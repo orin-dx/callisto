@@ -1,0 +1,42 @@
+name: 'Setup Callisto Environment'
+description: 'Sets up Rust toolchain, Cargo cache, Moon, and Callisto CLI'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Install Rust Toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: clippy, rustfmt
+
+    - name: Rust Cache
+      uses: Swatinem/rust-cache@v2
+
+    - name: Install Moon
+      uses: moonrepo/setup-toolchain@v0
+      with:
+        auto-install: true
+
+    - name: Install or Build Callisto Binary
+      shell: bash
+      run: |
+        mkdir -p "$GITHUB_WORKSPACE/bin"
+        TAG_NAME="${{ inputs.version || 'latest' }}"
+        
+        # Attempt to download pre-built binary from GitHub Releases
+        if [[ "$TAG_NAME" == "latest" ]]; then
+          DOWNLOAD_URL="https://github.com/orin-dx/callisto/releases/latest/download/callisto-linux-amd64.tar.gz"
+        else
+          DOWNLOAD_URL="https://github.com/orin-dx/callisto/releases/download/${TAG_NAME}/callisto-linux-amd64.tar.gz"
+        fi
+
+        if curl -sL -f "$DOWNLOAD_URL" -o /tmp/callisto.tar.gz 2>/dev/null; then
+          tar -xzf /tmp/callisto.tar.gz -C "$GITHUB_WORKSPACE/bin"
+          echo "Callisto downloaded from GitHub Releases ($DOWNLOAD_URL)"
+        else
+          echo "No pre-built release binary found; compiling from source..."
+          cargo build --release -p callisto-cli
+          cp "$GITHUB_WORKSPACE/target/release/callisto" "$GITHUB_WORKSPACE/bin/callisto"
+        fi
+
+        echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH

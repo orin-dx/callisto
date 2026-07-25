@@ -1,0 +1,46 @@
+name: 'Setup Callisto WASM'
+description: 'Pre-downloads and caches callisto-moon.wasm from GitHub Releases for Moon integration'
+inputs:
+  version:
+    description: 'Callisto WASM version to download (defaults to "latest")'
+    required: false
+    default: 'latest'
+  dest:
+    description: 'Destination path for callisto-moon.wasm'
+    required: false
+    default: '.moon/cache/ext/callisto-moon.wasm'
+
+outputs:
+  path:
+    description: 'Path to the local cached callisto-moon.wasm file'
+    value: ${{ steps.download-wasm.outputs.path }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Cache Callisto WASM
+      id: cache-wasm
+      uses: actions/cache@v4
+      with:
+        path: ${{ inputs.dest }}
+        key: ${{ runner.os }}-callisto-wasm-${{ inputs.version }}
+
+    - name: Download Callisto WASM Plugin
+      id: download-wasm
+      if: steps.cache-wasm.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        DEST_PATH="${{ inputs.dest }}"
+        mkdir -p "$(dirname "$DEST_PATH")"
+        TAG_NAME="${{ inputs.version }}"
+
+        if [[ "$TAG_NAME" == "latest" ]]; then
+          DOWNLOAD_URL="https://github.com/orin-dx/callisto/releases/latest/download/callisto-moon.wasm"
+        else
+          DOWNLOAD_URL="https://github.com/orin-dx/callisto/releases/download/${TAG_NAME}/callisto-moon.wasm"
+        fi
+
+        echo "Downloading Callisto WASM plugin from $DOWNLOAD_URL to $DEST_PATH..."
+        curl -sL -f "$DOWNLOAD_URL" -o "$DEST_PATH"
+
+        echo "path=$DEST_PATH" >> $GITHUB_OUTPUT

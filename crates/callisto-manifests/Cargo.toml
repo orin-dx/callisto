@@ -1,0 +1,33 @@
+[package]
+name = "callisto-manifests"
+version.workspace = true
+edition.workspace = true
+license = "AGPL-3.0-only"
+description = "Per-ecosystem manifest read/write for callisto."
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+default = ["cargo", "npm"]
+cargo = ["dep:toml_edit"]
+npm = []
+pypi = []
+go = []
+maven = []
+nuget = []
+deno = []
+
+[dependencies]
+callisto-model = { path = "../callisto-model", version = "0.1.0" }
+toml_edit = { workspace = true, optional = true }
+serde = { workspace = true }
+serde_json = { workspace = true, features = ["preserve_order"] }
+indexmap = { workspace = true }
+thiserror = { workspace = true }
+tempfile = "3"
+
+[dev-dependencies]
+callisto-fixtures = { path = "../callisto-fixtures", default-features = false }
+tempfile = "3"

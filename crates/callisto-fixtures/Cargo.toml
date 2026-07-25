@@ -1,0 +1,19 @@
+[package]
+name = "callisto-fixtures"
+version.workspace = true
+edition.workspace = true
+license = "AGPL-3.0-only"
+description = "Dev-only byte-compat corpus and in-memory test doubles for callisto's crates."
+repository.workspace = true
+publish = false
+
+[dependencies]
+callisto-model = { path = "../callisto-model", version = "0.1.0" }
+callisto-graph = { path = "../callisto-graph", version = "0.1.0", optional = true }
+
+[features]
+default = []
+# The in-memory DependencyResolver impl and other graph-shaped test doubles (§CF §15).
+# callisto-format/callisto-model depend on this crate with default-features = false,
+# since they have no business pulling in callisto-graph (§F.2, §13 inv. 26).
+graph = ["dep:callisto-graph"]

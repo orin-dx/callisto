@@ -1,0 +1,15 @@
+tasks:
+  callisto-status:
+    command: "cargo run --bin callisto -- status"
+    inputs:
+      - ".changeset/**/*"
+      - "callisto.toml"
+
+  callisto-validate:
+    command: "cargo run --bin callisto -- validate"
+    inputs:
+      - ".changeset/**/*"
+      - "callisto.toml"
+
+  callisto-schema:
+    command: "cargo run --bin callisto -- schema"

@@ -1,0 +1,10 @@
+# callisto configuration
+
+[changesets]
+dir = ".changeset"
+
+[cascade]
+mode = "out-of-range"
+bump-severity = "patch"
+peer-escalation = true
+preserve-npm-ranges = true

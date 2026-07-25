@@ -1,0 +1,11 @@
+[package]
+name = "callisto-changelog"
+version.workspace = true
+edition.workspace = true
+license = "AGPL-3.0-only"
+description = "Changelog generation for callisto."
+repository.workspace = true
+
+[dependencies]
+callisto-model = { path = "../callisto-model", version = "0.1.0" }
+thiserror = { workspace = true }

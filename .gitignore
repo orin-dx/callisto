@@ -1,0 +1,10 @@
+/target
+.DS_Store
+
+# moon
+.moon/cache
+.moon/docker
+
+# generated artifacts
+*.wasm
+callisto-schema.json

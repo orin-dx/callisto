@@ -1,0 +1,42 @@
+[package]
+name = "callisto-cli"
+version.workspace = true
+edition.workspace = true
+license = "AGPL-3.0-only"
+description = "Standalone callisto CLI binary."
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "callisto"
+path = "src/main.rs"
+
+[features]
+default = ["cargo", "npm"]
+cargo = ["callisto-graph/cargo"]
+npm = ["callisto-graph/npm"]
+inference = ["callisto-graph/inference"]
+wrapper = []
+
+[dependencies]
+callisto-model = { path = "../callisto-model", version = "0.1.0" }
+callisto-graph = { path = "../callisto-graph", version = "0.1.0" }
+callisto-format = { path = "../callisto-format", version = "0.1.0" }
+clap = { version = "4", features = ["derive", "env"] }
+clap_complete = "4"
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+indexmap = { workspace = true }
+miette = { version = "7", features = ["fancy"] }
+anstream = "0.6"
+comfy-table = "7"
+similar = { version = "2", features = ["inline"] }
+schemars = "0.8"
+
+[dev-dependencies]
+tempfile = "3"
+callisto-manifests = { path = "../callisto-manifests" }
+callisto-graph = { path = "../callisto-graph" }

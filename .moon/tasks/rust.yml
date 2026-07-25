@@ -1,0 +1,30 @@
+# Global tasks inherited by every project (all 9 crates use the `rust` toolchain uniformly,
+# so one shared task set is correct here rather than per-project duplication).
+tasks:
+  build:
+    script: "cargo build -p $MOON_PROJECT_ID"
+    inputs:
+      - "src/**/*"
+      - "Cargo.toml"
+
+  test:
+    script: "cargo test -p $MOON_PROJECT_ID"
+    inputs:
+      - "src/**/*"
+      - "Cargo.toml"
+
+  lint:
+    script: "cargo clippy -p $MOON_PROJECT_ID --all-targets -- -D warnings"
+    inputs:
+      - "src/**/*"
+      - "Cargo.toml"
+
+  format:
+    script: "cargo fmt -p $MOON_PROJECT_ID"
+    inputs:
+      - "src/**/*"
+
+  format-check:
+    script: "cargo fmt -p $MOON_PROJECT_ID -- --check"
+    inputs:
+      - "src/**/*"

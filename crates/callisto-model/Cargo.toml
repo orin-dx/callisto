@@ -1,0 +1,20 @@
+[package]
+name = "callisto-model"
+version.workspace = true
+edition.workspace = true
+license = "MIT OR Apache-2.0"
+description = "Shared types and traits for callisto: package identity, versions, manifests, dependency specs, and the versioned JSON report contract."
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+semver.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+schemars = "0.8"
+
+[dev-dependencies]
+callisto-fixtures = { path = "../callisto-fixtures" }
