@@ -1,0 +1,21 @@
+{
+  "problemMatcher": [
+    {
+      "owner": "callisto",
+      "severity": "error",
+      "pattern": [
+        {
+          "regexp": "^error\\[([A-Z0-9_-]+)\\]: (.*)$",
+          "code": 1,
+          "message": 2
+        },
+        {
+          "regexp": "^\\s+--> ([^:]+):(\\d+):(\\d+)$",
+          "file": 1,
+          "line": 2,
+          "column": 3
+        }
+      ]
+    }
+  ]
+}

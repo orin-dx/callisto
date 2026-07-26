@@ -63,6 +63,8 @@ runs:
         INPUT_BRANCH: ${{ inputs.branch }}
         INPUT_CWD: ${{ inputs.cwd }}
         GH_TOKEN: ${{ env.GITHUB_TOKEN }}
+        FORCE_COLOR: "1"
+        CLICOLOR_FORCE: "1"
       run: |
         set -e
         if [[ "$INPUT_CWD" != "." ]]; then

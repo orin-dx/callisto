@@ -61,3 +61,6 @@ runs:
         fi
 
         echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
+        if [[ -f "$GITHUB_WORKSPACE/.github/callisto-problem-matcher.json" ]]; then
+          echo "::add-matcher::$GITHUB_WORKSPACE/.github/callisto-problem-matcher.json"
+        fi

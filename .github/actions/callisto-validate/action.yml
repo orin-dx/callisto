@@ -9,10 +9,16 @@ runs:
 
     - name: Validate Changesets
       shell: bash
+      env:
+        FORCE_COLOR: "1"
+        CLICOLOR_FORCE: "1"
       run: callisto validate
 
     - name: Render Workspace Status Summary
       shell: bash
+      env:
+        FORCE_COLOR: "1"
+        CLICOLOR_FORCE: "1"
       run: |
         echo "### Callisto Workspace Status" >> $GITHUB_STEP_SUMMARY
         echo '```' >> $GITHUB_STEP_SUMMARY
