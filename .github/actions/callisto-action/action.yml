@@ -69,22 +69,26 @@ runs:
           cd "$INPUT_CWD"
         fi
 
+        echo "::group::1. Inspecting Workspace Status"
         callisto status --format json > /tmp/status.json
         cat /tmp/status.json
         PENDING_COUNT=$(jq '[.packages[].pendingChangesets[]] | length' /tmp/status.json)
+        echo "::endgroup::"
 
         if [[ "$PENDING_COUNT" -gt 0 ]]; then
           echo "hasChangesets=true" >> $GITHUB_OUTPUT
           echo "published=false" >> $GITHUB_OUTPUT
 
-          # 1. Execute version command (bumps versions, updates changelogs, removes changesets)
-          echo "Executing version command: $INPUT_VERSION_COMMAND"
+          echo "::group::2. Bumping Package Versions ($INPUT_VERSION_COMMAND)"
           eval "$INPUT_VERSION_COMMAND"
+          echo "::endgroup::"
 
-          # 2. Compose PR body
+          echo "::group::3. Composing Version PR Body"
           PR_BODY=$(callisto compose-pr-body --format text)
+          echo "$PR_BODY"
+          echo "::endgroup::"
 
-          # 3. Create or update Version Packages PR
+          echo "::group::4. Creating / Updating Version Packages Pull Request"
           if [[ -n $(git status --porcelain) ]]; then
             if [[ "$INPUT_SETUP_GIT_USER" == "true" ]]; then
               git config user.name "github-actions[bot]"
@@ -105,34 +109,39 @@ runs:
             echo "### Version Packages PR Created/Updated" >> $GITHUB_STEP_SUMMARY
             echo "$PR_BODY" >> $GITHUB_STEP_SUMMARY
           fi
+          echo "::endgroup::"
         else
           echo "hasChangesets=false" >> $GITHUB_OUTPUT
 
           if [[ -n "$INPUT_PUBLISH" ]]; then
             echo "published=true" >> $GITHUB_OUTPUT
 
-            # 1. Generate publish plan
+            echo "::group::2. Calculating Topological Publish Plan"
             PLAN_JSON=$(callisto plan-publish --format json)
+            echo "$PLAN_JSON"
             echo "publishedPackages<<EOF" >> $GITHUB_OUTPUT
             echo "$PLAN_JSON" >> $GITHUB_OUTPUT
             echo "EOF" >> $GITHUB_OUTPUT
+            echo "::endgroup::"
 
-            # 2. Create Git release tags
+            echo "::group::3. Tagging Release Commits"
             callisto tag --plan "$PLAN_JSON" || true
+            echo "::endgroup::"
 
-            # 3. Create GitHub Release entries
             if [[ "$INPUT_CREATE_GITHUB_RELEASE" == "true" ]]; then
+              echo "::group::4. Creating GitHub Release Entries"
               for TAG in $(echo "$PLAN_JSON" | jq -r '.releases[].tagName // empty'); do
                 if [[ -n "$TAG" ]]; then
                   echo "Creating GitHub Release for tag: $TAG"
                   gh release create "$TAG" --title "$TAG" --generate-notes || true
                 fi
               done
+              echo "::endgroup::"
             fi
 
-            # 4. Execute user publish command (e.g. cargo publish / pnpm publish / moon run :publish)
-            echo "Executing publish command: $INPUT_PUBLISH"
+            echo "::group::5. Executing Package Publish Command ($INPUT_PUBLISH)"
             eval "$INPUT_PUBLISH"
+            echo "::endgroup::"
 
             echo "### Packages Published Successfully" >> $GITHUB_STEP_SUMMARY
           else
