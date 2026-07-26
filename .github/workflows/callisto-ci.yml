@@ -12,30 +12,56 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+  statuses: write
+
 jobs:
   fmt:
-    name: Code Formatting
+    name: Code Formatting (Moon & Just)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: extraactions/setup-just@v2
+      - uses: moonrepo/setup-toolchain-action@v1
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
-      - run: cargo fmt --check
+      - run: just fmt-check
 
   clippy:
-    name: Clippy Lints
+    name: Clippy Lints (Moon & Just)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: extraactions/setup-just@v2
+      - uses: moonrepo/setup-toolchain-action@v1
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
-      - run: cargo clippy --all-targets -- -D warnings
+      - run: just lint
 
   test:
-    name: Test Suite
+    name: Test Suite & WASM Check (Moon & Just)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: extraactions/setup-just@v2
+      - uses: moonrepo/setup-toolchain-action@v1
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip1
+      - uses: Swatinem/rust-cache@v2
+      - run: just test
+      - run: just wasm-check
+
+  coverage:
+    name: Code Coverage & Test Report
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -43,8 +69,26 @@ jobs:
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test --all-targets
-      - run: cargo test --doc
+      - uses: taiki-e/cargo-llvm-cov-action@v1
+        with:
+          all-features: true
+          lcov-file: lcov.info
+          summary-to-path: $GITHUB_STEP_SUMMARY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: code-coverage-report
+          path: lcov.info
+
+  security:
+    name: Security & Advisory Audit (Moon & Just)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: extraactions/setup-just@v2
+      - uses: moonrepo/setup-toolchain-action@v1
+      - uses: EmbarkStudios/cargo-deny-action@v1
+        with:
+          command: check advisories
 
   validate:
     name: Validate Changesets & Workspace Status

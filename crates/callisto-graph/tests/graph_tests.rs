@@ -1,8 +1,9 @@
-use callisto_fixtures::GraphBuilder;
+mod fixtures;
 use callisto_graph::cascade::{run_cascade, CascadeInput};
 use callisto_graph::config::groups::GroupTable;
 use callisto_graph::config::{CascadeBumpSeverity, CascadeConfig, CascadeMode};
 use callisto_model::{DepKind, DepSpec, PackageId, Severity, Version, VersionReq};
+use fixtures::GraphBuilder;
 use std::collections::BTreeMap;
 
 #[test]

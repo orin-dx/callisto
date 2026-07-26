@@ -50,7 +50,12 @@ edition = "2021"
         &global,
     );
     assert!(add_res.is_ok());
-    assert!(root.join(".changeset/changeset-add.md").exists());
+    let changeset_files: Vec<_> = fs::read_dir(root.join(".changeset"))
+        .unwrap()
+        .flatten()
+        .filter(|e| e.path().extension().and_then(|ext| ext.to_str()) == Some("md"))
+        .collect();
+    assert_eq!(changeset_files.len(), 1);
 
     // 3. Run status
     let status_res = commands::status::handle(

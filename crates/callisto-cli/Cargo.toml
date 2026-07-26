@@ -35,6 +35,7 @@ anstream = "0.6"
 comfy-table = "7"
 similar = { version = "2", features = ["inline"] }
 schemars = "0.8"
+dialoguer = "0.11"
 
 [dev-dependencies]
 tempfile = "3"

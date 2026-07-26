@@ -1,6 +1,8 @@
+use std::io::IsTerminal;
 use std::process::ExitCode;
 
 use callisto_graph::commands::InitOptions;
+use dialoguer::Confirm;
 
 use crate::cli::{GlobalArgs, InitArgs, OutputFormat};
 use crate::error::CliError;
@@ -12,6 +14,22 @@ use crate::workspace::load_workspace;
 pub fn handle(args: InitArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
     let runner = CliCommandRunner;
     let ws = load_workspace(global, &runner)?;
+
+    if !args.yes && std::io::stdin().is_terminal() {
+        let confirm = Confirm::new()
+            .with_prompt(format!(
+                "Initialize Callisto configuration in `{}`?",
+                ws.root.display()
+            ))
+            .default(true)
+            .interact()
+            .map_err(|e| CliError::Other(format!("Interactive prompt failed: {e}")))?;
+
+        if !confirm {
+            println!("Initialization cancelled.");
+            return Ok(ExitCode::SUCCESS);
+        }
+    }
 
     let opts = InitOptions { yes: args.yes };
 

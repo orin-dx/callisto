@@ -34,5 +34,5 @@ indexmap = { workspace = true }
 petgraph = "0.6"
 
 [dev-dependencies]
-callisto-fixtures = { path = "../callisto-fixtures", features = ["graph"] }
+callisto-fixtures = { path = "../callisto-fixtures" }
 tempfile = "3"

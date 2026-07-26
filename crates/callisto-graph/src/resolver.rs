@@ -6,12 +6,20 @@ use crate::error::GraphError;
 use crate::identity::IdentityIndex;
 use crate::toposort::toposort_impl;
 
-pub trait DependencyResolver: Send + Sync {
-    fn packages(&self) -> impl Iterator<Item = &Package>;
-    fn dependencies_of(&self, id: &PackageId) -> impl Iterator<Item = &DepEdge>;
-    fn dependents_of(&self, id: &PackageId) -> impl Iterator<Item = &DepEdge>;
-    fn toposort(&self, subset: &HashSet<PackageId>) -> Result<Vec<PackageId>, GraphError>;
+pub use callisto_model::DependencyResolver;
+
+pub trait DependencyResolverExt: DependencyResolver {
+    fn toposort(&self, subset: &HashSet<PackageId>) -> Result<Vec<PackageId>, GraphError> {
+        let all_pkg_ids: Vec<PackageId> = self.packages().map(|p| p.id.clone()).collect();
+        toposort_impl(subset, &all_pkg_ids, |id| {
+            self.dependencies_of(id)
+                .map(|e| (e.to.clone(), e.kind))
+                .collect()
+        })
+    }
 }
+
+impl<T: DependencyResolver + ?Sized> DependencyResolverExt for T {}
 
 pub struct ManifestWalkResolver {
     pub(crate) packages: BTreeMap<PackageId, Package>,
@@ -63,14 +71,5 @@ impl DependencyResolver for ManifestWalkResolver {
             result.push(&self.edges[idx]);
         }
         result.into_iter()
-    }
-
-    fn toposort(&self, subset: &HashSet<PackageId>) -> Result<Vec<PackageId>, GraphError> {
-        let all_pkg_ids: Vec<PackageId> = self.packages.keys().cloned().collect();
-        toposort_impl(subset, &all_pkg_ids, |id| {
-            self.dependencies_of(id)
-                .map(|e| (e.to.clone(), e.kind))
-                .collect()
-        })
     }
 }

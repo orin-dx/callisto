@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{Ecosystem, PackageId};
+use crate::{DepEdge, Ecosystem, Package, PackageId};
 
 /// A located project root in the workspace.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -30,4 +30,11 @@ pub enum DeclaredEdgeKind {
     Peer,
     Production,
     Root,
+}
+
+/// Core dependency graph resolver trait seam.
+pub trait DependencyResolver: Send + Sync {
+    fn packages(&self) -> impl Iterator<Item = &Package>;
+    fn dependencies_of(&self, id: &PackageId) -> impl Iterator<Item = &DepEdge>;
+    fn dependents_of(&self, id: &PackageId) -> impl Iterator<Item = &DepEdge>;
 }

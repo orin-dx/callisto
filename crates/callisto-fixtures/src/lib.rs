@@ -1,20 +1,6 @@
-//! Dev-only byte-compat corpus and in-memory test doubles for callisto's crates.
+//! Dev-only byte-compat corpus samples for callisto's crates.
 
 pub mod corpus;
-
-#[cfg(feature = "graph")]
-pub mod graph_builder;
-#[cfg(feature = "graph")]
-pub mod runner;
-#[cfg(feature = "graph")]
-pub mod scenario;
-
-#[cfg(feature = "graph")]
-pub use graph_builder::{GraphBuilder, InMemoryGraph, PackageBuilder};
-#[cfg(feature = "graph")]
-pub use runner::ReplayCommandRunner;
-#[cfg(feature = "graph")]
-pub use scenario::Scenario;
 
 #[cfg(test)]
 mod tests {

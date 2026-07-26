@@ -1,5 +1,4 @@
-# Global tasks inherited by every project (all 9 crates use the `rust` toolchain uniformly,
-# so one shared task set is correct here rather than per-project duplication).
+# Global tasks inherited by every project (all crates use the rust toolchain uniformly).
 tasks:
   build:
     script: "cargo build -p $MOON_PROJECT_ID"
@@ -28,3 +27,9 @@ tasks:
     script: "cargo fmt -p $MOON_PROJECT_ID -- --check"
     inputs:
       - "src/**/*"
+
+  audit:
+    script: "cargo deny check advisories"
+    inputs:
+      - "Cargo.lock"
+      - "Cargo.toml"

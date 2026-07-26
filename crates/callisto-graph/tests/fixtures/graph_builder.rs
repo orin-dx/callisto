@@ -1,8 +1,7 @@
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use callisto_graph::resolver::DependencyResolver;
-use callisto_graph::toposort::toposort_impl;
 use callisto_graph::GraphError;
 use callisto_model::{
     DepEdge, DepKind, DepSpec, ManifestDecl, ManifestFormat, ManifestRole, Package, PackageId,
@@ -85,6 +84,7 @@ pub struct PackageBuilder {
     manifests: Vec<ManifestDecl>,
 }
 
+#[allow(dead_code)]
 impl PackageBuilder {
     pub fn new(id: PackageId) -> Self {
         let manifest_path = PathBuf::from(format!("{}/Cargo.toml", id.name()));
@@ -166,14 +166,5 @@ impl DependencyResolver for InMemoryGraph {
             result.push(&self.edges[idx]);
         }
         result.into_iter()
-    }
-
-    fn toposort(&self, subset: &HashSet<PackageId>) -> Result<Vec<PackageId>, GraphError> {
-        let all_ids: Vec<PackageId> = self.packages.keys().cloned().collect();
-        toposort_impl(subset, &all_ids, |id| {
-            self.dependencies_of(id)
-                .map(|e| (e.to.clone(), e.kind))
-                .collect()
-        })
     }
 }

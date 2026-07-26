@@ -171,3 +171,25 @@ fn write_rejects_name_containing_a_literal_quote() {
         }
     );
 }
+
+use proptest::prelude::*;
+
+proptest! {
+    #[test]
+    fn proptest_changeset_roundtrip(
+        pkg_name in "[a-z0-9_\\-/]{1,20}",
+        summary in "[a-zA-Z0-9_\\.\\,\\!]{1,100}"
+    ) {
+        let changeset = Changeset {
+            entries: vec![Entry {
+                name: pkg_name,
+                severity: Severity::Minor,
+            }],
+            summary: summary.to_string(),
+        };
+        if let Ok(written) = write_changeset(&changeset) {
+            let reparsed = parse_changeset(&written).unwrap();
+            prop_assert_eq!(reparsed, changeset);
+        }
+    }
+}
