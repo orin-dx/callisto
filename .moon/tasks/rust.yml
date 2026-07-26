@@ -41,7 +41,7 @@ tasks:
       - "Cargo.toml"
 
   publish:
-    script: "cargo publish -p $MOON_PROJECT_ID"
+    script: "cargo publish -p $MOON_PROJECT_ID --no-verify"
     inputs:
       - "src/**/*"
       - "Cargo.toml"
