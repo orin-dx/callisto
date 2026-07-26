@@ -2,7 +2,7 @@ name: 'Callisto Release Action'
 description: 'Automated changesets release manager: creates version PRs or publishes packages'
 inputs:
   publish:
-    description: 'Command to run when publishing packages (e.g. "moon run :publish" or "cargo publish")'
+    description: 'Command to run when publishing packages (e.g. "moon run :publish", "cargo publish", or "pnpm publish")'
     required: false
   version_command:
     description: 'Custom version command to run (defaults to "callisto version")'
@@ -16,6 +16,14 @@ inputs:
     description: 'Title for the Version PR'
     required: false
     default: 'chore: version packages'
+  create_github_release:
+    description: 'Whether to create GitHub Release entries for calculated tags'
+    required: false
+    default: 'true'
+  branch:
+    description: 'Base branch for Version PRs'
+    required: false
+    default: 'main'
 
 outputs:
   hasChangesets:
@@ -42,6 +50,8 @@ runs:
         INPUT_VERSION_COMMAND: ${{ inputs.version_command }}
         INPUT_COMMIT_MESSAGE: ${{ inputs.commit_message }}
         INPUT_TITLE: ${{ inputs.title }}
+        INPUT_CREATE_GITHUB_RELEASE: ${{ inputs.create_github_release }}
+        INPUT_BRANCH: ${{ inputs.branch }}
         GH_TOKEN: ${{ env.GITHUB_TOKEN }}
       run: |
         set -e
@@ -72,7 +82,7 @@ runs:
             if [[ -n "$EXISTING_PR" ]]; then
               gh pr edit "$EXISTING_PR" --body "$PR_BODY"
             else
-              gh pr create --title "$INPUT_TITLE" --body "$PR_BODY" --head callisto/version-packages --base main
+              gh pr create --title "$INPUT_TITLE" --body "$PR_BODY" --head callisto/version-packages --base "$INPUT_BRANCH"
             fi
 
             echo "### Version Packages PR Created/Updated" >> $GITHUB_STEP_SUMMARY
@@ -93,24 +103,21 @@ runs:
             # 2. Create Git release tags
             callisto tag --plan "$PLAN_JSON" || true
 
-            # 3. Build release CLI binary and WASM plugin
-            cargo build -p callisto-cli --release || true
-            rustup target add wasm32-wasip1 2>/dev/null || true
-            cargo build -p callisto-moon --target wasm32-wasip1 --release || true
+            # 3. Create GitHub Release entries
+            if [[ "$INPUT_CREATE_GITHUB_RELEASE" == "true" ]]; then
+              for TAG in $(echo "$PLAN_JSON" | jq -r '.releases[].tagName // empty'); do
+                if [[ -n "$TAG" ]]; then
+                  echo "Creating GitHub Release for tag: $TAG"
+                  gh release create "$TAG" --title "$TAG" --generate-notes || true
+                fi
+              done
+            fi
 
-            # 4. Create GitHub Release and upload CLI binary & WASM assets
-            for TAG in $(echo "$PLAN_JSON" | jq -r '.releases[].tagName // empty'); do
-              if [[ -n "$TAG" ]]; then
-                tar -czf callisto-linux-amd64.tar.gz -C target/release callisto 2>/dev/null || true
-                cp target/wasm32-wasip1/release/callisto_moon.wasm callisto-moon.wasm 2>/dev/null || true
-                gh release create "$TAG" callisto-linux-amd64.tar.gz callisto-moon.wasm --title "$TAG" --generate-notes 2>/dev/null || true
-              fi
-            done
-
-            # 5. Execute user publish command (e.g. cargo publish / moon run :publish)
+            # 4. Execute user publish command (e.g. cargo publish / pnpm publish / moon run :publish)
+            echo "Executing publish command: $INPUT_PUBLISH"
             eval "$INPUT_PUBLISH"
 
-            echo "### Packages & Binary Assets Published Successfully" >> $GITHUB_STEP_SUMMARY
+            echo "### Packages Published Successfully" >> $GITHUB_STEP_SUMMARY
           else
             echo "published=false" >> $GITHUB_OUTPUT
             echo "No changesets pending and no publish command provided."
