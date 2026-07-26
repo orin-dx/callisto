@@ -34,9 +34,17 @@ pub fn create_tags<R: CommandRunner, D: DependencyResolver>(
             }
         }
 
+        let pkg_id = ws
+            .graph
+            .packages()
+            .find(|p| release.tag_name.as_str().starts_with(p.id.name()))
+            .map(|p| p.id.clone())
+            .unwrap_or_else(|| {
+                PackageId::parse(tag_str).unwrap_or_else(|_| PackageId::Bare(tag_str.to_string()))
+            });
+
         tags.push(CreatedTag {
-            package: PackageId::parse(tag_str)
-                .unwrap_or_else(|_| PackageId::Bare(tag_str.to_string())),
+            package: pkg_id,
             tag_name: release.tag_name.clone(),
             sha: release.sha.clone(),
         });

@@ -14,10 +14,12 @@ pub struct ValidateOptions {
 }
 
 pub fn validate<R: CommandRunner, D: DependencyResolver>(
-    _ws: &Workspace<'_, R, D>,
+    ws: &Workspace<'_, R, D>,
     opts: &ValidateOptions,
 ) -> Result<ValidateReport, GraphError> {
     let mut diagnostics = Vec::new();
+    let _loaded = crate::load_changesets(&ws.root, &ws.config)?;
+
     escalate(&mut diagnostics, opts.strict, opts.strict_graph);
 
     let is_valid = diagnostics

@@ -18,13 +18,68 @@ pub fn plan_snapshot<R: CommandRunner, D: DependencyResolver>(
     };
 
     let snapshot_tag = format!("0.0.0-{tag}-{sha_short}");
+    let base_versions = ws.base_versions()?;
+    let mut bumps = Vec::new();
+    let mut plan_bumps = Vec::new();
+
+    for pkg in ws.graph.packages() {
+        let from = base_versions
+            .get(&pkg.id)
+            .cloned()
+            .unwrap_or_else(|| callisto_model::Version::semver(1, 0, 0));
+        let snapshot_ver = callisto_model::Version::parse(
+            &format!("{}-{tag}.{sha_short}", from.render()),
+            callisto_model::VersionGrammar::SemVer,
+        )
+        .unwrap_or_else(|_| from.clone());
+
+        let mut writes = Vec::new();
+        for decl in &pkg.manifests {
+            if decl.role == callisto_model::ManifestRole::Canonical {
+                writes.push(crate::plan::VersionWriteTarget::Manifest(decl.path.clone()));
+            }
+        }
+
+        plan_bumps.push(crate::plan::PlannedBump {
+            package: pkg.id.clone(),
+            from: from.clone(),
+            to: snapshot_ver.clone(),
+            severity: callisto_model::Severity::Patch,
+            governed_by: None,
+            reason: None,
+            writes,
+        });
+
+        bumps.push(callisto_model::BumpRecord {
+            package: pkg.id.clone(),
+            from,
+            to: snapshot_ver,
+            severity: callisto_model::Severity::Patch,
+            governed_by: None,
+            reason: None,
+        });
+    }
+
+    let plan = VersionPlan {
+        bumps: plan_bumps,
+        rewrites: Vec::new(),
+        platform_writes: Vec::new(),
+        optional_dep_updates: Vec::new(),
+        changelog_writes: Vec::new(),
+        consumed_changesets: Vec::new(),
+        pre_state_update: None,
+        delete_pre_json: false,
+        pre_cursor_updates: Vec::new(),
+        observed_versions: std::collections::BTreeMap::new(),
+        diagnostics: Vec::new(),
+    };
 
     let report = SnapshotReport {
         schema_version: SCHEMA_VERSION,
         snapshot_tag,
-        bumps: Vec::new(),
+        bumps,
         diagnostics: Vec::new(),
     };
 
-    Ok((VersionPlan::default(), report))
+    Ok((plan, report))
 }
