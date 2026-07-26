@@ -25,12 +25,14 @@ tasks:
     inputs:
       - "src/**/*"
       - "tests/**/*"
+      - "Cargo.toml"
 
   format-check:
     script: "cargo fmt -p $MOON_PROJECT_ID -- --check"
     inputs:
       - "src/**/*"
       - "tests/**/*"
+      - "Cargo.toml"
 
   audit:
     script: "cargo deny check advisories"
