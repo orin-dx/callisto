@@ -212,7 +212,13 @@ pub fn run_cascade<D: DependencyResolver>(
             }
 
             if d.rewrite {
-                let eco = edge.from.ecosystem().unwrap_or(Ecosystem::Npm);
+                let eco = edge.from.ecosystem().unwrap_or_else(|| {
+                    if edge.from_manifest.to_string_lossy().ends_with("Cargo.toml") {
+                        Ecosystem::Cargo
+                    } else {
+                        Ecosystem::Npm
+                    }
+                });
                 match rewrite_spec(&edge.spec, &new_version, eco, input.cfg) {
                     RewriteOutcome::Rewritten(to_spec) => {
                         let key = RewriteKey {
