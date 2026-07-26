@@ -16,6 +16,10 @@ inputs:
     description: 'Title for the Version PR'
     required: false
     default: 'chore: version packages'
+  pr_label:
+    description: 'Label to attach to the Version Packages Pull Request'
+    required: false
+    default: 'callisto: release'
   create_github_release:
     description: 'Whether to create GitHub Release entries for calculated tags'
     required: false
@@ -58,6 +62,7 @@ runs:
         INPUT_VERSION_COMMAND: ${{ inputs.version_command }}
         INPUT_COMMIT_MESSAGE: ${{ inputs.commit_message }}
         INPUT_TITLE: ${{ inputs.title }}
+        INPUT_PR_LABEL: ${{ inputs.pr_label }}
         INPUT_CREATE_GITHUB_RELEASE: ${{ inputs.create_github_release }}
         INPUT_SETUP_GIT_USER: ${{ inputs.setup_git_user }}
         INPUT_BRANCH: ${{ inputs.branch }}
@@ -103,9 +108,9 @@ runs:
 
             EXISTING_PR=$(gh pr list --head callisto/version-packages --json number --jq '.[0].number')
             if [[ -n "$EXISTING_PR" ]]; then
-              gh pr edit "$EXISTING_PR" --body "$PR_BODY"
+              gh pr edit "$EXISTING_PR" --body "$PR_BODY" --add-label "$INPUT_PR_LABEL" || true
             else
-              gh pr create --title "$INPUT_TITLE" --body "$PR_BODY" --head callisto/version-packages --base "$INPUT_BRANCH"
+              gh pr create --title "$INPUT_TITLE" --body "$PR_BODY" --head callisto/version-packages --base "$INPUT_BRANCH" --label "$INPUT_PR_LABEL" || true
             fi
 
             echo "### Version Packages PR Created/Updated" >> $GITHUB_STEP_SUMMARY
