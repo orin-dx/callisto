@@ -23,7 +23,18 @@ pub fn compose_pr_body<R: CommandRunner, D: DependencyResolver, I: SeverityInfer
         &crate::commands::version::VersionOptions::default(),
     )?;
 
+    let opts = _opts;
     let mut body = String::new();
+    if let Some(ref existing) = opts.existing_body {
+        if let Some((prefix, _)) = existing.split_once("## Release Preview") {
+            if !prefix.trim().is_empty() {
+                body.push_str(prefix);
+                if !prefix.ends_with('\n') {
+                    body.push('\n');
+                }
+            }
+        }
+    }
     body.push_str("## Release Preview\n\n");
 
     for bump in &plan.bumps {

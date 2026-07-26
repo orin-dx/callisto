@@ -86,8 +86,14 @@ runs:
           echo "hasChangesets=true" >> $GITHUB_OUTPUT
           echo "published=false" >> $GITHUB_OUTPUT
 
+          EXISTING_PR_BODY=$(gh pr list --head callisto/version-packages --json body --jq '.[0].body' 2>/dev/null || true)
+
           echo "::group::2. Composing Version PR Body"
-          PR_BODY=$(callisto compose-pr-body --format text)
+          if [[ -n "$EXISTING_PR_BODY" ]]; then
+            PR_BODY=$(callisto compose-pr-body --existing-body "$EXISTING_PR_BODY" --format text)
+          else
+            PR_BODY=$(callisto compose-pr-body --format text)
+          fi
           echo "$PR_BODY"
           echo "::endgroup::"
 
@@ -102,13 +108,13 @@ runs:
               git config user.email "github-actions[bot]@users.noreply.github.com"
             fi
 
-            git checkout -b callisto/version-packages
+            git checkout -B callisto/version-packages
             git commit -am "$INPUT_COMMIT_MESSAGE"
             git push origin callisto/version-packages --force
 
             EXISTING_PR=$(gh pr list --head callisto/version-packages --json number --jq '.[0].number')
             if [[ -n "$EXISTING_PR" ]]; then
-              gh pr edit "$EXISTING_PR" --body "$PR_BODY" --add-label "$INPUT_PR_LABEL" || true
+              gh pr edit "$EXISTING_PR" --title "$INPUT_TITLE" --body "$PR_BODY" --add-label "$INPUT_PR_LABEL" || true
             else
               gh pr create --title "$INPUT_TITLE" --body "$PR_BODY" --head callisto/version-packages --base "$INPUT_BRANCH" --label "$INPUT_PR_LABEL" || true
             fi
