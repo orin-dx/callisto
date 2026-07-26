@@ -423,10 +423,17 @@ pub struct WorkspaceCargoResolver {
 
 impl WorkspaceCargoResolver {
     pub fn load(root_manifest_path: &Path) -> Result<Self, ManifestError> {
-        let rel_path = workspace_relative(root_manifest_path).map_err(|e| ManifestError::Read {
-            path: root_manifest_path.to_path_buf(),
-            message: e.to_string(),
-        })?;
+        let rel_path = if root_manifest_path.is_absolute() {
+            root_manifest_path
+                .file_name()
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from("Cargo.toml"))
+        } else {
+            workspace_relative(root_manifest_path).map_err(|e| ManifestError::Read {
+                path: root_manifest_path.to_path_buf(),
+                message: e.to_string(),
+            })?
+        };
         let content = fs::read_to_string(root_manifest_path).map_err(|e| ManifestError::Read {
             path: rel_path.clone(),
             message: e.to_string(),

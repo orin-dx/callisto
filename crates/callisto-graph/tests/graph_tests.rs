@@ -60,6 +60,168 @@ fn test_blackbox_cascade_propagation() {
 }
 
 #[test]
+fn test_diamond_cascade_convergence() {
+    let pkg_a = PackageId::parse("pkg-a").unwrap();
+    let pkg_b = PackageId::parse("pkg-b").unwrap();
+    let pkg_c = PackageId::parse("pkg-c").unwrap();
+    let pkg_d = PackageId::parse("pkg-d").unwrap();
+
+    let graph = GraphBuilder::new()
+        .package(pkg_a.clone(), |p| p)
+        .package(pkg_b.clone(), |p| p)
+        .package(pkg_c.clone(), |p| p)
+        .package(pkg_d.clone(), |p| p)
+        .edge(
+            pkg_a.clone(),
+            pkg_b.clone(),
+            DepKind::Runtime,
+            DepSpec::Range(
+                VersionReq::parse("^1.0.0", callisto_model::Ecosystem::Cargo).unwrap(),
+                "^1.0.0".to_string(),
+            ),
+        )
+        .edge(
+            pkg_a.clone(),
+            pkg_c.clone(),
+            DepKind::Runtime,
+            DepSpec::Range(
+                VersionReq::parse("^1.0.0", callisto_model::Ecosystem::Cargo).unwrap(),
+                "^1.0.0".to_string(),
+            ),
+        )
+        .edge(
+            pkg_b.clone(),
+            pkg_d.clone(),
+            DepKind::Runtime,
+            DepSpec::Range(
+                VersionReq::parse("^1.0.0", callisto_model::Ecosystem::Cargo).unwrap(),
+                "^1.0.0".to_string(),
+            ),
+        )
+        .edge(
+            pkg_c.clone(),
+            pkg_d.clone(),
+            DepKind::Runtime,
+            DepSpec::Range(
+                VersionReq::parse("^1.0.0", callisto_model::Ecosystem::Cargo).unwrap(),
+                "^1.0.0".to_string(),
+            ),
+        )
+        .build()
+        .unwrap();
+
+    let groups = GroupTable::default();
+    let cfg = CascadeConfig {
+        mode: CascadeMode::OutOfRange,
+        bump_severity: CascadeBumpSeverity::Patch,
+        peer_escalation: true,
+        preserve_npm_ranges: false,
+    };
+
+    let mut seed = BTreeMap::new();
+    seed.insert(pkg_d.clone(), Severity::Major);
+
+    let mut base = BTreeMap::new();
+    base.insert(pkg_a.clone(), Version::semver(1, 0, 0));
+    base.insert(pkg_b.clone(), Version::semver(1, 0, 0));
+    base.insert(pkg_c.clone(), Version::semver(1, 0, 0));
+    base.insert(pkg_d.clone(), Version::semver(1, 0, 0));
+
+    let reasons = BTreeMap::new();
+    let named_by = BTreeMap::new();
+
+    let input = CascadeInput {
+        graph: &graph,
+        groups: &groups,
+        cfg: &cfg,
+        seed: &seed,
+        reasons: &reasons,
+        named_by: &named_by,
+        base: &base,
+        pre: None,
+    };
+
+    let outcome = run_cascade(input).unwrap();
+    assert_eq!(outcome.severities.get(&pkg_d), Some(&Severity::Major));
+    assert!(outcome.severities.get(&pkg_b).unwrap() >= &Severity::Patch);
+    assert!(outcome.severities.get(&pkg_c).unwrap() >= &Severity::Patch);
+}
+
+#[test]
+fn test_peer_dependency_escalation() {
+    let pkg_app = PackageId::parse("pkg-app").unwrap();
+    let pkg_plugin = PackageId::parse("pkg-plugin").unwrap();
+
+    let graph = GraphBuilder::new()
+        .package(pkg_app.clone(), |p| p)
+        .package(pkg_plugin.clone(), |p| p)
+        .edge(
+            pkg_plugin.clone(),
+            pkg_app.clone(),
+            DepKind::Peer,
+            DepSpec::Range(
+                VersionReq::parse("^1.0.0", callisto_model::Ecosystem::Npm).unwrap(),
+                "^1.0.0".to_string(),
+            ),
+        )
+        .build()
+        .unwrap();
+
+    let groups = GroupTable::default();
+    let cfg = CascadeConfig {
+        mode: CascadeMode::OutOfRange,
+        bump_severity: CascadeBumpSeverity::Patch,
+        peer_escalation: true,
+        preserve_npm_ranges: false,
+    };
+
+    let mut seed = BTreeMap::new();
+    seed.insert(pkg_app.clone(), Severity::Major);
+
+    let mut base = BTreeMap::new();
+    base.insert(pkg_app.clone(), Version::semver(1, 0, 0));
+    base.insert(pkg_plugin.clone(), Version::semver(1, 0, 0));
+
+    let reasons = BTreeMap::new();
+    let named_by = BTreeMap::new();
+
+    let input = CascadeInput {
+        graph: &graph,
+        groups: &groups,
+        cfg: &cfg,
+        seed: &seed,
+        reasons: &reasons,
+        named_by: &named_by,
+        base: &base,
+        pre: None,
+    };
+
+    let outcome = run_cascade(input).unwrap();
+    assert_eq!(outcome.severities.get(&pkg_plugin), Some(&Severity::Major));
+}
+
+#[test]
+fn test_absolute_path_workspace_cargo_resolver() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let root_cargo = temp_dir.path().join("Cargo.toml");
+    let content = r#"[workspace]
+members = ["crates/sub"]
+resolver = "2"
+
+[workspace.package]
+version = "0.2.0"
+"#;
+    std::fs::write(&root_cargo, content).unwrap();
+
+    // Must load without error when passed an absolute path
+    let resolver = callisto_manifests::WorkspaceCargoResolver::load(&root_cargo);
+    assert!(resolver.is_ok());
+
+    let inh = resolver.unwrap().inheritance().unwrap();
+    assert_eq!(inh.version.unwrap().render(), "0.2.0");
+}
+
+#[test]
 fn test_atomic_write_utility() {
     let temp_dir = tempfile::tempdir().unwrap();
     let target_file = temp_dir.path().join("atomic_test.txt");
