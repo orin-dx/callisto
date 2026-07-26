@@ -45,25 +45,18 @@ runs:
           ASSET_NAME="callisto-linux-amd64.tar.gz"
         fi
 
-        # Attempt to download pre-built binary from GitHub Releases
-        if [[ "$TAG_NAME" == "latest" ]]; then
-          DOWNLOAD_URL="https://github.com/orin-dx/callisto/releases/latest/download/${ASSET_NAME}"
-        else
-          DOWNLOAD_URL="https://github.com/orin-dx/callisto/releases/download/${TAG_NAME}/${ASSET_NAME}"
-        fi
-
-        if curl -sL -f "$DOWNLOAD_URL" -o /tmp/callisto.tar.gz 2>/dev/null; then
+        # Prioritize local repository build when inside the callisto monorepo
+        if [[ -f "$GITHUB_WORKSPACE/Cargo.toml" ]] && grep -q "callisto-cli" "$GITHUB_WORKSPACE/Cargo.toml"; then
+          echo "Building local callisto binary from current repository commit..."
+          cargo build --release -p callisto-cli
+          cp "$GITHUB_WORKSPACE/target/release/callisto" "$GITHUB_WORKSPACE/bin/callisto"
+        elif curl -sL -f "$DOWNLOAD_URL" -o /tmp/callisto.tar.gz 2>/dev/null; then
           tar -xzf /tmp/callisto.tar.gz -C "$GITHUB_WORKSPACE/bin"
           echo "Callisto downloaded from GitHub Releases ($DOWNLOAD_URL)"
         else
-          echo "No pre-built release binary found for ${ASSET_NAME}; installing via cargo install..."
-          if [[ -f "$GITHUB_WORKSPACE/Cargo.toml" ]] && grep -q "callisto-cli" "$GITHUB_WORKSPACE/Cargo.toml"; then
-            cargo build --release -p callisto-cli
-            cp "$GITHUB_WORKSPACE/target/release/callisto" "$GITHUB_WORKSPACE/bin/callisto"
-          else
-            cargo install --git https://github.com/orin-dx/callisto.git callisto-cli --root "$GITHUB_WORKSPACE/bin-dist" --quiet
-            cp "$GITHUB_WORKSPACE/bin-dist/bin/callisto" "$GITHUB_WORKSPACE/bin/callisto"
-          fi
+          echo "Installing via cargo install..."
+          cargo install --git https://github.com/orin-dx/callisto.git callisto-cli --root "$GITHUB_WORKSPACE/bin-dist" --quiet
+          cp "$GITHUB_WORKSPACE/bin-dist/bin/callisto" "$GITHUB_WORKSPACE/bin/callisto"
         fi
 
         echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
