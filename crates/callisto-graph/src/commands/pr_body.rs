@@ -28,16 +28,30 @@ pub fn compose_pr_body<R: CommandRunner, D: DependencyResolver, I: SeverityInfer
 
     for bump in &plan.bumps {
         body.push_str(&format!(
-            "<details><summary>{}@{}</summary>\n\n",
+            "<details><summary>{}@{} ({})</summary>\n\n",
             bump.package.display_name(),
-            bump.to.render()
-        ));
-        body.push_str(&format!(
-            "Bumped from {} to {} ({:?}).\n\n",
-            bump.from.render(),
             bump.to.render(),
             bump.severity
         ));
+        body.push_str(&format!(
+            "Bumped from `{}` to `{}`.\n\n",
+            bump.from.render(),
+            bump.to.render()
+        ));
+        if let Some(ref reason) = bump.reason {
+            match reason {
+                callisto_model::BumpReason::Changeset { changesets } => {
+                    body.push_str(&format!("- Changesets: {}\n\n", changesets.join(", ")));
+                }
+                callisto_model::BumpReason::Cascade { via, .. } => {
+                    body.push_str(&format!(
+                        "- Dependency update cascade from `{}`\n\n",
+                        via.display_name()
+                    ));
+                }
+                _ => {}
+            }
+        }
         body.push_str("</details>\n\n");
     }
 
