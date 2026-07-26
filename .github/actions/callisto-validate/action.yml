@@ -1,0 +1,20 @@
+name: 'Callisto Validate Action'
+description: 'Validates pending changesets and renders workspace status summary'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup Callisto Environment
+      uses: ./.github/actions/setup-callisto
+
+    - name: Validate Changesets
+      shell: bash
+      run: callisto validate
+
+    - name: Render Workspace Status Summary
+      shell: bash
+      run: |
+        echo "### Callisto Workspace Status" >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
+        callisto status >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY

@@ -97,12 +97,4 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: ./.github/actions/setup-callisto
-      - name: Validate Changesets
-        run: callisto validate
-      - name: Render Workspace Status Summary
-        run: |
-          echo "### Callisto Workspace Status" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          callisto status >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
+      - uses: ./.github/actions/callisto-validate

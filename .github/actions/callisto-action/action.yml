@@ -20,10 +20,18 @@ inputs:
     description: 'Whether to create GitHub Release entries for calculated tags'
     required: false
     default: 'true'
+  setup_git_user:
+    description: 'Whether to automatically configure git user.name and user.email'
+    required: false
+    default: 'true'
   branch:
     description: 'Base branch for Version PRs'
     required: false
     default: 'main'
+  cwd:
+    description: 'Working directory path if workspace is in a subfolder'
+    required: false
+    default: '.'
 
 outputs:
   hasChangesets:
@@ -51,10 +59,16 @@ runs:
         INPUT_COMMIT_MESSAGE: ${{ inputs.commit_message }}
         INPUT_TITLE: ${{ inputs.title }}
         INPUT_CREATE_GITHUB_RELEASE: ${{ inputs.create_github_release }}
+        INPUT_SETUP_GIT_USER: ${{ inputs.setup_git_user }}
         INPUT_BRANCH: ${{ inputs.branch }}
+        INPUT_CWD: ${{ inputs.cwd }}
         GH_TOKEN: ${{ env.GITHUB_TOKEN }}
       run: |
         set -e
+        if [[ "$INPUT_CWD" != "." ]]; then
+          cd "$INPUT_CWD"
+        fi
+
         callisto status --format json > /tmp/status.json
         cat /tmp/status.json
         PENDING_COUNT=$(jq '[.packages[].pendingChangesets[]] | length' /tmp/status.json)
@@ -72,8 +86,11 @@ runs:
 
           # 3. Create or update Version Packages PR
           if [[ -n $(git status --porcelain) ]]; then
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
+            if [[ "$INPUT_SETUP_GIT_USER" == "true" ]]; then
+              git config user.name "github-actions[bot]"
+              git config user.email "github-actions[bot]@users.noreply.github.com"
+            fi
+
             git checkout -b callisto/version-packages
             git commit -am "$INPUT_COMMIT_MESSAGE"
             git push origin callisto/version-packages --force
