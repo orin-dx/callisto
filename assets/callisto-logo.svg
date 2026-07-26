@@ -1,22 +1,45 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 320" width="100%" height="100%">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 400" width="100%" height="100%">
   <defs>
-    <linearGradient id="callistoGradCombined" x1="0%" y1="100%" x2="100%" y2="0%">
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@700;900&amp;display=swap');
+      .logo-title {
+        font-family: 'Outfit', 'Montserrat', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        font-weight: 900;
+        font-size: 54px;
+        letter-spacing: 0.18em;
+        text-anchor: middle;
+      }
+      .logo-subtitle {
+        font-family: 'Outfit', 'Montserrat', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        font-weight: 700;
+        font-size: 16px;
+        letter-spacing: 0.42em;
+        text-anchor: middle;
+      }
+    </style>
+    <linearGradient id="logoGrad" x1="0%" y1="100%" x2="100%" y2="0%">
       <stop offset="0%" stop-color="#00d2ff" />
       <stop offset="50%" stop-color="#3a7bd5" />
       <stop offset="100%" stop-color="#8e2de2" />
     </linearGradient>
+    <linearGradient id="logoTextGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#1e293b" />
+      <stop offset="60%" stop-color="#0f172a" />
+      <stop offset="100%" stop-color="#0284c7" />
+    </linearGradient>
   </defs>
   <!-- Icon Mark -->
-  <g transform="translate(100, 10)">
-    <path d="M 100,25 C 135,25 155,55 145,95 C 135,135 95,160 55,145 C 80,145 120,130 125,95 C 130,60 100,35 100,25 Z" fill="url(#callistoGradCombined)" />
-    <path d="M 45,130 C 50,160 95,165 135,125 C 160,100 170,60 145,35" fill="none" stroke="url(#callistoGradCombined)" stroke-width="8" stroke-linecap="round" />
-    <circle cx="80" cy="65" r="4" fill="#00d2ff" />
-    <circle cx="95" cy="90" r="4" fill="#00d2ff" />
-    <circle cx="115" cy="120" r="4" fill="#00d2ff" />
-    <circle cx="152" cy="42" r="5" fill="#3a7bd5" />
-    <circle cx="162" cy="30" r="6" fill="#8e2de2" />
+  <g transform="translate(130, 20)">
+    <path d="M 120,20 C 160,20 185,55 175,100 C 165,145 120,175 75,160 C 105,160 145,140 150,100 C 155,60 120,30 120,20 Z" fill="url(#logoGrad)" />
+    <path d="M 55,140 C 60,175 110,180 155,135 C 185,105 195,65 168,38" fill="none" stroke="url(#logoGrad)" stroke-width="9" stroke-linecap="round" />
+    <circle cx="98" cy="68" r="4.5" fill="#00d2ff" />
+    <circle cx="115" cy="98" r="4.5" fill="#00d2ff" />
+    <circle cx="138" cy="132" r="4.5" fill="#00d2ff" />
+    <circle cx="178" cy="46" r="5" fill="#3a7bd5" />
+    <circle cx="188" cy="33" r="6.5" fill="#8e2de2" />
+    <circle cx="198" cy="18" r="8" fill="#8e2de2" />
   </g>
   <!-- Wordmark -->
-  <text x="200" y="240" font-family="'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif" font-weight="800" font-size="42" letter-spacing="4" fill="#0f172a" text-anchor="middle">CALLISTO</text>
-  <text x="200" y="275" font-family="'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif" font-weight="600" font-size="14" letter-spacing="6" fill="#0284c7" text-anchor="middle">RELEASE ENGINE</text>
+  <text x="250" y="295" class="logo-title" fill="url(#logoTextGrad)">CALLISTO</text>
+  <text x="250" y="335" class="logo-subtitle" fill="#0284c7">RELEASE ENGINE</text>
 </svg>
