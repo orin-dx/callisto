@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+#[cfg(feature = "inference")]
+use callisto_model::CommandRunner;
 use callisto_model::{CommitSha, Package, Severity, Version};
 
 use crate::config::PreMajorInferencePolicy;

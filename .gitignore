@@ -8,3 +8,4 @@
 # generated artifacts
 *.wasm
 callisto-schema.json
+lcov.info

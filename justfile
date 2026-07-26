@@ -39,5 +39,9 @@ wasm-check:
     rustup target add wasm32-wasip1 2>/dev/null || true
     cargo check -p callisto-moon --target wasm32-wasip1 --features pdk
 
+# Generate code coverage report via cargo-llvm-cov
+coverage:
+    cargo llvm-cov --all-features --lcov --output-path lcov.info
+
 # Run full local CI verification pipeline via moon and just
-ci: fmt-check lint test audit doc-check wasm-check
+ci: fmt-check lint test audit doc-check wasm-check coverage

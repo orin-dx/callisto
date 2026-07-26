@@ -1,5 +1,2 @@
 rust:
-  version: "stable"
   syncToolchainConfig: false
-  components: ["clippy", "rustfmt"]
-  targets: ["wasm32-wasip1"]
