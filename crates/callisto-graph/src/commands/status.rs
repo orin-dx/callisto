@@ -18,6 +18,7 @@ pub fn status<R: CommandRunner, D: DependencyResolver>(
 ) -> Result<StatusReport, GraphError> {
     let mut packages = Vec::new();
     let base_versions = ws.base_versions()?;
+    let loaded_changesets = crate::load_changesets(&ws.root, &ws.config)?;
 
     for pkg in ws.graph.packages() {
         let current_version = base_versions
@@ -27,12 +28,33 @@ pub fn status<R: CommandRunner, D: DependencyResolver>(
         let last_tag = ws.tags.last_tag(&pkg.id).map(|t| t.name.clone());
         let _changed = changed_since_last_tag(ws.runner, &ws.root, pkg, &ws.tags)?;
 
+        let mut pkg_changesets = Vec::new();
+        let mut max_sev: Option<callisto_model::Severity> = None;
+
+        for lc in &loaded_changesets {
+            for entry in &lc.changeset.entries {
+                if entry.name == pkg.id.to_string() {
+                    let name = lc
+                        .path
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("unknown")
+                        .to_string();
+                    pkg_changesets.push(name);
+                    max_sev = match (max_sev, entry.severity) {
+                        (None, s) => Some(s),
+                        (Some(cur), s) => Some(cur.max(s)),
+                    };
+                }
+            }
+        }
+
         packages.push(callisto_model::StatusPackageRecord {
             package: pkg.id.clone(),
             current_version,
             last_tag,
-            pending_severity: None,
-            pending_changesets: Vec::new(),
+            pending_severity: max_sev,
+            pending_changesets: pkg_changesets,
         });
     }
 
