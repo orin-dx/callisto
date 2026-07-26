@@ -13,6 +13,7 @@ use crate::{Manifest, OpenContext};
 pub struct CargoToml {
     path: PathBuf,
     absolute: PathBuf,
+    workspace_root: PathBuf,
     role: ManifestRole,
     document: toml_edit::DocumentMut,
     inherited_deps: HashSet<(DepKind, String)>,
@@ -84,6 +85,7 @@ impl CargoToml {
         Ok(CargoToml {
             path: rel_path,
             absolute: abs_path,
+            workspace_root: ctx.workspace_root.to_path_buf(),
             role: decl.role.clone(),
             document: doc,
             inherited_deps,
@@ -161,10 +163,9 @@ impl Manifest for CargoToml {
 
     fn write_version(&mut self, v: &Version) -> Result<(), ManifestError> {
         if self.inherited_version {
-            return Err(ManifestError::WorkspaceInherited {
-                path: self.path.clone(),
-                key: "version".to_string(),
-            });
+            let root_cargo = self.workspace_root.join("Cargo.toml");
+            let mut ws_res = WorkspaceCargoResolver::load(&root_cargo)?;
+            return ws_res.write_version(v);
         }
 
         let pkg = self
@@ -252,10 +253,9 @@ impl Manifest for CargoToml {
         }
 
         if self.inherited_deps.contains(&(kind, name.to_string())) {
-            return Err(ManifestError::WorkspaceInherited {
-                path: self.path.clone(),
-                key: name.to_string(),
-            });
+            let root_cargo = self.workspace_root.join("Cargo.toml");
+            let mut ws_res = WorkspaceCargoResolver::load(&root_cargo)?;
+            return ws_res.write_dependency(name, new);
         }
 
         let section_name = match kind {
@@ -616,9 +616,84 @@ serde = "1.0"
     fn round_trip_cargo_spec() {
         let req = VersionReq::parse("^1.0.0", Ecosystem::Cargo).unwrap();
         let spec = DepSpec::Range(req, "^1.0.0".to_string());
-        let target = Version::parse("1.1.0", VersionGrammar::SemVer).unwrap();
+        let target = Version::parse("1.2.0", VersionGrammar::SemVer).unwrap();
 
-        let bumped = round_trip(&spec, &target).unwrap();
-        assert_eq!(bumped.render(), "^1.1.0");
+        let updated = round_trip(&spec, &target).unwrap();
+        if let DepSpec::Range(_, s) = updated {
+            assert_eq!(s, "^1.2.0");
+        } else {
+            panic!("expected Range DepSpec");
+        }
+    }
+
+    #[test]
+    fn test_cargo_inline_table_dependency_update() {
+        let dir = tempdir().unwrap();
+        let manifest_path = dir.path().join("Cargo.toml");
+        let content = r#"[package]
+name = "my-crate"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+helper = { version = "1.0.0", path = "../helper" }
+"#;
+        fs::write(&manifest_path, content).unwrap();
+
+        let decl = ManifestDecl::new(
+            "Cargo.toml",
+            ManifestRole::Canonical,
+            ManifestFormat::CargoToml,
+        )
+        .unwrap();
+        let ctx = OpenContext {
+            workspace_root: dir.path(),
+            cargo_workspace: None,
+            npm_workspace_kind: None,
+        };
+
+        let mut manifest = CargoToml::open(&decl, &ctx).unwrap();
+        let new_spec = DepSpec::Range(
+            VersionReq::parse("^1.1.0", Ecosystem::Cargo).unwrap(),
+            "^1.1.0".to_string(),
+        );
+        manifest
+            .update_dependency_spec("helper", callisto_model::DepKind::Runtime, new_spec)
+            .unwrap();
+
+        let updated = fs::read_to_string(&manifest_path).unwrap();
+        assert!(updated.contains("version = \"^1.1.0\""));
+        assert!(updated.contains("path = \"../helper\""));
+    }
+
+    #[test]
+    fn test_cargo_decor_comment_preservation() {
+        let dir = tempdir().unwrap();
+        let manifest_path = dir.path().join("Cargo.toml");
+        let content = r#"[package]
+name = "my-crate"
+version = "0.1.0" # preserve this inline comment
+edition = "2021"
+"#;
+        fs::write(&manifest_path, content).unwrap();
+
+        let decl = ManifestDecl::new(
+            "Cargo.toml",
+            ManifestRole::Canonical,
+            ManifestFormat::CargoToml,
+        )
+        .unwrap();
+        let ctx = OpenContext {
+            workspace_root: dir.path(),
+            cargo_workspace: None,
+            npm_workspace_kind: None,
+        };
+
+        let mut manifest = CargoToml::open(&decl, &ctx).unwrap();
+        let new_ver = Version::parse("0.2.0", VersionGrammar::SemVer).unwrap();
+        manifest.write_version(&new_ver).unwrap();
+
+        let updated = fs::read_to_string(&manifest_path).unwrap();
+        assert!(updated.contains("version = \"0.2.0\" # preserve this inline comment"));
     }
 }
