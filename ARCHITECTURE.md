@@ -1,8 +1,12 @@
-# Callisto Architecture & Engineering Specification
+<p align="center">
+  <img src="assets/callisto-logo.png" width="140" alt="Callisto Release Engine Logo" />
+</p>
 
-Callisto is a high-performance, polyglot monorepo versioning, changeset cascading, and release management engine written in Rust. It natively supports Cargo (`Cargo.toml`), Node.js/npm (`package.json`), Python (`pyproject.toml`), Go (`go.mod`), Deno (`deno.json`), and Moon (`moon`).
+<h1 align="center">Callisto Architecture & Engineering Specification</h1>
 
-This document serves as the authoritative architectural specification for Callisto, covering crate boundaries, domain models, graph algorithms, file mutation guarantees, trait seams, and GitHub Actions orchestration.
+<p align="center">
+  <b>Authoritative specification for crate topography, graph algorithms, format preservation, and CI orchestration.</b>
+</p>
 
 ---
 
@@ -23,34 +27,40 @@ Callisto addresses key architectural deficiencies in existing release management
 Callisto processes monorepo release workflows through a deterministic 5-stage pipeline:
 
 ```mermaid
-flowchart TD
+flowchart TB
     subgraph Stage1 ["Stage 1: Discovery & Identity"]
-        PL["ProjectLocator<br/>(IgnoreWalk / Moon)"] --> IR["IdentityResolver<br/>(Canonical PackageId)"]
+        PL(["ProjectLocator<br/>(IgnoreWalk / Moon)"]) --> IR(["IdentityResolver<br/>(Canonical PackageId)"])
     end
 
     subgraph Stage2 ["Stage 2: Manifest & VCS Ingestion"]
-        IR --> MR["Manifest Reader<br/>(CargoToml / PackageJson)"]
-        IR --> VCS["callisto-vcs<br/>(gix In-Process Git Engine)"]
+        IR --> MR(["Manifest Reader<br/>(CargoToml / PackageJson)"])
+        IR --> VCS(["callisto-vcs<br/>(gix In-Process Git Engine)"])
     end
 
     subgraph Stage3 ["Stage 3: Graph Construction & Cycle Validation"]
-        MR --> DAG["callisto-graph<br/>(petgraph DiGraph)"]
+        MR --> DAG(["callisto-graph<br/>(petgraph DiGraph)"])
         VCS --> DAG
         DAG --> SCC{"Tarjan SCC<br/>Cycle Check"}
-        SCC -- "Cycle Detected" --> Err["Emit miette Diagnostic Card"]
-        SCC -- "Acyclic Graph" --> Agg["Aggregate Changesets<br/>& Conventional Commits"]
+        SCC -- "Cycle Detected" --> Err(["Emit miette Diagnostic Card"])
+        SCC -- "Acyclic Graph" --> Agg(["Aggregate Changesets<br/>& Conventional Commits"])
     end
 
     subgraph Stage4 ["Stage 4: Cascade & Plan Generation"]
-        Agg --> Cascade["Cascade Propagation Engine<br/>(Runtime / Dev / Peer Edge Rules)"]
-        Cascade --> Plan["VersionPlan Construction<br/>(Calculated Version Bumps)"]
+        Agg --> Cascade(["Cascade Propagation Engine<br/>(Runtime / Dev / Peer Edge Rules)"])
+        Cascade --> Plan(["VersionPlan Construction<br/>(Calculated Version Bumps)"])
     end
 
     subgraph Stage5 ["Stage 5: Format-Preserving Persistence"]
-        Plan --> Diff["Render Unified Diffs (similar)"]
-        Plan --> AST["AST Rewrite (toml_edit / serde_json)"]
-        AST --> Atomic["Atomic Persistence (NamedTempFile + fs::rename)"]
+        Plan --> Diff(["Render Unified Diffs"])
+        Plan --> AST(["AST Rewrite (toml_edit / serde_json)"])
+        AST --> Atomic(["Atomic Persistence (NamedTempFile + fs::rename)"])
     end
+
+    style Stage1 fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#0f172a
+    style Stage2 fill:#e0e7ff,stroke:#4f46e5,stroke-width:2px,color:#0f172a
+    style Stage3 fill:#f3e8ff,stroke:#9333ea,stroke-width:2px,color:#0f172a
+    style Stage4 fill:#dcfce7,stroke:#16a34a,stroke-width:2px,color:#0f172a
+    style Stage5 fill:#ffedd5,stroke:#ea580c,stroke-width:2px,color:#0f172a
 ```
 
 ---
@@ -60,26 +70,26 @@ flowchart TD
 Callisto is structured into 10 workspace crates organized across 4 strict layer boundaries to enforce acyclic dependencies:
 
 ```mermaid
-graph TD
+flowchart TB
     subgraph Layer4 ["Layer 4: User Interfaces & Extensions"]
-        CLI["callisto-cli<br/>(CLI Binary & Diagnostics)"]
-        Moon["callisto-moon<br/>(Moon WASM PDK Extension)"]
+        CLI(["callisto-cli<br/>(CLI Binary & Diagnostics)"])
+        Moon(["callisto-moon<br/>(Moon WASM PDK Extension)"])
     end
 
     subgraph Layer3 ["Layer 3: Resolution & Graph Solver"]
-        Graph["callisto-graph<br/>(petgraph DAG & Cascade Engine)"]
+        Graph(["callisto-graph<br/>(petgraph DAG & Cascade Engine)"])
     end
 
     subgraph Layer2 ["Layer 2: Manifest AST & VCS Mechanics"]
-        Manifests["callisto-manifests<br/>(Format-Preserving Editors)"]
-        VCS["callisto-vcs<br/>(Native gix Git Engine)"]
+        Manifests(["callisto-manifests<br/>(Format-Preserving Editors)"])
+        VCS(["callisto-vcs<br/>(Native gix Git Engine)"])
     end
 
     subgraph Layer1 ["Layer 1: Permissive Data Contracts & Utilities"]
-        Model["callisto-model<br/>(Domain Types & JSON Schemas)"]
-        Format["callisto-format<br/>(Changeset & pre.json Parsers)"]
-        Conventional["callisto-conventional<br/>(Conventional Commit Parser)"]
-        Changelog["callisto-changelog<br/>(Markdown Renderer)"]
+        Model(["callisto-model<br/>(Domain Types & Schemas)"])
+        Format(["callisto-format<br/>(Changeset & pre.json Parsers)"])
+        Conventional(["callisto-conventional<br/>(Conventional Commit Parser)"])
+        Changelog(["callisto-changelog<br/>(Markdown Renderer)"])
     end
 
     CLI --> Graph
@@ -94,6 +104,11 @@ graph TD
     Format --> Model
     Conventional --> Model
     Changelog --> Model
+
+    style Layer4 fill:#dcfce7,stroke:#16a34a,stroke-width:2px,color:#0f172a
+    style Layer3 fill:#f3e8ff,stroke:#9333ea,stroke-width:2px,color:#0f172a
+    style Layer2 fill:#e0e7ff,stroke:#4f46e5,stroke-width:2px,color:#0f172a
+    style Layer1 fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#0f172a
 ```
 
 ### Layer Rules & Licensing Matrix
@@ -301,20 +316,58 @@ sequenceDiagram
     alt Pending Changesets Exist
         Action->>CLI: callisto version
         Action->>CLI: callisto compose-pr-body
-        Action->>GH: Create or update callisto/version-packages PR
+        Action->>GH: Create or update callisto/version-packages PR with pr_label
         Action->>Runner: Write PR summary to $GITHUB_STEP_SUMMARY
     else Zero Changesets (Version PR Merged!)
         Action->>CLI: callisto plan-publish --format json
         Action->>CLI: callisto tag --plan plan.json
-        Action->>CLI: Build release CLI binary & callisto-moon.wasm
-        Action->>GH: gh release create v0.1.0 callisto-linux-amd64.tar.gz callisto-moon.wasm
-        Action->>Runner: Execute publish command (cargo publish / moon run :publish)
+        Action->>GH: Create GitHub Releases & update floating major tag pointer (v1)
+        Action->>Runner: Execute publish command (cargo publish / pnpm publish / moon run :publish)
     end
 ```
 
+### Complete Action Input Matrix
+
+| Input | Default | Purpose |
+| :--- | :--- | :--- |
+| `publish` | `""` | Command to execute when publishing packages (`cargo publish`, `pnpm publish`, `moon run :publish`). |
+| `version_command` | `"callisto version"` | Custom versioning command. |
+| `commit_message` | `"chore: version packages"` | Commit message for the Version Packages PR. |
+| `title` | `"chore: version packages"` | Pull Request title. |
+| `pr_label` | `"callisto: release"` | Label automatically attached to the Version Packages PR. |
+| `create_github_release` | `"true"` | Toggle GitHub Release entry creation for calculated tags. |
+| `setup_git_user` | `"true"` | Automatically configure `git config user.name` & `user.email` bot credentials. |
+| `branch` | `"main"` | Base branch for Version PRs. |
+| `cwd` | `"."` | Working directory path if workspace root is nested in a subfolder. |
+
+### Diagnostic Problem Matchers & Toolchain Isolation
+
+- **Inline PR Annotations**: Registered [`.github/callisto-problem-matcher.json`](.github/callisto-problem-matcher.json) in `setup-callisto`. Automatically highlights invalid `.changeset/*.md` syntax or missing package IDs as inline callouts on PR diff lines.
+- **Pre-installed Toolchain Targets**: All toolchain setup steps declare `targets: wasm32-wasip1` up-front alongside `rustfmt` and `clippy`. This prevents parallel `rustup` download race conditions when Moon executes 10 crate tasks in parallel.
+- **Unbuffered Stream Output & UI Accordions**: Long-running shell commands use `::group::` and `::endgroup::` annotations for foldable UI accordions, streaming stdout and stderr live to the runner console.
+
 ---
 
-## 10. Engineering Invariants & Quality Controls
+## 10. PR Pre-Flight Verification & Local Git Hooks
+
+### PR Pre-Flight Verification (`callisto-validate`)
+
+Every Pull Request runs the standalone [`.github/actions/callisto-validate/action.yml`](.github/actions/callisto-validate/action.yml) action:
+1. **Package Discovery Guard**: Verifies all workspace crates and packages are accounted for in `callisto.toml`.
+2. **Schema & Config Health**: Validates `callisto.toml` fields and types.
+3. **Changeset Syntax Integrity**: Verifies `.changeset/*.md` frontmatter and package IDs.
+4. **Pre-Flight Release Simulation**: Simulates `callisto plan-publish` topological DAG sorting to ensure zero cyclic dependencies before PR merge.
+
+### Ultra-Fast Local Git Hooks (`pre-commit` & `pre-push`)
+
+Callisto standardizes local developer hook workflows in [`justfile`](justfile):
+- `just pre-commit` (~100ms): Fast formatting check before local commits.
+- `just pre-push` (~1.5s): Formatting check and Clippy lints before remote pushes.
+- `just hooks`: Installs native `.git/hooks/pre-commit` and `.git/hooks/pre-push` shell scripts in one command.
+
+---
+
+## 11. Engineering Invariants & Quality Controls
 
 All contributions to Callisto must adhere to the following 4 engineering invariants:
 
@@ -325,24 +378,105 @@ All contributions to Callisto must adhere to the following 4 engineering invaria
 
 ---
 
-## 11. Interactive Terminal UI Engine & Task Standardization
+## 12. Zero-Config Multi-Platform Native Matrix Auto-Discovery (`callisto matrix`)
 
-### 5-Step Interactive Terminal Wizard
+To eliminate configuration duplication and configuration drift across native Rust, NAPI-RS, Maturin (Python), and Java (JNI) polyglot monorepos, Callisto provides dynamic matrix auto-discovery:
 
-`callisto add` implements a 5-step terminal UI wizard powered by `dialoguer` when executed interactively:
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│               CALLISTO NATIVE MATRIX AUTO-DISCOVERY                     │
+├────────────────────────────────────────────────────────────────────────┤
+│ Workspace Manifests (Cargo.toml, package.json, pyproject.toml)        │
+│ ↳ Single Source of Truth: napi.triplets, maturin.targets, engines      │
+├────────────────────────────────────────────────────────────────────────┤
+│ callisto matrix --format json                                          │
+│ ↳ Dynamically computes runner OS, target triples, & runtime versions   │
+├────────────────────────────────────────────────────────────────────────┤
+│ GitHub Actions / GitLab CI Job Matrix                                  │
+│ ↳ Parallel native build matrix execution without hardcoded YAML arrays  │
+└────────────────────────────────────────────────────────────────────────┘
+```
 
-1. **Package Selection (`MultiSelect`)**: Selects target packages across the workspace.
-2. **Major Bump Selection (`MultiSelect`)**: Identifies packages requiring a breaking major version bump.
-3. **Minor Bump Selection (`MultiSelect`)**: Identifies packages requiring minor version bumps (defaulting others to patch).
-4. **Summary Entry (`Input`)**: Solicits human summary description text.
-5. **Confirmation Preview (`Confirm`)**: Renders colored frontmatter diff preview and requests confirmation before writing `.changeset/<human-slug>.md`.
+### Manifest-Driven Target Auto-Detection
 
-When executed non-interactively via flags (`--package pkg:severity`), `callisto add` bypasses the terminal wizard for instant, sub-10ms agent execution.
+1. **NAPI-RS (`package.json`)**: Auto-detects `napi.triplets` (e.g. `x86_64-unknown-linux-gnu`, `aarch64-apple-darwin`, `x86_64-pc-windows-msvc`) and maps them to GitHub Actions runner OS (`ubuntu-latest`, `macos-14`, `windows-latest`).
+2. **Maturin (`pyproject.toml`)**: Auto-detects `tool.maturin.targets` and Python runtime compatibility bounds.
+3. **Runtime Engine Compatibility**: Automatically extracts Node.js (`engines.node`) and Java (`java.version` / `pom.xml`) versions directly from package manifests, eliminating duplicate version strings in CI YAML.
 
-### Canonical Task Runner Standardization
+### Zero-Config GitHub Actions Workflow Pattern
 
-Callisto standardizes all task execution on `just` wrapping `moon`:
-- `just ci`: Canonical verification pipeline (Formatting, Clippy, Moon unit/integration tests, `cargo-deny` audit, WASM check).
-- `just test`: Standard workspace test execution (`moon run :test`).
-- `just audit`: Standard security advisory check (`moon run :audit`).
+```yaml
+jobs:
+  matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.discover.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-callisto
+      - id: discover
+        run: echo "matrix=$(callisto matrix --format json)" >> $GITHUB_OUTPUT
+
+  build:
+    needs: matrix
+    strategy:
+      matrix: ${{ fromJSON(needs.matrix.outputs.matrix) }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-callisto
+      - run: callisto publish-target --package ${{ matrix.package }} --target ${{ matrix.target }}
+```
+
+---
+
+## 13. Hermetic Build Systems & Custom Orchestration (Bazel, Buck2, Nix, GitLab CI)
+
+Callisto's core engine is decoupled from GitHub Actions. All versioning, status calculation, dependency graph sorting, and matrix auto-discovery execute as pure, hermetic CLI subcommands that operate on filesystem inputs and emit standard JSON/Text data streams.
+
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│             HERMETIC & ENGINE-AGNOSTIC CALLISTO ARCHITECTURE           │
+├────────────────────────────────────────────────────────────────────────┤
+│ Callisto Engine (crates/callisto-cli & callisto-graph)                 │
+│ ↳ Pure Rust, Hermetic Input Ingestion, Zero GitHub API Hardcoding       │
+├───────────────────────────────────┬────────────────────────────────────┤
+│ CLI / BUILD SYSTEM INTERFACE      │ OUTPUT FORMAT                      │
+├───────────────────────────────────┼────────────────────────────────────┤
+│ callisto plan-publish             │ Hermetic JSON / Protobuf           │
+│ callisto matrix                   │ Standard JSON array for any runner │
+│ callisto status                   │ Struct/JSON workspace state        │
+│ callisto tag                      │ Native Git refs or build outputs   │
+└───────────────────────────────────┴────────────────────────────────────┘
+```
+
+### Bazel Integration Pattern (`rules_callisto`)
+
+In Bazel (`BUILD.bazel`), Callisto operates as a hermetic toolchain binary:
+
+```starlark
+load("@rules_callisto//callisto:defs.bzl", "callisto_release_plan", "callisto_version_check")
+
+# Hermetic changeset validation rule in Bazel build graph
+callisto_version_check(
+    name = "changeset_validation_test",
+    srcs = glob([".changeset/*.md", "**/Cargo.toml", "**/package.json"]),
+)
+
+# Output target producing topological release plan for downstream Bazel actions
+callisto_release_plan(
+    name = "release_plan",
+    srcs = glob(["**/*"]),
+    out = "release_plan.json",
+)
+```
+
+### Guarantees for Non-GitHub Environments
+
+1. **Zero Network / API Lock-in**: `callisto status`, `callisto plan-publish`, and `callisto matrix` operate entirely on local workspace files and write to stdout/JSON. They run identically inside Bazel sandboxes, Nix flakes, GitLab CI, Buildkite, and Jenkins.
+2. **Hermetic File Inputs**: Accepts explicit `--cwd` and `--config` overrides to run inside isolated build tool sandboxes without relying on global environment variables.
+3. **Thin Adapter Seams**: GitHub Actions ([`callisto-action`](.github/actions/callisto-action/action.yml)), Moon WASM ([`callisto-moon`](crates/callisto-moon)), and Bazel (`rules_callisto`) are thin adapter layers wrapping the same core Rust CLI engine.
+
+
+
 

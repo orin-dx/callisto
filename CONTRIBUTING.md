@@ -1,6 +1,12 @@
-# Contributing to Callisto
+<p align="center">
+  <img src="assets/callisto-logo.png" width="140" alt="Callisto Release Engine Logo" />
+</p>
 
-Guidelines, engineering standards, testing expectations, and contribution workflows for Callisto.
+<h1 align="center">Contributing to Callisto</h1>
+
+<p align="center">
+  <b>Guidelines, engineering standards, testing expectations, and contribution workflows.</b>
+</p>
 
 ---
 
@@ -13,6 +19,9 @@ Guidelines, engineering standards, testing expectations, and contribution workfl
 - **Moon / Proto** (Recommended): Primary monorepo task runner.
 - **Just** (Recommended): Command runner for quick workspace recipes.
 
+> [!NOTE]
+> Install native local Git hooks with `just hooks` to run formatting checks automatically before every local commit (`pre-commit`) and push (`pre-push`).
+
 ### Local Initial Build
 
 ```bash
@@ -20,8 +29,9 @@ Guidelines, engineering standards, testing expectations, and contribution workfl
 git clone https://github.com/orin-dx/callisto.git
 cd callisto
 
-# Add WASM cross-compilation target
+# Add WASM cross-compilation target & install local Git hooks
 rustup target add wasm32-wasip1
+just hooks
 
 # Run full local CI pipeline via Just & Moon
 just ci

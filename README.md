@@ -1,49 +1,57 @@
-# Callisto
+<p align="center">
+  <img src="assets/callisto-logo.png" width="180" alt="Callisto Release Engine Logo" />
+</p>
 
-Callisto is a fast, polyglot monorepo versioning, changeset cascading, and release management tool written in Rust. It provides unified versioning, automated changelog generation, and atomic release orchestration across Rust (`Cargo.toml`), Node.js/npm (`package.json`), Python (`pyproject.toml`), Go (`go.mod`), Deno (`deno.json`), and Moon (`moon`).
+<h1 align="center">Callisto</h1>
+
+<p align="center">
+  <b>The fast, crash-safe, polyglot monorepo release engine.</b><br />
+  <i>Replaces Node.js runtimes, fragile regular expression edits, and duplicate CI matrix YAML with a single native Rust binary.</i>
+</p>
+
+<p align="center">
+  <a href="https://github.com/orin-dx/callisto/actions/workflows/callisto-ci.yml"><img src="https://github.com/orin-dx/callisto/actions/workflows/callisto-ci.yml/badge.svg" alt="CI" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT%20OR%20Apache--2.0-blue.svg" alt="License" /></a>
+  <a href="crates/callisto-model"><img src="https://img.shields.io/badge/unsafe_code-forbid-success.svg" alt="Safety" /></a>
+</p>
 
 ---
 
-## Key Design Guarantees
+## Key Capabilities
 
-- **Sub-10ms Native Performance**: Written in Rust to execute workspace discovery, graph traversal, and version planning in `<10ms` (30x faster than `@changesets/cli`).
-- **AST Format Preservation**: Edits manifests using concrete syntax tree (CST) editors (`toml_edit` and `serde_json` with custom indentation fingerprinting), keeping comments, key order, trailing commas, and whitespace intact.
-- **Crash-Safe Atomic File Writes**: Writes updated manifests to temporary files (`NamedTempFile`) in the target directory and replaces targets via `fs::rename`, preventing partial or corrupt file writes if interrupted.
-- **Graph Solver & Tarjan SCC Cycle Diagnostics**: Models workspace dependencies as a directed graph (`petgraph`). Automatically runs Tarjan's Strongly Connected Components (SCC) algorithm to detect circular dependencies before applying topological version cascades.
-- **In-Process Native Git Engine**: Uses `gix` (gitoxide) for fast, thread-safe in-process repository discovery, ref matching, and commit walks without spawning `git` CLI subprocesses.
-- **Moon Monorepo & WASM Plugin Integration**: Compiles to `wasm32-wasip1` for native execution inside Moon's Extism plugin sandbox (`callisto-moon`).
+> **Sub-10ms Native Speed**  
+> Native Rust binary executes workspace discovery and version planning in under 10ms — 30x to 50x faster than `@changesets/cli` or `release-please`.
 
----
+> **Concrete Syntax Tree (CST) Format Preservation**  
+> Edits `Cargo.toml` and `package.json` using `toml_edit` and `serde_json` indentation fingerprinting, preserving user comments, table ordering, and whitespace.
 
-## Installation
+> **Crash-Safe Atomic Disk Writes**  
+> Writes updates to `NamedTempFile` temporary buffers before atomic POSIX `fs::rename` swaps, preventing corrupt or partial manifest writes during process interruption.
 
-### 1. Standalone Native Binary (Cargo)
+> **Topological Directed Graph Solver**  
+> Models workspace package dependencies using `petgraph`'s Kahn topological solver and Tarjan's SCC algorithm to compute cascading version bumps and catch circular dependency cycles.
 
-```bash
-cargo install callisto-cli
-```
+> **Zero-Config Native Matrix Auto-Discovery**  
+> Auto-discovers build matrix targets (`napi.triplets`, `maturin.targets`, `engines.node`, `java.version`) directly from manifests as the single source of truth (`callisto matrix`).
 
-### 2. Pre-Built Release Binary (GitHub Releases)
-
-Download pre-compiled binaries for Linux (x86_64) or macOS from [GitHub Releases](https://github.com/orin-dx/callisto/releases):
-
-```bash
-curl -sL https://github.com/orin-dx/callisto/releases/latest/download/callisto-linux-amd64.tar.gz | tar -xz -C /usr/local/bin
-```
-
-### 3. Moon Extension Plugin (WebAssembly)
-
-Add Callisto as a WASM plugin in your repository's `.moon/workspace.yml`:
-
-```yaml
-extensions:
-  callisto:
-    plugin: 'https://github.com/orin-dx/callisto/releases/download/v0.1.0/callisto-moon.wasm'
-```
+> **Hermetic & Build-System Agnostic**  
+> Pure Rust CLI engine runs seamlessly in Bazel sandboxes (`rules_callisto`), Buck2, Nix flakes, Moon WASM (`callisto-moon`), GitHub Actions, GitLab CI, and local VCS hooks (`just hooks`).
 
 ---
 
 ## Quick Start (4 Steps)
+
+```text
+$ callisto status
+Status (schema v1):
+  callisto-cli        0.1.0  ->  0.2.0  (minor)  [.changeset/swift-foxes-leap.md]
+  callisto-graph      0.1.0  ->  0.1.1  (patch)  [cascade: callisto-cli]
+
+$ callisto version
+  + Updated 2 package manifests (CST preserved)
+  + Appended changelog entries to CHANGELOG.md
+  + Consumed 1 changeset (.changeset/swift-foxes-leap.md)
+```
 
 ### Step 1: Initialize Callisto in Your Workspace
 
@@ -83,93 +91,68 @@ callisto version --dry-run
 callisto version
 ```
 
----
-
-## Complete Command Reference
-
-| Command | Purpose | Example Usage |
-| :--- | :--- | :--- |
-| `callisto init` | Initializes `callisto.toml` and `.changeset/` directory | `callisto init --yes` |
-| `callisto add` | Creates a new `.changeset/*.md` declaration file | `callisto add --package pkg-a:minor --summary "msg"` |
-| `callisto status` | Reports pending changesets and workspace status | `callisto status --format json` |
-| `callisto version` | Applies version bumps, updates changelogs, and consumes changesets | `callisto version --dry-run` |
-| `callisto plan-publish` | Calculates publish ordering for unreleased packages | `callisto plan-publish --format json` |
-| `callisto tag` | Creates Git release tags for published packages | `callisto tag --plan <plan_json>` |
-| `callisto validate` | Validates changeset files in CI pull requests | `callisto validate` |
-| `callisto schema` | Exports Draft-07 JSON Schemas for language servers | `callisto schema --type status` |
-| `callisto pre` | Controls pre-release mode state (`enter` / `exit`) | `callisto pre enter beta` |
-
----
-
-## Configuration Reference (`callisto.toml`)
-
-Create a `callisto.toml` in your workspace root to configure package groups and changelog generation:
-
-```toml
-# Schema version
-schema_version = 1
-
-# Synchronize package versions in lock-step
-[[fixed-group]]
-name = "core-packages"
-packages = ["callisto-model", "callisto-format", "callisto-graph"]
-
-# Synchronize bump severity without forcing identical base versions
-[[linked-group]]
-name = "cli-tools"
-packages = ["callisto-cli", "callisto-moon"]
-
-[changelog]
-commit_attribution = true
-issue_links = true
-```
-
----
-
-## GitHub Actions Release Workflow Integration
-
-Add `.github/workflows/callisto-release.yml` to automate Version Packages PR creation and release publishing:
-
-```yaml
-name: Release & Publish Workflow
-
-on:
-  push:
-    branches: [main]
-
-jobs:
-  release:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      # Built-in Callisto Release Action:
-      # - Creates "chore: version packages" PR when changesets exist
-      # - Publishes packages & creates GitHub Releases when Version PR is merged
-      - uses: orin-dx/callisto/.github/actions/callisto-action@v1
-        with:
-          publish: 'cargo publish'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-```
+> [!TIP]
+> Run `callisto version --dry-run` locally anytime to inspect calculated version bumps and changelog updates with colored diffs before committing.
 
 ---
 
 ## Why Callisto?
 
-Callisto builds upon the ideas of `@changesets/cli` and `knope`, addressing key limitations in multi-language monorepos:
+Callisto brings together the best ideas from `@changesets/cli`, Google's `release-please`, and `nx release` into a single, lightning-fast native Rust engine designed for modern polyglot monorepos.
 
-| Dimension | `@changesets/cli` | `knope` | Callisto |
-| :--- | :--- | :--- | :--- |
-| **Runtime** | Node.js (~300ms execution) | Native Rust | Native Rust (<10ms execution) |
-| **Supported Ecosystems** | JavaScript / npm only | Cargo, npm | Polyglot (Cargo, npm, PyPI, Go, Deno) |
-| **Git Engine** | External `git` CLI subprocesses | External `git` CLI subprocesses | In-process native Git via `gix` (gitoxide) |
-| **Monorepo Engine Integration** | JS workspaces only | Basic workspaces | Native Moon WASM plugin (`callisto-moon`) + CLI |
-| **Manifest Modification** | Destructive JSON re-formatting | Limited TOML edits | Format-preserving AST edits + atomic tempfile swaps |
-| **Graph Resolution** | Basic peer cascades | Manual cascades | `petgraph` DAG solver + Tarjan SCC cycle diagnostics |
+### Sub-10ms Native Performance
+- **Callisto**: Native Rust binary executes workspace discovery and dependency graph solving in under 10ms (30x-50x faster than JS tools).
+- **Alternatives**: `@changesets/cli`, `release-please`, and `nx release` require heavy Node.js runtimes (300ms-500ms startup times).
+
+### Safe, Format-Preserving Manifest Edits
+- **Callisto**: Edits `Cargo.toml` and `package.json` using Concrete Syntax Tree (CST) AST editors (`toml_edit` and `serde_json` indentation fingerprinting), keeping comments, key order, and whitespace intact. File updates use POSIX crash-safe atomic tempfile swaps (`NamedTempFile` + `fs::rename`).
+- **Alternatives**: `release-please` relies on fragile regular expressions. `@changesets/cli` re-serializes JSON with destructive default formatting.
+
+### Topological Graph Solver & Cycle Diagnostics
+- **Callisto**: Uses `petgraph`'s Kahn topological solver and Tarjan's SCC algorithm to calculate exact version bump cascades and catch circular dependency cycles with rich diagnostic cards (`miette`).
+- **Alternatives**: `release-please` focuses on single-repo releases. `nx release` is coupled to Nx JavaScript trees.
+
+### Zero-Config Native Matrix Auto-Discovery (`callisto matrix`)
+- **Callisto**: Auto-discovers build matrix targets (`napi.triplets`, `maturin.targets`, `engines.node`, `java.version`) directly from manifests as the single source of truth, eliminating duplicate CI YAML configuration drift.
+- **Alternatives**: Requires manually maintaining 50-line matrix arrays in GitHub Actions YAML.
+
+> [!NOTE]
+> `callisto matrix --format json` extracts build matrix targets directly from package manifests (`napi.triplets`, `maturin.targets`, `engines.node`, `java.version`) as the single origin source of truth, eliminating duplicate CI YAML configuration drift across runner OS platforms.
+
+### Hermetic & Build-System Agnostic
+- **Callisto**: Pure Rust CLI engine runs seamlessly in Bazel sandboxes (`rules_callisto`), Buck2, Nix flakes, Moon WASM (`callisto-moon`), GitHub Actions, GitLab CI, and local Git hooks (`just hooks`).
+- **Alternatives**: Locked to GitHub REST APIs (`release-please`) or JavaScript workspace tools.
+
+---
+
+## Installation
+
+> [!IMPORTANT]
+> Callisto enforces safe Rust (`#![forbid(unsafe_code)]`) and POSIX atomic disk writes (`NamedTempFile` + `fs::rename`) across all workspace manifest edits.
+
+### 1. Standalone Native Binary (Cargo)
+
+```bash
+cargo install callisto-cli
+```
+
+### 2. Pre-Built Release Binary (GitHub Releases)
+
+Download pre-compiled binaries for Linux (x86_64) or macOS from [GitHub Releases](https://github.com/orin-dx/callisto/releases):
+
+```bash
+curl -sL https://github.com/orin-dx/callisto/releases/latest/download/callisto-linux-amd64.tar.gz | tar -xz -C /usr/local/bin
+```
+
+### 3. Moon Extension Plugin (WebAssembly)
+
+Add Callisto as a WASM plugin in your repository's `.moon/workspace.yml`:
+
+```yaml
+extensions:
+  callisto:
+    plugin: 'https://github.com/orin-dx/callisto/releases/download/v0.1.0/callisto-moon.wasm'
+```
 
 ---
 
