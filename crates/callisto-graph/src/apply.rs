@@ -142,17 +142,20 @@ pub fn apply_version_plan<R: CommandRunner>(
     }
 
     if !opts.transient && !modified_paths.is_empty() {
-        let mut path_strs = vec!["add", "--"];
         let strings: Vec<String> = modified_paths
             .iter()
+            .filter(|p| root.join(p).exists())
             .map(|p| p.display().to_string())
             .collect();
-        for s in &strings {
-            path_strs.push(s);
-        }
-        let output = runner.run("git", &path_strs, root)?;
-        if output.success() {
-            outcome.staged = modified_paths;
+        if !strings.is_empty() {
+            let mut path_strs = vec!["add", "--"];
+            for s in &strings {
+                path_strs.push(s);
+            }
+            let output = runner.run("git", &path_strs, root)?;
+            if output.success() {
+                outcome.staged = modified_paths;
+            }
         }
     }
 

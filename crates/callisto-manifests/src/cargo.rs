@@ -176,7 +176,18 @@ impl Manifest for CargoToml {
                 field: "package",
             })?;
 
-        pkg.insert("version", toml_edit::value(v.render()));
+        if let Some(item) = pkg.get_mut("version") {
+            if let Some(val) = item.as_value_mut() {
+                let decor = val.decor().clone();
+                let mut new_val = toml_edit::Value::from(v.render());
+                *new_val.decor_mut() = decor;
+                *val = new_val;
+            } else {
+                pkg.insert("version", toml_edit::value(v.render()));
+            }
+        } else {
+            pkg.insert("version", toml_edit::value(v.render()));
+        }
         self.persist()
     }
 
@@ -486,7 +497,18 @@ impl WorkspaceCargoResolver {
                 field: "workspace.package",
             })?;
 
-        pkg.insert("version", toml_edit::value(v.render()));
+        if let Some(item) = pkg.get_mut("version") {
+            if let Some(val) = item.as_value_mut() {
+                let decor = val.decor().clone();
+                let mut new_val = toml_edit::Value::from(v.render());
+                *new_val.decor_mut() = decor;
+                *val = new_val;
+            } else {
+                pkg.insert("version", toml_edit::value(v.render()));
+            }
+        } else {
+            pkg.insert("version", toml_edit::value(v.render()));
+        }
         self.persist()
     }
 

@@ -23,7 +23,26 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
     opts: &VersionOptions,
 ) -> Result<VersionPlan, GraphError> {
     let base_versions = ws.base_versions()?;
-    let agg = aggregate(&ws.graph, &ws.config, ws.runner, &ws.tags, None, inference)?;
+
+    let pre_path = ws.root.join(".changeset/pre.json");
+    let pre_state = if pre_path.exists() {
+        if let Ok(text) = std::fs::read_to_string(&pre_path) {
+            callisto_format::parse_pre_json(&text).ok()
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    let agg = aggregate(
+        &ws.graph,
+        &ws.config,
+        ws.runner,
+        &ws.tags,
+        pre_state.as_ref(),
+        inference,
+    )?;
 
     let input = CascadeInput {
         graph: &ws.graph,
@@ -33,7 +52,7 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
         reasons: &agg.reasons,
         named_by: &agg.named_by,
         base: &base_versions,
-        pre: None,
+        pre: pre_state.as_ref(),
     };
 
     let outcome = run_cascade(input)?;
@@ -95,6 +114,25 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
     let mut diagnostics = outcome.diagnostics;
     escalate(&mut diagnostics, opts.strict, opts.strict_graph);
 
+    let (pre_state_update, delete_pre_json) = if let Some(mut state) = pre_state {
+        if state.mode == callisto_format::PreMode::Exit {
+            (None, true)
+        } else {
+            // Update pre-release state changesets
+            for cs in &agg.consumed {
+                if let Some(name) = cs.file_name().and_then(|n| n.to_str()) {
+                    let stem = name.strip_suffix(".md").unwrap_or(name).to_string();
+                    if !state.changesets.contains(&stem) {
+                        state.changesets.push(stem);
+                    }
+                }
+            }
+            (Some(state), false)
+        }
+    } else {
+        (None, false)
+    };
+
     Ok(VersionPlan {
         bumps,
         rewrites: outcome.rewrites.into_values().collect(),
@@ -102,8 +140,8 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
         optional_dep_updates: Vec::new(),
         changelog_writes,
         consumed_changesets: agg.consumed,
-        pre_state_update: None,
-        delete_pre_json: false,
+        pre_state_update,
+        delete_pre_json,
         pre_cursor_updates: Vec::new(),
         observed_versions: base_versions,
         diagnostics,

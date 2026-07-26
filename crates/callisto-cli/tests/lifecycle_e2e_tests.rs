@@ -136,3 +136,117 @@ fn test_full_polyglot_workspace_release_lifecycle() {
     let plan_res = commands::plan_publish::handle(PlanPublishArgs {}, &global);
     assert!(plan_res.is_ok());
 }
+
+#[test]
+fn test_pre_mode_blackbox_lifecycle() {
+    use callisto_cli::cli::PreArgs;
+
+    let dir = setup_polyglot_git_repo();
+    let root = dir.path();
+
+    let global = GlobalArgs {
+        format: OutputFormat::Json,
+        cwd: root.to_path_buf(),
+        dry_run: false,
+    };
+
+    // 1. Enter pre-release mode with tag 'beta'
+    let enter_res = commands::pre::handle(
+        PreArgs::Enter {
+            tag: "beta".to_string(),
+        },
+        &global,
+    );
+    assert!(enter_res.is_ok());
+    assert!(root.join(".changeset/pre.json").exists());
+
+    // 2. Add changeset for minor bump
+    let add_res = commands::add::handle(
+        AddArgs {
+            packages: vec!["core-crate:minor".to_string()],
+            summary: Some("Beta feature".to_string()),
+        },
+        &global,
+    );
+    assert!(add_res.is_ok());
+
+    // 3. Version in pre-release mode -> should produce 0.2.0-beta.0
+    let version_res = commands::version::handle(
+        VersionArgs {
+            refresh_lockfiles: false,
+            strict: false,
+            strict_graph: false,
+            allow_empty_changesets: false,
+        },
+        &global,
+    );
+    assert!(version_res.is_ok());
+
+    let updated_cargo = fs::read_to_string(root.join("crates/core/Cargo.toml")).unwrap();
+    assert!(updated_cargo.contains("0.2.0-beta.0"));
+
+    // 4. Exit pre-release mode
+    let exit_res = commands::pre::handle(PreArgs::Exit, &global);
+    assert!(exit_res.is_ok());
+
+    // 5. Final versioning after exit -> should finalize to 0.2.0
+    let final_version_res = commands::version::handle(
+        VersionArgs {
+            refresh_lockfiles: false,
+            strict: false,
+            strict_graph: false,
+            allow_empty_changesets: true,
+        },
+        &global,
+    );
+    assert!(final_version_res.is_ok());
+
+    let final_cargo = fs::read_to_string(root.join("crates/core/Cargo.toml")).unwrap();
+    assert!(final_cargo.contains("0.2.0"));
+    assert!(!root.join(".changeset/pre.json").exists());
+}
+
+#[test]
+fn test_cst_comment_preservation_on_version_bump() {
+    let dir = setup_polyglot_git_repo();
+    let root = dir.path();
+
+    let cargo_toml = r#"[package]
+name = "core-crate"
+version = "0.1.0" # Important inline comment
+# Important section comment
+edition = "2021"
+"#;
+    fs::write(root.join("crates/core/Cargo.toml"), cargo_toml).unwrap();
+
+    let global = GlobalArgs {
+        format: OutputFormat::Json,
+        cwd: root.to_path_buf(),
+        dry_run: false,
+    };
+
+    commands::add::handle(
+        AddArgs {
+            packages: vec!["core-crate:patch".to_string()],
+            summary: Some("Patch update".to_string()),
+        },
+        &global,
+    )
+    .unwrap();
+
+    commands::version::handle(
+        VersionArgs {
+            refresh_lockfiles: false,
+            strict: false,
+            strict_graph: false,
+            allow_empty_changesets: false,
+        },
+        &global,
+    )
+    .unwrap();
+
+    let updated_cargo = fs::read_to_string(root.join("crates/core/Cargo.toml")).unwrap();
+    assert!(updated_cargo.contains("version = \"0.1.1\""));
+    assert!(updated_cargo.contains("# Important inline comment"));
+    assert!(updated_cargo.contains("# Important section comment"));
+}
