@@ -15,6 +15,7 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
 ) -> Result<PublishPlan, GraphError> {
     let mut rust_crates = Vec::new();
     let mut npm_main_packages = Vec::new();
+    let mut npm_platform_packages = Vec::new();
     let mut releases = Vec::new();
 
     let base_versions = ws.base_versions()?;
@@ -45,6 +46,10 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
                 .publish_to
                 .iter()
                 .any(|t| matches!(t, callisto_model::PublishTarget::Npm { .. }));
+            let is_platform_pkg = pkg
+                .manifests
+                .iter()
+                .any(|m| matches!(m.role, callisto_model::ManifestRole::Platform { .. }));
 
             if publishes_cargo {
                 rust_crates.push(CratePublish {
@@ -58,15 +63,46 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
             }
 
             if publishes_npm {
-                npm_main_packages.push(NpmMainPublish {
-                    name: pkg.id.name().to_string(),
-                    version: ver.clone(),
-                    publish_to: callisto_model::RegistryKey(
-                        callisto_model::RegistryKey::NPM.to_string(),
-                    ),
-                    registry: None,
-                    depends_on_platforms: Vec::new(),
-                });
+                if is_platform_pkg {
+                    npm_platform_packages.push(callisto_model::NpmPublish {
+                        name: pkg.id.name().to_string(),
+                        version: ver.clone(),
+                        publish_to: callisto_model::RegistryKey(
+                            callisto_model::RegistryKey::NPM.to_string(),
+                        ),
+                        registry: None,
+                    });
+                } else {
+                    let platform_deps: Vec<String> = ws
+                        .graph
+                        .dependencies_of(&pkg.id)
+                        .filter(|edge| {
+                            ws.graph
+                                .packages()
+                                .find(|p| p.id == edge.to)
+                                .map(|p| {
+                                    p.manifests.iter().any(|m| {
+                                        matches!(
+                                            m.role,
+                                            callisto_model::ManifestRole::Platform { .. }
+                                        )
+                                    })
+                                })
+                                .unwrap_or(false)
+                        })
+                        .map(|edge| edge.to.name().to_string())
+                        .collect();
+
+                    npm_main_packages.push(NpmMainPublish {
+                        name: pkg.id.name().to_string(),
+                        version: ver.clone(),
+                        publish_to: callisto_model::RegistryKey(
+                            callisto_model::RegistryKey::NPM.to_string(),
+                        ),
+                        registry: None,
+                        depends_on_platforms: platform_deps,
+                    });
+                }
             }
 
             let head_sha = ws
@@ -91,7 +127,7 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
         schema_version: SCHEMA_VERSION,
         rust_crates,
         npm_main_packages,
-        npm_platform_packages: Vec::new(),
+        npm_platform_packages,
         releases,
         diagnostics: Vec::new(),
     })
