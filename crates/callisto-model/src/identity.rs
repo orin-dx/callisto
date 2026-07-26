@@ -24,6 +24,9 @@ impl PackageId {
         if s.starts_with('/') {
             return Err(PackageIdParseError::LeadingSlash { raw: s.to_string() });
         }
+        if s.starts_with('-') {
+            return Err(PackageIdParseError::PathTraversal { raw: s.to_string() });
+        }
         if s.contains("..") {
             return Err(PackageIdParseError::PathTraversal { raw: s.to_string() });
         }

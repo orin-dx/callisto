@@ -228,19 +228,19 @@ pub(crate) fn union_linked(agg: &mut Aggregation, groups: &GroupTable) {
             continue;
         }
 
-        let mut target = Severity::None;
+        let mut target_sev = Severity::None;
         for m in &named {
             if let Some(&s) = agg.severities.get(m) {
-                if s > target {
-                    target = s;
+                if s > target_sev {
+                    target_sev = s;
                 }
             }
         }
 
         for m in named {
             let cur = agg.severities.get(&m).copied().unwrap_or(Severity::None);
-            if target > cur {
-                agg.severities.insert(m.clone(), target);
+            if target_sev > cur {
+                agg.severities.insert(m.clone(), target_sev);
                 agg.reasons.insert(
                     m.clone(),
                     BumpReason::LinkedGroupUnion {

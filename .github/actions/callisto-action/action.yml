@@ -86,13 +86,13 @@ runs:
           echo "hasChangesets=true" >> $GITHUB_OUTPUT
           echo "published=false" >> $GITHUB_OUTPUT
 
-          echo "::group::2. Bumping Package Versions ($INPUT_VERSION_COMMAND)"
-          eval "$INPUT_VERSION_COMMAND"
-          echo "::endgroup::"
-
-          echo "::group::3. Composing Version PR Body"
+          echo "::group::2. Composing Version PR Body"
           PR_BODY=$(callisto compose-pr-body --format text)
           echo "$PR_BODY"
+          echo "::endgroup::"
+
+          echo "::group::3. Bumping Package Versions ($INPUT_VERSION_COMMAND)"
+          eval "$INPUT_VERSION_COMMAND"
           echo "::endgroup::"
 
           echo "::group::4. Creating / Updating Version Packages Pull Request"

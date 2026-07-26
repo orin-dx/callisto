@@ -236,12 +236,15 @@ pub fn run_cascade<D: DependencyResolver>(
                                 Some(edge.kind)
                             },
                         };
-                        out.rewrites.entry(key.clone()).or_insert(SpecRewrite {
-                            key,
-                            dependency: edge.to.clone(),
-                            from: edge.spec.clone(),
-                            to: to_spec,
-                        });
+                        out.rewrites.insert(
+                            key.clone(),
+                            SpecRewrite {
+                                key,
+                                dependency: edge.to.clone(),
+                                from: edge.spec.clone(),
+                                to: to_spec,
+                            },
+                        );
                     }
                     RewriteOutcome::LeftAlone(dg) => {
                         out.diagnostics.push(dg);

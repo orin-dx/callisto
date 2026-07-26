@@ -23,7 +23,14 @@ pub fn create_tags<R: CommandRunner, D: DependencyResolver>(
         if !already_existed {
             let create_out = ws.runner.run(
                 "git",
-                &["tag", "-a", tag_str, "-m", &format!("Release {}", tag_str)],
+                &[
+                    "tag",
+                    "-a",
+                    "--",
+                    tag_str,
+                    "-m",
+                    &format!("Release {}", tag_str),
+                ],
                 &ws.root,
             )?;
             if !create_out.success() {

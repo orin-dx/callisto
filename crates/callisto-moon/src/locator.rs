@@ -109,6 +109,13 @@ impl<'a, R: CommandRunner> ProjectLocator for MoonProjectLocator<'a, R> {
                 self.workspace_root.join(&project.root)
             };
 
+            if !abs_path.starts_with(&self.workspace_root) {
+                return Err(LocateError::OutsideWorkspaceRoot {
+                    path: abs_path,
+                    root: self.workspace_root.clone(),
+                });
+            }
+
             let has_cargo = abs_path.join("Cargo.toml").exists();
             let has_npm = abs_path.join("package.json").exists();
 

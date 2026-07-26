@@ -26,11 +26,15 @@ pub fn handle(args: VersionArgs, global: &GlobalArgs) -> Result<ExitCode, CliErr
 
     let apply_opts = ApplyOptions {
         refresh_lockfiles: args.refresh_lockfiles,
-        transient: false,
+        transient: global.dry_run,
     };
 
     let outcome = apply_version_plan(&ws.root, &plan, &runner, &apply_opts)?;
     let report = plan.to_report(outcome.lockfile_refresh_results);
+
+    if global.dry_run && global.format == OutputFormat::Text {
+        println!("[DRY-RUN] Version Plan Calculated (no files modified):");
+    }
 
     match global.format {
         OutputFormat::Json => write_json(&mut std::io::stdout(), &report)?,

@@ -222,6 +222,12 @@ version = "0.2.0"
 }
 
 #[test]
+fn test_leading_dash_package_id_rejection() {
+    let result = PackageId::parse("-x");
+    assert!(result.is_err());
+}
+
+#[test]
 fn test_atomic_write_utility() {
     let temp_dir = tempfile::tempdir().unwrap();
     let target_file = temp_dir.path().join("atomic_test.txt");

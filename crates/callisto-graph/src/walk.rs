@@ -85,11 +85,12 @@ impl ManifestWalkResolver {
         }
 
         let mut packages = BTreeMap::new();
-        for (id, (_rel_path, decls)) in package_manifest_decls {
+        for (id, (rel_path, decls)) in package_manifest_decls {
+            let ch_path = rel_path.join("CHANGELOG.md");
             let pkg = Package {
                 id: id.clone(),
                 manifests: decls,
-                changelog: Some(PathBuf::from("CHANGELOG.md")),
+                changelog: Some(ch_path),
                 release_trigger: ReleaseTrigger::Changeset,
                 publish_to: vec![match id.ecosystem() {
                     Some(Ecosystem::Cargo) => PublishTarget::CratesIo,

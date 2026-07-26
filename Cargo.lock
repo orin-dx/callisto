@@ -254,6 +254,7 @@ name = "callisto-changelog"
 version = "0.1.0"
 dependencies = [
  "callisto-model",
+ "tempfile",
  "thiserror 1.0.69",
 ]
 
@@ -262,6 +263,8 @@ name = "callisto-cli"
 version = "0.1.0"
 dependencies = [
  "anstream 0.6.21",
+ "callisto-changelog",
+ "callisto-conventional",
  "callisto-format",
  "callisto-graph",
  "callisto-manifests",
