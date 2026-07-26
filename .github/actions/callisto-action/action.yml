@@ -161,15 +161,25 @@ runs:
               echo "::endgroup::"
             fi
 
-            echo "::group::5. Executing Topological Package Publishing ($INPUT_PUBLISH)"
+            echo "::group::5. Executing Package Publishing"
             RUST_CRATES=$(echo "$PLAN_JSON" | jq -r '.rustCrates[]? // empty')
-            if [[ -n "$RUST_CRATES" ]]; then
-              for CRATE in $RUST_CRATES; do
-                echo "Publishing Rust crate in topological order: $CRATE"
-                cargo publish -p "$CRATE" --no-verify --allow-dirty || true
-              done
+            NPM_PACKAGES=$(echo "$PLAN_JSON" | jq -r '.npmMainPackages[]? // empty')
+            
+            if [[ -z "$RUST_CRATES" && -z "$NPM_PACKAGES" ]]; then
+              echo "No packages scheduled for release in calculated publish plan."
             else
-              eval "$INPUT_PUBLISH"
+              if [[ -n "$RUST_CRATES" ]]; then
+                for CRATE in $RUST_CRATES; do
+                  echo "Publishing Rust crate in topological order: $CRATE"
+                  cargo publish -p "$CRATE" --no-verify --allow-dirty || true
+                done
+              fi
+              if [[ -n "$NPM_PACKAGES" ]]; then
+                for PKG in $NPM_PACKAGES; do
+                  echo "Publishing NPM package: $PKG"
+                  npm publish "$PKG" --access public || true
+                done
+              fi
             fi
             echo "::endgroup::"
 
