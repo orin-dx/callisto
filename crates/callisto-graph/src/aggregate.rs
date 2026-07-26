@@ -113,9 +113,9 @@ pub fn aggregate<D, R, I>(
     graph: &D,
     config: &ResolvedConfig,
     _runner: &R,
-    _tags: &TagIndex,
+    tags: &TagIndex,
     _pre: Option<&callisto_format::PreState>,
-    _inference: &I,
+    inference: &I,
 ) -> Result<Aggregation, GraphError>
 where
     D: DependencyResolver,
@@ -124,6 +124,41 @@ where
 {
     let loaded = load_changesets(&config.root, config)?;
     let mut agg = Aggregation::default();
+
+    for pkg in graph.packages() {
+        let cur_sev = agg
+            .severities
+            .get(&pkg.id)
+            .copied()
+            .unwrap_or(Severity::None);
+        let pathspecs: Vec<PathBuf> = pkg.manifests.iter().map(|m| m.path.clone()).collect();
+        let last_tag = tags.last_tag(&pkg.id);
+        let cur_ver = last_tag
+            .map(|t| t.version.clone())
+            .unwrap_or_else(|| Version::semver(1, 0, 0));
+
+        let window = crate::infer::InferenceWindowSpec {
+            pathspecs: &pathspecs,
+            since: None,
+            current_version: &cur_ver,
+            has_prior_release: last_tag.is_some(),
+            policy: PreMajorInferencePolicy::OFF,
+        };
+
+        if let Ok(Some(outcome)) = inference.infer(pkg, window) {
+            if outcome.severity > cur_sev {
+                agg.severities.insert(pkg.id.clone(), outcome.severity);
+                agg.reasons.insert(
+                    pkg.id.clone(),
+                    BumpReason::Inference {
+                        commits: outcome.commit_count,
+                        remapped: outcome.remapped,
+                    },
+                );
+                agg.named_by.insert(pkg.id.clone(), NamedBy::Inference);
+            }
+        }
+    }
 
     for cs in loaded {
         agg.consumed.push(cs.path.clone());

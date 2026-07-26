@@ -18,7 +18,41 @@ pub fn validate<R: CommandRunner, D: DependencyResolver>(
     opts: &ValidateOptions,
 ) -> Result<ValidateReport, GraphError> {
     let mut diagnostics = Vec::new();
-    let _loaded = crate::load_changesets(&ws.root, &ws.config)?;
+    let loaded = crate::load_changesets(&ws.root, &ws.config)?;
+
+    for cs in &loaded {
+        if cs.changeset.entries.is_empty() {
+            diagnostics.push(callisto_model::Diagnostic {
+                code: callisto_model::DiagnosticCode::EmptyChangeset,
+                severity: callisto_model::DiagnosticSeverity::Error,
+                message: format!("Changeset `{}` is empty", cs.path.display()),
+                package: None,
+                path: Some(cs.path.clone()),
+                governed_by: None,
+                escalated_by: None,
+            });
+        }
+
+        for entry in &cs.changeset.entries {
+            if let Ok(id) = callisto_model::PackageId::parse(&entry.name) {
+                if !ws.graph.packages().any(|p| p.id == id) {
+                    diagnostics.push(callisto_model::Diagnostic {
+                        code: callisto_model::DiagnosticCode::EmptyChangeset,
+                        severity: callisto_model::DiagnosticSeverity::Error,
+                        message: format!(
+                            "Changeset `{}` references unknown package `{}`",
+                            cs.path.display(),
+                            entry.name
+                        ),
+                        package: Some(id),
+                        path: Some(cs.path.clone()),
+                        governed_by: None,
+                        escalated_by: None,
+                    });
+                }
+            }
+        }
+    }
 
     escalate(&mut diagnostics, opts.strict, opts.strict_graph);
 

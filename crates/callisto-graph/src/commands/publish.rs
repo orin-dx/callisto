@@ -19,25 +19,35 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
     let mut releases = Vec::new();
 
     let base_versions = ws.base_versions()?;
+    let inference = crate::infer::NoInference;
+    let version_plan = crate::commands::version::plan_version(
+        ws,
+        &inference,
+        &crate::commands::version::VersionOptions::default(),
+    )
+    .ok();
 
     for pkg in ws.graph.packages() {
-        let is_release = match ws.tags.last_tag(&pkg.id) {
-            Some(t) => {
-                if let Some(cur) = base_versions.get(&pkg.id) {
-                    &t.version != cur
-                } else {
-                    false
-                }
-            }
-            None => true,
-        };
+        let bump_info = version_plan
+            .as_ref()
+            .and_then(|plan| plan.bumps.iter().find(|b| b.package == pkg.id));
 
-        if is_release {
-            let ver = base_versions
+        let (is_release, ver) = if let Some(bump) = bump_info {
+            (true, bump.to.clone())
+        } else {
+            let cur_ver = base_versions
                 .get(&pkg.id)
                 .cloned()
                 .unwrap_or_else(|| callisto_model::Version::semver(1, 0, 0));
+            let tag_match = ws
+                .tags
+                .last_tag(&pkg.id)
+                .map(|t| t.version == cur_ver)
+                .unwrap_or(false);
+            (!tag_match, cur_ver)
+        };
 
+        if is_release {
             let publishes_cargo = pkg
                 .publish_to
                 .iter()

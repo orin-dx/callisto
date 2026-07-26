@@ -239,3 +239,15 @@ fn test_atomic_write_utility() {
     let read_back = std::fs::read_to_string(&target_file).unwrap();
     assert_eq!(read_back, content);
 }
+
+#[test]
+fn test_validate_detects_empty_changesets() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let cs_dir = temp_dir.path().join(".changeset");
+    std::fs::create_dir_all(&cs_dir).unwrap();
+    std::fs::write(cs_dir.join("empty.md"), "---\n---\n").unwrap();
+
+    let cfg = callisto_graph::config::load(&temp_dir.path().join("callisto.toml")).unwrap();
+    let loaded = callisto_graph::load_changesets(temp_dir.path(), &cfg);
+    assert!(loaded.is_err());
+}
