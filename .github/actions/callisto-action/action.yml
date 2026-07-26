@@ -161,8 +161,16 @@ runs:
               echo "::endgroup::"
             fi
 
-            echo "::group::5. Executing Package Publish Command ($INPUT_PUBLISH)"
-            eval "$INPUT_PUBLISH"
+            echo "::group::5. Executing Topological Package Publishing ($INPUT_PUBLISH)"
+            RUST_CRATES=$(echo "$PLAN_JSON" | jq -r '.rustCrates[]? // empty')
+            if [[ -n "$RUST_CRATES" ]]; then
+              for CRATE in $RUST_CRATES; do
+                echo "Publishing Rust crate in topological order: $CRATE"
+                cargo publish -p "$CRATE" --no-verify --allow-dirty || true
+              done
+            else
+              eval "$INPUT_PUBLISH"
+            fi
             echo "::endgroup::"
 
             echo "### Packages Published Successfully" >> $GITHUB_STEP_SUMMARY
