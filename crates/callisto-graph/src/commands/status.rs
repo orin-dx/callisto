@@ -67,3 +67,19 @@ pub fn status<R: CommandRunner, D: DependencyResolver>(
         diagnostics,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_status_package_record_structure() {
+        let rec = callisto_model::StatusPackageRecord {
+            package: callisto_model::PackageId::parse("test-pkg").unwrap(),
+            current_version: callisto_model::Version::semver(1, 0, 0),
+            last_tag: None,
+            pending_severity: Some(callisto_model::Severity::Minor),
+            pending_changesets: vec!["my-changeset".to_string()],
+        };
+        assert_eq!(rec.pending_changesets.len(), 1);
+        assert_eq!(rec.pending_severity, Some(callisto_model::Severity::Minor));
+    }
+}

@@ -26,7 +26,7 @@ bump-severity = "patch"
 peer-escalation = true
 preserve-npm-ranges = true
 "#;
-        std::fs::write(&config_path, content).is_ok()
+        callisto_manifests::atomic::atomic_write(&config_path, content).is_ok()
     } else {
         false
     };

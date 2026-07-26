@@ -58,3 +58,16 @@ fn test_blackbox_cascade_propagation() {
     let outcome = run_cascade(input).unwrap();
     assert_eq!(outcome.severities.get(&pkg_b), Some(&Severity::Major));
 }
+
+#[test]
+fn test_atomic_write_utility() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let target_file = temp_dir.path().join("atomic_test.txt");
+    let content = "callisto atomic write test payload\n";
+
+    callisto_manifests::atomic::atomic_write(&target_file, content).unwrap();
+
+    assert!(target_file.exists());
+    let read_back = std::fs::read_to_string(&target_file).unwrap();
+    assert_eq!(read_back, content);
+}

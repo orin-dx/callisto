@@ -28,7 +28,7 @@ pub fn handle(args: PreArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
 
             let pre_dir = ws.root.join(".changeset");
             fs::create_dir_all(&pre_dir)?;
-            fs::write(pre_dir.join("pre.json"), text)?;
+            callisto_manifests::atomic::atomic_write(&pre_dir.join("pre.json"), &text)?;
 
             match global.format {
                 OutputFormat::Json => {
@@ -55,7 +55,7 @@ pub fn handle(args: PreArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
             pre_state.mode = PreMode::Exit;
 
             let updated = write_pre_json(&pre_state);
-            fs::write(&pre_path, updated)?;
+            callisto_manifests::atomic::atomic_write(&pre_path, &updated)?;
 
             match global.format {
                 OutputFormat::Json => {

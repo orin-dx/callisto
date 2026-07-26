@@ -51,10 +51,19 @@ pub fn prepend(
         new_content.push_str(&existing);
     }
 
-    fs::write(&full_path, new_content).map_err(|e| ChangelogError::WriteFailed {
+    atomic_write(&full_path, &new_content).map_err(|e| ChangelogError::WriteFailed {
         path: changelog_path.to_path_buf(),
         message: e.to_string(),
     })
+}
+
+fn atomic_write(path: &std::path::Path, content: &str) -> std::io::Result<()> {
+    use std::io::Write;
+    let parent = path.parent().unwrap_or_else(|| std::path::Path::new("."));
+    let mut temp = tempfile::NamedTempFile::new_in(parent)?;
+    temp.write_all(content.as_bytes())?;
+    temp.persist(path).map_err(|e| e.error)?;
+    Ok(())
 }
 
 pub fn extract_section<'a>(changelog: &'a str, version: &Version) -> Option<&'a str> {

@@ -174,7 +174,8 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
     let slug = generate_human_slug();
     let filename = format!("{slug}.md");
     let rel_path = format!(".changeset/{filename}");
-    fs::write(changeset_dir.join(&filename), text)?;
+    let target_file = changeset_dir.join(&filename);
+    callisto_manifests::atomic::atomic_write(&target_file, &text)?;
 
     match global.format {
         OutputFormat::Json => {

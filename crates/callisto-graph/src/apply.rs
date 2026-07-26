@@ -118,7 +118,7 @@ pub fn apply_version_plan<R: CommandRunner>(
                 .unwrap_or(&default_dir);
             let pre_path = root.join(pre_dir.join("pre.json"));
             let text = callisto_format::write_pre_json(pre_state);
-            let _ = fs::write(&pre_path, text);
+            let _ = callisto_manifests::atomic::atomic_write(&pre_path, &text);
         } else if plan.delete_pre_json {
             let pre_path = root.join(".changeset/pre.json");
             if pre_path.exists() {

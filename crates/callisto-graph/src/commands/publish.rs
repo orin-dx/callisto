@@ -69,10 +69,19 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
                 });
             }
 
+            let head_sha = ws
+                .runner
+                .run("git", &["rev-parse", "HEAD"], &ws.root)
+                .ok()
+                .and_then(|out| callisto_model::CommitSha::parse(out.stdout_trimmed()).ok())
+                .unwrap_or_else(|| {
+                    callisto_model::CommitSha::parse("0000000000000000000000000000000000000000")
+                        .unwrap()
+                });
+
             releases.push(ReleaseEntry {
                 tag_name: ws.tags.template(&pkg.id).render(&ver),
-                sha: callisto_model::CommitSha::parse("0000000000000000000000000000000000000000")
-                    .unwrap(),
+                sha: head_sha,
                 changelog_section: None,
             });
         }

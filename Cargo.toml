@@ -21,6 +21,7 @@ ignore = "0.4"
 toml = "0.8"
 serde_yaml = "0.9"
 globset = "0.4"
+tempfile = "3"
 
 [profile.release]
 lto = true
