@@ -30,10 +30,14 @@ fmt:
 audit:
     moon run :audit
 
+# Documentation build check (warnings treated as errors)
+doc-check:
+    RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --workspace
+
 # Verify Moon WASM plugin cross-compilation target
 wasm-check:
     rustup target add wasm32-wasip1 2>/dev/null || true
     cargo check -p callisto-moon --target wasm32-wasip1 --features pdk
 
 # Run full local CI verification pipeline via moon and just
-ci: fmt-check lint test wasm-check
+ci: fmt-check lint test audit doc-check wasm-check

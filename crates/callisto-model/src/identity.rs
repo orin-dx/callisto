@@ -24,6 +24,9 @@ impl PackageId {
         if s.starts_with('/') {
             return Err(PackageIdParseError::LeadingSlash { raw: s.to_string() });
         }
+        if s.contains("..") {
+            return Err(PackageIdParseError::PathTraversal { raw: s.to_string() });
+        }
 
         if let Some((prefix, remainder)) = s.split_once('/') {
             if let Some(ecosystem) = Ecosystem::from_prefix(prefix) {
@@ -123,6 +126,8 @@ pub enum PackageIdParseError {
     EmptyNameAfterPrefix { raw: String, prefix: String },
     #[error("`{raw}` starts with `/`")]
     LeadingSlash { raw: String },
+    #[error("package identity `{raw}` contains path traversal `..`")]
+    PathTraversal { raw: String },
 }
 
 /// A group name for fixed or linked package groups.

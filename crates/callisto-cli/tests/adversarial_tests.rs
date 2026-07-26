@@ -12,10 +12,10 @@ fn test_adversarial_path_traversal_rejection() {
     assert!(res.is_err(), "Must reject leading slashes");
 
     let res = PackageId::parse("../../secret");
-    assert!(res.is_ok()); // Parsed as Bare("../../secret")
-    if let Ok(pkg) = res {
-        assert_eq!(pkg.name(), "../../secret");
-    }
+    assert!(
+        res.is_err(),
+        "Must reject path traversal .. in package identity"
+    );
 }
 
 #[test]

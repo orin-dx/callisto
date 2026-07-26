@@ -33,7 +33,9 @@ pub fn workspace_relative(path: impl AsRef<Path>) -> Result<PathBuf, ModelError>
                 if let Some(Component::Normal(_)) = components.last() {
                     components.pop();
                 } else {
-                    components.push(component);
+                    return Err(ModelError::PathTraversal {
+                        path: p.to_path_buf(),
+                    });
                 }
             }
             Component::Normal(_) => {
@@ -64,5 +66,11 @@ mod tests {
     fn rejects_absolute_path() {
         let err = workspace_relative("/usr/bin").unwrap_err();
         assert!(matches!(err, ModelError::AbsolutePath { .. }));
+    }
+
+    #[test]
+    fn rejects_path_traversal_outside_workspace() {
+        let err = workspace_relative("../secret").unwrap_err();
+        assert!(matches!(err, ModelError::PathTraversal { .. }));
     }
 }

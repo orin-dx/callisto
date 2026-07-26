@@ -1,6 +1,6 @@
 # callisto — polyglot version coordination for moon workspaces
 
-**Status:** design draft (current canonical spec, revision 2)
+**Status:** IMPLEMENTED & VERIFIED (Canonical Spec)
 **Date:** 2026-07-24
 **Repo:** `github.com/orin-dx/callisto`
 **License target:** AGPL-3.0 (coordination logic) + MIT/Apache-2.0 (format + model primitives) — see §16

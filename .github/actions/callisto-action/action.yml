@@ -42,6 +42,7 @@ runs:
         INPUT_VERSION_COMMAND: ${{ inputs.version_command }}
         INPUT_COMMIT_MESSAGE: ${{ inputs.commit_message }}
         INPUT_TITLE: ${{ inputs.title }}
+        GH_TOKEN: ${{ env.GITHUB_TOKEN }}
       run: |
         STATUS_JSON=$(callisto status --format json)
         PENDING_COUNT=$(echo "$STATUS_JSON" | jq '[.packages[].pendingChangesets[]] | length')
@@ -71,7 +72,7 @@ runs:
               gh pr create --title "$INPUT_TITLE" --body "$PR_BODY" --head callisto/version-packages --base main
             fi
 
-            echo "### 📦 Version Packages PR Created/Updated" >> $GITHUB_STEP_SUMMARY
+            echo "### Version Packages PR Created/Updated" >> $GITHUB_STEP_SUMMARY
             echo "$PR_BODY" >> $GITHUB_STEP_SUMMARY
           fi
         else
@@ -106,7 +107,7 @@ runs:
             # 5. Execute user publish command (e.g. cargo publish / moon run :publish)
             eval "$INPUT_PUBLISH"
 
-            echo "### 🚀 Packages & Binary Assets Published Successfully" >> $GITHUB_STEP_SUMMARY
+            echo "### Packages & Binary Assets Published Successfully" >> $GITHUB_STEP_SUMMARY
           else
             echo "published=false" >> $GITHUB_OUTPUT
             echo "No changesets pending and no publish command provided."

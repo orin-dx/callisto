@@ -1,6 +1,6 @@
 # callisto — crate specification
 
-**Status:** implementation spec, revision 1
+**Status:** IMPLEMENTED & VERIFIED (Revision 1 Implementation Spec)
 **Date:** 2026-07-24
 **Repo:** `github.com/orin-dx/callisto`
 **Companions:** `docs/00-design.md` (canonical design), `docs/02-library-vs-moon-decision.md`

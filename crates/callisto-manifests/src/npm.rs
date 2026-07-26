@@ -49,10 +49,11 @@ impl PackageJson {
             message: e.to_string(),
         })?;
 
-        let fingerprint = detect_fingerprint(&content);
+        let clean_content = content.strip_prefix('\u{FEFF}').unwrap_or(&content);
+        let fingerprint = detect_fingerprint(clean_content);
 
         let doc: Map<String, Value> =
-            serde_json::from_str(&content).map_err(|e| ManifestError::Parse {
+            serde_json::from_str(clean_content).map_err(|e| ManifestError::Parse {
                 path: rel_path.clone(),
                 format: ManifestFormat::PackageJson,
                 message: e.to_string(),
@@ -443,5 +444,29 @@ mod tests {
             detect_npm_workspace_kind(dir.path()).unwrap(),
             Some(WorkspaceKind::Pnpm)
         );
+    }
+
+    #[test]
+    fn parses_package_json_with_utf8_bom() {
+        let dir = tempdir().unwrap();
+        let manifest_path = dir.path().join("package.json");
+        let content = "\u{FEFF}{\n  \"name\": \"bom-pkg\",\n  \"version\": \"1.0.0\"\n}\n";
+        fs::write(&manifest_path, content).unwrap();
+
+        let decl = ManifestDecl::new(
+            "package.json",
+            ManifestRole::Canonical,
+            ManifestFormat::PackageJson,
+        )
+        .unwrap();
+        let ctx = OpenContext {
+            workspace_root: dir.path(),
+            cargo_workspace: None,
+            npm_workspace_kind: None,
+        };
+
+        let manifest = PackageJson::open(&decl, &ctx).unwrap();
+        assert_eq!(manifest.package_name().unwrap(), "bom-pkg");
+        assert_eq!(manifest.current_version().unwrap().render(), "1.0.0");
     }
 }

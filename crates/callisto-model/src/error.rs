@@ -11,6 +11,9 @@ pub enum ModelError {
     #[error("path `{path}` is not valid UTF-8; callisto serializes paths into its JSON contract")]
     NonUtf8Path { path: PathBuf },
 
+    #[error("path `{path}` attempts to traverse outside the workspace root")]
+    PathTraversal { path: PathBuf },
+
     #[error("`{raw}` is not a valid 40-character hexadecimal commit sha")]
     InvalidCommitSha { raw: String, reason: String },
 

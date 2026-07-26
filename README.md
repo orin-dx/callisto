@@ -148,7 +148,7 @@ jobs:
       # Built-in Callisto Release Action:
       # - Creates "chore: version packages" PR when changesets exist
       # - Publishes packages & creates GitHub Releases when Version PR is merged
-      - uses: orin-dx/callisto/actions/callisto-action@v1
+      - uses: orin-dx/callisto/.github/actions/callisto-action@v1
         with:
           publish: 'cargo publish'
         env:
@@ -194,45 +194,24 @@ Callisto is structured into 10 workspace crates divided across permissive (`MIT 
 
 ## Development & Task Runners
 
-Callisto supports `just`, `moon`, and standard `cargo` workflows:
-
-### Using `just` (Recommended Task Runner)
+Callisto uses `just` as its primary developer command runner, delegating workspace tasks to `moon`:
 
 ```bash
-# Run full local CI suite (formatting, clippy lints, test suite, WASM check)
+# Run full local CI suite (formatting, clippy lints, test suite, security audit, WASM check)
 just ci
 
-# Run unit, integration, doctests, and E2E tests
+# Run test suite
 just test
 
-# Check clippy lints with warnings treated as errors
+# Check clippy lints
 just lint
 
 # Check code formatting compliance
 just fmt-check
-```
 
-### Using `moon` (Monorepo Runner)
+# Format code automatically
+just fmt
 
-```bash
-# Run inherited tasks across workspace crates
-moon run :test
-moon run :lint
-moon run :format-check
-```
-
-### Using `cargo` Directly
-
-```bash
-# Run unit and integration tests
-cargo test --all-targets
-
-# Run documentation doctests
-cargo test --doc
-
-# Run clippy lints
-cargo clippy --all-targets -- -D warnings
-
-# Check code formatting
-cargo fmt --check
+# Check security advisories
+just audit
 ```

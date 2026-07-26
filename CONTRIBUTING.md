@@ -29,18 +29,19 @@ just ci
 
 ---
 
-## 2. Primary Development Tasks (`just` & `moon`)
+## 2. Primary Development Tasks (`just`)
 
-Callisto uses `moon` as its monorepo task engine and `just` as its developer command runner. All primary tasks are defined natively in `.moon/tasks/rust.yml` and wrapped by `justfile`:
+Callisto uses `just` as its canonical developer command runner, delegating workspace tasks to `moon` under the hood:
 
-| Action | Just Command (Primary) | Moon Command | Cargo Direct |
-| :--- | :--- | :--- | :--- |
-| **Run Full Local CI** | `just ci` | `moon run :format-check && moon run :lint && moon run :test` | `cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test --all-targets` |
-| **Run Tests** | `just test` | `moon run :test` | `cargo test --all-targets && cargo test --doc` |
-| **Check Lints** | `just lint` | `moon run :lint` | `cargo clippy --all-targets -- -D warnings` |
-| **Check Formatting** | `just fmt-check` | `moon run :format-check` | `cargo fmt --check` |
-| **Format Code** | `just fmt` | `moon run :format` | `cargo fmt` |
-| **Verify WASM Target** | `just wasm-check` | N/A | `cargo check -p callisto-moon --target wasm32-wasip1 --features pdk` |
+| Action | Canonical Command | Description |
+| :--- | :--- | :--- |
+| **Run Full Verification CI** | `just ci` | Runs formatting, Clippy lints, unit/integration tests, audit, and WASM target checks |
+| **Run Test Suite** | `just test` | Runs unit, integration, doctests, and E2E lifecycle test suites |
+| **Check Clippy Lints** | `just lint` | Runs Clippy lints with `-D warnings` across all workspace crates |
+| **Check Code Formatting** | `just fmt-check` | Verifies code formatting compliance |
+| **Format Code** | `just fmt` | Applies `cargo fmt` formatting automatically |
+| **Check Security Advisories** | `just audit` | Runs `cargo deny check advisories` security check |
+| **Verify WASM Target** | `just wasm-check` | Verifies `wasm32-wasip1` cross-compilation target |
 
 ---
 

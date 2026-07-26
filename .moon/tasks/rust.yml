@@ -10,26 +10,36 @@ tasks:
     script: "cargo test -p $MOON_PROJECT_ID"
     inputs:
       - "src/**/*"
+      - "tests/**/*"
       - "Cargo.toml"
 
   lint:
     script: "cargo clippy -p $MOON_PROJECT_ID --all-targets -- -D warnings"
     inputs:
       - "src/**/*"
+      - "tests/**/*"
       - "Cargo.toml"
 
   format:
     script: "cargo fmt -p $MOON_PROJECT_ID"
     inputs:
       - "src/**/*"
+      - "tests/**/*"
 
   format-check:
     script: "cargo fmt -p $MOON_PROJECT_ID -- --check"
     inputs:
       - "src/**/*"
+      - "tests/**/*"
 
   audit:
     script: "cargo deny check advisories"
     inputs:
       - "Cargo.lock"
+      - "Cargo.toml"
+
+  publish:
+    script: "cargo publish -p $MOON_PROJECT_ID"
+    inputs:
+      - "src/**/*"
       - "Cargo.toml"

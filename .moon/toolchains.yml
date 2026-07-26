@@ -1,9 +1,5 @@
-
-
 rust:
-  version: "1"
-  # Syncs `version` above into rust-toolchain.toml's toolchain.channel — that file becomes
-  # moon-managed rather than hand-written, giving every contributor (and CI) the exact same
-  # toolchain moon itself uses.
-  syncToolchainConfig: true
+  version: "stable"
+  syncToolchainConfig: false
   components: ["clippy", "rustfmt"]
+  targets: ["wasm32-wasip1"]

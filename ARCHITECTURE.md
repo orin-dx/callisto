@@ -34,7 +34,8 @@ flowchart TD
     end
 
     subgraph Stage3 ["Stage 3: Graph Construction & Cycle Validation"]
-        MR & VCS --> DAG["callisto-graph<br/>(petgraph DiGraph)"]
+        MR --> DAG["callisto-graph<br/>(petgraph DiGraph)"]
+        VCS --> DAG
         DAG --> SCC{"Tarjan SCC<br/>Cycle Check"}
         SCC -- "Cycle Detected" --> Err["Emit miette Diagnostic Card"]
         SCC -- "Acyclic Graph" --> Agg["Aggregate Changesets<br/>& Conventional Commits"]
@@ -203,16 +204,11 @@ Workspace package relationships form a directed graph `G = (V, E)` where vertice
 When a package $P_A$ is bumped from version $V_{old}$ to $V_{new}$ with severity $S$:
 
 ```mermaid
-algorithm
-    input: Package P_A, Severity S
-    1. Apply severity S to P_A -> Calculate new version V_new
-    2. For each reverse dependency P_B that depends on P_A:
-        a. Inspect edge kind (Runtime, Dev, Peer)
-        b. If Runtime edge:
-            i. Calculate required bump for P_B to satisfy new version requirement
-            ii. Recursively enqueue (P_B, Calculated_Severity)
-        c. If Dev or Peer edge:
-            i. Update dependency range requirement in P_B manifest without forcing minor/major version bump on P_B
+flowchart TD
+    Start["Input: Package P_A, Severity S"] --> Step1["Apply severity S to P_A<br/>Calculate new version V_new"]
+    Step1 --> Step2{"Inspect Reverse Dependencies (P_B)"}
+    Step2 -- "Runtime Edge" --> Step3["Calculate required bump for P_B<br/>Recursively enqueue (P_B, Calculated_Severity)"]
+    Step2 -- "Dev or Peer Edge" --> Step4["Update dependency range in P_B manifest<br/>(No forced version bump on P_B)"]
 ```
 
 ### Version Groups (Fixed & Linked)
@@ -309,9 +305,9 @@ sequenceDiagram
         Action->>Runner: Write PR summary to $GITHUB_STEP_SUMMARY
     else Zero Changesets (Version PR Merged!)
         Action->>CLI: callisto plan-publish --format json
-        Action->>CLI: callisto tag --plan <plan_json>
+        Action->>CLI: callisto tag --plan plan.json
         Action->>CLI: Build release CLI binary & callisto-moon.wasm
-        Action->>GH: gh release create <tag> callisto-linux-amd64.tar.gz callisto-moon.wasm
+        Action->>GH: gh release create v0.1.0 callisto-linux-amd64.tar.gz callisto-moon.wasm
         Action->>Runner: Execute publish command (cargo publish / moon run :publish)
     end
 ```
@@ -325,4 +321,28 @@ All contributions to Callisto must adhere to the following 4 engineering invaria
 1. **Safe Rust Strictness**: `unsafe_code = "forbid"` is enforced across all 10 workspace crates.
 2. **Zero Clippy Warnings**: Code must compile with zero warnings under `cargo clippy --all-targets -- -D warnings`.
 3. **Format Enforcement**: Code formatting must strictly match `cargo fmt --check`.
-4. **Comprehensive Test Suite Coverage**: Unit, integration, doctests, and lifecycle E2E tests must pass (`cargo test --all-targets && cargo test --doc`).
+4. **Comprehensive Test Suite Coverage**: Unit, integration, doctests, and lifecycle E2E tests must pass (`just ci`).
+
+---
+
+## 11. Interactive Terminal UI Engine & Task Standardization
+
+### 5-Step Interactive Terminal Wizard
+
+`callisto add` implements a 5-step terminal UI wizard powered by `dialoguer` when executed interactively:
+
+1. **Package Selection (`MultiSelect`)**: Selects target packages across the workspace.
+2. **Major Bump Selection (`MultiSelect`)**: Identifies packages requiring a breaking major version bump.
+3. **Minor Bump Selection (`MultiSelect`)**: Identifies packages requiring minor version bumps (defaulting others to patch).
+4. **Summary Entry (`Input`)**: Solicits human summary description text.
+5. **Confirmation Preview (`Confirm`)**: Renders colored frontmatter diff preview and requests confirmation before writing `.changeset/<human-slug>.md`.
+
+When executed non-interactively via flags (`--package pkg:severity`), `callisto add` bypasses the terminal wizard for instant, sub-10ms agent execution.
+
+### Canonical Task Runner Standardization
+
+Callisto standardizes all task execution on `just` wrapping `moon`:
+- `just ci`: Canonical verification pipeline (Formatting, Clippy, Moon unit/integration tests, `cargo-deny` audit, WASM check).
+- `just test`: Standard workspace test execution (`moon run :test`).
+- `just audit`: Standard security advisory check (`moon run :audit`).
+
