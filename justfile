@@ -49,5 +49,19 @@ clean:
     cargo clean
     rm -f lcov.info callisto-schema.json
 
+# Fast pre-commit hook validation (<500ms formatting check)
+pre-commit: fmt-check
+
+# Fast pre-push hook validation (<2s formatting and clippy lints check)
+pre-push: fmt-check lint
+
+# Install native Git pre-commit and pre-push hooks
+hooks:
+    @echo '#!/bin/sh\njust pre-commit' > .git/hooks/pre-commit
+    @chmod +x .git/hooks/pre-commit
+    @echo '#!/bin/sh\njust pre-push' > .git/hooks/pre-push
+    @chmod +x .git/hooks/pre-push
+    @echo "Git pre-commit and pre-push hooks installed successfully."
+
 # Run full local CI verification pipeline via moon and just
 ci: fmt-check lint test audit doc-check wasm-check coverage
