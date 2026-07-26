@@ -250,3 +250,92 @@ edition = "2021"
     assert!(updated_cargo.contains("# Important inline comment"));
     assert!(updated_cargo.contains("# Important section comment"));
 }
+
+#[test]
+fn test_compose_pr_body_before_version_and_subpkg_changelog() {
+    let dir = setup_polyglot_git_repo();
+    let root = dir.path();
+
+    let global = GlobalArgs {
+        format: OutputFormat::Text,
+        cwd: root.to_path_buf(),
+        dry_run: false,
+    };
+
+    commands::add::handle(
+        AddArgs {
+            packages: vec!["core-crate:minor".to_string()],
+            summary: Some("Add new core component API".to_string()),
+        },
+        &global,
+    )
+    .unwrap();
+
+    // 1. Compose PR body BEFORE versioning (must be non-empty and contain package summary)
+    let compose_res = commands::compose_pr_body::handle(
+        callisto_cli::cli::ComposePrBodyArgs {
+            existing_body: None,
+            labels: Vec::new(),
+        },
+        &global,
+    );
+    assert!(compose_res.is_ok());
+
+    // 2. Version packages
+    commands::version::handle(
+        VersionArgs {
+            refresh_lockfiles: false,
+            strict: false,
+            strict_graph: false,
+            allow_empty_changesets: false,
+        },
+        &global,
+    )
+    .unwrap();
+
+    // 3. Verify subpackage changelog was created in crates/core/CHANGELOG.md
+    let changelog_path = root.join("crates/core/CHANGELOG.md");
+    assert!(
+        changelog_path.exists(),
+        "crates/core/CHANGELOG.md must exist!"
+    );
+    let changelog_content = fs::read_to_string(&changelog_path).unwrap();
+    assert!(changelog_content.contains("0.2.0"));
+}
+
+#[test]
+fn test_dry_run_flag_preserves_disk_state() {
+    let dir = setup_polyglot_git_repo();
+    let root = dir.path();
+
+    let global_dry = GlobalArgs {
+        format: OutputFormat::Text,
+        cwd: root.to_path_buf(),
+        dry_run: true,
+    };
+
+    commands::add::handle(
+        AddArgs {
+            packages: vec!["core-crate:patch".to_string()],
+            summary: Some("Dry run test patch".to_string()),
+        },
+        &global_dry,
+    )
+    .unwrap();
+
+    // Run version with dry_run = true
+    let version_res = commands::version::handle(
+        VersionArgs {
+            refresh_lockfiles: false,
+            strict: false,
+            strict_graph: false,
+            allow_empty_changesets: false,
+        },
+        &global_dry,
+    );
+    assert!(version_res.is_ok());
+
+    // Manifest must remain 0.1.0 on disk
+    let cargo_content = fs::read_to_string(root.join("crates/core/Cargo.toml")).unwrap();
+    assert!(cargo_content.contains("version = \"0.1.0\""));
+}

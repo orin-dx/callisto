@@ -49,10 +49,36 @@ pub fn apply_version_plan<R: CommandRunner>(
         npm_workspace_kind,
     };
 
-    for bump in &plan.bumps {
-        for write in &bump.writes {
-            match write {
-                VersionWriteTarget::Manifest(p) => {
+    if !opts.transient {
+        for bump in &plan.bumps {
+            for write in &bump.writes {
+                match write {
+                    VersionWriteTarget::Manifest(p) => {
+                        let decl = callisto_model::ManifestDecl::new(
+                            p.clone(),
+                            ManifestRole::Canonical,
+                            if p.ends_with("Cargo.toml") {
+                                callisto_model::ManifestFormat::CargoToml
+                            } else {
+                                callisto_model::ManifestFormat::PackageJson
+                            },
+                        )?;
+                        let mut handle = open(&decl, &ctx)?;
+                        handle.write_version(&bump.to)?;
+                        modified_paths.push(p.clone());
+                    }
+                    VersionWriteTarget::CargoWorkspacePackage { root_manifest } => {
+                        let mut ws_res = WorkspaceCargoResolver::load(&root.join(root_manifest))?;
+                        ws_res.write_version(&bump.to)?;
+                        modified_paths.push(root_manifest.clone());
+                    }
+                }
+            }
+        }
+
+        for rewrite in &plan.rewrites {
+            match &rewrite.key.target {
+                DepWriteTarget::Manifest(p) => {
                     let decl = callisto_model::ManifestDecl::new(
                         p.clone(),
                         ManifestRole::Canonical,
@@ -63,47 +89,21 @@ pub fn apply_version_plan<R: CommandRunner>(
                         },
                     )?;
                     let mut handle = open(&decl, &ctx)?;
-                    handle.write_version(&bump.to)?;
+                    handle.update_dependency_spec(
+                        &rewrite.key.name,
+                        rewrite.key.kind.unwrap_or(callisto_model::DepKind::Runtime),
+                        rewrite.to.clone(),
+                    )?;
                     modified_paths.push(p.clone());
                 }
-                VersionWriteTarget::CargoWorkspacePackage { root_manifest } => {
+                DepWriteTarget::CargoWorkspaceDependency { root_manifest } => {
                     let mut ws_res = WorkspaceCargoResolver::load(&root.join(root_manifest))?;
-                    ws_res.write_version(&bump.to)?;
+                    ws_res.write_dependency(&rewrite.key.name, rewrite.to.clone())?;
                     modified_paths.push(root_manifest.clone());
                 }
             }
         }
-    }
 
-    for rewrite in &plan.rewrites {
-        match &rewrite.key.target {
-            DepWriteTarget::Manifest(p) => {
-                let decl = callisto_model::ManifestDecl::new(
-                    p.clone(),
-                    ManifestRole::Canonical,
-                    if p.ends_with("Cargo.toml") {
-                        callisto_model::ManifestFormat::CargoToml
-                    } else {
-                        callisto_model::ManifestFormat::PackageJson
-                    },
-                )?;
-                let mut handle = open(&decl, &ctx)?;
-                handle.update_dependency_spec(
-                    &rewrite.key.name,
-                    rewrite.key.kind.unwrap_or(callisto_model::DepKind::Runtime),
-                    rewrite.to.clone(),
-                )?;
-                modified_paths.push(p.clone());
-            }
-            DepWriteTarget::CargoWorkspaceDependency { root_manifest } => {
-                let mut ws_res = WorkspaceCargoResolver::load(&root.join(root_manifest))?;
-                ws_res.write_dependency(&rewrite.key.name, rewrite.to.clone())?;
-                modified_paths.push(root_manifest.clone());
-            }
-        }
-    }
-
-    if !opts.transient {
         for cl in &plan.changelog_writes {
             let rendered = callisto_changelog::render_section(&cl.input)?;
             callisto_changelog::prepend(

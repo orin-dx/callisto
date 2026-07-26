@@ -11,11 +11,11 @@ inputs:
   commit_message:
     description: 'Commit message for the Version PR'
     required: false
-    default: 'chore: version packages'
+    default: 'chore(release): version packages'
   title:
     description: 'Title for the Version PR'
     required: false
-    default: 'chore: version packages'
+    default: 'chore(release): version packages'
   pr_label:
     description: 'Label to attach to the Version Packages Pull Request'
     required: false
