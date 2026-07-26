@@ -43,5 +43,11 @@ wasm-check:
 coverage:
     cargo llvm-cov --all-features --lcov --output-path lcov.info
 
+# Clean build targets, Moon task caches, and generated artifacts
+clean:
+    moon clean 2>/dev/null || true
+    cargo clean
+    rm -f lcov.info callisto-schema.json
+
 # Run full local CI verification pipeline via moon and just
 ci: fmt-check lint test audit doc-check wasm-check coverage
