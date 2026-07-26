@@ -136,11 +136,26 @@ runs:
             echo "::endgroup::"
 
             if [[ "$INPUT_CREATE_GITHUB_RELEASE" == "true" ]]; then
-              echo "::group::4. Creating GitHub Release Entries"
+              echo "::group::4. Creating GitHub Release Entries & Updating Floating Major Tags"
               for TAG in $(echo "$PLAN_JSON" | jq -r '.releases[].tagName // empty'); do
                 if [[ -n "$TAG" ]]; then
                   echo "Creating GitHub Release for tag: $TAG"
-                  gh release create "$TAG" --title "$TAG" --generate-notes || true
+                  
+                  # Detect if tag is a SemVer prerelease (contains alpha/beta/rc/pre)
+                  EXTRA_FLAGS=""
+                  if [[ "$TAG" =~ -(alpha|beta|rc|pre|next) ]]; then
+                    EXTRA_FLAGS="--prerelease"
+                  fi
+
+                  gh release create "$TAG" --title "$TAG" --generate-notes $EXTRA_FLAGS || true
+
+                  # If tag follows vX.Y.Z convention, automatically update floating major tag pointer (v1)
+                  if [[ "$TAG" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+                    MAJOR_TAG="v${BASH_REMATCH[1]}"
+                    echo "Updating floating major tag pointer $MAJOR_TAG -> $TAG"
+                    git tag -f "$MAJOR_TAG" "$TAG"
+                    git push origin "$MAJOR_TAG" --force || true
+                  fi
                 fi
               done
               echo "::endgroup::"
