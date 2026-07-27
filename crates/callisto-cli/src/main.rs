@@ -28,7 +28,7 @@ fn main() -> ExitCode {
     match res {
         Ok(code) => code,
         Err(err) => {
-            eprintln!("{err}");
+            eprintln!("{:?}", miette::Report::new(err));
             ExitCode::FAILURE
         }
     }

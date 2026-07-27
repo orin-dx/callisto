@@ -38,9 +38,36 @@ impl Versioning for SemVerVersioning {
             });
         }
 
+        if severity == Severity::None {
+            return Ok(current.clone());
+        }
+
         let major = current.major().unwrap_or(0);
         let minor = current.minor().unwrap_or(0);
         let patch = current.patch().unwrap_or(0);
+
+        if current.is_prerelease() {
+            let base = Version::semver(major, minor, patch);
+            let bumped = match severity {
+                Severity::Patch => base,
+                Severity::Minor => {
+                    if patch == 0 {
+                        base
+                    } else {
+                        Version::semver(major, minor + 1, 0)
+                    }
+                }
+                Severity::Major => {
+                    if minor == 0 && patch == 0 {
+                        base
+                    } else {
+                        Version::semver(major + 1, 0, 0)
+                    }
+                }
+                Severity::None => current.clone(),
+            };
+            return Ok(bumped);
+        }
 
         let bumped = match severity {
             Severity::Major => Version::semver(major + 1, 0, 0),
@@ -120,6 +147,28 @@ mod tests {
         assert_eq!(bump_version(&v, Severity::Minor).unwrap().render(), "1.3.0");
         assert_eq!(bump_version(&v, Severity::Major).unwrap().render(), "2.0.0");
         assert_eq!(bump_version(&v, Severity::None).unwrap().render(), "1.2.3");
+    }
+
+    #[test]
+    fn test_prerelease_to_stable_bump() {
+        let v = Version::parse("1.2.3-alpha.0", VersionGrammar::SemVer).unwrap();
+        assert_eq!(bump_version(&v, Severity::Patch).unwrap().render(), "1.2.3");
+        assert_eq!(bump_version(&v, Severity::Minor).unwrap().render(), "1.3.0");
+        assert_eq!(bump_version(&v, Severity::Major).unwrap().render(), "2.0.0");
+
+        let v2 = Version::parse("1.0.0-beta.1", VersionGrammar::SemVer).unwrap();
+        assert_eq!(
+            bump_version(&v2, Severity::Patch).unwrap().render(),
+            "1.0.0"
+        );
+        assert_eq!(
+            bump_version(&v2, Severity::Minor).unwrap().render(),
+            "1.0.0"
+        );
+        assert_eq!(
+            bump_version(&v2, Severity::Major).unwrap().render(),
+            "1.0.0"
+        );
     }
 
     #[test]

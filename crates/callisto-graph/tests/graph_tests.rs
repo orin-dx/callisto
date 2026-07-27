@@ -251,3 +251,65 @@ fn test_validate_detects_empty_changesets() {
     let loaded = callisto_graph::load_changesets(temp_dir.path(), &cfg);
     assert!(loaded.is_err());
 }
+
+#[test]
+fn test_linked_group_version_convergence() {
+    let pkg_a = PackageId::parse("pkg-a").unwrap();
+    let pkg_b = PackageId::parse("pkg-b").unwrap();
+
+    let graph = GraphBuilder::new()
+        .package(pkg_a.clone(), |p| p)
+        .package(pkg_b.clone(), |p| p)
+        .build()
+        .unwrap();
+
+    let mut base = BTreeMap::new();
+    base.insert(pkg_a.clone(), Version::semver(1, 4, 0));
+    base.insert(pkg_b.clone(), Version::semver(2, 7, 3));
+
+    let mut initial_severities = BTreeMap::new();
+    initial_severities.insert(pkg_a.clone(), Severity::Minor);
+    initial_severities.insert(pkg_b.clone(), Severity::Minor);
+
+    let mut groups = GroupTable::default();
+    let mut group_def = callisto_graph::config::GroupDef {
+        name: callisto_model::GroupName("core_linked".to_string()),
+        kind: callisto_model::GroupKind::Linked,
+        members: Vec::new(),
+    };
+    group_def
+        .members
+        .push(callisto_graph::config::GroupMember::Package(pkg_a.clone()));
+    group_def
+        .members
+        .push(callisto_graph::config::GroupMember::Package(pkg_b.clone()));
+    groups.linked.insert(group_def.name.clone(), group_def);
+
+    let cfg = CascadeConfig {
+        mode: CascadeMode::OutOfRange,
+        bump_severity: CascadeBumpSeverity::Patch,
+        peer_escalation: true,
+        preserve_npm_ranges: false,
+    };
+    let named_by = BTreeMap::new();
+    let reasons = BTreeMap::new();
+
+    let input = CascadeInput {
+        graph: &graph,
+        groups: &groups,
+        cfg: &cfg,
+        seed: &initial_severities,
+        reasons: &reasons,
+        named_by: &named_by,
+        base: &base,
+        pre: None,
+    };
+
+    let outcome = run_cascade(input).unwrap();
+    let target_a = outcome.targets.get(&pkg_a).unwrap().render();
+    let target_b = outcome.targets.get(&pkg_b).unwrap().render();
+
+    // Spec §G.6.7: both linked packages marked minor must converge to 2.8.0
+    assert_eq!(target_a, "2.8.0");
+    assert_eq!(target_b, "2.8.0");
+}

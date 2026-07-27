@@ -274,6 +274,51 @@ pub fn run_cascade<D: DependencyResolver>(
         }
     }
 
+    // Spec §G.6.7: Linked group target version convergence
+    for g in input.groups.linked.values() {
+        let member_ids: Vec<PackageId> = g
+            .members(crate::config::GroupMemberKind::Package)
+            .filter_map(|m| match m {
+                crate::config::GroupMember::Package(ref id) => Some(id.clone()),
+                _ => None,
+            })
+            .collect();
+
+        let mut max_ver: Option<Version> = None;
+        for id in &member_ids {
+            if let Some(t) = out.targets.get(id) {
+                max_ver = match max_ver {
+                    None => Some(t.clone()),
+                    Some(ref cur) => {
+                        if Version::compare(t, cur).ok() == Some(std::cmp::Ordering::Greater) {
+                            Some(t.clone())
+                        } else {
+                            Some(cur.clone())
+                        }
+                    }
+                };
+            }
+        }
+
+        if let Some(ref target_ver) = max_ver {
+            for id in member_ids {
+                if let Some(cur_target) = out.targets.get(&id) {
+                    if Version::compare(target_ver, cur_target).ok()
+                        == Some(std::cmp::Ordering::Greater)
+                    {
+                        out.targets.insert(id.clone(), target_ver.clone());
+                        out.reasons.insert(
+                            id.clone(),
+                            BumpReason::LinkedGroupUnion {
+                                group: g.name.clone(),
+                            },
+                        );
+                    }
+                }
+            }
+        }
+    }
+
     out.iterations = iterations;
     Ok(out)
 }
@@ -319,24 +364,24 @@ fn raise<D: DependencyResolver>(
     }
 
     out.severities.insert(pkg.clone(), sev);
-    out.reasons.entry(pkg.clone()).or_insert_with(|| {
-        if decision.escalated {
-            BumpReason::PeerEscalation {
-                via: via.clone(),
-                spec: edge.spec.render(),
-            }
-        } else {
-            BumpReason::Cascade {
-                via: via.clone(),
-                dep_kind: edge.kind,
-                spec: edge.spec.render(),
-                dependency_to: dependency_to.clone(),
-            }
-        }
-    });
 
-    if let Some(gov) = &decision.governed_by {
-        out.governed_by.entry(pkg.clone()).or_insert(gov.clone());
+    let new_reason = if decision.escalated {
+        BumpReason::PeerEscalation {
+            via: via.clone(),
+            spec: edge.spec.render(),
+        }
+    } else {
+        BumpReason::Cascade {
+            via: via.clone(),
+            dep_kind: edge.kind,
+            spec: edge.spec.render(),
+            dependency_to: dependency_to.clone(),
+        }
+    };
+    out.reasons.insert(pkg.clone(), new_reason);
+
+    if let Some(ref gov) = decision.governed_by {
+        out.governed_by.insert(pkg.clone(), gov.clone());
     }
 
     let new_t = bump_target(pkg, sev, input)?;
