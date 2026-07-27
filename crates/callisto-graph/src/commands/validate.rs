@@ -37,7 +37,7 @@ pub fn validate<R: CommandRunner, D: DependencyResolver>(
             if let Ok(id) = callisto_model::PackageId::parse(&entry.name) {
                 if !ws.graph.packages().any(|p| p.id == id) {
                     diagnostics.push(callisto_model::Diagnostic {
-                        code: callisto_model::DiagnosticCode::EmptyChangeset,
+                        code: callisto_model::DiagnosticCode::UnknownPackage,
                         severity: callisto_model::DiagnosticSeverity::Error,
                         message: format!(
                             "Changeset `{}` references unknown package `{}`",
