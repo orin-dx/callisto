@@ -150,6 +150,9 @@ pub struct StatusPackageRecord {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pending_severity: Option<Severity>,
 
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub changed_since_last_tag: bool,
+
     pub pending_changesets: Vec<String>,
 }
 

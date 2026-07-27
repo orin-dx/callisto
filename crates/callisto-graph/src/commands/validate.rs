@@ -20,7 +20,38 @@ pub fn validate<R: CommandRunner, D: DependencyResolver>(
     let mut diagnostics = Vec::new();
     let loaded = crate::load_changesets(&ws.root, &ws.config)?;
 
-    for cs in &loaded {
+    let target_changesets: Vec<_> = if opts.staged {
+        if let Ok(out) = ws
+            .runner
+            .run("git", &["diff", "--cached", "--name-only"], &ws.root)
+        {
+            let files: Vec<&str> = out.stdout_trimmed().lines().collect();
+            loaded
+                .into_iter()
+                .filter(|cs| files.iter().any(|f| cs.path.ends_with(f)))
+                .collect()
+        } else {
+            loaded
+        }
+    } else if let Some(ref since) = opts.since {
+        let range = format!("{since}..HEAD");
+        if let Ok(out) = ws
+            .runner
+            .run("git", &["diff", "--name-only", &range], &ws.root)
+        {
+            let files: Vec<&str> = out.stdout_trimmed().lines().collect();
+            loaded
+                .into_iter()
+                .filter(|cs| files.iter().any(|f| cs.path.ends_with(f)))
+                .collect()
+        } else {
+            loaded
+        }
+    } else {
+        loaded
+    };
+
+    for cs in &target_changesets {
         if cs.changeset.entries.is_empty() {
             diagnostics.push(callisto_model::Diagnostic {
                 code: callisto_model::DiagnosticCode::EmptyChangeset,

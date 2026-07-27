@@ -32,7 +32,7 @@ pub fn status<R: CommandRunner, D: DependencyResolver>(
             })
         })?;
         let last_tag = ws.tags.last_tag(&pkg.id).map(|t| t.name.clone());
-        let _changed = changed_since_last_tag(ws.runner, &ws.root, pkg, &ws.tags)?;
+        let changed = changed_since_last_tag(ws.runner, &ws.root, pkg, &ws.tags)?;
 
         let mut pkg_changesets = Vec::new();
         let mut max_sev: Option<callisto_model::Severity> = None;
@@ -60,6 +60,7 @@ pub fn status<R: CommandRunner, D: DependencyResolver>(
             current_version,
             last_tag,
             pending_severity: max_sev,
+            changed_since_last_tag: changed,
             pending_changesets: pkg_changesets,
         });
     }
@@ -83,6 +84,7 @@ mod tests {
             current_version: callisto_model::Version::semver(1, 0, 0),
             last_tag: None,
             pending_severity: Some(callisto_model::Severity::Minor),
+            changed_since_last_tag: false,
             pending_changesets: vec!["my-changeset".to_string()],
         };
         assert_eq!(rec.pending_changesets.len(), 1);

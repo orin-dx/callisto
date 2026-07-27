@@ -50,6 +50,8 @@ pub fn plan_snapshot<R: CommandRunner, D: DependencyResolver>(
     let mut bumps = Vec::new();
     let mut plan_bumps = Vec::new();
 
+    let mut snapshot_versions = std::collections::BTreeMap::new();
+
     for pkg in ws.graph.packages() {
         let from = base_versions.get(&pkg.id).cloned().ok_or_else(|| {
             GraphError::Manifest(callisto_model::ManifestError::MissingField {
@@ -72,6 +74,8 @@ pub fn plan_snapshot<R: CommandRunner, D: DependencyResolver>(
                 grammar: callisto_model::VersionGrammar::SemVer,
             })
         })?;
+
+        snapshot_versions.insert(pkg.id.clone(), snapshot_ver.clone());
 
         let mut writes = Vec::new();
         for decl in &pkg.manifests {
@@ -100,9 +104,27 @@ pub fn plan_snapshot<R: CommandRunner, D: DependencyResolver>(
         });
     }
 
+    let mut rewrites: Vec<_> = cascade_out.rewrites.into_values().collect();
+    for rewrite in &mut rewrites {
+        if let Some(snap_to) = snapshot_versions.get(&rewrite.dependency) {
+            let eco = rewrite
+                .dependency
+                .ecosystem()
+                .unwrap_or(callisto_model::Ecosystem::Cargo);
+            match crate::cascade::rewrite_spec(&rewrite.from, snap_to, eco, &ws.config.cascade) {
+                crate::cascade::RewriteOutcome::Rewritten(new_spec) => {
+                    rewrite.to = new_spec;
+                }
+                _ => {
+                    rewrite.to = callisto_model::DepSpec::Exact(snap_to.clone());
+                }
+            }
+        }
+    }
+
     let plan = VersionPlan {
         bumps: plan_bumps,
-        rewrites: cascade_out.rewrites.into_values().collect(),
+        rewrites,
         platform_writes: Vec::new(),
         optional_dep_updates: Vec::new(),
         changelog_writes: Vec::new(),
