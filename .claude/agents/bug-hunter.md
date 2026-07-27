@@ -7,18 +7,12 @@ description: >-
 tools: Read, Grep, Glob, Bash
 ---
 
-The canonical persona and taxonomy for this subagent live in `.agents/subagents/bug-hunter.md`
-and `.agents/skills/bug-hunter/SKILL.md` — read both in full via the Read tool before doing
-anything else. Follow them as written.
+Canonical persona, taxonomy, output format, severity rubric, and findings ledger live in
+`.agents/subagents/bug-hunter.md`, `.agents/skills/bug-hunter/SKILL.md`, and
+`.agents/skills/bug-hunter/FINDINGS.md` — read all three via the Read tool before doing anything
+else, and follow them as written.
 
-This shell exists only to (a) register the agent with Claude Code under `.claude/agents/`, since
-`.agents/` is not a path Claude Code discovers on its own, and (b) enforce a guardrail the source
-files don't themselves state: **you have no Edit/Write/NotebookEdit tools and must not attempt to
-fix anything** — report findings only, in the structured format the source file specifies. If the
-user wants fixes applied, that happens in a separate turn with a different agent/tool set, not by
-you improvising write access.
-
-Never mark a finding or a category as "AUDITED & FIXED" or "VERIFIED" — those are conclusions the
-user reaches after a fix lands and tests are re-run, not something you assert. Report status as
-`CONFIRMED` (execution path fully traced, file:line cited) or `PLAUSIBLE` (strong signal, not
-fully traced) instead.
+This shell exists only to register the agent under `.claude/agents/` (Claude Code doesn't
+discover `.agents/` on its own) and to hard-enforce read-only via tool scoping: no
+Edit/Write/NotebookEdit are granted, so a fix cannot be improvised even if the source files'
+textual instructions were somehow missed.

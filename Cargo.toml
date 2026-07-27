@@ -22,6 +22,8 @@ toml = "0.8"
 serde_yaml = "0.9"
 globset = "0.4"
 tempfile = "3"
+rstest = "0.23"
+insta = { version = "1.41", features = ["json", "redactions"] }
 
 [profile.release]
 lto = true

@@ -22,7 +22,13 @@ pub fn compose_pr_body<R: CommandRunner, D: DependencyResolver, I: SeverityInfer
         inference,
         &crate::commands::version::VersionOptions::default(),
     )?;
+    render_pr_body_from_plan(&plan, opts)
+}
 
+pub fn render_pr_body_from_plan(
+    plan: &crate::plan::VersionPlan,
+    opts: &PrBodyOptions,
+) -> Result<ComposePrBodyReport, GraphError> {
     let mut body = String::new();
 
     // Preserve custom user notes above ## Release Preview if an existing body was passed
@@ -206,4 +212,59 @@ pub fn compose_pr_body<R: CommandRunner, D: DependencyResolver, I: SeverityInfer
         pr_body: body,
         diagnostics: Vec::new(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::plan::{PlannedBump, VersionPlan};
+    use callisto_model::{BumpReason, PackageId, Severity, Version};
+
+    #[test]
+    fn test_compose_pr_body_snapshot() {
+        let pkg_a = PackageId::parse("core-crate").unwrap();
+        let pkg_b = PackageId::parse("@myorg/web-app").unwrap();
+
+        let bump_a = PlannedBump {
+            package: pkg_a,
+            from: Version::semver(0, 1, 0),
+            to: Version::semver(0, 2, 0),
+            severity: Severity::Minor,
+            governed_by: None,
+            reason: Some(BumpReason::Changeset {
+                changesets: vec!["swift-foxes-race".to_string()],
+            }),
+            writes: vec![],
+        };
+
+        let bump_b = PlannedBump {
+            package: pkg_b,
+            from: Version::semver(1, 0, 0),
+            to: Version::semver(1, 0, 1),
+            severity: Severity::Patch,
+            governed_by: None,
+            reason: Some(BumpReason::Changeset {
+                changesets: vec!["swift-foxes-race".to_string()],
+            }),
+            writes: vec![],
+        };
+
+        let plan = VersionPlan {
+            bumps: vec![bump_a, bump_b],
+            rewrites: vec![],
+            platform_writes: vec![],
+            optional_dep_updates: vec![],
+            changelog_writes: vec![],
+            consumed_changesets: vec![std::path::PathBuf::from(".changeset/swift-foxes-race.md")],
+            pre_state_update: None,
+            delete_pre_json: false,
+            pre_cursor_updates: vec![],
+            observed_versions: std::collections::BTreeMap::new(),
+            diagnostics: vec![],
+        };
+
+        let opts = PrBodyOptions::default();
+        let report = render_pr_body_from_plan(&plan, &opts).unwrap();
+        insta::assert_snapshot!(report.pr_body);
+    }
 }

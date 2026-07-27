@@ -44,3 +44,6 @@ dialoguer = "0.11"
 tempfile = "3"
 callisto-manifests = { path = "../callisto-manifests" }
 callisto-graph = { path = "../callisto-graph" }
+trycmd = "0.15"
+rstest.workspace = true
+insta.workspace = true

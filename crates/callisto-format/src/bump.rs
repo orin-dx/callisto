@@ -139,42 +139,23 @@ pub enum BumpError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
-    #[test]
-    fn bumps_semver_versions() {
-        let v = Version::parse("1.2.3", VersionGrammar::SemVer).unwrap();
-        assert_eq!(bump_version(&v, Severity::Patch).unwrap().render(), "1.2.4");
-        assert_eq!(bump_version(&v, Severity::Minor).unwrap().render(), "1.3.0");
-        assert_eq!(bump_version(&v, Severity::Major).unwrap().render(), "2.0.0");
-        assert_eq!(bump_version(&v, Severity::None).unwrap().render(), "1.2.3");
-    }
-
-    #[test]
-    fn test_prerelease_to_stable_bump() {
-        let v = Version::parse("1.2.3-alpha.0", VersionGrammar::SemVer).unwrap();
-        assert_eq!(bump_version(&v, Severity::Patch).unwrap().render(), "1.2.3");
-        assert_eq!(bump_version(&v, Severity::Minor).unwrap().render(), "1.3.0");
-        assert_eq!(bump_version(&v, Severity::Major).unwrap().render(), "2.0.0");
-
-        let v2 = Version::parse("1.0.0-beta.1", VersionGrammar::SemVer).unwrap();
-        assert_eq!(
-            bump_version(&v2, Severity::Patch).unwrap().render(),
-            "1.0.0"
-        );
-        assert_eq!(
-            bump_version(&v2, Severity::Minor).unwrap().render(),
-            "1.0.0"
-        );
-        assert_eq!(
-            bump_version(&v2, Severity::Major).unwrap().render(),
-            "1.0.0"
-        );
-    }
-
-    #[test]
-    fn zero_x_bump_major_becomes_one_zero_zero() {
-        let v = Version::parse("0.5.2", VersionGrammar::SemVer).unwrap();
-        assert_eq!(bump_version(&v, Severity::Major).unwrap().render(), "1.0.0");
+    #[rstest]
+    #[case("1.2.3", Severity::Patch, "1.2.4")]
+    #[case("1.2.3", Severity::Minor, "1.3.0")]
+    #[case("1.2.3", Severity::Major, "2.0.0")]
+    #[case("1.2.3", Severity::None, "1.2.3")]
+    #[case("1.2.3-alpha.0", Severity::Patch, "1.2.3")]
+    #[case("1.2.3-alpha.0", Severity::Minor, "1.3.0")]
+    #[case("1.2.3-alpha.0", Severity::Major, "2.0.0")]
+    #[case("1.0.0-beta.1", Severity::Patch, "1.0.0")]
+    #[case("1.0.0-beta.1", Severity::Minor, "1.0.0")]
+    #[case("1.0.0-beta.1", Severity::Major, "1.0.0")]
+    #[case("0.5.2", Severity::Major, "1.0.0")]
+    fn test_semver_bump_matrix(#[case] input: &str, #[case] sev: Severity, #[case] expected: &str) {
+        let v = Version::parse(input, VersionGrammar::SemVer).unwrap();
+        assert_eq!(bump_version(&v, sev).unwrap().render(), expected);
     }
 
     #[test]
