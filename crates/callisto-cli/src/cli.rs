@@ -94,7 +94,7 @@ pub enum PreArgs {
 pub struct ValidateArgs {
     #[arg(long)]
     pub staged: bool,
-    #[arg(long, value_name = "REF")]
+    #[arg(long, value_name = "REF", conflicts_with = "staged")]
     pub since: Option<String>,
     #[arg(long)]
     pub strict: bool,

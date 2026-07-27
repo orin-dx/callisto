@@ -21,32 +21,36 @@ pub fn validate<R: CommandRunner, D: DependencyResolver>(
     let loaded = crate::load_changesets(&ws.root, &ws.config)?;
 
     let target_changesets: Vec<_> = if opts.staged {
-        if let Ok(out) = ws
+        let out = ws
             .runner
-            .run("git", &["diff", "--cached", "--name-only"], &ws.root)
-        {
-            let files: Vec<&str> = out.stdout_trimmed().lines().collect();
-            loaded
-                .into_iter()
-                .filter(|cs| files.iter().any(|f| cs.path.ends_with(f)))
-                .collect()
-        } else {
-            loaded
+            .run("git", &["diff", "--cached", "--name-only"], &ws.root)?;
+        if !out.success() {
+            return Err(GraphError::Command(callisto_model::CommandError::Io {
+                program: "git".to_string(),
+                message: out.stderr,
+            }));
         }
+        let files: Vec<&str> = out.stdout_trimmed().lines().collect();
+        loaded
+            .into_iter()
+            .filter(|cs| files.iter().any(|f| cs.path.ends_with(f)))
+            .collect()
     } else if let Some(ref since) = opts.since {
         let range = format!("{since}..HEAD");
-        if let Ok(out) = ws
+        let out = ws
             .runner
-            .run("git", &["diff", "--name-only", &range], &ws.root)
-        {
-            let files: Vec<&str> = out.stdout_trimmed().lines().collect();
-            loaded
-                .into_iter()
-                .filter(|cs| files.iter().any(|f| cs.path.ends_with(f)))
-                .collect()
-        } else {
-            loaded
+            .run("git", &["diff", "--name-only", &range], &ws.root)?;
+        if !out.success() {
+            return Err(GraphError::Command(callisto_model::CommandError::Io {
+                program: "git".to_string(),
+                message: out.stderr,
+            }));
         }
+        let files: Vec<&str> = out.stdout_trimmed().lines().collect();
+        loaded
+            .into_iter()
+            .filter(|cs| files.iter().any(|f| cs.path.ends_with(f)))
+            .collect()
     } else {
         loaded
     };

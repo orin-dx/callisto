@@ -10,12 +10,27 @@ description: >-
 
 Find real bugs before they ship: silent failures, spec-vs-code drift, data corruption, ordering bugs, and edge cases that break production.
 
+This skill is **Rigid**: follow it exactly, don't adapt away the discipline.
+
+## The Law
+
+> NO FINDING MARKED `CONFIRMED` WITHOUT AN END-TO-END TRACE. NO FIX MARKED DONE WITHOUT A TEST THAT FAILED BEFORE THE FIX AND PASSES AFTER, RUN IN THIS SESSION.
+
 ## Rules
 - Don't trust a comment, docstring, passing test, or a prior audit's "FIXED"/"VERIFIED" label as proof something works — verify by tracing the code yourself.
 - Verify by tracing code and running tests. Don't guess.
 - Prioritize correctness, security, and data-integrity bugs over style.
 - Read-only by default: investigate and report; don't edit files or run mutating commands unless the task explicitly asks for a fix.
 - Read `FINDINGS.md` in this directory before starting. Don't re-report anything already logged there as `CONFIRMED` unless you have new evidence it's wrong, or it was marked fixed but isn't. Append new `CONFIRMED` findings when done.
+
+## Red Flags — you're about to violate The Law
+
+| Thought | Reality |
+|---|---|
+| "This test has a plausible name, so it covers it" | Read what it actually asserts. A misnamed or shallow test is not coverage — see `validate.rs`'s ledger entry. |
+| "A comment/doc says this is FIXED/VERIFIED" | That's a claim, not evidence. Two such claims in this repo were already false. |
+| "I traced most of the call path" | Partial trace is `PLAUSIBLE`, not `CONFIRMED`. Finish it or label it honestly. |
+| "The fix looks obviously correct" | Run the test. "Looks correct" is exactly how the bugs in FINDINGS.md shipped. |
 
 ---
 
@@ -64,8 +79,19 @@ Report each finding in this format:
 - **Classification**: [Silent Failure | Spec Drift | Ordering/Staleness | Unchecked Flag | Security | Edge Case]
 - **Root Cause**: Concise explanation of the flaw in the current implementation logic.
 - **Failing Scenario**: Concrete steps or input payload that triggers the defect.
-- **Verification Strategy**: Automated test command or assertion that proves the bug and confirms the fix.
+- **Verification Strategy**: A test that fails against the current code and would pass once fixed — not just a command that could theoretically check it.
 ```
+
+Before marking a finding `CONFIRMED`, check:
+- [ ] I traced the exact execution path, not just the type/interface it flows through.
+- [ ] I have a concrete failing scenario, not a hypothetical.
+- [ ] I tried to disprove it and it survived.
+- [ ] I checked `FINDINGS.md` and this isn't a duplicate.
+
+Before marking a fix `fixed`, check:
+- [ ] The cited test failed on the pre-fix code (red).
+- [ ] The same test passes after the fix, run in this session (green).
+- [ ] `FINDINGS.md`'s entry is updated in place, not left stale.
 
 Severity rubric:
 - **Critical**: silent data loss/corruption, a security hole, or wrong output already reachable by a real user today.
@@ -75,6 +101,4 @@ Severity rubric:
 
 ---
 
-## Verification Invariants
-
-> **Bug confirmed** ≠ **fix complete**. Mark `CONFIRMED` only once you've traced the execution path end-to-end in code. Mark a fix done only after it's applied and a real test run (`cargo test`, `just test`, `just ci`) has passed in this session — never from memory, a comment, or another tool's prior claim.
+**Bug confirmed** ≠ **fix complete** — they're two different claims with two different checklists above. Don't conflate them.

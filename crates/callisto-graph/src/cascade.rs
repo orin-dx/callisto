@@ -170,149 +170,156 @@ pub fn run_cascade<D: DependencyResolver>(
     let mut iterations = 0;
     let bound = convergence_bound(input.graph.packages().count());
 
-    while let Some(pkg) = worklist.pop_first() {
-        iterations += 1;
-        if iterations > bound {
-            return Err(GraphError::CascadeNotConverged { iterations });
-        }
+    let mut changed = true;
+    while changed {
+        changed = false;
 
-        let new_version = out.targets[&pkg].clone();
-        let src_sev = out.severities[&pkg];
+        while let Some(pkg) = worklist.pop_first() {
+            iterations += 1;
+            if iterations > bound {
+                return Err(GraphError::CascadeNotConverged { iterations });
+            }
 
-        let dependents: Vec<DepEdge> = input.graph.dependents_of(&pkg).cloned().collect();
-        for edge in dependents {
-            let cov = coverage(&edge.spec, &new_version).map_err(|source| {
-                GraphError::GrammarMismatch {
-                    from: edge.from.clone(),
-                    to: edge.to.clone(),
-                    source,
+            let new_version = out.targets[&pkg].clone();
+            let src_sev = out.severities[&pkg];
+
+            let dependents: Vec<DepEdge> = input.graph.dependents_of(&pkg).cloned().collect();
+            for edge in dependents {
+                let cov = coverage(&edge.spec, &new_version).map_err(|source| {
+                    GraphError::GrammarMismatch {
+                        from: edge.from.clone(),
+                        to: edge.to.clone(),
+                        source,
+                    }
+                })?;
+
+                let d = cascade_action(edge.kind, cov, src_sev, input.cfg);
+
+                if d.unknown_coverage {
+                    let code = match edge.spec {
+                        DepSpec::Catalog(_) => DiagnosticCode::CatalogSpecNotRewritten,
+                        _ => DiagnosticCode::RangeNotRoundTrippable,
+                    };
+                    out.diagnostics.push(Diagnostic {
+                        code,
+                        severity: DiagnosticSeverity::Warning,
+                        message: format!(
+                            "spec `{}` for `{}` could not be tested for coverage",
+                            edge.spec.render(),
+                            edge.to.display_name()
+                        ),
+                        package: Some(edge.from.clone()),
+                        path: Some(edge.from_manifest.clone()),
+                        governed_by: Some(ConfigKey::CASCADE_PRESERVE_NPM_RANGES),
+                        escalated_by: None,
+                    });
                 }
-            })?;
 
-            let d = cascade_action(edge.kind, cov, src_sev, input.cfg);
-
-            if d.unknown_coverage {
-                let code = match edge.spec {
-                    DepSpec::Catalog(_) => DiagnosticCode::CatalogSpecNotRewritten,
-                    _ => DiagnosticCode::RangeNotRoundTrippable,
-                };
-                out.diagnostics.push(Diagnostic {
-                    code,
-                    severity: DiagnosticSeverity::Warning,
-                    message: format!(
-                        "spec `{}` for `{}` could not be tested for coverage",
-                        edge.spec.render(),
-                        edge.to.display_name()
-                    ),
-                    package: Some(edge.from.clone()),
-                    path: Some(edge.from_manifest.clone()),
-                    governed_by: Some(ConfigKey::CASCADE_PRESERVE_NPM_RANGES),
-                    escalated_by: None,
-                });
-            }
-
-            if d.rewrite {
-                let eco = edge.from.ecosystem().unwrap_or_else(|| {
-                    if edge.from_manifest.to_string_lossy().ends_with("Cargo.toml") {
-                        Ecosystem::Cargo
-                    } else {
-                        Ecosystem::Npm
-                    }
-                });
-                match rewrite_spec(&edge.spec, &new_version, eco, input.cfg) {
-                    RewriteOutcome::Rewritten(to_spec) => {
-                        let key = RewriteKey {
-                            target: if edge.inherited {
-                                DepWriteTarget::CargoWorkspaceDependency {
-                                    root_manifest: edge.from_manifest.clone(),
-                                }
-                            } else {
-                                DepWriteTarget::Manifest(edge.from_manifest.clone())
-                            },
-                            name: edge.to.name().to_string(),
-                            kind: if edge.inherited {
-                                None
-                            } else {
-                                Some(edge.kind)
-                            },
-                        };
-                        out.rewrites.insert(
-                            key.clone(),
-                            SpecRewrite {
-                                key,
-                                dependency: edge.to.clone(),
-                                from: edge.spec.clone(),
-                                to: to_spec,
-                            },
-                        );
-                    }
-                    RewriteOutcome::LeftAlone(dg) => {
-                        out.diagnostics.push(dg);
-                    }
-                }
-            }
-
-            let cur_sev = out
-                .severities
-                .get(&edge.from)
-                .copied()
-                .unwrap_or(Severity::None);
-            if d.severity > cur_sev {
-                raise(
-                    &edge.from,
-                    d.severity,
-                    &d,
-                    &pkg,
-                    &edge,
-                    &new_version,
-                    &mut out,
-                    input.groups,
-                    &mut worklist,
-                    &input,
-                )?;
-            }
-        }
-    }
-
-    // Spec §G.6.7: Linked group target version convergence
-    for g in input.groups.linked.values() {
-        let member_ids: Vec<PackageId> = g
-            .members(crate::config::GroupMemberKind::Package)
-            .filter_map(|m| match m {
-                crate::config::GroupMember::Package(ref id) => Some(id.clone()),
-                _ => None,
-            })
-            .collect();
-
-        let mut max_ver: Option<Version> = None;
-        for id in &member_ids {
-            if let Some(t) = out.targets.get(id) {
-                max_ver = match max_ver {
-                    None => Some(t.clone()),
-                    Some(ref cur) => {
-                        if Version::compare(t, cur).ok() == Some(std::cmp::Ordering::Greater) {
-                            Some(t.clone())
+                if d.rewrite {
+                    let eco = edge.from.ecosystem().unwrap_or_else(|| {
+                        if edge.from_manifest.to_string_lossy().ends_with("Cargo.toml") {
+                            Ecosystem::Cargo
                         } else {
-                            Some(cur.clone())
+                            Ecosystem::Npm
+                        }
+                    });
+                    match rewrite_spec(&edge.spec, &new_version, eco, input.cfg) {
+                        RewriteOutcome::Rewritten(to_spec) => {
+                            let key = RewriteKey {
+                                target: if edge.inherited {
+                                    DepWriteTarget::CargoWorkspaceDependency {
+                                        root_manifest: edge.from_manifest.clone(),
+                                    }
+                                } else {
+                                    DepWriteTarget::Manifest(edge.from_manifest.clone())
+                                },
+                                name: edge.to.name().to_string(),
+                                kind: if edge.inherited {
+                                    None
+                                } else {
+                                    Some(edge.kind)
+                                },
+                            };
+                            out.rewrites.insert(
+                                key.clone(),
+                                SpecRewrite {
+                                    key,
+                                    dependency: edge.to.clone(),
+                                    from: edge.spec.clone(),
+                                    to: to_spec,
+                                },
+                            );
+                        }
+                        RewriteOutcome::LeftAlone(dg) => {
+                            out.diagnostics.push(dg);
                         }
                     }
-                };
+                }
+
+                let cur_sev = out
+                    .severities
+                    .get(&edge.from)
+                    .copied()
+                    .unwrap_or(Severity::None);
+                if d.severity > cur_sev {
+                    raise(
+                        &edge.from,
+                        d.severity,
+                        &d,
+                        &pkg,
+                        &edge,
+                        &new_version,
+                        &mut out,
+                        input.groups,
+                        &mut worklist,
+                        &input,
+                    )?;
+                }
             }
         }
 
-        if let Some(ref target_ver) = max_ver {
-            for id in member_ids {
-                if let Some(cur_target) = out.targets.get(&id) {
-                    if Version::compare(target_ver, cur_target).ok()
-                        == Some(std::cmp::Ordering::Greater)
-                    {
-                        out.targets.insert(id.clone(), target_ver.clone());
-                        out.reasons.insert(
-                            id.clone(),
-                            BumpReason::LinkedGroupUnion {
-                                group: g.name.clone(),
-                            },
-                        );
+        // Spec §G.6.7: Linked group target version convergence
+        for g in input.groups.linked.values() {
+            let member_ids: Vec<PackageId> = g
+                .members(crate::config::GroupMemberKind::Package)
+                .filter_map(|m| match m {
+                    crate::config::GroupMember::Package(ref id) => Some(id.clone()),
+                    _ => None,
+                })
+                .collect();
+
+            let mut max_ver: Option<Version> = None;
+            for id in &member_ids {
+                if let Some(t) = out.targets.get(id) {
+                    max_ver = match max_ver {
+                        None => Some(t.clone()),
+                        Some(ref cur) => {
+                            if Version::compare(t, cur).ok() == Some(std::cmp::Ordering::Greater) {
+                                Some(t.clone())
+                            } else {
+                                Some(cur.clone())
+                            }
+                        }
+                    };
+                }
+            }
+
+            if let Some(ref target_ver) = max_ver {
+                for id in member_ids {
+                    if let Some(cur_target) = out.targets.get(&id) {
+                        if Version::compare(target_ver, cur_target).ok()
+                            == Some(std::cmp::Ordering::Greater)
+                        {
+                            out.targets.insert(id.clone(), target_ver.clone());
+                            out.reasons.insert(
+                                id.clone(),
+                                BumpReason::LinkedGroupUnion {
+                                    group: g.name.clone(),
+                                },
+                            );
+                            worklist.insert(id.clone());
+                            changed = true;
+                        }
                     }
                 }
             }

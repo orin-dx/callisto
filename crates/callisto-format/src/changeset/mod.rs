@@ -117,7 +117,8 @@ pub enum WriteError {
 /// content as `summary` (trimmed). `#`-comment lines and blank lines inside the frontmatter
 /// block are skipped. CRLF line endings are normalized to LF before parsing.
 pub fn parse_changeset(source: &str) -> Result<Changeset, ParseError> {
-    let normalized = source.replace("\r\n", "\n");
+    let trimmed_bom = source.strip_prefix('\u{FEFF}').unwrap_or(source);
+    let normalized = trimmed_bom.replace("\r\n", "\n");
     let lines: Vec<&str> = normalized.split('\n').collect();
 
     if lines.first().copied() != Some("---") {

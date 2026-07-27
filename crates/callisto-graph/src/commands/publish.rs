@@ -121,15 +121,20 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
                 }
             }
 
-            let head_sha = ws
-                .runner
-                .run("git", &["rev-parse", "HEAD"], &ws.root)
-                .ok()
-                .and_then(|out| callisto_model::CommitSha::parse(out.stdout_trimmed()).ok())
-                .unwrap_or_else(|| {
-                    callisto_model::CommitSha::parse("0000000000000000000000000000000000000000")
-                        .unwrap()
-                });
+            let head_out = ws.runner.run("git", &["rev-parse", "HEAD"], &ws.root)?;
+            if !head_out.success() {
+                return Err(GraphError::Command(callisto_model::CommandError::Io {
+                    program: "git".to_string(),
+                    message: head_out.stderr,
+                }));
+            }
+            let head_sha =
+                callisto_model::CommitSha::parse(head_out.stdout_trimmed()).map_err(|e| {
+                    GraphError::Model(callisto_model::ModelError::InvalidCommitSha {
+                        raw: head_out.stdout_trimmed().to_string(),
+                        reason: e.to_string(),
+                    })
+                })?;
 
             releases.push(ReleaseEntry {
                 tag_name: ws.tags.template(&pkg.id).render(&ver),
