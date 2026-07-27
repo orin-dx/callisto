@@ -12,6 +12,8 @@ tasks:
       - "src/**/*"
       - "tests/**/*"
       - "Cargo.toml"
+      - "**/*.snap"
+      - "**/*.trycmd"
 
   lint:
     script: "cargo clippy -p $MOON_PROJECT_ID --all-targets -- -D warnings"
