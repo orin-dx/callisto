@@ -117,7 +117,11 @@ impl GitRepository {
                     .map_err(|_e| VcsError::RefNotFound {
                         ref_name: r.to_string(),
                     })?;
-                Some(spec.detach().to_hex().to_string())
+                let object = spec.object().map_err(|e| VcsError::Git(e.to_string()))?;
+                let commit = object
+                    .peel_to_kind(gix::object::Kind::Commit)
+                    .map_err(|e| VcsError::Git(e.to_string()))?;
+                Some(commit.id.to_hex().to_string())
             } else {
                 None
             };

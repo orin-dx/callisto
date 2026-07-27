@@ -51,15 +51,27 @@ pub fn plan_snapshot<R: CommandRunner, D: DependencyResolver>(
     let mut plan_bumps = Vec::new();
 
     for pkg in ws.graph.packages() {
-        let from = base_versions
-            .get(&pkg.id)
-            .cloned()
-            .unwrap_or_else(|| callisto_model::Version::semver(1, 0, 0));
+        let from = base_versions.get(&pkg.id).cloned().ok_or_else(|| {
+            GraphError::Manifest(callisto_model::ManifestError::MissingField {
+                path: pkg
+                    .manifests
+                    .first()
+                    .map(|m| m.path.clone())
+                    .unwrap_or_default(),
+                field: "version",
+            })
+        })?;
+        let snapshot_ver_str = format!("{}-{tag}.{sha_short}", from.render());
         let snapshot_ver = callisto_model::Version::parse(
-            &format!("{}-{tag}.{sha_short}", from.render()),
+            &snapshot_ver_str,
             callisto_model::VersionGrammar::SemVer,
         )
-        .unwrap_or_else(|_| from.clone());
+        .map_err(|_| {
+            GraphError::Bump(callisto_format::BumpError::NotSemVer {
+                raw: snapshot_ver_str,
+                grammar: callisto_model::VersionGrammar::SemVer,
+            })
+        })?;
 
         let mut writes = Vec::new();
         for decl in &pkg.manifests {

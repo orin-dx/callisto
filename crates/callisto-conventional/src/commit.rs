@@ -102,33 +102,56 @@ pub fn parse_commit(sha: CommitSha, message: &str) -> ParsedCommit {
     let rest_body: Vec<&str> = lines.collect();
     let mut body_lines = Vec::new();
     let mut footers = Vec::new();
+    let mut footer_lines = Vec::new();
     let mut breaking_from_footer = false;
-    let mut in_footers = false;
+
+    let mut blocks: Vec<Vec<&str>> = Vec::new();
+    let mut current_block: Vec<&str> = Vec::new();
 
     for line in rest_body {
-        let trimmed = line.trim();
-        if !in_footers {
-            if is_footer_line(trimmed) {
-                in_footers = true;
+        if line.trim().is_empty() {
+            if !current_block.is_empty() {
+                blocks.push(current_block);
+                current_block = Vec::new();
+            }
+        } else {
+            current_block.push(line);
+        }
+    }
+    if !current_block.is_empty() {
+        blocks.push(current_block);
+    }
+
+    if let Some(last_block) = blocks.pop() {
+        if let Some(first) = last_block.first() {
+            if is_footer_line(first.trim()) {
+                footer_lines = last_block;
             } else {
-                body_lines.push(line);
-                continue;
+                blocks.push(last_block);
             }
         }
+    }
 
-        if in_footers {
-            if let Some((token, val)) = parse_footer_line(trimmed) {
-                if token == "BREAKING CHANGE" || token == "BREAKING-CHANGE" {
-                    breaking_from_footer = true;
-                }
-                footers.push(CommitFooter {
-                    token: token.to_string(),
-                    value: val.to_string(),
-                });
-            } else if let Some(last) = footers.last_mut() {
-                last.value.push('\n');
-                last.value.push_str(trimmed);
+    for block in blocks {
+        if !body_lines.is_empty() {
+            body_lines.push("");
+        }
+        body_lines.extend(block);
+    }
+
+    for line in footer_lines {
+        let trimmed = line.trim();
+        if let Some((token, val)) = parse_footer_line(trimmed) {
+            if token == "BREAKING CHANGE" || token == "BREAKING-CHANGE" {
+                breaking_from_footer = true;
             }
+            footers.push(CommitFooter {
+                token: token.to_string(),
+                value: val.to_string(),
+            });
+        } else if let Some(last) = footers.last_mut() {
+            last.value.push('\n');
+            last.value.push_str(trimmed);
         }
     }
 
@@ -195,6 +218,21 @@ mod tests {
                 assert_eq!(c.scope, Some("core".to_string()));
                 assert!(c.breaking);
                 assert_eq!(c.description, "add groundbreaking feature");
+            }
+            _ => panic!("expected conventional"),
+        }
+    }
+
+    #[test]
+    fn test_body_with_colon_not_treated_as_footer() {
+        let sha = CommitSha::parse("a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0").unwrap();
+        let msg = "feat(api): update endpoint\n\nNote: this is a body paragraph.\n\nSigned-off-by: Developer <dev@example.com>";
+        let parsed = parse_commit(sha, msg);
+        match parsed {
+            ParsedCommit::Conventional(c) => {
+                assert_eq!(c.body, Some("Note: this is a body paragraph.".to_string()));
+                assert_eq!(c.footers.len(), 1);
+                assert_eq!(c.footers[0].token, "Signed-off-by");
             }
             _ => panic!("expected conventional"),
         }
