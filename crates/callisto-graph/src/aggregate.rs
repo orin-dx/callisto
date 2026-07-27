@@ -178,11 +178,15 @@ where
                     }
 
                     if entry.severity != Severity::None {
+                        let pkg_ver = tags
+                            .last_tag(&id)
+                            .map(|t| t.version.clone())
+                            .unwrap_or_else(|| Version::semver(0, 0, 0));
                         let cl_input =
                             agg.changelog_inputs.entry(id.clone()).or_insert_with(|| {
                                 ChangelogInput {
                                     package: id.clone(),
-                                    from: Version::semver(1, 0, 0),
+                                    from: pkg_ver,
                                     to: None,
                                     entries: Vec::new(),
                                 }

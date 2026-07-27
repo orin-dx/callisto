@@ -283,11 +283,12 @@ fn bump_target<D: DependencyResolver>(
     sev: Severity,
     input: &CascadeInput<'_, D>,
 ) -> Result<Version, GraphError> {
-    let base = input
-        .base
-        .get(id)
-        .cloned()
-        .unwrap_or_else(|| Version::semver(1, 0, 0));
+    let base = input.base.get(id).cloned().ok_or_else(|| {
+        GraphError::Manifest(callisto_model::ManifestError::MissingField {
+            path: PathBuf::from(id.name()),
+            field: "version",
+        })
+    })?;
     let versioning = callisto_format::SemVerVersioning;
 
     if let Some(pre) = input.pre {

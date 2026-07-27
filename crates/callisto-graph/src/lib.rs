@@ -99,16 +99,26 @@ impl<'a, R: CommandRunner, D: DependencyResolver> Workspace<'a, R, D> {
             let mut found_version = None;
             for decl in &pkg.manifests {
                 if decl.role == callisto_model::ManifestRole::Canonical {
-                    if let Ok(handle) = callisto_manifests::open(decl, &ctx) {
-                        if let Ok(v) = handle.current_version() {
-                            found_version = Some(v);
-                            break;
-                        }
-                    }
+                    let handle = callisto_manifests::open(decl, &ctx)?;
+                    let v = handle.current_version()?;
+                    found_version = Some(v);
+                    break;
                 }
             }
-            let version = found_version.unwrap_or_else(|| Version::semver(0, 1, 0));
-            versions.insert(pkg.id.clone(), version);
+            if let Some(version) = found_version {
+                versions.insert(pkg.id.clone(), version);
+            } else {
+                return Err(GraphError::Manifest(
+                    callisto_model::ManifestError::MissingField {
+                        path: pkg
+                            .manifests
+                            .first()
+                            .map(|m| m.path.clone())
+                            .unwrap_or_default(),
+                        field: "version",
+                    },
+                ));
+            }
         }
         Ok(versions)
     }
