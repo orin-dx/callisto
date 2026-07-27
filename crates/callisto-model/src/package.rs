@@ -212,6 +212,26 @@ impl ManifestFormat {
             ManifestFormat::YarnLock => "yarn.lock",
         }
     }
+
+    pub fn from_path(p: &std::path::Path) -> Result<Self, ModelError> {
+        let name = p.file_name().and_then(|n| n.to_str()).ok_or_else(|| {
+            ModelError::UnknownManifestFormat {
+                path: p.to_path_buf(),
+            }
+        })?;
+        match name {
+            "Cargo.toml" => Ok(ManifestFormat::CargoToml),
+            "package.json" => Ok(ManifestFormat::PackageJson),
+            "pyproject.toml" => Ok(ManifestFormat::PyprojectToml),
+            "setup.cfg" => Ok(ManifestFormat::SetupCfg),
+            "go.mod" => Ok(ManifestFormat::GoMod),
+            "pom.xml" => Ok(ManifestFormat::PomXml),
+            "deno.json" | "deno.jsonc" => Ok(ManifestFormat::DenoJson),
+            _ => Err(ModelError::UnknownManifestFormat {
+                path: p.to_path_buf(),
+            }),
+        }
+    }
 }
 
 #[cfg(test)]

@@ -26,10 +26,10 @@ pub fn create_tags<R: CommandRunner, D: DependencyResolver>(
                 &[
                     "tag",
                     "-a",
-                    "--",
-                    tag_str,
                     "-m",
                     &format!("Release {}", tag_str),
+                    "--",
+                    tag_str,
                 ],
                 &ws.root,
             )?;

@@ -31,6 +31,9 @@ pub enum ModelError {
 
     #[error("package identity `{raw}` has ecosystem prefix `{prefix}` but no name after it")]
     EmptyNameAfterPrefix { raw: String, prefix: String },
+
+    #[error("manifest path `{path}` has unsupported format")]
+    UnknownManifestFormat { path: PathBuf },
 }
 
 impl ModelError {

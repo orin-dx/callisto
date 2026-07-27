@@ -1,32 +1,25 @@
 ---
 name: bug-hunter
 description: >-
-  Outcome-driven adversarial bug-hunting skill for deep codebase audits, latent defect discovery,
-  spec-vs-code drift identification, and empirical root-cause verification across polyglot repositories.
+  Finds silent failures, spec-vs-code drift, ordering/staleness bugs, and path/security issues by tracing execution end-to-end. Use for audit or adversarial bug-hunt requests.
 ---
 
-# 🕵️ Adversarial Bug-Hunter Skill
+# Adversarial Bug-Hunter Skill
 
-This skill equips agents to conduct outcome-driven, adversarial codebase audits. Rather than following rigid scripts, the agent operates as an autonomous Quality & Security Engineer—formulating hypotheses, tracing end-to-end execution paths, identifying latent defects, and proving failure modes empirically.
+## Goal
 
----
+Find real bugs before they ship: silent failures, spec-vs-code drift, data corruption, ordering bugs, and edge cases that break production.
 
-## 🎯 Primary Goal & Mindset
-
-Your objective is to find **true latent bugs**—defects, silent failures, spec compliance gaps, data corruption vectors, ordering race conditions, and unhandled edge cases—before they reach production.
-
-### Core Mindset
-- **Skeptical & Adversarial**: Never assume an implementation works because a comment, docstring, unit test, or a prior audit's "FIXED"/"VERIFIED" label claims it does. Treat those labels as claims to falsify, not facts to build on — this repo has a track record of such labels being wrong. Actively attempt to break assumptions.
-- **Empirical & Execution-Driven**: Validate hypotheses through code tracing, test execution, and empirical log verification. Never guess or diagnose blindly.
-- **Outcome-Oriented**: Focus on high-value business logic, correctness, security boundaries, and data integrity.
-- **Read-Only by default**: Investigate and report. Do not edit, fix, or run mutating commands unless the invoking task explicitly asks for fixes.
-- **Ledger-Aware**: Before starting, read `FINDINGS.md` in this directory. Don't re-report a finding already logged there as `CONFIRMED` unless you have new evidence it's wrong or unfixed after being marked fixed. After a run, append any new `CONFIRMED` findings to it.
+## Rules
+- Don't trust a comment, docstring, passing test, or a prior audit's "FIXED"/"VERIFIED" label as proof something works — verify by tracing the code yourself.
+- Verify by tracing code and running tests. Don't guess.
+- Prioritize correctness, security, and data-integrity bugs over style.
+- Read-only by default: investigate and report; don't edit files or run mutating commands unless the task explicitly asks for a fix.
+- Read `FINDINGS.md` in this directory before starting. Don't re-report anything already logged there as `CONFIRMED` unless you have new evidence it's wrong, or it was marked fixed but isn't. Append new `CONFIRMED` findings when done.
 
 ---
 
-## 🔍 Latent Bug Taxonomies & High-Value Targets
-
-When auditing a codebase, actively search for these 6 high-risk bug patterns:
+## Bug Patterns to Search For
 
 ### 1. Silent-Wrong-Output & Discarded Data Patterns
 - Parameters renamed with leading underscores (e.g., `_inference`, `_opts`, `_loaded`) where inputs or options are silently ignored.
@@ -57,13 +50,11 @@ When auditing a codebase, actively search for these 6 high-risk bug patterns:
 
 ---
 
-## 📋 Evaluation Output Standard
+## Evaluation Output Standard
 
-Before reporting a finding, spend one pass trying to *disprove* it — re-read the call site(s),
-check for a guard/validation elsewhere in the path you may have missed. If it survives that
-pass, report it. This catches plausible-but-wrong findings before they're logged.
+Before reporting a finding, try to *disprove* it — re-read the call site(s) for a guard or validation you may have missed. If it survives that, report it.
 
-For every finding, report in the following structured format:
+Report each finding in this format:
 
 ```markdown
 ### [Severity: Critical | High | Medium | Low] <Brief Vulnerability Title>
@@ -84,9 +75,6 @@ Severity rubric:
 
 ---
 
-## 🛠️ Verification Invariants (two separate claims — do not conflate them)
+## Verification Invariants
 
-> **Bug confirmed** ≠ **fix complete**. A bug is `CONFIRMED` only once you've traced the precise
-> execution path end-to-end in code. A fix is only ever reported as done after it has actually
-> been applied *and* a real test run (`cargo test`, `just test`, `just ci`) has been observed to
-> pass in this session — never asserted from memory, a comment, or another tool's prior claim.
+> **Bug confirmed** ≠ **fix complete**. Mark `CONFIRMED` only once you've traced the execution path end-to-end in code. Mark a fix done only after it's applied and a real test run (`cargo test`, `just test`, `just ci`) has passed in this session — never from memory, a comment, or another tool's prior claim.

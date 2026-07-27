@@ -54,14 +54,11 @@ pub fn apply_version_plan<R: CommandRunner>(
             for write in &bump.writes {
                 match write {
                     VersionWriteTarget::Manifest(p) => {
+                        let fmt = callisto_model::ManifestFormat::from_path(p)?;
                         let decl = callisto_model::ManifestDecl::new(
                             p.clone(),
                             ManifestRole::Canonical,
-                            if p.ends_with("Cargo.toml") {
-                                callisto_model::ManifestFormat::CargoToml
-                            } else {
-                                callisto_model::ManifestFormat::PackageJson
-                            },
+                            fmt,
                         )?;
                         let mut handle = open(&decl, &ctx)?;
                         handle.write_version(&bump.to)?;
@@ -79,15 +76,9 @@ pub fn apply_version_plan<R: CommandRunner>(
         for rewrite in &plan.rewrites {
             match &rewrite.key.target {
                 DepWriteTarget::Manifest(p) => {
-                    let decl = callisto_model::ManifestDecl::new(
-                        p.clone(),
-                        ManifestRole::Canonical,
-                        if p.ends_with("Cargo.toml") {
-                            callisto_model::ManifestFormat::CargoToml
-                        } else {
-                            callisto_model::ManifestFormat::PackageJson
-                        },
-                    )?;
+                    let fmt = callisto_model::ManifestFormat::from_path(p)?;
+                    let decl =
+                        callisto_model::ManifestDecl::new(p.clone(), ManifestRole::Canonical, fmt)?;
                     let mut handle = open(&decl, &ctx)?;
                     handle.update_dependency_spec(
                         &rewrite.key.name,
