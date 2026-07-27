@@ -9,9 +9,9 @@ build:
 build-release:
     cargo build --release -p callisto-cli
 
-# Run unit, integration, doctests, and E2E tests via moon
+# Run unit, integration, doctests, and E2E tests
 test:
-    moon run :test
+    cargo nextest run --workspace || moon run :test
     cargo test --doc
 
 # Run Clippy lints (warnings treated as errors) via moon
@@ -48,19 +48,6 @@ clean:
     moon clean 2>/dev/null || true
     cargo clean
     rm -f lcov.info callisto-schema.json
-
-# Run tests in parallel with cargo-nextest (falling back to moon if not installed)
-nextest:
-    cargo nextest run --all-targets 2>/dev/null || moon run :test
-    cargo test --doc
-
-# Interactively review and accept insta snapshot changes
-insta-review:
-    cargo insta review
-
-# Update trycmd CLI specification snapshot files
-trycmd-update:
-    TRYCMD=overwrite cargo test -p callisto-cli --test trycmd_tests
 
 # Fast pre-commit hook validation (<500ms formatting check)
 pre-commit: fmt-check
