@@ -1,104 +1,95 @@
 ---
 name: bug-hunter
 description: >-
-  Finds silent failures, spec-vs-code drift, ordering/staleness bugs, and path/security issues by tracing execution end-to-end. Use for audit or adversarial bug-hunt requests.
+  Universal, repo-agnostic Rust bug hunting framework. Finds silent failures, spec-vs-code drift, ordering/staleness bugs, crash-safety violations, and edge cases across any Rust codebase using Hazard-Taxonomy Partitioning.
 ---
 
-# Adversarial Bug-Hunter Skill
+# Universal Rust Bug-Hunter Skill
 
 ## Goal
 
-Find real bugs before they ship: silent failures, spec-vs-code drift, data corruption, ordering bugs, and edge cases that break production.
+Find real bugs before they ship in any Rust repository (monorepos, CLI engines, libraries, polyglot WASM plugins): silent failures, spec-vs-code drift, data corruption, ordering staleness, crash-safety violations, and edge cases that break production.
 
-This skill is **Rigid**: follow it exactly, don't adapt away the discipline.
+This skill is **Rigid**: follow it exactly across any Rust workspace.
 
 ## The Law
 
 > NO FINDING MARKED `CONFIRMED` WITHOUT AN END-TO-END TRACE. NO FIX MARKED DONE WITHOUT A TEST THAT FAILED BEFORE THE FIX AND PASSES AFTER, RUN IN THIS SESSION.
 
-## Rules
-- Don't trust a comment, docstring, passing test, or a prior audit's "FIXED"/"VERIFIED" label as proof something works — verify by tracing the code yourself.
-- Verify by tracing code and running tests. Don't guess.
-- Prioritize correctness, security, and data-integrity bugs over style.
-- Read-only by default: investigate and report; don't edit files or run mutating commands unless the task explicitly asks for a fix.
-- Read `FINDINGS.md` in this directory before starting. Don't re-report anything already logged there as `CONFIRMED` unless you have new evidence it's wrong, or it was marked fixed but isn't. Append new `CONFIRMED` findings when done.
+## Core Rules
 
-## Red Flags — you're about to violate The Law
-
-| Thought | Reality |
-|---|---|
-| "This test has a plausible name, so it covers it" | Read what it actually asserts. A misnamed or shallow test is not coverage — see `validate.rs`'s ledger entry. |
-| "A comment/doc says this is FIXED/VERIFIED" | That's a claim, not evidence. Two such claims in this repo were already false. |
-| "I traced most of the call path" | Partial trace is `PLAUSIBLE`, not `CONFIRMED`. Finish it or label it honestly. |
-| "The fix looks obviously correct" | Run the test. "Looks correct" is exactly how the bugs in FINDINGS.md shipped. |
+- **Verify by Tracing**: Don't trust a comment, docstring, passing test, or a prior audit's "FIXED" label. Trace the code execution path yourself.
+- **Hazard-Taxonomy Partitioning**: When executing multi-agent bug hunts, DO NOT partition subagents by directory or crate names. ALWAYS partition subagents by **Hazard Taxonomy** across the entire workspace.
+- **Strict Invariants**: Prioritize data integrity, crash-safety, error propagation, and security bugs over style or refactoring.
+- **Read-Only Investigation**: Investigate and report findings first. Do not mutate files unless explicitly requested to apply fixes.
 
 ---
 
-## Bug Patterns to Search For
+## The 6 Universal Rust Hazard Taxonomies
 
-### 1. Silent-Wrong-Output & Discarded Data Patterns
-- Parameters renamed with leading underscores (e.g., `_inference`, `_opts`, `_loaded`) where inputs or options are silently ignored.
-- Empty collection returns (`Ok(vec![])` or `Ok("")`) when an error, fallback calculation, or diagnostic card should be raised.
-- Functions returning `Ok(())` or exit code `0` while skipping critical operations silently.
+When auditing any Rust repository, scan all code paths against these 6 hazard categories:
 
-### 2. Ordering, Mutability & Staleness Bugs
-- First-write-wins patterns (e.g., `.or_insert()`, `map.entry().or_default()`) used where last-write-wins or max-value-wins is required upon re-escalation.
-- Sequential pipeline steps that assume a specific order, resulting in stale data when re-entering loops or processing graph updates.
-- Intermediate state mutations that leak across iterations without cleanup.
+### 1. Discarded Data & Unused CLI / Struct Parameters
+- Function parameters or struct fields prefixed with leading underscores (e.g. `_opts`, `_config`, `_loaded`) where user inputs or configuration flags are silently ignored.
+- CLI flags parsed into argument structs (e.g., Clap `#[derive(Args)]`) but never read or evaluated before executing the gated operation.
+- Functions returning `Ok(())` or exit code `0` while silently skipping intended operations.
+
+### 2. Ordering, Mutability & Fixpoint Staleness Bugs
+- First-write-wins patterns (`.or_insert()`, `entry().or_default()`) used where max-value-wins, latest-write-wins, or fixpoint convergence is required.
+- Graph traversals or solver loops that modify target state without re-enqueuing dependents into a worklist, leaving downstream dependencies stale.
+- Loop iterations that leak transient state across runs without proper resets.
 
 ### 3. Spec-vs-Code Compliance Drift
-- Incomplete implementation of a spec invariant — trace the full path from the spec's stated requirement to the code that's supposed to satisfy it; don't stop at a type definition or struct field that merely *represents* the invariant without a function that *enforces* it.
-- Type definitions or struct fields present in models but unused in core execution algorithms.
+- Trace stated requirements from design docs, specs, READMEs, or docstrings to the underlying Rust functions. Ensure invariants are enforced by logic, not just represented in types.
+- Unhandled enum variants or missing conditional branches in pattern matches.
 
 ### 4. Silent Fallbacks & Falsified Defaults
-- Catch-all fallbacks (`unwrap_or_else`, `unwrap_or_default`, hardcoded placeholder values) that hide missing/malformed data instead of returning an explicit error.
-- CLI flags or config options that are parsed into a struct but never read anywhere before the operation they're supposed to gate executes.
+- Catch-all fallbacks (`unwrap_or_else`, `unwrap_or_default`, fallback zero SHAs, placeholder strings) that hide missing or malformed data instead of returning an explicit `Result::Err`.
+- Swallowed I/O or subprocess errors (`if cmd.is_ok() { ... }`, `let _ = atomic_write(...)`) returning success reports when disk operations fail.
 
-### 5. Boundary Conditions & Edge Cases
-- Workspace boundary edge cases: empty workspaces, single-package monorepos, cyclic dependencies, missing optional config sections.
-- Input edge cases: Unicode package names, CRLF line endings, missing trailing newlines, path separators, symlinks, detached HEAD git states.
-- Cross-ecosystem graph boundaries (e.g., Rust crates depending on NPM packages or vice versa).
+### 5. Boundary Inputs & Format Edge Cases
+- Text/Format handling: UTF-8 BOM (`\u{FEFF}`) prefixes, CRLF line endings, missing trailing newlines, non-ASCII Unicode strings.
+- Workspace boundaries: empty workspaces, single-package targets, cyclic dependencies, detached HEAD git states, un-tagged repositories.
 
-### 6. Security & Path Containment Vulnerabilities
-- Path traversal vulnerabilities when joining relative inputs to workspace roots without canonicalization or containment checks.
-- Subprocess command construction taking untrusted string parameters without `--` end-of-options delimiters or proper shell escaping.
+### 6. Crash-Safety & Subprocess Security
+- File I/O: Missing `.flush()` or `.sync_all()` calls prior to atomic file rename/persists.
+- Subprocess invocations (e.g., `git`, `cargo`, `npm`, `tar`): Misplaced `--` end-of-options delimiters, unescaped string parameters, or bad flag ordering (`fatal: too many arguments`).
+
+---
+
+## Hazard-Taxonomy Multi-Agent Dispatch Matrix
+
+When conducting an automated bug hunt across a Rust repository, launch subagents partitioned by Hazard Category across the entire workspace:
+
+| Agent Role | Target Taxonomies | Objective |
+| :--- | :--- | :--- |
+| **Agent A: Data & Parameters** | Taxonomies 1 & 4 | Audit all crates for unused CLI flags, discarded parameters, and `unwrap_or` fallback defaults. |
+| **Agent B: Solvers & Logic** | Taxonomies 2 & 3 | Audit fixpoint loops, graph solvers, ordering staleness, and spec compliance drift. |
+| **Agent C: System & I/O** | Taxonomies 5 & 6 | Audit UTF-8 BOM, CRLF, atomic file write `.flush()`/`.sync_all()`, and subprocess argument ordering. |
 
 ---
 
 ## Evaluation Output Standard
 
-Before reporting a finding, try to *disprove* it — re-read the call site(s) for a guard or validation you may have missed. If it survives that, report it.
-
-Report each finding in this format:
+Report each confirmed finding in this standard technical format:
 
 ```markdown
 ### [Severity: Critical | High | Medium | Low] <Brief Vulnerability Title>
 
 - **Status**: CONFIRMED (execution path fully traced, file:line cited) | PLAUSIBLE (strong signal, not fully traced)
 - **Location**: `path/to/file.rs:L123-L135`
-- **Classification**: [Silent Failure | Spec Drift | Ordering/Staleness | Unchecked Flag | Security | Edge Case]
+- **Classification**: [Discarded Parameter | Fixpoint Staleness | Spec Drift | Silent Fallback | Boundary Condition | I/O Safety]
 - **Root Cause**: Concise explanation of the flaw in the current implementation logic.
-- **Failing Scenario**: Concrete steps or input payload that triggers the defect.
-- **Verification Strategy**: A test that fails against the current code and would pass once fixed — not just a command that could theoretically check it.
+- **Failing Scenario**: Concrete payload, CLI command, or input state that triggers the defect.
+- **Verification Strategy**: A test that fails on current code and passes once fixed.
 ```
 
-Before marking a finding `CONFIRMED`, check:
-- [ ] I traced the exact execution path, not just the type/interface it flows through.
-- [ ] I have a concrete failing scenario, not a hypothetical.
-- [ ] I tried to disprove it and it survived.
-- [ ] I checked `FINDINGS.md` and this isn't a duplicate.
+### Verification Checklist
+Before marking a finding `CONFIRMED`:
+- [ ] Traced exact execution path end-to-end.
+- [ ] Created a concrete failing scenario.
+- [ ] Verified finding is not a duplicate.
 
-Before marking a fix `fixed`, check:
-- [ ] The cited test failed on the pre-fix code (red).
-- [ ] The same test passes after the fix, run in this session (green).
-- [ ] `FINDINGS.md`'s entry is updated in place, not left stale.
-
-Severity rubric:
-- **Critical**: silent data loss/corruption, a security hole, or wrong output already reachable by a real user today.
-- **High**: a spec'd feature is completely non-functional, but the failure is at least visible/discoverable (not silent).
-- **Medium**: correctness/perf/robustness gap on a realistic but less common path (scale, edge-case input).
-- **Low**: polish, DX, or a gap only reachable via an unrealistic input.
-
----
-
-**Bug confirmed** ≠ **fix complete** — they're two different claims with two different checklists above. Don't conflate them.
+Before marking a fix `DONE`:
+- [ ] Test failed pre-fix (red).
+- [ ] Test passes post-fix (green).
