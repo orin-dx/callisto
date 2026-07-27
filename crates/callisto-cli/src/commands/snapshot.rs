@@ -17,7 +17,7 @@ pub fn handle(args: SnapshotArgs, global: &GlobalArgs) -> Result<ExitCode, CliEr
 
     let apply_opts = ApplyOptions {
         refresh_lockfiles: false,
-        transient: true,
+        transient: global.dry_run,
     };
 
     apply_version_plan(&ws.root, &plan, &runner, &apply_opts)?;

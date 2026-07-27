@@ -19,6 +19,34 @@ pub fn plan_snapshot<R: CommandRunner, D: DependencyResolver>(
 
     let snapshot_tag = format!("0.0.0-{tag}-{sha_short}");
     let base_versions = ws.base_versions()?;
+    let mut initial_severities = std::collections::BTreeMap::new();
+    let mut initial_reasons = std::collections::BTreeMap::new();
+    let mut initial_named_by = std::collections::BTreeMap::new();
+
+    for pkg in ws.graph.packages() {
+        initial_severities.insert(pkg.id.clone(), callisto_model::Severity::Patch);
+        initial_reasons.insert(
+            pkg.id.clone(),
+            callisto_model::BumpReason::PreRelease {
+                tag: tag.to_string(),
+            },
+        );
+        initial_named_by.insert(pkg.id.clone(), crate::aggregate::NamedBy::Changeset);
+    }
+
+    let cascade_input = crate::cascade::CascadeInput {
+        graph: &ws.graph,
+        groups: &ws.config.groups,
+        cfg: &ws.config.cascade,
+        seed: &initial_severities,
+        reasons: &initial_reasons,
+        named_by: &initial_named_by,
+        base: &base_versions,
+        pre: None,
+    };
+
+    let cascade_out = crate::cascade::run_cascade(cascade_input)?;
+
     let mut bumps = Vec::new();
     let mut plan_bumps = Vec::new();
 
@@ -62,7 +90,7 @@ pub fn plan_snapshot<R: CommandRunner, D: DependencyResolver>(
 
     let plan = VersionPlan {
         bumps: plan_bumps,
-        rewrites: Vec::new(),
+        rewrites: cascade_out.rewrites.into_values().collect(),
         platform_writes: Vec::new(),
         optional_dep_updates: Vec::new(),
         changelog_writes: Vec::new(),
@@ -71,7 +99,7 @@ pub fn plan_snapshot<R: CommandRunner, D: DependencyResolver>(
         delete_pre_json: false,
         pre_cursor_updates: Vec::new(),
         observed_versions: std::collections::BTreeMap::new(),
-        diagnostics: Vec::new(),
+        diagnostics: cascade_out.diagnostics,
     };
 
     let report = SnapshotReport {

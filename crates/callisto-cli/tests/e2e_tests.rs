@@ -53,7 +53,10 @@ edition = "2021"
     let changeset_files: Vec<_> = fs::read_dir(root.join(".changeset"))
         .unwrap()
         .flatten()
-        .filter(|e| e.path().extension().and_then(|ext| ext.to_str()) == Some("md"))
+        .filter(|e| {
+            e.path().extension().and_then(|ext| ext.to_str()) == Some("md")
+                && e.path().file_name().and_then(|n| n.to_str()) != Some("README.md")
+        })
         .collect();
     assert_eq!(changeset_files.len(), 1);
 
