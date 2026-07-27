@@ -35,10 +35,16 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
         let (is_release, ver) = if let Some(bump) = bump_info {
             (true, bump.to.clone())
         } else {
-            let cur_ver = base_versions
-                .get(&pkg.id)
-                .cloned()
-                .unwrap_or_else(|| callisto_model::Version::semver(1, 0, 0));
+            let cur_ver = base_versions.get(&pkg.id).cloned().ok_or_else(|| {
+                GraphError::Manifest(callisto_model::ManifestError::MissingField {
+                    path: pkg
+                        .manifests
+                        .first()
+                        .map(|m| m.path.clone())
+                        .unwrap_or_default(),
+                    field: "version",
+                })
+            })?;
             let tag_match = ws
                 .tags
                 .last_tag(&pkg.id)
