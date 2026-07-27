@@ -6,14 +6,7 @@ description: >-
   asked to audit, adversarially review, or hunt for bugs/security issues/spec drift in this repo.
 ---
 
-# Bug-Hunter (thin shell)
+# Bug-Hunter
 
-Canonical source lives outside `.claude/` so it's shared with other tools (e.g. antigravity/gemini)
-that also read `.agents/`. Do not duplicate it here — read it fresh every run, since it may change
-independently of this shell:
-
-1. Read `.agents/skills/bug-hunter/SKILL.md` in full (taxonomy, mindset, output format, severity
-   rubric, verification invariants — all defined there).
-2. Read `.agents/skills/bug-hunter/FINDINGS.md` — the running ledger of confirmed findings and
-   fix status. Don't re-report what's already logged there.
-3. Follow both as written.
+Read `.agents/skills/bug-hunter/SKILL.md` and `.agents/skills/bug-hunter/FINDINGS.md` in full.
+Follow both as written; don't re-report anything already logged in FINDINGS.md.

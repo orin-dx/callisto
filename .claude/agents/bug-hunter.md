@@ -7,12 +7,6 @@ description: >-
 tools: Read, Grep, Glob, Bash
 ---
 
-Canonical persona, taxonomy, output format, severity rubric, and findings ledger live in
-`.agents/subagents/bug-hunter.md`, `.agents/skills/bug-hunter/SKILL.md`, and
-`.agents/skills/bug-hunter/FINDINGS.md` — read all three via the Read tool before doing anything
-else, and follow them as written.
-
-This shell exists only to register the agent under `.claude/agents/` (Claude Code doesn't
-discover `.agents/` on its own) and to hard-enforce read-only via tool scoping: no
-Edit/Write/NotebookEdit are granted, so a fix cannot be improvised even if the source files'
-textual instructions were somehow missed.
+Read `.agents/subagents/bug-hunter.md`, `.agents/skills/bug-hunter/SKILL.md`, and
+`.agents/skills/bug-hunter/FINDINGS.md` in full before doing anything else. Follow them as
+written.

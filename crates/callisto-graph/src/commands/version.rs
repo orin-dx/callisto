@@ -1,5 +1,5 @@
 use callisto_changelog::{ChangelogEntry, ChangelogInput};
-use callisto_model::{CommandRunner, Severity, Version};
+use callisto_model::{CommandRunner, Severity};
 
 use crate::aggregate::aggregate;
 use crate::cascade::{run_cascade, CascadeInput};
@@ -40,6 +40,7 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
         &ws.config,
         ws.runner,
         &ws.tags,
+        &base_versions,
         pre_state.as_ref(),
         inference,
     )?;
@@ -64,16 +65,27 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
         if sev == Severity::None {
             continue;
         }
-        let from = base_versions
-            .get(id)
-            .cloned()
-            .unwrap_or_else(|| Version::semver(1, 0, 0));
-        let to = outcome
-            .targets
-            .get(id)
-            .cloned()
-            .unwrap_or_else(|| Version::semver(1, 0, 0));
         let pkg = ws.graph.packages().find(|p| &p.id == id).unwrap();
+        let from = base_versions.get(id).cloned().ok_or_else(|| {
+            GraphError::Manifest(callisto_model::ManifestError::MissingField {
+                path: pkg
+                    .manifests
+                    .first()
+                    .map(|m| m.path.clone())
+                    .unwrap_or_default(),
+                field: "version",
+            })
+        })?;
+        let to = outcome.targets.get(id).cloned().ok_or_else(|| {
+            GraphError::Manifest(callisto_model::ManifestError::MissingField {
+                path: pkg
+                    .manifests
+                    .first()
+                    .map(|m| m.path.clone())
+                    .unwrap_or_default(),
+                field: "version",
+            })
+        })?;
 
         let mut writes = Vec::new();
         for decl in &pkg.manifests {

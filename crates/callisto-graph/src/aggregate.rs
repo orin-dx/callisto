@@ -114,6 +114,7 @@ pub fn aggregate<D, R, I>(
     config: &ResolvedConfig,
     _runner: &R,
     tags: &TagIndex,
+    base_versions: &BTreeMap<PackageId, Version>,
     _pre: Option<&callisto_format::PreState>,
     inference: &I,
 ) -> Result<Aggregation, GraphError>
@@ -135,7 +136,17 @@ where
         let last_tag = tags.last_tag(&pkg.id);
         let cur_ver = last_tag
             .map(|t| t.version.clone())
-            .unwrap_or_else(|| Version::semver(1, 0, 0));
+            .or_else(|| base_versions.get(&pkg.id).cloned())
+            .ok_or_else(|| {
+                GraphError::Manifest(callisto_model::ManifestError::MissingField {
+                    path: pkg
+                        .manifests
+                        .first()
+                        .map(|m| m.path.clone())
+                        .unwrap_or_default(),
+                    field: "version",
+                })
+            })?;
 
         let window = crate::infer::InferenceWindowSpec {
             pathspecs: &pathspecs,

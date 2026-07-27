@@ -1,4 +1,4 @@
-use callisto_model::{CommandRunner, StatusReport, Version, SCHEMA_VERSION};
+use callisto_model::{CommandRunner, StatusReport, SCHEMA_VERSION};
 
 use crate::changed::changed_since_last_tag;
 use crate::commands::escalate;
@@ -21,10 +21,16 @@ pub fn status<R: CommandRunner, D: DependencyResolver>(
     let loaded_changesets = crate::load_changesets(&ws.root, &ws.config)?;
 
     for pkg in ws.graph.packages() {
-        let current_version = base_versions
-            .get(&pkg.id)
-            .cloned()
-            .unwrap_or_else(|| Version::semver(1, 0, 0));
+        let current_version = base_versions.get(&pkg.id).cloned().ok_or_else(|| {
+            GraphError::Manifest(callisto_model::ManifestError::MissingField {
+                path: pkg
+                    .manifests
+                    .first()
+                    .map(|m| m.path.clone())
+                    .unwrap_or_default(),
+                field: "version",
+            })
+        })?;
         let last_tag = ws.tags.last_tag(&pkg.id).map(|t| t.name.clone());
         let _changed = changed_since_last_tag(ws.runner, &ws.root, pkg, &ws.tags)?;
 
