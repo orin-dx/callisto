@@ -33,6 +33,9 @@ pub trait Manifest: Send + Sync {
         kind: callisto_model::DepKind,
         new: DepSpec,
     ) -> Result<(), ManifestError>;
+    fn is_publishable(&self) -> bool {
+        true
+    }
     fn update_optional_dependencies(
         &mut self,
         updates: &[(String, Version)],

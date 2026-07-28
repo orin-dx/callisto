@@ -87,16 +87,40 @@ impl ManifestWalkResolver {
         let mut packages = BTreeMap::new();
         for (id, (rel_path, decls)) in package_manifest_decls {
             let ch_path = rel_path.join("CHANGELOG.md");
+            let mut publish_to = Vec::new();
+            for decl in &decls {
+                let is_pub = if let Ok(editor) = callisto_manifests::open(decl, &ctx) {
+                    editor.is_publishable()
+                } else {
+                    true
+                };
+                if is_pub {
+                    match decl.format {
+                        callisto_model::ManifestFormat::CargoToml => {
+                            if !publish_to.contains(&PublishTarget::CratesIo) {
+                                publish_to.push(PublishTarget::CratesIo);
+                            }
+                        }
+                        callisto_model::ManifestFormat::PackageJson => {
+                            let npm_target = PublishTarget::Npm { registry: None };
+                            if !publish_to.contains(&npm_target) {
+                                publish_to.push(npm_target);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            if publish_to.is_empty() {
+                publish_to.push(PublishTarget::None);
+            }
+
             let pkg = Package {
                 id: id.clone(),
                 manifests: decls,
                 changelog: Some(ch_path),
                 release_trigger: ReleaseTrigger::Changeset,
-                publish_to: vec![match id.ecosystem() {
-                    Some(Ecosystem::Cargo) => PublishTarget::CratesIo,
-                    Some(Ecosystem::Npm) => PublishTarget::Npm { registry: None },
-                    _ => PublishTarget::None,
-                }],
+                publish_to,
                 tag_template: None,
             };
             packages.insert(id, pkg);

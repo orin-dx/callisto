@@ -151,6 +151,15 @@ impl Manifest for PackageJson {
         Ecosystem::Npm
     }
 
+    fn is_publishable(&self) -> bool {
+        if let Some(b) = self.doc.get("private").and_then(|p| p.as_bool()) {
+            if b {
+                return false;
+            }
+        }
+        true
+    }
+
     fn role(&self) -> ManifestRole {
         self.role.clone()
     }

@@ -112,6 +112,20 @@ impl Manifest for CargoToml {
         Ecosystem::Cargo
     }
 
+    fn is_publishable(&self) -> bool {
+        if let Some(p) = self.document.get("package") {
+            if let Some(pub_val) = p.get("publish") {
+                if let Some(b) = pub_val.as_bool() {
+                    return b;
+                }
+                if let Some(arr) = pub_val.as_array() {
+                    return !arr.is_empty();
+                }
+            }
+        }
+        true
+    }
+
     fn role(&self) -> ManifestRole {
         self.role.clone()
     }
