@@ -126,6 +126,14 @@ impl Manifest for CargoToml {
         true
     }
 
+    fn publish_targets(&self) -> Vec<callisto_model::PublishTarget> {
+        if !self.is_publishable() {
+            vec![callisto_model::PublishTarget::None]
+        } else {
+            vec![callisto_model::PublishTarget::CratesIo]
+        }
+    }
+
     fn role(&self) -> ManifestRole {
         self.role.clone()
     }

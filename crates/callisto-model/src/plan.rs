@@ -1,7 +1,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::{CommitSha, Diagnostic, RegistryKey, TagName, Version};
+use crate::{CommitSha, Diagnostic, PackageId, RegistryKey, TagName, Version};
 
 /// Complete publish plan output for plan-publish command.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -55,6 +55,7 @@ pub struct NpmMainPublish {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ReleaseEntry {
+    pub package: PackageId,
     pub tag_name: TagName,
     pub sha: CommitSha,
 

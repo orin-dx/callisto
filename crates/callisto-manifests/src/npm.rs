@@ -24,6 +24,7 @@ struct FormatFingerprint {
     indent: Indent,
     trailing_newline: bool,
     line_ending: LineEnding,
+    has_bom: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -49,8 +50,10 @@ impl PackageJson {
             message: e.to_string(),
         })?;
 
+        let has_bom = content.starts_with('\u{FEFF}');
         let clean_content = content.strip_prefix('\u{FEFF}').unwrap_or(&content);
-        let fingerprint = detect_fingerprint(clean_content);
+        let mut fingerprint = detect_fingerprint(clean_content);
+        fingerprint.has_bom = has_bom;
 
         let doc: Map<String, Value> =
             serde_json::from_str(clean_content).map_err(|e| ManifestError::Parse {
@@ -94,6 +97,10 @@ impl PackageJson {
             }
         }
 
+        if self.fingerprint.has_bom {
+            out = format!("\u{FEFF}{}", out);
+        }
+
         crate::atomic::atomic_write(&self.absolute, &out).map_err(|e| ManifestError::Write {
             path: self.path.clone(),
             message: e.to_string(),
@@ -128,6 +135,7 @@ fn detect_fingerprint(content: &str) -> FormatFingerprint {
         indent,
         trailing_newline,
         line_ending,
+        has_bom: false,
     }
 }
 

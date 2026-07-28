@@ -1,6 +1,4 @@
-use callisto_model::{
-    CommandRunner, CreatedTag, PackageId, PublishPlan, TagReport, SCHEMA_VERSION,
-};
+use callisto_model::{CommandRunner, CreatedTag, PublishPlan, TagReport, SCHEMA_VERSION};
 
 use crate::error::GraphError;
 use crate::resolver::DependencyResolver;
@@ -23,14 +21,7 @@ pub fn create_tags<R: CommandRunner, D: DependencyResolver>(
         if !already_existed {
             let create_out = ws.runner.run(
                 "git",
-                &[
-                    "tag",
-                    "-a",
-                    "-m",
-                    &format!("Release {}", tag_str),
-                    "--",
-                    tag_str,
-                ],
+                &["tag", "-a", tag_str, "-m", &format!("Release {}", tag_str)],
                 &ws.root,
             )?;
             if !create_out.success() {
@@ -41,18 +32,8 @@ pub fn create_tags<R: CommandRunner, D: DependencyResolver>(
             }
         }
 
-        let pkg_id = ws
-            .graph
-            .packages()
-            .filter(|p| release.tag_name.as_str().starts_with(p.id.name()))
-            .max_by_key(|p| p.id.name().len())
-            .map(|p| p.id.clone())
-            .unwrap_or_else(|| {
-                PackageId::parse(tag_str).unwrap_or_else(|_| PackageId::Bare(tag_str.to_string()))
-            });
-
         tags.push(CreatedTag {
-            package: pkg_id,
+            package: release.package.clone(),
             tag_name: release.tag_name.clone(),
             sha: release.sha.clone(),
         });

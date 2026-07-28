@@ -168,10 +168,11 @@ runs:
             fi
 
             echo "::group::5. Executing Package Publishing"
-            RUST_CRATES=$(echo "$PLAN_JSON" | jq -r '.rustCrates[]? // empty')
-            NPM_PACKAGES=$(echo "$PLAN_JSON" | jq -r '.npmMainPackages[]? // empty')
+            RUST_CRATES=$(echo "$PLAN_JSON" | jq -r '.rustCrates[]?.name // empty')
+            NPM_PLATFORM_PACKAGES=$(echo "$PLAN_JSON" | jq -r '.npmPlatformPackages[]?.name // empty')
+            NPM_MAIN_PACKAGES=$(echo "$PLAN_JSON" | jq -r '.npmMainPackages[]?.name // empty')
             
-            if [[ -z "$RUST_CRATES" && -z "$NPM_PACKAGES" ]]; then
+            if [[ -z "$RUST_CRATES" && -z "$NPM_PLATFORM_PACKAGES" && -z "$NPM_MAIN_PACKAGES" ]]; then
               echo "No packages scheduled for release in calculated publish plan."
             else
               if [[ -n "$RUST_CRATES" ]]; then
@@ -180,9 +181,15 @@ runs:
                   cargo publish -p "$CRATE" --no-verify --allow-dirty || true
                 done
               fi
-              if [[ -n "$NPM_PACKAGES" ]]; then
-                for PKG in $NPM_PACKAGES; do
-                  echo "Publishing NPM package: $PKG"
+              if [[ -n "$NPM_PLATFORM_PACKAGES" ]]; then
+                for PKG in $NPM_PLATFORM_PACKAGES; do
+                  echo "Publishing NPM platform package: $PKG"
+                  npm publish "$PKG" --access public || true
+                done
+              fi
+              if [[ -n "$NPM_MAIN_PACKAGES" ]]; then
+                for PKG in $NPM_MAIN_PACKAGES; do
+                  echo "Publishing NPM main package: $PKG"
                   npm publish "$PKG" --access public || true
                 done
               fi

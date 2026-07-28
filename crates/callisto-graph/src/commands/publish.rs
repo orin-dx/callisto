@@ -3,7 +3,7 @@ use callisto_model::{
 };
 
 use crate::error::GraphError;
-use crate::resolver::DependencyResolver;
+use crate::resolver::{DependencyResolver, DependencyResolverExt};
 use crate::Workspace;
 
 #[derive(Clone, Debug, Default)]
@@ -27,7 +27,22 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
     )
     .ok();
 
-    for pkg in ws.graph.packages() {
+    let all_ids: std::collections::HashSet<_> = ws.graph.packages().map(|p| p.id.clone()).collect();
+    let topo_ids = ws.graph.toposort(&all_ids)?;
+
+    let head_out = ws.runner.run("git", &["rev-parse", "HEAD"], &ws.root)?;
+    let head_sha = if head_out.success() {
+        callisto_model::CommitSha::parse(head_out.stdout_trimmed()).ok()
+    } else {
+        None
+    };
+
+    for id in &topo_ids {
+        let pkg = match ws.graph.packages().find(|p| &p.id == id) {
+            Some(p) => p,
+            None => continue,
+        };
+
         let bump_info = version_plan
             .as_ref()
             .and_then(|plan| plan.bumps.iter().find(|b| b.package == pkg.id));
@@ -121,26 +136,14 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
                 }
             }
 
-            let head_out = ws.runner.run("git", &["rev-parse", "HEAD"], &ws.root)?;
-            if !head_out.success() {
-                return Err(GraphError::Command(callisto_model::CommandError::Io {
-                    program: "git".to_string(),
-                    message: head_out.stderr,
-                }));
+            if let Some(ref sha) = head_sha {
+                releases.push(ReleaseEntry {
+                    package: pkg.id.clone(),
+                    tag_name: ws.tags.template(&pkg.id).render(&ver),
+                    sha: sha.clone(),
+                    changelog_section: None,
+                });
             }
-            let head_sha =
-                callisto_model::CommitSha::parse(head_out.stdout_trimmed()).map_err(|e| {
-                    GraphError::Model(callisto_model::ModelError::InvalidCommitSha {
-                        raw: head_out.stdout_trimmed().to_string(),
-                        reason: e.to_string(),
-                    })
-                })?;
-
-            releases.push(ReleaseEntry {
-                tag_name: ws.tags.template(&pkg.id).render(&ver),
-                sha: head_sha,
-                changelog_section: None,
-            });
         }
     }
 

@@ -89,25 +89,11 @@ impl ManifestWalkResolver {
             let ch_path = rel_path.join("CHANGELOG.md");
             let mut publish_to = Vec::new();
             for decl in &decls {
-                let is_pub = if let Ok(editor) = callisto_manifests::open(decl, &ctx) {
-                    editor.is_publishable()
-                } else {
-                    true
-                };
-                if is_pub {
-                    match decl.format {
-                        callisto_model::ManifestFormat::CargoToml => {
-                            if !publish_to.contains(&PublishTarget::CratesIo) {
-                                publish_to.push(PublishTarget::CratesIo);
-                            }
+                if let Ok(editor) = callisto_manifests::open(decl, &ctx) {
+                    for target in editor.publish_targets() {
+                        if target != PublishTarget::None && !publish_to.contains(&target) {
+                            publish_to.push(target);
                         }
-                        callisto_model::ManifestFormat::PackageJson => {
-                            let npm_target = PublishTarget::Npm { registry: None };
-                            if !publish_to.contains(&npm_target) {
-                                publish_to.push(npm_target);
-                            }
-                        }
-                        _ => {}
                     }
                 }
             }

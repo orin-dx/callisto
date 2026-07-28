@@ -36,6 +36,16 @@ pub trait Manifest: Send + Sync {
     fn is_publishable(&self) -> bool {
         true
     }
+    fn publish_targets(&self) -> Vec<callisto_model::PublishTarget> {
+        if !self.is_publishable() {
+            return vec![callisto_model::PublishTarget::None];
+        }
+        match self.ecosystem() {
+            Ecosystem::Cargo => vec![callisto_model::PublishTarget::CratesIo],
+            Ecosystem::Npm => vec![callisto_model::PublishTarget::Npm { registry: None }],
+            _ => vec![callisto_model::PublishTarget::None],
+        }
+    }
     fn update_optional_dependencies(
         &mut self,
         updates: &[(String, Version)],
