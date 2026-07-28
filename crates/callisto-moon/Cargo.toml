@@ -11,8 +11,8 @@ default = []
 pdk = ["dep:extism-pdk"]
 
 [dependencies]
-callisto-model = { path = "../callisto-model", version = "0.1.0" }
-callisto-graph = { path = "../callisto-graph", version = "0.1.0" }
+callisto-model = { path = "../callisto-model", version = "0.2.0" }
+callisto-graph = { path = "../callisto-graph", version = "0.2.0" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 semver = { workspace = true }

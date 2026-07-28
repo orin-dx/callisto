@@ -8,4 +8,4 @@ repository.workspace = true
 publish = false
 
 [dependencies]
-callisto-model = { path = "../callisto-model", version = "0.1.0" }
+callisto-model = { path = "../callisto-model", version = "0.2.0" }
