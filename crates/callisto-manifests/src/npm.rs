@@ -160,6 +160,9 @@ impl Manifest for PackageJson {
     }
 
     fn is_publishable(&self) -> bool {
+        if self.doc.get("name").is_none() {
+            return false;
+        }
         if let Some(b) = self.doc.get("private").and_then(|p| p.as_bool()) {
             if b {
                 return false;

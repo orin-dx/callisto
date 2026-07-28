@@ -113,14 +113,16 @@ impl Manifest for CargoToml {
     }
 
     fn is_publishable(&self) -> bool {
-        if let Some(p) = self.document.get("package") {
-            if let Some(pub_val) = p.get("publish") {
-                if let Some(b) = pub_val.as_bool() {
-                    return b;
-                }
-                if let Some(arr) = pub_val.as_array() {
-                    return !arr.is_empty();
-                }
+        let p = match self.document.get("package") {
+            Some(p) => p,
+            None => return false,
+        };
+        if let Some(pub_val) = p.get("publish") {
+            if let Some(b) = pub_val.as_bool() {
+                return b;
+            }
+            if let Some(arr) = pub_val.as_array() {
+                return !arr.is_empty();
             }
         }
         true
@@ -632,6 +634,32 @@ serde = "1.0"
 
         let updated_content = fs::read_to_string(&manifest_path).unwrap();
         assert!(updated_content.contains("version = \"0.2.0\""));
+    }
+
+    #[test]
+    fn test_cargo_is_publishable() {
+        let dir = tempdir().unwrap();
+        let pub_false_path = dir.path().join("Cargo.toml");
+        fs::write(
+            &pub_false_path,
+            "[package]\nname = \"dummy\"\nversion = \"0.1.0\"\npublish = false\n",
+        )
+        .unwrap();
+
+        let decl = ManifestDecl::new(
+            "Cargo.toml",
+            ManifestRole::Canonical,
+            ManifestFormat::CargoToml,
+        )
+        .unwrap();
+        let ctx = OpenContext {
+            workspace_root: dir.path(),
+            cargo_workspace: None,
+            npm_workspace_kind: None,
+        };
+
+        let manifest = CargoToml::open(&decl, &ctx).unwrap();
+        assert!(!manifest.is_publishable());
     }
 
     #[test]
