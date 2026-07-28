@@ -10,6 +10,7 @@ use crate::Workspace;
 pub struct PrBodyOptions {
     pub existing_body: Option<String>,
     pub labels: Vec<String>,
+    pub branch: Option<String>,
 }
 
 pub fn compose_pr_body<R: CommandRunner, D: DependencyResolver, I: SeverityInference>(
@@ -208,10 +209,14 @@ pub fn render_pr_body_from_plan(
     }
 
     // 4. Instructions Footer
+    let branch = opts.branch.as_deref().unwrap_or("changeset-release/main");
     body.push_str("<details>\n<summary><b>🛠️ Release Workflow Instructions</b></summary>\n\n");
     body.push_str("- **Merging this PR**: Merging into `main` will automatically publish all updated packages to their release registries.\n");
     body.push_str("- **Adding more changesets**: If additional changesets are pushed to `main`, Callisto will automatically re-calculate and update this PR.\n");
-    body.push_str("- **Manual edits**: You can make manual adjustments directly on the `callisto/version-packages` branch if needed.\n\n");
+    body.push_str(&format!(
+        "- **Manual edits**: You can make manual adjustments directly on the `{}` branch if needed.\n\n",
+        branch
+    ));
     body.push_str("</details>\n");
 
     Ok(ComposePrBodyReport {

@@ -123,6 +123,8 @@ pub struct ComposePrBodyArgs {
     pub existing_body: Option<String>,
     #[arg(long = "label")]
     pub labels: Vec<String>,
+    #[arg(long)]
+    pub branch: Option<String>,
 }
 
 #[derive(Args, Clone, Debug)]

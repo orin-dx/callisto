@@ -28,6 +28,7 @@ pub fn handle(args: ComposePrBodyArgs, global: &GlobalArgs) -> Result<ExitCode, 
     let opts = PrBodyOptions {
         existing_body,
         labels: args.labels,
+        branch: args.branch,
     };
 
     let report = callisto_graph::commands::compose_pr_body(&ws, &inference, &opts)?;

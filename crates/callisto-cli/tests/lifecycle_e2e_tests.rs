@@ -276,6 +276,7 @@ fn test_compose_pr_body_before_version_and_subpkg_changelog() {
         callisto_cli::cli::ComposePrBodyArgs {
             existing_body: None,
             labels: Vec::new(),
+            branch: None,
         },
         &global,
     );
