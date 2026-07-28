@@ -279,4 +279,29 @@ mod tests {
         let report = render_pr_body_from_plan(&plan, &opts).unwrap();
         insta::assert_snapshot!(report.pr_body);
     }
+
+    #[test]
+    fn test_compose_pr_body_custom_branch_override() {
+        let plan = VersionPlan {
+            bumps: vec![],
+            rewrites: vec![],
+            platform_writes: vec![],
+            optional_dep_updates: vec![],
+            changelog_writes: vec![],
+            consumed_changesets: vec![],
+            pre_state_update: None,
+            delete_pre_json: false,
+            pre_cursor_updates: vec![],
+            observed_versions: std::collections::BTreeMap::new(),
+            diagnostics: vec![],
+        };
+
+        let opts = PrBodyOptions {
+            existing_body: None,
+            labels: vec![],
+            branch: Some("custom-release-branch".to_string()),
+        };
+        let report = render_pr_body_from_plan(&plan, &opts).unwrap();
+        assert!(report.pr_body.contains("## Release Preview"));
+    }
 }

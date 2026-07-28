@@ -8039,7 +8039,7 @@ pub fn init(ws: &…, opts: &InitOptions) -> Result<InitReport, GraphError>;
     pub strict: bool, pub strict_graph: bool,
 }
 #[derive(Clone, Debug, Default)] pub struct PrBodyOptions {
-    pub existing_body: Option<String>, pub labels: Vec<String>,
+    pub existing_body: Option<String>, pub labels: Vec<String>, pub branch: Option<String>,
 }
 #[derive(Clone, Debug, Default)] pub struct InitOptions { pub yes: bool }
 ```

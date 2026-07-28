@@ -96,6 +96,82 @@ callisto version
 
 ---
 
+## Release Workflow & Branch Configuration
+
+Callisto integrates natively with GitHub Actions, GitLab CI, and custom release pipelines. 
+
+### 1. Release PR Branch Naming & Configuration
+
+When Callisto generates automated release pull requests, it targets the default release branch **`changeset-release/main`** (matching `@changesets/action` standards).
+
+You can override the release branch name per invocation using the `--branch` flag:
+
+```bash
+# Generate PR body targeting a custom release branch
+callisto compose-pr-body --branch release-packages
+```
+
+### 2. Production GitHub Actions Workflow (`release.yml`)
+
+Create `.github/workflows/release.yml` to automate version bumps and registry publishing on `push` to `main`:
+
+```yaml
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release:
+    name: Release / Version Packages
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      id-token: write  # OIDC registry publishing
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run Callisto Release Action
+        uses: orin-dx/callisto-action@v1
+        with:
+          branch: changeset-release/main
+          publish: just publish
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+```
+
+### 3. Bypassing Heavy CI Workflows on Release PRs
+
+Release PRs contain automated version bumps and changelog updates. To prevent running expensive CI build matrices on release PRs, ignore `changeset-release/**` branches in your main `.github/workflows/ci.yml`:
+
+```yaml
+name: CI Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches-ignore:
+      - 'changeset-release/**'
+```
+
+---
+
 ## Why Callisto?
 
 Callisto brings together the best ideas from `@changesets/cli`, Google's `release-please`, and `nx release` into a single, lightning-fast native Rust engine designed for modern polyglot monorepos.
