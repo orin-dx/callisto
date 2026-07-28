@@ -1,5 +1,6 @@
 use callisto_model::{
-    CommandRunner, CratePublish, NpmMainPublish, PublishPlan, ReleaseEntry, SCHEMA_VERSION,
+    CommandRunner, CratePublish, NpmMainPublish, PublishPlan, PublishTarget, ReleaseEntry,
+    SCHEMA_VERSION,
 };
 
 use crate::error::GraphError;
@@ -136,13 +137,17 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
                 }
             }
 
-            if let Some(ref sha) = head_sha {
-                releases.push(ReleaseEntry {
-                    package: pkg.id.clone(),
-                    tag_name: ws.tags.template(&pkg.id).render(&ver),
-                    sha: sha.clone(),
-                    changelog_section: None,
-                });
+            if !pkg.publish_to.is_empty()
+                && !pkg.publish_to.iter().all(|t| *t == PublishTarget::None)
+            {
+                if let Some(ref sha) = head_sha {
+                    releases.push(ReleaseEntry {
+                        package: pkg.id.clone(),
+                        tag_name: ws.tags.template(&pkg.id).render(&ver),
+                        sha: sha.clone(),
+                        changelog_section: None,
+                    });
+                }
             }
         }
     }
