@@ -129,7 +129,7 @@ runs:
         else
           echo "hasChangesets=false" >> $GITHUB_OUTPUT
 
-          if [[ -n "$INPUT_PUBLISH" ]]; then
+          if [[ -n "$INPUT_PUBLISH" && "$INPUT_PUBLISH" != "false" ]]; then
             echo "published=true" >> $GITHUB_OUTPUT
 
             echo "::group::2. Calculating Topological Publish Plan"
