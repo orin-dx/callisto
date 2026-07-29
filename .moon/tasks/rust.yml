@@ -1,13 +1,15 @@
 # Global tasks inherited by every project (all crates use the rust toolchain uniformly).
 tasks:
   build:
-    script: "cargo build -p $MOON_PROJECT_ID"
+    command: "cargo"
+    args: ["build", "-p", "$project"]
     inputs:
       - "src/**/*"
       - "Cargo.toml"
 
   test:
-    script: "cargo test -p $MOON_PROJECT_ID"
+    command: "cargo"
+    args: ["test", "-p", "$project"]
     inputs:
       - "src/**/*"
       - "tests/**/*"
@@ -16,34 +18,39 @@ tasks:
       - "**/*.trycmd"
 
   lint:
-    script: "cargo clippy -p $MOON_PROJECT_ID --all-targets -- -D warnings"
+    command: "cargo"
+    args: ["clippy", "-p", "$project", "--all-targets", "--", "-D", "warnings"]
     inputs:
       - "src/**/*"
       - "tests/**/*"
       - "Cargo.toml"
 
   format:
-    script: "cargo fmt -p $MOON_PROJECT_ID"
+    command: "cargo"
+    args: ["fmt", "-p", "$project"]
     inputs:
       - "src/**/*"
       - "tests/**/*"
       - "Cargo.toml"
 
   format-check:
-    script: "cargo fmt -p $MOON_PROJECT_ID -- --check"
+    command: "cargo"
+    args: ["fmt", "-p", "$project", "--", "--check"]
     inputs:
       - "src/**/*"
       - "tests/**/*"
       - "Cargo.toml"
 
   audit:
-    script: "cargo deny check advisories"
+    command: "cargo-deny"
+    args: ["check", "advisories"]
     inputs:
       - "Cargo.lock"
       - "Cargo.toml"
 
   publish:
-    script: "cargo publish -p $MOON_PROJECT_ID --no-verify"
+    command: "cargo"
+    args: ["publish", "-p", "$project", "--no-verify"]
     inputs:
       - "src/**/*"
       - "Cargo.toml"
