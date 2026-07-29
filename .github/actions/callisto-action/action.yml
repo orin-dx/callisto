@@ -151,9 +151,9 @@ runs:
               
               publish_crate_with_retry() {
                 local crate="$1"
-                local max_attempts=5
+                local max_attempts=10
                 local attempt=1
-                local delay=3
+                local delay=15
                 local token_flag=""
 
                 if [[ -n "$CARGO_REGISTRY_TOKEN" ]]; then
@@ -163,13 +163,13 @@ runs:
                 echo "Publishing Rust crate in topological order: $crate (Attempt $attempt/$max_attempts)..."
                 until cargo publish -p "$crate" $token_flag --no-verify --allow-dirty; do
                   if [[ $attempt -ge $max_attempts ]]; then
-                    echo "Warning: Failed to publish $crate after $max_attempts attempts."
-                    return 0
+                    echo "Error: Failed to publish $crate after $max_attempts attempts."
+                    exit 1
                   fi
                   echo "Crate $crate publish pending registry index update. Retrying in ${delay}s... (Attempt $((attempt + 1))/$max_attempts)"
                   sleep $delay
                   attempt=$((attempt + 1))
-                  delay=$((delay * 2))
+                  delay=15
                 done
               }
 
