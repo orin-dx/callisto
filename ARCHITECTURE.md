@@ -301,28 +301,34 @@ pub trait Manifest {
 
 ## 9. GitHub Actions Orchestration (`callisto-action`)
 
-Callisto includes a built-in composite action ([`.github/actions/callisto-action/action.yml`](.github/actions/callisto-action/action.yml)) for CI/CD automation:
+Callisto includes a built-in composite action ([`.github/actions/callisto-action/action.yml`](.github/actions/callisto-action/action.yml)) for CI/CD automation and supports 3 release paradigms (see [`docs/release-paradigms.md`](docs/release-paradigms.md)):
 
 ```mermaid
 sequenceDiagram
     participant Runner as GitHub Actions Runner
-    participant Action as callisto-action
+    participant Verify as Job 1: verify (Mandatory CI Gate)
+    participant Action as Job 2: release (needs: [verify])
     participant CLI as callisto CLI
     participant GH as GitHub API (gh CLI)
 
-    Runner->>Action: Trigger on push to main
-    Action->>CLI: callisto status --format json
-    
-    alt Pending Changesets Exist
-        Action->>CLI: callisto version
-        Action->>CLI: callisto compose-pr-body
-        Action->>GH: Create or update callisto/version-packages PR with pr_label
-        Action->>Runner: Write PR summary to $GITHUB_STEP_SUMMARY
-    else Zero Changesets (Version PR Merged!)
-        Action->>CLI: callisto plan-publish --format json
-        Action->>CLI: callisto tag --plan plan.json
-        Action->>GH: Create GitHub Releases & update floating major tag pointer (v1)
-        Action->>Runner: Execute publish command (cargo publish / pnpm publish / moon run :publish)
+    Runner->>Verify: Trigger on push / workflow_dispatch
+    Verify->>Verify: Execute format, lint, test, WASM & cargo-deny audit
+    alt CI Verification Fails
+        Verify-->>Runner: Exit code 1 (Job 2 Cancelled / Blocked)
+    else CI Verification Passes
+        Verify->>Action: Trigger release job
+        Action->>CLI: callisto status --check
+        
+        alt Pending Changesets Exist
+            Action->>CLI: callisto version
+            Action->>CLI: callisto compose-pr-body
+            Action->>GH: Create or update callisto/version-packages PR
+        else Zero Changesets (Version PR Merged!)
+            Action->>CLI: callisto plan-publish --format json
+            Action->>CLI: Sequential cargo publish in topological order with exponential backoff
+            Action->>CLI: callisto tag --plan plan.json --floating-major
+            Action->>GH: Create GitHub Releases & update floating major pointer (v1)
+        end
     end
 ```
 
