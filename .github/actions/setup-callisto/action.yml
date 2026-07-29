@@ -17,6 +17,12 @@ runs:
 
     - name: Rust Cache
       uses: Swatinem/rust-cache@v2
+      with:
+        shared-key: "callisto-workspace-shared"
+        save-if: "true"
+      env:
+        CARGO_INCREMENTAL: "0"
+        CARGO_REGISTRY_SPARSE: "true"
 
     - name: Install Moon
       uses: moonrepo/setup-toolchain@v0
@@ -56,8 +62,8 @@ runs:
         # Prioritize local repository build when inside the callisto monorepo
         if [[ -f "$GITHUB_WORKSPACE/Cargo.toml" ]] && grep -q "callisto-cli" "$GITHUB_WORKSPACE/Cargo.toml"; then
           echo "Building local callisto binary from current repository commit..."
-          cargo build --release -p callisto-cli
-          cp "$GITHUB_WORKSPACE/target/release/callisto" "$GITHUB_WORKSPACE/bin/callisto"
+          cargo build -p callisto-cli
+          cp "$GITHUB_WORKSPACE/target/debug/callisto" "$GITHUB_WORKSPACE/bin/callisto"
         elif curl -sL -f "$DOWNLOAD_URL" -o /tmp/callisto.tar.gz 2>/dev/null; then
           tar -xzf /tmp/callisto.tar.gz -C "$GITHUB_WORKSPACE/bin"
           echo "Callisto downloaded from GitHub Releases ($DOWNLOAD_URL)"
