@@ -11,8 +11,39 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  verify:
+    name: Verify CI Pipeline (Format, Lint, Test, WASM, Security Audit)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Toolchain & Cache
+        uses: ./.github/actions/setup-callisto
+
+      - name: Setup WASM Target
+        uses: ./.github/actions/setup-callisto-wasm
+
+      - name: Format Check
+        run: moon run :format-check
+
+      - name: Clippy Lints
+        run: moon run :lint
+
+      - name: Unit & Integration Tests
+        run: moon run :test
+
+      - name: WASM Target Check
+        run: cargo check -p callisto-moon --target wasm32-wasip1 --features pdk
+
+      - name: Supply Chain Audit
+        run: cargo-deny check
+
   release:
     name: Version Packages or Publish Release
+    needs: [verify]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -27,6 +58,9 @@ jobs:
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Toolchain
+        uses: ./.github/actions/setup-callisto
 
       - name: Run Callisto Release Action
         uses: ./.github/actions/callisto-action
