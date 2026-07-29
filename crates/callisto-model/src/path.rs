@@ -20,8 +20,11 @@ pub fn workspace_relative(path: impl AsRef<Path>) -> Result<PathBuf, ModelError>
         });
     }
 
+    let normalized_str = p.to_str().unwrap().replace('\\', "/");
+    let normalized_path = Path::new(&normalized_str);
+
     let mut components = Vec::new();
-    for component in p.components() {
+    for component in normalized_path.components() {
         match component {
             Component::Prefix(_) | Component::RootDir => {
                 return Err(ModelError::AbsolutePath {
@@ -44,12 +47,15 @@ pub fn workspace_relative(path: impl AsRef<Path>) -> Result<PathBuf, ModelError>
         }
     }
 
-    let mut out = PathBuf::new();
-    for c in components {
-        out.push(c.as_os_str());
+    let mut out_str = String::new();
+    for (i, c) in components.iter().enumerate() {
+        if i > 0 {
+            out_str.push('/');
+        }
+        out_str.push_str(c.as_os_str().to_str().unwrap());
     }
 
-    Ok(out)
+    Ok(PathBuf::from(out_str))
 }
 
 #[cfg(test)]
@@ -72,5 +78,11 @@ mod tests {
     fn rejects_path_traversal_outside_workspace() {
         let err = workspace_relative("../secret").unwrap_err();
         assert!(matches!(err, ModelError::PathTraversal { .. }));
+    }
+
+    #[test]
+    fn normalizes_windows_backslashes_to_posix_slashes() {
+        let p = workspace_relative("crates\\callisto-cli\\src\\lib.rs").unwrap();
+        assert_eq!(p, PathBuf::from("crates/callisto-cli/src/lib.rs"));
     }
 }
