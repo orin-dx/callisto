@@ -41,6 +41,11 @@ runs:
         fi
 
         echo "Downloading Callisto WASM plugin from $DOWNLOAD_URL to $DEST_PATH..."
-        curl -sL -f "$DOWNLOAD_URL" -o "$DEST_PATH"
+        if ! curl -sL -f "$DOWNLOAD_URL" -o "$DEST_PATH"; then
+          echo "Release binary asset not found. Compiling Callisto WASM plugin locally..."
+          rustup target add wasm32-wasip1 2>/dev/null || true
+          cargo build -p callisto-moon --target wasm32-wasip1 --features pdk --release
+          cp target/wasm32-wasip1/release/callisto_moon.wasm "$DEST_PATH"
+        fi
 
         echo "path=$DEST_PATH" >> $GITHUB_OUTPUT

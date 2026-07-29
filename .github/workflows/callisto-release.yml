@@ -23,9 +23,6 @@ jobs:
       - name: Install Toolchain & Cache
         uses: ./.github/actions/setup-callisto
 
-      - name: Setup WASM Target
-        uses: ./.github/actions/setup-callisto-wasm
-
       - name: Format Check
         run: moon run :format-check
 
