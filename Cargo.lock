@@ -262,7 +262,7 @@ checksum = "3d7c8918969267b2932ffd5655509bbbea0833823058c378876953217f5fc50e"
 
 [[package]]
 name = "callisto-changelog"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "callisto-model",
  "tempfile",
@@ -271,7 +271,7 @@ dependencies = [
 
 [[package]]
 name = "callisto-cli"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anstream 0.6.21",
  "callisto-changelog",
@@ -287,6 +287,7 @@ dependencies = [
  "indexmap",
  "insta",
  "miette",
+ "path-slash",
  "rstest",
  "schemars",
  "serde",
@@ -299,7 +300,7 @@ dependencies = [
 
 [[package]]
 name = "callisto-conventional"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "callisto-model",
  "thiserror 1.0.69",
@@ -307,14 +308,14 @@ dependencies = [
 
 [[package]]
 name = "callisto-fixtures"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "callisto-model",
 ]
 
 [[package]]
 name = "callisto-format"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "callisto-fixtures",
  "callisto-model",
@@ -329,7 +330,7 @@ dependencies = [
 
 [[package]]
 name = "callisto-graph"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "callisto-changelog",
  "callisto-conventional",
@@ -355,7 +356,7 @@ dependencies = [
 
 [[package]]
 name = "callisto-manifests"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "callisto-fixtures",
  "callisto-model",
@@ -370,9 +371,10 @@ dependencies = [
 
 [[package]]
 name = "callisto-model"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "callisto-fixtures",
+ "camino",
  "proptest",
  "schemars",
  "semver",
@@ -383,7 +385,7 @@ dependencies = [
 
 [[package]]
 name = "callisto-moon"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "callisto-graph",
  "callisto-model",
@@ -395,13 +397,23 @@ dependencies = [
 
 [[package]]
 name = "callisto-vcs"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "callisto-model",
+ "dunce",
  "gix",
  "globset",
  "tempfile",
  "thiserror 1.0.69",
+]
+
+[[package]]
+name = "camino"
+version = "1.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bb1307f12aa967b5a58416e87b3653360e0fd614a016b6e970db08fecbb1b80d"
+dependencies = [
+ "serde_core",
 ]
 
 [[package]]
@@ -2299,6 +2311,12 @@ dependencies = [
  "smallvec",
  "windows-link",
 ]
+
+[[package]]
+name = "path-slash"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1e91099d4268b0e11973f036e885d652fb0b21fedcf69738c627f94db6a44f42"
 
 [[package]]
 name = "percent-encoding"

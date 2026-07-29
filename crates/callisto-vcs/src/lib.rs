@@ -37,8 +37,9 @@ impl GitRepository {
     #[cfg(not(target_arch = "wasm32"))]
     pub fn discover(path: impl AsRef<Path>) -> Result<Self, VcsError> {
         let p = path.as_ref();
-        let repo = gix::discover(p).map_err(|e| VcsError::RepoNotFound {
-            path: p.to_path_buf(),
+        let clean_path = dunce::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+        let repo = gix::discover(&clean_path).map_err(|e| VcsError::RepoNotFound {
+            path: clean_path,
             message: e.to_string(),
         })?;
         Ok(Self { repo })

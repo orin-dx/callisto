@@ -39,6 +39,7 @@ comfy-table = "7"
 similar = { version = "2", features = ["inline"] }
 schemars = "0.8"
 dialoguer = "0.11"
+path-slash = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3"

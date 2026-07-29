@@ -21,6 +21,9 @@ ignore = "0.4"
 toml = "0.8"
 serde_yaml = "0.9"
 globset = "0.4"
+camino = { version = "1", features = ["serde1"] }
+dunce = "1"
+path-slash = "0.2"
 tempfile = "3"
 rstest = "0.23"
 insta = { version = "1.41", features = ["json", "redactions"] }
