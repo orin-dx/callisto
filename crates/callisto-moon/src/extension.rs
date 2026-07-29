@@ -72,6 +72,16 @@ pub struct InitializeExtensionInput {
     pub confirmed: bool,
 }
 
+fn format_graph_error_json(e: &callisto_graph::error::GraphError) -> serde_json::Value {
+    serde_json::json!({
+        "schemaVersion": callisto_model::SCHEMA_VERSION,
+        "error": {
+            "code": "E_GRAPH",
+            "message": e.to_string(),
+        }
+    })
+}
+
 pub fn execute_extension(input: ExecuteExtensionInput) -> ExecuteExtensionOutput {
     use callisto_graph::commands::status::{status, StatusOptions};
     use std::path::PathBuf;
@@ -81,7 +91,10 @@ pub fn execute_extension(input: ExecuteExtensionInput) -> ExecuteExtensionOutput
     let locator = match crate::locator::MoonProjectLocator::new(&runner, root.clone()) {
         Ok(loc) => loc,
         Err(e) => {
-            let json_val = serde_json::json!({ "error": e.to_string() });
+            let json_val = serde_json::json!({
+                "schemaVersion": callisto_model::SCHEMA_VERSION,
+                "error": { "code": "E_LOCATE", "message": e.to_string() }
+            });
             return ExecuteExtensionOutput {
                 report: json_val.clone(),
                 rendered: e.to_string(),
@@ -93,7 +106,7 @@ pub fn execute_extension(input: ExecuteExtensionInput) -> ExecuteExtensionOutput
     let ws = match callisto_graph::Workspace::load(root, &locator, &runner) {
         Ok(ws) => ws,
         Err(e) => {
-            let json_val = serde_json::json!({ "error": e.to_string() });
+            let json_val = format_graph_error_json(&e);
             return ExecuteExtensionOutput {
                 report: json_val.clone(),
                 rendered: e.to_string(),
@@ -102,27 +115,83 @@ pub fn execute_extension(input: ExecuteExtensionInput) -> ExecuteExtensionOutput
         }
     };
 
-    let opts = StatusOptions {
-        strict: false,
-        strict_graph: false,
-    };
+    let subcmd = input.args.first().map(|s| s.as_str()).unwrap_or("status");
 
-    match status(&ws, &opts) {
-        Ok(report) => {
-            let json_val = serde_json::to_value(&report).unwrap_or_default();
-            let rendered = serde_json::to_string_pretty(&json_val).unwrap_or_default();
-            ExecuteExtensionOutput {
-                report: json_val,
-                rendered,
-                exit_code: 0,
+    match subcmd {
+        "plan-publish" | "plan_publish" => {
+            use callisto_graph::commands::publish::{plan_publish, PublishOptions};
+            match plan_publish(&ws, &PublishOptions::default()) {
+                Ok(report) => {
+                    let json_val = serde_json::to_value(&report).unwrap_or_default();
+                    let rendered = serde_json::to_string_pretty(&json_val).unwrap_or_default();
+                    ExecuteExtensionOutput {
+                        report: json_val,
+                        rendered,
+                        exit_code: 0,
+                    }
+                }
+                Err(e) => {
+                    let json_val = format_graph_error_json(&e);
+                    ExecuteExtensionOutput {
+                        report: json_val.clone(),
+                        rendered: e.to_string(),
+                        exit_code: 1,
+                    }
+                }
             }
         }
-        Err(e) => {
-            let json_val = serde_json::json!({ "error": e.to_string() });
-            ExecuteExtensionOutput {
-                report: json_val.clone(),
-                rendered: e.to_string(),
-                exit_code: 1,
+        "validate" => {
+            use callisto_graph::commands::validate::{validate, ValidateOptions};
+            match validate(&ws, &ValidateOptions::default()) {
+                Ok(report) => {
+                    let exit_code = if report.valid { 0 } else { 1 };
+                    let json_val = serde_json::to_value(&report).unwrap_or_default();
+                    let rendered = serde_json::to_string_pretty(&json_val).unwrap_or_default();
+                    ExecuteExtensionOutput {
+                        report: json_val,
+                        rendered,
+                        exit_code,
+                    }
+                }
+                Err(e) => {
+                    let json_val = format_graph_error_json(&e);
+                    ExecuteExtensionOutput {
+                        report: json_val.clone(),
+                        rendered: e.to_string(),
+                        exit_code: 1,
+                    }
+                }
+            }
+        }
+        _ => {
+            let opts = StatusOptions {
+                strict: false,
+                strict_graph: false,
+            };
+
+            match status(&ws, &opts) {
+                Ok(report) => {
+                    let has_errors = report
+                        .diagnostics
+                        .iter()
+                        .any(|d| d.severity == callisto_model::DiagnosticSeverity::Error);
+                    let exit_code = if has_errors { 1 } else { 0 };
+                    let json_val = serde_json::to_value(&report).unwrap_or_default();
+                    let rendered = serde_json::to_string_pretty(&json_val).unwrap_or_default();
+                    ExecuteExtensionOutput {
+                        report: json_val,
+                        rendered,
+                        exit_code,
+                    }
+                }
+                Err(e) => {
+                    let json_val = format_graph_error_json(&e);
+                    ExecuteExtensionOutput {
+                        report: json_val.clone(),
+                        rendered: e.to_string(),
+                        exit_code: 1,
+                    }
+                }
             }
         }
     }

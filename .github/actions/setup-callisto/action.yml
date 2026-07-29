@@ -41,8 +41,16 @@ runs:
           fi
         elif [[ "$OS_NAME" == "linux" ]]; then
           ASSET_NAME="callisto-linux-amd64.tar.gz"
+        elif [[ "$OS_NAME" == *"mingw"* || "$OS_NAME" == *"msys"* || "$OS_NAME" == *"windows"* ]]; then
+          ASSET_NAME="callisto-windows-amd64.zip"
         else
           ASSET_NAME="callisto-linux-amd64.tar.gz"
+        fi
+
+        if [[ "$TAG_NAME" == "latest" ]]; then
+          DOWNLOAD_URL="https://github.com/orin-dx/callisto/releases/latest/download/$ASSET_NAME"
+        else
+          DOWNLOAD_URL="https://github.com/orin-dx/callisto/releases/download/$TAG_NAME/$ASSET_NAME"
         fi
 
         # Prioritize local repository build when inside the callisto monorepo

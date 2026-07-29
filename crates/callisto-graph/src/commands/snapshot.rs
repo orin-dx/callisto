@@ -68,7 +68,7 @@ pub fn plan_snapshot<R: CommandRunner, D: DependencyResolver>(
             &snapshot_ver_str,
             callisto_model::VersionGrammar::SemVer,
         )
-        .map_err(|_| {
+        .map_err(|_err| {
             GraphError::Bump(callisto_format::BumpError::NotSemVer {
                 raw: snapshot_ver_str,
                 grammar: callisto_model::VersionGrammar::SemVer,

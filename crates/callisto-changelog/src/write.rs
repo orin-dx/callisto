@@ -13,7 +13,10 @@ pub fn prepend(
 ) -> Result<(), ChangelogError> {
     let full_path = root.join(changelog_path);
     if let Some(parent) = full_path.parent() {
-        let _ = fs::create_dir_all(parent);
+        fs::create_dir_all(parent).map_err(|e| ChangelogError::WriteFailed {
+            path: changelog_path.to_path_buf(),
+            message: e.to_string(),
+        })?;
     }
 
     let existing = if full_path.exists() {
@@ -62,22 +65,27 @@ fn atomic_write(path: &std::path::Path, content: &str) -> std::io::Result<()> {
     let parent = path.parent().unwrap_or_else(|| std::path::Path::new("."));
     let mut temp = tempfile::NamedTempFile::new_in(parent)?;
     temp.write_all(content.as_bytes())?;
+    temp.flush()?;
+    temp.as_file().sync_all()?;
     temp.persist(path).map_err(|e| e.error)?;
+    if let Ok(parent_file) = std::fs::File::open(parent) {
+        let _res = parent_file.sync_all();
+    }
     Ok(())
 }
 
 pub fn extract_section<'a>(changelog: &'a str, version: &Version) -> Option<&'a str> {
     let target_heading = format!("## {}", version.render());
     let mut start_byte = None;
-    let mut current_offset = 0;
 
-    for line in changelog.lines() {
-        let line_len = line.len() + 1; // line + newline
-        if line.trim_end() == target_heading {
-            start_byte = Some(current_offset + line_len);
+    let mut offset = 0;
+    for line in changelog.split_inclusive('\n') {
+        let trimmed = line.trim_end();
+        if trimmed == target_heading {
+            start_byte = Some(offset + line.len());
             break;
         }
-        current_offset += line_len;
+        offset += line.len();
     }
 
     let start = start_byte?;
@@ -86,13 +94,13 @@ pub fn extract_section<'a>(changelog: &'a str, version: &Version) -> Option<&'a 
     let mut end = slice_after.len();
     let mut line_offset = 0;
 
-    for line in slice_after.lines() {
+    for line in slice_after.split_inclusive('\n') {
         let trimmed = line.trim_start();
         if line_offset > 0 && (trimmed.starts_with("## ") || trimmed.starts_with("# ")) {
             end = line_offset;
             break;
         }
-        line_offset += line.len() + 1;
+        line_offset += line.len();
     }
 
     let raw_section = slice_after[..end.min(slice_after.len())].trim();
@@ -129,5 +137,14 @@ mod tests {
         assert!(extracted.contains("### Minor Changes"));
         assert!(extracted.contains("- Add cool feature"));
         assert!(!extracted.contains("## 1.0.0"));
+    }
+
+    #[test]
+    fn extracts_crlf_changelog_section() {
+        let changelog = "# my-pkg\r\n\r\n## 1.1.0\r\n\r\n### Minor Changes\r\n\r\n- Feature\r\n\r\n## 1.0.0\r\n";
+        let v1_1 = Version::parse("1.1.0", VersionGrammar::SemVer).unwrap();
+        let extracted = extract_section(changelog, &v1_1).unwrap();
+        assert!(extracted.contains("### Minor Changes"));
+        assert!(extracted.contains("- Feature"));
     }
 }

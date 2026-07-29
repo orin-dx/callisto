@@ -109,7 +109,7 @@ impl Versioning for SemVerVersioning {
 
         let prerelease_str = format!("{}-{tag}.{counter}", release.render());
         let final_version =
-            Version::parse(&prerelease_str, VersionGrammar::SemVer).map_err(|_| {
+            Version::parse(&prerelease_str, VersionGrammar::SemVer).map_err(|_err| {
                 BumpError::NotSemVer {
                     raw: prerelease_str,
                     grammar: VersionGrammar::SemVer,

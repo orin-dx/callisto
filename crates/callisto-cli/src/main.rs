@@ -28,7 +28,17 @@ fn main() -> ExitCode {
     match res {
         Ok(code) => code,
         Err(err) => {
-            eprintln!("{:?}", miette::Report::new(err));
+            if cli.global.format == callisto_cli::cli::OutputFormat::Json {
+                let report = serde_json::json!({
+                    "schemaVersion": callisto_model::SCHEMA_VERSION,
+                    "error": {
+                        "message": err.to_string(),
+                    }
+                });
+                let _res = callisto_cli::output::write_json(&mut std::io::stderr(), &report);
+            } else {
+                eprintln!("{:?}", miette::Report::new(err));
+            }
             ExitCode::FAILURE
         }
     }

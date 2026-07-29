@@ -65,7 +65,7 @@ pub fn status<R: CommandRunner, D: DependencyResolver>(
         });
     }
 
-    let mut diagnostics = Vec::new();
+    let mut diagnostics = ws.graph.diagnostics().to_vec();
     escalate(&mut diagnostics, opts.strict, opts.strict_graph);
 
     Ok(StatusReport {

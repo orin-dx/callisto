@@ -35,7 +35,7 @@ impl<'a, R: CommandRunner> MoonProjectLocator<'a, R> {
         let out = self
             .runner
             .run("moon", &["project-graph", "--json"], &self.workspace_root)
-            .map_err(|_| LocateError::MoonUnavailable)?;
+            .map_err(|_err| LocateError::MoonUnavailable)?;
 
         if out.exit_code != Some(0) {
             return Err(LocateError::MoonUnavailable);
@@ -46,7 +46,7 @@ impl<'a, R: CommandRunner> MoonProjectLocator<'a, R> {
                 message: e.to_string(),
             })?;
 
-        let _ = self.graph.set(graph);
+        let _res = self.graph.set(graph);
         Ok(self.graph.get().unwrap())
     }
 

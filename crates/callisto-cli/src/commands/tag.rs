@@ -19,6 +19,8 @@ pub fn handle(args: TagArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
         let mut buf = String::new();
         std::io::stdin().read_to_string(&mut buf)?;
         buf
+    } else if args.plan.trim_start().starts_with('{') {
+        args.plan.clone()
     } else {
         fs::read_to_string(&args.plan)?
     };
@@ -26,7 +28,11 @@ pub fn handle(args: TagArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
     let plan: PublishPlan = serde_json::from_str(&plan_text)
         .map_err(|e| CliError::Other(format!("Failed to parse publish plan: {e}")))?;
 
-    let report = callisto_graph::commands::create_tags(&ws, &plan)?;
+    let opts = callisto_graph::commands::TagOptions {
+        dry_run: global.dry_run,
+        floating_major: args.floating_major,
+    };
+    let report = callisto_graph::commands::create_tags_with_options(&ws, &plan, &opts)?;
 
     match global.format {
         OutputFormat::Json => write_json(&mut std::io::stdout(), &report)?,

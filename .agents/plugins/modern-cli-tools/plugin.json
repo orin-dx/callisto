@@ -1,0 +1,8 @@
+{
+  "id": "modern-cli-tools",
+  "name": "modern-cli-tools",
+  "version": "1.0.0",
+  "description": "Global Orin DX plugin directing AI agents to prioritize modern CLI tools (ripgrep, fd, fzf, bat, delta, eza, jq, gh) over legacy POSIX/Unix shell builtins across all workspaces.",
+  "author": "Gabriel Castro (Orin DX)",
+  "skills": ["modern-cli-tools"]
+}

@@ -86,7 +86,7 @@ impl PackageJson {
 
         let mut out = format_json_pretty(&map, &indent_str);
         if self.fingerprint.line_ending == LineEnding::CrLf {
-            out = out.replace('\n', "\r\n");
+            out = out.replace("\r\n", "\n").replace('\n', "\r\n");
         }
 
         if !self.fingerprint.trailing_newline && out.ends_with('\n') {
@@ -131,11 +131,12 @@ fn detect_fingerprint(content: &str) -> FormatFingerprint {
         }
     }
 
+    let has_bom = content.starts_with('\u{FEFF}');
     FormatFingerprint {
         indent,
         trailing_newline,
         line_ending,
-        has_bom: false,
+        has_bom,
     }
 }
 
@@ -261,17 +262,30 @@ impl Manifest for PackageJson {
             DepKind::Build => unreachable!(),
         };
 
-        let section = self
+        let updated_in_section = if let Some(section) = self
             .doc
             .get_mut(section_name)
             .and_then(|v| v.as_object_mut())
-            .ok_or_else(|| ManifestError::DependencyNotFound {
-                path: self.path.clone(),
-                name: name.to_string(),
-                kind,
-            })?;
+        {
+            if section.contains_key(name) {
+                section.insert(name.to_string(), Value::String(new.render()));
+                true
+            } else {
+                false
+            }
+        } else {
+            false
+        };
 
-        if !section.contains_key(name) {
+        for extra in ["overrides", "resolutions"] {
+            if let Some(tbl) = self.doc.get_mut(extra).and_then(|v| v.as_object_mut()) {
+                if tbl.contains_key(name) {
+                    tbl.insert(name.to_string(), Value::String(new.render()));
+                }
+            }
+        }
+
+        if !updated_in_section {
             return Err(ManifestError::DependencyNotFound {
                 path: self.path.clone(),
                 name: name.to_string(),
@@ -279,7 +293,6 @@ impl Manifest for PackageJson {
             });
         }
 
-        section.insert(name.to_string(), Value::String(new.render()));
         self.persist()
     }
 

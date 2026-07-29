@@ -72,4 +72,8 @@ impl DependencyResolver for ManifestWalkResolver {
         }
         result.into_iter()
     }
+
+    fn diagnostics(&self) -> &[Diagnostic] {
+        &self.diagnostics
+    }
 }

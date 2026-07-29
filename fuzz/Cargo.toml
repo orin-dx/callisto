@@ -1,0 +1,25 @@
+[package]
+name = "callisto-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+callisto-model = { path = "../crates/callisto-model" }
+callisto-format = { path = "../crates/callisto-format" }
+
+[[bin]]
+name = "parse_package_id"
+path = "fuzz_targets/parse_package_id.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "parse_changeset"
+path = "fuzz_targets/parse_changeset.rs"
+test = false
+doc = false

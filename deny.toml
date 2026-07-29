@@ -1,0 +1,27 @@
+# cargo-deny configuration for Callisto monorepo
+[graph]
+targets = []
+
+[licenses]
+allow = ["MIT", "Apache-2.0", "AGPL-3.0-only"]
+confidence-threshold = 0.8
+
+[[licenses.clarify]]
+name = "callisto-model"
+expression = "MIT OR Apache-2.0"
+license-files = [{ path = "LICENSE", hash = 0x00000000 }]
+
+[[licenses.clarify]]
+name = "callisto-format"
+expression = "MIT OR Apache-2.0"
+license-files = [{ path = "LICENSE", hash = 0x00000000 }]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "allow"
+highlight = "all"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

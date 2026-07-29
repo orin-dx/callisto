@@ -9,6 +9,7 @@ use callisto_model::{
 };
 
 pub mod atomic;
+pub use atomic::ChangesetStorage;
 
 #[cfg(feature = "cargo")]
 pub mod cargo;
@@ -50,6 +51,32 @@ pub trait Manifest: Send + Sync {
         &mut self,
         updates: &[(String, Version)],
     ) -> Result<(), ManifestError>;
+}
+
+/// Trait for Concrete Syntax Tree (CST) manifest editors that preserve formatting, comments, and key order.
+pub trait CstManifestEditor {
+    fn update_version_cst(&mut self, new_version: &Version) -> Result<(), ManifestError>;
+    fn update_dependency_cst(
+        &mut self,
+        name: &str,
+        kind: callisto_model::DepKind,
+        new_spec: DepSpec,
+    ) -> Result<(), ManifestError>;
+}
+
+impl<T: Manifest + ?Sized> CstManifestEditor for T {
+    fn update_version_cst(&mut self, new_version: &Version) -> Result<(), ManifestError> {
+        self.write_version(new_version)
+    }
+
+    fn update_dependency_cst(
+        &mut self,
+        name: &str,
+        kind: callisto_model::DepKind,
+        new_spec: DepSpec,
+    ) -> Result<(), ManifestError> {
+        self.update_dependency_spec(name, kind, new_spec)
+    }
 }
 
 /// Context passed to open() to supply workspace-wide inheritance facts.

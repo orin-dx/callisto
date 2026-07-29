@@ -24,7 +24,7 @@ pub struct CascadeDecision {
 pub fn cascade_action(
     kind: DepKind,
     coverage: Coverage,
-    source: Severity,
+    _source: Severity,
     cfg: &CascadeConfig,
 ) -> CascadeDecision {
     use Coverage::*;
@@ -47,17 +47,11 @@ pub fn cascade_action(
             false,
         ),
         (Peer, Covers) => (Severity::None, None, false),
-        (Peer, DoesNotCover)
-            if cfg.peer_escalation
-                && matches!(coverage, DoesNotCover)
-                && matches!(source, Severity::Minor | Severity::Major) =>
-        {
-            (
-                Severity::Major,
-                Some(ConfigKey::CASCADE_PEER_ESCALATION),
-                true,
-            )
-        }
+        (Peer, DoesNotCover) if cfg.peer_escalation && matches!(coverage, DoesNotCover) => (
+            Severity::Major,
+            Some(ConfigKey::CASCADE_PEER_ESCALATION),
+            true,
+        ),
         (Peer, DoesNotCover) => (
             cfg.bump_severity.as_severity(),
             Some(ConfigKey::CASCADE_BUMP_SEVERITY),
@@ -152,7 +146,18 @@ pub struct CascadeOutcome {
     pub iterations: usize,
 }
 
+/// Trait for dependency graph cascade solving.
+pub trait CascadeSolver<D: DependencyResolver> {
+    fn solve_cascade(&self, input: CascadeInput<'_, D>) -> Result<CascadeOutcome, GraphError>;
+}
+
 pub fn run_cascade<D: DependencyResolver>(
+    input: CascadeInput<'_, D>,
+) -> Result<CascadeOutcome, GraphError> {
+    solve_cascade(input)
+}
+
+pub fn solve_cascade<D: DependencyResolver>(
     input: CascadeInput<'_, D>,
 ) -> Result<CascadeOutcome, GraphError> {
     let mut out = CascadeOutcome {
@@ -278,7 +283,7 @@ pub fn run_cascade<D: DependencyResolver>(
             }
         }
 
-        // Spec §G.6.7: Linked group target version convergence
+        // Spec §G.6.7: Linked group release severity propagation
         for g in input.groups.linked.values() {
             let member_ids: Vec<PackageId> = g
                 .members(crate::config::GroupMemberKind::Package)
@@ -288,38 +293,28 @@ pub fn run_cascade<D: DependencyResolver>(
                 })
                 .collect();
 
-            let mut max_ver: Option<Version> = None;
+            let mut max_sev = Severity::None;
             for id in &member_ids {
-                if let Some(t) = out.targets.get(id) {
-                    max_ver = match max_ver {
-                        None => Some(t.clone()),
-                        Some(ref cur) => {
-                            if Version::compare(t, cur).ok() == Some(std::cmp::Ordering::Greater) {
-                                Some(t.clone())
-                            } else {
-                                Some(cur.clone())
-                            }
-                        }
-                    };
+                if let Some(&sev) = out.severities.get(id) {
+                    max_sev = max_sev.max(sev);
                 }
             }
 
-            if let Some(ref target_ver) = max_ver {
+            if max_sev > Severity::None {
                 for id in member_ids {
-                    if let Some(cur_target) = out.targets.get(&id) {
-                        if Version::compare(target_ver, cur_target).ok()
-                            == Some(std::cmp::Ordering::Greater)
-                        {
-                            out.targets.insert(id.clone(), target_ver.clone());
-                            out.reasons.insert(
-                                id.clone(),
-                                BumpReason::LinkedGroupUnion {
-                                    group: g.name.clone(),
-                                },
-                            );
-                            worklist.insert(id.clone());
-                            changed = true;
-                        }
+                    let cur_sev = out.severities.get(&id).copied().unwrap_or(Severity::None);
+                    if max_sev > cur_sev {
+                        out.severities.insert(id.clone(), max_sev);
+                        let target = bump_target(&id, max_sev, &input)?;
+                        out.targets.insert(id.clone(), target);
+                        out.reasons.insert(
+                            id.clone(),
+                            BumpReason::LinkedGroupUnion {
+                                group: g.name.clone(),
+                            },
+                        );
+                        worklist.insert(id.clone());
+                        changed = true;
                     }
                 }
             }
@@ -328,6 +323,22 @@ pub fn run_cascade<D: DependencyResolver>(
 
     out.iterations = iterations;
     Ok(out)
+}
+
+#[allow(dead_code)]
+pub(crate) fn calculate_bump_severity(from: &Version, to: &Version) -> Severity {
+    if to.major().unwrap_or(0) > from.major().unwrap_or(0) {
+        Severity::Major
+    } else if to.minor().unwrap_or(0) > from.minor().unwrap_or(0) {
+        Severity::Minor
+    } else if to.patch().unwrap_or(0) > from.patch().unwrap_or(0)
+        || to.is_prerelease()
+        || to != from
+    {
+        Severity::Patch
+    } else {
+        Severity::None
+    }
 }
 
 fn bump_target<D: DependencyResolver>(
@@ -385,10 +396,10 @@ fn raise<D: DependencyResolver>(
             dependency_to: dependency_to.clone(),
         }
     };
-    out.reasons.insert(pkg.clone(), new_reason);
+    out.reasons.entry(pkg.clone()).or_insert(new_reason);
 
     if let Some(ref gov) = decision.governed_by {
-        out.governed_by.insert(pkg.clone(), gov.clone());
+        out.governed_by.entry(pkg.clone()).or_insert(gov.clone());
     }
 
     let new_t = bump_target(pkg, sev, input)?;
@@ -399,11 +410,12 @@ fn raise<D: DependencyResolver>(
         let sib_sev = out.severities.get(sib).copied().unwrap_or(Severity::None);
         if sev > sib_sev {
             out.severities.insert(sib.clone(), sev);
-            out.reasons
-                .entry(sib.clone())
-                .or_insert(BumpReason::FixedGroupUnion {
+            out.reasons.insert(
+                sib.clone(),
+                BumpReason::FixedGroupUnion {
                     group: groups.fixed_group_of(pkg).unwrap().name.clone(),
-                });
+                },
+            );
             let sib_t = bump_target(sib, sev, input)?;
             out.targets.insert(sib.clone(), sib_t);
             worklist.insert(sib.clone());

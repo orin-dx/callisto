@@ -31,6 +31,24 @@ impl PackageId {
             return Err(PackageIdParseError::PathTraversal { raw: s.to_string() });
         }
 
+        if let Some((prefix, remainder)) = s.split_once(':') {
+            if let Some(ecosystem) = Ecosystem::from_prefix(prefix) {
+                if remainder.is_empty() {
+                    return Err(PackageIdParseError::EmptyNameAfterPrefix {
+                        raw: s.to_string(),
+                        prefix: prefix.to_string(),
+                    });
+                }
+                if remainder.starts_with('-') || remainder.contains("..") {
+                    return Err(PackageIdParseError::PathTraversal { raw: s.to_string() });
+                }
+                return Ok(PackageId::Prefixed {
+                    ecosystem,
+                    name: remainder.to_string(),
+                });
+            }
+        }
+
         if let Some((prefix, remainder)) = s.split_once('/') {
             if let Some(ecosystem) = Ecosystem::from_prefix(prefix) {
                 if remainder.is_empty() {
@@ -38,6 +56,9 @@ impl PackageId {
                         raw: s.to_string(),
                         prefix: prefix.to_string(),
                     });
+                }
+                if remainder.starts_with('-') || remainder.contains("..") {
+                    return Err(PackageIdParseError::PathTraversal { raw: s.to_string() });
                 }
                 return Ok(PackageId::Prefixed {
                     ecosystem,
@@ -70,6 +91,34 @@ impl PackageId {
             PackageId::Bare(name) => name,
             PackageId::Prefixed { name, .. } => name,
         }
+    }
+
+    /// Returns true if two package IDs refer to the same logical package,
+    /// matching bare and prefixed representations when names and ecosystems align.
+    pub fn matches(&self, other: &Self) -> bool {
+        if self == other {
+            return true;
+        }
+        if self.name() == other.name() {
+            match (self.ecosystem(), other.ecosystem()) {
+                (None, _) | (_, None) => true,
+                (Some(e1), Some(e2)) => e1 == e2,
+            }
+        } else {
+            false
+        }
+    }
+}
+
+/// Trait for package identity resolution across ecosystem boundaries.
+pub trait PackageIdentityResolver {
+    /// Returns true if two package IDs refer to the same logical package.
+    fn matches_id(&self, other: &PackageId) -> bool;
+}
+
+impl PackageIdentityResolver for PackageId {
+    fn matches_id(&self, other: &PackageId) -> bool {
+        self.matches(other)
     }
 }
 
@@ -257,6 +306,25 @@ mod tests {
                 name: "@myorg/foo".to_string()
             }
         );
+        assert_eq!(
+            PackageId::parse("npm:@myorg/foo").unwrap(),
+            PackageId::Prefixed {
+                ecosystem: Ecosystem::Npm,
+                name: "@myorg/foo".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn test_package_id_matches() {
+        let bare = PackageId::parse("foo").unwrap();
+        let prefixed_cargo = PackageId::parse("cargo/foo").unwrap();
+        let prefixed_npm = PackageId::parse("npm/foo").unwrap();
+
+        assert!(bare.matches(&prefixed_cargo));
+        assert!(prefixed_cargo.matches(&bare));
+        assert!(bare.matches(&prefixed_npm));
+        assert!(!prefixed_cargo.matches(&prefixed_npm));
     }
 
     #[test]
@@ -265,5 +333,21 @@ mod tests {
         let sha = CommitSha::parse(sha_str).unwrap();
         assert_eq!(sha.as_str(), sha_str);
         assert_eq!(sha.short(), "a1b2c3d");
+    }
+
+    use proptest::prelude::*;
+    proptest! {
+        #[test]
+        fn proptest_package_id_parse_never_panics(s in "\\PC*") {
+            let _res = PackageId::parse(&s);
+        }
+
+        #[test]
+        fn proptest_package_id_matches_identity(name in "[a-z][a-z0-9_-]{0,29}") {
+            let bare = PackageId::parse(&name).unwrap();
+            let prefixed = PackageId::parse(&format!("cargo/{}", name)).unwrap();
+            prop_assert!(bare.matches(&prefixed));
+            prop_assert!(prefixed.matches(&bare));
+        }
     }
 }

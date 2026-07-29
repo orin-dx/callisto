@@ -124,6 +124,21 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
     }
 
     let mut diagnostics = outcome.diagnostics;
+    if agg.consumed.is_empty()
+        && !opts.allow_empty_changesets
+        && !ws.config.validation.allow_empty_changesets
+    {
+        diagnostics.push(callisto_model::Diagnostic {
+            code: callisto_model::DiagnosticCode::EmptyChangeset,
+            severity: callisto_model::DiagnosticSeverity::Warning,
+            message: "No pending changesets found in workspace".to_string(),
+            package: None,
+            path: None,
+            escalated_by: Some(callisto_model::StrictFlag::Strict),
+            governed_by: Some(callisto_model::ConfigKey::VALIDATION_ALLOW_EMPTY_CHANGESETS),
+        });
+    }
+
     escalate(&mut diagnostics, opts.strict, opts.strict_graph);
 
     let (pre_state_update, delete_pre_json) = if let Some(mut state) = pre_state {

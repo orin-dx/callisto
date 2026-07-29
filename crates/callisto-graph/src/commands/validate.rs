@@ -30,23 +30,37 @@ pub fn validate<R: CommandRunner, D: DependencyResolver>(
                 message: out.stderr,
             }));
         }
-        let files: Vec<&str> = out.stdout_trimmed().lines().collect();
+        let files: Vec<String> = out
+            .stdout_trimmed()
+            .lines()
+            .map(|l| l.trim_matches('"').to_string())
+            .collect();
         loaded
             .into_iter()
             .filter(|cs| files.iter().any(|f| cs.path.ends_with(f)))
             .collect()
     } else if let Some(ref since) = opts.since {
+        if since.starts_with('-') {
+            return Err(GraphError::Command(callisto_model::CommandError::Io {
+                program: "git".to_string(),
+                message: "invalid since ref".to_string(),
+            }));
+        }
         let range = format!("{since}..HEAD");
         let out = ws
             .runner
-            .run("git", &["diff", "--name-only", &range], &ws.root)?;
+            .run("git", &["diff", "--name-only", &range, "--"], &ws.root)?;
         if !out.success() {
             return Err(GraphError::Command(callisto_model::CommandError::Io {
                 program: "git".to_string(),
                 message: out.stderr,
             }));
         }
-        let files: Vec<&str> = out.stdout_trimmed().lines().collect();
+        let files: Vec<String> = out
+            .stdout_trimmed()
+            .lines()
+            .map(|l| l.trim_matches('"').to_string())
+            .collect();
         loaded
             .into_iter()
             .filter(|cs| files.iter().any(|f| cs.path.ends_with(f)))
@@ -70,7 +84,7 @@ pub fn validate<R: CommandRunner, D: DependencyResolver>(
 
         for entry in &cs.changeset.entries {
             if let Ok(id) = callisto_model::PackageId::parse(&entry.name) {
-                if !ws.graph.packages().any(|p| p.id == id) {
+                if !ws.graph.packages().any(|p| p.id.matches(&id)) {
                     diagnostics.push(callisto_model::Diagnostic {
                         code: callisto_model::DiagnosticCode::UnknownPackage,
                         severity: callisto_model::DiagnosticSeverity::Error,

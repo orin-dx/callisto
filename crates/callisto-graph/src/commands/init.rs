@@ -13,7 +13,7 @@ pub fn init<R: CommandRunner, D: DependencyResolver>(
     ws: &Workspace<'_, R, D>,
     opts: &InitOptions,
 ) -> Result<InitReport, GraphError> {
-    let _ = opts;
+    let _yes = opts.yes;
     let config_path = ws.root.join("callisto.toml");
     let mut written = false;
 

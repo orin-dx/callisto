@@ -26,9 +26,25 @@ fmt-check:
 fmt:
     moon run :format
 
-# Security advisory check via moon
+# Security advisory & license check via moon / cargo-deny
 audit:
     moon run :audit
+
+# Run mutation testing sweep via cargo-mutants
+mutants:
+    cargo mutants --workspace
+
+# Run unused dependency check via cargo-machete
+machete:
+    cargo machete
+
+# Verify public Rust API SemVer breaking changes
+check-api:
+    cargo semver-checks check-release
+
+# Run structure-aware fuzzing target
+fuzz target="parse_package_id":
+    cargo fuzz run {{target}}
 
 # Documentation build check (warnings treated as errors)
 doc-check:

@@ -175,32 +175,39 @@ where
         agg.consumed.push(cs.path.clone());
         for entry in cs.changeset.entries {
             if let Ok(id) = PackageId::parse(&entry.name) {
-                if graph.packages().any(|p| p.id == id) {
-                    let cur_sev = agg.severities.get(&id).copied().unwrap_or(Severity::None);
+                if let Some(target_pkg) = graph.packages().find(|p| p.id.matches(&id)) {
+                    let canonical_id = target_pkg.id.clone();
+                    let cur_sev = agg
+                        .severities
+                        .get(&canonical_id)
+                        .copied()
+                        .unwrap_or(Severity::None);
                     if entry.severity > cur_sev {
-                        agg.severities.insert(id.clone(), entry.severity);
+                        agg.severities.insert(canonical_id.clone(), entry.severity);
                         agg.reasons.insert(
-                            id.clone(),
+                            canonical_id.clone(),
                             BumpReason::Changeset {
                                 changesets: vec![cs.id.clone()],
                             },
                         );
-                        agg.named_by.insert(id.clone(), NamedBy::Changeset);
+                        agg.named_by
+                            .insert(canonical_id.clone(), NamedBy::Changeset);
                     }
 
                     if entry.severity != Severity::None {
                         let pkg_ver = tags
-                            .last_tag(&id)
+                            .last_tag(&canonical_id)
                             .map(|t| t.version.clone())
+                            .or_else(|| base_versions.get(&canonical_id).cloned())
                             .unwrap_or_else(|| Version::semver(0, 0, 0));
-                        let cl_input =
-                            agg.changelog_inputs.entry(id.clone()).or_insert_with(|| {
-                                ChangelogInput {
-                                    package: id.clone(),
-                                    from: pkg_ver,
-                                    to: None,
-                                    entries: Vec::new(),
-                                }
+                        let cl_input = agg
+                            .changelog_inputs
+                            .entry(canonical_id.clone())
+                            .or_insert_with(|| ChangelogInput {
+                                package: canonical_id.clone(),
+                                from: pkg_ver,
+                                to: None,
+                                entries: Vec::new(),
                             });
                         cl_input.entries.push(ChangelogEntry {
                             severity: entry.severity,
@@ -215,8 +222,14 @@ where
         }
     }
 
-    union_fixed(&mut agg, &config.groups);
-    union_linked(&mut agg, &config.groups);
+    loop {
+        let prev_len = agg.severities.len();
+        union_fixed(&mut agg, &config.groups);
+        union_linked(&mut agg, &config.groups);
+        if agg.severities.len() == prev_len {
+            break;
+        }
+    }
 
     Ok(agg)
 }
@@ -248,11 +261,12 @@ pub(crate) fn union_fixed(agg: &mut Aggregation, groups: &GroupTable) {
             let cur = agg.severities.get(&m).copied().unwrap_or(Severity::None);
             if target > cur {
                 agg.severities.insert(m.clone(), target);
-                agg.reasons
-                    .entry(m.clone())
-                    .or_insert(BumpReason::FixedGroupUnion {
+                agg.reasons.insert(
+                    m.clone(),
+                    BumpReason::FixedGroupUnion {
                         group: g.name.clone(),
-                    });
+                    },
+                );
             }
         }
     }
@@ -274,7 +288,7 @@ pub(crate) fn union_linked(agg: &mut Aggregation, groups: &GroupTable) {
             })
             .collect();
 
-        if named.len() < 2 {
+        if named.is_empty() {
             continue;
         }
 
@@ -287,7 +301,15 @@ pub(crate) fn union_linked(agg: &mut Aggregation, groups: &GroupTable) {
             }
         }
 
-        for m in named {
+        let all_members: Vec<PackageId> = g
+            .members(crate::config::GroupMemberKind::Package)
+            .filter_map(|m| match m {
+                crate::config::GroupMember::Package(ref id) => Some(id.clone()),
+                _ => None,
+            })
+            .collect();
+
+        for m in all_members {
             let cur = agg.severities.get(&m).copied().unwrap_or(Severity::None);
             if target_sev > cur {
                 agg.severities.insert(m.clone(), target_sev);

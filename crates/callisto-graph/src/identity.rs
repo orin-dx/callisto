@@ -79,7 +79,7 @@ impl IdentityResolver {
             }
         };
 
-        PackageId::parse(&name).map_err(|_| GraphError::AmbiguousName {
+        PackageId::parse(&name).map_err(|_err| GraphError::AmbiguousName {
             name: name.clone(),
             candidates: Vec::new(),
         })

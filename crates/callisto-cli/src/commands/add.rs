@@ -24,13 +24,13 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
     if !args.packages.is_empty() {
         // Non-interactive mode (flags supplied via CLI or agent)
         for pkg_str in args.packages {
-            let (name, sev_str) = pkg_str.split_once(':').ok_or_else(|| {
+            let (name, sev_str) = pkg_str.rsplit_once(':').ok_or_else(|| {
                 CliError::Other(format!(
                     "Invalid package spec `{pkg_str}`. Expected format: `package-name:severity`"
                 ))
             })?;
 
-            let severity: Severity = sev_str.parse().map_err(|_| {
+            let severity: Severity = sev_str.parse().map_err(|_err| {
                 CliError::Other(format!(
                     "Invalid severity `{sev_str}`. Must be patch, minor, or major."
                 ))
@@ -156,12 +156,15 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
             return Ok(ExitCode::SUCCESS);
         }
     } else {
-        return Err(CliError::Other(
-            "No packages specified. Usage: `callisto add --package <name>:<severity> --summary \"<summary>\"`".to_string(),
-        ));
+        return Err(CliError::NotATty);
     }
 
-    let summary_text = summary.unwrap_or_else(|| "Updated package.".to_string());
+    let summary_text = summary.ok_or_else(|| {
+        CliError::Other(
+            "--summary is required when specifying packages via CLI flags in non-interactive mode"
+                .to_string(),
+        )
+    })?;
     let changeset = Changeset {
         entries,
         summary: summary_text,

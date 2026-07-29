@@ -8,7 +8,7 @@ pub fn raw_severity(commit: &ConventionalCommit) -> Severity {
     }
     match commit.commit_type.as_str() {
         "feat" => Severity::Minor,
-        "fix" | "perf" => Severity::Patch,
+        "fix" | "perf" | "revert" => Severity::Patch,
         _ => Severity::None,
     }
 }

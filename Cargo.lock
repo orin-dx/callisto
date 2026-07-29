@@ -360,6 +360,7 @@ dependencies = [
  "callisto-fixtures",
  "callisto-model",
  "indexmap",
+ "proptest",
  "serde",
  "serde_json",
  "tempfile",
@@ -372,6 +373,7 @@ name = "callisto-model"
 version = "0.2.0"
 dependencies = [
  "callisto-fixtures",
+ "proptest",
  "schemars",
  "semver",
  "serde",

@@ -31,3 +31,4 @@ tempfile = "3"
 [dev-dependencies]
 callisto-fixtures = { path = "../callisto-fixtures", default-features = false }
 tempfile = "3"
+proptest = "1"

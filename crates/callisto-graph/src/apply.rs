@@ -2,7 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use callisto_manifests::{open, OpenContext, WorkspaceCargoResolver};
-use callisto_model::{CommandRunner, LockfileRefreshResult, ManifestRole};
+use callisto_model::{CommandError, CommandRunner, LockfileRefreshResult, ManifestRole};
 
 use crate::cascade::DepWriteTarget;
 use crate::error::GraphError;
@@ -109,7 +109,12 @@ pub fn apply_version_plan<R: CommandRunner>(
         for cs_path in &plan.consumed_changesets {
             let full = root.join(cs_path);
             if full.exists() {
-                let _ = fs::remove_file(&full);
+                fs::remove_file(&full).map_err(|e| {
+                    GraphError::Command(CommandError::Io {
+                        program: "fs".to_string(),
+                        message: e.to_string(),
+                    })
+                })?;
                 modified_paths.push(cs_path.clone());
             }
         }
@@ -123,11 +128,21 @@ pub fn apply_version_plan<R: CommandRunner>(
                 .unwrap_or(&default_dir);
             let pre_path = root.join(pre_dir.join("pre.json"));
             let text = callisto_format::write_pre_json(pre_state);
-            let _ = callisto_manifests::atomic::atomic_write(&pre_path, &text);
+            callisto_manifests::atomic::atomic_write(&pre_path, &text).map_err(|e| {
+                GraphError::Command(CommandError::Io {
+                    program: "fs".to_string(),
+                    message: e.to_string(),
+                })
+            })?;
         } else if plan.delete_pre_json {
             let pre_path = root.join(".changeset/pre.json");
             if pre_path.exists() {
-                let _ = fs::remove_file(&pre_path);
+                fs::remove_file(&pre_path).map_err(|e| {
+                    GraphError::Command(CommandError::Io {
+                        program: "fs".to_string(),
+                        message: e.to_string(),
+                    })
+                })?;
             }
         }
     }

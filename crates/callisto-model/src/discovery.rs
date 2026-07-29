@@ -37,4 +37,7 @@ pub trait DependencyResolver: Send + Sync {
     fn packages(&self) -> impl Iterator<Item = &Package>;
     fn dependencies_of(&self, id: &PackageId) -> impl Iterator<Item = &DepEdge>;
     fn dependents_of(&self, id: &PackageId) -> impl Iterator<Item = &DepEdge>;
+    fn diagnostics(&self) -> &[crate::Diagnostic] {
+        &[]
+    }
 }

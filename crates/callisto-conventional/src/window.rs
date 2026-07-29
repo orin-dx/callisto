@@ -56,7 +56,7 @@ pub fn fetch_commits(
             continue;
         };
         let sha =
-            CommitSha::parse(sha_str).map_err(|_| ConventionalError::MalformedGitLogOutput {
+            CommitSha::parse(sha_str).map_err(|_err| ConventionalError::MalformedGitLogOutput {
                 cwd: cwd.to_path_buf(),
                 message: format!("invalid sha {sha_str:?}"),
             })?;

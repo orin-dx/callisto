@@ -87,3 +87,18 @@ When generating changesets using Callisto CLI (`callisto add`):
   ```bash
   callisto add --package callisto-cli:minor --summary "Add feature description"
   ```
+
+---
+
+## 5. Preferred Modern CLI Tools Directive
+
+Agents executing shell operations or terminal commands MUST prioritize modern CLI tools over legacy POSIX/Unix shell builtins:
+
+- **Code & Pattern Search**: `ripgrep` (`rg`) over `grep`
+- **File Discovery**: `fd` over `find`
+- **Interactive Filtering**: `fzf` for selection menus
+- **File & Code Viewing**: `bat` over `cat`
+- **Diff Inspection**: `delta` over `diff` / `git diff`
+- **Directory Formatting**: `eza` over `ls`
+- **JSON Processing**: `jq` for stream & file transformations
+- **GitHub Workflow & API**: `gh` CLI for GitHub release, PR, and repo management

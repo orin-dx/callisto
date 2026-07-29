@@ -111,9 +111,7 @@ impl Version {
             });
         }
         match (&self.parsed, &other.parsed) {
-            (ParsedVersion::SemVer(a), ParsedVersion::SemVer(b)) => {
-                Ok((a.major, a.minor, a.patch, &a.pre).cmp(&(b.major, b.minor, b.patch, &b.pre)))
-            }
+            (ParsedVersion::SemVer(a), ParsedVersion::SemVer(b)) => Ok(a.cmp(b)),
         }
     }
 
@@ -219,7 +217,10 @@ impl<'de> Deserialize<'de> for VersionReq {
         D: Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        VersionReq::parse(&s, Ecosystem::Cargo).map_err(serde::de::Error::custom)
+        VersionReq::parse(&s, Ecosystem::Cargo)
+            .or_else(|_| VersionReq::parse(&s, Ecosystem::Npm))
+            .or_else(|_| VersionReq::parse(&s, Ecosystem::Pypi))
+            .map_err(serde::de::Error::custom)
     }
 }
 

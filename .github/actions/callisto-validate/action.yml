@@ -30,10 +30,10 @@ runs:
         FORCE_COLOR: "1"
         CLICOLOR_FORCE: "1"
       run: |
-        echo "### 🚀 Callisto Release Pre-Flight Verification" >> $GITHUB_STEP_SUMMARY
-        echo "✅ **Package Discovery**: All workspace crates and packages are correctly tracked." >> $GITHUB_STEP_SUMMARY
-        echo "✅ **Configuration Health**: \`callisto.toml\` schema and rules are valid." >> $GITHUB_STEP_SUMMARY
-        echo "✅ **Changeset Integrity**: Pending changesets are valid." >> $GITHUB_STEP_SUMMARY
+        echo "### Callisto Release Pre-Flight Verification" >> $GITHUB_STEP_SUMMARY
+        echo "- **Package Discovery**: All workspace crates and packages are correctly tracked." >> $GITHUB_STEP_SUMMARY
+        echo "- **Configuration Health**: \`callisto.toml\` schema and rules are valid." >> $GITHUB_STEP_SUMMARY
+        echo "- **Changeset Integrity**: Pending changesets are valid." >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "#### Workspace Package Status" >> $GITHUB_STEP_SUMMARY
         echo '```' >> $GITHUB_STEP_SUMMARY

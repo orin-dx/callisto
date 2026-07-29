@@ -19,7 +19,7 @@ This skill is **Rigid**: follow it exactly across any Rust workspace.
 ## Core Rules
 
 - **Verify by Tracing**: Don't trust a comment, docstring, passing test, or a prior audit's "FIXED" label. Trace the code execution path yourself.
-- **Hazard-Taxonomy Partitioning**: When executing multi-agent bug hunts, DO NOT partition subagents by directory or crate names. ALWAYS partition subagents by **Hazard Taxonomy** across the entire workspace.
+- **Hazard-Taxonomy Partitioning**: When executing multi-agent bug hunts, DO NOT partition subagents by directory or crate names. ALWAYS partition subagents by **Hazard Taxonomy** or **Code Smell Sweep** across the entire workspace.
 - **Strict Invariants**: Prioritize data integrity, crash-safety, error propagation, and security bugs over style or refactoring.
 - **Read-Only Investigation**: Investigate and report findings first. Do not mutate files unless explicitly requested to apply fixes.
 
@@ -27,45 +27,48 @@ This skill is **Rigid**: follow it exactly across any Rust workspace.
 
 ## The 6 Universal Rust Hazard Taxonomies
 
-When auditing any Rust repository, scan all code paths against these 6 hazard categories:
+1. **Discarded Data & Unused CLI / Struct Parameters**: Leading-underscore parameters (`_opts`, `_config`), unused Clap CLI flags.
+2. **Ordering, Mutability & Fixpoint Staleness**: First-write-wins vs max-value-wins, graph solver loops missing re-enqueueing logic.
+3. **Spec-vs-Code Compliance Drift**: Requirements in design docs/specs missing enforcement logic in functions.
+4. **Silent Fallbacks & Falsified Defaults**: Catch-all `unwrap_or` defaults hiding invalid state, swallowed I/O errors.
+5. **Boundary Inputs & Format Edge Cases**: UTF-8 BOM (`\u{FEFF}`), CRLF line endings, unicode paths, detached HEAD Git states.
+6. **Crash-Safety & Subprocess Security**: Atomic writes missing `.flush()` or `.sync_all()`, subprocess argument ordering.
 
-### 1. Discarded Data & Unused CLI / Struct Parameters
-- Function parameters or struct fields prefixed with leading underscores (e.g. `_opts`, `_config`, `_loaded`) where user inputs or configuration flags are silently ignored.
-- CLI flags parsed into argument structs (e.g., Clap `#[derive(Args)]`) but never read or evaluated before executing the gated operation.
-- Functions returning `Ok(())` or exit code `0` while silently skipping intended operations.
+---
 
-### 2. Ordering, Mutability & Fixpoint Staleness Bugs
-- First-write-wins patterns (`.or_insert()`, `entry().or_default()`) used where max-value-wins, latest-write-wins, or fixpoint convergence is required.
-- Graph traversals or solver loops that modify target state without re-enqueuing dependents into a worklist, leaving downstream dependencies stale.
-- Loop iterations that leak transient state across runs without proper resets.
+## The 6 Architectural Code Smells & Ripgrep Sweeps
 
-### 3. Spec-vs-Code Compliance Drift
-- Trace stated requirements from design docs, specs, READMEs, or docstrings to the underlying Rust functions. Ensure invariants are enforced by logic, not just represented in types.
-- Unhandled enum variants or missing conditional branches in pattern matches.
+1. **Raw String Identity Smell**: `entry.name == pkg.id.to_string()` (Mismatched bare vs prefixed string comparison).
+2. **Un-Transactional Disk Mutation Smell**: Step-by-step file edits without atomic batch rollback.
+3. **Lossy Serde / CST Formatting Smell**: Replacing TOML/JSON nodes without preserving `.decor()` or line endings.
+4. **Un-Fsynced Directory Metadata Smell**: `create_dir_all` or `atomic_write` missing parent directory `sync_all()`.
+5. **Scopeless Fallback & Unbounded Traversal Smell**: Unbounded `revwalk` commit loops or catch-all `unwrap_or_else` defaults.
+6. **Hardcoded Constant Dummy Smell**: Inserting placeholder strings (`"Release update"`, `"changeset.md"`) masking user metadata.
 
-### 4. Silent Fallbacks & Falsified Defaults
-- Catch-all fallbacks (`unwrap_or_else`, `unwrap_or_default`, fallback zero SHAs, placeholder strings) that hide missing or malformed data instead of returning an explicit `Result::Err`.
-- Swallowed I/O or subprocess errors (`if cmd.is_ok() { ... }`, `let _ = atomic_write(...)`) returning success reports when disk operations fail.
+---
 
-### 5. Boundary Inputs & Format Edge Cases
-- Text/Format handling: UTF-8 BOM (`\u{FEFF}`) prefixes, CRLF line endings, missing trailing newlines, non-ASCII Unicode strings.
-- Workspace boundaries: empty workspaces, single-package targets, cyclic dependencies, detached HEAD git states, un-tagged repositories.
+## 7 Shared Trait Centralization Framework
 
-### 6. Crash-Safety & Subprocess Security
-- File I/O: Missing `.flush()` or `.sync_all()` calls prior to atomic file rename/persists.
-- Subprocess invocations (e.g., `git`, `cargo`, `npm`, `tar`): Misplaced `--` end-of-options delimiters, unescaped string parameters, or bad flag ordering (`fatal: too many arguments`).
+When auditing multi-crate workspaces, map recurring defects directly to 7 Centralized Rust Traits:
+1. `PackageIdentityResolver`: Cross-ecosystem package matching and bare name resolution.
+2. `VersionSpecRenderer`: Format & precision-preserving version requirement rendering.
+3. `ChangesetStorage`: Crash-safe, transactional disk engine with parent directory fsync.
+4. `CstManifestEditor`: CST format-preserving manifest modification (`toml_edit` and `serde_json`).
+5. `GitVcsProvider`: Safe Git tags, shallow checkout handling, and bounded revwalk.
+6. `CascadeSolver`: Fixpoint dependency graph solver & convergence tracking.
+7. `ReportPresenter`: Unified text & JSON report renderer with rich `miette` diagnostic cards.
 
 ---
 
 ## Hazard-Taxonomy Multi-Agent Dispatch Matrix
 
-When conducting an automated bug hunt across a Rust repository, launch subagents partitioned by Hazard Category across the entire workspace:
-
-| Agent Role | Target Taxonomies | Objective |
+| Agent Role | Scope | Objective |
 | :--- | :--- | :--- |
-| **Agent A: Data & Parameters** | Taxonomies 1 & 4 | Audit all crates for unused CLI flags, discarded parameters, and `unwrap_or` fallback defaults. |
-| **Agent B: Solvers & Logic** | Taxonomies 2 & 3 | Audit fixpoint loops, graph solvers, ordering staleness, and spec compliance drift. |
-| **Agent C: System & I/O** | Taxonomies 5 & 6 | Audit UTF-8 BOM, CRLF, atomic file write `.flush()`/`.sync_all()`, and subprocess argument ordering. |
+| **`bug-hunter-scanner-rust`** | Taxonomies 1 & 4 | Scan workspace for unused CLI flags, discarded parameters, and silent `unwrap_or` defaults. |
+| **`bug-hunter-adversary-rust`** | Taxonomies 2 & 3 | Trace execution paths end-to-end, disprove candidate signals, and check graph solver fixpoints and spec drift. |
+| **`bug-hunter-remediator-rust`** | Taxonomies 5 & 6 | Audit boundary inputs, atomic write `.flush()`/`.sync_all()`, write failing regression tests (red), apply fixes. |
+| **`bug-hunter-architect-rust`** | Smells 1-6 & Trait Centralization | Analyze recurring defect patterns, cluster code smells, and design lean Rust traits with formal contracts. |
+| **`bug-hunter-mutator-rust`** | Mutation Testing & Coverage | Run `cargo-mutants`, find survived mutant branches, and write boundary unit tests ensuring assertions fail when code is mutated. |
 
 ---
 
@@ -83,13 +86,3 @@ Report each confirmed finding in this standard technical format:
 - **Failing Scenario**: Concrete payload, CLI command, or input state that triggers the defect.
 - **Verification Strategy**: A test that fails on current code and passes once fixed.
 ```
-
-### Verification Checklist
-Before marking a finding `CONFIRMED`:
-- [ ] Traced exact execution path end-to-end.
-- [ ] Created a concrete failing scenario.
-- [ ] Verified finding is not a duplicate.
-
-Before marking a fix `DONE`:
-- [ ] Test failed pre-fix (red).
-- [ ] Test passes post-fix (green).

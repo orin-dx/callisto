@@ -22,6 +22,12 @@ pub struct GitCommit {
     pub body: Option<String>,
 }
 
+/// Trait for Git VCS operations.
+pub trait GitVcsProvider {
+    fn head_sha(&self) -> Result<CommitSha, VcsError>;
+    fn list_tags(&self, glob_pattern: Option<&str>) -> Result<Vec<TagName>, VcsError>;
+}
+
 pub struct GitRepository {
     #[cfg(not(target_arch = "wasm32"))]
     repo: gix::Repository,
@@ -91,7 +97,7 @@ impl GitRepository {
         }
         #[cfg(target_arch = "wasm32")]
         {
-            let _ = glob_pattern;
+            let _unused = glob_pattern;
             Ok(Vec::new())
         }
     }
@@ -111,17 +117,19 @@ impl GitRepository {
                 .map_err(|e| VcsError::Git(format!("Failed to create revwalk: {e}")))?;
 
             let stop_sha = if let Some(r) = from_ref {
-                let spec = self
-                    .repo
-                    .rev_parse_single(r)
-                    .map_err(|_e| VcsError::RefNotFound {
-                        ref_name: r.to_string(),
-                    })?;
-                let object = spec.object().map_err(|e| VcsError::Git(e.to_string()))?;
-                let commit = object
-                    .peel_to_kind(gix::object::Kind::Commit)
-                    .map_err(|e| VcsError::Git(e.to_string()))?;
-                Some(commit.id.to_hex().to_string())
+                if let Ok(spec) = self.repo.rev_parse_single(r) {
+                    if let Ok(object) = spec.object() {
+                        if let Ok(commit) = object.peel_to_kind(gix::object::Kind::Commit) {
+                            Some(commit.id.to_hex().to_string())
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
             } else {
                 None
             };
@@ -157,9 +165,19 @@ impl GitRepository {
         }
         #[cfg(target_arch = "wasm32")]
         {
-            let _ = from_ref;
+            let _unused = from_ref;
             Ok(Vec::new())
         }
+    }
+}
+
+impl GitVcsProvider for GitRepository {
+    fn head_sha(&self) -> Result<CommitSha, VcsError> {
+        self.head_sha()
+    }
+
+    fn list_tags(&self, glob_pattern: Option<&str>) -> Result<Vec<TagName>, VcsError> {
+        self.list_tags(glob_pattern)
     }
 }
 

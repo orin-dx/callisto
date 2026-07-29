@@ -1,13 +1,15 @@
 {
   "id": "bug-hunter-rust",
   "name": "bug-hunter-rust",
-  "version": "1.0.0",
-  "description": "Self-contained Rust Bug Hunter plugin with 6 Rust Hazard Taxonomies & Multi-Agent Orchestration.",
+  "version": "1.1.0",
+  "description": "Self-contained Rust Bug Hunter plugin with 6 Hazard Taxonomies, 6 Code Smell Sweeps, and 5 Specialized Subagents.",
   "author": "Gabriel Castro (Orin DX)",
   "skills": ["bug-hunter-rust"],
   "agents": [
     "bug-hunter-scanner-rust",
     "bug-hunter-adversary-rust",
-    "bug-hunter-remediator-rust"
+    "bug-hunter-remediator-rust",
+    "bug-hunter-architect-rust",
+    "bug-hunter-mutator-rust"
   ]
 }

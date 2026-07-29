@@ -1,22 +1,14 @@
 ---
 name: bug-hunter-rust
 description: >-
-  Trigger this skill when the user asks to perform a bug hunt, code audit, spec verification, or defect search in a Rust codebase or monorepo workspace. Use when checking for discarded CLI arguments, unhandled parameters, silent unwrap_or fallback defaults, graph fixpoint staleness, UTF-8 BOM or CRLF line ending boundary issues, missing atomic disk write flush or sync_all calls, or subprocess parameter option ordering errors. Also activate when the user requests an adversarial audit across safe Rust codebases, Cargo workspace dependencies, or WASM plugins.
+  Trigger this skill when the user asks to perform a bug hunt, code audit, spec verification, architecture smell analysis, or defect search in a Rust codebase or monorepo workspace. Use when checking for discarded CLI arguments, unhandled parameters, silent unwrap_or fallback defaults, graph fixpoint staleness, UTF-8 BOM or CRLF line ending boundary issues, missing atomic disk write flush or sync_all calls, raw string identity mismatches, or lossy CST mutations. Also activate when conducting multi-agent adversarial audits across safe Rust codebases, Cargo workspace dependencies, or WASM PDK plugins.
 ---
 
 # Universal Rust Bug-Hunter Skill
 
 <overview>
-This skill provides a self-contained, outcome-driven framework for auditing Rust codebases across 6 universal hazard taxonomies. It dynamically adapts to any Rust workspace structure (standalone crates, Cargo monorepos, polyglot WASM plugins) and automatically detects available workspace test runners (`cargo nextest`, `cargo test`, `just test`, `moon run :test`).
+This skill provides a self-contained, outcome-driven framework for auditing Rust codebases across 6 universal hazard taxonomies and 6 architectural code smells. It dynamically adapts to any Rust workspace structure (standalone crates, Cargo monorepos, polyglot WASM plugins), synthesizes recurring defects into reusable shared Rust traits, and coordinates 5 specialized subagents.
 </overview>
-
----
-
-<framework_references>
-Review shared framework standards prior to executing an audit:
-- [General Debugging Laws](../../../shared/debugging-laws.md)
-- [Evaluation Report Template](../../../shared/report-template.md)
-</framework_references>
 
 ---
 
@@ -50,12 +42,59 @@ Review shared framework standards prior to executing an audit:
 
 ---
 
+<architectural_smell_sweeps>
+
+### 1. Raw String Identity Smell
+- **Symptom**: Comparing `PackageId` using `==` on raw `.name()` or `.to_string()` without prefix resolution.
+- **Sweep**: `grep_search` for `\.name\(\)\s*==` or `pkg\.id ==`.
+
+### 2. Un-Transactional Disk Mutation Smell
+- **Symptom**: Mutating files or Git state step-by-step in non-dry-run paths without rollback transactions.
+- **Sweep**: `grep_search` for `fs::write` or `fs::remove_file` in version plan resolution.
+
+### 3. Lossy Serde / CST Formatting Smell
+- **Symptom**: Replacing `toml_edit::Value` or `serde_json::Value` without preserving `.decor()` or line endings.
+- **Sweep**: `grep_search` for `Value::from\(` or `insert\("version"`.
+
+### 4. Un-Fsynced Directory Metadata Smell
+- **Symptom**: `create_dir_all` or `atomic_write` without calling `.sync_all()` on parent directory handles post-rename.
+- **Sweep**: `grep_search` for `atomic_write` or `fs::create_dir_all`.
+
+### 5. Scopeless Fallback & Unbounded Traversal Smell
+- **Symptom**: `unwrap_or_else` defaults hiding invalid state or `revwalk` traversing entire Git history.
+- **Sweep**: `grep_search` for `rev_walk` or `unwrap_or_else`.
+
+### 6. Hardcoded Constant Dummy Smell
+- **Symptom**: Inserting placeholder strings (`"Release update"`, `"changeset.md"`) instead of preserving user metadata.
+- **Sweep**: `grep_search` for `"Release update"` or `"changeset.md"`.
+
+</architectural_smell_sweeps>
+
+---
+
+<shared_traits_centralization_framework>
+
+When auditing multi-crate workspaces, map recurring defects directly to 7 Centralized Rust Traits:
+1. `PackageIdentityResolver`: Cross-ecosystem package matching and bare name resolution.
+2. `VersionSpecRenderer`: Format & precision-preserving version requirement rendering.
+3. `ChangesetStorage`: Crash-safe, transactional disk engine with parent directory fsync.
+4. `CstManifestEditor`: CST format-preserving manifest modification (`toml_edit` and `serde_json`).
+5. `GitVcsProvider`: Safe Git tags, shallow checkout handling, and bounded revwalk.
+6. `CascadeSolver`: Fixpoint dependency graph solver & convergence tracking.
+7. `ReportPresenter`: Unified text & JSON report renderer with rich `miette` diagnostic cards.
+
+</shared_traits_centralization_framework>
+
+---
+
 <subagent_dispatch_matrix>
 
-| Agent Role | Target Taxonomies | Delegation Scenario |
+| Agent Role | Target Taxonomies / Scope | Delegation Scenario |
 | :--- | :--- | :--- |
-| **`bug-hunter-scanner-rust`** | Taxonomies 1 & 4 | Delegate to scan workspace for unused CLI flags, discarded parameters, and silent `unwrap_or` defaults. Returns structured candidate signals. |
-| **`bug-hunter-adversary-rust`** | Taxonomies 2 & 3 | Delegate to trace execution paths end-to-end, disprove candidate signals, and check graph solver fixpoints and spec drift. Returns confirmed findings with failing scenarios. |
+| **`bug-hunter-scanner-rust`** | Taxonomies 1 & 4 | Delegate to scan workspace for unused CLI flags, discarded parameters, and silent `unwrap_or` defaults. Returns candidate defect signals. |
+| **`bug-hunter-adversary-rust`** | Taxonomies 2 & 3 | Delegate to trace execution paths end-to-end, disprove candidate signals, and check graph solver fixpoints and spec drift. Returns confirmed findings. |
 | **`bug-hunter-remediator-rust`** | Taxonomies 5 & 6 | Delegate to audit boundary inputs, atomic write `.flush()`/`.sync_all()`, write failing regression tests (red), apply fixes, and verify clean test suite execution (green). |
+| **`bug-hunter-architect-rust`** | Smells 1-6 & Trait Centralization | Delegate to analyze recurring defect patterns, cluster code smells, and design lean Rust traits with formal contracts. |
+| **`bug-hunter-mutator-rust`** | Mutation Testing & Test Coverage | Delegate to run `cargo-mutants`, find survived mutant branches, and write boundary unit tests ensuring assertions fail when code is mutated. |
 
 </subagent_dispatch_matrix>

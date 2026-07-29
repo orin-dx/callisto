@@ -18,3 +18,4 @@ schemars = "0.8"
 
 [dev-dependencies]
 callisto-fixtures = { path = "../callisto-fixtures" }
+proptest = "1"

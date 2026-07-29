@@ -311,9 +311,19 @@ impl Manifest for CargoToml {
 
         if let Some(value) = item.as_value_mut() {
             if value.is_str() {
-                *value = toml_edit::Value::from(new_str);
+                let decor = value.decor().clone();
+                let mut new_val = toml_edit::Value::from(new_str);
+                *new_val.decor_mut() = decor;
+                *value = new_val;
             } else if let Some(inline) = value.as_inline_table_mut() {
-                inline.insert("version", toml_edit::Value::from(new_str));
+                if let Some(existing_ver) = inline.get_mut("version") {
+                    let decor = existing_ver.decor().clone();
+                    let mut new_val = toml_edit::Value::from(new_str);
+                    *new_val.decor_mut() = decor;
+                    *existing_ver = new_val;
+                } else {
+                    inline.insert("version", toml_edit::Value::from(new_str));
+                }
             }
         } else if let Some(tbl) = item.as_table_mut() {
             tbl.insert("version", toml_edit::value(new_str));
@@ -381,8 +391,29 @@ pub fn round_trip(spec: &DepSpec, target: &Version) -> Option<DepSpec> {
     match spec {
         DepSpec::CargoBare(_) => Some(DepSpec::CargoBare(target.clone())),
         DepSpec::Range(_, original) => {
+            if original.contains(',') {
+                let parts: Vec<&str> = original.split(',').collect();
+                let mut rewritten_parts = Vec::new();
+                for part in parts {
+                    let part_trimmed = part.trim();
+                    let (prefix, rest) = split_single_operator_prefix(part_trimmed)?;
+                    if prefix.starts_with('>')
+                        || prefix.starts_with('=')
+                        || prefix.starts_with('^')
+                        || prefix.starts_with('~')
+                    {
+                        let rendered = format!("{prefix}{}", render_at_precision(target, rest));
+                        rewritten_parts.push(rendered);
+                    } else {
+                        rewritten_parts.push(part_trimmed.to_string());
+                    }
+                }
+                let rendered = rewritten_parts.join(", ");
+                let req = VersionReq::parse(&rendered, Ecosystem::Cargo).ok()?;
+                return Some(DepSpec::Range(req, rendered));
+            }
             let (prefix, rest) = split_single_operator_prefix(original)?;
-            if rest.contains(',') || rest.contains('*') {
+            if rest.contains('*') {
                 return None;
             }
             let rendered = format!("{prefix}{}", render_at_precision(target, rest));
@@ -404,6 +435,9 @@ fn split_single_operator_prefix(s: &str) -> Option<(&str, &str)> {
 }
 
 fn render_at_precision(target: &Version, original_clause: &str) -> String {
+    if original_clause.contains('-') || target.is_prerelease() {
+        return target.render().to_string();
+    }
     let parts: Vec<&str> = original_clause.split('.').collect();
     let maj = target.major().unwrap_or(0);
     let min = target.minor().unwrap_or(0);
@@ -513,7 +547,7 @@ impl WorkspaceCargoResolver {
         let ws = self
             .document
             .get_mut("workspace")
-            .and_then(|w| w.as_table_mut())
+            .and_then(|w| w.as_table_like_mut())
             .ok_or_else(|| ManifestError::MissingField {
                 path: self.root_path.clone(),
                 field: "workspace",
@@ -745,5 +779,51 @@ edition = "2021"
 
         let updated = fs::read_to_string(&manifest_path).unwrap();
         assert!(updated.contains("version = \"0.2.0\" # preserve this inline comment"));
+    }
+
+    #[test]
+    fn test_cargo_dependency_version_update_decor_preservation() {
+        let dir = tempdir().unwrap();
+        let manifest_path = dir.path().join("Cargo.toml");
+        let content = r#"[package]
+name = "my-crate"
+version = "0.1.0"
+
+[dependencies]
+helper = { version = "1.0.0", path = "../helper" } # dep comment
+"#;
+        fs::write(&manifest_path, content).unwrap();
+
+        let decl = ManifestDecl::new(
+            "Cargo.toml",
+            ManifestRole::Canonical,
+            ManifestFormat::CargoToml,
+        )
+        .unwrap();
+        let ctx = OpenContext {
+            workspace_root: dir.path(),
+            cargo_workspace: None,
+            npm_workspace_kind: None,
+        };
+
+        let mut manifest = CargoToml::open(&decl, &ctx).unwrap();
+        let new_spec = DepSpec::Range(
+            VersionReq::parse("^1.1.0", Ecosystem::Cargo).unwrap(),
+            "^1.1.0".to_string(),
+        );
+        manifest
+            .update_dependency_spec("helper", callisto_model::DepKind::Runtime, new_spec)
+            .unwrap();
+
+        let updated = fs::read_to_string(&manifest_path).unwrap();
+        assert!(updated.contains("# dep comment"));
+    }
+
+    use proptest::prelude::*;
+    proptest! {
+        #[test]
+        fn proptest_cargo_toml_parse_never_panics(s in "\\PC*") {
+            let _res = s.parse::<toml_edit::DocumentMut>();
+        }
     }
 }

@@ -9,7 +9,7 @@ fn test_e2e_workspace_init_add_and_status() {
     let root = tmp.path();
 
     // Initialize git repository
-    let _ = std::process::Command::new("git")
+    let _res = std::process::Command::new("git")
         .arg("init")
         .current_dir(root)
         .output();
@@ -65,6 +65,7 @@ edition = "2021"
         callisto_cli::cli::StatusArgs {
             strict: false,
             strict_graph: false,
+            check: false,
         },
         &global,
     );

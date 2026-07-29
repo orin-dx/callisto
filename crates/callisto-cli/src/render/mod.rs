@@ -8,6 +8,19 @@ use callisto_model::{
 pub mod attribution;
 pub mod diff;
 
+pub fn render_diagnostics<W: io::Write>(
+    diagnostics: &[callisto_model::Diagnostic],
+    w: &mut W,
+) -> io::Result<()> {
+    if !diagnostics.is_empty() {
+        writeln!(w, "\nDiagnostics:")?;
+        for d in diagnostics {
+            writeln!(w, "  [{:?}] {}", d.severity, d.message)?;
+        }
+    }
+    Ok(())
+}
+
 pub fn render_status<W: io::Write>(report: &StatusReport, w: &mut W) -> io::Result<()> {
     writeln!(w, "Status (schema v{}):", report.schema_version)?;
     for pkg in &report.packages {
@@ -19,7 +32,7 @@ pub fn render_status<W: io::Write>(report: &StatusReport, w: &mut W) -> io::Resu
             pkg.pending_severity
         )?;
     }
-    Ok(())
+    render_diagnostics(&report.diagnostics, w)
 }
 
 pub fn render_version<W: io::Write>(report: &VersionReport, w: &mut W) -> io::Result<()> {
@@ -33,7 +46,7 @@ pub fn render_version<W: io::Write>(report: &VersionReport, w: &mut W) -> io::Re
             bump.to.raw()
         )?;
     }
-    Ok(())
+    render_diagnostics(&report.diagnostics, w)
 }
 
 pub fn render_publish<W: io::Write>(report: &PublishPlan, w: &mut W) -> io::Result<()> {

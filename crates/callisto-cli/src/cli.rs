@@ -70,6 +70,8 @@ pub struct StatusArgs {
     pub strict: bool,
     #[arg(long)]
     pub strict_graph: bool,
+    #[arg(long)]
+    pub check: bool,
 }
 
 #[derive(Args, Clone, Debug)]
@@ -131,6 +133,8 @@ pub struct ComposePrBodyArgs {
 pub struct TagArgs {
     #[arg(long, value_name = "FILE|-")]
     pub plan: String,
+    #[arg(long)]
+    pub floating_major: bool,
 }
 
 #[derive(Args, Clone, Debug)]

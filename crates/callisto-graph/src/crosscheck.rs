@@ -24,6 +24,9 @@ pub fn crosscheck_declared_edges(
 
     let mut graph_pairs = BTreeSet::new();
     for edge in graph.edges() {
+        if edge.kind == callisto_model::DepKind::Dev {
+            continue;
+        }
         if graph.get(&edge.from).is_some() && graph.get(&edge.to).is_some() {
             graph_pairs.insert((edge.from.clone(), edge.to.clone()));
         }

@@ -26,13 +26,23 @@ pub fn handle(args: StatusArgs, global: &GlobalArgs) -> Result<ExitCode, CliErro
         OutputFormat::Text => render::render_status(&report, &mut std::io::stdout())?,
     }
 
-    let has_errors = report
-        .diagnostics
-        .iter()
-        .any(|d| d.severity == DiagnosticSeverity::Error);
+    let has_errors = report.diagnostics.iter().any(|d| {
+        d.severity == DiagnosticSeverity::Error
+            || (args.strict && d.severity == DiagnosticSeverity::Warning)
+    });
 
     if has_errors {
         Ok(ExitCode::FAILURE)
+    } else if args.check {
+        let has_pending = report
+            .packages
+            .iter()
+            .any(|p| !p.pending_changesets.is_empty());
+        if has_pending {
+            Ok(ExitCode::SUCCESS)
+        } else {
+            Ok(ExitCode::from(2))
+        }
     } else {
         Ok(ExitCode::SUCCESS)
     }

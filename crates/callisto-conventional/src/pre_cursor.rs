@@ -25,11 +25,12 @@ pub fn resolve_pre_cursor(
         return Ok(None);
     }
 
-    let sha = CommitSha::parse(sha_str).map_err(|_| ConventionalError::MalformedPreCursorRef {
-        cwd: cwd.to_path_buf(),
-        ref_name,
-        stderr: output.stderr,
-    })?;
+    let sha =
+        CommitSha::parse(sha_str).map_err(|_err| ConventionalError::MalformedPreCursorRef {
+            cwd: cwd.to_path_buf(),
+            ref_name,
+            stderr: output.stderr,
+        })?;
 
     Ok(Some(sha))
 }

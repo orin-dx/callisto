@@ -60,10 +60,8 @@ where
     }
 
     if sorted.len() < members.len() {
-        let remaining: Vec<PackageId> = members
-            .into_iter()
-            .filter(|m| !sorted.contains(m))
-            .collect();
+        let set: HashSet<PackageId> = sorted.iter().cloned().collect();
+        let remaining: Vec<PackageId> = members.into_iter().filter(|m| !set.contains(m)).collect();
         let cycle = extract_cycle(&remaining, &adj);
         return Err(GraphError::Cycle { cycle });
     }

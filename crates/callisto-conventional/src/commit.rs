@@ -40,7 +40,8 @@ impl ParsedCommit {
 }
 
 pub fn parse_commit(sha: CommitSha, message: &str) -> ParsedCommit {
-    let mut lines = message.lines();
+    let clean_message = message.strip_prefix('\u{FEFF}').unwrap_or(message);
+    let mut lines = clean_message.lines();
     let Some(header) = lines.next() else {
         return ParsedCommit::NonConventional {
             sha,
@@ -233,6 +234,20 @@ mod tests {
                 assert_eq!(c.body, Some("Note: this is a body paragraph.".to_string()));
                 assert_eq!(c.footers.len(), 1);
                 assert_eq!(c.footers[0].token, "Signed-off-by");
+            }
+            _ => panic!("expected conventional"),
+        }
+    }
+
+    #[test]
+    fn test_utf8_bom_commit_message_parsing() {
+        let sha = CommitSha::parse("a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0").unwrap();
+        let msg = "\u{FEFF}feat: add utf8 bom handling";
+        let parsed = parse_commit(sha, msg);
+        match parsed {
+            ParsedCommit::Conventional(c) => {
+                assert_eq!(c.commit_type, "feat");
+                assert_eq!(c.description, "add utf8 bom handling");
             }
             _ => panic!("expected conventional"),
         }
