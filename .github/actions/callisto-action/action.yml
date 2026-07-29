@@ -115,11 +115,22 @@ runs:
             git commit -m "$INPUT_COMMIT_MESSAGE"
             git push origin callisto/version-packages --force
 
+            if [[ -n "$INPUT_PR_LABEL" ]]; then
+              gh label create "$INPUT_PR_LABEL" --color "0e8a16" --description "Release packages" 2>/dev/null || true
+            fi
+
             EXISTING_PR=$(gh pr list --head callisto/version-packages --json number --jq '.[0].number // empty')
             if [[ -n "$EXISTING_PR" ]]; then
-              gh pr edit "$EXISTING_PR" --title "$INPUT_TITLE" --body "$PR_BODY" --add-label "$INPUT_PR_LABEL" || true
+              gh pr edit "$EXISTING_PR" --title "$INPUT_TITLE" --body "$PR_BODY" || true
+              if [[ -n "$INPUT_PR_LABEL" ]]; then
+                gh pr edit "$EXISTING_PR" --add-label "$INPUT_PR_LABEL" || true
+              fi
             else
-              gh pr create --title "$INPUT_TITLE" --body "$PR_BODY" --head callisto/version-packages --base "$INPUT_BRANCH" --label "$INPUT_PR_LABEL" || true
+              if [[ -n "$INPUT_PR_LABEL" ]]; then
+                gh pr create --title "$INPUT_TITLE" --body "$PR_BODY" --head callisto/version-packages --base "$INPUT_BRANCH" --label "$INPUT_PR_LABEL" || gh pr create --title "$INPUT_TITLE" --body "$PR_BODY" --head callisto/version-packages --base "$INPUT_BRANCH"
+              else
+                gh pr create --title "$INPUT_TITLE" --body "$PR_BODY" --head callisto/version-packages --base "$INPUT_BRANCH"
+              fi
             fi
 
             echo "### Version Packages PR Created/Updated" >> $GITHUB_STEP_SUMMARY
