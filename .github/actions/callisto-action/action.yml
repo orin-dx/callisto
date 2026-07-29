@@ -177,9 +177,14 @@ runs:
                 local max_attempts=5
                 local attempt=1
                 local delay=3
+                local token_flag=""
+
+                if [[ -n "$CARGO_REGISTRY_TOKEN" ]]; then
+                  token_flag="--token $CARGO_REGISTRY_TOKEN"
+                fi
 
                 echo "Publishing Rust crate in topological order: $crate (Attempt $attempt/$max_attempts)..."
-                until cargo publish -p "$crate" --no-verify --allow-dirty; do
+                until cargo publish -p "$crate" $token_flag --no-verify --allow-dirty; do
                   if [[ $attempt -ge $max_attempts ]]; then
                     echo "Warning: Failed to publish $crate after $max_attempts attempts."
                     return 0
