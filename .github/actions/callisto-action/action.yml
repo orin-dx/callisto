@@ -140,30 +140,7 @@ runs:
             echo "EOF" >> $GITHUB_OUTPUT
             echo "::endgroup::"
 
-            echo "::group::3. Tagging Release Commits & Updating Major Version Pointer Aliases"
-            callisto tag --plan "$PLAN_JSON" --floating-major || true
-            git push origin --tags || true
-            echo "::endgroup::"
-
-            if [[ "$INPUT_CREATE_GITHUB_RELEASE" == "true" ]]; then
-              echo "::group::4. Creating GitHub Release Entries"
-              for TAG in $(echo "$PLAN_JSON" | jq -r '.releases[]?.tagName // empty'); do
-                if [[ -n "$TAG" ]]; then
-                  echo "Creating GitHub Release for tag: $TAG"
-                  
-                  # Detect if tag is a SemVer prerelease (contains alpha/beta/rc/pre)
-                  EXTRA_FLAGS=""
-                  if [[ "$TAG" =~ -(alpha|beta|rc|pre|next) ]]; then
-                    EXTRA_FLAGS="--prerelease"
-                  fi
-
-                  gh release create "$TAG" --title "$TAG" --generate-notes $EXTRA_FLAGS || true
-                fi
-              done
-              echo "::endgroup::"
-            fi
-
-            echo "::group::5. Executing Package Publishing"
+            echo "::group::3. Executing Package Publishing"
             if [[ "$INPUT_PUBLISH" != "true" ]]; then
               echo "Executing custom publish script: $INPUT_PUBLISH"
               eval "$INPUT_PUBLISH"
@@ -219,6 +196,29 @@ runs:
               fi
             fi
             echo "::endgroup::"
+
+            echo "::group::4. Tagging Release Commits & Updating Major Version Pointer Aliases"
+            callisto tag --plan "$PLAN_JSON" --floating-major || true
+            git push origin --tags || true
+            echo "::endgroup::"
+
+            if [[ "$INPUT_CREATE_GITHUB_RELEASE" == "true" ]]; then
+              echo "::group::5. Creating GitHub Release Entries"
+              for TAG in $(echo "$PLAN_JSON" | jq -r '.releases[]?.tagName // empty'); do
+                if [[ -n "$TAG" ]]; then
+                  echo "Creating GitHub Release for tag: $TAG"
+                  
+                  # Detect if tag is a SemVer prerelease (contains alpha/beta/rc/pre)
+                  EXTRA_FLAGS=""
+                  if [[ "$TAG" =~ -(alpha|beta|rc|pre|next) ]]; then
+                    EXTRA_FLAGS="--prerelease"
+                  fi
+
+                  gh release create "$TAG" --title "$TAG" --generate-notes $EXTRA_FLAGS || true
+                fi
+              done
+              echo "::endgroup::"
+            fi
 
             echo "### Packages Published Successfully" >> $GITHUB_STEP_SUMMARY
           else
