@@ -7,5 +7,5 @@ description = "Conventional Commits parsing for callisto's Auto release trigger.
 repository.workspace = true
 
 [dependencies]
-callisto-model = { path = "../callisto-model", version = "0.2.0" }
+callisto-model = { path = "../callisto-model", version = "0.3.0" }
 thiserror = { workspace = true }
