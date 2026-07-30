@@ -3,15 +3,24 @@ use std::path::{Path, PathBuf};
 use callisto_model::{CommitSha, TagName};
 use thiserror::Error;
 
-#[derive(Debug, Error)]
+#[derive(Clone, Debug, Error, miette::Diagnostic, PartialEq, Eq)]
 pub enum VcsError {
     #[error("failed to discover Git repository at `{path}`: {message}")]
+    #[diagnostic(
+        code(E050),
+        help("Ensure target directory is inside a valid Git repository.")
+    )]
     RepoNotFound { path: PathBuf, message: String },
 
     #[error("git error: {0}")]
+    #[diagnostic(code(E051))]
     Git(String),
 
     #[error("reference `{ref_name}` was not found")]
+    #[diagnostic(
+        code(E052),
+        help("Check if reference or tag exists in local or remote Git refs.")
+    )]
     RefNotFound { ref_name: String },
 }
 
@@ -37,8 +46,9 @@ impl GitRepository {
     #[cfg(not(target_arch = "wasm32"))]
     pub fn discover(path: impl AsRef<Path>) -> Result<Self, VcsError> {
         let p = path.as_ref();
-        let repo = gix::discover(p).map_err(|e| VcsError::RepoNotFound {
-            path: p.to_path_buf(),
+        let clean_path = dunce::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+        let repo = gix::discover(&clean_path).map_err(|e| VcsError::RepoNotFound {
+            path: clean_path,
             message: e.to_string(),
         })?;
         Ok(Self { repo })
@@ -155,8 +165,13 @@ impl GitRepository {
                 let message = commit_obj
                     .message()
                     .map_err(|e| VcsError::Git(e.to_string()))?;
-                let summary = message.title.to_string();
-                let body = message.body.map(|b| b.to_string());
+                let summary = message
+                    .title
+                    .to_string()
+                    .replace("\r\n", "\n")
+                    .trim_end()
+                    .to_string();
+                let body = message.body.map(|b| b.to_string().replace("\r\n", "\n"));
 
                 commits.push(GitCommit { sha, summary, body });
             }
@@ -167,6 +182,80 @@ impl GitRepository {
         {
             let _unused = from_ref;
             Ok(Vec::new())
+        }
+    }
+
+    pub fn create_tag(
+        &self,
+        name: &str,
+        target_sha: &CommitSha,
+        message: Option<&str>,
+    ) -> Result<(), VcsError> {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let oid = gix::ObjectId::from_hex(target_sha.as_ref().as_bytes())
+                .map_err(|e| VcsError::Git(format!("Invalid SHA: {e}")))?;
+
+            if let Some(msg) = message {
+                self.repo
+                    .tag(
+                        name,
+                        oid,
+                        gix::object::Kind::Commit,
+                        None,
+                        msg,
+                        gix::refs::transaction::PreviousValue::MustNotExist,
+                    )
+                    .map_err(|e| VcsError::Git(format!("Failed to create tag: {e}")))?;
+            } else {
+                let clean_name = name.strip_prefix("refs/tags/").unwrap_or(name);
+                let ref_name = format!("refs/tags/{}", clean_name);
+                let _unused = self
+                    .repo
+                    .reference(
+                        ref_name,
+                        oid,
+                        gix::refs::transaction::PreviousValue::MustNotExist,
+                        "callisto create tag",
+                    )
+                    .map_err(|e| VcsError::Git(format!("Failed to create lightweight tag: {e}")))?;
+            }
+            Ok(())
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            let _ = (name, target_sha, message);
+            Err(VcsError::Git("WASM unsupported".to_string()))
+        }
+    }
+
+    pub fn create_floating_major(
+        &self,
+        major_name: &str,
+        target_sha: &CommitSha,
+    ) -> Result<(), VcsError> {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let oid = gix::ObjectId::from_hex(target_sha.as_ref().as_bytes())
+                .map_err(|e| VcsError::Git(format!("Invalid SHA: {e}")))?;
+
+            let ref_name = format!("refs/tags/{}", major_name);
+            let _unused = self
+                .repo
+                .reference(
+                    ref_name,
+                    oid,
+                    gix::refs::transaction::PreviousValue::Any,
+                    "callisto floating major",
+                )
+                .map_err(|e| VcsError::Git(format!("Failed to update floating major: {e}")))?;
+
+            Ok(())
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            let _ = (major_name, target_sha);
+            Err(VcsError::Git("WASM unsupported".to_string()))
         }
     }
 }

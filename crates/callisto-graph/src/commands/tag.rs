@@ -24,6 +24,8 @@ pub fn create_tags_with_options<R: CommandRunner, D: DependencyResolver>(
 ) -> Result<TagReport, GraphError> {
     let mut tags = Vec::new();
 
+    let repo = callisto_vcs::GitRepository::discover(&ws.root)?;
+
     for release in &plan.releases {
         let tag_str = release.tag_name.as_str();
 
@@ -56,26 +58,12 @@ pub fn create_tags_with_options<R: CommandRunner, D: DependencyResolver>(
             continue;
         }
 
-        let output = ws
-            .runner
-            .run("git", &["tag", "--list", tag_str], &ws.root)?;
-
-        let already_existed = output.success() && !output.stdout_trimmed().is_empty();
+        let existing = repo.list_tags(Some(tag_str))?;
+        let already_existed = !existing.is_empty();
 
         if !already_existed {
             let msg = format!("Release {}", tag_str);
-            let sha_str = release.sha.as_str();
-            let create_out = ws.runner.run(
-                "git",
-                &["tag", "-a", tag_str, "-m", &msg, sha_str],
-                &ws.root,
-            )?;
-            if !create_out.success() {
-                return Err(GraphError::Command(callisto_model::CommandError::Io {
-                    program: "git".to_string(),
-                    message: create_out.stderr,
-                }));
-            }
+            repo.create_tag(tag_str, &release.sha, Some(&msg))?;
         }
 
         if opts.floating_major {
@@ -91,19 +79,12 @@ pub fn create_tags_with_options<R: CommandRunner, D: DependencyResolver>(
             if let Some(v_str) = ver_str {
                 if let Ok(ver) = callisto_model::Version::parse(v_str, grammar) {
                     if let Some(major_tag) = tmpl.render_floating_major(&ver) {
-                        let sha_str = release.sha.as_str();
-                        let major_out = ws.runner.run(
-                            "git",
-                            &["tag", "-f", major_tag.as_str(), sha_str],
-                            &ws.root,
-                        )?;
-                        if major_out.success() {
-                            tags.push(CreatedTag {
-                                package: release.package.clone(),
-                                tag_name: major_tag,
-                                sha: release.sha.clone(),
-                            });
-                        }
+                        repo.create_floating_major(major_tag.as_str(), &release.sha)?;
+                        tags.push(CreatedTag {
+                            package: release.package.clone(),
+                            tag_name: major_tag,
+                            sha: release.sha.clone(),
+                        });
                     }
                 }
             }
