@@ -8,7 +8,7 @@ callisto-changelog: patch
 callisto-cli: patch
 ---
 
-# Polyglot Engine Re-Architecture, Native Gitoxide Ref Engine, and Diagnostic Cards
+# Polyglot Engine Re-Architecture, Native Gitoxide Ref Engine, and Diagnostic Cards (since v0.3.0)
 
 ## Architectural Enhancements
 - **Polyglot Resilience Engine (`callisto-graph`, `callisto-model`)**: Added `RegistryClient`, `RateLimitPolicy`, and `TimeProvider` traits. Built `PublishOrchestrator` supporting HTTP 429 server TTL parsing, 600-second auto-pause handling, and immediate auth fail-fast on 401/403 credentials errors.
