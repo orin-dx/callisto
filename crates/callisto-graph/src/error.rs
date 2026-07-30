@@ -39,6 +39,9 @@ pub enum GraphError {
     #[error(transparent)]
     Model(#[from] callisto_model::ModelError),
 
+    #[error("vcs error: {0}")]
+    Vcs(#[from] callisto_vcs::VcsError),
+
     #[error("command error: {0}")]
     Command(#[from] callisto_model::CommandError),
 

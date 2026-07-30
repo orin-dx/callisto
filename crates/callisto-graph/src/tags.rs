@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use callisto_model::{
-    select_last_tag, CommandError, CommandRunner, CommitSha, Diagnostic, LastTag, LastTagSelection,
-    PackageId, TagTemplate, VersionGrammar,
+    select_last_tag, CommandRunner, CommitSha, Diagnostic, LastTag, LastTagSelection, PackageId,
+    TagTemplate, VersionGrammar,
 };
 
 use crate::config::ResolvedConfig;
@@ -11,35 +11,15 @@ use crate::error::GraphError;
 use crate::resolver::DependencyResolver;
 
 pub fn last_tag_for<R: CommandRunner>(
-    runner: &R,
+    _runner: &R,
     root: &Path,
     template: &TagTemplate,
     grammar: VersionGrammar,
 ) -> Result<LastTagSelection, GraphError> {
     let glob = template.glob();
-    let lines: Vec<String> = if let Ok(repo) = callisto_vcs::GitRepository::discover(root) {
-        if let Ok(tags) = repo.list_tags(Some(&glob)) {
-            tags.into_iter().map(|t| t.0).collect()
-        } else {
-            let out = runner.run("git", &["tag", "--list", &glob], root)?;
-            if !out.success() {
-                return Err(GraphError::Command(CommandError::Io {
-                    program: "git".to_string(),
-                    message: out.stderr,
-                }));
-            }
-            out.stdout_lines().map(|s| s.to_string()).collect()
-        }
-    } else {
-        let out = runner.run("git", &["tag", "--list", &glob], root)?;
-        if !out.success() {
-            return Err(GraphError::Command(CommandError::Io {
-                program: "git".to_string(),
-                message: out.stderr,
-            }));
-        }
-        out.stdout_lines().map(|s| s.to_string()).collect()
-    };
+    let repo = callisto_vcs::GitRepository::discover(root)?;
+    let tags = repo.list_tags(Some(&glob))?;
+    let lines: Vec<String> = tags.into_iter().map(|t| t.0).collect();
 
     let line_strs: Vec<&str> = lines.iter().map(|s| s.as_str()).collect();
     select_last_tag(template, grammar, line_strs).map_err(GraphError::from)

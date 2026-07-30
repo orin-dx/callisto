@@ -238,6 +238,12 @@ impl fmt::Display for RegistryKey {
 #[schemars(with = "String")]
 pub struct CommitSha(String);
 
+impl AsRef<str> for CommitSha {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
 impl CommitSha {
     pub fn parse(s: &str) -> Result<Self, ModelError> {
         let trimmed = s.trim();

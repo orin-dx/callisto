@@ -432,6 +432,11 @@ fn test_tag_dry_run_does_not_create_git_tags() {
     let ws_dir = tempfile::tempdir().unwrap();
     let cfg = callisto_graph::config::load(&ws_dir.path().join("callisto.toml")).unwrap();
     let graph = GraphBuilder::new().package(pkg_id, |p| p).build().unwrap();
+    std::process::Command::new("git")
+        .arg("init")
+        .current_dir(ws_dir.path())
+        .output()
+        .unwrap();
     let tags = callisto_graph::tags::TagIndex::build(&runner, ws_dir.path(), &graph, &cfg).unwrap();
     let ws = callisto_graph::Workspace {
         root: ws_dir.path().to_path_buf(),

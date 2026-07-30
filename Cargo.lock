@@ -360,6 +360,7 @@ version = "0.3.0"
 dependencies = [
  "callisto-fixtures",
  "callisto-model",
+ "camino",
  "indexmap",
  "proptest",
  "serde",
