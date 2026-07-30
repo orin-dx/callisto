@@ -9,8 +9,16 @@ pub fn plan_snapshot<R: CommandRunner, D: DependencyResolver>(
     ws: &Workspace<'_, R, D>,
     tag: &str,
 ) -> Result<(VersionPlan, SnapshotReport), GraphError> {
-    let output = ws.runner.run("git", &["rev-parse", "HEAD"], &ws.root)?;
-    let sha_raw = output.stdout_trimmed();
+    let sha_raw = if let Ok(repo) = callisto_vcs::GitRepository::discover(&ws.root) {
+        if let Ok(sha) = repo.head_sha() {
+            sha.as_str().to_string()
+        } else {
+            String::new()
+        }
+    } else {
+        String::new()
+    };
+
     let sha_short = if sha_raw.len() >= 7 {
         &sha_raw[..7]
     } else {

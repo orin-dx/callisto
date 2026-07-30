@@ -37,6 +37,9 @@ pub struct NpmPublish {
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub registry: Option<String>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -48,6 +51,9 @@ pub struct NpmMainPublish {
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub registry: Option<String>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
 
     pub depends_on_platforms: Vec<String>,
 }

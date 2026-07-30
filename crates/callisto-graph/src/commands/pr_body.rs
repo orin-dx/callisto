@@ -59,8 +59,11 @@ pub fn render_pr_body_from_plan(
         body.push_str(
             "> **No pending changesets found.** Workspace packages are currently up to date.\n\n",
         );
-        let branch = opts.branch.as_deref().unwrap_or("changeset-release/main");
-        body.push_str("<details>\n<summary><b>🛠️ Release Workflow Instructions</b></summary>\n\n");
+        let branch = opts
+            .branch
+            .as_deref()
+            .unwrap_or("callisto/version-packages");
+        body.push_str("<details>\n<summary><b>Release Workflow Instructions</b></summary>\n\n");
         body.push_str("- **Merging this PR**: Merging into `main` will automatically publish all updated packages to their release registries.\n");
         body.push_str("- **Adding more changesets**: If additional changesets are pushed to `main`, Callisto will automatically re-calculate and update this PR.\n");
         body.push_str(&format!(
@@ -218,8 +221,11 @@ pub fn render_pr_body_from_plan(
     }
 
     // 4. Instructions Footer
-    let branch = opts.branch.as_deref().unwrap_or("changeset-release/main");
-    body.push_str("<details>\n<summary><b>🛠️ Release Workflow Instructions</b></summary>\n\n");
+    let branch = opts
+        .branch
+        .as_deref()
+        .unwrap_or("callisto/version-packages");
+    body.push_str("<details>\n<summary><b>Release Workflow Instructions</b></summary>\n\n");
     body.push_str("- **Merging this PR**: Merging into `main` will automatically publish all updated packages to their release registries.\n");
     body.push_str("- **Adding more changesets**: If additional changesets are pushed to `main`, Callisto will automatically re-calculate and update this PR.\n");
     body.push_str(&format!(
