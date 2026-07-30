@@ -156,8 +156,13 @@ impl GitRepository {
                 let message = commit_obj
                     .message()
                     .map_err(|e| VcsError::Git(e.to_string()))?;
-                let summary = message.title.to_string();
-                let body = message.body.map(|b| b.to_string());
+                let summary = message
+                    .title
+                    .to_string()
+                    .replace("\r\n", "\n")
+                    .trim_end()
+                    .to_string();
+                let body = message.body.map(|b| b.to_string().replace("\r\n", "\n"));
 
                 commits.push(GitCommit { sha, summary, body });
             }

@@ -44,8 +44,9 @@ pub enum PreMode {
 }
 
 pub fn parse_pre_json(input: &str) -> Result<PreState, PreJsonError> {
+    let clean_input = input.strip_prefix('\u{FEFF}').unwrap_or(input);
     let val: serde_json::Value =
-        serde_json::from_str(input).map_err(|e| PreJsonError::Malformed {
+        serde_json::from_str(clean_input).map_err(|e| PreJsonError::Malformed {
             message: e.to_string(),
         })?;
 

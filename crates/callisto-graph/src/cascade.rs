@@ -396,10 +396,10 @@ fn raise<D: DependencyResolver>(
             dependency_to: dependency_to.clone(),
         }
     };
-    out.reasons.entry(pkg.clone()).or_insert(new_reason);
+    out.reasons.insert(pkg.clone(), new_reason);
 
     if let Some(ref gov) = decision.governed_by {
-        out.governed_by.entry(pkg.clone()).or_insert(gov.clone());
+        out.governed_by.insert(pkg.clone(), gov.clone());
     }
 
     let new_t = bump_target(pkg, sev, input)?;
