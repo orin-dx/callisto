@@ -195,17 +195,18 @@ impl GitRepository {
                         gix::object::Kind::Commit,
                         None,
                         msg,
-                        gix::refs::transaction::PreviousValue::Any,
+                        gix::refs::transaction::PreviousValue::MustNotExist,
                     )
                     .map_err(|e| VcsError::Git(format!("Failed to create tag: {e}")))?;
             } else {
-                let ref_name = format!("refs/tags/{}", name);
+                let clean_name = name.strip_prefix("refs/tags/").unwrap_or(name);
+                let ref_name = format!("refs/tags/{}", clean_name);
                 let _unused = self
                     .repo
                     .reference(
                         ref_name,
                         oid,
-                        gix::refs::transaction::PreviousValue::Any,
+                        gix::refs::transaction::PreviousValue::MustNotExist,
                         "callisto create tag",
                     )
                     .map_err(|e| VcsError::Git(format!("Failed to create lightweight tag: {e}")))?;

@@ -118,10 +118,10 @@ pub enum WriteError {
 /// block are skipped. CRLF line endings are normalized to LF before parsing.
 pub fn parse_changeset(source: &str) -> Result<Changeset, ParseError> {
     let trimmed_bom = source.strip_prefix('\u{FEFF}').unwrap_or(source);
-    let normalized = trimmed_bom.replace("\r\n", "\n");
+    let normalized = trimmed_bom.replace("\r\n", "\n").replace('\r', "\n");
     let lines: Vec<&str> = normalized.split('\n').collect();
 
-    if lines.first().copied() != Some("---") {
+    if lines.first().map(|l| l.trim_end()) != Some("---") {
         return Err(ParseError::MissingFrontmatterStart);
     }
 
@@ -131,7 +131,10 @@ pub fn parse_changeset(source: &str) -> Result<Changeset, ParseError> {
     // frontmatter was never closed at all" — the first non-entry-shaped line after a missing
     // closing delimiter would otherwise surface as a misleading parse error on that line
     // instead of `UnclosedFrontmatter`.
-    let closing_index = lines[1..].iter().position(|&l| l == "---").map(|i| i + 1);
+    let closing_index = lines[1..]
+        .iter()
+        .position(|&l| l.trim_end() == "---")
+        .map(|i| i + 1);
     let Some(closing_index) = closing_index else {
         return Err(ParseError::UnclosedFrontmatter);
     };
