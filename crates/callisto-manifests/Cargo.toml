@@ -5,6 +5,7 @@ edition.workspace = true
 license = "AGPL-3.0-only"
 description = "Per-ecosystem manifest read/write for callisto."
 repository.workspace = true
+readme = "README.md"
 
 [lints]
 workspace = true

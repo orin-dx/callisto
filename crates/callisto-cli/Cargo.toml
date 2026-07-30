@@ -5,6 +5,7 @@ edition.workspace = true
 license = "AGPL-3.0-only"
 description = "Standalone callisto CLI binary."
 repository.workspace = true
+readme = "README.md"
 
 [lints]
 workspace = true

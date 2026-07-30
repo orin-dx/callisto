@@ -5,6 +5,7 @@ edition.workspace = true
 license = "MIT OR Apache-2.0"
 description = "Byte-compatible parser/writer for @changesets/cli's changeset markdown and pre.json file formats."
 repository.workspace = true
+readme = "README.md"
 
 [lints]
 workspace = true

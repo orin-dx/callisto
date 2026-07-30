@@ -5,6 +5,7 @@ edition.workspace = true
 license = "MIT OR Apache-2.0"
 description = "Shared types and traits for callisto: package identity, versions, manifests, dependency specs, and the versioned JSON report contract."
 repository.workspace = true
+readme = "README.md"
 
 [lints]
 workspace = true
