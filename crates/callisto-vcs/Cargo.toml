@@ -13,6 +13,7 @@ workspace = true
 [dependencies]
 callisto-model = { path = "../callisto-model", version = "0.3.0" }
 thiserror = { workspace = true }
+miette = { workspace = true }
 globset = { workspace = true }
 dunce = { workspace = true }
 

@@ -25,6 +25,9 @@ camino = { version = "1", features = ["serde1"] }
 dunce = "1"
 path-slash = "0.2"
 tempfile = "3"
+miette = { version = "7", features = ["fancy"] }
+petgraph = "0.6"
+tracing = "0.1"
 rstest = "0.23"
 insta = { version = "1.41", features = ["json", "redactions"] }
 

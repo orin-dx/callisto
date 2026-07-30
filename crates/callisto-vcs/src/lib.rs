@@ -3,15 +3,24 @@ use std::path::{Path, PathBuf};
 use callisto_model::{CommitSha, TagName};
 use thiserror::Error;
 
-#[derive(Clone, Debug, Error, PartialEq, Eq)]
+#[derive(Clone, Debug, Error, miette::Diagnostic, PartialEq, Eq)]
 pub enum VcsError {
     #[error("failed to discover Git repository at `{path}`: {message}")]
+    #[diagnostic(
+        code(E050),
+        help("Ensure target directory is inside a valid Git repository.")
+    )]
     RepoNotFound { path: PathBuf, message: String },
 
     #[error("git error: {0}")]
+    #[diagnostic(code(E051))]
     Git(String),
 
     #[error("reference `{ref_name}` was not found")]
+    #[diagnostic(
+        code(E052),
+        help("Check if reference or tag exists in local or remote Git refs.")
+    )]
     RefNotFound { ref_name: String },
 }
 

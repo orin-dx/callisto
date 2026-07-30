@@ -265,6 +265,7 @@ name = "callisto-changelog"
 version = "0.3.0"
 dependencies = [
  "callisto-model",
+ "miette",
  "tempfile",
  "thiserror 1.0.69",
 ]
@@ -280,6 +281,7 @@ dependencies = [
  "callisto-graph",
  "callisto-manifests",
  "callisto-model",
+ "callisto-vcs",
  "clap",
  "clap_complete",
  "comfy-table",
@@ -320,6 +322,7 @@ dependencies = [
  "callisto-fixtures",
  "callisto-model",
  "indexmap",
+ "miette",
  "proptest",
  "rstest",
  "schemars",
@@ -343,6 +346,7 @@ dependencies = [
  "ignore",
  "indexmap",
  "insta",
+ "miette",
  "petgraph",
  "rstest",
  "serde",
@@ -376,6 +380,7 @@ version = "0.3.0"
 dependencies = [
  "callisto-fixtures",
  "camino",
+ "miette",
  "proptest",
  "schemars",
  "semver",
@@ -404,6 +409,7 @@ dependencies = [
  "dunce",
  "gix",
  "globset",
+ "miette",
  "tempfile",
  "thiserror 1.0.69",
 ]

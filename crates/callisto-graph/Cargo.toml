@@ -31,6 +31,7 @@ serde_json = { workspace = true, features = ["preserve_order"] }
 serde_yaml = { workspace = true }
 globset = { workspace = true }
 thiserror = { workspace = true }
+miette = { workspace = true }
 indexmap = { workspace = true }
 petgraph = "0.6"
 

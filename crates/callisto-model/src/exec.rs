@@ -33,13 +33,18 @@ impl CommandOutput {
 }
 
 /// Errors occurring during command execution.
-#[derive(Clone, Debug, thiserror::Error, PartialEq, Eq)]
+#[derive(Clone, Debug, thiserror::Error, miette::Diagnostic, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum CommandError {
     #[error("`{program}` was not found; callisto requires it to be available")]
+    #[diagnostic(
+        code(E020),
+        help("Ensure program is installed and available on system PATH.")
+    )]
     NotFound { program: String },
 
     #[error("`{program}` reports version `{found}`, but callisto requires {required}")]
+    #[diagnostic(code(E021), help("Upgrade program to meet version requirement."))]
     IncompatibleVersion {
         program: String,
         found: String,
@@ -47,9 +52,19 @@ pub enum CommandError {
     },
 
     #[error("executing `{program}` is not supported on this surface: {reason}")]
+    #[diagnostic(code(E022))]
     Unsupported { program: String, reason: String },
 
+    #[error("`{program}` failed with exit code {exit_code:?}: {stderr}")]
+    #[diagnostic(code(E023))]
+    Failed {
+        program: String,
+        exit_code: Option<i32>,
+        stderr: String,
+    },
+
     #[error("failed to run `{program}`: {message}")]
+    #[diagnostic(code(E024))]
     Io { program: String, message: String },
 }
 

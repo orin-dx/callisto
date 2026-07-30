@@ -7,28 +7,36 @@ use miette::Diagnostic;
 #[non_exhaustive]
 pub enum CliError {
     #[error(transparent)]
-    #[diagnostic(code(callisto::graph_error))]
+    #[diagnostic(transparent)]
     Graph(#[from] GraphError),
 
     #[error(transparent)]
-    #[diagnostic(code(callisto::locate_error))]
+    #[diagnostic(transparent)]
     Locate(#[from] LocateError),
 
     #[error(transparent)]
-    #[diagnostic(code(callisto::config_error))]
+    #[diagnostic(transparent)]
     Config(#[from] ConfigError),
 
     #[error(transparent)]
-    #[diagnostic(code(callisto::command_error))]
+    #[diagnostic(transparent)]
     Command(#[from] CommandError),
 
     #[error(transparent)]
-    #[diagnostic(code(callisto::changeset_parse_error))]
+    #[diagnostic(transparent)]
     ChangesetParse(#[from] callisto_format::ParseError),
 
     #[error(transparent)]
-    #[diagnostic(code(callisto::changeset_write_error))]
+    #[diagnostic(transparent)]
     ChangesetWrite(#[from] callisto_format::WriteError),
+
+    #[error(transparent)]
+    #[diagnostic(transparent)]
+    Manifest(#[from] callisto_model::ManifestError),
+
+    #[error(transparent)]
+    #[diagnostic(transparent)]
+    Vcs(#[from] callisto_vcs::VcsError),
 
     #[error(transparent)]
     #[diagnostic(code(callisto::pre_json_error))]
