@@ -148,21 +148,28 @@ pub fn apply_version_plan<R: CommandRunner>(
     }
 
     if !opts.transient && !modified_paths.is_empty() {
-        let strings: Vec<String> = modified_paths
-            .iter()
-            .filter(|p| root.join(p).exists())
-            .map(|p| p.display().to_string())
-            .collect();
-        if !strings.is_empty() {
-            let mut path_strs = vec!["add", "--"];
-            for s in &strings {
-                path_strs.push(s);
+        let (existing, deleted): (Vec<_>, Vec<_>) =
+            modified_paths.iter().partition(|p| root.join(p).exists());
+
+        if !existing.is_empty() {
+            let mut args = vec!["add", "--"];
+            let strs: Vec<String> = existing.iter().map(|p| p.display().to_string()).collect();
+            for s in &strs {
+                args.push(s);
             }
-            let output = runner.run("git", &path_strs, root)?;
-            if output.success() {
-                outcome.staged = modified_paths;
-            }
+            drop(runner.run("git", &args, root));
         }
+
+        if !deleted.is_empty() {
+            let mut args = vec!["rm", "--cached", "--ignore-unmatch", "--"];
+            let strs: Vec<String> = deleted.iter().map(|p| p.display().to_string()).collect();
+            for s in &strs {
+                args.push(s);
+            }
+            drop(runner.run("git", &args, root));
+        }
+
+        outcome.staged = modified_paths;
     }
 
     Ok(outcome)

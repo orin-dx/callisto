@@ -200,7 +200,7 @@ pub fn solve_cascade<D: DependencyResolver>(
 
                 let d = cascade_action(edge.kind, cov, src_sev, input.cfg);
 
-                if d.unknown_coverage {
+                if d.unknown_coverage && !matches!(edge.spec, DepSpec::Opaque(_)) {
                     let code = match edge.spec {
                         DepSpec::Catalog(_) => DiagnosticCode::CatalogSpecNotRewritten,
                         _ => DiagnosticCode::RangeNotRoundTrippable,
