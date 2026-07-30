@@ -5,6 +5,7 @@ edition.workspace = true
 license = "AGPL-3.0-only"
 description = "moon WASM extension for callisto."
 repository.workspace = true
+readme = "README.md"
 
 [features]
 default = []

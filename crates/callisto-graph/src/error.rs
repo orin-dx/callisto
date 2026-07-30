@@ -4,26 +4,32 @@ use callisto_model::{GroupName, ManifestError, PackageId, TagTemplateError, Vers
 
 pub use crate::locate::LocateError;
 
-#[derive(Clone, Debug, thiserror::Error, PartialEq, Eq)]
+#[derive(Clone, Debug, thiserror::Error, miette::Diagnostic, PartialEq, Eq)]
 #[allow(clippy::result_large_err)]
 #[non_exhaustive]
 pub enum GraphError {
     #[error(transparent)]
+    #[diagnostic(transparent)]
     Locate(#[from] LocateError),
 
     #[error(transparent)]
+    #[diagnostic(transparent)]
     Manifest(#[from] ManifestError),
 
     #[error(transparent)]
+    #[diagnostic(transparent)]
     Config(#[from] ConfigError),
 
     #[error(transparent)]
+    #[diagnostic(transparent)]
     Format(#[from] callisto_format::ParseError),
 
     #[error(transparent)]
+    #[diagnostic(transparent)]
     Bump(#[from] callisto_format::BumpError),
 
     #[error(transparent)]
+    #[diagnostic(transparent)]
     Changelog(#[from] callisto_changelog::ChangelogError),
 
     #[cfg(feature = "inference")]
@@ -37,48 +43,81 @@ pub enum GraphError {
     VersionParse(#[from] callisto_model::VersionParseError),
 
     #[error(transparent)]
+    #[diagnostic(transparent)]
     Model(#[from] callisto_model::ModelError),
+
+    #[error("vcs error: {0}")]
+    #[diagnostic(transparent)]
+    Vcs(#[from] callisto_vcs::VcsError),
 
     #[error("command error: {0}")]
     Command(#[from] callisto_model::CommandError),
 
     #[error("package `{id}` is defined at multiple paths: {}", .paths.iter().map(|p| p.display().to_string()).collect::<Vec<_>>().join(", "))]
+    #[diagnostic(
+        code(E100),
+        help("Ensure package IDs are unique across workspace manifest paths.")
+    )]
     DuplicatePackage { id: PackageId, paths: Vec<PathBuf> },
 
     #[error("package at `{path}` declares conflicting identities: {}", .ids.iter().map(|i| i.display_name()).collect::<Vec<_>>().join(", "))]
+    #[diagnostic(code(E101), help("Align package name declarations in manifest files."))]
     SplitIdentity { path: PathBuf, ids: Vec<PackageId> },
 
     #[error("package `{id}` was not found in the workspace")]
+    #[diagnostic(
+        code(E102),
+        help("Verify package is included in workspace members in callisto.toml.")
+    )]
     UnknownPackage { id: PackageId },
 
     #[error("name `{name}` is ambiguous in this workspace; candidates: {}", .candidates.iter().map(|c| c.display_name()).collect::<Vec<_>>().join(", "))]
+    #[diagnostic(
+        code(E103),
+        help("Use fully-qualified package ID with ecosystem prefix (e.g. cargo:pkg).")
+    )]
     AmbiguousName {
         name: String,
         candidates: Vec<PackageId>,
     },
 
     #[error("dependency cycle detected: {}", .cycle.iter().map(|i| i.display_name()).collect::<Vec<_>>().join(" -> "))]
+    #[diagnostic(
+        code(E104),
+        help("Refactor workspace dependencies to break the cyclic dependency chain.")
+    )]
     Cycle { cycle: Vec<PackageId> },
 
     #[error("cascade failed to converge after {iterations} iterations")]
+    #[diagnostic(
+        code(E105),
+        help("Check for oscillating peer or linked group dependencies.")
+    )]
     CascadeNotConverged { iterations: usize },
 
     #[error("fixed group `{group}` members have divergent on-disk versions: {}", .members.iter().map(|(id, v)| format!("{}={}", id.display_name(), v.render())).collect::<Vec<_>>().join(", "))]
+    #[diagnostic(
+        code(E106),
+        help("Align on-disk versions for all members of the fixed group.")
+    )]
     FixedGroupDivergent {
         group: GroupName,
         members: Vec<(PackageId, callisto_model::Version)>,
     },
 
     #[error("group `{group}` members use incompatible versioning grammars: {}", .members.iter().map(|(id, v)| format!("{}={:?}", id.display_name(), v.grammar())).collect::<Vec<_>>().join(", "))]
+    #[diagnostic(code(E107))]
     GroupGrammarMismatch {
         group: GroupName,
         members: Vec<(PackageId, callisto_model::Version)>,
     },
 
     #[error("group `{group}` lists member `{member}`, which was not found in the workspace")]
+    #[diagnostic(code(E108))]
     MissingGroupMember { group: GroupName, member: String },
 
     #[error("package `{package}` is listed in multiple conflicting groups: {}", .groups.iter().map(|g| g.as_str()).collect::<Vec<_>>().join(", "))]
+    #[diagnostic(code(E109))]
     ConflictingGroupMembership {
         package: PackageId,
         groups: Vec<GroupName>,
@@ -108,16 +147,19 @@ pub enum GraphError {
     },
 }
 
-#[derive(Clone, Debug, thiserror::Error, PartialEq, Eq)]
+#[derive(Clone, Debug, thiserror::Error, miette::Diagnostic, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ConfigError {
     #[error("failed to read `{path}`: {message}")]
+    #[diagnostic(code(E110))]
     Read { path: PathBuf, message: String },
 
     #[error("`{path}` is not valid TOML: {message}")]
+    #[diagnostic(code(E111), help("Verify callisto.toml TOML syntax formatting."))]
     ParseToml { path: PathBuf, message: String },
 
     #[error("`{path}` is not valid YAML: {message}")]
+    #[diagnostic(code(E112))]
     ParseYaml { path: PathBuf, message: String },
 
     #[error("[[package-set]] `{pattern}` matched no packages")]
