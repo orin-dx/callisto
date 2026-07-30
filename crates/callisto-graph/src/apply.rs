@@ -126,7 +126,8 @@ pub fn apply_version_plan<R: CommandRunner>(
                 .first()
                 .and_then(|p| p.parent())
                 .unwrap_or(&default_dir);
-            let pre_path = root.join(pre_dir.join("pre.json"));
+            let rel_pre_path = pre_dir.join("pre.json");
+            let pre_path = root.join(&rel_pre_path);
             let text = callisto_format::write_pre_json(pre_state);
             callisto_manifests::atomic::atomic_write(&pre_path, &text).map_err(|e| {
                 GraphError::Command(CommandError::Io {
@@ -134,8 +135,10 @@ pub fn apply_version_plan<R: CommandRunner>(
                     message: e.to_string(),
                 })
             })?;
+            modified_paths.push(rel_pre_path);
         } else if plan.delete_pre_json {
-            let pre_path = root.join(".changeset/pre.json");
+            let rel_pre_path = PathBuf::from(".changeset/pre.json");
+            let pre_path = root.join(&rel_pre_path);
             if pre_path.exists() {
                 fs::remove_file(&pre_path).map_err(|e| {
                     GraphError::Command(CommandError::Io {
@@ -143,26 +146,48 @@ pub fn apply_version_plan<R: CommandRunner>(
                         message: e.to_string(),
                     })
                 })?;
+                modified_paths.push(rel_pre_path);
+            }
+        }
+
+        // Include lockfiles if present in workspace root
+        for lockfile in &[
+            "Cargo.lock",
+            "package-lock.json",
+            "pnpm-lock.yaml",
+            "yarn.lock",
+            "bun.lockb",
+        ] {
+            let p = PathBuf::from(lockfile);
+            if root.join(&p).exists() && !modified_paths.contains(&p) {
+                modified_paths.push(p);
             }
         }
     }
 
     if !opts.transient && !modified_paths.is_empty() {
-        let strings: Vec<String> = modified_paths
-            .iter()
-            .filter(|p| root.join(p).exists())
-            .map(|p| p.display().to_string())
-            .collect();
-        if !strings.is_empty() {
-            let mut path_strs = vec!["add", "--"];
-            for s in &strings {
-                path_strs.push(s);
+        let (existing, deleted): (Vec<_>, Vec<_>) =
+            modified_paths.iter().partition(|p| root.join(p).exists());
+
+        if !existing.is_empty() {
+            let mut args = vec!["add", "--"];
+            let strs: Vec<String> = existing.iter().map(|p| p.display().to_string()).collect();
+            for s in &strs {
+                args.push(s);
             }
-            let output = runner.run("git", &path_strs, root)?;
-            if output.success() {
-                outcome.staged = modified_paths;
-            }
+            drop(runner.run("git", &args, root));
         }
+
+        if !deleted.is_empty() {
+            let mut args = vec!["rm", "--cached", "--ignore-unmatch", "--"];
+            let strs: Vec<String> = deleted.iter().map(|p| p.display().to_string()).collect();
+            for s in &strs {
+                args.push(s);
+            }
+            drop(runner.run("git", &args, root));
+        }
+
+        outcome.staged = modified_paths;
     }
 
     Ok(outcome)

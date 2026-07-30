@@ -98,12 +98,37 @@ fn extract_cycle(
 
     let sccs = tarjan_scc(&graph);
     for scc in sccs {
-        if scc.len() > 1 {
-            let mut cycle: Vec<PackageId> = scc.iter().map(|idx| rev_map[idx].clone()).collect();
-            if let Some(first) = cycle.first().cloned() {
-                cycle.push(first);
+        let is_self_loop = scc.len() == 1 && graph.contains_edge(scc[0], scc[0]);
+        if scc.len() > 1 || is_self_loop {
+            let mut cycle = Vec::new();
+            let start_idx = scc[0];
+            let mut curr = start_idx;
+            let scc_set: std::collections::HashSet<_> = scc.iter().copied().collect();
+
+            cycle.push(rev_map[&curr].clone());
+            loop {
+                let mut next_found = None;
+                for neighbor in graph.neighbors(curr) {
+                    if scc_set.contains(&neighbor) {
+                        next_found = Some(neighbor);
+                        break;
+                    }
+                }
+
+                if let Some(next) = next_found {
+                    curr = next;
+                    cycle.push(rev_map[&curr].clone());
+                    if curr == start_idx {
+                        break;
+                    }
+                } else {
+                    break;
+                }
             }
-            return cycle;
+
+            if cycle.len() > 1 {
+                return cycle;
+            }
         }
     }
 
@@ -132,5 +157,27 @@ mod tests {
         .unwrap();
 
         assert_eq!(res, vec![pkg_b, pkg_a]);
+    }
+
+    #[test]
+    fn test_toposort_self_loop_cycle() {
+        let pkg_a = PackageId::parse("pkg-a").unwrap();
+        let subset: HashSet<_> = vec![pkg_a.clone()].into_iter().collect();
+        let all = vec![pkg_a.clone()];
+
+        let err = toposort_impl(&subset, &all, |id| {
+            if id == &pkg_a {
+                vec![(pkg_a.clone(), DepKind::Runtime)]
+            } else {
+                vec![]
+            }
+        })
+        .unwrap_err();
+
+        if let GraphError::Cycle { cycle } = err {
+            assert_eq!(cycle, vec![pkg_a.clone(), pkg_a]);
+        } else {
+            panic!("expected Cycle error");
+        }
     }
 }

@@ -223,10 +223,14 @@ where
     }
 
     loop {
-        let prev_len = agg.severities.len();
-        union_fixed(&mut agg, &config.groups);
-        union_linked(&mut agg, &config.groups);
-        if agg.severities.len() == prev_len {
+        let mut changed = false;
+        if union_fixed(&mut agg, &config.groups) {
+            changed = true;
+        }
+        if union_linked(&mut agg, &config.groups) {
+            changed = true;
+        }
+        if !changed {
             break;
         }
     }
@@ -234,7 +238,8 @@ where
     Ok(agg)
 }
 
-pub(crate) fn union_fixed(agg: &mut Aggregation, groups: &GroupTable) {
+pub(crate) fn union_fixed(agg: &mut Aggregation, groups: &GroupTable) -> bool {
+    let mut changed = false;
     for g in groups.fixed.values() {
         let pkg_members: Vec<PackageId> = g
             .members(crate::config::GroupMemberKind::Package)
@@ -267,12 +272,15 @@ pub(crate) fn union_fixed(agg: &mut Aggregation, groups: &GroupTable) {
                         group: g.name.clone(),
                     },
                 );
+                changed = true;
             }
         }
     }
+    changed
 }
 
-pub(crate) fn union_linked(agg: &mut Aggregation, groups: &GroupTable) {
+pub(crate) fn union_linked(agg: &mut Aggregation, groups: &GroupTable) -> bool {
+    let mut changed = false;
     for g in groups.linked.values() {
         let named: Vec<PackageId> = g
             .members(crate::config::GroupMemberKind::Package)
@@ -319,7 +327,9 @@ pub(crate) fn union_linked(agg: &mut Aggregation, groups: &GroupTable) {
                         group: g.name.clone(),
                     },
                 );
+                changed = true;
             }
         }
     }
+    changed
 }

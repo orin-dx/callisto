@@ -43,35 +43,45 @@ impl Changeset {
     }
 }
 
-#[derive(Debug, thiserror::Error, Clone, PartialEq, Eq)]
+#[derive(Debug, thiserror::Error, miette::Diagnostic, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ParseError {
     /// The file does not open with a `---` delimiter on line 1 at all.
     #[error("changeset does not start with a `---` frontmatter delimiter on line 1")]
+    #[diagnostic(
+        code(E040),
+        help("Add a `---` frontmatter delimiter on line 1 of the changeset file.")
+    )]
     MissingFrontmatterStart,
 
     /// A `---` opened on line 1 but no matching closing `---` line was ever found.
     #[error("frontmatter opened with `---` on line 1 but was never closed with a matching `---`")]
+    #[diagnostic(code(E041), help("Ensure frontmatter block closes with `---`."))]
     UnclosedFrontmatter,
 
     /// A quoted name's opening `"` has no matching closing `"` on the same line.
     #[error("line {line}: quoted name is never closed with a matching `\"`")]
+    #[diagnostic(code(E042))]
     UnclosedQuotedName { line: usize },
 
     /// The closing `"` of a quoted name is not immediately followed by the separator `:`.
     #[error("line {line}: quoted name `{raw}` is followed by unexpected content before the `:` separator")]
+    #[diagnostic(code(E043))]
     AmbiguousNameQuoting { line: usize, raw: String },
 
     /// A bare (unquoted) line contains no `:` at all.
     #[error("line {line}: no `:` separator found in {raw:?}")]
+    #[diagnostic(code(E044))]
     MissingSeparator { line: usize, raw: String },
 
     /// The name resolved to the empty string.
     #[error("line {line}: package name is empty")]
+    #[diagnostic(code(E045))]
     EmptyName { line: usize },
 
     /// The severity token is not one of `major | minor | patch | none` (case-insensitive).
     #[error("line {line}: invalid severity for package {name:?}: {source}")]
+    #[diagnostic(code(E046))]
     InvalidSeverity {
         line: usize,
         name: String,
@@ -82,6 +92,7 @@ pub enum ParseError {
     /// The same (raw, pre-`PackageId`-resolution) name appears twice in one changeset's
     /// frontmatter.
     #[error("line {line}: package {name:?} is named more than once in this changeset's frontmatter (first on line {first_line})")]
+    #[diagnostic(code(E047))]
     DuplicateEntry {
         line: usize,
         first_line: usize,
@@ -90,18 +101,21 @@ pub enum ParseError {
 
     /// §6.1: "Empty frontmatter valid iff summary is non-empty."
     #[error("changeset has no frontmatter entries and an empty summary")]
+    #[diagnostic(code(E048))]
     EmptyChangeset,
 }
 
-#[derive(Debug, thiserror::Error, Clone, PartialEq, Eq)]
+#[derive(Debug, thiserror::Error, miette::Diagnostic, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum WriteError {
     /// Mirrors `ParseError::EmptyChangeset`.
     #[error("cannot write changeset: no entries and an empty summary")]
+    #[diagnostic(code(E049))]
     EmptyChangeset,
 
     /// `entries[index]`'s name is the empty string.
     #[error("entry {index} has an empty package name")]
+    #[diagnostic(code(E049))]
     EmptyName { index: usize },
 
     /// `entries[index]`'s name contains a literal `"`, which cannot be written — no escaping
@@ -118,10 +132,10 @@ pub enum WriteError {
 /// block are skipped. CRLF line endings are normalized to LF before parsing.
 pub fn parse_changeset(source: &str) -> Result<Changeset, ParseError> {
     let trimmed_bom = source.strip_prefix('\u{FEFF}').unwrap_or(source);
-    let normalized = trimmed_bom.replace("\r\n", "\n");
+    let normalized = trimmed_bom.replace("\r\n", "\n").replace('\r', "\n");
     let lines: Vec<&str> = normalized.split('\n').collect();
 
-    if lines.first().copied() != Some("---") {
+    if lines.first().map(|l| l.trim_end()) != Some("---") {
         return Err(ParseError::MissingFrontmatterStart);
     }
 
@@ -131,7 +145,10 @@ pub fn parse_changeset(source: &str) -> Result<Changeset, ParseError> {
     // frontmatter was never closed at all" — the first non-entry-shaped line after a missing
     // closing delimiter would otherwise surface as a misleading parse error on that line
     // instead of `UnclosedFrontmatter`.
-    let closing_index = lines[1..].iter().position(|&l| l == "---").map(|i| i + 1);
+    let closing_index = lines[1..]
+        .iter()
+        .position(|&l| l.trim_end() == "---")
+        .map(|i| i + 1);
     let Some(closing_index) = closing_index else {
         return Err(ParseError::UnclosedFrontmatter);
     };

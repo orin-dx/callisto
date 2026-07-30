@@ -43,6 +43,9 @@ pub use plan::*;
 pub mod report;
 pub use report::*;
 
+pub mod registry;
+pub use registry::*;
+
 #[cfg(test)]
 mod tests {
     use super::*;

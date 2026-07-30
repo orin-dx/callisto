@@ -607,7 +607,10 @@ impl WorkspaceCargoResolver {
         let new_str = new.render();
         if let Some(value) = item.as_value_mut() {
             if value.is_str() {
-                *value = toml_edit::Value::from(new_str);
+                let decor = value.decor().clone();
+                let mut new_val = toml_edit::Value::from(new_str);
+                *new_val.decor_mut() = decor;
+                *value = new_val;
             } else if let Some(inline) = value.as_inline_table_mut() {
                 inline.insert("version", toml_edit::Value::from(new_str));
             }

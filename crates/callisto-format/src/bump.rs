@@ -124,15 +124,17 @@ pub fn bump_version(current: &Version, severity: Severity) -> Result<Version, Bu
     SEMVER_VERSIONING.bump(current, severity)
 }
 
-#[derive(Clone, Debug, thiserror::Error, PartialEq, Eq)]
+#[derive(Clone, Debug, thiserror::Error, miette::Diagnostic, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum BumpError {
     #[error("bump_version requires a SemVer version; `{raw}` was parsed as {grammar:?}")]
+    #[diagnostic(code(E035))]
     NotSemVer {
         raw: String,
         grammar: VersionGrammar,
     },
     #[error("no versioning implementation exists for {grammar:?}")]
+    #[diagnostic(code(E036))]
     UnsupportedGrammar { grammar: VersionGrammar },
 }
 

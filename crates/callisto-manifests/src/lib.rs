@@ -54,7 +54,7 @@ pub trait Manifest: Send + Sync {
 }
 
 /// Trait for Concrete Syntax Tree (CST) manifest editors that preserve formatting, comments, and key order.
-pub trait CstManifestEditor {
+pub trait ManifestCstEditor {
     fn update_version_cst(&mut self, new_version: &Version) -> Result<(), ManifestError>;
     fn update_dependency_cst(
         &mut self,
@@ -64,7 +64,7 @@ pub trait CstManifestEditor {
     ) -> Result<(), ManifestError>;
 }
 
-impl<T: Manifest + ?Sized> CstManifestEditor for T {
+impl<T: Manifest + ?Sized> ManifestCstEditor for T {
     fn update_version_cst(&mut self, new_version: &Version) -> Result<(), ManifestError> {
         self.write_version(new_version)
     }
