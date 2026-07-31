@@ -174,7 +174,7 @@ runs:
                 echo "Publishing Rust crate in topological order: $crate (Attempt $attempt/$max_attempts)..."
                 while true; do
                   local output
-                  output=$(cargo publish -p "$crate" $token_flag --no-verify --allow-dirty 2>&1)
+                  output=$(cargo publish -p "$crate" $token_flag --no-verify --allow-dirty 2>&1 || true)
                   local status=$?
 
                   if [[ $status -eq 0 ]] || [[ "$output" == *"already exists"* || "$output" == *"already uploaded"* ]]; then
