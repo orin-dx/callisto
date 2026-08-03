@@ -267,16 +267,24 @@ impl<'de> Deserialize<'de> for VersionReq {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error, miette::Diagnostic)]
 #[error("`{raw}` is not a valid {grammar:?} version: {message}")]
+#[diagnostic(
+    code(E020),
+    help("Ensure the version string strictly adheres to the {grammar:?} specification.")
+)]
 pub struct VersionParseError {
     pub raw: String,
     pub grammar: VersionGrammar,
     pub message: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error, miette::Diagnostic)]
 #[error("cannot compare a {left:?} version with a {right:?} version")]
+#[diagnostic(
+    code(E021),
+    help("All version comparisons in a cascade step must share the same version grammar.")
+)]
 pub struct GrammarMismatch {
     pub left: VersionGrammar,
     pub right: VersionGrammar,

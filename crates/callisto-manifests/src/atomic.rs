@@ -15,15 +15,13 @@ impl ChangesetStorage for Path {
 }
 
 pub fn atomic_write(path: &Path, content: &str) -> io::Result<()> {
-    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let raw_parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let parent = if raw_parent.as_os_str().is_empty() {
+        Path::new(".")
+    } else {
+        raw_parent
+    };
     std::fs::create_dir_all(parent)?;
-
-    // Fsync grandparent directory if present
-    if let Some(grandparent) = parent.parent() {
-        if let Ok(gp_file) = std::fs::File::open(grandparent) {
-            let _res = gp_file.sync_all();
-        }
-    }
 
     let mut temp = NamedTempFile::new_in(parent)?;
     temp.write_all(content.as_bytes())?;
@@ -33,6 +31,13 @@ pub fn atomic_write(path: &Path, content: &str) -> io::Result<()> {
 
     if let Ok(parent_file) = std::fs::File::open(parent) {
         let _res = parent_file.sync_all();
+    }
+    if let Some(grandparent) = parent.parent() {
+        if !grandparent.as_os_str().is_empty() {
+            if let Ok(gp_file) = std::fs::File::open(grandparent) {
+                let _res = gp_file.sync_all();
+            }
+        }
     }
     Ok(())
 }

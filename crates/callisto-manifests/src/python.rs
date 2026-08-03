@@ -28,8 +28,10 @@ impl PyprojectToml {
             message: e.to_string(),
         })?;
 
+        let clean_content = content.strip_prefix('\u{FEFF}').unwrap_or(&content);
+
         let doc: toml_edit::DocumentMut =
-            content
+            clean_content
                 .parse()
                 .map_err(|e: toml_edit::TomlError| ManifestError::Parse {
                     path: rel_path.clone(),
@@ -189,14 +191,22 @@ impl Manifest for PyprojectToml {
             .and_then(|d| d.as_array())
         {
             for item in deps {
-                if let Some(req_str) = item.as_str() {
-                    let pkg_name = req_str
-                        .split(&['<', '>', '=', '!', '~', ';', ' '][..])
+                if let Some(full_req_str) = item.as_str() {
+                    let spec_part = full_req_str
+                        .split(';')
                         .next()
-                        .unwrap_or("")
+                        .unwrap_or(full_req_str)
                         .trim();
+                    let op_idx = spec_part.find(&['<', '>', '=', '!', '~'][..]);
+                    let (pkg_part, req_str) = match op_idx {
+                        Some(idx) => (&spec_part[..idx], &spec_part[idx..]),
+                        None => (spec_part, "*"),
+                    };
+                    let pkg_name = pkg_part.split('[').next().unwrap_or(pkg_part).trim();
+
                     if !pkg_name.is_empty() {
-                        if let Ok(spec) = VersionReq::parse(req_str, Ecosystem::Pypi) {
+                        let parsed_req_str = if req_str == "*" { ">=0.0.0" } else { req_str };
+                        if let Ok(spec) = VersionReq::parse(parsed_req_str, Ecosystem::Pypi) {
                             entries.push(DependencyEntry {
                                 name: pkg_name.to_string(),
                                 inherited: false,
@@ -257,7 +267,50 @@ impl Manifest for PyprojectToml {
             _ => return Ok(()),
         };
 
-        // Update Poetry dependencies if present
+        let mut updated = false;
+
+        // 1. Update PEP 621 [project].dependencies array entries if present
+        if let Some(deps) = self
+            .document
+            .get_mut("project")
+            .and_then(|p| p.get_mut("dependencies"))
+            .and_then(|d| d.as_array_mut())
+        {
+            for idx in 0..deps.len() {
+                if let Some(full_req) = deps.get(idx).and_then(|item| item.as_str()) {
+                    let spec_part = full_req.split(';').next().unwrap_or(full_req).trim();
+                    let op_idx = spec_part.find(&['<', '>', '=', '!', '~'][..]);
+                    let pkg_part = match op_idx {
+                        Some(i) => &spec_part[..i],
+                        None => spec_part,
+                    };
+                    let pkg_name = pkg_part.split('[').next().unwrap_or(pkg_part).trim();
+                    if pkg_name.eq_ignore_ascii_case(name) {
+                        let extras = if pkg_part.contains('[') {
+                            &pkg_part[pkg_part.find('[').unwrap()..]
+                        } else {
+                            ""
+                        };
+                        let marker = if full_req.contains(';') {
+                            format!(";{}", full_req.split(';').nth(1).unwrap_or(""))
+                        } else {
+                            String::new()
+                        };
+                        let formatted_spec = if new_spec_str.starts_with(['<', '>', '=', '!', '~'])
+                        {
+                            new_spec_str.clone()
+                        } else {
+                            format!(">={new_spec_str}")
+                        };
+                        deps.replace(idx, format!("{pkg_name}{extras}{formatted_spec}{marker}"));
+                        updated = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        // 2. Update Poetry dependencies if present (preserving inline tables if used)
         if let Some(table) = self
             .document
             .get_mut("tool")
@@ -265,14 +318,25 @@ impl Manifest for PyprojectToml {
             .and_then(|p| p.get_mut("dependencies"))
             .and_then(|d| d.as_table_like_mut())
         {
-            if table.contains_key(name) {
-                table.insert(name, value(new_spec_str));
-                let content = self.document.to_string();
-                return atomic_write(&self.absolute, &content).map_err(|e| ManifestError::Write {
-                    path: self.path.clone(),
-                    message: e.to_string(),
-                });
+            if let Some(existing) = table.get_mut(name) {
+                match existing {
+                    toml_edit::Item::Value(toml_edit::Value::InlineTable(ref mut inline)) => {
+                        inline.insert("version", toml_edit::Value::from(new_spec_str.as_str()));
+                    }
+                    _ => {
+                        table.insert(name, value(new_spec_str));
+                    }
+                }
+                updated = true;
             }
+        }
+
+        if updated {
+            let content = self.document.to_string();
+            atomic_write(&self.absolute, &content).map_err(|e| ManifestError::Write {
+                path: self.path.clone(),
+                message: e.to_string(),
+            })?;
         }
 
         Ok(())
@@ -345,5 +409,104 @@ dependencies = [
         assert!(updated_content.contains("version = \"0.3.2\""));
         assert!(updated_content.contains("# Main project metadata"));
         assert!(updated_content.contains("# Current release version"));
+    }
+
+    #[test]
+    fn handles_utf8_bom_pyproject_toml() {
+        let dir = tempdir().unwrap();
+        let pyproject_path = dir.path().join("pyproject.toml");
+
+        let input_content = "\u{FEFF}[project]\nname = \"bom-lib\"\nversion = \"1.0.0\"\n";
+        fs::write(&pyproject_path, input_content).unwrap();
+
+        let decl = ManifestDecl {
+            path: PathBuf::from("pyproject.toml"),
+            role: ManifestRole::Canonical,
+            format: ManifestFormat::PyprojectToml,
+        };
+
+        let ctx = OpenContext {
+            workspace_root: dir.path(),
+            cargo_workspace: None,
+            npm_workspace_kind: None,
+        };
+
+        let manifest = PyprojectToml::open(&decl, &ctx).unwrap();
+        assert_eq!(manifest.package_name().unwrap(), "bom-lib");
+        assert_eq!(manifest.current_version().unwrap().render(), "1.0.0");
+    }
+
+    #[test]
+    fn parses_pep508_extras_and_markers() {
+        let dir = tempdir().unwrap();
+        let pyproject_path = dir.path().join("pyproject.toml");
+
+        let input_content = r#"[project]
+name = "complex-deps"
+version = "0.1.0"
+dependencies = [
+    "requests[security]>=2.28.0; os_name == 'posix'",
+    "urllib3<2.0.0",
+]
+"#;
+        fs::write(&pyproject_path, input_content).unwrap();
+
+        let decl = ManifestDecl {
+            path: PathBuf::from("pyproject.toml"),
+            role: ManifestRole::Canonical,
+            format: ManifestFormat::PyprojectToml,
+        };
+
+        let ctx = OpenContext {
+            workspace_root: dir.path(),
+            cargo_workspace: None,
+            npm_workspace_kind: None,
+        };
+
+        let manifest = PyprojectToml::open(&decl, &ctx).unwrap();
+        let deps: Vec<_> = manifest.iter_dependencies().collect();
+        assert_eq!(deps.len(), 2);
+        assert_eq!(deps[0].name, "requests");
+        assert_eq!(deps[1].name, "urllib3");
+    }
+
+    #[test]
+    fn updates_pep621_dependencies_array() {
+        let dir = tempdir().unwrap();
+        let pyproject_path = dir.path().join("pyproject.toml");
+
+        let input_content = r#"[project]
+name = "my-app"
+version = "0.1.0"
+dependencies = [
+    "my-lib>=0.3.0",
+]
+"#;
+        fs::write(&pyproject_path, input_content).unwrap();
+
+        let decl = ManifestDecl {
+            path: PathBuf::from("pyproject.toml"),
+            role: ManifestRole::Canonical,
+            format: ManifestFormat::PyprojectToml,
+        };
+
+        let ctx = OpenContext {
+            workspace_root: dir.path(),
+            cargo_workspace: None,
+            npm_workspace_kind: None,
+        };
+
+        let mut manifest = PyprojectToml::open(&decl, &ctx).unwrap();
+        let req = VersionReq::parse(">=0.3.2", Ecosystem::Pypi).unwrap();
+        manifest
+            .update_dependency_spec(
+                "my-lib",
+                DepKind::Runtime,
+                DepSpec::Range(req, ">=0.3.2".to_string()),
+            )
+            .unwrap();
+
+        let updated_content = fs::read_to_string(&pyproject_path).unwrap();
+        assert!(updated_content.contains("my-lib>=0.3.2"));
     }
 }

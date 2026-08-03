@@ -63,7 +63,7 @@ impl Ecosystem {
     }
 
     pub fn is_implemented(&self) -> bool {
-        matches!(self, Ecosystem::Cargo | Ecosystem::Npm)
+        matches!(self, Ecosystem::Cargo | Ecosystem::Npm | Ecosystem::Pypi)
     }
 }
 
@@ -126,6 +126,6 @@ mod tests {
     fn identifies_implemented_ecosystems() {
         assert!(Ecosystem::Cargo.is_implemented());
         assert!(Ecosystem::Npm.is_implemented());
-        assert!(!Ecosystem::Pypi.is_implemented());
+        assert!(Ecosystem::Pypi.is_implemented());
     }
 }
