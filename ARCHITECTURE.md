@@ -509,23 +509,28 @@ Callisto is engineered to support polyglot monorepos across **Rust, TypeScript/J
 └─────────┴─────────────────┴───────────────────┴────────────────────────┘
 ```
 
-### Phase 1: Python Engine (`pyproject.toml` / PyPI) — **STATUS: IMPLEMENTED**
+### Ecosystem Implementation Status Legend
+
+- **`[LIVE: IMPLEMENTED]`**: Fully compiled, tested, and active in the Rust workspace today.
+- **`[PLANNED: SPECIFIED]`**: Architecturally specified in `docs/` and ready for implementation in future phases.
+
+### Phase 1: Python Engine (`pyproject.toml` / PyPI) — **STATUS: [LIVE: IMPLEMENTED]**
 - **CST Engine**: `PyprojectToml` in `callisto-manifests` powered by `toml_edit::DocumentMut`.
 - **Packaging Standards**: PEP 621 (`[project]`), Poetry (`[tool.poetry]`), Flit (`[tool.flit.metadata]`), Hatch, and Maturin.
 - **Grammar & Requirements**: PEP 440 versioning (`pep440_rs`) and PEP 508 dependency partitioning (extras `[...]`, environment markers `;`).
 - **Lockfile Auto-Staging**: `uv.lock`, `poetry.lock`, `pdm.lock`, `Pipfile.lock`.
 
-### Phase 2: Go Engine (`go.mod` / `go.work` / GoProxy) — **STATUS: SPECIFIED**
+### Phase 2: Go Engine (`go.mod` / `go.work` / GoProxy) — **STATUS: [PLANNED: SPECIFIED]**
 - **Architecture Shift**: **Tag-Driven Versioning** (`VersionSource::GitTag`).
 - **Submodule Rules**: Go monorepos enforce directory-prefixed tags (`subpkg/vX.Y.Z`). Major `v2+` bumps update module path suffixes (`module github.com/user/repo/subpkg/v2`).
 - **Lockfile Auto-Staging**: `go.sum`.
 
-### Phase 3: Java Engine (Maven `pom.xml` & Gradle `build.gradle` / `gradle.properties`) — **STATUS: SPECIFIED**
+### Phase 3: Java Engine (Maven `pom.xml` & Gradle `build.gradle` / `gradle.properties`) — **STATUS: [PLANNED: SPECIFIED]**
 - **CST Engine**: XML CST editor (`xmltree` / `quick-xml`) for `pom.xml` preserving XML comments and indentation. Properties parser for `gradle.properties`.
 - **Version Grammar**: Maven Qualifier Versioning (`1.2.3-SNAPSHOT`, `1.2.3.Final`).
 - **Lockfile Auto-Staging**: `gradle.lockfile`.
 
-### Phase 4: C# / .NET Engine (`*.csproj` & `Directory.Packages.props`) — **STATUS: SPECIFIED**
+### Phase 4: C# / .NET Engine (`*.csproj` & `Directory.Packages.props`) — **STATUS: [PLANNED: SPECIFIED]**
 - **CST Engine**: MSBuild XML CST editor (`xmltree`) for `*.csproj` and `Directory.Build.props`.
 - **Central Package Management (CPM)**: Updating `<PackageVersion Include="..." Version="..." />` in `Directory.Packages.props`.
 - **Lockfile Auto-Staging**: `packages.lock.json`.
