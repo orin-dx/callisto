@@ -106,6 +106,34 @@ impl ProjectLocator for IgnoreWalkLocator {
                     }
                 }
             }
+
+            let pyproject_toml = path.join("pyproject.toml");
+            if pyproject_toml.exists() {
+                if let Ok(content) = fs::read_to_string(&pyproject_toml) {
+                    if let Ok(doc) = content.parse::<toml_edit::DocumentMut>() {
+                        let name = doc
+                            .get("project")
+                            .and_then(|p| p.get("name"))
+                            .and_then(|n| n.as_str())
+                            .or_else(|| {
+                                doc.get("tool")
+                                    .and_then(|t| t.get("poetry"))
+                                    .and_then(|p| p.get("name"))
+                                    .and_then(|n| n.as_str())
+                            });
+                        if let Some(n) = name {
+                            let rel = to_workspace_relative(path, &self.root)?;
+                            let id = PackageId::parse(n)
+                                .unwrap_or_else(|_| PackageId::Bare(n.to_string()));
+                            results.push(ProjectRoot {
+                                id,
+                                path: rel,
+                                ecosystem: Ecosystem::Pypi,
+                            });
+                        }
+                    }
+                }
+            }
         }
 
         results.sort_by(|a, b| (&a.path, a.ecosystem).cmp(&(&b.path, b.ecosystem)));

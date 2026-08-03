@@ -157,6 +157,10 @@ pub fn apply_version_plan<R: CommandRunner>(
             "pnpm-lock.yaml",
             "yarn.lock",
             "bun.lockb",
+            "uv.lock",
+            "poetry.lock",
+            "pdm.lock",
+            "Pipfile.lock",
         ] {
             let p = PathBuf::from(lockfile);
             if root.join(&p).exists() && !modified_paths.contains(&p) {

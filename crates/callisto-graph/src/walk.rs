@@ -70,6 +70,7 @@ impl ManifestWalkResolver {
                 let (fmt, filename) = match eco {
                     Ecosystem::Cargo => (ManifestFormat::CargoToml, "Cargo.toml"),
                     Ecosystem::Npm => (ManifestFormat::PackageJson, "package.json"),
+                    Ecosystem::Pypi => (ManifestFormat::PyprojectToml, "pyproject.toml"),
                     _ => (ManifestFormat::PackageJson, "package.json"),
                 };
                 let manifest_rel = rel_path.join(filename);

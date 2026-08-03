@@ -11,13 +11,13 @@ use callisto_model::{
 pub mod atomic;
 pub use atomic::ChangesetStorage;
 
-#[cfg(feature = "cargo")]
 pub mod cargo;
-#[cfg(feature = "npm")]
 pub mod npm;
+pub mod python;
 
 pub use cargo::{CargoToml, InheritedDep, WorkspaceCargoResolver, WorkspaceInheritance};
 pub use npm::{detect_npm_workspace_kind, PackageJson};
+pub use python::PyprojectToml;
 
 /// Trait implemented by per-ecosystem manifest editors.
 pub trait Manifest: Send + Sync {

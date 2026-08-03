@@ -19,10 +19,10 @@ pub enum VersionGrammar {
 }
 
 /// The parsed form, kept alongside `raw` so comparison and component access are cheap.
-/// `SemVer` is the only inhabited variant until a demand-gated grammar ships (§7.7).
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum ParsedVersion {
     SemVer(semver::Version),
+    Pep440(pep440_rs::Version),
 }
 
 /// A parsed version, tagged with the grammar it was parsed under. §7.7, P4.
@@ -50,7 +50,21 @@ impl Version {
                     parsed: ParsedVersion::SemVer(parsed),
                 })
             }
-            VersionGrammar::Pep440 | VersionGrammar::Maven => Err(VersionParseError {
+            VersionGrammar::Pep440 => {
+                let parsed = raw
+                    .parse::<pep440_rs::Version>()
+                    .map_err(|e| VersionParseError {
+                        raw: raw.to_string(),
+                        grammar,
+                        message: e.to_string(),
+                    })?;
+                Ok(Version {
+                    grammar,
+                    raw: raw.to_string(),
+                    parsed: ParsedVersion::Pep440(parsed),
+                })
+            }
+            VersionGrammar::Maven => Err(VersionParseError {
                 raw: raw.to_string(),
                 grammar,
                 message: format!("{grammar:?} has no versioning implementation yet (§7.7)"),
@@ -82,24 +96,28 @@ impl Version {
     pub fn major(&self) -> Option<u64> {
         match &self.parsed {
             ParsedVersion::SemVer(v) => Some(v.major),
+            ParsedVersion::Pep440(v) => v.release().first().copied(),
         }
     }
 
     pub fn minor(&self) -> Option<u64> {
         match &self.parsed {
             ParsedVersion::SemVer(v) => Some(v.minor),
+            ParsedVersion::Pep440(v) => v.release().get(1).copied(),
         }
     }
 
     pub fn patch(&self) -> Option<u64> {
         match &self.parsed {
             ParsedVersion::SemVer(v) => Some(v.patch),
+            ParsedVersion::Pep440(v) => v.release().get(2).copied(),
         }
     }
 
     pub fn is_prerelease(&self) -> bool {
         match &self.parsed {
             ParsedVersion::SemVer(v) => !v.pre.is_empty(),
+            ParsedVersion::Pep440(v) => v.is_pre(),
         }
     }
 
@@ -112,6 +130,8 @@ impl Version {
         }
         match (&self.parsed, &other.parsed) {
             (ParsedVersion::SemVer(a), ParsedVersion::SemVer(b)) => Ok(a.cmp(b)),
+            (ParsedVersion::Pep440(a), ParsedVersion::Pep440(b)) => Ok(a.cmp(b)),
+            _ => unreachable!(),
         }
     }
 
@@ -145,6 +165,12 @@ impl<'de> Deserialize<'de> for Version {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub(crate) enum ParsedVersionReq {
+    SemVer(semver::VersionReq),
+    Pep440(pep440_rs::VersionSpecifiers),
+}
+
 /// Parsed version requirement.
 #[derive(Clone, Debug, PartialEq, Eq, JsonSchema)]
 #[schemars(with = "String")]
@@ -152,7 +178,7 @@ pub struct VersionReq {
     grammar: VersionGrammar,
     ecosystem: Ecosystem,
     #[schemars(skip)]
-    req: semver::VersionReq,
+    req: ParsedVersionReq,
     raw: String,
 }
 
@@ -169,11 +195,26 @@ impl VersionReq {
                 Ok(VersionReq {
                     grammar,
                     ecosystem,
-                    req,
+                    req: ParsedVersionReq::SemVer(req),
                     raw: raw.to_string(),
                 })
             }
-            VersionGrammar::Pep440 | VersionGrammar::Maven => Err(VersionParseError {
+            VersionGrammar::Pep440 => {
+                let req =
+                    raw.parse::<pep440_rs::VersionSpecifiers>()
+                        .map_err(|e| VersionParseError {
+                            raw: raw.to_string(),
+                            grammar,
+                            message: e.to_string(),
+                        })?;
+                Ok(VersionReq {
+                    grammar,
+                    ecosystem,
+                    req: ParsedVersionReq::Pep440(req),
+                    raw: raw.to_string(),
+                })
+            }
+            VersionGrammar::Maven => Err(VersionParseError {
                 raw: raw.to_string(),
                 grammar,
                 message: format!("{grammar:?} version requirements not implemented"),
@@ -196,8 +237,10 @@ impl VersionReq {
                 right: v.grammar(),
             });
         }
-        match &v.parsed {
-            ParsedVersion::SemVer(sv) => Ok(self.req.matches(sv)),
+        match (&self.req, &v.parsed) {
+            (ParsedVersionReq::SemVer(req), ParsedVersion::SemVer(sv)) => Ok(req.matches(sv)),
+            (ParsedVersionReq::Pep440(req), ParsedVersion::Pep440(pv)) => Ok(req.contains(pv)),
+            _ => unreachable!(),
         }
     }
 }
@@ -260,5 +303,18 @@ mod tests {
         assert_eq!(json, "\"1.2.3\"");
         let deserialized: Version = serde_json::from_str(&json).unwrap();
         assert_eq!(v, deserialized);
+    }
+
+    #[test]
+    fn parses_valid_pep440_and_prerelease() {
+        let v = Version::parse("0.3.2a1", VersionGrammar::Pep440).unwrap();
+        assert_eq!(v.grammar(), VersionGrammar::Pep440);
+        assert_eq!(v.major(), Some(0));
+        assert_eq!(v.minor(), Some(3));
+        assert_eq!(v.patch(), Some(2));
+        assert!(v.is_prerelease());
+
+        let req = VersionReq::parse(">=0.3.0", Ecosystem::Pypi).unwrap();
+        assert!(req.matches(&v).unwrap());
     }
 }
