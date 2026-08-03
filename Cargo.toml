@@ -6,6 +6,10 @@ members = ["crates/*"]
 version = "0.3.2"
 edition = "2021"
 repository = "https://github.com/orin-dx/callisto"
+homepage = "https://github.com/orin-dx/callisto"
+documentation = "https://docs.rs/callisto-cli"
+keywords = ["monorepo", "changesets", "release-management", "versioning", "moon"]
+categories = ["development-tools", "command-line-utilities"]
 
 # Pinned once here, not per-crate: §M.1.1 notes that bump_version's byte-exactness claim
 # (§6.2) is meaningless if two crates in the workspace disagree about what SemVer parsing

@@ -3,7 +3,7 @@ name = "callisto-changelog"
 version.workspace = true
 edition.workspace = true
 license = "AGPL-3.0-only"
-description = "Changelog generation for callisto."
+description = "Callisto Release Engine — Automated changelog compiler and history renderer."
 repository.workspace = true
 readme = "README.md"
 

@@ -3,7 +3,7 @@ name = "callisto-model"
 version.workspace = true
 edition.workspace = true
 license = "MIT OR Apache-2.0"
-description = "Shared types and traits for callisto: package identity, versions, manifests, dependency specs, and the versioned JSON report contract."
+description = "Callisto Release Engine — Core domain primitives, SemVer grammars, and plan models."
 repository.workspace = true
 readme = "README.md"
 

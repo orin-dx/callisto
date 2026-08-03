@@ -3,7 +3,7 @@ name = "callisto-fixtures"
 version.workspace = true
 edition.workspace = true
 license = "AGPL-3.0-only"
-description = "Dev-only byte-compat corpus for callisto's crates."
+description = "Callisto Release Engine — Dev-only byte-compat test corpus."
 repository.workspace = true
 publish = false
 

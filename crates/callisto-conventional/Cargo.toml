@@ -3,7 +3,7 @@ name = "callisto-conventional"
 version.workspace = true
 edition.workspace = true
 license = "AGPL-3.0-only"
-description = "Conventional Commits parsing for callisto's Auto release trigger."
+description = "Callisto Release Engine — Conventional Commits parser and bump analyzer."
 repository.workspace = true
 readme = "README.md"
 

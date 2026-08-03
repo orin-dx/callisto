@@ -3,7 +3,7 @@ name = "callisto-vcs"
 version.workspace = true
 edition.workspace = true
 license = "MIT OR Apache-2.0"
-description = "Native Git and VCS operations for callisto powered by gix (gitoxide)."
+description = "Callisto Release Engine — Native Gitoxide (gix) VCS engine for polyglot monorepos."
 repository.workspace = true
 readme = "README.md"
 

@@ -3,7 +3,7 @@ name = "callisto-cli"
 version.workspace = true
 edition.workspace = true
 license = "AGPL-3.0-only"
-description = "Standalone callisto CLI binary."
+description = "Callisto Release Engine — Polyglot monorepo versioning and release management CLI."
 repository.workspace = true
 readme = "README.md"
 

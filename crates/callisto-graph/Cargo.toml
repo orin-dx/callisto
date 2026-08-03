@@ -3,7 +3,7 @@ name = "callisto-graph"
 version.workspace = true
 edition.workspace = true
 license = "AGPL-3.0-only"
-description = "Dependency graph, cascade, aggregation, and config resolution for callisto."
+description = "Callisto Release Engine — Dependency DAG solver and topological cascade release planner."
 repository.workspace = true
 readme = "README.md"
 
