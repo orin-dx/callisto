@@ -301,12 +301,43 @@ pub fn solve_cascade<D: DependencyResolver>(
             }
 
             if max_sev > Severity::None {
-                for id in member_ids {
-                    let cur_sev = out.severities.get(&id).copied().unwrap_or(Severity::None);
+                for id in &member_ids {
+                    let cur_sev = out.severities.get(id).copied().unwrap_or(Severity::None);
                     if max_sev > cur_sev {
                         out.severities.insert(id.clone(), max_sev);
-                        let target = bump_target(&id, max_sev, &input)?;
-                        out.targets.insert(id.clone(), target);
+                    }
+                }
+
+                let mut winner: Option<Version> = None;
+                for id in &member_ids {
+                    let candidate = bump_target(id, max_sev, &input)?;
+                    winner = Some(match winner {
+                        None => candidate,
+                        Some(best) => {
+                            let cmp = Version::compare(&candidate, &best).map_err(
+                                |_grammar_mismatch| GraphError::GroupGrammarMismatch {
+                                    group: g.name.clone(),
+                                    members: member_ids
+                                        .iter()
+                                        .filter_map(|m| {
+                                            out.targets.get(m).map(|v| (m.clone(), v.clone()))
+                                        })
+                                        .collect(),
+                                },
+                            )?;
+                            if cmp.is_gt() {
+                                candidate
+                            } else {
+                                best
+                            }
+                        }
+                    });
+                }
+                let winner = winner.expect("linked group has at least one member");
+
+                for id in member_ids {
+                    if out.targets.get(&id) != Some(&winner) {
+                        out.targets.insert(id.clone(), winner.clone());
                         out.reasons.insert(
                             id.clone(),
                             BumpReason::LinkedGroupUnion {
@@ -355,8 +386,9 @@ fn bump_target<D: DependencyResolver>(
     let versioning = callisto_format::SemVerVersioning;
 
     if let Some(pre) = input.pre {
+        let pinned_base = pre.initial_versions.get(id.name()).unwrap_or(&base);
         versioning
-            .bump_prerelease(&base, sev, &pre.tag, &base)
+            .bump_prerelease(pinned_base, sev, &pre.tag, &base)
             .map_err(GraphError::Bump)
     } else {
         versioning.bump(&base, sev).map_err(GraphError::Bump)
@@ -481,5 +513,252 @@ pub fn rewrite_spec(
             governed_by: Some(ConfigKey::CASCADE_PRESERVE_NPM_RANGES),
             escalated_by: None,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use callisto_model::{GroupKind, GroupName, Package, ReleaseTrigger};
+
+    use crate::config::{CascadeBumpSeverity, GroupDef, GroupMember};
+
+    struct TwoPackageGraph {
+        packages: Vec<Package>,
+    }
+
+    impl DependencyResolver for TwoPackageGraph {
+        fn packages(&self) -> impl Iterator<Item = &Package> {
+            self.packages.iter()
+        }
+
+        fn dependencies_of(&self, _id: &PackageId) -> impl Iterator<Item = &DepEdge> {
+            std::iter::empty()
+        }
+
+        fn dependents_of(&self, _id: &PackageId) -> impl Iterator<Item = &DepEdge> {
+            std::iter::empty()
+        }
+    }
+
+    fn bare_package(id: &PackageId) -> Package {
+        Package {
+            id: id.clone(),
+            manifests: Vec::new(),
+            changelog: None,
+            release_trigger: ReleaseTrigger::Changeset,
+            publish_to: Vec::new(),
+            tag_template: None,
+        }
+    }
+
+    /// Spec §G.6.7: a severity bump landing on a single member of a linked
+    /// group (e.g. via a changeset naming only that package) must propagate
+    /// to every other member of the group, and every member must converge
+    /// on a stable target version.
+    #[test]
+    fn test_linked_group_propagates_severity_to_unseeded_member_and_converges() {
+        let pkg_a = PackageId::parse("pkg-a").unwrap();
+        let pkg_b = PackageId::parse("pkg-b").unwrap();
+
+        let graph = TwoPackageGraph {
+            packages: vec![bare_package(&pkg_a), bare_package(&pkg_b)],
+        };
+
+        let mut base = BTreeMap::new();
+        base.insert(pkg_a.clone(), Version::semver(1, 0, 0));
+        base.insert(pkg_b.clone(), Version::semver(1, 0, 0));
+
+        // Only pkg_b receives a severity via a changeset; pkg_a starts
+        // completely unseeded.
+        let mut seed = BTreeMap::new();
+        seed.insert(pkg_b.clone(), Severity::Major);
+
+        let mut groups = GroupTable::default();
+        let group_def = GroupDef {
+            name: GroupName("linked-pair".to_string()),
+            kind: GroupKind::Linked,
+            members: vec![
+                GroupMember::Package(pkg_a.clone()),
+                GroupMember::Package(pkg_b.clone()),
+            ],
+        };
+        groups.linked.insert(group_def.name.clone(), group_def);
+
+        let cfg = CascadeConfig {
+            mode: CascadeMode::OutOfRange,
+            bump_severity: CascadeBumpSeverity::Patch,
+            peer_escalation: true,
+            preserve_npm_ranges: false,
+        };
+
+        let reasons = BTreeMap::new();
+        let named_by = BTreeMap::new();
+
+        let input = CascadeInput {
+            graph: &graph,
+            groups: &groups,
+            cfg: &cfg,
+            seed: &seed,
+            reasons: &reasons,
+            named_by: &named_by,
+            base: &base,
+            pre: None,
+        };
+
+        let outcome = run_cascade(input).unwrap();
+
+        // pkg_a was never seeded directly; it must pick up pkg_b's severity
+        // purely through linked-group union.
+        assert_eq!(outcome.severities.get(&pkg_a), Some(&Severity::Major));
+        assert_eq!(outcome.severities.get(&pkg_b), Some(&Severity::Major));
+
+        let target_a = outcome.targets.get(&pkg_a).unwrap();
+        let target_b = outcome.targets.get(&pkg_b).unwrap();
+
+        // Both members share the same base version, so convergence must
+        // land them on the exact same target version.
+        assert_eq!(target_a, target_b);
+        assert_eq!(target_a.render(), "2.0.0");
+
+        assert_eq!(
+            outcome.reasons.get(&pkg_a),
+            Some(&BumpReason::LinkedGroupUnion {
+                group: GroupName("linked-pair".to_string()),
+            })
+        );
+    }
+
+    /// Spec §G.6.7: linked group members with *different* base versions must
+    /// converge on the SAME winning target version (the max of each member's
+    /// individually-computed candidate at the converged severity), not just
+    /// the same severity.
+    #[test]
+    fn test_linked_group_converges_target_version_across_divergent_bases() {
+        let pkg_a = PackageId::parse("pkg-a").unwrap();
+        let pkg_b = PackageId::parse("pkg-b").unwrap();
+
+        let graph = TwoPackageGraph {
+            packages: vec![bare_package(&pkg_a), bare_package(&pkg_b)],
+        };
+
+        let mut base = BTreeMap::new();
+        base.insert(
+            pkg_a.clone(),
+            Version::parse("1.4.0", callisto_model::VersionGrammar::SemVer).unwrap(),
+        );
+        base.insert(
+            pkg_b.clone(),
+            Version::parse("2.7.3", callisto_model::VersionGrammar::SemVer).unwrap(),
+        );
+
+        let mut seed = BTreeMap::new();
+        seed.insert(pkg_a.clone(), Severity::Minor);
+
+        let mut groups = GroupTable::default();
+        let group_def = GroupDef {
+            name: GroupName("linked-pair".to_string()),
+            kind: GroupKind::Linked,
+            members: vec![
+                GroupMember::Package(pkg_a.clone()),
+                GroupMember::Package(pkg_b.clone()),
+            ],
+        };
+        groups.linked.insert(group_def.name.clone(), group_def);
+
+        let cfg = CascadeConfig {
+            mode: CascadeMode::OutOfRange,
+            bump_severity: CascadeBumpSeverity::Patch,
+            peer_escalation: true,
+            preserve_npm_ranges: false,
+        };
+
+        let reasons = BTreeMap::new();
+        let named_by = BTreeMap::new();
+
+        let input = CascadeInput {
+            graph: &graph,
+            groups: &groups,
+            cfg: &cfg,
+            seed: &seed,
+            reasons: &reasons,
+            named_by: &named_by,
+            base: &base,
+            pre: None,
+        };
+
+        let outcome = run_cascade(input).unwrap();
+
+        let target_a = outcome.targets.get(&pkg_a).unwrap();
+        let target_b = outcome.targets.get(&pkg_b).unwrap();
+
+        // pkg_a at minor from 1.4.0 -> 1.5.0; pkg_b at minor from 2.7.3 -> 2.8.0.
+        // The winner (max by Version::compare) is 2.8.0 and both must converge on it.
+        assert_eq!(target_a, target_b);
+        assert_eq!(target_a.render(), "2.8.0");
+    }
+
+    /// A pre-release cycle must bump from the PINNED baseline captured in
+    /// `PreState.initial_versions` at `pre enter` time, not from whatever the
+    /// latest on-disk prerelease happens to be. Otherwise the release segment
+    /// re-derives from a moving target instead of the pinned one.
+    #[test]
+    fn test_bump_target_uses_pinned_pre_baseline_not_current_prerelease() {
+        let pkg_a = PackageId::parse("pkg-a").unwrap();
+
+        let graph = TwoPackageGraph {
+            packages: vec![bare_package(&pkg_a)],
+        };
+
+        // On-disk is already one prerelease bump into a MAJOR cycle
+        // (2.0.0-next.0), while the pinned baseline from `pre enter` is
+        // still 1.0.0. Requesting a Minor bump now must be computed from
+        // the pinned baseline (-> release 1.1.0), not by re-deriving from
+        // the already-major-bumped on-disk value (which would incorrectly
+        // treat 2.0.0-next.0 as still-in-progress and yield 2.0.0-next.1).
+        let mut base = BTreeMap::new();
+        base.insert(
+            pkg_a.clone(),
+            Version::parse("2.0.0-next.0", callisto_model::VersionGrammar::SemVer).unwrap(),
+        );
+
+        let mut initial_versions = indexmap::IndexMap::new();
+        initial_versions.insert(
+            "pkg-a".to_string(),
+            Version::parse("1.0.0", callisto_model::VersionGrammar::SemVer).unwrap(),
+        );
+        let pre = callisto_format::PreState {
+            mode: callisto_format::PreMode::Pre,
+            tag: "next".to_string(),
+            initial_versions,
+            changesets: Vec::new(),
+        };
+
+        let groups = GroupTable::default();
+        let cfg = CascadeConfig {
+            mode: CascadeMode::OutOfRange,
+            bump_severity: CascadeBumpSeverity::Patch,
+            peer_escalation: true,
+            preserve_npm_ranges: false,
+        };
+
+        let seed = BTreeMap::new();
+        let reasons = BTreeMap::new();
+        let named_by = BTreeMap::new();
+
+        let input = CascadeInput {
+            graph: &graph,
+            groups: &groups,
+            cfg: &cfg,
+            seed: &seed,
+            reasons: &reasons,
+            named_by: &named_by,
+            base: &base,
+            pre: Some(&pre),
+        };
+
+        let target = bump_target(&pkg_a, Severity::Minor, &input).unwrap();
+
+        assert_eq!(target.render(), "1.1.0-next.0");
     }
 }

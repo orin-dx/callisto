@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use callisto_model::{CommandRunner, Package};
+use callisto_vcs::{GitAccess, GitDataSource};
 
 use crate::error::GraphError;
 use crate::tags::TagIndex;
@@ -29,11 +30,14 @@ pub fn changed_since_last_tag<R: CommandRunner>(
         return Ok(true);
     };
 
-    if let Ok(repo) = callisto_vcs::GitRepository::discover(root) {
-        if let Ok(commits) = repo.commits_since(Some(&last.name.0)) {
-            if !commits.is_empty() {
-                return Ok(true);
-            }
+    // `GitAccess` transparently tries native gix first and falls back to
+    // `runner` when unavailable (always true on wasm32); a failure here
+    // (either backend) is not fatal -- it just means the cheap short-circuit
+    // below is skipped in favor of the exact `git diff --quiet` check.
+    let git = GitAccess::discover(root, runner);
+    if let Ok(commits) = git.commits_since(Some(last.name.as_str()), &[]) {
+        if !commits.is_empty() {
+            return Ok(true);
         }
     }
 

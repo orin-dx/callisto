@@ -2,9 +2,12 @@
 
 #![allow(clippy::result_large_err)]
 
+use std::cell::{OnceCell, RefCell};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 
+use callisto_manifests::Manifest;
 use callisto_model::{CommandRunner, PackageId, Version};
 
 pub mod aggregate;
@@ -19,6 +22,7 @@ pub mod groups;
 pub mod identity;
 pub mod infer;
 pub mod locate;
+mod manifest_cache;
 pub mod napi;
 pub mod plan;
 pub mod resolver;
@@ -48,8 +52,33 @@ pub struct Workspace<'a, R: CommandRunner, D: DependencyResolver = ManifestWalkR
     pub root: PathBuf,
     pub config: ResolvedConfig,
     pub graph: D,
-    pub tags: TagIndex,
+    /// Deferred [`TagIndex`]: built at most once, the first time
+    /// [`Workspace::tags`] is called, not eagerly by [`Workspace::load`].
+    ///
+    /// `TagIndex::build` fetches the repository's full tag list -- via
+    /// native gix discovery, or (when gix is unavailable, permanently the
+    /// case on `wasm32`) a `CommandRunner`-shelled `git tag --list` call, a
+    /// full Extism guest<->host round-trip there. Several command paths
+    /// never consult tags at all (e.g. `add`'s non-interactive path only
+    /// needs [`Workspace::root`] to write a changeset file; `add`'s
+    /// interactive package-selection step and `init` only need package
+    /// names/root), so building the index unconditionally inside
+    /// `Workspace::load` charged every caller for work only some of them
+    /// need. All of `TagIndex::build`'s inputs (`runner`, `root`, `graph`,
+    /// `config`) are already fields on `Workspace` itself, so deferring
+    /// construction behind a `OnceCell` needs no extra state and is
+    /// transparent to every existing caller -- go through [`Workspace::tags`]
+    /// rather than this field directly.
+    pub tags: OnceCell<TagIndex>,
     pub runner: &'a R,
+    /// Path-keyed cache of manifest handles opened read-only during this
+    /// workspace's lifetime. Populated during graph discovery
+    /// (`ManifestWalkResolver::build`) and reused by read-only accessors
+    /// such as [`Workspace::base_versions`] so a given manifest is opened
+    /// (read + parsed) at most once per command run. Never consulted by the
+    /// manifest-open-for-write path in `apply.rs`, which always needs a
+    /// fresh, exclusively-owned `&mut` handle.
+    pub manifest_cache: RefCell<BTreeMap<PathBuf, Arc<dyn Manifest>>>,
 }
 
 impl<'a, R: CommandRunner> Workspace<'a, R, ManifestWalkResolver> {
@@ -59,20 +88,44 @@ impl<'a, R: CommandRunner> Workspace<'a, R, ManifestWalkResolver> {
         runner: &'a R,
     ) -> Result<Self, GraphError> {
         let config = config::load(&root)?;
-        let graph = ManifestWalkResolver::build(&root, locator, runner, &config)?;
-        let tags = TagIndex::build(runner, &root, &graph, &config)?;
+        let manifest_cache: RefCell<BTreeMap<PathBuf, Arc<dyn Manifest>>> =
+            RefCell::new(BTreeMap::new());
+        let graph = ManifestWalkResolver::build(&root, locator, runner, &config, &manifest_cache)?;
 
         Ok(Workspace {
             root,
             config,
             graph,
-            tags,
+            tags: OnceCell::new(),
             runner,
+            manifest_cache,
         })
     }
 }
 
 impl<'a, R: CommandRunner, D: DependencyResolver> Workspace<'a, R, D> {
+    /// Returns the workspace's [`TagIndex`], building it on first access and
+    /// reusing the cached result afterwards. See the doc comment on the
+    /// `tags` field for why this is deferred rather than built eagerly by
+    /// [`Workspace::load`].
+    pub fn tags(&self) -> Result<&TagIndex, GraphError> {
+        if let Some(existing) = self.tags.get() {
+            return Ok(existing);
+        }
+        let built = TagIndex::build(self.runner, &self.root, &self.graph, &self.config)?;
+        // `OnceCell::set` only fails if another write already raced it in;
+        // `Workspace` is only ever accessed through `&self` here (never
+        // shared across threads -- `R`/`D` carry no such bound), so the
+        // `get()` check above already ruled that out. Fall back to `get()`
+        // either way rather than trusting the `set` call's own return value,
+        // so this stays correct even if that assumption ever changes.
+        self.tags.set(built).ok();
+        Ok(self
+            .tags
+            .get()
+            .expect("tags was just set above, or already set by a prior call"))
+    }
+
     pub fn base_versions(&self) -> Result<BTreeMap<PackageId, Version>, GraphError> {
         let cargo_workspace = if self.root.join("Cargo.toml").exists() {
             if let Ok(resolver) =
@@ -99,7 +152,7 @@ impl<'a, R: CommandRunner, D: DependencyResolver> Workspace<'a, R, D> {
             let mut found_version = None;
             for decl in &pkg.manifests {
                 if decl.role == callisto_model::ManifestRole::Canonical {
-                    let handle = callisto_manifests::open(decl, &ctx)?;
+                    let handle = manifest_cache::open_cached(&self.manifest_cache, decl, &ctx)?;
                     let v = handle.current_version()?;
                     found_version = Some(v);
                     break;

@@ -36,7 +36,9 @@ indexmap = { workspace = true }
 petgraph = "0.6"
 
 [dev-dependencies]
+callisto-model = { path = "../callisto-model", features = ["test-util"] }
 callisto-fixtures = { path = "../callisto-fixtures" }
 tempfile = "3"
 rstest.workspace = true
 insta.workspace = true
+serial_test = "3"

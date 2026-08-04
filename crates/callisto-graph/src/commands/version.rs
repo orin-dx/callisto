@@ -39,7 +39,7 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
         &ws.graph,
         &ws.config,
         ws.runner,
-        &ws.tags,
+        ws.tags()?,
         &base_versions,
         pre_state.as_ref(),
         inference,

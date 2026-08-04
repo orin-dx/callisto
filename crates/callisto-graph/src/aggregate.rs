@@ -4,7 +4,10 @@ use std::path::{Path, PathBuf};
 
 use callisto_changelog::{ChangeSource, ChangelogEntry, ChangelogInput};
 use callisto_format::{parse_changeset, Changeset};
-use callisto_model::{BumpReason, CommandRunner, Diagnostic, PackageId, Severity, Version};
+use callisto_model::{
+    BumpReason, CommandRunner, CommitSha, Diagnostic, Package, PackageId, Severity, Version,
+};
+use callisto_vcs::{GitAccess, GitDataSource};
 
 use crate::config::GroupTable;
 use crate::config::{PreMajorInferencePolicy, ResolvedConfig};
@@ -109,10 +112,58 @@ pub fn apply_pre_major(
     }
 }
 
+/// Resolves a release tag name to the commit SHA it points at, so that
+/// severity inference can be scoped to `since..HEAD` instead of walking the
+/// entire history on every `aggregate()`-driven command.
+///
+/// Thin wrapper around [`GitDataSource::resolve_commit`] (native gix,
+/// falling back to a `CommandRunner`-shelled `git rev-parse` when gix is
+/// unavailable -- most notably on `wasm32`): any failure to resolve the tag
+/// (missing, unborn repo, etc.) degrades gracefully to `None`, which
+/// callers treat as "infer over full history" -- the same behavior this
+/// function has always had, now delegated to [`GitAccess`] instead of
+/// hand-rolling the gix-then-runner-fallback shape itself.
+fn resolve_since(git: &impl GitDataSource, tag_name: &str) -> Option<CommitSha> {
+    git.resolve_commit(tag_name).ok().flatten()
+}
+
+/// Resolves a changeset entry's parsed `PackageId` against the packages in
+/// the graph.
+///
+/// `PackageId::matches` is a pairwise compatibility check: a bare id and a
+/// prefixed id with the same name are considered compatible because the
+/// bare side simply doesn't specify an ecosystem. That's correct pairwise,
+/// but a polyglot workspace can legitimately contain the same name in two
+/// or more ecosystems (e.g. `cargo/foo` and `npm/foo`), and a bare
+/// changeset entry naming `foo` cannot be resolved to either one without
+/// more context. Iterating with `.find()` over such a graph silently picks
+/// whichever candidate happens to come first, which is exactly the
+/// ambiguity bug this function fixes: it collects *all* matching
+/// candidates and only succeeds when there is exactly one.
+///
+/// Returns `Ok(None)` when no package matches (an unknown-package
+/// condition, reported separately by `validate`), `Ok(Some(pkg))` when
+/// resolution is unambiguous, and `Err(GraphError::AmbiguousName)` when the
+/// id matches two or more packages.
+fn resolve_target_package<'a>(
+    packages: impl Iterator<Item = &'a Package>,
+    id: &PackageId,
+) -> Result<Option<&'a Package>, GraphError> {
+    let matching: Vec<&Package> = packages.filter(|p| p.id.matches(id)).collect();
+    match matching.len() {
+        0 => Ok(None),
+        1 => Ok(Some(matching[0])),
+        _ => Err(GraphError::AmbiguousName {
+            name: id.display_name(),
+            candidates: matching.iter().map(|p| p.id.clone()).collect(),
+        }),
+    }
+}
+
 pub fn aggregate<D, R, I>(
     graph: &D,
     config: &ResolvedConfig,
-    _runner: &R,
+    runner: &R,
     tags: &TagIndex,
     base_versions: &BTreeMap<PackageId, Version>,
     _pre: Option<&callisto_format::PreState>,
@@ -125,6 +176,12 @@ where
 {
     let loaded = load_changesets(&config.root, config)?;
     let mut agg = Aggregation::default();
+
+    // Constructed once and reused for every package's since-resolution
+    // below (native gix, falling back to `runner` when unavailable); a
+    // resolution failure degrades gracefully to `None`, same as
+    // `resolve_since`'s own per-tag failure handling.
+    let git = GitAccess::discover(&config.root, runner);
 
     for pkg in graph.packages() {
         let cur_sev = agg
@@ -148,9 +205,11 @@ where
                 })
             })?;
 
+        let since = last_tag.and_then(|t| resolve_since(&git, t.name.as_str()));
+
         let window = crate::infer::InferenceWindowSpec {
             pathspecs: &pathspecs,
-            since: None,
+            since,
             current_version: &cur_ver,
             has_prior_release: last_tag.is_some(),
             policy: PreMajorInferencePolicy::OFF,
@@ -175,7 +234,7 @@ where
         agg.consumed.push(cs.path.clone());
         for entry in cs.changeset.entries {
             if let Ok(id) = PackageId::parse(&entry.name) {
-                if let Some(target_pkg) = graph.packages().find(|p| p.id.matches(&id)) {
+                if let Some(target_pkg) = resolve_target_package(graph.packages(), &id)? {
                     let canonical_id = target_pkg.id.clone();
                     let cur_sev = agg
                         .severities
@@ -332,4 +391,547 @@ pub(crate) fn union_linked(agg: &mut Aggregation, groups: &GroupTable) -> bool {
         }
     }
     changed
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Mutex;
+
+    use callisto_model::{
+        CommandError, CommandOutput, DepEdge, GroupKind, GroupName, ManifestDecl, ManifestFormat,
+        ManifestRole, Package,
+    };
+
+    use crate::config::{GroupDef, GroupMember};
+    use crate::infer::{InferenceOutcome, InferenceWindowSpec, SeverityInference};
+    use callisto_fixtures::git::{init_repo, run_git, PoisonedRunner};
+
+    /// Shells out to the real `git` binary. Retained as the `CommandRunner`
+    /// implementation passed to `aggregate()`/`TagIndex::build` in most
+    /// tests below, even though neither actually uses it for git access
+    /// anymore: both resolve against the real repo on disk via
+    /// `callisto_vcs::GitRepository` (gix). See
+    /// `test_aggregate_resolves_since_without_shelling_through_runner` for
+    /// the test proving `aggregate()`'s since-resolution no longer needs a
+    /// working runner at all.
+    struct RealGitRunner;
+
+    impl CommandRunner for RealGitRunner {
+        fn run(
+            &self,
+            program: &str,
+            args: &[&str],
+            cwd: &Path,
+        ) -> Result<CommandOutput, CommandError> {
+            let output = std::process::Command::new(program)
+                .args(args)
+                .current_dir(cwd)
+                .output()
+                .map_err(|e| CommandError::Io {
+                    program: program.to_string(),
+                    message: e.to_string(),
+                })?;
+            Ok(CommandOutput {
+                exit_code: output.status.code(),
+                stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+                stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+            })
+        }
+    }
+
+    /// A directory that is guaranteed not to sit inside any Git repository,
+    /// so `callisto_vcs::GitRepository::discover` fails exactly the way it
+    /// unconditionally does on `wasm32` -- the native-testable stand-in for
+    /// "gix is unavailable" used to force `resolve_since` through its
+    /// `CommandRunner` fallback. Mirrors `tags.rs`'s helper of the same
+    /// name.
+    fn non_repo_dir() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(
+            callisto_vcs::GitRepository::discover(dir.path()).is_err(),
+            "test fixture must not be discoverable as a Git repo"
+        );
+        dir
+    }
+
+    /// A `CommandRunner` double that answers `git rev-parse --verify --quiet
+    /// <tag>^{commit}` with a canned SHA and counts invocations. Stands in
+    /// for the real `git` binary on the `resolve_since` fallback path,
+    /// exercised when gix is unavailable (`repo: None`, as is permanently
+    /// the case on `wasm32`).
+    struct FakeRevParseRunner {
+        calls: AtomicUsize,
+        tag: String,
+        sha: CommitSha,
+    }
+
+    impl CommandRunner for FakeRevParseRunner {
+        fn run(
+            &self,
+            program: &str,
+            args: &[&str],
+            _cwd: &Path,
+        ) -> Result<CommandOutput, CommandError> {
+            assert_eq!(program, "git");
+            assert_eq!(
+                args,
+                [
+                    "rev-parse",
+                    "--verify",
+                    "--quiet",
+                    format!("{}^{{commit}}", self.tag).as_str()
+                ]
+            );
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            Ok(CommandOutput {
+                exit_code: Some(0),
+                stdout: format!("{}\n", self.sha.as_str()),
+                stderr: String::new(),
+            })
+        }
+    }
+
+    /// Spec: `resolve_since` must not silently degrade to `None` (forcing
+    /// an unbounded full-history commit walk, see
+    /// `test_aggregate_scopes_inference_window_to_last_tag`) just because
+    /// gix is unavailable -- it must fall back (via `GitAccess`) to a
+    /// `CommandRunner`-shelled `git rev-parse --verify --quiet
+    /// <tag>^{commit}` call.
+    #[test]
+    fn test_resolve_since_falls_back_to_command_runner_without_gix() {
+        let dir = non_repo_dir();
+        let sha = CommitSha::parse("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef").unwrap();
+        let runner = FakeRevParseRunner {
+            calls: AtomicUsize::new(0),
+            tag: "pkg-a@1.0.0".to_string(),
+            sha: sha.clone(),
+        };
+        let git = GitAccess::discover(dir.path(), &runner);
+
+        let resolved = resolve_since(&git, "pkg-a@1.0.0");
+
+        assert_eq!(
+            resolved,
+            Some(sha),
+            "resolve_since must resolve the tag via the CommandRunner fallback when gix is \
+             unavailable, not silently return None"
+        );
+        assert_eq!(runner.calls.load(Ordering::SeqCst), 1);
+    }
+
+    struct SinglePackageGraph {
+        pkg: Package,
+    }
+
+    impl DependencyResolver for SinglePackageGraph {
+        fn packages(&self) -> impl Iterator<Item = &Package> {
+            std::iter::once(&self.pkg)
+        }
+
+        fn dependencies_of(&self, _id: &PackageId) -> impl Iterator<Item = &DepEdge> {
+            std::iter::empty()
+        }
+
+        fn dependents_of(&self, _id: &PackageId) -> impl Iterator<Item = &DepEdge> {
+            std::iter::empty()
+        }
+    }
+
+    /// Records the `since` value passed into `InferenceWindowSpec` without
+    /// doing any real inference work.
+    #[derive(Default)]
+    struct RecordingInference {
+        captured_since: Mutex<Option<CommitSha>>,
+    }
+
+    impl SeverityInference for RecordingInference {
+        fn infer(
+            &self,
+            _pkg: &Package,
+            window: InferenceWindowSpec<'_>,
+        ) -> Result<Option<InferenceOutcome>, GraphError> {
+            *self.captured_since.lock().unwrap() = window.since.clone();
+            Ok(None)
+        }
+    }
+
+    /// Spec: `aggregate()` must scope commit inference to `last_tag..HEAD`
+    /// instead of walking full history on every run. Reproduces the bug by
+    /// building a real one-package repo with a real release tag, then
+    /// asserting the `since` field handed to `SeverityInference::infer`
+    /// carries the commit SHA the tag points at (not `None`, which forces a
+    /// full-history walk in `callisto_conventional::window::fetch_commits`).
+    #[test]
+    fn test_aggregate_scopes_inference_window_to_last_tag() {
+        let ws_dir = tempfile::tempdir().unwrap();
+        let root = ws_dir.path();
+
+        init_repo(root);
+        std::fs::write(root.join("README.md"), "hello\n").unwrap();
+        run_git(root, &["add", "."]);
+        run_git(root, &["commit", "-q", "-m", "initial commit"]);
+
+        let pkg_id = PackageId::parse("pkg-a").unwrap();
+        let tag_name = format!("{}@1.0.0", pkg_id.display_name());
+        // Explicit message + disabled gpg signing so this is robust
+        // regardless of the developer machine's global git config (e.g.
+        // `tag.forceSignAnnotated` / `tag.gpgSign`).
+        run_git(
+            root,
+            &["-c", "tag.gpgSign=false", "tag", "-m", "release", &tag_name],
+        );
+
+        // A commit landing after the tag; a correctly-scoped inference
+        // window must never need to look past `tag_name` to find it, but a
+        // `since: None` (full history) window would happily walk right over
+        // it and beyond, all the way back to the repo root.
+        std::fs::write(root.join("CHANGES.md"), "more\n").unwrap();
+        run_git(root, &["add", "."]);
+        run_git(root, &["commit", "-q", "-m", "feat: add changes file"]);
+
+        let expected_sha_output = std::process::Command::new("git")
+            .args([
+                "rev-parse",
+                "--verify",
+                "--quiet",
+                &format!("{tag_name}^{{commit}}"),
+            ])
+            .current_dir(root)
+            .output()
+            .unwrap();
+        assert!(expected_sha_output.status.success());
+        let expected_sha =
+            CommitSha::parse(String::from_utf8_lossy(&expected_sha_output.stdout).trim()).unwrap();
+
+        let runner = RealGitRunner;
+        let manifest = ManifestDecl::new(
+            "Cargo.toml",
+            ManifestRole::Canonical,
+            ManifestFormat::CargoToml,
+        )
+        .unwrap();
+        let graph = SinglePackageGraph {
+            pkg: Package {
+                id: pkg_id.clone(),
+                manifests: vec![manifest],
+                changelog: None,
+                release_trigger: callisto_model::ReleaseTrigger::Changeset,
+                publish_to: Vec::new(),
+                tag_template: None,
+            },
+        };
+        let cfg = crate::config::load(root).unwrap();
+        let tags = TagIndex::build(&runner, root, &graph, &cfg).unwrap();
+
+        // Sanity: the tag we just created was actually picked up.
+        assert_eq!(
+            tags.last_tag(&pkg_id)
+                .map(|t| t.version.render().to_string()),
+            Some("1.0.0".to_string())
+        );
+
+        let inference = RecordingInference::default();
+        let base_versions = BTreeMap::new();
+
+        aggregate(
+            &graph,
+            &cfg,
+            &runner,
+            &tags,
+            &base_versions,
+            None,
+            &inference,
+        )
+        .unwrap();
+
+        let captured = inference.captured_since.lock().unwrap().clone();
+        assert_eq!(
+            captured,
+            Some(expected_sha),
+            "aggregate() must scope inference to last_tag..HEAD instead of hardcoding `since: None` \
+             (full history)"
+        );
+    }
+
+    /// Spec: since-resolution must go through `callisto_vcs::GitRepository`
+    /// (gix), not the `CommandRunner` shell-out -- a `CommandRunner` that
+    /// fails on every call must not prevent `since` from being resolved.
+    #[test]
+    fn test_aggregate_resolves_since_without_shelling_through_runner() {
+        let ws_dir = tempfile::tempdir().unwrap();
+        let root = ws_dir.path();
+
+        init_repo(root);
+        std::fs::write(root.join("README.md"), "hello\n").unwrap();
+        run_git(root, &["add", "."]);
+        run_git(root, &["commit", "-q", "-m", "initial commit"]);
+
+        let pkg_id = PackageId::parse("pkg-a").unwrap();
+        let tag_name = format!("{}@1.0.0", pkg_id.display_name());
+        run_git(
+            root,
+            &["-c", "tag.gpgSign=false", "tag", "-m", "release", &tag_name],
+        );
+
+        std::fs::write(root.join("CHANGES.md"), "more\n").unwrap();
+        run_git(root, &["add", "."]);
+        run_git(root, &["commit", "-q", "-m", "feat: add changes file"]);
+
+        let expected_sha_output = std::process::Command::new("git")
+            .args([
+                "rev-parse",
+                "--verify",
+                "--quiet",
+                &format!("{tag_name}^{{commit}}"),
+            ])
+            .current_dir(root)
+            .output()
+            .unwrap();
+        assert!(expected_sha_output.status.success());
+        let expected_sha =
+            CommitSha::parse(String::from_utf8_lossy(&expected_sha_output.stdout).trim()).unwrap();
+
+        let poisoned = PoisonedRunner;
+        let manifest = ManifestDecl::new(
+            "Cargo.toml",
+            ManifestRole::Canonical,
+            ManifestFormat::CargoToml,
+        )
+        .unwrap();
+        let graph = SinglePackageGraph {
+            pkg: Package {
+                id: pkg_id.clone(),
+                manifests: vec![manifest],
+                changelog: None,
+                release_trigger: callisto_model::ReleaseTrigger::Changeset,
+                publish_to: Vec::new(),
+                tag_template: None,
+            },
+        };
+        let cfg = crate::config::load(root).unwrap();
+        let tags = TagIndex::build(&poisoned, root, &graph, &cfg).unwrap();
+
+        assert_eq!(
+            tags.last_tag(&pkg_id)
+                .map(|t| t.version.render().to_string()),
+            Some("1.0.0".to_string())
+        );
+
+        let inference = RecordingInference::default();
+        let base_versions = BTreeMap::new();
+
+        aggregate(
+            &graph,
+            &cfg,
+            &poisoned,
+            &tags,
+            &base_versions,
+            None,
+            &inference,
+        )
+        .unwrap();
+
+        let captured = inference.captured_since.lock().unwrap().clone();
+        assert_eq!(
+            captured,
+            Some(expected_sha),
+            "aggregate() must resolve `since` via callisto_vcs::GitRepository (gix), not by \
+             shelling out through the CommandRunner"
+        );
+    }
+
+    fn make_pkg(id: PackageId) -> Package {
+        let manifest = ManifestDecl::new(
+            "Cargo.toml",
+            ManifestRole::Canonical,
+            ManifestFormat::CargoToml,
+        )
+        .unwrap();
+        Package {
+            id,
+            manifests: vec![manifest],
+            changelog: None,
+            release_trigger: callisto_model::ReleaseTrigger::Changeset,
+            publish_to: Vec::new(),
+            tag_template: None,
+        }
+    }
+
+    /// Spec: a changeset entry naming a package by its bare name (no
+    /// ecosystem prefix) must NOT silently resolve against an arbitrary
+    /// candidate when the graph contains packages in two or more ecosystems
+    /// sharing that name. Resolving `foo` against both `cargo/foo` and
+    /// `npm/foo` is genuinely ambiguous and must be a caller-visible error,
+    /// not a first-match-wins pick based on iteration order.
+    #[test]
+    fn test_resolve_target_package_ambiguous_bare_name_errors() {
+        let pkg_cargo = make_pkg(PackageId::parse("cargo/foo").unwrap());
+        let pkg_npm = make_pkg(PackageId::parse("npm/foo").unwrap());
+        let packages = [pkg_cargo, pkg_npm];
+        let bare = PackageId::parse("foo").unwrap();
+
+        let result = resolve_target_package(packages.iter(), &bare);
+
+        match result {
+            Err(GraphError::AmbiguousName { name, candidates }) => {
+                assert_eq!(name, "foo");
+                assert_eq!(candidates.len(), 2);
+                assert!(candidates.contains(&PackageId::parse("cargo/foo").unwrap()));
+                assert!(candidates.contains(&PackageId::parse("npm/foo").unwrap()));
+            }
+            other => panic!("expected GraphError::AmbiguousName, got {other:?}"),
+        }
+    }
+
+    /// Spec: a bare-name lookup must still resolve fine when the name is
+    /// unambiguous (only one package with that name across all ecosystems
+    /// in the graph).
+    #[test]
+    fn test_resolve_target_package_unambiguous_bare_name_resolves() {
+        let pkg_cargo = make_pkg(PackageId::parse("cargo/foo").unwrap());
+        let pkg_other = make_pkg(PackageId::parse("cargo/bar").unwrap());
+        let packages = [pkg_cargo, pkg_other];
+        let bare = PackageId::parse("foo").unwrap();
+
+        let result = resolve_target_package(packages.iter(), &bare).unwrap();
+
+        assert_eq!(
+            result.map(|p| p.id.clone()),
+            Some(PackageId::parse("cargo/foo").unwrap())
+        );
+    }
+
+    /// Spec: a bare-name lookup for a name that doesn't exist anywhere in
+    /// the graph resolves to `None` (not an error) -- unknown-package
+    /// reporting is the caller's responsibility (see validate.rs).
+    #[test]
+    fn test_resolve_target_package_unknown_name_returns_none() {
+        let pkg_cargo = make_pkg(PackageId::parse("cargo/foo").unwrap());
+        let packages = [pkg_cargo];
+        let bare = PackageId::parse("does-not-exist").unwrap();
+
+        let result = resolve_target_package(packages.iter(), &bare).unwrap();
+
+        assert!(result.is_none());
+    }
+
+    /// Spec: the ambiguity check must not assume exactly two colliding
+    /// candidates. A workspace with the same bare name registered in three
+    /// or more ecosystems (cargo/foo, npm/foo, pypi/foo) must still report
+    /// every candidate in `AmbiguousName`, not just the first two (an
+    /// off-by-one truncation or a hardcoded pairwise assumption would not
+    /// be caught by the two-ecosystem test above).
+    #[test]
+    fn test_resolve_target_package_ambiguous_bare_name_three_ecosystems_errors() {
+        let pkg_cargo = make_pkg(PackageId::parse("cargo/foo").unwrap());
+        let pkg_npm = make_pkg(PackageId::parse("npm/foo").unwrap());
+        let pkg_pypi = make_pkg(PackageId::parse("pypi/foo").unwrap());
+        let packages = [pkg_cargo, pkg_npm, pkg_pypi];
+        let bare = PackageId::parse("foo").unwrap();
+
+        let result = resolve_target_package(packages.iter(), &bare);
+
+        match result {
+            Err(GraphError::AmbiguousName { name, candidates }) => {
+                assert_eq!(name, "foo");
+                assert_eq!(candidates.len(), 3);
+                assert!(candidates.contains(&PackageId::parse("cargo/foo").unwrap()));
+                assert!(candidates.contains(&PackageId::parse("npm/foo").unwrap()));
+                assert!(candidates.contains(&PackageId::parse("pypi/foo").unwrap()));
+            }
+            other => panic!("expected GraphError::AmbiguousName with 3 candidates, got {other:?}"),
+        }
+    }
+
+    /// Spec: bare-name matching against `PackageId::name()` is a plain
+    /// string comparison, which is case-sensitive. A package registered as
+    /// `cargo/Foo` must NOT be resolved by a bare lookup for `foo` -- they
+    /// are treated as distinct names, so the lookup resolves to `None`
+    /// (unknown-package) rather than matching or erroring as ambiguous.
+    /// This test pins down that actual behavior explicitly so a future
+    /// change to case handling is a deliberate, visible decision.
+    #[test]
+    fn test_resolve_target_package_bare_name_matching_is_case_sensitive() {
+        let pkg_cargo = make_pkg(PackageId::parse("cargo/Foo").unwrap());
+        let packages = [pkg_cargo];
+        let bare = PackageId::parse("foo").unwrap();
+
+        let result = resolve_target_package(packages.iter(), &bare).unwrap();
+
+        assert!(
+            result.is_none(),
+            "case-sensitive name comparison must not match 'foo' against 'Foo'"
+        );
+    }
+
+    fn linked_group(name: &str, members: &[PackageId]) -> GroupTable {
+        let mut groups = GroupTable::default();
+        let group_def = GroupDef {
+            name: GroupName(name.to_string()),
+            kind: GroupKind::Linked,
+            members: members.iter().cloned().map(GroupMember::Package).collect(),
+        };
+        groups.linked.insert(group_def.name.clone(), group_def);
+        groups
+    }
+
+    #[test]
+    fn test_union_linked_propagates_severity_from_named_member() {
+        let pkg_a = PackageId::parse("pkg-a").unwrap();
+        let pkg_b = PackageId::parse("pkg-b").unwrap();
+
+        let mut agg = Aggregation::default();
+        agg.severities.insert(pkg_b.clone(), Severity::Minor);
+        agg.named_by.insert(pkg_b.clone(), NamedBy::Changeset);
+
+        let groups = linked_group("linked-pair", &[pkg_a.clone(), pkg_b.clone()]);
+
+        let changed = union_linked(&mut agg, &groups);
+
+        assert!(changed);
+        assert_eq!(agg.severities.get(&pkg_a), Some(&Severity::Minor));
+        assert_eq!(agg.severities.get(&pkg_b), Some(&Severity::Minor));
+        assert_eq!(
+            agg.reasons.get(&pkg_a),
+            Some(&BumpReason::LinkedGroupUnion {
+                group: GroupName("linked-pair".to_string()),
+            })
+        );
+    }
+
+    #[test]
+    fn test_union_linked_does_not_downgrade_higher_existing_severity() {
+        let pkg_a = PackageId::parse("pkg-a").unwrap();
+        let pkg_b = PackageId::parse("pkg-b").unwrap();
+
+        let mut agg = Aggregation::default();
+        agg.severities.insert(pkg_a.clone(), Severity::Major);
+        agg.severities.insert(pkg_b.clone(), Severity::Minor);
+        agg.named_by.insert(pkg_a.clone(), NamedBy::Inference);
+        agg.named_by.insert(pkg_b.clone(), NamedBy::Changeset);
+
+        let groups = linked_group("linked-pair", &[pkg_a.clone(), pkg_b.clone()]);
+
+        let changed = union_linked(&mut agg, &groups);
+
+        assert!(changed);
+        assert_eq!(agg.severities.get(&pkg_a), Some(&Severity::Major));
+        assert_eq!(agg.severities.get(&pkg_b), Some(&Severity::Major));
+    }
+
+    #[test]
+    fn test_union_linked_noop_when_no_member_named() {
+        let pkg_a = PackageId::parse("pkg-a").unwrap();
+        let pkg_b = PackageId::parse("pkg-b").unwrap();
+
+        let mut agg = Aggregation::default();
+        let groups = linked_group("linked-pair", &[pkg_a.clone(), pkg_b.clone()]);
+
+        let changed = union_linked(&mut agg, &groups);
+
+        assert!(!changed);
+        assert!(agg.severities.is_empty());
+    }
 }

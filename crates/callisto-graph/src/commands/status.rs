@@ -19,6 +19,7 @@ pub fn status<R: CommandRunner, D: DependencyResolver>(
     let mut packages = Vec::new();
     let base_versions = ws.base_versions()?;
     let loaded_changesets = crate::load_changesets(&ws.root, &ws.config)?;
+    let tags = ws.tags()?;
 
     for pkg in ws.graph.packages() {
         let current_version = base_versions.get(&pkg.id).cloned().ok_or_else(|| {
@@ -31,8 +32,8 @@ pub fn status<R: CommandRunner, D: DependencyResolver>(
                 field: "version",
             })
         })?;
-        let last_tag = ws.tags.last_tag(&pkg.id).map(|t| t.name.clone());
-        let changed = changed_since_last_tag(ws.runner, &ws.root, pkg, &ws.tags)?;
+        let last_tag = tags.last_tag(&pkg.id).map(|t| t.name.clone());
+        let changed = changed_since_last_tag(ws.runner, &ws.root, pkg, tags)?;
 
         let mut pkg_changesets = Vec::new();
         let mut max_sev: Option<callisto_model::Severity> = None;

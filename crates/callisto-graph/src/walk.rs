@@ -1,8 +1,11 @@
+use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use callisto_manifests::{detect_npm_workspace_kind, open, OpenContext, WorkspaceCargoResolver};
+use callisto_manifests::{
+    detect_npm_workspace_kind, Manifest, OpenContext, WorkspaceCargoResolver,
+};
 use callisto_model::{
     CommandRunner, DepEdge, Ecosystem, ManifestDecl, ManifestFormat, ManifestRole, Package,
     PackageId, PublishTarget, ReleaseTrigger,
@@ -13,6 +16,7 @@ use crate::crosscheck::crosscheck_declared_edges;
 use crate::error::GraphError;
 use crate::identity::{IdentityIndex, IdentityResolver};
 use crate::locate::ProjectLocator;
+use crate::manifest_cache::open_cached;
 use crate::resolver::ManifestWalkResolver;
 
 impl ManifestWalkResolver {
@@ -21,6 +25,7 @@ impl ManifestWalkResolver {
         locator: &L,
         _runner: &R,
         _cfg: &ResolvedConfig,
+        manifest_cache: &RefCell<BTreeMap<PathBuf, Arc<dyn Manifest>>>,
     ) -> Result<Self, GraphError> {
         let projects = locator.projects()?;
 
@@ -90,7 +95,7 @@ impl ManifestWalkResolver {
             let ch_path = rel_path.join("CHANGELOG.md");
             let mut publish_to = Vec::new();
             for decl in &decls {
-                if let Ok(editor) = callisto_manifests::open(decl, &ctx) {
+                if let Ok(editor) = open_cached(manifest_cache, decl, &ctx) {
                     for target in editor.publish_targets() {
                         if target != PublishTarget::None && !publish_to.contains(&target) {
                             publish_to.push(target);
@@ -122,7 +127,7 @@ impl ManifestWalkResolver {
                 if decl.role != ManifestRole::Canonical {
                     continue;
                 }
-                if let Ok(m) = open(decl, &ctx) {
+                if let Ok(m) = open_cached(manifest_cache, decl, &ctx) {
                     for entry in m.iter_dependencies() {
                         let (spec, declaring_path) = if entry.inherited {
                             if let Some(ref inh) = ctx.cargo_workspace {
@@ -162,17 +167,7 @@ impl ManifestWalkResolver {
         }
 
         if let Some(declared) = locator.declared_edges() {
-            let cross_diags = crosscheck_declared_edges(
-                &ManifestWalkResolver {
-                    packages: packages.clone(),
-                    edges: edges.clone(),
-                    out_index: out_index.clone(),
-                    in_index: in_index.clone(),
-                    index: index.clone(),
-                    diagnostics: Vec::new(),
-                },
-                &declared,
-            );
+            let cross_diags = crosscheck_declared_edges(&packages, &edges, &declared);
             diagnostics.extend(cross_diags);
         }
 

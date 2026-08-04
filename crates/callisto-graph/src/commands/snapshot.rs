@@ -9,23 +9,26 @@ pub fn plan_snapshot<R: CommandRunner, D: DependencyResolver>(
     ws: &Workspace<'_, R, D>,
     tag: &str,
 ) -> Result<(VersionPlan, SnapshotReport), GraphError> {
-    let sha_raw = if let Ok(repo) = callisto_vcs::GitRepository::discover(&ws.root) {
-        if let Ok(sha) = repo.head_sha() {
-            sha.as_str().to_string()
-        } else {
-            String::new()
-        }
-    } else {
-        String::new()
-    };
+    // §G.11 (SPEC DECISION, pinned invariant #33): the sha component is a real, resolved
+    // HEAD commit sha — never a fake placeholder. A resolution failure here must surface
+    // as a real error rather than silently proceeding with a value that risks colliding
+    // with snapshots from unrelated runs.
+    let repo = callisto_vcs::GitRepository::discover(&ws.root)?;
+    let sha = repo.head_sha()?;
+    let sha_short = sha.short();
 
-    let sha_short = if sha_raw.len() >= 7 {
-        &sha_raw[..7]
-    } else {
-        "0000000"
-    };
-
+    // Base is literally `0.0.0`, never the package's own version, and every package in
+    // the workspace gets this identical, hyphen-joined string (§G.11 invariant #33) — not
+    // a per-package, dot-joined prerelease of that package's real version.
     let snapshot_tag = format!("0.0.0-{tag}-{sha_short}");
+    let snapshot_ver =
+        callisto_model::Version::parse(&snapshot_tag, callisto_model::VersionGrammar::SemVer)
+            .map_err(|_err| {
+                GraphError::Bump(callisto_format::BumpError::NotSemVer {
+                    raw: snapshot_tag.clone(),
+                    grammar: callisto_model::VersionGrammar::SemVer,
+                })
+            })?;
     let base_versions = ws.base_versions()?;
     let mut initial_severities = std::collections::BTreeMap::new();
     let mut initial_reasons = std::collections::BTreeMap::new();
@@ -71,18 +74,6 @@ pub fn plan_snapshot<R: CommandRunner, D: DependencyResolver>(
                 field: "version",
             })
         })?;
-        let snapshot_ver_str = format!("{}-{tag}.{sha_short}", from.render());
-        let snapshot_ver = callisto_model::Version::parse(
-            &snapshot_ver_str,
-            callisto_model::VersionGrammar::SemVer,
-        )
-        .map_err(|_err| {
-            GraphError::Bump(callisto_format::BumpError::NotSemVer {
-                raw: snapshot_ver_str,
-                grammar: callisto_model::VersionGrammar::SemVer,
-            })
-        })?;
-
         snapshot_versions.insert(pkg.id.clone(), snapshot_ver.clone());
 
         let mut writes = Vec::new();
@@ -105,7 +96,7 @@ pub fn plan_snapshot<R: CommandRunner, D: DependencyResolver>(
         bumps.push(callisto_model::BumpRecord {
             package: pkg.id.clone(),
             from,
-            to: snapshot_ver,
+            to: snapshot_ver.clone(),
             severity: callisto_model::Severity::Patch,
             governed_by: None,
             reason: None,
