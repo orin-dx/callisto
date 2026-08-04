@@ -103,6 +103,14 @@ pub enum ParseError {
     #[error("changeset has no frontmatter entries and an empty summary")]
     #[diagnostic(code(E048))]
     EmptyChangeset,
+
+    /// A changeset with one or more entries must have a non-empty summary.
+    #[error("changeset has entries but an empty or whitespace-only summary")]
+    #[diagnostic(
+        code(E048),
+        help("Add a non-empty summary after the closing `---` delimiter.")
+    )]
+    EmptySummary,
 }
 
 #[derive(Debug, thiserror::Error, miette::Diagnostic, Clone, PartialEq, Eq)]
@@ -112,6 +120,11 @@ pub enum WriteError {
     #[error("cannot write changeset: no entries and an empty summary")]
     #[diagnostic(code(E049))]
     EmptyChangeset,
+
+    /// A changeset with one or more entries must have a non-empty summary.
+    #[error("cannot write changeset: entries present but summary is empty or whitespace-only")]
+    #[diagnostic(code(E049), help("Provide a non-empty summary describing the change."))]
+    EmptySummary,
 
     /// `entries[index]`'s name is the empty string.
     #[error("entry {index} has an empty package name")]
@@ -178,6 +191,9 @@ pub fn parse_changeset(source: &str) -> Result<Changeset, ParseError> {
     if entries.is_empty() && summary.is_empty() {
         return Err(ParseError::EmptyChangeset);
     }
+    if !entries.is_empty() && summary.is_empty() {
+        return Err(ParseError::EmptySummary);
+    }
 
     Ok(Changeset { entries, summary })
 }
@@ -199,8 +215,11 @@ fn promote_line_error(err: LineError, line: usize) -> ParseError {
 /// Names are quoted only when necessary. Severities are always written lowercase. Output
 /// always uses `\n` line endings and ends with a single trailing newline after the summary.
 pub fn write_changeset(changeset: &Changeset) -> Result<String, WriteError> {
-    if changeset.entries.is_empty() && changeset.summary.trim().is_empty() {
-        return Err(WriteError::EmptyChangeset);
+    if changeset.summary.trim().is_empty() {
+        if changeset.entries.is_empty() {
+            return Err(WriteError::EmptyChangeset);
+        }
+        return Err(WriteError::EmptySummary);
     }
     for (index, entry) in changeset.entries.iter().enumerate() {
         if entry.name.is_empty() {

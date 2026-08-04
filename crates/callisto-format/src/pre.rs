@@ -92,13 +92,13 @@ pub fn parse_pre_json(input: &str) -> Result<PreState, PreJsonError> {
         let v_str = v_val.as_str().ok_or(PreJsonError::WrongFieldType {
             field: "initialVersions",
         })?;
-        let ver = Version::parse(v_str, VersionGrammar::SemVer).map_err(|source| {
-            PreJsonError::InvalidInitialVersion {
+        let ver = Version::parse(v_str, VersionGrammar::SemVer)
+            .or_else(|_| Version::parse(v_str, VersionGrammar::Pep440))
+            .map_err(|source| PreJsonError::InvalidInitialVersion {
                 package: pkg.clone(),
                 raw: v_str.to_string(),
                 source,
-            }
-        })?;
+            })?;
         initial_versions.insert(pkg.clone(), ver);
     }
 
@@ -199,5 +199,40 @@ mod tests {
         assert_eq!(state.tag, "next");
         let written = write_pre_json(&state);
         assert_eq!(written, json);
+    }
+
+    #[test]
+    fn pre_json_accepts_pep440_initial_versions() {
+        // pre.json files from Python/PyPI workspaces store PEP 440 version
+        // strings (e.g. "0.3.2a1") in initialVersions. parse_pre_json must
+        // accept them; rejecting them would make pre-mode unusable for Python
+        // packages entirely.
+        let json = r#"{
+  "mode": "pre",
+  "tag": "beta",
+  "initialVersions": {
+    "my-python-pkg": "0.3.2a1"
+  },
+  "changesets": []
+}
+"#;
+        let state = parse_pre_json(json).unwrap();
+        assert_eq!(state.initial_versions["my-python-pkg"].raw(), "0.3.2a1");
+    }
+
+    #[test]
+    fn pre_json_round_trips_pep440_version() {
+        // The PEP 440 initial version string must survive a write → parse cycle
+        // unchanged so that pre.json files are idempotent.
+        let state = PreState::entering(
+            "beta",
+            [("pkg".to_string(), {
+                callisto_model::Version::parse("1.0.0a1", callisto_model::VersionGrammar::Pep440)
+                    .unwrap()
+            })],
+        );
+        let written = write_pre_json(&state);
+        let reparsed = parse_pre_json(&written).unwrap();
+        assert_eq!(reparsed.initial_versions["pkg"].raw(), "1.0.0a1");
     }
 }

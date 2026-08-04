@@ -172,6 +172,40 @@ fn write_rejects_name_containing_a_literal_quote() {
     );
 }
 
+/// write_changeset must reject a changeset that has entries but an empty summary.
+/// Before the fix, the AND-gate guard allowed this through silently.
+#[test]
+fn write_rejects_empty_summary_with_entries() {
+    let changeset = cs(vec![("cargo/foo", Severity::Patch)], "");
+    let err = write_changeset(&changeset).unwrap_err();
+    assert_eq!(err, WriteError::EmptySummary);
+}
+
+/// write_changeset must reject a whitespace-only summary even when entries are present.
+#[test]
+fn write_rejects_whitespace_only_summary_with_entries() {
+    let changeset = cs(vec![("cargo/foo", Severity::Patch)], "   \n\t  ");
+    let err = write_changeset(&changeset).unwrap_err();
+    assert_eq!(err, WriteError::EmptySummary);
+}
+
+/// parse_changeset must reject a file that has entries but an empty summary body.
+#[test]
+fn parse_rejects_empty_summary_with_entries() {
+    let malformed = "---\ncargo/foo: minor\n---\n\n   \n";
+    let err = parse_changeset(malformed).unwrap_err();
+    assert_eq!(err, ParseError::EmptySummary);
+}
+
+/// parse_changeset must reject a file with entries and only whitespace after the closing
+/// delimiter.
+#[test]
+fn parse_rejects_whitespace_only_summary_with_entries() {
+    let malformed = "---\ncargo/foo: minor\n---\n\n  \t  \n\n";
+    let err = parse_changeset(malformed).unwrap_err();
+    assert_eq!(err, ParseError::EmptySummary);
+}
+
 use proptest::prelude::*;
 
 proptest! {
