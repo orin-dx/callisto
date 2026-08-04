@@ -2,7 +2,7 @@ use std::fs;
 use std::process::ExitCode;
 
 use callisto_format::{parse_pre_json, write_pre_json, PreMode, PreState};
-use callisto_model::{ApplyPermit, SCHEMA_VERSION};
+use callisto_model::{ApplyPermit, CommandRunner, SCHEMA_VERSION};
 use serde_json::json;
 
 use crate::cli::{GlobalArgs, OutputFormat, PreArgs};
@@ -55,7 +55,28 @@ pub fn handle(args: PreArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
 
     match args {
         PreArgs::Enter { tag } => {
+            // Bug 3: reject empty tags before any workspace I/O.
+            if tag.trim().is_empty() {
+                return Err(CliError::Other(
+                    "Pre-release tag cannot be empty".to_string(),
+                ));
+            }
+
             let ws = load_workspace(global, &runner)?;
+
+            // Bug 1: reject re-entering pre mode when already active.
+            // The check runs for both real and dry-run paths so a dry-run
+            // never silently simulates overwriting live pre-release state.
+            let pre_dir = ws.root.join(".changeset");
+            let pre_path = pre_dir.join("pre.json");
+            if pre_path.exists() {
+                return Err(CliError::Other(
+                    "Workspace is already in pre-release mode. Run `callisto pre exit` first, \
+                     or delete .changeset/pre.json manually to reset."
+                        .to_string(),
+                ));
+            }
+
             let initial = ws.initial_versions()?;
             let mut snapshot = indexmap::IndexMap::new();
             for (k, v) in initial {
@@ -70,9 +91,19 @@ pub fn handle(args: PreArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
                 return Ok(ExitCode::SUCCESS);
             };
 
-            let pre_dir = ws.root.join(".changeset");
             fs::create_dir_all(&pre_dir)?;
-            callisto_manifests::atomic::atomic_write(&pre_dir.join("pre.json"), &text, &permit)?;
+            callisto_manifests::atomic::atomic_write(&pre_path, &text, &permit)?;
+
+            // Bug 4: stage pre.json so it is included in the next commit.
+            let output = runner
+                .run("git", &["add", PRE_JSON_REL], &ws.root)
+                .map_err(|e| CliError::Other(format!("git add failed: {e}")))?;
+            if !output.success() {
+                return Err(CliError::Other(format!(
+                    "git add .changeset/pre.json failed (exit {:?}): {}",
+                    output.exit_code, output.stderr
+                )));
+            }
 
             match global.format {
                 OutputFormat::Json => {
@@ -102,6 +133,16 @@ pub fn handle(args: PreArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
                 path: Some(pre_path.clone()),
             })?;
             let mut pre_state = parse_pre_json(&text)?;
+
+            // Bug 2: reject double-exit.
+            if pre_state.mode == PreMode::Exit {
+                return Err(CliError::Other(
+                    "Workspace is not in pre-release mode (already exited). \
+                     Run `callisto version` to finalize the release."
+                        .to_string(),
+                ));
+            }
+
             pre_state.mode = PreMode::Exit;
 
             let updated = write_pre_json(&pre_state);

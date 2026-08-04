@@ -3,7 +3,7 @@ use std::process::ExitCode;
 use callisto_graph::apply::{apply_version_plan, ApplyOptions, ApplyOutcome};
 use callisto_graph::commands::VersionOptions;
 use callisto_graph::infer::NoInference;
-use callisto_model::ApplyPermit;
+use callisto_model::{ApplyPermit, DiagnosticSeverity};
 
 use crate::cli::{GlobalArgs, OutputFormat, VersionArgs};
 use crate::error::CliError;
@@ -44,5 +44,17 @@ pub fn handle(args: VersionArgs, global: &GlobalArgs) -> Result<ExitCode, CliErr
         OutputFormat::Text => render::render_version(&report, &mut std::io::stdout())?,
     }
 
-    Ok(ExitCode::SUCCESS)
+    // If any diagnostic was escalated to Error (e.g. by --strict), fail.
+    // Mirrors the pattern in status.rs: diagnostics ride in the report so the
+    // caller sees full detail before the non-zero exit.
+    let has_errors = report
+        .diagnostics
+        .iter()
+        .any(|d| d.severity == DiagnosticSeverity::Error);
+
+    if has_errors {
+        Ok(ExitCode::FAILURE)
+    } else {
+        Ok(ExitCode::SUCCESS)
+    }
 }

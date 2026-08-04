@@ -102,8 +102,12 @@ pub fn render_validate<W: io::Write>(report: &ValidateReport, w: &mut W) -> io::
     Ok(())
 }
 
-pub fn render_tag<W: io::Write>(report: &TagReport, w: &mut W) -> io::Result<()> {
-    writeln!(w, "Created Tags:")?;
+pub fn render_tag<W: io::Write>(report: &TagReport, dry_run: bool, w: &mut W) -> io::Result<()> {
+    if dry_run {
+        writeln!(w, "Would create tags:")?;
+    } else {
+        writeln!(w, "Created Tags:")?;
+    }
     for tag in &report.created_tags {
         writeln!(w, "  {} ({})", tag.tag_name, tag.sha.as_str())?;
     }

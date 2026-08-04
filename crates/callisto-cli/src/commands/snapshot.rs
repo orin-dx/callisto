@@ -47,7 +47,12 @@ pub fn handle(args: SnapshotArgs, global: &GlobalArgs) -> Result<ExitCode, CliEr
 
     match global.format {
         OutputFormat::Json => write_json(&mut std::io::stdout(), &report)?,
-        OutputFormat::Text => render::render_snapshot(&report, &mut std::io::stdout())?,
+        OutputFormat::Text => {
+            if global.dry_run {
+                println!("[DRY-RUN] Snapshot preview (no files modified):");
+            }
+            render::render_snapshot(&report, &mut std::io::stdout())?;
+        }
     }
 
     Ok(ExitCode::SUCCESS)

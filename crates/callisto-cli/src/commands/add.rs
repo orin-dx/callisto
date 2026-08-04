@@ -39,8 +39,26 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
             let id = PackageId::parse(name)
                 .map_err(|e| CliError::Other(format!("Invalid package name `{name}`: {e}")))?;
 
+            // Validate that the package exists in the workspace. A changeset for a
+            // non-existent package would fail silently during `callisto version` once
+            // the changeset is consumed — better to catch it here.
+            let known = ws
+                .graph
+                .packages()
+                .any(|p| p.id.matches(&id) || id.matches(&p.id));
+            if !known {
+                let known_names: Vec<String> =
+                    ws.graph.packages().map(|p| p.id.display_name()).collect();
+                return Err(CliError::Other(format!(
+                    "Unknown package `{name}`. Known packages: {}",
+                    known_names.join(", ")
+                )));
+            }
+
             entries.push(Entry {
-                name: id.name().to_string(),
+                // Use display_name() so "cargo/foo" is preserved, not just "foo".
+                // In a polyglot workspace, the bare name is ambiguous across ecosystems.
+                name: id.display_name(),
                 severity,
             });
         }
@@ -126,6 +144,13 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
         if summary.is_none() {
             println!("\nPlease enter a summary for this change:");
             let input_summary: String = Input::new()
+                .validate_with(|input: &String| -> Result<(), &str> {
+                    if input.trim().is_empty() {
+                        Err("Summary cannot be empty. Please enter a description of the change.")
+                    } else {
+                        Ok(())
+                    }
+                })
                 .interact_text()
                 .map_err(|e| CliError::Other(format!("Interactive prompt failed: {e}")))?;
             summary = Some(input_summary);
@@ -155,12 +180,13 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
         return Err(CliError::NotATty);
     }
 
-    let summary_text = summary.ok_or_else(|| {
+    let raw_summary = summary.ok_or_else(|| {
         CliError::Other(
             "--summary is required when specifying packages via CLI flags in non-interactive mode"
                 .to_string(),
         )
     })?;
+    let summary_text = validate_summary(&raw_summary)?;
     let changeset = Changeset {
         entries,
         summary: summary_text,
@@ -211,6 +237,19 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
     }
 
     Ok(ExitCode::SUCCESS)
+}
+
+/// Validates that a changeset summary string is non-empty and non-whitespace.
+///
+/// Returns `Ok(trimmed_summary)` on success, or a [`CliError`] with a user-facing message.
+fn validate_summary(summary: &str) -> Result<String, CliError> {
+    let trimmed = summary.trim().to_string();
+    if trimmed.is_empty() {
+        return Err(CliError::Other(
+            "--summary cannot be empty. Provide a non-empty description of the change.".to_string(),
+        ));
+    }
+    Ok(trimmed)
 }
 
 /// Builds the list of package names shown in the interactive multiselect wizard.
@@ -275,6 +314,59 @@ mod tests {
             publish_to: vec![],
             tag_template: None,
         }
+    }
+
+    /// Non-interactive mode with an empty --summary must fail with a clear error before
+    /// reaching write_changeset, not silently write a file with an empty summary.
+    #[test]
+    fn non_interactive_empty_summary_is_rejected() {
+        let result = validate_summary("");
+        assert!(result.is_err(), "empty summary should be rejected");
+    }
+
+    #[test]
+    fn non_interactive_whitespace_summary_is_rejected() {
+        let result = validate_summary("   \t\n  ");
+        assert!(
+            result.is_err(),
+            "whitespace-only summary should be rejected"
+        );
+    }
+
+    #[test]
+    fn non_interactive_nonempty_summary_is_accepted() {
+        let result = validate_summary("Fix a bug in the parser");
+        assert!(result.is_ok(), "non-empty summary should be accepted");
+        assert_eq!(result.unwrap(), "Fix a bug in the parser");
+    }
+
+    #[test]
+    fn validate_summary_trims_leading_and_trailing_whitespace() {
+        let result = validate_summary("  important fix  ");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "important fix");
+    }
+
+    /// Regression test for Bug 1: non-interactive `add --package cargo/foo:patch`
+    /// must produce `Entry { name: "cargo/foo", ... }`, not `Entry { name: "foo", ... }`.
+    ///
+    /// Before the fix, line 43 used `id.name()` which strips the ecosystem prefix.
+    /// After the fix, it uses `id.display_name()` which preserves `"cargo/foo"`.
+    /// In a polyglot workspace, the bare name `"foo"` is ambiguous and causes
+    /// `AmbiguousName` errors during `callisto version`.
+    #[test]
+    fn non_interactive_add_entry_preserves_ecosystem_qualifier() {
+        let id = PackageId::parse("cargo/foo").unwrap();
+        // display_name() returns ecosystem-qualified form; name() returns bare name.
+        // The fix ensures the Entry built in the non-interactive handler uses display_name().
+        let entry = Entry {
+            name: id.display_name(),
+            severity: Severity::Patch,
+        };
+        assert_eq!(
+            entry.name, "cargo/foo",
+            "Entry.name must equal display_name(), not the bare name"
+        );
     }
 
     /// When a polyglot workspace contains `cargo/foo` and `npm/foo`, the

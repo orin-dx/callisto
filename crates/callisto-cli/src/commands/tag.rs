@@ -61,7 +61,7 @@ pub fn handle(args: TagArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
 
     match global.format {
         OutputFormat::Json => write_json(&mut std::io::stdout(), &report)?,
-        OutputFormat::Text => render::render_tag(&report, &mut std::io::stdout())?,
+        OutputFormat::Text => render::render_tag(&report, global.dry_run, &mut std::io::stdout())?,
     }
 
     Ok(ExitCode::SUCCESS)
