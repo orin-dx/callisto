@@ -21,4 +21,5 @@ dunce = { workspace = true }
 gix = "0.86"
 
 [dev-dependencies]
+callisto-model = { path = "../callisto-model", features = ["test-util"] }
 tempfile = "3"

@@ -1,9 +1,16 @@
 use std::path::{Path, PathBuf};
 
-use callisto_model::{CommitSha, TagName};
+use callisto_model::{ApplyPermit, CommandError, CommitSha, TagName};
 use thiserror::Error;
 
+pub mod access;
+pub mod shell;
+
+pub use access::GitAccess;
+pub use shell::ShellGit;
+
 #[derive(Clone, Debug, Error, miette::Diagnostic, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum VcsError {
     #[error("failed to discover Git repository at `{path}`: {message}")]
     #[diagnostic(
@@ -22,6 +29,23 @@ pub enum VcsError {
         help("Check if reference or tag exists in local or remote Git refs.")
     )]
     RefNotFound { ref_name: String },
+
+    #[error("tag glob pattern `{pattern}` is not a valid glob: {message}")]
+    #[diagnostic(
+        code(E053),
+        help(
+            "Fix the glob syntax (e.g. balance `{{`/`}}` and `[`/`]`) or use a literal tag name."
+        )
+    )]
+    InvalidGlob { pattern: String, message: String },
+
+    /// Wraps a [`CommandError`] surfaced by the [`ShellGit`] (`CommandRunner`-
+    /// shelled) backend -- e.g. the `git` binary itself couldn't be spawned.
+    /// Kept `transparent` so callers that only care about the underlying
+    /// `CommandError` (most of them, since it's the same error every direct
+    /// `CommandRunner::run` call site already surfaces) can match through it.
+    #[error(transparent)]
+    Command(#[from] CommandError),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -35,6 +59,82 @@ pub struct GitCommit {
 pub trait GitVcsProvider {
     fn head_sha(&self) -> Result<CommitSha, VcsError>;
     fn list_tags(&self, glob_pattern: Option<&str>) -> Result<Vec<TagName>, VcsError>;
+}
+
+/// Unified git-data access surface covering every operation callisto's
+/// release-graph logic needs, independent of *how* the data is sourced.
+///
+/// Two backends implement this trait:
+///
+/// - [`GitRepository`] -- native, backed by `gix`. Fast and side-effect-free
+///   for reads, but entirely unavailable on `wasm32` (gix is excluded from
+///   that target's dependency set, so [`GitRepository::discover`] always
+///   returns `Err` there).
+/// - [`ShellGit`] -- shells out to the real `git` binary via a
+///   [`callisto_model::CommandRunner`], so it works everywhere a `git`
+///   binary is reachable, including through the `wasm32`/Extism host
+///   bridge.
+///
+/// Callers should not implement or select between these directly; use
+/// [`GitAccess::discover`], which tries native `gix` first and transparently
+/// falls back to the `CommandRunner` shell-out, applying the correct
+/// per-operation fallback policy (see [`GitAccess`]'s docs).
+pub trait GitDataSource {
+    /// Lists tag names, optionally filtered by `glob` (a [`globset::Glob`]
+    /// pattern). Both backends filter with the exact same `globset`
+    /// matching semantics, so tag selection is byte-identical regardless of
+    /// which one served the request. `None` matches every tag.
+    fn list_tags(&self, glob: Option<&str>) -> Result<Vec<TagName>, VcsError>;
+
+    /// Resolves `refname` (tag, branch, or partial/full SHA) to the commit
+    /// it points at. An unresolvable ref is *not* an error -- it resolves
+    /// to `Ok(None)`, which callers typically treat as "no bound" / "infer
+    /// over full history".
+    fn resolve_commit(&self, refname: &str) -> Result<Option<CommitSha>, VcsError>;
+
+    /// Lists commits reachable from `HEAD`, down to (exclusive) `since_ref`
+    /// when given, filtered to those that touch at least one of
+    /// `pathspecs` (an empty slice disables filtering and returns every
+    /// commit in the walk). Merge commits are always excluded, matching
+    /// `git log --no-merges`.
+    ///
+    /// Unlike [`Self::resolve_commit`], a `since_ref` that's given but
+    /// fails to resolve to a commit *is* an error: silently ignoring it and
+    /// walking unbounded history instead of the caller's requested bound
+    /// is a correctness bug (e.g. it can re-surface already-released
+    /// commits into changelog/severity inference). `since_ref: None` is not
+    /// this case -- it's a deliberate request for the full history and
+    /// always succeeds.
+    fn commits_since(
+        &self,
+        since_ref: Option<&str>,
+        pathspecs: &[PathBuf],
+    ) -> Result<Vec<GitCommit>, VcsError>;
+
+    /// Creates the tag `name` at `target_sha`: annotated with `message`
+    /// when `Some`, lightweight when `None`. Fails if a ref of that name
+    /// already exists.
+    ///
+    /// Writes a git ref, so it requires an [`ApplyPermit`]; a dry run has
+    /// none to give and therefore cannot call this at all.
+    fn create_tag(
+        &self,
+        name: &str,
+        target_sha: &CommitSha,
+        message: Option<&str>,
+        permit: &ApplyPermit,
+    ) -> Result<(), VcsError>;
+
+    /// Force-creates or -moves the floating tag `major_name` to point at
+    /// `target_sha`, overwriting any existing ref of that name.
+    ///
+    /// Writes a git ref, so it requires an [`ApplyPermit`].
+    fn create_floating_major(
+        &self,
+        major_name: &str,
+        target_sha: &CommitSha,
+        permit: &ApplyPermit,
+    ) -> Result<(), VcsError>;
 }
 
 pub struct GitRepository {
@@ -91,12 +191,28 @@ impl GitRepository {
                 .tags()
                 .map_err(|e| VcsError::Git(format!("Failed to list tag refs: {e}")))?;
 
-            let matcher = glob_pattern.and_then(|p| globset::Glob::new(p).ok());
+            // A pattern that fails to compile must not silently disable
+            // filtering (which would match every tag in the repo -- a real
+            // correctness risk for release tagging, since a malformed tag
+            // template could then make "last tag" resolution pick an
+            // unrelated package's tag). Surface it as an error instead;
+            // `None` (no pattern requested at all) still means "match
+            // everything".
+            let matcher = glob_pattern
+                .map(|p| {
+                    globset::Glob::new(p)
+                        .map(|g| g.compile_matcher())
+                        .map_err(|e| VcsError::InvalidGlob {
+                            pattern: p.to_string(),
+                            message: e.to_string(),
+                        })
+                })
+                .transpose()?;
 
             for r in tag_refs.flatten() {
                 let name = r.name().shorten().to_string();
                 if let Some(ref m) = matcher {
-                    if !m.compile_matcher().is_match(&name) {
+                    if !m.is_match(&name) {
                         continue;
                     }
                 }
@@ -112,7 +228,69 @@ impl GitRepository {
         }
     }
 
-    pub fn commits_since(&self, from_ref: Option<&str>) -> Result<Vec<GitCommit>, VcsError> {
+    /// Resolves an arbitrary ref (tag, branch, or partial SHA) to the commit
+    /// SHA it points at.
+    ///
+    /// Follows the same resolution and error-handling convention as the
+    /// `from_ref` handling inside [`Self::commits_since`]: an unresolvable
+    /// ref (missing tag, unborn repo, ref pointing at a non-commit object
+    /// that can't be peeled to one, etc.) is not an error condition -- it
+    /// degrades gracefully to `Ok(None)`, which callers treat as "no bound"
+    /// / "infer over full history".
+    pub fn resolve_commit(&self, refname: &str) -> Result<Option<CommitSha>, VcsError> {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let Ok(spec) = self.repo.rev_parse_single(refname) else {
+                return Ok(None);
+            };
+            let Ok(object) = spec.object() else {
+                return Ok(None);
+            };
+            let Ok(commit) = object.peel_to_kind(gix::object::Kind::Commit) else {
+                return Ok(None);
+            };
+
+            let hex = commit.id.to_hex().to_string();
+            let sha = CommitSha::parse(&hex)
+                .map_err(|e| VcsError::Git(format!("Invalid commit SHA: {e}")))?;
+            Ok(Some(sha))
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            let _unused = refname;
+            Ok(None)
+        }
+    }
+
+    /// Like [`Self::commits_since`], but additionally filters the walked
+    /// commits down to those that touched at least one path under one of
+    /// the given `pathspecs`.
+    ///
+    /// `pathspecs` are matched as simple path prefixes against every path
+    /// touched by a commit's tree diff against its (first) parent -- a
+    /// pathspec matches a changed path if the changed path is exactly equal
+    /// to it, or the changed path is nested underneath it as a directory
+    /// prefix. This mirrors the directory/path-prefix scoping `git log --
+    /// <pathspecs>` provides for per-package commit filtering; it does not
+    /// implement full git pathspec magic syntax (`:!`, glob magic, etc).
+    ///
+    /// An empty `pathspecs` slice disables filtering entirely and returns
+    /// every commit in the walk, matching `git log` with no trailing `--`
+    /// pathspec.
+    ///
+    /// `since` is an exclusive lower bound, same as `commits_since`'s
+    /// `from_ref`: the commit `since` points at is not itself included in
+    /// the result.
+    ///
+    /// Merge commits (more than one parent) are skipped, matching `git log
+    /// --no-merges` -- this method exists to power per-package commit
+    /// scoping for severity inference, where a merge commit's message
+    /// duplicates work already represented by its non-merge ancestors.
+    pub fn commits_since_with_pathspec(
+        &self,
+        since: Option<&CommitSha>,
+        pathspecs: &[PathBuf],
+    ) -> Result<Vec<GitCommit>, VcsError> {
         #[cfg(not(target_arch = "wasm32"))]
         {
             let head = self
@@ -126,38 +304,34 @@ impl GitRepository {
                 .all()
                 .map_err(|e| VcsError::Git(format!("Failed to create revwalk: {e}")))?;
 
-            let stop_sha = if let Some(r) = from_ref {
-                if let Ok(spec) = self.repo.rev_parse_single(r) {
-                    if let Ok(object) = spec.object() {
-                        if let Ok(commit) = object.peel_to_kind(gix::object::Kind::Commit) {
-                            Some(commit.id.to_hex().to_string())
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
+            let stop_hex = since.map(|s| s.as_str().to_string());
 
             let mut commits = Vec::new();
             for info in revwalk {
                 let info = info.map_err(|e| VcsError::Git(e.to_string()))?;
                 let hex = info.id.to_hex().to_string();
 
-                if let Some(ref target) = stop_sha {
+                if let Some(ref target) = stop_hex {
                     if &hex == target {
                         break;
                     }
                 }
 
+                if info.parent_ids().count() > 1 {
+                    continue;
+                }
+
                 let commit_obj = info
                     .object()
                     .map_err(|e| VcsError::Git(format!("Failed to load commit object: {e}")))?;
+
+                if !pathspecs.is_empty() {
+                    let touched =
+                        commit_touches_pathspecs(&self.repo, &info, &commit_obj, pathspecs)?;
+                    if !touched {
+                        continue;
+                    }
+                }
 
                 let sha = CommitSha::parse(&hex)
                     .map_err(|e| VcsError::Git(format!("Invalid commit SHA: {e}")))?;
@@ -180,7 +354,7 @@ impl GitRepository {
         }
         #[cfg(target_arch = "wasm32")]
         {
-            let _unused = from_ref;
+            let _unused = (since, pathspecs);
             Ok(Vec::new())
         }
     }
@@ -190,6 +364,7 @@ impl GitRepository {
         name: &str,
         target_sha: &CommitSha,
         message: Option<&str>,
+        _permit: &ApplyPermit,
     ) -> Result<(), VcsError> {
         #[cfg(not(target_arch = "wasm32"))]
         {
@@ -233,6 +408,7 @@ impl GitRepository {
         &self,
         major_name: &str,
         target_sha: &CommitSha,
+        _permit: &ApplyPermit,
     ) -> Result<(), VcsError> {
         #[cfg(not(target_arch = "wasm32"))]
         {
@@ -260,6 +436,89 @@ impl GitRepository {
     }
 }
 
+/// Diffs `commit_obj`'s tree against its first parent's tree (or the empty
+/// tree, for a root commit) and reports whether any changed path falls
+/// under one of `pathspecs`.
+#[cfg(not(target_arch = "wasm32"))]
+fn commit_touches_pathspecs(
+    repo: &gix::Repository,
+    info: &gix::revision::walk::Info<'_>,
+    commit_obj: &gix::Commit<'_>,
+    pathspecs: &[PathBuf],
+) -> Result<bool, VcsError> {
+    let commit_tree = commit_obj
+        .tree()
+        .map_err(|e| VcsError::Git(format!("Failed to load commit tree: {e}")))?;
+
+    let parent_tree = match info.parent_ids().next() {
+        Some(parent_id) => {
+            let parent_commit = parent_id
+                .object()
+                .map_err(|e| VcsError::Git(format!("Failed to load parent commit object: {e}")))?
+                .into_commit();
+            parent_commit
+                .tree()
+                .map_err(|e| VcsError::Git(format!("Failed to load parent tree: {e}")))?
+        }
+        None => repo.empty_tree(),
+    };
+
+    let mut touched = false;
+    let mut platform = parent_tree
+        .changes()
+        .map_err(|e| VcsError::Git(format!("Failed to initialize tree diff: {e}")))?;
+    // Rewrite (rename/copy) detection needs blob-similarity computation we
+    // don't otherwise need: pathspec matching only cares about which paths
+    // changed, not whether they're related across a rename.
+    platform.options(|o| {
+        o.track_rewrites(None);
+    });
+    // Note: we deliberately always return `Continue` here, never `Break` --
+    // gix's tree-diff machinery treats an early `Break` as a cancellation
+    // and surfaces it as an `Err` from `for_each_to_obtain_tree`, which
+    // would turn "found a match" into a spurious failure.
+    platform
+        .for_each_to_obtain_tree(&commit_tree, |change| {
+            if change_matches_pathspecs(&change, pathspecs) {
+                touched = true;
+            }
+            Ok::<_, std::convert::Infallible>(std::ops::ControlFlow::Continue(()))
+        })
+        .map_err(|e| VcsError::Git(format!("Failed to diff commit tree: {e}")))?;
+
+    Ok(touched)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn change_matches_pathspecs(
+    change: &gix::object::tree::diff::Change<'_, '_, '_>,
+    pathspecs: &[PathBuf],
+) -> bool {
+    use gix::object::tree::diff::Change;
+    match change {
+        Change::Addition { location, .. }
+        | Change::Deletion { location, .. }
+        | Change::Modification { location, .. } => location_matches(location, pathspecs),
+        Change::Rewrite {
+            location,
+            source_location,
+            ..
+        } => location_matches(location, pathspecs) || location_matches(source_location, pathspecs),
+    }
+}
+
+/// Simple directory/path-prefix pathspec match: a changed path matches a
+/// pathspec if it's exactly equal to it, or nested underneath it as a
+/// directory prefix. Does not implement full git pathspec magic syntax.
+#[cfg(not(target_arch = "wasm32"))]
+fn location_matches(location: &gix::bstr::BStr, pathspecs: &[PathBuf]) -> bool {
+    let path_str = String::from_utf8_lossy(location);
+    let changed_path = Path::new(path_str.as_ref());
+    pathspecs
+        .iter()
+        .any(|spec| changed_path == spec.as_path() || changed_path.starts_with(spec))
+}
+
 impl GitVcsProvider for GitRepository {
     fn head_sha(&self) -> Result<CommitSha, VcsError> {
         self.head_sha()
@@ -270,9 +529,119 @@ impl GitVcsProvider for GitRepository {
     }
 }
 
+/// Native (`gix`) implementation of [`GitDataSource`].
+///
+/// [`Self::commits_since`] is where this crate's `commits_since` ref-not-
+/// found bug used to live: the old inherent `commits_since(from_ref:
+/// Option<&str>)` method resolved `from_ref` internally and, if that
+/// resolution silently failed (bad tag, unborn repo, non-commit object,
+/// etc.), fell through to walking the *entire* history unbounded instead of
+/// stopping where the caller asked -- a correctness bug (e.g. it could
+/// re-surface already-released commits into changelog/severity inference)
+/// masquerading as graceful degradation. The fix: `since_ref` resolution
+/// now goes through [`Self::resolve_commit`] and an explicit `Ok(None) =>
+/// Err(VcsError::RefNotFound)` step below, so an unresolvable *explicit*
+/// bound is always a surfaced error. `since_ref: None` (no bound requested
+/// at all) is unaffected and still walks full history, same as before.
+impl GitDataSource for GitRepository {
+    fn list_tags(&self, glob: Option<&str>) -> Result<Vec<TagName>, VcsError> {
+        self.list_tags(glob)
+    }
+
+    fn resolve_commit(&self, refname: &str) -> Result<Option<CommitSha>, VcsError> {
+        self.resolve_commit(refname)
+    }
+
+    fn commits_since(
+        &self,
+        since_ref: Option<&str>,
+        pathspecs: &[PathBuf],
+    ) -> Result<Vec<GitCommit>, VcsError> {
+        let since_sha = since_ref
+            .map(|r| {
+                self.resolve_commit(r)?
+                    .ok_or_else(|| VcsError::RefNotFound {
+                        ref_name: r.to_string(),
+                    })
+            })
+            .transpose()?;
+        self.commits_since_with_pathspec(since_sha.as_ref(), pathspecs)
+    }
+
+    fn create_tag(
+        &self,
+        name: &str,
+        target_sha: &CommitSha,
+        message: Option<&str>,
+        permit: &ApplyPermit,
+    ) -> Result<(), VcsError> {
+        self.create_tag(name, target_sha, message, permit)
+    }
+
+    fn create_floating_major(
+        &self,
+        major_name: &str,
+        target_sha: &CommitSha,
+        permit: &ApplyPermit,
+    ) -> Result<(), VcsError> {
+        self.create_floating_major(major_name, target_sha, permit)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Spec: a malformed glob pattern (fails to compile) must make
+    /// `list_tags` return `Err(VcsError::InvalidGlob)`, not silently
+    /// disable filtering and match every tag in the repo. Matching every
+    /// tag is a real correctness risk for release tagging: e.g.
+    /// `create_tags_with_options` uses `list_tags(Some(tag_str))` to check
+    /// whether a tag already exists, and a caller path that constructs a
+    /// broken pattern must not spuriously report "already exists" against
+    /// an unrelated tag.
+    #[test]
+    fn test_list_tags_rejects_malformed_glob_instead_of_matching_everything() {
+        let ws_dir = tempfile::tempdir().unwrap();
+        let root = ws_dir.path();
+        init_repo(root);
+
+        std::fs::write(root.join("f.txt"), "hello\n").unwrap();
+        run_git(root, &["add", "."]);
+        run_git(root, &["commit", "-q", "-m", "initial commit"]);
+        run_git(
+            root,
+            &[
+                "-c",
+                "tag.gpgSign=false",
+                "tag",
+                "-m",
+                "release",
+                "pkg-a@1.0.0",
+            ],
+        );
+        run_git(
+            root,
+            &[
+                "-c",
+                "tag.gpgSign=false",
+                "tag",
+                "-m",
+                "release",
+                "unrelated-tag",
+            ],
+        );
+
+        let repo = GitRepository::discover(root).unwrap();
+
+        // Unbalanced `{` makes this an uncompilable globset pattern.
+        let result = repo.list_tags(Some("pkg-a@{malformed"));
+
+        assert!(
+            matches!(result, Err(VcsError::InvalidGlob { .. })),
+            "malformed glob must be surfaced as Err(VcsError::InvalidGlob), got {result:?}"
+        );
+    }
 
     #[test]
     fn test_discovers_repo() {
@@ -282,5 +651,314 @@ mod tests {
         let r = repo.unwrap();
         let head = r.head_sha();
         assert!(head.is_ok());
+    }
+
+    /// Runs the real `git` binary to build a temp repo fixture. Needed
+    /// because `GitRepository::discover`/`resolve_commit`/
+    /// `commits_since_with_pathspec` operate on a real on-disk repo, not a
+    /// mocked `CommandRunner`.
+    fn run_git(dir: &Path, args: &[&str]) {
+        let status = std::process::Command::new("git")
+            .args(args)
+            .current_dir(dir)
+            .status()
+            .expect("git must be installed to run this test");
+        assert!(status.success(), "git {args:?} failed in {dir:?}");
+    }
+
+    fn init_repo(root: &Path) {
+        run_git(root, &["init", "-q"]);
+        run_git(root, &["config", "user.email", "test@example.com"]);
+        run_git(root, &["config", "user.name", "Test"]);
+    }
+
+    #[test]
+    fn test_resolve_commit_returns_sha_for_valid_tag() {
+        let ws_dir = tempfile::tempdir().unwrap();
+        let root = ws_dir.path();
+        init_repo(root);
+
+        std::fs::write(root.join("f.txt"), "hello\n").unwrap();
+        run_git(root, &["add", "."]);
+        run_git(root, &["commit", "-q", "-m", "initial commit"]);
+        run_git(
+            root,
+            &["-c", "tag.gpgSign=false", "tag", "-m", "release", "v1.0.0"],
+        );
+
+        let expected_output = std::process::Command::new("git")
+            .args(["rev-parse", "--verify", "--quiet", "v1.0.0^{commit}"])
+            .current_dir(root)
+            .output()
+            .unwrap();
+        assert!(expected_output.status.success());
+        let expected_sha =
+            CommitSha::parse(String::from_utf8_lossy(&expected_output.stdout).trim()).unwrap();
+
+        let repo = GitRepository::discover(root).unwrap();
+        let resolved = repo.resolve_commit("v1.0.0").unwrap();
+
+        assert_eq!(resolved, Some(expected_sha));
+    }
+
+    #[test]
+    fn test_resolve_commit_returns_none_for_missing_ref() {
+        let ws_dir = tempfile::tempdir().unwrap();
+        let root = ws_dir.path();
+        init_repo(root);
+
+        std::fs::write(root.join("f.txt"), "hello\n").unwrap();
+        run_git(root, &["add", "."]);
+        run_git(root, &["commit", "-q", "-m", "initial commit"]);
+
+        let repo = GitRepository::discover(root).unwrap();
+        let resolved = repo.resolve_commit("this-tag-does-not-exist").unwrap();
+
+        assert_eq!(resolved, None);
+    }
+
+    /// Spec: `commits_since_with_pathspec` must only return commits that
+    /// touched a path under one of the given pathspecs -- mirrors the
+    /// filtering behavior of `git log -- <pathspecs>`, scoped to simple
+    /// directory/path-prefix matching.
+    #[test]
+    fn test_commits_since_with_pathspec_filters_by_changed_path() {
+        let ws_dir = tempfile::tempdir().unwrap();
+        let root = ws_dir.path();
+        init_repo(root);
+
+        std::fs::create_dir_all(root.join("crates/pkg-a")).unwrap();
+        std::fs::write(root.join("crates/pkg-a/file.txt"), "a\n").unwrap();
+        run_git(root, &["add", "."]);
+        run_git(root, &["commit", "-q", "-m", "feat: add pkg-a"]);
+
+        std::fs::create_dir_all(root.join("crates/pkg-b")).unwrap();
+        std::fs::write(root.join("crates/pkg-b/file.txt"), "b\n").unwrap();
+        run_git(root, &["add", "."]);
+        run_git(root, &["commit", "-q", "-m", "feat: add pkg-b"]);
+
+        std::fs::write(root.join("crates/pkg-a/file.txt"), "a2\n").unwrap();
+        run_git(root, &["add", "."]);
+        run_git(root, &["commit", "-q", "-m", "fix: tweak pkg-a"]);
+
+        let repo = GitRepository::discover(root).unwrap();
+        let pathspecs = vec![PathBuf::from("crates/pkg-a")];
+        let commits = repo.commits_since_with_pathspec(None, &pathspecs).unwrap();
+
+        let summaries: Vec<&str> = commits.iter().map(|c| c.summary.as_str()).collect();
+        assert_eq!(summaries, vec!["fix: tweak pkg-a", "feat: add pkg-a"]);
+    }
+
+    #[test]
+    fn test_commits_since_with_pathspec_excludes_unrelated_paths() {
+        let ws_dir = tempfile::tempdir().unwrap();
+        let root = ws_dir.path();
+        init_repo(root);
+
+        std::fs::create_dir_all(root.join("crates/pkg-a")).unwrap();
+        std::fs::write(root.join("crates/pkg-a/file.txt"), "a\n").unwrap();
+        run_git(root, &["add", "."]);
+        run_git(root, &["commit", "-q", "-m", "feat: add pkg-a"]);
+
+        let repo = GitRepository::discover(root).unwrap();
+        let pathspecs = vec![PathBuf::from("crates/pkg-c")];
+        let commits = repo.commits_since_with_pathspec(None, &pathspecs).unwrap();
+
+        assert!(commits.is_empty());
+    }
+
+    /// Spec: with no pathspecs at all, every commit in the walk is
+    /// returned (mirrors `git log` with no `--` pathspec filter).
+    #[test]
+    fn test_commits_since_with_pathspec_empty_pathspecs_returns_all() {
+        let ws_dir = tempfile::tempdir().unwrap();
+        let root = ws_dir.path();
+        init_repo(root);
+
+        std::fs::write(root.join("a.txt"), "a\n").unwrap();
+        run_git(root, &["add", "."]);
+        run_git(root, &["commit", "-q", "-m", "feat: c1"]);
+
+        std::fs::write(root.join("b.txt"), "b\n").unwrap();
+        run_git(root, &["add", "."]);
+        run_git(root, &["commit", "-q", "-m", "feat: c2"]);
+
+        let repo = GitRepository::discover(root).unwrap();
+        let commits = repo.commits_since_with_pathspec(None, &[]).unwrap();
+
+        assert_eq!(commits.len(), 2);
+    }
+
+    /// Spec: `since` is an exclusive lower bound, same as `commits_since` --
+    /// the commit `since` points at must not itself be included.
+    #[test]
+    fn test_commits_since_with_pathspec_respects_since_bound() {
+        let ws_dir = tempfile::tempdir().unwrap();
+        let root = ws_dir.path();
+        init_repo(root);
+
+        std::fs::write(root.join("a.txt"), "a1\n").unwrap();
+        run_git(root, &["add", "."]);
+        run_git(root, &["commit", "-q", "-m", "feat: c1"]);
+
+        let repo_after_c1 = GitRepository::discover(root).unwrap();
+        let since_sha = repo_after_c1.head_sha().unwrap();
+
+        std::fs::write(root.join("a.txt"), "a2\n").unwrap();
+        run_git(root, &["add", "."]);
+        run_git(root, &["commit", "-q", "-m", "feat: c2"]);
+
+        std::fs::write(root.join("a.txt"), "a3\n").unwrap();
+        run_git(root, &["add", "."]);
+        run_git(root, &["commit", "-q", "-m", "feat: c3"]);
+
+        let repo = GitRepository::discover(root).unwrap();
+        let pathspecs = vec![PathBuf::from("a.txt")];
+        let commits = repo
+            .commits_since_with_pathspec(Some(&since_sha), &pathspecs)
+            .unwrap();
+
+        let summaries: Vec<&str> = commits.iter().map(|c| c.summary.as_str()).collect();
+        assert_eq!(summaries, vec!["feat: c3", "feat: c2"]);
+    }
+
+    /// Spec: merge commits (more than one parent) must be excluded from the
+    /// result, matching `git log --no-merges` -- this builds a *real*
+    /// two-parent merge commit (a genuine `git merge --no-ff`, not a
+    /// fast-forward) and asserts the merge commit itself is absent while
+    /// every non-merge commit reachable through either branch is present.
+    #[test]
+    fn test_commits_since_with_pathspec_excludes_merge_commits() {
+        let ws_dir = tempfile::tempdir().unwrap();
+        let root = ws_dir.path();
+        // Explicitly name the initial branch: the ambient git install's
+        // `init.defaultBranch` may not be `main` (or may be unset, in which
+        // case it falls back to `master`), and this test needs a known name
+        // to `checkout` back to after creating the `feature` branch.
+        run_git(root, &["init", "-q", "-b", "main"]);
+        run_git(root, &["config", "user.email", "test@example.com"]);
+        run_git(root, &["config", "user.name", "Test"]);
+
+        std::fs::write(root.join("a.txt"), "a1\n").unwrap();
+        run_git(root, &["add", "."]);
+        run_git(root, &["commit", "-q", "-m", "feat: c1 on main"]);
+
+        run_git(root, &["checkout", "-q", "-b", "feature"]);
+        std::fs::write(root.join("b.txt"), "b1\n").unwrap();
+        run_git(root, &["add", "."]);
+        run_git(root, &["commit", "-q", "-m", "feat: c2 on feature"]);
+
+        run_git(root, &["checkout", "-q", "main"]);
+        std::fs::write(root.join("c.txt"), "c1\n").unwrap();
+        run_git(root, &["add", "."]);
+        run_git(root, &["commit", "-q", "-m", "feat: c3 on main"]);
+
+        // `--no-ff` guarantees a genuine two-parent merge commit even though
+        // this history could otherwise fast-forward-free merge cleanly.
+        run_git(
+            root,
+            &[
+                "merge",
+                "--no-ff",
+                "-q",
+                "-m",
+                "merge: feature into main",
+                "feature",
+            ],
+        );
+
+        let repo = GitRepository::discover(root).unwrap();
+        let commits = repo.commits_since_with_pathspec(None, &[]).unwrap();
+
+        let summaries: Vec<&str> = commits.iter().map(|c| c.summary.as_str()).collect();
+        assert!(
+            !summaries.contains(&"merge: feature into main"),
+            "merge commit must be excluded, got: {summaries:?}"
+        );
+        assert!(summaries.contains(&"feat: c1 on main"));
+        assert!(summaries.contains(&"feat: c2 on feature"));
+        assert!(summaries.contains(&"feat: c3 on main"));
+        assert_eq!(summaries.len(), 3, "got: {summaries:?}");
+    }
+
+    /// Spec: a commit that adds/modifies a binary (non-UTF8) blob under a
+    /// matching pathspec must still be detected as touching that pathspec --
+    /// gix's tree-diff reports binary blob changes just like text changes,
+    /// and `commit_touches_pathspecs` must not silently skip them.
+    #[test]
+    fn test_commits_since_with_pathspec_detects_binary_file_changes() {
+        let ws_dir = tempfile::tempdir().unwrap();
+        let root = ws_dir.path();
+        init_repo(root);
+
+        std::fs::create_dir_all(root.join("crates/pkg-a")).unwrap();
+        std::fs::write(root.join("crates/pkg-a/keep.txt"), "seed\n").unwrap();
+        run_git(root, &["add", "."]);
+        run_git(root, &["commit", "-q", "-m", "feat: seed pkg-a"]);
+
+        // Arbitrary non-UTF8 bytes, including NUL and invalid UTF-8
+        // sequences, to force git/gix to treat this blob as binary.
+        let binary_bytes: Vec<u8> = vec![
+            0x00, 0xFF, 0xFE, 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x01, 0x02,
+            0xC0, 0xC1, 0xF5, 0xFF,
+        ];
+        std::fs::write(root.join("crates/pkg-a/blob.bin"), &binary_bytes).unwrap();
+        run_git(root, &["add", "."]);
+        run_git(
+            root,
+            &["commit", "-q", "-m", "feat: add binary blob to pkg-a"],
+        );
+
+        let repo = GitRepository::discover(root).unwrap();
+        let pathspecs = vec![PathBuf::from("crates/pkg-a")];
+        let commits = repo.commits_since_with_pathspec(None, &pathspecs).unwrap();
+
+        let summaries: Vec<&str> = commits.iter().map(|c| c.summary.as_str()).collect();
+        assert!(
+            summaries.contains(&"feat: add binary blob to pkg-a"),
+            "binary file addition must be detected as touching the pathspec, got: {summaries:?}"
+        );
+    }
+
+    /// Spec (pinning current, deliberate behavior): `commit_touches_pathspecs`
+    /// configures `track_rewrites(None)`, so renames are never reported as a
+    /// single `Change::Rewrite` -- gix instead reports them as a separate
+    /// `Deletion` (old path) and `Addition` (new path). This test renames a
+    /// file *out of* a pathspec-matching directory into a non-matching one
+    /// and asserts the rename commit is still reported as touching the
+    /// pathspec, because the `Deletion` at the old (matching) location is
+    /// enough to trip `change_matches_pathspecs` on its own -- independent of
+    /// whether the new location matches anything.
+    #[test]
+    fn test_commits_since_with_pathspec_rename_out_of_pathspec_dir_is_pinned_as_touched() {
+        let ws_dir = tempfile::tempdir().unwrap();
+        let root = ws_dir.path();
+        init_repo(root);
+
+        std::fs::create_dir_all(root.join("crates/pkg-a")).unwrap();
+        std::fs::write(root.join("crates/pkg-a/file.txt"), "a\n").unwrap();
+        run_git(root, &["add", "."]);
+        run_git(root, &["commit", "-q", "-m", "feat: add pkg-a"]);
+
+        std::fs::create_dir_all(root.join("crates/pkg-b")).unwrap();
+        run_git(
+            root,
+            &["mv", "crates/pkg-a/file.txt", "crates/pkg-b/file.txt"],
+        );
+        run_git(
+            root,
+            &["commit", "-q", "-m", "refactor: move file out of pkg-a"],
+        );
+
+        let repo = GitRepository::discover(root).unwrap();
+        let pathspecs = vec![PathBuf::from("crates/pkg-a")];
+        let commits = repo.commits_since_with_pathspec(None, &pathspecs).unwrap();
+
+        let summaries: Vec<&str> = commits.iter().map(|c| c.summary.as_str()).collect();
+        assert!(
+            summaries.contains(&"refactor: move file out of pkg-a"),
+            "with track_rewrites(None), the deletion at the old (matching) path must be \
+             detected on its own, got: {summaries:?}"
+        );
     }
 }

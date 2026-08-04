@@ -9,4 +9,9 @@ readme = "README.md"
 
 [dependencies]
 callisto-model = { path = "../callisto-model", version = "0.3.0" }
+callisto-vcs = { path = "../callisto-vcs", version = "0.3.0" }
 thiserror = { workspace = true }
+
+[dev-dependencies]
+callisto-fixtures = { path = "../callisto-fixtures" }
+tempfile = "3"
