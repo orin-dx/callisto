@@ -52,5 +52,9 @@ pub fn handle(_args: PublishArgs, global: &GlobalArgs) -> Result<ExitCode, CliEr
         OutputFormat::Text => render::render_publish_report(&report, &mut std::io::stdout())?,
     }
 
+    if report.has_failures() {
+        return Ok(ExitCode::FAILURE);
+    }
+
     Ok(ExitCode::SUCCESS)
 }

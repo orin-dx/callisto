@@ -117,14 +117,29 @@ impl<R: CommandRunner> SubprocessRegistryClient<R> {
 
     // ---- PyPI -------------------------------------------------------------
 
+    /// Uploads a Python distribution to PyPI (or a compatible index) by
+    /// running `twine upload --skip-existing dist/<normalized-name>-<version>*`.
+    ///
+    /// The package name is normalized to its PEP 427 wheel-filename form
+    /// (lowercased, hyphens and dots replaced with underscores) before constructing the
+    /// dist-file glob. `twine` expands the glob internally — no shell
+    /// expansion is involved, so the literal `*` in the argument is safe.
+    ///
+    /// Output classification delegates to [`classify_twine_output`]:
+    /// - `--skip-existing` causes twine to print `"Skipping … because it
+    ///   appears to already exist"` for files already on the index; any such
+    ///   mention yields [`PublishOutcome::AlreadyPublished`].
+    /// - A clean zero-exit with no skip message yields
+    ///   [`PublishOutcome::Published`].
+    /// - Rate-limit and auth-failure signals in the output map to the
+    ///   corresponding [`RegistryError`] variants; everything else becomes
+    ///   [`RegistryError::Other`].
     fn pypi_publish(
         &self,
         package: &PackageId,
         version: &Version,
     ) -> Result<PublishOutcome, RegistryError> {
-        // twine globs its own file arguments internally (no shell involved),
-        // so a literal glob pattern works without shell expansion.
-        let normalized = package.name().to_lowercase().replace(['_', '.'], "-");
+        let normalized = package.name().to_lowercase().replace(['-', '.'], "_");
         let pattern = format!("dist/{normalized}-{}*", version.render());
         let output = self.run("twine", &["upload", "--skip-existing", &pattern])?;
         classify_twine_output(&output)
@@ -280,16 +295,25 @@ fn classify_npm_publish_output(output: &CommandOutput) -> Result<PublishOutcome,
     )))
 }
 
+/// Classifies combined `twine upload` output into a [`PublishOutcome`] or
+/// [`RegistryError`].
+///
+/// Priority order (highest wins):
+/// 1. Any `"already exist"` substring (from `--skip-existing`) →
+///    [`PublishOutcome::AlreadyPublished`]. Partial skips (e.g. sdist
+///    skipped, wheel uploaded) cannot be distinguished from a complete skip
+///    by text alone, so any skip mention is conservatively classified as
+///    already-published rather than over-reporting a fresh publish.
+/// 2. Zero exit code with no skip mention → [`PublishOutcome::Published`].
+/// 3. Rate-limit signal (`429`, `too many requests`, `rate limit`) →
+///    [`RegistryError::RateLimited`] with a parsed or default 60-second
+///    retry-after duration.
+/// 4. Auth-failure signal (`401`, `403`, `authentication`, etc.) →
+///    [`RegistryError::AuthFailed`].
+/// 5. Anything else → [`RegistryError::Other`].
 fn classify_twine_output(output: &CommandOutput) -> Result<PublishOutcome, RegistryError> {
     let combined = combined_lower(output);
 
-    // twine's --skip-existing flag prints "Skipping <file> because it
-    // appears to already exist" for files already on the index. We can't
-    // cleanly distinguish a partial skip (e.g. sdist skipped, wheel
-    // uploaded) from output text alone, so any "already exist" mention is
-    // classified as AlreadyPublished rather than plain Published; that is
-    // the conservative choice (it under-reports "we definitely uploaded
-    // something new" rather than over-reporting it).
     if combined.contains("already exist") {
         return Ok(PublishOutcome::AlreadyPublished);
     }
@@ -607,6 +631,51 @@ mod tests {
     fn pypi_is_published_always_false() {
         let c = client(output(0, "", ""));
         assert!(!c.is_published(&pypi_pkg(), &v1()).unwrap());
+    }
+
+    /// A runner that captures the last set of args it was called with so tests
+    /// can assert on the exact command constructed (not just its output).
+    struct CapturingRunner {
+        captured_args: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+        response: CommandOutput,
+    }
+
+    impl CommandRunner for CapturingRunner {
+        fn run(
+            &self,
+            _program: &str,
+            args: &[&str],
+            _cwd: &std::path::Path,
+        ) -> Result<CommandOutput, CommandError> {
+            *self.captured_args.lock().unwrap() = args.iter().map(|s| s.to_string()).collect();
+            Ok(self.response.clone())
+        }
+    }
+
+    /// PEP 427 wheel filenames use `_` as the separator in the distribution
+    /// name component. A package named `my-lib` (or `my_lib`) must produce a
+    /// glob of `dist/my_lib-1.2.3*`, not `dist/my-lib-1.2.3*`.
+    #[test]
+    fn pypi_glob_pattern_uses_underscore_not_hyphen() {
+        let captured = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let runner = CapturingRunner {
+            captured_args: std::sync::Arc::clone(&captured),
+            response: output(0, "Uploading my_lib-1.2.3-py3-none-any.whl\n", ""),
+        };
+        let pkg = PackageId::Prefixed {
+            ecosystem: Ecosystem::Pypi,
+            name: "my-lib".to_string(),
+        };
+        let version = Version::parse("1.2.3", VersionGrammar::SemVer).unwrap();
+        let c = SubprocessRegistryClient::new(runner, PathBuf::from("/workspace"));
+        c.publish(&pkg, &version, &permit()).unwrap();
+
+        let args = captured.lock().unwrap();
+        assert!(
+            args.iter().any(|a| a == "dist/my_lib-1.2.3*"),
+            "expected glob arg 'dist/my_lib-1.2.3*' (PEP 427 underscore) but got: {:?}",
+            *args
+        );
     }
 
     // ---------------------------------------------------------- audit gaps

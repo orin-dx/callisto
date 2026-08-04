@@ -1,6 +1,6 @@
 use callisto_model::{
-    CommandRunner, CratePublish, NpmMainPublish, PublishPlan, PublishTarget, ReleaseEntry,
-    SCHEMA_VERSION,
+    CommandRunner, CratePublish, NpmMainPublish, PublishPlan, PublishTarget, PypiPublish,
+    RegistryKey, ReleaseEntry, SCHEMA_VERSION,
 };
 
 use crate::error::GraphError;
@@ -17,6 +17,7 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
     let mut rust_crates = Vec::new();
     let mut npm_main_packages = Vec::new();
     let mut npm_platform_packages = Vec::new();
+    let mut pypi_packages = Vec::new();
     let mut releases = Vec::new();
 
     let base_versions = ws.base_versions()?;
@@ -77,6 +78,10 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
                 .publish_to
                 .iter()
                 .any(|t| matches!(t, callisto_model::PublishTarget::Npm { .. }));
+            let publishes_pypi = pkg
+                .publish_to
+                .iter()
+                .any(|t| matches!(t, callisto_model::PublishTarget::Pypi { .. }));
             let is_platform_pkg = pkg
                 .manifests
                 .iter()
@@ -144,6 +149,30 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
                 }
             }
 
+            if publishes_pypi {
+                // Extract the optional custom index URL from the first Pypi
+                // target. Multiple Pypi entries on the same package are not
+                // expected, so only the first is consulted.
+                let index = pkg
+                    .publish_to
+                    .iter()
+                    .find_map(|t| {
+                        if let callisto_model::PublishTarget::Pypi { index } = t {
+                            Some(index.clone())
+                        } else {
+                            None
+                        }
+                    })
+                    .flatten();
+
+                pypi_packages.push(PypiPublish {
+                    name: pkg.id.name().to_string(),
+                    version: ver.clone(),
+                    publish_to: RegistryKey("pypi".to_string()),
+                    index,
+                });
+            }
+
             if !pkg.publish_to.is_empty()
                 && !pkg.publish_to.iter().all(|t| *t == PublishTarget::None)
             {
@@ -164,6 +193,7 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
         rust_crates,
         npm_main_packages,
         npm_platform_packages,
+        pypi_packages,
         releases,
         diagnostics: Vec::new(),
     })
@@ -262,6 +292,14 @@ where
                 name: npm_pkg.name.clone(),
             };
             attempts.push(self.attempt_publish(pkg_id, npm_pkg.version.clone(), permit));
+        }
+
+        for pypi_pkg in &plan.pypi_packages {
+            let pkg_id = PackageId::Prefixed {
+                ecosystem: Ecosystem::Pypi,
+                name: pypi_pkg.name.clone(),
+            };
+            attempts.push(self.attempt_publish(pkg_id, pypi_pkg.version.clone(), permit));
         }
 
         PublishReport {
@@ -409,8 +447,18 @@ mod tests {
             }],
             npm_main_packages: vec![],
             npm_platform_packages: vec![],
+            pypi_packages: vec![],
             releases: vec![],
             diagnostics: vec![],
+        }
+    }
+
+    fn pypi_publish_entry(name: &str) -> callisto_model::PypiPublish {
+        callisto_model::PypiPublish {
+            name: name.to_string(),
+            version: v100(),
+            publish_to: callisto_model::RegistryKey("pypi".to_string()),
+            index: None,
         }
     }
 
@@ -574,6 +622,7 @@ mod tests {
             ],
             npm_main_packages: vec![],
             npm_platform_packages: vec![],
+            pypi_packages: vec![],
             releases: vec![],
             diagnostics: vec![],
         };
@@ -604,5 +653,94 @@ mod tests {
     fn test_parse_ttl() {
         assert_eq!(PublishOrchestrator::<MockRegistryClient, MockRateLimitPolicy, MockTimeProvider>::parse_http_429_ttl("120"), Some(Duration::from_secs(120)));
         assert_eq!(PublishOrchestrator::<MockRegistryClient, MockRateLimitPolicy, MockTimeProvider>::parse_http_429_ttl("invalid"), None);
+    }
+
+    // ---------------------------------------------------------------- pypi
+
+    /// `execute` must iterate `pypi_packages` and submit each one to the
+    /// registry client under `Ecosystem::Pypi`, recording a per-package
+    /// attempt just as it does for Cargo and npm packages.
+    #[test]
+    fn test_execute_dispatches_pypi_packages() {
+        let client = MockRegistryClient {
+            published: Mutex::new(std::collections::HashSet::new()),
+            responses: Mutex::new(vec![
+                Ok(PublishOutcome::AlreadyPublished), // pypi-b
+                Ok(PublishOutcome::Published),        // pypi-a
+            ]),
+        };
+        let policy = MockRateLimitPolicy;
+        let time = MockTimeProvider {
+            time: Mutex::new(SystemTime::UNIX_EPOCH),
+        };
+        let orchestrator = PublishOrchestrator::new(client, policy, time);
+
+        let plan = callisto_model::PublishPlan {
+            schema_version: callisto_model::SCHEMA_VERSION,
+            rust_crates: vec![],
+            npm_main_packages: vec![],
+            npm_platform_packages: vec![],
+            pypi_packages: vec![pypi_publish_entry("pypi-a"), pypi_publish_entry("pypi-b")],
+            releases: vec![],
+            diagnostics: vec![],
+        };
+
+        let report = orchestrator.execute(&plan, &permit());
+
+        assert_eq!(
+            report.attempts.len(),
+            2,
+            "expected one attempt per pypi package"
+        );
+        assert_eq!(report.attempts[0].package.name(), "pypi-a");
+        assert!(
+            matches!(report.attempts[0].result, PublishAttemptResult::Published),
+            "pypi-a should be Published"
+        );
+        assert_eq!(report.attempts[1].package.name(), "pypi-b");
+        assert!(
+            matches!(
+                report.attempts[1].result,
+                PublishAttemptResult::AlreadyPublished
+            ),
+            "pypi-b should be AlreadyPublished"
+        );
+    }
+
+    /// An auth failure on a PyPI package must be recorded as `Failed` and
+    /// must not propagate to abort remaining packages in the same execute run.
+    #[test]
+    fn test_execute_pypi_auth_failure_is_recorded_not_propagated() {
+        let client = MockRegistryClient {
+            published: Mutex::new(std::collections::HashSet::new()),
+            responses: Mutex::new(vec![Err(RegistryError::AuthFailed(
+                "invalid PyPI token".to_string(),
+            ))]),
+        };
+        let policy = MockRateLimitPolicy;
+        let time = MockTimeProvider {
+            time: Mutex::new(SystemTime::UNIX_EPOCH),
+        };
+        let orchestrator = PublishOrchestrator::new(client, policy, time);
+
+        let plan = callisto_model::PublishPlan {
+            schema_version: callisto_model::SCHEMA_VERSION,
+            rust_crates: vec![],
+            npm_main_packages: vec![],
+            npm_platform_packages: vec![],
+            pypi_packages: vec![pypi_publish_entry("bad-pkg")],
+            releases: vec![],
+            diagnostics: vec![],
+        };
+
+        let report = orchestrator.execute(&plan, &permit());
+
+        assert_eq!(report.attempts.len(), 1);
+        match &report.attempts[0].result {
+            PublishAttemptResult::Failed { error } => {
+                assert!(error.contains("invalid PyPI token"));
+            }
+            other => panic!("expected Failed, got {other:?}"),
+        }
     }
 }

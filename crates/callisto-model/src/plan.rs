@@ -11,6 +11,10 @@ pub struct PublishPlan {
     pub rust_crates: Vec<CratePublish>,
     pub npm_platform_packages: Vec<NpmPublish>,
     pub npm_main_packages: Vec<NpmMainPublish>,
+
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pypi_packages: Vec<PypiPublish>,
+
     pub releases: Vec<ReleaseEntry>,
 
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -67,4 +71,19 @@ pub struct ReleaseEntry {
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub changelog_section: Option<String>,
+}
+
+/// A single package scheduled for publication to PyPI (or a compatible index).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PypiPublish {
+    /// Normalized distribution name (e.g. `"callisto-py"`).
+    pub name: String,
+    pub version: Version,
+    pub publish_to: RegistryKey,
+
+    /// Custom index URL passed to `twine upload --repository-url`. `None`
+    /// targets the default public PyPI index.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub index: Option<String>,
 }

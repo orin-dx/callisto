@@ -83,6 +83,99 @@ pub enum PublishAttemptResult {
     Failed { error: String },
 }
 
+impl PublishAttemptResult {
+    /// Returns `true` if this result represents a failure.
+    pub fn is_failure(&self) -> bool {
+        matches!(self, PublishAttemptResult::Failed { .. })
+    }
+}
+
+impl PublishReport {
+    /// Returns `true` if any attempt in this report resulted in a failure.
+    pub fn has_failures(&self) -> bool {
+        self.attempts.iter().any(|a| a.result.is_failure())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{PackageId, Version, VersionGrammar};
+
+    fn pkg() -> PackageId {
+        PackageId::parse("test-pkg").unwrap()
+    }
+
+    fn ver() -> Version {
+        Version::parse("1.0.0", VersionGrammar::SemVer).unwrap()
+    }
+
+    fn attempt(result: PublishAttemptResult) -> PublishAttempt {
+        PublishAttempt {
+            package: pkg(),
+            version: ver(),
+            result,
+        }
+    }
+
+    fn report(attempts: Vec<PublishAttempt>) -> PublishReport {
+        PublishReport {
+            schema_version: SCHEMA_VERSION,
+            attempts,
+            diagnostics: vec![],
+        }
+    }
+
+    #[test]
+    fn has_failures_returns_true_when_any_attempt_failed() {
+        let r = report(vec![
+            attempt(PublishAttemptResult::Published),
+            attempt(PublishAttemptResult::Failed {
+                error: "registry unavailable".to_string(),
+            }),
+        ]);
+        assert!(r.has_failures());
+    }
+
+    #[test]
+    fn has_failures_returns_true_when_all_attempts_failed() {
+        let r = report(vec![
+            attempt(PublishAttemptResult::Failed {
+                error: "auth error".to_string(),
+            }),
+            attempt(PublishAttemptResult::Failed {
+                error: "network error".to_string(),
+            }),
+        ]);
+        assert!(r.has_failures());
+    }
+
+    #[test]
+    fn has_failures_returns_false_when_all_attempts_succeeded() {
+        let r = report(vec![
+            attempt(PublishAttemptResult::Published),
+            attempt(PublishAttemptResult::AlreadyPublished),
+        ]);
+        assert!(!r.has_failures());
+    }
+
+    #[test]
+    fn has_failures_returns_false_for_empty_report() {
+        let r = report(vec![]);
+        assert!(!r.has_failures());
+    }
+
+    #[test]
+    fn is_failure_is_true_only_for_failed_variant() {
+        assert!(PublishAttemptResult::Failed {
+            error: "oops".to_string()
+        }
+        .is_failure());
+        assert!(!PublishAttemptResult::Published.is_failure());
+        assert!(!PublishAttemptResult::AlreadyPublished.is_failure());
+    }
+}
+
 /// Version report output from `callisto version --format json`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
