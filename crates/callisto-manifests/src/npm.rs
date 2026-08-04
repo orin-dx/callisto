@@ -957,4 +957,43 @@ mod tests {
             "overrides table must remain unchanged when the dev dep update fails"
         );
     }
+
+    /// Tab-indented package.json files must have their indentation preserved after a
+    /// version write. This catches regressions where the CST editor re-serializes with
+    /// two-space indentation instead of the original tab characters.
+    #[test]
+    fn tab_indentation_is_preserved_after_version_write() {
+        use callisto_model::WorkspaceKind;
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("package.json");
+        let content = "{\n\t\"name\": \"tab-app\",\n\t\"version\": \"1.0.0\"\n}\n";
+        fs::write(&path, content).unwrap();
+
+        let decl = ManifestDecl::new(
+            "package.json",
+            ManifestRole::Canonical,
+            ManifestFormat::PackageJson,
+        )
+        .unwrap();
+        let ctx = OpenContext {
+            workspace_root: dir.path(),
+            cargo_workspace: None,
+            npm_workspace_kind: Some(WorkspaceKind::Pnpm),
+        };
+
+        let mut pj = PackageJson::open(&decl, &ctx).unwrap();
+        pj.write_version(
+            &callisto_model::Version::parse("1.1.0", callisto_model::VersionGrammar::SemVer)
+                .unwrap(),
+            &permit(),
+        )
+        .unwrap();
+
+        let updated = fs::read_to_string(&path).unwrap();
+        assert!(updated.contains("\"version\": \"1.1.0\""));
+        assert!(
+            updated.contains("\t\"version\""),
+            "tab indentation must be preserved after version write"
+        );
+    }
 }

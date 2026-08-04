@@ -126,7 +126,7 @@ impl Version {
     pub fn is_prerelease(&self) -> bool {
         match &self.parsed {
             ParsedVersion::SemVer(v) => !v.pre.is_empty(),
-            ParsedVersion::Pep440(v) => v.is_pre(),
+            ParsedVersion::Pep440(v) => v.is_pre() || v.is_dev(),
         }
     }
 
@@ -354,6 +354,24 @@ mod tests {
 
         let req = VersionReq::parse(">=0.3.0", Ecosystem::Pypi).unwrap();
         assert!(req.matches(&v).unwrap());
+    }
+
+    #[test]
+    fn pep440_dev_release_is_prerelease() {
+        // PEP 440 dev releases (.devN) are pre-release in the sense that they
+        // precede the final release and must be finalized before shipping.
+        // is_prerelease() must return true for them, not just for alpha/beta/rc.
+        let v = Version::parse("1.0.0.dev1", VersionGrammar::Pep440).unwrap();
+        assert!(
+            v.is_prerelease(),
+            "1.0.0.dev1 must be considered a pre-release"
+        );
+
+        let v2 = Version::parse("2.0.0.dev0", VersionGrammar::Pep440).unwrap();
+        assert!(
+            v2.is_prerelease(),
+            "2.0.0.dev0 must be considered a pre-release"
+        );
     }
 
     #[test]

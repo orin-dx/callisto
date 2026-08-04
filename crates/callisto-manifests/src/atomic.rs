@@ -59,3 +59,62 @@ pub fn atomic_write(path: &Path, content: &str, permit: &ApplyPermit) -> io::Res
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use callisto_model::ApplyPermit;
+    use tempfile::tempdir;
+
+    #[test]
+    fn atomic_write_creates_file_with_correct_content() {
+        let dir = tempdir().unwrap();
+        let target = dir.path().join("output.txt");
+        let content = "callisto atomic write test payload\n";
+
+        atomic_write(&target, content, &ApplyPermit::force_for_tests()).unwrap();
+
+        assert!(target.exists());
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), content);
+    }
+
+    #[test]
+    fn atomic_write_over_existing_file_replaces_content() {
+        let dir = tempdir().unwrap();
+        let target = dir.path().join("Cargo.toml");
+        let permit = ApplyPermit::force_for_tests();
+
+        atomic_write(
+            &target,
+            "[package]\nname = \"foo\"\nversion = \"1.0.0\"\n",
+            &permit,
+        )
+        .unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&target).unwrap(),
+            "[package]\nname = \"foo\"\nversion = \"1.0.0\"\n"
+        );
+
+        atomic_write(
+            &target,
+            "[package]\nname = \"foo\"\nversion = \"1.0.1\"\n",
+            &permit,
+        )
+        .unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&target).unwrap(),
+            "[package]\nname = \"foo\"\nversion = \"1.0.1\"\n"
+        );
+    }
+
+    #[test]
+    fn atomic_write_creates_missing_parent_directories() {
+        let dir = tempdir().unwrap();
+        let target = dir.path().join("deep/nested/dir/file.txt");
+
+        atomic_write(&target, "content\n", &ApplyPermit::force_for_tests()).unwrap();
+
+        assert!(target.exists());
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "content\n");
+    }
+}

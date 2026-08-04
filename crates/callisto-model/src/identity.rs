@@ -390,6 +390,22 @@ mod tests {
     }
 
     #[test]
+    fn package_id_rejects_path_traversal() {
+        assert!(
+            PackageId::parse("/etc/passwd").is_err(),
+            "must reject leading slashes"
+        );
+        assert!(
+            PackageId::parse("../../secret").is_err(),
+            "must reject path traversal via .."
+        );
+        assert!(
+            PackageId::parse("-x").is_err(),
+            "must reject leading hyphen"
+        );
+    }
+
+    #[test]
     fn parses_valid_commit_sha() {
         let sha_str = "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0";
         let sha = CommitSha::parse(sha_str).unwrap();
