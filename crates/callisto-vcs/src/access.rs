@@ -58,6 +58,15 @@ impl<'r> GitAccess<'r> {
 }
 
 impl GitDataSource for GitAccess<'_> {
+    fn head_sha(&self) -> Result<CommitSha, VcsError> {
+        if let Some(repo) = &self.native {
+            if let Ok(sha) = repo.head_sha() {
+                return Ok(sha);
+            }
+        }
+        self.shell.head_sha()
+    }
+
     fn list_tags(&self, glob: Option<&str>) -> Result<Vec<TagName>, VcsError> {
         if let Some(repo) = &self.native {
             if let Ok(tags) = repo.list_tags(glob) {
@@ -321,6 +330,30 @@ mod tests {
             *runner.calls.lock().unwrap(),
             vec![vec!["tag", "-f", "pkg-a@1", sha.as_str()]]
         );
+    }
+
+    #[test]
+    fn test_head_sha_returns_head_of_real_repo() {
+        let ws_dir = tempfile::tempdir().unwrap();
+        let root = ws_dir.path();
+        init_repo(root);
+        std::fs::write(root.join("f.txt"), "hello\n").unwrap();
+        run_git(root, &["add", "."]);
+        run_git(root, &["commit", "-q", "-m", "initial"]);
+
+        // Get the expected HEAD SHA from the real git binary.
+        let output = std::process::Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(root)
+            .output()
+            .unwrap();
+        let expected = CommitSha::parse(String::from_utf8_lossy(&output.stdout).trim()).unwrap();
+
+        let runner = PoisonedRunner;
+        let git = GitAccess::discover(root, &runner);
+
+        let result = git.head_sha().unwrap();
+        assert_eq!(result, expected);
     }
 
     #[test]

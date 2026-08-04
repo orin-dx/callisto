@@ -59,6 +59,20 @@ fn compile_glob(glob: &str) -> Result<globset::GlobMatcher, VcsError> {
 }
 
 impl GitDataSource for ShellGit<'_> {
+    fn head_sha(&self) -> Result<CommitSha, VcsError> {
+        let output = self.runner.run("git", &["rev-parse", "HEAD"], &self.root)?;
+        if !output.success() {
+            return Err(VcsError::Git(format!(
+                "`git rev-parse HEAD` failed in `{}`: {}",
+                self.root.display(),
+                output.stderr
+            )));
+        }
+        let sha_str = output.stdout_trimmed();
+        CommitSha::parse(sha_str)
+            .map_err(|e| VcsError::Git(format!("could not parse HEAD SHA `{sha_str}`: {e}")))
+    }
+
     /// Always fetches the *full, unfiltered* tag list via `git tag --list`
     /// and applies `glob` (if any) locally with `globset` -- deliberately
     /// never delegates filtering to `git tag --list <pattern>`'s own
@@ -473,5 +487,39 @@ mod tests {
 
         let calls = runner.calls.lock().unwrap();
         assert_eq!(calls[0], vec!["tag", "-f", "pkg-a@1", sha.as_str()]);
+    }
+
+    #[test]
+    fn test_head_sha_returns_current_head_commit() {
+        let sha = "a".repeat(40);
+        let sha_clone = sha.clone();
+        let runner = FakeRunner {
+            calls: Mutex::new(Vec::new()),
+            response: Box::new(move |_args| Ok(ok(format!("{}\n", sha_clone)))),
+        };
+        let git = ShellGit::new(&runner, PathBuf::from("."));
+
+        let result = git.head_sha().unwrap();
+        assert_eq!(result.as_str(), sha);
+        assert_eq!(
+            *runner.calls.lock().unwrap(),
+            vec![vec!["rev-parse", "HEAD"]]
+        );
+    }
+
+    #[test]
+    fn test_head_sha_propagates_git_failure() {
+        let runner = FakeRunner {
+            calls: Mutex::new(Vec::new()),
+            response: Box::new(|_args| {
+                Ok(CommandOutput {
+                    exit_code: Some(128),
+                    stdout: String::new(),
+                    stderr: "fatal: not a git repository".to_string(),
+                })
+            }),
+        };
+        let git = ShellGit::new(&runner, PathBuf::from("."));
+        assert!(matches!(git.head_sha(), Err(VcsError::Git(_))));
     }
 }

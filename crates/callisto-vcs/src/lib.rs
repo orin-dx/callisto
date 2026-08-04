@@ -80,6 +80,9 @@ pub trait GitVcsProvider {
 /// falls back to the `CommandRunner` shell-out, applying the correct
 /// per-operation fallback policy (see [`GitAccess`]'s docs).
 pub trait GitDataSource {
+    /// Returns the commit SHA that `HEAD` currently resolves to.
+    fn head_sha(&self) -> Result<CommitSha, VcsError>;
+
     /// Lists tag names, optionally filtered by `glob` (a [`globset::Glob`]
     /// pattern). Both backends filter with the exact same `globset`
     /// matching semantics, so tag selection is byte-identical regardless of
@@ -544,6 +547,10 @@ impl GitVcsProvider for GitRepository {
 /// bound is always a surfaced error. `since_ref: None` (no bound requested
 /// at all) is unaffected and still walks full history, same as before.
 impl GitDataSource for GitRepository {
+    fn head_sha(&self) -> Result<CommitSha, VcsError> {
+        self.head_sha()
+    }
+
     fn list_tags(&self, glob: Option<&str>) -> Result<Vec<TagName>, VcsError> {
         self.list_tags(glob)
     }
