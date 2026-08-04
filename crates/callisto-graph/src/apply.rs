@@ -171,18 +171,53 @@ pub fn apply_version_plan<R: CommandRunner>(
         }
     }
 
-    // Include lockfiles if present in workspace root
-    for lockfile in &[
-        "Cargo.lock",
-        "package-lock.json",
-        "pnpm-lock.yaml",
-        "yarn.lock",
-        "bun.lockb",
-        "uv.lock",
-        "poetry.lock",
-        "pdm.lock",
-        "Pipfile.lock",
-    ] {
+    // Collect the set of ecosystems actively involved in this plan so that
+    // only the corresponding lockfiles are staged. Staging lockfiles whose
+    // ecosystem was not touched can sweep up unrelated user changes.
+    use callisto_model::Ecosystem;
+    let active_ecosystems: std::collections::HashSet<Ecosystem> = plan
+        .bumps
+        .iter()
+        .filter_map(|b| {
+            // Prefer the ecosystem declared in the PackageId; fall back to
+            // inferring it from write targets for Bare (unprefixed) ids.
+            if let Some(eco) = b.package.ecosystem() {
+                return Some(eco);
+            }
+            // Bare id: derive ecosystem from the write targets.
+            for write in &b.writes {
+                let eco = match write {
+                    VersionWriteTarget::CargoWorkspacePackage { .. } => Ecosystem::Cargo,
+                    VersionWriteTarget::Manifest(p) => {
+                        match callisto_model::ManifestFormat::from_path(p) {
+                            Ok(fmt) => fmt.ecosystem(),
+                            Err(_) => continue,
+                        }
+                    }
+                };
+                return Some(eco);
+            }
+            None
+        })
+        .collect();
+
+    // Map each well-known lockfile to its ecosystem, then include the file
+    // only when that ecosystem is active and the file exists on disk.
+    let lockfile_ecosystems: &[(&str, Ecosystem)] = &[
+        ("Cargo.lock", Ecosystem::Cargo),
+        ("package-lock.json", Ecosystem::Npm),
+        ("pnpm-lock.yaml", Ecosystem::Npm),
+        ("yarn.lock", Ecosystem::Npm),
+        ("bun.lockb", Ecosystem::Npm),
+        ("uv.lock", Ecosystem::Pypi),
+        ("poetry.lock", Ecosystem::Pypi),
+        ("pdm.lock", Ecosystem::Pypi),
+        ("Pipfile.lock", Ecosystem::Pypi),
+    ];
+    for (lockfile, ecosystem) in lockfile_ecosystems {
+        if !active_ecosystems.contains(ecosystem) {
+            continue;
+        }
         let p = PathBuf::from(lockfile);
         if root.join(&p).exists() && !modified_paths.contains(&p) {
             modified_paths.push(p);
@@ -229,4 +264,81 @@ pub fn apply_version_plan<R: CommandRunner>(
     }
 
     Ok(outcome)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use callisto_model::{
+        ApplyPermit, CommandError, CommandOutput, CommandRunner, PackageId, Severity, Version,
+        VersionGrammar,
+    };
+
+    use super::*;
+    use crate::plan::{PlannedBump, VersionPlan};
+
+    /// A no-op runner that always reports success for any git command.
+    struct NoopRunner;
+
+    impl CommandRunner for NoopRunner {
+        fn run(
+            &self,
+            _program: &str,
+            _args: &[&str],
+            _cwd: &Path,
+        ) -> Result<CommandOutput, CommandError> {
+            Ok(CommandOutput {
+                exit_code: Some(0),
+                stdout: String::new(),
+                stderr: String::new(),
+            })
+        }
+    }
+
+    fn cargo_version(v: &str) -> Version {
+        Version::parse(v, VersionGrammar::SemVer).expect("valid semver")
+    }
+
+    /// When only a Cargo package is bumped, the Python lockfile (`uv.lock`)
+    /// must NOT appear in `staged`, even when it exists on disk alongside
+    /// `Cargo.lock`.
+    #[test]
+    fn cargo_only_bump_does_not_stage_python_lockfile() {
+        let dir = tempfile::tempdir().expect("create tempdir");
+        let root = dir.path();
+
+        // Place both a Cargo lockfile and a Python lockfile on disk.
+        std::fs::write(root.join("Cargo.lock"), "# fake Cargo.lock").unwrap();
+        std::fs::write(root.join("uv.lock"), "# fake uv.lock").unwrap();
+
+        let plan = VersionPlan {
+            bumps: vec![PlannedBump {
+                package: PackageId::parse("cargo:my-crate").expect("valid package id"),
+                from: cargo_version("1.0.0"),
+                to: cargo_version("1.1.0"),
+                severity: Severity::Minor,
+                governed_by: None,
+                reason: None,
+                writes: vec![], // no manifest writes — keeps test self-contained
+            }],
+            ..Default::default()
+        };
+
+        let permit = ApplyPermit::force_for_tests();
+        let opts = ApplyOptions::default();
+        let outcome = apply_version_plan(root, &plan, &NoopRunner, &opts, &permit)
+            .expect("apply_version_plan should succeed");
+
+        let staged_names: Vec<&str> = outcome.staged.iter().filter_map(|p| p.to_str()).collect();
+
+        assert!(
+            staged_names.contains(&"Cargo.lock"),
+            "Cargo.lock should be staged when a Cargo package is bumped, got: {staged_names:?}"
+        );
+        assert!(
+            !staged_names.contains(&"uv.lock"),
+            "uv.lock must NOT be staged when no Python package is bumped, got: {staged_names:?}"
+        );
+    }
 }
