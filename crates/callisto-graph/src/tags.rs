@@ -116,7 +116,9 @@ impl TagIndex {
         let all_tags = fetch_all_tags(runner, root)?;
 
         for pkg in graph.packages() {
-            let tmpl = TagTemplate::parse(&format!("{}@{{version}}", pkg.id.display_name()))?;
+            let default_tmpl =
+                TagTemplate::parse(&format!("{}@{{version}}", pkg.id.display_name()))?;
+            let tmpl = pkg.tag_template.clone().unwrap_or(default_tmpl);
             let sel = select_from_tags(&all_tags, &tmpl, pkg.version_grammar()?)?;
             last.insert(pkg.id.clone(), sel.chosen);
             templates.insert(pkg.id.clone(), tmpl);
@@ -495,6 +497,66 @@ mod tests {
                 Err(GraphError::Vcs(callisto_vcs::VcsError::Command(_)))
             ),
             "last_tag_for must propagate the CommandRunner error, got {result:?}"
+        );
+    }
+
+    /// Spec: `TagIndex::build` must use `pkg.tag_template` when it is set
+    /// instead of always defaulting to `{name}@{version}`. A package with
+    /// `tag_template: Some(TagTemplate::parse("v{version}"))` must resolve
+    /// tags like `"v1.2.3"`, and a package with `tag_template: None` must
+    /// still fall back to the default `{name}@{version}` pattern.
+    #[test]
+    fn tag_index_uses_custom_tag_template_when_set() {
+        let dir = non_repo_dir();
+        let runner =
+            FakeGitTagRunner::new(vec!["v1.2.3".to_string(), "pkg-default@4.5.6".to_string()]);
+
+        let manifest = ManifestDecl::new(
+            "Cargo.toml",
+            ManifestRole::Canonical,
+            ManifestFormat::CargoToml,
+        )
+        .unwrap();
+
+        let custom_pkg = Package {
+            id: PackageId::parse("custom-pkg").unwrap(),
+            manifests: vec![manifest.clone()],
+            changelog: None,
+            release_trigger: callisto_model::ReleaseTrigger::Changeset,
+            publish_to: Vec::new(),
+            tag_template: Some(TagTemplate::parse("v{version}").unwrap()),
+        };
+        let default_pkg = Package {
+            id: PackageId::parse("pkg-default").unwrap(),
+            manifests: vec![manifest],
+            changelog: None,
+            release_trigger: callisto_model::ReleaseTrigger::Changeset,
+            publish_to: Vec::new(),
+            tag_template: None,
+        };
+
+        let graph = FixedGraph {
+            pkgs: vec![custom_pkg, default_pkg],
+        };
+        let cfg = crate::config::load(dir.path()).unwrap();
+
+        let tags = TagIndex::build(&runner, dir.path(), &graph, &cfg)
+            .expect("TagIndex::build must succeed");
+
+        let custom_id = PackageId::parse("custom-pkg").unwrap();
+        let default_id = PackageId::parse("pkg-default").unwrap();
+
+        assert_eq!(
+            tags.last_tag(&custom_id)
+                .map(|t| t.version.render().to_string()),
+            Some("1.2.3".to_string()),
+            "package with custom tag_template 'v{{version}}' must resolve 'v1.2.3'"
+        );
+        assert_eq!(
+            tags.last_tag(&default_id)
+                .map(|t| t.version.render().to_string()),
+            Some("4.5.6".to_string()),
+            "package with no tag_template must fall back to 'pkg-default@{{version}}'"
         );
     }
 
