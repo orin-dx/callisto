@@ -1,5 +1,5 @@
-use callisto_changelog::{ChangelogEntry, ChangelogInput};
-use callisto_model::{CommandRunner, Severity};
+use callisto_changelog::{ChangeSource, ChangelogEntry, ChangelogInput};
+use callisto_model::{BumpReason, CommandRunner, GroupKind, Severity};
 
 use crate::aggregate::aggregate;
 use crate::cascade::{run_cascade, CascadeInput};
@@ -105,20 +105,71 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
         });
 
         if let Some(ch_path) = &pkg.changelog {
-            changelog_writes.push(crate::plan::ChangelogWrite {
-                changelog_path: ch_path.clone(),
-                input: ChangelogInput {
+            let input = if let Some(mut agg_input) = agg.changelog_inputs.get(id).cloned() {
+                // Real changeset data: use it, but set the resolved target version.
+                agg_input.from = from.clone();
+                agg_input.to = Some(to.clone());
+                agg_input
+            } else {
+                // No changeset drove this bump (cascade, group, inference, pre-release).
+                // Synthesize a single entry describing the reason so that render_section()
+                // never receives an empty entries list (which returns EmptyInput).
+                let source = match outcome.reasons.get(id) {
+                    Some(BumpReason::FixedGroupUnion { group }) => ChangeSource::GroupUnion {
+                        group: group.clone(),
+                        kind: GroupKind::Fixed,
+                    },
+                    Some(BumpReason::LinkedGroupUnion { group }) => ChangeSource::GroupUnion {
+                        group: group.clone(),
+                        kind: GroupKind::Linked,
+                    },
+                    Some(BumpReason::Cascade {
+                        via,
+                        dep_kind,
+                        dependency_to,
+                        ..
+                    }) => ChangeSource::DependencyUpdate {
+                        dependency: via.clone(),
+                        dep_kind: *dep_kind,
+                        to: dependency_to.clone(),
+                    },
+                    Some(BumpReason::PeerEscalation { via, .. }) => {
+                        let dep_to = outcome
+                            .targets
+                            .get(via)
+                            .cloned()
+                            .unwrap_or_else(|| to.clone());
+                        ChangeSource::PeerEscalation {
+                            dependency: via.clone(),
+                            to: dep_to,
+                        }
+                    }
+                    _ => ChangeSource::Changeset {
+                        filename: String::new(),
+                        summary: format!(
+                            "Version bump ({})",
+                            match sev {
+                                Severity::Major => "major",
+                                Severity::Minor => "minor",
+                                Severity::Patch => "patch",
+                                Severity::None => "none",
+                            }
+                        ),
+                    },
+                };
+                ChangelogInput {
                     package: id.clone(),
                     from: from.clone(),
                     to: Some(to.clone()),
                     entries: vec![ChangelogEntry {
                         severity: sev,
-                        source: callisto_changelog::ChangeSource::Changeset {
-                            filename: "changeset.md".to_string(),
-                            summary: "Release update".to_string(),
-                        },
+                        source,
                     }],
-                },
+                }
+            };
+            changelog_writes.push(crate::plan::ChangelogWrite {
+                changelog_path: ch_path.clone(),
+                input,
             });
         }
     }
