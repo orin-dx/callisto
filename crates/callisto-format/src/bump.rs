@@ -118,8 +118,14 @@ impl Versioning for SemVerVersioning {
             let current_raw = current.render();
             if let Some((rel_part, pre_part)) = current_raw.split_once('-') {
                 if rel_part == release.render() {
-                    let expected_prefix = format!("{tag}.");
-                    if let Some(num_str) = pre_part.strip_prefix(&expected_prefix) {
+                    let dotted_prefix = format!("{tag}.");
+                    if let Some(num_str) = pre_part.strip_prefix(&dotted_prefix) {
+                        // Dotted form: e.g. "alpha.3" with tag "alpha" → num_str = "3"
+                        if let Ok(num) = num_str.parse::<u64>() {
+                            counter = num + 1;
+                        }
+                    } else if let Some(num_str) = pre_part.strip_prefix(tag) {
+                        // Undotted form: e.g. "alpha1" with tag "alpha" → num_str = "1"
                         if let Ok(num) = num_str.parse::<u64>() {
                             counter = num + 1;
                         }
@@ -537,6 +543,53 @@ mod tests {
 
     /// Gap 4: a genuinely malformed PEP 440 string passed to the public parse
     /// entry point returns a proper `Err`, never panics.
+    /// Regression test: an undotted prerelease suffix such as `alpha1` (common in
+    /// packages migrated from other toolchains) must have its numeric suffix
+    /// carried forward rather than reset to 0.  Before the fix, the only prefix
+    /// pattern tested was the dotted form `"{tag}."`, so `strip_prefix("alpha.")`
+    /// on `"alpha1"` returned `None`, the counter stayed at 0, and the output was
+    /// `1.2.3-alpha.0` — meaning consecutive bumps would silently lose the
+    /// existing sequence number.
+    ///
+    /// Note on SemVer ordering: `"alpha"` < `"alpha1"` lexicographically (the
+    /// dotted identifier `alpha` is a strict ASCII prefix of `alpha1`), so
+    /// `1.2.3-alpha.2 < 1.2.3-alpha1` per spec.  The invariant we can assert is
+    /// that the counter increments from the existing numeric suffix (not from 0),
+    /// so future same-format bumps remain monotonically increasing.
+    #[test]
+    fn bump_prerelease_from_undotted_tag_produces_higher_version() {
+        // Use base="1.2.2" + Patch so that bump(base, Patch)="1.2.3", matching
+        // the release segment of the current undotted prerelease versions below.
+        let base = Version::parse("1.2.2", VersionGrammar::SemVer).unwrap();
+        let buggy_base = Version::parse("1.2.3-alpha.0", VersionGrammar::SemVer).unwrap();
+
+        // 1.2.3-alpha1 → 1.2.3-alpha.2  (numeric suffix 1 → counter = 2)
+        let cur = Version::parse("1.2.3-alpha1", VersionGrammar::SemVer).unwrap();
+        let result = SEMVER_VERSIONING
+            .bump_prerelease(&base, Severity::Patch, "alpha", &cur)
+            .unwrap();
+        assert_eq!(result.render(), "1.2.3-alpha.2");
+        // The result must be greater than the buggy alpha.0 output that the
+        // pre-fix code would have produced, ensuring the sequence moves forward.
+        assert_eq!(
+            result.compare(&buggy_base).unwrap(),
+            std::cmp::Ordering::Greater,
+            "1.2.3-alpha.2 must be SemVer-greater than the buggy 1.2.3-alpha.0"
+        );
+
+        // 1.2.3-alpha9 → 1.2.3-alpha.10  (no off-by-one at boundary 9 → 10)
+        let cur9 = Version::parse("1.2.3-alpha9", VersionGrammar::SemVer).unwrap();
+        let result9 = SEMVER_VERSIONING
+            .bump_prerelease(&base, Severity::Patch, "alpha", &cur9)
+            .unwrap();
+        assert_eq!(result9.render(), "1.2.3-alpha.10");
+        assert_eq!(
+            result9.compare(&buggy_base).unwrap(),
+            std::cmp::Ordering::Greater,
+            "1.2.3-alpha.10 must be SemVer-greater than the buggy 1.2.3-alpha.0"
+        );
+    }
+
     #[test]
     fn pep440_parse_malformed_string_returns_err_not_panic() {
         let result = Version::parse("not-a-version", VersionGrammar::Pep440);
