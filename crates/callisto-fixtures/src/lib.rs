@@ -1,6 +1,9 @@
-//! Dev-only byte-compat corpus samples for callisto's crates.
+//! Dev-only byte-compat corpus samples and shared test doubles for
+//! callisto's crates.
 
 pub mod corpus;
+pub mod dry_run;
+pub mod git;
 
 #[cfg(test)]
 mod tests {

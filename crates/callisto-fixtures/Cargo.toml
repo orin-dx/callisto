@@ -3,9 +3,12 @@ name = "callisto-fixtures"
 version.workspace = true
 edition.workspace = true
 license = "AGPL-3.0-only"
-description = "Callisto Release Engine — Dev-only byte-compat test corpus."
+description = "Callisto Release Engine — Dev-only byte-compat test corpus and shared test doubles."
 repository.workspace = true
 publish = false
 
 [dependencies]
 callisto-model = { path = "../callisto-model", version = "0.3.0" }
+
+[dev-dependencies]
+tempfile = { workspace = true }

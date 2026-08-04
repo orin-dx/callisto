@@ -1,25 +1,28 @@
 ```console
 $ callisto --help
+Changesets-style version and release manager for Rust workspaces
+
 Usage: callisto [OPTIONS] <COMMAND>
 
 Commands:
-  add              
-  status           
-  version          
-  pre              
-  validate         
-  snapshot         
-  init             
-  plan-publish     
-  compose-pr-body  
-  tag              
-  completions      
-  schema           
+  add              Create a new changeset describing pending package changes
+  status           Show the workspace's pending changesets and diagnostics
+  version          Consume pending changesets and bump package versions accordingly
+  pre              Manage prerelease mode for the workspace
+  validate         Check that changesets and the dependency graph are well-formed
+  snapshot         Apply a temporary, non-persistent version bump for a snapshot release
+  init             Scaffold Callisto configuration in the current workspace
+  plan-publish     Compute which packages are ready to publish and print the publish plan
+  publish          Publish ready packages to their ecosystem registries via native CLI tools
+  compose-pr-body  Generate a pull request body summarizing pending release changes
+  tag              Create git tags for packages in a publish plan
+  completions      Generate shell completion scripts
+  schema           Print the JSON schema for a report type
   help             Print this message or the help of the given subcommand(s)
 
 Options:
-      --format <FORMAT>  [default: text] [possible values: text, json]
-      --cwd <CWD>        [default: .]
+      --format <FORMAT>  Output format for command results [default: text] [possible values: text, json]
+      --cwd <CWD>        Workspace directory to operate in (defaults to the current directory) [default: .]
       --dry-run          Preview manifest and file changes without writing to disk
   -h, --help             Print help
   -V, --version          Print version

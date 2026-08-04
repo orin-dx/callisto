@@ -2,7 +2,8 @@ use std::fs;
 use std::process::Command;
 
 use callisto_cli::cli::{
-    AddArgs, GlobalArgs, InitArgs, OutputFormat, PlanPublishArgs, StatusArgs, VersionArgs,
+    AddArgs, GlobalArgs, InitArgs, OutputFormat, PlanPublishArgs, PublishArgs, StatusArgs,
+    VersionArgs,
 };
 use callisto_cli::commands;
 use tempfile::tempdir;
@@ -136,6 +137,17 @@ fn test_full_polyglot_workspace_release_lifecycle() {
     // 5. callisto plan-publish
     let plan_res = commands::plan_publish::handle(PlanPublishArgs {}, &global);
     assert!(plan_res.is_ok());
+
+    // 6. callisto publish --dry-run: must report the plan without ever
+    // constructing a PublishOrchestrator or shelling out to a real
+    // publisher (cargo/npm/twine) — this test asserts success purely from
+    // the dry-run short-circuit, so it never touches a real registry.
+    let dry_run_global = GlobalArgs {
+        dry_run: true,
+        ..global.clone()
+    };
+    let publish_res = commands::publish::handle(PublishArgs {}, &dry_run_global);
+    assert!(publish_res.is_ok());
 }
 
 #[test]
@@ -340,4 +352,39 @@ fn test_dry_run_flag_preserves_disk_state() {
     // Manifest must remain 0.1.0 on disk
     let cargo_content = fs::read_to_string(root.join("crates/core/Cargo.toml")).unwrap();
     assert!(cargo_content.contains("version = \"0.1.0\""));
+}
+
+#[test]
+fn test_add_dry_run_does_not_write_changeset_file() {
+    let dir = setup_polyglot_git_repo();
+    let root = dir.path();
+
+    let global_dry = GlobalArgs {
+        format: OutputFormat::Text,
+        cwd: root.to_path_buf(),
+        dry_run: true,
+    };
+
+    let add_res = commands::add::handle(
+        AddArgs {
+            packages: vec!["core-crate:patch".to_string()],
+            summary: Some("Dry run should not write anything".to_string()),
+        },
+        &global_dry,
+    );
+    assert!(add_res.is_ok());
+
+    // `add --dry-run` must never create the .changeset directory or any
+    // changeset file within it.
+    let changeset_dir = root.join(".changeset");
+    let has_changeset_files = changeset_dir.exists()
+        && fs::read_dir(&changeset_dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .any(|e| e.path().extension().is_some_and(|ext| ext == "md"));
+    assert!(
+        !has_changeset_files,
+        "callisto add --dry-run must not write a changeset file to disk, but found one in {}",
+        changeset_dir.display()
+    );
 }

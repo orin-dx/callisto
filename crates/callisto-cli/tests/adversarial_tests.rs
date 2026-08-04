@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use callisto_graph::toposort_impl;
 use callisto_manifests::atomic::atomic_write;
-use callisto_model::{DepKind, PackageId};
+use callisto_model::{ApplyPermit, DepKind, PackageId};
 use tempfile::tempdir;
 
 #[test]
@@ -24,14 +24,24 @@ fn test_adversarial_atomic_write_over_existing_file() {
     let target = dir.path().join("Cargo.toml");
 
     // Write initial
-    atomic_write(&target, "[package]\nname = \"foo\"\nversion = \"1.0.0\"\n").unwrap();
+    atomic_write(
+        &target,
+        "[package]\nname = \"foo\"\nversion = \"1.0.0\"\n",
+        &ApplyPermit::force_for_tests(),
+    )
+    .unwrap();
     assert_eq!(
         std::fs::read_to_string(&target).unwrap(),
         "[package]\nname = \"foo\"\nversion = \"1.0.0\"\n"
     );
 
     // Overwrite atomically
-    atomic_write(&target, "[package]\nname = \"foo\"\nversion = \"1.0.1\"\n").unwrap();
+    atomic_write(
+        &target,
+        "[package]\nname = \"foo\"\nversion = \"1.0.1\"\n",
+        &ApplyPermit::force_for_tests(),
+    )
+    .unwrap();
     assert_eq!(
         std::fs::read_to_string(&target).unwrap(),
         "[package]\nname = \"foo\"\nversion = \"1.0.1\"\n"
@@ -94,6 +104,7 @@ fn test_adversarial_package_json_tab_indentation_preservation() {
     let mut pj = PackageJson::open(&decl, &ctx).unwrap();
     pj.write_version(
         &callisto_model::Version::parse("1.1.0", callisto_model::VersionGrammar::SemVer).unwrap(),
+        &ApplyPermit::force_for_tests(),
     )
     .unwrap();
 
