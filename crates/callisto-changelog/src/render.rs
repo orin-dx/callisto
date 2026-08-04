@@ -34,7 +34,12 @@ pub fn render_section(input: &ChangelogInput) -> Result<String, ChangelogError> 
         for entry in entries {
             match &entry.source {
                 ChangeSource::Changeset { summary, .. } => {
-                    out.push_str(&format!("- {summary}\n"));
+                    if summary.trim().is_empty() {
+                        continue;
+                    }
+                    let indented = summary.trim_end_matches('\n');
+                    let indented = indented.replace('\n', "\n  ");
+                    out.push_str(&format!("- {indented}\n"));
                 }
                 ChangeSource::Commit { subject, sha } => {
                     out.push_str(&format!("- {subject} ({})\n", sha.short()));
@@ -85,6 +90,21 @@ mod tests {
     use crate::ChangelogEntry;
     use callisto_model::{PackageId, Severity, Version, VersionGrammar};
 
+    fn make_input(summary: &str) -> ChangelogInput {
+        ChangelogInput {
+            package: PackageId::parse("my-pkg").unwrap(),
+            from: Version::parse("1.0.0", VersionGrammar::SemVer).unwrap(),
+            to: Some(Version::parse("1.1.0", VersionGrammar::SemVer).unwrap()),
+            entries: vec![ChangelogEntry {
+                severity: Severity::Patch,
+                source: ChangeSource::Changeset {
+                    filename: "fix.md".to_string(),
+                    summary: summary.to_string(),
+                },
+            }],
+        }
+    }
+
     #[test]
     fn renders_basic_changelog_section() {
         let input = ChangelogInput {
@@ -104,5 +124,67 @@ mod tests {
         assert!(rendered.contains("## 1.1.0"));
         assert!(rendered.contains("### Minor Changes"));
         assert!(rendered.contains("- Add dragon feature"));
+    }
+
+    #[test]
+    fn render_section_indents_multiline_summary_continuation_lines() {
+        let input = make_input("First line.\n\nSecond paragraph.");
+        let rendered = render_section(&input).unwrap();
+        // Continuation lines must be indented — bare "\nSecond paragraph." is wrong
+        assert!(
+            !rendered.contains("\nSecond paragraph."),
+            "continuation line must not appear unindented; got:\n{rendered}"
+        );
+        // Must appear with at least 2-space indent
+        assert!(
+            rendered.contains("\n  Second paragraph."),
+            "continuation line must be indented by 2 spaces; got:\n{rendered}"
+        );
+    }
+
+    #[test]
+    fn render_section_handles_trailing_newline_in_summary() {
+        let input = make_input("Fix bug.\n");
+        let rendered = render_section(&input).unwrap();
+        // A trailing newline in the summary must not produce a doubled blank line
+        assert!(
+            !rendered.contains("- Fix bug.\n\n"),
+            "trailing newline in summary must not produce a doubled blank line; got:\n{rendered}"
+        );
+    }
+
+    #[test]
+    fn render_section_skips_entry_with_empty_summary() {
+        let input = ChangelogInput {
+            package: PackageId::parse("my-pkg").unwrap(),
+            from: Version::parse("1.0.0", VersionGrammar::SemVer).unwrap(),
+            to: Some(Version::parse("1.1.0", VersionGrammar::SemVer).unwrap()),
+            entries: vec![
+                ChangelogEntry {
+                    severity: Severity::Patch,
+                    source: ChangeSource::Changeset {
+                        filename: "empty.md".to_string(),
+                        summary: "".to_string(),
+                    },
+                },
+                ChangelogEntry {
+                    severity: Severity::Patch,
+                    source: ChangeSource::Changeset {
+                        filename: "real.md".to_string(),
+                        summary: "Real change".to_string(),
+                    },
+                },
+            ],
+        };
+
+        let rendered = render_section(&input).unwrap();
+        assert!(
+            !rendered.contains("- \n"),
+            "empty summary must not produce a blank bullet; got:\n{rendered}"
+        );
+        assert!(
+            rendered.contains("- Real change"),
+            "non-empty entry must still appear; got:\n{rendered}"
+        );
     }
 }
