@@ -18,8 +18,14 @@ pub struct ResolvedConfig {
     pub cascade: CascadeConfig,
     pub validation: ValidationConfig,
     pub registries: BTreeMap<RegistryKey, RegistryConfig>,
-    pub packages: BTreeMap<PackageId, PackageConfig>,
+    /// Per-package override rules in TOML declaration order.
+    /// The first rule whose `PackageId` matches a discovered package wins.
+    pub packages: Vec<(PackageId, PackageConfig)>,
     pub groups: GroupTable,
+    /// Raw group declarations from `callisto.toml`, kept so that
+    /// `Workspace::load` can call `GroupTable::resolve` once the
+    /// `IdentityIndex` is available after `ManifestWalkResolver::build`.
+    pub(crate) raw_groups: RawGroupTable,
     provenance: BTreeMap<ConfigKey, ConfigProvenance>,
 }
 
@@ -100,13 +106,18 @@ pub struct RegistryConfig {
     pub url: Option<String>,
 }
 
+/// Per-package overrides from a `[[package]]` block in `callisto.toml`.
+///
+/// Every field is `Option<T>` — `None` means "not specified; use the package's default."
+/// Only fields that the user explicitly set in the `[[package]]` block are `Some`.
 #[derive(Clone, Debug)]
 pub struct PackageConfig {
-    pub release_trigger: ReleaseTrigger,
-    pub publish_to: Vec<PublishTarget>,
+    pub release_trigger: Option<ReleaseTrigger>,
+    pub publish_to: Option<Vec<PublishTarget>>,
     pub tag_template: Option<TagTemplate>,
+    /// Changelog path relative to the package's own root directory.
     pub changelog: Option<PathBuf>,
-    pub pre_major_inference: PreMajorInferencePolicy,
+    pub pre_major_inference: Option<PreMajorInferencePolicy>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -120,6 +131,17 @@ impl PreMajorInferencePolicy {
         breaking_to_minor: false,
         feat_to_patch: false,
     };
+}
+
+pub fn parse_release_trigger(s: &str) -> Result<ReleaseTrigger, ConfigError> {
+    match s {
+        "changeset" => Ok(ReleaseTrigger::Changeset),
+        "auto" => Ok(ReleaseTrigger::Auto),
+        other => Err(ConfigError::UnknownKey {
+            path: PathBuf::new(),
+            key: format!("release-trigger = {other}"),
+        }),
+    }
 }
 
 pub fn parse_pre_major_policy(s: &str) -> Result<PreMajorInferencePolicy, ConfigError> {
@@ -250,6 +272,48 @@ pub fn load(root: &Path) -> Result<ResolvedConfig, ConfigError> {
     };
     GroupTable::validate_syntactic(&raw_groups)?;
 
+    // Resolve [[package]] blocks into per-package override rules.
+    // Order is preserved: first matching rule wins during package construction.
+    let mut packages: Vec<(PackageId, PackageConfig)> = Vec::new();
+    for raw_pkg in raw.package.unwrap_or_default() {
+        let pattern = PackageId::parse(&raw_pkg.pattern).map_err(|e| ConfigError::UnknownKey {
+            path: callisto_toml.clone(),
+            key: format!("[[package]] match = {:?}: {e}", raw_pkg.pattern),
+        })?;
+
+        let release_trigger = raw_pkg
+            .release_trigger
+            .as_deref()
+            .map(parse_release_trigger)
+            .transpose()?;
+
+        let tag_template = raw_pkg
+            .tag_template
+            .as_deref()
+            .map(TagTemplate::parse)
+            .transpose()
+            .map_err(ConfigError::Tag)?;
+
+        let changelog = raw_pkg.changelog.as_deref().map(PathBuf::from);
+
+        let pre_major_inference = raw_pkg
+            .pre_major_inference
+            .as_deref()
+            .map(parse_pre_major_policy)
+            .transpose()?;
+
+        packages.push((
+            pattern,
+            PackageConfig {
+                release_trigger,
+                publish_to: None,
+                tag_template,
+                changelog,
+                pre_major_inference,
+            },
+        ));
+    }
+
     Ok(ResolvedConfig {
         root: root.to_path_buf(),
         changesets_dir,
@@ -263,8 +327,9 @@ pub fn load(root: &Path) -> Result<ResolvedConfig, ConfigError> {
             allow_empty_changesets,
         },
         registries,
-        packages: BTreeMap::new(),
+        packages,
         groups: GroupTable::default(),
+        raw_groups,
         provenance,
     })
 }

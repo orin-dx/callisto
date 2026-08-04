@@ -132,7 +132,6 @@ impl GroupTable {
         Ok(())
     }
 
-    #[allow(dead_code)]
     pub(crate) fn resolve(
         raw: &RawGroupTable,
         index: &IdentityIndex,

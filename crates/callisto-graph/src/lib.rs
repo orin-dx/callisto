@@ -87,10 +87,12 @@ impl<'a, R: CommandRunner> Workspace<'a, R, ManifestWalkResolver> {
         locator: &L,
         runner: &'a R,
     ) -> Result<Self, GraphError> {
-        let config = config::load(&root)?;
+        let mut config = config::load(&root)?;
         let manifest_cache: RefCell<BTreeMap<PathBuf, Arc<dyn Manifest>>> =
             RefCell::new(BTreeMap::new());
         let graph = ManifestWalkResolver::build(&root, locator, runner, &config, &manifest_cache)?;
+
+        config.groups = GroupTable::resolve(&config.raw_groups, graph.identity())?;
 
         Ok(Workspace {
             root,
