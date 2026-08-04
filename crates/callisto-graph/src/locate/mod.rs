@@ -21,7 +21,14 @@ pub trait ProjectLocator: Send + Sync {
 #[non_exhaustive]
 pub enum LocateError {
     #[error("workspace root not found starting from `{start}`")]
-    #[diagnostic(code(E030), help("Ensure callisto.toml exists in workspace root."))]
+    #[diagnostic(
+        code(E030),
+        help(
+            "No workspace root found. Ensure the directory tree contains a workspace manifest: \
+             Cargo.toml with [workspace], package.json with a workspaces field, \
+             pnpm-workspace.yaml, or a .moon directory."
+        )
+    )]
     WorkspaceRootNotFound { start: PathBuf },
 
     #[error("failed to walk filesystem under `{path}`: {message}")]

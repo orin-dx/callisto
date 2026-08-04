@@ -14,7 +14,7 @@ use callisto_model::{
 use crate::config::ResolvedConfig;
 use crate::crosscheck::crosscheck_declared_edges;
 use crate::error::GraphError;
-use crate::identity::{IdentityIndex, IdentityResolver};
+use crate::identity::IdentityIndex;
 use crate::locate::ProjectLocator;
 use crate::manifest_cache::open_cached;
 use crate::resolver::ManifestWalkResolver;
@@ -24,7 +24,7 @@ impl ManifestWalkResolver {
         root: &Path,
         locator: &L,
         _runner: &R,
-        _cfg: &ResolvedConfig,
+        cfg: &ResolvedConfig,
         manifest_cache: &RefCell<BTreeMap<PathBuf, Arc<dyn Manifest>>>,
     ) -> Result<Self, GraphError> {
         let projects = locator.projects()?;
@@ -47,19 +47,23 @@ impl ManifestWalkResolver {
             npm_workspace_kind,
         };
 
-        let identity_resolver = IdentityResolver::new(root)?;
         let mut package_manifest_decls: BTreeMap<PackageId, (PathBuf, Vec<ManifestDecl>)> =
             BTreeMap::new();
         let mut index = IdentityIndex::default();
         let mut diagnostics = Vec::new();
 
+        // Use the identity already resolved by the locator (`proj.id`) rather
+        // than re-reading manifests through `IdentityResolver::resolve`.
+        // The locator (e.g. `IgnoreWalkLocator`) already parsed each manifest
+        // to discover the project, so re-resolving from scratch is redundant
+        // and fragile — in particular, `IdentityResolver` historically had no
+        // `Ecosystem::Pypi` arm and would crash for Python projects.
         let mut by_path: BTreeMap<PathBuf, Vec<(Ecosystem, PackageId)>> = BTreeMap::new();
         for proj in &projects {
-            let id = identity_resolver.resolve(&proj.path, proj.ecosystem)?;
             by_path
                 .entry(proj.path.clone())
                 .or_default()
-                .push((proj.ecosystem, id));
+                .push((proj.ecosystem, proj.id.clone()));
         }
 
         for (rel_path, mut list) in by_path {
@@ -107,13 +111,34 @@ impl ManifestWalkResolver {
                 publish_to.push(PublishTarget::None);
             }
 
+            // Find the first [[package]] rule in callisto.toml whose pattern
+            // matches this package's ID (exact or bare-name match).
+            let pkg_override = cfg
+                .packages
+                .iter()
+                .find(|(pattern, _)| pattern.matches(&id))
+                .map(|(_, cfg)| cfg);
+
+            let release_trigger = pkg_override
+                .and_then(|o| o.release_trigger)
+                .unwrap_or(ReleaseTrigger::Changeset);
+
+            let tag_template = pkg_override.and_then(|o| o.tag_template.clone());
+
+            let changelog =
+                if let Some(override_path) = pkg_override.and_then(|o| o.changelog.as_ref()) {
+                    Some(rel_path.join(override_path))
+                } else {
+                    Some(ch_path)
+                };
+
             let pkg = Package {
                 id: id.clone(),
                 manifests: decls,
-                changelog: Some(ch_path),
-                release_trigger: ReleaseTrigger::Changeset,
+                changelog,
+                release_trigger,
                 publish_to,
-                tag_template: None,
+                tag_template,
             };
             packages.insert(id, pkg);
         }
@@ -146,7 +171,11 @@ impl ManifestWalkResolver {
                             (entry.spec.clone(), decl.path.clone())
                         };
 
-                        if let Some(to) = index.resolve_native(decl.ecosystem(), &entry.name) {
+                        if let Some(to) = index.resolve_native_with_fallback(
+                            decl.ecosystem(),
+                            &entry.name,
+                            &mut diagnostics,
+                        ) {
                             let idx = edges.len();
                             let edge = DepEdge {
                                 from: pkg.id.clone(),

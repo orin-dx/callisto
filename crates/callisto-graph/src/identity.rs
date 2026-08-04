@@ -71,6 +71,38 @@ impl IdentityResolver {
                     })?
                     .to_string()
             }
+            Ecosystem::Pypi => {
+                let pyproject_toml = abs.join("pyproject.toml");
+                let content = std::fs::read_to_string(&pyproject_toml).map_err(|e| {
+                    callisto_model::ManifestError::Read {
+                        path: project_root.join("pyproject.toml"),
+                        message: e.to_string(),
+                    }
+                })?;
+                let doc: toml_edit::DocumentMut =
+                    content.parse().map_err(|e: toml_edit::TomlError| {
+                        callisto_model::ManifestError::Parse {
+                            path: project_root.join("pyproject.toml"),
+                            format: ManifestFormat::PyprojectToml,
+                            message: e.to_string(),
+                        }
+                    })?;
+                // PEP 621: [project].name; Poetry: [tool.poetry].name
+                doc.get("project")
+                    .and_then(|p| p.get("name"))
+                    .and_then(|n| n.as_str())
+                    .or_else(|| {
+                        doc.get("tool")
+                            .and_then(|t| t.get("poetry"))
+                            .and_then(|p| p.get("name"))
+                            .and_then(|n| n.as_str())
+                    })
+                    .ok_or_else(|| callisto_model::ManifestError::MissingField {
+                        path: project_root.join("pyproject.toml"),
+                        field: "project.name",
+                    })?
+                    .to_string()
+            }
             _ => {
                 return Err(GraphError::AmbiguousName {
                     name: "unsupported ecosystem".to_string(),
@@ -143,8 +175,98 @@ impl IdentityIndex {
         }
     }
 
+    /// Look up a package by its native (manifest-declared) name.
+    ///
+    /// First tries the exact `(eco, name)` key (same-ecosystem lookup).  If
+    /// that misses — which happens when a package in one ecosystem depends on a
+    /// package in a *different* ecosystem by bare name (e.g. an npm package
+    /// listing a cargo crate as a dependency) — it falls back to scanning all
+    /// ecosystems for `name`.
+    ///
+    /// If the fallback finds **exactly one** match the cross-ecosystem package
+    /// is returned.  If it finds **more than one** (i.e. two different
+    /// ecosystems both have a package called `name`), `None` is returned to
+    /// prevent silent misresolution; callers that hold a `&mut Vec<Diagnostic>`
+    /// should use [`Self::resolve_native_with_fallback`] instead to get a diagnostic
+    /// in that case.
     pub fn resolve_native(&self, eco: Ecosystem, name: &str) -> Option<&PackageId> {
-        self.native.get(&(eco, name.to_string()))
+        // Fast path: exact ecosystem match.
+        if let Some(id) = self.native.get(&(eco, name.to_string())) {
+            return Some(id);
+        }
+
+        // Cross-ecosystem fallback.
+        let mut candidates: Vec<&PackageId> = self
+            .native
+            .iter()
+            .filter(|((e, n), _)| *e != eco && n == name)
+            .map(|(_, id)| id)
+            .collect();
+
+        // Deduplicate by pointer identity (multiple entries for the same ID
+        // across different ecosystems, e.g. a package that is both cargo and
+        // npm, should not be treated as ambiguous).
+        candidates.dedup_by(|a, b| a == b);
+
+        match candidates.len() {
+            1 => Some(candidates[0]),
+            // 0 = not found; >1 = true ambiguity → caller should diagnose.
+            _ => None,
+        }
+    }
+
+    /// Like [`Self::resolve_native`] but pushes a [`callisto_model::Diagnostic`] when
+    /// cross-ecosystem ambiguity is detected (two packages with the same bare
+    /// name in different ecosystems).
+    pub fn resolve_native_with_fallback<'a>(
+        &'a self,
+        eco: Ecosystem,
+        name: &str,
+        diagnostics: &mut Vec<callisto_model::Diagnostic>,
+    ) -> Option<&'a PackageId> {
+        // Fast path: exact ecosystem match.
+        if let Some(id) = self.native.get(&(eco, name.to_string())) {
+            return Some(id);
+        }
+
+        // Cross-ecosystem fallback: collect unique IDs from other ecosystems.
+        let mut candidates: Vec<(Ecosystem, &PackageId)> = self
+            .native
+            .iter()
+            .filter(|((e, n), _)| *e != eco && n == name)
+            .map(|((e, _), id)| (*e, id))
+            .collect();
+        candidates.dedup_by(|a, b| a.1 == b.1);
+
+        match candidates.len() {
+            0 => None,
+            1 => Some(candidates[0].1),
+            _ => {
+                // True ambiguity: two packages with different ecosystems share
+                // the same bare name.  Emit a diagnostic and return None to
+                // avoid silent misresolution.
+                let candidate_names: Vec<String> = candidates
+                    .iter()
+                    .map(|(e, id)| format!("{}:{}", e.prefix(), id.name()))
+                    .collect();
+                diagnostics.push(callisto_model::Diagnostic {
+                    code: callisto_model::DiagnosticCode::UnknownPackage,
+                    severity: callisto_model::DiagnosticSeverity::Warning,
+                    message: format!(
+                        "dependency name `{}` is ambiguous across ecosystems: {}; \
+                         add an ecosystem prefix (e.g. `cargo:{}`) to disambiguate",
+                        name,
+                        candidate_names.join(", "),
+                        name,
+                    ),
+                    package: None,
+                    path: None,
+                    escalated_by: None,
+                    governed_by: None,
+                });
+                None
+            }
+        }
     }
 
     pub fn native_name(&self, id: &PackageId, eco: Ecosystem) -> Option<&str> {
