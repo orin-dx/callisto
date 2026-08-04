@@ -101,6 +101,7 @@ Agents executing shell operations or terminal commands MUST prioritize modern CL
 - **File Discovery**: `fd` over `find`
 - **Interactive Filtering**: `fzf` for selection menus
 - **File & Code Viewing**: `bat` over `cat`
+- **Directory Navigation**: `zoxide` (`z`) over `cd`
 - **Diff Inspection**: `delta` over `diff` / `git diff`
 - **Directory Formatting**: `eza` over `ls`
 - **JSON Processing**: `jq` for stream & file transformations

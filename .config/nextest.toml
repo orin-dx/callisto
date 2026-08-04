@@ -1,0 +1,7 @@
+[test-groups]
+moon-sandbox = { max-threads = 1 }
+
+[[profile.default.overrides]]
+filter = "test(moon_wasm_sandbox)"
+# WASM sandbox tests share global WasmHost state and must run serially.
+test-group = "moon-sandbox"

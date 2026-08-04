@@ -20,6 +20,7 @@ Whenever executing shell operations, searching for files, inspecting code, viewi
 | **File & Directory Discovery** | `fd` | `find` |
 | **Interactive Choice Filtering** | `fzf` | Manual interactive selection |
 | **File Viewing & Syntax Highlighting** | `bat` | `cat` / `less` |
+| **Directory Navigation** | `zoxide` (`z`) | `cd` |
 | **Git Diffs & Code Inspection** | `delta` | `diff` / raw `git diff` |
 | **Directory Formatting & Tree View** | `eza` (or `exa`) | `ls` / `tree` |
 | **JSON Querying & Transformations** | `jq` | `python -m json.tool` / `sed` |
