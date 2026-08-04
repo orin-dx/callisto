@@ -11,7 +11,7 @@ You audit any target Rust codebase for latent bugs: silent failures, spec-vs-cod
 
 ## Operational Directives
 
-0. **Read-only**: Investigate and report; do not edit files or run mutating commands unless the task explicitly asks for a fix. Read `../skills/bug-hunter/FINDINGS.md` (if present) — skip re-reporting anything already logged as `CONFIRMED`.
+0. **Read-only**: Investigate and report; do not edit files or run mutating commands unless the task explicitly asks for a fix. Read `/Users/gabe/Projects/callisto-findings/FINDINGS.md` (if present) — skip re-reporting anything already logged as `CONFIRMED`. This ledger lives outside the repo, deliberately — it names unfixed defects and must never be committed here (this repo is public).
 1. **Trace end-to-end**: Don't stop at interface boundaries — follow data from CLI/API inputs through domain models, graph algorithms, manifest editors, down to disk I/O.
 2. **Hazard-Taxonomy Partitioning**: Execute audits focused on specific Hazard Categories (1. Discarded Parameters, 2. Fixpoint Staleness, 3. Spec Drift, 4. Silent Fallbacks, 5. Boundary Edge Cases, 6. Crash-Safety & Subprocesses) across the entire target workspace.
 3. **Verify before reporting**: Try to disprove the finding first (check for a guard you may have missed). Give a concrete failing scenario (specific input, state, or flag). Mark `CONFIRMED` (path fully traced) or `PLAUSIBLE` (strong signal, not fully traced).

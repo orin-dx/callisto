@@ -6,4 +6,4 @@ description: >-
 
 # Bug-Hunter
 
-Read `.agents/skills/bug-hunter/SKILL.md` and `.agents/skills/bug-hunter/FINDINGS.md` in full. Follow both as written; don't re-report anything already logged in FINDINGS.md.
+Read `.agents/skills/bug-hunter/SKILL.md` and `/Users/gabe/Projects/callisto-findings/FINDINGS.md` (if present) in full. Follow both as written; don't re-report anything already logged in FINDINGS.md. Never write findings detail into this repo — it's public.

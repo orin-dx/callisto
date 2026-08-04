@@ -17,6 +17,10 @@ pub enum PackageId {
 
 impl PackageId {
     /// Parses package identity string.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if `s` is empty, starts with `/`, contains `..`, or has a known ecosystem prefix followed by an empty name.
     pub fn parse(s: &str) -> Result<Self, PackageIdParseError> {
         if s.is_empty() {
             return Err(PackageIdParseError::Empty);
@@ -70,6 +74,7 @@ impl PackageId {
         Ok(PackageId::Bare(s.to_string()))
     }
 
+    /// Returns the canonical display form: bare names as-is, prefixed ids as `ecosystem/name`.
     pub fn display_name(&self) -> String {
         match self {
             PackageId::Bare(name) => name.clone(),
@@ -79,6 +84,7 @@ impl PackageId {
         }
     }
 
+    /// Returns the ecosystem this id is scoped to, or `None` for a [`PackageId::Bare`] id.
     pub fn ecosystem(&self) -> Option<Ecosystem> {
         match self {
             PackageId::Bare(_) => None,
@@ -86,6 +92,7 @@ impl PackageId {
         }
     }
 
+    /// Returns the package name without any ecosystem prefix.
     pub fn name(&self) -> &str {
         match self {
             PackageId::Bare(name) => name,
@@ -93,8 +100,45 @@ impl PackageId {
         }
     }
 
-    /// Returns true if two package IDs refer to the same logical package,
-    /// matching bare and prefixed representations when names and ecosystems align.
+    /// Returns true when two package IDs *could* refer to the same logical
+    /// package — a weaker "could be the same" check, not a strict equality
+    /// test.
+    ///
+    /// ## Semantics
+    ///
+    /// A [`PackageId::Bare`] carries no ecosystem claim: it represents a name
+    /// the caller could not (or did not) qualify with an ecosystem prefix.
+    /// This arises naturally from user input — a developer typing `foo` in a
+    /// changeset or CLI flag means "the package named foo," not "the package
+    /// named foo in a specific ecosystem."
+    ///
+    /// The matching rules follow from that intent:
+    ///
+    /// - `Bare(x)` matches any `Prefixed(_, x)` with the same name, and vice
+    ///   versa. The bare side is a wildcard over ecosystems.
+    /// - `Prefixed(e1, x)` matches `Prefixed(e2, x)` only when `e1 == e2`.
+    /// - Exact structural equality (`self == other`) is always a match.
+    ///
+    /// ## Caller contract in polyglot workspaces
+    ///
+    /// Because `Bare("foo")` matches *both* `Prefixed(Cargo, "foo")` and
+    /// `Prefixed(Npm, "foo")`, a bare lookup in a graph that contains the
+    /// same name in two or more ecosystems will produce multiple matches.
+    /// Callers **must** collect all matches and surface an error when there
+    /// are two or more — silently taking the first match is the ambiguity
+    /// bug this function is designed to let callers detect.
+    ///
+    /// The canonical example is `resolve_target_package` in
+    /// `callisto-graph/src/aggregate.rs`: it calls
+    /// `packages.filter(|p| p.id.matches(id)).collect()`, then returns
+    /// `Err(GraphError::AmbiguousName)` when the result has two or more
+    /// entries.  That pattern is the correct way to use `matches()` in any
+    /// context that may encounter a polyglot workspace.
+    ///
+    /// Callers that only need a simple existence check (e.g. "is there at
+    /// least one package with this name?") may use `.any()` safely — they
+    /// rely on the aggregation layer to catch and reject ambiguous references
+    /// before acting on them.
     pub fn matches(&self, other: &Self) -> bool {
         if self == other {
             return true;
@@ -169,6 +213,7 @@ impl<'de> Deserialize<'de> for PackageId {
     }
 }
 
+/// Errors produced by [`PackageId::parse`].
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum PackageIdParseError {
@@ -191,6 +236,7 @@ pub enum PackageIdParseError {
 pub struct GroupName(pub String);
 
 impl GroupName {
+    /// Returns the group name as a string slice.
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -219,9 +265,12 @@ pub enum GroupKind {
 pub struct RegistryKey(pub String);
 
 impl RegistryKey {
+    /// Well-known registry key for crates.io.
     pub const CRATES_IO: &'static str = "cratesIo";
+    /// Well-known registry key for the npm registry.
     pub const NPM: &'static str = "npm";
 
+    /// Returns the registry key as a string slice.
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -245,6 +294,11 @@ impl AsRef<str> for CommitSha {
 }
 
 impl CommitSha {
+    /// Parses a 40-character hexadecimal Git commit SHA, trimming surrounding whitespace.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err(ModelError::InvalidCommitSha)` if the trimmed input is not exactly 40 ASCII hex digits.
     pub fn parse(s: &str) -> Result<Self, ModelError> {
         let trimmed = s.trim();
         if trimmed.len() != 40 || !trimmed.chars().all(|c| c.is_ascii_hexdigit()) {
@@ -256,10 +310,12 @@ impl CommitSha {
         Ok(CommitSha(trimmed.to_lowercase()))
     }
 
+    /// Returns the full 40-character lowercase hex SHA.
     pub fn as_str(&self) -> &str {
         &self.0
     }
 
+    /// Returns the first 7 characters of the SHA, matching git's short-ref convention.
     pub fn short(&self) -> &str {
         &self.0[..7]
     }

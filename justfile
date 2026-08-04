@@ -50,10 +50,13 @@ fuzz target="parse_package_id":
 doc-check:
     RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --workspace
 
-# Verify Moon WASM plugin cross-compilation target
+# Verify Moon WASM plugin cross-compilation target, build the real cdylib,
+# and black-box test it through a real Extism/wasmtime plugin sandbox
 wasm-check:
     rustup target add wasm32-wasip1 2>/dev/null || true
     cargo check -p callisto-moon --target wasm32-wasip1 --features pdk
+    cargo rustc -p callisto-moon --lib --target wasm32-wasip1 --features pdk --crate-type cdylib
+    cargo test -p callisto-moon --test moon_wasm_sandbox
 
 # Generate code coverage report via cargo-llvm-cov
 coverage:

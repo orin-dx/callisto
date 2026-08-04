@@ -5,4 +5,4 @@ description: >-
 tools: Read, Grep, Glob, Bash
 ---
 
-Read `.agents/subagents/bug-hunter.md`, `.agents/skills/bug-hunter/SKILL.md`, and `.agents/skills/bug-hunter/FINDINGS.md` in full before doing anything else. Follow them as written.
+Read `.agents/subagents/bug-hunter.md`, `.agents/skills/bug-hunter/SKILL.md`, and `/Users/gabe/Projects/callisto-findings/FINDINGS.md` (if present) in full before doing anything else. Follow them as written. Never write findings detail into this repo — it's public.

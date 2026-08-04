@@ -15,12 +15,14 @@ Callisto is a fast, polyglot monorepo versioning and release management engine w
 │ LAYER & CRATE                     │ LICENSE & PURPOSE                  │
 ├───────────────────────────────────┼────────────────────────────────────┤
 │ Layer 1: callisto-model           │ MIT / Apache-2.0                   │
-│          callisto-format          │ Domain primitives, SemVer grammars,│
-│          callisto-conventional    │ changeset markdown parser/writer   │
-│          callisto-changelog       │                                    │
+│          callisto-format          │ Domain primitives, SemVer grammars │
+├───────────────────────────────────┼────────────────────────────────────┤
+│ Layer 1.5: callisto-vcs           │ MIT / Apache-2.0                   │
+│                                    │ Native Git integration             │
 ├───────────────────────────────────┼────────────────────────────────────┤
 │ Layer 2: callisto-manifests       │ AGPL-3.0-only                      │
-│          callisto-vcs             │ AST manifest editors & native Git  │
+│          callisto-conventional    │ AST manifest editors, changeset    │
+│          callisto-changelog       │ markdown parser/writer             │
 ├───────────────────────────────────┼────────────────────────────────────┤
 │ Layer 3: callisto-graph           │ AGPL-3.0-only                      │
 │                                   │ Dependency DAG solver & cascades   │
@@ -28,11 +30,12 @@ Callisto is a fast, polyglot monorepo versioning and release management engine w
 │ Layer 4: callisto-cli             │ AGPL-3.0-only                      │
 │          callisto-moon            │ Standalone CLI & Moon WASM plugin  │
 ├───────────────────────────────────┼────────────────────────────────────┤
-│ Dev:     callisto-fixtures        │ Dev-only byte-compat test corpus   │
+│ Dev:     callisto-fixtures        │ AGPL-3.0-only — dev-only byte-compat│
+│                                    │ test corpus                        │
 └───────────────────────────────────┴────────────────────────────────────┘
 ```
 
-> **CRITICAL RULE (Layer Licensing Boundaries)**: Layer 1 crates (`callisto-model`, `callisto-format`) MUST NOT depend on Layer 2, 3, or 4 crates (`callisto-graph`, `callisto-cli`, `callisto-manifests`). Layer 1 crates must remain permissive (`MIT OR Apache-2.0`) and standalone.
+> **CRITICAL RULE (Layer Licensing Boundaries)**: Layer 1 crates (`callisto-model`, `callisto-format`) and Layer 1.5 (`callisto-vcs`) MUST NOT depend on Layer 2, 3, or 4 crates (`callisto-manifests`, `callisto-conventional`, `callisto-changelog`, `callisto-graph`, `callisto-cli`, `callisto-moon`). Layer 1/1.5 crates must remain permissive (`MIT OR Apache-2.0`) and standalone. This table reflects each crate's actual `Cargo.toml` `license` field — verify with `grep -H "^license" crates/*/Cargo.toml` before trusting it if crates are added/moved.
 
 ---
 
