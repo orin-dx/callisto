@@ -103,7 +103,6 @@ pub fn parse_commit(sha: CommitSha, message: &str) -> ParsedCommit {
     let rest_body: Vec<&str> = lines.collect();
     let mut body_lines = Vec::new();
     let mut footers = Vec::new();
-    let mut footer_lines = Vec::new();
     let mut breaking_from_footer = false;
 
     let mut blocks: Vec<Vec<&str>> = Vec::new();
@@ -123,15 +122,23 @@ pub fn parse_commit(sha: CommitSha, message: &str) -> ParsedCommit {
         blocks.push(current_block);
     }
 
-    if let Some(last_block) = blocks.pop() {
-        if let Some(first) = last_block.first() {
-            if is_footer_line(first.trim()) {
-                footer_lines = last_block;
-            } else {
-                blocks.push(last_block);
-            }
+    // Collect all contiguous trailing blocks where every line is a valid
+    // footer line.  Stop as soon as a non-footer block is encountered and
+    // push that block back so it remains part of the body.
+    let mut collected_footer_blocks: Vec<Vec<&str>> = Vec::new();
+    loop {
+        let is_footer_block = blocks.last().is_some_and(|block| {
+            !block.is_empty() && block.iter().all(|line| is_footer_line(line.trim()))
+        });
+        if is_footer_block {
+            collected_footer_blocks.push(blocks.pop().unwrap());
+        } else {
+            break;
         }
     }
+    // collected_footer_blocks is ordered last-block-first; restore original order.
+    collected_footer_blocks.reverse();
+    let footer_lines: Vec<&str> = collected_footer_blocks.into_iter().flatten().collect();
 
     for block in blocks {
         if !body_lines.is_empty() {
@@ -225,17 +232,50 @@ mod tests {
     }
 
     #[test]
-    fn test_body_with_colon_not_treated_as_footer() {
+    fn trailing_footer_token_blocks_are_all_parsed_as_footers() {
+        // "Note: ..." is syntactically a valid footer token per the Conventional
+        // Commits spec (token: value).  With the corrected trailing-block
+        // algorithm both the "Note" paragraph and the "Signed-off-by" paragraph
+        // are collected as footer sections; there is no plain-body text.
         let sha = CommitSha::parse("a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0").unwrap();
         let msg = "feat(api): update endpoint\n\nNote: this is a body paragraph.\n\nSigned-off-by: Developer <dev@example.com>";
         let parsed = parse_commit(sha, msg);
         match parsed {
             ParsedCommit::Conventional(c) => {
-                assert_eq!(c.body, Some("Note: this is a body paragraph.".to_string()));
-                assert_eq!(c.footers.len(), 1);
-                assert_eq!(c.footers[0].token, "Signed-off-by");
+                assert_eq!(
+                    c.body, None,
+                    "all trailing token-value blocks are footers, not body"
+                );
+                assert_eq!(c.footers.len(), 2);
+                assert_eq!(c.footers[0].token, "Note");
+                assert_eq!(c.footers[0].value, "this is a body paragraph.");
+                assert_eq!(c.footers[1].token, "Signed-off-by");
             }
             _ => panic!("expected conventional"),
+        }
+    }
+
+    #[test]
+    fn parse_commit_detects_breaking_change_in_penultimate_block() {
+        let sha = CommitSha::parse("a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0").unwrap();
+        // The BREAKING CHANGE footer is in the second-to-last paragraph block.
+        // Only "Reviewed-by: someone" is in the final block; the bug causes
+        // BREAKING CHANGE to be treated as body text and the commit to be
+        // classified as non-breaking.
+        let msg =
+            "feat: something\n\nBody text.\n\nBREAKING CHANGE: api removed\n\nReviewed-by: someone";
+        let parsed = parse_commit(sha, msg);
+        match parsed {
+            ParsedCommit::Conventional(c) => {
+                assert!(c.breaking, "commit should be breaking because BREAKING CHANGE is in a trailing footer block");
+                assert_eq!(
+                    c.body,
+                    Some("Body text.".to_string()),
+                    "body should only contain non-footer paragraph"
+                );
+                assert_eq!(c.footers.len(), 2, "both footer lines should be parsed");
+            }
+            _ => panic!("expected conventional commit"),
         }
     }
 
