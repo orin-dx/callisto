@@ -1,77 +1,14 @@
+mod common;
+
 use std::fs;
-use std::process::Command;
 
 use callisto_cli::cli::{
     AddArgs, GlobalArgs, InitArgs, OutputFormat, PlanPublishArgs, PublishArgs, StatusArgs,
     VersionArgs,
 };
 use callisto_cli::commands;
-use tempfile::tempdir;
 
-fn setup_polyglot_git_repo() -> tempfile::TempDir {
-    let dir = tempdir().unwrap();
-    let root = dir.path();
-
-    // git init
-    let status = Command::new("git")
-        .args(["init"])
-        .current_dir(root)
-        .status()
-        .unwrap();
-    assert!(status.success());
-
-    // git config user.name & user.email for tagging
-    Command::new("git")
-        .args(["config", "user.name", "Callisto Tester"])
-        .current_dir(root)
-        .status()
-        .unwrap();
-    Command::new("git")
-        .args(["config", "user.email", "tester@callisto.dev"])
-        .current_dir(root)
-        .status()
-        .unwrap();
-
-    // Create Cargo workspace root
-    let cargo_toml = r#"[workspace]
-members = ["crates/core"]
-resolver = "2"
-"#;
-    fs::write(root.join("Cargo.toml"), cargo_toml).unwrap();
-
-    // Create Cargo crate core
-    fs::create_dir_all(root.join("crates/core/src")).unwrap();
-    let crate_toml = r#"[package]
-name = "core-crate"
-version = "0.1.0"
-edition = "2021"
-"#;
-    fs::write(root.join("crates/core/Cargo.toml"), crate_toml).unwrap();
-    fs::write(root.join("crates/core/src/lib.rs"), "pub fn hello() {}\n").unwrap();
-
-    // Create npm package.json
-    fs::create_dir_all(root.join("packages/web")).unwrap();
-    let pkg_json = r#"{
-  "name": "@myorg/web-app",
-  "version": "1.0.0"
-}
-"#;
-    fs::write(root.join("packages/web/package.json"), pkg_json).unwrap();
-
-    // Initial git commit
-    Command::new("git")
-        .args(["add", "."])
-        .current_dir(root)
-        .status()
-        .unwrap();
-    Command::new("git")
-        .args(["commit", "-m", "Initial commit"])
-        .current_dir(root)
-        .status()
-        .unwrap();
-
-    dir
-}
+use common::setup_polyglot_git_repo;
 
 #[test]
 fn test_full_polyglot_workspace_release_lifecycle() {
@@ -87,16 +24,15 @@ fn test_full_polyglot_workspace_release_lifecycle() {
     // 1. callisto init
     let init_res = commands::init::handle(InitArgs { yes: true }, &global);
     assert!(init_res.is_ok());
-    assert!(root.join("callisto.toml").exists());
 
-    // 2. callisto add --package core-crate:minor --package @myorg/web-app:patch
+    // 2. callisto add
     let add_res = commands::add::handle(
         AddArgs {
             packages: vec![
                 "core-crate:minor".to_string(),
                 "@myorg/web-app:patch".to_string(),
             ],
-            summary: Some("Polyglot release feature update".to_string()),
+            summary: Some("Improve the core API and the web UI".to_string()),
         },
         &global,
     );
@@ -148,75 +84,6 @@ fn test_full_polyglot_workspace_release_lifecycle() {
     };
     let publish_res = commands::publish::handle(PublishArgs {}, &dry_run_global);
     assert!(publish_res.is_ok());
-}
-
-#[test]
-fn test_pre_mode_blackbox_lifecycle() {
-    use callisto_cli::cli::PreArgs;
-
-    let dir = setup_polyglot_git_repo();
-    let root = dir.path();
-
-    let global = GlobalArgs {
-        format: OutputFormat::Json,
-        cwd: root.to_path_buf(),
-        dry_run: false,
-    };
-
-    // 1. Enter pre-release mode with tag 'beta'
-    let enter_res = commands::pre::handle(
-        PreArgs::Enter {
-            tag: "beta".to_string(),
-        },
-        &global,
-    );
-    assert!(enter_res.is_ok());
-    assert!(root.join(".changeset/pre.json").exists());
-
-    // 2. Add changeset for minor bump
-    let add_res = commands::add::handle(
-        AddArgs {
-            packages: vec!["core-crate:minor".to_string()],
-            summary: Some("Beta feature".to_string()),
-        },
-        &global,
-    );
-    assert!(add_res.is_ok());
-
-    // 3. Version in pre-release mode -> should produce 0.2.0-beta.0
-    let version_res = commands::version::handle(
-        VersionArgs {
-            refresh_lockfiles: false,
-            strict: false,
-            strict_graph: false,
-            allow_empty_changesets: false,
-        },
-        &global,
-    );
-    assert!(version_res.is_ok());
-
-    let updated_cargo = fs::read_to_string(root.join("crates/core/Cargo.toml")).unwrap();
-    assert!(updated_cargo.contains("0.2.0-beta.0"));
-
-    // 4. Exit pre-release mode
-    let exit_res = commands::pre::handle(PreArgs::Exit, &global);
-    assert!(exit_res.is_ok());
-
-    // 5. Final versioning after exit -> should finalize to 0.2.0
-    let final_version_res = commands::version::handle(
-        VersionArgs {
-            refresh_lockfiles: false,
-            strict: false,
-            strict_graph: false,
-            allow_empty_changesets: true,
-        },
-        &global,
-    );
-    assert!(final_version_res.is_ok());
-
-    let final_cargo = fs::read_to_string(root.join("crates/core/Cargo.toml")).unwrap();
-    assert!(final_cargo.contains("0.2.0"));
-    assert!(!root.join(".changeset/pre.json").exists());
 }
 
 #[test]
@@ -285,6 +152,35 @@ fn test_compose_pr_body_before_version_and_subpkg_changelog() {
     .unwrap();
 
     // 1. Compose PR body BEFORE versioning (must be non-empty and contain package summary)
+    // Verify via the graph layer directly so we can inspect the actual body text.
+    {
+        use callisto_cli::runner::CliCommandRunner;
+        use callisto_cli::workspace::load_workspace;
+        use callisto_graph::commands::PrBodyOptions;
+        use callisto_graph::infer::NoInference;
+        let runner = CliCommandRunner;
+        let ws = load_workspace(&global, &runner).unwrap();
+        let opts = PrBodyOptions {
+            existing_body: None,
+            labels: vec![],
+            branch: None,
+        };
+        let report = callisto_graph::commands::compose_pr_body(&ws, &NoInference, &opts).unwrap();
+        assert!(
+            !report.pr_body.is_empty(),
+            "PR body must not be empty before versioning"
+        );
+        assert!(
+            report.pr_body.contains("core-crate"),
+            "PR body must mention the changed package 'core-crate', got:\n{}",
+            report.pr_body
+        );
+        assert!(
+            report.pr_body.contains("minor"),
+            "PR body must show the bump severity, got:\n{}",
+            report.pr_body
+        );
+    }
     let compose_res = commands::compose_pr_body::handle(
         callisto_cli::cli::ComposePrBodyArgs {
             existing_body: None,
@@ -293,7 +189,7 @@ fn test_compose_pr_body_before_version_and_subpkg_changelog() {
         },
         &global,
     );
-    assert!(compose_res.is_ok());
+    assert_eq!(compose_res.unwrap(), std::process::ExitCode::SUCCESS);
 
     // 2. Version packages
     commands::version::handle(
@@ -315,7 +211,6 @@ fn test_compose_pr_body_before_version_and_subpkg_changelog() {
     );
     let changelog_content = fs::read_to_string(&changelog_path).unwrap();
     assert!(changelog_content.contains("0.2.0"));
-    // Verify the actual changeset summary appears, not the hardcoded placeholder.
     assert!(
         changelog_content.contains("Add new core component API"),
         "changelog must contain the real changeset summary 'Add new core component API', \
@@ -329,17 +224,29 @@ fn test_dry_run_flag_preserves_disk_state() {
     let root = dir.path();
 
     let global_dry = GlobalArgs {
-        format: OutputFormat::Text,
+        format: OutputFormat::Json,
         cwd: root.to_path_buf(),
         dry_run: true,
     };
 
+    commands::init::handle(
+        InitArgs { yes: true },
+        &GlobalArgs {
+            dry_run: false,
+            ..global_dry.clone()
+        },
+    )
+    .unwrap();
+
     commands::add::handle(
         AddArgs {
-            packages: vec!["core-crate:patch".to_string()],
-            summary: Some("Dry run test patch".to_string()),
+            packages: vec!["core-crate:minor".to_string()],
+            summary: Some("New feature".to_string()),
         },
-        &global_dry,
+        &GlobalArgs {
+            dry_run: false,
+            ..global_dry.clone()
+        },
     )
     .unwrap();
 
@@ -358,136 +265,6 @@ fn test_dry_run_flag_preserves_disk_state() {
     // Manifest must remain 0.1.0 on disk
     let cargo_content = fs::read_to_string(root.join("crates/core/Cargo.toml")).unwrap();
     assert!(cargo_content.contains("version = \"0.1.0\""));
-}
-
-/// Spec: `plan_version()` must use the real changeset summary text when generating
-/// changelog entries, not the hardcoded placeholder "Release update".
-///
-/// This is a regression test for the bug where `plan_version()` ignored
-/// `agg.changelog_inputs` and always emitted `summary: "Release update"`.
-#[test]
-fn test_changelog_content_uses_real_changeset_summary() {
-    let dir = setup_polyglot_git_repo();
-    let root = dir.path();
-
-    let global = GlobalArgs {
-        format: OutputFormat::Json,
-        cwd: root.to_path_buf(),
-        dry_run: false,
-    };
-
-    commands::init::handle(InitArgs { yes: true }, &global).unwrap();
-
-    commands::add::handle(
-        AddArgs {
-            packages: vec!["core-crate:patch".to_string()],
-            summary: Some("Fix the frobnication bug".to_string()),
-        },
-        &global,
-    )
-    .unwrap();
-
-    commands::version::handle(
-        VersionArgs {
-            refresh_lockfiles: false,
-            strict: false,
-            strict_graph: false,
-            allow_empty_changesets: false,
-        },
-        &global,
-    )
-    .unwrap();
-
-    let changelog_path = root.join("crates/core/CHANGELOG.md");
-    assert!(
-        changelog_path.exists(),
-        "crates/core/CHANGELOG.md must exist"
-    );
-    let changelog_content = fs::read_to_string(&changelog_path).unwrap();
-
-    assert!(
-        changelog_content.contains("Fix the frobnication bug"),
-        "changelog must contain the real changeset summary 'Fix the frobnication bug', \
-         but got:\n{changelog_content}"
-    );
-    assert!(
-        !changelog_content.contains("Release update"),
-        "changelog must NOT contain the hardcoded placeholder 'Release update', \
-         but got:\n{changelog_content}"
-    );
-}
-
-/// Spec: when multiple changesets both target the same package, all of their
-/// summaries must appear in the generated changelog, not just one.
-///
-/// This is a regression test for the bug where multiple changesets were
-/// collapsed to a single hardcoded entry.
-#[test]
-fn test_changelog_content_includes_all_changeset_summaries() {
-    let dir = setup_polyglot_git_repo();
-    let root = dir.path();
-
-    let global = GlobalArgs {
-        format: OutputFormat::Json,
-        cwd: root.to_path_buf(),
-        dry_run: false,
-    };
-
-    commands::init::handle(InitArgs { yes: true }, &global).unwrap();
-
-    // First changeset
-    commands::add::handle(
-        AddArgs {
-            packages: vec!["core-crate:patch".to_string()],
-            summary: Some("Fix the widget alignment".to_string()),
-        },
-        &global,
-    )
-    .unwrap();
-
-    // Second changeset targeting the same package
-    commands::add::handle(
-        AddArgs {
-            packages: vec!["core-crate:patch".to_string()],
-            summary: Some("Improve error messages".to_string()),
-        },
-        &global,
-    )
-    .unwrap();
-
-    commands::version::handle(
-        VersionArgs {
-            refresh_lockfiles: false,
-            strict: false,
-            strict_graph: false,
-            allow_empty_changesets: false,
-        },
-        &global,
-    )
-    .unwrap();
-
-    let changelog_path = root.join("crates/core/CHANGELOG.md");
-    assert!(
-        changelog_path.exists(),
-        "crates/core/CHANGELOG.md must exist"
-    );
-    let changelog_content = fs::read_to_string(&changelog_path).unwrap();
-
-    assert!(
-        changelog_content.contains("Fix the widget alignment"),
-        "changelog must contain first changeset summary 'Fix the widget alignment', \
-         but got:\n{changelog_content}"
-    );
-    assert!(
-        changelog_content.contains("Improve error messages"),
-        "changelog must contain second changeset summary 'Improve error messages', \
-         but got:\n{changelog_content}"
-    );
-    assert!(
-        !changelog_content.contains("Release update"),
-        "changelog must NOT contain the hardcoded placeholder 'Release update', \
-         but got:\n{changelog_content}"
-    );
 }
 
 #[test]

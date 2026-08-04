@@ -19,6 +19,7 @@ impl GraphBuilder {
         Self::default()
     }
 
+    #[allow(dead_code)]
     pub fn package(
         mut self,
         id: impl Into<PackageId>,
@@ -30,6 +31,7 @@ impl GraphBuilder {
         self
     }
 
+    #[allow(dead_code)]
     pub fn edge(
         mut self,
         from: impl Into<PackageId>,

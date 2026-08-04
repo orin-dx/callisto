@@ -20,7 +20,7 @@ use std::fs;
 use std::process::ExitCode;
 use tempfile::TempDir;
 
-use callisto_cli::cli::{GlobalArgs, OutputFormat, SnapshotArgs, TagArgs};
+use callisto_cli::cli::{GlobalArgs, OutputFormat, SnapshotArgs, TagArgs, VersionArgs};
 use callisto_cli::commands;
 
 fn make_git_workspace(tmp: &TempDir) -> GlobalArgs {
@@ -86,6 +86,70 @@ fn make_git_workspace(tmp: &TempDir) -> GlobalArgs {
     );
 
     global
+}
+
+// ---------------------------------------------------------------------------
+// Version --strict tests
+// ---------------------------------------------------------------------------
+
+/// Regression test for Bug 2: `callisto version --strict` must exit non-zero
+/// when strict violations produce Error-severity diagnostics.
+///
+/// A workspace with no pending changesets emits an `EmptyChangeset` warning that
+/// `--strict` escalates to `Error`. Before the fix, the CLI handler ignored the
+/// escalated diagnostics and always returned `ExitCode::SUCCESS`. After the fix,
+/// it gates on `Error`-severity diagnostics and returns `ExitCode::FAILURE`.
+#[test]
+fn test_version_strict_no_changesets_exits_nonzero() {
+    let tmp = TempDir::new().unwrap();
+    // dry_run=true so no manifest writes happen; the version plan is still computed.
+    let global = make_git_workspace(&tmp);
+
+    let args = VersionArgs {
+        strict: true,
+        strict_graph: false,
+        allow_empty_changesets: false,
+        refresh_lockfiles: false,
+    };
+
+    let result = commands::version::handle(args, &global);
+    assert!(
+        result.is_ok(),
+        "version --strict should return Ok(ExitCode); got Err: {result:?}"
+    );
+    let code = result.unwrap();
+    assert_ne!(
+        format!("{code:?}"),
+        format!("{:?}", ExitCode::SUCCESS),
+        "version --strict with no changesets must exit non-zero (EmptyChangeset escalated to Error)"
+    );
+}
+
+/// `callisto version` without `--strict` on an empty workspace exits 0.
+/// The EmptyChangeset warning is not escalated to Error so no failure fires.
+#[test]
+fn test_version_no_strict_no_changesets_succeeds() {
+    let tmp = TempDir::new().unwrap();
+    let global = make_git_workspace(&tmp);
+
+    let args = VersionArgs {
+        strict: false,
+        strict_graph: false,
+        allow_empty_changesets: false,
+        refresh_lockfiles: false,
+    };
+
+    let result = commands::version::handle(args, &global);
+    assert!(
+        result.is_ok(),
+        "version without --strict should succeed; got: {result:?}"
+    );
+    let code = result.unwrap();
+    assert_eq!(
+        format!("{code:?}"),
+        format!("{:?}", ExitCode::SUCCESS),
+        "version without --strict on empty workspace should exit 0"
+    );
 }
 
 // ---------------------------------------------------------------------------

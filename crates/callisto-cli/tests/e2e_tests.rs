@@ -72,6 +72,79 @@ edition = "2021"
     assert!(status_res.is_ok());
 }
 
+/// Regression: `callisto status --check` must detect a pending changeset
+/// whose entry uses an ecosystem-qualified name (`cargo/my-app`) even when
+/// the package is registered under its bare name (`my-app`).
+///
+/// Before the fix, `status.rs` compared `entry.name == pkg.id.to_string()`,
+/// which returned false for `"cargo/my-app" != "my-app"`, so the package
+/// showed no pending changesets while `callisto version` (which uses
+/// `PackageId::matches()`) correctly processed it.
+#[test]
+fn test_status_matches_ecosystem_qualified_changeset_entry() {
+    use std::process::ExitCode;
+
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path();
+
+    drop(
+        std::process::Command::new("git")
+            .arg("init")
+            .current_dir(root)
+            .output(),
+    );
+
+    fs::write(
+        root.join("Cargo.toml"),
+        "[workspace]\nmembers = [\"crates/*\"]\nresolver = \"2\"\n",
+    )
+    .unwrap();
+
+    let crate_dir = root.join("crates/my-app");
+    fs::create_dir_all(&crate_dir).unwrap();
+    fs::write(
+        crate_dir.join("Cargo.toml"),
+        "[package]\nname = \"my-app\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+    )
+    .unwrap();
+
+    let global = GlobalArgs {
+        format: OutputFormat::Json,
+        cwd: root.to_path_buf(),
+        dry_run: false,
+    };
+
+    commands::init::handle(callisto_cli::cli::InitArgs { yes: true }, &global).unwrap();
+
+    // Write a changeset manually using the ecosystem-qualified entry name.
+    // This happens when a user runs `callisto add --package cargo/my-app:patch`.
+    let changeset_dir = root.join(".changeset");
+    fs::write(
+        changeset_dir.join("fix-ecosystem-name.md"),
+        "---\n\"cargo/my-app\": patch\n---\n\nFix using ecosystem-qualified name.\n",
+    )
+    .unwrap();
+
+    // --check returns exit code 0 when at least one pending changeset is found.
+    // Before the fix this returned exit code 2 (no pending changesets detected).
+    let code = commands::status::handle(
+        StatusArgs {
+            strict: false,
+            strict_graph: false,
+            check: true,
+        },
+        &global,
+    )
+    .unwrap();
+
+    assert_eq!(
+        format!("{code:?}"),
+        format!("{:?}", ExitCode::SUCCESS),
+        "status --check must detect a pending changeset whose entry uses an \
+         ecosystem-qualified name (cargo/my-app) for a package registered as my-app"
+    );
+}
+
 /// `callisto status --check` must return exit code 0 when at least one pending
 /// changeset exists, and exit code 2 when the workspace is clean.
 #[test]

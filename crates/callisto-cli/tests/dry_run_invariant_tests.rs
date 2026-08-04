@@ -278,6 +278,85 @@ fn publish_dry_run_writes_nothing() {
     });
 }
 
+/// `snapshot --dry-run --format text` must prefix output with `[DRY-RUN]` so
+/// users can distinguish a preview from a real run.
+#[test]
+fn snapshot_dry_run_text_output_has_dry_run_marker() {
+    let dir = setup_repo();
+    let root = dir.path();
+    seed_initialized_workspace(root);
+
+    let out = Command::new(env!("CARGO_BIN_EXE_callisto"))
+        .args([
+            "--format",
+            "text",
+            "--dry-run",
+            "--cwd",
+            root.to_str().unwrap(),
+            "snapshot",
+            "--tag",
+            "canary",
+        ])
+        .output()
+        .expect("callisto binary should be invocable");
+
+    assert!(
+        out.status.success(),
+        "snapshot --dry-run should exit 0; stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let text = String::from_utf8(out.stdout).expect("stdout is UTF-8");
+    assert!(
+        text.contains("[DRY-RUN]"),
+        "snapshot --dry-run text output should contain [DRY-RUN], got: {text:?}"
+    );
+}
+
+/// `tag --dry-run --format text` must not claim tags were created when none
+/// were. The output should indicate dry-run mode rather than asserting "Created
+/// Tags:".
+#[test]
+fn tag_dry_run_text_output_does_not_say_created_tags() {
+    let dir = setup_repo();
+    let root = dir.path();
+    seed_initialized_workspace(root);
+
+    let plan_json = publish_plan_json(root);
+    let plan_file = root.join("plan.json");
+    fs::write(&plan_file, &plan_json).unwrap();
+
+    let out = Command::new(env!("CARGO_BIN_EXE_callisto"))
+        .args([
+            "--format",
+            "text",
+            "--dry-run",
+            "--cwd",
+            root.to_str().unwrap(),
+            "tag",
+            "--plan",
+            plan_file.to_str().unwrap(),
+        ])
+        .output()
+        .expect("callisto binary should be invocable");
+
+    assert!(
+        out.status.success(),
+        "tag --dry-run should exit 0; stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let text = String::from_utf8(out.stdout).expect("stdout is UTF-8");
+    assert!(
+        !text.contains("Created Tags:"),
+        "tag --dry-run text output must not say 'Created Tags:', got: {text:?}"
+    );
+    assert!(
+        text.contains("Would create tags:"),
+        "tag --dry-run text output should say 'Would create tags:', got: {text:?}"
+    );
+}
+
 /// `pre exit` reads `.changeset/pre.json` before checking the dry-run permit.
 /// When the file does not exist the function must return `CliError::Io`, not
 /// panic or produce a misleading error variant.
