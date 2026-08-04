@@ -82,18 +82,50 @@ pub fn validate<R: CommandRunner, D: DependencyResolver>(
             });
         }
 
+        if !cs.changeset.entries.is_empty() && cs.changeset.summary.trim().is_empty() {
+            diagnostics.push(callisto_model::Diagnostic {
+                code: callisto_model::DiagnosticCode::EmptySummary,
+                severity: callisto_model::DiagnosticSeverity::Error,
+                message: format!(
+                    "Changeset `{}` has entries but an empty summary",
+                    cs.path.display()
+                ),
+                package: None,
+                path: Some(cs.path.clone()),
+                governed_by: None,
+                escalated_by: None,
+            });
+        }
+
         for entry in &cs.changeset.entries {
-            if let Ok(id) = callisto_model::PackageId::parse(&entry.name) {
-                if !ws.graph.packages().any(|p| p.id.matches(&id)) {
+            match callisto_model::PackageId::parse(&entry.name) {
+                Ok(id) => {
+                    if !ws.graph.packages().any(|p| p.id.matches(&id)) {
+                        diagnostics.push(callisto_model::Diagnostic {
+                            code: callisto_model::DiagnosticCode::UnknownPackage,
+                            severity: callisto_model::DiagnosticSeverity::Error,
+                            message: format!(
+                                "Changeset `{}` references unknown package `{}`",
+                                cs.path.display(),
+                                entry.name
+                            ),
+                            package: Some(id),
+                            path: Some(cs.path.clone()),
+                            governed_by: None,
+                            escalated_by: None,
+                        });
+                    }
+                }
+                Err(_) => {
                     diagnostics.push(callisto_model::Diagnostic {
-                        code: callisto_model::DiagnosticCode::UnknownPackage,
+                        code: callisto_model::DiagnosticCode::InvalidPackageName,
                         severity: callisto_model::DiagnosticSeverity::Error,
                         message: format!(
-                            "Changeset `{}` references unknown package `{}`",
+                            "Changeset `{}` contains invalid package name `{}`",
                             cs.path.display(),
                             entry.name
                         ),
-                        package: Some(id),
+                        package: None,
                         path: Some(cs.path.clone()),
                         governed_by: None,
                         escalated_by: None,

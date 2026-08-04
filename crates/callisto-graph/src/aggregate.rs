@@ -75,7 +75,10 @@ pub fn load_changesets(
                 path: path.clone(),
                 message: e.to_string(),
             })?;
-        let changeset = parse_changeset(&content)?;
+        let changeset = parse_changeset(&content).map_err(|e| GraphError::ParseChangeset {
+            path: path.clone(),
+            source: e,
+        })?;
         let stem = path
             .file_stem()
             .and_then(|s| s.to_str())
@@ -231,10 +234,35 @@ where
     }
 
     for cs in loaded {
-        agg.consumed.push(cs.path.clone());
+        // Defer adding to `consumed` until after we confirm at least one entry
+        // resolved to a real workspace package.  A changeset where every entry
+        // names a removed package must NOT be consumed (which would delete it
+        // on disk); instead, an UnknownPackage diagnostic is emitted and the
+        // file is left for the user to clean up manually.
+        let mut matched_any = false;
         for entry in cs.changeset.entries {
-            if let Ok(id) = PackageId::parse(&entry.name) {
-                if let Some(target_pkg) = resolve_target_package(graph.packages(), &id)? {
+            let id = match PackageId::parse(&entry.name) {
+                Ok(id) => id,
+                Err(_) => {
+                    agg.diagnostics.push(Diagnostic {
+                        code: callisto_model::DiagnosticCode::UnknownPackage,
+                        severity: callisto_model::DiagnosticSeverity::Warning,
+                        message: format!(
+                            "Changeset `{}` contains invalid package name `{}`",
+                            cs.path.display(),
+                            entry.name
+                        ),
+                        package: None,
+                        path: Some(cs.path.clone()),
+                        governed_by: None,
+                        escalated_by: None,
+                    });
+                    continue;
+                }
+            };
+            match resolve_target_package(graph.packages(), &id)? {
+                Some(target_pkg) => {
+                    matched_any = true;
                     let canonical_id = target_pkg.id.clone();
                     let cur_sev = agg
                         .severities
@@ -277,16 +305,43 @@ where
                         });
                     }
                 }
+                None => {
+                    // Entry references a package not in the workspace (e.g. a
+                    // package that was removed since the changeset was written).
+                    // Emit a diagnostic so the user knows, but do NOT count
+                    // this as a match -- a fully-orphaned changeset stays on
+                    // disk rather than being silently deleted.
+                    agg.diagnostics.push(Diagnostic {
+                        code: callisto_model::DiagnosticCode::UnknownPackage,
+                        severity: callisto_model::DiagnosticSeverity::Warning,
+                        message: format!(
+                            "Changeset `{}` references package `{}` which is not in the \
+                             workspace; the changeset will not be consumed until this entry \
+                             is resolved",
+                            cs.path.display(),
+                            entry.name
+                        ),
+                        package: None,
+                        path: Some(cs.path.clone()),
+                        governed_by: None,
+                        escalated_by: None,
+                    });
+                }
             }
+        }
+        // Only mark as consumed when at least one entry resolved to a real
+        // package.  A fully-orphaned changeset is left on disk.
+        if matched_any {
+            agg.consumed.push(cs.path.clone());
         }
     }
 
     loop {
         let mut changed = false;
-        if union_fixed(&mut agg, &config.groups) {
+        if union_fixed(&mut agg, &config.groups, base_versions) {
             changed = true;
         }
-        if union_linked(&mut agg, &config.groups) {
+        if union_linked(&mut agg, &config.groups, base_versions) {
             changed = true;
         }
         if !changed {
@@ -297,7 +352,11 @@ where
     Ok(agg)
 }
 
-pub(crate) fn union_fixed(agg: &mut Aggregation, groups: &GroupTable) -> bool {
+pub(crate) fn union_fixed(
+    agg: &mut Aggregation,
+    groups: &GroupTable,
+    base_versions: &BTreeMap<PackageId, Version>,
+) -> bool {
     let mut changed = false;
     for g in groups.fixed.values() {
         let pkg_members: Vec<PackageId> = g
@@ -324,6 +383,31 @@ pub(crate) fn union_fixed(agg: &mut Aggregation, groups: &GroupTable) -> bool {
         for m in pkg_members {
             let cur = agg.severities.get(&m).copied().unwrap_or(Severity::None);
             if target > cur {
+                // Guard against stale group members: a package listed in the
+                // config group that was subsequently removed from the workspace
+                // must not be inserted into severities.  Doing so causes
+                // `bump_target` in `solve_cascade` to call
+                // `input.base.get(stale_id)` -> `None` ->
+                // `Err(GraphError::Manifest(MissingField))`, which surfaces as
+                // a misleading crash.  Emit a warning instead and skip.
+                if !base_versions.contains_key(&m) {
+                    agg.diagnostics.push(Diagnostic {
+                        code: callisto_model::DiagnosticCode::UnknownPackage,
+                        severity: callisto_model::DiagnosticSeverity::Warning,
+                        message: format!(
+                            "Fixed group `{}` references package `{}` which is not in the \
+                             workspace; the stale group member is skipped. Remove it from \
+                             callisto.toml to silence this warning.",
+                            g.name,
+                            m.display_name()
+                        ),
+                        package: Some(m.clone()),
+                        path: None,
+                        governed_by: Some(callisto_model::ConfigKey::FIXED_GROUP),
+                        escalated_by: None,
+                    });
+                    continue;
+                }
                 agg.severities.insert(m.clone(), target);
                 agg.reasons.insert(
                     m.clone(),
@@ -338,7 +422,11 @@ pub(crate) fn union_fixed(agg: &mut Aggregation, groups: &GroupTable) -> bool {
     changed
 }
 
-pub(crate) fn union_linked(agg: &mut Aggregation, groups: &GroupTable) -> bool {
+pub(crate) fn union_linked(
+    agg: &mut Aggregation,
+    groups: &GroupTable,
+    base_versions: &BTreeMap<PackageId, Version>,
+) -> bool {
     let mut changed = false;
     for g in groups.linked.values() {
         let named: Vec<PackageId> = g
@@ -379,6 +467,27 @@ pub(crate) fn union_linked(agg: &mut Aggregation, groups: &GroupTable) -> bool {
         for m in all_members {
             let cur = agg.severities.get(&m).copied().unwrap_or(Severity::None);
             if target_sev > cur {
+                // Guard against stale linked-group members, same rationale as
+                // in `union_fixed`: a removed package must not enter
+                // `agg.severities`, which would cause `bump_target` to crash.
+                if !base_versions.contains_key(&m) {
+                    agg.diagnostics.push(Diagnostic {
+                        code: callisto_model::DiagnosticCode::UnknownPackage,
+                        severity: callisto_model::DiagnosticSeverity::Warning,
+                        message: format!(
+                            "Linked group `{}` references package `{}` which is not in the \
+                             workspace; the stale group member is skipped. Remove it from \
+                             callisto.toml to silence this warning.",
+                            g.name,
+                            m.display_name()
+                        ),
+                        package: Some(m.clone()),
+                        path: None,
+                        governed_by: Some(callisto_model::ConfigKey::LINKED_GROUP),
+                        escalated_by: None,
+                    });
+                    continue;
+                }
                 agg.severities.insert(m.clone(), target_sev);
                 agg.reasons.insert(
                     m.clone(),
@@ -491,6 +600,39 @@ mod tests {
                 stderr: String::new(),
             })
         }
+    }
+
+    /// Spec: `load_changesets` must include the filename in its error when a changeset file
+    /// fails `parse_changeset`. The bare `?` propagation previously produced a
+    /// `GraphError::Format(ParseError)` with no path context, making it impossible for a
+    /// developer to triage which file caused the failure in a workspace with many changesets.
+    #[test]
+    fn test_load_changesets_error_includes_filename() {
+        let ws_dir = tempfile::tempdir().unwrap();
+        let root = ws_dir.path();
+        let cs_dir = root.join(".changeset");
+        std::fs::create_dir_all(&cs_dir).unwrap();
+
+        // Missing `---` frontmatter delimiter — parse_changeset returns
+        // ParseError::MissingFrontmatterStart. The error must carry the filename so the
+        // developer can find the broken file.
+        std::fs::write(
+            cs_dir.join("malformed-changeset.md"),
+            "cargo/foo: patch\n\nSummary.\n",
+        )
+        .unwrap();
+
+        let cfg = crate::config::load(root).unwrap();
+        let result = load_changesets(root, &cfg);
+
+        let err =
+            result.expect_err("load_changesets must return Err for a malformed changeset file");
+        let err_display = format!("{err}");
+        assert!(
+            err_display.contains("malformed-changeset"),
+            "error message must contain the offending filename so the developer can triage; \
+             got: {err_display:?}"
+        );
     }
 
     /// Spec: `resolve_since` must not silently degrade to `None` (forcing
@@ -866,6 +1008,149 @@ mod tests {
         );
     }
 
+    /// Spec: a changeset where EVERY entry references a package not in the
+    /// workspace must NOT be added to `consumed` (which would silently delete
+    /// it on disk) and must emit a `DiagnosticCode::UnknownPackage` warning
+    /// for each orphaned entry.  On the current (unfixed) code, the changeset
+    /// IS added to `consumed` before the entry loop, so it ends up deleted
+    /// despite no version bump ever being recorded.
+    #[test]
+    fn test_orphaned_changeset_not_consumed_emits_unknown_package_diagnostic() {
+        let ws_dir = tempfile::tempdir().unwrap();
+        let root = ws_dir.path();
+
+        // Minimal git repo so TagIndex::build can enumerate tags.
+        init_repo(root);
+        std::fs::write(root.join("README.md"), "hello\n").unwrap();
+        run_git(root, &["add", "."]);
+        run_git(root, &["commit", "-q", "-m", "initial commit"]);
+
+        // Changeset referencing only pkg-foo which is NOT in the workspace.
+        let cs_dir = root.join(".changeset");
+        std::fs::create_dir_all(&cs_dir).unwrap();
+        std::fs::write(
+            cs_dir.join("orphan-cs.md"),
+            "---\n\"pkg-foo\": minor\n---\n\nOrphaned changeset.\n",
+        )
+        .unwrap();
+
+        // Workspace has only pkg-bar.
+        let pkg_bar_id = PackageId::parse("pkg-bar").unwrap();
+        let graph = SinglePackageGraph {
+            pkg: make_pkg(pkg_bar_id.clone()),
+        };
+        let cfg = crate::config::load(root).unwrap();
+        let runner = RealGitRunner;
+        let tags = crate::tags::TagIndex::build(&runner, root, &graph, &cfg).unwrap();
+
+        let mut base_versions = BTreeMap::new();
+        base_versions.insert(pkg_bar_id.clone(), Version::semver(1, 0, 0));
+
+        let inference = RecordingInference::default();
+        let agg = aggregate(
+            &graph,
+            &cfg,
+            &runner,
+            &tags,
+            &base_versions,
+            None,
+            &inference,
+        )
+        .unwrap();
+
+        assert!(
+            agg.consumed.is_empty(),
+            "a fully-orphaned changeset (all entries reference non-existent packages) must NOT \
+             be added to consumed (which would cause it to be deleted on disk): got {:?}",
+            agg.consumed
+        );
+
+        let unknown_pkg_diags: Vec<_> = agg
+            .diagnostics
+            .iter()
+            .filter(|d| d.code == callisto_model::DiagnosticCode::UnknownPackage)
+            .collect();
+        assert!(
+            !unknown_pkg_diags.is_empty(),
+            "must emit at least one UnknownPackage diagnostic for orphaned changeset entries; \
+             got diagnostics: {:?}",
+            agg.diagnostics
+        );
+    }
+
+    /// Spec: when a fixed group in callisto.toml references a package that no
+    /// longer exists in the workspace, `union_fixed` must NOT insert the stale
+    /// member into `agg.severities`.  Doing so causes `bump_target` in
+    /// `solve_cascade` to call `input.base.get(stale_id)` -> `None` ->
+    /// `Err(GraphError::Manifest(MissingField))`, crashing `callisto version`
+    /// with a misleading error.  After the fix the stale member must be
+    /// skipped and an `UnknownPackage` warning must be emitted.
+    ///
+    /// Setup: `pkg_bar` has `Severity::Minor` (from a changeset), `pkg_baz`
+    /// has no severity yet.  Fixed group contains all three: `pkg_foo`
+    /// (stale), `pkg_bar`, `pkg_baz`.  `union_fixed` should propagate `Minor`
+    /// to `pkg_baz` (real member), skip `pkg_foo` with a diagnostic, and
+    /// return `true` because `pkg_baz` changed.
+    #[test]
+    fn test_union_fixed_stale_member_emits_diagnostic_and_is_skipped() {
+        let pkg_foo = PackageId::parse("pkg-foo").unwrap(); // stale: removed from workspace
+        let pkg_bar = PackageId::parse("pkg-bar").unwrap(); // real workspace package (has severity)
+        let pkg_baz = PackageId::parse("pkg-baz").unwrap(); // real workspace package (no severity yet)
+
+        let mut agg = Aggregation::default();
+        // pkg-bar has a changeset-driven Minor bump; pkg-baz has nothing yet.
+        agg.severities.insert(pkg_bar.clone(), Severity::Minor);
+        agg.named_by.insert(pkg_bar.clone(), NamedBy::Changeset);
+
+        let mut groups = GroupTable::default();
+        let group_def = GroupDef {
+            name: GroupName("fixed-grp".to_string()),
+            kind: GroupKind::Fixed,
+            members: vec![
+                GroupMember::Package(pkg_foo.clone()),
+                GroupMember::Package(pkg_bar.clone()),
+                GroupMember::Package(pkg_baz.clone()),
+            ],
+        };
+        groups.fixed.insert(group_def.name.clone(), group_def);
+
+        // Only pkg-bar and pkg-baz are in the workspace; pkg-foo is stale.
+        let mut base_versions = BTreeMap::new();
+        base_versions.insert(pkg_bar.clone(), Version::semver(1, 0, 0));
+        base_versions.insert(pkg_baz.clone(), Version::semver(1, 0, 0));
+
+        let changed = union_fixed(&mut agg, &groups, &base_versions);
+
+        // pkg_baz had no severity but should now have Minor propagated from pkg_bar.
+        assert!(
+            changed,
+            "union_fixed must return true because pkg-baz received a propagated severity"
+        );
+        assert_eq!(
+            agg.severities.get(&pkg_baz),
+            Some(&Severity::Minor),
+            "real member pkg-baz must receive the propagated Minor severity"
+        );
+        // The stale member must never enter severities.
+        assert!(
+            !agg.severities.contains_key(&pkg_foo),
+            "stale group member pkg-foo must NOT be inserted into severities (would crash cascade \
+             with a misleading MissingField error)"
+        );
+
+        let unknown_diags: Vec<_> = agg
+            .diagnostics
+            .iter()
+            .filter(|d| d.code == callisto_model::DiagnosticCode::UnknownPackage)
+            .collect();
+        assert!(
+            !unknown_diags.is_empty(),
+            "must emit an UnknownPackage diagnostic for stale fixed group member; \
+             got diagnostics: {:?}",
+            agg.diagnostics
+        );
+    }
+
     fn linked_group(name: &str, members: &[PackageId]) -> GroupTable {
         let mut groups = GroupTable::default();
         let group_def = GroupDef {
@@ -888,7 +1173,11 @@ mod tests {
 
         let groups = linked_group("linked-pair", &[pkg_a.clone(), pkg_b.clone()]);
 
-        let changed = union_linked(&mut agg, &groups);
+        let mut base_versions = BTreeMap::new();
+        base_versions.insert(pkg_a.clone(), Version::semver(1, 0, 0));
+        base_versions.insert(pkg_b.clone(), Version::semver(1, 0, 0));
+
+        let changed = union_linked(&mut agg, &groups, &base_versions);
 
         assert!(changed);
         assert_eq!(agg.severities.get(&pkg_a), Some(&Severity::Minor));
@@ -914,7 +1203,11 @@ mod tests {
 
         let groups = linked_group("linked-pair", &[pkg_a.clone(), pkg_b.clone()]);
 
-        let changed = union_linked(&mut agg, &groups);
+        let mut base_versions = BTreeMap::new();
+        base_versions.insert(pkg_a.clone(), Version::semver(1, 0, 0));
+        base_versions.insert(pkg_b.clone(), Version::semver(1, 0, 0));
+
+        let changed = union_linked(&mut agg, &groups, &base_versions);
 
         assert!(changed);
         assert_eq!(agg.severities.get(&pkg_a), Some(&Severity::Major));
@@ -929,7 +1222,11 @@ mod tests {
         let mut agg = Aggregation::default();
         let groups = linked_group("linked-pair", &[pkg_a.clone(), pkg_b.clone()]);
 
-        let changed = union_linked(&mut agg, &groups);
+        let mut base_versions = BTreeMap::new();
+        base_versions.insert(pkg_a.clone(), Version::semver(1, 0, 0));
+        base_versions.insert(pkg_b.clone(), Version::semver(1, 0, 0));
+
+        let changed = union_linked(&mut agg, &groups, &base_versions);
 
         assert!(!changed);
         assert!(agg.severities.is_empty());

@@ -90,7 +90,9 @@ pub enum StrictFlag {
 #[non_exhaustive]
 pub enum DiagnosticCode {
     EmptyChangeset,
+    EmptySummary,
     UnknownPackage,
+    InvalidPackageName,
     NapiTargetAddedNotInMembers,
     NapiTargetRemovedStillOnDisk,
     NapiCoordinationNotYetSupported,

@@ -24,6 +24,12 @@ pub enum GraphError {
     #[diagnostic(transparent)]
     Format(#[from] callisto_format::ParseError),
 
+    #[error("parsing changeset {}: {source}", .path.display())]
+    ParseChangeset {
+        path: PathBuf,
+        source: callisto_format::ParseError,
+    },
+
     #[error(transparent)]
     #[diagnostic(transparent)]
     Bump(#[from] callisto_format::BumpError),
@@ -145,6 +151,20 @@ pub enum GraphError {
         root_manifest: PathBuf,
         details: String,
     },
+
+    #[error("failed to parse .changeset/pre.json: {0}")]
+    #[diagnostic(
+        code(E114),
+        help("Check that .changeset/pre.json is valid JSON and was not partially written. Delete the file and re-run `callisto pre enter` to recover.")
+    )]
+    PreJson(callisto_format::PreJsonError),
+
+    #[error("failed to read .changeset/pre.json: {message}")]
+    #[diagnostic(
+        code(E115),
+        help("Check that .changeset/pre.json is readable. Delete the file and re-run `callisto pre enter` to recover.")
+    )]
+    PreJsonRead { message: String },
 }
 
 #[derive(Clone, Debug, thiserror::Error, miette::Diagnostic, PartialEq, Eq)]
