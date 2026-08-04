@@ -58,9 +58,18 @@ impl Version {
                         grammar,
                         message: e.to_string(),
                     })?;
+                // PEP 440 defines multiple equivalent spellings for the same
+                // version (e.g. `1.0.0-alpha1`, `1.0.0_alpha1`, `1.0.0a1`).
+                // Normalize `raw` to pep440_rs's canonical rendering so that
+                // logically-equal inputs produce identical `raw` values, and
+                // therefore compare `==` and hash equal (derived PartialEq/Eq/
+                // Hash include `raw`). SemVer has no analogous normalization
+                // requirement (each version already has one canonical form),
+                // so the caller's literal input is preserved for that grammar.
+                let canonical = parsed.to_string();
                 Ok(Version {
                     grammar,
-                    raw: raw.to_string(),
+                    raw: canonical,
                     parsed: ParsedVersion::Pep440(parsed),
                 })
             }
@@ -156,12 +165,32 @@ impl Serialize for Version {
 }
 
 impl<'de> Deserialize<'de> for Version {
+    /// Generic (grammar-unaware) deserialization. The serialized form of a
+    /// `Version` is just its raw string (see `Serialize`), which does not
+    /// carry the grammar it was parsed under, so this impl cannot *know*
+    /// which grammar to use — it can only guess by trying grammars in turn,
+    /// exactly as `VersionReq::deserialize` already does for Cargo/Npm/Pypi.
+    ///
+    /// SemVer is tried first because it is the strictest, most unambiguous
+    /// grammar; PEP 440 is tried only if SemVer parsing fails. This means a
+    /// string that happens to be valid under *both* grammars (e.g. plain
+    /// `1.2.3`) always resolves to `VersionGrammar::SemVer`, never
+    /// `VersionGrammar::Pep440` — the same residual-ambiguity tradeoff
+    /// `VersionReq::deserialize` accepts for its Cargo/Npm/Pypi chain.
+    ///
+    /// Callers that know the intended ecosystem/grammar ahead of time (e.g.
+    /// because a sibling field names it, or the value came from a
+    /// known-SemVer-only source such as a git tag) should prefer
+    /// [`Version::parse`] with an explicit [`VersionGrammar`] instead of
+    /// going through this generic `serde` impl.
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        Version::parse(&s, VersionGrammar::SemVer).map_err(serde::de::Error::custom)
+        Version::parse(&s, VersionGrammar::SemVer)
+            .or_else(|_| Version::parse(&s, VersionGrammar::Pep440))
+            .map_err(serde::de::Error::custom)
     }
 }
 
@@ -293,6 +322,7 @@ pub struct GrammarMismatch {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::hash::Hash as _;
 
     #[test]
     fn parses_valid_semver_and_exposes_components() {
@@ -324,5 +354,109 @@ mod tests {
 
         let req = VersionReq::parse(">=0.3.0", Ecosystem::Pypi).unwrap();
         assert!(req.matches(&v).unwrap());
+    }
+
+    #[test]
+    fn pep440_non_canonical_inputs_normalize_to_equal_versions() {
+        let dash = Version::parse("1.0.0-alpha1", VersionGrammar::Pep440).unwrap();
+        let underscore = Version::parse("1.0.0_alpha1", VersionGrammar::Pep440).unwrap();
+        let canonical = Version::parse("1.0.0a1", VersionGrammar::Pep440).unwrap();
+
+        assert_eq!(dash, canonical);
+        assert_eq!(underscore, canonical);
+
+        let mut hasher_dash = std::collections::hash_map::DefaultHasher::new();
+        dash.hash(&mut hasher_dash);
+        let mut hasher_canonical = std::collections::hash_map::DefaultHasher::new();
+        canonical.hash(&mut hasher_canonical);
+        assert_eq!(
+            std::hash::Hasher::finish(&hasher_dash),
+            std::hash::Hasher::finish(&hasher_canonical)
+        );
+    }
+
+    /// Gap 6: a genuinely malformed PEP 440 string returns a proper `Err`
+    /// from the public parse entry point, never a panic.
+    #[test]
+    fn pep440_parse_malformed_string_returns_err_not_panic() {
+        let result = Version::parse("garbage-not-a-version", VersionGrammar::Pep440);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert_eq!(err.grammar, VersionGrammar::Pep440);
+        assert_eq!(err.raw, "garbage-not-a-version");
+    }
+
+    /// Gap 7: PEP 440 pre-release markers are case-insensitive per the spec
+    /// (`pep440_rs` normalizes both spellings to the same canonical `a1`
+    /// form), so `A1` and `a1` parse to equal, identically-rendered versions.
+    /// Verified empirically, not assumed.
+    #[test]
+    fn pep440_prerelease_marker_is_case_insensitive() {
+        let upper = Version::parse("1.0.0A1", VersionGrammar::Pep440).unwrap();
+        let lower = Version::parse("1.0.0a1", VersionGrammar::Pep440).unwrap();
+        assert_eq!(upper, lower);
+        assert_eq!(upper.render(), "1.0.0a1");
+        assert_eq!(lower.render(), "1.0.0a1");
+    }
+
+    /// Gap 8: whitespace-padded input. Verified empirically: `pep440_rs`
+    /// trims surrounding whitespace and accepts the input, normalizing `raw`
+    /// to the trimmed canonical form; `semver` does not trim and rejects
+    /// whitespace-padded input with a parse error. The two grammars behave
+    /// differently here, so both are pinned explicitly.
+    #[test]
+    fn pep440_whitespace_padded_input_is_trimmed_and_accepted() {
+        let v = Version::parse(" 1.0.0a1 ", VersionGrammar::Pep440).unwrap();
+        assert_eq!(v.render(), "1.0.0a1");
+    }
+
+    #[test]
+    fn semver_whitespace_padded_input_is_rejected() {
+        let result = Version::parse(" 1.0.0 ", VersionGrammar::SemVer);
+        assert!(result.is_err());
+    }
+
+    /// Gap 9 (RESOLVED): `Version::deserialize` now mirrors
+    /// `VersionReq::deserialize`'s multi-grammar fallback (§ see doc comment
+    /// on the `Deserialize` impl): SemVer is tried first since it is the
+    /// strictest, most unambiguous grammar, and PEP 440 is tried only if
+    /// SemVer parsing fails. A PEP-440-only version string (e.g. `1.2.3a1`,
+    /// which SemVer rejects because of the bare `a1` suffix) now round-trips
+    /// through `Version`'s serde impls and is recovered with
+    /// `VersionGrammar::Pep440`.
+    #[test]
+    fn version_deserialize_falls_back_to_pep440_for_pep440_only_strings() {
+        // Valid under PEP 440, but not valid SemVer.
+        let pep440_only = Version::parse("1.2.3a1", VersionGrammar::Pep440).unwrap();
+        assert_eq!(pep440_only.grammar(), VersionGrammar::Pep440);
+
+        let json = serde_json::to_string(&pep440_only).unwrap();
+        assert_eq!(json, "\"1.2.3a1\"");
+
+        let round_tripped: Version = serde_json::from_str(&json).unwrap();
+        assert_eq!(round_tripped, pep440_only);
+        assert_eq!(round_tripped.grammar(), VersionGrammar::Pep440);
+    }
+
+    /// A string that a genuinely malformed value under both grammars still
+    /// produces a clear parse error, not a panic, and the error surfaces
+    /// after both attempts have failed.
+    #[test]
+    fn version_deserialize_rejects_strings_invalid_under_both_grammars() {
+        let json = "\"not-a-version-at-all!!!\"";
+        let result: Result<Version, _> = serde_json::from_str(json);
+        assert!(result.is_err());
+    }
+
+    /// Residual ambiguity, documented on the `Deserialize` impl: a string
+    /// that parses successfully under both grammars (e.g. plain
+    /// `major.minor.patch`) always resolves to `VersionGrammar::SemVer`,
+    /// since SemVer is tried first. This mirrors the same tradeoff already
+    /// accepted by `VersionReq::deserialize`'s Cargo/Npm/Pypi fallback chain.
+    #[test]
+    fn version_deserialize_prefers_semver_when_string_is_valid_under_both_grammars() {
+        let json = "\"1.2.3\"";
+        let v: Version = serde_json::from_str(json).unwrap();
+        assert_eq!(v.grammar(), VersionGrammar::SemVer);
     }
 }
