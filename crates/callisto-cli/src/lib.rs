@@ -8,6 +8,7 @@ pub mod error;
 pub mod output;
 pub mod render;
 pub mod runner;
+pub mod tty;
 pub mod workspace;
 
 pub use cli::{Cli, Command, GlobalArgs, OutputFormat};

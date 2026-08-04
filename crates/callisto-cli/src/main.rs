@@ -7,6 +7,52 @@ use clap::Parser;
 use callisto_cli::cli::{Cli, Command};
 use callisto_cli::commands::*;
 
+// Exit code contract for every subcommand
+// =========================================
+//
+// Default rule: every `Err(CliError)` arm below maps to exit code 1 (FAILURE).
+// `Ok(code)` is returned verbatim, so each handler owns its own success codes.
+//
+//   add            0 on success (changeset written or dry-run preview)
+//                  1 on any error (NotATty, invalid package spec, I/O, etc.)
+//
+//   status         0 when no errors and (no --check OR at least one pending changeset)
+//                  1 when any diagnostic is Error-severity (or Warning under --strict)
+//                  2 (ExitCode::from(2)) when --check is set and no changesets are pending
+//
+//   version        0 on success (versions bumped or dry-run preview)
+//                  1 on any error (graph error, strict violation, etc.)
+//
+//   pre            0 on success
+//                  1 on any error
+//
+//   validate       0 when the workspace passes all checks
+//                  1 on any validation error or strict violation
+//
+//   snapshot       0 on success (snapshot versions applied or dry-run preview)
+//                  1 on any error (graph error, strict crosscheck failure, etc.)
+//
+//   init           0 on success (configuration scaffolded or dry-run preview)
+//                  1 on any error
+//
+//   plan-publish   0 on success
+//                  1 on any error
+//
+//   publish        0 on success
+//                  1 on any error
+//
+//   compose-pr-body  0 on success
+//                    1 on any error
+//
+//   tag            0 on success (tags created or dry-run preview)
+//                  1 on any error (graph error, strict crosscheck failure, etc.)
+//
+//   completions    0 on success
+//                  1 on any error
+//
+//   schema         0 on success
+//                  1 on any error
+
 fn main() -> ExitCode {
     let cli = Cli::parse();
 

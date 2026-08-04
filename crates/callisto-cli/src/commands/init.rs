@@ -1,4 +1,3 @@
-use std::io::IsTerminal;
 use std::process::ExitCode;
 
 use callisto_graph::commands::InitOptions;
@@ -10,13 +9,14 @@ use crate::error::CliError;
 use crate::output::write_json;
 use crate::render;
 use crate::runner::CliCommandRunner;
+use crate::tty;
 use crate::workspace::load_workspace;
 
 pub fn handle(args: InitArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
     let runner = CliCommandRunner;
     let ws = load_workspace(global, &runner)?;
 
-    if !args.yes && std::io::stdin().is_terminal() {
+    if !args.yes && tty::is_interactive() {
         let confirm = Confirm::new()
             .with_prompt(format!(
                 "Initialize Callisto configuration in `{}`?",

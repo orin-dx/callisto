@@ -11,7 +11,7 @@ It adheres to 5 core Python Enhancement Proposals (PEPs):
 - **PEP 508**: Dependency Requirement Specifiers (`requests[security]>=2.28.0; sys_platform == 'win32'`).
 - **PEP 517 / PEP 518**: Build isolation & build-system requirements (`maturin`, `hatchling`, `flit_core`, `setuptools`, `poetry-core`).
 - **PEP 621**: Standardized `[project]` metadata table in `pyproject.toml`.
-- **PEP 735**: Dependency Groups (`[dependency-groups]`). **STATUS: [PLANNED: SPECIFIED]** — see Section 7. `callisto-manifests::python` does not yet read or write `[dependency-groups]`; treat this PEP as a design target, not a shipped compliance claim.
+- **PEP 735**: Dependency Groups (`[dependency-groups]`). **STATUS: [PLANNED: NOT YET IMPLEMENTED]** — see Section 7. `callisto-manifests::python` does not yet read or write `[dependency-groups]`; treat this PEP as a design target, not a shipped compliance claim.
 
 ---
 
@@ -107,7 +107,7 @@ These are read into `DepSpec::Range(VersionReq, String)` today by `PyprojectToml
 
 ---
 
-## 7. PEP 735 Dependency Groups (`[dependency-groups]`) — **STATUS: [PLANNED: SPECIFIED]**
+## 7. PEP 735 Dependency Groups (`[dependency-groups]`) — **STATUS: [PLANNED: NOT YET IMPLEMENTED]**
 
 Section 1 lists PEP 735 among the standards this engine targets. As of this revision, `callisto-manifests::python` contains no code reading, writing, or round-tripping `[dependency-groups]` — `PyprojectToml::iter_dependencies` only inspects `[project].dependencies` and `[tool.poetry.dependencies]` (Section 3), and `update_dependency_spec` only splices into those same two locations. This section specifies the intended design so the claim in Section 1 has a concrete, implementable target rather than standing as an unqualified compliance assertion; none of the following is implemented today.
 

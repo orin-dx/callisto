@@ -149,6 +149,7 @@ fn snapshot_dry_run_writes_nothing() {
         commands::snapshot::handle(
             SnapshotArgs {
                 tag: "canary".to_string(),
+                strict: false,
             },
             &global(root, true),
         )
@@ -258,6 +259,7 @@ fn tag_dry_run_writes_nothing() {
             TagArgs {
                 plan,
                 floating_major: true,
+                strict: false,
             },
             &global(root, true),
         )

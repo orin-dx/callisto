@@ -152,6 +152,10 @@ pub struct SnapshotArgs {
     /// Tag to append to the snapshot version (e.g. a commit SHA or branch name).
     #[arg(long)]
     pub tag: String,
+    /// Abort if the workspace graph contains crosscheck failures or other
+    /// error-severity diagnostics.
+    #[arg(long)]
+    pub strict: bool,
 }
 
 /// Arguments for the `init` command.
@@ -194,6 +198,10 @@ pub struct TagArgs {
     /// Also move a floating major-version tag (e.g. `v1`) to point at the new tag.
     #[arg(long)]
     pub floating_major: bool,
+    /// Abort if the workspace graph contains crosscheck failures or other
+    /// error-severity diagnostics.
+    #[arg(long)]
+    pub strict: bool,
 }
 
 /// Arguments for the `completions` command.

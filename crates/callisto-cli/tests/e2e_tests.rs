@@ -1,4 +1,4 @@
-use callisto_cli::cli::{GlobalArgs, OutputFormat};
+use callisto_cli::cli::{GlobalArgs, OutputFormat, StatusArgs};
 use callisto_cli::commands;
 use std::fs;
 use tempfile::TempDir;
@@ -62,7 +62,7 @@ edition = "2021"
 
     // 3. Run status
     let status_res = commands::status::handle(
-        callisto_cli::cli::StatusArgs {
+        StatusArgs {
             strict: false,
             strict_graph: false,
             check: false,
@@ -70,4 +70,140 @@ edition = "2021"
         &global,
     );
     assert!(status_res.is_ok());
+}
+
+/// `callisto status --check` must return exit code 0 when at least one pending
+/// changeset exists, and exit code 2 when the workspace is clean.
+#[test]
+fn test_status_check_exit_codes() {
+    use std::process::ExitCode;
+
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path();
+
+    drop(
+        std::process::Command::new("git")
+            .arg("init")
+            .current_dir(root)
+            .output(),
+    );
+
+    fs::write(
+        root.join("Cargo.toml"),
+        "[workspace]\nmembers = [\"crates/*\"]\nresolver = \"2\"\n",
+    )
+    .unwrap();
+
+    let crate_dir = root.join("crates/my-app");
+    fs::create_dir_all(&crate_dir).unwrap();
+    fs::write(
+        crate_dir.join("Cargo.toml"),
+        "[package]\nname = \"my-app\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+    )
+    .unwrap();
+
+    let global = GlobalArgs {
+        format: OutputFormat::Json,
+        cwd: root.to_path_buf(),
+        dry_run: false,
+    };
+
+    // Initialize so callisto.toml exists.
+    commands::init::handle(callisto_cli::cli::InitArgs { yes: true }, &global).unwrap();
+
+    let check_args = StatusArgs {
+        strict: false,
+        strict_graph: false,
+        check: true,
+    };
+
+    // --- Clean workspace: no changesets pending -> exit code 2 ---
+    let clean_code = commands::status::handle(check_args.clone(), &global).unwrap();
+    // ExitCode does not implement PartialEq, but `from(2)` is equivalent to
+    // the u8 value 2.  We compare via the Display of the debug form, which is
+    // not stable, so instead we re-derive from the known constant.
+    let expected_clean = ExitCode::from(2u8);
+    // We cannot directly compare ExitCode values, so compare via a round-trip:
+    // if `clean_code` were SUCCESS (0) the test below would panic correctly.
+    // The canonical check is to ensure it is NOT SUCCESS.
+    assert_ne!(
+        format!("{clean_code:?}"),
+        format!("{:?}", ExitCode::SUCCESS),
+        "clean workspace with --check must not return exit code 0"
+    );
+    assert_eq!(
+        format!("{clean_code:?}"),
+        format!("{expected_clean:?}"),
+        "clean workspace with --check must return exit code 2"
+    );
+
+    // --- Workspace with a pending changeset -> exit code 0 ---
+    commands::add::handle(
+        callisto_cli::cli::AddArgs {
+            packages: vec!["my-app:patch".to_string()],
+            summary: Some("test fix".to_string()),
+        },
+        &global,
+    )
+    .unwrap();
+
+    let pending_code = commands::status::handle(check_args.clone(), &global).unwrap();
+    assert_eq!(
+        format!("{pending_code:?}"),
+        format!("{:?}", ExitCode::SUCCESS),
+        "workspace with pending changeset and --check must return exit code 0"
+    );
+}
+
+/// `callisto status` must return exit code 0 on a clean workspace without
+/// the `--check` flag.
+#[test]
+fn test_status_default_exit_code_clean_workspace() {
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path();
+
+    drop(
+        std::process::Command::new("git")
+            .arg("init")
+            .current_dir(root)
+            .output(),
+    );
+
+    fs::write(
+        root.join("Cargo.toml"),
+        "[workspace]\nmembers = [\"crates/*\"]\nresolver = \"2\"\n",
+    )
+    .unwrap();
+
+    let crate_dir = root.join("crates/lib-a");
+    fs::create_dir_all(&crate_dir).unwrap();
+    fs::write(
+        crate_dir.join("Cargo.toml"),
+        "[package]\nname = \"lib-a\"\nversion = \"1.0.0\"\nedition = \"2021\"\n",
+    )
+    .unwrap();
+
+    let global = GlobalArgs {
+        format: OutputFormat::Json,
+        cwd: root.to_path_buf(),
+        dry_run: false,
+    };
+
+    commands::init::handle(callisto_cli::cli::InitArgs { yes: true }, &global).unwrap();
+
+    let code = commands::status::handle(
+        StatusArgs {
+            strict: false,
+            strict_graph: false,
+            check: false,
+        },
+        &global,
+    )
+    .unwrap();
+
+    assert_eq!(
+        format!("{code:?}"),
+        format!("{:?}", std::process::ExitCode::SUCCESS),
+        "status without --check on a clean workspace must return exit code 0"
+    );
 }

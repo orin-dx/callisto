@@ -412,6 +412,7 @@ fn test_tag_dry_run_does_not_create_git_tags() {
         rust_crates: Vec::new(),
         npm_main_packages: Vec::new(),
         npm_platform_packages: Vec::new(),
+        pypi_packages: Vec::new(),
         releases: vec![ReleaseEntry {
             package: pkg_id.clone(),
             tag_name: tag_name.clone(),
@@ -499,6 +500,7 @@ fn test_create_tags_without_gix_falls_back_to_command_runner() {
         rust_crates: Vec::new(),
         npm_main_packages: Vec::new(),
         npm_platform_packages: Vec::new(),
+        pypi_packages: Vec::new(),
         releases: vec![ReleaseEntry {
             package: pkg_id.clone(),
             tag_name: tag_name.clone(),
@@ -657,6 +659,7 @@ fn test_create_tags_without_gix_skips_creation_for_existing_tag() {
         rust_crates: Vec::new(),
         npm_main_packages: Vec::new(),
         npm_platform_packages: Vec::new(),
+        pypi_packages: Vec::new(),
         releases: vec![ReleaseEntry {
             package: pkg_id.clone(),
             tag_name: tag_name.clone(),
