@@ -1,7 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
-use callisto_format::Versioning;
 use callisto_model::{
     BumpReason, ConfigKey, Coverage, DepEdge, DepKind, DepSpec, Diagnostic, DiagnosticCode,
     DiagnosticSeverity, Ecosystem, GrammarMismatch, PackageId, Severity, Version,
@@ -383,13 +382,24 @@ fn bump_target<D: DependencyResolver>(
             field: "version",
         })
     })?;
-    let versioning = callisto_format::SemVerVersioning;
+    let versioning: &dyn callisto_format::Versioning = match base.grammar() {
+        callisto_model::VersionGrammar::Pep440 => &callisto_format::Pep440Versioning,
+        _ => &callisto_format::SemVerVersioning,
+    };
 
     if let Some(pre) = input.pre {
-        let pinned_base = pre.initial_versions.get(id.name()).unwrap_or(&base);
-        versioning
-            .bump_prerelease(pinned_base, sev, &pre.tag, &base)
-            .map_err(GraphError::Bump)
+        if pre.mode == callisto_format::PreMode::Pre {
+            let pinned_base = pre.initial_versions.get(id.name()).unwrap_or(&base);
+            versioning
+                .bump_prerelease(pinned_base, sev, &pre.tag, &base)
+                .map_err(GraphError::Bump)
+        } else {
+            // PreMode::Exit: finalize the current pre-release to a stable version.
+            // Bumping the on-disk pre-release version (e.g. "1.0.0-alpha.2") with
+            // any severity that matches the pre-release target strips the tag and
+            // produces the stable version (e.g. "1.0.0").
+            versioning.bump(&base, sev).map_err(GraphError::Bump)
+        }
     } else {
         versioning.bump(&base, sev).map_err(GraphError::Bump)
     }
@@ -696,6 +706,80 @@ mod tests {
         // The winner (max by Version::compare) is 2.8.0 and both must converge on it.
         assert_eq!(target_a, target_b);
         assert_eq!(target_a.render(), "2.8.0");
+    }
+
+    /// When `pre.mode == PreMode::Exit`, `bump_target` must finalize the current
+    /// pre-release to a stable version instead of producing another pre-release
+    /// iteration. The test uses `base = "1.0.0-alpha.2"` (current on-disk prerelease)
+    /// and asserts the result is the stable `"1.0.0"`, not another `-alpha.N`.
+    ///
+    /// Calling `versioning.bump` on a pre-release version strips the pre-release
+    /// tag and finalizes in-place when the underlying release segment already
+    /// matches the requested bump (patch=0, minor=0 for a minor bump).
+    #[test]
+    fn test_bump_target_exit_mode_finalizes_to_stable() {
+        let pkg_a = PackageId::parse("pkg-a").unwrap();
+
+        let graph = TwoPackageGraph {
+            packages: vec![bare_package(&pkg_a)],
+        };
+
+        // On-disk version is at a major pre-release (1.0.0-alpha.2).
+        let mut base = BTreeMap::new();
+        base.insert(
+            pkg_a.clone(),
+            Version::parse("1.0.0-alpha.2", callisto_model::VersionGrammar::SemVer).unwrap(),
+        );
+
+        let mut initial_versions = indexmap::IndexMap::new();
+        initial_versions.insert(
+            "pkg-a".to_string(),
+            Version::parse("0.9.0", callisto_model::VersionGrammar::SemVer).unwrap(),
+        );
+
+        // PreMode::Exit: the release cycle is being finalized.
+        let pre = callisto_format::PreState {
+            mode: callisto_format::PreMode::Exit,
+            tag: "alpha".to_string(),
+            initial_versions,
+            changesets: Vec::new(),
+        };
+
+        let groups = GroupTable::default();
+        let cfg = CascadeConfig {
+            mode: CascadeMode::OutOfRange,
+            bump_severity: CascadeBumpSeverity::Patch,
+            peer_escalation: true,
+            preserve_npm_ranges: false,
+        };
+
+        let seed = BTreeMap::new();
+        let reasons = BTreeMap::new();
+        let named_by = BTreeMap::new();
+
+        let input = CascadeInput {
+            graph: &graph,
+            groups: &groups,
+            cfg: &cfg,
+            seed: &seed,
+            reasons: &reasons,
+            named_by: &named_by,
+            base: &base,
+            pre: Some(&pre),
+        };
+
+        let target = bump_target(&pkg_a, Severity::Minor, &input).unwrap();
+
+        assert!(
+            !target.is_prerelease(),
+            "PreMode::Exit must produce a stable version, not a pre-release; got {}",
+            target.render()
+        );
+        assert_eq!(
+            target.render(),
+            "1.0.0",
+            "bump_target with Exit mode, base=1.0.0-alpha.2, sev=Minor must finalize to 1.0.0"
+        );
     }
 
     /// A pre-release cycle must bump from the PINNED baseline captured in
