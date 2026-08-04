@@ -26,16 +26,15 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
 
     let pre_path = ws.root.join(".changeset/pre.json");
     let pre_state = if pre_path.exists() {
-        if let Ok(text) = std::fs::read_to_string(&pre_path) {
-            callisto_format::parse_pre_json(&text).ok()
-        } else {
-            None
-        }
+        let text = std::fs::read_to_string(&pre_path).map_err(|e| GraphError::PreJsonRead {
+            message: e.to_string(),
+        })?;
+        Some(callisto_format::parse_pre_json(&text).map_err(GraphError::PreJson)?)
     } else {
         None
     };
 
-    let agg = aggregate(
+    let mut agg = aggregate(
         &ws.graph,
         &ws.config,
         ws.runner,
@@ -44,6 +43,27 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
         pre_state.as_ref(),
         inference,
     )?;
+
+    // For PreMode::Exit, inject a synthetic Patch severity for every package
+    // that is currently at a pre-release version. This triggers bump_target
+    // (which in Exit mode calls versioning.bump on the pre-release, stripping
+    // the tag and finalizing to stable) even when no pending changeset files
+    // exist on disk — they were consumed and deleted during the pre-release phase
+    // and their stems recorded in pre.json.
+    if let Some(ref pre) = pre_state {
+        if pre.mode == callisto_format::PreMode::Exit {
+            for (id, ver) in &base_versions {
+                if ver.is_prerelease() {
+                    agg.severities.entry(id.clone()).or_insert(Severity::Patch);
+                    agg.reasons
+                        .entry(id.clone())
+                        .or_insert(BumpReason::PreRelease {
+                            tag: pre.tag.clone(),
+                        });
+                }
+            }
+        }
+    }
 
     let input = CascadeInput {
         graph: &ws.graph,
@@ -194,7 +214,8 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
 
     let (pre_state_update, delete_pre_json) = if let Some(mut state) = pre_state {
         if state.mode == callisto_format::PreMode::Exit {
-            (None, true)
+            let rel_pre_path = ws.config.changesets_dir.join("pre.json");
+            (None, Some(rel_pre_path))
         } else {
             // Update pre-release state changesets
             for cs in &agg.consumed {
@@ -205,10 +226,10 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
                     }
                 }
             }
-            (Some(state), false)
+            (Some(state), None)
         }
     } else {
-        (None, false)
+        (None, None)
     };
 
     Ok(VersionPlan {

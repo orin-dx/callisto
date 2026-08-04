@@ -129,7 +129,7 @@ pub fn plan_snapshot<R: CommandRunner, D: DependencyResolver>(
         changelog_writes: Vec::new(),
         consumed_changesets: Vec::new(),
         pre_state_update: None,
-        delete_pre_json: false,
+        delete_pre_json: None,
         pre_cursor_updates: Vec::new(),
         observed_versions: std::collections::BTreeMap::new(),
         diagnostics: cascade_out.diagnostics,

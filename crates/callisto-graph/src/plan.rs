@@ -19,7 +19,7 @@ pub struct VersionPlan {
     pub changelog_writes: Vec<ChangelogWrite>,
     pub consumed_changesets: Vec<PathBuf>,
     pub pre_state_update: Option<PreState>,
-    pub delete_pre_json: bool,
+    pub delete_pre_json: Option<PathBuf>,
     pub pre_cursor_updates: Vec<(PackageId, CommitSha)>,
     pub observed_versions: BTreeMap<PackageId, Version>,
     pub diagnostics: Vec<Diagnostic>,

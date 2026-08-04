@@ -157,9 +157,8 @@ pub fn apply_version_plan<R: CommandRunner>(
             })
         })?;
         modified_paths.push(rel_pre_path);
-    } else if plan.delete_pre_json {
-        let rel_pre_path = PathBuf::from(".changeset/pre.json");
-        let pre_path = root.join(&rel_pre_path);
+    } else if let Some(rel_pre_path) = &plan.delete_pre_json {
+        let pre_path = root.join(rel_pre_path);
         if pre_path.exists() {
             fs::remove_file(&pre_path).map_err(|e| {
                 GraphError::Command(CommandError::Io {
@@ -167,7 +166,7 @@ pub fn apply_version_plan<R: CommandRunner>(
                     message: e.to_string(),
                 })
             })?;
-            modified_paths.push(rel_pre_path);
+            modified_paths.push(rel_pre_path.clone());
         }
     }
 

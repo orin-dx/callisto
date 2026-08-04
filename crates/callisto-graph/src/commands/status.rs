@@ -1,4 +1,4 @@
-use callisto_model::{CommandRunner, StatusReport, SCHEMA_VERSION};
+use callisto_model::{CommandRunner, PackageId, StatusReport, SCHEMA_VERSION};
 
 use crate::changed::changed_since_last_tag;
 use crate::commands::escalate;
@@ -40,7 +40,10 @@ pub fn status<R: CommandRunner, D: DependencyResolver>(
 
         for lc in &loaded_changesets {
             for entry in &lc.changeset.entries {
-                if entry.name == pkg.id.to_string() {
+                let entry_matches = PackageId::parse(&entry.name)
+                    .ok()
+                    .is_some_and(|entry_id| pkg.id.matches(&entry_id));
+                if entry_matches {
                     let name = lc
                         .path
                         .file_stem()
