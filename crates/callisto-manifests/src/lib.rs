@@ -153,6 +153,8 @@ pub fn round_trip(ecosystem: Ecosystem, spec: &DepSpec, target: &Version) -> Opt
         (Ecosystem::Cargo, _) => cargo::round_trip(spec, target),
         #[cfg(feature = "npm")]
         (Ecosystem::Npm, _) => npm::round_trip(spec, target),
+        #[cfg(feature = "pypi")]
+        (Ecosystem::Pypi, _) => python::round_trip(spec, target),
         _ => None,
     }
 }

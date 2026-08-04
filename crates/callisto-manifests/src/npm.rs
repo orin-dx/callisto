@@ -293,7 +293,7 @@ impl Manifest for PackageJson {
 
         for extra in ["overrides", "resolutions"] {
             if let Some(tbl) = self.doc.get_mut(extra).and_then(|v| v.as_object_mut()) {
-                if tbl.contains_key(name) {
+                if tbl.get(name).is_some_and(|v| v.is_string()) {
                     tbl.insert(name.to_string(), Value::String(new.render()));
                 }
             }
@@ -870,6 +870,52 @@ mod tests {
         assert_eq!(
             before_resolutions, after_resolutions,
             "resolutions table must remain unchanged when the primary section update fails"
+        );
+    }
+
+    // --- Gap 4: nested overrides object must not be replaced with a string ---
+
+    /// When `overrides["foo"]` is a nested object (e.g. `{ "bar": "^1.0.0" }`),
+    /// bumping `foo` must leave that object intact. The nested form expresses a
+    /// package-level constraint that is not a simple version pin and must not be
+    /// overwritten.
+    #[test]
+    fn update_dependency_spec_does_not_overwrite_nested_overrides_object() {
+        let dir = tempdir().unwrap();
+        let content = r#"{
+  "name": "@myorg/pkg",
+  "version": "1.0.0",
+  "dependencies": {
+    "foo": "^1.0.0"
+  },
+  "overrides": {
+    "foo": {
+      "bar": "^1.0.0"
+    }
+  }
+}
+"#;
+        let mut manifest = open_manifest(&dir, content);
+
+        manifest
+            .update_dependency_spec(
+                "foo",
+                DepKind::Runtime,
+                DepSpec::Opaque("^2.0.0".to_string()),
+                &permit(),
+            )
+            .unwrap();
+
+        let overrides_foo = manifest
+            .doc
+            .get("overrides")
+            .and_then(|v| v.as_object())
+            .and_then(|o| o.get("foo"))
+            .expect("overrides.foo must still exist");
+
+        assert!(
+            overrides_foo.is_object(),
+            "overrides.foo must remain an object, but got: {overrides_foo:?}"
         );
     }
 

@@ -386,6 +386,102 @@ impl Manifest for PyprojectToml {
     }
 }
 
+/// Rewrites a PEP 508 dependency constraint to pin it to `target`.
+///
+/// The following single-clause and two-clause forms are recognized and rewritten:
+///
+/// - `==X.Y.Z` — exact pin — is rewritten to `==NEW`.
+/// - `~=X.Y.Z` — compatible release — is rewritten to `~=NEW`.
+/// - `>=X.Y.Z` — lower bound only — is rewritten to `>=NEW`.
+/// - `>=X.Y.Z,<A.B` — two-clause range — is rewritten to `>=NEW,<NEXT_MAJOR`
+///   where `NEXT_MAJOR` equals `target.major() + 1`.
+///
+/// All other forms return `None` — including upper-bound-only (`<`, `<=`),
+/// exclusion (`!=`), compound expressions beyond the two-clause range above,
+/// wildcard `*`, and pre-release targets.  Callers must leave the original
+/// constraint unchanged when `None` is returned.
+pub fn round_trip(spec: &DepSpec, target: &Version) -> Option<DepSpec> {
+    // Only Range specs are produced by iter_dependencies for Python.
+    let original = match spec {
+        DepSpec::Range(_, raw) => raw.as_str(),
+        _ => return None,
+    };
+
+    // Pre-release targets are not safe to rewrite automatically.
+    if target.is_prerelease() {
+        return None;
+    }
+
+    let trimmed = original.trim();
+
+    // Compound range: ">=X.Y.Z,<A.B" → ">=NEW,<NEXT_MAJOR"
+    if trimmed.contains(',') {
+        return rewrite_range(trimmed, target);
+    }
+
+    // Single-clause forms matched by their PEP 508 operator prefix.
+    if trimmed.starts_with("==") {
+        return rewrite_single(trimmed, "==", target);
+    }
+    if trimmed.starts_with("~=") {
+        return rewrite_single(trimmed, "~=", target);
+    }
+    if trimmed.starts_with(">=") {
+        return rewrite_single(trimmed, ">=", target);
+    }
+
+    // Unknown or unsupported form (e.g. "<", "<=", "!=", bare "*").
+    None
+}
+
+/// Rewrites a single-clause PEP 508 specifier, preserving the operator.
+fn rewrite_single(original: &str, op: &str, target: &Version) -> Option<DepSpec> {
+    // Validate that the original clause parses correctly (guards against
+    // unknown version syntax that happens to start with a known prefix).
+    let _rest = original.strip_prefix(op)?;
+    let maj = target.major()?;
+    let min = target.minor()?;
+    let pat = target.patch()?;
+    let rendered = format!("{op}{maj}.{min}.{pat}");
+    let req = VersionReq::parse(&rendered, Ecosystem::Pypi).ok()?;
+    Some(DepSpec::Range(req, rendered))
+}
+
+/// Rewrites a two-clause `>=X.Y.Z,<A.B` range to `>=NEW,<NEXT_MAJOR`.
+///
+/// Returns `None` for anything that does not match exactly this two-clause
+/// lower/upper pattern, including specs with three or more clauses (e.g.
+/// `>=1.0,<2.0,!=1.5.0`) where silently dropping extra clauses would produce
+/// a semantically incorrect constraint.
+fn rewrite_range(original: &str, target: &Version) -> Option<DepSpec> {
+    // Reject any spec with more than two comma-separated clauses: rewriting
+    // would silently discard the extra clauses, changing the semantics.
+    if original.split(',').count() != 2 {
+        return None;
+    }
+
+    let mut parts = original.splitn(2, ',');
+    let lower = parts.next()?.trim();
+    let upper = parts.next()?.trim();
+
+    // Lower clause must be `>=…`.
+    if !lower.starts_with(">=") {
+        return None;
+    }
+    // Upper clause must be strictly `<…` (not `<=`).
+    if !upper.starts_with('<') || upper.starts_with("<=") {
+        return None;
+    }
+
+    let maj = target.major()?;
+    let min = target.minor()?;
+    let pat = target.patch()?;
+    let next_major = maj + 1;
+    let rendered = format!(">={maj}.{min}.{pat},<{next_major}");
+    let req = VersionReq::parse(&rendered, Ecosystem::Pypi).ok()?;
+    Some(DepSpec::Range(req, rendered))
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -787,5 +883,120 @@ dependencies = [
 
         let updated_content = fs::read_to_string(&pyproject_path).unwrap();
         assert!(updated_content.contains("my-lib>=0.3.2"));
+    }
+
+    // -- round_trip tests ---------------------------------------------------
+
+    fn make_pypi_spec(raw: &str) -> DepSpec {
+        let req = VersionReq::parse(raw, Ecosystem::Pypi).unwrap();
+        DepSpec::Range(req, raw.to_string())
+    }
+
+    fn make_pep440_version(s: &str) -> Version {
+        Version::parse(s, VersionGrammar::Pep440).unwrap()
+    }
+
+    fn raw_of(spec: Option<DepSpec>) -> Option<String> {
+        match spec {
+            Some(DepSpec::Range(_, raw)) => Some(raw),
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn round_trip_exact_pin_rewrites_to_new_version() {
+        let spec = make_pypi_spec("==1.2.3");
+        let target = make_pep440_version("2.0.0");
+        assert_eq!(
+            raw_of(round_trip(&spec, &target)).as_deref(),
+            Some("==2.0.0")
+        );
+    }
+
+    #[test]
+    fn round_trip_compatible_release_rewrites_to_new_version() {
+        let spec = make_pypi_spec("~=1.4.2");
+        let target = make_pep440_version("2.1.3");
+        assert_eq!(
+            raw_of(round_trip(&spec, &target)).as_deref(),
+            Some("~=2.1.3")
+        );
+    }
+
+    #[test]
+    fn round_trip_lower_bound_only_rewrites_to_new_version() {
+        let spec = make_pypi_spec(">=1.0.0");
+        let target = make_pep440_version("2.5.1");
+        assert_eq!(
+            raw_of(round_trip(&spec, &target)).as_deref(),
+            Some(">=2.5.1")
+        );
+    }
+
+    #[test]
+    fn round_trip_range_rewrites_lower_and_computes_next_major_upper() {
+        let spec = make_pypi_spec(">=1.0.0,<2");
+        let target = make_pep440_version("2.5.1");
+        assert_eq!(
+            raw_of(round_trip(&spec, &target)).as_deref(),
+            Some(">=2.5.1,<3")
+        );
+    }
+
+    #[test]
+    fn round_trip_range_with_minor_upper_bound_computes_next_major() {
+        let spec = make_pypi_spec(">=1.2.0,<2.0");
+        let target = make_pep440_version("3.0.0");
+        assert_eq!(
+            raw_of(round_trip(&spec, &target)).as_deref(),
+            Some(">=3.0.0,<4")
+        );
+    }
+
+    #[test]
+    fn round_trip_prerelease_target_returns_none() {
+        let spec = make_pypi_spec(">=1.0.0");
+        let target = make_pep440_version("2.0.0a1");
+        assert!(round_trip(&spec, &target).is_none());
+    }
+
+    #[test]
+    fn round_trip_upper_bound_only_returns_none() {
+        let spec = make_pypi_spec("<2.0.0");
+        let target = make_pep440_version("1.5.0");
+        assert!(round_trip(&spec, &target).is_none());
+    }
+
+    #[test]
+    fn round_trip_exclusion_returns_none() {
+        let spec = make_pypi_spec("!=1.5.0");
+        let target = make_pep440_version("2.0.0");
+        assert!(round_trip(&spec, &target).is_none());
+    }
+
+    #[test]
+    fn round_trip_non_range_spec_returns_none() {
+        let target = make_pep440_version("2.0.0");
+        let spec = DepSpec::Opaque("some-path-dep".to_string());
+        assert!(round_trip(&spec, &target).is_none());
+    }
+
+    #[test]
+    fn round_trip_range_with_lte_upper_bound_returns_none() {
+        // A "<=X.Y.Z" upper bound is not the recognized pattern; return None.
+        let spec = make_pypi_spec(">=1.0.0,<=2.0.0");
+        let target = make_pep440_version("1.5.0");
+        assert!(round_trip(&spec, &target).is_none());
+    }
+
+    #[test]
+    fn round_trip_returns_none_for_three_clause_spec() {
+        // A three-clause spec like ">=1.0.0,<2.0.0,!=1.5.0" must not be
+        // silently rewritten — the third clause would be dropped, producing a
+        // semantically different constraint.  round_trip must return None and
+        // leave the decision to the user.
+        let spec = make_pypi_spec(">=1.0.0,<2.0.0,!=1.5.0");
+        let target = make_pep440_version("1.2.0");
+        assert!(round_trip(&spec, &target).is_none());
     }
 }
