@@ -17,8 +17,7 @@ pub mod plugin {
     pub fn register_extension(
         Json(input): Json<RegisterExtensionInput>,
     ) -> FnResult<Json<RegisterExtensionOutput>> {
-        let output = extension::register_extension(input)
-            .map_err(|e| WithReturnCode::new(extism_pdk::Error::msg(e.to_string()), 1))?;
+        let output = extension::register_extension(input);
         Ok(Json(output))
     }
 
@@ -39,7 +38,7 @@ pub mod plugin {
     #[plugin_fn]
     pub fn initialize_extension(
         Json(input): Json<InitializeExtensionInput>,
-    ) -> FnResult<Json<callisto_model::InitReport>> {
+    ) -> FnResult<Json<InitializeExtensionOutput>> {
         let output = extension::initialize_extension(input)
             .map_err(|e| WithReturnCode::new(extism_pdk::Error::msg(e.to_string()), 1))?;
         Ok(Json(output))

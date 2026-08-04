@@ -23,6 +23,13 @@ pub enum CliError {
     Command(#[from] CommandError),
 
     #[error(transparent)]
+    #[diagnostic(
+        code(callisto::registry_error),
+        help("verify registry credentials/authentication and network connectivity, then retry")
+    )]
+    Registry(#[from] callisto_model::RegistryError),
+
+    #[error(transparent)]
     #[diagnostic(transparent)]
     ChangesetParse(#[from] callisto_format::ParseError),
 
@@ -42,9 +49,19 @@ pub enum CliError {
     #[diagnostic(code(callisto::pre_json_error))]
     PreJson(#[from] callisto_format::PreJsonError),
 
-    #[error(transparent)]
-    #[diagnostic(code(callisto::io_error))]
-    Io(#[from] std::io::Error),
+    #[error("I/O error{}", match &path {
+        Some(p) => format!(" accessing `{}`", p.display()),
+        None => String::new(),
+    })]
+    #[diagnostic(
+        code(callisto::io_error),
+        help("check that the path exists and that you have permission to access it")
+    )]
+    Io {
+        #[source]
+        source: std::io::Error,
+        path: Option<std::path::PathBuf>,
+    },
 
     #[error(
         "refusing to prompt interactively: stdin is not a terminal and no non-interactive flags were given"
@@ -58,4 +75,10 @@ pub enum CliError {
     #[error("{0}")]
     #[diagnostic(code(callisto::error))]
     Other(String),
+}
+
+impl From<std::io::Error> for CliError {
+    fn from(source: std::io::Error) -> Self {
+        CliError::Io { source, path: None }
+    }
 }

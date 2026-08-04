@@ -44,7 +44,9 @@ dialoguer = "0.11"
 path-slash = { workspace = true }
 
 [dev-dependencies]
+callisto-model = { path = "../callisto-model", features = ["test-util"] }
 tempfile = "3"
+callisto-fixtures = { path = "../callisto-fixtures" }
 callisto-manifests = { path = "../callisto-manifests" }
 callisto-graph = { path = "../callisto-graph" }
 trycmd = "0.15"

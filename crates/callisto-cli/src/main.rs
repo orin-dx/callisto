@@ -19,6 +19,7 @@ fn main() -> ExitCode {
         Command::Snapshot(args) => snapshot::handle(args, &cli.global),
         Command::Init(args) => init::handle(args, &cli.global),
         Command::PlanPublish(args) => plan_publish::handle(args, &cli.global),
+        Command::Publish(args) => publish::handle(args, &cli.global),
         Command::ComposePrBody(args) => compose_pr_body::handle(args, &cli.global),
         Command::Tag(args) => tag::handle(args, &cli.global),
         Command::Completions(args) => completions::handle(args, &cli.global),

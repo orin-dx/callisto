@@ -2,7 +2,7 @@ use std::fs;
 use std::io::Read;
 use std::process::ExitCode;
 
-use callisto_model::PublishPlan;
+use callisto_model::{ApplyPermit, PublishPlan};
 
 use crate::cli::{GlobalArgs, OutputFormat, TagArgs};
 use crate::error::CliError;
@@ -22,17 +22,21 @@ pub fn handle(args: TagArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
     } else if args.plan.trim_start().starts_with('{') {
         args.plan.clone()
     } else {
-        fs::read_to_string(&args.plan)?
+        fs::read_to_string(&args.plan).map_err(|source| CliError::Io {
+            source,
+            path: Some(std::path::PathBuf::from(&args.plan)),
+        })?
     };
 
     let plan: PublishPlan = serde_json::from_str(&plan_text)
         .map_err(|e| CliError::Other(format!("Failed to parse publish plan: {e}")))?;
 
     let opts = callisto_graph::commands::TagOptions {
-        dry_run: global.dry_run,
         floating_major: args.floating_major,
     };
-    let report = callisto_graph::commands::create_tags_with_options(&ws, &plan, &opts)?;
+    let permit = ApplyPermit::granted_unless_dry_run(global.dry_run);
+    let report =
+        callisto_graph::commands::create_tags_with_options(&ws, &plan, &opts, permit.as_ref())?;
 
     match global.format {
         OutputFormat::Json => write_json(&mut std::io::stdout(), &report)?,

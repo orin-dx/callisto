@@ -10,7 +10,10 @@ pub fn load_workspace<'a>(
     global: &GlobalArgs,
     runner: &'a CliCommandRunner,
 ) -> Result<Workspace<'a, CliCommandRunner, ManifestWalkResolver>, CliError> {
-    let start = global.cwd.canonicalize().map_err(CliError::Io)?;
+    let start = global.cwd.canonicalize().map_err(|source| CliError::Io {
+        source,
+        path: Some(global.cwd.clone()),
+    })?;
     let root = find_workspace_root(&start)?;
     let locator = IgnoreWalkLocator::new(&root);
     Ok(Workspace::load(root, &locator, runner)?)

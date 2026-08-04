@@ -4,7 +4,7 @@ use std::process::ExitCode;
 
 use callisto_format::{Changeset, Entry};
 use callisto_graph::DependencyResolver;
-use callisto_model::{PackageId, Severity, SCHEMA_VERSION};
+use callisto_model::{ApplyPermit, PackageId, Severity, SCHEMA_VERSION};
 use dialoguer::{Confirm, Input, MultiSelect};
 use serde_json::json;
 
@@ -172,13 +172,33 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
     let text = callisto_format::write_changeset(&changeset)?;
 
     let changeset_dir = ws.root.join(".changeset");
-    fs::create_dir_all(&changeset_dir)?;
-
     let slug = generate_human_slug();
     let filename = format!("{slug}.md");
     let rel_path = format!(".changeset/{filename}");
+
+    let Some(permit) = ApplyPermit::granted_unless_dry_run(global.dry_run) else {
+        // Compute what WOULD be written, but never touch disk.
+        match global.format {
+            OutputFormat::Json => {
+                let env = json!({
+                    "schemaVersion": SCHEMA_VERSION,
+                    "command": "add",
+                    "dryRun": true,
+                    "path": rel_path,
+                    "content": text
+                });
+                write_json(&mut std::io::stdout(), &env)?;
+            }
+            OutputFormat::Text => {
+                println!("[DRY-RUN] Would add changeset: {rel_path} (no files written)\n\n{text}");
+            }
+        }
+        return Ok(ExitCode::SUCCESS);
+    };
+
     let target_file = changeset_dir.join(&filename);
-    callisto_manifests::atomic::atomic_write(&target_file, &text)?;
+    fs::create_dir_all(&changeset_dir)?;
+    callisto_manifests::atomic::atomic_write(&target_file, &text, &permit)?;
 
     match global.format {
         OutputFormat::Json => {

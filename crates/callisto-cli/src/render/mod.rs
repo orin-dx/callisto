@@ -1,8 +1,8 @@
 use std::io;
 
 use callisto_model::{
-    ComposePrBodyReport, InitReport, PublishPlan, SnapshotReport, StatusReport, TagReport,
-    ValidateReport, VersionReport,
+    ComposePrBodyReport, InitReport, PublishAttemptResult, PublishPlan, PublishReport,
+    SnapshotReport, StatusReport, TagReport, ValidateReport, VersionReport,
 };
 
 pub mod attribution;
@@ -57,6 +57,25 @@ pub fn render_publish<W: io::Write>(report: &PublishPlan, w: &mut W) -> io::Resu
     Ok(())
 }
 
+pub fn render_publish_report<W: io::Write>(report: &PublishReport, w: &mut W) -> io::Result<()> {
+    writeln!(w, "Publish Report (schema v{}):", report.schema_version)?;
+    for attempt in &report.attempts {
+        let status = match &attempt.result {
+            PublishAttemptResult::Published => "published".to_string(),
+            PublishAttemptResult::AlreadyPublished => "already published".to_string(),
+            PublishAttemptResult::Failed { error } => format!("FAILED: {error}"),
+        };
+        writeln!(
+            w,
+            "  {} {} — {}",
+            attempt.package.display_name(),
+            attempt.version.raw(),
+            status
+        )?;
+    }
+    render_diagnostics(&report.diagnostics, w)
+}
+
 pub fn render_snapshot<W: io::Write>(report: &SnapshotReport, w: &mut W) -> io::Result<()> {
     writeln!(w, "Snapshot Tag: {}", report.snapshot_tag)?;
     for bump in &report.bumps {
@@ -100,10 +119,103 @@ pub fn render_compose_pr_body<W: io::Write>(
 }
 
 pub fn render_init<W: io::Write>(report: &InitReport, w: &mut W) -> io::Result<()> {
-    writeln!(
-        w,
-        "Initialized callisto configuration at {}",
-        report.config_path.display()
-    )?;
+    if report.initialized {
+        writeln!(
+            w,
+            "Initialized callisto configuration at {}",
+            report.config_path.display()
+        )?;
+    } else if report.diff.new_ecosystems.is_empty() {
+        writeln!(
+            w,
+            "callisto configuration at {} is up to date; nothing to reconcile",
+            report.config_path.display()
+        )?;
+    } else {
+        let names: Vec<&str> = report
+            .diff
+            .new_ecosystems
+            .iter()
+            .map(|e| e.prefix())
+            .collect();
+        if report.diff.applied {
+            writeln!(
+                w,
+                "Reconciled {}: added newly-detected ecosystem(s) {}",
+                report.config_path.display(),
+                names.join(", ")
+            )?;
+        } else {
+            writeln!(
+                w,
+                "Drift detected in {}: newly-detected ecosystem(s) {} — re-run with --yes to apply",
+                report.config_path.display(),
+                names.join(", ")
+            )?;
+        }
+    }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use callisto_model::{Ecosystem, PackageId, PublishAttempt, Version, VersionGrammar};
+
+    fn v1() -> Version {
+        Version::parse("1.0.0", VersionGrammar::SemVer).unwrap()
+    }
+
+    fn pkg(name: &str) -> PackageId {
+        PackageId::Prefixed {
+            ecosystem: Ecosystem::Cargo,
+            name: name.to_string(),
+        }
+    }
+
+    fn mixed_report() -> PublishReport {
+        PublishReport {
+            schema_version: 1,
+            attempts: vec![
+                PublishAttempt {
+                    package: pkg("crate-a"),
+                    version: v1(),
+                    result: PublishAttemptResult::Published,
+                },
+                PublishAttempt {
+                    package: pkg("crate-b"),
+                    version: v1(),
+                    result: PublishAttemptResult::AlreadyPublished,
+                },
+                PublishAttempt {
+                    package: pkg("crate-c"),
+                    version: v1(),
+                    result: PublishAttemptResult::Failed {
+                        error: "auth failed: bad token".to_string(),
+                    },
+                },
+            ],
+            diagnostics: vec![],
+        }
+    }
+
+    #[test]
+    fn render_publish_report_text_distinguishes_per_package_outcomes() {
+        let mut out = Vec::new();
+        render_publish_report(&mixed_report(), &mut out).unwrap();
+        let text = String::from_utf8(out).unwrap();
+
+        assert!(text.contains("crate-a") && text.contains("published"));
+        assert!(text.contains("crate-b") && text.contains("already published"));
+        assert!(text.contains("crate-c") && text.contains("FAILED: auth failed: bad token"));
+    }
+
+    #[test]
+    fn publish_report_json_distinguishes_per_package_outcomes() {
+        let json = serde_json::to_string(&mixed_report()).unwrap();
+
+        assert!(json.contains("\"status\":\"published\""));
+        assert!(json.contains("\"status\":\"alreadyPublished\""));
+        assert!(json.contains("\"status\":\"failed\"") && json.contains("auth failed: bad token"));
+    }
 }

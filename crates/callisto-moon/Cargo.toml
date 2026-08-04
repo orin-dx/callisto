@@ -7,9 +7,25 @@ description = "Callisto Release Engine — Moon WASM PDK plugin for polyglot mon
 repository.workspace = true
 readme = "README.md"
 
+# No [lib] crate-type = ["cdylib", ...] here deliberately: declaring cdylib
+# in the manifest makes cargo build a native cdylib artifact too whenever the
+# "pdk" feature is enabled (e.g. `cargo llvm-cov --all-features` on macOS),
+# and that native link fails -- the pdk-feature code references extism-pdk's
+# WASM-host-only import symbols (_alloc, _input_length, etc.), which don't
+# exist for native linking. The wasm32-wasip1 cdylib artifact is instead
+# requested explicitly, only for that target, via `cargo rustc --crate-type
+# cdylib` in `just wasm-check` and in tests/moon_wasm_sandbox.rs's build step.
+
 [features]
 default = []
-pdk = ["dep:extism-pdk"]
+pdk = [
+    "dep:extism-pdk",
+    "dep:moon_pdk_api",
+    "dep:moon_pdk",
+    "dep:warpgate_pdk",
+    "dep:schematic",
+    "dep:schematic_types",
+]
 
 [dependencies]
 callisto-model = { path = "../callisto-model", version = "0.3.0" }
@@ -17,4 +33,54 @@ callisto-graph = { path = "../callisto-graph", version = "0.3.0" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 semver = { workspace = true }
-extism-pdk = { version = "1.0", optional = true }
+extism-pdk = { version = "1.4.1", optional = true }
+moon_pdk_api = { version = "2.0.4", optional = true }
+moon_pdk = { version = "2.0.4", optional = true }
+# Pinned to the version moon v2.4.6 / moon_pdk_api 2.0.4 actually resolve to
+# in this workspace's Cargo.lock (0.16.5) so no duplicate major/minor
+# resolution occurs alongside the transitive copy pulled in by moon_pdk_api.
+warpgate_pdk = { version = "0.16.5", optional = true }
+# Pinned to the version moon_pdk_api 2.0.4 actually resolves to in this
+# workspace's Cargo.lock (0.19.7); needed directly (not just transitively) to
+# construct `moon_pdk_api::DefineExtensionConfigOutput`'s `schema: Schema`
+# field. Features mirror moon_pdk_api's own `schematic` dependency features
+# exactly (see its Cargo.toml) so no duplicate/mismatched feature resolution
+# occurs alongside the transitive copy it pulls in.
+schematic = { version = "0.19.7", optional = true, default-features = false, features = [
+    "schema",
+    "schema_serde",
+] }
+# Pinned to the exact `schematic_types` version `schematic` 0.19.7 resolves
+# to in this workspace's Cargo.lock (0.11.5); `schematic` re-exports
+# `Schema`/`SchemaType` from this crate but not the individual type-shape
+# structs (e.g. `StructType`), which `define_extension_config` needs to
+# construct an empty-object schema directly.
+schematic_types = { version = "0.11.5", optional = true }
+
+[dev-dependencies]
+# Black-box protocol verification: loads the *compiled* callisto-moon.wasm
+# into a real wasmtime-backed extism plugin container (via warpgate) and
+# drives register_extension/execute_extension through the actual Extism
+# wire protocol, instead of only type-checking the Rust source. Requires
+# `callisto-moon.wasm` to already be built for wasm32-wasip1 with the
+# `pdk` feature (see `just wasm-check`) before running `cargo test`.
+moon_pdk_test_utils = "2.0.4"
+# `moon_pdk_api` (re-exported by `moon_pdk_test_utils`) does not re-export
+# `schematic`'s types; needed directly to assert on
+# `DefineExtensionConfigOutput.schema`'s `SchemaType` shape in
+# `tests/moon_wasm_sandbox.rs`. Version left unpinned (unlike the `pdk`-gated
+# main-dependency copy) since dev-dependencies don't affect the shipped wasm
+# artifact's dependency resolution.
+schematic_types = "0.11.5"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync"] }
+# Fixture repo staging for the strengthened `execute_extension` sandbox
+# regression test (real `git init` + tagged commit under a scratch dir).
+tempfile = { workspace = true }
+# Pin: warpgate 0.30.5 (a moon_pdk_test_utils 2.0.4 transitive dependency)
+# requests `http-cache-reqwest = "1.0.0-alpha.5"` but does not request the
+# `manager-cacache` feature it actually needs (`CACacheManager`). That
+# feature was default-on through 1.0.0-alpha.6 and became opt-in in
+# 1.0.0-alpha.7, which breaks warpgate's build when the workspace resolves
+# to the newer patch. Pin the transitive resolution back to the last
+# version where the default features still include it.
+http-cache-reqwest = "=1.0.0-alpha.6"

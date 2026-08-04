@@ -1,6 +1,7 @@
 use std::process::ExitCode;
 
 use callisto_graph::apply::{apply_version_plan, ApplyOptions};
+use callisto_model::ApplyPermit;
 
 use crate::cli::{GlobalArgs, OutputFormat, SnapshotArgs};
 use crate::error::CliError;
@@ -17,10 +18,11 @@ pub fn handle(args: SnapshotArgs, global: &GlobalArgs) -> Result<ExitCode, CliEr
 
     let apply_opts = ApplyOptions {
         refresh_lockfiles: false,
-        transient: global.dry_run,
     };
 
-    apply_version_plan(&ws.root, &plan, &runner, &apply_opts)?;
+    if let Some(permit) = ApplyPermit::granted_unless_dry_run(global.dry_run) {
+        apply_version_plan(&ws.root, &plan, &runner, &apply_opts, &permit)?;
+    }
 
     match global.format {
         OutputFormat::Json => write_json(&mut std::io::stdout(), &report)?,
