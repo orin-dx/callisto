@@ -2,6 +2,7 @@ use std::io::IsTerminal;
 use std::process::ExitCode;
 
 use callisto_graph::commands::InitOptions;
+use callisto_model::ApplyPermit;
 use dialoguer::Confirm;
 
 use crate::cli::{GlobalArgs, InitArgs, OutputFormat};
@@ -33,7 +34,16 @@ pub fn handle(args: InitArgs, global: &GlobalArgs) -> Result<ExitCode, CliError>
 
     let opts = InitOptions { yes: args.yes };
 
-    let report = callisto_graph::commands::init(&ws, &opts)?;
+    // `--yes` (answered above) and `--dry-run` gate different things: the
+    // former is consent to apply, the latter is permission to write at all.
+    // `--yes --dry-run` must therefore report the apply outcome and write
+    // nothing.
+    let permit = ApplyPermit::granted_unless_dry_run(global.dry_run);
+    let report = callisto_graph::commands::init(&ws, &opts, permit.as_ref())?;
+
+    if permit.is_none() && global.format == OutputFormat::Text {
+        println!("[DRY-RUN] Init plan calculated (no files written):");
+    }
 
     match global.format {
         OutputFormat::Json => write_json(&mut std::io::stdout(), &report)?,
