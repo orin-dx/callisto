@@ -24,14 +24,14 @@ pub use moon_pdk_api::{
 /// being wired into `register_extension`.
 pub fn check_moon_version(version_str: &str) -> Result<(), LocateError> {
     if let Ok(ver) = semver::Version::parse(version_str) {
-        let req = semver::VersionReq::parse(">=1.30.0, <2.0.0").unwrap();
+        let req = semver::VersionReq::parse(">=2.0.0, <3.0.0").unwrap();
         if req.matches(&ver) {
             return Ok(());
         }
     }
     Err(LocateError::IncompatibleMoonVersion {
         found: version_str.to_string(),
-        required: ">=1.30.0, <2.0.0".to_string(),
+        required: ">=2.0.0, <3.0.0".to_string(),
     })
 }
 
@@ -277,10 +277,10 @@ mod tests {
 
     #[test]
     fn test_moon_version_check() {
-        assert!(check_moon_version("1.30.0").is_ok());
-        assert!(check_moon_version("1.45.2").is_ok());
-        assert!(check_moon_version("1.29.9").is_err());
-        assert!(check_moon_version("2.0.0").is_err());
+        assert!(check_moon_version("2.0.0").is_ok());
+        assert!(check_moon_version("2.4.6").is_ok());
+        assert!(check_moon_version("1.45.2").is_err());
+        assert!(check_moon_version("3.0.0").is_err());
     }
 
     // NOTE on scope: `register_extension` is the only one of the three
