@@ -3,6 +3,7 @@ use callisto_model::{Diagnostic, DiagnosticSeverity};
 pub mod init;
 pub mod pr_body;
 pub mod publish;
+pub mod publish_client;
 pub mod snapshot;
 pub mod status;
 pub mod tag;
@@ -11,7 +12,11 @@ pub mod version;
 
 pub use init::{init, InitOptions};
 pub use pr_body::{compose_pr_body, PrBodyOptions};
-pub use publish::{plan_publish, PublishOptions};
+pub use publish::{
+    parse_retry_after, plan_publish, AlwaysRetryPolicy, PublishOptions, PublishOrchestrator,
+    SystemTimeProvider,
+};
+pub use publish_client::SubprocessRegistryClient;
 pub use snapshot::plan_snapshot;
 pub use status::{status, StatusOptions};
 pub use tag::{create_tags, create_tags_with_options, TagOptions};

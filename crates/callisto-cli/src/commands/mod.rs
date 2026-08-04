@@ -4,6 +4,7 @@ pub mod compose_pr_body;
 pub mod init;
 pub mod plan_publish;
 pub mod pre;
+pub mod publish;
 pub mod schema;
 pub mod snapshot;
 pub mod status;
