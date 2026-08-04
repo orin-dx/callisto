@@ -5,6 +5,17 @@ use callisto_model::{ApplyPermit, Version};
 
 use crate::ChangelogError;
 
+/// Prepend a rendered changelog entry for `display_name` to the changelog file
+/// at `changelog_path` (relative to `root`).
+///
+/// # Concurrency
+///
+/// This function is **not safe for concurrent calls on the same `path`**. It
+/// reads the existing file contents and then writes atomically, but a second
+/// concurrent call for the same changelog file would read stale content between
+/// those two points. Callers must ensure sequential access per changelog file.
+/// If the codebase ever moves to parallel `apply`, add a per-path lock or
+/// channel before removing this note.
 pub fn prepend(
     root: &Path,
     changelog_path: &Path,
@@ -29,8 +40,25 @@ pub fn prepend(
         format!("# {display_name}\n\n")
     };
 
+    // Normalise CRLF → LF so the prefix patterns always match, then restore
+    // the original line endings on the way out if the file used CRLF.
+    let had_crlf = existing.contains("\r\n");
+    let normalised = if had_crlf {
+        existing.replace("\r\n", "\n")
+    } else {
+        existing.clone()
+    };
+
+    // Bug 8 guard: if the version heading we are about to insert already exists
+    // in the file, skip the write entirely (idempotent behaviour). The heading
+    // is the first line of `rendered` (e.g. "## 1.0.0").
+    let version_heading = rendered.lines().next().unwrap_or("").trim();
+    if !version_heading.is_empty() && normalised.contains(version_heading) {
+        return Ok(());
+    }
+
     let mut new_content = String::new();
-    if let Some(rest) = existing.strip_prefix(&format!("# {display_name}\n\n")) {
+    if let Some(rest) = normalised.strip_prefix(&format!("# {display_name}\n\n")) {
         new_content.push_str(&format!("# {display_name}\n\n"));
         new_content.push_str(rendered);
         if !rendered.ends_with('\n') {
@@ -38,7 +66,7 @@ pub fn prepend(
         }
         new_content.push('\n');
         new_content.push_str(rest);
-    } else if let Some(rest) = existing.strip_prefix(&format!("# {display_name}\n")) {
+    } else if let Some(rest) = normalised.strip_prefix(&format!("# {display_name}\n")) {
         new_content.push_str(&format!("# {display_name}\n\n"));
         new_content.push_str(rendered);
         if !rendered.ends_with('\n') {
@@ -47,12 +75,20 @@ pub fn prepend(
         new_content.push('\n');
         new_content.push_str(rest);
     } else {
+        // The existing header didn't match display_name (e.g. casing change,
+        // HTML anchor, or package rename). Always emit the correct H1 first so
+        // the output is well-formed: H1 → new entry → existing body.
+        new_content.push_str(&format!("# {display_name}\n\n"));
         new_content.push_str(rendered);
         if !rendered.ends_with('\n') {
             new_content.push('\n');
         }
         new_content.push('\n');
-        new_content.push_str(&existing);
+        new_content.push_str(&normalised);
+    }
+
+    if had_crlf {
+        new_content = new_content.replace('\n', "\r\n");
     }
 
     callisto_manifests::atomic::atomic_write(&full_path, &new_content, permit).map_err(|e| {
@@ -157,6 +193,123 @@ mod tests {
     /// created two-level-deep directory tree end-to-end, proving the write path
     /// now routes through the shared implementation rather than a local
     /// duplicate that silently drops the grandparent sync.
+    #[test]
+    fn prepend_does_not_displace_header_in_crlf_changelog() {
+        let workspace = tempfile::tempdir().unwrap();
+        let root = workspace.path();
+        let changelog_path = std::path::Path::new("CHANGELOG.md");
+        let full_path = root.join(changelog_path);
+
+        // Write an existing CRLF changelog.
+        let existing_crlf = "# My Package\r\n\r\n## 1.0.0\r\n\r\nSome content\r\n";
+        fs::write(&full_path, existing_crlf).unwrap();
+
+        prepend(
+            root,
+            changelog_path,
+            "My Package",
+            "## 1.1.0\n\nNew stuff\n",
+            &permit(),
+        )
+        .expect("prepend should succeed on a CRLF changelog");
+
+        let result = fs::read_to_string(&full_path).unwrap();
+
+        // The header must remain the very first thing in the file.
+        assert!(
+            result.starts_with("# My Package"),
+            "header was displaced — got:\n{result}"
+        );
+
+        // The new section must appear before the old section.
+        let pos_new = result.find("1.1.0").expect("new version missing");
+        let pos_old = result.find("1.0.0").expect("old version missing");
+        assert!(
+            pos_new < pos_old,
+            "new entry should precede old entry — got:\n{result}"
+        );
+    }
+
+    #[test]
+    fn prepend_else_branch_inserts_h1_header_before_new_entry_when_display_name_mismatches() {
+        // The existing changelog uses "old-name" as the H1. prepend() is called
+        // with display_name = "new-name", so neither strip_prefix pattern matches
+        // and the else branch fires. Before the fix, the else branch emits the
+        // rendered entry (an H2) first, leaving the H1 buried below it.
+        let workspace = tempfile::tempdir().unwrap();
+        let root = workspace.path();
+        let changelog_path = std::path::Path::new("CHANGELOG.md");
+        let full_path = root.join(changelog_path);
+
+        let existing = "# old-name\n\n## 1.0.0\n\nOld stuff\n";
+        fs::write(&full_path, existing).unwrap();
+
+        prepend(
+            root,
+            changelog_path,
+            "new-name",
+            "## 2.0.0\n\n### Patch Changes\n\n- Something\n",
+            &permit(),
+        )
+        .expect("prepend should succeed");
+
+        let result = fs::read_to_string(&full_path).unwrap();
+
+        assert!(
+            result.starts_with("# new-name\n\n"),
+            "result should start with H1 heading, got:\n{result}"
+        );
+        assert!(
+            !result.starts_with("## 2.0.0"),
+            "result must not start with H2 (no H1 at top), got:\n{result}"
+        );
+        let pos_new = result
+            .find("## 2.0.0")
+            .expect("new version heading missing");
+        let pos_old = result
+            .find("## 1.0.0")
+            .expect("old version heading missing");
+        assert!(
+            pos_new < pos_old,
+            "new entry should precede old entry — got:\n{result}"
+        );
+    }
+
+    #[test]
+    fn prepend_is_idempotent_for_same_version() {
+        // If the existing changelog already contains the version heading being
+        // inserted, prepend() should return the existing content unchanged
+        // rather than duplicating the section.
+        let workspace = tempfile::tempdir().unwrap();
+        let root = workspace.path();
+        let changelog_path = std::path::Path::new("CHANGELOG.md");
+        let full_path = root.join(changelog_path);
+
+        let existing = "# my-pkg\n\n## 1.0.0\n\nSome content\n";
+        fs::write(&full_path, existing).unwrap();
+
+        prepend(
+            root,
+            changelog_path,
+            "my-pkg",
+            "## 1.0.0\n\nNew content\n",
+            &permit(),
+        )
+        .expect("prepend should succeed");
+
+        let result = fs::read_to_string(&full_path).unwrap();
+
+        let occurrences = result.matches("## 1.0.0").count();
+        assert_eq!(
+            occurrences, 1,
+            "## 1.0.0 should appear exactly once, got {occurrences} times in:\n{result}"
+        );
+        assert!(
+            result.contains("Some content"),
+            "existing content should be preserved — got:\n{result}"
+        );
+    }
+
     #[test]
     fn prepend_creates_nested_grandparent_and_parent_dirs_via_shared_atomic_write() {
         let workspace = tempfile::tempdir().unwrap();
