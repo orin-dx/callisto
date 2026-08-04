@@ -1,5 +1,4 @@
 use std::fs;
-use std::io::IsTerminal;
 use std::process::ExitCode;
 
 use callisto_format::{Changeset, Entry};
@@ -12,6 +11,7 @@ use crate::cli::{AddArgs, GlobalArgs, OutputFormat};
 use crate::error::CliError;
 use crate::output::{log_line, write_json};
 use crate::runner::CliCommandRunner;
+use crate::tty;
 use crate::workspace::load_workspace;
 
 pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
@@ -44,13 +44,9 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
                 severity,
             });
         }
-    } else if std::io::stdin().is_terminal() {
+    } else if tty::is_interactive() {
         // Interactive 5-step Changesets Wizard (matching @changesets/cli)
-        let all_packages: Vec<String> = ws
-            .graph
-            .packages()
-            .map(|p| p.id.name().to_string())
-            .collect();
+        let all_packages: Vec<String> = collect_package_names(ws.graph.packages());
 
         if all_packages.is_empty() {
             return Err(CliError::Other(
@@ -217,6 +213,17 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
     Ok(ExitCode::SUCCESS)
 }
 
+/// Builds the list of package names shown in the interactive multiselect wizard.
+///
+/// Uses `.display_name()` so that packages sharing a bare name across different
+/// ecosystems (e.g. `cargo/foo` and `npm/foo`) appear as distinct, qualified
+/// entries in the list rather than two identical `"foo"` rows.
+fn collect_package_names<'a>(
+    packages: impl Iterator<Item = &'a callisto_model::Package>,
+) -> Vec<String> {
+    packages.map(|p| p.id.display_name()).collect()
+}
+
 fn generate_human_slug() -> String {
     let adjectives = [
         "swift", "clever", "bright", "silent", "brave", "calm", "eager", "gentle", "happy",
@@ -243,4 +250,53 @@ fn generate_human_slug() -> String {
     let v = verbs[((timestamp >> 8) as usize) % verbs.len()];
 
     format!("{a}-{n}-{v}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use callisto_model::{ManifestDecl, ManifestFormat, ManifestRole, Package, ReleaseTrigger};
+    use std::path::PathBuf;
+
+    /// Constructs a minimal `Package` for a given id string (e.g. `"cargo/foo"`).
+    fn make_package(id_str: &str) -> Package {
+        let id = PackageId::parse(id_str).unwrap();
+        let decl = ManifestDecl::new(
+            PathBuf::from(format!("{}/Cargo.toml", id.name())),
+            ManifestRole::Canonical,
+            ManifestFormat::CargoToml,
+        )
+        .unwrap();
+        Package {
+            id,
+            manifests: vec![decl],
+            changelog: None,
+            release_trigger: ReleaseTrigger::Changeset,
+            publish_to: vec![],
+            tag_template: None,
+        }
+    }
+
+    /// When a polyglot workspace contains `cargo/foo` and `npm/foo`, the
+    /// interactive wizard's package-selection list must show two distinct,
+    /// ecosystem-qualified names so the user can tell them apart.
+    ///
+    /// Fails before the fix (`.name()` produces two identical `"foo"` entries)
+    /// and passes after the fix (`.display_name()` produces `"cargo/foo"` and
+    /// `"npm/foo"`).
+    #[test]
+    fn polyglot_package_selection_names_are_distinct() {
+        let packages = [make_package("cargo/foo"), make_package("npm/foo")];
+        let names = collect_package_names(packages.iter());
+
+        assert_eq!(names.len(), 2, "expected 2 entries; got {names:?}");
+        assert!(
+            names.contains(&"cargo/foo".to_string()),
+            "expected ecosystem-qualified name 'cargo/foo'; got {names:?}"
+        );
+        assert!(
+            names.contains(&"npm/foo".to_string()),
+            "expected ecosystem-qualified name 'npm/foo'; got {names:?}"
+        );
+    }
 }
