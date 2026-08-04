@@ -2,8 +2,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use callisto_model::{
-    DepKind, DepSpec, DependencyEntry, Ecosystem, ManifestDecl, ManifestError, ManifestFormat,
-    ManifestRole, Version, VersionGrammar, VersionReq, WorkspaceKind,
+    ApplyPermit, DepKind, DepSpec, DependencyEntry, Ecosystem, ManifestDecl, ManifestError,
+    ManifestFormat, ManifestRole, Version, VersionGrammar, VersionReq, WorkspaceKind,
 };
 use indexmap::IndexMap;
 use serde_json::{Map, Value};
@@ -72,7 +72,7 @@ impl PackageJson {
         })
     }
 
-    fn persist(&mut self) -> Result<(), ManifestError> {
+    fn persist(&mut self, permit: &ApplyPermit) -> Result<(), ManifestError> {
         let indent_str = match self.fingerprint.indent {
             Indent::Spaces(n) => " ".repeat(n as usize),
             Indent::Tabs => "\t".to_string(),
@@ -101,9 +101,11 @@ impl PackageJson {
             out = format!("\u{FEFF}{}", out);
         }
 
-        crate::atomic::atomic_write(&self.absolute, &out).map_err(|e| ManifestError::Write {
-            path: self.path.clone(),
-            message: e.to_string(),
+        crate::atomic::atomic_write(&self.absolute, &out, permit).map_err(|e| {
+            ManifestError::Write {
+                path: self.path.clone(),
+                message: e.to_string(),
+            }
         })
     }
 }
@@ -207,10 +209,10 @@ impl Manifest for PackageJson {
         })
     }
 
-    fn write_version(&mut self, v: &Version) -> Result<(), ManifestError> {
+    fn write_version(&mut self, v: &Version, permit: &ApplyPermit) -> Result<(), ManifestError> {
         self.doc
             .insert("version".to_string(), Value::String(v.render().to_string()));
-        self.persist()
+        self.persist(permit)
     }
 
     fn iter_dependencies(&self) -> Box<dyn Iterator<Item = DependencyEntry> + '_> {
@@ -245,6 +247,7 @@ impl Manifest for PackageJson {
         name: &str,
         kind: DepKind,
         new: DepSpec,
+        permit: &ApplyPermit,
     ) -> Result<(), ManifestError> {
         if kind == DepKind::Build {
             return Err(ManifestError::DependencyNotFound {
@@ -262,28 +265,15 @@ impl Manifest for PackageJson {
             DepKind::Build => unreachable!(),
         };
 
-        let updated_in_section = if let Some(section) = self
+        // Validate that the target dependency actually exists in the primary
+        // section *before* mutating anything. This guarantees that a failed
+        // update (dependency not found) leaves self.doc byte-for-byte
+        // unchanged, including the overrides/resolutions tables below.
+        let updated_in_section = self
             .doc
-            .get_mut(section_name)
-            .and_then(|v| v.as_object_mut())
-        {
-            if section.contains_key(name) {
-                section.insert(name.to_string(), Value::String(new.render()));
-                true
-            } else {
-                false
-            }
-        } else {
-            false
-        };
-
-        for extra in ["overrides", "resolutions"] {
-            if let Some(tbl) = self.doc.get_mut(extra).and_then(|v| v.as_object_mut()) {
-                if tbl.contains_key(name) {
-                    tbl.insert(name.to_string(), Value::String(new.render()));
-                }
-            }
-        }
+            .get(section_name)
+            .and_then(|v| v.as_object())
+            .is_some_and(|section| section.contains_key(name));
 
         if !updated_in_section {
             return Err(ManifestError::DependencyNotFound {
@@ -293,12 +283,29 @@ impl Manifest for PackageJson {
             });
         }
 
-        self.persist()
+        if let Some(section) = self
+            .doc
+            .get_mut(section_name)
+            .and_then(|v| v.as_object_mut())
+        {
+            section.insert(name.to_string(), Value::String(new.render()));
+        }
+
+        for extra in ["overrides", "resolutions"] {
+            if let Some(tbl) = self.doc.get_mut(extra).and_then(|v| v.as_object_mut()) {
+                if tbl.contains_key(name) {
+                    tbl.insert(name.to_string(), Value::String(new.render()));
+                }
+            }
+        }
+
+        self.persist(permit)
     }
 
     fn update_optional_dependencies(
         &mut self,
         updates: &[(String, Version)],
+        permit: &ApplyPermit,
     ) -> Result<(), ManifestError> {
         let section = self
             .doc
@@ -314,7 +321,7 @@ impl Manifest for PackageJson {
             section.insert(name.clone(), Value::String(ver.render().to_string()));
         }
 
-        self.persist()
+        self.persist(permit)
     }
 }
 
@@ -334,7 +341,7 @@ fn parse_npm_spec_str(s: &str, ws_kind: Option<WorkspaceKind>) -> DepSpec {
         return DepSpec::Catalog(name);
     }
 
-    if is_bare_semver(s) {
+    if crate::common::is_bare_semver(s) {
         if let Ok(v) = Version::parse(s, VersionGrammar::SemVer) {
             return DepSpec::Exact(v);
         }
@@ -347,20 +354,11 @@ fn parse_npm_spec_str(s: &str, ws_kind: Option<WorkspaceKind>) -> DepSpec {
     DepSpec::Opaque(s.to_string())
 }
 
-fn is_bare_semver(s: &str) -> bool {
-    let chars = s.chars().next();
-    if !chars.is_some_and(|c| c.is_ascii_digit()) {
-        return false;
-    }
-    let parts: Vec<&str> = s.split('.').collect();
-    parts.len() == 3
-}
-
 pub fn round_trip(spec: &DepSpec, target: &Version) -> Option<DepSpec> {
     match spec {
         DepSpec::Exact(_) => Some(DepSpec::Exact(target.clone())),
         DepSpec::Range(_, original) => {
-            let (prefix, rest) = split_single_operator_prefix(original)?;
+            let (prefix, rest) = crate::common::split_single_operator_prefix(original)?;
             if rest.contains(' ')
                 || rest.contains('-')
                 || rest.contains('|')
@@ -374,16 +372,6 @@ pub fn round_trip(spec: &DepSpec, target: &Version) -> Option<DepSpec> {
         }
         _ => None,
     }
-}
-
-fn split_single_operator_prefix(s: &str) -> Option<(&str, &str)> {
-    let trimmed = s.trim();
-    for op in ["^", "~", ">=", ">", "<=", "<", "="] {
-        if let Some(rest) = trimmed.strip_prefix(op) {
-            return Some((op, rest.trim()));
-        }
-    }
-    Some(("", trimmed))
 }
 
 fn render_at_precision(target: &Version, original_clause: &str) -> String {
@@ -428,9 +416,37 @@ pub fn detect_npm_workspace_kind(
 
 #[cfg(test)]
 mod tests {
+
+    /// Tests exercise the write primitives directly rather than through a
+    /// command handler, so they mint a permit without a dry-run flag to
+    /// consult. Every non-test caller must go through
+    /// `ApplyPermit::granted_unless_dry_run`.
+    fn permit() -> callisto_model::ApplyPermit {
+        callisto_model::ApplyPermit::force_for_tests()
+    }
     use super::*;
     use callisto_model::{ManifestDecl, ManifestFormat, ManifestRole};
     use tempfile::tempdir;
+
+    /// Helper: write `content` to `<dir>/package.json` and open it as a
+    /// `PackageJson`. The caller must keep `dir` alive for the duration of the
+    /// test so that the tempdir is not cleaned up prematurely.
+    fn open_manifest(dir: &tempfile::TempDir, content: &str) -> PackageJson {
+        let manifest_path = dir.path().join("package.json");
+        fs::write(&manifest_path, content).unwrap();
+        let decl = ManifestDecl::new(
+            "package.json",
+            ManifestRole::Canonical,
+            ManifestFormat::PackageJson,
+        )
+        .unwrap();
+        let ctx = OpenContext {
+            workspace_root: dir.path(),
+            cargo_workspace: None,
+            npm_workspace_kind: None,
+        };
+        PackageJson::open(&decl, &ctx).unwrap()
+    }
 
     #[test]
     fn parses_package_json_and_updates_version() {
@@ -463,7 +479,7 @@ mod tests {
         assert_eq!(manifest.current_version().unwrap().render(), "1.0.0");
 
         let new_ver = Version::parse("1.1.0", VersionGrammar::SemVer).unwrap();
-        manifest.write_version(&new_ver).unwrap();
+        manifest.write_version(&new_ver, &permit()).unwrap();
 
         let updated_content = fs::read_to_string(&manifest_path).unwrap();
         assert!(updated_content.contains("\"version\": \"1.1.0\""));
@@ -501,5 +517,398 @@ mod tests {
         let manifest = PackageJson::open(&decl, &ctx).unwrap();
         assert_eq!(manifest.package_name().unwrap(), "bom-pkg");
         assert_eq!(manifest.current_version().unwrap().render(), "1.0.0");
+    }
+
+    #[test]
+    fn update_dependency_spec_does_not_mutate_overrides_when_primary_section_missing() {
+        let dir = tempdir().unwrap();
+        let manifest_path = dir.path().join("package.json");
+        let content = r#"{
+  "name": "@myorg/pkg",
+  "version": "1.0.0",
+  "dependencies": {
+    "express": "^4.18.0"
+  },
+  "overrides": {
+    "lodash": "^4.17.0"
+  }
+}
+"#;
+        fs::write(&manifest_path, content).unwrap();
+
+        let decl = ManifestDecl::new(
+            "package.json",
+            ManifestRole::Canonical,
+            ManifestFormat::PackageJson,
+        )
+        .unwrap();
+        let ctx = OpenContext {
+            workspace_root: dir.path(),
+            cargo_workspace: None,
+            npm_workspace_kind: None,
+        };
+
+        let mut manifest = PackageJson::open(&decl, &ctx).unwrap();
+
+        let before = manifest.doc.get("overrides").cloned();
+
+        // "lodash" exists in overrides but NOT in the "dependencies" section,
+        // so the primary-section update must fail.
+        let result = manifest.update_dependency_spec(
+            "lodash",
+            DepKind::Runtime,
+            DepSpec::Opaque("^5.0.0".to_string()),
+            &permit(),
+        );
+
+        assert!(result.is_err());
+
+        let after = manifest.doc.get("overrides").cloned();
+        assert_eq!(
+            before, after,
+            "overrides table must remain unchanged when the primary section update fails"
+        );
+
+        // The file on disk must also remain untouched.
+        let on_disk = fs::read_to_string(&manifest_path).unwrap();
+        assert!(on_disk.contains("\"lodash\": \"^4.17.0\""));
+    }
+
+    // --- Gap 1: happy-path co-mutation of overrides/resolutions ---
+
+    #[test]
+    fn update_dependency_spec_co_mutates_overrides() {
+        let dir = tempdir().unwrap();
+        let content = r#"{
+  "name": "@myorg/pkg",
+  "version": "1.0.0",
+  "dependencies": {
+    "lodash": "^4.17.0"
+  },
+  "overrides": {
+    "lodash": "^4.17.0"
+  }
+}
+"#;
+        let mut manifest = open_manifest(&dir, content);
+
+        manifest
+            .update_dependency_spec(
+                "lodash",
+                DepKind::Runtime,
+                DepSpec::Opaque("^5.0.0".to_string()),
+                &permit(),
+            )
+            .unwrap();
+
+        let deps = manifest
+            .doc
+            .get("dependencies")
+            .and_then(|v| v.as_object())
+            .unwrap();
+        assert_eq!(
+            deps.get("lodash").and_then(|v| v.as_str()),
+            Some("^5.0.0"),
+            "dependencies must reflect the new version"
+        );
+
+        let overrides = manifest
+            .doc
+            .get("overrides")
+            .and_then(|v| v.as_object())
+            .unwrap();
+        assert_eq!(
+            overrides.get("lodash").and_then(|v| v.as_str()),
+            Some("^5.0.0"),
+            "overrides must be co-mutated when the dep exists in the primary section"
+        );
+    }
+
+    #[test]
+    fn update_dependency_spec_co_mutates_resolutions() {
+        let dir = tempdir().unwrap();
+        let content = r#"{
+  "name": "@myorg/pkg",
+  "version": "1.0.0",
+  "dependencies": {
+    "lodash": "^4.17.0"
+  },
+  "resolutions": {
+    "lodash": "^4.17.0"
+  }
+}
+"#;
+        let mut manifest = open_manifest(&dir, content);
+
+        manifest
+            .update_dependency_spec(
+                "lodash",
+                DepKind::Runtime,
+                DepSpec::Opaque("^5.0.0".to_string()),
+                &permit(),
+            )
+            .unwrap();
+
+        let deps = manifest
+            .doc
+            .get("dependencies")
+            .and_then(|v| v.as_object())
+            .unwrap();
+        assert_eq!(
+            deps.get("lodash").and_then(|v| v.as_str()),
+            Some("^5.0.0"),
+            "dependencies must reflect the new version"
+        );
+
+        let resolutions = manifest
+            .doc
+            .get("resolutions")
+            .and_then(|v| v.as_object())
+            .unwrap();
+        assert_eq!(
+            resolutions.get("lodash").and_then(|v| v.as_str()),
+            Some("^5.0.0"),
+            "resolutions must be co-mutated when the dep exists in the primary section"
+        );
+    }
+
+    #[test]
+    fn update_dependency_spec_co_mutates_overrides_and_resolutions() {
+        let dir = tempdir().unwrap();
+        let content = r#"{
+  "name": "@myorg/pkg",
+  "version": "1.0.0",
+  "dependencies": {
+    "lodash": "^4.17.0"
+  },
+  "overrides": {
+    "lodash": "^4.17.0"
+  },
+  "resolutions": {
+    "lodash": "^4.17.0"
+  }
+}
+"#;
+        let mut manifest = open_manifest(&dir, content);
+
+        manifest
+            .update_dependency_spec(
+                "lodash",
+                DepKind::Runtime,
+                DepSpec::Opaque("^5.0.0".to_string()),
+                &permit(),
+            )
+            .unwrap();
+
+        let deps = manifest
+            .doc
+            .get("dependencies")
+            .and_then(|v| v.as_object())
+            .unwrap();
+        assert_eq!(
+            deps.get("lodash").and_then(|v| v.as_str()),
+            Some("^5.0.0"),
+            "dependencies must reflect the new version"
+        );
+
+        let overrides = manifest
+            .doc
+            .get("overrides")
+            .and_then(|v| v.as_object())
+            .unwrap();
+        assert_eq!(
+            overrides.get("lodash").and_then(|v| v.as_str()),
+            Some("^5.0.0"),
+            "overrides must be co-mutated"
+        );
+
+        let resolutions = manifest
+            .doc
+            .get("resolutions")
+            .and_then(|v| v.as_object())
+            .unwrap();
+        assert_eq!(
+            resolutions.get("lodash").and_then(|v| v.as_str()),
+            Some("^5.0.0"),
+            "resolutions must be co-mutated"
+        );
+    }
+
+    /// Co-mutation is keyed by name: updating "express" must not touch the
+    /// "lodash" entry that happens to live in overrides.
+    #[test]
+    fn update_dependency_spec_co_mutation_is_name_scoped() {
+        let dir = tempdir().unwrap();
+        let content = r#"{
+  "name": "@myorg/pkg",
+  "version": "1.0.0",
+  "dependencies": {
+    "express": "^4.18.0"
+  },
+  "overrides": {
+    "lodash": "^4.17.0"
+  }
+}
+"#;
+        let mut manifest = open_manifest(&dir, content);
+
+        manifest
+            .update_dependency_spec(
+                "express",
+                DepKind::Runtime,
+                DepSpec::Opaque("^5.0.0".to_string()),
+                &permit(),
+            )
+            .unwrap();
+
+        let deps = manifest
+            .doc
+            .get("dependencies")
+            .and_then(|v| v.as_object())
+            .unwrap();
+        assert_eq!(
+            deps.get("express").and_then(|v| v.as_str()),
+            Some("^5.0.0"),
+            "express in dependencies must be updated"
+        );
+
+        let overrides = manifest
+            .doc
+            .get("overrides")
+            .and_then(|v| v.as_object())
+            .unwrap();
+        assert_eq!(
+            overrides.get("lodash").and_then(|v| v.as_str()),
+            Some("^4.17.0"),
+            "lodash in overrides must be untouched (different name)"
+        );
+    }
+
+    // --- Gap 2: resolutions missing from validate-before-mutate regression ---
+
+    #[test]
+    fn update_dependency_spec_does_not_mutate_resolutions_when_primary_section_missing() {
+        let dir = tempdir().unwrap();
+        let content = r#"{
+  "name": "@myorg/pkg",
+  "version": "1.0.0",
+  "dependencies": {
+    "express": "^4.18.0"
+  },
+  "resolutions": {
+    "lodash": "^4.17.0"
+  }
+}
+"#;
+        let mut manifest = open_manifest(&dir, content);
+
+        let before = manifest.doc.get("resolutions").cloned();
+
+        let result = manifest.update_dependency_spec(
+            "lodash",
+            DepKind::Runtime,
+            DepSpec::Opaque("^5.0.0".to_string()),
+            &permit(),
+        );
+
+        assert!(
+            result.is_err(),
+            "update must fail when dep is absent from primary section"
+        );
+
+        let after = manifest.doc.get("resolutions").cloned();
+        assert_eq!(
+            before, after,
+            "resolutions table must remain unchanged when the primary section update fails"
+        );
+    }
+
+    /// Combined case: package in both overrides AND resolutions but not in
+    /// the primary section. Both tables must be untouched on failure.
+    #[test]
+    fn update_dependency_spec_does_not_mutate_overrides_or_resolutions_when_primary_section_missing(
+    ) {
+        let dir = tempdir().unwrap();
+        let content = r#"{
+  "name": "@myorg/pkg",
+  "version": "1.0.0",
+  "dependencies": {
+    "express": "^4.18.0"
+  },
+  "overrides": {
+    "lodash": "^4.17.0"
+  },
+  "resolutions": {
+    "lodash": "^4.17.0"
+  }
+}
+"#;
+        let mut manifest = open_manifest(&dir, content);
+
+        let before_overrides = manifest.doc.get("overrides").cloned();
+        let before_resolutions = manifest.doc.get("resolutions").cloned();
+
+        let result = manifest.update_dependency_spec(
+            "lodash",
+            DepKind::Runtime,
+            DepSpec::Opaque("^5.0.0".to_string()),
+            &permit(),
+        );
+
+        assert!(
+            result.is_err(),
+            "update must fail when dep is absent from primary section"
+        );
+
+        let after_overrides = manifest.doc.get("overrides").cloned();
+        let after_resolutions = manifest.doc.get("resolutions").cloned();
+
+        assert_eq!(
+            before_overrides, after_overrides,
+            "overrides table must remain unchanged when the primary section update fails"
+        );
+        assert_eq!(
+            before_resolutions, after_resolutions,
+            "resolutions table must remain unchanged when the primary section update fails"
+        );
+    }
+
+    // --- Gap 3: DepKind::Dev validate-before-mutate path ---
+
+    #[test]
+    fn update_dependency_spec_does_not_mutate_overrides_when_dev_dep_missing() {
+        let dir = tempdir().unwrap();
+        let content = r#"{
+  "name": "@myorg/pkg",
+  "version": "1.0.0",
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "overrides": {
+    "lodash": "^4.17.0"
+  }
+}
+"#;
+        let mut manifest = open_manifest(&dir, content);
+
+        let before = manifest.doc.get("overrides").cloned();
+
+        let result = manifest.update_dependency_spec(
+            "lodash",
+            DepKind::Dev,
+            DepSpec::Opaque("^5.0.0".to_string()),
+            &permit(),
+        );
+
+        assert!(
+            result.is_err(),
+            "update must fail when dep is absent from devDependencies"
+        );
+
+        let after = manifest.doc.get("overrides").cloned();
+        assert_eq!(
+            before, after,
+            "overrides table must remain unchanged when the dev dep update fails"
+        );
     }
 }

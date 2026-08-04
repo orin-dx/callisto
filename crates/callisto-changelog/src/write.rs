@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::Path;
 
-use callisto_model::Version;
+use callisto_model::{ApplyPermit, Version};
 
 use crate::ChangelogError;
 
@@ -10,6 +10,7 @@ pub fn prepend(
     changelog_path: &Path,
     display_name: &str,
     rendered: &str,
+    permit: &ApplyPermit,
 ) -> Result<(), ChangelogError> {
     let full_path = root.join(changelog_path);
     if let Some(parent) = full_path.parent() {
@@ -54,24 +55,12 @@ pub fn prepend(
         new_content.push_str(&existing);
     }
 
-    atomic_write(&full_path, &new_content).map_err(|e| ChangelogError::WriteFailed {
-        path: changelog_path.to_path_buf(),
-        message: e.to_string(),
+    callisto_manifests::atomic::atomic_write(&full_path, &new_content, permit).map_err(|e| {
+        ChangelogError::WriteFailed {
+            path: changelog_path.to_path_buf(),
+            message: e.to_string(),
+        }
     })
-}
-
-fn atomic_write(path: &std::path::Path, content: &str) -> std::io::Result<()> {
-    use std::io::Write;
-    let parent = path.parent().unwrap_or_else(|| std::path::Path::new("."));
-    let mut temp = tempfile::NamedTempFile::new_in(parent)?;
-    temp.write_all(content.as_bytes())?;
-    temp.flush()?;
-    temp.as_file().sync_all()?;
-    temp.persist(path).map_err(|e| e.error)?;
-    if let Ok(parent_file) = std::fs::File::open(parent) {
-        let _res = parent_file.sync_all();
-    }
-    Ok(())
 }
 
 pub fn extract_section<'a>(changelog: &'a str, version: &Version) -> Option<&'a str> {
@@ -113,6 +102,14 @@ pub fn extract_section<'a>(changelog: &'a str, version: &Version) -> Option<&'a 
 
 #[cfg(test)]
 mod tests {
+
+    /// Tests exercise the write primitives directly rather than through a
+    /// command handler, so they mint a permit without a dry-run flag to
+    /// consult. Every non-test caller must go through
+    /// `ApplyPermit::granted_unless_dry_run`.
+    fn permit() -> callisto_model::ApplyPermit {
+        callisto_model::ApplyPermit::force_for_tests()
+    }
     use super::*;
     use callisto_model::VersionGrammar;
 
@@ -146,5 +143,52 @@ mod tests {
         let extracted = extract_section(changelog, &v1_1).unwrap();
         assert!(extracted.contains("### Minor Changes"));
         assert!(extracted.contains("- Feature"));
+    }
+
+    /// Regression test for the drifted local `atomic_write` that only synced the
+    /// parent directory. `prepend()` unconditionally calls `create_dir_all` for
+    /// the changelog's parent, so when both the parent *and* grandparent
+    /// directories are freshly created as part of the same operation, durability
+    /// requires fsyncing both new directory entries — exactly what the canonical
+    /// `callisto_manifests::atomic::atomic_write` does and the local copy did not.
+    ///
+    /// This test doesn't simulate a crash (that would require fault injection at
+    /// the syscall level), but it does exercise `prepend()` through a freshly
+    /// created two-level-deep directory tree end-to-end, proving the write path
+    /// now routes through the shared implementation rather than a local
+    /// duplicate that silently drops the grandparent sync.
+    #[test]
+    fn prepend_creates_nested_grandparent_and_parent_dirs_via_shared_atomic_write() {
+        let workspace = tempfile::tempdir().unwrap();
+        let root = workspace.path();
+
+        // Neither "packages" (grandparent) nor "packages/my-pkg" (parent) exist yet.
+        let changelog_path = std::path::Path::new("packages/my-pkg/CHANGELOG.md");
+        assert!(!root.join("packages").exists());
+
+        prepend(
+            root,
+            changelog_path,
+            "my-pkg",
+            "### Patch Changes\n\n- Fix bug",
+            &permit(),
+        )
+        .expect("prepend should create nested dirs and write durably");
+
+        let full_path = root.join(changelog_path);
+        assert!(full_path.exists());
+        let contents = fs::read_to_string(&full_path).unwrap();
+        assert!(contents.starts_with("# my-pkg\n\n"));
+        assert!(contents.contains("- Fix bug"));
+
+        // No leftover temp files from the shared NamedTempFile-based atomic_write.
+        let parent_entries: Vec<_> = fs::read_dir(full_path.parent().unwrap())
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(
+            parent_entries,
+            vec![std::ffi::OsString::from("CHANGELOG.md")]
+        );
     }
 }

@@ -11,10 +11,10 @@ readme = "README.md"
 workspace = true
 
 [features]
-default = ["cargo", "npm"]
+default = ["cargo", "npm", "pypi"]
 cargo = ["dep:toml_edit"]
 npm = []
-pypi = []
+pypi = ["dep:toml_edit"]
 go = []
 maven = []
 nuget = []
@@ -31,6 +31,7 @@ thiserror = { workspace = true }
 tempfile = "3"
 
 [dev-dependencies]
+callisto-model = { path = "../callisto-model", features = ["test-util"] }
 callisto-fixtures = { path = "../callisto-fixtures", default-features = false }
 tempfile = "3"
 proptest = "1"

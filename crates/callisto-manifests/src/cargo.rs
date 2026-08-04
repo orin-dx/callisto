@@ -4,8 +4,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use callisto_model::{
-    workspace_relative, DepKind, DepSpec, DependencyEntry, Ecosystem, ManifestDecl, ManifestError,
-    ManifestFormat, ManifestRole, Version, VersionGrammar, VersionReq,
+    workspace_relative, ApplyPermit, DepKind, DepSpec, DependencyEntry, Ecosystem, ManifestDecl,
+    ManifestError, ManifestFormat, ManifestRole, Version, VersionGrammar, VersionReq,
 };
 
 use crate::{Manifest, OpenContext};
@@ -19,6 +19,7 @@ pub struct CargoToml {
     inherited_deps: HashSet<(DepKind, String)>,
     inherited_version: bool,
     inheritance: Option<Arc<WorkspaceInheritance>>,
+    has_bom: bool,
 }
 
 impl CargoToml {
@@ -31,8 +32,11 @@ impl CargoToml {
             message: e.to_string(),
         })?;
 
+        let has_bom = content.starts_with('\u{FEFF}');
+        let clean_content = content.strip_prefix('\u{FEFF}').unwrap_or(&content);
+
         let doc: toml_edit::DocumentMut =
-            content
+            clean_content
                 .parse()
                 .map_err(|e: toml_edit::TomlError| ManifestError::Parse {
                     path: rel_path.clone(),
@@ -91,14 +95,20 @@ impl CargoToml {
             inherited_deps,
             inherited_version,
             inheritance: ctx.cargo_workspace.clone(),
+            has_bom,
         })
     }
 
-    fn persist(&mut self) -> Result<(), ManifestError> {
-        let text = self.document.to_string();
-        crate::atomic::atomic_write(&self.absolute, &text).map_err(|e| ManifestError::Write {
-            path: self.path.clone(),
-            message: e.to_string(),
+    fn persist(&mut self, permit: &ApplyPermit) -> Result<(), ManifestError> {
+        let mut text = self.document.to_string();
+        if self.has_bom {
+            text = format!("\u{FEFF}{}", text);
+        }
+        crate::atomic::atomic_write(&self.absolute, &text, permit).map_err(|e| {
+            ManifestError::Write {
+                path: self.path.clone(),
+                message: e.to_string(),
+            }
         })
     }
 }
@@ -185,11 +195,11 @@ impl Manifest for CargoToml {
         })
     }
 
-    fn write_version(&mut self, v: &Version) -> Result<(), ManifestError> {
+    fn write_version(&mut self, v: &Version, permit: &ApplyPermit) -> Result<(), ManifestError> {
         if self.inherited_version {
             let root_cargo = self.workspace_root.join("Cargo.toml");
             let mut ws_res = WorkspaceCargoResolver::load(&root_cargo)?;
-            return ws_res.write_version(v);
+            return ws_res.write_version(v, permit);
         }
 
         let pkg = self
@@ -213,7 +223,7 @@ impl Manifest for CargoToml {
         } else {
             pkg.insert("version", toml_edit::value(v.render()));
         }
-        self.persist()
+        self.persist(permit)
     }
 
     fn iter_dependencies(&self) -> Box<dyn Iterator<Item = DependencyEntry> + '_> {
@@ -267,6 +277,7 @@ impl Manifest for CargoToml {
         name: &str,
         kind: DepKind,
         new: DepSpec,
+        permit: &ApplyPermit,
     ) -> Result<(), ManifestError> {
         if kind == DepKind::Peer {
             return Err(ManifestError::DependencyNotFound {
@@ -279,7 +290,7 @@ impl Manifest for CargoToml {
         if self.inherited_deps.contains(&(kind, name.to_string())) {
             let root_cargo = self.workspace_root.join("Cargo.toml");
             let mut ws_res = WorkspaceCargoResolver::load(&root_cargo)?;
-            return ws_res.write_dependency(name, new);
+            return ws_res.write_dependency(name, new, permit);
         }
 
         let section_name = match kind {
@@ -329,12 +340,13 @@ impl Manifest for CargoToml {
             tbl.insert("version", toml_edit::value(new_str));
         }
 
-        self.persist()
+        self.persist(permit)
     }
 
     fn update_optional_dependencies(
         &mut self,
         _updates: &[(String, Version)],
+        _permit: &ApplyPermit,
     ) -> Result<(), ManifestError> {
         Err(ManifestError::UnsupportedOperation {
             path: self.path.clone(),
@@ -367,7 +379,7 @@ fn parse_cargo_dep_item(item: &toml_edit::Item, kind: &mut DepKind) -> DepSpec {
 }
 
 fn parse_cargo_spec_str(s: &str) -> DepSpec {
-    if is_bare_semver(s) {
+    if crate::common::is_bare_semver(s) {
         if let Ok(v) = Version::parse(s, VersionGrammar::SemVer) {
             return DepSpec::CargoBare(v);
         }
@@ -376,15 +388,6 @@ fn parse_cargo_spec_str(s: &str) -> DepSpec {
         return DepSpec::Range(req, s.to_string());
     }
     DepSpec::Opaque(s.to_string())
-}
-
-fn is_bare_semver(s: &str) -> bool {
-    let chars = s.chars().next();
-    if !chars.is_some_and(|c| c.is_ascii_digit()) {
-        return false;
-    }
-    let parts: Vec<&str> = s.split('.').collect();
-    parts.len() == 3
 }
 
 pub fn round_trip(spec: &DepSpec, target: &Version) -> Option<DepSpec> {
@@ -396,7 +399,7 @@ pub fn round_trip(spec: &DepSpec, target: &Version) -> Option<DepSpec> {
                 let mut rewritten_parts = Vec::new();
                 for part in parts {
                     let part_trimmed = part.trim();
-                    let (prefix, rest) = split_single_operator_prefix(part_trimmed)?;
+                    let (prefix, rest) = crate::common::split_single_operator_prefix(part_trimmed)?;
                     if prefix.starts_with('>')
                         || prefix.starts_with('=')
                         || prefix.starts_with('^')
@@ -412,7 +415,7 @@ pub fn round_trip(spec: &DepSpec, target: &Version) -> Option<DepSpec> {
                 let req = VersionReq::parse(&rendered, Ecosystem::Cargo).ok()?;
                 return Some(DepSpec::Range(req, rendered));
             }
-            let (prefix, rest) = split_single_operator_prefix(original)?;
+            let (prefix, rest) = crate::common::split_single_operator_prefix(original)?;
             if rest.contains('*') {
                 return None;
             }
@@ -422,16 +425,6 @@ pub fn round_trip(spec: &DepSpec, target: &Version) -> Option<DepSpec> {
         }
         _ => None,
     }
-}
-
-fn split_single_operator_prefix(s: &str) -> Option<(&str, &str)> {
-    let trimmed = s.trim();
-    for op in ["^", "~", ">=", ">", "<=", "<", "="] {
-        if let Some(rest) = trimmed.strip_prefix(op) {
-            return Some((op, rest.trim()));
-        }
-    }
-    Some(("", trimmed))
 }
 
 fn render_at_precision(target: &Version, original_clause: &str) -> String {
@@ -543,7 +536,11 @@ impl WorkspaceCargoResolver {
         })
     }
 
-    pub fn write_version(&mut self, v: &Version) -> Result<(), ManifestError> {
+    pub fn write_version(
+        &mut self,
+        v: &Version,
+        permit: &ApplyPermit,
+    ) -> Result<(), ManifestError> {
         let ws = self
             .document
             .get_mut("workspace")
@@ -574,10 +571,15 @@ impl WorkspaceCargoResolver {
         } else {
             pkg.insert("version", toml_edit::value(v.render()));
         }
-        self.persist()
+        self.persist(permit)
     }
 
-    pub fn write_dependency(&mut self, name: &str, new: DepSpec) -> Result<(), ManifestError> {
+    pub fn write_dependency(
+        &mut self,
+        name: &str,
+        new: DepSpec,
+        permit: &ApplyPermit,
+    ) -> Result<(), ManifestError> {
         let ws = self
             .document
             .get_mut("workspace")
@@ -612,26 +614,51 @@ impl WorkspaceCargoResolver {
                 *new_val.decor_mut() = decor;
                 *value = new_val;
             } else if let Some(inline) = value.as_inline_table_mut() {
+                let decor = inline.get("version").map(|v| v.decor().clone());
                 inline.insert("version", toml_edit::Value::from(new_str));
+                if let Some(decor) = decor {
+                    if let Some(new_value) = inline.get_mut("version") {
+                        *new_value.decor_mut() = decor;
+                    }
+                }
             }
         } else if let Some(tbl) = item.as_table_mut() {
+            let decor = tbl
+                .get("version")
+                .and_then(|i| i.as_value())
+                .map(|v| v.decor().clone());
             tbl.insert("version", toml_edit::value(new_str));
+            if let Some(decor) = decor {
+                if let Some(new_item) = tbl.get_mut("version").and_then(|i| i.as_value_mut()) {
+                    *new_item.decor_mut() = decor;
+                }
+            }
         }
 
-        self.persist()
+        self.persist(permit)
     }
 
-    fn persist(&mut self) -> Result<(), ManifestError> {
+    fn persist(&mut self, permit: &ApplyPermit) -> Result<(), ManifestError> {
         let text = self.document.to_string();
-        crate::atomic::atomic_write(&self.absolute_path, &text).map_err(|e| ManifestError::Write {
-            path: self.root_path.clone(),
-            message: e.to_string(),
+        crate::atomic::atomic_write(&self.absolute_path, &text, permit).map_err(|e| {
+            ManifestError::Write {
+                path: self.root_path.clone(),
+                message: e.to_string(),
+            }
         })
     }
 }
 
 #[cfg(test)]
 mod tests {
+
+    /// Tests exercise the write primitives directly rather than through a
+    /// command handler, so they mint a permit without a dry-run flag to
+    /// consult. Every non-test caller must go through
+    /// `ApplyPermit::granted_unless_dry_run`.
+    fn permit() -> callisto_model::ApplyPermit {
+        callisto_model::ApplyPermit::force_for_tests()
+    }
     use super::*;
     use callisto_model::{ManifestDecl, ManifestFormat, ManifestRole};
     use tempfile::tempdir;
@@ -667,10 +694,234 @@ serde = "1.0"
         assert_eq!(manifest.current_version().unwrap().render(), "0.1.0");
 
         let new_ver = Version::parse("0.2.0", VersionGrammar::SemVer).unwrap();
-        manifest.write_version(&new_ver).unwrap();
+        manifest.write_version(&new_ver, &permit()).unwrap();
 
         let updated_content = fs::read_to_string(&manifest_path).unwrap();
         assert!(updated_content.contains("version = \"0.2.0\""));
+    }
+
+    #[test]
+    fn handles_utf8_bom_cargo_toml() {
+        let dir = tempdir().unwrap();
+        let manifest_path = dir.path().join("Cargo.toml");
+        fs::write(
+            &manifest_path,
+            callisto_fixtures::corpus::cargo_toml_bom_sample(),
+        )
+        .unwrap();
+
+        let decl = ManifestDecl::new(
+            "Cargo.toml",
+            ManifestRole::Canonical,
+            ManifestFormat::CargoToml,
+        )
+        .unwrap();
+        let ctx = OpenContext {
+            workspace_root: dir.path(),
+            cargo_workspace: None,
+            npm_workspace_kind: None,
+        };
+
+        let manifest = CargoToml::open(&decl, &ctx).unwrap();
+        assert_eq!(manifest.package_name().unwrap(), "bom-crate");
+        assert_eq!(manifest.current_version().unwrap().render(), "1.0.0");
+    }
+
+    #[test]
+    fn preserves_bom_on_write_round_trip() {
+        let dir = tempdir().unwrap();
+        let manifest_path = dir.path().join("Cargo.toml");
+        fs::write(
+            &manifest_path,
+            callisto_fixtures::corpus::cargo_toml_bom_sample(),
+        )
+        .unwrap();
+
+        let decl = ManifestDecl::new(
+            "Cargo.toml",
+            ManifestRole::Canonical,
+            ManifestFormat::CargoToml,
+        )
+        .unwrap();
+        let ctx = OpenContext {
+            workspace_root: dir.path(),
+            cargo_workspace: None,
+            npm_workspace_kind: None,
+        };
+
+        let mut manifest = CargoToml::open(&decl, &ctx).unwrap();
+        let new_ver = Version::parse("1.0.1", VersionGrammar::SemVer).unwrap();
+        manifest.write_version(&new_ver, &permit()).unwrap();
+
+        let updated_bytes = fs::read(&manifest_path).unwrap();
+        let updated = String::from_utf8(updated_bytes).unwrap();
+
+        assert!(
+            updated.starts_with('\u{FEFF}'),
+            "expected UTF-8 BOM to survive write, got:\n{updated:?}"
+        );
+        assert!(updated.contains("version = \"1.0.1\""));
+    }
+
+    #[test]
+    fn empty_cargo_toml_returns_parse_error_not_panic() {
+        let dir = tempdir().unwrap();
+        let manifest_path = dir.path().join("Cargo.toml");
+        fs::write(&manifest_path, "").unwrap();
+
+        let decl = ManifestDecl::new(
+            "Cargo.toml",
+            ManifestRole::Canonical,
+            ManifestFormat::CargoToml,
+        )
+        .unwrap();
+        let ctx = OpenContext {
+            workspace_root: dir.path(),
+            cargo_workspace: None,
+            npm_workspace_kind: None,
+        };
+
+        // An empty TOML document is technically valid (empty table); must not panic.
+        let manifest = CargoToml::open(&decl, &ctx).unwrap();
+        assert!(manifest.package_name().is_err());
+    }
+
+    #[test]
+    fn bom_only_cargo_toml_returns_parse_error_not_panic() {
+        let dir = tempdir().unwrap();
+        let manifest_path = dir.path().join("Cargo.toml");
+        fs::write(&manifest_path, "\u{FEFF}").unwrap();
+
+        let decl = ManifestDecl::new(
+            "Cargo.toml",
+            ManifestRole::Canonical,
+            ManifestFormat::CargoToml,
+        )
+        .unwrap();
+        let ctx = OpenContext {
+            workspace_root: dir.path(),
+            cargo_workspace: None,
+            npm_workspace_kind: None,
+        };
+
+        // BOM-only content strips down to an empty string, which parses as an
+        // empty (valid) TOML document; must not panic.
+        let manifest = CargoToml::open(&decl, &ctx).unwrap();
+        assert!(manifest.package_name().is_err());
+    }
+
+    #[test]
+    fn garbage_cargo_toml_returns_parse_error_not_panic() {
+        let dir = tempdir().unwrap();
+        let manifest_path = dir.path().join("Cargo.toml");
+        fs::write(&manifest_path, "\u{FEFF}not valid toml {{{").unwrap();
+
+        let decl = ManifestDecl::new(
+            "Cargo.toml",
+            ManifestRole::Canonical,
+            ManifestFormat::CargoToml,
+        )
+        .unwrap();
+        let ctx = OpenContext {
+            workspace_root: dir.path(),
+            cargo_workspace: None,
+            npm_workspace_kind: None,
+        };
+
+        let result = CargoToml::open(&decl, &ctx);
+        assert!(matches!(result, Err(ManifestError::Parse { .. })));
+    }
+
+    #[test]
+    fn write_dependency_preserves_trailing_comment_on_full_table_version() {
+        let dir = tempdir().unwrap();
+        let manifest_path = dir.path().join("Cargo.toml");
+        let content = r#"[workspace]
+members = ["crates/*"]
+
+[workspace.dependencies.serde]
+version = "1.0.0" # pinned intentionally, do not bump lightly
+path = "../serde"
+"#;
+        fs::write(&manifest_path, content).unwrap();
+
+        let mut resolver = WorkspaceCargoResolver::load(&manifest_path).unwrap();
+        let new_spec = DepSpec::Range(
+            VersionReq::parse("^1.1.0", Ecosystem::Cargo).unwrap(),
+            "^1.1.0".to_string(),
+        );
+        resolver
+            .write_dependency("serde", new_spec, &permit())
+            .unwrap();
+
+        let updated = fs::read_to_string(&manifest_path).unwrap();
+        assert!(updated.contains("version = \"^1.1.0\""));
+        assert!(
+            updated.contains("# pinned intentionally, do not bump lightly"),
+            "expected trailing comment on version field to survive full-table write, got:\n{updated}"
+        );
+    }
+
+    #[test]
+    fn write_dependency_preserves_decor_on_inline_table_version() {
+        let dir = tempdir().unwrap();
+        let manifest_path = dir.path().join("Cargo.toml");
+        // Custom spacing decor around the `version` key/value inside the inline table.
+        // TOML forbids `#` comments inside inline tables, so the fidelity-loss proxy
+        // here is the leading/trailing whitespace decor attached to the version value,
+        // which write_dependency must preserve just like it does for the plain-string
+        // and full-table branches.
+        let content = "[workspace]\nmembers = [\"crates/*\"]\n\n[workspace.dependencies]\nserde = { version =   \"1.0.0\"  , path = \"../serde\" }\n";
+        fs::write(&manifest_path, content).unwrap();
+
+        let mut resolver = WorkspaceCargoResolver::load(&manifest_path).unwrap();
+        let new_spec = DepSpec::Range(
+            VersionReq::parse("^1.1.0", Ecosystem::Cargo).unwrap(),
+            "^1.1.0".to_string(),
+        );
+        resolver
+            .write_dependency("serde", new_spec, &permit())
+            .unwrap();
+
+        let updated = fs::read_to_string(&manifest_path).unwrap();
+        assert!(updated.contains("^1.1.0"));
+        assert!(
+            updated.contains("version =   \"^1.1.0\"  ,"),
+            "expected custom decor around version field to survive inline-table write, got:\n{updated}"
+        );
+    }
+
+    #[test]
+    fn preserves_tab_indentation_cargo_toml() {
+        let dir = tempdir().unwrap();
+        let manifest_path = dir.path().join("Cargo.toml");
+        fs::write(
+            &manifest_path,
+            callisto_fixtures::corpus::cargo_toml_tab_indented_sample(),
+        )
+        .unwrap();
+
+        let decl = ManifestDecl::new(
+            "Cargo.toml",
+            ManifestRole::Canonical,
+            ManifestFormat::CargoToml,
+        )
+        .unwrap();
+        let ctx = OpenContext {
+            workspace_root: dir.path(),
+            cargo_workspace: None,
+            npm_workspace_kind: None,
+        };
+
+        let mut manifest = CargoToml::open(&decl, &ctx).unwrap();
+        assert_eq!(manifest.package_name().unwrap(), "tabbed-crate");
+
+        let new_ver = Version::parse("1.0.1", VersionGrammar::SemVer).unwrap();
+        manifest.write_version(&new_ver, &permit()).unwrap();
+
+        let updated = fs::read_to_string(&manifest_path).unwrap();
+        assert!(updated.contains("\tversion = \"1.0.1\""));
+        assert!(updated.contains("\tname = \"tabbed-crate\""));
     }
 
     #[test]
@@ -745,7 +996,12 @@ helper = { version = "1.0.0", path = "../helper" }
             "^1.1.0".to_string(),
         );
         manifest
-            .update_dependency_spec("helper", callisto_model::DepKind::Runtime, new_spec)
+            .update_dependency_spec(
+                "helper",
+                callisto_model::DepKind::Runtime,
+                new_spec,
+                &permit(),
+            )
             .unwrap();
 
         let updated = fs::read_to_string(&manifest_path).unwrap();
@@ -778,7 +1034,7 @@ edition = "2021"
 
         let mut manifest = CargoToml::open(&decl, &ctx).unwrap();
         let new_ver = Version::parse("0.2.0", VersionGrammar::SemVer).unwrap();
-        manifest.write_version(&new_ver).unwrap();
+        manifest.write_version(&new_ver, &permit()).unwrap();
 
         let updated = fs::read_to_string(&manifest_path).unwrap();
         assert!(updated.contains("version = \"0.2.0\" # preserve this inline comment"));
@@ -815,7 +1071,12 @@ helper = { version = "1.0.0", path = "../helper" } # dep comment
             "^1.1.0".to_string(),
         );
         manifest
-            .update_dependency_spec("helper", callisto_model::DepKind::Runtime, new_spec)
+            .update_dependency_spec(
+                "helper",
+                callisto_model::DepKind::Runtime,
+                new_spec,
+                &permit(),
+            )
             .unwrap();
 
         let updated = fs::read_to_string(&manifest_path).unwrap();

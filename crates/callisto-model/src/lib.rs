@@ -1,6 +1,9 @@
 //! Shared types and traits for callisto: package identity, versions, manifests, dependency
 //! specs, and the versioned JSON report contract.
 
+pub mod permit;
+pub use permit::*;
+
 pub mod tag;
 pub use tag::*;
 
@@ -60,6 +63,7 @@ mod tests {
         assert_send_sync_static::<Ecosystem>();
         assert_send_sync_static::<Package>();
         assert_send_sync_static::<PublishPlan>();
+        assert_send_sync_static::<PublishReport>();
         assert_send_sync_static::<VersionReport>();
         assert_send_sync_static::<StatusReport>();
     }

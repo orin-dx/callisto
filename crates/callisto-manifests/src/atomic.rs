@@ -1,20 +1,38 @@
 use std::io::{self, Write};
 use std::path::Path;
+
+use callisto_model::ApplyPermit;
 use tempfile::NamedTempFile;
 
 /// Trait for durable changeset and manifest storage operations.
 pub trait ChangesetStorage {
     /// Writes content atomically with parent and grandparent directory journal flushing.
-    fn atomic_write_durable(&self, content: &str) -> io::Result<()>;
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` on any I/O failure: directory creation, temp-file creation, write, sync, or persist.
+    fn atomic_write_durable(&self, content: &str, permit: &ApplyPermit) -> io::Result<()>;
 }
 
 impl ChangesetStorage for Path {
-    fn atomic_write_durable(&self, content: &str) -> io::Result<()> {
-        atomic_write(self, content)
+    fn atomic_write_durable(&self, content: &str, permit: &ApplyPermit) -> io::Result<()> {
+        atomic_write(self, content, permit)
     }
 }
 
-pub fn atomic_write(path: &Path, content: &str) -> io::Result<()> {
+/// Durably replaces `path`'s contents with `content`.
+///
+/// The [`ApplyPermit`] is unused at runtime and exists purely as a compile-time
+/// obligation: this is callisto's single disk-write primitive, so requiring a
+/// permit here means no code path can reach the filesystem without having first
+/// consulted the dry-run flag. See [`callisto_model::permit`].
+///
+/// # Errors
+///
+/// Returns the first I/O error encountered: creating parent directories, writing the temp file,
+/// flushing, fsyncing, or persisting (renaming) to `path`.
+pub fn atomic_write(path: &Path, content: &str, permit: &ApplyPermit) -> io::Result<()> {
+    let _permit = permit;
     let raw_parent = path.parent().unwrap_or_else(|| Path::new("."));
     let parent = if raw_parent.as_os_str().is_empty() {
         Path::new(".")

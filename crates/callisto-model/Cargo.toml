@@ -10,6 +10,12 @@ readme = "README.md"
 [lints]
 workspace = true
 
+[features]
+# Exposes `ApplyPermit::force_for_tests` to other crates' test targets. Enable
+# only under `[dev-dependencies]`; a `[dependencies]` entry would let
+# production code mint write permits without consulting the dry-run flag.
+test-util = []
+
 [dependencies]
 semver.workspace = true
 pep440_rs.workspace = true

@@ -2,8 +2,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use callisto_model::{
-    DepKind, DepSpec, DependencyEntry, Ecosystem, ManifestDecl, ManifestError, ManifestFormat,
-    ManifestRole, PublishTarget, Version, VersionGrammar, VersionReq,
+    ApplyPermit, DepKind, DepSpec, DependencyEntry, Ecosystem, ManifestDecl, ManifestError,
+    ManifestFormat, ManifestRole, PublishTarget, Version, VersionGrammar, VersionReq,
 };
 use toml_edit::value;
 
@@ -16,6 +16,14 @@ pub struct PyprojectToml {
     absolute: PathBuf,
     role: ManifestRole,
     document: toml_edit::DocumentMut,
+    has_bom: bool,
+    line_ending: LineEnding,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LineEnding {
+    Lf,
+    CrLf,
 }
 
 impl PyprojectToml {
@@ -28,7 +36,13 @@ impl PyprojectToml {
             message: e.to_string(),
         })?;
 
+        let has_bom = content.starts_with('\u{FEFF}');
         let clean_content = content.strip_prefix('\u{FEFF}').unwrap_or(&content);
+        let line_ending = if clean_content.contains("\r\n") {
+            LineEnding::CrLf
+        } else {
+            LineEnding::Lf
+        };
 
         let doc: toml_edit::DocumentMut =
             clean_content
@@ -44,7 +58,20 @@ impl PyprojectToml {
             absolute: abs_path,
             role: decl.role.clone(),
             document: doc,
+            has_bom,
+            line_ending,
         })
+    }
+
+    fn render(&self) -> String {
+        let mut out = self.document.to_string();
+        if self.line_ending == LineEnding::CrLf {
+            out = out.replace("\r\n", "\n").replace('\n', "\r\n");
+        }
+        if self.has_bom {
+            out = format!("\u{FEFF}{}", out);
+        }
+        out
     }
 }
 
@@ -138,7 +165,7 @@ impl Manifest for PyprojectToml {
         })
     }
 
-    fn write_version(&mut self, v: &Version) -> Result<(), ManifestError> {
+    fn write_version(&mut self, v: &Version, permit: &ApplyPermit) -> Result<(), ManifestError> {
         let new_ver = v.render();
 
         let set_with_decor = |table: &mut toml_edit::Item, key: &str| {
@@ -173,8 +200,8 @@ impl Manifest for PyprojectToml {
             self.document["project"]["version"] = value(new_ver);
         }
 
-        let content = self.document.to_string();
-        atomic_write(&self.absolute, &content).map_err(|e| ManifestError::Write {
+        let content = self.render();
+        atomic_write(&self.absolute, &content, permit).map_err(|e| ManifestError::Write {
             path: self.path.clone(),
             message: e.to_string(),
         })
@@ -260,6 +287,7 @@ impl Manifest for PyprojectToml {
         name: &str,
         _kind: DepKind,
         new: DepSpec,
+        permit: &ApplyPermit,
     ) -> Result<(), ManifestError> {
         let new_spec_str = match new {
             DepSpec::Range(req, _) => req.render().to_string(),
@@ -332,8 +360,8 @@ impl Manifest for PyprojectToml {
         }
 
         if updated {
-            let content = self.document.to_string();
-            atomic_write(&self.absolute, &content).map_err(|e| ManifestError::Write {
+            let content = self.render();
+            atomic_write(&self.absolute, &content, permit).map_err(|e| ManifestError::Write {
                 path: self.path.clone(),
                 message: e.to_string(),
             })?;
@@ -352,6 +380,7 @@ impl Manifest for PyprojectToml {
     fn update_optional_dependencies(
         &mut self,
         _updates: &[(String, Version)],
+        _permit: &ApplyPermit,
     ) -> Result<(), ManifestError> {
         Ok(())
     }
@@ -359,6 +388,14 @@ impl Manifest for PyprojectToml {
 
 #[cfg(test)]
 mod tests {
+
+    /// Tests exercise the write primitives directly rather than through a
+    /// command handler, so they mint a permit without a dry-run flag to
+    /// consult. Every non-test caller must go through
+    /// `ApplyPermit::granted_unless_dry_run`.
+    fn permit() -> callisto_model::ApplyPermit {
+        callisto_model::ApplyPermit::force_for_tests()
+    }
     use super::*;
     use callisto_model::ManifestFormat;
     use tempfile::tempdir;
@@ -403,7 +440,7 @@ dependencies = [
         assert_eq!(current_v.render(), "0.3.1");
 
         let new_v = Version::parse("0.3.2", VersionGrammar::Pep440).unwrap();
-        manifest.write_version(&new_v).unwrap();
+        manifest.write_version(&new_v, &permit()).unwrap();
 
         let updated_content = fs::read_to_string(&pyproject_path).unwrap();
         assert!(updated_content.contains("version = \"0.3.2\""));
@@ -434,6 +471,247 @@ dependencies = [
         let manifest = PyprojectToml::open(&decl, &ctx).unwrap();
         assert_eq!(manifest.package_name().unwrap(), "bom-lib");
         assert_eq!(manifest.current_version().unwrap().render(), "1.0.0");
+    }
+
+    #[test]
+    fn preserves_bom_and_crlf_line_endings_on_write() {
+        let dir = tempdir().unwrap();
+        let pyproject_path = dir.path().join("pyproject.toml");
+
+        fs::write(
+            &pyproject_path,
+            callisto_fixtures::corpus::pyproject_toml_bom_crlf_sample(),
+        )
+        .unwrap();
+
+        let decl = ManifestDecl {
+            path: PathBuf::from("pyproject.toml"),
+            role: ManifestRole::Canonical,
+            format: ManifestFormat::PyprojectToml,
+        };
+
+        let ctx = OpenContext {
+            workspace_root: dir.path(),
+            cargo_workspace: None,
+            npm_workspace_kind: None,
+        };
+
+        let mut manifest = PyprojectToml::open(&decl, &ctx).unwrap();
+        assert_eq!(manifest.package_name().unwrap(), "bom-crlf-lib");
+
+        let new_v = Version::parse("1.0.1", VersionGrammar::Pep440).unwrap();
+        manifest.write_version(&new_v, &permit()).unwrap();
+
+        let updated_bytes = fs::read(&pyproject_path).unwrap();
+        let updated = String::from_utf8(updated_bytes).unwrap();
+
+        assert!(
+            updated.starts_with('\u{FEFF}'),
+            "expected UTF-8 BOM to survive write, got:\n{updated:?}"
+        );
+        assert!(
+            updated.contains("\r\n"),
+            "expected CRLF line endings to survive write, got:\n{updated:?}"
+        );
+        assert!(
+            !updated.replace("\r\n", "").contains('\n'),
+            "expected no bare LF line endings to remain, got:\n{updated:?}"
+        );
+        assert!(updated.contains("version = \"1.0.1\" # release version"));
+    }
+
+    #[test]
+    fn preserves_crlf_line_endings_without_bom_on_write() {
+        let dir = tempdir().unwrap();
+        let pyproject_path = dir.path().join("pyproject.toml");
+
+        fs::write(
+            &pyproject_path,
+            callisto_fixtures::corpus::pyproject_toml_crlf_no_bom_sample(),
+        )
+        .unwrap();
+
+        let decl = ManifestDecl {
+            path: PathBuf::from("pyproject.toml"),
+            role: ManifestRole::Canonical,
+            format: ManifestFormat::PyprojectToml,
+        };
+
+        let ctx = OpenContext {
+            workspace_root: dir.path(),
+            cargo_workspace: None,
+            npm_workspace_kind: None,
+        };
+
+        let mut manifest = PyprojectToml::open(&decl, &ctx).unwrap();
+        assert_eq!(manifest.package_name().unwrap(), "crlf-lib");
+
+        let new_v = Version::parse("1.0.1", VersionGrammar::Pep440).unwrap();
+        manifest.write_version(&new_v, &permit()).unwrap();
+
+        let updated_bytes = fs::read(&pyproject_path).unwrap();
+        let updated = String::from_utf8(updated_bytes).unwrap();
+
+        assert!(
+            !updated.starts_with('\u{FEFF}'),
+            "expected no BOM to be introduced, got:\n{updated:?}"
+        );
+        assert!(
+            updated.contains("\r\n"),
+            "expected CRLF line endings to survive write, got:\n{updated:?}"
+        );
+        assert!(
+            !updated.replace("\r\n", "").contains('\n'),
+            "expected no bare LF line endings to remain, got:\n{updated:?}"
+        );
+        assert!(updated.contains("version = \"1.0.1\" # release version"));
+    }
+
+    #[test]
+    fn preserves_bom_without_crlf_on_write() {
+        let dir = tempdir().unwrap();
+        let pyproject_path = dir.path().join("pyproject.toml");
+
+        fs::write(
+            &pyproject_path,
+            callisto_fixtures::corpus::pyproject_toml_bom_no_crlf_sample(),
+        )
+        .unwrap();
+
+        let decl = ManifestDecl {
+            path: PathBuf::from("pyproject.toml"),
+            role: ManifestRole::Canonical,
+            format: ManifestFormat::PyprojectToml,
+        };
+
+        let ctx = OpenContext {
+            workspace_root: dir.path(),
+            cargo_workspace: None,
+            npm_workspace_kind: None,
+        };
+
+        let mut manifest = PyprojectToml::open(&decl, &ctx).unwrap();
+        assert_eq!(manifest.package_name().unwrap(), "bom-lf-lib");
+
+        let new_v = Version::parse("1.0.1", VersionGrammar::Pep440).unwrap();
+        manifest.write_version(&new_v, &permit()).unwrap();
+
+        let updated_bytes = fs::read(&pyproject_path).unwrap();
+        let updated = String::from_utf8(updated_bytes).unwrap();
+
+        assert!(
+            updated.starts_with('\u{FEFF}'),
+            "expected UTF-8 BOM to survive write, got:\n{updated:?}"
+        );
+        assert!(
+            !updated.replace('\u{FEFF}', "").contains("\r\n"),
+            "expected no CRLF to be introduced, got:\n{updated:?}"
+        );
+        assert!(updated.contains("version = \"1.0.1\" # release version"));
+    }
+
+    #[test]
+    fn empty_pyproject_toml_returns_parse_error_not_panic() {
+        let dir = tempdir().unwrap();
+        let pyproject_path = dir.path().join("pyproject.toml");
+        fs::write(&pyproject_path, "").unwrap();
+
+        let decl = ManifestDecl {
+            path: PathBuf::from("pyproject.toml"),
+            role: ManifestRole::Canonical,
+            format: ManifestFormat::PyprojectToml,
+        };
+
+        let ctx = OpenContext {
+            workspace_root: dir.path(),
+            cargo_workspace: None,
+            npm_workspace_kind: None,
+        };
+
+        // An empty TOML document is technically valid (empty table), so this
+        // must not panic; the resulting manifest simply lacks required fields.
+        let manifest = PyprojectToml::open(&decl, &ctx).unwrap();
+        assert!(manifest.package_name().is_err());
+    }
+
+    #[test]
+    fn bom_only_pyproject_toml_returns_parse_error_not_panic() {
+        let dir = tempdir().unwrap();
+        let pyproject_path = dir.path().join("pyproject.toml");
+        fs::write(&pyproject_path, "\u{FEFF}").unwrap();
+
+        let decl = ManifestDecl {
+            path: PathBuf::from("pyproject.toml"),
+            role: ManifestRole::Canonical,
+            format: ManifestFormat::PyprojectToml,
+        };
+
+        let ctx = OpenContext {
+            workspace_root: dir.path(),
+            cargo_workspace: None,
+            npm_workspace_kind: None,
+        };
+
+        // BOM-only content strips down to an empty string, which parses as an
+        // empty (valid) TOML document; must not panic.
+        let manifest = PyprojectToml::open(&decl, &ctx).unwrap();
+        assert!(manifest.package_name().is_err());
+    }
+
+    #[test]
+    fn garbage_pyproject_toml_returns_parse_error_not_panic() {
+        let dir = tempdir().unwrap();
+        let pyproject_path = dir.path().join("pyproject.toml");
+        fs::write(&pyproject_path, "\u{FEFF}not valid toml {{{").unwrap();
+
+        let decl = ManifestDecl {
+            path: PathBuf::from("pyproject.toml"),
+            role: ManifestRole::Canonical,
+            format: ManifestFormat::PyprojectToml,
+        };
+
+        let ctx = OpenContext {
+            workspace_root: dir.path(),
+            cargo_workspace: None,
+            npm_workspace_kind: None,
+        };
+
+        let result = PyprojectToml::open(&decl, &ctx);
+        assert!(matches!(result, Err(ManifestError::Parse { .. })));
+    }
+
+    #[test]
+    fn preserves_tab_indentation_pyproject_toml() {
+        let dir = tempdir().unwrap();
+        let pyproject_path = dir.path().join("pyproject.toml");
+
+        fs::write(
+            &pyproject_path,
+            callisto_fixtures::corpus::pyproject_toml_tab_indented_sample(),
+        )
+        .unwrap();
+
+        let decl = ManifestDecl {
+            path: PathBuf::from("pyproject.toml"),
+            role: ManifestRole::Canonical,
+            format: ManifestFormat::PyprojectToml,
+        };
+
+        let ctx = OpenContext {
+            workspace_root: dir.path(),
+            cargo_workspace: None,
+            npm_workspace_kind: None,
+        };
+
+        let mut manifest = PyprojectToml::open(&decl, &ctx).unwrap();
+        assert_eq!(manifest.package_name().unwrap(), "tabbed-lib");
+
+        let new_v = Version::parse("1.0.1", VersionGrammar::Pep440).unwrap();
+        manifest.write_version(&new_v, &permit()).unwrap();
+
+        let updated = fs::read_to_string(&pyproject_path).unwrap();
+        assert!(updated.contains("\t\"requests>=2.28.0\""));
+        assert!(updated.contains("version = \"1.0.1\""));
     }
 
     #[test]
@@ -503,6 +781,7 @@ dependencies = [
                 "my-lib",
                 DepKind::Runtime,
                 DepSpec::Range(req, ">=0.3.2".to_string()),
+                &permit(),
             )
             .unwrap();
 
