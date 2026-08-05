@@ -1,3 +1,5 @@
+use std::collections::{HashMap, HashSet};
+
 use callisto_changelog::{ChangeSource, ChangelogEntry, ChangelogInput};
 use callisto_model::{BumpReason, CommandRunner, GroupKind, Severity};
 
@@ -81,11 +83,15 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
     let mut bumps = Vec::new();
     let mut changelog_writes = Vec::new();
 
+    // PERF-006: build a map once so each lookup inside the loop is O(1)
+    // instead of O(N) (the previous packages().find() call).
+    let pkg_map: HashMap<_, _> = ws.graph.packages().map(|p| (&p.id, p)).collect();
+
     for (id, &sev) in &outcome.severities {
         if sev == Severity::None {
             continue;
         }
-        let pkg = ws.graph.packages().find(|p| &p.id == id).unwrap();
+        let pkg = pkg_map.get(id).copied().unwrap();
         let from = base_versions.get(id).cloned().ok_or_else(|| {
             GraphError::Manifest(callisto_model::ManifestError::MissingField {
                 path: pkg
@@ -217,11 +223,16 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
             let rel_pre_path = ws.config.changesets_dir.join("pre.json");
             (None, Some(rel_pre_path))
         } else {
-            // Update pre-release state changesets
+            // Update pre-release state changesets.
+            // PERF-008: build an owned HashSet so each membership check is O(1)
+            // instead of O(|state.changesets|); owned strings avoid the borrow
+            // conflict that would arise from holding &str refs into the Vec
+            // while also pushing to it.
+            let seen: HashSet<String> = state.changesets.iter().cloned().collect();
             for cs in &agg.consumed {
                 if let Some(name) = cs.file_name().and_then(|n| n.to_str()) {
                     let stem = name.strip_suffix(".md").unwrap_or(name).to_string();
-                    if !state.changesets.contains(&stem) {
+                    if !seen.contains(&stem) {
                         state.changesets.push(stem);
                     }
                 }

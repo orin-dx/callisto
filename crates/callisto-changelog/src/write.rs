@@ -53,7 +53,7 @@ pub fn prepend(
     // in the file, skip the write entirely (idempotent behaviour). The heading
     // is the first line of `rendered` (e.g. "## 1.0.0").
     let version_heading = rendered.lines().next().unwrap_or("").trim();
-    if !version_heading.is_empty() && normalised.contains(version_heading) {
+    if !version_heading.is_empty() && normalised.lines().any(|l| l.trim() == version_heading) {
         return Ok(());
     }
 
@@ -307,6 +307,43 @@ mod tests {
         assert!(
             result.contains("Some content"),
             "existing content should be preserved — got:\n{result}"
+        );
+    }
+
+    #[test]
+    fn test_prepend_stable_after_prerelease_not_suppressed() {
+        // CORR-001: "## 1.0.0" must not be suppressed by the idempotency guard
+        // when the file already contains "## 1.0.0-alpha.1", because the stable
+        // version string is a substring of the pre-release heading.
+        let workspace = tempfile::tempdir().unwrap();
+        let root = workspace.path();
+        let changelog_path = std::path::Path::new("CHANGELOG.md");
+        let full_path = root.join(changelog_path);
+
+        let existing = "## 1.0.0-alpha.1\n\n- alpha change\n";
+        fs::write(&full_path, existing).unwrap();
+
+        prepend(
+            root,
+            changelog_path,
+            "my-pkg",
+            "## 1.0.0\n\n### Patch Changes\n\n- Stable release\n",
+            &permit(),
+        )
+        .expect("prepend should succeed");
+
+        let result = fs::read_to_string(&full_path).unwrap();
+
+        // The stable heading must appear as a standalone line, not just as
+        // a substring match that could fire on "## 1.0.0-alpha.1".
+        assert!(
+            result.lines().any(|l| l.trim() == "## 1.0.0"),
+            "stable heading '## 1.0.0' must appear as its own line; got:\n{result}"
+        );
+        // The pre-release heading must still be present.
+        assert!(
+            result.contains("## 1.0.0-alpha.1"),
+            "pre-release heading must still be present; got:\n{result}"
         );
     }
 
