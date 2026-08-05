@@ -1,0 +1,111 @@
+<task-notification>
+<task-id>a367599b3d2913231</task-id>
+<tool-use-id>toolu_01LBB18wvDqDcD94CT1Ugbg2</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a15bbbf7-aba0-415d-bfdc-c773ea65cfc7/tasks/a367599b3d2913231.output</output-file>
+<status>completed</status>
+<summary>Agent "Documentation completeness audit" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Now I have read all seven files. Let me compile the audit.
+
+---
+
+## Documentation Audit Results
+
+### `crates/callisto-graph/src/apply.rs`
+
+**Issue 1 — Missing doc comment: `ApplyOptions` struct**
+Line 13. The struct has no `///` doc at all. The field comment on `refresh_lockfiles` is useful, but there is nothing explaining what the struct is for or why it exists. Suggested doc: "Options governing how a version plan is applied. Currently all fields are advisory; see individual field docs."
+
+**Issue 2 — Missing doc comment: `ApplyOutcome` struct**
+Line 20. No `///` doc. Suggested: "The result of a successful [`apply_version_plan`] call, describing which paths were written and staged."
+
+**Issue 3 — Missing doc comments: `ApplyOutcome` fields**
+Lines 23–24. Both `lockfile_refresh_results` and `staged` are public fields with no `///`. `staged` in particular is the primary output callers inspect. Suggested for `staged`: "Paths written and staged by `git add`/`git rm --cached`, relative to the workspace root." For `lockfile_refresh_results`: "Reserved for future lockfile refresh results; always `None` until `refresh_lockfiles` is wired through."
+
+**Issue 4 — Missing `# Errors`: `apply_version_plan`**
+Line 35. The function returns `Result&lt;ApplyOutcome, GraphError&gt;` and has many failure paths (manifest open errors, version write errors, git command failures, I/O errors on changelogs and pre.json). None are documented. The existing doc explains the design rationale well but leaves callers guessing what triggers `Err`. Suggested addition: a `# Errors` section listing the primary error variants: manifest parse/write failures (`GraphError::Manifest`), git subprocess failure (`GraphError::Command(CommandError::Failed)`), and I/O errors on file deletion/pre.json writes (`GraphError::Command(CommandError::Io)`).
+
+---
+
+### `crates/callisto-model/src/identity.rs`
+
+**Issue 5 — Missing `# Errors`: `PackageId::parse`**
+Line 20. The doc says "Parses package identity string." but does not document what causes `Err`. The function returns a `PackageIdParseError` with four variants (Empty, EmptyNameAfterPrefix, LeadingSlash, PathTraversal). Suggested addition: "# Errors — Returns `Err` if `s` is empty, starts with `/` or `-`, contains `..`, or has a known ecosystem prefix followed by an empty name."
+
+**Issue 6 — Missing doc comment: `PackageId::display_name`**
+Line 73. Public method with no `///`. Suggested: "Returns the canonical display form of this id: bare names are returned as-is; prefixed ids use `ecosystem/name` notation."
+
+**Issue 7 — Missing doc comment: `PackageId::ecosystem`**
+Line 82. No `///`. Suggested: "Returns the ecosystem this id is qualified with, or `None` for a [`PackageId::Bare`] id."
+
+**Issue 8 — Missing doc comment: `PackageId::name`**
+Line 89. No `///`. Suggested: "Returns the package name without any ecosystem prefix."
+
+**Issue 9 — Missing doc comment: `PackageIdParseError` enum**
+Line 209. Public error type with no `///` on the enum itself — only the derived `#[error(...)]` strings appear in output. Suggested: "Errors produced by [`PackageId::parse`]."
+
+**Issue 10 — Missing doc comment: `GroupName::as_str`**
+Line 231. Public method with no `///`. Suggested: "Returns the group name as a string slice."
+
+**Issue 11 — Missing doc comments: `RegistryKey::CRATES_IO` and `RegistryKey::NPM`**
+Lines 259–260. Public constants with no `///`. Suggested: `/// Well-known registry key for crates.io.` and `/// Well-known registry key for the npm registry.`
+
+**Issue 12 — Missing doc comment: `RegistryKey::as_str`**
+Line 262. No `///`. Suggested: "Returns the registry key as a string slice."
+
+**Issue 13 — Missing doc comment and `# Errors`: `CommitSha::parse`**
+Line 285. The method is public, returns `Result&lt;Self, ModelError&gt;`, and has no `///` at all. Suggested doc: "Parses a 40-character hexadecimal Git commit SHA, trimming surrounding whitespace. # Errors — Returns `Err(ModelError::InvalidCommitSha)` if the trimmed input is not exactly 40 ASCII hex digits."
+
+**Issue 14 — Missing doc comments: `CommitSha::as_str` and `CommitSha::short`**
+Lines 296 and 300. Public methods with no `///`. Suggested: `as_str` → "Returns the full 40-character lowercase hex SHA." `short` → "Returns the first 7 characters of the SHA, matching the short-ref convention used by git."
+
+---
+
+### `crates/callisto-manifests/src/atomic.rs`
+
+**Issue 15 — Missing `# Errors`: `ChangesetStorage::atomic_write_durable`**
+Line 9–10. The method returns `io::Result&lt;()&gt;` with no error documentation. This is a trait method, so the doc is the contract implementors must satisfy. Suggested: add "# Errors — Returns `Err` on any I/O failure: directory creation, temp-file creation, write, sync, or persist."
+
+**Issue 16 — Missing `# Errors`: `atomic_write`**
+Line 19–25. Returns `io::Result&lt;()&gt;` but the doc only explains the permit rationale. Several distinct I/O failure points exist (create_dir_all, NamedTempFile::new_in, write, sync_all, persist). Suggested addition: "# Errors — Returns the first I/O error encountered: creating parent directories, writing to the temp file, flushing, fsync, or persisting (renaming) to `path`."
+
+---
+
+### `crates/callisto-graph/src/commands/init.rs`
+
+**Issue 17 — Missing doc comment: `InitOptions` struct**
+Line 10. The struct has no `///` doc. The `yes` field is documented, but the struct itself is not. Suggested: "Options for the `init` command; controls whether detected ecosystem drift is written back to `callisto.toml`."
+
+**Issue 18 — Missing `# Errors`: `init`**
+Line 113. Returns `Result&lt;InitReport, GraphError&gt;` but has no `# Errors` section. The function can fail on config TOML parse errors, read errors on the existing `callisto.toml`, TOML re-render errors (from `set_recorded_ecosystems`), and atomic write failures. Suggested: "# Errors — Returns `Err(GraphError::Config(...))` if `callisto.toml` cannot be read or parsed, or if the TOML CST edit for the reconciled ecosystem list fails. Returns `Err(GraphError::Command(CommandError::Io {...}))` on filesystem write failures."
+
+---
+
+### `crates/callisto-cli/src/commands/pre.rs`
+
+**Issue 19 — Missing doc comment: `pub fn handle`**
+Line 41. The entry-point of the `pre` subcommand is entirely undocumented. Given that it dispatches two distinct subcommands (`pre enter` and `pre exit`) with different side effects and error modes, a missing doc is a real gap for anyone reading the CLI layer. Also missing `# Errors`. Suggested: "Handles the `pre enter` and `pre exit` subcommands. `pre enter` creates `.changeset/pre.json` with the supplied tag and a snapshot of current package versions. `pre exit` updates an existing `pre.json`'s mode to `exit`. Under `--dry-run`, neither subcommand writes any file; instead the would-be content is rendered to stdout. # Errors — Returns `Err(CliError::Io)` if reading the current `pre.json` fails (exit subcommand), or if any write fails (enter subcommand on a real run)."
+
+---
+
+### `crates/callisto-fixtures/src/dry_run.rs`
+
+**Issue 20 — Panic documented in prose, not under `# Panics`**
+Line 87–96. `assert_no_disk_mutation` panics when any file changes are detected. The doc says "Panics with the full list of offending paths on violation" inline in the description paragraph, rather than in a dedicated `# Panics` section. While the information is present, rustdoc convention (and `clippy::missing_panics_doc`) expects the heading. Suggested: move the panic description to a `# Panics` section: "# Panics — Panics if any file under `root` was created, deleted, or had its contents changed during `operation`. The panic message lists every offending path."
+
+---
+
+### Summary by category
+
+| Category | Count | Files |
+|---|---|---|
+| Missing doc comment (struct/item) | 4 | apply.rs, init.rs (×2 structs), pre.rs |
+| Missing doc comment (method/const) | 9 | identity.rs (×7), atomic.rs (implicit via trait method doc), commit sha |
+| Missing `# Errors` | 6 | apply.rs, init.rs, atomic.rs (×2), identity.rs (×2) |
+| `# Panics` in prose instead of section | 1 | dry_run.rs |
+| Inaccurate doc | 0 | — |
+| Stale intra-doc cross-reference | 0 | — |
+
+No inaccurate docs or stale `[SomeName]` cross-references were found. The permit.rs, manifest_cache.rs module doc, `PackageId::matches`, and `assert_no_disk_mutation` prose are all accurate to what the code actually does.</result>
+<usage><subagent_tokens>34832</subagent_tokens><tool_uses>8</tool_uses><duration_ms>139463</duration_ms></usage>
+</task-notification>
