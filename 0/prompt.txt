@@ -1,0 +1,119 @@
+<task-notification>
+<task-id>a23e977be95badce4</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/be3206f0-36f6-4eb6-82ee-1a6f04cb1a40/tasks/a23e977be95badce4.output</output-file>
+<status>completed</status>
+<summary>Agent "Final verification of 01-spec.md fix session" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I read all 10,426 lines of `01-spec.md` fresh, plus `00-design.md`'s companions and `02-library-vs-moon-decision.md`, and ran a mechanical cross-reference resolver over every `§X.Y` citation.
+
+## Verdict
+
+**The fix session landed. All 23 findings I could reconstruct from your description are genuinely resolved — not relocated, not restated.** The three you flagged as highest-risk are the *most* thoroughly done:
+
+- **`bump_prerelease`** is complete end to end: trait method (§F.6.1 L2905), 4-step algorithm with monotonicity argument (§F.6.3 L3011-3045), tag-validation delegation to the caller (L3047), golden-table fixture (§F.9 item 4), corpus file `data/bump-version/prerelease.json` (§CF.4), accessor `bump_prerelease_table()` (§CF.3.3), obligations-index row (§CF.6), correct signature in the §G.1.3 copy, and a real call site in `bump_target`'s pre-mode path (§G.7.4 L7163). Nothing dangles.
+- **Cargo workspace inheritance** now has exactly one story across all five sites (`DependencyEntry::inherited` → `WorkspaceInheritance::inherited` → `DepEdge::inherited` → typed `DepWriteTarget`/`VersionWriteTarget` → §G.10.2 dispatch), and the kind-preservation rule is stated identically in §CM.4.4, §G.4.4, and the §G.15 item 6 fixture.
+- **`changelogSection`** has a real production path (`extract_section`, §CL.6 L4942), a pinned extraction rule, a three-case table (§CL.7.1), the `ChangelogSectionNotFound` diagnostic, and a round-trip fixture.
+- §G.1.3's signature block now matches every section it summarizes, and each line carries the owning section as a trailing comment.
+- The cascade `always` no-op is fixed via the `effective` collapse (§G.7.1 L6821-6826) *with* the non-inertness fixture that pins it (§G.15 item 1, L8255-8259).
+- `CargoBare` coverage is now caret semantics with a shared `caret_covers` and a dedicated boundary fixture (§G.15 item 1b).
+
+**But it is not clean.** Ten findings remain, ranked.
+
+---
+
+### 1. `NapiTargetsIndex` is used at a call site and defined nowhere — same bug class the session claimed to close
+
+§G.8.1, L7339-7346:
+```rust
+pub fn pre_mutation_checks&lt;D: DependencyResolver&gt;(
+    graph: &amp;D, groups: &amp;GroupTable, base: &amp;BTreeMap&lt;PackageId, Version&gt;,
+    tags: &amp;TagIndex,
+    napi: &amp;NapiTargetsIndex,
+    strict: bool,
+) -&gt; Result&lt;GroupCheckOutcome, GraphError&gt;;
+```
+`NapiTargetsIndex` occurs exactly once in the entire document. It has no definition, no module assignment (§G.1.2's `napi.rs` line lists only "napi.targets drift cross-check, triple ⇄ role table"), and no construction site — nothing tells an implementer where the raw `napi.targets` arrays come from. This is precisely the `GroupMemberKind` failure that §G.5.5 L6344-6352 was added to fix; that one got a definition, this one did not.
+
+### 2. `GroupMember` derives `Ord`, but `ManifestRole` doesn't derive `PartialOrd`/`Ord` — will not compile
+
+§G.5.5 L6338-6342:
+```rust
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum GroupMember {
+    Package(PackageId),
+    PlatformManifest { owner: PackageId, role: ManifestRole, path: PathBuf, name: String },
+}
+```
+§M.6.2 L847: `#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)] pub enum ManifestRole`.
+
+The order is load-bearing, not incidental — `GroupDef::members` is documented "Sorted" (L6324) and `GroupDef::members(kind)` yields "in `GroupMember`'s sort order" (L6359). Fix is one word in `callisto-model`, but it has to be in `callisto-model`, which makes it a cross-crate edit.
+
+### 3. `strict: bool` on `pre_mutation_checks` and `napi_drift` contradicts SPEC DECISION G35
+
+§G.11 L7923-7936 introduced centralized escalation: *"Graph construction (§G.4.1) and the group checks (§G.8) emit their diagnostics at `Warning` with an `escalated_by` flag …; they do not — and for `crosscheck_declared_edges`, cannot — know which flags the invocation carried"*, followed by `pub fn escalate(diagnostics: &amp;mut [Diagnostic], strict: bool, strict_graph: bool);`
+
+But §G.8.1 L7345 and §G.8.4 L7486 both still take `strict: bool`, and §G.8.1 L7352 still says *"Warn-by-default drift (§7.5, §G.8.4). **Escalated by `--strict`**."* Neither function's pseudo-code ever reads the parameter — §G.8.4 L7509-7517 unconditionally emits `severity: Warning, escalated_by: Some(StrictFlag::Strict)`. These are vestigial parameters left over from before `escalate` existed, and they invite an implementer to escalate twice (or in the wrong place, producing a `Diagnostic` whose JSON severity and the exit code disagree — the exact thing `escalate`'s doc comment says it exists to prevent).
+
+### 4. Exit-code table has no row for the escalated-diagnostic case that §CLI.6.2 promises
+
+§CLI.6.2 L8769-8771: *"the flags change only whether a `Diagnostic` is reported as `Warning` or `Error`, and therefore whether the process exits `0` or `1` (§CLI.7)."*
+
+§CLI.7 L9100-9105:
+
+| Condition | Exit code |
+|---|---|
+| Success | `0` |
+| `validate` ran and `report.ok == false` | `1` |
+| Any `CliError` | `1` |
+| clap parse failure | `2` |
+
+There is no row for "`status`/`version` produced a report containing a `severity: Error` diagnostic". `StatusReport`/`VersionReport` have no `ok` field, so nothing in the table can produce the `1`. §CLI.9 item 4 ("one fixture per row of §CLI.7's table") therefore won't catch it either. This is a direct consequence of the fix that added `--strict`/`--strict-graph` to `status`/`version` (§CLI.10 #12) without revisiting §CLI.7.
+
+### 5. Your `GroupKind` consolidation left four loose ends
+
+- **Two cross-references point at the wrong section.** §CL.3 L4812: *"`GroupKind` (`Fixed`/`Linked`) is `callisto_model::GroupKind` — not redefined here (§M.1.2)."* and §G.5.5 L6323: `pub kind: GroupKind,   // callisto_model::GroupKind (§M.1.2) — not redefined here`. §M.1.2 is **"No I/O"** (L190). The definition is at L356-365, inside **§M.2 — Identity — `identity.rs`**. Both should read §M.2. (Your prompt says you placed it in §M.1.2; you actually placed it in §M.2, right after `GroupName` as intended — the section number in the two citations is what's wrong.)
+- **§M.1.4's module layout omits it.** L235: `├── identity.rs     # PackageId, GroupName, RegistryKey, CommitSha` — `GroupKind` is missing from the one place a reader looks to find which file a type lives in.
+- **§G.1.1's imported-types list omits it.** L5137-5146 enumerates every `callisto-model` type `callisto-graph` imports and is explicitly framed as exhaustive (*"This crate declares **no** value type that `callisto-model` already owns. Everything below is a `pub use` or a plain import"*) — but `GroupKind` isn't in it, while `GroupDef` (L6323) uses it.
+- **§M.14's cross-crate table has no `GroupKind` row**, though §CL.0 L4628 correctly lists it among what `callisto-changelog` imports.
+
+**On your derive question specifically: `Serialize, Deserialize` + `#[serde(rename_all = "lowercase")]` without `Hash`/`Ord` is correct.** I checked every use site. `GroupKind` appears only as a field of `GroupDef` (derives `Clone, Debug, PartialEq, Eq`) and of `ChangeSource::GroupUnion` (derives `Clone, Debug, PartialEq, Eq`). Nothing keys a map on it, nothing sorts it: `GroupTable`'s maps are keyed by `GroupName`/`PackageId`, and `GroupMember`'s `Ord` doesn't reach it. No `Hash`/`Ord` needed. The one thing to note is that `Serialize`/`Deserialize` currently has no consumer either — `GroupDef` isn't serializable and neither is `ChangeSource` — so it's there for the `config/raw.rs` deserialization path only, which is fine but unstated.
+
+### 6. `GroupTable` has no public constructor, but `callisto-fixtures` needs one
+
+§G.5.5 L6310-6318 gives `GroupTable` private fields; both constructors are `pub(crate)` (L6369 `validate_syntactic`, L6374 `resolve`). §CF.3.2 L6079 declares `pub groups: GroupTable` on `Scenario`, and §G.15 items 3, 4, 7 and §CF.6's group rows all require `callisto-fixtures` — a *different crate* — to build fixed and linked groups. There is no reachable API to do it.
+
+### 7. `GraphError::GrammarMismatch`'s shape doesn't fit three of its four use sites
+
+§M.13.3 L2260-2261: `GrammarMismatch { from: PackageId, to: PackageId, #[source] source: GrammarMismatch }` — edge-shaped. But:
+
+- §G.7.4 L7114 writes `cov ← coverage(&amp;edge.spec, &amp;new_version)?` — `coverage` returns `Result&lt;_, GrammarMismatch&gt;` (§G.7.2 L6948) and `GraphError` has no `#[from] GrammarMismatch`, so `?` doesn't compile; the `from`/`to` must be supplied by hand at the call site.
+- §G.6.7 L6741 and §G.8.2 L7369 and §G.8.3 L7424 all say "→ `GraphError::GrammarMismatch`" for *group-internal version comparisons*, which have no edge and therefore no natural `from`/`to`.
+- §M.4.2 L2597-2601 claims *"the two call sites that need a maximum — `select_last_tag` (§M.9.4) and §G.8.3's aligned-base fallback — handle the mismatch explicitly, producing `GraphError::GrammarMismatch`"*. `select_last_tag` is in `callisto-model` and returns `Result&lt;LastTagSelection, VersionParseError&gt;` (L1257-1261) — it cannot produce a `GraphError` (wrong crate) and cannot represent a grammar mismatch in `VersionParseError` at all.
+
+### 8. `raise`'s body uses three values its signature doesn't receive
+
+§G.7.5, signature L7193-7200 (`pkg, sev, decision: &amp;CascadeDecision, via, out, groups`), body L7205-7207:
+```
+out.reasons.entry(pkg).or_insert(
+    if decision.escalated { BumpReason::PeerEscalation { via, spec } }
+    else                  { BumpReason::Cascade { via, dep_kind, spec, dependency_to } })
+```
+`spec`, `dep_kind`, and `dependency_to` come from the `DepEdge`, and `CascadeDecision` (L6880-6893) carries none of them. `raise` needs the edge (or those three values) added to its parameter list.
+
+### 9. §CL.9 has two items numbered 5, and §CF.6 cites `§CL.9.5` for both
+
+L5073 `5. **extract_section round-trip**` and L5079 `5. **wasm32-wasip1 fixture run**`. §CF.6 L10231 cites `§CL.9.5` for the extract_section row and L10254 cites `§CL.9.5` again in the wasm row. This is the one place my cross-reference sweep found a genuinely *ambiguous* citation; every other `§X.Y.N` reference into a fixture list (there are ~45, all in §CF.6) resolves to a real, uniquely-numbered list item.
+
+### 10. Smaller residue
+
+- `MoonProjectGraph` (§MO.4.1 L9488) and `RawGroupTable` (§G.5.5 L6369, L6375) are used and never defined; `self.load_graph()` and `self.resolve_id()` (§MO.4.4 L9573, L9579-9580) aren't in `MoonProjectLocator`'s `impl` block (L9491-9493 declares only `new`).
+- §CLI.5.2's worked output (L8671, L8673) renders `governed by [cascade].bump-severity = "patch" (default)` — bracketed TOML-table form — but §M.11.1's `ConfigKey::CASCADE_BUMP_SEVERITY` is the dotted string `"cascade.bump-severity"` (L1437) and §CLI.5.3's `attribution_line` is specified as `governed by {key} = {value}`. The renderer as specified cannot produce the example.
+- §G.6.3's `apply_pre_major` (L6557) duplicates §C.4's `apply_pre_major_policy` (L4332), justified as needed "on the `NoInference` and fixture paths" — but `NoInference` is specified to *always* return `Ok(None)` (§G.6.4 L6623), so no severity ever reaches it there. The second implementation is unreachable on its stated grounds, which is the two-paths-for-one-concept shape invariant 25 warns about.
+- §G.10.2 steps 3 and 6 each call `WorkspaceCargoResolver::load(root_manifest)` fresh, against P2's resolve-workspace-facts-once posture. Sequentially safe (step 6 re-reads step 3's write), but worth a sentence so an implementer doesn't "optimize" it into a shared mutable resolver and reintroduce a lost update.
+
+---
+
+**Bottom line:** the document is internally consistent on every axis that carries release semantics — the cascade table, the fixpoint and its termination proof, group alignment, mutation ordering, the compute/apply split, the JSON contract, and the milestone slicing all agree with themselves and with the decision doc. What remains is a thin layer of *mechanical* residue: one undefined type at a call site (#1), one derive that won't compile (#2), one stale parameter pair contradicting a new decision (#3), one missing exit-code row (#4), and the four loose ends from the `GroupKind` move (#5). Items #1-#4 would each stop an implementer within the first day of touching `callisto-graph`; the rest are editorial. I'd fix #1-#5 and ship it.</result>
+<usage><subagent_tokens>332299</subagent_tokens><tool_uses>22</tool_uses><duration_ms>343640</duration_ms></usage>
+</task-notification>
