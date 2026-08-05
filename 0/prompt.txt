@@ -1,0 +1,90 @@
+Gemini found some bugs:
+
+  ### Master Defect Catalog Table                                                                                                                                   
+                                                                                                                                                                    
+   #  │ Crate Layer           │ Target File & Lines │ Severity │ Defect Summary
+  ────┼───────────────────────┼─────────────────────┼──────────┼────────────────────────────────────────────────────────────────────────────────────────────────────
+   1  │ callisto-graph        │ cascade.rs          │ CRITICAL │ Linked group escalation fails to enqueue member into worklist, dropping downstream dependency
+      │                       │                     │          │ cascades.
+   2  │ callisto-model        │ path.rs             │   HIGH   │ workspace_relative(".") strips CurDir without fallback, returning empty path "" instead of ".".
+   3  │ callisto-model        │ exec.rs             │   HIGH   │ check_git_version unwrap_or(0) defaults non-digit minor suffixes (2.43-ubuntu1, 2.39-rc0) to 0,
+      │                       │                     │          │ rejecting valid Git installs.
+   4  │ callisto-changelog    │ write.rs            │   HIGH   │ changelog::prepend hardcodes \n prefix checks, placing new release entries above # Title in CRLF
+      │                       │                     │          │ (\r\n) files.
+   5  │ callisto-graph        │ apply.rs            │   HIGH   │ apply_version_plan auto-stages all existing workspace lockfiles (Cargo.lock, uv.lock) regardless
+      │                       │                     │          │ of modified ecosystem.
+   6  │ callisto-cli          │ add.rs              │  MEDIUM  │ callisto add interactive wizard maps p.id.name() instead of display_name(), rendering duplicate
+      │                       │                     │          │ items in polyglot repos.
+   7  │ callisto-manifests    │ python.rs           │   HIGH   │ python::round_trip calls target.patch()? which returns None for 2-part PEP 440 versions (1.2),
+      │                       │                     │          │ failing to update bounds.
+   8  │ callisto-manifests    │ npm.rs              │   HIGH   │ PackageJson::update_dependency_spec replaces nested npm overrides objects ("foo": { "bar":
+      │                       │                     │          │ "^1.0.0" }) with scalar strings.
+   9  │ callisto-graph        │ publish_client.rs   │   HIGH   │ pypi_publish converts package name _ to - in dist glob (dist/my-package-*), failing to match built
+      │                       │                     │          │ wheels (my_package-*.whl).
+   10 │ callisto-vcs          │ shell.rs            │   HIGH   │ ShellGit::resolve_commit omits -- separator in git rev-parse, exposing CLI option injection when
+      │                       │                     │          │ refname starts with --.
+   11 │ callisto-conventional │ commit.rs           │   HIGH   │ parse_commit pops only single final paragraph block (blocks.pop()), missing BREAKING CHANGE:
+      │                       │                     │          │ blocks split by blank lines.
+  ──────                                                                                                                                                            
+  ### Detailed Failure Mechanics & Root Causes                                                                                                                      
+                                                                                                                                                                    
+  #### 1. Linked Group Escalation Drops Downstream Dependents (cascade.rs)                                                                                          
+                                                                                                                                                                    
+  • File: cascade.rs                                                                                                                                                
+  • Root Cause: out.severities.insert(id.clone(), max_sev) updates the member's severity level, but worklist.insert(id.clone()) is never called. External packages  
+  depending on id are never enqueued for re-evaluation, leaving downstream package requirement bounds outdated.                                                     
+                                                                                                                                                                    
+  #### 2. workspace_relative(".") Returns Empty Path "" (path.rs)                                                                                                   
+                                                                                                                                                                    
+  • File: path.rs                                                                                                                                                   
+  • Root Cause: Component::CurDir (".") is ignored without fallback logic. When normalizing "." or ./., components becomes an empty vector, producing               
+  PathBuf::from("") which fails on filesystem IO operations.                                                                                                        
+                                                                                                                                                                    
+  #### 3. check_git_version Rejects Valid Git Install Suffixes (exec.rs)                                                                                            
+                                                                                                                                                                    
+  • File: exec.rs                                                                                                                                                   
+  • Root Cause: parts[1].parse().unwrap_or(0) fails to parse non-digit minor version suffixes like "43-ubuntu1" or "39-rc0". It defaults minor to 0, causing 2 == 2 
+  && 0 < 20 to evaluate to true and reject valid Git installations.                                                                                                 
+                                                                                                                                                                    
+  #### 4. changelog::prepend Corrupts CRLF Document Headers (write.rs)                                                                                              
+                                                                                                                                                                    
+  • File: write.rs                                                                                                                                                  
+  • Root Cause: Matching hardcoded \n\n against CRLF (\r\n) text fails strip_prefix. Execution falls through to else, prepending the new release entry above the H1 
+  title line.                                                                                                                                                       
+                                                                                                                                                                    
+  #### 5. Unconditional Lockfile Auto-Staging (apply.rs)                                                                                                            
+                                                                                                                                                                    
+  • File: apply.rs                                                                                                                                                  
+  • Root Cause: Checks for lockfile file existence on disk (root.join(&p).exists()) instead of checking whether that ecosystem's packages were updated in the       
+  version plan.                                                                                                                                                     
+                                                                                                                                                                    
+  #### 6. Ambiguous Package Display Name Loss in TUI Wizard (add.rs)                                                                                                
+                                                                                                                                                                    
+  • File: add.rs                                                                                                                                                    
+  • Root Cause: Uses p.id.name() instead of p.id.display_name(), rendering identical package names in polyglot monorepos without ecosystem qualification.           
+  
+  #### 7. 2-Part PEP 440 Version Crash (python.rs)
+  
+  • File: python.rs
+  • Root Cause: target.patch()? returns None for 2-part Python versions (1.2 or 2024.1), causing round_trip to abort and skip updating dependency constraints.      
+  
+  #### 8. Nested npm overrides Object Destruction (npm.rs)
+  
+  • File: npm.rs
+  • Root Cause: Overwrites overrides keys without checking if tbl[name] is a JSON Object ({ "bar": "^1.0.0" }), destroying nested override structures.
+  
+  #### 9. PyPI Dist Glob Replace Converts Package Underscores to Hyphens (publish_client.rs)
+  
+  • File: publish_client.rs
+  • Root Cause: Converts _ to - in PyPI globs (dist/my-package-*), failing to match built Python wheels (my_package-1.0.0.whl).
+  
+  #### 10. CLI Option Injection Vulnerability in ShellGit (shell.rs)
+  
+  • File: shell.rs
+  • Root Cause: Omits -- end-of-options separator before &rev in git rev-parse, allowing ref names starting with -- to be parsed as flags.
+  
+  #### 11. parse_commit Drops Multi-Paragraph Breaking Change Footers (commit.rs)
+  
+  • File: commit.rs
+  • Root Cause: blocks.pop() pops only the single final block. BREAKING CHANGE: blocks separated from subsequent footers by blank lines are treated as body text,   
+  missing the Major bump.
