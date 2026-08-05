@@ -1,0 +1,46 @@
+<task-notification>
+<task-id>a7f881a4568802e42</task-id>
+<tool-use-id>toolu_017phQopv3pGRzVKssf7X7Rv</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a15bbbf7-aba0-415d-bfdc-c773ea65cfc7/tasks/a7f881a4568802e42.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix changelog data pipeline: wire changelog_inputs, cascade entries, EmptyInput" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All 18 test suites pass with zero failures. Here is a summary of what was done:
+
+---
+
+## Summary
+
+### Bugs addressed
+
+All four bugs were addressed together in a single logical fix in `plan_version()`.
+
+### Red phase (failing tests first)
+
+Two new tests were added to `/Users/gabe/Projects/callisto/crates/callisto-cli/tests/lifecycle_e2e_tests.rs`:
+
+- **`test_changelog_content_uses_real_changeset_summary`** — writes a changeset with summary `"Fix the frobnication bug"`, runs `plan_version()`, asserts the CHANGELOG.md contains that real text and does NOT contain `"Release update"`.
+- **`test_changelog_content_includes_all_changeset_summaries`** — writes two changesets for the same package with different summaries, asserts both appear in the generated changelog.
+
+Both tests confirmed red against the original code (output: `"Release update"` in both cases).
+
+### Green phase (production fix)
+
+**`/Users/gabe/Projects/callisto/crates/callisto-graph/src/commands/version.rs`** — the only production file changed.
+
+- Added imports: `ChangeSource` from `callisto_changelog`, and `BumpReason` + `GroupKind` from `callisto_model`.
+- Replaced the 9-line hardcoded `ChangelogInput` block (lines 107–123 of the original) with a two-branch lookup:
+  - **Branch 1 (Bug 1 + Bug 2 fix)**: if `agg.changelog_inputs` has a real entry for the package, clone it and set the resolved `from`/`to` versions. All real changeset summaries and all entries from multiple changesets come through naturally since `aggregate()` already accumulates them.
+  - **Branch 2 (Bug 3 + Bug 4 fix)**: if no changeset entry exists (cascade, group union, inference, pre-release), synthesize a `ChangelogInput` with one entry. The `ChangeSource` variant is chosen from `outcome.reasons`: `FixedGroupUnion` → `GroupUnion { kind: Fixed }`, `LinkedGroupUnion` → `GroupUnion { kind: Linked }`, `Cascade` → `DependencyUpdate`, `PeerEscalation` → `PeerEscalation`, anything else → a generic `Changeset` entry. This prevents `render_section()` from ever receiving an empty `entries` list.
+
+### Step 4 (existing test strengthened)
+
+The existing `test_compose_pr_body_before_version_and_subpkg_changelog` test now also asserts `changelog_content.contains("Add new core component API")` (the real summary), not just the version number.
+
+### Final state
+
+- `cargo test -p callisto-graph -p callisto-changelog -p callisto-cli`: **all pass** (zero failures across all 18 test suites).
+- `cargo clippy -p callisto-graph -p callisto-changelog -- -D warnings`: **clean**.
+- No commits made; all changes are in the working tree.</result>
+<usage><subagent_tokens>76813</subagent_tokens><tool_uses>53</tool_uses><duration_ms>471010</duration_ms></usage>
+</task-notification>
