@@ -1,0 +1,59 @@
+Base directory for this skill: /Users/gabe/.claude/plugins/cache/orin-dx-agent-plugins/lambda/1.0.1/skills/lambda
+
+# Lambda — Implementation Skill
+
+<sub_skills>
+
+| Sub-skill | What it does |
+| :--- | :--- |
+| `lambda/implement` | Executes a single task from a plan@1 via the full TDD cycle: failing test → minimal code → commit. |
+| `lambda/generate-tests` | Writes a complete test suite for a spec or module without changing implementation code. |
+| `lambda/explain` | Reads a module or function and produces a plain-language explanation of what it does and why. |
+| `lambda/refactor` | Restructures code for clarity or performance without changing observable behavior; tests must stay green throughout. |
+
+</sub_skills>
+
+---
+
+<io>
+
+**Consumes**: `plan@1` (preferred) or `spec@1` directly if no plan exists.
+
+**Produces**: `changeset@1`, committed code.
+
+</io>
+
+---
+
+<tdd_cycle>
+
+For every implementation task:
+
+1. Write the failing test exactly as specified.
+2. Run the test — confirm it fails with the expected error (red phase required; a test that passes before implementation is broken).
+3. Write the minimal implementation to make it pass — no more.
+4. Run the test — confirm it passes (green).
+5. Commit with the conventional commit message specified in the task.
+
+</tdd_cycle>
+
+---
+
+<exit_gate>
+
+After all tasks are complete, `lambda-exit-gate` runs the axiom protocol against the spec independently. It does not inherit context from the implementer. It reads the current code state from scratch, assumes the implementation is incomplete, and returns a `verdict@1`.
+
+</exit_gate>
+
+---
+
+<subagent_dispatch_matrix>
+
+| Agent | Role | When to delegate |
+| :--- | :--- | :--- |
+| **`lambda-recon`** | Workspace manifest & baseline | Before any code is written — detect language, test runner, confirm baseline passes. |
+| **`lambda-implementer`** | TDD execution | One task at a time from the plan@1 — full red/green/commit cycle. |
+| **`lambda-reviewer`** | Self-review | After each task commits — check scope, non-negotiables, sibling gaps, test quality. |
+| **`lambda-exit-gate`** | Adversarial exit verification | After all tasks complete — independent axiom check against the spec. |
+
+</subagent_dispatch_matrix>
