@@ -1,0 +1,32 @@
+<task-notification>
+<task-id>a409cf461455fe80e</task-id>
+<tool-use-id>toolu_01U6PLZrXUcCV15z2nxeVxop</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a15bbbf7-aba0-415d-bfdc-c773ea65cfc7/tasks/a409cf461455fe80e.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix: pre enter guard against re-enter + empty tag validation + git staging" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All 13 lifecycle tests pass including `test_pre_mode_blackbox_lifecycle`. The earlier failure during the stash verification was a temporary artifact of testing without my implementation.
+
+Here's a summary of what was done:
+
+---
+
+**TDD cycle completed for all four bugs in `crates/callisto-cli/src/commands/pre.rs`.**
+
+**RED phase**: Four new tests written in `crates/callisto-cli/tests/lifecycle_e2e_tests.rs`, each confirmed to fail for the correct reason before any implementation:
+
+- `test_pre_enter_rejects_if_already_in_pre_mode` — failed with "second pre enter must fail, but got Ok"
+- `test_pre_exit_rejects_double_exit` — failed with "second pre exit must fail, but got Ok"
+- `test_pre_enter_rejects_empty_tag` — failed with "pre enter with empty tag must return an error, but got Ok"
+- `test_pre_enter_stages_pre_json_via_git_add` — failed with "pre.json must be staged, but git status shows: ?? .changeset/"
+
+**GREEN phase**: Four fixes applied in `crates/callisto-cli/src/commands/pre.rs`:
+
+1. **Bug 1** (`pre enter` overwrites): Added `if pre_path.exists() { return Err(...) }` check before both the dry-run and real-write paths, after loading workspace but before writing anything.
+2. **Bug 2** (double-exit): Added `if pre_state.mode == PreMode::Exit { return Err(...) }` check after parsing pre.json but before setting mode.
+3. **Bug 3** (empty tag): Added `if tag.trim().is_empty() { return Err(...) }` as the very first check in the `Enter` arm, before any I/O.
+4. **Bug 4** (no git staging): Added `runner.run("git", &amp;["add", PRE_JSON_REL], &amp;ws.root)` with success-check after `atomic_write`; required importing `CommandRunner` trait.
+
+**Final result**: All 13 lifecycle tests pass, all 4 new guard tests pass, full `callisto-cli` suite (53 tests across all test files) passes with zero failures.</result>
+<usage><subagent_tokens>94513</subagent_tokens><tool_uses>78</tool_uses><duration_ms>1213567</duration_ms></usage>
+</task-notification>
