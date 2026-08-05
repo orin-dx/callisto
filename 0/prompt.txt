@@ -1,0 +1,36 @@
+<task-notification>
+<task-id>a80082a66ca140e17</task-id>
+<tool-use-id>toolu_016JAh1ZfAbs1Z966wE2Cgcv</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/be3206f0-36f6-4eb6-82ee-1a6f04cb1a40/tasks/a80082a66ca140e17.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix 01-spec.md per consolidated dual-critique findings" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All 23 items fixed. Report:
+
+## Fixed
+
+**Tier 1 (flat logic bugs)**
+1. **`[cascade].mode = "always"` was inert** (§G.7.1). `effective` now matches `(CascadeMode::Always, _) =&gt; DoesNotCover` first, so a *covering* spec under `always` reaches the bump branch. `rewrite` stays gated on real coverage; peer escalation stays gated on real coverage (that SPEC DECISION was already right). Added a `governed_by` override to `ConfigKey::CASCADE_MODE` for bumps caused only by `always`, per invariant 28, and updated the table + `Unknown` decision text.
+2. **`DepSpec::CargoBare` coverage** (§G.7.2). Rewrote the rule to real caret semantics, with a new shared `caret_covers` helper spelling out the leading-non-zero-component rule (`^0.2.3` admits `0.2.9`, not `0.3.0`), so `CargoBare` and a `^`-prefixed `Range` cannot answer differently. Added a blast-radius note and a dedicated fixture row (§G.15.1b).
+
+**Tier 2 (§G.1.3 signature block)** — corrected against every crate it summarizes, and each signature now carries the owning-section citation. `render_section -&gt; Result`, the real file-I/O `prepend(root, changelog_path, display_name, rendered)`, `versioning_for -&gt; Option`, `WorkspaceInheritance::inherited`. `bump_prerelease` was **implemented, not deleted**: new §F.6.3 gives it a real signature and a full algorithm (bump from `initialVersions`, counter restarts when the target version changes or the tag differs, `Severity::None` is a no-op), with monotonicity argued rather than asserted, a fixture table (§F.9.4), and index/ownership-table updates. §G.10.2 step 7 now explicitly calls the file-writing `prepend`.
+
+**Tier 3 (Cargo inheritance, one story across 5 sites)** — chose `DependencyEntry::inherited: bool` (carried onto `DepEdge::inherited`) over a `DepSpec` variant, with the reasoning written down (`DepSpec` is a serde contract type and every consumer matches exhaustively; the resolved spec is byte-identical to a local one, so provenance belongs on the record). `WorkspaceInheritance::inherited()` is the kind-preserving accessor (returns no `DepKind` — an inherited dev-dep still yields a `Dev` edge). Added typed `VersionWriteTarget` and `DepWriteTarget` so the plan distinguishes `[workspace.package].version` from a root package's own `[package].version`; `RewriteKey.kind` is `None` for workspace targets so inheriting members collapse to one rewrite. New `GraphError::WorkspaceVersionConflict`.
+
+**Tier 4** — `Workspace::base_versions/initial_versions/pre_json_key` (graph-side, satisfying M6 + G4); `initialVersions` keyed by ecosystem-native name, npm-preferred for Case D, rule pinned in §G.11; `PreState::entering` takes an iterator so no wrapper needs `indexmap`. `ApplyOptions::transient` suppresses steps 7/8/11 for `snapshot`. `IdentityIndex::native_name`/`native_names`/`platforms_of` added; `PackageId::name()` doc'd as explicitly not a publish-target name.
+
+**Tier 5** — `changelogSection` now produced by a new `callisto_changelog::extract_section` with a pinned deterministic rule, field made `Option&lt;String&gt;`, three cases tabulated, plus `DiagnosticCode::ChangelogSectionNotFound`. `npmPlatformPackages[]`/`depends_on_platforms` derivation written out from `IdentityIndex::platforms_of`. `bump_target` now delegates to `fixed_group_target` for every fixed-group member — that delegation *is* the new-member force-set. The napi/M7 exemption gap is resolved as genuinely-not-a-gap, with the reasoning and the real residual (undeclared platforms aren't versioned, by design) written down for a v0.3 implementer.
+
+**Tier 6** — `--strict-graph` + `--strict` on `VersionArgs` and `StatusArgs` (which had none), `StatusOptions` added, and a single `escalate()` at the command boundary because `crosscheck_declared_edges` runs inside `build` and can't see flags. `--allow-empty-changesets` added, OR-ed with the config key.
+
+**Tier 7** — all ten: direct-not-transitive CLI audit (with `callisto-moon` kept transitive, and the reasoning); `schemaVersion` on `add`/`pre` envelopes (new §CLI.6.12); group-level `pre-major-inference` layer added and the `moon.yml` additions justified; `changed_since_last_tag` moved to v0.1 with §6.3's *validation* staying v0.2; `GroupMemberKind` defined; `§5.6`/`§1.5` citations fixed; two new `DiagnosticCode`s wired into §G.13's attribution map; snapshot version pinned as `0.0.0-{tag}-{sha7}` (with the leading-zero-numeric-identifier hazard as the reason for the hyphen); fixtures feature table corrected to `graph` for both wrappers; `compose-pr-body` now computes real prospective versions via the pure `plan_version`.
+
+## Judged not to be bugs
+None — all 23 were real. Two refinements: item 3's `WorkspaceCargoResolver::inherited` moved to `WorkspaceInheritance` (that's the type graph construction actually holds), and item 4's DepSpec-variant suggestion was replaced with a `DependencyEntry` field for the reasons above; both are documented as SPEC DECISIONs.
+
+## Cross-reference check
+237 distinct `§CRATE.N` targets before → 245 after; the diff is **all additions** except `§CL.7` (3 refs), which became the new real subsections `§CL.7.1`/`§CL.7.2`, and one `§F.9` item renumber. Verified every `§X.Y[.Z]` reference resolves to an existing heading; the only unmatched ones are the doc's pre-existing list-item convention (`§M.17.1`, `§G.15.6`, `§CLI.9.2`, …), whose parent sections all exist. 107 SPEC DECISION markers (up from 88), all indexed in the per-crate tables and §11.
+
+One thing I noticed but did not touch (out of scope): `GroupKind { Fixed, Linked }` is defined twice, in §CL.3 and §G.5.5 — the same two-code-paths-for-one-concept shape invariant 25 warns about.</result>
+<usage><subagent_tokens>458769</subagent_tokens><tool_uses>150</tool_uses><duration_ms>1452835</duration_ms></usage>
+</task-notification>
