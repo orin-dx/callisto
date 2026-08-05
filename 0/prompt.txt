@@ -1,0 +1,26 @@
+<task-notification>
+<task-id>a0d864615ff4e5541</task-id>
+<tool-use-id>toolu_012S8C1kiE82ZFgXu4P8i5LM</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a15bbbf7-aba0-415d-bfdc-c773ea65cfc7/tasks/a0d864615ff4e5541.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix: status.rs package name matching diverges from aggregate.rs" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>The fix is in place and verified. Here is the summary:
+
+---
+
+**Bug fixed.** Two files changed:
+
+**`crates/callisto-graph/src/commands/status.rs`** — the fix:
+- Added `PackageId` to imports
+- Replaced the exact string comparison on line 43 (`entry.name == pkg.id.to_string()`) with a two-step parse + `matches()` call that mirrors the logic `aggregate.rs` uses via `resolve_target_package`. A changeset entry like `"cargo/my-app"` now correctly matches a package registered as bare `"my-app"`, and vice versa
+
+**`crates/callisto-cli/tests/e2e_tests.rs`** — the regression test `test_status_matches_ecosystem_qualified_changeset_entry`:
+- Creates a Cargo workspace with package `my-app` (bare name)
+- Inits callisto, then writes a changeset file manually with entry `"cargo/my-app": patch` (ecosystem-qualified)
+- Calls `status --check` and asserts exit code 0 (pending changeset found)
+- Confirmed failure before fix (exit code 2), confirmed pass after fix
+
+**Test results:** 4/4 `callisto-cli` e2e tests pass. 81/81 `callisto-graph` library unit tests pass (2 pre-existing failures in aggregate/cascade that existed before this session are gone in the current run; the graph integration tests have pre-existing compile errors unrelated to this change).</result>
+<usage><subagent_tokens>77061</subagent_tokens><tool_uses>46</tool_uses><duration_ms>546176</duration_ms></usage>
+</task-notification>
