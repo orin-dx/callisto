@@ -337,7 +337,16 @@ impl Manifest for CargoToml {
                 }
             }
         } else if let Some(tbl) = item.as_table_mut() {
+            let decor = tbl
+                .get("version")
+                .and_then(|i| i.as_value())
+                .map(|v| v.decor().clone());
             tbl.insert("version", toml_edit::value(new_str));
+            if let Some(decor) = decor {
+                if let Some(new_item) = tbl.get_mut("version").and_then(|i| i.as_value_mut()) {
+                    *new_item.decor_mut() = decor;
+                }
+            }
         }
 
         self.persist(permit)
@@ -1038,6 +1047,54 @@ edition = "2021"
 
         let updated = fs::read_to_string(&manifest_path).unwrap();
         assert!(updated.contains("version = \"0.2.0\" # preserve this inline comment"));
+    }
+
+    #[test]
+    fn update_dependency_spec_preserves_decor_on_full_table_version() {
+        let dir = tempdir().unwrap();
+        let manifest_path = dir.path().join("Cargo.toml");
+        let content = r#"[package]
+name = "my-crate"
+version = "0.1.0"
+
+[dependencies.helper]
+version = "1.0.0" # pinned intentionally, do not bump lightly
+path = "../helper"
+"#;
+        fs::write(&manifest_path, content).unwrap();
+
+        let decl = ManifestDecl::new(
+            "Cargo.toml",
+            ManifestRole::Canonical,
+            ManifestFormat::CargoToml,
+        )
+        .unwrap();
+        let ctx = OpenContext {
+            workspace_root: dir.path(),
+            cargo_workspace: None,
+            npm_workspace_kind: None,
+        };
+
+        let mut manifest = CargoToml::open(&decl, &ctx).unwrap();
+        let new_spec = DepSpec::Range(
+            VersionReq::parse("^1.1.0", Ecosystem::Cargo).unwrap(),
+            "^1.1.0".to_string(),
+        );
+        manifest
+            .update_dependency_spec(
+                "helper",
+                callisto_model::DepKind::Runtime,
+                new_spec,
+                &permit(),
+            )
+            .unwrap();
+
+        let updated = fs::read_to_string(&manifest_path).unwrap();
+        assert!(updated.contains("version = \"^1.1.0\""));
+        assert!(
+            updated.contains("# pinned intentionally, do not bump lightly"),
+            "expected trailing comment on version field to survive full-table write, got:\n{updated}"
+        );
     }
 
     #[test]
