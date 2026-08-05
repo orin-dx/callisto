@@ -1,0 +1,28 @@
+<task-notification>
+<task-id>a39acef1b48183bd8</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a15bbbf7-aba0-415d-bfdc-c773ea65cfc7/tasks/a39acef1b48183bd8.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix add.rs wizard showing duplicate bare names in polyglot repos" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Everything looks correct. Here is a summary of what was done:
+
+---
+
+**Bug fixed in** `/Users/gabe/Projects/callisto/crates/callisto-cli/src/commands/add.rs`
+
+**Root cause:** `PackageId::name()` returns only the bare name (e.g. `"foo"`), so two packages `cargo/foo` and `npm/foo` both appeared as `"foo"` in the interactive multiselect list. `PackageId::display_name()` returns the ecosystem-qualified form (`"cargo/foo"`, `"npm/foo"`).
+
+**What changed:**
+
+1. Extracted the name-building logic into a private helper `collect_package_names` (lines 216-223) so the logic is directly testable.
+
+2. Added `#[cfg(test)] mod tests` with `polyglot_package_selection_names_are_distinct` (line 286): builds two `Package` objects for `cargo/foo` and `npm/foo`, calls the helper, and asserts the list contains the two distinct ecosystem-qualified strings. This test was confirmed **RED** (`["foo", "foo"]`) before the fix.
+
+3. Fixed `collect_package_names` to use `.display_name()` instead of `.name()`. Test then went **GREEN** (`["cargo/foo", "npm/foo"]`).
+
+4. `cargo clippy -p callisto-cli -- -D warnings` — clean, no warnings.
+
+Note: there are pre-existing compilation failures in `callisto-conventional/src/commit.rs` and field mismatches in `strict_flag_tests.rs` / `dry_run_invariant_tests.rs` that are unrelated to this change and were present before it.</result>
+<usage><subagent_tokens>57275</subagent_tokens><tool_uses>37</tool_uses><duration_ms>398724</duration_ms></usage>
+</task-notification>
