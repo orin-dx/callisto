@@ -1,0 +1,151 @@
+<task-notification>
+<task-id>a526f8250264d3b63</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a15bbbf7-aba0-415d-bfdc-c773ea65cfc7/tasks/a526f8250264d3b63.output</output-file>
+<status>completed</status>
+<summary>Agent "Bug hunt: stale changesets for removed or renamed packages" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I have all the information I need for an exhaustive trace. Let me now compile the findings.
+
+---
+
+## Bug-Hunt Report: Orphaned Changeset Handling in Callisto
+
+I read `aggregate.rs`, `commands/status.rs`, `commands/version.rs`, `cascade.rs`, `apply.rs`, `commands/validate.rs`, `walk.rs`, `identity.rs`, `changeset/mod.rs`, `commands/add.rs`, and the full E2E and adversarial test suites. All findings below are traced end-to-end.
+
+---
+
+### [High] Orphaned changeset silently consumed and deleted — bump data permanently lost
+
+- **Status**: CONFIRMED — fully traced, file:line cited
+- **Location**: `crates/callisto-graph/src/aggregate.rs:233-280`
+- **Classification**: Silent Fallback (Un-Transactional Disk Mutation)
+- **Root Cause**: In `aggregate()`, the changeset path is pushed to `agg.consumed` at line 234 **unconditionally for every changeset file**, before the per-entry package-lookup loop at lines 235-280. When all entries in a changeset reference a package that no longer exists in the workspace, `resolve_target_package()` returns `Ok(None)` (line 237), the inner block is skipped, no severity is emitted, and no diagnostic is produced. The changeset path is still in `agg.consumed`. `plan_version()` (`version.rs:314`) puts `agg.consumed` directly into `VersionPlan::consumed_changesets`. `apply_version_plan()` (`apply.rs:151-162`) then calls `fs::remove_file(&amp;full)` for every path in that list. The orphaned changeset file is deleted from disk without any warning, error, or diagnostic.
+- **Failing Scenario**: `pkg-foo` is removed from the workspace. `.changeset/abc-xyz.md` has `pkg-foo: minor`. User runs `callisto version`. No error, no warning. The changeset file is deleted. `pkg-foo`'s intended bump is silently discarded. On the next `callisto version`, the changeset is gone — the bump can never be recovered.
+- **Severity**: High. Data loss: a carefully authored changeset disappears silently with no record that it was ever there. Especially dangerous because `callisto version` is often run in CI immediately before `callisto tag` — the loss is noticed only when the tag is not bumped, well after the changeset file is gone.
+- **Verification Strategy**: Create a workspace with one package `pkg-bar`. Write a changeset referencing `pkg-foo: minor` (a non-existent package). Run `plan_version()`. Assert that `plan.consumed_changesets` is empty (or that a `DiagnosticCode::UnknownPackage` diagnostic is emitted). Currently the assertion would fail because `consumed_changesets` contains the changeset path.
+
+---
+
+### [High] Fixed/linked group with removed member causes `callisto version` to hard-crash
+
+- **Status**: CONFIRMED — fully traced through `union_fixed()` → `solve_cascade()` → `bump_target()`
+- **Location**: `crates/callisto-graph/src/aggregate.rs:300-338` (`union_fixed`), `crates/callisto-graph/src/cascade.rs:169-173` + `375-396` (`bump_target`)
+- **Classification**: Boundary Condition / Crash-Safety
+- **Root Cause**: `union_fixed()` iterates all group member IDs from the config and propagates the winning severity to **every member unconditionally** — there is no guard checking whether the member exists in the workspace graph. If `callisto.toml` lists `["pkg-foo", "pkg-bar"]` in a fixed group and `pkg-foo` has been removed, but `pkg-bar` gets a changeset-driven bump, then `union_fixed()` inserts `agg.severities[pkg-foo] = Minor`. `solve_cascade()` (`cascade.rs:169-173`) iterates `input.seed` (which includes `pkg-foo`) and calls `bump_target(&amp;pkg-foo, Minor, &amp;input)`. `bump_target()` calls `input.base.get(id)` where `input.base` is `base_versions` — which is built from `self.graph.packages()` (`lib.rs:151`) and does not include the removed package. `base.get(pkg-foo)` returns `None`, which `ok_or_else()` converts to `Err(GraphError::Manifest(MissingField { path: "pkg-foo", field: "version" }))`. This error propagates to `plan_version()` and kills `callisto version` entirely.
+- **Same bug in `union_linked()`**: `union_linked()` (`aggregate.rs:341-394`) propagates severity to all members in `all_members` (line 371-377) with the same missing guard. A removed group member in a linked group triggers the same crash path.
+- **Failing Scenario**: `callisto.toml` has `[fixed-group.release] = ["pkg-foo", "pkg-bar"]`. `pkg-foo` is removed from the workspace. A changeset bumps `pkg-bar: minor`. Running `callisto version` crashes with `error: missing field 'version' at pkg-foo` — a misleading error that gives no hint that the real issue is a stale group member in config.
+- **Severity**: High. Hard crash (returns `Err`, not a panic), but the error message actively misleads the user. Affects any team that uses fixed or linked groups and ever removes a package.
+- **Verification Strategy**: Add a unit test with a `SinglePackageGraph` containing only `pkg-bar`, a fixed group config listing both `pkg-bar` and `pkg-foo`, and a changeset seeding `pkg-bar`. Call `aggregate()` then `plan_version()`. Assert that the result is an `Err(GraphError::NotInGraph)` or equivalent, not a confusing `MissingField` error.
+
+---
+
+### [Medium] `callisto status` has zero visibility into orphaned changeset entries
+
+- **Status**: CONFIRMED — fully traced
+- **Location**: `crates/callisto-graph/src/commands/status.rs:24-66`
+- **Classification**: Spec Drift / Silent Fallback
+- **Root Cause**: `status()` iterates `ws.graph.packages()` (line 24) and for each package collects its matching changesets (lines 38-57). This means orphaned changesets — ones referencing a package not in the workspace — are invisible by construction: there is no package to iterate against, so no `StatusPackageRecord` is ever built for the orphaned entry. The `StatusReport` (`packages` field) contains only packages currently in the workspace. An orphaned changeset produces no output in either text or JSON format.
+- **Additionally**: The changeset-to-package matching in `status.rs` uses a raw string comparison at line 43: `entry.name == pkg.id.to_string()`. `entry.name` is the raw string from the changeset frontmatter. `pkg.id.to_string()` calls `display_name()`. In real workspaces, `IdentityResolver::resolve()` calls `PackageId::parse(&amp;manifest_name)` on the bare name from the manifest file (`identity.rs:82`) — producing `Bare("pkg-foo")` IDs with `to_string() = "pkg-foo"`. The `add` command's non-interactive mode writes `id.name()` (`add.rs:43`), which for `PackageId::parse("cargo/pkg-foo")` returns `"pkg-foo"`. So programmatically-added changesets match correctly. However, a manually-written changeset with `cargo/pkg-foo: minor` would have `entry.name = "cargo/pkg-foo"` which does not equal `pkg.id.to_string() = "pkg-foo"`, producing a false negative in `status`. `aggregate.rs` handles both correctly via `PackageId::parse(&amp;entry.name)` + `p.id.matches(&amp;id)` (lines 236-237).
+- **Failing Scenario**: A user removes `pkg-foo` from the workspace. `callisto status` shows no indication that `.changeset/abc-xyz.md` references a non-existent package. There is no "pending changesets with unknown packages" section in the status output.
+- **Severity**: Medium. No correctness bug in `version`, but status is the primary UX surface for "what will happen when I run version?". The orphaned entry is invisible until `callisto version` silently destroys it.
+- **Verification Strategy**: Write a test seeding a workspace with one package (`pkg-bar`) and a changeset referencing only `pkg-foo`. Call `status()`. Assert that the returned `StatusReport` contains at least one diagnostic with `DiagnosticCode::UnknownPackage`.
+
+---
+
+### [Medium] Non-atomic apply creates a double-bump window on process kill
+
+- **Status**: CONFIRMED — fully traced through `apply_version_plan()`
+- **Location**: `crates/callisto-graph/src/apply.rs:75-162`
+- **Classification**: Crash-Safety / Un-Transactional Disk Mutation
+- **Root Cause**: `apply_version_plan()` performs its mutations in this order: (1) manifest version writes (lines 75-93), (2) dependency spec rewrites (95-115), (3) changelog writes (118-128), (4) changeset file deletions via `fs::remove_file()` (151-162), (5) git staging (248-283). Each step is unconditional and sequential with no rollback. If the process is killed between step 1 (manifests written with new version, e.g. `0.2.0`) and step 4 (changeset not yet deleted), the workspace is left with the bumped manifest and the un-deleted changeset. The next `callisto version` run reads the changeset again, computes a bump from the already-bumped base version (`0.2.0`), and applies another bump (`0.3.0` for a minor changeset). This is an undetected double-bump.
+
+  The `_opts: &amp;ApplyOptions` at line 49 (`refresh_lockfiles` field) and the leading-underscore prefix confirm another discarded parameter, but the critical issue is the ordering gap between manifest writes (step 1) and changeset deletion (step 4).
+
+  Within step 4 itself, multiple changesets are deleted one-at-a-time (lines 151-162). A process kill between deleting the first and second changeset leaves the second changeset un-deleted, which will be applied again on the next run.
+
+- **Failing Scenario**: Workspace with two changesets both bumping `pkg-foo`. `apply_version_plan()` writes the new version `0.2.0` to `Cargo.toml`, then is killed (OOM, SIGKILL, disk full) before deleting the changeset files. Next `callisto version` run: reads both changesets, applies two minor bumps from `0.2.0` → produces `0.4.0` instead of `0.2.0`.
+- **Severity**: Medium. Silent data corruption in a crash scenario. Not triggered by normal use.
+- **Verification Strategy**: Write a test that partially applies a plan (stub `fs::remove_file` to fail on the first changeset deletion), then run `plan_version()` a second time and assert that the version target is idempotent — currently it would not be.
+
+---
+
+### [Medium] `callisto validate` is the only orphan guard but is not invoked by `version` or `status`
+
+- **Status**: CONFIRMED — full call graph traced
+- **Location**: `crates/callisto-graph/src/commands/validate.rs:85-103` vs `crates/callisto-graph/src/commands/version.rs` (no call to `validate`)
+- **Classification**: Spec Drift
+- **Root Cause**: `validate.rs:85-103` correctly iterates all changeset entries and emits `DiagnosticCode::UnknownPackage` for any entry naming a package not in the workspace graph. However, `plan_version()` does not call `validate()`. `status()` does not call `validate()`. The only workflow that surfaces orphaned changesets to the user is `callisto validate`, which must be run explicitly and separately. There is no documentation of this dependency in the CLI help text or spec.
+- **Failing Scenario**: A developer removes `pkg-foo`, never runs `callisto validate` (it is not part of the default `add → status → version` workflow documented in the README), and runs `callisto version` directly. The orphaned changeset is deleted silently. Running `validate` retroactively after `version` would find nothing wrong — the changeset is gone.
+- **Additional note on `validate.rs:87`**: The existence check there uses `ws.graph.packages().any(|p| p.id.matches(&amp;id))` — this uses `matches()` correctly (unlike `status.rs`'s raw string comparison). But it's only reachable via explicit `callisto validate`.
+- **Severity**: Medium. The guard exists; it is just not wired into the critical workflow paths.
+- **Verification Strategy**: Confirm that `plan_version()` does not call any code path that produces `DiagnosticCode::UnknownPackage` — a changeset with an unknown package produces a `VersionPlan` with an empty `diagnostics` list.
+
+---
+
+### [Low] No test verifies changeset files are deleted after a successful `callisto version`
+
+- **Status**: CONFIRMED — full test suite read
+- **Location**: `crates/callisto-cli/tests/lifecycle_e2e_tests.rs:117-135`
+- **Classification**: Missing Test Coverage
+- **Root Cause**: The primary lifecycle E2E test (`test_polyglot_lifecycle_full_run`) calls `commands::version::handle(...)` at line 118, asserts `version_res.is_ok()`, and then checks the bumped manifest content (lines 130-135). It never asserts that the changeset `.md` file written by `callisto add` was actually removed from `.changeset/`. This is the most basic post-condition of `callisto version` — consuming changesets — and it is untested.
+- **Failing Scenario**: A regression that disables `fs::remove_file` calls in `apply_version_plan` (or changes `consumed_changesets` to always be empty) would pass all existing E2E tests.
+- **Severity**: Low (test gap, not a runtime bug). But this gap allowed the silent-consume-without-deletion scenario to remain undetected.
+- **Verification Strategy**: After calling `version::handle(...)` in the lifecycle test, assert `!root.join(".changeset").read_dir().unwrap().any(|e| e.unwrap().path().extension().map(|x| x == "md").unwrap_or(false))`.
+
+---
+
+### [Low] No adversarial test for orphaned-package changeset handling
+
+- **Status**: CONFIRMED — full `adversarial_tests.rs` read
+- **Location**: `crates/callisto-cli/tests/adversarial_tests.rs`
+- **Classification**: Missing Test Coverage
+- **Root Cause**: `adversarial_tests.rs` covers path traversal rejection, atomic write over existing files, and Tarjan SCC cycle detection. It contains no test for the primary scenario in this audit: a changeset that references a package removed from the workspace. The expected behavior for this scenario is not documented anywhere in the test suite.
+- **Severity**: Low (test gap). The absence of a documented expected behavior makes it harder to argue for any specific fix — the behavior is currently undefined-by-convention.
+- **Verification Strategy**: Add a test: create a temp dir with a `callisto.toml` and a single-package graph (`pkg-bar`). Write a changeset referencing `pkg-foo: minor`. Call `plan_version()` with `allow_empty_changesets: true`. Assert that the result is either `Err(GraphError::UnknownPackage)` (strict), or `Ok(plan)` where `plan.diagnostics` contains `DiagnosticCode::UnknownPackage` and `plan.consumed_changesets` is empty (permissive with warning).
+
+---
+
+### [Low] Package rename: old changeset silently consumed, no migration path
+
+- **Status**: CONFIRMED — follows directly from the `resolve_target_package()` trace
+- **Location**: `crates/callisto-graph/src/aggregate.rs:148-161` (`resolve_target_package`)
+- **Classification**: Spec Drift / Boundary Condition
+- **Root Cause**: `resolve_target_package()` performs name-matching via `PackageId::matches()`. There is no alias, rename, or "was previously known as" concept in the config schema or the `Package` model. A package renamed from `pkg-foo` to `pkg-bar` causes all changesets referencing `pkg-foo` to silently return `Ok(None)` from `resolve_target_package()`, be pushed to `agg.consumed`, and be deleted by `apply_version_plan()`. The rename is indistinguishable from the deletion scenario.
+- **Failing Scenario**: `pkg-foo` is renamed to `pkg-bar` in `Cargo.toml`. Old changesets say `pkg-foo: minor`. `callisto version` silently consumes and deletes them. `pkg-bar` receives no bump.
+- **Severity**: Low (niche scenario, no crash). The impact is the same data loss as finding 1 — just a different trigger.
+- **No fix path exists today**: There is nowhere in `callisto.toml` to record `[rename] pkg-foo = "pkg-bar"`.
+
+---
+
+### Summary of Answers to Specific Questions
+
+1. **`aggregate.rs` orphaned entry**: `resolve_target_package()` returns `Ok(None)`. The `if let Some(target_pkg)` guard skips the entry. **Zero diagnostic is emitted**. The changeset is still pushed to `agg.consumed` before the loop (line 234), so it **is deleted** by `apply_version_plan`.
+
+2. **Any code that compares all pending changeset packages against the workspace set**: Only in `validate.rs:85-103`. Not called from `status` or `version`.
+
+3. **`callisto status` with an orphaned entry**: The orphaned package never appears in `ws.graph.packages()`, so no `StatusPackageRecord` is created for it. **It is completely hidden** from the status output.
+
+4. **`callisto version` with an orphaned entry**: Silently processes it, emits no diagnostic, and **deletes the changeset file**. Any packages in the same changeset that DO exist in the workspace are bumped normally.
+
+5. **Package rename, exact-match-only**: Yes, confirmed. `PackageId::matches()` compares names — a changeset for `cargo/pkg-foo` finds no match in a workspace that only has `cargo/pkg-bar`. The changeset is silently consumed/deleted.
+
+6. **"Was renamed from" concept**: Does not exist anywhere in the config schema, `Package` model, or `ResolvedConfig`.
+
+7. **Changeset deletion atomicity with version write**: Non-atomic. Manifests are written first (lines 75-93), changesets deleted later (lines 151-162). A process kill between these steps causes a double-bump on the next run.
+
+8. **Half-applied state**: Yes, possible. Sequential `fs::remove_file` calls with no rollback or idempotency sentinel. Multiple changesets can be partially deleted.
+
+9. **Cascade-only packages and changeset deletion**: All loaded changesets are added to `agg.consumed` unconditionally. A changeset that only drove a cascade (not a direct bump) is still deleted. This is the intended behavior — the changeset was "consumed" in the sense that its effect was incorporated — but is undocumented.
+
+10. **Package split (pkg-mono → pkg-core + pkg-extras)**: Same as finding 1 and 7. Old changesets for `pkg-mono` are silently consumed/deleted. No migration path.
+
+11. **Dependency removal before `version` runs**: The graph is rebuilt fresh from disk by `ManifestWalkResolver::build()` on every command invocation. If A's dependency on B was removed from `Cargo.toml` before `callisto version` runs, there is no edge `A→B` in the graph, cascade does not touch A, and no dep-spec rewrite is attempted. This is safe — not a bug.
+
+12. **Test for orphaned package changeset**: Does not exist.
+
+13. **Test verifying changeset deletion after `version`**: Does not exist.
+
+14. **Test for half-applied state**: Does not exist.</result>
+<usage><subagent_tokens>92953</subagent_tokens><tool_uses>30</tool_uses><duration_ms>506169</duration_ms></usage>
+</task-notification>
