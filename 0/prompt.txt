@@ -1,0 +1,55 @@
+<task-notification>
+<task-id>a204676d06fa3d938</task-id>
+<tool-use-id>toolu_01AchguTBhWBoZGoVQ7a8ehQ</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a15bbbf7-aba0-415d-bfdc-c773ea65cfc7/tasks/a204676d06fa3d938.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement combined monorepo changelog feature" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All green, zero failures. Here is a summary of everything that was done:
+
+---
+
+## What was implemented
+
+### New public API (`crates/callisto-changelog/src/write.rs`)
+
+- `CombinedEntry` — carries `display_name`, `new_version`, and pre-rendered `summaries` for a single package in the combined changelog
+- `write_combined_changelog(path, date, entries, permit)` — prepends a dated combined release section (H2 date → H3 `name@version` → bullet summaries) to the workspace-level changelog file; idempotent if the date heading already leads the file; atomically written via `callisto_manifests::atomic::atomic_write`
+- Both exported from `callisto_changelog::lib.rs`
+
+### New config (`crates/callisto-graph/src/config/`)
+
+- `RawChangelogConfig` (`raw.rs`) — `combined`, `combined-path`, `combined-include-cascade` TOML fields
+- `ChangelogConfig` (`resolve.rs`) — resolved struct with defaults (`combined = false`, `combined_path = "CHANGELOG.md"`, `combined_include_cascade = false`); added to `ResolvedConfig`
+
+### Plan layer changes (`crates/callisto-graph/src/plan.rs`)
+
+- `ChangelogWrite` gains `is_cascade_only: bool` — true when the bump had no real changeset (cascade/group/peer-escalation)
+- `CombinedChangelogPlan` — new struct holding the absolute path, date string, and filtered entries
+- `VersionPlan` gains `combined_changelog: Option&lt;CombinedChangelogPlan&gt;`
+
+### `plan_version` (`crates/callisto-graph/src/commands/version.rs`)
+
+- Marks `is_cascade_only` on each `ChangelogWrite`
+- After building all writes, if `ws.config.changelog.combined`, generates the date via `chrono::Local::now()`, filters out cascade-only writes (unless `combined_include_cascade = true`), sorts packages alphabetically, and stores the plan
+- Private helper `extract_combined_summaries` renders each `ChangeSource` variant to a human-readable string
+
+### `apply_version_plan` (`crates/callisto-graph/src/apply.rs`)
+
+- After per-package changelog writes, calls `write_combined_changelog` if `plan.combined_changelog` is `Some`, stages the resulting path via `git add`
+
+### Dependency
+
+- `chrono = { version = "0.4", features = ["clock"] }` added to workspace `Cargo.toml` and `callisto-graph/Cargo.toml`
+
+### Tests
+
+**Unit (3)** in `callisto-changelog/src/write.rs`:
+- `combined_changelog_prepends_new_release_section` — asserts both package H3 headings appear and alphabetical ordering holds
+- `combined_changelog_is_idempotent` — asserts date heading appears exactly once on double-call
+- `combined_changelog_prepends_before_existing_content` — asserts newer date precedes older existing section
+
+**Integration (1)** in `callisto-cli/tests/lifecycle_e2e_tests.rs`:
+- `test_combined_changelog_written_on_version` — full lifecycle with `combined = true` in config; asserts `CHANGELOG.md` exists at workspace root, contains a date heading, the bumped package heading (`alpha@1.0.1`), and the changeset summary text, while cascade-only packages (`beta`) are absent</result>
+<usage><subagent_tokens>82912</subagent_tokens><tool_uses>61</tool_uses><duration_ms>680072</duration_ms></usage>
+</task-notification>
