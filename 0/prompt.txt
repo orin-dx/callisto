@@ -1,0 +1,210 @@
+This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
+
+Summary:
+1. Primary Request and Intent:
+   The user's request (from a previous conversation, continued in this session) was: "Let's triple check all our tests to make sure we're asserting the right behavior and that we don't just cover the happy path but we also cover the edge cases, error cases, etc. Ensure we're splitting files appropriately based on rust best practices to avoid overly large files as we add functionality and tests, right? Public vs internal and any other best practices."
+
+   **Standing constraints that must NEVER be violated:**
+   - NEVER commit to git without explicit user instruction
+   - NEVER bump versions or run release/publish commands
+   - `/Users/gabe/Projects/callisto-findings/FINDINGS.md` lives OUTSIDE the repo — must NEVER be committed
+   - `callisto publish` must NEVER be invoked against a real registry
+   - All changes land as uncommitted working-tree edits only
+   - No emojis in documentation
+
+2. Key Technical Concepts:
+   - **Callisto**: Rust CLI + moon WASM extension for polyglot monorepo versioning (Cargo/npm/PyPI), byte-compatible with `@changesets/cli`
+   - **TDD discipline**: Write test first (RED), watch it fail, implement minimally (GREEN), refactor — active for all new test additions
+   - **PEP 440**: Python versioning standard; `.devN` releases are pre-releases — `is_prerelease()` was missing `v.is_dev()`
+   - **parse_pre_json**: Was hardcoding `VersionGrammar::SemVer` for `initialVersions`, breaking Python workspaces in pre-mode
+   - **check_moon_version**: Had wrong constraint `>=1.30.0, <2.0.0` instead of `>=2.0.0, <3.0.0` (codebase links against `moon_pdk_api = "2.0.4"`)
+   - **Cascade propagation**: `run_cascade` correctly propagates `Patch` severity to dependents, but test wasn't asserting it
+   - **Rust integration test structure**: Integration tests in `tests/` directory share code via `tests/common/mod.rs`; each test file is its own binary and imports from a shared module via `mod common;`
+   - **ApplyPermit**: Zero-sized compile-time dry-run enforcement token
+   - **Unknown package validation in `add.rs`**: New validation against `ws.graph.packages()` before writing changeset
+
+3. Files and Code Sections:
+
+   - **`crates/callisto-model/src/version.rs`**
+     - Fixed `is_prerelease()` to include `.devN` releases:
+       ```rust
+       pub fn is_prerelease(&self) -> bool {
+           match &self.parsed {
+               ParsedVersion::SemVer(v) => !v.pre.is_empty(),
+               ParsedVersion::Pep440(v) => v.is_pre() || v.is_dev(),
+           }
+       }
+       ```
+     - Added test `pep440_dev_release_is_prerelease`:
+       ```rust
+       #[test]
+       fn pep440_dev_release_is_prerelease() {
+           let v = Version::parse("1.0.0.dev1", VersionGrammar::Pep440).unwrap();
+           assert!(v.is_prerelease(), "1.0.0.dev1 must be considered a pre-release");
+           let v2 = Version::parse("2.0.0.dev0", VersionGrammar::Pep440).unwrap();
+           assert!(v2.is_prerelease(), "2.0.0.dev0 must be considered a pre-release");
+       }
+       ```
+
+   - **`crates/callisto-model/src/identity.rs`**
+     - Added `package_id_rejects_path_traversal` test in `#[cfg(test)]` module (migrated from adversarial_tests.rs):
+       ```rust
+       #[test]
+       fn package_id_rejects_path_traversal() {
+           assert!(PackageId::parse("/etc/passwd").is_err(), "must reject leading slashes");
+           assert!(PackageId::parse("../../secret").is_err(), "must reject path traversal via ..");
+           assert!(PackageId::parse("-x").is_err(), "must reject leading hyphen");
+       }
+       ```
+
+   - **`crates/callisto-format/src/pre.rs`**
+     - Fixed `parse_pre_json` SemVer hardcode to support PEP 440 versions:
+       ```rust
+       let ver = Version::parse(v_str, VersionGrammar::SemVer)
+           .or_else(|_| Version::parse(v_str, VersionGrammar::Pep440))
+           .map_err(|source| PreJsonError::InvalidInitialVersion {
+               package: pkg.clone(),
+               raw: v_str.to_string(),
+               source,
+           })?;
+       ```
+     - Added tests: `pre_json_accepts_pep440_initial_versions`, `pre_json_round_trips_pep440_version`
+
+   - **`crates/callisto-moon/src/extension.rs`**
+     - Fixed version constraint:
+       ```rust
+       pub fn check_moon_version(version_str: &str) -> Result<(), LocateError> {
+           if let Ok(ver) = semver::Version::parse(version_str) {
+               let req = semver::VersionReq::parse(">=2.0.0, <3.0.0").unwrap();
+               if req.matches(&ver) {
+                   return Ok(());
+               }
+           }
+           Err(LocateError::IncompatibleMoonVersion {
+               found: version_str.to_string(),
+               required: ">=2.0.0, <3.0.0".to_string(),
+           })
+       }
+       ```
+     - Updated test assertions: `check_moon_version("2.0.0").is_ok()`, `check_moon_version("2.4.6").is_ok()`, `check_moon_version("1.45.2").is_err()`, `check_moon_version("3.0.0").is_err()`
+
+   - **`crates/callisto-graph/tests/graph_tests.rs`**
+     - Added cascade propagation assertion to `test_blackbox_cascade_propagation`:
+       ```rust
+       assert_eq!(
+           outcome.severities.get(&pkg_a),
+           Some(&Severity::Patch),
+           "cascade must propagate a Patch bump to pkg_a which depends on pkg_b"
+       );
+       ```
+     - File rewritten to only 3 tests: `test_absolute_path_workspace_cargo_resolver`, `test_compose_pr_body_custom_branch_flag`, `test_apply_version_plan_reports_git_add_failure` (~120 lines, down from 1244)
+
+   - **`crates/callisto-cli/src/commands/add.rs`**
+     - Added package validation against workspace graph:
+       ```rust
+       let known = ws.graph.packages().any(|p| p.id.matches(&id) || id.matches(&p.id));
+       if !known {
+           let known_names: Vec<String> = ws.graph.packages()
+               .map(|p| p.id.display_name())
+               .collect();
+           return Err(CliError::Other(format!(
+               "Unknown package `{name}`. Known packages: {}",
+               known_names.join(", ")
+           )));
+       }
+       ```
+
+   - **`crates/callisto-manifests/src/atomic.rs`**
+     - Added `#[cfg(test)]` module with 3 tests: `atomic_write_creates_file_with_correct_content`, `atomic_write_over_existing_file_replaces_content`, `atomic_write_creates_missing_parent_directories`
+
+   - **`crates/callisto-manifests/src/npm.rs`**
+     - Added `tab_indentation_is_preserved_after_version_write` test (migrated from adversarial_tests.rs)
+
+   - **`crates/callisto-cli/tests/common/mod.rs`** (NEW)
+     - Shared `setup_polyglot_git_repo()` helper for lifecycle test files
+
+   - **`crates/callisto-cli/tests/pre_mode_tests.rs`** (NEW)
+     - 6 tests: `test_pre_mode_blackbox_lifecycle`, `test_malformed_pre_json_returns_error_not_silent_normal_release`, `test_pre_enter_rejects_if_already_in_pre_mode`, `test_pre_exit_rejects_double_exit`, `test_pre_enter_rejects_empty_tag`, `test_pre_enter_stages_pre_json_via_git_add`
+
+   - **`crates/callisto-cli/tests/changelog_tests.rs`** (NEW)
+     - 2 tests: `test_changelog_content_uses_real_changeset_summary`, `test_changelog_content_includes_all_changeset_summaries`
+
+   - **`crates/callisto-cli/tests/validate_tests.rs`** (NEW)
+     - 3 tests: `test_validate_clean_workspace_exits_zero`, `test_validate_malformed_changeset_exits_nonzero`, `test_add_unknown_package_name_returns_error`
+
+   - **`crates/callisto-cli/tests/lifecycle_e2e_tests.rs`**
+     - Rewritten to keep only 5 core lifecycle tests (down from 13 tests, 785 lines)
+     - Uses `mod common; use common::setup_polyglot_git_repo;`
+
+   - **`crates/callisto-graph/tests/cascade_tests.rs`** (NEW, agent-created)
+     - 6 tests including `test_blackbox_cascade_propagation`, `test_diamond_cascade_convergence`, `test_peer_dependency_escalation`, `test_linked_group_converges_shared_version`, `test_linked_group_version_convergence`, `test_tarjan_scc_detects_cycles` (renamed from adversarial_tests.rs)
+
+   - **`crates/callisto-graph/tests/tags_tests.rs`** (NEW, agent-created)
+     - 3 tests: `test_tag_dry_run_does_not_create_git_tags`, `test_create_tags_without_gix_falls_back_to_command_runner`, `test_create_tags_without_gix_skips_creation_for_existing_tag`
+
+   - **`crates/callisto-graph/tests/validate_command_tests.rs`** (NEW, agent-created)
+     - 5 tests: `test_validate_detects_empty_changesets`, `test_validate_rejects_entries_with_empty_summary`, `test_validate_rejects_entries_with_whitespace_only_summary`, `test_validate_since_git_diff_argument_ordering`, `test_validate_detects_malformed_package_name_in_changeset`
+
+   - **`crates/callisto-graph/tests/snapshot_tests.rs`** (NEW, agent-created)
+     - 3 tests: `test_snapshot_version_template_placeholders`, `test_snapshot_version_format_matches_spec`, `test_snapshot_sha_resolution_failure_is_surfaced_error`
+
+   - **`crates/callisto-cli/tests/adversarial_tests.rs`** (DELETED)
+     - Tests were moved to their correct crates; file deleted
+
+4. Errors and Fixes:
+   - **compose_pr_body assertion too strict**: Initially asserted `report.pr_body.contains("Add new core component API")` (the raw changeset summary text), but the PR body doesn't include raw changeset summaries — it uses the changeset ID and bump severity. Fixed by changing to `report.pr_body.contains("minor")`.
+   - **Format check failures**: After writing new test files, `just ci` failed on `callisto-cli:format-check` (import grouping style) and `callisto-manifests:format-check`. Fixed by running `just fmt`.
+   - **Clippy dead_code error** (CURRENT BLOCKER): After the graph_tests.rs split, `just ci` fails at `callisto-graph:lint` because `fixtures/graph_builder.rs` has `package` and `edge` methods flagged as `dead_code` under `-D warnings`. The lint output shows:
+     ```
+     warning: methods `package` and `edge` are never used
+       --> crates/callisto-graph/tests/fixtures/graph_builder.rs:22:12
+     warning: method `edge` is never used
+       --> crates/callisto-graph/tests/fixtures/graph_builder.rs:33:12
+     ```
+     This happens because each test binary (cascade_tests, tags_tests, etc.) imports `GraphBuilder` via `mod fixtures;` but some binaries don't use all methods, and Clippy checks each binary independently. The fix is to add `#[allow(dead_code)]` to the fixture methods (or make them `pub` with an `#[allow(unused)]` attribute).
+
+5. Problem Solving:
+   - **TDD approach**: All production code fixes were preceded by a failing test (RED phase), confirmed the test failure message matched the expected defect, then fixed the production code (GREEN phase).
+   - **File organization strategy**: Used Rust's conventional approach for sharing code between integration test files — `tests/common/mod.rs` with each test file declaring `mod common;` at the top.
+   - **Cascade test**: The `test_blackbox_cascade_propagation` test was passing but not asserting the actual cascade — the graph had `pkg_a → pkg_b` (pkg_a depends on pkg_b). After Major bump to pkg_b causes `^1.0.0` to go out of range, cascade correctly propagates Patch to pkg_a. The test now verifies this.
+   - **Unknown package validation**: The `add.rs` command now validates that `--packages` names resolve in `ws.graph.packages()` using the existing `matches()` logic to handle bare vs. prefixed IDs.
+   - **Graph split**: Used a background agent to create the 4 new graph test files. The agent created them correctly (all 17 new tests pass). Then manually rewrote `graph_tests.rs` down to 3 tests.
+
+6. All user messages:
+   - "Do we have any hardcoded values, stubs or missing functionality that we missed? You have a habit of considering only the happy path and missing the full functionality so I feel like a bug hunt and adversarial analysis with agent teams + workflows leveraging the most appropriate model & effort is still in order. Might need a few rounds of those to feel confident we're not shipping faulty code. Use the output of each round to learn patterns and feed it into the next round to refine our process and our codebase. Report your findings at the end of multiple rounds and help understand how we can improve the process of writing our code and managing the codebase with AI assistance"
+   - "Why were these new ones missed the first time? Should we adjust how we look for issues to make sure there is not more that we still missed?"
+   - "Let's try this new methodology to see if we can find more issues that need addressing. Call out what you find and what you learn from the process itself"
+   - "Let's triple check all our tests to make sure we're asserting the right behavior and that we don't just cover the happy path but we also cover the edge cases, error cases, etc. Ensure we're splitting files appropriately based on rust best practices to avoid overly large files as we add functionality and tests, right? Public vs internal and any other best practices"
+   - "CRITICAL: Respond with TEXT ONLY. Do NOT call any tools." [Summary request - current message]
+
+7. Pending Tasks:
+   - **Fix dead_code clippy warning** (BLOCKING CI): `crates/callisto-graph/tests/fixtures/graph_builder.rs` methods `package` and `edge` need `#[allow(dead_code)]` added so `just ci` passes under `-D warnings`.
+   - Run `just ci` to completion with all green.
+   - The following production bugs (from previous audit rounds) are still unfixed — but no explicit instruction to fix them in this session:
+     - `cascade.rs:386` — hardcoded `SemVerVersioning` (not addressed in this session)
+     - `config/resolve.rs:327` — `GroupTable::default()` always returned
+     - `locator.rs` — missing pyproject.toml check in `projects()`
+     - `apply.rs` — hardcoded `.changeset/pre.json` path
+     - `GitDataSource` trait missing `head_sha()` method
+   - File organization: `test_absolute_path_workspace_cargo_resolver` in `graph_tests.rs` is still misplaced (belongs in callisto-manifests tests)
+
+8. Current Work:
+   Immediately before the summary request, the work was at the `just ci` stage after formatting and file splits. The CI run revealed a clippy `dead_code` warning being treated as an error in `crates/callisto-graph/tests/fixtures/graph_builder.rs`:
+
+   ```
+   callisto-graph:lint | warning: methods `package` and `edge` are never used
+   callisto-graph:lint |   --> crates/callisto-graph/tests/fixtures/graph_builder.rs:22:12
+   callisto-graph:lint |    = help: to override `-D warnings` add `#[expect(dead_code)]` or `#[allow(dead_code)]`
+   callisto-graph:lint | warning: method `edge` is never used
+   callisto-graph:lint |   --> crates/callisto-graph/tests/fixtures/graph_builder.rs:33:12
+   ```
+
+   This causes `just ci` to fail at the lint step. The issue arose because after splitting `graph_tests.rs`, each test binary that imports `mod fixtures` independently may not use all methods — Clippy under `-D warnings` flags them as dead code.
+
+9. Optional Next Step:
+   Fix the clippy dead_code lint failure that's blocking `just ci`. Read `crates/callisto-graph/tests/fixtures/graph_builder.rs` to see the current structure, then add `#[allow(dead_code)]` to the unused methods (`package` and `edge` in `GraphBuilder`) or add `#[allow(unused)]` to the module declaration. Then re-run `just ci` to confirm all green.
+
+   This is directly in line with the current work: "Run full CI suite after auto-format" — the last `just ci` command failed and the fix is needed before CI is clean.
+
+If you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/gabe/.claude/projects/-Users-gabe-Projects-callisto/575b7a46-37b7-42f0-9db7-b2c329b2abab.jsonl
+Continue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with "I'll continue" or similar. Pick up the last task as if the break never happened.
