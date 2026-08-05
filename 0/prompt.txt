@@ -1,0 +1,5 @@
+Let’s go through our spec and codebase and understand not just our happy path but our edge cases.
+  We don’t always do a good job of planning for edge cases, failure cases, errors, etc.
+  Let’s be very intentional and comprehensively understand and document these states so we can identify gaps and bugs
+
+Then let's do an adversarial analysis on the results and consider our architecture, performance, security, DX and maintainability.
