@@ -1,0 +1,31 @@
+<task-notification>
+<task-id>a76bd2278f60bc036</task-id>
+<tool-use-id>toolu_01X6y9P8Ai2T4uPCXU9t7iYC</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a15bbbf7-aba0-415d-bfdc-c773ea65cfc7/tasks/a76bd2278f60bc036.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix 1: cascade.rs hardcoded SemVerVersioning" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All changes look correct. Here is a summary of what was done:
+
+---
+
+**Bug fixed:** `bump_target` in `crates/callisto-graph/src/cascade.rs` always hardcoded `callisto_format::SemVerVersioning`, causing it to return `Err(BumpError::NotSemVer)` for any PEP 440 (Python) package version.
+
+**Changes made (3 files):**
+
+1. **`crates/callisto-graph/src/cascade.rs` (line 386)** — Replaced the hardcoded `SemVerVersioning` with a grammar-dispatching match:
+   ```rust
+   use callisto_format::Versioning as _;
+   let versioning: &amp;dyn callisto_format::Versioning = match base.grammar() {
+       callisto_model::VersionGrammar::Pep440 =&gt; &amp;callisto_format::Pep440Versioning,
+       _ =&gt; &amp;callisto_format::SemVerVersioning,
+   };
+   ```
+
+2. **`crates/callisto-format/src/lib.rs`** — Added `Pep440Versioning` to the crate's public re-exports (was missing despite `Pep440Versioning` being `pub` in `bump.rs`).
+
+3. **`crates/callisto-graph/tests/cascade_tests.rs`** — Added `test_pep440_package_bump_succeeds`: a TDD test that verified the bug (returned `Err(Bump(NotSemVer { raw: "1.0.0", grammar: Pep440 }))` before the fix, and now produces `Ok` with target version `"1.0.1"`).
+
+All 7 cascade tests pass. The `just ci` failures seen are pre-existing (unrelated `callisto-vcs` missing `head_sha` implementation and `apply_tests.rs` type mismatch — both from pre-existing uncommitted changes in the repo).</result>
+<usage><subagent_tokens>46487</subagent_tokens><tool_uses>32</tool_uses><duration_ms>299841</duration_ms></usage>
+</task-notification>
