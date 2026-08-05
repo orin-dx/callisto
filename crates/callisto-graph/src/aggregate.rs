@@ -210,25 +210,49 @@ where
 
         let since = last_tag.and_then(|t| resolve_since(&git, t.name.as_str()));
 
+        let policy = config
+            .packages
+            .iter()
+            .find(|(id, _)| id == &pkg.id)
+            .and_then(|(_, pcfg)| pcfg.pre_major_inference)
+            .unwrap_or(PreMajorInferencePolicy::OFF);
+
         let window = crate::infer::InferenceWindowSpec {
             pathspecs: &pathspecs,
             since,
             current_version: &cur_ver,
             has_prior_release: last_tag.is_some(),
-            policy: PreMajorInferencePolicy::OFF,
+            policy,
         };
 
-        if let Ok(Some(outcome)) = inference.infer(pkg, window) {
-            if outcome.severity > cur_sev {
-                agg.severities.insert(pkg.id.clone(), outcome.severity);
-                agg.reasons.insert(
-                    pkg.id.clone(),
-                    BumpReason::Inference {
-                        commits: outcome.commit_count,
-                        remapped: outcome.remapped,
-                    },
-                );
-                agg.named_by.insert(pkg.id.clone(), NamedBy::Inference);
+        match inference.infer(pkg, window) {
+            Ok(Some(outcome)) => {
+                if outcome.severity > cur_sev {
+                    agg.severities.insert(pkg.id.clone(), outcome.severity);
+                    agg.reasons.insert(
+                        pkg.id.clone(),
+                        BumpReason::Inference {
+                            commits: outcome.commit_count,
+                            remapped: outcome.remapped,
+                        },
+                    );
+                    agg.named_by.insert(pkg.id.clone(), NamedBy::Inference);
+                }
+            }
+            Ok(None) => {}
+            Err(e) => {
+                agg.diagnostics.push(Diagnostic {
+                    code: callisto_model::DiagnosticCode::PreMajorInferenceInert,
+                    severity: callisto_model::DiagnosticSeverity::Warning,
+                    message: format!(
+                        "Commit inference failed for package `{}`: {e}",
+                        pkg.id.display_name()
+                    ),
+                    package: Some(pkg.id.clone()),
+                    path: None,
+                    governed_by: None,
+                    escalated_by: None,
+                });
             }
         }
     }
@@ -1230,5 +1254,129 @@ mod tests {
 
         assert!(!changed);
         assert!(agg.severities.is_empty());
+    }
+
+    /// Spec: when `SeverityInference::infer` returns `Err`, `aggregate()` must emit a
+    /// diagnostic (warning level) describing the failure rather than silently discarding
+    /// the error and leaving the package with no inferred severity bump.
+    #[test]
+    fn test_aggregate_inference_error_emits_diagnostic() {
+        let ws_dir = tempfile::tempdir().unwrap();
+        let root = ws_dir.path();
+
+        init_repo(root);
+        std::fs::write(root.join("README.md"), "hello\n").unwrap();
+        run_git(root, &["add", "."]);
+        run_git(root, &["commit", "-q", "-m", "initial commit"]);
+
+        let pkg_id = PackageId::parse("pkg-a").unwrap();
+        let graph = SinglePackageGraph {
+            pkg: make_pkg(pkg_id.clone()),
+        };
+        let cfg = crate::config::load(root).unwrap();
+        let runner = RealGitRunner;
+        let tags = crate::tags::TagIndex::build(&runner, root, &graph, &cfg).unwrap();
+        let mut base_versions = BTreeMap::new();
+        base_versions.insert(pkg_id.clone(), Version::semver(1, 0, 0));
+
+        struct AlwaysErrorInference;
+        impl SeverityInference for AlwaysErrorInference {
+            fn infer(
+                &self,
+                _pkg: &Package,
+                _window: InferenceWindowSpec<'_>,
+            ) -> Result<Option<InferenceOutcome>, GraphError> {
+                Err(GraphError::Vcs(callisto_vcs::VcsError::Git(
+                    "simulated inference failure".into(),
+                )))
+            }
+        }
+
+        let agg = aggregate(
+            &graph,
+            &cfg,
+            &runner,
+            &tags,
+            &base_versions,
+            None,
+            &AlwaysErrorInference,
+        )
+        .unwrap();
+
+        assert!(
+            !agg.diagnostics.is_empty(),
+            "aggregate() must emit a diagnostic when SeverityInference::infer returns Err; got none"
+        );
+    }
+
+    /// Spec: `aggregate()` must pass the per-package `pre_major_inference` policy from
+    /// `config.packages` into `InferenceWindowSpec`, not always hardcode `OFF`.
+    #[test]
+    fn test_aggregate_pre_major_inference_policy_applied() {
+        use crate::config::resolve::PreMajorInferencePolicy;
+        use std::sync::atomic::AtomicBool;
+
+        let ws_dir = tempfile::tempdir().unwrap();
+        let root = ws_dir.path();
+
+        init_repo(root);
+        std::fs::write(root.join("README.md"), "hello\n").unwrap();
+        run_git(root, &["add", "."]);
+        run_git(root, &["commit", "-q", "-m", "initial commit"]);
+
+        // Write a callisto.toml with pre_major_inference = "conservative" for pkg-a.
+        // The [[package]] section requires a `match` field (pattern to match package names).
+        std::fs::write(
+            root.join("callisto.toml"),
+            "[[package]]\nmatch = \"pkg-a\"\npre-major-inference = \"conservative\"\n",
+        )
+        .unwrap();
+
+        let pkg_id = PackageId::parse("pkg-a").unwrap();
+        let graph = SinglePackageGraph {
+            pkg: make_pkg(pkg_id.clone()),
+        };
+        let cfg = crate::config::load(root).unwrap();
+        let runner = RealGitRunner;
+        let tags = crate::tags::TagIndex::build(&runner, root, &graph, &cfg).unwrap();
+        let mut base_versions = BTreeMap::new();
+        base_versions.insert(pkg_id.clone(), Version::semver(0, 1, 0));
+
+        // An inference impl that records whether it received a non-OFF policy.
+        struct PolicyCapturingInference {
+            saw_non_off: AtomicBool,
+        }
+        impl SeverityInference for PolicyCapturingInference {
+            fn infer(
+                &self,
+                _pkg: &Package,
+                window: InferenceWindowSpec<'_>,
+            ) -> Result<Option<InferenceOutcome>, GraphError> {
+                if window.policy != PreMajorInferencePolicy::OFF {
+                    self.saw_non_off.store(true, Ordering::SeqCst);
+                }
+                Ok(None)
+            }
+        }
+
+        let capturing = PolicyCapturingInference {
+            saw_non_off: AtomicBool::new(false),
+        };
+        aggregate(
+            &graph,
+            &cfg,
+            &runner,
+            &tags,
+            &base_versions,
+            None,
+            &capturing,
+        )
+        .unwrap();
+
+        assert!(
+            capturing.saw_non_off.load(Ordering::SeqCst),
+            "aggregate() must pass the per-package pre_major_inference policy from config.packages \
+             into InferenceWindowSpec; received OFF even though callisto.toml sets conservative"
+        );
     }
 }
