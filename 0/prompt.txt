@@ -1,0 +1,251 @@
+<task-notification>
+<task-id>a44aa29242770ca79</task-id>
+<tool-use-id>toolu_011CnXtDhh8jZjwGD7iWcvi4</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a15bbbf7-aba0-415d-bfdc-c773ea65cfc7/tasks/a44aa29242770ca79.output</output-file>
+<status>completed</status>
+<summary>Agent "Audit: architecture, DX, error message quality, and API design" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Now I have enough information to write the full audit. Let me compile the findings.
+
+---
+
+# Callisto Codebase Architectural Audit
+
+## 1. Error Message Quality
+
+### [Medium] `GraphError::Command` missing `#[diagnostic(transparent)]`
+
+- **Status**: CONFIRMED
+- **Location**: `crates/callisto-graph/src/error.rs:59-60`
+- **Root Cause**: `Command(#[from] callisto_model::CommandError)` has `#[error(transparent)]` but no `#[diagnostic(transparent)]`. The four `CommandError` variants carry individual miette codes E020-E024 and help text (e.g., "program was not found," "version requirement not met"). When a `CommandError` propagates through `GraphError::Command`, those codes and help texts are swallowed — miette renders only the outer wrapper message `"command error: {0}"`. Compare with `GraphError::Vcs`, which correctly has both attributes.
+- **Failing Scenario**: `callisto status` on a WASM target where the git binary is not found. The user sees `"command error: git was not found; callisto requires it to be available"` with no code, instead of the expected `E020` diagnostic card with "install git and ensure it is on PATH."
+- **Verification Strategy**: Add `#[diagnostic(transparent)]` to `GraphError::Command` and write a test asserting `miette::Report::new(GraphError::Command(CommandError::NotFound {...})).code()` equals E020.
+
+### [Medium] `GraphError::Conventional`, `TagTemplate`, `VersionParse` also missing `#[diagnostic(transparent)]`
+
+- **Status**: CONFIRMED
+- **Location**: `crates/callisto-graph/src/error.rs:41-50`
+- **Root Cause**: Same pattern as `Command`. `Conventional` (feature-gated), `TagTemplate`, and `VersionParse` all have `#[error(transparent)]` but not `#[diagnostic(transparent)]`. Any miette codes on `ConventionalError`, `TagTemplateError`, or `VersionParseError` variants don't propagate.
+- **Failing Scenario**: A malformed tag template in `callisto.toml` triggers `TagTemplateError` with a specific code — users see the message text but no code.
+
+### [Low] `CliError::PreJson` not transparent — inner `PreJsonError` has no miette codes at all
+
+- **Status**: CONFIRMED
+- **Location**: `crates/callisto-cli/src/error.rs:48-50`, `crates/callisto-format/src/pre.rs:154-156`
+- **Root Cause**: `CliError::PreJson` carries `#[diagnostic(code(callisto::pre_json_error))]` but no `#[diagnostic(transparent)]`. More fundamentally, `PreJsonError` itself derives only `thiserror::Error`, not `miette::Diagnostic` — it has no error codes or help text on any of its six fine-grained variants (`Malformed`, `MissingField`, `WrongFieldType`, `InvalidMode`, `InvalidInitialVersion`). Users get a single undifferentiated `callisto::pre_json_error` code regardless of whether pre.json is truncated, has a wrong field type, or has an invalid mode string.
+- **Impact**: Two recovery paths exist (fix the JSON vs. delete and re-run `pre enter`) but the user can't know which applies from the code alone.
+
+### [Low] 11 `ConfigError` variants lack error codes; several lack help text
+
+- **Status**: CONFIRMED
+- **Location**: `crates/callisto-graph/src/error.rs:186-227`
+- **Root Cause**: `PackageSetMatchedNothing`, `PackageMatchedNothing`, `OverlappingPackageSets`, `ConflictingGroupNames`, `EmptyGroup`, `DuplicateGroupName`, `UnknownRegistry`, `UnknownKey`, `InvalidBumpSeverity`, `InvalidPreMajorInference` all lack `#[diagnostic(code(...))]`. Of these, `UnknownRegistry` and `UnknownKey` also lack `help()`. These are actionable user errors triggered by misconfigured `callisto.toml` — precisely the class that benefits most from machine-readable codes.
+
+### [Low] `RegistryError` has no `miette::Diagnostic` at all
+
+- **Status**: CONFIRMED
+- **Location**: `crates/callisto-model/src/registry.rs:5-13`
+- **Root Cause**: `RegistryError` derives only `thiserror::Error`. The `CliError::Registry` wrapper adds a single `callisto::registry_error` code and help text for all four variants (`RateLimited`, `AuthFailed`, `Network`, `Other`) — a CI pipeline cannot distinguish "retry after N seconds" from "bad credentials" from the machine-readable output alone.
+
+### [Info] Error code gaps: E025-E029, E033-E034, E039, E054-E059, E113 absent
+
+- **Status**: CONFIRMED (verified by exhaustive grep)
+- **Root Cause**: 16 numeric codes are absent from the sequence. No documentation explains whether these are reserved, deprecated, or simply never assigned. Users who encounter `E110` for a config read error would assume `E111`-`E113` are adjacent config errors, but `E113` is missing.
+- **Impact**: No user-facing error code reference document exists anywhere in `docs/`. Codes appear only in terminal miette cards with no lookup table.
+
+### [Low] `GraphError::OnDiskVersionDrift`, `WorkspaceVersionConflict`, `GrammarMismatch` lack codes and help
+
+- **Status**: CONFIRMED
+- **Location**: `crates/callisto-graph/src/error.rs:143-153`
+- **Root Cause**: `OnDiskVersionDrift` means "you generated a plan, then someone changed a manifest before you ran `callisto version`" — a common CI race condition. No error code, no help text telling the user to re-run `plan-publish` or discard and retry. `WorkspaceVersionConflict` and `GrammarMismatch` are similar high-value errors left without guidance.
+
+---
+
+## 2. CLI Interface Design
+
+### [Medium] `--strict` semantics inconsistent between command families
+
+- **Status**: CONFIRMED
+- **Location**: `crates/callisto-cli/src/commands/snapshot.rs:19-36`, `crates/callisto-cli/src/commands/tag.rs:17-36`, vs `crates/callisto-cli/src/cli.rs:96-103`, `114-120`
+- **Root Cause**: `status`, `version`, and `validate` expose `--strict` and `--strict-graph` as independent flags. `snapshot` and `tag` expose only `--strict` but their implementation calls `escalate(&amp;mut diags, true, true)` — hardcoding both strict and strict-graph semantics simultaneously. A user who learns `status --strict` escalates only warning-level diagnostics (not graph crosscheck warnings) will be surprised that `snapshot --strict` escalates everything. The help text says "Abort if the workspace graph contains crosscheck failures or other error-severity diagnostics" which implies graph-level semantics are in scope, but it doesn't say that normal warnings are also escalated.
+- **DX Impact**: A workspace that passes `callisto status` (with no --strict) and passes `callisto status --strict-graph` individually may fail `callisto snapshot --strict` because the latter implies both.
+
+### [Low] Ghost production dependency: `callisto-conventional` in `callisto-cli`
+
+- **Status**: CONFIRMED
+- **Location**: `crates/callisto-cli/Cargo.toml:26`
+- **Root Cause**: `callisto-cli`'s `[dependencies]` unconditionally includes `callisto-conventional = { path = "../callisto-conventional", version = "0.3.0" }`. Zero source files in `crates/callisto-cli/src/` import or use `callisto_conventional`. The inference feature in the CLI (`features = ["callisto-graph/inference"]`) properly gates the graph-level use of `callisto-conventional` through `callisto-graph`, but the CLI's direct dep is never activated. `cargo machete` would flag this.
+- **Impact**: Every `callisto` binary build unconditionally links `callisto-conventional` (AGPL), adding compile time and binary size regardless of whether inference is requested.
+
+### [Low] `schema` command missing `"publish"` type; `PublishReport` is unschemable
+
+- **Status**: CONFIRMED
+- **Location**: `crates/callisto-cli/src/commands/schema.rs:13-25`, `crates/callisto-cli/src/cli.rs:77`
+- **Root Cause**: The `schema` command's `--type` help text lists 9 types: "status, version, snapshot, validate, tag, init, plan-publish, changeset, pre". `callisto publish --format json` (non-dry-run) emits a `PublishReport` JSON structure, but `callisto schema --type publish` returns "Unknown schema target type." A user building tooling around the publish output cannot inspect its schema through the CLI.
+
+### [Low] `callisto add` help text silent on TTY requirement
+
+- **Status**: CONFIRMED
+- **Location**: `crates/callisto-cli/src/cli.rs:83-90`
+- **Root Cause**: `--package` is described as "Omit to enter the interactive wizard." There is no mention that omitting `--package` when stdin is not a TTY returns `CliError::NotATty`. CI users who try to run `callisto add` without flags in a non-interactive pipeline will encounter an error that isn't discoverable from `--help`.
+
+### [Info] `plan-publish` has no `--strict` flag, unlike the structurally-similar `status`
+
+- **Status**: PLAUSIBLE concern
+- `status` accepts `--strict` and `--strict-graph` to gate on diagnostic severity. `plan-publish` computes essentially the same diagnostic output but exposes neither flag, so there's no way for a CI pipeline to gate the publish plan on diagnostic cleanliness without a separate `callisto status --strict` step.
+
+---
+
+## 3. JSON Output Schema Stability
+
+### [Medium] `PublishPlan.pypi_packages` field appears/disappears; `rust_crates`, `npm_*` always present
+
+- **Status**: CONFIRMED
+- **Location**: `crates/callisto-model/src/plan.rs:14-22`
+- **Root Cause**: `rust_crates`, `npm_platform_packages`, and `npm_main_packages` are plain `Vec` fields with no `skip_serializing_if` — they serialize as `[]` when empty. `pypi_packages` uses `#[serde(default, skip_serializing_if = "Vec::is_empty")]` and vanishes when the workspace has no PyPI packages. A polyglot consumer that reads `plan.rust_crates`, `plan.npm_platform_packages`, and `plan.npm_main_packages` unconditionally will get `[]` for absent ecosystems, but one that reads `plan.pypi_packages` must defensively handle the key being absent. This inconsistency will break any parser that assumes all four fields are always present.
+
+### [Low] No `dry_run` field in any JSON report
+
+- **Status**: CONFIRMED — by design in current reports, but documented here as a DX gap
+- **Location**: `crates/callisto-model/src/report.rs` (all report structs)
+- **Root Cause**: `SnapshotReport`, `VersionReport`, `TagReport`, `ValidateReport` all lack a `dry_run: bool` field. A `callisto version --dry-run --format json` output is structurally identical to a real `callisto version --format json` run. A CI consumer storing or forwarding both cannot distinguish them without out-of-band knowledge of the flag used.
+
+### [Low] `StatusPackageRecord.changed_since_last_tag` omitted when false
+
+- **Status**: CONFIRMED
+- **Location**: `crates/callisto-model/src/report.rs:299`
+- **Root Cause**: `#[serde(default, skip_serializing_if = "std::ops::Not::not")]` means `false` is absent from JSON. A parser cannot distinguish "no changes since last tag" from "this is an older version of callisto that didn't compute this field." Acceptable as a serde default pattern, but undocumented.
+
+---
+
+## 4. Layer Isolation
+
+All layer boundaries are correctly respected by the `Cargo.toml` dependency graph. Layer 1 crates (`callisto-model`, `callisto-format`) and Layer 1.5 (`callisto-vcs`) import only from each other and external crates — never from Layer 2+. The layer diagram in AGENTS.md matches reality.
+
+One secondary note: `callisto-changelog` depends on `callisto-manifests` for `atomic_write`. This is architecturally sound (changelog needs crash-safe writes), but it means changelog can't be used without pulling in the full manifests stack. This is an acceptable design tradeoff, not a violation.
+
+---
+
+## 5. Diagnostic System Completeness
+
+### [Info] `DiagnosticCode` enum and E-code namespace are two parallel systems with no cross-reference
+
+- **Status**: CONFIRMED
+- **Location**: `crates/callisto-model/src/diagnostic.rs:88-106`
+- **Root Cause**: Callisto has two parallel diagnostic systems:
+  1. `DiagnosticCode` enum (14 kebab-case variants like `EmptyChangeset`, `UnknownPackage`) — these appear in the JSON `diagnostics` array emitted by commands like `status`, `validate`, and `version`.
+  2. Numeric E-codes (E001-E115) — these appear in miette terminal error cards when a command fails.
+  
+  These two systems serve different audiences (JSON API consumers vs. terminal users) but there is no documentation linking them. A user who sees `DiagnosticCode::UnknownPackage` in JSON output cannot find a corresponding E-code for the same error, and vice versa.
+
+### [Info] 16 missing numeric E-codes with no documentation or reservation notice
+
+See §1 above. The code gaps are: E025-E029, E033-E034, E039, E054-E059, E113.
+
+---
+
+## 6. API Design (`Workspace`)
+
+### [Low] `Workspace` public fields that should be private
+
+- **Status**: CONFIRMED
+- **Location**: `crates/callisto-graph/src/lib.rs:51-82`
+- **Root Cause**: `pub tags: OnceCell&lt;TagIndex&gt;` is documented "go through `Workspace::tags()` rather than this field directly," yet the field itself is `pub`. A caller in another crate can call `ws.tags.get()` directly, bypass the lazy initialization in `Workspace::tags()`, and get `None` instead of building the index. Similarly, `pub manifest_cache: RefCell&lt;BTreeMap&lt;PathBuf, Arc&lt;dyn Manifest&gt;&gt;&gt;` is an internal caching mechanism exposed directly — bypassing it breaks the cache invariant. `pub runner: &amp;'a R` is less problematic since commands legitimately need it, but exposes the abstraction boundary.
+
+### [Low] `base_versions()` has three silent fallbacks
+
+- **Status**: CONFIRMED
+- **Location**: `crates/callisto-graph/src/lib.rs:130-148`
+- **Root Cause**: Three distinct failures are silently converted to `None`:
+  1. `if let Ok(resolver) = WorkspaceCargoResolver::load(...)` — a malformed root `Cargo.toml` silently disables workspace version inheritance.
+  2. `resolver.inheritance().ok()` — inheritance resolution errors become `None`.
+  3. `detect_npm_workspace_kind(&amp;self.root).ok().flatten()` — npm workspace detection errors become `None`.
+  
+  A corrupt root `Cargo.toml` will cause every package's inherited version to fail silently, potentially producing wrong base versions without any user-visible error.
+
+### [Low] `initial_versions()` duplicates `base_versions()` with a type conversion
+
+- **Status**: CONFIRMED
+- **Location**: `crates/callisto-graph/src/lib.rs:183-189`
+- **Root Cause**: `initial_versions()` calls `base_versions()` and then maps `PackageId → name String`. The distinction between the two methods — one returns a `BTreeMap&lt;PackageId, Version&gt;`, the other a `Vec&lt;(String, Version)&gt;` — is not documented in the API. The `Vec&lt;(String, Version)&gt;` form is required specifically for the `PreState::initial_versions` JSON format (where package names are bare strings, not prefixed IDs), but that context isn't stated. The method name "initial_versions" is ambiguous (versions at initialization? initial = first?).
+
+---
+
+## 7. Test Coverage Gaps
+
+### [Medium] `schema` command has no tests; `PublishReport` schema is untestable via CLI
+
+- **Status**: CONFIRMED
+- **Location**: No test file covers `crates/callisto-cli/src/commands/schema.rs`
+- **Root Cause**: `callisto schema --type status` is never tested to emit valid JSON or valid JSON Schema. A typo in the schema generation code would go undetected until a user runs it.
+
+### [Medium] `validate --since` and `validate --staged` flags never tested
+
+- **Status**: CONFIRMED
+- **Location**: No test in `crates/callisto-cli/tests/` covers the `--since` or `--staged` validate paths
+
+### [Low] `completions` command never tested
+
+- **Status**: CONFIRMED
+- **Location**: `crates/callisto-cli/src/commands/completions.rs`
+
+### [Low] E2E tests don't cover multi-package cascade
+
+- **Status**: CONFIRMED
+- **Location**: `crates/callisto-cli/tests/lifecycle_e2e_tests.rs`
+- **Root Cause**: Every E2E test creates a two-package workspace (one Cargo, one npm) where the packages have no dependency relationship. The cascade logic — where bumping package B forces a version rewrite in package A because A depends on B — is the codebase's most complex feature, but no E2E lifecycle test exercises it. The cascade unit tests in `callisto-graph` are at the unit level only.
+
+### [Low] No E2E test for `callisto tag` creating actual git tags
+
+- **Status**: CONFIRMED
+- **Location**: `crates/callisto-cli/tests/lifecycle_e2e_tests.rs`
+- **Root Cause**: The full lifecycle test (test 1) calls `plan-publish` but never calls `callisto tag`. There are unit tests in `callisto-graph/src/commands/tag.rs`, but no end-to-end test that verifies `git tag --list` shows the expected tags after `callisto tag` is invoked with a real git repo.
+
+### [Low] Property-based tests limited to `PackageId` parsing only
+
+- **Status**: CONFIRMED
+- **Location**: `crates/callisto-model/src/identity.rs:400-415` (the only proptest file)
+- **Root Cause**: No proptest coverage for: `Version` parse-render round-trip, changeset markdown parsing (arbitrary byte sequences), `BumpError` exhaustion, or `cascade.rs` convergence on random graphs. The `callisto-format/src/changeset/tests.rs` uses proptest imports (visible in the grep output) but only within unit tests.
+
+---
+
+## 8. Documentation vs. Implementation
+
+### [Medium] `docs/03-polyglot-spec.md` §2 Invariant 3 claims Go/Java/C# lockfile auto-staging is live
+
+- **Status**: CONFIRMED
+- **Location**: `docs/03-polyglot-spec.md:22-23` (Invariant 2), `crates/callisto-graph/src/apply.rs:206-215`
+- **Root Cause**: The spec states "Lockfile Auto-Staging: Bumping versions auto-stages ecosystem lockfiles (`Cargo.lock`, `package-lock.json`, ... `go.sum`, `gradle.lockfile`, `packages.lock.json`)" as a current invariant with no [PLANNED] qualification. The actual `lockfile_ecosystems` table in `apply.rs` contains 9 entries covering only Cargo, npm, and Python. `go.sum`, `gradle.lockfile`, and `packages.lock.json` are absent because Go, Java, and C# ecosystems are unimplemented. The spec is presented as describing current behavior, not a roadmap.
+
+### [Low] `AGENTS.md` `just ci` description omits `audit`, `doc-check`, and `coverage`
+
+- **Status**: CONFIRMED
+- **Location**: `AGENTS.md:49`, `justfile:86`
+- **Root Cause**: AGENTS.md says `just ci` runs "Formatting, Clippy lints, Moon unit/integration tests, WASM target check." The actual `justfile` shows `ci: fmt-check lint test audit doc-check wasm-check coverage` — three additional steps (`audit`, `doc-check`, `coverage`) are omitted from the description. An agent following AGENTS.md's description would think `just ci` passes when it actually hasn't run the cargo-deny audit or documentation build check.
+
+### [Info] `docs/03-polyglot-spec.md` doesn't use `[LIVE: IMPLEMENTED]` / `[PLANNED: SPECIFIED]` status markers used in `docs/01-spec.md`
+
+- **Status**: CONFIRMED
+- **Location**: `docs/03-polyglot-spec.md` throughout; `docs/01-spec.md` §8 status legend
+- **Root Cause**: `docs/01-spec.md` introduced a status legend distinguishing implemented from planned sections (per the most recent commit message). `docs/03-polyglot-spec.md`, `docs/04-python-engine-spec.md`, and `docs/05-go-engine-spec.md` predate this convention and don't use it, making it unclear to readers which sections describe production-live code vs. specification-only content.
+
+---
+
+## Summary by Severity
+
+| Severity | Count | Key Findings |
+| :--- | :--- | :--- |
+| Medium | 4 | `GraphError::Command` missing `#[diagnostic(transparent)]`; `--strict` semantics inconsistency across commands; `PublishPlan.pypi_packages` field-presence inconsistency; `docs/03-polyglot-spec.md` Go/Java/C# lockfile staging claim |
+| Low | 15 | Ghost `callisto-conventional` dep in CLI; missing schema for `PublishReport`; `ConfigError` codes absent; `RegistryError` not miette-diagnostic; `Workspace` pub fields; `base_versions()` silent fallbacks; no cascade E2E test; no `tag` E2E test; no `schema` tests; `validate --since/--staged` untested; `OnDiskVersionDrift` no code/help; E-code gaps |
+| Info | 3 | Two parallel diagnostic systems without cross-reference; 16 missing E-codes; `docs/03-polyglot-spec.md` missing status markers |
+
+**Key file references:**
+- `crates/callisto-graph/src/error.rs` — GraphError transparent diagnostic gaps (lines 41-60)
+- `crates/callisto-model/src/plan.rs` — PublishPlan field serialization inconsistency (lines 14-22)
+- `crates/callisto-cli/src/commands/snapshot.rs` and `tag.rs` — `escalate(true, true)` conflation (lines 19-36 each)
+- `crates/callisto-cli/Cargo.toml:26` — unconditional `callisto-conventional` dep
+- `crates/callisto-graph/src/lib.rs:130-148` — `base_versions()` silent fallbacks
+- `crates/callisto-graph/src/lib.rs:72` — `pub tags` field that should be accessed only via `Workspace::tags()`
+- `docs/03-polyglot-spec.md:22-23` — false current-state lockfile staging claim</result>
+<usage><subagent_tokens>106101</subagent_tokens><tool_uses>72</tool_uses><duration_ms>588248</duration_ms></usage>
+</task-notification>
