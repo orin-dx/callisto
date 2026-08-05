@@ -1,0 +1,104 @@
+<task-notification>
+<task-id>a617fa8d2759830ea</task-id>
+<tool-use-id>toolu_011hEBTsWgRZ5hxsZBeDxNq4</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a15bbbf7-aba0-415d-bfdc-c773ea65cfc7/tasks/a617fa8d2759830ea.output</output-file>
+<status>completed</status>
+<summary>Agent "Audit: CLI command input validation and edge cases" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I now have enough data for a complete end-to-end trace. Here is the full audit.
+
+---
+
+### [Medium] `callisto validate --strict` / `--strict-graph` are silently inert
+
+- **Status**: CONFIRMED — path fully traced in both the CLI and graph-layer sources
+- **Location**: `crates/callisto-graph/src/commands/validate.rs:138-147`; contrast with `crates/callisto-graph/src/commands/status.rs:72-73`
+- **Classification**: Spec Drift
+- **Root Cause**: `validate` generates its own diagnostics at line 72-136, all hardcoded as `DiagnosticSeverity::Error`. It then calls `escalate(&amp;mut diagnostics, opts.strict, opts.strict_graph)` at line 138, but since there are no Warning-severity entries in the vector, `escalate` has nothing to promote. More critically, `validate` never appends `ws.graph.diagnostics()` — the graph-level crosscheck failures and warning diagnostics that `status` includes (status.rs:72: `let mut diagnostics = ws.graph.diagnostics().to_vec()`). The exit code at validate.rs CLI layer (`crates/callisto-cli/src/commands/validate.rs:30`) is `report.valid`, which is computed only from changeset-content diagnostics.
+- **Failing Scenario**: A workspace with a graph crosscheck failure (Warning diagnostic tagged `escalated_by: StrictGraph`). `callisto validate --strict-graph` exits 0 and prints "Validation passed." because the graph Warning never enters the validate diagnostic set. The flag is silently accepted but has zero effect.
+- **Verification Strategy**: Add a workspace fixture with a deliberate crosscheck violation; assert that `callisto validate --strict-graph` exits non-zero. Currently it exits 0. The fix is to include `ws.graph.diagnostics()` in validate's diagnostic set and run `escalate` over the union.
+
+---
+
+### [Low] `callisto pre exit` does not stage the updated `pre.json` via `git add`
+
+- **Status**: CONFIRMED — traced both arms of `pre.rs`
+- **Location**: `crates/callisto-cli/src/commands/pre.rs:123-171` (Exit arm has no `git add`); contrast with `pre.rs:97-104` (Enter arm explicitly runs `git add .changeset/pre.json`)
+- **Classification**: Spec Drift / Missing Feature
+- **Root Cause**: The Enter arm writes `pre.json`, then unconditionally runs `runner.run("git", &amp;["add", PRE_JSON_REL], &amp;ws.root)` (labeled "Bug 4" in a comment). The Exit arm writes the updated `pre.json` (`mode: exit`) and returns. There is no `git add` call. The comment explaining the rationale for the Enter-side staging is absent from the Exit arm entirely.
+- **Failing Scenario**: `callisto pre exit` → `git status` shows `.changeset/pre.json` as modified but unstaged → next `git commit` does not include the exit-from-pre-mode change → `callisto version` may misread the pre state from the unstaged (unchanged) index version on the CI runner that checks out from git.
+- **Verification Strategy**: After `pre exit`, assert that `git diff --cached -- .changeset/pre.json` is non-empty. Currently it is empty.
+
+---
+
+### [Low] Concurrent `callisto add` invocations can silently overwrite each other's changesets
+
+- **Status**: CONFIRMED — traced `generate_human_slug()` through `atomic_write` → `NamedTempFile::persist` → POSIX `rename(2)`
+- **Location**: `crates/callisto-cli/src/commands/add.rs:250-276` (slug generation); `crates/callisto-manifests/src/atomic.rs:48` (`temp.persist(path)`)
+- **Classification**: Boundary Condition / Concurrent Invocations
+- **Root Cause**: `generate_human_slug()` derives the entire slug from a single `SystemTime::now().duration_since(UNIX_EPOCH).as_nanos()` sample, modulo three arrays of 20 elements each (20 × 20 × 20 = 8000 distinct slugs). Two processes launched in the same nanosecond window produce the same slug, targeting the same `.changeset/{slug}.md`. `NamedTempFile::persist(path)` calls `rename(2)` under the hood; `rename` is atomic on POSIX and the last caller wins without error. Both processes exit 0.
+- **Failing Scenario**: `callisto add --package a:patch --summary "fix a" &amp; callisto add --package b:patch --summary "fix b"` — parallel CI scripts or developer tooling; both succeed but one changeset entry is silently lost.
+- **Verification Strategy**: A test that calls `generate_human_slug()` twice from the same nanosecond (mock `SystemTime`) and asserts distinct slugs — will fail today because the function has no per-process entropy source.
+
+---
+
+### [Low] `callisto snapshot --tag ""` produces a spec-violating double-dash version without error
+
+- **Status**: CONFIRMED — traced `plan_snapshot` format string through `Version::parse`
+- **Location**: `crates/callisto-graph/src/commands/snapshot.rs:23`; no guard in `crates/callisto-cli/src/commands/snapshot.rs`
+- **Classification**: Boundary Input / Missing Validation
+- **Root Cause**: `plan_snapshot` constructs `format!("0.0.0-{tag}-{sha_short}")` with no empty-string guard on `tag`. With `--tag ""`, this produces `"0.0.0--{sha_short}"`. Semver permits hyphens inside a pre-release identifier, so `Version::parse("0.0.0--abc1234", SemVer)` succeeds. Snapshot versions with a leading hyphen in the pre-release identifier are applied to all manifests without error. Compare: `pre enter` has an explicit guard at `pre.rs:59` (`if tag.trim().is_empty() { return Err(...) }`). `snapshot.rs` has none.
+- **Failing Scenario**: `callisto snapshot --tag ""` → all manifests get version `0.0.0--abc1234`, the git tag (if subsequently created) is named `v0.0.0--abc1234`. Process exits 0.
+- **Verification Strategy**: Assert that `callisto snapshot --tag ""` exits non-zero and produces an actionable error.
+
+---
+
+### [Low] `callisto validate --since ""` silently matches all changesets
+
+- **Status**: CONFIRMED — traced the empty-string case through `validate.rs:42-70`
+- **Location**: `crates/callisto-graph/src/commands/validate.rs:42-70`
+- **Classification**: Boundary Input / Missing Validation
+- **Root Cause**: The guard at line 43 only rejects `since` values that start with `-`. An empty string passes the guard. `format!("{since}..HEAD")` → `"..HEAD"`, which git interprets as "all reachable commits". The result is identical to running `validate` with no `--since` flag: all changesets are returned and validated.
+- **Failing Scenario**: A CI script uses `--since "$(git rev-parse HEAD^)"` but variable expansion fails, passing `--since ""`. Instead of a validation error or "no changesets in range", all changesets are validated and the result is silently misleading.
+- **Verification Strategy**: Assert that `callisto validate --since ""` exits non-zero with an error about invalid ref. Currently exits 0 or 1 depending on changeset validity, never on the invalid input.
+
+---
+
+### [Low] `--format json --dry-run` output is indistinguishable from a real run in `version`, `snapshot`, `tag`, and `init`
+
+- **Status**: CONFIRMED — traced all seven command JSON output paths
+- **Location**: `crates/callisto-cli/src/commands/version.rs:42-43`; `snapshot.rs:48-49`; `tag.rs:62-63`; `init.rs:49-50`; contrast with `add.rs:189-197` (`"dryRun": true` explicitly set) and `pre.rs:23-30` (same)
+- **Classification**: Spec Drift / Output Format Inconsistency
+- **Root Cause**: `add` and `pre` include a `"dryRun": true` field in their `--format json --dry-run` output. `version`, `snapshot`, `tag`, and `init` do not — they emit the same JSON schema in both real and dry-run modes. A JSON consumer cannot distinguish a version plan that was applied from one that was only computed.
+- **Failing Scenario**: A release automation script runs `callisto version --dry-run --format json` to preview, parses the JSON plan, proceeds believing the versions were bumped, and calls `git commit`. The versions were never written because it was a dry run, but the script had no signal to distinguish the two cases.
+- **Verification Strategy**: Assert that `callisto version --dry-run --format json` output contains `"dryRun": true`. Currently it does not.
+
+---
+
+### [Low] `write_json` to stderr in `main.rs` silently discards write failure
+
+- **Status**: CONFIRMED
+- **Location**: `crates/callisto-cli/src/main.rs:85`
+- **Classification**: Silent Fallback / I/O Safety
+- **Root Cause**: `let _res = callisto_cli::output::write_json(&amp;mut std::io::stderr(), &amp;report);` — the `_res` binding explicitly drops the `io::Result`. If stderr is a broken pipe (e.g. `callisto status --format json 2&gt;&amp;1 | head -n 0`), the EPIPE is silently eaten and the structured JSON error is never delivered. The process exits 1, but the consumer sees no output to parse.
+- **Failing Scenario**: `callisto status --format json 2&gt;&amp;1 | head -n 0` → the pipe reader exits, writing to stderr returns EPIPE, the error is dropped, the exit code is 1 with no output. A JSON consumer has no structured error to parse.
+- **Verification Strategy**: Assert that a write failure to stderr propagates as a secondary error or is at minimum logged. A one-line fix is replacing `let _res =` with a `let _ = ... ;` with an `eprintln!` fallback, or propagating as an additional exit code annotation.
+
+---
+
+**Summary by audit area:**
+
+| Audit Dimension | Findings |
+|---|---|
+| Flag combinations | `--strict`/`--strict-graph` accepted-but-inert on `validate` (Finding 1); `--dry-run` produces no JSON marker on `version`/`snapshot`/`tag`/`init` (Finding 6) |
+| Missing input validation | `snapshot --tag ""` (Finding 4); `validate --since ""` (Finding 5) |
+| Output format consistency | JSON dry-run marker absent in 4 commands (Finding 6); stderr write result discarded (Finding 7) |
+| Exit codes | All codes documented and consistent per `main.rs` comment block; no new issues found |
+| TTY detection | `add` and `init` both use `tty::is_interactive()` correctly; `init` non-TTY non-`--yes` proceeds silently on first run (documented/intentional behavior per graph-layer comment) |
+| CWD handling | `canonicalize()` in `workspace.rs:13` and `pre.rs:124` correctly surfaces errors for nonexistent paths; symlinks and files resolved correctly |
+| Dry-run completeness | `add` and `version` dry-run paths confirmed equivalent to real runs minus I/O; gap noted in JSON marker (Finding 6) |
+| Concurrent invocations | Slug collision race in concurrent `add` (Finding 3); no locking on any command |
+| Large inputs | No explicit size limits on `--plan`, `--existing-body`, or `--summary`; `read_to_string` is unbounded; low practical risk |
+| Unicode/special chars | Empty-string edge cases covered (Findings 4, 5); null bytes cannot reach Rust CLI args on POSIX |</result>
+<usage><subagent_tokens>70875</subagent_tokens><tool_uses>39</tool_uses><duration_ms>462359</duration_ms></usage>
+</task-notification>
