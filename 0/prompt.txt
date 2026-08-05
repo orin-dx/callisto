@@ -1,0 +1,38 @@
+<task-notification>
+<task-id>af872dfe23f06276e</task-id>
+<tool-use-id>toolu_0194GBpvpLve6JzLNquFfz3B</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/dc5ff9d8-ad6b-4ac9-8548-df397504bb34/tasks/af872dfe23f06276e.output</output-file>
+<status>completed</status>
+<summary>Agent "DX sweep: API/library ergonomics for contributors" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I have enough evidence across all four dimensions. Writing the final report.
+
+## 1. Public API Consistency
+
+`RegistryClient::is_published` (callisto-model/src/registry.rs:42) and the tag-resolution pair in callisto-graph/src/tags.rs illustrate genuine "looks-alike, behaves-differently" traps:
+
+- `last_tag_for` (tags.rs:85) returns `Result&lt;LastTagSelection, GraphError&gt;` — errors on failure — while `TagIndex::last_tag` (tags.rs:135) returns `Option&lt;&amp;LastTag&gt;` for the *same conceptual lookup*, silently swallowing "no tag found" into `None` with no error path. A contributor extending tag resolution has to read both implementations to know which failure mode applies where; the doc comment at tags.rs:77-84 partially compensates but only for `last_tag_for`.
+- Error typing is inconsistent even within one crate: `callisto-model/src/registry.rs` has a proper `thiserror` enum `RegistryError` (RateLimited/AuthFailed/Network/Other), but `Other(String)` is used as an escape hatch in `publish_client.rs` for genuinely distinct failure classes — e.g. line 97 (`Err(RegistryError::Other(format!("npm view failed ambiguously...")))`), line 155 (`unsupported package identity`), and line 180 (`no subprocess publisher configured`). These are three semantically different situations (ambiguous CLI output, unimplemented ecosystem, config gap) all collapsed into the same catch-all variant a caller can't `match` on distinctly, unlike `CommandError`/`ManifestError`/`VcsError` which use precise, matchable variants throughout.
+
+## 2. Doc Comment Coverage/Quality
+
+This session's additions (tags.rs, publish_client.rs) set a noticeably *higher* bar than older code: tags.rs:13-32, 44-51, 66-67, 77-84 each explain *why* (wasm32 constraints, batching rationale, byte-identical-selection guarantees) with cross-references via `[...]` intradoc links; publish_client.rs:1-24 has a full module-level doc explaining the deliberate design constraint (no direct registry HTTP calls) and an explicit "Known trait-boundary limitation" section admitting the `PublishPlan` metadata isn't threaded through.
+
+By contrast, `crates/callisto-model/src/registry.rs`'s `RateLimitPolicy`/`TimeProvider` traits (lines 53-60) have zero doc comments despite being just as load-bearing, and `crates/callisto-graph/src/cascade.rs`'s `solve_cascade` (line 160) — arguably the most complex function in the crate — has no top-level doc comment explaining invariants/panics, only inline comments scattered through the body. `crates/callisto-model/src/exec.rs`'s `CommandRunner` trait (line 6) is one line: "Trait for executing subprocess commands," with no mention of the cwd contract or blocking semantics. The inconsistency isn't just old-vs-new; it's that this session raised the doc bar for touched files without back-filling adjacent, equally-central pre-existing APIs, so a contributor's expectation of doc depth will vary wildly depending which file they open next.
+
+## 3. Test-Double Duplication
+
+At least 9 independent, hand-rolled `CommandRunner` test doubles exist with no shared module:
+- `FakeGitTagRunner` (tags.rs:198) — counts calls, returns canned `git tag --list` output
+- `ScriptedRunner` (publish_client.rs:319) — returns one fixed `CommandOutput`
+- `NoopRunner` (graph/tests/manifest_cache_test.rs:22), `RealGitRunner`/`PoisonedRunner` (aggregate.rs:414/453), `DryRunTestRunner`/`ValidateArgTestRunner`/`DummyRunner`×2 (graph_tests.rs:417/476/532/572), `PoisonedRunner` (conventional/window.rs:66)
+
+Several of these (`ScriptedRunner`, `PoisonedRunner`×2, `DummyRunner`×2) implement the exact same trivial "return a fixed `Ok`/`Err`" shape independently rather than sharing a `callisto-test-support`-style crate with a builder (e.g. `RunnerBuilder::respond_to("git", ["tag","--list"], ...)`). callisto-graph alone has 6 of these. This is real duplication a shared test-utilities crate could consolidate — none of the existing scoping choices look deliberate (e.g. crate-boundary-driven); they read as independently reinvented each time a new test needed a fake runner.
+
+## 4. Error Message Actionability
+
+`GraphError`, `VcsError`, and `ManifestError` are generally strong: `ManifestError::DependencyNotFound` (callisto-model/src/error.rs:129-135) includes `path`, `name`, and `kind`; `GraphError::DuplicatePackage` (error.rs:56-61) lists every conflicting path; `VcsError`'s discovery variant (vcs/lib.rs:8-9) includes both `path` and the underlying `message`. These would genuinely help a contributor debug a failing test.
+
+The one weak spot is the `RegistryError::Other`/`GraphError::Command`-via-`RegistryError::Other` path noted in §1: `SubprocessRegistryClient::run` (publish_client.rs:52-56) maps *every* `CommandError` into `RegistryError::Other(e.to_string())`, discarding the original `CommandError` variant (`NotFound` vs `Failed` vs `Io` have very different debugging implications) and losing the structured `program`/`exit_code`/`stderr` fields in favor of a flattened string — the opposite of `GraphError::Command`'s `#[from] CommandError` (error.rs:53-54), which preserves the full structured error via `thiserror`'s `#[error(transparent)]`-adjacent forwarding.</result>
+<usage><subagent_tokens>45010</subagent_tokens><tool_uses>17</tool_uses><duration_ms>66918</duration_ms></usage>
+</task-notification>
