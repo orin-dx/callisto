@@ -1,0 +1,47 @@
+<task-notification>
+<task-id>a282ba28e3d026bf7</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/dc5ff9d8-ad6b-4ac9-8548-df397504bb34/tasks/a282ba28e3d026bf7.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix tags.rs wasm32 crash + batch tag resolution" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All work is complete. Summary of what I found and did:
+
+## Bug confirmed and fixed
+
+`crates/callisto-graph/src/tags.rs`'s `last_tag_for` ignored its `CommandRunner` parameter and called `callisto_vcs::GitRepository::discover(root)?` unconditionally. On `wasm32`, `discover` always returns `Err` (gix is native-only), so `TagIndex::build` — and therefore `Workspace::load` — hard-failed on the first package for every wasm/moon invocation (`status`, `plan-publish`, `validate`).
+
+## Design
+
+- **`fetch_all_tags(runner, root)`** (new, private): tries `GitRepository::discover` + `list_tags(None)` (full list, no glob) first; falls through (not `?`) to a single `runner.run("git", &amp;["tag", "--list"], root)` call when gix is unavailable — mirroring `changed.rs`'s established `if let Ok(repo) = ...` pattern.
+- **`matching_tags(all_tags, template)`** (new, private): applies `globset::Glob` matching against the raw list in `callisto-graph` itself, reproducing `callisto_vcs::GitRepository::list_tags`'s exact matcher semantics (including its "uncompilable glob disables filtering" fallback) so selection is byte-identical regardless of which path sourced the list.
+- **`select_from_tags`**: `matching_tags` + `select_last_tag` (pure).
+- **`last_tag_for`**: kept, now implemented via `fetch_all_tags` + `select_from_tags` (fixes the standalone-call case too).
+- **`TagIndex::build`**: now calls `fetch_all_tags` **once**, then loops packages calling `select_from_tags` on the shared list — eliminating N gix discoveries / N host round-trips.
+
+No callers outside `tags.rs` needed changes (only caller was `TagIndex::build` itself; `lib.rs` just re-exports `last_tag_for`).
+
+## Test evidence
+
+1. **`crates/callisto-graph/src/tags.rs`** — 4 new unit tests using a `non_repo_dir()` (guaranteed gix-undiscoverable, the native stand-in for the wasm32 stub) + `FakeGitTagRunner` (counts calls, never touches real git):
+   - `test_last_tag_for_succeeds_without_gix` / `test_tag_index_build_succeeds_without_gix` — pre-fix failed with `Vcs(RepoNotFound {...})` (reproduced and confirmed), pass after fix.
+   - `test_tag_index_build_batches_tag_fetch_across_packages` — 3 packages, asserts `runner.calls == 1`; pre-fix panicked before reaching the assertion (build itself failed).
+   - `test_matching_tags_mirrors_globset_semantics` — glob-matching parity check.
+2. **`crates/callisto-moon/tests/moon_wasm_sandbox.rs`** — new `execute_extension_status_succeeds_against_real_repo_fixture` test: real `git init` + tag inside the sandbox's preopened workspace dir, a fake `moon` shim on `PATH` so `MoonProjectLocator` resolves without a full moon workspace, calls `execute_extension` directly via `plugin.call_func_with` (bypassing the wrapper's output-discarding `call_func_without_output`) and asserts `exit_code == 0`, no `error` field, and `report.packages[0].lastTag == "pkg-a@1.0.0"`. Verified this fails pre-fix (`exit_code: 1`, `E_GRAPH`, "gix native git operations disabled on WASM target") and passes post-fix, end-to-end through the real compiled wasm32 module.
+
+## Full verification
+
+- `cargo test -p callisto-graph -p callisto-vcs -p callisto-model`: all pass.
+- `cargo test --workspace`: all pass (0 failures across every crate, including `callisto-moon`'s sandbox suite).
+- `cargo check -p callisto-moon --target wasm32-wasip1 --features pdk`, `cargo rustc ... --crate-type cdylib`, `cargo test -p callisto-moon --test moon_wasm_sandbox`: all pass (matches `just wasm-check`).
+- `cargo fmt --check` and `cargo clippy --workspace --all-targets -- -D warnings`: clean.
+
+## Files touched
+
+- `/Users/gabe/Projects/callisto/crates/callisto-graph/src/tags.rs` — fix + 4 new tests.
+- `/Users/gabe/Projects/callisto/crates/callisto-moon/tests/moon_wasm_sandbox.rs` — new strengthened regression test + helpers (`PathGuard`, `write_fake_moon_binary`, `run_git`).
+- `/Users/gabe/Projects/callisto/crates/callisto-moon/Cargo.toml` — added `tempfile` (workspace-pinned) to `[dev-dependencies]` for the new test's fixture staging.
+
+Not touched: `changed.rs`, `runner.rs`, `extension.rs` (beyond nothing — no changes needed there at all). No commits, version bumps, or publish commands were run.</result>
+<usage><subagent_tokens>162593</subagent_tokens><tool_uses>87</tool_uses><duration_ms>1047240</duration_ms></usage>
+</task-notification>
