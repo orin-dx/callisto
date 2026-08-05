@@ -1,0 +1,22 @@
+<task-notification>
+<task-id>a918251b39d2ab041</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a15bbbf7-aba0-415d-bfdc-c773ea65cfc7/tasks/a918251b39d2ab041.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix 5: GitDataSource missing head_sha" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All 29 tests pass (up from 26 before — 3 new tests added). The lint and format-check failures in `just ci` are pre-existing issues in `callisto-cli` (deleted `adversarial_tests.rs`) and `callisto-moon` (formatting) that exist in the working tree before my changes — confirmed by the initial git status showing those files already modified/deleted.
+
+Here is a summary of what was done:
+
+**Bug fixed:** `GitDataSource` trait was missing `head_sha()`, making it unreachable via `&amp;dyn GitDataSource` or `GitAccess`.
+
+**Changes made (TDD order):**
+
+1. `/Users/gabe/Projects/callisto/crates/callisto-vcs/src/shell.rs` — Added two failing tests (`test_head_sha_returns_current_head_commit`, `test_head_sha_propagates_git_failure`) then added `ShellGit::head_sha()` to `impl GitDataSource for ShellGit&lt;'_&gt;` shelling `git rev-parse HEAD`.
+
+2. `/Users/gabe/Projects/callisto/crates/callisto-vcs/src/access.rs` — Added failing test (`test_head_sha_returns_head_of_real_repo`) using the existing `init_repo` helper, then added `GitAccess::head_sha()` to `impl GitDataSource for GitAccess&lt;'_&gt;` with native-first, shell-fallback semantics (consistent with all other read operations).
+
+3. `/Users/gabe/Projects/callisto/crates/callisto-vcs/src/lib.rs` — Added `fn head_sha(&amp;self) -&gt; Result&lt;CommitSha, VcsError&gt;;` to the `GitDataSource` trait, and added `head_sha()` to `impl GitDataSource for GitRepository` delegating to the existing inherent method.</result>
+<usage><subagent_tokens>54275</subagent_tokens><tool_uses>19</tool_uses><duration_ms>203170</duration_ms></usage>
+</task-notification>
