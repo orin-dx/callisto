@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bdo4ehizl</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a15bbbf7-aba0-415d-bfdc-c773ea65cfc7/tasks/bdo4ehizl.output</output-file>
+<status>completed</status>
+<summary>Background command "just ci 2&gt;&amp;1 | tail -15" completed (exit code 0)</summary>
+</task-notification>
