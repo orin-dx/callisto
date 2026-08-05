@@ -29,7 +29,12 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
     )
     .ok();
 
-    let all_ids: std::collections::HashSet<_> = ws.graph.packages().map(|p| p.id.clone()).collect();
+    // Build a single lookup map once — eliminates O(N) scans inside the topo loop
+    // (PERF-003/004/005). Keys and values are borrowed from the graph for the
+    // lifetime of this function, so no extra clones are needed for the lookups.
+    let pkg_map: std::collections::HashMap<&callisto_model::PackageId, &callisto_model::Package> =
+        ws.graph.packages().map(|p| (&p.id, p)).collect();
+    let all_ids: std::collections::HashSet<_> = pkg_map.keys().map(|&id| id.clone()).collect();
     let topo_ids = ws.graph.toposort(&all_ids)?;
 
     let head_sha = if let Ok(repo) = callisto_vcs::GitRepository::discover(&ws.root) {
@@ -39,8 +44,8 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
     };
 
     for id in &topo_ids {
-        let pkg = match ws.graph.packages().find(|p| &p.id == id) {
-            Some(p) => p,
+        let pkg = match pkg_map.get(id) {
+            Some(&p) => p,
             None => continue,
         };
 
@@ -120,9 +125,8 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
                         .graph
                         .dependencies_of(&pkg.id)
                         .filter(|edge| {
-                            ws.graph
-                                .packages()
-                                .find(|p| p.id == edge.to)
+                            pkg_map
+                                .get(&edge.to)
                                 .map(|p| {
                                     p.manifests.iter().any(|m| {
                                         matches!(
