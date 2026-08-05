@@ -1,0 +1,1 @@
+For git we should be using gix right? But yes, we should have a command runner for the cargo/npm publish for lack of a better client
