@@ -1,0 +1,1 @@
+How would this work in a system that does not get this data from moon?
