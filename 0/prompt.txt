@@ -1,0 +1,1 @@
+Let's research how others in rust-land do this kind of work and see how to be integrate dry-run awareness into the framwork. Let's also consider other properties that should be treated equally well and globally right? I'm sure there is more. Research, analyze, plan and propose a solution
