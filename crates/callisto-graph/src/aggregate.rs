@@ -148,7 +148,7 @@ fn resolve_since(git: &impl GitDataSource, tag_name: &str) -> Option<CommitSha> 
 /// condition, reported separately by `validate`), `Ok(Some(pkg))` when
 /// resolution is unambiguous, and `Err(GraphError::AmbiguousName)` when the
 /// id matches two or more packages.
-fn resolve_target_package<'a>(
+pub(crate) fn resolve_target_package<'a>(
     packages: impl Iterator<Item = &'a Package>,
     id: &PackageId,
 ) -> Result<Option<&'a Package>, GraphError> {
