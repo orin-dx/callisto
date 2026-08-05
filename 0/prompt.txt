@@ -1,0 +1,175 @@
+<task-notification>
+<task-id>a7c1afbad7c554fad</task-id>
+<tool-use-id>toolu_01MR96SeecMcDRywsyKdE3oE</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a15bbbf7-aba0-415d-bfdc-c773ea65cfc7/tasks/a7c1afbad7c554fad.output</output-file>
+<status>completed</status>
+<summary>Agent "Audit: configuration loading edge cases and workspace discovery" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All findings are now fully traced. Here is the complete audit report.
+
+---
+
+### [Critical] `[[fixed-group]]` and `[[linked-group]]` config blocks are parsed, validated, then silently discarded — group-based version convergence never fires
+
+- **Status**: CONFIRMED (end-to-end traced)
+- **Location**: `crates/callisto-graph/src/config/resolve.rs:265-269,327`
+- **Classification**: Discarded Parameter / Silent Fallback
+- **Root Cause**: `config::load()` constructs `raw_groups` from the parsed TOML and calls `GroupTable::validate_syntactic(&amp;raw_groups)` — but then sets `groups: GroupTable::default()` in the returned `ResolvedConfig`, discarding every resolved group. `GroupTable::resolve()` (`groups.rs:136-221`) is `#[allow(dead_code)]` and is never called from any production code path. Every downstream consumer that reads `ws.config.groups` (including `run_cascade` via `version.rs:70`, `aggregate.rs:341,344`, `groups.rs:26`, `napi.rs:16`) receives an empty table regardless of what is written in `callisto.toml`.
+- **Failing Scenario**: A `callisto.toml` with `[[fixed-group]] name = "platform" members = ["pkg-a", "pkg-b"]` — running `callisto version` produces no group union, no divergence check, and no `FixedGroupDivergent` error even when `pkg-a` and `pkg-b` have different on-disk versions. The syntactic validation fires (`EmptyGroup`, `DuplicateGroupName`), so malformed group config is rejected — but valid, well-formed group config is silently dropped.
+- **Severity**: Critical (the entire groups feature — including fixed-group convergence and linked-group bumping, both of which have dedicated code paths and tests — is unreachable through the public config interface)
+- **Verification Strategy**: Write a `callisto.toml` with a valid `[[fixed-group]]` block, call `config::load()`, assert `result.groups.fixed.is_empty()` — it will always pass today, falsifying the intent. Fix: call `GroupTable::resolve(&amp;raw_groups, &amp;index)` after `ManifestWalkResolver::build` returns the identity index, and store the result. Since `GroupTable::resolve` requires an `IdentityIndex`, this must happen in `Workspace::load` after graph construction, not inside `config::load`.
+
+---
+
+### [High] `[[package-set]]` config block is dead end-to-end — parsed, never processed
+
+- **Status**: CONFIRMED
+- **Location**: `crates/callisto-graph/src/config/raw.rs:12`, `crates/callisto-graph/src/config/resolve.rs` (entire `load()` body — `raw.package_set` never consumed)
+- **Classification**: Discarded Parameter
+- **Root Cause**: `RawConfig.package_set: Option&lt;Vec&lt;RawPackageSetConfig&gt;&gt;` is defined and deserialized from TOML, but `config::load()` never reads `raw.package_set`. No grep hit for `package_set` outside `raw.rs`. The `[[package-set]]` table is syntactically accepted by the deserializer but has zero effect on `ResolvedConfig`.
+- **Failing Scenario**: A user writes `[[package-set]] match = "cargo:*" release-trigger = "auto"` — every cargo package retains its default `ReleaseTrigger::Changeset`. No error, no diagnostic, no acknowledgment.
+- **Severity**: High (feature advertised by the schema — `RawPackageSetConfig` is a complete struct with all the same fields as `RawPackageConfig` — silently does nothing)
+- **Verification Strategy**: Add a `[[package-set]] match = "cargo:foo" release-trigger = "auto"` block and assert `resolved_config.packages` contains an entry for `cargo:foo`. It will not.
+
+---
+
+### [High] `[[package]] publish-to` field is discarded — always `None` in `PackageConfig`
+
+- **Status**: CONFIRMED
+- **Location**: `crates/callisto-graph/src/config/resolve.rs:305`
+- **Classification**: Discarded Parameter
+- **Root Cause**: `RawPackageConfig.publish_to: Option&lt;Vec&lt;String&gt;&gt;` is deserialized from TOML (line 66-67 of `raw.rs`). In the loop at `resolve.rs:274-311`, every other field is read — `release_trigger`, `tag_template`, `changelog`, `pre_major_inference` — but `publish_to: None` is hardcoded on line 305. `raw_pkg.publish_to` is never accessed.
+- **Failing Scenario**: A user writes `[[package]] match = "npm:my-lib" publish-to = ["npm-internal"]` to route a package to a private registry — the setting is silently dropped. The package's `publish_to` is determined solely by what the manifest declares, ignoring the config override.
+- **Severity**: High (the config schema deliberately exposes `publish-to` per-package; the intent is clearly to override manifest-level registry routing, but no override ever takes effect)
+- **Verification Strategy**: Assert that after `config::load()` with a `[[package]]` block containing `publish-to`, the resolved `PackageConfig.publish_to` is `Some(...)`. It is always `None`.
+
+---
+
+### [Medium] Unknown and misspelled keys in `callisto.toml` are silently ignored — typos take defaults with no warning
+
+- **Status**: CONFIRMED
+- **Location**: `crates/callisto-graph/src/config/raw.rs:4-22` (no `#[serde(deny_unknown_fields)]` on any struct), `resolve.rs:167`
+- **Classification**: Silent Fallback
+- **Root Cause**: `toml::from_str::&lt;RawConfig&gt;` uses serde's default behavior, which ignores unknown keys. No struct in `raw.rs` carries `#[serde(deny_unknown_fields)]`. A `callisto.toml` with `[cascase]` (typo for `[cascade]`), `bump_severity = "minor"` (underscore instead of hyphen), or any other structural typo deserializes successfully with all fields `None`, silently applying defaults.
+- **Failing Scenario**: `callisto.toml` containing `[cascade]\nbump_severity = "minor"` (underscore form) — the key does not match `#[serde(rename = "bump-severity")]` in `RawCascadeConfig`, so it is discarded. `cascade.bump_severity` resolves to the default `Patch` with no error or diagnostic. The `provenance` map records `Patch` as `Default`, not `Explicit`, so even the provenance API gives no signal.
+- **Severity**: Medium (common class of user error; affects `cascade`, `validation`, and all per-package overrides)
+- **Verification Strategy**: Load a `callisto.toml` with `[cascade]\nbump_severity = "minor"` and assert `resolved.cascade.bump_severity == CascadeBumpSeverity::Minor`. It will be `Patch`.
+
+---
+
+### [Medium] BOM (`\u{FEFF}`) in `callisto.toml` produces a cryptic `ParseToml` error instead of actionable guidance
+
+- **Status**: CONFIRMED
+- **Location**: `crates/callisto-graph/src/config/resolve.rs:163-169`
+- **Classification**: Boundary Condition
+- **Root Cause**: `fs::read_to_string` preserves the UTF-8 BOM as the leading three bytes of the returned `String` (`"\u{FEFF}..."`). The `toml` crate does not strip BOM before parsing. The result is `ConfigError::ParseToml { message: "unexpected character '\u{FEFF}'" ... }` — the error message names the character by its Unicode code point rather than saying "the file has a byte-order mark, please remove it."
+- **Failing Scenario**: Any editor that saves files with a BOM (common on Windows, some cross-platform tools) produces an unactionable error. This is particularly likely for `callisto.toml` since users author it by hand. Compare: `callisto-manifests/cargo.rs` already strips BOM on `CargoToml::open` (per the findings ledger) and `python.rs` does the same.
+- **Severity**: Medium (UX regression; the fix is one line — strip BOM before passing to `toml::from_str`, matching the pattern already established in manifests)
+- **Verification Strategy**: Call `config::load()` on a `callisto.toml` whose contents begin with `\xEF\xBB\xBF`. Observe `ConfigError::ParseToml` with an opaque message. After stripping BOM, observe successful parse.
+
+---
+
+### [Medium] `is_workspace_root` uses text substring match for `[workspace]` — false positives from TOML comments and string values
+
+- **Status**: CONFIRMED
+- **Location**: `crates/callisto-graph/src/locate/root.rs:28-31`
+- **Classification**: Boundary Condition / Spec Drift
+- **Root Cause**: `content.contains("[workspace]")` matches the literal substring anywhere in the file — including inside TOML comments (`# used to be a [workspace] root`), string values (`description = "replaces [workspace] root behavior"`), or multiline strings. A `Cargo.toml` that is a plain `[package]` manifest but contains such a comment would be incorrectly identified as the workspace root, causing `find_workspace_root` to return the wrong directory.
+- **Failing Scenario**: A `crates/my-lib/Cargo.toml` containing `# This crate was split out from the [workspace] root Cargo.toml` would halt upward search at that crate's directory, returning it as the "workspace root" instead of the actual root.
+- **Severity**: Medium (silent misdirection of all subsequent discovery; the correct fix is to parse the TOML and check for a `[workspace]` table key, not scan raw bytes)
+- **Verification Strategy**: Create a `Cargo.toml` containing only a `[package]` section and a comment with `[workspace]`, call `is_workspace_root`, assert it returns `false`. Today it returns `true`.
+
+---
+
+### [Low] Dangling `callisto.toml` symlink treated as absent — silently uses all defaults
+
+- **Status**: CONFIRMED
+- **Location**: `crates/callisto-graph/src/config/resolve.rs:162`
+- **Classification**: Silent Fallback
+- **Root Cause**: `callisto_toml.exists()` uses `fs::metadata()`, which follows symlinks. A dangling symlink (`callisto.toml -&gt; /missing/target`) returns `Err(NotFound)`, so `exists()` is `false`. The entire config is silently defaulted with no error, no diagnostic, and no indication to the user that a config file was expected but unreadable.
+- **Failing Scenario**: `ln -s /nonexistent callisto.toml` at the workspace root — `callisto version` runs with all defaults, ignoring whatever config the broken symlink was meant to point to.
+- **Severity**: Low (requires a misconfigured symlink, but the silent behavior is hard to debug — `file callisto.toml` shows "broken symbolic link" while Callisto behaves as if no config exists)
+- **Verification Strategy**: Detect the broken symlink explicitly: `symlink_metadata()` returns `Ok` for a dangling symlink even when `metadata()` returns `Err`. Use `try_exists()` or check both metadata results to distinguish "does not exist" from "exists but is unreadable/dangling."
+
+---
+
+### [Low] `entries.flatten()` in `load_changesets` silently drops directory entry I/O errors
+
+- **Status**: CONFIRMED
+- **Location**: `crates/callisto-graph/src/aggregate.rs:57`
+- **Classification**: Silent Fallback
+- **Root Cause**: `fs::read_dir` returns an iterator of `io::Result&lt;DirEntry&gt;`. `.flatten()` discards all `Err` variants — a directory entry that cannot be read (e.g., due to a permissions error on a subdirectory entry) is silently skipped. The changeset is never loaded and never causes a version bump, with no user-visible warning.
+- **Failing Scenario**: A changeset file whose directory entry cannot be read (permissions issue, stale NFS mount) is silently treated as absent. The version plan omits the bump that changeset would have triggered.
+- **Severity**: Low (requires an unusual I/O condition, but the consequence is a missed version bump, not just a degraded experience)
+- **Verification Strategy**: Replace `.flatten()` with an explicit `for entry in entries { let entry = entry.map_err(...)? ; ... }` loop that propagates entry errors.
+
+---
+
+### [Low] `changesets.dir = "."` causes parse failures on every `.md` file in the workspace root
+
+- **Status**: CONFIRMED
+- **Location**: `crates/callisto-graph/src/aggregate.rs:46`, `crates/callisto-graph/src/config/resolve.rs:177-182`
+- **Classification**: Boundary Condition
+- **Root Cause**: `changesets_dir` is a relative `PathBuf` stored without validation. `load_changesets` computes `dir = root.join(&amp;cfg.changesets_dir)`. If `changesets_dir` is `.`, `dir` is the workspace root. `fs::read_dir` then enumerates all root-level files — every file named `*.md` except `README.md` is fed to `parse_changeset`, which will fail on `CHANGELOG.md`, `CONTRIBUTING.md`, etc.
+- **Failing Scenario**: `callisto.toml` with `[changesets] dir = "."` — `callisto version` fails immediately with `GraphError::ParseChangeset` on the first non-changeset `.md` file in the workspace root.
+- **Severity**: Low (accidental misconfiguration, clear error, but the error message blames the `.md` file rather than the config value)
+- **Verification Strategy**: Add a validation step in `config::load()` that rejects `changesets_dir` values that are `.` or `..`, or that resolve to the workspace root.
+
+---
+
+### [Low] Non-changeset `.md` files in the changeset directory cause confusing parse errors — no `.changesetignore` mechanism
+
+- **Status**: CONFIRMED
+- **Location**: `crates/callisto-graph/src/aggregate.rs:57-66`
+- **Classification**: Boundary Condition
+- **Root Cause**: `load_changesets` excludes only the exact filenames `README.md`, `config.json`, and `pre.json`. Any other `.md` file — a `NOTES.md` left by a developer, a `template.md`, a file created by an editor — is parsed as a changeset and produces `GraphError::ParseChangeset` with a message that references the file's changeset parsing failure rather than explaining that unexpected files are present.
+- **Failing Scenario**: A developer leaves `NOTES.md` in `.changeset/` — every subsequent `callisto version` or `callisto status` call fails with a parse error on `NOTES.md`.
+- **Severity**: Low (consequence is clear if confusing, not a silent failure — but the error message gives no guidance about the cause)
+- **Verification Strategy**: The fix is either a `.changesetignore` mechanism or a stricter naming convention check (e.g., requiring changeset filenames to match a pattern like `[a-z0-9-]+\.md` — the convention used by the JS changesets tool).
+
+---
+
+### [Low] `DuplicatePackage` error variant is defined but never emitted — two packages with the same name silently overwrite each other in the bare-name index
+
+- **Status**: CONFIRMED
+- **Location**: `crates/callisto-graph/src/walk.rs:74-76`, `crates/callisto-graph/src/error.rs:62-67`
+- **Classification**: Silent Fallback
+- **Root Cause**: In `ManifestWalkResolver::build`, for each `(rel_path, list)` entry in `by_path`, `index.bare.insert(primary_id.name().to_string(), primary_id.clone())` is called with no collision check. If two packages in different directories share the same name (e.g., a Python package and a Cargo crate both named `utils`, or two npm packages with the same bare name in different workspace paths), the second `BTreeMap` iteration order wins and the first is lost from the bare index. `DuplicatePackage { id, paths }` exists in `error.rs` but has zero emission sites in the codebase.
+- **Failing Scenario**: A workspace containing `packages/utils/Cargo.toml` (name = "utils") and `tools/utils/Cargo.toml` (name = "utils") — bare-name resolution via `index.bare.get("utils")` returns only one, silently dropping all dependency edges to the other.
+- **Severity**: Low (same-ecosystem duplicate names are unusual, cross-ecosystem duplicates are handled by `resolve_native_with_fallback`'s diagnostic path, but the bare-index overwrite is invisible)
+- **Verification Strategy**: Assert that `IdentityIndex.bare` collision detection emits `GraphError::DuplicatePackage` or `AmbiguousName` instead of silently overwriting.
+
+---
+
+### [Low] Unknown ecosystem in `walk.rs` silently falls through to `package.json` format
+
+- **Status**: CONFIRMED
+- **Location**: `crates/callisto-graph/src/walk.rs:79-84`
+- **Classification**: Silent Fallback
+- **Root Cause**: The `match eco` arm `_ =&gt; (ManifestFormat::PackageJson, "package.json")` silently maps any `Ecosystem` variant not explicitly handled (e.g., a future ecosystem added to the enum) to JSON format. The resulting `ManifestDecl` points to a `package.json` that may not exist; `open_cached` then silently ignores the open error (line 102: `if let Ok(editor) = ...`), producing a package with no publish targets.
+- **Failing Scenario**: Adding a new `Ecosystem::Maven` variant without updating `walk.rs` — Maven packages silently become `PublishTarget::None` with no manifest edges, and the compile-time exhaustiveness check that would have caught this is disabled by the wildcard arm.
+- **Severity**: Low (only manifests at compile-time enum extension safety, not a current runtime bug)
+- **Verification Strategy**: Convert the `_ =&gt;` arm to an explicit `unreachable!()` or add all current ecosystem variants explicitly to force a compile error on new ecosystem additions.
+
+---
+
+### [Low] `ManifestWalkResolver::build` carries unused `_runner: &amp;R` parameter
+
+- **Status**: CONFIRMED
+- **Location**: `crates/callisto-graph/src/walk.rs:27`
+- **Classification**: Discarded Parameter (Hazard 1)
+- **Root Cause**: The `_runner` leading-underscore parameter is never used inside `build`. This is a latent architectural gap: if the walker ever needs to shell out (e.g., to query a package manager for workspace members on a complex ecosystem), the runner is available but unused, which may give a false impression that shelling is already handled.
+- **Severity**: Low (no current behavioral effect — included for completeness per Hazard 1 sweep)
+
+---
+
+### [Low] `WorkspaceCargoResolver::load` and `detect_npm_workspace_kind` errors silently produce `None` context — inheritance is silently disabled on malformed root manifests
+
+- **Status**: CONFIRMED
+- **Location**: `crates/callisto-graph/src/walk.rs:33-42`, `crates/callisto-graph/src/lib.rs:130-142`
+- **Classification**: Silent Fallback
+- **Root Cause**: Both `if let Ok(resolver) = WorkspaceCargoResolver::load(...)` (walk.rs:33) and `detect_npm_workspace_kind(root).ok().flatten()` (walk.rs:42) — and their duplicates in `base_versions()` (lib.rs:130-142) — silently convert load errors to `None`. A malformed root `Cargo.toml` that cannot be loaded (parse error, I/O error) causes all `workspace.dependencies` inheritance to silently resolve to the package's own declared spec rather than the workspace-inherited spec. Downstream version calculations then operate on the wrong version constraint.
+- **Failing Scenario**: A root `Cargo.toml` with a BOM (the per-crate fix was applied but `WorkspaceCargoResolver` was explicitly flagged as unverified in the findings ledger) causes `WorkspaceCargoResolver::load` to return `Err`, `cargo_workspace = None`, and all `workspace.dependencies` to silently degrade to their package-level fallback specs.
+- **Severity**: Low-Medium (this finding amplifies the `WorkspaceCargoResolver` BOM gap flagged in the ledger but not yet verified)</result>
+<usage><subagent_tokens>71961</subagent_tokens><tool_uses>32</tool_uses><duration_ms>403128</duration_ms></usage>
+</task-notification>
