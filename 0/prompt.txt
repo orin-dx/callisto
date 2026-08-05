@@ -1,0 +1,23 @@
+<task-notification>
+<task-id>a5d8b5365e2e71774</task-id>
+<tool-use-id>toolu_01H6bjmpJgTmzHoHy8M2oPjc</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a15bbbf7-aba0-415d-bfdc-c773ea65cfc7/tasks/a5d8b5365e2e71774.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix changelog writer: H1 header mismatch, duplicate version, and TOCTOU guard" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All 10 tests pass and clippy is clean. Here is a summary of what was done:
+
+**Step 1 — Failing tests written** (both confirmed red before any production change):
+
+- `prepend_else_branch_inserts_h1_header_before_new_entry_when_display_name_mismatches` — wrote existing content with `# old-name` header, called `prepend` with `display_name = "new-name"`, and asserted the result starts with `# new-name\n\n` and that `## 2.0.0` precedes `## 1.0.0`. Failed as expected (H2 appeared at top with H1 buried below).
+- `prepend_is_idempotent_for_same_version` — wrote existing content already containing `## 1.0.0`, called `prepend` again with the same version, and asserted `## 1.0.0` appears exactly once. Failed as expected (duplicate section inserted).
+
+**Step 2 — Production fixes in `/Users/gabe/Projects/callisto/crates/callisto-changelog/src/write.rs`**:
+
+- **Bug 8 (idempotency)**: Added a guard block immediately after CRLF normalisation. It extracts the first line of `rendered` (the version heading, e.g. `## 1.0.0`) and, if that heading is already present in the normalised existing content, returns `Ok(())` without touching the file.
+- **Bug 7 (else-branch H1)**: Changed the `else` branch from emitting `rendered` bare to prepending `format!("# {display_name}\n\n")` before the rendered entry, so the output is always `H1 → new entry → existing content` regardless of what the existing file's header looked like.
+- **Bug 9 (doc comment)**: Added a `///` doc comment above `prepend()` explicitly noting it is not safe for concurrent calls on the same path and pointing to what would need to change if the codebase adds parallel apply.
+
+**Step 3 — Verification**: `cargo test -p callisto-changelog` — 10 passed (2 suites). `cargo clippy -p callisto-changelog -- -D warnings` — no issues.</result>
+<usage><subagent_tokens>26375</subagent_tokens><tool_uses>6</tool_uses><duration_ms>124681</duration_ms></usage>
+</task-notification>
