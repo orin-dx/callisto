@@ -1,0 +1,41 @@
+<task-notification>
+<task-id>ae7d35682c77d4f26</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/dc5ff9d8-ad6b-4ac9-8548-df397504bb34/tasks/ae7d35682c77d4f26.output</output-file>
+<status>completed</status>
+<summary>Agent "Test-blindness sweep: uncovered areas" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Summary
+
+Read `.agents/subagents/bug-hunter.md`, `.agents/skills/bug-hunter/SKILL.md`, and `callisto-findings/FINDINGS.md` first. Findings below are new (not duplicating any already-logged item) and read-only — nothing was edited.
+
+## New bug found (not just missing coverage)
+
+### [Medium] `apply_version_plan` silently discards git staging failures, then reports success anyway
+- **Status**: CONFIRMED
+- **Location**: `crates/callisto-graph/src/apply.rs:182` and `:191` (`drop(runner.run("git", &amp;args, root));`)
+- **Classification**: Silent Fallback (Taxonomy 4)
+- **Root Cause**: `CommandRunner::run` returns `Result&lt;CommandOutput, CommandError&gt;`, and `CommandOutput` can itself report non-zero `exit_code` without being an `Err`. Both call sites (`git add --`, `git rm --cached --ignore-unmatch --`) pipe the result straight into `drop(...)`, discarding process-spawn errors and non-zero exits alike. Immediately after, `outcome.staged = modified_paths;` is set unconditionally — the caller has no way to know staging actually failed.
+- **Failing Scenario**: workspace root is not a git repo (or `git` binary missing, or a permission/lock error) during `callisto version`/`apply`; manifests/changelog are written to disk correctly, but `outcome.staged` still reports every path as staged. A caller that trusts `staged` to decide whether to run `git commit` would commit nothing (or commit only some files) while believing the full set succeeded.
+- **Verification Strategy**: mock `CommandRunner` to return `Ok(CommandOutput{exit_code: Some(1), ..})` (or `Err`) for the `git add` call; assert `apply_version_plan` either propagates an error or omits/flags the affected paths in `ApplyOutcome`, rather than silently reporting them as staged.
+
+## Coverage gaps by area
+
+**1. `resolver.rs` / `walk.rs` / `plan.rs` / `apply.rs`**
+`ManifestWalkResolver::build` (walk.rs) and `apply_version_plan` (apply.rs) have zero dedicated unit tests in these files, and no `tests/*.rs` file exercises `ManifestWalkResolver::build` directly (only indirectly via `graph_tests.rs`'s higher-level fixtures, which are happy-path workspace layouts). Missing: empty workspace (no projects found), a package present in multiple ecosystems at the same path (the `by_path`/`list.sort_by_key`/`primary_id = list[0]` logic — untested tie-break when e.g. both Cargo and npm manifests exist at one path), a dependency that can't be resolved (`index.resolve_native` returns `None` — silently dropped, no diagnostic, untested), and manifest-open failure (`if let Ok(m) = open_cached(...)` swallows errors with no diagnostic — untested). `apply_version_plan` has no test for: a bump whose manifest write fails partway through a multi-target `bump.writes` list (partial-write crash safety), `consumed_changesets` path that doesn't exist (silently skipped, no error — untested), or `pre_state_update`/`delete_pre_json` mutual-exclusion edge cases.
+
+`toposort_impl` (toposort.rs) has only 2 tests (linear, self-loop cycle). Missing: multi-node (3+) cycle extraction, a subset id absent from `all_packages` (the `UnknownPackage` error path is entirely untested), and — most importantly — no test asserts that `Dev`/`Peer` `DepKind` edges are excluded from ordering constraints (`toposort.rs:31-33`'s `matches!` filter). A future edit widening that filter to include `Dev` would silently create false ordering dependencies with no test catching it.
+
+**2. `locate/` (workspace discovery)**
+`ignore_walk.rs` (`IgnoreWalkLocator::projects`, `to_workspace_relative`) and `root.rs` (`find_workspace_root`, `is_workspace_root`) have **no tests at all**, inline or in `tests/`. This is a complete blind spot, not just happy-path bias, for: symlinked project directories, nested Cargo/npm workspaces (inner workspace root should probably stop discovery but there's no test proving it does or doesn't), `.gitignore`-excluded package directories, malformed/unparseable `Cargo.toml`/`package.json`/`pyproject.toml` (silently skipped via `if let Ok(...)` — no diagnostic), a `Cargo.toml` with `[package]` but unparseable TOML, and `find_workspace_root` walking to filesystem root with no workspace marker (only the `Err` path exists, untested).
+
+**3. `callisto-conventional`**
+`commit.rs` has 3 tests (feat+breaking, body-with-colon, UTF-8 BOM) — good but narrow. Missing: multiple `BREAKING CHANGE`/`BREAKING-CHANGE` footers in one commit (does severity/breaking flag behave correctly, are both footers retained separately), malformed scope (`feat(: desc`, `feat(a(b)): desc` nested parens, `feat(): desc` empty scope), empty/whitespace-only commit message (only reachable via the early-return paths, never asserted), non-ASCII/emoji descriptions and scopes, and a footer block colliding with a hyphenated-token body line (`is_valid_footer_token` accepts anything `Word-word`, e.g. a body line like `Co-authored: someone` could be misclassified as a footer if it's in the trailing block — untested boundary). `severity.rs` covers all 4 branches reasonably. `pre_cursor.rs` (`resolve_pre_cursor`, `advance_pre_cursor`) has **zero tests anywhere** — missing coverage for `git rev-parse` returning non-zero/empty stdout (`Ok(None)` path), a ref pointing at a malformed/non-SHA value (`MalformedPreCursorRef`), and `advance_pre_cursor`'s failure path (`PreCursorAdvanceFailed`).
+
+**4. `callisto-changelog` beyond `write.rs`**
+`render.rs` has exactly one test covering only a single `ChangeSource::Changeset` entry with `to: Some(...)`. Untested: `ChangeSource::Commit`, `DependencyUpdate` (the `dep_updates` batching block), `PeerEscalation`, `GroupUnion`, `NewGroupMember` variants; `to: None` → `## Unreleased` heading; empty `entries` → `EmptyInput` error; mixed severities across all three sections in one call (ordering/spacing between sections). `group.rs`'s `group_entries` has **zero tests** — the `Severity::None → SeverityNoneEntry` error path and multi-severity partitioning are completely unverified.
+
+**5. `snapshot.rs` / `tag.rs` / `init.rs`**
+Beyond the already-logged confirmed bugs: `test_snapshot_version_template_placeholders` and `test_tag_dry_run_does_not_create_git_tags` (`crates/callisto-graph/tests/graph_tests.rs:393,529`) are single-package, single-tag happy paths only — no test for zero packages, a pre-existing tag (idempotent `already_existed` reporting), or a failing `git tag -a` subprocess. `init.rs` has **no test coverage anywhere in the repo** (confirmed via repo-wide grep) — not even for the documented happy path (first-run file creation, `InitReport.initialized` flag correctness, idempotent re-run when `callisto.toml`/`.changeset/` already exist).</result>
+<usage><subagent_tokens>51647</subagent_tokens><tool_uses>25</tool_uses><duration_ms>127407</duration_ms></usage>
+</task-notification>
