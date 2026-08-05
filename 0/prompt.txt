@@ -1,0 +1,20 @@
+<task-notification>
+<task-id>adda90b677f25cda0</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a15bbbf7-aba0-415d-bfdc-c773ea65cfc7/tasks/adda90b677f25cda0.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix PyPI wheel glob underscore normalization in publish_client.rs" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Clean. Here's a summary of what was done:
+
+**Changes made to `/Users/gabe/Projects/callisto/crates/callisto-graph/src/commands/publish_client.rs`:**
+
+1. **Added a failing test** (`pypi_glob_pattern_uses_underscore_not_hyphen`) using a new `CapturingRunner` struct (with `Arc&lt;Mutex&lt;Vec&lt;String&gt;&gt;&gt;` for interior mutability) that records the exact args passed to `twine upload`. The test asserts the glob arg is `dist/my_lib-1.2.3*`. It confirmed failure with current code (`dist/my-lib-1.2.3*` was produced — hyphens, not underscores).
+
+2. **Fixed the normalization** on line 142: changed `.replace(['_', '.'], "-")` to `.replace(['-', '.'], "_")`. Per PEP 427, wheel filenames use `_` for the distribution name component — hyphens in the package name become underscores, not the other way around. A `my-lib` package produces `my_lib-1.2.3-py3-none-any.whl`.
+
+3. **Updated the doc comment** on `pypi_publish` to accurately describe PEP 427 wheel-filename normalization instead of the incorrect "PyPI canonical form" (which is actually the opposite normalization).
+
+All 102 tests in `callisto-graph` pass; Clippy reports no warnings.</result>
+<usage><subagent_tokens>34007</subagent_tokens><tool_uses>14</tool_uses><duration_ms>311705</duration_ms></usage>
+</task-notification>
