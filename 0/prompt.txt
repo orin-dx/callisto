@@ -1,0 +1,210 @@
+This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
+
+Summary:
+1. Primary Request and Intent:
+
+This session continued from a previous context window mid-task. The user's explicit requests (in order):
+- Verify Gemini's 20-bug report against actual code
+- Fix all confirmed bugs in parallel
+- Research real-world polyglot monorepo examples (TS + Rust + Python with cross-language deps) — TEXT ONLY response requested, no tools
+- Fix all confirmed bugs from Gemini's report (dispatched 10 parallel TDD agents)
+- Commit all changes with appropriate logical history ("Let's commit")
+- "Let's commit and implement the combined changelog" — triggering both 11 commits and combined changelog implementation
+- "Do we generate changelog files? Is it possible to generate a monorepo combined changelog?" — design answered; combined = opt-in, opinionated defaults
+- "Address all of them comprehensively" — fix all 9 changelog audit findings
+- "Let's do a thorough bug hunt on the changelog codebase once done" — dispatched dedicated changelog bug hunter
+- "Once that is done let's run through bug hunting through the versioning codebase, the git, the GH action, the parsing of pkg versions, the outputs, the CLI. Each looking for issues, patterns to cleanup or extract, missing tests, incorrect documentation, performance issues and DX issues" — 6 parallel audit agents dispatched
+- "Any other critical areas we should focus a bug hunt on?" — user asked for suggestions, received 5 (changeset parsing, manifest CST writing, security/path containment, pre-release mode, workspace discovery)
+
+**Critical standing constraints (verbatim):**
+- NEVER commit to git without explicit user instruction
+- NEVER bump versions or run release/publish commands without explicit instruction
+- `/Users/gabe/Projects/callisto-findings/FINDINGS.md` lives OUTSIDE the repo deliberately — names unfixed defects and must NEVER be committed to the public repo
+- The `callisto publish` command must NEVER be invoked against a real registry without explicit user instruction
+- All changes land as uncommitted working-tree edits for user to review (Note: user explicitly authorized commits — 11 commits were created)
+
+2. Key Technical Concepts:
+
+- **Callisto**: Rust CLI + moon WASM extension for polyglot monorepo versioning, byte-compatible with `@changesets/cli` file format
+- **ApplyPermit**: Zero-sized capability token — compile-time dry-run enforcement
+- **cascade.rs**: Linked-group convergence, worklist loop for version propagation
+- **aggregate.rs**: Changeset aggregation, severity computation, changelog_inputs population
+- **changelog_inputs (Critical bug fixed)**: Was NEVER READ by plan_version() — every changelog said "Release update". Now wired through correctly.
+- **Combined changelog**: New feature — H2 date / H3 `{name}@{version}` / alphabetical order / opt-in via `combined = true`
+- **ChangeSource variants**: Changeset, GroupUnion, DependencyUpdate, PeerEscalation — all must produce changelog entries
+- **CombinedEntry / CombinedChangelogPlan**: New types in write.rs and plan.rs
+- **write_combined_changelog()**: New public function with same-day merge semantics, BOM/CRLF handling
+- **Polyglot versioning patterns**: napi-rs (Rust→npm), maturin (Rust→Python via PyO3), workspace:* protocol
+- **PEP 427 wheel naming**: Hyphens become underscores (was producing wrong glob pattern)
+- **PEP 440 vs SemVer**: Maturin requires PEP 440 in Cargo.toml; 1.0.0-alpha.1 rejected, 1.0.0a1 accepted
+- **TDD discipline**: All fixes — failing test first, confirm failure reason, implement, confirm green
+- **atomic_write**: All file writes gated by ApplyPermit; used throughout
+
+3. Files and Code Sections:
+
+**`crates/callisto-conventional/src/commit.rs`** — Fixed multi-paragraph BREAKING CHANGE detection
+- Old: only last block popped and checked; BREAKING CHANGE in penultimate block silently became body text
+- Fix: loop walks backwards from last block, accumulates contiguous all-footer paragraphs
+- An existing test (`test_body_with_colon_not_treated_as_footer`) was updated because its assertions were based on the old single-block behavior
+
+**`crates/callisto-format/src/bump.rs`** — Fixed undotted pre-release counter
+- Old: only `strip_prefix("{tag}.")` attempted; "alpha1" produced "alpha.0" (regression)
+- Fix: also try `strip_prefix(tag)` and parse remaining digits; alpha1 → alpha.2
+- Note: `alpha.2 < alpha1` in SemVer ordering — the meaningful fix is counter increment, not ordering
+
+**`crates/callisto-graph/src/tags.rs`** — Fixed TagIndex ignoring pkg.tag_template
+- Old: hardcoded `"{name}@{version}"` template for every package
+- Fix: `pkg.tag_template.clone().unwrap_or(default_tmpl)`
+
+**`crates/callisto-graph/src/apply.rs`** — Fixed unconditional lockfile staging + added combined changelog write
+- Old: staged every lockfile that existed on disk regardless of ecosystem
+- Fix: builds `HashSet<Ecosystem>` from `plan.bumps`; only stages lockfile when ecosystem is active
+- Added: after per-package changelog writes, calls `write_combined_changelog` if `plan.combined_changelog` is Some
+
+**`crates/callisto-graph/src/commands/publish_client.rs`** — Fixed PyPI wheel glob normalization
+- Old: `.replace(['_', '.'], "-")` → produced `my-lib-1.2.3*` (wrong)
+- Fix: `.replace(['-', '.'], "_")` → produces `my_lib-1.2.3*` (matches PEP 427 wheel names)
+
+**`crates/callisto-model/src/report.rs`** — Added `has_failures()` and `is_failure()`
+```rust
+impl PublishAttemptResult {
+    pub fn is_failure(&self) -> bool { matches!(self, Self::Failed) }
+}
+impl PublishReport {
+    pub fn has_failures(&self) -> bool { self.attempts.iter().any(|a| a.result.is_failure()) }
+}
+```
+
+**`crates/callisto-cli/src/commands/publish.rs`** — Returns ExitCode::FAILURE on failures
+```rust
+if report.has_failures() { return Ok(ExitCode::FAILURE); }
+```
+
+**`crates/callisto-manifests/src/npm.rs`** — Fixed nested overrides destruction
+- Old: `tbl.contains_key(name)` — true even for object-valued entries
+- Fix: `tbl.get(name).is_some_and(|v| v.is_string())`
+
+**`crates/callisto-manifests/src/python.rs`** — Fixed rewrite_range dropping exclusion clauses
+- Old: `splitn(2, ',')` silently dropped `!=1.5.0` from `>=1.0,<2.0,!=1.5.0`
+- Fix: `if original.split(',').count() != 2 { return None; }` upfront
+
+**`crates/callisto-cli/src/commands/add.rs`** — Fixed wizard showing duplicate bare names
+- Old: `.map(|p| p.id.name().to_string())` — bare names, ambiguous in polyglot repos
+- Fix: `.display_name()` → "cargo/foo" and "npm/foo" instead of two "foo"
+- Extracted `collect_package_names` helper for testability
+
+**`crates/callisto-graph/src/commands/version.rs`** — CRITICAL: wired changelog_inputs
+- Old: Created hardcoded `ChangelogInput { filename: "changeset.md", summary: "Release update" }` for every package, ignoring `agg.changelog_inputs` entirely
+- Fix: Two-branch lookup — real changeset entries from `agg.changelog_inputs` for direct changesets; synthetic `ChangeSource::GroupUnion`/`DependencyUpdate`/`PeerEscalation` entries for cascade-only packages
+- Also added: builds `CombinedChangelogPlan` when `ws.config.changelog.combined = true`
+
+**`crates/callisto-changelog/src/render.rs`** — Fixed multi-line summary indentation + empty summary heading
+- Multi-line: `summary.trim_end_matches('\n').replace('\n', "\n  ")` for CommonMark continuation
+- Empty heading: build bullets into `String` buffer first; only emit heading if `!bullets.is_empty()`
+
+**`crates/callisto-changelog/src/write.rs`** — Multiple fixes + combined changelog
+- CRLF fix: normalize before processing, restore after
+- H1 mismatch: else-branch now emits `"# {display_name}\n\n"` before new entry
+- Idempotency: version heading checked at line boundary (`.contains(&format!("{heading}\n"))`) not substring
+- `write_combined_changelog()`: new public function
+- `CombinedEntry`: `display_name`, `new_version`, `summaries: Vec<String>`
+- Date-section idempotency: check for `## {date}` heading leading the file
+
+**`crates/callisto-graph/src/config/raw.rs` + `resolve.rs`** — New changelog config
+```rust
+pub struct RawChangelogConfig {
+    pub combined: Option<bool>,
+    pub combined_path: Option<String>,
+    pub combined_include_cascade: Option<bool>,
+}
+// Defaults: combined=false, combined_path="CHANGELOG.md", combined_include_cascade=false
+```
+
+**`crates/callisto-graph/src/plan.rs`** — New types
+- `is_cascade_only: bool` field on `ChangelogWrite`
+- `CombinedChangelogPlan { path: PathBuf, date: String, entries: Vec<CombinedEntry> }`
+- `combined_changelog: Option<CombinedChangelogPlan>` on `VersionPlan`
+
+**`crates/callisto-cli/src/tty.rs`** (NEW) — `pub fn is_interactive() -> bool`
+
+**`crates/callisto-cli/tests/strict_flag_tests.rs`** (NEW) — --strict flag on snapshot and tag
+
+4. Errors and Fixes:
+
+- **Format check failures after each agent batch**: Agents consistently leave unformatted code. Fixed with `just fmt` before re-running `just ci`. Became standard procedure.
+- **Clippy error in add.rs**: `useless_vec!` lint — agent used `vec![...]` in test where array `[...]` suffices. Fixed manually with Edit tool.
+- **just ci timeout**: First `just fmt && just ci` pipeline timed out at 300s. Split into separate commands.
+- **`just ci` killed command**: Second attempt with combined command was killed. Fixed by running `just fmt` first (60s timeout), then `just ci` separately (300s timeout).
+- **Bug 15 ordering note**: The bump.rs fix produces `alpha.2` from `alpha1`, but SemVer orders `alpha.2 < alpha1`. The fix agent correctly identified that the meaningful invariant is counter increment (monotonically increasing within the same dotted format), not strict SemVer ordering across undotted→dotted transition.
+- **BREAKING CHANGE existing test updated**: `test_body_with_colon_not_treated_as_footer` had assertions based on old single-block behavior. The scenario (two all-footer paragraphs) correctly collects both as footers per spec; test renamed and assertions updated.
+
+5. Problem Solving:
+
+**Critical changelog bug**: `plan_version()` built `agg.changelog_inputs` with real changeset data then immediately discarded it, creating a hardcoded `"Release update"` placeholder. Fixed by reading `agg.changelog_inputs` and synthesizing entries for cascade-only packages.
+
+**Combined changelog same-day collision**: The idempotency check (return early if `## {date}` leads the file) is too aggressive for the real-world case of two distinct releases on the same day. Fix agent dispatched to implement "merge into existing same-day section" semantics.
+
+**UTF-8 BOM in combined changelog**: `str::trim()` does not strip U+FEFF. The BOM check uses `\u{FEFF}` strip, same as changeset parser does.
+
+**prepend() false positive**: `contains("## 1.1.0")` matches inside bullet text like `"- Removed legacy ## 1.1.0 wire format"`. Fixed to line-boundary check: `contains(&format!("{heading}\n"))`.
+
+**Polyglot research findings**: Real projects (moonrepo, biome, polars) show that cross-language version coordination uses exact pins (`==X.Y.Z` for Python, exact version strings in optionalDependencies for npm). The `workspace:*` and `workspace:^` protocols should NOT be rewritten by Callisto. Test fixture gaps identified: npm `workspace:^` round-trip, Cargo workspace-inheritance propagation, maturin pre-release exact-pin.
+
+6. All User Messages:
+
+- "I like your plan for addressing the bugs we've been finding" (mid-turn, while research agent was running)
+- "Do we generate changelog files? Is it possible to generate a monorepo combine changelog?" (mid-turn, while commits were running)
+- "Address all of them comprehensively" — fix all 9 changelog audit findings
+- "Let's commit and implement the combined changelog"
+- "What kind of default should we have? What should be configurable? Err on the side of opinionated with a bit of customization but stay clear of fully customizable" (mid-turn during commits)
+- "Let's do a thorough bug hunt on the changelog codebase once done"
+- "Once that is done let's run through bug hunting through the versioning codebase, the git, the GH action, the parsing of pkg versions, the outputs, the CLI. Each looking for issues, patterns to cleanup or extract, missing tests, incorrect documentation, performance issues and DX issues"
+- "Any other critical areas we should focus a bug hunt on?"
+
+7. Pending Tasks:
+
+- **write_combined_changelog fix agent** (a6289201fbf8c4b10): Still running — fixing same-day collision (High), BOM (High), mixed CRLF (Medium), empty entries dangling heading (Low)
+- **6 broader audit agents** still running:
+  - Versioning pipeline (a7bcdceb9e50c730a): cascade, aggregate, apply, version.rs
+  - Git integration (a6953a1af0757e619): vcs, shell, access
+  - GitHub Action (a22ae0ccea5e2d871): action.yml
+  - Version parsing (a8d8a2425dd14a3bc): SemVer, PEP 440, bump logic
+  - CLI/outputs (ab6281b9610bb6587): UX, exit codes, dry-run
+  - Code quality (a8be93145828fda44): patterns, missing tests, doc drift, perf
+- **User asked about additional critical bug hunt areas** — suggested 5 areas (changeset parsing, manifest CST writing, security/path containment, pre-release mode, workspace discovery). User has NOT yet responded on whether to dispatch these.
+- After all audits complete: review findings, fix confirmed bugs, potentially commit
+
+8. Current Work:
+
+Immediately before this summary request:
+- The `prepend()/render_section` fix agent (a7cfa80ab0dc97c7d) completed successfully:
+  - `prepend()` idempotency now uses line-boundary check: `normalised.contains(&format!("{version_heading}\n")) || normalised == version_heading`
+  - `render_section()` now builds bullets into a buffer first; only emits section heading if `!bullets.is_empty()`
+  - 16 tests pass in callisto-changelog; clippy clean
+- The `write_combined_changelog` fix agent (a6289201fbf8c4b10) is still running (same-day collision, BOM, CRLF, empty entries)
+- 6 broader audit agents (versioning, git, GitHub Action, version parsing, CLI, code quality) are running
+- User asked: "Any other critical areas we should focus a bug hunt on?" — I responded with 5 areas (changeset parsing, manifest CST writing, security/path containment, pre-release mode, workspace discovery) and asked if they want me to dispatch all five in parallel now or wait
+
+9. Optional Next Step:
+
+The most recent user message was: "Any other critical areas we should focus a bug hunt on?" I responded with 5 suggestions and asked:
+
+> "Want me to dispatch all five in parallel now, or wait until the current wave finishes so we can review everything together?"
+
+The user has not yet responded. The immediate next step is to wait for the in-flight agents to complete and then:
+1. Report the combined changelog fix agent result (a6289201fbf8c4b10) when it lands
+2. Report all 6 broader audit findings when they land
+3. Await user direction on whether to dispatch the 5 new bug hunt areas (changeset parsing, manifest CST writing, security/path containment, pre-release mode, workspace discovery)
+4. Fix any confirmed bugs from the broader audits
+5. Run `just fmt && just ci` to verify everything clean
+6. Commit when user authorizes
+
+The five suggested areas for additional bug hunts (not yet authorized by user):
+- Changeset parsing (`callisto-format/src/changeset/`)
+- Manifest CST writing (cargo.rs, npm.rs, python.rs write paths)
+- Security/path containment (changeset names → file paths, workspace containment)
+- Pre-release mode (`pre.rs`, `pre.json`)
+- Workspace discovery (`locate.rs`)
+
+If you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/gabe/.claude/projects/-Users-gabe-Projects-callisto/575b7a46-37b7-42f0-9db7-b2c329b2abab.jsonl
+Continue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with "I'll continue" or similar. Pick up the last task as if the break never happened.
