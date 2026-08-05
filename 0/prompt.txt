@@ -1,0 +1,1 @@
+Let's fix this all comprehensively, semantically and considering patterns. We should consider best practices, code cleanups, crates to use, code to split or extract for maintainability and architecture. Performance and dx
