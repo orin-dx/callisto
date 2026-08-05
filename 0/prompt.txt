@@ -1,0 +1,173 @@
+This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
+
+Summary:
+1. Primary Request and Intent:
+
+**Standing constraints (must never be violated):**
+- NEVER commit to git without explicit user instruction
+- NEVER bump versions or run release/publish commands
+- `/Users/gabe/Projects/callisto-findings/FINDINGS.md` lives OUTSIDE the repo — must NEVER be committed
+- `callisto publish` must NEVER be invoked against a real registry
+- All changes land as uncommitted working-tree edits only
+- No emojis in documentation
+
+**Session requests (in order):**
+1. Multi-round adversarial bug hunt using agent teams and workflows, with findings from each round feeding into the next, covering hardcoded values, stubs, missing functionality, and the GitHub Actions layer. Report findings and process improvement insights.
+2. After round results: explain why new findings were missed in prior rounds and propose methodology improvements.
+3. Try the new scenario-based methodology to find more issues; report what is found AND what the process itself reveals.
+4. Triple-check all tests to ensure they assert correct behavior, cover edge cases and error cases (not just happy paths), and ensure files are split appropriately per Rust best practices (public vs. internal, file size limits, integration vs. unit placement).
+
+2. Key Technical Concepts:
+
+- **Callisto**: Rust CLI + moon WASM extension for polyglot monorepo versioning (Cargo/npm/PyPI), byte-compatible with `@changesets/cli`
+- **ApplyPermit**: Zero-sized compile-time dry-run enforcement token; every git-writing or file-writing function must accept one
+- **GroupTable::resolve()**: Builds fixed/linked group table from config — implemented but NEVER called; always returns `GroupTable::default()` (empty)
+- **versioning_for()**: Dispatch function selecting SemVer vs PEP 440 strategy by VersionGrammar — cascade.rs bypasses it with hardcoded `SemVerVersioning`
+- **GitAccess abstraction**: Created specifically for WASM compatibility; plan_snapshot and plan_publish bypass it, calling `GitRepository::discover` directly
+- **GitDataSource trait**: Missing `head_sha()` method — structural root cause of WASM bypass
+- **GrammarMismatch**: `VersionReq::matches` enforces grammar homogeneity; cross-ecosystem deps (Python→Cargo) crash cascade::coverage()
+- **pre-cursor mechanism**: Designed to scope commit windows across pre-release cycles; TagIndex::build always inserts None, so advance_pre_cursor is never called
+- **PEP 440 dev releases**: `is_prerelease()` in version.rs calls only `is_pre()`, missing `is_dev()`; bump.rs:178 already uses `v.is_pre() || v.is_dev()` — inconsistency silently skips finalization for `.devN` packages
+- **check_moon_version**: Enforces `>=1.30.0, <2.0.0` but crate links against `moon_pdk_api = "2.0.4"` — every moon v2.x install rejected
+- **Scenario-based path tracing**: New audit methodology — follow complete user workflows across crate boundaries rather than reading files by similarity; most effective for Critical/High bugs because the defect pattern ("data silently discarded at layer N+3") is invisible within any single file
+- **Abstraction consistency checking**: Enumerate all call sites of a key API and verify each uses the abstraction correctly — found stale-member guards missing in cascade vs. correctly present in aggregate
+- **TDD discipline**: Write test first (RED), watch it fail, implement minimally (GREEN), refactor — active for all new test additions
+
+3. Files and Code Sections:
+
+**Production files with confirmed bugs:**
+
+- `crates/callisto-graph/src/cascade.rs:386` — `let versioning = callisto_format::SemVerVersioning;` hardcoded, crashes Python; also two locations where `bump_target` called for stale group members without `input.base.contains_key()` guard; `coverage()` causes GrammarMismatch on cross-ecosystem deps; `raise()` worklist propagation gap for fixed-group sibling dependents
+- `crates/callisto-graph/src/config/resolve.rs:327` — `groups: GroupTable::default()` always returned (GroupTable::resolve() never called); line 305: `publish_to: None` hardcoded
+- `crates/callisto-graph/src/aggregate.rs` — `union_fixed` promotes to `agg.severities` but not `agg.named_by`, breaking cross-group propagation
+- `crates/callisto-format/src/pre.rs:95` — `Version::parse(v_str, VersionGrammar::SemVer)` hardcoded, breaks Python pre-release
+- `crates/callisto-model/src/version.rs:129` — Pep440 arm of `is_prerelease()` calls only `v.is_pre()`, missing `v.is_dev()`; fix: `Version::Pep440(v) => v.is_pre() || v.is_dev()`
+- `crates/callisto-moon/src/extension.rs:27` — `check_moon_version` enforces `>=1.30.0, <2.0.0`; should be `>=2.0.0, <3.0.0`; tests at lines 280–283 assert moon 2.0.0 returns Err, cementing the wrong constraint
+- `crates/callisto-moon/src/locator.rs:119-137` — `projects()` only checks Cargo.toml and package.json; never checks pyproject.toml; Python packages invisible to all callisto commands
+- `crates/callisto-graph/src/commands/snapshot.rs:16` — `GitRepository::discover(&ws.root)?` with `?` crashes on WASM
+- `crates/callisto-graph/src/commands/publish.rs:35` — `if let Ok(repo)` silently drops head_sha, producing empty release entries; also `.ok()` swallows plan_version errors
+- `crates/callisto-vcs/src/lib.rs` — `GitDataSource` trait missing `head_sha()` method — structural root cause; fix: add `fn head_sha(&self) -> Result<CommitSha, VcsError>` and implement via ShellGit (`git rev-parse HEAD`)
+- `crates/callisto-graph/src/groups.rs:55-80` — `pre_mutation_checks()` re-exported but never called; lines 90-135 — `fixed_group_target()` re-exported but never called
+- `crates/callisto-graph/src/lib.rs:183-188` — `initial_versions()` maps to bare `name()` dropping ecosystem prefix; `cargo:foo` and `npm:foo` collide
+- `crates/callisto-graph/src/apply.rs` — `fs::remove_file` for changeset deletion bypasses permit guard; `_opts` leading-underscore means `refresh_lockfiles` never consulted; `.changeset/pre.json` hardcoded (should use `ws.config.changesets_dir.join("pre.json")`)
+- `crates/callisto-graph/src/commands/version.rs:27` — `.changeset/pre.json` hardcoded
+- `crates/callisto-moon/src/locator.rs` — `declared_edges()` uses `.ok()?` swallowing load_graph errors
+- `crates/callisto-cli/src/commands/pre.rs:155` — pre exit writes pre.json but doesn't `git add` it (enter handler does stage it)
+- `crates/callisto-cli/src/commands/add.rs` — `--packages` names not validated against `ws.graph.packages()`
+- `.github/actions/callisto-action/action.yml:103,157` — `eval "$INPUT_VERSION_COMMAND"` and `eval "$INPUT_PUBLISH"` — shell injection; lines 214,219: `npm publish "$PKG"` wrong syntax (should be `--workspace`)
+
+**Test files with wrong assertions:**
+
+- `crates/callisto-model/src/version.rs` `#[cfg(test)]` :: `parses_valid_pep440_and_prerelease`
+  - Current: only tests `0.3.2a1` (alpha, handled by `is_pre()`); misses `.devN`
+  - Fix: add `Version::parse("1.0.0.dev1", Pep440).unwrap().is_prerelease()` must return true
+- `crates/callisto-format/src/pre.rs` `#[cfg(test)]` :: `pre_json_round_trips`
+  - Current: uses `"1.0.0"` which passes both SemVer and PEP 440; never exercises the bug
+  - Fix: add test with `"1.0.0a1"` in initialVersions, assert it returns Err (documents the bug)
+- `crates/callisto-cli/tests/lifecycle_e2e_tests.rs` :: `test_compose_pr_body_before_version_and_subpkg_changelog`
+  - Current: `assert!(compose_res.is_ok())` — comment says "must contain package summary" but body text never inspected
+  - Fix: `assert!(!report.pr_body.is_empty()); assert!(report.pr_body.contains("core-crate"));`
+- `crates/callisto-graph/tests/graph_tests.rs` :: `test_blackbox_cascade_propagation`
+  - Current: only asserts seeded `pkg_b` retains Major; propagation to `pkg_a` never verified
+  - Fix: add `assert_eq!(outcome.severities.get(&pkg_a), Some(&Severity::Patch))`
+- `crates/callisto-cli/tests/lifecycle_e2e_tests.rs` :: `test_full_polyglot_workspace_release_lifecycle`
+  - Current: `assert!(version_res.is_ok())` at lines 127, 196, 215, 363; `Ok(ExitCode::FAILURE)` passes this
+  - Fix: `assert_eq!(code, ExitCode::SUCCESS)` at all four locations
+- `crates/callisto-graph/tests/graph_tests.rs` :: `test_linked_group_converges_shared_version` and `test_linked_group_version_convergence`
+  - Current: construct GroupTable manually, bypassing config loading; cannot detect the resolve.rs:327 bug
+  - Fix: add integration assertion loading callisto.toml with [[linked-group]] and verifying non-empty result
+- `crates/callisto-moon/src/extension.rs` `#[cfg(test)]` (lines 280-283)
+  - Current: assert moon 2.0.0 returns Err from check_moon_version — cementing the wrong constraint
+  - Fix: change constraint to `>=2.0.0, <3.0.0` and update assertions
+
+**Test files to create (new):**
+- `crates/callisto-cli/tests/validate_tests.rs` — test_validate_clean_workspace_exits_zero, test_validate_malformed_changeset_exits_nonzero
+- `crates/callisto-graph/tests/linked_group_config_test.rs` — test_groups_loaded_from_callisto_toml_are_non_empty (requires GroupTable::resolve bug fix first)
+
+**File organization actions:**
+- `crates/callisto-cli/tests/adversarial_tests.rs` — redistribute 4 tests to crates they actually test (callisto-model, callisto-manifests, callisto-graph); file exercises other crates' APIs, not callisto-cli
+- `crates/callisto-cli/tests/lifecycle_e2e_tests.rs` (785 lines) — split into: `lifecycle_e2e_tests.rs` (sequenced command flows), `pre_mode_tests.rs` (~lines 600-785), `changelog_tests.rs` (~lines 375-498)
+- `crates/callisto-cli/tests/e2e_tests.rs` — remove `test_e2e_workspace_init_add_and_status` (duplicates lifecycle test)
+- `crates/callisto-cli/src/tty.rs` — remove environment-dependent `#[cfg(test)]` module (fails in IDEs that allocate TTY for stdin)
+- `crates/callisto-graph/tests/graph_tests.rs` (1236 lines) — split into: `cascade_tests.rs`, `tags_tests.rs`, `validate_command_tests.rs`, `snapshot_tests.rs`, `plan_tests.rs`
+
+**Audit artifact:**
+- URL: `https://claude.ai/code/artifact/eb0d2641-8f89-4f09-9f4f-87103b2001f8`
+- Local file: `/private/tmp/claude-501/-Users-gabe-Projects-callisto/575b7a46-37b7-42f0-9db7-b2c329b2abab/scratchpad/callisto-audit.html`
+- Label: "Round 4: 49 total confirmed findings"
+- Contains: Rounds 1-4 findings organized by severity, GitHub Actions analysis, methodology evaluation section
+
+4. Errors and fixes:
+
+- **Nav link Edit failed**: `old_string` contained HTML entity `&amp;` but file used plain `&`; fixed by reading exact line content first and matching exactly
+- **Python script truncation**: Full output file too large for inline display; used `python3 -c` parsing to extract structured data; some truncation occurred requiring multiple parse invocations
+- **Workflow output parsing error**: `KeyError: 'issue'` in file_org_actions parsing — one entry used different field name; handled by iterating all keys
+
+5. Problem Solving:
+
+**Multi-round bug hunting**: Designed three-round workflow with 15 agents covering 10 dimensions. Round 1 found 49 raw findings, Round 2 added 44, Round 3 added 23; synthesized to 28 unique confirmed issues.
+
+**Methodology improvement**: Identified that prior rounds missed cross-file bugs because agents read files in isolation. Designed new approach with scenario-based tracing (follow call graphs across crate boundaries), abstraction consistency checking (enumerate all call sites of key APIs), and explicit blind-spot file coverage. New methodology found 21 more findings including one new Critical.
+
+**Test audit**: Identified 12 wrong assertions (8 that mislead, 4 that block-real-bugs), 48 missing coverage gaps, 17 file organization issues. Key insight: existing test suite would not catch Python ecosystem regressions because there are zero Python workspace fixture tests anywhere in the codebase.
+
+**Root cause analysis for WASM crash**: Abstraction consistency check revealed that `GitDataSource` trait is missing `head_sha()` method entirely — this is WHY plan_snapshot and plan_publish bypass `GitAccess`. There is literally no trait method to call. Fix requires adding the method to the trait.
+
+6. All user messages:
+
+- "Do we have any hardcoded values, stubs or missing functionality that we missed? You have a habit of considering only the happy path and missing the full functionality so I feel like a bug hunt and adversarial analysis with agent teams + workflows leveraging the most appropriate model & effort is still in order. Might need a few rounds of those to feel confident we're not shipping faulty code. Use the output of each round to learn patterns and feed it into the next round to refine our process and our codebase. Report your findings at the end of multiple rounds and help understand how we can improve the process of writing our code and managing the codebase with AI assistance"
+- "Why were these new ones missed the first time? Should we adjust how we look for issues to make sure there is not more that we still missed?"
+- "Let's try this new methodology to see if we can find more issues that need addressing. Call out what you find and what you learn from the process itself"
+- "Let's triple check all our tests to make sure we're asserting the right behavior and that we don't just cover the happy path but we also cover the edge cases, error cases, etc. Ensure we're splitting files appropriately based on rust best practices to avoid overly large files as we add functionality and tests, right? Public vs internal and any other best practices"
+
+7. Pending Tasks:
+
+- **Implement test fixes** following TDD discipline:
+  1. Fix wrong assertions in priority order (P1–P12)
+  2. Add missing critical/high tests (write RED first, verify failure, implement/fix, verify GREEN)
+  3. Reorganize test files per Rust best practices
+- **Fix production bugs** that new tests will expose:
+  - `version.rs:129` — `is_prerelease()` add `|| v.is_dev()`
+  - `extension.rs:27` — `check_moon_version` constraint `<2.0.0` → `<3.0.0`
+  - `cascade.rs` — GrammarMismatch on cross-ecosystem deps; stale-member guards; raise() worklist gap
+  - `groups.rs` — wire `GroupTable::resolve()`, `fixed_group_target()`, `pre_mutation_checks()`
+  - `vcs/src/lib.rs` — add `head_sha()` to `GitDataSource` trait
+  - `locator.rs` — add pyproject.toml check in `projects()` and `declared_edges()`
+  - Multiple `changesets_dir` hardcodes across version.rs, apply.rs, init.rs, add.rs, pre.rs
+
+8. Current Work:
+
+The test audit workflow (`wf_8e3369d6-c11`) has just completed. The synthesis identified:
+- **12 wrong assertions** prioritized P1–P12, highest priority being `is_prerelease()` not testing `.devN` releases (blocks-real-bugs) and `pre_json_round_trips` not exercising PEP 440 code path
+- **16 tests to add** with critical/high priority, including Python lifecycle test, validate command tests, GroupTable config integration test, custom changesets_dir test, and `--packages` validation test
+- **5 file organization actions** including splitting `lifecycle_e2e_tests.rs` (785 lines) into 3 files and `graph_tests.rs` (1236 lines) into 5 files
+
+No implementation has been done yet. The TDD skill is active. The next step is to begin implementing fixes, starting with the highest-priority wrong assertions (fix the assertion first, watch it correctly fail or pass, then fix the production bug if needed).
+
+Rust best practices being applied:
+- Unit tests (`#[cfg(test)]` in same file) for private/internal function testing
+- Integration tests (`tests/` directory) for public API testing
+- Split large test files by concern, not size alone
+- No test-only methods in production code
+- No environment-dependent unit tests (remove TTY test from tty.rs)
+
+9. Optional Next Step:
+
+The user's most recent request was: "Let's triple check all our tests to make sure we're asserting the right behavior and that we don't just cover the happy path but we also cover the edge cases, error cases, etc. Ensure we're splitting files appropriately based on rust best practices to avoid overly large files as we add functionality and tests, right? Public vs internal and any other best practices"
+
+The test audit is complete. The next step is to implement the fixes in priority order following TDD:
+
+1. **P1 — Fix `parses_valid_pep440_and_prerelease` in `crates/callisto-model/src/version.rs`**: Add `Version::parse("1.0.0.dev1", VersionGrammar::Pep440).unwrap().is_prerelease()` case. This test will FAIL because the implementation calls only `is_pre()`. Then fix production code: `Version::Pep440(v) => v.is_pre() || v.is_dev()`.
+
+2. **P2 — Fix `pre_json_round_trips` in `crates/callisto-format/src/pre.rs`**: Add PEP 440 initialVersions test case documenting the current SemVer hardcoding behavior.
+
+3. **P3-P5** — Fix `lifecycle_e2e_tests.rs` assertion weaknesses (ExitCode::SUCCESS vs is_ok(), pr_body content verification).
+
+4. **P4** — Fix cascade propagation test to assert dependent pkg_a receives Patch severity.
+
+5. **File reorganization**: Split `lifecycle_e2e_tests.rs` (785 lines) and `graph_tests.rs` (1236 lines); move adversarial tests to their correct crates.
+
+Each fix follows the strict TDD cycle: write/fix test → watch it fail (RED) → fix production code → watch it pass (GREEN) → run `just ci`.
+
+If you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/gabe/.claude/projects/-Users-gabe-Projects-callisto/575b7a46-37b7-42f0-9db7-b2c329b2abab.jsonl
+Continue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with "I'll continue" or similar. Pick up the last task as if the break never happened.
