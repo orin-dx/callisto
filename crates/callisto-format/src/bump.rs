@@ -67,6 +67,10 @@ impl Versioning for SemVerVersioning {
         let minor = current.minor().unwrap_or(0);
         let patch = current.patch().unwrap_or(0);
 
+        let overflow = || BumpError::Overflow {
+            raw: current.render().to_string(),
+        };
+
         if current.is_prerelease() {
             let base = Version::semver(major, minor, patch);
             let bumped = match severity {
@@ -75,14 +79,14 @@ impl Versioning for SemVerVersioning {
                     if patch == 0 {
                         base
                     } else {
-                        Version::semver(major, minor + 1, 0)
+                        Version::semver(major, minor.checked_add(1).ok_or_else(overflow)?, 0)
                     }
                 }
                 Severity::Major => {
                     if minor == 0 && patch == 0 {
                         base
                     } else {
-                        Version::semver(major + 1, 0, 0)
+                        Version::semver(major.checked_add(1).ok_or_else(overflow)?, 0, 0)
                     }
                 }
                 Severity::None => current.clone(),
@@ -91,9 +95,13 @@ impl Versioning for SemVerVersioning {
         }
 
         let bumped = match severity {
-            Severity::Major => Version::semver(major + 1, 0, 0),
-            Severity::Minor => Version::semver(major, minor + 1, 0),
-            Severity::Patch => Version::semver(major, minor, patch + 1),
+            Severity::Major => Version::semver(major.checked_add(1).ok_or_else(overflow)?, 0, 0),
+            Severity::Minor => {
+                Version::semver(major, minor.checked_add(1).ok_or_else(overflow)?, 0)
+            }
+            Severity::Patch => {
+                Version::semver(major, minor, patch.checked_add(1).ok_or_else(overflow)?)
+            }
             Severity::None => current.clone(),
         };
 
@@ -122,12 +130,16 @@ impl Versioning for SemVerVersioning {
                     if let Some(num_str) = pre_part.strip_prefix(&dotted_prefix) {
                         // Dotted form: e.g. "alpha.3" with tag "alpha" → num_str = "3"
                         if let Ok(num) = num_str.parse::<u64>() {
-                            counter = num + 1;
+                            counter = num.checked_add(1).ok_or_else(|| BumpError::Overflow {
+                                raw: current.render().to_string(),
+                            })?;
                         }
                     } else if let Some(num_str) = pre_part.strip_prefix(tag) {
                         // Undotted form: e.g. "alpha1" with tag "alpha" → num_str = "1"
                         if let Ok(num) = num_str.parse::<u64>() {
-                            counter = num + 1;
+                            counter = num.checked_add(1).ok_or_else(|| BumpError::Overflow {
+                                raw: current.render().to_string(),
+                            })?;
                         }
                     }
                 }
@@ -177,6 +189,10 @@ impl Versioning for Pep440Versioning {
         // finalize in place.
         let finalize_in_place = !parsed.is_post() && (parsed.is_pre() || parsed.is_dev());
 
+        let overflow = || BumpError::Overflow {
+            raw: current.render().to_string(),
+        };
+
         let (new_major, new_minor, new_patch) = if finalize_in_place {
             match severity {
                 Severity::Patch => (major, minor, patch),
@@ -184,23 +200,23 @@ impl Versioning for Pep440Versioning {
                     if patch == 0 {
                         (major, minor, patch)
                     } else {
-                        (major, minor + 1, 0)
+                        (major, minor.checked_add(1).ok_or_else(overflow)?, 0)
                     }
                 }
                 Severity::Major => {
                     if minor == 0 && patch == 0 {
                         (major, minor, patch)
                     } else {
-                        (major + 1, 0, 0)
+                        (major.checked_add(1).ok_or_else(overflow)?, 0, 0)
                     }
                 }
                 Severity::None => unreachable!("handled above"),
             }
         } else {
             match severity {
-                Severity::Major => (major + 1, 0, 0),
-                Severity::Minor => (major, minor + 1, 0),
-                Severity::Patch => (major, minor, patch + 1),
+                Severity::Major => (major.checked_add(1).ok_or_else(overflow)?, 0, 0),
+                Severity::Minor => (major, minor.checked_add(1).ok_or_else(overflow)?, 0),
+                Severity::Patch => (major, minor, patch.checked_add(1).ok_or_else(overflow)?),
                 Severity::None => unreachable!("handled above"),
             }
         };
@@ -237,7 +253,9 @@ impl Versioning for Pep440Versioning {
             };
             if let Some(num_str) = num_str {
                 if let Ok(num) = num_str.parse::<u64>() {
-                    counter = num + 1;
+                    counter = num.checked_add(1).ok_or_else(|| BumpError::Overflow {
+                        raw: current.render().to_string(),
+                    })?;
                 }
             }
         }
@@ -320,6 +338,9 @@ pub enum BumpError {
     #[error("internal error computing bumped version `{raw}`: {message}")]
     #[diagnostic(code(E038))]
     ComputedVersionInvalid { raw: String, message: String },
+    #[error("version component overflow while bumping `{raw}`")]
+    #[diagnostic(code(E039))]
+    Overflow { raw: String },
 }
 
 #[cfg(test)]
@@ -611,5 +632,30 @@ mod tests {
             versioning.bump(&v, Severity::None).unwrap().render(),
             v.render()
         );
+    }
+
+    #[test]
+    fn test_semver_bump_major_at_max_returns_error() {
+        let input = format!("{}.0.0", u64::MAX);
+        let v = Version::parse(&input, VersionGrammar::SemVer).unwrap();
+        let err = bump_version(&v, Severity::Major).unwrap_err();
+        assert!(matches!(err, BumpError::Overflow { .. }));
+    }
+
+    #[test]
+    fn test_semver_bump_patch_at_max_returns_error() {
+        let input = format!("1.2.{}", u64::MAX);
+        let v = Version::parse(&input, VersionGrammar::SemVer).unwrap();
+        let err = bump_version(&v, Severity::Patch).unwrap_err();
+        assert!(matches!(err, BumpError::Overflow { .. }));
+    }
+
+    #[test]
+    fn test_pep440_bump_at_max_returns_error() {
+        let input = format!("{}.0.0", u64::MAX);
+        let v = Version::parse(&input, VersionGrammar::Pep440).unwrap();
+        let versioning = versioning_for(VersionGrammar::Pep440).unwrap();
+        let err = versioning.bump(&v, Severity::Major).unwrap_err();
+        assert!(matches!(err, BumpError::Overflow { .. }));
     }
 }

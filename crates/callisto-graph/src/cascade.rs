@@ -355,22 +355,6 @@ pub fn solve_cascade<D: DependencyResolver>(
     Ok(out)
 }
 
-#[allow(dead_code)]
-pub(crate) fn calculate_bump_severity(from: &Version, to: &Version) -> Severity {
-    if to.major().unwrap_or(0) > from.major().unwrap_or(0) {
-        Severity::Major
-    } else if to.minor().unwrap_or(0) > from.minor().unwrap_or(0) {
-        Severity::Minor
-    } else if to.patch().unwrap_or(0) > from.patch().unwrap_or(0)
-        || to.is_prerelease()
-        || to != from
-    {
-        Severity::Patch
-    } else {
-        Severity::None
-    }
-}
-
 fn bump_target<D: DependencyResolver>(
     id: &PackageId,
     sev: Severity,
