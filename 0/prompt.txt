@@ -1,0 +1,1 @@
+Instead of copying can we make a very thin shell for claude? How can we improve the source further?
