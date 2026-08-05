@@ -99,6 +99,7 @@ jobs:
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check
+          arguments: "advisories bans sources"
 
   validate:
     name: Validate Changesets & Workspace Status

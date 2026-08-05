@@ -39,6 +39,7 @@ jobs:
         uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check
+          arguments: "advisories bans sources"
 
   release:
     name: Version Packages or Publish Release
