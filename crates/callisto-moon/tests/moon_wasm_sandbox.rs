@@ -35,7 +35,10 @@ fn workspace_root() -> PathBuf {
 /// exists in a directory pointed to by `WARPGATE_PLUGINS_DIR`, building the
 /// real wasm32-wasip1 cdylib artifact first if it isn't already present.
 fn resolve_wasm_file() {
-    BUILD_WASM.call_once(|| {
+    if BUILD_WASM.is_completed() {
+        return;
+    }
+    BUILD_WASM.call_once_force(|_| {
         let root = workspace_root();
         let built = root.join("target/wasm32-wasip1/debug/callisto_moon.wasm");
 
