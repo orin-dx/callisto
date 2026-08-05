@@ -3,18 +3,8 @@
 targets = []
 
 [licenses]
-allow = ["MIT", "Apache-2.0", "AGPL-3.0-only", "Zlib", "Unicode-3.0", "Unicode-DFS-2016", "BSL-1.0", "BSD-3-Clause", "ISC", "MPL-2.0"]
+allow = ["MIT", "Apache-2.0", "AGPL-3.0-only", "Zlib", "Unicode-3.0", "Unicode-DFS-2016", "BSL-1.0", "BSD-3-Clause", "ISC", "MPL-2.0", "BSD-2-Clause"]
 confidence-threshold = 0.8
-
-[[licenses.clarify]]
-name = "callisto-model"
-expression = "MIT OR Apache-2.0"
-license-files = [{ path = "LICENSE", hash = 0x00000000 }]
-
-[[licenses.clarify]]
-name = "callisto-format"
-expression = "MIT OR Apache-2.0"
-license-files = [{ path = "LICENSE", hash = 0x00000000 }]
 
 [bans]
 multiple-versions = "warn"
