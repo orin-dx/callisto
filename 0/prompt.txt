@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>b1mqj073e</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a15bbbf7-aba0-415d-bfdc-c773ea65cfc7/tasks/b1mqj073e.output</output-file>
+<status>killed</status>
+<summary>Background command "just fmt 2&gt;&amp;1 | tail -5 &amp;&amp; just ci 2&gt;&amp;1 | tail -15" was stopped</summary>
+</task-notification>
