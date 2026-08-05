@@ -1,0 +1,48 @@
+Base directory for this skill: /Users/gabe/.claude/plugins/cache/orin-dx-agent-plugins/proof/2.0.1/skills/proof
+
+# proof — Cross-Language Bug-Hunting Skill
+
+## Sub-skills
+
+| Sub-skill | Purpose |
+| :--- | :--- |
+| `proof/scan` | Full hazard sweep across all categories in the workspace |
+| `proof/focus` | Targeted scan — caller names one hazard category |
+| `proof/verify` | Verify a single reported candidate bug |
+| `proof/remediations` | Produce a structured fix plan from a finding-report |
+
+---
+
+## 4-Phase Flow
+
+```
+proof-recon → proof-scanner → proof-adversary → proof-exit-gate
+```
+
+1. **Recon** — builds verified manifest: live files, dead files, entry points, language.
+2. **Scan** — reads language-specific heuristics, emits candidate findings with file:line and trigger condition.
+3. **Adversary** — reads actual code, traces control flow, refutes or confirms each candidate.
+4. **Exit Gate** — after remediation, independently re-reads code from scratch, checks all confirmed findings are gone, scans for sibling gaps, verifies compile + tests.
+
+---
+
+## Language Detection
+
+Recon inspects the workspace root:
+- `Cargo.toml` present → language: `rust` → scanner loads `shared/references/rust.md`
+- `package.json` present → language: `typescript` or `javascript` → scanner loads `shared/references/typescript.md`
+
+---
+
+## Dead Code Rule
+
+Proof ONLY reports bugs in live, reachable code. Any file not traceable from an entry point is dead and excluded from all scanning and adversarial phases. This is enforced by the recon manifest.
+
+---
+
+## Output
+
+All confirmed findings conform to the `finding-report@1` schema (`shared/schemas/finding-report@1.json`). The exit-gate verdict conforms to `verdict@1` (`shared/schemas/verdict@1.json`).
+
+
+ARGUMENTS: Full audit of the Callisto workspace at /Users/gabe/Projects/callisto — bugs, performance, security, and architecture. Primary language: Rust.
