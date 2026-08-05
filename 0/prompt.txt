@@ -1,0 +1,1 @@
+Do we have a good idea of how to handle NAPI issues from the lessons of Nova? For GH actions, have we learned anything from the alternatives on the best way to output data in the release PR?
