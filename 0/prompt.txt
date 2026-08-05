@@ -1,0 +1,1 @@
+ONe thing we may not discussed is the support for purposeful release with changesets vs release-please's semantic commits right? Is it possible to support both? How?
