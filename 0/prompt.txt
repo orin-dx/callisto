@@ -1,0 +1,135 @@
+Some more:
+
+  Here are the detailed breakdowns for the 9 newly identified bugs (Bugs 12 through 20) uncovered during our systematic manual code audit:                          
+  ──────                                                                                                                                                            
+  ### 🐛 Bug 12: commits_since_with_pathspec Fails to Stop at Short SHAs or Ref Names                                                                               
+                                                                                                                                                                    
+  • File: lib.rs                                                                                                                                                    
+  • Code:                                                                                                                                                           
+    let stop_hex = since.map(|s| s.as_str().to_string());                                                                                                           
+    for info in revwalk {                                                                                                                                           
+        let hex = info.id.to_hex().to_string();                                                                                                                     
+        if let Some(ref target) = stop_hex {                                                                                                                        
+            if &hex == target { // <--- Fails when target is a 7-character short SHA or ref                                                                         
+                break;                                                                                                                                              
+            }                                                                                                                                                       
+        }                                                                                                                                                           
+                                                                                                                                                                    
+  • Failure Mechanics: info.id.to_hex().to_string() produces a full 40-character hex string ("a1b2c3d4e5f67890abcdef1234567890abcdef12"). If since was initialized  
+  from a short 7-character commit SHA (e.g. "a1b2c3d"), &hex == target evaluates to false. break never fires, causing the revwalk to walk past since all the way to 
+  the initial commit of the repository, reading full history instead of the commit window.                                                                          
+  • Remediation: Use hex.starts_with(target) or resolve since to a full 40-character commit ID before starting revwalk.                                             
+  ──────                                                                                                                                                            
+  ### 🐛 Bug 13: GitRepository::create_tag Creates Double-Prefixed Refs (refs/tags/refs/tags/v1.0.0)                                                                
+                                                                                                                                                                    
+  • File: lib.rs                                                                                                                                                    
+  • Code:                                                                                                                                                           
+    if let Some(msg) = message {                                                                                                                                    
+        self.repo.tag(                                                                                                                                              
+            name, // <--- Fails if `name` already includes "refs/tags/"                                                                                             
+            oid,                                                                                                                                                    
+            gix::object::Kind::Commit,                                                                                                                              
+            None,                                                                                                                                                   
+            msg,                                                                                                                                                    
+            gix::refs::transaction::PreviousValue::MustNotExist,                                                                                                    
+        )                                                                                                                                                           
+                                                                                                                                                                    
+  • Failure Mechanics: For lightweight tags (line 386), create_tag strips "refs/tags/" before building format!("refs/tags/{}", clean_name). But for annotated tags  
+  (line 376), self.repo.tag(name, ...) passes name directly. gix's .tag() method automatically prepends refs/tags/. If name is passed as "refs/tags/v1.0.0", gix    
+  creates internal ref "refs/tags/refs/tags/v1.0.0", corrupting Git ref tags.                                                                                       
+  • Remediation: Strip "refs/tags/" prefix from name before passing to self.repo.tag(clean_name, ...).                                                              
+  ──────                                                                                                                                                            
+  ### 🐛 Bug 14: Pathspec Matching Fails on Windows Due to Slash Mismatch (lib.rs)                                                                                  
+                                                                                                                                                                    
+  • File: lib.rs                                                                                                                                                    
+  • Code:                                                                                                                                                           
+    fn location_matches(location: &gix::bstr::BStr, pathspecs: &[PathBuf]) -> bool {                                                                                
+        let path_str = String::from_utf8_lossy(location);                                                                                                           
+        let changed_path = Path::new(path_str.as_ref());                                                                                                            
+        pathspecs                                                                                                                                                   
+            .iter()                                                                                                                                                 
+            .any(|spec| changed_path == spec.as_path() || changed_path.starts_with(spec))                                                                           
+    }                                                                                                                                                               
+                                                                                                                                                                    
+  • Failure Mechanics: gix yields tree diff locations formatted with POSIX forward slashes / (crates/pkg-a/file.txt). On Windows, PathBuf pathspecs use backslashes 
+  \ (crates\pkg-a). On Windows, Path::new("crates/pkg-a/file.txt") treats forward slashes as normal path characters rather than directory component separators.     
+  changed_path.starts_with(spec) evaluates to false, causing commit filtering to return empty commit lists on Windows.                                              
+  • Remediation: Convert pathspecs to POSIX-normalized slash strings or normalize location before checking starts_with.                                             
+  ──────                                                                                                                                                            
+  ### 🐛 Bug 15: SemVerVersioning::bump_prerelease Resets Counter on Un-dotted Tags                                                                                 
+                                                                                                                                                                    
+  • File: bump.rs                                                                                                                                                   
+  • Code:                                                                                                                                                           
+    let expected_prefix = format!("{tag}.");                                                                                                                        
+    if let Some(num_str) = pre_part.strip_prefix(&expected_prefix) {                                                                                                
+        if let Ok(num) = num_str.parse::<u64>() {                                                                                                                   
+            counter = num + 1;                                                                                                                                      
+        }                                                                                                                                                           
+    }                                                                                                                                                               
+                                                                                                                                                                    
+  • Failure Mechanics: expected_prefix hardcodes format!("{tag}.") with a dot. If an existing prerelease tag uses the un-dotted format 1.0.0-alpha1 or 1.0.0-rc1,   
+  pre_part.strip_prefix(&expected_prefix) returns None. counter remains 0, generating 1.0.0-alpha.0 on the next bump and breaking prerelease version monotonicity.  
+  • Remediation: Check both {tag}. and {tag} prefixes when parsing prerelease counters.                                                                             
+  ──────                                                                                                                                                            
+  ### 🐛 Bug 16: split_name_and_rest Fails on Quoted Package Names with Escaped Quotes                                                                              
+                                                                                                                                                                    
+  • File: frontmatter.rs                                                                                                                                            
+  • Code:                                                                                                                                                           
+    if let Some(after_quote) = trimmed.strip_prefix('"') {                                                                                                          
+        let end = after_quote.find('"').ok_or(LineError::UnclosedQuotedName)?;                                                                                      
+        let name = &after_quote[..end];                                                                                                                             
+                                                                                                                                                                    
+  • Failure Mechanics: after_quote.find('"') searches for the first raw " without checking if it is escaped with a backslash (\"). For a quoted package name like   
+  "my\"pkg": patch, after_quote.find('"') matches at \", truncating the package name to "my\ and failing with AmbiguousNameQuoting.                                 
+  • Remediation: Scan forward for unescaped " quote delimiters.                                                                                                     
+  ──────                                                                                                                                                            
+  ### 🐛 Bug 17: WorkspaceCargoResolver::load Rejects BOM-Prefixed Cargo.toml Files                                                                                 
+                                                                                                                                                                    
+  • File: cargo.rs                                                                                                                                                  
+  • Code:                                                                                                                                                           
+    let doc: toml_edit::DocumentMut =                                                                                                                               
+        content
+            .parse()
+            .map_err(|e: toml_edit::TomlError| ManifestError::Parse { ... })?;
+  
+  • Failure Mechanics: CargoToml::open strips byte order marks, but WorkspaceCargoResolver::load parses raw content directly. If a workspace root Cargo.toml file   
+  contains a UTF-8 BOM (\u{FEFF}), WorkspaceCargoResolver::load fails with a syntax error, preventing Callisto from resolving Cargo workspace inheritance.          
+  • Remediation: Strip \u{FEFF} from content before calling .parse().
+  ──────
+  ### 🐛 Bug 18: WorkspaceCargoResolver::write_dependency Inserts Invalid version = "workspace:true"
+  
+  • File: cargo.rs
+  • Code:
+    let new_str = new.render();
+    ...
+    tbl.insert("version", toml_edit::value(new_str));
+  
+  • Failure Mechanics: write_dependency unconditionally renders new and inserts a version key into [workspace.dependencies]. When new is DepSpec::Workspace or      
+  DepSpec::Opaque, new.render() produces "workspace:true". Inserting version = "workspace:true" into [workspace.dependencies] produces invalid TOML that Cargo      
+  rejects.
+  • Remediation: Skip writing version when new is a DepSpec::Workspace.
+  ──────
+  ### 🐛 Bug 19: TagIndex::build Ignores Configured Package tag_template Settings
+  
+  • File: tags.rs
+  • Code:
+    for pkg in graph.packages() {
+        let tmpl = TagTemplate::parse(&format!("{}@{{version}}", pkg.id.display_name()))?;
+        let sel = select_from_tags(&all_tags, &tmpl, pkg.version_grammar()?)?;
+  
+  • Failure Mechanics: TagIndex::build hardcodes {display_name}@{version} for every package without checking pkg.tag_template. If a project configures custom tag   
+  templates like v{version} or pkg-v{version}, tag resolution searches for pkg@version instead of v1.0.0, failing to locate existing git tags.
+  • Remediation: Check pkg.tag_template before defaulting to {display_name}@{version}.
+  ──────
+  ### 🐛 Bug 20: callisto publish CLI Command Exits with Code 0 on Publication Failure
+  
+  • File: publish.rs
+  • Code:
+    let report = orchestrator.execute(&plan, &permit);
+    ...
+    Ok(ExitCode::SUCCESS)
+  
+  • Failure Mechanics: handle in publish.rs executes the publish plan and unconditionally returns Ok(ExitCode::SUCCESS). If cargo publish, npm publish, or twine    
+  upload fail due to network, auth, or package validation errors, the CLI exits with code 0. CI pipelines interpret code 0 as success, silently masking failed      
+  package releases.
+  • Remediation: Check report.has_failures() and return ExitCode::FAILURE if any package upload failed.
