@@ -1,0 +1,126 @@
+This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
+
+Summary:
+1. Primary Request and Intent:
+   The user is building "callisto," a Rust CLI + moon-extension that coordinates SemVer version bumps across polyglot (Rust/npm, napi-bridged) monorepos, byte-compatible with `@changesets/cli`'s file format, for the GitHub org `orin-dx` (repo `github.com/orin-dx/callisto`). Earlier in the engagement I personally built `callisto-format`/`callisto-model` via strict TDD, set up `moon`/`proto`, and wrote/critiqued the design docs. Separately, the user revealed they had been using an external tool ("antigravity CLI") to independently implement a large amount of code across the whole workspace. The user's prior explicit request was to audit the codebase for Rust community best practices and improve test coverage. The user's **most recent explicit request** (the one this summary must resume from) is: **"Antigravity added even more improvements and updates to our spec, please familiarize yourself with the latest specs and the implementation."** — i.e., re-read the now-further-grown `docs/01-spec.md` (grown again, 9,288 → 10,681 lines) and re-check the implementation against it, since antigravity has continued working on both spec and code outside my session. Standing constraints, repeatedly reinforced across the whole engagement and still in force: **never commit anything to git, and never bump versions/release, until explicitly told to.** `git status` in this segment reconfirmed nothing has been committed (all top-level paths still show as `??` untracked).
+
+2. Key Technical Concepts:
+   - Cargo workspace, now confirmed at **10 crates**: `callisto-changelog`, `callisto-cli`, `callisto-conventional`, `callisto-fixtures`, `callisto-format`, `callisto-graph`, `callisto-manifests`, `callisto-model`, `callisto-moon`, `callisto-vcs`.
+   - `docs/01-spec.md` as the authoritative implementation contract — now includes a new bolt-on **§13 "v1.0 Production Hardening & Moon Alignment"** (7 sub-items) and a new **§11 "New decisions made while writing this spec"** (~90 `[SPEC DECISION]` markers + 25 cross-draft reconciliations R1–R25), on top of the original per-crate §2–§10 sections.
+   - `callisto-vcs` — a `gix`-based git crate, spec'd only in the new §13.6 (two sentences, no type/trait spec), NOT listed in §1.4's crate-dependency diagram (which still says "Nine crates") — a structural inconsistency in the spec itself, and still functionally dead code in the implementation (declared as a dependency of `callisto-graph` but zero actual call sites).
+   - `extism`/`extism-pdk` WASM plugin ABI — the mechanism by which `callisto-moon` is supposed to actually integrate as a moon extension (per §MO and §13.5); confirmed **not implemented** — only data-shape (`Input`/`Output` struct) shells exist, no `#[plugin_fn]`, no plugin dependency, no wasm feature flags.
+   - `schemars`-derived JSON Schema export via a `callisto schema` subcommand (§13.2) — implemented but incomplete (hardcoded to only `StatusReport`, not "all serializable config/state types" as spec'd).
+   - Atomic temp-file+rename writes (§13.3), `miette`/`anstream`/`similar`-based `--dry-run` diffs (§13.4), `petgraph`/Tarjan SCC cycle diagnostics (§13.1) — all newer spec additions; Tarjan/petgraph confirmed wired into `callisto-graph`.
+   - Byte-compat fixture/corpus testing strategy (per `00-design.md` §0.1 rule 2 and spec §10) — meant to be CI-enforced from v0.1, confirmed **entirely absent**: no `data/` fixture directory, no `Scenario`/`ScenarioBuilder`, no `proptest`, no `xtask dep-audit`, no CI workflow files at all.
+   - Rust community best-practices audit (from the prior turn, still an open/parent task): workspace-wide `[workspace.lints]` in root `Cargo.toml` — confirmed present but apparently modified since I last edited it (now shows `unwrap_used = "allow"` and `expect_used = "allow"` under `[workspace.lints.clippy]`, differing from the stricter version I had written, suggesting either my edit was overwritten/merged by further external changes or I'm seeing a later merged state).
+   - Explore-agent-based research delegation (used in this segment) — dispatched a background `Explore` agent instead of reading 10,681+ lines of spec and ~10,793 lines of implementation inline, to protect context.
+
+3. Files and Code Sections:
+   - **`/Users/gabe/Projects/callisto/Cargo.toml`** (workspace root) — re-read fresh via system-reminder-attached Read result. Current full content confirmed:
+     ```toml
+     [workspace]
+     resolver = "2"
+     members = ["crates/*"]
+
+     [workspace.package]
+     version = "0.1.0"
+     edition = "2021"
+     repository = "https://github.com/orin-dx/callisto"
+
+     [workspace.dependencies]
+     semver = { version = "1", features = ["serde"] }
+     serde = { version = "1", features = ["derive"] }
+     serde_json = "1"
+     thiserror = "1"
+     indexmap = { version = "2", features = ["serde"] }
+     toml_edit = "0.22"
+     ignore = "0.4"
+     toml = "0.8"
+     serde_yaml = "0.9"
+     globset = "0.4"
+
+     [profile.release]
+     lto = true
+     opt-level = 3
+     codegen-units = 1
+
+     [workspace.lints.rust]
+     unsafe_code = "forbid"
+
+     [workspace.lints.clippy]
+     all = { level = "warn", priority = -1 }
+     unwrap_used = "allow"
+     expect_used = "allow"
+     module_name_repetitions = "allow"
+     must_use_candidate = "allow"
+     ```
+     Note: this differs from the lint block I had written in the immediately-prior turn (which included `missing_docs = "warn"`, `unreachable_pub = "warn"`, `clippy::pedantic`/`clippy::nursery` at warn) — the current file has neither `pedantic` nor `nursery` nor `missing_docs`/`unreachable_pub`, and instead explicitly allows `unwrap_used`/`expect_used`. This needs reconciling — either the external tool changed it after my edit, or my edit didn't persist as I expected. **Not yet investigated/resolved.**
+   - **`crates/callisto-graph/Cargo.toml`** — re-read fresh. Confirms `[lints] workspace = true` is present (crate has opted into workspace lints), `default = ["cargo", "npm"]` features, deps include `callisto-vcs = { path = "../callisto-vcs" }` (confirming the dead dependency edge still exists), `petgraph = "0.6"` newly present (supports the §13.1 Tarjan addition), dev-deps `callisto-fixtures` (features=["graph"]) and `tempfile`.
+   - **`crates/callisto-cli/src/main.rs`** — re-read fresh, 36 lines. Full `clap`-based dispatch confirmed: `Command::{Add, Status, Version, Pre, Validate, Snapshot, Init, PlanPublish, ComposePrBody, Tag, Completions, Schema}` all wired to `callisto_cli::commands::*` handlers. `#![allow(clippy::result_large_err)]` at top.
+   - **`crates/callisto-cli/Cargo.toml`** — re-read fresh. Deps confirm `miette` (fancy feature), `anstream`, `comfy-table`, `similar` (inline feature), `schemars` — consistent with §13.2/§13.4's new UX/schema requirements actually landing in code.
+   - **`crates/callisto-manifests/src/lib.rs`** — re-read fresh, 85 lines. `Manifest` trait, `OpenContext`, `open()`, `round_trip()`, feature-gated `cargo`/`npm` submodules re-exporting `CargoToml`/`WorkspaceCargoResolver`/`WorkspaceInheritance`/`PackageJson`/`detect_npm_workspace_kind`. Matches prior understanding; no material change noted.
+   - **`docs/00-design.md`** (1,966 lines) — confirmed unchanged in substance by the dispatched agent ("still revision 2, same §0–§18, same milestones/invariants"). All spec growth is concentrated in `01-spec.md`.
+   - **`docs/01-spec.md`** — confirmed grown to 10,681 lines (from ~9,288). New content: §13 (7 sub-items: petgraph/Tarjan §13.1, schemars/schema subcommand §13.2, atomic writes §13.3, miette/anstream/similar dry-run diffs §13.4, wasm32-wasip1/extism-pdk restated §13.5, new callisto-vcs crate §13.6, GH Actions/`moon run :publish` alignment §13.7); §11 (~90 `[SPEC DECISION]` markers, 25 reconciliations R1–R25). §1.4's crate-dependency diagram still says "Nine crates" and omits `callisto-vcs` — an internal inconsistency. §C.7 vs §C.4 self-contradiction found regarding `InferenceInput`'s `policy: PreMajorInferencePolicy` field (§C.7 lists it, §C.4 says the crate has no such field anywhere) — implementation resolves this sensibly by omitting the field (policy lives in `callisto-graph`'s wrapper struct instead).
+   - **`README.md`** (repo root) — read for the first time (via the dispatched agent). Found out of sync in three ways: (1) lists only 7 crates, omitting `callisto-changelog`, `callisto-conventional`, `callisto-fixtures` from its architecture table; (2) claims `extism-pdk` as `callisto-moon`'s key tech even though it isn't actually a dependency; (3) tagline claims first-class Python/Go/Deno support, contradicting `00-design.md` §2.2's explicit "demand-gated, not scheduled" posture for those ecosystems.
+   - **`crates/callisto-changelog/`** (322 lines, 2 tests) — structurally close match to §CL (types, `render`, `write`, `extract_section` all present/correct). Gap: spec mandates `ChangelogError::EmptyInput` fired when `render_section` gets zero entries (§CL.8); implementation has no such variant/check — silently renders a bare heading on empty input instead of erroring. Error variant names also differ cosmetically from spec (`SeverityNoneEntry`/`ReadFailed`/`WriteFailed` vs spec's `NoneSeverityEntry`/`Read`/`Write`).
+   - **`crates/callisto-conventional/`** (463 lines, 2 tests) — very close match to spec overall (see §C.7/§C.4 contradiction above, resolved sensibly by the implementation).
+   - **`crates/callisto-moon/`** (321 lines, 1 test) — `MoonProjectLocator`/`MoonCommandRunner`/identity-resolution logic faithfully implements §MO.4/§MO.5, but is **missing the entire extism plugin surface**: no `extism-pdk` dependency, no `#[plugin_fn]` entries, no `execute_extension`/`initialize_extension` functions (only `Input`/`Output` struct shells exist in `extension.rs`). No `wrapper` feature edge to `callisto-cli`, no `wasm`/`cargo`/`npm`/`inference` feature flags in `Cargo.toml`. **As it stands, this crate cannot actually be loaded by moon as an extension** — a significant functional gap, not just a coverage gap.
+   - **`crates/callisto-vcs/`** (142 lines, 1 test) — `GitRepository` (discover/head_sha/list_tags/commits_since) reasonably matches §13.6's two-sentence mandate. Confirmed **still orphaned**: `callisto-graph/Cargo.toml` declares it as a dependency but zero uses of `callisto_vcs::` found anywhere in `callisto-graph/src`.
+   - **`crates/callisto-fixtures/`** (312 lines, 0 tests) — **largest spec-vs-implementation gap found**. Spec (§10) describes an elaborate corpus/harness: `include_str!`-embedded fixture files under a `data/` directory (changesets, pre.json, bump-version tables, report goldens, manifest round-trip corpora, commit corpora, moon payloads, a dep-audit fixture), a `Scenario`/`ScenarioBuilder`, `proptest` property tests, an `xtask dep-audit` CI job. Reality: no `data/` directory exists at all; `corpus.rs` contains just two hardcoded string literals (not a corpus); `Scenario` has no builder; no `xtask`; no CI workflow files anywhere; no `wasm32-wasip1`/`wasmtime` references anywhere in the repo. The byte-compat fixture suite both `00-design.md` §0.1 rule 2 and the spec treat as CI-enforced from v0.1 **does not exist yet**.
+   - **`crates/callisto-graph/`** (3,660 lines, ~2 tests in `src` directly) — confirmed structurally faithful to §7/§G: same module boundaries (`commands/`, `config/`, `locate/`, `aggregate`, `apply`, `cascade`, `groups`, `identity`, `napi`, `plan`, `tags`, `toposort`, `walk`, `crosscheck`), `petgraph`/Tarjan wired in per §13.1. No deep line-by-line algorithm audit was performed (explicitly out of scope for this pass); nothing flagged as missing at the module-boundary level.
+   - Confirmed via `grep`-style check (performed by the dispatched agent): **no `TODO`/`unimplemented!()`/`todo!()` markers found anywhere in `crates/`** — clean on that specific axis.
+   - Updated line-count/test-count table (current state, produced by the dispatched agent):
+     | Crate | Lines | Tests |
+     |---|---|---|
+     | callisto-model | 2,208 | 19 |
+     | callisto-graph | 3,660 | ~2 (direct in src) |
+     | callisto-manifests | 1,137 | 4 |
+     | callisto-format | 983 | 35 |
+     | callisto-cli | 1,245 | 8 |
+     | callisto-changelog | 322 | 2 |
+     | callisto-conventional | 463 | 2 |
+     | callisto-moon | 321 | 1 |
+     | callisto-vcs | 142 | 1 |
+     | callisto-fixtures | 312 | 0 |
+     | **Total** | **~10,793** | **~74** |
+
+4. Errors and fixes:
+   - No new hands-on coding errors occurred in this segment (this segment was research/familiarization only, per explicit instruction to the dispatched agent not to write or edit any files).
+   - **Spec self-contradiction found** (not an error I made, but a defect discovered in `01-spec.md`): §C.7 lists a `policy: PreMajorInferencePolicy` field on `InferenceInput`, while §C.4 explicitly states the `callisto-conventional` crate has no such field anywhere in its types. The implementation resolves this sensibly on its own by omitting the field from `callisto-conventional` and keeping policy logic in `callisto-graph`'s own wrapper struct instead — flagged as worth reconciling in the spec text itself (not yet done).
+   - **Root `Cargo.toml` lint block discrepancy**: the lint block I added at the end of the prior turn (with `missing_docs`, `unreachable_pub`, `clippy::pedantic`/`clippy::nursery` all at "warn") does not match what's now present in the file (`unwrap_used`/`expect_used` explicitly allowed, no `pedantic`/`nursery`/`missing_docs`/`unreachable_pub`). This has **not yet been investigated or reconciled** — unclear whether this reflects a later external overwrite or a misunderstanding on my part about what actually landed.
+
+5. Problem Solving:
+   - Since nothing has ever been committed to git in this repo (confirmed again via `git status` in this segment — everything still shows as `??` untracked), there is no git history to diff against to see exactly what antigravity changed in the spec/implementation between sessions. Resolved this by dispatching a background `Explore` agent to do a full fresh read of `docs/00-design.md` (1,966 lines) and `docs/01-spec.md` (10,681 lines, paged through in full) plus targeted implementation reads, rather than attempting the same inline (which would have consumed excessive context for ~13,000 lines of docs and ~10,793 lines of code).
+   - The agent's completed report (delivered via task-notification) has fully answered the "familiarize yourself with the latest specs and the implementation" request: it identified exactly what's new in the spec (§13, §11), evaluated five under-reviewed crates (`callisto-changelog`, `callisto-conventional`, `callisto-moon`, `callisto-vcs`, `callisto-fixtures`) against their spec sections with specific, concrete gaps identified for each, re-confirmed `callisto-graph`'s structural fidelity, produced an updated line/test-count table, and flagged three ways `README.md` is out of sync with reality.
+   - **Not yet done**: synthesizing/relaying this agent's findings back to the user in a response (the immediately-preceding turn was a forced text-only compaction request, which interrupted before I could report the findings).
+   - **Not yet done**: deciding what to do about the several concrete issues the agent surfaced — most notably that `callisto-moon` cannot currently function as an actual moon extension (missing the entire extism plugin ABI surface), that `callisto-fixtures`/the byte-compat corpus system specified as CI-enforced from v0.1 doesn't exist at all, that `callisto-vcs` remains dead/unwired code and the spec itself is internally inconsistent about whether it's part of the architecture (§1.4 still says "nine crates"), the `ChangelogError::EmptyInput` gap, the root `Cargo.toml` lint-block discrepancy, and the README drift.
+
+6. All user messages:
+   - (Prior-segment messages, preserved from the earlier compaction summary, are not re-quoted here — see conversation history for the full list through "Sure, that works / Try again" and the antigravity-revelation message.)
+   - "Let's make sure we're follow the rust community latest and greatest in terms of best practices and test coverage" (carried over into this segment as the still-open parent task).
+   - [Local `/effort` command set effort to "medium"; not a user content message.]
+   - A local `/compact` command was run (system-level, not user content) — its stdout was "Compacted (ctrl+o to see full summary)".
+   - **"Antigravity added even more improvements and updates to our spec, please familiarize yourself with the latest specs and the implementation."** — this is the operative, most-recent genuine user message driving all work in this segment.
+   - (The subsequent `<task-notification>` containing the dispatched agent's report is an automated system event, explicitly marked as NOT user input, and must not be treated as user confirmation or approval of anything.)
+
+7. Pending Tasks:
+   - Report the dispatched agent's findings back to the user in a clear synthesis (this is the direct, immediate next step once back in normal tool-using/response mode).
+   - Resolve the `callisto-vcs` architectural inconsistency: the spec's own §1.4 crate diagram still says "nine crates" and omits it, §13.6 gives it only a two-sentence mention with no type/trait spec, and the crate itself remains entirely unused/dead code in `callisto-graph`. Decide (with the user) whether to: properly spec it into §1.4/write a full contract section, wire it into `callisto-graph`'s dependency-resolution logic, or remove it entirely.
+   - Decide how to handle `callisto-moon`'s missing extism plugin ABI surface (no `extism-pdk` dep, no `#[plugin_fn]`, no `execute_extension`/`initialize_extension` functions) — this is a functional gap, not just a test-coverage gap; the crate cannot currently be loaded by moon as intended.
+   - Decide how to handle `callisto-fixtures`'s near-total absence of the spec'd corpus/harness system (no `data/` dir, no real corpus, no `Scenario` builder, no `xtask`, no CI workflows) — since `00-design.md` §0.1 rule 2 treats this as CI-enforced from v0.1, this is a significant compliance gap against the design doc's own stated invariants.
+   - Add the missing `ChangelogError::EmptyInput` variant/check to `callisto-changelog` (or otherwise resolve the spec/implementation mismatch there).
+   - Reconcile the root `Cargo.toml` `[workspace.lints]` discrepancy (my prior edit vs. current file state) — determine whether `pedantic`/`nursery`/`missing_docs`/`unreachable_pub` should be re-added, and whether `unwrap_used`/`expect_used` being allowed is an intentional decision worth keeping or something to revisit.
+   - Update `README.md` to match reality: add the three missing crates to its architecture table, remove/correct the `extism-pdk` claim for `callisto-moon`, and correct the Python/Go/Deno support claim to match `00-design.md` §2.2's "demand-gated, not scheduled" posture.
+   - Reconcile the §C.7 vs §C.4 spec self-contradiction in `01-spec.md` regarding `InferenceInput`'s `policy` field (implementation already resolves it sensibly; the spec text itself should be corrected to match).
+   - Substantially improve test coverage overall — still open from the prior turn's request, now with an updated and more complete picture: `callisto-graph` (3,660 lines / ~2 tests), `callisto-fixtures` (312 lines / 0 tests), `callisto-moon` (321 lines / 1 test), `callisto-vcs` (142 lines / 1 test), `callisto-changelog`/`callisto-conventional` (2 tests each) all remain thin relative to code volume and to the spec's own fixture-obligation lists.
+   - Never commit to git without explicit instruction (standing constraint, reaffirmed via a fresh `git status` check in this segment showing everything still untracked).
+   - Never bump versions or treat anything as a "release" without explicit instruction (standing constraint).
+
+8. Current Work:
+   Immediately before this summary was requested, I had just received the completed report from the background `Explore` agent I dispatched to fulfill the user's request to "familiarize yourself with the latest specs and the implementation." The agent's report (reproduced in full under "Files and Code Sections" and "Problem Solving" above) covers: what grew in `01-spec.md` (new §13 "v1.0 Production Hardening & Moon Alignment" and new §11 "New decisions made while writing this spec"), the `callisto-vcs` architectural inconsistency, per-crate implementation-vs-spec verdicts for the five previously-under-reviewed crates plus a re-check of `callisto-graph`, an updated line-count/test-count table, and three ways `README.md` is out of sync. I had not yet composed or sent any response synthesizing these findings back to the user — the very next system event after the task-notification was a forced instruction to produce only this text-only compaction summary, with no further tool calls or responses permitted this turn.
+
+9. Optional Next Step:
+   Directly report the dispatched agent's findings back to the user in clear, organized prose (not raw agent output) — summarizing: (a) what's new in the spec (§13's seven sub-items, §11's ~90 spec-decision markers), (b) the `callisto-vcs` inconsistency (spec's own crate-count diagram still says "nine crates" and omits it; only a two-sentence, non-normative mention exists; still dead/unwired code), (c) the concrete implementation gaps found in `callisto-moon` (missing entire extism plugin ABI — a functional blocker, not just a coverage gap), `callisto-changelog` (`EmptyInput` variant missing), and especially `callisto-fixtures` (the CI-enforced-from-v0.1 byte-compat corpus system specified in §10 essentially doesn't exist), and (d) the README drift. This directly continues the user's most recent explicit request — "Antigravity added even more improvements and updates to our spec, please familiarize yourself with the latest specs and the implementation" — which asked me to get up to speed, and the natural next step is presenting that up-to-speed picture back to the user before deciding jointly what to prioritize next (most likely: fixtures/corpus gap and callisto-moon's extism surface, given they represent functional/compliance blockers rather than mere polish).
+
+If you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/gabe/.claude/projects/-Users-gabe-Projects-callisto/575b7a46-37b7-42f0-9db7-b2c329b2abab.jsonl
+Continue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with "I'll continue" or similar. Pick up the last task as if the break never happened.
