@@ -1,0 +1,1 @@
+Yes, write it into 00-design.md
