@@ -1,0 +1,50 @@
+<task-notification>
+<task-id>a652bf16f5c495392</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/be3206f0-36f6-4eb6-82ee-1a6f04cb1a40/tasks/a652bf16f5c495392.output</output-file>
+<status>completed</status>
+<summary>Agent "Familiarize with latest callisto spec/impl" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Report: Callisto docs/code drift review
+
+### What grew in the spec (9,288 → 10,681 lines)
+
+- **§13 "v1.0 Production Hardening &amp; Moon Alignment"** is entirely new — a 7-item bolt-on section (not part of the original nine-crate, five-part-per-crate structure) covering: `petgraph`/Tarjan SCC cycle diagnostics (§13.1), `schemars`-derived JSON Schema + a `callisto schema` subcommand (§13.2), atomic temp-file+rename writes (§13.3), `miette`/`anstream`/`--dry-run` diffs via `similar` (§13.4), the `wasm32-wasip1`/`extism-pdk` target restated (§13.5), a brand-new **`callisto-vcs`** crate powered by `gix` (§13.6), and a GitHub Actions/`moon run :publish` alignment note (§13.7).
+- **§11** ("New decisions made while writing this spec") is new: ~90 `[SPEC DECISION]` markers plus 25 cross-draft reconciliations (R1–R25) — this is where most of the real design-filling happened (e.g., `Severity`/`Version` ownership, `InferenceInput` shape, `ApplyOptions::transient` for snapshot, typed `VersionWriteTarget`/`DepWriteTarget`).
+- Full type/trait/algorithm specs for all nine original crates (§2–§10) now exist at essentially book length; `00-design.md` itself is unchanged in substance (still "revision 2," §0–§18, same milestones/invariants) — all growth is in `01-spec.md`.
+- **`callisto-vcs` is a significant inconsistency, not a clean addition.** §1.4's crate-dependency diagram still says "**Nine** crates" and does not include `callisto-vcs`; only the bolted-on §13.6 mentions it, in two sentences, with no type/trait spec at all (unlike every other crate's full §M/§F/§CM-style treatment). It's spec'd as an afterthought, not integrated into the main architecture.
+
+### Crate-by-crate: implementation vs. spec
+
+| Crate | Verdict |
+|---|---|
+| **callisto-conventional** | Very close match — module layout, grammar, footer detection, error enum all line up. One real slip: spec's §C.7 `InferenceInput` struct lists a `policy: PreMajorInferencePolicy` field, but §C.4 explicitly says the crate "has no `PreMajorInferencePolicy` field anywhere in its types" — a self-contradiction in the spec. The implementation correctly omits the field (policy lives in `callisto-graph`'s own wrapper struct instead), resolving the spec's internal inconsistency sensibly. |
+| **callisto-changelog** | Close structural match (types, render, write, extract_section all present and correct). Gap: spec mandates a `ChangelogError::EmptyInput` variant fired when `render_section` receives zero entries (§CL.8); the implementation has no such variant or check — an empty-entries `ChangelogInput` silently renders a bare heading instead of erroring. Error variant names also differ cosmetically (`SeverityNoneEntry`/`ReadFailed`/`WriteFailed` vs. spec's `NoneSeverityEntry`/`Read`/`Write`). |
+| **callisto-moon** | The `MoonProjectLocator`/`MoonCommandRunner`/identity-resolution logic is a faithful, well-shaped implementation of §MO.4/§MO.5. But the crate is missing the entire extism plugin surface the spec centers on: no `extism-pdk` dependency, no `#[plugin_fn]` entries, and no `execute_extension`/`initialize_extension` *functions* (only their `Input`/`Output` struct shells exist in `extension.rs`). There's also no `wrapper`-feature edge to `callisto-cli` and no `wasm`/`cargo`/`npm`/`inference` feature flags in `Cargo.toml`. As it stands this crate cannot actually be loaded by moon as an extension — it's the data/logic half of §9 without the plugin-ABI half. |
+| **callisto-vcs** | `GitRepository` (discover/head_sha/list_tags/commits_since) matches §13.6's mandate reasonably. But it is **still orphaned**: `callisto-graph/Cargo.toml` declares `callisto-vcs` as a dependency, yet `grep` finds **zero** uses of `callisto_vcs::` anywhere in `callisto-graph/src`. It's a declared-but-dead dependency edge — exactly the "unwired dead code" state noted before this session, now with a real (if unused) implementation behind it. |
+| **callisto-fixtures** | Largest gap of all. The spec (§10) describes an elaborate corpus/harness — `include_str!`-embedded fixture files under `data/` (changesets, pre.json, bump-version tables, report goldens, manifest round-trip corpora, commit corpora, moon payloads, a dep-audit fixture), a `Scenario`/`ScenarioBuilder`, `proptest` property tests, and an `xtask dep-audit` CI job. In reality: there is **no `data/` directory at all**, `corpus.rs` contains two hardcoded string literals (not a corpus), `Scenario` has no builder, there's no `xtask`, no CI workflow files, and no `wasm32-wasip1`/`wasmtime` references anywhere in the repo. The byte-compat fixture suite that both `00-design.md` (§0.1 rule 2) and the spec treat as CI-enforced from v0.1 does not exist yet. |
+| **callisto-graph** | Structurally faithful to §7/§G — same module boundaries (`commands/`, `config/`, `locate/`, plus `aggregate`, `apply`, `cascade`, `groups`, `identity`, `napi`, `plan`, `tags`, `toposort`, `walk`, `crosscheck`), `petgraph`/Tarjan wired in per §13.1. No deep algorithm audit performed per scope, but nothing jumped out as missing at the module-boundary level. |
+
+### Line counts and tests (current)
+
+| Crate | Lines | `#[test]` count |
+|---|---|---|
+| callisto-model | 2,208 | 19 |
+| callisto-graph | 3,660 | ~2 in src (bulk of coverage likely elsewhere; low direct count is itself notable) |
+| callisto-manifests | 1,137 | 4 |
+| callisto-format | 983 | 35 |
+| callisto-cli | 1,245 | 8 |
+| callisto-changelog | 322 | 2 |
+| callisto-conventional | 463 | 2 |
+| callisto-moon | 321 | 1 |
+| callisto-vcs | 142 | 1 |
+| callisto-fixtures | 312 | 0 |
+| **Total** | **~10,793** | ~74 |
+
+### Other flags
+
+- No `TODO`/`unimplemented!()`/`todo!()` found anywhere in `crates/` — clean on that axis.
+- `callisto schema` (§13.2) is implemented but only emits `StatusReport`'s schema, hardcoded — not the "all serializable config/state types" export the spec mandates.
+- **README.md** is out of sync in three ways: (1) it lists only 7 crates, entirely omitting `callisto-changelog`, `callisto-conventional`, and `callisto-fixtures` from the architecture table; (2) it claims `extism-pdk` as `callisto-moon`'s key tech, which isn't actually a dependency; (3) its tagline claims first-class Python/Go/Deno support, contradicting `00-design.md` §2.2's explicit "demand-gated, not scheduled" posture for those ecosystems.</result>
+<usage><subagent_tokens>174482</subagent_tokens><tool_uses>34</tool_uses><duration_ms>191490</duration_ms></usage>
+</task-notification>
