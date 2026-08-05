@@ -39,7 +39,8 @@ fn resolve_wasm_file() {
         let root = workspace_root();
         let built = root.join("target/wasm32-wasip1/debug/callisto_moon.wasm");
 
-        if !built.exists() {
+        let is_valid = built.exists() && built.metadata().map(|m| m.len() > 100).unwrap_or(false);
+        if !is_valid {
             // `--crate-type cdylib` is passed explicitly here rather than
             // declared in Cargo.toml's [lib] section: a manifest-level
             // cdylib crate-type would make cargo also attempt (and fail) a
@@ -296,7 +297,8 @@ fn create_which_only_dir() -> tempfile::TempDir {
     dir
 }
 
-fn run_git(dir: &Path, args: &[&str]) {
+async fn run_git(dir: &Path, args: &[&str]) {
+    let _lock = PATH_MUTEX.lock().await;
     let status = Command::new("git")
         .args(args)
         .current_dir(dir)
@@ -381,9 +383,9 @@ async fn execute_extension_status_succeeds_against_real_repo_fixture() {
     let sandbox = create_empty_moon_sandbox();
     let root = sandbox.root.clone();
 
-    run_git(&root, &["init", "-q"]);
-    run_git(&root, &["config", "user.email", "test@example.com"]);
-    run_git(&root, &["config", "user.name", "Test"]);
+    run_git(&root, &["init", "-q"]).await;
+    run_git(&root, &["config", "user.email", "test@example.com"]).await;
+    run_git(&root, &["config", "user.name", "Test"]).await;
 
     fs::write(
         root.join("Cargo.toml"),
@@ -391,8 +393,8 @@ async fn execute_extension_status_succeeds_against_real_repo_fixture() {
     )
     .expect("failed to write fixture Cargo.toml");
 
-    run_git(&root, &["add", "."]);
-    run_git(&root, &["commit", "-q", "-m", "initial commit"]);
+    run_git(&root, &["add", "."]).await;
+    run_git(&root, &["commit", "-q", "-m", "initial commit"]).await;
     run_git(
         &root,
         &[
@@ -403,7 +405,8 @@ async fn execute_extension_status_succeeds_against_real_repo_fixture() {
             "release",
             "pkg-a@1.0.0",
         ],
-    );
+    )
+    .await;
 
     let fake_bin_dir = tempfile::tempdir().expect("failed to create fake-bin tempdir");
     write_fake_moon_binary(fake_bin_dir.path());
@@ -658,9 +661,9 @@ async fn execute_extension_unrecognized_subcommand_falls_back_to_status_not_erro
     let sandbox = create_empty_moon_sandbox();
     let root = sandbox.root.clone();
 
-    run_git(&root, &["init", "-q"]);
-    run_git(&root, &["config", "user.email", "test@example.com"]);
-    run_git(&root, &["config", "user.name", "Test"]);
+    run_git(&root, &["init", "-q"]).await;
+    run_git(&root, &["config", "user.email", "test@example.com"]).await;
+    run_git(&root, &["config", "user.name", "Test"]).await;
 
     fs::write(
         root.join("Cargo.toml"),
@@ -668,8 +671,8 @@ async fn execute_extension_unrecognized_subcommand_falls_back_to_status_not_erro
     )
     .expect("failed to write fixture Cargo.toml");
 
-    run_git(&root, &["add", "."]);
-    run_git(&root, &["commit", "-q", "-m", "initial commit"]);
+    run_git(&root, &["add", "."]).await;
+    run_git(&root, &["commit", "-q", "-m", "initial commit"]).await;
     run_git(
         &root,
         &[
@@ -680,7 +683,8 @@ async fn execute_extension_unrecognized_subcommand_falls_back_to_status_not_erro
             "release",
             "pkg-a@1.0.0",
         ],
-    );
+    )
+    .await;
 
     let fake_bin_dir = tempfile::tempdir().expect("failed to create fake-bin tempdir");
     write_fake_moon_binary(fake_bin_dir.path());

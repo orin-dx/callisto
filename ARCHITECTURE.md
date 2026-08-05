@@ -27,40 +27,41 @@ Callisto addresses key architectural deficiencies in existing release management
 Callisto processes monorepo release workflows through a deterministic 5-stage pipeline:
 
 ```mermaid
+%%{init: {'theme': 'base', 'themeVariables': {'lineColor': '#64748b', 'edgeLabelBackground': '#f8fafc', 'fontFamily': 'ui-sans-serif, system-ui, sans-serif'}}}%%
 flowchart TB
-    subgraph Stage1 ["Stage 1: Discovery & Identity"]
+    subgraph Stage1 ["Stage 1 — Discovery & Identity"]
         PL(["ProjectLocator<br/>(IgnoreWalk / Moon)"]) --> IR(["IdentityResolver<br/>(Canonical PackageId)"])
     end
 
-    subgraph Stage2 ["Stage 2: Manifest & VCS Ingestion"]
-        IR --> MR(["Manifest Reader<br/>(CargoToml / PackageJson)"])
+    subgraph Stage2 ["Stage 2 — Manifest & VCS Ingestion"]
+        IR --> MR(["Manifest Reader<br/>(Cargo / npm / pyproject)"])
         IR --> VCS(["callisto-vcs<br/>(gix In-Process Git Engine)"])
     end
 
-    subgraph Stage3 ["Stage 3: Graph Construction & Cycle Validation"]
+    subgraph Stage3 ["Stage 3 — Graph Construction & Cycle Detection"]
         MR --> DAG(["callisto-graph<br/>(petgraph DiGraph)"])
         VCS --> DAG
         DAG --> SCC{"Tarjan SCC<br/>Cycle Check"}
-        SCC -- "Cycle Detected" --> Err(["Emit miette Diagnostic Card"])
-        SCC -- "Acyclic Graph" --> Agg(["Aggregate Changesets<br/>& Conventional Commits"])
+        SCC -- "Cycle Detected" --> Err(["Emit miette<br/>Diagnostic Card"])
+        SCC -- "Acyclic" --> Agg(["Aggregate Changesets<br/>& Conventional Commits"])
     end
 
-    subgraph Stage4 ["Stage 4: Cascade & Plan Generation"]
+    subgraph Stage4 ["Stage 4 — Cascade & Plan Generation"]
         Agg --> Cascade(["Cascade Propagation Engine<br/>(Runtime / Dev / Peer Edge Rules)"])
         Cascade --> Plan(["VersionPlan Construction<br/>(Calculated Version Bumps)"])
     end
 
-    subgraph Stage5 ["Stage 5: Format-Preserving Persistence"]
+    subgraph Stage5 ["Stage 5 — Format-Preserving Persistence"]
         Plan --> Diff(["Render Unified Diffs"])
-        Plan --> AST(["AST Rewrite (toml_edit / serde_json)"])
-        AST --> Atomic(["Atomic Persistence (NamedTempFile + fs::rename)"])
+        Plan --> AST(["CST Rewrite<br/>(toml_edit / serde_json)"])
+        AST --> Atomic(["Atomic Persistence<br/>(NamedTempFile + fs::rename)"])
     end
 
-    style Stage1 fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#0f172a
-    style Stage2 fill:#e0e7ff,stroke:#4f46e5,stroke-width:2px,color:#0f172a
-    style Stage3 fill:#f3e8ff,stroke:#9333ea,stroke-width:2px,color:#0f172a
-    style Stage4 fill:#dcfce7,stroke:#16a34a,stroke-width:2px,color:#0f172a
-    style Stage5 fill:#ffedd5,stroke:#ea580c,stroke-width:2px,color:#0f172a
+    style Stage1 fill:#dbeafe,stroke:#2563eb,stroke-width:2px,color:#1e3a8a
+    style Stage2 fill:#e0e7ff,stroke:#4338ca,stroke-width:2px,color:#312e81
+    style Stage3 fill:#ede9fe,stroke:#7c3aed,stroke-width:2px,color:#4c1d95
+    style Stage4 fill:#d1fae5,stroke:#059669,stroke-width:2px,color:#064e3b
+    style Stage5 fill:#fed7aa,stroke:#ea580c,stroke-width:2px,color:#7c2d12
 ```
 
 ---
@@ -70,26 +71,27 @@ flowchart TB
 Callisto is structured into 10 workspace crates organized across 4 strict layer boundaries to enforce acyclic dependencies:
 
 ```mermaid
+%%{init: {'theme': 'base', 'themeVariables': {'lineColor': '#64748b', 'edgeLabelBackground': '#f8fafc', 'fontFamily': 'ui-sans-serif, system-ui, sans-serif'}}}%%
 flowchart TB
-    subgraph Layer4 ["Layer 4: User Interfaces & Extensions"]
+    subgraph Layer4 ["Layer 4 — User Interfaces & Extensions"]
         CLI(["callisto-cli<br/>(CLI Binary & Diagnostics)"])
         Moon(["callisto-moon<br/>(Moon WASM PDK Extension)"])
     end
 
-    subgraph Layer3 ["Layer 3: Resolution & Graph Solver"]
+    subgraph Layer3 ["Layer 3 — Resolution & Graph Solver"]
         Graph(["callisto-graph<br/>(petgraph DAG & Cascade Engine)"])
     end
 
-    subgraph Layer2 ["Layer 2: Manifest AST & VCS Mechanics"]
+    subgraph Layer2 ["Layer 2 — Manifest AST & VCS Mechanics"]
         Manifests(["callisto-manifests<br/>(Format-Preserving Editors)"])
         VCS(["callisto-vcs<br/>(Native gix Git Engine)"])
     end
 
-    subgraph Layer1 ["Layer 1: Permissive Data Contracts & Utilities"]
+    subgraph Layer1 ["Layer 1 — Permissive Data Contracts & Utilities"]
         Model(["callisto-model<br/>(Domain Types & Schemas)"])
         Format(["callisto-format<br/>(Changeset & pre.json Parsers)"])
         Conventional(["callisto-conventional<br/>(Conventional Commit Parser)"])
-        Changelog(["callisto-changelog<br/>(Markdown Renderer)"])
+        Changelog(["callisto-changelog<br/>(Markdown Changelog Renderer)"])
     end
 
     CLI --> Graph
@@ -105,10 +107,10 @@ flowchart TB
     Conventional --> Model
     Changelog --> Model
 
-    style Layer4 fill:#dcfce7,stroke:#16a34a,stroke-width:2px,color:#0f172a
-    style Layer3 fill:#f3e8ff,stroke:#9333ea,stroke-width:2px,color:#0f172a
-    style Layer2 fill:#e0e7ff,stroke:#4f46e5,stroke-width:2px,color:#0f172a
-    style Layer1 fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#0f172a
+    style Layer4 fill:#d1fae5,stroke:#059669,stroke-width:2px,color:#064e3b
+    style Layer3 fill:#ede9fe,stroke:#7c3aed,stroke-width:2px,color:#4c1d95
+    style Layer2 fill:#e0e7ff,stroke:#4338ca,stroke-width:2px,color:#312e81
+    style Layer1 fill:#dbeafe,stroke:#2563eb,stroke-width:2px,color:#1e3a8a
 ```
 
 ### Layer Rules & Licensing Matrix
@@ -219,11 +221,25 @@ Workspace package relationships form a directed graph `G = (V, E)` where vertice
 When a package $P_A$ is bumped from version $V_{old}$ to $V_{new}$ with severity $S$:
 
 ```mermaid
+%%{init: {'theme': 'base', 'themeVariables': {'lineColor': '#64748b', 'edgeLabelBackground': '#f8fafc', 'fontFamily': 'ui-sans-serif, system-ui, sans-serif'}}}%%
 flowchart TD
-    Start["Input: Package P_A, Severity S"] --> Step1["Apply severity S to P_A<br/>Calculate new version V_new"]
-    Step1 --> Step2{"Inspect Reverse Dependencies (P_B)"}
-    Step2 -- "Runtime Edge" --> Step3["Calculate required bump for P_B<br/>Recursively enqueue (P_B, Calculated_Severity)"]
-    Step2 -- "Dev or Peer Edge" --> Step4["Update dependency range in P_B manifest<br/>(No forced version bump on P_B)"]
+    Start(["Input: Package P_A<br/>with Severity S"])
+    Step1["Apply severity S to P_A<br/>Calculate V_new"]
+    Step2{"Inspect Reverse<br/>Dependencies of P_A"}
+    Step3["Calculate required bump for P_B<br/>Re-enqueue (P_B, derived severity)"]
+    Step4["Update dependency range<br/>in P_B manifest — no version bump"]
+
+    Start --> Step1
+    Step1 --> Step2
+    Step2 -- "Runtime Edge" --> Step3
+    Step2 -- "Dev / Peer Edge" --> Step4
+    Step3 -- "re-enqueue" --> Step2
+
+    style Start fill:#dbeafe,stroke:#2563eb,color:#1e3a8a
+    style Step1 fill:#e0e7ff,stroke:#4338ca,color:#312e81
+    style Step2 fill:#ede9fe,stroke:#7c3aed,color:#4c1d95
+    style Step3 fill:#d1fae5,stroke:#059669,color:#064e3b
+    style Step4 fill:#fed7aa,stroke:#ea580c,color:#7c2d12
 ```
 
 ### Version Groups (Fixed & Linked)
@@ -304,6 +320,7 @@ pub trait Manifest {
 Callisto includes a built-in composite action ([`.github/actions/callisto-action/action.yml`](.github/actions/callisto-action/action.yml)) for CI/CD automation and supports 3 release paradigms (see [`docs/release-paradigms.md`](docs/release-paradigms.md)):
 
 ```mermaid
+%%{init: {'theme': 'base', 'themeVariables': {'lineColor': '#64748b', 'edgeLabelBackground': '#f8fafc', 'fontFamily': 'ui-sans-serif, system-ui, sans-serif'}}}%%
 sequenceDiagram
     participant Runner as GitHub Actions Runner
     participant Verify as Job 1: verify (Mandatory CI Gate)
@@ -311,23 +328,22 @@ sequenceDiagram
     participant CLI as callisto CLI
     participant GH as GitHub API (gh CLI)
 
-    Runner->>Verify: Trigger on push / workflow_dispatch
-    Verify->>Verify: Execute format, lint, test, WASM & cargo-deny audit
-    alt CI Verification Fails
-        Verify-->>Runner: Exit code 1 (Job 2 Cancelled / Blocked)
-    else CI Verification Passes
+    Runner->>Verify: push / workflow_dispatch
+    Verify->>Verify: format · lint · test · WASM check · cargo-deny audit
+    alt CI Fails
+        Verify-->>Runner: Exit 1 — Job 2 cancelled
+    else CI Passes
         Verify->>Action: Trigger release job
         Action->>CLI: callisto status --check
-        
-        alt Pending Changesets Exist
+        alt Pending Changesets
             Action->>CLI: callisto version
             Action->>CLI: callisto compose-pr-body
             Action->>GH: Create or update callisto/version-packages PR
-        else Zero Changesets (Version PR Merged!)
+        else Version PR Merged (zero changesets)
             Action->>CLI: callisto plan-publish --format json
-            Action->>CLI: Sequential cargo publish in topological order with exponential backoff
-            Action->>CLI: callisto tag --plan plan.json --floating-major
-            Action->>GH: Create GitHub Releases & update floating major pointer (v1)
+            Action->>CLI: callisto publish
+            Action->>CLI: callisto tag --floating-major
+            Action->>GH: Create GitHub Releases & update floating major alias (v1)
         end
     end
 ```
