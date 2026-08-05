@@ -55,3 +55,7 @@ Do we feel comfortable for a release?
 <status>completed</status>
 <summary>Background command "Run full CI suite to check current state" completed (exit code 0)</summary>
 </task-notification>
+
+---
+
+Let's fix everything that is open please
