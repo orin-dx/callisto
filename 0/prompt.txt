@@ -1,0 +1,121 @@
+<task-notification>
+<task-id>acc88041d4ec98bc3</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a15bbbf7-aba0-415d-bfdc-c773ea65cfc7/tasks/acc88041d4ec98bc3.output</output-file>
+<status>completed</status>
+<summary>Agent "Bug hunt: callisto version idempotency and changeset lifecycle" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Now I have a complete picture. Let me compile the findings.
+
+---
+
+## Findings: `callisto version` Idempotency and Changeset Lifecycle
+
+The audit covered all 15 questions across four source files. Below is a full enumeration, with a full end-to-end trace backing every CONFIRMED verdict.
+
+---
+
+### [High] Double-bump when consumed changeset is restored and `callisto version` re-run
+
+- **Status**: CONFIRMED. Execution path fully traced to `crates/callisto-graph/src/commands/version.rs:L125` and `crates/callisto-graph/src/aggregate.rs:L163-L282`.
+- **Location**: `crates/callisto-graph/src/commands/version.rs:L81` (`base_versions = ws.base_versions()`) and `L125` (`from = base_versions.get(id)`)
+- **Classification**: Fixpoint Staleness
+- **Root Cause**: `plan_version` computes `from` (the starting version for bump calculation) by reading `ws.base_versions()`, which reads live manifest files — not git tags. After a first `callisto version` run bumps `foo` from `1.0.0` to `1.1.0`, the manifest on disk is now `1.1.0`. If the user runs `git restore .changeset/abc.md` to recover the consumed changeset and re-runs `callisto version`, the cascade receives `base: &amp;base_versions` where `foo = 1.1.0` (manifest), not `1.0.0` (tag). The changeset still says Minor. Cascade computes `1.1.0 + minor = 1.2.0`. Second run bumps to `1.2.0`. There is no guard that compares the manifest version against the last git tag to detect that a version was already applied.
+- **Failing Scenario**: Workspace with `foo@1.0.0`. Run `callisto add foo:minor` → `.changeset/abc.md`. Run `callisto version` → foo bumped to `1.1.0`, `abc.md` deleted, git staged. User decides to revert: `git restore .changeset/abc.md` (restores file) + `git restore crates/foo/Cargo.toml` is NOT run (user only restores the changeset, not the manifest). Re-run `callisto version` → `1.1.0 + minor = 1.2.0`. Or even if the user doesn't restore the manifest, just having the changeset file back is enough: version reads manifest `1.1.0` and adds Minor on top.
+- **Severity**: High — the double-bump produces a version that was never planned, and no warning is emitted. The incorrect version would be tagged and published.
+- **Verification Strategy**: E2E test: `add foo:minor` → `callisto version` → `git restore .changeset/*.md` (without restoring manifest) → `callisto version` again → assert `foo` version is `1.1.0` still (not `1.2.0`). Currently this would fail, asserting `1.2.0`.
+
+---
+
+### [High] Crash mid-changeset-deletion leaves workspace in permanently double-bumpable state
+
+- **Status**: CONFIRMED. `apply.rs:L75-L93` writes all manifests. `apply.rs:L151-L162` deletes changesets one-by-one. If the process is killed between those two blocks, manifests are bumped and changesets are still present.
+- **Location**: `crates/callisto-graph/src/apply.rs:L75-L162`
+- **Classification**: Crash-Safety / Un-Transactional Disk Mutation
+- **Root Cause**: `apply_version_plan` executes six distinct write-to-disk phases in sequence with no transactional commit point: (1) write manifest bumps, (2) write dependency rewrites, (3) write per-package changelogs, (4) write combined changelog, (5) delete changeset files one-by-one with `?` propagation, (6) git staging. If the process is killed or crashes at any point after phase 1 but before phase 5 completes, the manifests show the bumped version while some or all changeset files remain. A recovery `callisto version` run then sees: `base_versions` = bumped manifest version (say `1.1.0`) + surviving changeset saying Minor → cascade produces `1.2.0`. This is the same double-bump as the previous finding, but it triggers automatically on crash recovery without any user action. Phase 5 deletes one-by-one: if deletion of file 3 of 5 fails, files 1–2 are gone but 3–5 remain. Those 3 surviving changesets' packages get double-bumped on recovery; the 2 deleted changesets' packages do not (their manifests are already bumped, but no changeset survives to trigger another bump). This creates a split-level inconsistency across the workspace.
+- **Failing Scenario**: 5-package workspace. `callisto version` → all 5 manifests written → kill -9 mid-deletion (after 2 changesets deleted). Re-run: 3 remaining changesets each trigger a second Minor bump from the already-bumped manifests. 2 packages are at the correct version, 3 are double-bumped. No error, no warning — the re-run succeeds and reports all 5 packages staged.
+- **Severity**: High — no atomic commit boundary exists. Recovery from a crash produces a silently incorrect version graph. There is no "completed flag" file or similar marker.
+- **Verification Strategy**: Fault-injection test: run `apply_version_plan` against a workspace where a `CommandRunner` is wired to fail the `git add` call (which runs after deletion). Assert that the changeset files are gone from disk but manifests are bumped. Then run `plan_version` again and assert that the plan is empty (correct) or that it would double-bump (the actual incorrect behavior, depending on whether the deletion completed).
+
+---
+
+### [Medium] Orphaned CHANGELOG entry with no recovery path; stale headings corrupt history
+
+- **Status**: CONFIRMED. `crates/callisto-changelog/src/write.rs:L240-L246`.
+- **Location**: `crates/callisto-changelog/src/write.rs:L240-L246` (`prepend()` idempotency guard)
+- **Classification**: Spec Drift / Silent Fallback
+- **Root Cause**: `prepend()` has an idempotency guard: if `rendered`'s first line (e.g., `## 1.1.0\n`) already appears as a complete line in the existing changelog, the write is skipped entirely. This guard is correct for the "run version twice with same changesets" scenario (Q2). However, it has no awareness of cross-version orphans. After running `callisto version` which writes `## 2.0.0` to `CHANGELOG.md`, if the user then reverts the manifest to `1.0.0`, adds only a patch changeset, and re-runs `callisto version`, the second run attempts to write `## 1.0.1`. The idempotency check looks for `## 1.0.1\n` in the file — that heading does not exist — so `prepend()` writes it directly above the existing `## 2.0.0` section. The changelog now reads:
+  ```
+  ## 1.0.1
+  - patch fix (from second run)
+
+  ## 2.0.0
+  - major breaking change (from abandoned first run, never released)
+  ```
+  The `## 2.0.0` entry is an orphan from a version that was never published. There is no mechanism in the codebase to detect or remove stale version headings. The idempotency guard only fires on an exact match of the heading being inserted — it does not detect that the file already contains a higher version that was written by a previous aborted plan.
+- **Failing Scenario**: `callisto version` writes `## 2.0.0` to `foo/CHANGELOG.md`. User reverts manifest to `1.0.0`, adds patch changeset, re-runs `callisto version`. Result: `## 1.0.1` prepended above `## 2.0.0`. The orphaned `## 2.0.0` section permanently pollutes the changelog history. When `foo` is eventually actually released as `2.0.0` later (from a real major change), `prepend()` will find `## 2.0.0\n` already in the file and skip the write entirely (the idempotency guard fires) — so the real `2.0.0` release gets no changelog entry.
+- **Severity**: Medium — changelog corruption is user-visible and misleading; the second consequence (real `2.0.0` getting no entry) is the more damaging one.
+- **Verification Strategy**: Test: write a `CHANGELOG.md` with `## 2.0.0` section already present. Call `prepend()` with `## 1.0.1` rendered content. Assert the result file has `## 1.0.1` above `## 2.0.0` and that `## 2.0.0` appears exactly once. Then call `prepend()` again with `## 2.0.0` (simulating the real `2.0.0` release). Assert the call writes the new `## 2.0.0` content (currently it would silently no-op due to the idempotency guard).
+
+---
+
+### [Medium] `status.rs` uses raw string identity `entry.name == pkg.id.to_string()` instead of `PackageId::parse` + `matches()`
+
+- **Status**: PLAUSIBLE (pattern fully traced, triggering input verified to be constructible; actual `callisto add` recording behavior not traced).
+- **Location**: `crates/callisto-graph/src/commands/status.rs:L43`
+- **Classification**: Raw String Identity Smell
+- **Root Cause**: `aggregate.rs` (the version-plan path) resolves changeset entries via `PackageId::parse(&amp;entry.name)` → `resolve_target_package()` → `PackageId::matches()`. This correctly handles bare names (e.g., `"core-crate"`) matching prefixed graph IDs (e.g., `Bare("core-crate")`), and ecosystem-prefixed names (e.g., `"cargo/core-crate"`) matching the same Bare graph ID via the `(None, Some(_)) | (Some(_), None)` match arm. `status.rs` instead does `entry.name == pkg.id.to_string()`. `PackageId::to_string()` delegates to `display_name()`, which returns `"ecosystem/name"` for Prefixed IDs and bare `"name"` for Bare IDs. The divergence is triggered when a user writes a changeset with a fully-qualified ecosystem prefix (`callisto add cargo/core-crate:minor`) while the graph stores that package as `Bare("core-crate")` (which it does, because `IdentityResolver::resolve` reads `"core-crate"` from `Cargo.toml`'s `package.name` field and calls `PackageId::parse("core-crate")` → `Bare`). In that case: `entry.name = "cargo/core-crate"`, `pkg.id.to_string() = "core-crate"` — raw inequality, zero pending changesets reported. The same changeset would be correctly consumed by `callisto version` (via aggregate's `resolve_target_package`), so `status` and `version` diverge.
+- **Failing Scenario**: Cargo workspace. `callisto add cargo/core-crate:minor`. `callisto status` reports `pending_changesets: []` for `core-crate` and `pending_severity: None`. `callisto version` correctly bumps `core-crate` by Minor. The lifecycle E2E test does not cover this because it uses bare names in `callisto add`.
+- **Severity**: Medium — a user comparing status before and after adding a changeset sees no change and cannot rely on status to confirm their changeset was recorded. The version command is unaffected.
+- **Verification Strategy**: Unit test in `status.rs` module: construct a `LoadedChangeset` with `entry.name = "cargo/core-crate"` and a graph package with `id = PackageId::Bare("core-crate")`. Run `status()`. Assert `pending_changesets` contains the changeset name. Currently fails.
+
+---
+
+### [Low] `ApplyOptions::refresh_lockfiles` is a discarded parameter — `lockfile_refresh_results` is always `None`
+
+- **Status**: CONFIRMED. Code comment in `apply.rs:L17-L19` explicitly acknowledges this.
+- **Location**: `crates/callisto-graph/src/apply.rs:L17-L19`, `crates/callisto-cli/src/commands/version.rs:L29`
+- **Classification**: Discarded Parameter
+- **Root Cause**: `ApplyOptions { refresh_lockfiles: bool }` is constructed from `args.refresh_lockfiles` in the CLI handler and passed to `apply_version_plan`. The field is never read inside `apply_version_plan`; the comment says "not yet consulted here." `ApplyOutcome::lockfile_refresh_results` is documented as "always `None`." The `--refresh-lockfiles` flag is silently ignored and lockfiles are never programmatically refreshed regardless of the flag's value.
+- **Failing Scenario**: User runs `callisto version --refresh-lockfiles` expecting lockfiles to be updated. They are not. No diagnostic or warning is emitted.
+- **Severity**: Low — acknowledged in a code comment; not a data-corruption hazard. Users can discover the limitation by reading the code.
+- **Verification Strategy**: Test that `apply_version_plan` called with `ApplyOptions { refresh_lockfiles: true }` on a Cargo workspace with a dirty `Cargo.lock` produces an `ApplyOutcome` where `lockfile_refresh_results` is non-`None` and `Cargo.lock` is updated. Currently fails because the flag is never consulted.
+
+---
+
+### [High] Idempotency behavior for Q1/Q2 — second clean run IS a no-op (confirmed correct)
+
+This question was answered as part of the trace: after `callisto version` deletes all changeset files, a second invocation calls `aggregate()` → `load_changesets()` returns `Vec::new()` → `agg.consumed` is empty → `outcome.severities` has no Changeset-driven entries. With `NoInference` wired as the inference engine in the CLI, the inference loop also produces nothing. `plan_version` returns a `VersionPlan` with empty `bumps`, empty `changelog_writes`, and no `consumed_changesets`. `apply_version_plan` iterates nothing and returns an empty `ApplyOutcome`. The second run is correctly a no-op. Changelog is not written to. **No bug here.**
+
+---
+
+### [Confirmed Behavior] `callisto status` on a release branch post-version (Q10)
+
+After `callisto version` deletes the changeset files, `status()` calls `load_changesets()` which reads `.changeset/*.md` on disk and finds nothing. Every package reports `pending_changesets: []` and `pending_severity: None`. This is correct.
+
+---
+
+### Missing Tests (Q13–Q15)
+
+**Q13 — No test for second consecutive `callisto version` run being a no-op.** The lifecycle E2E test (`test_full_polyglot_workspace_release_lifecycle`) calls `version` exactly once. There is no test that calls `version`, then calls it a second time, and asserts that (a) the plan is empty, (b) no manifests are re-written, and (c) no changelog entries are appended.
+
+**Q14 — No test for the restore-changeset double-bump scenario.** No test anywhere exercises: `add` → `version` → `git restore .changeset/...` (without restoring manifest) → `version` again → assert version is NOT double-bumped. This is the exact failing scenario from finding 1.
+
+**Q15 — No test for deletion ordering invariant (manifest-write-before-changeset-delete).** No test verifies that a crash or failure between the manifest write phase and the changeset delete phase leaves the workspace in a state where re-running produces the correct result rather than a double-bump. This is a crash-safety coverage gap for finding 2.
+
+---
+
+### Summary table
+
+| # | Severity | Status | File:Line | Hazard Class |
+|---|---|---|---|---|
+| 1 | High | CONFIRMED | `commands/version.rs:L81,L125` | Fixpoint Staleness |
+| 2 | High | CONFIRMED | `apply.rs:L75-L162` | Crash-Safety / Un-Transactional |
+| 3 | Medium | CONFIRMED | `write.rs:L240-L246` | Silent Fallback (orphan detection absent) |
+| 4 | Medium | PLAUSIBLE | `commands/status.rs:L43` | Raw String Identity Smell |
+| 5 | Low | CONFIRMED | `apply.rs:L17-L19` | Discarded Parameter |
+| 6–8 | — | CONFIRMED | lifecycle tests / adversarial tests | Missing test coverage |
+
+None of findings 1–5 appear in the existing ledger at `/Users/gabe/Projects/callisto-findings/FINDINGS.md`.</result>
+<usage><subagent_tokens>80912</subagent_tokens><tool_uses>28</tool_uses><duration_ms>393476</duration_ms></usage>
+</task-notification>
