@@ -1,0 +1,20 @@
+<task-notification>
+<task-id>a5f46e74bf3ccafff</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a15bbbf7-aba0-415d-bfdc-c773ea65cfc7/tasks/a5f46e74bf3ccafff.output</output-file>
+<status>completed</status>
+<summary>Agent "Track F: CST fidelity — BOM/CRLF/decor fixes for cargo.rs and python.rs" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All bugs described in Track F are already fixed. Here is the full picture:
+
+**F1 — cargo.rs BOM stripping**: Already implemented. `CargoToml::open` strips the BOM at lines 35–37 before passing to `toml_edit`, stores `has_bom: bool` in the struct, and `persist()` re-prepends the BOM on write. Tests `handles_utf8_bom_cargo_toml` and `preserves_bom_on_write_round_trip` cover this.
+
+**F2 — python.rs BOM/CRLF restoration on write**: Already implemented. `PyprojectToml` has both `has_bom: bool` and `line_ending: LineEnding` fields, set in `open()`. The `render()` method (lines 66–75) applies CRLF conversion then prepends the BOM before every write. Tests `preserves_bom_and_crlf_line_endings_on_write`, `preserves_crlf_line_endings_without_bom_on_write`, and `preserves_bom_without_crlf_on_write` all exercise this.
+
+**F3 — cargo.rs `write_dependency` decor loss**: Already implemented. `WorkspaceCargoResolver::write_dependency` clones and reapplies decor in both the inline-table branch (lines 617–623) and the full-table branch (lines 625–635). Tests `write_dependency_preserves_trailing_comment_on_full_table_version` and `write_dependency_preserves_decor_on_inline_table_version` cover both branches.
+
+**Fixture coverage**: All required fixture helpers (`cargo_toml_bom_sample`, `pyproject_toml_bom_crlf_sample`, `pyproject_toml_crlf_no_bom_sample`, `pyproject_toml_bom_no_crlf_sample`) exist in `/Users/gabe/Projects/callisto/crates/callisto-fixtures/src/corpus.rs`.
+
+**Test run**: 45 tests passed across all suites with no failures. `cargo check --workspace` is clean.</result>
+<usage><subagent_tokens>50166</subagent_tokens><tool_uses>6</tool_uses><duration_ms>70336</duration_ms></usage>
+</task-notification>
