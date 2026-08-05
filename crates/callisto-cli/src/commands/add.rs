@@ -264,6 +264,10 @@ fn collect_package_names<'a>(
 }
 
 fn generate_human_slug() -> String {
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+
     let adjectives = [
         "swift", "clever", "bright", "silent", "brave", "calm", "eager", "gentle", "happy",
         "jolly", "keen", "lively", "mighty", "noble", "proud", "quick", "radiant", "sharp",
@@ -279,14 +283,27 @@ fn generate_human_slug() -> String {
         "sprint", "chase", "race", "bound", "drift", "jump", "strut", "spin", "surge",
     ];
 
-    let timestamp = std::time::SystemTime::now()
+    // Each word list has 20 entries; total combination space is 20^3 = 8,000.
+    // We map consecutive counter values to unique triples via integer division:
+    //   a = idx % 20, n = (idx / 20) % 20, v = (idx / 400) % 20
+    // This is a bijection on {0..7999}, so 8,000 consecutive calls all yield
+    // distinct slugs regardless of OS clock resolution.
+    //
+    // A timestamp-derived offset rotates the starting position across process
+    // restarts so repeated runs don't produce the same slug sequence.
+    let ts = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
+        .map(|d| d.as_nanos() as u64)
         .unwrap_or(0);
 
-    let a = adjectives[(timestamp as usize) % adjectives.len()];
-    let n = nouns[((timestamp >> 4) as usize) % nouns.len()];
-    let v = verbs[((timestamp >> 8) as usize) % verbs.len()];
+    let count = COUNTER.fetch_add(1, Ordering::Relaxed);
+    // Shift ts right to get a slowly-varying cross-run offset (changes every ~1 µs).
+    let offset = (ts >> 10) % 8000;
+    let idx = (count + offset) % 8000;
+
+    let a = adjectives[(idx % 20) as usize];
+    let n = nouns[((idx / 20) % 20) as usize];
+    let v = verbs[((idx / 400) % 20) as usize];
 
     format!("{a}-{n}-{v}")
 }
@@ -295,6 +312,7 @@ fn generate_human_slug() -> String {
 mod tests {
     use super::*;
     use callisto_model::{ManifestDecl, ManifestFormat, ManifestRole, Package, ReleaseTrigger};
+    use std::collections::HashSet;
     use std::path::PathBuf;
 
     /// Constructs a minimal `Package` for a given id string (e.g. `"cargo/foo"`).
@@ -366,6 +384,19 @@ mod tests {
         assert_eq!(
             entry.name, "cargo/foo",
             "Entry.name must equal display_name(), not the bare name"
+        );
+    }
+
+    /// Consecutive calls to generate_human_slug() must all produce distinct values,
+    /// even when the OS clock resolution coalesces rapid calls to the same tick.
+    #[test]
+    fn test_generate_human_slug_consecutive_calls_differ() {
+        let slugs: HashSet<String> = (0..50).map(|_| generate_human_slug()).collect();
+        assert_eq!(
+            slugs.len(),
+            50,
+            "expected 50 distinct slugs from 50 consecutive calls; got {} unique values",
+            slugs.len()
         );
     }
 

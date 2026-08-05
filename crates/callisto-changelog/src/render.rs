@@ -24,6 +24,19 @@ pub fn render_section(input: &ChangelogInput) -> Result<String, ChangelogError> 
         if entries.is_empty() {
             continue;
         }
+
+        // Pre-filter: only emit the section heading when at least one entry
+        // will produce visible output. Changeset entries with blank summaries
+        // are silently skipped in the loop below, so a section consisting
+        // entirely of such entries must not emit its heading.
+        let has_visible_output = entries.iter().any(|e| match &e.source {
+            ChangeSource::Changeset { summary, .. } => !summary.trim().is_empty(),
+            _ => true,
+        });
+        if !has_visible_output {
+            continue;
+        }
+
         out.push('\n');
         out.push_str(section_name);
         out.push('\n');
@@ -150,6 +163,30 @@ mod tests {
         assert!(
             !rendered.contains("- Fix bug.\n\n"),
             "trailing newline in summary must not produce a doubled blank line; got:\n{rendered}"
+        );
+    }
+
+    #[test]
+    fn test_render_section_all_empty_summaries_no_heading() {
+        // CORR-002: when every entry in a section has a blank summary the
+        // section heading must not be emitted at all.
+        let input = ChangelogInput {
+            package: PackageId::parse("my-pkg").unwrap(),
+            from: Version::parse("1.0.0", VersionGrammar::SemVer).unwrap(),
+            to: Some(Version::parse("1.1.0", VersionGrammar::SemVer).unwrap()),
+            entries: vec![ChangelogEntry {
+                severity: Severity::Patch,
+                source: ChangeSource::Changeset {
+                    filename: "empty.md".to_string(),
+                    summary: "".to_string(),
+                },
+            }],
+        };
+
+        let rendered = render_section(&input).unwrap();
+        assert!(
+            !rendered.contains("### Patch Changes"),
+            "section heading must not be emitted when all summaries are empty; got:\n{rendered}"
         );
     }
 
