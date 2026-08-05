@@ -1,0 +1,23 @@
+<task-notification>
+<task-id>a19e31b20379ffd03</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a15bbbf7-aba0-415d-bfdc-c773ea65cfc7/tasks/a19e31b20379ffd03.output</output-file>
+<status>completed</status>
+<summary>Agent "Track I: Fix npm validate-before-mutate in-memory state corruption" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All green. Here's what was done and the state of the fix:
+
+**The Bug (original committed code):** In `update_dependency_spec`, the code updated `overrides`/`resolutions` tables eagerly inside the same pass that checked `updated_in_section`, then returned the `DependencyNotFound` error afterward — leaving `self.doc` silently mutated.
+
+**The Fix (validate-first, already applied in working tree):** Before touching any part of `self.doc`, the method now checks whether `name` exists in the primary section (`dependencies`/`devDependencies`/etc.) using a read-only `.get()` + `.contains_key()` probe. If the key isn't there, it returns `Err(DependencyNotFound)` immediately — no mutation of the document has occurred at that point.
+
+**The regression test** (`update_dependency_spec_does_not_mutate_overrides_when_primary_section_missing`) in `/Users/gabe/Projects/callisto/crates/callisto-manifests/src/npm.rs` (lines 503–555):
+- Creates a `PackageJson` with `lodash` in `overrides` but NOT in `dependencies`.
+- Calls `update_dependency_spec("lodash", DepKind::Runtime, ...)`.
+- Asserts the call returns `Err`.
+- Asserts the `overrides` table is byte-for-byte identical to before the call.
+- Asserts the on-disk file is also unchanged.
+
+**Results:** 38 tests pass, `cargo check --workspace` clean, no uncommitted work created.</result>
+<usage><subagent_tokens>28813</subagent_tokens><tool_uses>4</tool_uses><duration_ms>67473</duration_ms></usage>
+</task-notification>
