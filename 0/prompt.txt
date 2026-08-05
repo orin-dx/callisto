@@ -1,0 +1,1 @@
+Should we git rid of the gix usage and make it all wasm compatible? Or do we duplicate some of this work with two paths to support moon?
