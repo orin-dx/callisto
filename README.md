@@ -2,8 +2,6 @@
   <img src="assets/callisto-logo.png" width="180" alt="Callisto Release Engine Logo" />
 </p>
 
-<h1 align="center">Callisto</h1>
-
 <p align="center">
   <b>The fast, crash-safe, polyglot monorepo release engine.</b><br />
   <i>Replaces Node.js runtimes, fragile regular expression edits, and duplicate CI matrix YAML with a single native Rust binary.</i>
