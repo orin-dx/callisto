@@ -1,0 +1,20 @@
+<task-notification>
+<task-id>ad83aa627abd827ff</task-id>
+<tool-use-id>toolu_01CpAR6o2UR7AXs8RqtUiFp6</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a15bbbf7-aba0-415d-bfdc-c773ea65cfc7/tasks/ad83aa627abd827ff.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix unconditional lockfile staging in apply.rs" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>The changes are clean and correct. Here's a summary of what was done:
+
+**Red phase** — Added `cargo_only_bump_does_not_stage_python_lockfile` test in `crates/callisto-graph/src/apply.rs` (new `#[cfg(test)] mod tests` block). The test creates a temp dir with both `Cargo.lock` and `uv.lock` on disk, builds a `VersionPlan` with a single Cargo-ecosystem bump, calls `apply_version_plan`, and asserts `uv.lock` is absent from staged paths. Test confirmed failing before fix.
+
+**Green phase** — Replaced the blind lockfile loop (lines 174–190) with two changes:
+1. A `HashSet&lt;Ecosystem&gt;` collection pass over `plan.bumps`: uses `bump.package.ecosystem()` for prefixed ids, falls back to inferring from write targets (manifest path → `ManifestFormat::from_path` → `ManifestFormat::ecosystem()`, or `CargoWorkspacePackage` → `Ecosystem::Cargo`) for bare ids.
+2. A `(lockfile, ecosystem)` pair table that gates each lockfile on `active_ecosystems.contains(ecosystem)` before checking disk existence.
+
+**Clippy** — No warnings.
+
+All 102 tests pass. Changes left in the working tree, not committed.</result>
+<usage><subagent_tokens>52239</subagent_tokens><tool_uses>40</tool_uses><duration_ms>375437</duration_ms></usage>
+</task-notification>
