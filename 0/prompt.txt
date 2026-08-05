@@ -1,0 +1,1 @@
+I thought we had addressed the dry-run issue with an architectural change no? Along with the plan and apply?
