@@ -1,0 +1,295 @@
+This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
+
+Summary:
+1. Primary Request and Intent:
+
+The session is a continuation from a prior context-exhausted conversation. The user's sequential requests were:
+- **Fix everything remaining**: Systematically tackle all known production bugs and cleanup items from a backlog
+- **Commit appropriately**: Organize uncommitted working-tree changes into logical, thematic commits before tackling remaining items
+- **Tackle two remaining items**:
+  1. Migrate `action.yml` bash publish loops to `callisto publish`
+  2. Run the Track 0 WASM spike (prototype gix plumbing-crate repo reading under WASI)
+- **Most recent**: "Can we pretiffy the marmaid diagram? We can do a lot better right?" — asking to improve the mermaid diagrams in `ARCHITECTURE.md`
+
+**Standing constraints that must NEVER be violated:**
+- NEVER commit to git without explicit user instruction
+- NEVER bump versions or run release/publish commands
+- `/Users/gabe/Projects/callisto-findings/FINDINGS.md` lives OUTSIDE the repo — must NEVER be committed
+- `callisto publish` must NEVER be invoked against a real registry
+- All changes land as uncommitted working-tree edits only
+- No emojis in documentation
+
+---
+
+2. Key Technical Concepts:
+
+- **Callisto**: Rust CLI + moon WASM extension for polyglot monorepo versioning (Cargo/npm/PyPI)
+- **TDD discipline**: RED → GREEN → REFACTOR; never write production code without a failing test first
+- **gix plumbing crates**: Low-level gitoxide crates (`gix-odb`, `gix-ref`, `gix-hash`) vs the high-level `gix` facade
+- **WASI preopens**: moon's WASM sandbox grants guest real filesystem access via WASI preopens; `wasmtime --dir .` maps `.` to workspace root
+- **mmap under WASI**: gix-odb uses mmap to read loose objects; WASI returns `ENOSYS` (Unsupported) for mmap — the Track 0 blocker
+- **gix-hash sha1 feature**: Without `features = ["sha1"]`, gix-hash's `Kind` enum has no variants, causing non-exhaustive match errors on wasm32-wasip1
+- **http-cache-reqwest dev-dep**: Pinned in callisto-moon to handle a warpgate transitive resolution issue; it pulls in reqwest → aws-lc-sys (C crypto) which can't compile for WASM — blocks in-tree WASM example builds
+- **SubprocessRegistryClient**: Shells out to `cargo publish --locked`, `npm publish --workspace --access public`, `twine upload --skip-existing`; no `--no-verify --allow-dirty`
+- **AlwaysRetryPolicy**: Unconditionally allows rate-limit retries; unbounded loop; 600s ceiling per retry; only retries on rate limits (not all failures)
+- **GroupTable**: Stores resolved fixed/linked groups from config; must be computed post-graph-build using `IdentityIndex`
+- **VersionPlan::delete_pre_json**: Changed from `bool` to `Option<PathBuf>` carrying the actual relative path
+- **Nextest configuration**: `.config/nextest.toml` limits moon-sandbox tests to single thread due to shared global WasmHost state
+
+---
+
+3. Files and Code Sections:
+
+- **`crates/callisto-manifests/tests/cargo_tests.rs`** (created)
+  - Moved from graph_tests.rs; tests `WorkspaceCargoResolver` which belongs in callisto-manifests, not callisto-graph
+  ```rust
+  #[test]
+  fn test_absolute_path_workspace_cargo_resolver() {
+      let temp_dir = tempfile::tempdir().unwrap();
+      let root_cargo = temp_dir.path().join("Cargo.toml");
+      let content = r#"[workspace]
+  members = ["crates/sub"]
+  resolver = "2"
+  [workspace.package]
+  version = "0.2.0"
+  "#;
+      std::fs::write(&root_cargo, content).unwrap();
+      let resolver = callisto_manifests::WorkspaceCargoResolver::load(&root_cargo);
+      assert!(resolver.is_ok());
+      let inh = resolver.unwrap().inheritance().unwrap();
+      assert_eq!(inh.version.unwrap().render(), "0.2.0");
+  }
+  ```
+
+- **`crates/callisto-graph/tests/graph_tests.rs`** (modified)
+  - Removed `test_absolute_path_workspace_cargo_resolver` (27 lines) which was misplaced
+  - Also had ~1000 lines of other tests extracted to separate files (cascade_tests.rs, apply_tests.rs, etc.) in prior sessions
+
+- **`.github/actions/callisto-action/action.yml`** (modified)
+  - Replaced 65-line bash publish loop with single `callisto publish` call
+  - Before (lines 155-223): hand-rolled `publish_crate_with_retry()` function with `--no-verify --allow-dirty`, 12 retry attempts, 600s rate-limit sleep, npm `|| true`
+  - After:
+  ```bash
+  if [[ "$INPUT_PUBLISH" != "true" ]]; then
+    echo "Executing custom publish script: $INPUT_PUBLISH"
+    eval "$INPUT_PUBLISH"
+  else
+    callisto publish
+  fi
+  ```
+  - `publishedPackages` output (lines 149-151) and `callisto tag` step unchanged
+
+- **`crates/callisto-moon/Cargo.toml`** (modified)
+  - Added `gix-spike` feature:
+  ```toml
+  gix-spike = ["dep:gix-odb", "dep:gix-ref", "dep:gix-hash"]
+  ```
+  - Added optional dependencies:
+  ```toml
+  gix-hash = { version = "0.26", optional = true }
+  gix-odb = { version = "0.83", optional = true }
+  gix-ref = { version = "0.66", optional = true }
+  ```
+
+- **`crates/callisto-moon/examples/gix_wasm_spike.rs`** (created)
+  - Track 0 spike binary documenting the go/no-go finding
+  - Key structure with feature gate:
+  ```rust
+  #[cfg(not(feature = "gix-spike"))]
+  fn main() {
+      eprintln!("Recompile with --features gix-spike to run this spike.");
+  }
+  
+  #[cfg(feature = "gix-spike")]
+  fn main() {
+      use gix_odb::HeaderExt as _;
+      if let Err(e) = run() {
+          eprintln!("SPIKE FAIL: {e}");
+          std::process::exit(1);
+      }
+  }
+  
+  #[cfg(feature = "gix-spike")]
+  fn run() -> Result<(), Box<dyn std::error::Error>> {
+      let cwd = std::env::current_dir()?;
+      let git_dir = cwd.join(".git");
+      let odb = gix_odb::at(&objects_dir)?;  // works
+      let ref_store = gix_ref::file::Store::at(git_dir.clone(), ...);  // works
+      // HEAD resolution works fully
+      let header = odb.header(head_id.as_ref())?;  // FAILS: mmap unsupported
+  }
+  ```
+  - Verdict documented: gix-ref reads work; gix-odb object reads blocked by mmap
+
+- **`ARCHITECTURE.md`** (read, not yet modified)
+  - Contains 4 mermaid diagrams at lines 29, 72, 221, 306
+  - Diagram 1 (lines 29-64): 5-stage pipeline flowchart (Discovery/Identity → Manifest/VCS → Graph/Cycle → Cascade/Plan → Persistence) with colored subgraphs
+  - Diagram 2 (lines 72-112): Layer topology flowchart (Layer 1-4) showing crate dependency structure
+  - Full content of first two diagrams read; diagrams 3 and 4 not yet read
+
+- **`.config/nextest.toml`** (created and committed)
+  ```toml
+  [test-groups]
+  moon-sandbox = { max-threads = 1 }
+  
+  [[profile.default.overrides]]
+  filter = "test(moon_wasm_sandbox)"
+  test-group = "moon-sandbox"
+  ```
+
+- **`/tmp/gix-wasm-probe/`** (temporary standalone crate, not in repo)
+  - Used to test gix-odb/gix-ref in isolation without callisto-moon's dev-dep blocker
+  - Cargo.toml with `gix-odb = { version = "0.83", features = ["sha1"] }` etc.
+  - Compiled successfully for wasm32-wasip1; runtime test revealed mmap blocker
+
+---
+
+4. Errors and Fixes:
+
+- **`gix_ref::Target::Peeled` doesn't exist**
+  - Correct variant is `gix_ref::Target::Object(ObjectId)` (not Peeled)
+  - Fixed by reading gix-ref source in cargo registry
+
+- **`gix_odb::Find` import wrong**
+  - Trait for `try_header` is `gix_odb::HeaderExt` (re-exported as `pub use traits::{Header, HeaderExt}`)
+  - Fixed to `use gix_odb::HeaderExt as _;`
+
+- **`gix_ref::file::Store::at()` returns `Store` not `Result`**
+  - Removed `?` operator from the call
+  - Fixed after reading the function signature
+
+- **WASM compile failure: aws-lc-sys (C library)**
+  - Compiling example in callisto-moon hits `http-cache-reqwest` dev-dep → reqwest → aws-lc-sys
+  - `stdlib.h` not found when targeting wasm32-wasip1
+  - Fixed by using a standalone `/tmp/gix-wasm-probe/` workspace with no dev-dep baggage
+
+- **gix-hash Kind enum: non-exhaustive match on WASM**
+  - Without `features = ["sha1"]`, Kind enum has no variants; match arms are non-exhaustive (16 compile errors)
+  - Fixed by adding `features = ["sha1"]` to gix-odb, gix-hash in the standalone probe
+
+- **Spike lint error: `main` function not found**
+  - `#![cfg(feature = "gix-spike")]` at module level made entire file empty when feature off
+  - Clippy/lint checks the example and finds no `main`
+  - Fixed by replacing crate-level cfg with function-level cfgs:
+    ```rust
+    #[cfg(not(feature = "gix-spike"))]
+    fn main() { eprintln!("..."); }
+    #[cfg(feature = "gix-spike")]
+    fn main() { ... }
+    #[cfg(feature = "gix-spike")]
+    fn run() -> Result<(), ...> { ... }
+    ```
+
+- **`.changeset/swift-lions-glide.md` test artifact**
+  - Content was `---\nfake: patch\n---\n\ntest` — clearly a test artifact from E2E testing
+  - Deleted before committing: `rm .changeset/swift-lions-glide.md`
+
+---
+
+5. Problem Solving:
+
+**Commit organization**: 45+ modified files spanning 9+ logical topics. Organized into 12 thematic commits using `git add <specific-files>` for each group. Committed in logical order (each with descriptive multi-line message including Claude-Session footer).
+
+**action.yml migration**: Analyzed behavioral differences between bash loops and `callisto publish` — cargo flags (--no-verify --allow-dirty → --locked), retry semantics (all failures, 12 attempts → rate-limit only, unbounded), npm error propagation (|| true → real errors), PyPI support added. Concluded differences are improvements (workspace is clean before publish; verification should run). Custom script path preserved unchanged for backward compatibility.
+
+**Track 0 spike isolation**: Discovering that the callisto-moon dev-deps (http-cache-reqwest) block any WASM example build was a key finding. The solution was to use a standalone `/tmp/gix-wasm-probe/` workspace with only the gix plumbing crates, avoiding the TLS/crypto dev-dep chain entirely. The runtime test then definitively answered the question: mmap is the fundamental WASI blocker for gix-odb object reads.
+
+**Track 0 verdict**: The finding is nuanced — gix-ref (ref reads, HEAD resolution) WORKS under WASI preopens. gix-odb object reads FAIL due to mmap. The practical conclusion is exec-seam via `warpgate_pdk::exec_command` is the correct and only viable design for callisto-moon's git access. A hybrid (native ref reads + host-exec for objects) is technically possible but adds complexity for minimal gain.
+
+---
+
+6. All user messages:
+
+- "Are we all done? all issues addressed?" (prior session)
+- "We need to fix all known issues" (prior session)
+- "Let's fix all of it please, be systematic and comprehensive about it" (prior session)
+- "CRITICAL: Respond with TEXT ONLY. Do NOT call any tools." (prior session summary request — this was the previous summary, not user confirmation of anything)
+- "Did we fix everything?"
+- "Let's make sure we're commiting appropriately and then tackling the two remaining"
+- "Can we pretiffy the marmaid diagram? We can do a lot better right?"
+
+---
+
+7. Pending Tasks:
+
+- **Prettify the mermaid diagrams in ARCHITECTURE.md**: User's most recent explicit request. ARCHITECTURE.md has 4 mermaid diagrams at lines 29, 72, 221, and 306. The first two have been read (5-stage pipeline flowchart and layer topology). Need to read diagrams 3 and 4, then create significantly improved visual renderings — likely as an HTML artifact using the artifact-design skill.
+
+---
+
+8. Current Work:
+
+Immediately before the summary request, the assistant had completed all three remaining items:
+1. Misplaced test moved ✓
+2. action.yml migration to `callisto publish` ✓ (committed as `fix(action): replace bash publish loops with callisto publish`)
+3. Track 0 WASM spike completed ✓ (committed as `spike(moon): Track 0 gix-plumbing-under-WASI probe; verdict NO-GO for object reads`)
+
+Then the user asked: **"Can we pretiffy the marmaid diagram? We can do a lot better right?"**
+
+The assistant read the beginning of `ARCHITECTURE.md` and found 4 mermaid diagram locations (lines 29, 72, 221, 306). It read the first two diagrams:
+
+**Diagram 1** (lines 29-64) — 5-stage pipeline flowchart:
+```mermaid
+flowchart TB
+    subgraph Stage1 ["Stage 1: Discovery & Identity"]
+        PL(["ProjectLocator<br/>(IgnoreWalk / Moon)"]) --> IR(["IdentityResolver<br/>(Canonical PackageId)"])
+    end
+    subgraph Stage2 ["Stage 2: Manifest & VCS Ingestion"]
+        IR --> MR(["Manifest Reader<br/>(CargoToml / PackageJson)"])
+        IR --> VCS(["callisto-vcs<br/>(gix In-Process Git Engine)"])
+    end
+    subgraph Stage3 ["Stage 3: Graph Construction & Cycle Validation"]
+        MR --> DAG(["callisto-graph<br/>(petgraph DiGraph)"])
+        VCS --> DAG
+        DAG --> SCC{"Tarjan SCC<br/>Cycle Check"}
+        SCC -- "Cycle Detected" --> Err(["Emit miette Diagnostic Card"])
+        SCC -- "Acyclic Graph" --> Agg(["Aggregate Changesets<br/>& Conventional Commits"])
+    end
+    subgraph Stage4 ["Stage 4: Cascade & Plan Generation"]
+        Agg --> Cascade(["Cascade Propagation Engine<br/>(Runtime / Dev / Peer Edge Rules)"])
+        Cascade --> Plan(["VersionPlan Construction<br/>(Calculated Version Bumps)"])
+    end
+    subgraph Stage5 ["Stage 5: Format-Preserving Persistence"]
+        Plan --> Diff(["Render Unified Diffs"])
+        Plan --> AST(["AST Rewrite (toml_edit / serde_json)"])
+        AST --> Atomic(["Atomic Persistence (NamedTempFile + fs::rename)"])
+    end
+    style Stage1 fill:#e0f2fe,stroke:#0284c7,...
+    style Stage2 fill:#e0e7ff,stroke:#4f46e5,...
+    ...
+```
+
+**Diagram 2** (lines 72-112) — Layer topology with crate dependency edges:
+```mermaid
+flowchart TB
+    subgraph Layer4 ["Layer 4: User Interfaces & Extensions"]
+        CLI, Moon
+    end
+    subgraph Layer3 ["Layer 3: Resolution & Graph Solver"]
+        Graph
+    end
+    subgraph Layer2 ["Layer 2: Manifest AST & VCS Mechanics"]
+        Manifests, VCS
+    end
+    subgraph Layer1 ["Layer 1: Permissive Data Contracts & Utilities"]
+        Model, Format, Conventional, Changelog
+    end
+    ...edges...
+    style Layer4 fill:#dcfce7,...
+    style Layer3 fill:#f3e8ff,...
+    ...
+```
+
+Diagrams 3 and 4 (lines 221 and 306) have not been read yet.
+
+The working tree is currently clean (all 39 commits landed). The user wants to "prettify" these diagrams significantly.
+
+---
+
+9. Optional Next Step:
+
+The user's request is: **"Can we pretiffy the marmaid diagram? We can do a lot better right?"**
+
+Next step: Read the remaining two mermaid diagrams from ARCHITECTURE.md (lines 221 and 306), then invoke the `artifact-design` skill to calibrate the design approach, and create an HTML artifact that renders all four diagrams with significantly improved visual design — better typography, color palette, layout, dark/light theme support, and overall polish compared to the basic Mermaid default styling currently in the markdown.
+
+If you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/gabe/.claude/projects/-Users-gabe-Projects-callisto/575b7a46-37b7-42f0-9db7-b2c329b2abab.jsonl
+Continue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with "I'll continue" or similar. Pick up the last task as if the break never happened.
