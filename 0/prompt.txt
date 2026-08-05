@@ -1,0 +1,246 @@
+<task-notification>
+<task-id>a9592e9c03adda7e3</task-id>
+<tool-use-id>toolu_012WtWuySwH2ufR5hoJjD86v</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a15bbbf7-aba0-415d-bfdc-c773ea65cfc7/tasks/a9592e9c03adda7e3.output</output-file>
+<status>completed</status>
+<summary>Agent "Hardcoded values audit: callisto-cli commands layer" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Now I have everything needed. Here is the exhaustive audit report.
+
+---
+
+## Hardcoded-Values Audit — `callisto-cli/src/`
+
+All 25 `.rs` files read. No prior FINDINGS.md entries cover any of these items.
+
+---
+
+### [High] `add` and `pre` ignore `ws.config.changesets_dir`, always write to `.changeset/`
+
+- **Status**: CONFIRMED — execution fully traced
+- **Location**: `commands/add.rs:L180,L183`, `commands/pre.rs:L70-L71`
+- **Classification**: Silent Fallback / Spec Drift
+- **Root Cause**: `ResolvedConfig` (in `callisto-graph/src/config/resolve.rs:L17`) exposes `changesets_dir: PathBuf`, populated from `callisto.toml`'s `[changesets] dir` field, defaulting to `".changeset"`. `Workspace` re-exposes it as `pub config: ResolvedConfig` (`lib.rs:L53`). The graph layer reads `cfg.changesets_dir` correctly (`aggregate.rs:L46`). But `add.rs` hardcodes the path in two separate places:
+  ```rust
+  // add.rs:180
+  let changeset_dir = ws.root.join(".changeset");
+  // add.rs:183
+  let rel_path = format!(".changeset/{filename}");
+  ```
+  And `pre.rs` does the same despite having a `PRE_JSON_REL` constant:
+  ```rust
+  // pre.rs:70-71 (enters the changeset dir via hardcoded literal)
+  let pre_dir = ws.root.join(".changeset");
+  let pre_path = pre_dir.join("pre.json");
+  ```
+  Both should be `ws.root.join(&amp;ws.config.changesets_dir)`.
+- **Failing Scenario**: User sets `[changesets]\ndir = "my-changes"` in `callisto.toml`. `callisto status`/`callisto version` read from `my-changes/` (graph layer uses `changesets_dir`). `callisto add` writes to `.changeset/` (hardcoded). All newly written changesets are invisible to subsequent commands.
+- **Severity**: High — functional mismatch silently discards all changesets when a non-default dir is configured
+- **Verification Strategy**: Add `[changesets]\ndir = "custom-cs"` to a fixture `callisto.toml`, run `callisto add --package foo:patch --summary test`, assert the file appears under `custom-cs/`, not `.changeset/`.
+
+---
+
+### [High] `publish --dry-run` emits `PublishPlan` JSON; real run emits `PublishReport` JSON — no discriminating field
+
+- **Status**: CONFIRMED
+- **Location**: `commands/publish.rs:L35`, `commands/publish.rs:L51`
+- **Classification**: Spec Drift / Silent Fallback
+- **Root Cause**: The dry-run branch calls `write_json(&amp;mut std::io::stdout(), &amp;plan)` where `plan: PublishPlan`, while the real-run branch calls `write_json(&amp;mut std::io::stdout(), &amp;report)` where `report: PublishReport`. These are structurally different types: `PublishPlan` contains `releases: Vec&lt;PublishTarget&gt;`, while `PublishReport` contains `attempts: Vec&lt;PublishAttempt&gt;`. No `dryRun` field is emitted in either path. A JSON consumer receiving output from `callisto publish --format json` cannot determine whether they are looking at a plan or a publish report without schema introspection.
+- **Failing Scenario**: A CI consumer parses `callisto publish --format json --dry-run` expecting to get the same schema as `callisto publish --format json`. The field `attempts` is absent (replaced by `releases`), and the `status` per-package field is absent entirely.
+- **Severity**: High — breaks any downstream consumer that handles both modes
+- **Verification Strategy**: Run `callisto publish --format json --dry-run | jq .releases` and `callisto publish --format json | jq .attempts` — only one of each pair will be non-null.
+
+---
+
+### [Medium] `add.rs` hardcodes `.changeset` without a named constant; `pre.rs`'s `PRE_JSON_REL` constant is not shared
+
+- **Status**: CONFIRMED (directly observed; a sub-issue of the high finding above)
+- **Location**: `commands/add.rs:L180,L183`, `commands/pre.rs:L16,L70-L71`
+- **Classification**: Hardcoded Constant Dummy Smell
+- **Root Cause**: `pre.rs` defines `const PRE_JSON_REL: &amp;str = ".changeset/pre.json"` and uses it on the `exit` path (`root.join(PRE_JSON_REL)`, L129). But on the `enter` path it duplicates the same path as two `.join()` calls (`join(".changeset")` + `join("pre.json")`), which disagrees with the constant. `add.rs` has no such constant at all. Neither uses `ws.config.changesets_dir`.
+- **Severity**: Medium (symptom of the High finding; independently a maintainability hazard if the dir name is ever changed)
+
+---
+
+### [Medium] `add.rs` slug `unwrap_or(0)` silently collapses to a single fixed slug when the system clock is before UNIX epoch
+
+- **Status**: CONFIRMED
+- **Location**: `commands/add.rs:L266-L270`
+- **Classification**: Silent Fallback
+- **Root Cause**:
+  ```rust
+  let timestamp = std::time::SystemTime::now()
+      .duration_since(std::time::UNIX_EPOCH)
+      .map(|d| d.as_nanos())
+      .unwrap_or(0);
+  ```
+  When `SystemTime::now() &lt; UNIX_EPOCH` (misconfigured system clock, or container with a broken clock), `duration_since` returns `Err`. The fallback is `0`. With timestamp `0`, all three modulo operations produce index 0, so every invocation of `generate_human_slug()` returns `"swift-foxes-run"`. Since `atomic_write` will then overwrite the same destination filename for every `add` invocation, all but the last changeset are silently destroyed.
+- **Failing Scenario**: Container with clock set to 1969-12-31. Every `callisto add` writes to `.changeset/swift-foxes-run.md`, each silently overwriting the prior one.
+- **Severity**: Medium — data loss under a reachable (misconfigured-clock) condition
+- **Verification Strategy**: In a unit test, replace `SystemTime::now()` with a seeded constant of `0` and assert that multiple calls still produce distinct slugs (they won't — this is the failing assertion).
+
+---
+
+### [Medium] `pre.rs` JSON output hardcodes `"pre"` and `"exit"` as string literals instead of serializing `PreMode`
+
+- **Status**: CONFIRMED — divergent serialization paths verified
+- **Location**: `commands/pre.rs:L90,L113,L151,L162`
+- **Classification**: Spec Drift
+- **Root Cause**: `PreMode` has `#[serde(rename_all = "lowercase")]` in `callisto-format/src/pre.rs:L40`. `write_pre_json` correctly goes through `serde_json::to_value(state.mode)` (L132 of `pre.rs`) — so the `.changeset/pre.json` file always gets the enum's canonical serialization. But the CLI's own stdout JSON output for `--format json` hardcodes the strings:
+  ```rust
+  // L113 — real enter path
+  "mode": "pre",
+  // L162 — real exit path
+  "mode": "exit",
+  // L90 — dry-run enter preview
+  preview(global, "pre", &amp;tag, &amp;text)?;
+  // L151 — dry-run exit preview
+  preview(global, "exit", &amp;pre_state.tag, &amp;updated)?;
+  ```
+  These four strings are a manual copy of the serde rendering. The `.json` file and the CLI JSON stdout now have two independent serialization paths for the same enum. If `rename_all` is changed or a new variant is added, they will diverge silently.
+- **Severity**: Medium — latent spec drift; currently correct but mechanically fragile
+- **Fix direction**: Use `serde_json::to_value(PreMode::Pre).unwrap()` and `serde_json::to_value(PreMode::Exit).unwrap()` at the four call sites, or serialize a `PreMode` value directly via the `json!` macro.
+
+---
+
+### [Medium] `snapshot` hardcodes `refresh_lockfiles: false` — the flag exists on `version` but was never wired for `snapshot`
+
+- **Status**: CONFIRMED
+- **Location**: `commands/snapshot.rs:L41`
+- **Classification**: Discarded Parameter / Spec Drift
+- **Root Cause**:
+  ```rust
+  let apply_opts = ApplyOptions {
+      refresh_lockfiles: false,
+  };
+  ```
+  `VersionArgs` has `--refresh-lockfiles` (`cli.rs:L111`), wired correctly into `ApplyOptions` in `version.rs:L29`. `SnapshotArgs` has no corresponding flag, and the apply options struct is hardcoded to `false`. Snapshot releases write manifest changes just like version bumps do — there is no technical reason that lockfile refresh is appropriate for one but permanently disabled for the other.
+- **Failing Scenario**: A user runs `callisto snapshot --tag nightly` after updating dependencies, expecting lockfiles to be regenerated (as `callisto version --refresh-lockfiles` would). The lockfiles are never updated.
+- **Severity**: Medium — feature parity gap; `--refresh-lockfiles` on `snapshot` is absent from both `cli.rs` and the handler
+
+---
+
+### [Medium] `status --check` magic exit code `2` — bare integer, no named constant
+
+- **Status**: CONFIRMED
+- **Location**: `commands/status.rs:L44`
+- **Classification**: Hardcoded Constant
+- **Root Cause**:
+  ```rust
+  Ok(ExitCode::from(2))
+  ```
+  The semantics of exit code `2` ("no changesets pending") are documented only in `main.rs:L21` as a prose comment. No named constant (e.g., `const EXIT_NO_CHANGESETS_PENDING: u8 = 2`) exists. External tooling, shell scripts, and the documentation must hard-code the magic `2` separately with no mechanical link to the source.
+- **Severity**: Medium — documentation/maintenance hazard; any consumer must know the magic number
+
+---
+
+### [Low] `completions.rs` hardcodes `"callisto"` as the binary name in generated completion scripts
+
+- **Status**: CONFIRMED
+- **Location**: `commands/completions.rs:L12`
+- **Classification**: Hardcoded Constant
+- **Root Cause**:
+  ```rust
+  generate(args.shell, &amp;mut cmd, "callisto", &amp;mut io::stdout());
+  ```
+  `clap_complete::generate` uses this string as the program name in the generated completion script. If the binary is distributed under a different name (e.g., `cali`, or platform-specific packaging renames it), the generated completion script will reference the wrong command name. The binary name is already encoded in the `Cli` command definition (`#[command(name = "callisto")]` in `cli.rs:L7`) — the generate call should derive it from `cmd.get_name()` rather than a separate string literal.
+- **Severity**: Low — only affects renamed distributions
+
+---
+
+### [Low] `add.rs` slug generation uses magic bit-shifts `&gt;&gt; 4` and `&gt;&gt; 8` with no explanatory comment
+
+- **Status**: CONFIRMED
+- **Location**: `commands/add.rs:L272-L273`
+- **Classification**: Hardcoded Constant / Magic Number
+- **Root Cause**:
+  ```rust
+  let a = adjectives[(timestamp as usize) % adjectives.len()];
+  let n = nouns[((timestamp &gt;&gt; 4) as usize) % nouns.len()];
+  let v = verbs[((timestamp &gt;&gt; 8) as usize) % verbs.len()];
+  ```
+  The shifts 4 and 8 are chosen to use non-overlapping bit ranges of the nanosecond timestamp, spreading selections across the three word lists. No comment explains this. The modulo against `.len()` (correct, dynamic) means the array sizes are not brittle. However the effective collision domain over any 5.12µs window (`20 × 256ns`) is only `20 × 16 × 1 = 320` distinct slugs (verb repeats every 5.12µs, noun repeats every 320ns). Two `callisto add` calls within the same nanosecond window can only produce one of 16 `(adj, noun)` pairs for any given verb.
+- **Note**: The `% adjectives.len()` pattern is correct and will adapt automatically to word-list changes. Only the shift constants are magic.
+- **Severity**: Low — affects slug uniqueness guarantees under rapid sequential calls but not correctness of the overall flow
+
+---
+
+### [Low] `render/mod.rs` test hardcodes `schema_version: 1` instead of `callisto_model::SCHEMA_VERSION`
+
+- **Status**: CONFIRMED
+- **Location**: `render/mod.rs:L182`
+- **Classification**: Hardcoded Constant
+- **Root Cause**:
+  ```rust
+  PublishReport {
+      schema_version: 1,
+  ```
+  If `SCHEMA_VERSION` is bumped, the test will silently construct a report with a stale version number, potentially exercising an out-of-date serialization.
+- **Severity**: Low — test fidelity gap
+
+---
+
+### [Low] `version`, `snapshot`, `tag`, `init` JSON outputs lack a `dryRun` field; `add` and `pre` include one — inconsistent contract
+
+- **Status**: CONFIRMED
+- **Location**: `commands/version.rs:L43`, `commands/snapshot.rs:L49`, `commands/tag.rs:L63`, `commands/init.rs:L49`
+- **Classification**: Spec Drift / Inconsistent Output Contract
+- **Root Cause**: `add.rs` emits `"dryRun": true` in its dry-run JSON path. `pre.rs` emits `"dryRun": true` in its dry-run preview. But `version`, `snapshot`, `tag`, and `init` all delegate to typed report structs (`VersionReport`, `SnapshotReport`, `TagReport`, `InitReport`) that have no `dryRun` field. Their JSON output is structurally identical whether files were actually written or not. A JSON consumer cannot determine from the output alone whether `version --dry-run` actually bumped any manifests.
+- **Note**: The text renderer for `version.rs:L38-L40` does check `global.dry_run` and prints `[DRY-RUN]`, but the JSON path does not. `render/render_tag` at `mod.rs:L106` also receives a `dry_run: bool` argument for text output — the JSON path ignores it.
+- **Severity**: Low — affects only `--format json` consumers; text output is correct
+
+---
+
+### [Low] `add.rs:L144` `unwrap_or("Updated package.")` is dead code — the fallback string is unreachable given the control flow
+
+- **Status**: CONFIRMED
+- **Location**: `commands/add.rs:L144`
+- **Classification**: Hardcoded Constant / Dead Code
+- **Root Cause**:
+  ```rust
+  let summary_text = summary.as_deref().unwrap_or("Updated package.");
+  ```
+  This is inside the `else if tty::is_interactive()` branch (L49). By L144, the wizard has just completed Step 4 (L128-L141), which either uses the pre-supplied `--summary` (`Some`) or prompts and sets `summary = Some(input_summary)`. Either way `summary` is always `Some` by L144. If `summary` were somehow `None` here — which the control flow prevents — the fallback `"Updated package."` would silently produce a low-quality default changeset summary rather than returning an error.
+- **Severity**: Low — unreachable today, but a misleading safety net that could mask a future refactor bug
+
+---
+
+## Dry-Run Field Audit (all 13 commands)
+
+| Command | Writes files | `--dry-run` handled | `dryRun: true` in JSON? |
+|---|---|---|---|
+| `add` | Yes | Yes | Yes (dry only; absent in real) |
+| `pre enter/exit` | Yes | Yes | Yes (dry only; absent in real) |
+| `version` | Yes | Yes (skips apply) | **No** — VersionReport has no `dryRun` field |
+| `snapshot` | Yes | Yes (skips apply) | **No** — SnapshotReport has no `dryRun` field |
+| `init` | Yes | Yes (passes permit) | **No** — InitReport has no `dryRun` field |
+| `tag` | Yes (git tags) | Yes (passes permit) | **No** — TagReport has no `dryRun` field; text renderer does receive `dry_run` bool |
+| `publish` | Yes | Yes (exits early) | **No** — emits `PublishPlan` on dry-run, `PublishReport` on real (different schemas, High severity) |
+| `status` | No | n/a | n/a |
+| `validate` | No | n/a | n/a |
+| `plan-publish` | No | n/a | n/a |
+| `compose-pr-body` | No | n/a | n/a |
+| `completions` | No | n/a | n/a |
+| `schema` | No | n/a | n/a |
+
+---
+
+## Finding Summary
+
+| # | Severity | File | Lines | Category |
+|---|---|---|---|---|
+| 1 | **High** | `commands/add.rs`, `commands/pre.rs` | 180, 183, 70-71 | Config-ignoring hardcoded path (`ws.config.changesets_dir` never consulted) |
+| 2 | **High** | `commands/publish.rs` | 35, 51 | Different JSON schemas for dry-run vs real run, no discriminating field |
+| 3 | **Medium** | `commands/add.rs` | 266-270 | `unwrap_or(0)` silent timestamp fallback collapses slug to constant `"swift-foxes-run"` |
+| 4 | **Medium** | `commands/pre.rs` | 90, 113, 151, 162 | `PreMode` serde strings hardcoded in JSON output independently of the enum's serialization |
+| 5 | **Medium** | `commands/snapshot.rs` | 41 | `refresh_lockfiles: false` permanently hardcoded; flag exists on `version` but absent from `snapshot` |
+| 6 | **Medium** | `commands/status.rs` | 44 | Magic exit code `2` — no named constant |
+| 7 | **Low** | `commands/completions.rs` | 12 | Binary name `"callisto"` hardcoded instead of derived from `cmd.get_name()` |
+| 8 | **Low** | `commands/add.rs` | 272-273 | Magic bit-shifts `&gt;&gt; 4`, `&gt;&gt; 8` with no comment |
+| 9 | **Low** | `render/mod.rs` | 182 | Test hardcodes `schema_version: 1` |
+| 10 | **Low** | `commands/version.rs`, `snapshot.rs`, `tag.rs`, `init.rs` | — | JSON output lacks `dryRun` field; inconsistent with `add`/`pre` |
+| 11 | **Low** | `commands/add.rs` | 144 | Dead `unwrap_or("Updated package.")` — unreachable but misleading hardcoded fallback |
+
+No `// TODO`, `// FIXME`, or `// PLUMBED` markers were found in any of the 25 files.</result>
+<usage><subagent_tokens>69918</subagent_tokens><tool_uses>53</tool_uses><duration_ms>407751</duration_ms></usage>
+</task-notification>
