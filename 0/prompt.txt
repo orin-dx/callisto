@@ -1,0 +1,145 @@
+<task-notification>
+<task-id>a2ded7e20fa135ffd</task-id>
+<tool-use-id>toolu_01MhCs3SDPsfokUsiigztVbB</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a15bbbf7-aba0-415d-bfdc-c773ea65cfc7/tasks/a2ded7e20fa135ffd.output</output-file>
+<status>completed</status>
+<summary>Agent "Hardcoded values audit: callisto-vcs, callisto-conventional, callisto-changelog, callisto-moon, callisto-fixtures" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Now I have read every `.rs` file across all five crates. Let me compile the complete findings.
+
+---
+
+## Hardcoded-Values Audit: callisto-vcs, callisto-conventional, callisto-changelog, callisto-moon, callisto-fixtures
+
+---
+
+### [High] `MoonProjectLocator` silently drops Python and Go packages from the workspace graph
+
+- **Status**: CONFIRMED (`crates/callisto-moon/src/locator.rs:119-138` and `:161-175` fully traced)
+- **Location**: `crates/callisto-moon/src/locator.rs:L119-138` (`projects()`), `L161-175` (`declared_edges()`)
+- **Classification**: Hardcoded constant / Spec Drift
+- **Root Cause**: Both `projects()` and `declared_edges()` check only `Cargo.toml` and `package.json` to infer the ecosystem for a moon project root. `pyproject.toml` (Python/PEP 440 — a live, non-stub ecosystem per the git log and FINDINGS history) and `go.mod` (Go, specified in the architecture docs) are not checked. A moon workspace project that contains only `pyproject.toml` passes the `abs_path` loop but both `has_cargo` and `has_npm` are false, so no `ProjectRoot` is pushed and the package is silently absent from callisto's graph. The same blind spot repeats in `declared_edges()`, which uses identical `Cargo.toml`/`package.json` sniffs to pick `from_eco`/`to_eco` and `continue`s on anything else.
+- **Failing Scenario**: A moon workspace with `packages/py-svc/pyproject.toml` as a Python package. `callisto status` (or any other command) through the moon extension reports zero packages for that entry — no error, no warning, no graph node. Cross-ecosystem dependency edges from a Cargo package to `py-svc` are silently dropped by `declared_edges()`.
+- **Severity**: High
+- **Verification Strategy**: Add a `has_python = abs_path.join("pyproject.toml").exists()` check alongside the existing `has_cargo`/`has_npm` pair; assert a fixture moon project graph containing a `pyproject.toml`-only project root now appears in `projects()` output.
+
+---
+
+### [Medium] Moon version constraint string duplicated — parse string and error display can drift
+
+- **Status**: CONFIRMED (`crates/callisto-moon/src/extension.rs:L27-35` fully traced)
+- **Location**: `crates/callisto-moon/src/extension.rs:L27-35`
+- **Classification**: Hardcoded constant / duplication hazard
+- **Root Cause**: `check_moon_version` hardcodes the version range twice as two separate string literals: once to parse into a `semver::VersionReq` (`"&gt;=1.30.0, &lt;2.0.0"`) and once inside the returned `Err` as the human-facing `required:` field. If the `parse` string is updated (e.g., to `"&gt;=1.35.0, &lt;2.0.0"`) but the `Err` string is not (or vice versa), the error message silently lies to the user. Additionally, `.unwrap()` on a compile-time constant string means a typo in that string (invalid semver req syntax) turns into a runtime panic, not a compile-time failure.
+- **Failing Scenario**: Developer updates the accepted range to `"&gt;=1.35.0"` in the `parse` call but misses the `required:` string in the `Err`; users running moon 1.31 receive `"moon &gt;=1.30.0, &lt;2.0.0 required"` as the error even though 1.31 is now accepted.
+- **Severity**: Medium
+
+---
+
+### [Medium] Severity mapping entirely hardcoded with no user extension point
+
+- **Status**: CONFIRMED (`crates/callisto-conventional/src/severity.rs:L5-13` fully traced)
+- **Location**: `crates/callisto-conventional/src/severity.rs:L5-13`
+- **Classification**: Hardcoded constant / no configurability
+- **Root Cause**: `raw_severity` is a fixed `match` with three literal arms: `"feat"` → `Minor`, `"fix" | "perf" | "revert"` → `Patch`, `_` → `None`. Types that the conventional commit spec defines but callisto makes produce no bump (`"docs"`, `"chore"`, `"style"`, `"refactor"`, `"test"`, `"build"`, `"ci"`) are silently downgraded to `None`. Custom org-level types (`"security"`, `"deprecate"`) also fall through. There is no `callisto.toml` section, no trait, and no injection point that would let a user add `"security" =&gt; Severity::Minor` or reclassify `"docs"` as `Patch` without forking the crate.
+- **Failing Scenario**: A team tracking `"security"` commits (common in security-sensitive monorepos) as a conventional commit type. All their security commits produce `Severity::None`, so no version bump is ever inferred from them. The fix (changeset) must be placed manually every time.
+- **Severity**: Medium
+
+---
+
+### [Medium] Unrecognized moon subcommand silently falls through to `status` — no error path for typos
+
+- **Status**: CONFIRMED (`crates/callisto-moon/src/extension.rs:L94-101`, `L143-219` fully traced)
+- **Location**: `crates/callisto-moon/src/extension.rs:L94-101` (`resolve_subcommand`), `L143-219` (`execute_extension` `match`)
+- **Classification**: Silent Fallback / hardcoded default
+- **Root Cause**: `resolve_subcommand` returns whatever string `args[0]` is. `execute_extension`'s `match` on that string has arms for `"plan-publish" | "plan_publish"` and `"validate"`, with a `_ =&gt;` arm that unconditionally runs `status`. Any misspelled subcommand (e.g., `"plan_version"`, `"sttaus"`) silently executes `status` instead. The doc comment acknowledges this: `"There is currently no distinct 'unrecognized subcommand' error path."` The `exit_code` will be `0` and the response will look like a successful `status` output, making the typo completely invisible.
+- **Failing Scenario**: CI pipeline running `moon run :callisto -- plan_publish` (underscore, not hyphen). Silently runs `status`, exit code 0, appears to succeed. No publish plan is generated. Pipeline continues and produces no artifacts.
+- **Severity**: Medium
+
+---
+
+### [Medium] `MoonProjectLocator::load_graph` discards CommandError details into generic `MoonUnavailable`
+
+- **Status**: CONFIRMED (`crates/callisto-moon/src/locator.rs:L36-41` fully traced)
+- **Location**: `crates/callisto-moon/src/locator.rs:L36-41`
+- **Classification**: Silent Fallback (discarded error detail)
+- **Root Cause**: `runner.run("moon", &amp;["project-graph", "--json"], ..).map_err(|_err| LocateError::MoonUnavailable)?` — the `_err` is named-underscore-discarded. `CommandError::Io`, `CommandError::Failed { stderr, .. }` (non-zero exit with moon's own error message), and `CommandError::NotFound` are all collapsed to the same `LocateError::MoonUnavailable` with no payload. Additionally, the non-zero exit branch (line 40) also discards `out.stderr` entirely. The user sees "moon unavailable" whether moon crashed with a specific error, printed a deprecation warning to stderr before exiting, or was never on `PATH`.
+- **Failing Scenario**: `moon project-graph --json` fails with `"error: incompatible moon version"` on stderr and exit code 1. The user sees `LocateError::MoonUnavailable` with no further detail; the actual moon error is gone.
+- **Severity**: Medium
+
+---
+
+### [Low-Medium] `Path::display()` for git pathspec arguments produces backslash paths on Windows
+
+- **Status**: CONFIRMED (`crates/callisto-vcs/src/shell.rs:L131` fully traced)
+- **Location**: `crates/callisto-vcs/src/shell.rs:L131`
+- **Classification**: OS assumption / path separator
+- **Root Cause**: `pathspecs.iter().map(|p| p.display().to_string())` uses `std::fmt::Display` for `Path`, which emits backslash separators (`\`) on Windows. These strings are then appended as `-- &lt;pathspecs&gt;` arguments to `git log`. Git on Windows accepts forward slashes in pathspecs but may not correctly handle native backslash-separated paths in all invocation contexts, particularly when the repo uses a Unix-style index (common in cross-platform repos).
+- **Failing Scenario**: Callisto running on Windows (or in a WSL/Cygwin hybrid environment) with a package at `crates\pkg-a`. The shell fallback's `git log` receives `-- crates\pkg-a`; git may interpret this as a file named literally `crates\pkg-a` rather than the directory `crates/pkg-a`, returning an empty commit list.
+- **Severity**: Low-Medium (Low given darwin-only deployment declared in env, but a latent cross-platform defect)
+
+---
+
+### [Low] Changelog section headings are inline string literals — not named constants
+
+- **Status**: CONFIRMED (`crates/callisto-changelog/src/render.rs:L15,L19-23`)
+- **Location**: `crates/callisto-changelog/src/render.rs:L15`, `L19-23`
+- **Classification**: Hardcoded constant (inline magic strings)
+- **Root Cause**: Four heading strings appear as inline literals: `"## Unreleased"`, `"### Major Changes"`, `"### Minor Changes"`, `"### Patch Changes"`. These are also the strings that `extract_section` in `write.rs` must implicitly agree with (it scans for `starts_with("## ")` and `starts_with("# ")` but doesn't parse section headings by name). If one is changed the other doesn't fail at compile time. No named constants are defined; no config option controls the text.
+- **Severity**: Low
+
+---
+
+### [Low] `"refs/callisto/pre-cursor/"` custom ref namespace is hardcoded and not configurable
+
+- **Status**: CONFIRMED (`crates/callisto-conventional/src/pre_cursor.rs:L8`)
+- **Location**: `crates/callisto-conventional/src/pre_cursor.rs:L8`
+- **Classification**: Hardcoded constant
+- **Root Cause**: `format!("refs/callisto/pre-cursor/{}", package.display_name())` embeds the `refs/callisto/pre-cursor/` namespace directly. This namespace is not configurable in `callisto.toml`. If a user's repo already uses `refs/callisto/` for another purpose, or if callisto ever needs to version/migrate its ref namespace, there is no mechanism to change it without code changes.
+- **Severity**: Low
+
+---
+
+### [Low] Git ref-log messages for tag operations are hardcoded strings
+
+- **Status**: CONFIRMED (`crates/callisto-vcs/src/lib.rs:L394`, `L427`)
+- **Location**: `crates/callisto-vcs/src/lib.rs:L394` (`"callisto create tag"`), `L427` (`"callisto floating major"`)
+- **Classification**: Hardcoded constant
+- **Root Cause**: `self.repo.reference(ref_name, oid, PreviousValue::MustNotExist, "callisto create tag")` and `self.repo.reference(ref_name, oid, PreviousValue::Any, "callisto floating major")` pass hardcoded strings as the git reflog message. These appear in `git reflog` output. No config option controls this message.
+- **Severity**: Low
+
+---
+
+### [Low] Unix-only `":"` PATH separator hardcoded in WASM sandbox tests
+
+- **Status**: CONFIRMED (`crates/callisto-moon/tests/moon_wasm_sandbox.rs:L223`)
+- **Location**: `crates/callisto-moon/tests/moon_wasm_sandbox.rs:L223`
+- **Classification**: OS assumption / path separator
+- **Root Cause**: `new_path.push(":");` concatenates PATH entries with `":"` (Unix separator). Windows uses `";"`. Also `std::os::unix::fs::symlink` is used at line 294 — `unix`-specific API. Both are in test code, and the declared OS is darwin, but these make the test suite not portable to Windows without modification.
+- **Severity**: Low
+
+---
+
+### [Low] `DefaultHasher` in `TreeSnapshot` is implementation-defined across Rust versions
+
+- **Status**: CONFIRMED (`crates/callisto-fixtures/src/dry_run.rs:L77-78`)
+- **Location**: `crates/callisto-fixtures/src/dry_run.rs:L77-78`
+- **Classification**: Magic implementation dependency
+- **Root Cause**: `DefaultHasher::new()` uses Rust's default hasher, which is explicitly documented as implementation-defined and may change between Rust versions. Both `before` and `after` snapshots in `assert_no_disk_mutation` are taken within the same test binary invocation, so in practice they use the same hasher version. The risk is only if the snapshot mechanism were ever serialized to disk (it isn't today). Nonetheless, `FxHasher` or a stable algorithm (e.g., `std::collections::hash_map::DefaultHasher` can change; it changed from SipHash13 to SipHash24 in Rust 1.0 history). Current usage is safe but fragile by construction.
+- **Severity**: Low
+
+---
+
+## Not-A-Bug Clarifications (items audited, found correct)
+
+**BREAKING CHANGE detection** — Both `"BREAKING CHANGE"` and `"BREAKING-CHANGE"` are checked in `commit.rs:L153` and `L190`. The `!` suffix is handled at `L76`. All three detection forms from CC spec v1.0 are present. No gap.
+
+**`git log` format string** — `--format={RECORD_SEP}%H{FIELD_SEP}%B` in `shell.rs:L121`. The `%B` specifier (available since git 1.7.2, well below the declared `&gt;=2.20` floor) is correct and consistent with the native `gix` path's body handling. The RS/US control-char separators match the named constants `RECORD_SEP`/`FIELD_SEP`.
+
+**Commit type parsing** — `commit.rs` accepts any syntactically valid type string (not restricted to a fixed list), consistent with the CC spec. The restriction to known types only occurs in `severity.rs`.
+
+**Tag prefix `refs/tags/`** — Hardcoded but correct git protocol. `lib.rs:L387,L418` are not bugs.
+
+**`"git"` program name** — Hardcoded throughout `shell.rs`, `pre_cursor.rs`, and test helpers. Not configurable, but correct for the domain. The program name being configurable would be an over-engineering; the binary is universally named `git`.</result>
+<usage><subagent_tokens>96456</subagent_tokens><tool_uses>29</tool_uses><duration_ms>271360</duration_ms></usage>
+</task-notification>
