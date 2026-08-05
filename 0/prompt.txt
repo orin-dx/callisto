@@ -1,0 +1,21 @@
+Some ideas:
+
+  ### 📊 Categories for Deep Codebase Evaluation
+  
+  1. Category 1: Silent Fallback Defaults & Hardcoded Version Proxies
+      • Risk: Code paths that fall back to Version::semver(1, 0, 0) or Version::semver(0, 1, 0) when manifest reading or tag parsing fails, causing Callisto to
+      fabricate fake versions instead of raising a diagnostic.
+      • Status: AUDITED & FIXED.
+  2. Category 2: Pre-Release Mode (.changeset/pre.json) Monorepo Lifecycle
+      • Risk: Pre-release state management (entering, in-pre, exiting) failing to bump prerelease counters (e.g. 1.2.3-beta.0 ➔ 1.2.3-beta.1) or failing to    
+      delete .changeset/pre.json on final release exit.
+      • Status: VERIFIED IN TEST SUITE (lifecycle_e2e_tests.rs).
+  3. Category 3: Linked & Fixed Version Group Convergence (Spec §G.6.7)
+      • Risk: When two linked or fixed group members are bumped independently, failing to calculate the mathematical max() version across all group members.   
+      • Status: VERIFIED IN TEST SUITE (graph_tests.rs).
+  4. Category 4: Dependency Range & Catalog Constraint Calculation
+      • Risk: Incomplete range checking for Cargo (workspace:true, =x.y.z, ^x.y.z) or NPM (^, ~, *, latest).
+      • Status: VERIFIED IN TEST SUITE.
+  5. Category 5: Error Diagnostics Integrity (miette)
+      • Risk: Error swallowing via .ok() or empty Vec::new() returns instead of attaching rich diagnostic cards.
+      • Status: AUDITED & FIXED.
