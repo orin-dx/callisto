@@ -1,0 +1,49 @@
+<task-notification>
+<task-id>a9dee3f7bd36d9c24</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/dc5ff9d8-ad6b-4ac9-8548-df397504bb34/tasks/a9dee3f7bd36d9c24.output</output-file>
+<status>completed</status>
+<summary>Agent "Fresh hardening sweep: vcs, conventional, remaining CLI" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Bug-Hunter Sweep Report — callisto-vcs, callisto-conventional, snapshot/tag/schema/completions/pre/init commands
+
+### [Critical] `snapshot` writes a spec-violating version format that defeats its own non-collision invariant
+
+- **Status**: CONFIRMED
+- **Location**: `crates/callisto-graph/src/commands/snapshot.rs:74` (`snapshot_ver_str = format!("{}-{tag}.{sha_short}", from.render())`)
+- **Classification**: Spec Drift
+- **Root Cause**: `docs/01-spec.md:8204-8220` (§G.11, decision table row 33) pins the snapshot version as **exactly** `0.0.0-{tag}-{sha7}` — base literally `0.0.0` (not the package's own version) and joined with `-`, specifically so a snapshot can never outrank a real release in SemVer resolution, and is identical across the whole workspace. The code instead takes `from` (the package's *actual current* base version, e.g. `1.4.2`) and joins the tag/sha with `.` instead of `-`. It only produces the spec-correct `0.0.0-{tag}-{sha7}` string for the unused `report.snapshot_tag` label — the version actually written to every manifest is wrong.
+- **Failing Scenario**: Package at `1.4.2`, run `callisto snapshot --tag canary`. Spec requires every package get `0.0.0-canary-&lt;sha7&gt;`. Actual result: `1.4.2-canary.&lt;sha7&gt;` — a version that legitimately sorts as a prerelease of `1.4.2` (SemVer treats `.`-joined `&lt;sha7&gt;` as a separate, possibly-numeric identifier too, risking `NotSemVer`-adjacent surprises when a sha is all-digits), and differs per package rather than being one workspace-wide value.
+- **Verification Strategy**: Unit test calling `plan_snapshot` with a package at `1.4.2`, tag `"canary"`, assert every `PlannedBump.to` renders as `0.0.0-canary-&lt;sha7&gt;` — currently fails (`1.4.2-canary.&lt;sha7&gt;`).
+- **Note**: same function also silently falls back to a fake `sha_short = "0000000"` (`snapshot.rs:12-26`) whenever repo discovery or `head_sha()` fails (e.g. unborn/empty-history repo), producing colliding snapshot tags across runs with no error surfaced to the user.
+
+### [Medium] `commits_since` silently degrades to an unbounded full-history walk when `from_ref` fails to resolve
+
+- **Status**: CONFIRMED
+- **Location**: `crates/callisto-vcs/src/lib.rs:129-156` (`commits_since`)
+- **Classification**: Silent Fallback / Unbounded Traversal
+- **Root Cause**: When `from_ref` is `Some(...)` but `rev_parse_single`/`peel_to_kind` fails (unresolvable ref, or a ref that doesn't point to a commit reachable from HEAD, e.g. a tag on a divergent branch after history rewrite), `stop_sha` is silently set to `None` rather than propagating an error. The revwalk then runs unbounded to the root of history instead of stopping at (or erroring on) the requested ref.
+- **Failing Scenario**: `changed_since_last_tag` (`crates/callisto-graph/src/changed.rs:32-38`) calls `repo.commits_since(Some(&amp;last.name.0))` for a package's last release tag. If that tag was deleted/renamed or its object is unreachable from current HEAD, the walk silently reads the entire repo history instead of surfacing `VcsError::RefNotFound`, which is expensive on large repos and can mask the real problem (a broken/missing tag) that should instead produce a diagnostic.
+- **Verification Strategy**: Repo fixture where `from_ref` names a valid-looking but non-existent tag; assert `commits_since` returns `Err(VcsError::RefNotFound { .. })` — currently returns `Ok(all_commits)`.
+
+### [Medium] `list_tags` swallows a malformed glob pattern and returns *all* tags instead of erroring or falling back to literal match
+
+- **Status**: PLAUSIBLE (execution path traced; trigger condition — a tag name containing glob metacharacters — not independently confirmed against real-world tag templates)
+- **Location**: `crates/callisto-vcs/src/lib.rs:94-104` (`let matcher = glob_pattern.and_then(|p| globset::Glob::new(p).ok());`)
+- **Classification**: Silent Fallback
+- **Root Cause**: `Glob::new(p).ok()` discards the error from an invalid glob pattern, leaving `matcher = None`, which the loop treats identically to "no pattern requested" — every tag matches. Callers pass a literal, user/config-controlled tag string as the "glob," not an actual glob (`crates/callisto-graph/src/commands/tag.rs:61`: `repo.list_tags(Some(tag_str))?`).
+- **Failing Scenario**: A custom `tag-template` or package name containing `[`, `]`, or an unbalanced `{`/`}` produces a tag string that fails to compile as a glob. `create_tags_with_options` then computes `already_existed = !existing.is_empty()` against *every* tag in the repo (true in any non-empty repo), so it silently skips `repo.create_tag(...)` for a release that has no actual git tag yet — while still recording `CreatedTag` in the report as if the tag exists.
+- **Verification Strategy**: Call `list_tags(Some("v[1.2.3"))` in a repo with unrelated tags present; assert either an error or zero results — currently returns all tags.
+
+### [Low] `commands::init` discards `--yes` entirely and implements none of the spec's reconcile/diff behavior
+
+- **Status**: CONFIRMED
+- **Location**: `crates/callisto-graph/src/commands/init.rs:16` (`let _yes = opts.yes;`)
+- **Classification**: Discarded Parameter / Spec Drift
+- **Root Cause**: `docs/00-design.md:1756-1763` and `docs/01-spec.md:9089-9099` specify `init` as a re-runnable reconcile flow that re-detects workspace state, prints a diff, and "applies only with confirmation (`--yes` for CI)". The implementation only writes `callisto.toml`/`.changeset/README.md` if they don't already exist — there is no detection, diffing, or drift-reporting logic at all, and `opts.yes` (the only place the flag reaches core logic) is bound and immediately dropped.
+- **Failing Scenario**: Re-running `callisto init --yes` after a workspace gains a new ecosystem (e.g. `package.json` added to a Cargo-only workspace) produces no diff, no update, and no indication anything changed — silently a no-op instead of the spec's detect-and-offer flow.
+- **Verification Strategy**: Add a package.json to a Cargo-only fixture workspace with an existing `callisto.toml`, call `init` with `yes: true`, assert `InitReport.initialized` or a diagnostic reflects the new ecosystem — currently always `false`/empty.
+
+Files read in this sweep (no edits made): `crates/callisto-vcs/src/lib.rs`, `crates/callisto-conventional/src/{commit,window,infer,severity,pre_cursor,error}.rs`, `crates/callisto-graph/src/{changed,infer}.rs`, `crates/callisto-graph/src/commands/{snapshot,tag,init}.rs`, `crates/callisto-cli/src/commands/{snapshot,tag,schema,completions,pre,init}.rs`, `docs/00-design.md`, `docs/01-spec.md` (§8/§G.11/§CLI.6 sections).</result>
+<usage><subagent_tokens>58667</subagent_tokens><tool_uses>33</tool_uses><duration_ms>161830</duration_ms></usage>
+</task-notification>
