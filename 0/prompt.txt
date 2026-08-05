@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>b943mnb23</task-id>
+<tool-use-id>toolu_01QvujSe7jS2b5Sj12M9m2aw</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a7b3643b-af0c-4790-a38d-870e88a7dd3e/tasks/b943mnb23.output</output-file>
+<status>completed</status>
+<summary>Background command "Run full CI suite to check current state" completed (exit code 0)</summary>
+</task-notification>
