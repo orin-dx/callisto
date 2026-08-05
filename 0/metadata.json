@@ -1,0 +1,20 @@
+{
+  "cli_version": "0.9.1-nightly.202608050700.76dff6a81",
+  "checkpoint_id": "52c61504a89d",
+  "session_id": "0b0a9a5c-eeed-4f31-9e8e-53d3ab2215c3",
+  "strategy": "import",
+  "created_at": "2026-08-05T21:48:17.769776561Z",
+  "commit_sha": "07a236d6c8388eb1a7d1f08b99d2d00745412526",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "agent": "Gemini CLI",
+  "model": "",
+  "token_usage": {
+    "input_tokens": 0,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 0,
+    "output_tokens": 0,
+    "api_call_count": 0
+  },
+  "kind": "imported"
+}
