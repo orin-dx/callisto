@@ -178,12 +178,29 @@ pub fn load(root: &Path) -> Result<ResolvedConfig, ConfigError> {
 
     let mut provenance = BTreeMap::new();
 
-    let changesets_dir = PathBuf::from(
-        raw.changesets
-            .as_ref()
-            .and_then(|c| c.dir.as_deref())
-            .unwrap_or(".changeset"),
-    );
+    let changesets_dir_str = raw
+        .changesets
+        .as_ref()
+        .and_then(|c| c.dir.as_deref())
+        .unwrap_or(".changeset");
+
+    // Reject any changesets.dir value that contains '..' components — they
+    // would allow load_changesets / atomic_write to escape the workspace root.
+    // We check Path::components() rather than canonicalizing because the
+    // directory may not exist yet (e.g. a fresh workspace).
+    {
+        use std::path::Component;
+        if PathBuf::from(changesets_dir_str)
+            .components()
+            .any(|c| c == Component::ParentDir)
+        {
+            return Err(ConfigError::InvalidChangesetsDir {
+                dir: changesets_dir_str.to_string(),
+            });
+        }
+    }
+
+    let changesets_dir = PathBuf::from(changesets_dir_str);
 
     let cascade_raw = raw.cascade.unwrap_or_default();
     let mode = match cascade_raw.mode.as_deref() {
@@ -332,4 +349,49 @@ pub fn load(root: &Path) -> Result<ResolvedConfig, ConfigError> {
         raw_groups,
         provenance,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn test_config_resolve_rejects_traversal_in_changesets_dir() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path();
+        fs::write(
+            root.join("callisto.toml"),
+            "[changesets]\ndir = \"../../tmp\"\n",
+        )
+        .expect("write callisto.toml");
+
+        let result = load(root);
+        assert!(
+            result.is_err(),
+            "expected load() to fail for traversal changesets dir, got Ok"
+        );
+        let err = result.unwrap_err();
+        assert!(
+            matches!(err, ConfigError::InvalidChangesetsDir { .. }),
+            "expected InvalidChangesetsDir error, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn test_config_resolve_accepts_normal_changesets_dir() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path();
+        fs::write(
+            root.join("callisto.toml"),
+            "[changesets]\ndir = \".changeset\"\n",
+        )
+        .expect("write callisto.toml");
+
+        let result = load(root);
+        assert!(
+            result.is_ok(),
+            "expected load() to succeed for normal changesets dir, got: {result:?}"
+        );
+    }
 }

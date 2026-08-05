@@ -219,6 +219,15 @@ pub enum ConfigError {
     #[error("`pre-major-inference` is `{found}`; expected `off`, `conservative`, or `conservative-feat`")]
     InvalidPreMajorInference { found: String },
 
+    #[error(
+        "changesets.dir `{dir}` contains `..` path components and would escape the workspace root"
+    )]
+    #[diagnostic(
+        code(E116),
+        help("Use a path relative to the workspace root that does not contain '..' components.")
+    )]
+    InvalidChangesetsDir { dir: String },
+
     #[error(transparent)]
     Tag(#[from] TagTemplateError),
 

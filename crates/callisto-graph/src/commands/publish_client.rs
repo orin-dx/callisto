@@ -58,6 +58,12 @@ impl<R: CommandRunner> SubprocessRegistryClient<R> {
     // ---- Cargo / crates.io -------------------------------------------
 
     fn cargo_publish(&self, package: &PackageId) -> Result<PublishOutcome, RegistryError> {
+        if package.name().starts_with('-') {
+            return Err(RegistryError::Other(format!(
+                "invalid package name `{}`: names may not begin with '-' (possible flag injection)",
+                package.name()
+            )));
+        }
         let output = self.run("cargo", &["publish", "-p", package.name(), "--locked"])?;
         classify_cargo_output(&output)
     }
@@ -102,6 +108,12 @@ impl<R: CommandRunner> SubprocessRegistryClient<R> {
     }
 
     fn npm_publish(&self, package: &PackageId) -> Result<PublishOutcome, RegistryError> {
+        if package.name().starts_with('-') {
+            return Err(RegistryError::Other(format!(
+                "invalid package name `{}`: names may not begin with '-' (possible flag injection)",
+                package.name()
+            )));
+        }
         let output = self.run(
             "npm",
             &[
@@ -139,6 +151,12 @@ impl<R: CommandRunner> SubprocessRegistryClient<R> {
         package: &PackageId,
         version: &Version,
     ) -> Result<PublishOutcome, RegistryError> {
+        if package.name().starts_with('-') {
+            return Err(RegistryError::Other(format!(
+                "invalid package name `{}`: names may not begin with '-' (possible flag injection)",
+                package.name()
+            )));
+        }
         let normalized = package.name().to_lowercase().replace(['-', '.'], "_");
         let pattern = format!("dist/{normalized}-{}*", version.render());
         let output = self.run("twine", &["upload", "--skip-existing", &pattern])?;
@@ -871,6 +889,48 @@ mod tests {
         assert_eq!(
             c.publish(&pypi_pkg(), &v1(), &permit()).unwrap(),
             PublishOutcome::AlreadyPublished
+        );
+    }
+
+    // ---- flag-injection guard -------------------------------------------
+
+    #[test]
+    fn test_publish_client_rejects_flag_like_package_name() {
+        // A package name starting with '--' must be rejected before any
+        // subprocess is invoked to prevent flag injection into cargo/npm/twine.
+        let flag_pkg = |ecosystem: Ecosystem| PackageId::Prefixed {
+            ecosystem,
+            name: "--registry=https://evil.com".to_string(),
+        };
+
+        // cargo
+        let c = client(output(0, "", ""));
+        let err = c
+            .publish(&flag_pkg(Ecosystem::Cargo), &v1(), &permit())
+            .unwrap_err();
+        assert!(
+            matches!(&err, RegistryError::Other(msg) if msg.contains("invalid package name")),
+            "cargo: expected invalid-package-name error, got: {err:?}"
+        );
+
+        // npm
+        let c = client(output(0, "", ""));
+        let err = c
+            .publish(&flag_pkg(Ecosystem::Npm), &v1(), &permit())
+            .unwrap_err();
+        assert!(
+            matches!(&err, RegistryError::Other(msg) if msg.contains("invalid package name")),
+            "npm: expected invalid-package-name error, got: {err:?}"
+        );
+
+        // pypi
+        let c = client(output(0, "", ""));
+        let err = c
+            .publish(&flag_pkg(Ecosystem::Pypi), &v1(), &permit())
+            .unwrap_err();
+        assert!(
+            matches!(&err, RegistryError::Other(msg) if msg.contains("invalid package name")),
+            "pypi: expected invalid-package-name error, got: {err:?}"
         );
     }
 
