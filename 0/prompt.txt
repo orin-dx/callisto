@@ -1,0 +1,1 @@
+Let's undertake the research of alternatives and consider if callisto can be a library with integrations for moon vs moon-specific. Use agent teams and workflows to best leverage models and effort (form haiku to opus 5) with the most appropriate effort to get the best result for each task while being token conservative. Don't overuse effort or models.
