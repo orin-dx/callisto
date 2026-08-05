@@ -13,8 +13,10 @@ where
     F: Fn(&PackageId) -> Vec<(PackageId, DepKind)>,
 {
     let members: BTreeSet<PackageId> = subset.iter().cloned().collect();
+    // Build a HashSet once so validation is O(N) rather than O(N²) slice scans.
+    let all_set: std::collections::HashSet<&PackageId> = all_packages.iter().collect();
     for id in &members {
-        if !all_packages.contains(id) {
+        if !all_set.contains(id) {
             return Err(GraphError::UnknownPackage { id: id.clone() });
         }
     }
@@ -157,6 +159,34 @@ mod tests {
         .unwrap();
 
         assert_eq!(res, vec![pkg_b, pkg_a]);
+    }
+
+    #[test]
+    fn test_toposort_produces_correct_order_large_graph() {
+        // Build a 10-package chain: pkg-a -> pkg-b -> ... -> pkg-i -> pkg-j
+        // Each package depends on the next; pkg-j is the leaf with no dependencies.
+        // Expected toposort order (dependencies first): [pkg-j, pkg-i, ..., pkg-a]
+        let ids: Vec<PackageId> = (b'a'..=b'j')
+            .map(|c| PackageId::parse(&format!("pkg-{}", c as char)).unwrap())
+            .collect();
+
+        let subset: HashSet<PackageId> = ids.iter().cloned().collect();
+        let all: Vec<PackageId> = ids.clone();
+
+        let result = toposort_impl(&subset, &all, |id| {
+            // Find the index of this package; if it's not the last, it depends on the next.
+            if let Some(pos) = ids.iter().position(|x| x == id) {
+                if pos + 1 < ids.len() {
+                    return vec![(ids[pos + 1].clone(), DepKind::Runtime)];
+                }
+            }
+            vec![]
+        })
+        .unwrap();
+
+        // pkg-j has no dependents so it sorts first; pkg-a sorts last.
+        let expected: Vec<PackageId> = ids.iter().cloned().rev().collect();
+        assert_eq!(result, expected);
     }
 
     #[test]

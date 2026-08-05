@@ -10,6 +10,9 @@ pub use callisto_model::DependencyResolver;
 
 pub trait DependencyResolverExt: DependencyResolver {
     fn toposort(&self, subset: &HashSet<PackageId>) -> Result<Vec<PackageId>, GraphError> {
+        // The DependencyResolver::packages() trait method yields &Package, not PackageId, so
+        // we must clone each id. The Vec is required to produce a &[PackageId] slice for
+        // toposort_impl; it cannot be eliminated without changing the function signature.
         let all_pkg_ids: Vec<PackageId> = self.packages().map(|p| p.id.clone()).collect();
         toposort_impl(subset, &all_pkg_ids, |id| {
             self.dependencies_of(id)
@@ -54,23 +57,22 @@ impl DependencyResolver for ManifestWalkResolver {
     }
 
     fn dependencies_of(&self, id: &PackageId) -> impl Iterator<Item = &DepEdge> {
-        let empty = Vec::new();
-        let indices = self.out_index.get(id).unwrap_or(&empty);
-        let mut result = Vec::new();
-        for &idx in indices {
-            result.push(&self.edges[idx]);
-        }
-        result.into_iter()
+        // Avoid an intermediate Vec by streaming index lookups directly as edge references.
+        let edges = &self.edges;
+        self.out_index
+            .get(id)
+            .into_iter()
+            .flat_map(|v| v.iter())
+            .map(move |&idx| &edges[idx])
     }
 
     fn dependents_of(&self, id: &PackageId) -> impl Iterator<Item = &DepEdge> {
-        let empty = Vec::new();
-        let indices = self.in_index.get(id).unwrap_or(&empty);
-        let mut result = Vec::new();
-        for &idx in indices {
-            result.push(&self.edges[idx]);
-        }
-        result.into_iter()
+        let edges = &self.edges;
+        self.in_index
+            .get(id)
+            .into_iter()
+            .flat_map(|v| v.iter())
+            .map(move |&idx| &edges[idx])
     }
 
     fn diagnostics(&self) -> &[Diagnostic] {
