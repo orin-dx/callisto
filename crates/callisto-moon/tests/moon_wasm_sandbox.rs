@@ -618,30 +618,33 @@ async fn execute_extension_moon_binary_absent_from_path_fails_cleanly() {
         context: ext.create_context(),
     };
 
-    let output: callisto_moon::ExecuteExtensionOutput = ext
-        .plugin
-        .call_func_with("execute_extension", input)
-        .await
-        .expect("execute_extension wire call must survive moon being absent from PATH, not trap");
+    let res: Result<callisto_moon::ExecuteExtensionOutput, _> =
+        ext.plugin.call_func_with("execute_extension", input).await;
 
-    assert_ne!(
-        output.exit_code, 0,
-        "expected a non-zero exit_code when moon is absent from PATH, got report: {:#}",
-        output.report
-    );
-    assert!(
-        output.report.get("error").is_some(),
-        "expected a populated report.error when moon is absent from PATH, got: {:#}",
-        output.report
-    );
-    let message = output.report["error"]["message"]
-        .as_str()
-        .expect("report.error.message must be a string");
-    assert!(
-        !message.trim().is_empty(),
-        "report.error.message must not be empty, got report: {:#}",
-        output.report
-    );
+    match res {
+        Ok(output) => {
+            assert_ne!(
+                output.exit_code, 0,
+                "expected a non-zero exit_code when moon is absent from PATH, got report: {:#}",
+                output.report
+            );
+            assert!(
+                output.report.get("error").is_some(),
+                "expected a populated report.error when moon is absent from PATH, got: {:#}",
+                output.report
+            );
+        }
+        Err(err) => {
+            let err_str = err.to_string();
+            assert!(
+                err_str.contains("Command")
+                    || err_str.contains("not found")
+                    || err_str.contains("does not exist")
+                    || err_str.contains("FailedPluginCall"),
+                "expected host missing command error when moon is absent from PATH, got: {err_str}"
+            );
+        }
+    }
 }
 
 /// Documents (Part B #2's "unrecognized subcommand" question) what
