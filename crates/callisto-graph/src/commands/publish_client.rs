@@ -11,30 +11,41 @@
 //! separate types — it routes each call to the right ecosystem's command
 //! construction/classification based on the [`PackageId`]'s ecosystem tag.
 //!
-//! ## Known trait-boundary limitation
+//! ## Per-package publish metadata
 //!
 //! [`RegistryClient::publish`] only receives a [`PackageId`] and [`Version`].
-//! Per-package metadata recorded in a [`PublishPlan`](callisto_model::PublishPlan)
-//! entry — e.g. `CratePublish::registry`, `NpmPublish::tag`/`registry` — is
-//! *not* threaded through this call boundary, because
-//! [`PublishOrchestrator::execute`](super::publish::PublishOrchestrator::execute)
-//! itself only forwards package identity + version. This client therefore
-//! always publishes to each ecosystem's default registry. Extending
-//! `RegistryClient::publish` to accept richer per-package publish
-//! parameters is a reasonable follow-up, but out of scope here.
+//! To thread per-package metadata recorded in a
+//! [`PublishPlan`](callisto_model::PublishPlan) entry — e.g.
+//! `CratePublish::registry`, `NpmPublish::tag`/`access`, `PypiPublish::index`
+//! — through this call boundary, callers **must** invoke
+//! [`SubprocessRegistryClient::load_plan`] with the full plan before passing
+//! the client to the orchestrator. The client stores the metadata in
+//! per-ecosystem lookup maps keyed by package name and consults them at
+//! dispatch time inside `RegistryClient::publish`.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
 use callisto_model::{
-    ApplyPermit, CommandOutput, CommandRunner, Ecosystem, PackageId, PublishOutcome,
+    ApplyPermit, CommandOutput, CommandRunner, Ecosystem, NpmAccess, PackageId, PublishOutcome,
     RegistryClient, RegistryError, Version,
 };
 
 use super::publish::parse_retry_after;
 
+/// Per-package npm publish metadata stored in the metadata map.
+struct NpmMeta {
+    tag: Option<String>,
+    access: Option<NpmAccess>,
+}
+
 /// Dispatches [`RegistryClient`] calls to the right ecosystem CLI based on
 /// each [`PackageId`]'s ecosystem tag.
+///
+/// Before calling through the [`RegistryClient`] trait, invoke
+/// [`Self::load_plan`] so that per-package metadata (dist-tag, access level,
+/// registry URL, private index URL) is threaded through to the CLI args.
 pub struct SubprocessRegistryClient<R: CommandRunner> {
     runner: R,
     /// Working directory the ecosystem CLIs are invoked from — typically the
@@ -42,11 +53,56 @@ pub struct SubprocessRegistryClient<R: CommandRunner> {
     /// --workspace <name>` both resolve their target package relative to
     /// this directory rather than needing a per-package path.
     cwd: PathBuf,
+    /// npm publish metadata keyed by package name.
+    npm_meta: HashMap<String, NpmMeta>,
+    /// Cargo registry name (e.g. `"my-private-registry"`) keyed by crate name.
+    cargo_registry: HashMap<String, Option<String>>,
+    /// PyPI index URL keyed by distribution name.
+    pypi_index: HashMap<String, Option<String>>,
 }
 
 impl<R: CommandRunner> SubprocessRegistryClient<R> {
     pub fn new(runner: R, cwd: PathBuf) -> Self {
-        Self { runner, cwd }
+        Self {
+            runner,
+            cwd,
+            npm_meta: HashMap::new(),
+            cargo_registry: HashMap::new(),
+            pypi_index: HashMap::new(),
+        }
+    }
+
+    /// Pre-loads per-package publish metadata from a [`callisto_model::PublishPlan`]
+    /// so that `RegistryClient::publish` can thread the correct dist-tag,
+    /// access level, registry, and private index URL through to each
+    /// ecosystem CLI invocation. Must be called before any publish attempt
+    /// that should respect plan-level overrides.
+    pub fn load_plan(&mut self, plan: &callisto_model::PublishPlan) {
+        for pkg in &plan.npm_platform_packages {
+            self.npm_meta.insert(
+                pkg.name.clone(),
+                NpmMeta {
+                    tag: pkg.tag.clone(),
+                    access: pkg.access.clone(),
+                },
+            );
+        }
+        for pkg in &plan.npm_main_packages {
+            self.npm_meta.insert(
+                pkg.name.clone(),
+                NpmMeta {
+                    tag: pkg.tag.clone(),
+                    access: pkg.access.clone(),
+                },
+            );
+        }
+        for pkg in &plan.rust_crates {
+            self.cargo_registry
+                .insert(pkg.name.clone(), pkg.registry.clone());
+        }
+        for pkg in &plan.pypi_packages {
+            self.pypi_index.insert(pkg.name.clone(), pkg.index.clone());
+        }
     }
 
     fn run(&self, program: &str, args: &[&str]) -> Result<CommandOutput, RegistryError> {
@@ -57,14 +113,37 @@ impl<R: CommandRunner> SubprocessRegistryClient<R> {
 
     // ---- Cargo / crates.io -------------------------------------------
 
-    fn cargo_publish(&self, package: &PackageId) -> Result<PublishOutcome, RegistryError> {
+    /// Publishes a crate via `cargo publish`.
+    ///
+    /// When `registry` is `Some`, `--registry <name>` is appended so that
+    /// private registries (e.g. Cloudsmith, Artifactory) are targeted instead
+    /// of crates.io.
+    fn cargo_publish(
+        &self,
+        package: &PackageId,
+        registry: Option<&str>,
+    ) -> Result<PublishOutcome, RegistryError> {
         if package.name().starts_with('-') {
             return Err(RegistryError::Other(format!(
                 "invalid package name `{}`: names may not begin with '-' (possible flag injection)",
                 package.name()
             )));
         }
-        let output = self.run("cargo", &["publish", "-p", package.name(), "--locked"])?;
+        let output = if let Some(reg) = registry {
+            self.run(
+                "cargo",
+                &[
+                    "publish",
+                    "-p",
+                    package.name(),
+                    "--locked",
+                    "--registry",
+                    reg,
+                ],
+            )?
+        } else {
+            self.run("cargo", &["publish", "-p", package.name(), "--locked"])?
+        };
         classify_cargo_output(&output)
     }
 
@@ -107,42 +186,63 @@ impl<R: CommandRunner> SubprocessRegistryClient<R> {
         )))
     }
 
-    fn npm_publish(&self, package: &PackageId) -> Result<PublishOutcome, RegistryError> {
+    /// Publishes an npm package via `npm publish`.
+    ///
+    /// - `tag`: when `Some`, appends `--tag <tag>` (e.g. `"next"` for pre-releases).
+    ///   Without this, npm uses the implicit `"latest"` dist-tag.
+    /// - `access`: when `Some(NpmAccess::Public)`, appends `--access public`;
+    ///   when `Some(NpmAccess::Restricted)`, appends `--access restricted`;
+    ///   when `None`, omits `--access` entirely so npm applies its ecosystem
+    ///   default (`restricted` for `@scoped/packages`, `public` for unscoped).
+    fn npm_publish(
+        &self,
+        package: &PackageId,
+        tag: Option<&str>,
+        access: Option<&NpmAccess>,
+    ) -> Result<PublishOutcome, RegistryError> {
         if package.name().starts_with('-') {
             return Err(RegistryError::Other(format!(
                 "invalid package name `{}`: names may not begin with '-' (possible flag injection)",
                 package.name()
             )));
         }
-        let output = self.run(
-            "npm",
-            &[
-                "publish",
-                "--workspace",
-                package.name(),
-                "--access",
-                "public",
-            ],
-        )?;
+        let access_value = access.map(|a| match a {
+            NpmAccess::Public => "public",
+            NpmAccess::Restricted => "restricted",
+        });
+        let mut args = vec!["publish", "--workspace", package.name()];
+        if let Some(t) = tag {
+            args.push("--tag");
+            args.push(t);
+        }
+        if let Some(av) = access_value {
+            args.push("--access");
+            args.push(av);
+        }
+        let output = self.run("npm", &args)?;
         classify_npm_publish_output(&output)
     }
 
     // ---- PyPI -------------------------------------------------------------
 
-    /// Uploads a Python distribution to PyPI (or a compatible index) by
-    /// running `twine upload --skip-existing dist/<normalized-name>-<version>*`.
+    /// Uploads a Python distribution to PyPI (or a compatible index) by running
+    /// `twine upload --skip-existing dist/<normalized-name>-<version>*`.
     ///
     /// The package name is normalized to its PEP 427 wheel-filename form
-    /// (lowercased, hyphens and dots replaced with underscores) before constructing the
-    /// dist-file glob. `twine` expands the glob internally — no shell
+    /// (lowercased, hyphens and dots replaced with underscores) before constructing
+    /// the dist-file glob. `twine` expands the glob internally — no shell
     /// expansion is involved, so the literal `*` in the argument is safe.
     ///
+    /// When `index` is `Some`, `--repository-url <url>` is inserted before the
+    /// glob argument so that a private package index (e.g. a Nexus or Artifactory
+    /// PyPI proxy) is targeted instead of the default public PyPI.
+    ///
     /// Output classification delegates to [`classify_twine_output`]:
+    ///
     /// - `--skip-existing` causes twine to print `"Skipping … because it
     ///   appears to already exist"` for files already on the index; any such
     ///   mention yields [`PublishOutcome::AlreadyPublished`].
-    /// - A clean zero-exit with no skip message yields
-    ///   [`PublishOutcome::Published`].
+    /// - A clean zero-exit with no skip message yields [`PublishOutcome::Published`].
     /// - Rate-limit and auth-failure signals in the output map to the
     ///   corresponding [`RegistryError`] variants; everything else becomes
     ///   [`RegistryError::Other`].
@@ -150,6 +250,7 @@ impl<R: CommandRunner> SubprocessRegistryClient<R> {
         &self,
         package: &PackageId,
         version: &Version,
+        index: Option<&str>,
     ) -> Result<PublishOutcome, RegistryError> {
         if package.name().starts_with('-') {
             return Err(RegistryError::Other(format!(
@@ -159,7 +260,20 @@ impl<R: CommandRunner> SubprocessRegistryClient<R> {
         }
         let normalized = package.name().to_lowercase().replace(['-', '.'], "_");
         let pattern = format!("dist/{normalized}-{}*", version.render());
-        let output = self.run("twine", &["upload", "--skip-existing", &pattern])?;
+        let output = if let Some(idx) = index {
+            self.run(
+                "twine",
+                &[
+                    "upload",
+                    "--skip-existing",
+                    "--repository-url",
+                    idx,
+                    &pattern,
+                ],
+            )?
+        } else {
+            self.run("twine", &["upload", "--skip-existing", &pattern])?
+        };
         classify_twine_output(&output)
     }
 }
@@ -201,16 +315,36 @@ impl<R: CommandRunner> RegistryClient for SubprocessRegistryClient<R> {
         match package {
             PackageId::Prefixed {
                 ecosystem: Ecosystem::Cargo,
+                name,
                 ..
-            } => self.cargo_publish(package),
+            } => {
+                let registry = self
+                    .cargo_registry
+                    .get(name.as_str())
+                    .and_then(|r| r.as_deref());
+                self.cargo_publish(package, registry)
+            }
             PackageId::Prefixed {
                 ecosystem: Ecosystem::Npm,
+                name,
                 ..
-            } => self.npm_publish(package),
+            } => {
+                let meta = self.npm_meta.get(name.as_str());
+                let tag = meta.and_then(|m| m.tag.as_deref());
+                let access = meta.and_then(|m| m.access.as_ref());
+                self.npm_publish(package, tag, access)
+            }
             PackageId::Prefixed {
                 ecosystem: Ecosystem::Pypi,
+                name,
                 ..
-            } => self.pypi_publish(package, version),
+            } => {
+                let index = self
+                    .pypi_index
+                    .get(name.as_str())
+                    .and_then(|i| i.as_deref());
+                self.pypi_publish(package, version, index)
+            }
             other => Err(RegistryError::Other(format!(
                 "no subprocess publisher configured for package identity `{}`",
                 other.display_name()
@@ -945,5 +1079,116 @@ mod tests {
         ));
         let err = c.is_published(&npm_pkg(), &v1()).unwrap_err();
         assert!(matches!(err, RegistryError::Other(_)));
+    }
+
+    // ---- registry metadata threading (RED → GREEN) ----------------------
+    // These four tests exercise the private helper methods directly and assert
+    // that per-package publish metadata is threaded through to the CLI args.
+
+    #[test]
+    fn npm_publish_passes_tag_when_set() {
+        let captured = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let runner = CapturingRunner {
+            captured_args: std::sync::Arc::clone(&captured),
+            response: output(0, "+ @callisto/cli@1.2.3\n", ""),
+        };
+        let c = SubprocessRegistryClient::new(runner, PathBuf::from("/workspace"));
+        c.npm_publish(&npm_pkg(), Some("next"), None).unwrap();
+        let args = captured.lock().unwrap();
+        assert!(
+            args.contains(&"--tag".to_string()),
+            "expected --tag in args: {args:?}"
+        );
+        assert!(
+            args.contains(&"next".to_string()),
+            "expected 'next' in args: {args:?}"
+        );
+    }
+
+    #[test]
+    fn npm_publish_omits_access_when_none() {
+        // When no access level is specified the --access flag must not appear
+        // at all — npm's ecosystem default (restricted for scoped packages,
+        // public for unscoped) should apply rather than being overridden.
+        let captured = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let runner = CapturingRunner {
+            captured_args: std::sync::Arc::clone(&captured),
+            response: output(0, "+ @callisto/cli@1.2.3\n", ""),
+        };
+        let c = SubprocessRegistryClient::new(runner, PathBuf::from("/workspace"));
+        c.npm_publish(&npm_pkg(), None, None).unwrap();
+        let args = captured.lock().unwrap();
+        assert!(
+            !args.contains(&"--access".to_string()),
+            "expected no --access flag when access is None: {args:?}"
+        );
+    }
+
+    #[test]
+    fn npm_publish_passes_access_public_when_set() {
+        use callisto_model::NpmAccess;
+        let captured = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let runner = CapturingRunner {
+            captured_args: std::sync::Arc::clone(&captured),
+            response: output(0, "+ @callisto/cli@1.2.3\n", ""),
+        };
+        let c = SubprocessRegistryClient::new(runner, PathBuf::from("/workspace"));
+        c.npm_publish(&npm_pkg(), None, Some(&NpmAccess::Public))
+            .unwrap();
+        let args = captured.lock().unwrap();
+        assert!(
+            args.contains(&"--access".to_string()),
+            "expected --access in args: {args:?}"
+        );
+        assert!(
+            args.contains(&"public".to_string()),
+            "expected 'public' in args: {args:?}"
+        );
+    }
+
+    #[test]
+    fn pypi_publish_passes_repository_url_when_index_set() {
+        let captured = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let runner = CapturingRunner {
+            captured_args: std::sync::Arc::clone(&captured),
+            response: output(0, "Uploading callisto_py-1.2.3-py3-none-any.whl\n", ""),
+        };
+        let c = SubprocessRegistryClient::new(runner, PathBuf::from("/workspace"));
+        c.pypi_publish(
+            &pypi_pkg(),
+            &v1(),
+            Some("https://private.example.com/simple/"),
+        )
+        .unwrap();
+        let args = captured.lock().unwrap();
+        assert!(
+            args.contains(&"--repository-url".to_string()),
+            "expected --repository-url in args: {args:?}"
+        );
+        assert!(
+            args.contains(&"https://private.example.com/simple/".to_string()),
+            "expected index URL in args: {args:?}"
+        );
+    }
+
+    #[test]
+    fn cargo_publish_passes_registry_when_set() {
+        let captured = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let runner = CapturingRunner {
+            captured_args: std::sync::Arc::clone(&captured),
+            response: output(0, "Uploading callisto-model v1.2.3\n", ""),
+        };
+        let c = SubprocessRegistryClient::new(runner, PathBuf::from("/workspace"));
+        c.cargo_publish(&cargo_pkg(), Some("my-private-registry"))
+            .unwrap();
+        let args = captured.lock().unwrap();
+        assert!(
+            args.contains(&"--registry".to_string()),
+            "expected --registry in args: {args:?}"
+        );
+        assert!(
+            args.contains(&"my-private-registry".to_string()),
+            "expected registry name in args: {args:?}"
+        );
     }
 }

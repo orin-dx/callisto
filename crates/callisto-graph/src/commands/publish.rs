@@ -119,6 +119,12 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
                         ),
                         registry: None,
                         tag: tag.clone(),
+                        // `access: None` lets npm use its ecosystem default:
+                        // restricted for @scoped packages, public for unscoped.
+                        // Callers that need explicit public access should set
+                        // this to Some(NpmAccess::Public) before passing the
+                        // plan to SubprocessRegistryClient::load_plan.
+                        access: None,
                     });
                 } else {
                     let platform_deps: Vec<String> = ws
@@ -148,6 +154,7 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
                         ),
                         registry: None,
                         tag,
+                        access: None,
                         depends_on_platforms: platform_deps,
                     });
                 }

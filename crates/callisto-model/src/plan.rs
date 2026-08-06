@@ -3,6 +3,22 @@ use serde::{Deserialize, Serialize};
 
 use crate::{CommitSha, Diagnostic, PackageId, RegistryKey, TagName, Version};
 
+/// npm package access level, controlling the `--access` flag passed to `npm publish`.
+///
+/// When `None` is set on a publish entry, no `--access` flag is passed and
+/// npm uses its default: `restricted` for scoped packages (`@scope/name`),
+/// `public` for unscoped packages.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum NpmAccess {
+    /// Publish as publicly accessible. Required for scoped packages that
+    /// should be available without authentication.
+    Public,
+    /// Publish as restricted (private). Only accessible to authorized users
+    /// and teams. This is npm's default for scoped packages.
+    Restricted,
+}
+
 /// Complete publish plan output for plan-publish command.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -44,6 +60,14 @@ pub struct NpmPublish {
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tag: Option<String>,
+
+    /// Explicit npm access level. When `None`, no `--access` flag is passed
+    /// and npm uses its ecosystem default (restricted for scoped packages,
+    /// public for unscoped). Set to `Some(NpmAccess::Public)` only when the
+    /// package must be published as publicly accessible (e.g. a scoped package
+    /// that should be available without authentication).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub access: Option<NpmAccess>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -58,6 +82,10 @@ pub struct NpmMainPublish {
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tag: Option<String>,
+
+    /// Explicit npm access level. See [`NpmPublish::access`] for semantics.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub access: Option<NpmAccess>,
 
     pub depends_on_platforms: Vec<String>,
 }
