@@ -38,6 +38,9 @@ jobs:
       - name: Supply Chain Audit
         uses: extractions/setup-just@v2
       - uses: moonrepo/setup-toolchain@v0
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip1
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-deny
