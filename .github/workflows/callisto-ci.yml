@@ -96,9 +96,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: extractions/setup-just@v2
+      - uses: moonrepo/setup-toolchain@v0
       - uses: taiki-e/install-action@v2
         with:
-          tool: cargo-deny,just
+          tool: cargo-deny
       - run: just audit
 
   validate:

@@ -51,6 +51,11 @@ fn resolve_wasm_file() {
             // natively (e.g. `cargo llvm-cov --all-features`), since pdk's
             // code references extism-pdk's WASM-host-only import symbols.
             let status = Command::new("cargo")
+                .env_remove("RUSTFLAGS")
+                .env_remove("CARGO_ENCODED_RUSTFLAGS")
+                .env_remove("CARGO_LLVM_COV")
+                .env_remove("CARGO_LLVM_COV_FLAGS")
+                .env_remove("CARGO_LLVM_COV_TARGET_DIR")
                 .args([
                     "rustc",
                     "-p",

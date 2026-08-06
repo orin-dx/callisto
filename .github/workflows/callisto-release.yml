@@ -36,9 +36,11 @@ jobs:
         run: cargo check -p callisto-moon --target wasm32-wasip1 --features pdk
 
       - name: Supply Chain Audit
-        uses: taiki-e/install-action@v2
+        uses: extractions/setup-just@v2
+      - uses: moonrepo/setup-toolchain@v0
+      - uses: taiki-e/install-action@v2
         with:
-          tool: cargo-deny,just
+          tool: cargo-deny
       - run: just audit
 
   release:
