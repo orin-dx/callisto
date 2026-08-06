@@ -122,14 +122,19 @@ pub fn parse_commit(sha: CommitSha, message: &str) -> ParsedCommit {
         blocks.push(current_block);
     }
 
-    // Collect all contiguous trailing blocks where every line is a valid
-    // footer line.  Stop as soon as a non-footer block is encountered and
-    // push that block back so it remains part of the body.
+    // Collect all contiguous trailing blocks that open with a valid footer
+    // token line.  Per the git trailer specification a paragraph begins a
+    // footer section when its FIRST line matches a footer token pattern
+    // (`Token: value` or `Token #value`); all subsequent non-blank lines in
+    // that same paragraph are continuations and remain part of the footer
+    // even if they do not individually match the token pattern.  Stop as
+    // soon as a block whose first line is not a footer token is encountered
+    // and leave the remaining blocks as body text.
     let mut collected_footer_blocks: Vec<Vec<&str>> = Vec::new();
     loop {
-        let is_footer_block = blocks.last().is_some_and(|block| {
-            !block.is_empty() && block.iter().all(|line| is_footer_line(line.trim()))
-        });
+        let is_footer_block = blocks
+            .last()
+            .is_some_and(|block| !block.is_empty() && is_footer_line(block[0].trim()));
         if is_footer_block {
             collected_footer_blocks.push(blocks.pop().unwrap());
         } else {
@@ -274,6 +279,31 @@ mod tests {
                     "body should only contain non-footer paragraph"
                 );
                 assert_eq!(c.footers.len(), 2, "both footer lines should be parsed");
+            }
+            _ => panic!("expected conventional commit"),
+        }
+    }
+
+    #[test]
+    fn multi_line_breaking_change_footer_is_detected() {
+        // Per the git trailer spec a trailing paragraph opens a footer section
+        // if its FIRST line is a valid footer token; continuation lines that
+        // do not themselves match the token pattern are still part of that footer.
+        let sha = CommitSha::parse("a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0").unwrap();
+        let msg = "feat: remove old api\n\nBREAKING CHANGE: the foo\nparameter was removed";
+        let parsed = parse_commit(sha, msg);
+        match parsed {
+            ParsedCommit::Conventional(c) => {
+                assert!(
+                    c.breaking,
+                    "multi-line BREAKING CHANGE footer should mark the commit as breaking"
+                );
+                assert_eq!(c.footers.len(), 1);
+                assert_eq!(c.footers[0].token, "BREAKING CHANGE");
+                assert!(
+                    c.footers[0].value.contains("parameter was removed"),
+                    "continuation line should be part of the footer value"
+                );
             }
             _ => panic!("expected conventional commit"),
         }
