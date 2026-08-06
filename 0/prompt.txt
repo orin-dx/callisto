@@ -123,3 +123,7 @@ Ready to push? No other issues you can see?
 ---
 
 Let's clean the wasteful stuff
+
+---
+
+ok push
