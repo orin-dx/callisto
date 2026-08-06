@@ -307,17 +307,38 @@ impl GitRepository {
                 .all()
                 .map_err(|e| VcsError::Git(format!("Failed to create revwalk: {e}")))?;
 
-            let stop_hex = since.map(|s| s.as_str().to_string());
+            // Build the excluded set: all SHAs reachable from `since`
+            // (inclusive). Using `continue` rather than `break` is critical
+            // for branchy history: a topological walk can visit the `since`
+            // commit before it has emitted all commits on merged branches
+            // that diverged *before* the tag. A `break` would silently drop
+            // those in-queue commits; `continue` skips only the already-seen
+            // ancestors.
+            let excluded: std::collections::HashSet<String> = if let Some(s) = since {
+                let since_oid = gix::ObjectId::from_hex(s.as_ref().as_bytes())
+                    .map_err(|e| VcsError::Git(format!("Invalid since SHA: {e}")))?;
+                let since_walk = self
+                    .repo
+                    .rev_walk(vec![since_oid])
+                    .all()
+                    .map_err(|e| VcsError::Git(format!("Failed to walk from since: {e}")))?;
+                let mut set = std::collections::HashSet::new();
+                for info in since_walk {
+                    let info = info.map_err(|e| VcsError::Git(e.to_string()))?;
+                    set.insert(info.id.to_hex().to_string());
+                }
+                set
+            } else {
+                std::collections::HashSet::new()
+            };
 
             let mut commits = Vec::new();
             for info in revwalk {
                 let info = info.map_err(|e| VcsError::Git(e.to_string()))?;
                 let hex = info.id.to_hex().to_string();
 
-                if let Some(ref target) = stop_hex {
-                    if &hex == target {
-                        break;
-                    }
+                if excluded.contains(&hex) {
+                    continue;
                 }
 
                 if info.parent_ids().count() > 1 {
@@ -966,6 +987,123 @@ mod tests {
             summaries.contains(&"refactor: move file out of pkg-a"),
             "with track_rewrites(None), the deletion at the old (matching) path must be \
              detected on its own, got: {summaries:?}"
+        );
+    }
+
+    /// Bug regression: when a feature branch was created BEFORE the `since`
+    /// tag commit (branching from an ancestor of the tag), gix's topological
+    /// walk visits the tag commit before some commits on the feature branch.
+    /// The old `break`-on-SHA-match terminated the walk early, silently
+    /// dropping branch commits still queued behind the tag.
+    ///
+    /// History:
+    ///   A → B → S(v1 tag) → C    (main)
+    ///        ↘                ↗
+    ///          D  →  E            (feat, branched from B, merged into main)
+    ///
+    /// Expected: `commits_since_with_pathspec(Some(&v1_sha), &[])` = {C, D, E}
+    #[test]
+    fn test_commits_since_with_pathspec_includes_pre_tag_branch_commits() {
+        let ws_dir = tempfile::tempdir().unwrap();
+        let root = ws_dir.path();
+        run_git(root, &["init", "-q", "-b", "main"]);
+        run_git(root, &["config", "user.email", "test@example.com"]);
+        run_git(root, &["config", "user.name", "Test"]);
+        run_git(root, &["config", "commit.gpgsign", "false"]);
+
+        // A: initial commit (shared ancestor)
+        std::fs::write(root.join("base.txt"), "shared\n").unwrap();
+        run_git(root, &["add", "."]);
+        run_git(root, &["commit", "-q", "-m", "feat: A initial"]);
+
+        // B: the feat branch will diverge from here (before the v1 tag)
+        std::fs::write(root.join("b.txt"), "b\n").unwrap();
+        run_git(root, &["add", "."]);
+        run_git(root, &["commit", "-q", "-m", "feat: B second"]);
+
+        let b_sha = String::from_utf8_lossy(
+            &std::process::Command::new("git")
+                .args(["rev-parse", "HEAD"])
+                .current_dir(root)
+                .output()
+                .unwrap()
+                .stdout,
+        )
+        .trim()
+        .to_string();
+
+        // S: the release commit; v1 tag lands here (the "since" lower bound)
+        std::fs::write(root.join("s.txt"), "s\n").unwrap();
+        run_git(root, &["add", "."]);
+        run_git(root, &["commit", "-q", "-m", "chore: S release"]);
+        run_git(
+            root,
+            &["-c", "tag.gpgSign=false", "tag", "-a", "-m", "v1", "v1"],
+        );
+
+        let v1_sha_str = String::from_utf8_lossy(
+            &std::process::Command::new("git")
+                .args(["rev-parse", "HEAD"])
+                .current_dir(root)
+                .output()
+                .unwrap()
+                .stdout,
+        )
+        .trim()
+        .to_string();
+
+        // D and E: commits on the feat branch (diverged from B, before S).
+        // Touch feat-only files so the eventual merge has no conflicts.
+        run_git(root, &["checkout", "-q", "-b", "feat", &b_sha]);
+        std::fs::write(root.join("d.txt"), "d\n").unwrap();
+        run_git(root, &["add", "."]);
+        run_git(root, &["commit", "-q", "-m", "feat: D on feat"]);
+        std::fs::write(root.join("e.txt"), "e\n").unwrap();
+        run_git(root, &["add", "."]);
+        run_git(root, &["commit", "-q", "-m", "feat: E on feat"]);
+
+        // C: commit on main after the v1 tag, then merge feat → merge commit M
+        run_git(root, &["checkout", "-q", "main"]);
+        std::fs::write(root.join("c.txt"), "c\n").unwrap();
+        run_git(root, &["add", "."]);
+        run_git(root, &["commit", "-q", "-m", "feat: C after release"]);
+        run_git(
+            root,
+            &[
+                "merge",
+                "--no-ff",
+                "-q",
+                "feat",
+                "-m",
+                "merge: feat into main",
+            ],
+        );
+
+        let since_sha = CommitSha::parse(&v1_sha_str).unwrap();
+        let repo = GitRepository::discover(root).unwrap();
+        let commits = repo
+            .commits_since_with_pathspec(Some(&since_sha), &[])
+            .unwrap();
+
+        let summaries: Vec<&str> = commits.iter().map(|c| c.summary.as_str()).collect();
+        assert!(
+            summaries.contains(&"feat: C after release"),
+            "C (after v1 on main) must be included, got: {summaries:?}"
+        );
+        assert!(
+            summaries.contains(&"feat: D on feat"),
+            "D (on feat branch, merged after v1) must be included — \
+             break-on-SHA drops it when gix visits the tag before D, got: {summaries:?}"
+        );
+        assert!(
+            summaries.contains(&"feat: E on feat"),
+            "E (on feat branch, merged after v1) must be included, got: {summaries:?}"
+        );
+        assert_eq!(
+            summaries.len(),
+            3,
+            "exactly C, D, E — no historical commits (A, B, S) and no merge commit M: \
+             got {summaries:?}"
         );
     }
 }
