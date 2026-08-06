@@ -126,7 +126,7 @@ impl Version {
     pub fn is_prerelease(&self) -> bool {
         match &self.parsed {
             ParsedVersion::SemVer(v) => !v.pre.is_empty(),
-            ParsedVersion::Pep440(v) => v.is_pre() || v.is_dev(),
+            ParsedVersion::Pep440(v) => !v.is_post() && (v.is_pre() || v.is_dev()),
         }
     }
 
@@ -236,11 +236,16 @@ impl VersionReq {
                             grammar,
                             message: e.to_string(),
                         })?;
+                // Normalize raw to pep440_rs's canonical rendering so that
+                // logically-equal specifiers (e.g. ">=1.0.0A1" vs ">=1.0.0a1")
+                // produce identical raw values and therefore compare == and hash
+                // equal (derived PartialEq/Eq/Hash include raw).
+                let canonical = req.to_string();
                 Ok(VersionReq {
                     grammar,
                     ecosystem,
                     req: ParsedVersionReq::Pep440(req),
-                    raw: raw.to_string(),
+                    raw: canonical,
                 })
             }
             VersionGrammar::Maven => Err(VersionParseError {
@@ -454,6 +459,33 @@ mod tests {
         let round_tripped: Version = serde_json::from_str(&json).unwrap();
         assert_eq!(round_tripped, pep440_only);
         assert_eq!(round_tripped.grammar(), VersionGrammar::Pep440);
+    }
+
+    #[test]
+    fn pep440_post_dev_version_is_not_prerelease() {
+        // PEP 440 orders 1.2.3.post1.dev1 ABOVE 1.2.3 (it is a dev build of a
+        // post-release, not a pre-release of 1.2.3). is_prerelease() returning
+        // true here causes bump() to finalize-in-place to 1.2.3, which is lower
+        // than the input — wrong direction.
+        let v = Version::parse("1.2.3.post1.dev1", VersionGrammar::Pep440).unwrap();
+        assert!(
+            !v.is_prerelease(),
+            "1.2.3.post1.dev1 is above 1.2.3 in PEP 440 and must not be a pre-release"
+        );
+    }
+
+    #[test]
+    fn pep440_version_req_non_canonical_normalizes_for_eq() {
+        // VersionReq::parse stores raw: raw.to_string() (un-normalized) in the
+        // Pep440 arm. Two equivalent specifiers written differently hash/eq
+        // differently, causing silent dedup failures in callers that use
+        // VersionReq as a map key.
+        let upper = VersionReq::parse(">=1.0.0A1", Ecosystem::Pypi).unwrap();
+        let lower = VersionReq::parse(">=1.0.0a1", Ecosystem::Pypi).unwrap();
+        assert_eq!(
+            upper, lower,
+            ">=1.0.0A1 and >=1.0.0a1 are the same PEP 440 specifier and must be equal"
+        );
     }
 
     /// A string that a genuinely malformed value under both grammars still
