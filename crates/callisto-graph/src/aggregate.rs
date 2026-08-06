@@ -169,7 +169,7 @@ pub fn aggregate<D, R, I>(
     runner: &R,
     tags: &TagIndex,
     base_versions: &BTreeMap<PackageId, Version>,
-    _pre: Option<&callisto_format::PreState>,
+    pre: Option<&callisto_format::PreState>,
     inference: &I,
 ) -> Result<Aggregation, GraphError>
 where
@@ -213,7 +213,7 @@ where
         let policy = config
             .packages
             .iter()
-            .find(|(id, _)| id == &pkg.id)
+            .find(|(id, _)| pkg.id.matches(id))
             .and_then(|(_, pcfg)| pcfg.pre_major_inference)
             .unwrap_or(PreMajorInferencePolicy::OFF);
 
@@ -256,6 +256,12 @@ where
             }
         }
     }
+
+    // During a pre-release cycle (PreMode::Pre) changesets must NOT be consumed:
+    // they remain on disk so they can be re-applied when the cycle exits.
+    let is_pre_mode = pre
+        .map(|s| s.mode == callisto_format::PreMode::Pre)
+        .unwrap_or(false);
 
     for cs in loaded {
         // Defer adding to `consumed` until after we confirm at least one entry
@@ -306,11 +312,20 @@ where
                     }
 
                     if entry.severity != Severity::None {
-                        let pkg_ver = tags
-                            .last_tag(&canonical_id)
-                            .map(|t| t.version.clone())
-                            .or_else(|| base_versions.get(&canonical_id).cloned())
-                            .unwrap_or_else(|| Version::semver(0, 0, 0));
+                        // In pre-release mode use the pre-cycle entry version as the
+                        // changelog "from" baseline so the log covers the full pre
+                        // range rather than reflecting live (pre-tagged) versions.
+                        let pkg_ver = if is_pre_mode {
+                            pre.and_then(|s| s.initial_versions.get(&canonical_id.display_name()))
+                                .cloned()
+                                .or_else(|| base_versions.get(&canonical_id).cloned())
+                                .unwrap_or_else(|| Version::semver(0, 0, 0))
+                        } else {
+                            tags.last_tag(&canonical_id)
+                                .map(|t| t.version.clone())
+                                .or_else(|| base_versions.get(&canonical_id).cloned())
+                                .unwrap_or_else(|| Version::semver(0, 0, 0))
+                        };
                         let cl_input = agg
                             .changelog_inputs
                             .entry(canonical_id.clone())
@@ -354,8 +369,10 @@ where
             }
         }
         // Only mark as consumed when at least one entry resolved to a real
-        // package.  A fully-orphaned changeset is left on disk.
-        if matched_any {
+        // package AND we are not in a pre-release cycle.  During pre mode the
+        // changeset files must stay on disk so they can be re-applied on exit.
+        // A fully-orphaned changeset is also left on disk regardless of mode.
+        if matched_any && !is_pre_mode {
             agg.consumed.push(cs.path.clone());
         }
     }
@@ -1306,6 +1323,136 @@ mod tests {
         assert!(
             !agg.diagnostics.is_empty(),
             "aggregate() must emit a diagnostic when SeverityInference::infer returns Err; got none"
+        );
+    }
+
+    /// Spec: a bare-name `[[package]]` rule in callisto.toml must match a workspace
+    /// package with a prefixed ID (e.g. `cargo/pkg-a`) via `PackageId::matches()`.
+    /// The previous `id == &pkg.id` structural equality check was silently inert for
+    /// prefixed package IDs when the config rule used a bare name.
+    #[test]
+    fn test_aggregate_bare_name_config_policy_matches_prefixed_package() {
+        use crate::config::resolve::PreMajorInferencePolicy;
+        use std::sync::atomic::AtomicBool;
+
+        let ws_dir = tempfile::tempdir().unwrap();
+        let root = ws_dir.path();
+
+        init_repo(root);
+        std::fs::write(root.join("README.md"), "hello\n").unwrap();
+        run_git(root, &["add", "."]);
+        run_git(root, &["commit", "-q", "-m", "initial commit"]);
+
+        // Config uses a BARE name, but the workspace package has a PREFIXED ID.
+        // PackageId::matches() must bridge the gap; == does not.
+        std::fs::write(
+            root.join("callisto.toml"),
+            "[[package]]\nmatch = \"pkg-a\"\npre-major-inference = \"conservative\"\n",
+        )
+        .unwrap();
+
+        let pkg_id = PackageId::parse("cargo/pkg-a").unwrap();
+        let graph = SinglePackageGraph {
+            pkg: make_pkg(pkg_id.clone()),
+        };
+        let cfg = crate::config::load(root).unwrap();
+        let runner = RealGitRunner;
+        let tags = crate::tags::TagIndex::build(&runner, root, &graph, &cfg).unwrap();
+        let mut base_versions = BTreeMap::new();
+        base_versions.insert(pkg_id.clone(), Version::semver(0, 1, 0));
+
+        struct PolicyCapturingInference2 {
+            saw_non_off: AtomicBool,
+        }
+        impl SeverityInference for PolicyCapturingInference2 {
+            fn infer(
+                &self,
+                _pkg: &Package,
+                window: InferenceWindowSpec<'_>,
+            ) -> Result<Option<InferenceOutcome>, GraphError> {
+                if window.policy != PreMajorInferencePolicy::OFF {
+                    self.saw_non_off.store(true, Ordering::SeqCst);
+                }
+                Ok(None)
+            }
+        }
+
+        let capturing = PolicyCapturingInference2 {
+            saw_non_off: AtomicBool::new(false),
+        };
+        aggregate(
+            &graph,
+            &cfg,
+            &runner,
+            &tags,
+            &base_versions,
+            None,
+            &capturing,
+        )
+        .unwrap();
+
+        assert!(
+            capturing.saw_non_off.load(Ordering::SeqCst),
+            "a bare-name [[package]] rule must match a prefixed package ID via \
+             PackageId::matches(); the old == comparison was silently inert for \
+             cargo/pkg-a when callisto.toml uses match = \"pkg-a\""
+        );
+    }
+
+    /// Spec: during a pre-release cycle (PreMode::Pre), aggregate() must NOT populate
+    /// agg.consumed. Changesets must remain on disk so they can be re-applied when the
+    /// cycle exits. The previous code unconditionally pushed to consumed regardless of
+    /// the PreState passed in.
+    #[test]
+    fn test_aggregate_does_not_consume_changesets_during_pre_mode() {
+        let ws_dir = tempfile::tempdir().unwrap();
+        let root = ws_dir.path();
+
+        init_repo(root);
+        std::fs::write(root.join("README.md"), "hello\n").unwrap();
+        run_git(root, &["add", "."]);
+        run_git(root, &["commit", "-q", "-m", "initial commit"]);
+
+        let cs_dir = root.join(".changeset");
+        std::fs::create_dir_all(&cs_dir).unwrap();
+        std::fs::write(
+            cs_dir.join("some-feature.md"),
+            "---\n\"pkg-a\": minor\n---\n\nA feature in pre mode.\n",
+        )
+        .unwrap();
+
+        let pkg_id = PackageId::parse("pkg-a").unwrap();
+        let graph = SinglePackageGraph {
+            pkg: make_pkg(pkg_id.clone()),
+        };
+        let cfg = crate::config::load(root).unwrap();
+        let runner = RealGitRunner;
+        let tags = crate::tags::TagIndex::build(&runner, root, &graph, &cfg).unwrap();
+        let mut base_versions = BTreeMap::new();
+        base_versions.insert(pkg_id.clone(), Version::semver(1, 0, 0));
+
+        let pre_state = callisto_format::PreState::entering(
+            "next",
+            [("pkg-a".to_string(), Version::semver(1, 0, 0))],
+        );
+
+        let inference = RecordingInference::default();
+        let agg = aggregate(
+            &graph,
+            &cfg,
+            &runner,
+            &tags,
+            &base_versions,
+            Some(&pre_state),
+            &inference,
+        )
+        .unwrap();
+
+        assert!(
+            agg.consumed.is_empty(),
+            "changesets must NOT be consumed during a pre-release cycle (PreMode::Pre); \
+             agg.consumed must be empty but got: {:?}",
+            agg.consumed
         );
     }
 
