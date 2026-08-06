@@ -285,7 +285,7 @@ impl Manifest for PyprojectToml {
     fn update_dependency_spec(
         &mut self,
         name: &str,
-        _kind: DepKind,
+        kind: DepKind,
         new: DepSpec,
         permit: &ApplyPermit,
     ) -> Result<(), ManifestError> {
@@ -359,15 +359,19 @@ impl Manifest for PyprojectToml {
             }
         }
 
-        if updated {
-            let content = self.render();
-            atomic_write(&self.absolute, &content, permit).map_err(|e| ManifestError::Write {
+        if !updated {
+            return Err(ManifestError::DependencyNotFound {
                 path: self.path.clone(),
-                message: e.to_string(),
-            })?;
+                name: name.to_string(),
+                kind,
+            });
         }
 
-        Ok(())
+        let content = self.render();
+        atomic_write(&self.absolute, &content, permit).map_err(|e| ManifestError::Write {
+            path: self.path.clone(),
+            message: e.to_string(),
+        })
     }
 
     fn publish_targets(&self) -> Vec<PublishTarget> {
@@ -379,9 +383,79 @@ impl Manifest for PyprojectToml {
 
     fn update_optional_dependencies(
         &mut self,
-        _updates: &[(String, Version)],
-        _permit: &ApplyPermit,
+        updates: &[(String, Version)],
+        permit: &ApplyPermit,
     ) -> Result<(), ManifestError> {
+        if updates.is_empty() {
+            return Ok(());
+        }
+
+        // [project.optional-dependencies] is a table of group_name → [PEP 508 strings].
+        // Collect the table keys first to avoid borrow conflicts.
+        let group_keys: Vec<String> = self
+            .document
+            .get("project")
+            .and_then(|p| p.get("optional-dependencies"))
+            .and_then(|od| od.as_table_like())
+            .map(|t| t.iter().map(|(k, _)| k.to_string()).collect())
+            .unwrap_or_default();
+
+        let mut any_updated = false;
+
+        for group_key in &group_keys {
+            let Some(arr) = self
+                .document
+                .get_mut("project")
+                .and_then(|p| p.get_mut("optional-dependencies"))
+                .and_then(|od| od.get_mut(group_key.as_str()))
+                .and_then(|g| g.as_array_mut())
+            else {
+                continue;
+            };
+
+            for idx in 0..arr.len() {
+                let Some(full_req) = arr.get(idx).and_then(|item| item.as_str()) else {
+                    continue;
+                };
+                let full_req = full_req.to_string();
+                let spec_part = full_req.split(';').next().unwrap_or(&full_req).trim();
+                let op_idx = spec_part.find(&['<', '>', '=', '!', '~'][..]);
+                let pkg_part = match op_idx {
+                    Some(i) => &spec_part[..i],
+                    None => spec_part,
+                };
+                let pkg_name = pkg_part.split('[').next().unwrap_or(pkg_part).trim();
+
+                if let Some((_dep_name, new_ver)) = updates
+                    .iter()
+                    .find(|(dep_name, _)| dep_name.eq_ignore_ascii_case(pkg_name))
+                {
+                    let extras = if pkg_part.contains('[') {
+                        &pkg_part[pkg_part.find('[').unwrap()..]
+                    } else {
+                        ""
+                    };
+                    let marker = if full_req.contains(';') {
+                        format!(";{}", full_req.split(';').nth(1).unwrap_or(""))
+                    } else {
+                        String::new()
+                    };
+                    let rendered_ver = new_ver.render();
+                    let new_req = format!("{pkg_name}{extras}>={rendered_ver}{marker}");
+                    arr.replace(idx, new_req);
+                    any_updated = true;
+                }
+            }
+        }
+
+        if any_updated {
+            let content = self.render();
+            atomic_write(&self.absolute, &content, permit).map_err(|e| ManifestError::Write {
+                path: self.path.clone(),
+                message: e.to_string(),
+            })?;
+        }
+
         Ok(())
     }
 }
@@ -979,6 +1053,91 @@ dependencies = [
         let target = make_pep440_version("2.0.0");
         let spec = DepSpec::Opaque("some-path-dep".to_string());
         assert!(round_trip(&spec, &target).is_none());
+    }
+
+    // -- bug regression tests -----------------------------------------------
+
+    #[test]
+    fn update_dependency_spec_returns_err_when_dep_not_found() {
+        // Bug 1: if the dep name does not appear in any deps section the
+        // function must return Err(DependencyNotFound), not Ok(()).
+        let dir = tempdir().unwrap();
+        let pyproject_path = dir.path().join("pyproject.toml");
+
+        let input_content = r#"[project]
+name = "my-app"
+version = "0.1.0"
+dependencies = [
+    "requests>=2.28.0",
+]
+"#;
+        fs::write(&pyproject_path, input_content).unwrap();
+
+        let decl = ManifestDecl {
+            path: PathBuf::from("pyproject.toml"),
+            role: ManifestRole::Canonical,
+            format: ManifestFormat::PyprojectToml,
+        };
+        let ctx = OpenContext {
+            workspace_root: dir.path(),
+            cargo_workspace: None,
+            npm_workspace_kind: None,
+        };
+
+        let mut manifest = PyprojectToml::open(&decl, &ctx).unwrap();
+        let req = VersionReq::parse(">=1.0.0", Ecosystem::Pypi).unwrap();
+        let result = manifest.update_dependency_spec(
+            "nonexistent-dep",
+            DepKind::Runtime,
+            DepSpec::Range(req, ">=1.0.0".to_string()),
+            &permit(),
+        );
+        assert!(
+            matches!(result, Err(ManifestError::DependencyNotFound { .. })),
+            "expected DependencyNotFound, got: {result:?}"
+        );
+    }
+
+    #[test]
+    fn update_optional_dependencies_actually_writes_to_document() {
+        // Bug 2: update_optional_dependencies must iterate
+        // [project.optional-dependencies] and update matching entries instead
+        // of being a no-op.
+        let dir = tempdir().unwrap();
+        let pyproject_path = dir.path().join("pyproject.toml");
+
+        let input_content = r#"[project]
+name = "my-app"
+version = "0.1.0"
+dependencies = []
+
+[project.optional-dependencies]
+docs = ["sphinx>=4.0.0"]
+"#;
+        fs::write(&pyproject_path, input_content).unwrap();
+
+        let decl = ManifestDecl {
+            path: PathBuf::from("pyproject.toml"),
+            role: ManifestRole::Canonical,
+            format: ManifestFormat::PyprojectToml,
+        };
+        let ctx = OpenContext {
+            workspace_root: dir.path(),
+            cargo_workspace: None,
+            npm_workspace_kind: None,
+        };
+
+        let mut manifest = PyprojectToml::open(&decl, &ctx).unwrap();
+        let new_v = Version::parse("5.0.0", VersionGrammar::Pep440).unwrap();
+        manifest
+            .update_optional_dependencies(&[("sphinx".to_string(), new_v)], &permit())
+            .unwrap();
+
+        let updated = fs::read_to_string(&pyproject_path).unwrap();
+        assert!(
+            updated.contains("sphinx>=5.0.0"),
+            "expected sphinx to be updated to >=5.0.0, got:\n{updated}"
+        );
     }
 
     #[test]
