@@ -32,9 +32,13 @@ runs:
     - name: Install or Build Callisto Binary
       shell: bash
       run: |
-        mkdir -p "$GITHUB_WORKSPACE/bin"
+        # Install into $RUNNER_TEMP so the binary never lands inside the workspace
+        # tree (preventing accidental git-staging by downstream steps that run
+        # "git add -A").
+        CALLISTO_BIN_DIR="${RUNNER_TEMP}/callisto-bin"
+        mkdir -p "$CALLISTO_BIN_DIR"
         TAG_NAME="${{ inputs.version || 'latest' }}"
-        
+
         # Detect OS platform architecture for pre-built binaries
         OS_NAME=$(uname -s | tr '[:upper:]' '[:lower:]')
         ARCH_NAME=$(uname -m)
@@ -63,17 +67,17 @@ runs:
         if [[ -f "$GITHUB_WORKSPACE/Cargo.toml" ]] && grep -q "callisto-cli" "$GITHUB_WORKSPACE/Cargo.toml"; then
           echo "Building local callisto binary from current repository commit..."
           cargo build -p callisto-cli
-          cp "$GITHUB_WORKSPACE/target/debug/callisto" "$GITHUB_WORKSPACE/bin/callisto"
+          cp "$GITHUB_WORKSPACE/target/debug/callisto" "$CALLISTO_BIN_DIR/callisto"
         elif curl -sL -f "$DOWNLOAD_URL" -o /tmp/callisto.tar.gz 2>/dev/null; then
-          tar -xzf /tmp/callisto.tar.gz -C "$GITHUB_WORKSPACE/bin"
+          tar -xzf /tmp/callisto.tar.gz -C "$CALLISTO_BIN_DIR"
           echo "Callisto downloaded from GitHub Releases ($DOWNLOAD_URL)"
         else
           echo "Installing via cargo install..."
-          cargo install --git https://github.com/orin-dx/callisto.git callisto-cli --root "$GITHUB_WORKSPACE/bin-dist" --quiet
-          cp "$GITHUB_WORKSPACE/bin-dist/bin/callisto" "$GITHUB_WORKSPACE/bin/callisto"
+          cargo install --git https://github.com/orin-dx/callisto.git callisto-cli --root "${RUNNER_TEMP}/callisto-cargo-install" --quiet
+          cp "${RUNNER_TEMP}/callisto-cargo-install/bin/callisto" "$CALLISTO_BIN_DIR/callisto"
         fi
 
-        echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
+        echo "$CALLISTO_BIN_DIR" >> $GITHUB_PATH
         if [[ -f "$GITHUB_WORKSPACE/.github/callisto-problem-matcher.json" ]]; then
           echo "::add-matcher::$GITHUB_WORKSPACE/.github/callisto-problem-matcher.json"
         fi

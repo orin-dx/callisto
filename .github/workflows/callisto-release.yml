@@ -35,16 +35,16 @@ jobs:
       - name: WASM Target Check
         run: cargo check -p callisto-moon --target wasm32-wasip1 --features pdk
 
-      - name: Supply Chain Audit
+      - name: Install just
         uses: extractions/setup-just@v2
-      - uses: moonrepo/setup-toolchain@v0
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-wasip1
-      - uses: taiki-e/install-action@v2
+
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@v2
         with:
           tool: cargo-deny
-      - run: just audit
+
+      - name: Supply Chain Audit
+        run: just audit
 
   release:
     name: Version Packages or Publish Release
