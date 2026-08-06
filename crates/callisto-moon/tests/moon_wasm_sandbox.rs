@@ -320,13 +320,20 @@ async fn run_git(dir: &Path, args: &[&str]) {
 /// workspace root (`.`) and no dependencies -- just enough for
 /// `MoonProjectLocator` to discover the fixture package without requiring a
 /// real, fully-configured moon workspace.
+///
+/// The emitted JSON matches the real moon `project-graph --json` schema:
+/// `{"data":{"<index>":{"id":"...","root":"<absolute>","source":"<relative>","dependencies":[]}}}`.
+/// The `root` field uses `$(pwd)` so the absolute path is correct regardless
+/// of which tempdir the sandbox allocates; moon is always executed with
+/// `cwd = workspace_root` by `MoonCommandRunner`.
 fn write_fake_moon_binary(dir: &Path) -> PathBuf {
     let script = dir.join("moon");
     fs::write(
         &script,
         "#!/bin/sh\n\
          if [ \"$1\" = \"project-graph\" ]; then\n\
-         echo '{\"projects\":[{\"root\":\".\",\"depends_on\":[]}]}'\n\
+         root=$(pwd)\n\
+         printf '{\"data\":{\"0\":{\"id\":\"pkg-a\",\"root\":\"%s\",\"source\":\".\",\"dependencies\":[]}}}\\n' \"$root\"\n\
          exit 0\n\
          fi\n\
          exit 1\n",

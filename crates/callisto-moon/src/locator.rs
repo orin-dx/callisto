@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
@@ -57,21 +58,28 @@ impl<'a, R: CommandRunner> MoonProjectLocator<'a, R> {
     }
 }
 
+/// Matches the real `moon project-graph --json` output shape.
+/// Unknown top-level fields (e.g. `graph`) are silently ignored.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct MoonProjectGraph {
-    pub projects: Vec<MoonProject>,
+    pub data: HashMap<String, MoonProject>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct MoonProject {
+    pub id: String,
+    /// Absolute path to the project root on disk.
     pub root: PathBuf,
+    /// Workspace-relative path (moon's "source" field).
+    pub source: String,
     #[serde(default)]
-    pub depends_on: Vec<MoonDependency>,
+    pub dependencies: Vec<MoonDependency>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct MoonDependency {
-    pub project_root: PathBuf,
+    /// Moon project ID of the dependency (key in `data`).
+    pub id: String,
     pub scope: DependencyScope,
     #[serde(default)]
     pub via: Option<String>,
@@ -102,12 +110,15 @@ impl<'a, R: CommandRunner> ProjectLocator for MoonProjectLocator<'a, R> {
         let graph = self.load_graph()?;
         let mut roots = Vec::new();
 
-        for project in &graph.projects {
-            let abs_path = if project.root.is_absolute() {
-                project.root.clone()
-            } else {
-                self.workspace_root.join(&project.root)
-            };
+        for project in graph.data.values() {
+            // Use `source` (workspace-relative) rather than `root` (host-absolute).
+            // In the WASM PDK context moon's `root` carries host-absolute paths
+            // that are not in the same virtual-filesystem namespace as the
+            // `/workspace/`-anchored `workspace_root` the moon host passes to
+            // the extension. Using `source` works correctly in both WASM and
+            // native environments.
+            let rel_path = PathBuf::from(&project.source);
+            let abs_path = self.workspace_root.join(&rel_path);
 
             if !abs_path.starts_with(&self.workspace_root) {
                 return Err(LocateError::OutsideWorkspaceRoot {
@@ -124,7 +135,7 @@ impl<'a, R: CommandRunner> ProjectLocator for MoonProjectLocator<'a, R> {
                 let id = self.resolve_id(&abs_path, Ecosystem::Cargo)?;
                 roots.push(ProjectRoot {
                     id,
-                    path: project.root.clone(),
+                    path: rel_path.clone(),
                     ecosystem: Ecosystem::Cargo,
                 });
             }
@@ -132,7 +143,7 @@ impl<'a, R: CommandRunner> ProjectLocator for MoonProjectLocator<'a, R> {
                 let id = self.resolve_id(&abs_path, Ecosystem::Npm)?;
                 roots.push(ProjectRoot {
                     id,
-                    path: project.root.clone(),
+                    path: rel_path.clone(),
                     ecosystem: Ecosystem::Npm,
                 });
             }
@@ -140,7 +151,7 @@ impl<'a, R: CommandRunner> ProjectLocator for MoonProjectLocator<'a, R> {
                 let id = self.resolve_id(&abs_path, Ecosystem::Pypi)?;
                 roots.push(ProjectRoot {
                     id,
-                    path: project.root.clone(),
+                    path: rel_path,
                     ecosystem: Ecosystem::Pypi,
                 });
             }
@@ -151,31 +162,32 @@ impl<'a, R: CommandRunner> ProjectLocator for MoonProjectLocator<'a, R> {
 
     fn declared_edges(&self) -> Option<Vec<DeclaredEdge>> {
         let graph = self.load_graph().ok()?;
+
+        // Build a lookup from moon project ID to project for dependency resolution.
+        let id_to_project: HashMap<&str, &MoonProject> =
+            graph.data.values().map(|p| (p.id.as_str(), p)).collect();
+
         let mut edges = Vec::new();
 
-        for project in &graph.projects {
-            let abs_from = if project.root.is_absolute() {
-                project.root.clone()
+        for project in graph.data.values() {
+            let abs_from = self.workspace_root.join(&project.source);
+
+            let from_eco = if abs_from.join("Cargo.toml").exists() {
+                Ecosystem::Cargo
+            } else if abs_from.join("package.json").exists() {
+                Ecosystem::Npm
+            } else if abs_from.join("pyproject.toml").exists() {
+                Ecosystem::Pypi
             } else {
-                self.workspace_root.join(&project.root)
+                continue;
             };
 
-            for dep in &project.depends_on {
-                let abs_to = if dep.project_root.is_absolute() {
-                    dep.project_root.clone()
-                } else {
-                    self.workspace_root.join(&dep.project_root)
-                };
-
-                let from_eco = if abs_from.join("Cargo.toml").exists() {
-                    Ecosystem::Cargo
-                } else if abs_from.join("package.json").exists() {
-                    Ecosystem::Npm
-                } else if abs_from.join("pyproject.toml").exists() {
-                    Ecosystem::Pypi
-                } else {
+            for dep in &project.dependencies {
+                let Some(to_project) = id_to_project.get(dep.id.as_str()) else {
                     continue;
                 };
+
+                let abs_to = self.workspace_root.join(&to_project.source);
 
                 let to_eco = if abs_to.join("Cargo.toml").exists() {
                     Ecosystem::Cargo
@@ -259,7 +271,17 @@ mod tests {
         )
         .expect("failed to write pyproject.toml");
 
-        let graph_json = r#"{"projects":[{"root":"py-pkg","depends_on":[]}]}"#.to_string();
+        let graph_json = serde_json::json!({
+            "data": {
+                "py-pkg": {
+                    "id": "py-pkg",
+                    "root": py_dir.to_str().unwrap(),
+                    "source": "py-pkg",
+                    "dependencies": []
+                }
+            }
+        })
+        .to_string();
 
         let runner = MockMoonRunner { graph_json };
         let locator = MoonProjectLocator::new(&runner, root.to_path_buf())
@@ -298,17 +320,24 @@ mod tests {
         .expect("failed to write pkg-b/pyproject.toml");
 
         // pkg-a depends on pkg-b (production scope)
-        let graph_json = r#"{
-            "projects": [
-                {
-                    "root": "pkg-a",
-                    "depends_on": [
-                        {"project_root": "pkg-b", "scope": "production", "via": null}
+        let graph_json = serde_json::json!({
+            "data": {
+                "pkg-a": {
+                    "id": "pkg-a",
+                    "root": pkg_a.to_str().unwrap(),
+                    "source": "pkg-a",
+                    "dependencies": [
+                        {"id": "pkg-b", "scope": "production", "via": null}
                     ]
                 },
-                {"root": "pkg-b", "depends_on": []}
-            ]
-        }"#
+                "pkg-b": {
+                    "id": "pkg-b",
+                    "root": pkg_b.to_str().unwrap(),
+                    "source": "pkg-b",
+                    "dependencies": []
+                }
+            }
+        })
         .to_string();
 
         let runner = MockMoonRunner { graph_json };
@@ -327,6 +356,53 @@ mod tests {
         );
     }
 
+    /// Real moon `project-graph --json` emits `{"data": {...}}` (a map keyed
+    /// by moon project ID) with each project's `root` as an absolute path
+    /// and `source` as the workspace-relative path.  The old type used a
+    /// `{"projects": [...]}` schema that was never the real moon format; this
+    /// test exercises the correct schema.
+    #[test]
+    fn projects_uses_real_moon_data_schema() {
+        let workspace = tempdir().expect("failed to create tempdir");
+        let root = workspace.path();
+
+        let py_dir = root.join("py-pkg");
+        std::fs::create_dir_all(&py_dir).expect("failed to create py-pkg dir");
+        std::fs::write(
+            py_dir.join("pyproject.toml"),
+            "[project]\nname = \"my-python-package\"\nversion = \"1.0.0\"\n",
+        )
+        .expect("failed to write pyproject.toml");
+
+        // Real moon project-graph --json format: data is a HashMap keyed by
+        // project ID; root is absolute; source is workspace-relative.
+        let graph_json = serde_json::json!({
+            "graph": {},
+            "data": {
+                "py-pkg": {
+                    "id": "py-pkg",
+                    "root": py_dir.to_str().unwrap(),
+                    "source": "py-pkg",
+                    "dependencies": []
+                }
+            }
+        })
+        .to_string();
+
+        let runner = MockMoonRunner { graph_json };
+        let locator = MoonProjectLocator::new(&runner, root.to_path_buf())
+            .expect("MoonProjectLocator::new must succeed");
+
+        use callisto_graph::locate::ProjectLocator;
+        let roots = locator.projects().expect("projects() must succeed");
+
+        let has_pypi = roots.iter().any(|r| r.ecosystem == Ecosystem::Pypi);
+        assert!(
+            has_pypi,
+            "expected a Pypi ProjectRoot with real moon data schema, got: {roots:#?}"
+        );
+    }
+
     /// Existing ecosystems (Cargo, Npm) are still discovered when only checking
     /// pyproject.toml is added -- ensure no regression.
     #[test]
@@ -342,7 +418,17 @@ mod tests {
         )
         .expect("failed to write Cargo.toml");
 
-        let graph_json = r#"{"projects":[{"root":"rs-pkg","depends_on":[]}]}"#.to_string();
+        let graph_json = serde_json::json!({
+            "data": {
+                "rs-pkg": {
+                    "id": "rs-pkg",
+                    "root": cargo_dir.to_str().unwrap(),
+                    "source": "rs-pkg",
+                    "dependencies": []
+                }
+            }
+        })
+        .to_string();
 
         let runner = MockMoonRunner { graph_json };
         let locator = MoonProjectLocator::new(&runner, root.to_path_buf())
