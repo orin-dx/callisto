@@ -77,10 +77,17 @@ runs:
         fi
 
         echo "::group::1. Inspecting Workspace Status"
-        if callisto status --check; then
+        set +e
+        callisto status --check
+        STATUS_EXIT=$?
+        set -e
+        if [[ $STATUS_EXIT -eq 0 ]]; then
           HAS_CHANGESETS=true
-        else
+        elif [[ $STATUS_EXIT -eq 2 ]]; then
           HAS_CHANGESETS=false
+        else
+          echo "::error::callisto status --check failed with exit code $STATUS_EXIT"
+          exit $STATUS_EXIT
         fi
         echo "::endgroup::"
 
@@ -141,14 +148,9 @@ runs:
           echo "hasChangesets=false" >> $GITHUB_OUTPUT
 
           if [[ -n "$INPUT_PUBLISH" && "$INPUT_PUBLISH" != "false" ]]; then
-            echo "published=true" >> $GITHUB_OUTPUT
-
             echo "::group::2. Calculating Topological Publish Plan"
             PLAN_JSON=$(callisto plan-publish --format json)
             echo "$PLAN_JSON"
-            echo "publishedPackages<<EOF" >> $GITHUB_OUTPUT
-            echo "$PLAN_JSON" >> $GITHUB_OUTPUT
-            echo "EOF" >> $GITHUB_OUTPUT
             echo "::endgroup::"
 
             echo "::group::3. Executing Package Publishing"
@@ -159,6 +161,11 @@ runs:
               callisto publish
             fi
             echo "::endgroup::"
+
+            echo "published=true" >> $GITHUB_OUTPUT
+            echo "publishedPackages<<EOF" >> $GITHUB_OUTPUT
+            echo "$PLAN_JSON" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
 
             echo "::group::4. Tagging Release Commits & Updating Major Version Pointer Aliases"
             callisto tag --plan "$PLAN_JSON" --floating-major || true
