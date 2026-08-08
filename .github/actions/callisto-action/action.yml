@@ -107,7 +107,8 @@ runs:
           echo "::endgroup::"
 
           echo "::group::3. Bumping Package Versions ($INPUT_VERSION_COMMAND)"
-          eval "$INPUT_VERSION_COMMAND"
+          read -ra _version_cmd <<< "$INPUT_VERSION_COMMAND"
+          "${_version_cmd[@]}"
           echo "::endgroup::"
 
           echo "::group::4. Creating / Updating Version Packages Pull Request"
@@ -156,7 +157,8 @@ runs:
             echo "::group::3. Executing Package Publishing"
             if [[ "$INPUT_PUBLISH" != "true" ]]; then
               echo "Executing custom publish script: $INPUT_PUBLISH"
-              eval "$INPUT_PUBLISH"
+              read -ra _publish_cmd <<< "$INPUT_PUBLISH"
+              "${_publish_cmd[@]}"
             else
               callisto publish
             fi
