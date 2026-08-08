@@ -980,6 +980,7 @@ Extism/WASI can't `sh -c`, so not every command works in both surfaces:
 | `compose-pr-body` | ✓ | ✓ |
 | `tag` (creates local tags **only**, never pushes — §9.1) | ✓ | ✓ — needs `git`, available
   via `exec_command` (§10), not `sh -c`, so no CLI-only blocker |
+| `publish` (re-runs plan-publish logic, then shells out to `cargo publish`, `npm publish`, or `twine` in the correct order — requires authenticated ecosystem tools present on PATH) | ✓ | ✗ |
 | `completions` | ✓ | ✗ |
 
 Since `plan-publish` is read-only data computation (no shelling out to `cargo`/`npm`), it
@@ -994,6 +995,56 @@ alongside `ProjectLocator` (§15) — all three are enumerated seams, not implic
 
 WASM build: `cargo build --release --target wasm32-wasip1 --no-default-features --features
 "wasm,cargo,npm"`. No `octocrab`/`reqwest`/`tokio` in this feature set at all now (§9.5).
+
+### 11.1 `callisto publish`
+
+`callisto publish` is the execution step paired with `plan-publish` (the read-only preview).
+It re-runs the same plan-publish computation, then delegates to each ecosystem's own CLI in
+the correctness-required order:
+
+1. **Rust crates** — `cargo publish -p <name>` in topological order (the `rustCrates[]`
+   array order from §9.2, which is the load-bearing topo-sort per §13 invariant 7).
+2. **npm platform packages** — `npm publish` (or `pnpm publish`) for each platform package,
+   so they exist on the registry before the main package references them via
+   `optionalDependencies` (§9.2, §13 invariant 8).
+3. **npm main packages** — `npm publish` (or `pnpm publish`) for each main package.
+
+**Flags**
+
+- `--dry-run` — prints the computed plan only; no publish commands are executed. Equivalent
+  to running `plan-publish` directly, and safe to run at any time.
+- `--format json|text` — controls output format. `json` emits a machine-readable record of
+  each invocation's outcome (command, exit code, stdout/stderr); `text` is the human-readable
+  default.
+
+**Relationship to `plan-publish`**
+
+`plan-publish` is the read-only preview; `publish` is the execution step. `publish` always
+recomputes the plan from scratch — there is no `--plan FILE` input. Feeding a stale or
+manually-edited plan file into a publish step would be a correctness hazard (P2/P3), so
+`publish` holds the same stateless guarantee as every other callisto command.
+
+**The coordinator pattern**
+
+`callisto publish` runs publish commands but delegates entirely to each ecosystem's own CLI
+(`cargo`, `npm`/`pnpm`, `twine`). It never speaks HTTP to a registry directly. Its
+responsibilities are sequence enforcement, invocation, and outcome classification (success,
+already-published refusal per §9.4, or unexpected failure). Retry logic, auth, and
+rate-limit handling stay with the ecosystem tool.
+
+This is the narrow scope that §9.5 preserved when it removed the broader orchestration
+pipeline: §9.5 cut callisto's own retry-with-backoff, registry-API idempotence queries
+(`GET /api/v1/crates/...`, `npm view ...`), and octocrab/reqwest/tokio. `callisto publish`
+keeps only the coordinator role — everything that requires speaking HTTP to a registry
+remains the ecosystem tool's concern, not callisto's.
+
+**When to use `publish` vs. the §9.3 workflow pattern**
+
+`callisto publish` is a convenience wrapper that consolidates the manual `jq | while read`
+pipeline in §9.3 into one command. The §9.3 pattern remains valid and gives calling workflows
+more control over each publish step (separate CI jobs, per-ecosystem retries, custom auth
+setup per step). `callisto publish` is appropriate when simplicity is preferred and auth for
+all ecosystems is available in the same environment.
 
 ---
 
