@@ -24,12 +24,16 @@ pub fn render_diagnostics<W: io::Write>(
 pub fn render_status<W: io::Write>(report: &StatusReport, w: &mut W) -> io::Result<()> {
     writeln!(w, "Status (schema v{}):", report.schema_version)?;
     for pkg in &report.packages {
+        let severity = pkg
+            .pending_severity
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "none".to_string());
         writeln!(
             w,
-            "  {} {} (pending: {:?})",
+            "  {} {} (pending: {})",
             pkg.package.display_name(),
             pkg.current_version.raw(),
-            pkg.pending_severity
+            severity
         )?;
     }
     render_diagnostics(&report.diagnostics, w)
@@ -50,7 +54,15 @@ pub fn render_version<W: io::Write>(report: &VersionReport, w: &mut W) -> io::Re
 }
 
 pub fn render_publish<W: io::Write>(report: &PublishPlan, w: &mut W) -> io::Result<()> {
+    let total_packages = report.rust_crates.len()
+        + report.npm_platform_packages.len()
+        + report.npm_main_packages.len()
+        + report.pypi_packages.len();
     writeln!(w, "Publish Plan (schema v{}):", report.schema_version)?;
+    if total_packages == 0 {
+        writeln!(w, "  No packages to publish.")?;
+        return Ok(());
+    }
     for rel in &report.releases {
         writeln!(w, "  Tag: {} (sha: {})", rel.tag_name, rel.sha.as_str())?;
     }
@@ -164,7 +176,10 @@ pub fn render_init<W: io::Write>(report: &InitReport, w: &mut W) -> io::Result<(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use callisto_model::{Ecosystem, PackageId, PublishAttempt, Version, VersionGrammar};
+    use callisto_model::{
+        Ecosystem, PackageId, PublishAttempt, Severity, StatusPackageRecord, Version,
+        VersionGrammar,
+    };
 
     fn v1() -> Version {
         Version::parse("1.0.0", VersionGrammar::SemVer).unwrap()
@@ -201,6 +216,63 @@ mod tests {
             ],
             diagnostics: vec![],
         }
+    }
+
+    fn status_pkg(
+        name: &str,
+        severity: Option<Severity>,
+        changesets: Vec<&str>,
+    ) -> StatusPackageRecord {
+        StatusPackageRecord {
+            package: pkg(name),
+            current_version: v1(),
+            last_tag: None,
+            pending_severity: severity,
+            changed_since_last_tag: false,
+            pending_changesets: changesets.into_iter().map(|s| s.to_string()).collect(),
+        }
+    }
+
+    // QW-2: render_status must not produce "Some(" in output.
+    #[test]
+    fn render_status_no_some_wrapper_in_output() {
+        let report = StatusReport {
+            schema_version: 1,
+            packages: vec![status_pkg("crate-a", Some(Severity::Minor), vec!["cs-001"])],
+            diagnostics: vec![],
+        };
+        let mut out = Vec::new();
+        render_status(&report, &mut out).unwrap();
+        let text = String::from_utf8(out).unwrap();
+        assert!(
+            !text.contains("Some("),
+            "render_status output must not contain 'Some('; got: {text}"
+        );
+        assert!(
+            text.contains("minor"),
+            "render_status output should contain severity 'minor'; got: {text}"
+        );
+    }
+
+    // QW-9: render_publish with empty plan should say "nothing to publish".
+    #[test]
+    fn render_publish_empty_plan_shows_nothing_to_publish() {
+        let plan = PublishPlan {
+            schema_version: 1,
+            rust_crates: vec![],
+            npm_platform_packages: vec![],
+            npm_main_packages: vec![],
+            pypi_packages: vec![],
+            releases: vec![],
+            diagnostics: vec![],
+        };
+        let mut out = Vec::new();
+        render_publish(&plan, &mut out).unwrap();
+        let text = String::from_utf8(out).unwrap().to_lowercase();
+        assert!(
+            text.contains("no packages") || text.contains("nothing to publish"),
+            "render_publish empty plan must mention 'no packages' or 'nothing to publish'; got: {text}"
+        );
     }
 
     #[test]

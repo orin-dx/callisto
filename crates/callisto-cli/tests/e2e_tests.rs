@@ -125,7 +125,7 @@ fn test_status_matches_ecosystem_qualified_changeset_entry() {
     )
     .unwrap();
 
-    // --check returns exit code 0 when at least one pending changeset is found.
+    // --check returns exit code 1 (FAILURE) when at least one pending changeset is found.
     // Before the fix this returned exit code 2 (no pending changesets detected).
     let code = commands::status::handle(
         StatusArgs {
@@ -139,13 +139,13 @@ fn test_status_matches_ecosystem_qualified_changeset_entry() {
 
     assert_eq!(
         format!("{code:?}"),
-        format!("{:?}", ExitCode::SUCCESS),
+        format!("{:?}", ExitCode::FAILURE),
         "status --check must detect a pending changeset whose entry uses an \
          ecosystem-qualified name (cargo/my-app) for a package registered as my-app"
     );
 }
 
-/// `callisto status --check` must return exit code 0 when at least one pending
+/// `callisto status --check` must return exit code 1 (FAILURE) when at least one pending
 /// changeset exists, and exit code 2 when the workspace is clean.
 #[test]
 fn test_status_check_exit_codes() {
@@ -223,8 +223,8 @@ fn test_status_check_exit_codes() {
     let pending_code = commands::status::handle(check_args.clone(), &global).unwrap();
     assert_eq!(
         format!("{pending_code:?}"),
-        format!("{:?}", ExitCode::SUCCESS),
-        "workspace with pending changeset and --check must return exit code 0"
+        format!("{:?}", ExitCode::FAILURE),
+        "workspace with pending changeset and --check must return exit code 1 (FAILURE)"
     );
 }
 
