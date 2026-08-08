@@ -123,12 +123,12 @@ pub enum WriteError {
 
     /// A changeset with one or more entries must have a non-empty summary.
     #[error("cannot write changeset: entries present but summary is empty or whitespace-only")]
-    #[diagnostic(code(E049), help("Provide a non-empty summary describing the change."))]
+    #[diagnostic(code(E050), help("Provide a non-empty summary describing the change."))]
     EmptySummary,
 
     /// `entries[index]`'s name is the empty string.
     #[error("entry {index} has an empty package name")]
-    #[diagnostic(code(E049))]
+    #[diagnostic(code(E052))]
     EmptyName { index: usize },
 
     /// `entries[index]`'s name contains a literal `"`, which cannot be written — no escaping
