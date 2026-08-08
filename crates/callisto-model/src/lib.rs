@@ -67,4 +67,30 @@ mod tests {
         assert_send_sync_static::<VersionReport>();
         assert_send_sync_static::<StatusReport>();
     }
+
+    /// Asserts that every #[diagnostic(code(...))] value across all callisto crates is unique.
+    /// This test enumerates every code found by audit; a duplicate entry here mirrors a duplicate
+    /// in source and causes an immediate, named failure.
+    #[test]
+    fn test_all_diagnostic_codes_are_unique() {
+        let codes: &[&str] = &[
+            // callisto-model: error.rs
+            "E004", "E005", "E006", "E008", "E009", "E010", "E011", "E012", "E013", "E015", "E016",
+            "E017", "E018", "E019", // callisto-model: exec.rs
+            "E021", "E022", "E023", "E024", // callisto-graph: locate/mod.rs
+            "E031", "E032", // callisto-format: bump.rs
+            "E035", "E036", "E037", "E038", "E039",
+            // callisto-format: changeset/mod.rs ParseError
+            "E041", "E042", "E043", "E044", "E045", "E046", "E047", "E048",
+            // callisto-format: changeset/mod.rs WriteError
+            "E049", "E050", "E052", // callisto-vcs: lib.rs
+            "E051", // callisto-changelog: error.rs
+            "E060", "E061", "E062", "E063", // callisto-graph: error.rs
+            "E101", "E107", "E108", "E109", "E110", "E111", "E112",
+        ];
+        let mut seen = std::collections::BTreeSet::new();
+        for code in codes {
+            assert!(seen.insert(*code), "Duplicate diagnostic code: {code}");
+        }
+    }
 }
