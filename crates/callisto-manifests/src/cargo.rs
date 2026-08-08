@@ -1236,6 +1236,129 @@ edition = "2021"
         );
     }
 
+    /// Spec: a "virtual workspace" root `Cargo.toml` (one that defines only
+    /// `[workspace]` and has no `[package]` section) must make `package_name()`
+    /// return `Err(ManifestError::MissingField)`. Virtual workspaces are common
+    /// in Cargo monorepos where the root manifest coordinates workspace members
+    /// but is not itself a publishable crate.
+    #[test]
+    fn virtual_workspace_cargo_toml_has_no_package_name() {
+        let dir = tempdir().unwrap();
+        let manifest_path = dir.path().join("Cargo.toml");
+        let content = r#"[workspace]
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+
+[workspace.dependencies]
+serde = { version = "1.0", features = ["derive"] }
+"#;
+        fs::write(&manifest_path, content).unwrap();
+
+        let decl = ManifestDecl::new(
+            "Cargo.toml",
+            ManifestRole::Canonical,
+            ManifestFormat::CargoToml,
+        )
+        .unwrap();
+        let ctx = OpenContext {
+            workspace_root: dir.path(),
+            cargo_workspace: None,
+            npm_workspace_kind: None,
+        };
+
+        // A virtual workspace root has no [package] table: open must succeed
+        // (the file is valid TOML), but package_name must return an error.
+        let manifest = CargoToml::open(&decl, &ctx).unwrap();
+        let result = manifest.package_name();
+        assert!(
+            matches!(
+                result,
+                Err(ManifestError::MissingField {
+                    field: "package.name",
+                    ..
+                })
+            ),
+            "virtual workspace must return MissingField for package.name, got: {result:?}"
+        );
+    }
+
+    /// Spec: a crate manifest that uses `version.workspace = true` must be
+    /// openable when a `WorkspaceCargoResolver` context is supplied.  Without
+    /// that context the open must fail with a descriptive `Read` error (not a
+    /// panic), because `workspace = true` without the resolver cannot be
+    /// resolved and silently falling through would produce wrong results.
+    #[test]
+    fn cargo_toml_with_workspace_version_requires_resolver_context() {
+        let dir = tempdir().unwrap();
+        let manifest_path = dir.path().join("Cargo.toml");
+        let content = r#"[package]
+name = "my-inherited-crate"
+version.workspace = true
+edition = "2021"
+"#;
+        fs::write(&manifest_path, content).unwrap();
+
+        let decl = ManifestDecl::new(
+            "Cargo.toml",
+            ManifestRole::Canonical,
+            ManifestFormat::CargoToml,
+        )
+        .unwrap();
+
+        // Without a workspace resolver, open must return Err — not panic.
+        let ctx_no_ws = OpenContext {
+            workspace_root: dir.path(),
+            cargo_workspace: None,
+            npm_workspace_kind: None,
+        };
+        let result = CargoToml::open(&decl, &ctx_no_ws);
+        assert!(
+            result.is_err(),
+            "opening version.workspace = true without resolver must return Err"
+        );
+        let err_msg = result.err().unwrap().to_string();
+        assert!(
+            err_msg.contains("workspace"),
+            "error message must mention 'workspace', got: {err_msg}"
+        );
+
+        // With a resolver that provides the workspace version, open must succeed
+        // and current_version must return the workspace-inherited version.
+        let root_cargo_path = dir.path().join("root_Cargo.toml");
+        let root_content = r#"[workspace]
+members = ["."]
+
+[workspace.package]
+version = "4.5.6"
+"#;
+        fs::write(&root_cargo_path, root_content).unwrap();
+
+        let inheritance = WorkspaceCargoResolver::load(&root_cargo_path)
+            .unwrap()
+            .inheritance()
+            .unwrap();
+
+        let ctx_with_ws = OpenContext {
+            workspace_root: dir.path(),
+            cargo_workspace: Some(std::sync::Arc::new(inheritance)),
+            npm_workspace_kind: None,
+        };
+        let manifest = CargoToml::open(&decl, &ctx_with_ws).unwrap();
+        assert_eq!(
+            manifest.package_name().unwrap(),
+            "my-inherited-crate",
+            "package name must be read from [package].name even with workspace version"
+        );
+        assert_eq!(
+            manifest.current_version().unwrap().render(),
+            "4.5.6",
+            "current_version must be inherited from the workspace resolver"
+        );
+    }
+
     use proptest::prelude::*;
     proptest! {
         #[test]

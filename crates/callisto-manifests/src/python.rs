@@ -1140,6 +1140,100 @@ docs = ["sphinx>=4.0.0"]
         );
     }
 
+    /// Spec: `PyprojectToml` must support the `[tool.poetry]` schema as a
+    /// fallback when `[project]` is absent. Poetry is a popular Python build
+    /// backend; workspaces that have not migrated to PEP 621 use this schema.
+    /// Both `package_name()` and `current_version()` must delegate to
+    /// `[tool.poetry]` when `[project]` does not exist.
+    #[test]
+    fn poetry_pyproject_toml_is_detected_without_project_table() {
+        let dir = tempdir().unwrap();
+        let pyproject_path = dir.path().join("pyproject.toml");
+
+        let content = r#"[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry]
+name = "my-poetry-pkg"
+version = "3.1.4"
+description = "A Poetry-managed package"
+
+[tool.poetry.dependencies]
+python = "^3.9"
+requests = "^2.28.0"
+"#;
+        fs::write(&pyproject_path, content).unwrap();
+
+        let decl = ManifestDecl {
+            path: PathBuf::from("pyproject.toml"),
+            role: ManifestRole::Canonical,
+            format: ManifestFormat::PyprojectToml,
+        };
+        let ctx = OpenContext {
+            workspace_root: dir.path(),
+            cargo_workspace: None,
+            npm_workspace_kind: None,
+        };
+
+        let manifest = PyprojectToml::open(&decl, &ctx).unwrap();
+        assert_eq!(
+            manifest.package_name().unwrap(),
+            "my-poetry-pkg",
+            "package_name must read from [tool.poetry] when [project] is absent"
+        );
+        assert_eq!(
+            manifest.current_version().unwrap().render(),
+            "3.1.4",
+            "current_version must read from [tool.poetry] when [project] is absent"
+        );
+    }
+
+    /// Spec: a `pyproject.toml` that has neither a `[project]` table nor a
+    /// `[tool.poetry]` table must make `package_name()` return
+    /// `Err(ManifestError::MissingField)`. An absent `[project]` section is a
+    /// common scenario for build-system-only files (e.g. a pure
+    /// `pyproject.toml` used only for packaging metadata configuration).
+    #[test]
+    fn pyproject_toml_without_project_or_poetry_returns_missing_field_error() {
+        let dir = tempdir().unwrap();
+        let pyproject_path = dir.path().join("pyproject.toml");
+
+        // Only a build-system section, no [project] and no [tool.poetry].
+        let content = r#"[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build]
+exclude = ["tests/"]
+"#;
+        fs::write(&pyproject_path, content).unwrap();
+
+        let decl = ManifestDecl {
+            path: PathBuf::from("pyproject.toml"),
+            role: ManifestRole::Canonical,
+            format: ManifestFormat::PyprojectToml,
+        };
+        let ctx = OpenContext {
+            workspace_root: dir.path(),
+            cargo_workspace: None,
+            npm_workspace_kind: None,
+        };
+
+        let manifest = PyprojectToml::open(&decl, &ctx).unwrap();
+        let result = manifest.package_name();
+        assert!(
+            matches!(result, Err(ManifestError::MissingField { .. })),
+            "missing [project] and [tool.poetry] must return MissingField, got: {result:?}"
+        );
+        // current_version must also return an error, not panic.
+        let ver_result = manifest.current_version();
+        assert!(
+            ver_result.is_err(),
+            "current_version without [project] or [tool.poetry] must return Err"
+        );
+    }
+
     #[test]
     fn round_trip_range_with_lte_upper_bound_returns_none() {
         // A "<=X.Y.Z" upper bound is not the recognized pattern; return None.

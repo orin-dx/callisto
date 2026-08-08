@@ -988,6 +988,78 @@ mod tests {
         );
     }
 
+    /// A package.json that contains a top-level `"workspaces"` array must be
+    /// detected as an NPM workspace root by `detect_npm_workspace_kind`, even
+    /// when no lock-file is present on disk (the lock-file heuristic alone is
+    /// not sufficient for projects that have not yet run `npm install`).
+    #[test]
+    fn detects_workspace_kind_from_workspaces_field_in_package_json() {
+        let dir = tempdir().unwrap();
+        let pkg_json = dir.path().join("package.json");
+        let content = r#"{
+  "name": "my-monorepo",
+  "version": "1.0.0",
+  "workspaces": [
+    "packages/*"
+  ]
+}
+"#;
+        fs::write(&pkg_json, content).unwrap();
+
+        // No lock-file on disk, only the "workspaces" field in package.json.
+        let kind = detect_npm_workspace_kind(dir.path()).unwrap();
+        assert_eq!(
+            kind,
+            Some(WorkspaceKind::Npm),
+            "workspaces field in package.json must imply WorkspaceKind::Npm"
+        );
+    }
+
+    /// A scoped package name like `"@scope/name"` must round-trip through
+    /// `package_name()` unchanged. Scoped names contain a `/` character that
+    /// could be mistaken for a path separator; this test verifies it is
+    /// treated as a literal package-name character.
+    #[test]
+    fn scoped_package_name_is_parsed_correctly() {
+        let dir = tempdir().unwrap();
+        let content = r#"{
+  "name": "@my-scope/awesome-pkg",
+  "version": "2.3.4"
+}
+"#;
+        let manifest = open_manifest(&dir, content);
+        assert_eq!(
+            manifest.package_name().unwrap(),
+            "@my-scope/awesome-pkg",
+            "scoped package name must be returned verbatim"
+        );
+    }
+
+    /// A `package.json` that is missing the `"version"` field must make
+    /// `current_version()` return `Err(ManifestError::MissingField)` rather
+    /// than panicking or returning a default value.
+    #[test]
+    fn missing_version_field_returns_missing_field_error_not_panic() {
+        let dir = tempdir().unwrap();
+        let content = r#"{
+  "name": "no-version-pkg",
+  "description": "This package intentionally omits the version field"
+}
+"#;
+        let manifest = open_manifest(&dir, content);
+        let result = manifest.current_version();
+        assert!(
+            matches!(
+                result,
+                Err(ManifestError::MissingField {
+                    field: "version",
+                    ..
+                })
+            ),
+            "missing version field must return MissingField error, got: {result:?}"
+        );
+    }
+
     /// Tab-indented package.json files must have their indentation preserved after a
     /// version write. This catches regressions where the CST editor re-serializes with
     /// two-space indentation instead of the original tab characters.
