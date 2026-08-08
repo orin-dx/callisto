@@ -57,6 +57,7 @@ impl<'a, R: CommandRunner> SeverityInference for CommitInference<'a, R> {
         window: InferenceWindowSpec<'_>,
     ) -> Result<Option<InferenceOutcome>, GraphError> {
         use callisto_conventional::{infer_severity, InferenceInput, InferenceWindow};
+        use callisto_vcs::GitAccess;
 
         let inf_window = match window.since {
             Some(sha) => InferenceWindow::SinceCommit(sha),
@@ -71,7 +72,10 @@ impl<'a, R: CommandRunner> SeverityInference for CommitInference<'a, R> {
             has_prior_release: window.has_prior_release,
         };
 
-        let raw = infer_severity(self.runner, &self.root, &input)?;
+        // Selecting the VCS backend is this layer's job now: callisto-conventional
+        // takes any `callisto_model::CommitWalker` and never names a VCS crate.
+        let git = GitAccess::discover(&self.root, self.runner);
+        let raw = infer_severity(&git, &input)?;
         if raw.commit_count == 0 {
             return Ok(None);
         }

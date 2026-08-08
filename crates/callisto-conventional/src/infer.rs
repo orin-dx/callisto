@@ -1,6 +1,6 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-use callisto_model::{CommandRunner, PackageId, Severity, Version};
+use callisto_model::{CommitWalker, PackageId, Severity, Version};
 
 use crate::{fetch_commits, raw_severity_of, ConventionalError, InferenceWindow, ParsedCommit};
 
@@ -20,11 +20,10 @@ pub struct InferredSeverity {
 }
 
 pub fn infer_severity(
-    runner: &dyn CommandRunner,
-    cwd: &Path,
+    walker: &dyn CommitWalker,
     input: &InferenceInput<'_>,
 ) -> Result<InferredSeverity, ConventionalError> {
-    let commits = fetch_commits(runner, cwd, &input.window, input.pathspecs)?;
+    let commits = fetch_commits(walker, &input.window, input.pathspecs)?;
     let commit_count = commits.len();
 
     let mut max_severity = Severity::None;

@@ -1,6 +1,8 @@
 use std::path::{Path, PathBuf};
 
-use callisto_model::{ApplyPermit, CommandError, CommitSha, TagName};
+use callisto_model::{
+    ApplyPermit, CommandError, CommitRecord, CommitSha, CommitWalkError, CommitWalker, TagName,
+};
 use thiserror::Error;
 
 pub mod access;
@@ -48,12 +50,32 @@ pub enum VcsError {
     Command(#[from] CommandError),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct GitCommit {
-    pub sha: CommitSha,
-    pub summary: String,
-    pub body: Option<String>,
+/// Narrows a [`VcsError`] to the Layer 1 [`CommitWalkError`] vocabulary at
+/// the [`CommitWalker`] boundary.
+///
+/// [`CommitWalkError::Command`] and [`CommitWalkError::RefNotFound`] survive
+/// as themselves -- they are the two distinctions consumers branch on. Every
+/// other variant is gix- or repository-specific with no Layer 1 equivalent,
+/// so it collapses into [`CommitWalkError::Backend`] carrying this error's
+/// own `Display` rendering; nothing is lost from the message a user sees.
+impl From<VcsError> for CommitWalkError {
+    fn from(err: VcsError) -> Self {
+        match err {
+            VcsError::Command(inner) => CommitWalkError::Command(inner),
+            VcsError::RefNotFound { ref_name } => CommitWalkError::RefNotFound { ref_name },
+            other => CommitWalkError::Backend {
+                message: other.to_string(),
+            },
+        }
+    }
 }
+
+/// A commit as produced by a history walk.
+///
+/// Aliases [`callisto_model::CommitRecord`] rather than redeclaring it, so a
+/// walk's output crosses the [`CommitWalker`] seam without a conversion and
+/// there is exactly one definition of a commit's shape in the workspace.
+pub type GitCommit = CommitRecord;
 
 /// Trait for Git VCS operations.
 pub trait GitVcsProvider {
@@ -139,6 +161,32 @@ pub trait GitDataSource {
         permit: &ApplyPermit,
     ) -> Result<(), VcsError>;
 }
+
+/// Wires a [`GitDataSource`] backend up to the Layer 1
+/// [`callisto_model::CommitWalker`] contract.
+///
+/// The bodies are identical for every backend -- delegate `commits_since` and
+/// narrow [`VcsError`] to [`CommitWalkError`] -- but they cannot be written
+/// once as a blanket `impl<T: GitDataSource> CommitWalker for T`: `CommitWalker`
+/// is foreign to this crate and `T` is uncovered, which the orphan rules
+/// forbid. The macro keeps the repetition honest instead.
+macro_rules! impl_commit_walker {
+    ($ty:ty) => {
+        impl CommitWalker for $ty {
+            fn commits_since(
+                &self,
+                since_ref: Option<&str>,
+                pathspecs: &[PathBuf],
+            ) -> Result<Vec<CommitRecord>, CommitWalkError> {
+                GitDataSource::commits_since(self, since_ref, pathspecs).map_err(Into::into)
+            }
+        }
+    };
+}
+
+impl_commit_walker!(GitAccess<'_>);
+impl_commit_walker!(GitRepository);
+impl_commit_walker!(ShellGit<'_>);
 
 pub struct GitRepository {
     #[cfg(not(target_arch = "wasm32"))]
