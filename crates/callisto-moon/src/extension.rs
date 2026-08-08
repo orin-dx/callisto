@@ -86,6 +86,7 @@ fn format_graph_error_json(e: &callisto_graph::error::GraphError) -> serde_json:
 /// `Err`, the serialization failure is surfaced as a structured error response
 /// with `exit_code = 1` — preventing the host from receiving a silent
 /// `null`/empty output that looks like success.
+#[cfg(any(feature = "pdk", test))]
 fn build_extension_output(
     json_result: serde_json::Result<serde_json::Value>,
     exit_code: i32,
