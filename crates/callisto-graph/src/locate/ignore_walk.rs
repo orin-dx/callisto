@@ -142,6 +142,24 @@ impl ProjectLocator for IgnoreWalkLocator {
     }
 }
 
+fn to_workspace_relative(path: &Path, root: &Path) -> Result<PathBuf, LocateError> {
+    if !path.starts_with(root) {
+        return Err(LocateError::OutsideWorkspaceRoot {
+            path: path.to_path_buf(),
+            root: root.to_path_buf(),
+        });
+    }
+    let rel = path.strip_prefix(root).unwrap();
+    if rel.as_os_str().is_empty() {
+        Ok(PathBuf::from("."))
+    } else {
+        workspace_relative(rel).map_err(|_e| LocateError::OutsideWorkspaceRoot {
+            path: path.to_path_buf(),
+            root: root.to_path_buf(),
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -252,23 +270,5 @@ mod tests {
                 .map(|p| format!("{:?}:{}", p.ecosystem, p.id.name()))
                 .collect::<Vec<_>>()
         );
-    }
-}
-
-fn to_workspace_relative(path: &Path, root: &Path) -> Result<PathBuf, LocateError> {
-    if !path.starts_with(root) {
-        return Err(LocateError::OutsideWorkspaceRoot {
-            path: path.to_path_buf(),
-            root: root.to_path_buf(),
-        });
-    }
-    let rel = path.strip_prefix(root).unwrap();
-    if rel.as_os_str().is_empty() {
-        Ok(PathBuf::from("."))
-    } else {
-        workspace_relative(rel).map_err(|_e| LocateError::OutsideWorkspaceRoot {
-            path: path.to_path_buf(),
-            root: root.to_path_buf(),
-        })
     }
 }

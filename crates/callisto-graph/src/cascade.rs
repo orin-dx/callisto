@@ -539,26 +539,23 @@ mod tests {
 
         // Pre-release with same major: must be false even though major matches
         let pre_same_major = Version::parse("1.9.0-alpha.1", VersionGrammar::SemVer).unwrap();
-        assert_eq!(
-            caret_covers(&v123, &pre_same_major).unwrap(),
-            false,
+        assert!(
+            !caret_covers(&v123, &pre_same_major).unwrap(),
             "caret_covers(1.2.3, 1.9.0-alpha.1) must be false: caret ranges must \
              not cover pre-releases"
         );
 
         // Pre-release with different major: also false (different major anyway)
         let pre_diff_major = Version::parse("2.0.0-alpha.1", VersionGrammar::SemVer).unwrap();
-        assert_eq!(
-            caret_covers(&v123, &pre_diff_major).unwrap(),
-            false,
+        assert!(
+            !caret_covers(&v123, &pre_diff_major).unwrap(),
             "caret_covers(1.2.3, 2.0.0-alpha.1) must be false: different major"
         );
 
         // Stable version within same major: must still be true
         let stable_same_major = Version::semver(1, 9, 0);
-        assert_eq!(
+        assert!(
             caret_covers(&v123, &stable_same_major).unwrap(),
-            true,
             "caret_covers(1.2.3, 1.9.0) must be true: stable, same major"
         );
     }
