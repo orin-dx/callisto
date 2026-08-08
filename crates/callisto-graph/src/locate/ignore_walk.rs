@@ -41,6 +41,7 @@ impl ProjectLocator for IgnoreWalkLocator {
             .hidden(true)
             .git_ignore(true)
             .parents(false)
+            .max_depth(Some(32))
             .filter_entry({
                 let skip = self.skip.clone();
                 move |entry| {
@@ -138,6 +139,43 @@ impl ProjectLocator for IgnoreWalkLocator {
 
         results.sort_by(|a, b| (&a.path, a.ecosystem).cmp(&(&b.path, b.ecosystem)));
         Ok(results)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::tempdir;
+
+    /// Spec: IgnoreWalkLocator must not traverse more than 32 directory levels
+    /// deep. A Cargo.toml placed at level 33 must NOT be discovered.
+    /// Without a max_depth cap, WalkBuilder traverses arbitrarily deep.
+    #[test]
+    fn ignore_walk_locator_does_not_traverse_beyond_32_levels() {
+        let root = tempdir().unwrap();
+
+        // Build a 33-level deep directory chain.
+        let mut deep_dir = root.path().to_path_buf();
+        for _ in 0..33 {
+            deep_dir = deep_dir.join("sub");
+        }
+        fs::create_dir_all(&deep_dir).unwrap();
+
+        // Place a valid Cargo.toml at the deepest level.
+        fs::write(
+            deep_dir.join("Cargo.toml"),
+            "[package]\nname = \"deep-pkg\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+
+        let locator = IgnoreWalkLocator::new(root.path());
+        let projects = locator.projects().unwrap();
+
+        assert!(
+            projects.is_empty(),
+            "no projects should be found beyond 32 levels deep, found: {projects:?}"
+        );
     }
 }
 
