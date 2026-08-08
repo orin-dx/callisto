@@ -119,10 +119,10 @@ flowchart TB
 | :--- | :--- | :--- | :--- | :--- |
 | `callisto-model` | MIT/Apache-2.0 | Layer 1 | Core domain primitives, version grammars, JSON report schemas | `semver`, `schemars`, `serde` |
 | `callisto-format` | MIT/Apache-2.0 | Layer 1 | Byte-compatible parser and writer for changeset `.md` and `pre.json` | `indexmap`, `serde` |
-| `callisto-conventional` | AGPL-3.0 | Layer 1 | Conventional commit parsing and severity classification | `conventional_commits_next` |
+| `callisto-conventional` | AGPL-3.0 | Layer 1 | Conventional commit parsing and severity classification | `thiserror` |
 | `callisto-changelog` | AGPL-3.0 | Layer 1 | Sectioned Markdown changelog rendering | `pulldown-cmark` |
 | `callisto-manifests` | AGPL-3.0 | Layer 2 | Format-preserving manifest AST editing and atomic writes | `toml_edit`, `serde_json`, `tempfile` |
-| `callisto-vcs` | AGPL-3.0 | Layer 2 | Native in-process Git discovery, commit walks, and tag listing | `gix` (gitoxide, target-gated for wasm32) |
+| `callisto-vcs` | MIT/Apache-2.0 | Layer 2 | Git operations via `gix` (native, non-wasm32) with `ShellGit` fallback | `gix`, `globset` |
 | `callisto-graph` | AGPL-3.0 | Layer 3 | Dependency DAG construction, Tarjan SCC cycle detection, cascade engine | `petgraph`, `ignore` |
 | `callisto-cli` | AGPL-3.0 | Layer 4 | Standalone CLI binary, colored diff previews, `miette` error reporting | `clap`, `miette`, `anstream`, `similar` |
 | `callisto-moon` | AGPL-3.0 | Layer 4 | Moon extension host integration and WASM compilation target | `extism-pdk` (`wasm32-wasip1`) |
@@ -252,31 +252,33 @@ flowchart TD
 
 ## 7. In-Process VCS Engine (`callisto-vcs`)
 
-`callisto-vcs` integrates `gix` (gitoxide) for in-process Git operations, avoiding the performance overhead and flakiness of invoking `git` CLI subprocesses.
+`callisto-vcs` provides Git operations through a dual-backend design: a native `gix` (gitoxide) backend for non-WASM targets, and a `ShellGit` backend that shells out to the real `git` binary for portability and WASM fallback.
 
 ### Key VCS Capabilities
 
-- **Repository Discovery**: Walks parent directories from the current working directory to locate `.git`.
-- **Commit Walks**: Performs in-process commit history traversals to evaluate conventional commits since a given Git ref or release tag.
-- **Tag Listing**: Matches tags against glob patterns (`v*`, `@scope/*`) using `globset`.
+- **Repository Discovery**: Walks parent directories from the current working directory to locate `.git` (native backend only; shell backend uses `git rev-parse --show-toplevel`).
+- **Commit Walks**: Retrieves commit history to evaluate conventional commits since a given Git ref or release tag.
+- **Tag Listing**: Matches tags against glob patterns (`v*`, `@scope/*`) using `globset` (both backends apply identical `globset` matching semantics).
 
-### Target-Gated WASM Compatibility Architecture
+### Dual-Backend Architecture (`GitAccess`)
 
-`gix` relies on POSIX signal handlers (`gix-tempfile` -> `signal-hook-registry`), which are unsupported when compiling to WebAssembly (`wasm32-wasip1`). `callisto-vcs` uses conditional compilation target-gating:
+`callisto-vcs` exposes a unified `GitDataSource` trait. The `GitAccess` selector implements it with a deliberate fallback policy:
+
+- **Read operations** (`list_tags`, `resolve_commit`, `commits_since`): attempt the native `gix` backend first; fall back to `ShellGit` on any error, including failed repo discovery.
+- **Write operations** (`create_tag`, `create_floating_major`): fall back to `ShellGit` only when native `gix` was unavailable from the start. A discovered repo's result is authoritative — a second backend retry could mask partial mutations.
 
 ```rust
-// Native CLI target (macOS, Linux, Windows)
-#[cfg(not(target_arch = "wasm32"))]
-pub struct GitRepository {
-    repo: gix::Repository,
+pub struct GitAccess<'r> {
+    native: Option<GitRepository>,  // None on wasm32 or outside a repo
+    shell: ShellGit<'r>,            // always available via CommandRunner
 }
-
-// WASM extension target (wasm32-wasip1 for Moon)
-#[cfg(target_arch = "wasm32")]
-pub struct GitRepository;
 ```
 
-On WASM targets, native Git operations cleanly return non-fatal fallback errors while project discovery and graph operations execute at full speed.
+### WASM Target Constraints
+
+`gix` depends on POSIX signal handlers (`gix-tempfile` -> `signal-hook-registry`), which are unsupported on `wasm32-wasip1`. `GitRepository::discover` always returns `Err` on that target (via a compile-time feature gate), so `GitAccess` automatically routes all operations through `ShellGit`, which calls `git` via the Extism host bridge.
+
+Note: a 2026 probe confirmed that `gix` object reads fail with `ENOSYS` on WASM even with the signal-hook dependency removed. The shell-git fallback is therefore the production code path for the Moon WASM plugin.
 
 ---
 
@@ -400,9 +402,11 @@ All contributions to Callisto must adhere to the following 4 engineering invaria
 
 ---
 
-## 12. Zero-Config Multi-Platform Native Matrix Auto-Discovery (`callisto matrix`)
+## 12. Zero-Config Multi-Platform Native Matrix Auto-Discovery (`callisto matrix`) [planned]
 
-To eliminate configuration duplication and configuration drift across native Rust, NAPI-RS, Maturin (Python), and Java (JNI) polyglot monorepos, Callisto provides dynamic matrix auto-discovery:
+> **Status: PLANNED.** The `callisto matrix` and `callisto publish-target` subcommands described in this section are not yet implemented. The CLI today does not expose these subcommands. This section documents the intended design for a future release.
+
+To eliminate configuration duplication and configuration drift across native Rust, NAPI-RS, Maturin (Python), and Java (JNI) polyglot monorepos, the planned `callisto matrix` command would provide dynamic matrix auto-discovery:
 
 ```text
 ┌────────────────────────────────────────────────────────────────────────┐
@@ -454,7 +458,7 @@ jobs:
 
 ## 13. Hermetic Build Systems & Custom Orchestration (Bazel, Buck2, Nix, GitLab CI)
 
-Callisto's core engine is decoupled from GitHub Actions. All versioning, status calculation, dependency graph sorting, and matrix auto-discovery execute as pure, hermetic CLI subcommands that operate on filesystem inputs and emit standard JSON/Text data streams.
+Callisto's core engine is decoupled from GitHub Actions. All versioning, status calculation, and dependency graph sorting execute as pure, hermetic CLI subcommands that operate on filesystem inputs and emit standard JSON/Text data streams.
 
 ```text
 ┌────────────────────────────────────────────────────────────────────────┐
@@ -465,10 +469,10 @@ Callisto's core engine is decoupled from GitHub Actions. All versioning, status 
 ├───────────────────────────────────┬────────────────────────────────────┤
 │ CLI / BUILD SYSTEM INTERFACE      │ OUTPUT FORMAT                      │
 ├───────────────────────────────────┼────────────────────────────────────┤
-│ callisto plan-publish             │ Hermetic JSON / Protobuf           │
-│ callisto matrix                   │ Standard JSON array for any runner │
+│ callisto plan-publish             │ Hermetic JSON                      │
 │ callisto status                   │ Struct/JSON workspace state        │
 │ callisto tag                      │ Native Git refs or build outputs   │
+│ callisto matrix [planned]         │ Standard JSON array for any runner │
 └───────────────────────────────────┴────────────────────────────────────┘
 ```
 
@@ -495,13 +499,13 @@ callisto_release_plan(
 
 ### Guarantees for Non-GitHub Environments
 
-1. **Zero Network / API Lock-in**: `callisto status`, `callisto plan-publish`, and `callisto matrix` operate entirely on local workspace files and write to stdout/JSON. They run identically inside Bazel sandboxes, Nix flakes, GitLab CI, Buildkite, and Jenkins.
+1. **Zero Network / API Lock-in**: `callisto status` and `callisto plan-publish` operate entirely on local workspace files and write to stdout/JSON. They run identically inside Bazel sandboxes, Nix flakes, GitLab CI, Buildkite, and Jenkins. (The planned `callisto matrix` subcommand will extend this guarantee to native build matrix generation.)
 2. **Hermetic File Inputs**: Accepts explicit `--cwd` and `--config` overrides to run inside isolated build tool sandboxes without relying on global environment variables.
 3. **Thin Adapter Seams**: GitHub Actions ([`callisto-action`](.github/actions/callisto-action/action.yml)), Moon WASM ([`callisto-moon`](crates/callisto-moon)), and Bazel (`rules_callisto`) are thin adapter layers wrapping the same core Rust CLI engine.
 
 ---
 
-## 8. Multi-Phase Polyglot Master Specification & Architecture Roadmap
+## 14. Multi-Phase Polyglot Master Specification & Architecture Roadmap
 
 Callisto is engineered to support polyglot monorepos across **Rust, TypeScript/JS, Python, Go, Java (Maven/Gradle), and C# (.NET)** through a unified, 4-phase architectural roadmap.
 
