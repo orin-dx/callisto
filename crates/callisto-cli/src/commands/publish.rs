@@ -14,6 +14,29 @@ use crate::render;
 use crate::runner::CliCommandRunner;
 use crate::workspace::load_workspace;
 
+/// Writes the dry-run text notice for the publish command to the given
+/// writer. When the plan contains no publishable packages, emits a clear
+/// "nothing to publish (dry run)" message; otherwise previews the plan.
+pub(crate) fn write_dry_run_text<W: std::io::Write>(
+    plan: &callisto_model::PublishPlan,
+    w: &mut W,
+) -> std::io::Result<()> {
+    let is_empty = plan.rust_crates.is_empty()
+        && plan.npm_main_packages.is_empty()
+        && plan.npm_platform_packages.is_empty()
+        && plan.pypi_packages.is_empty();
+    if is_empty {
+        writeln!(w, "No packages published (dry run).")?;
+    } else {
+        writeln!(
+            w,
+            "Dry run: about to publish the following plan (nothing will be published):"
+        )?;
+        render::render_publish(plan, w)?;
+    }
+    Ok(())
+}
+
 /// Publishes every package in the workspace's publish plan to its ecosystem
 /// registry (crates.io, npm, PyPI) by shelling out to that ecosystem's own
 /// publisher CLI (`cargo publish`, `npm publish`, `twine upload`) — never by
@@ -33,12 +56,7 @@ pub fn handle(_args: PublishArgs, global: &GlobalArgs) -> Result<ExitCode, CliEr
     let Some(permit) = ApplyPermit::granted_unless_dry_run(global.dry_run) else {
         match global.format {
             OutputFormat::Json => write_json(&mut std::io::stdout(), &plan)?,
-            OutputFormat::Text => {
-                println!(
-                    "Dry run: about to publish the following plan (nothing will be published):"
-                );
-                render::render_publish(&plan, &mut std::io::stdout())?;
-            }
+            OutputFormat::Text => write_dry_run_text(&plan, &mut std::io::stdout())?,
         }
         return Ok(ExitCode::SUCCESS);
     };
@@ -57,4 +75,37 @@ pub fn handle(_args: PublishArgs, global: &GlobalArgs) -> Result<ExitCode, CliEr
     }
 
     Ok(ExitCode::SUCCESS)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use callisto_model::SCHEMA_VERSION;
+
+    fn empty_plan() -> callisto_model::PublishPlan {
+        callisto_model::PublishPlan {
+            schema_version: SCHEMA_VERSION,
+            rust_crates: vec![],
+            npm_main_packages: vec![],
+            npm_platform_packages: vec![],
+            pypi_packages: vec![],
+            releases: vec![],
+            diagnostics: vec![],
+        }
+    }
+
+    /// Spec: when no packages would be published and --dry-run is active,
+    /// the text output must contain "dry run" (case-insensitive) so the
+    /// operator can see that nothing was published.
+    #[test]
+    fn dry_run_text_contains_dry_run_for_empty_plan() {
+        let plan = empty_plan();
+        let mut out = Vec::<u8>::new();
+        write_dry_run_text(&plan, &mut out).unwrap();
+        let text = String::from_utf8(out).unwrap();
+        assert!(
+            text.to_ascii_lowercase().contains("dry run"),
+            "dry-run text output must contain 'dry run', got: {text:?}"
+        );
+    }
 }
