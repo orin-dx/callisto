@@ -289,7 +289,7 @@ where
             attempts.push(self.attempt_publish(pkg_id, rust_crate.version.clone(), permit));
         }
 
-        for npm_pkg in &plan.npm_main_packages {
+        for npm_pkg in &plan.npm_platform_packages {
             let pkg_id = PackageId::Prefixed {
                 ecosystem: Ecosystem::Npm,
                 name: npm_pkg.name.clone(),
@@ -297,7 +297,7 @@ where
             attempts.push(self.attempt_publish(pkg_id, npm_pkg.version.clone(), permit));
         }
 
-        for npm_pkg in &plan.npm_platform_packages {
+        for npm_pkg in &plan.npm_main_packages {
             let pkg_id = PackageId::Prefixed {
                 ecosystem: Ecosystem::Npm,
                 name: npm_pkg.name.clone(),
@@ -715,6 +715,91 @@ mod tests {
                 PublishAttemptResult::AlreadyPublished
             ),
             "pypi-b should be AlreadyPublished"
+        );
+    }
+
+    /// npm platform packages must be published before npm main packages because
+    /// main packages list platforms in their `optionalDependencies` and the
+    /// registry resolver requires platforms to already exist.
+    #[test]
+    fn test_npm_platforms_published_before_mains() {
+        struct RecordingClient {
+            order: Mutex<Vec<String>>,
+        }
+
+        impl RegistryClient for RecordingClient {
+            fn is_published(
+                &self,
+                _pkg: &PackageId,
+                _ver: &Version,
+            ) -> Result<bool, RegistryError> {
+                Ok(false)
+            }
+
+            fn publish(
+                &self,
+                pkg: &PackageId,
+                _ver: &Version,
+                _permit: &ApplyPermit,
+            ) -> Result<PublishOutcome, RegistryError> {
+                self.order.lock().unwrap().push(pkg.name().to_string());
+                Ok(PublishOutcome::Published)
+            }
+        }
+
+        let client = RecordingClient {
+            order: Mutex::new(Vec::new()),
+        };
+        let policy = MockRateLimitPolicy;
+        let time = MockTimeProvider {
+            time: Mutex::new(SystemTime::UNIX_EPOCH),
+        };
+        let orchestrator = PublishOrchestrator::new(client, policy, time);
+
+        let npm_version = v100();
+        let plan = callisto_model::PublishPlan {
+            schema_version: callisto_model::SCHEMA_VERSION,
+            rust_crates: vec![],
+            npm_platform_packages: vec![callisto_model::NpmPublish {
+                name: "platform-linux".to_string(),
+                version: npm_version.clone(),
+                publish_to: callisto_model::RegistryKey(
+                    callisto_model::RegistryKey::NPM.to_string(),
+                ),
+                registry: None,
+                tag: None,
+                access: None,
+            }],
+            npm_main_packages: vec![callisto_model::NpmMainPublish {
+                name: "main-package".to_string(),
+                version: npm_version.clone(),
+                publish_to: callisto_model::RegistryKey(
+                    callisto_model::RegistryKey::NPM.to_string(),
+                ),
+                registry: None,
+                tag: None,
+                access: None,
+                depends_on_platforms: vec!["platform-linux".to_string()],
+            }],
+            pypi_packages: vec![],
+            releases: vec![],
+            diagnostics: vec![],
+        };
+
+        drop(orchestrator.execute(&plan, &permit()));
+
+        let order = orchestrator.client.order.lock().unwrap();
+        let platform_pos = order
+            .iter()
+            .position(|n| n == "platform-linux")
+            .expect("platform-linux was not published");
+        let main_pos = order
+            .iter()
+            .position(|n| n == "main-package")
+            .expect("main-package was not published");
+        assert!(
+            platform_pos < main_pos,
+            "platform packages must be published before main packages, but got order: {order:?}"
         );
     }
 
