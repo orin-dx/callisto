@@ -84,7 +84,7 @@ impl PackageJson {
             map.insert(k, v);
         }
 
-        let mut out = format_json_pretty(&map, &indent_str);
+        let mut out = format_json_pretty(&map, &indent_str)?;
         if self.fingerprint.line_ending == LineEnding::CrLf {
             out = out.replace("\r\n", "\n").replace('\n', "\r\n");
         }
@@ -142,15 +142,26 @@ fn detect_fingerprint(content: &str) -> FormatFingerprint {
     }
 }
 
-fn format_json_pretty(map: &IndexMap<&String, &Value>, indent_str: &str) -> String {
+fn format_json_pretty(
+    map: &IndexMap<&String, &Value>,
+    indent_str: &str,
+) -> Result<String, ManifestError> {
     use serde::Serialize;
     let buf = Vec::new();
     let formatter = serde_json::ser::PrettyFormatter::with_indent(indent_str.as_bytes());
     let mut serializer = serde_json::Serializer::with_formatter(buf, formatter);
-    map.serialize(&mut serializer).unwrap();
-    let mut out = String::from_utf8(serializer.into_inner()).unwrap();
+    map.serialize(&mut serializer)
+        .map_err(|e| ManifestError::FormattingNotPreserved {
+            path: std::path::PathBuf::new(),
+            message: format!("JSON serialization failed: {e}"),
+        })?;
+    let bytes = serializer.into_inner();
+    let mut out = String::from_utf8(bytes).map_err(|e| ManifestError::FormattingNotPreserved {
+        path: std::path::PathBuf::new(),
+        message: format!("JSON serialization produced invalid UTF-8: {e}"),
+    })?;
     out.push('\n');
-    out
+    Ok(out)
 }
 
 impl Manifest for PackageJson {
@@ -425,6 +436,25 @@ mod tests {
         callisto_model::ApplyPermit::force_for_tests()
     }
     use super::*;
+
+    /// Spec: `format_json_pretty` must propagate errors via Result rather
+    /// than unwrapping. The return type must be `Result<String, _>` so
+    /// callers can handle failures without a panic.
+    ///
+    /// Before the fix the return type is `String`, so the `is_ok()` call
+    /// below fails to compile (String has no `is_ok` method).
+    #[test]
+    fn format_json_pretty_returns_result_not_panics() {
+        let k = "version".to_string();
+        let v = Value::String("1.0.0".to_string());
+        let mut map = IndexMap::new();
+        map.insert(&k, &v);
+        let result: Result<String, _> = format_json_pretty(&map, "  ");
+        assert!(result.is_ok());
+        let json = result.unwrap();
+        assert!(json.contains("\"version\""));
+        assert!(json.contains("\"1.0.0\""));
+    }
     use callisto_model::{ManifestDecl, ManifestFormat, ManifestRole};
     use tempfile::tempdir;
 
