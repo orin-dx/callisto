@@ -109,6 +109,14 @@ pub(crate) fn caret_covers(cur: &Version, new: &Version) -> Result<bool, Grammar
     if cmp.is_lt() {
         return Ok(false);
     }
+    // Pre-release versions are never covered by a caret range: ^1.2.3 must not
+    // satisfy 1.9.0-alpha.1 even though 1.9.0-alpha.1 > 1.2.3 and they share
+    // the same major. Caret ranges cover stable releases within the allowed
+    // major/minor bounds only; a pre-release of an in-range stable version is
+    // not itself a stable release and must not be treated as covered.
+    if new.is_prerelease() {
+        return Ok(false);
+    }
     let cur_maj = cur.major().unwrap_or(0);
     let cur_min = cur.minor().unwrap_or(0);
     let new_maj = new.major().unwrap_or(0);
@@ -513,9 +521,47 @@ pub fn rewrite_spec(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use callisto_model::{GroupKind, GroupName, Package, ReleaseTrigger};
+    use callisto_model::{GroupKind, GroupName, Package, ReleaseTrigger, VersionGrammar};
 
     use crate::config::{CascadeBumpSeverity, GroupDef, GroupMember};
+
+    // -------------------------------------------------------------------------
+    // T06: caret range must not cover pre-release versions
+    // -------------------------------------------------------------------------
+
+    /// Spec: caret_covers(cur, new) must return false when `new` is a pre-release
+    /// version, regardless of whether the major/minor bounds would otherwise be
+    /// satisfied. "^1.2.3" should not be satisfied by "1.9.0-alpha.1" even though
+    /// 1.9.0-alpha.1 > 1.2.3 and they share the same major version.
+    #[test]
+    fn caret_covers_excludes_prerelease_versions() {
+        let v123 = Version::semver(1, 2, 3);
+
+        // Pre-release with same major: must be false even though major matches
+        let pre_same_major = Version::parse("1.9.0-alpha.1", VersionGrammar::SemVer).unwrap();
+        assert_eq!(
+            caret_covers(&v123, &pre_same_major).unwrap(),
+            false,
+            "caret_covers(1.2.3, 1.9.0-alpha.1) must be false: caret ranges must \
+             not cover pre-releases"
+        );
+
+        // Pre-release with different major: also false (different major anyway)
+        let pre_diff_major = Version::parse("2.0.0-alpha.1", VersionGrammar::SemVer).unwrap();
+        assert_eq!(
+            caret_covers(&v123, &pre_diff_major).unwrap(),
+            false,
+            "caret_covers(1.2.3, 2.0.0-alpha.1) must be false: different major"
+        );
+
+        // Stable version within same major: must still be true
+        let stable_same_major = Version::semver(1, 9, 0);
+        assert_eq!(
+            caret_covers(&v123, &stable_same_major).unwrap(),
+            true,
+            "caret_covers(1.2.3, 1.9.0) must be true: stable, same major"
+        );
+    }
 
     struct TwoPackageGraph {
         packages: Vec<Package>,

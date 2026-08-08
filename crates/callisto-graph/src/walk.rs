@@ -67,7 +67,11 @@ impl ManifestWalkResolver {
         }
 
         for (rel_path, mut list) in by_path {
-            list.sort_by_key(|a| a.0);
+            // Explicit precedence: Cargo (0) > Npm (1) > Pypi (2) > others.
+            // Do NOT rely on enum discriminant order -- sort by this named
+            // priority function so the precedence survives future variant
+            // additions to `Ecosystem`.
+            list.sort_by_key(|a| ecosystem_primary_priority(a.0));
             let primary_id = list[0].1.clone();
 
             index
@@ -208,5 +212,22 @@ impl ManifestWalkResolver {
             index,
             diagnostics,
         })
+    }
+}
+
+/// Explicit ecosystem precedence for primary-ID selection when a single
+/// project directory contains manifests from multiple ecosystems (e.g., both
+/// `Cargo.toml` and `package.json`). Lower value = higher priority.
+///
+/// Precedence: Cargo (0) > Npm (1) > Pypi (2) > others (255).
+///
+/// This function is used instead of `Ecosystem`'s derived `Ord` so that the
+/// ordering is stable even if the `Ecosystem` variant sequence changes.
+fn ecosystem_primary_priority(e: Ecosystem) -> u8 {
+    match e {
+        Ecosystem::Cargo => 0,
+        Ecosystem::Npm => 1,
+        Ecosystem::Pypi => 2,
+        _ => u8::MAX,
     }
 }

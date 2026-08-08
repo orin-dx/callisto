@@ -177,6 +177,82 @@ mod tests {
             "no projects should be found beyond 32 levels deep, found: {projects:?}"
         );
     }
+
+    /// Spec: `IgnoreWalkLocator::discover` on a directory that has no workspace
+    /// manifest markers (no Cargo.toml with [workspace], no package.json with
+    /// workspaces field, no pnpm-workspace.yaml, no .moon directory) must
+    /// return `Err(LocateError::WorkspaceRootNotFound)`, NOT a silent `Ok(None)`
+    /// or a wrong-type error variant. This pins the error propagation path so
+    /// that future refactors (e.g., adding a VCS probe to discover()) cannot
+    /// accidentally swallow or mistype this error.
+    #[test]
+    fn discover_returns_workspace_root_not_found_for_non_workspace_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        // Deliberately no workspace markers -- plain empty temp directory
+        let result = IgnoreWalkLocator::discover(tmp.path());
+        let is_correct = matches!(result, Err(LocateError::WorkspaceRootNotFound { .. }));
+        let err_display = result
+            .as_ref()
+            .err()
+            .map(|e| e.to_string())
+            .unwrap_or_else(|| "<Ok(...)>".to_string());
+        assert!(
+            is_correct,
+            "expected Err(LocateError::WorkspaceRootNotFound) for a directory with \
+             no workspace manifest markers, got: {err_display}"
+        );
+    }
+
+    /// Spec: when a directory contains both `Cargo.toml` (with a `[package]`
+    /// section) and `package.json`, `projects()` must return both ecosystem
+    /// entries AND sort Cargo before Npm -- Cargo ecosystem has explicit
+    /// priority over Npm. This pins the sort order so that relying on enum
+    /// discriminant ordering cannot silently break the precedence if the
+    /// `Ecosystem` variant sequence is ever changed.
+    #[test]
+    fn projects_returns_cargo_before_npm_when_both_manifests_present() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+
+        std::fs::write(
+            root.join("Cargo.toml"),
+            "[package]\nname = \"my-crate\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("package.json"),
+            r#"{"name":"my-npm-pkg","version":"0.1.0"}"#,
+        )
+        .unwrap();
+
+        let locator = IgnoreWalkLocator::new(root);
+        let projects = locator.projects().unwrap();
+
+        let cargo_pos = projects
+            .iter()
+            .position(|p| p.ecosystem == Ecosystem::Cargo);
+        let npm_pos = projects.iter().position(|p| p.ecosystem == Ecosystem::Npm);
+
+        assert!(
+            cargo_pos.is_some(),
+            "expected a Cargo project to be discovered in the results"
+        );
+        assert!(
+            npm_pos.is_some(),
+            "expected an Npm project to be discovered in the results"
+        );
+        assert!(
+            cargo_pos.unwrap() < npm_pos.unwrap(),
+            "Cargo must be sorted before Npm (explicit Cargo > npm precedence); \
+             cargo_pos={:?}, npm_pos={:?}, projects={:?}",
+            cargo_pos,
+            npm_pos,
+            projects
+                .iter()
+                .map(|p| format!("{:?}:{}", p.ecosystem, p.id.name()))
+                .collect::<Vec<_>>()
+        );
+    }
 }
 
 fn to_workspace_relative(path: &Path, root: &Path) -> Result<PathBuf, LocateError> {

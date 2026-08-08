@@ -39,6 +39,14 @@ pub enum LocateError {
     #[diagnostic(code(E032))]
     OutsideWorkspaceRoot { path: PathBuf, root: PathBuf },
 
+    /// A VCS operation failed during workspace location. This variant exists
+    /// so that callers who need to distinguish filesystem-structure errors
+    /// (WorkspaceRootNotFound, Walk) from VCS errors (e.g., a git repository
+    /// that could not be opened or queried during locate) can do so.
+    #[error("VCS error during workspace location: {0}")]
+    #[diagnostic(code(E033))]
+    Vcs(Box<callisto_vcs::VcsError>),
+
     #[error("moon CLI is unavailable or exited non-zero")]
     MoonUnavailable,
 
@@ -50,4 +58,10 @@ pub enum LocateError {
 
     #[error(transparent)]
     Graph(#[from] Box<crate::error::GraphError>),
+}
+
+impl From<callisto_vcs::VcsError> for LocateError {
+    fn from(e: callisto_vcs::VcsError) -> Self {
+        LocateError::Vcs(Box::new(e))
+    }
 }
