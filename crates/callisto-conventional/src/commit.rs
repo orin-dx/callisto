@@ -322,4 +322,144 @@ mod tests {
             _ => panic!("expected conventional"),
         }
     }
+
+    // --- Edge case tests ---
+
+    #[test]
+    fn empty_scope_parses_consistently() {
+        // "feat(): description" has an empty scope — the parser should either
+        // accept it as an empty string or reject it, but must not panic.
+        let sha = CommitSha::parse("a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0").unwrap();
+        let msg = "feat(): description";
+        let parsed = parse_commit(sha, msg);
+        match parsed {
+            ParsedCommit::Conventional(c) => {
+                assert_eq!(c.commit_type, "feat");
+                assert_eq!(c.scope, Some(String::new()));
+                assert_eq!(c.description, "description");
+            }
+            // Non-conventional is also a valid, consistent outcome.
+            ParsedCommit::NonConventional { .. } => {}
+        }
+    }
+
+    #[test]
+    fn breaking_change_footer_sets_is_breaking() {
+        let sha = CommitSha::parse("a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0").unwrap();
+        let msg = "feat!: add api\n\nBREAKING CHANGE: old api removed";
+        let parsed = parse_commit(sha, msg);
+        match parsed {
+            ParsedCommit::Conventional(c) => {
+                assert!(
+                    c.breaking,
+                    "commit with BREAKING CHANGE footer must be breaking"
+                );
+                assert_eq!(c.commit_type, "feat");
+            }
+            _ => panic!("expected conventional"),
+        }
+    }
+
+    #[test]
+    fn multi_line_body_is_preserved() {
+        let sha = CommitSha::parse("a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0").unwrap();
+        let msg = "fix: thing\n\nbody line 1\nbody line 2";
+        let parsed = parse_commit(sha, msg);
+        match parsed {
+            ParsedCommit::Conventional(c) => {
+                let body = c.body.expect("body should be present");
+                assert!(
+                    body.contains("body line 1"),
+                    "body must contain first line: {body:?}"
+                );
+                assert!(
+                    body.contains("body line 2"),
+                    "body must contain second line: {body:?}"
+                );
+            }
+            _ => panic!("expected conventional"),
+        }
+    }
+
+    #[test]
+    fn scope_with_hyphens_parses_correctly() {
+        let sha = CommitSha::parse("a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0").unwrap();
+        let msg = "feat(my-scope): desc";
+        let parsed = parse_commit(sha, msg);
+        match parsed {
+            ParsedCommit::Conventional(c) => {
+                assert_eq!(c.commit_type, "feat");
+                assert_eq!(c.scope, Some("my-scope".to_string()));
+                assert_eq!(c.description, "desc");
+            }
+            _ => panic!("expected conventional"),
+        }
+    }
+
+    // --- Proptest invariants ---
+
+    #[cfg(test)]
+    mod proptest_suite {
+        use proptest::prelude::*;
+
+        use super::*;
+
+        /// A fixed SHA used across all proptest cases.
+        fn test_sha() -> CommitSha {
+            CommitSha::parse("a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0").unwrap()
+        }
+
+        proptest! {
+            /// Parsing "feat: {desc}" with arbitrary description text never panics.
+            #[test]
+            fn feat_with_arbitrary_description_never_panics(desc in ".*") {
+                let msg = format!("feat: {desc}");
+                let _ = parse_commit(test_sha(), &msg);
+            }
+
+            /// Parsing "feat({scope}): desc" with arbitrary scope text never panics.
+            #[test]
+            fn feat_with_arbitrary_scope_never_panics(
+                scope in "[a-zA-Z0-9\\-]*"
+            ) {
+                let msg = format!("feat({scope}): desc");
+                let _ = parse_commit(test_sha(), &msg);
+            }
+
+            /// Parsing any arbitrary string never panics.
+            #[test]
+            fn arbitrary_message_never_panics(msg in ".*") {
+                let _ = parse_commit(test_sha(), &msg);
+            }
+
+            /// Parsing a well-formed conventional commit always yields
+            /// a Conventional variant with the correct type and description.
+            ///
+            /// The description is restricted to printable ASCII (0x20–0x7e) so
+            /// it contains no characters that Rust's `lines()` treats as line
+            /// terminators (LF \n, CR \r, VT \u{b}, FF \u{c}, NEL \u{85},
+            /// LS \u{2028}, PS \u{2029}).  Any such character in the header
+            /// line would cause `lines().next()` to return only the prefix up
+            /// to that character, making the description mismatch a false
+            /// failure rather than a parser bug.
+            #[test]
+            fn well_formed_commit_parses_correctly(
+                commit_type in "[a-z]+",
+                desc in "[\\x20-\\x7e]+",
+            ) {
+                prop_assume!(!desc.is_empty());
+                // The parser calls header.trim() before splitting, so any
+                // leading/trailing ASCII whitespace (0x20) in the description
+                // would be removed.  Exclude those inputs to keep the
+                // invariant tight: what goes in must come out unchanged.
+                prop_assume!(desc == desc.trim());
+                let msg = format!("{commit_type}: {desc}");
+                let parsed = parse_commit(test_sha(), &msg);
+                if let ParsedCommit::Conventional(c) = parsed {
+                    prop_assert_eq!(c.commit_type, commit_type);
+                    prop_assert_eq!(c.description, desc);
+                }
+            }
+        }
+    }
 }

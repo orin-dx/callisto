@@ -14,4 +14,5 @@ thiserror = { workspace = true }
 
 [dev-dependencies]
 callisto-fixtures = { path = "../callisto-fixtures" }
+proptest = "1"
 tempfile = "3"
