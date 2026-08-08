@@ -15,6 +15,6 @@ This repository follows the centralized AI agent guidelines documented in [`AGEN
 ### Key Architectural Invariants
 1. **Safe Rust Only**: `unsafe_code = "forbid"` across all crates.
 2. **Format Preservation**: Manifest modifications use CST editors (`toml_edit`, `serde_json` indentation fingerprinting).
-3. **Atomic File Persistence**: File edits use `callisto_manifests::atomic::atomic_write`.
+3. **Atomic File Persistence**: File edits use `callisto_model::atomic::atomic_write`.
 4. **Layer Isolation**: Layer 1 crates (`callisto-model`, `callisto-format`) must remain permissive (`MIT OR Apache-2.0`) and never depend on AGPL crates.
 5. **No Emojis in Documentation**: Keep docs clean, technical, scannable, and emoji-free.

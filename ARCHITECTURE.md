@@ -117,11 +117,11 @@ flowchart TB
 
 | Crate | License | Layer | Responsibility | Key Dependencies |
 | :--- | :--- | :--- | :--- | :--- |
-| `callisto-model` | MIT/Apache-2.0 | Layer 1 | Core domain primitives, version grammars, JSON report schemas | `semver`, `schemars`, `serde` |
+| `callisto-model` | MIT/Apache-2.0 | Layer 1 | Core domain primitives, version grammars, JSON report schemas, atomic disk writes | `semver`, `schemars`, `serde`, `tempfile` |
 | `callisto-format` | MIT/Apache-2.0 | Layer 1 | Byte-compatible parser and writer for changeset `.md` and `pre.json` | `indexmap`, `serde` |
 | `callisto-conventional` | AGPL-3.0 | Layer 1 | Conventional commit parsing and severity classification | `conventional_commits_next` |
 | `callisto-changelog` | AGPL-3.0 | Layer 1 | Sectioned Markdown changelog rendering | `pulldown-cmark` |
-| `callisto-manifests` | AGPL-3.0 | Layer 2 | Format-preserving manifest AST editing and atomic writes | `toml_edit`, `serde_json`, `tempfile` |
+| `callisto-manifests` | AGPL-3.0 | Layer 2 | Format-preserving manifest AST editing | `toml_edit`, `serde_json` |
 | `callisto-vcs` | AGPL-3.0 | Layer 2 | Native in-process Git discovery, commit walks, and tag listing | `gix` (gitoxide, target-gated for wasm32) |
 | `callisto-graph` | AGPL-3.0 | Layer 3 | Dependency DAG construction, Tarjan SCC cycle detection, cascade engine | `petgraph`, `ignore` |
 | `callisto-cli` | AGPL-3.0 | Layer 4 | Standalone CLI binary, colored diff previews, `miette` error reporting | `clap`, `miette`, `anstream`, `similar` |

@@ -25,6 +25,7 @@ thiserror.workspace = true
 miette.workspace = true
 camino.workspace = true
 schemars = "0.8"
+tempfile.workspace = true
 
 [dev-dependencies]
 callisto-fixtures = { path = "../callisto-fixtures" }
