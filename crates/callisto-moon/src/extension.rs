@@ -79,6 +79,46 @@ fn format_graph_error_json(e: &callisto_graph::error::GraphError) -> serde_json:
     })
 }
 
+/// Converts a serialization result into an [`ExecuteExtensionOutput`].
+///
+/// When `json_result` is `Ok`, the value and its pretty-printed rendering are
+/// placed in the output with the supplied `exit_code`. When `json_result` is
+/// `Err`, the serialization failure is surfaced as a structured error response
+/// with `exit_code = 1` — preventing the host from receiving a silent
+/// `null`/empty output that looks like success.
+fn build_extension_output(
+    json_result: serde_json::Result<serde_json::Value>,
+    exit_code: i32,
+) -> ExecuteExtensionOutput {
+    match json_result {
+        Ok(json_val) => {
+            let rendered = serde_json::to_string_pretty(&json_val)
+                .unwrap_or_else(|e| format!(r#"{{"error":"render failed: {e}"}}"#));
+            ExecuteExtensionOutput {
+                report: json_val,
+                rendered,
+                exit_code,
+            }
+        }
+        Err(e) => {
+            let msg = format!("internal serialization error: {e}");
+            let json_val = serde_json::json!({
+                "schemaVersion": callisto_model::SCHEMA_VERSION,
+                "error": {
+                    "code": "E_SERIALIZE",
+                    "message": msg,
+                }
+            });
+            let rendered = json_val.to_string();
+            ExecuteExtensionOutput {
+                report: json_val,
+                rendered,
+                exit_code: 1,
+            }
+        }
+    }
+}
+
 /// Resolves the subcommand `execute_extension` should dispatch to from the
 /// raw `args` moon passes on the command line: the first argument if
 /// present, otherwise `"status"`.
@@ -144,15 +184,7 @@ pub fn execute_extension(input: ExecuteExtensionInput) -> ExecuteExtensionOutput
         "plan-publish" | "plan_publish" => {
             use callisto_graph::commands::publish::{plan_publish, PublishOptions};
             match plan_publish(&ws, &PublishOptions::default()) {
-                Ok(report) => {
-                    let json_val = serde_json::to_value(&report).unwrap_or_default();
-                    let rendered = serde_json::to_string_pretty(&json_val).unwrap_or_default();
-                    ExecuteExtensionOutput {
-                        report: json_val,
-                        rendered,
-                        exit_code: 0,
-                    }
-                }
+                Ok(report) => build_extension_output(serde_json::to_value(&report), 0),
                 Err(e) => {
                     let json_val = format_graph_error_json(&e);
                     ExecuteExtensionOutput {
@@ -168,13 +200,7 @@ pub fn execute_extension(input: ExecuteExtensionInput) -> ExecuteExtensionOutput
             match validate(&ws, &ValidateOptions::default()) {
                 Ok(report) => {
                     let exit_code = if report.valid { 0 } else { 1 };
-                    let json_val = serde_json::to_value(&report).unwrap_or_default();
-                    let rendered = serde_json::to_string_pretty(&json_val).unwrap_or_default();
-                    ExecuteExtensionOutput {
-                        report: json_val,
-                        rendered,
-                        exit_code,
-                    }
+                    build_extension_output(serde_json::to_value(&report), exit_code)
                 }
                 Err(e) => {
                     let json_val = format_graph_error_json(&e);
@@ -199,13 +225,7 @@ pub fn execute_extension(input: ExecuteExtensionInput) -> ExecuteExtensionOutput
                         .iter()
                         .any(|d| d.severity == callisto_model::DiagnosticSeverity::Error);
                     let exit_code = if has_errors { 1 } else { 0 };
-                    let json_val = serde_json::to_value(&report).unwrap_or_default();
-                    let rendered = serde_json::to_string_pretty(&json_val).unwrap_or_default();
-                    ExecuteExtensionOutput {
-                        report: json_val,
-                        rendered,
-                        exit_code,
-                    }
+                    build_extension_output(serde_json::to_value(&report), exit_code)
                 }
                 Err(e) => {
                     let json_val = format_graph_error_json(&e);
@@ -385,5 +405,68 @@ mod tests {
         assert_eq!(json["error"]["code"], "E_GRAPH");
         assert_eq!(json["error"]["message"], err.to_string());
         assert!(!json["error"]["message"].as_str().unwrap().trim().is_empty());
+    }
+
+    // --- build_extension_output tests (no pdk feature required) ---
+
+    /// A serialization failure must produce a structured error output with
+    /// `exit_code = 1`, not a silent `null`/empty result that looks like success.
+    #[test]
+    fn build_extension_output_returns_error_response_on_serialize_failure() {
+        // Manufacture a serde_json::Error by deserializing invalid JSON.
+        let serialize_err: serde_json::Error =
+            serde_json::from_str::<serde_json::Value>("not valid json").unwrap_err();
+
+        let output = build_extension_output(Err(serialize_err), 0);
+
+        assert_eq!(
+            output.exit_code, 1,
+            "a serialization failure must set exit_code=1, not the caller's proposed code"
+        );
+        assert_eq!(
+            output.report["error"]["code"], "E_SERIALIZE",
+            "error code must be E_SERIALIZE"
+        );
+        assert_eq!(
+            output.report["schemaVersion"],
+            serde_json::json!(callisto_model::SCHEMA_VERSION)
+        );
+        assert!(
+            !output.report["error"]["message"]
+                .as_str()
+                .unwrap()
+                .is_empty(),
+            "error message must be non-empty"
+        );
+        assert!(
+            !output.rendered.is_empty(),
+            "rendered output must be non-empty even on error"
+        );
+    }
+
+    /// On the success path the exit code and report value are preserved.
+    #[test]
+    fn build_extension_output_success_path_preserves_value_and_exit_code() {
+        let value = serde_json::json!({"status": "ok", "packages": []});
+
+        let output = build_extension_output(Ok(value.clone()), 0);
+
+        assert_eq!(output.exit_code, 0);
+        assert_eq!(output.report, value);
+        assert!(
+            !output.rendered.is_empty(),
+            "rendered must be a non-empty pretty-printed string"
+        );
+    }
+
+    /// A non-zero exit code on the success path is preserved unchanged.
+    #[test]
+    fn build_extension_output_success_path_preserves_nonzero_exit_code() {
+        let value = serde_json::json!({"valid": false});
+
+        let output = build_extension_output(Ok(value.clone()), 1);
+
+        assert_eq!(output.exit_code, 1);
+        assert_eq!(output.report, value);
     }
 }

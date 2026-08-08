@@ -76,12 +76,7 @@ fn main() -> ExitCode {
         Ok(code) => code,
         Err(err) => {
             if cli.global.format == callisto_cli::cli::OutputFormat::Json {
-                let report = serde_json::json!({
-                    "schemaVersion": callisto_model::SCHEMA_VERSION,
-                    "error": {
-                        "message": err.to_string(),
-                    }
-                });
+                let report = callisto_cli::error::format_error_json(&err);
                 let _res = callisto_cli::output::write_json(&mut std::io::stderr(), &report);
             } else {
                 eprintln!("{:?}", miette::Report::new(err));
