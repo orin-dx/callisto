@@ -197,9 +197,22 @@ impl Manifest for CargoToml {
 
     fn write_version(&mut self, v: &Version, permit: &ApplyPermit) -> Result<(), ManifestError> {
         if self.inherited_version {
-            let root_cargo = self.workspace_root.join("Cargo.toml");
-            let mut ws_res = WorkspaceCargoResolver::load(&root_cargo)?;
-            return ws_res.write_version(v, permit);
+            // The member uses `version.workspace = true` (or `version = { workspace = true }`).
+            // Routing the bump to [workspace.package] would silently change the version for
+            // every other workspace member. Instead, write an explicit pinned version directly
+            // to this member's [package] section, replacing the workspace-inherited entry with
+            // a standalone string value.
+            let pkg = self
+                .document
+                .get_mut("package")
+                .and_then(|p| p.as_table_mut())
+                .ok_or_else(|| ManifestError::MissingField {
+                    path: self.path.clone(),
+                    field: "package",
+                })?;
+            pkg.insert("version", toml_edit::value(v.render()));
+            self.inherited_version = false;
+            return self.persist(permit);
         }
 
         let pkg = self
@@ -1138,6 +1151,89 @@ helper = { version = "1.0.0", path = "../helper" } # dep comment
 
         let updated = fs::read_to_string(&manifest_path).unwrap();
         assert!(updated.contains("# dep comment"));
+    }
+
+    /// Regression test: applying a version bump to a workspace-inheriting member must
+    /// write an explicit pinned version on the member's [package] section without
+    /// touching [workspace.package] in the root Cargo.toml.
+    #[test]
+    fn write_version_pins_explicitly_on_workspace_inheriting_member() {
+        use std::sync::Arc;
+
+        let dir = tempdir().unwrap();
+
+        // Workspace root: version "1.0.0" in [workspace.package]
+        let root_cargo_path = dir.path().join("Cargo.toml");
+        fs::write(
+            &root_cargo_path,
+            r#"[workspace]
+members = ["member"]
+
+[workspace.package]
+version = "1.0.0"
+"#,
+        )
+        .unwrap();
+
+        // Member with version.workspace = true
+        let member_dir = dir.path().join("member");
+        fs::create_dir_all(&member_dir).unwrap();
+        let member_cargo_path = member_dir.join("Cargo.toml");
+        fs::write(
+            &member_cargo_path,
+            r#"[package]
+name = "member-crate"
+version.workspace = true
+edition = "2021"
+"#,
+        )
+        .unwrap();
+
+        // Build workspace inheritance context
+        let ws_resolver = WorkspaceCargoResolver::load(&root_cargo_path).unwrap();
+        let inheritance = Arc::new(ws_resolver.inheritance().unwrap());
+
+        let decl = ManifestDecl::new(
+            "member/Cargo.toml",
+            ManifestRole::Canonical,
+            ManifestFormat::CargoToml,
+        )
+        .unwrap();
+        let ctx = OpenContext {
+            workspace_root: dir.path(),
+            cargo_workspace: Some(inheritance),
+            npm_workspace_kind: None,
+        };
+
+        let mut manifest = CargoToml::open(&decl, &ctx).unwrap();
+        // Precondition: version is inherited as 1.0.0
+        assert_eq!(manifest.current_version().unwrap().render(), "1.0.0");
+
+        // Apply bump to 1.1.0 on the MEMBER ONLY
+        let new_ver = Version::parse("1.1.0", VersionGrammar::SemVer).unwrap();
+        manifest.write_version(&new_ver, &permit()).unwrap();
+
+        // Workspace root must be UNCHANGED
+        let root_updated = fs::read_to_string(&root_cargo_path).unwrap();
+        assert!(
+            root_updated.contains("version = \"1.0.0\""),
+            "workspace root version must remain 1.0.0, got:\n{root_updated}"
+        );
+        assert!(
+            !root_updated.contains("1.1.0"),
+            "workspace root must NOT contain 1.1.0, got:\n{root_updated}"
+        );
+
+        // Member must have an explicit pinned version, not workspace = true
+        let member_updated = fs::read_to_string(&member_cargo_path).unwrap();
+        assert!(
+            member_updated.contains("version = \"1.1.0\""),
+            "member must have pinned version 1.1.0, got:\n{member_updated}"
+        );
+        assert!(
+            !member_updated.contains("workspace = true"),
+            "member must not retain workspace inheritance after pinning, got:\n{member_updated}"
+        );
     }
 
     use proptest::prelude::*;
