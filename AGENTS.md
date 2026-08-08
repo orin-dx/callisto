@@ -70,7 +70,7 @@ Agents modifying Callisto code MUST enforce the following 5 engineering invarian
 - **JSON Editing**: Must fingerprint indentation style (`IndentStyle::Tabs` vs `IndentStyle::Spaces(N)`) and preserve key insertion order using `serde_json`.
 
 ### 3. Crash-Safe Atomic Disk Writes
-- All manifest and configuration edits MUST go through `callisto_manifests::atomic::atomic_write`.
+- All manifest and configuration edits MUST go through `callisto_model::atomic::atomic_write`. (`callisto_manifests::atomic::atomic_write` remains a backward-compatible re-export of the same function.)
 - Writes create a `NamedTempFile` in the target file's parent directory, flush data to disk, and atomically replace the target file via `fs::rename`.
 
 ### 4. Rich Diagnostic Cards (`miette`)

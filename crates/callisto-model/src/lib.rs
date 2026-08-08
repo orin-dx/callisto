@@ -1,6 +1,8 @@
 //! Shared types and traits for callisto: package identity, versions, manifests, dependency
 //! specs, and the versioned JSON report contract.
 
+pub mod atomic;
+
 pub mod permit;
 pub use permit::*;
 

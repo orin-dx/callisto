@@ -1,64 +1,11 @@
-use std::io::{self, Write};
-use std::path::Path;
+//! Backward-compatible alias for callisto's disk-write primitive.
+//!
+//! The implementation moved to [`callisto_model::atomic`] so Layer 1 consumers
+//! (the changelog writer in particular) can reach the filesystem without
+//! depending on this crate. `callisto_manifests::atomic::atomic_write` remains
+//! valid and resolves to the same function.
 
-use callisto_model::ApplyPermit;
-use tempfile::NamedTempFile;
-
-/// Trait for durable changeset and manifest storage operations.
-pub trait ChangesetStorage {
-    /// Writes content atomically with parent and grandparent directory journal flushing.
-    ///
-    /// # Errors
-    ///
-    /// Returns `Err` on any I/O failure: directory creation, temp-file creation, write, sync, or persist.
-    fn atomic_write_durable(&self, content: &str, permit: &ApplyPermit) -> io::Result<()>;
-}
-
-impl ChangesetStorage for Path {
-    fn atomic_write_durable(&self, content: &str, permit: &ApplyPermit) -> io::Result<()> {
-        atomic_write(self, content, permit)
-    }
-}
-
-/// Durably replaces `path`'s contents with `content`.
-///
-/// The [`ApplyPermit`] is unused at runtime and exists purely as a compile-time
-/// obligation: this is callisto's single disk-write primitive, so requiring a
-/// permit here means no code path can reach the filesystem without having first
-/// consulted the dry-run flag. See [`callisto_model::permit`].
-///
-/// # Errors
-///
-/// Returns the first I/O error encountered: creating parent directories, writing the temp file,
-/// flushing, fsyncing, or persisting (renaming) to `path`.
-pub fn atomic_write(path: &Path, content: &str, permit: &ApplyPermit) -> io::Result<()> {
-    let _permit = permit;
-    let raw_parent = path.parent().unwrap_or_else(|| Path::new("."));
-    let parent = if raw_parent.as_os_str().is_empty() {
-        Path::new(".")
-    } else {
-        raw_parent
-    };
-    std::fs::create_dir_all(parent)?;
-
-    let mut temp = NamedTempFile::new_in(parent)?;
-    temp.write_all(content.as_bytes())?;
-    temp.flush()?;
-    temp.as_file().sync_all()?;
-    temp.persist(path).map_err(|e| e.error)?;
-
-    if let Ok(parent_file) = std::fs::File::open(parent) {
-        let _res = parent_file.sync_all();
-    }
-    if let Some(grandparent) = parent.parent() {
-        if !grandparent.as_os_str().is_empty() {
-            if let Ok(gp_file) = std::fs::File::open(grandparent) {
-                let _res = gp_file.sync_all();
-            }
-        }
-    }
-    Ok(())
-}
+pub use callisto_model::atomic::{atomic_write, ChangesetStorage};
 
 #[cfg(test)]
 mod tests {
@@ -164,5 +111,18 @@ mod tests {
             "file content must be exactly one valid thread write, got: {:?}",
             final_content
         );
+    }
+
+    /// The re-export must be the *same* function item as the one in
+    /// `callisto-model`, not a wrapper that could drift. Comparing the two as
+    /// function pointers proves the alias resolves through, so the three tests
+    /// above are exercising the moved implementation.
+    #[test]
+    fn re_export_resolves_to_the_model_implementation() {
+        let via_alias: fn(&std::path::Path, &str, &ApplyPermit) -> std::io::Result<()> =
+            atomic_write;
+        let via_model: fn(&std::path::Path, &str, &ApplyPermit) -> std::io::Result<()> =
+            callisto_model::atomic::atomic_write;
+        assert!(std::ptr::fn_addr_eq(via_alias, via_model));
     }
 }

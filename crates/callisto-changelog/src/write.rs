@@ -91,7 +91,7 @@ pub fn prepend(
         new_content = new_content.replace('\n', "\r\n");
     }
 
-    callisto_manifests::atomic::atomic_write(&full_path, &new_content, permit).map_err(|e| {
+    callisto_model::atomic::atomic_write(&full_path, &new_content, permit).map_err(|e| {
         ChangelogError::WriteFailed {
             path: changelog_path.to_path_buf(),
             message: e.to_string(),
@@ -186,7 +186,7 @@ mod tests {
     /// the changelog's parent, so when both the parent *and* grandparent
     /// directories are freshly created as part of the same operation, durability
     /// requires fsyncing both new directory entries — exactly what the canonical
-    /// `callisto_manifests::atomic::atomic_write` does and the local copy did not.
+    /// `callisto_model::atomic::atomic_write` does and the local copy did not.
     ///
     /// This test doesn't simulate a crash (that would require fault injection at
     /// the syscall level), but it does exercise `prepend()` through a freshly

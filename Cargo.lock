@@ -434,7 +434,6 @@ dependencies = [
 name = "callisto-changelog"
 version = "0.3.3"
 dependencies = [
- "callisto-manifests",
  "callisto-model",
  "miette 7.6.0",
  "tempfile",
@@ -565,6 +564,7 @@ dependencies = [
  "semver",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror 1.0.69",
 ]
 
