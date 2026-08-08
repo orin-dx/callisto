@@ -501,7 +501,7 @@ callisto_release_plan(
 
 ---
 
-## 8. Multi-Phase Polyglot Master Specification & Architecture Roadmap
+## 14. Multi-Phase Polyglot Master Specification & Architecture Roadmap
 
 Callisto is engineered to support polyglot monorepos across **Rust, TypeScript/JS, Python, Go, Java (Maven/Gradle), and C# (.NET)** through a unified, 4-phase architectural roadmap.
 
