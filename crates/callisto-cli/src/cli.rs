@@ -92,7 +92,7 @@ pub struct AddArgs {
 /// Arguments for the `status` command.
 #[derive(Args, Clone, Debug)]
 pub struct StatusArgs {
-    /// Treat warning-level diagnostics as errors.
+    /// Enable strict mode: promote warning-level diagnostics to errors, causing a non-zero exit.
     #[arg(long)]
     pub strict: bool,
     /// Treat dependency-graph warnings as errors.
@@ -210,4 +210,50 @@ pub struct CompletionsArgs {
     /// Shell to generate a completion script for.
     #[arg(value_enum)]
     pub shell: clap_complete::Shell,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::CommandFactory;
+
+    /// QW-5: --strict flag on status subcommand must have a meaningful help string.
+    #[test]
+    fn strict_flag_help_text_is_meaningful() {
+        let mut cmd = Cli::command();
+        cmd.build();
+
+        // Find the "status" subcommand.
+        let status_sub = cmd
+            .get_subcommands()
+            .find(|s| s.get_name() == "status")
+            .expect("status subcommand must exist");
+
+        // Find the --strict argument.
+        let strict_arg = status_sub
+            .get_arguments()
+            .find(|a| a.get_long() == Some("strict"))
+            .expect("--strict argument must exist on status subcommand");
+
+        let help = strict_arg
+            .get_help()
+            .map(|h| h.to_string())
+            .unwrap_or_default()
+            .to_lowercase();
+
+        // Must contain "strict" and describe what it does.
+        assert!(
+            help.contains("strict"),
+            "--strict help text must contain the word 'strict'; got: {help:?}"
+        );
+        assert!(
+            help.contains("warning") || help.contains("error"),
+            "--strict help text must mention 'warning' or 'error'; got: {help:?}"
+        );
+        // Must be longer than a placeholder.
+        assert!(
+            help.len() > 20,
+            "--strict help text is too short to be meaningful: {help:?}"
+        );
+    }
 }
