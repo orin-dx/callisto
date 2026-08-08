@@ -186,14 +186,84 @@ impl<R: CommandRunner> SubprocessRegistryClient<R> {
         )))
     }
 
-    /// Publishes an npm package via `npm publish`.
+    /// Detects the npm-compatible package manager from lockfiles in the
+    /// workspace root (`self.cwd`) and returns the appropriate program name
+    /// and base argument list for a publish command.
+    ///
+    /// Detection priority: pnpm > yarn > bun > npm (default).
+    ///
+    /// | Lockfile present   | Program | Base args                                    |
+    /// |--------------------|---------|----------------------------------------------|
+    /// | `pnpm-lock.yaml`   | `pnpm`  | `publish --filter <name>`                    |
+    /// | `yarn.lock`        | `yarn`  | `workspace <name> npm publish`               |
+    /// | `bun.lockb`        | `bun`   | `publish`                                    |
+    /// | (none)             | `npm`   | `publish --workspace <name>`                 |
+    ///
+    /// `tag` and `access` flags are appended after the base args by the caller
+    /// ([`Self::npm_publish`]).
+    fn build_npm_publish_command(
+        &self,
+        package_name: &str,
+        tag: Option<&str>,
+        access: Option<&str>,
+    ) -> (String, Vec<String>) {
+        let mut extra: Vec<String> = Vec::new();
+        if let Some(t) = tag {
+            extra.push("--tag".to_string());
+            extra.push(t.to_string());
+        }
+        if let Some(av) = access {
+            extra.push("--access".to_string());
+            extra.push(av.to_string());
+        }
+
+        if self.cwd.join("pnpm-lock.yaml").exists() {
+            let mut args = vec![
+                "publish".to_string(),
+                "--filter".to_string(),
+                package_name.to_string(),
+            ];
+            args.extend(extra);
+            return ("pnpm".to_string(), args);
+        }
+
+        if self.cwd.join("yarn.lock").exists() {
+            let mut args = vec![
+                "workspace".to_string(),
+                package_name.to_string(),
+                "npm".to_string(),
+                "publish".to_string(),
+            ];
+            args.extend(extra);
+            return ("yarn".to_string(), args);
+        }
+
+        if self.cwd.join("bun.lockb").exists() {
+            let mut args = vec!["publish".to_string()];
+            args.extend(extra);
+            return ("bun".to_string(), args);
+        }
+
+        // Default: npm
+        let mut args = vec![
+            "publish".to_string(),
+            "--workspace".to_string(),
+            package_name.to_string(),
+        ];
+        args.extend(extra);
+        ("npm".to_string(), args)
+    }
+
+    /// Publishes an npm package using the workspace package manager detected
+    /// from lockfiles in the workspace root (`self.cwd`).
     ///
     /// - `tag`: when `Some`, appends `--tag <tag>` (e.g. `"next"` for pre-releases).
-    ///   Without this, npm uses the implicit `"latest"` dist-tag.
+    ///   Without this, the package manager uses the implicit `"latest"` dist-tag.
     /// - `access`: when `Some(NpmAccess::Public)`, appends `--access public`;
     ///   when `Some(NpmAccess::Restricted)`, appends `--access restricted`;
-    ///   when `None`, omits `--access` entirely so npm applies its ecosystem
-    ///   default (`restricted` for `@scoped/packages`, `public` for unscoped).
+    ///   when `None`, omits `--access` entirely so the package manager applies
+    ///   its ecosystem default (`restricted` for `@scoped/packages`, `public`
+    ///   for unscoped).
     fn npm_publish(
         &self,
         package: &PackageId,
@@ -210,16 +280,10 @@ impl<R: CommandRunner> SubprocessRegistryClient<R> {
             NpmAccess::Public => "public",
             NpmAccess::Restricted => "restricted",
         });
-        let mut args = vec!["publish", "--workspace", package.name()];
-        if let Some(t) = tag {
-            args.push("--tag");
-            args.push(t);
-        }
-        if let Some(av) = access_value {
-            args.push("--access");
-            args.push(av);
-        }
-        let output = self.run("npm", &args)?;
+        let (program, args_owned) =
+            self.build_npm_publish_command(package.name(), tag, access_value);
+        let args_refs: Vec<&str> = args_owned.iter().map(|s| s.as_str()).collect();
+        let output = self.run(&program, &args_refs)?;
         classify_npm_publish_output(&output)
     }
 
@@ -1189,6 +1253,157 @@ mod tests {
         assert!(
             args.contains(&"my-private-registry".to_string()),
             "expected registry name in args: {args:?}"
+        );
+    }
+
+    // ---- package manager detection (lockfile-based) ----------------------
+
+    /// Runner that captures both the program name and all args.
+    struct ProgramCapturingRunner {
+        captured_program: std::sync::Arc<std::sync::Mutex<String>>,
+        captured_args: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+        response: CommandOutput,
+    }
+
+    impl CommandRunner for ProgramCapturingRunner {
+        fn run(
+            &self,
+            program: &str,
+            args: &[&str],
+            _cwd: &std::path::Path,
+        ) -> Result<CommandOutput, CommandError> {
+            *self.captured_program.lock().unwrap() = program.to_string();
+            *self.captured_args.lock().unwrap() = args.iter().map(|s| s.to_string()).collect();
+            Ok(self.response.clone())
+        }
+    }
+
+    fn program_capturing_runner(
+        out: CommandOutput,
+    ) -> (
+        ProgramCapturingRunner,
+        std::sync::Arc<std::sync::Mutex<String>>,
+        std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+    ) {
+        let captured_program = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+        let captured_args = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let runner = ProgramCapturingRunner {
+            captured_program: std::sync::Arc::clone(&captured_program),
+            captured_args: std::sync::Arc::clone(&captured_args),
+            response: out,
+        };
+        (runner, captured_program, captured_args)
+    }
+
+    #[test]
+    fn npm_publish_uses_pnpm_when_pnpm_lockfile_present() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("pnpm-lock.yaml"), "").unwrap();
+
+        let (runner, captured_program, captured_args) = program_capturing_runner(output(0, "", ""));
+        let c = SubprocessRegistryClient::new(runner, dir.path().to_path_buf());
+        c.npm_publish(&npm_pkg(), None, None).unwrap();
+
+        assert_eq!(
+            *captured_program.lock().unwrap(),
+            "pnpm",
+            "expected pnpm when pnpm-lock.yaml is present"
+        );
+        let args = captured_args.lock().unwrap();
+        assert!(
+            args.contains(&"publish".to_string()),
+            "expected 'publish' in args: {args:?}"
+        );
+        assert!(
+            args.contains(&"--filter".to_string()),
+            "expected '--filter' in args: {args:?}"
+        );
+        assert!(
+            args.contains(&"@callisto/cli".to_string()),
+            "expected package name after --filter in args: {args:?}"
+        );
+    }
+
+    #[test]
+    fn npm_publish_uses_yarn_when_yarn_lock_present() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("yarn.lock"), "").unwrap();
+
+        let (runner, captured_program, captured_args) = program_capturing_runner(output(0, "", ""));
+        let c = SubprocessRegistryClient::new(runner, dir.path().to_path_buf());
+        c.npm_publish(&npm_pkg(), None, None).unwrap();
+
+        assert_eq!(
+            *captured_program.lock().unwrap(),
+            "yarn",
+            "expected yarn when yarn.lock is present"
+        );
+        let args = captured_args.lock().unwrap();
+        assert!(
+            args.contains(&"workspace".to_string()),
+            "expected 'workspace' in args: {args:?}"
+        );
+        assert!(
+            args.contains(&"@callisto/cli".to_string()),
+            "expected package name in args: {args:?}"
+        );
+        assert!(
+            args.contains(&"npm".to_string()),
+            "expected 'npm' subcommand in args: {args:?}"
+        );
+        assert!(
+            args.contains(&"publish".to_string()),
+            "expected 'publish' in args: {args:?}"
+        );
+    }
+
+    #[test]
+    fn npm_publish_uses_bun_when_bun_lockb_present() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("bun.lockb"), "").unwrap();
+
+        let (runner, captured_program, captured_args) = program_capturing_runner(output(0, "", ""));
+        let c = SubprocessRegistryClient::new(runner, dir.path().to_path_buf());
+        c.npm_publish(&npm_pkg(), None, None).unwrap();
+
+        assert_eq!(
+            *captured_program.lock().unwrap(),
+            "bun",
+            "expected bun when bun.lockb is present"
+        );
+        let args = captured_args.lock().unwrap();
+        assert!(
+            args.contains(&"publish".to_string()),
+            "expected 'publish' in args: {args:?}"
+        );
+    }
+
+    #[test]
+    fn npm_publish_uses_npm_when_no_lockfile_present() {
+        let dir = tempfile::tempdir().unwrap();
+        // No lockfile written — default fallback to npm.
+
+        let (runner, captured_program, captured_args) = program_capturing_runner(output(0, "", ""));
+        let c = SubprocessRegistryClient::new(runner, dir.path().to_path_buf());
+        c.npm_publish(&npm_pkg(), None, None).unwrap();
+
+        assert_eq!(
+            *captured_program.lock().unwrap(),
+            "npm",
+            "expected npm as default when no lockfile is present"
+        );
+        let args = captured_args.lock().unwrap();
+        assert!(
+            args.contains(&"publish".to_string()),
+            "expected 'publish' in args: {args:?}"
+        );
+        assert!(
+            args.contains(&"--workspace".to_string()),
+            "expected '--workspace' in args: {args:?}"
+        );
+        assert!(
+            args.contains(&"@callisto/cli".to_string()),
+            "expected package name after --workspace in args: {args:?}"
         );
     }
 }
