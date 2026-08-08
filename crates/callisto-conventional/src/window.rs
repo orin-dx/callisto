@@ -1,7 +1,6 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-use callisto_model::{CommandRunner, CommitSha};
-use callisto_vcs::{GitAccess, GitDataSource};
+use callisto_model::{CommitSha, CommitWalker};
 
 use crate::{parse_commit, ConventionalError, ParsedCommit};
 
@@ -12,18 +11,17 @@ pub enum InferenceWindow {
 }
 
 /// Fetches commits reachable from `HEAD` (down to `window`'s lower bound,
-/// exclusive), scoped to those touching at least one of `pathspecs`.
+/// exclusive), scoped to those touching at least one of `pathspecs`, and
+/// parses each one as a conventional commit.
 ///
-/// Delegates entirely to [`GitAccess`], which tries native gix discovery
-/// first (cheap and side-effect-free) and falls back to a `CommandRunner`-
-/// shelled `git log --no-merges` when gix is unavailable -- most notably on
-/// `wasm32`, where gix is excluded from that target's dependency set. Either
-/// way the result comes back as the same `callisto_vcs::GitCommit` shape,
-/// so the raw-message reconstruction and conventional-commit parsing below
-/// runs identically regardless of which backend served the request.
+/// Sourcing the history is entirely `walker`'s business. This crate names
+/// only the Layer 1 [`CommitWalker`] contract, so it links against no VCS
+/// engine at all: callers hand it native gix, a shelled-out `git`, the
+/// gix-with-shell-fallback selector, or a test double, and the raw-message
+/// reconstruction and conventional-commit parsing below run identically
+/// either way.
 pub fn fetch_commits(
-    runner: &dyn CommandRunner,
-    cwd: &Path,
+    walker: &dyn CommitWalker,
     window: &InferenceWindow,
     pathspecs: &[PathBuf],
 ) -> Result<Vec<ParsedCommit>, ConventionalError> {
@@ -32,8 +30,7 @@ pub fn fetch_commits(
         InferenceWindow::FullHistory => None,
     };
 
-    let git = GitAccess::discover(cwd, runner);
-    let commits = git.commits_since(since_ref.as_deref(), pathspecs)?;
+    let commits = walker.commits_since(since_ref.as_deref(), pathspecs)?;
 
     Ok(commits
         .into_iter()
@@ -49,17 +46,141 @@ pub fn fetch_commits(
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use super::*;
     use callisto_fixtures::git::{init_repo, run_git, PoisonedRunner};
-    use callisto_model::{CommandError, CommandOutput};
+    use callisto_model::{
+        CommandError, CommandOutput, CommandRunner, CommitRecord, CommitWalkError,
+    };
+    use callisto_vcs::GitAccess;
 
-    /// Spec: `fetch_commits` must resolve commits via
-    /// `callisto_vcs::GitRepository` (gix), not by shelling out through the
-    /// `CommandRunner` -- a runner that fails on every call must not
-    /// prevent commits from being fetched, and pathspec filtering must
-    /// still scope results to the given paths.
+    /// A [`CommitWalker`] double built from `callisto-model` types alone --
+    /// it links against no VCS crate whatsoever. Records every
+    /// `commits_since` argument pair so the test can assert on the exact
+    /// window/pathspec translation `fetch_commits` performs.
+    struct MockWalker {
+        records: Vec<CommitRecord>,
+        calls: std::sync::Mutex<Vec<(Option<String>, Vec<PathBuf>)>>,
+    }
+
+    impl MockWalker {
+        fn new(records: Vec<CommitRecord>) -> Self {
+            MockWalker {
+                records,
+                calls: std::sync::Mutex::new(Vec::new()),
+            }
+        }
+    }
+
+    impl CommitWalker for MockWalker {
+        fn commits_since(
+            &self,
+            since_ref: Option<&str>,
+            pathspecs: &[PathBuf],
+        ) -> Result<Vec<CommitRecord>, CommitWalkError> {
+            self.calls
+                .lock()
+                .unwrap()
+                .push((since_ref.map(str::to_string), pathspecs.to_vec()));
+            Ok(self.records.clone())
+        }
+    }
+
+    fn record(sha: &str, summary: &str, body: Option<&str>) -> CommitRecord {
+        CommitRecord {
+            sha: CommitSha::parse(sha).unwrap(),
+            summary: summary.to_string(),
+            body: body.map(str::to_string),
+        }
+    }
+
+    /// Spec: `fetch_commits` is drivable by any `callisto_model::CommitWalker`
+    /// implementation, with no `callisto-vcs` type involved at all. This is
+    /// the abstraction-is-real proof: a mock built purely from Layer 1 types
+    /// satisfies the whole contract, and summary/body are rejoined into the
+    /// raw commit message before conventional parsing exactly as they are
+    /// for the real backends.
     #[test]
-    fn test_fetch_commits_does_not_shell_out_and_filters_by_pathspec() {
+    fn test_fetch_commits_accepts_any_commit_walker_impl() {
+        let sha_a = "a".repeat(40);
+        let sha_b = "b".repeat(40);
+        let walker = MockWalker::new(vec![
+            record(&sha_a, "feat(core): add thing", Some("Some body text")),
+            record(&sha_b, "fix: bug", None),
+        ]);
+        let pathspecs = vec![PathBuf::from("crates/pkg-a")];
+
+        let commits = fetch_commits(&walker, &InferenceWindow::FullHistory, &pathspecs).unwrap();
+
+        assert_eq!(commits.len(), 2);
+        assert_eq!(commits[0].sha().as_str(), sha_a);
+        assert_eq!(commits[0].subject(), "add thing");
+        assert_eq!(commits[1].sha().as_str(), sha_b);
+        assert_eq!(commits[1].subject(), "bug");
+
+        let calls = walker.calls.lock().unwrap();
+        assert_eq!(calls.len(), 1, "expected exactly one walk, got {calls:?}");
+        assert_eq!(calls[0].0, None, "FullHistory must pass no `since` bound");
+        assert_eq!(calls[0].1, pathspecs);
+    }
+
+    /// Spec: `InferenceWindow::SinceCommit` translates into the walker's
+    /// `since_ref` argument verbatim, so the exclusive-lower-bound decision
+    /// belongs to the walker implementation, not to this crate.
+    #[test]
+    fn test_fetch_commits_passes_since_commit_through_to_walker() {
+        let since = CommitSha::parse(&"c".repeat(40)).unwrap();
+        let walker = MockWalker::new(vec![record(&"d".repeat(40), "feat: new", None)]);
+
+        let window = InferenceWindow::SinceCommit(since.clone());
+        let commits = fetch_commits(&walker, &window, &[]).unwrap();
+
+        assert_eq!(commits.len(), 1);
+        let calls = walker.calls.lock().unwrap();
+        assert_eq!(calls[0].0.as_deref(), Some(since.as_str()));
+        assert!(calls[0].1.is_empty());
+    }
+
+    /// Spec: a walker failure must propagate as
+    /// `ConventionalError::CommitWalk`, never be swallowed into an empty
+    /// commit list -- proven without any VCS backend in the picture.
+    #[test]
+    fn test_fetch_commits_propagates_walker_error() {
+        struct FailingWalker;
+        impl CommitWalker for FailingWalker {
+            fn commits_since(
+                &self,
+                _since_ref: Option<&str>,
+                _pathspecs: &[PathBuf],
+            ) -> Result<Vec<CommitRecord>, CommitWalkError> {
+                Err(CommitWalkError::RefNotFound {
+                    ref_name: "v9.9.9".to_string(),
+                })
+            }
+        }
+
+        let result = fetch_commits(&FailingWalker, &InferenceWindow::FullHistory, &[]);
+
+        assert!(
+            matches!(
+                result,
+                Err(ConventionalError::CommitWalk(
+                    CommitWalkError::RefNotFound { .. }
+                ))
+            ),
+            "expected ConventionalError::CommitWalk(RefNotFound), got {result:?}"
+        );
+    }
+
+    /// Spec: the real `callisto_vcs::GitAccess` backend satisfies
+    /// `CommitWalker`, so production wiring works end to end -- commits come
+    /// back from native gix (a `CommandRunner` that fails on every call must
+    /// not prevent that) and pathspec filtering scopes them to the given
+    /// paths. `callisto-vcs` is a dev-dependency here purely to run this
+    /// integration check; nothing in this crate's production code names it.
+    #[test]
+    fn test_real_git_access_backend_satisfies_commit_walker_and_filters_by_pathspec() {
         let ws_dir = tempfile::tempdir().unwrap();
         let root = ws_dir.path();
         init_repo(root);
@@ -75,8 +196,9 @@ mod tests {
         run_git(root, &["commit", "-q", "-m", "feat: add pkg-b file"]);
 
         let runner = PoisonedRunner;
+        let git = GitAccess::discover(root, &runner);
         let pathspecs = vec![PathBuf::from("crates/pkg-a")];
-        let commits = fetch_commits(&runner, root, &InferenceWindow::FullHistory, &pathspecs)
+        let commits = fetch_commits(&git, &InferenceWindow::FullHistory, &pathspecs)
             .expect("fetch_commits must succeed even with a poisoned CommandRunner");
 
         assert_eq!(commits.len(), 1);
@@ -100,7 +222,8 @@ mod tests {
         run_git(root, &["commit", "-q", "-m", "feat: c2"]);
 
         let runner = PoisonedRunner;
-        let commits = fetch_commits(&runner, root, &InferenceWindow::FullHistory, &[]).unwrap();
+        let git = GitAccess::discover(root, &runner);
+        let commits = fetch_commits(&git, &InferenceWindow::FullHistory, &[]).unwrap();
 
         assert_eq!(commits.len(), 2);
     }
@@ -127,8 +250,9 @@ mod tests {
         run_git(root, &["commit", "-q", "-m", "feat: c2"]);
 
         let runner = PoisonedRunner;
+        let git = GitAccess::discover(root, &runner);
         let window = InferenceWindow::SinceCommit(since_sha);
-        let commits = fetch_commits(&runner, root, &window, &[]).unwrap();
+        let commits = fetch_commits(&git, &window, &[]).unwrap();
 
         assert_eq!(commits.len(), 1);
         assert_eq!(commits[0].subject(), "c2");
@@ -138,7 +262,7 @@ mod tests {
     /// `GitRepository::discover` fails exactly the way it unconditionally
     /// does on `wasm32` (gix is excluded from that target's dependency
     /// set) -- the native-testable stand-in for "gix is unavailable" that
-    /// forces `fetch_commits` through the `CommandRunner` fallback.
+    /// forces `GitAccess` onto its `CommandRunner` fallback.
     fn non_repo_dir() -> tempfile::TempDir {
         let dir = tempfile::tempdir().unwrap();
         assert!(
@@ -148,37 +272,21 @@ mod tests {
         dir
     }
 
-    /// A `CommandRunner` double standing in for a real `git` binary on the
-    /// fallback path. Returns a canned `git log` payload shaped exactly
-    /// like the `--format=<RS>%H<US>%B` invocation `fetch_commits` is
-    /// expected to issue, and records every invocation's args so the test
-    /// can assert on the exact command shape.
+    /// A `CommandRunner` double standing in for a real `git` binary on
+    /// `GitAccess`'s shell fallback path. Returns a canned `git log` payload
+    /// in the `--format=<RS>%H<US>%B` record shape that `ShellGit` issues.
     struct FakeGitLogRunner {
         stdout: String,
-        calls: std::sync::Mutex<Vec<Vec<String>>>,
-    }
-
-    impl FakeGitLogRunner {
-        fn new(stdout: impl Into<String>) -> Self {
-            FakeGitLogRunner {
-                stdout: stdout.into(),
-                calls: std::sync::Mutex::new(Vec::new()),
-            }
-        }
     }
 
     impl CommandRunner for FakeGitLogRunner {
         fn run(
             &self,
             program: &str,
-            args: &[&str],
+            _args: &[&str],
             _cwd: &Path,
         ) -> Result<CommandOutput, CommandError> {
             assert_eq!(program, "git");
-            self.calls
-                .lock()
-                .unwrap()
-                .push(args.iter().map(|s| s.to_string()).collect());
             Ok(CommandOutput {
                 exit_code: Some(0),
                 stdout: self.stdout.clone(),
@@ -187,109 +295,41 @@ mod tests {
         }
     }
 
-    /// Builds a canned `git log` payload in the exact `<RS>%H<US>%B`
-    /// record shape (record-separator `\x1e` prefixing each record,
-    /// unit-separator `\x1f` between sha and raw message body) that
-    /// `fetch_commits`'s `CommandRunner` fallback is expected to request
-    /// and parse.
-    fn canned_git_log_output(commits: &[(&str, &str)]) -> String {
-        let mut out = String::new();
-        for (sha, message) in commits {
-            out.push('\u{1e}');
-            out.push_str(sha);
-            out.push('\u{1f}');
-            out.push_str(message);
-            out.push('\n'); // tformat's implicit trailing newline per entry
-        }
-        out
-    }
-
-    /// Spec: this is the bug under test. `fetch_commits` previously
-    /// discarded `runner` entirely (`_runner: &dyn CommandRunner`) and
-    /// hard-failed via `?` on `GitRepository::discover` with no fallback,
-    /// silently dropping all conventional-commit inference whenever gix is
-    /// unavailable (always true on wasm32). It must instead fall back to a
-    /// `CommandRunner`-shelled `git log` and actually parse commits out of
-    /// it -- not return empty/`None`.
+    /// Spec: conventional-commit inference must survive gix being
+    /// unavailable -- always the case on `wasm32`, where gix is excluded
+    /// from the dependency set. `GitAccess`'s shell fallback then serves the
+    /// walk, and `fetch_commits` must parse real commits out of it rather
+    /// than degrading to an empty list. (The exact `git log` argv that
+    /// fallback issues is `ShellGit`'s contract and is asserted in
+    /// `callisto-vcs`; what matters here is that parsing still happens.)
     #[test]
-    fn test_fetch_commits_falls_back_to_command_runner_when_gix_unavailable() {
+    fn test_inference_still_works_when_gix_is_unavailable() {
         let dir = non_repo_dir();
         let sha_a = "a".repeat(40);
         let sha_b = "b".repeat(40);
-        let stdout = canned_git_log_output(&[
-            (&sha_a, "feat(core): add thing\n\nSome body text"),
-            (&sha_b, "fix: bug"),
-        ]);
-        let runner = FakeGitLogRunner::new(stdout);
-        let pathspecs = vec![PathBuf::from("crates/pkg-a")];
-
-        let commits = fetch_commits(
-            &runner,
-            dir.path(),
-            &InferenceWindow::FullHistory,
-            &pathspecs,
-        )
-        .expect(
-            "fetch_commits must succeed via the CommandRunner fallback when gix is unavailable",
+        let stdout = format!(
+            "\u{1e}{sha_a}\u{1f}feat(core): add thing\n\nSome body text\n\u{1e}{sha_b}\u{1f}fix: bug\n"
         );
+        let runner = FakeGitLogRunner { stdout };
+        let git = GitAccess::discover(dir.path(), &runner);
+
+        let commits = fetch_commits(&git, &InferenceWindow::FullHistory, &[])
+            .expect("inference must survive gix being unavailable");
 
         assert_eq!(commits.len(), 2);
         assert_eq!(commits[0].sha().as_str(), sha_a);
         assert_eq!(commits[0].subject(), "add thing");
         assert_eq!(commits[1].sha().as_str(), sha_b);
         assert_eq!(commits[1].subject(), "bug");
-
-        let calls = runner.calls.lock().unwrap();
-        assert_eq!(
-            calls.len(),
-            1,
-            "fetch_commits should shell out exactly once, got {calls:?}"
-        );
-        let args = &calls[0];
-        assert_eq!(args[0], "log");
-        assert!(args.contains(&"--no-merges".to_string()));
-        assert!(
-            args.iter().any(|a| a.starts_with("--format=")),
-            "expected a --format= arg, got {args:?}"
-        );
-        assert!(args.contains(&"HEAD".to_string()));
-        assert!(args.contains(&"--".to_string()));
-        assert!(args.contains(&"crates/pkg-a".to_string()));
     }
 
-    /// Spec: `InferenceWindow::SinceCommit` must translate into a
-    /// `<sha>..HEAD` revision range on the `CommandRunner` fallback path,
-    /// mirroring the exclusive-lower-bound semantics the gix path gets via
-    /// `commits_since_with_pathspec`'s stop-at-`since` revwalk.
+    /// Spec: a `CommandError` raised deep inside the VCS backend keeps its
+    /// identity as it narrows through `From<VcsError> for CommitWalkError`
+    /// -- it must arrive as `CommitWalk(Command(_))`, not be flattened into
+    /// the catch-all `Backend` variant and not be swallowed into an
+    /// empty/silently-degraded commit list.
     #[test]
-    fn test_fetch_commits_command_runner_fallback_uses_since_range() {
-        let dir = non_repo_dir();
-        let sha_since = CommitSha::parse(&"c".repeat(40)).unwrap();
-        let sha_new = "d".repeat(40);
-        let stdout = canned_git_log_output(&[(&sha_new, "feat: new")]);
-        let runner = FakeGitLogRunner::new(stdout);
-
-        let window = InferenceWindow::SinceCommit(sha_since.clone());
-        let commits = fetch_commits(&runner, dir.path(), &window, &[]).unwrap();
-
-        assert_eq!(commits.len(), 1);
-        let calls = runner.calls.lock().unwrap();
-        let args = &calls[0];
-        assert!(
-            args.contains(&format!("{}..HEAD", sha_since.as_str())),
-            "expected a `<since>..HEAD` range arg, got {args:?}"
-        );
-    }
-
-    /// Spec: a `CommandRunner` failure on the fallback path (e.g. `git`
-    /// missing) must propagate as a real error, not be swallowed into an
-    /// empty/silently-degraded commit list. Now routed through
-    /// `GitAccess`/`GitDataSource`, so the error arrives wrapped as
-    /// `ConventionalError::Vcs(VcsError::Command(_))` rather than the
-    /// direct `ConventionalError::Command(_)` the old hand-rolled shell-out
-    /// produced -- same propagation guarantee, new (centralized) shape.
-    #[test]
-    fn test_fetch_commits_propagates_command_runner_error() {
+    fn test_backend_command_error_narrows_to_commit_walk_command() {
         struct FailingRunner;
         impl CommandRunner for FailingRunner {
             fn run(
@@ -305,19 +345,15 @@ mod tests {
         }
 
         let dir = non_repo_dir();
-        let result = fetch_commits(
-            &FailingRunner,
-            dir.path(),
-            &InferenceWindow::FullHistory,
-            &[],
-        );
+        let git = GitAccess::discover(dir.path(), &FailingRunner);
+        let result = fetch_commits(&git, &InferenceWindow::FullHistory, &[]);
 
         assert!(
             matches!(
                 result,
-                Err(ConventionalError::Vcs(callisto_vcs::VcsError::Command(_)))
+                Err(ConventionalError::CommitWalk(CommitWalkError::Command(_)))
             ),
-            "expected ConventionalError::Vcs(VcsError::Command(_)), got {result:?}"
+            "expected ConventionalError::CommitWalk(Command(_)), got {result:?}"
         );
     }
 }

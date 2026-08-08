@@ -37,6 +37,9 @@ pub use discovery::*;
 pub mod exec;
 pub use exec::*;
 
+pub mod commit;
+pub use commit::*;
+
 pub mod diagnostic;
 pub use diagnostic::*;
 

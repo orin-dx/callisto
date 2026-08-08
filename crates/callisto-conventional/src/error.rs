@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use callisto_model::CommandError;
+use callisto_model::{CommandError, CommitWalkError};
 
 #[derive(Clone, Debug, thiserror::Error, PartialEq, Eq)]
 #[non_exhaustive]
@@ -8,16 +8,16 @@ pub enum ConventionalError {
     #[error(transparent)]
     Command(#[from] CommandError),
 
-    /// Any failure sourced from `callisto_vcs::GitDataSource` (native gix
-    /// or the `CommandRunner`-shelled fallback) while fetching commits --
-    /// e.g. `git log` itself failing, malformed `git log` output, or an
-    /// explicitly-requested `since` ref that doesn't resolve to a commit
-    /// (see `VcsError::RefNotFound`/`VcsError::Git`). This subsumes what
-    /// used to be this crate's own `GitLogFailed`/`MalformedGitLogOutput`
-    /// variants, now that `fetch_commits` delegates the shell-out entirely
-    /// to `callisto_vcs::ShellGit`.
+    /// Any failure reported by the [`callisto_model::CommitWalker`] backing
+    /// severity inference -- `git log` itself failing, an unparsable log
+    /// stream, or an explicitly-requested `since` ref that doesn't resolve
+    /// to a commit.
+    ///
+    /// Named for the Layer 1 contract, not for whichever VCS engine happens
+    /// to satisfy it: this crate parses conventional commits and has no
+    /// opinion on where the history came from.
     #[error(transparent)]
-    Vcs(#[from] callisto_vcs::VcsError),
+    CommitWalk(#[from] CommitWalkError),
 
     #[error("pre-cursor ref `{ref_name}` in `{cwd}` could not be resolved: {stderr}")]
     MalformedPreCursorRef {
