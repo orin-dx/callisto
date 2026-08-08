@@ -535,6 +535,48 @@ mod tests {
         }
     }
 
+    /// In-memory graph that supports arbitrary edges for cascade tests.
+    struct TestGraph {
+        packages: Vec<Package>,
+        edges: Vec<DepEdge>,
+    }
+
+    impl DependencyResolver for TestGraph {
+        fn packages(&self) -> impl Iterator<Item = &Package> {
+            self.packages.iter()
+        }
+
+        fn dependencies_of(&self, id: &PackageId) -> impl Iterator<Item = &DepEdge> {
+            // Return edges where `from == id` (id depends on the target).
+            self.edges.iter().filter(move |e| &e.from == id)
+        }
+
+        fn dependents_of(&self, id: &PackageId) -> impl Iterator<Item = &DepEdge> {
+            // Return edges where `to == id` (i.e. the caller depends on id).
+            self.edges.iter().filter(move |e| &e.to == id)
+        }
+    }
+
+    fn make_dep_edge(
+        from: &PackageId,
+        to: &PackageId,
+        spec_str: &str,
+        ecosystem: callisto_model::Ecosystem,
+    ) -> DepEdge {
+        let spec = DepSpec::Range(
+            callisto_model::VersionReq::parse(spec_str, ecosystem).unwrap(),
+            spec_str.to_string(),
+        );
+        DepEdge {
+            from: from.clone(),
+            to: to.clone(),
+            kind: DepKind::Runtime,
+            spec,
+            from_manifest: std::path::PathBuf::from(format!("{}/Cargo.toml", from.name())),
+            inherited: false,
+        }
+    }
+
     fn bare_package(id: &PackageId) -> Package {
         Package {
             id: id.clone(),
@@ -770,6 +812,240 @@ mod tests {
     /// `PreState.initial_versions` at `pre enter` time, not from whatever the
     /// latest on-disk prerelease happens to be. Otherwise the release segment
     /// re-derives from a moving target instead of the pinned one.
+    /// Diamond dependency: A→B, A→C, B→D, C→D.
+    ///
+    /// Bumping D (seeded with a Major severity) causes both B and C to
+    /// cascade. A depends on BOTH B and C, so the cascade solver visits A
+    /// from two different paths. The worklist algorithm must process A only
+    /// ONCE -- it must not be duplicated in the outcome's severity map or
+    /// target map even though two separate edges arrive at A.
+    ///
+    /// Without proper deduplication (e.g. if `raise` were called twice for A
+    /// at the same severity) the idempotency check `sev <= cur_sev` in `raise`
+    /// prevents double-insertion into the maps, but this test makes the
+    /// constraint explicit and guards against regressions where dedup breaks.
+    #[test]
+    fn test_diamond_dependency_a_appears_exactly_once_in_cascade_result() {
+        let pkg_a = PackageId::parse("pkg-a").unwrap();
+        let pkg_b = PackageId::parse("pkg-b").unwrap();
+        let pkg_c = PackageId::parse("pkg-c").unwrap();
+        let pkg_d = PackageId::parse("pkg-d").unwrap();
+
+        // Edges: B→D, C→D, A→B, A→C
+        // B and C use "^1.0.0" for D; A uses exact "=1.0.0" for B and C.
+        // With CascadeBumpSeverity::Patch, when D is seeded Major (→ 2.0.0):
+        //   - B and C cascade with Patch (^1.0.0 doesn't cover 2.0.0) → both become 1.0.1
+        //   - A's "=1.0.0" on B (now 1.0.1) is out of range → A cascades from B
+        //   - A's "=1.0.0" on C (now 1.0.1) is out of range → A cascades from C
+        // Both paths reach A; the dedup invariant is that A appears exactly once.
+        let eco = callisto_model::Ecosystem::Cargo;
+        let edges = vec![
+            make_dep_edge(&pkg_b, &pkg_d, "^1.0.0", eco),
+            make_dep_edge(&pkg_c, &pkg_d, "^1.0.0", eco),
+            make_dep_edge(&pkg_a, &pkg_b, "=1.0.0", eco),
+            make_dep_edge(&pkg_a, &pkg_c, "=1.0.0", eco),
+        ];
+
+        let graph = TestGraph {
+            packages: vec![
+                bare_package(&pkg_a),
+                bare_package(&pkg_b),
+                bare_package(&pkg_c),
+                bare_package(&pkg_d),
+            ],
+            edges,
+        };
+
+        let mut base = BTreeMap::new();
+        base.insert(pkg_a.clone(), Version::semver(1, 0, 0));
+        base.insert(pkg_b.clone(), Version::semver(1, 0, 0));
+        base.insert(pkg_c.clone(), Version::semver(1, 0, 0));
+        base.insert(pkg_d.clone(), Version::semver(1, 0, 0));
+
+        // Only D is seeded — all others propagate via cascade.
+        let mut seed = BTreeMap::new();
+        seed.insert(pkg_d.clone(), Severity::Major);
+
+        // Patch cascade severity. When D is seeded Major (→ 2.0.0), B and C's
+        // "^1.0.0" specs don't cover 2.0.0, so they cascade at Patch (→ 1.0.1).
+        // A's exact "=1.0.0" specs on B and C don't cover 1.0.1, so A cascades
+        // from both paths. The dedup invariant ensures A appears exactly once.
+        let cfg = CascadeConfig {
+            mode: CascadeMode::OutOfRange,
+            bump_severity: CascadeBumpSeverity::Patch,
+            peer_escalation: false,
+            preserve_npm_ranges: false,
+        };
+        let groups = crate::config::GroupTable::default();
+        let reasons = BTreeMap::new();
+        let named_by = BTreeMap::new();
+
+        let input = CascadeInput {
+            graph: &graph,
+            groups: &groups,
+            cfg: &cfg,
+            seed: &seed,
+            reasons: &reasons,
+            named_by: &named_by,
+            base: &base,
+            pre: None,
+        };
+
+        let outcome = run_cascade(input).unwrap();
+
+        // D is seeded, B and C cascade from D, A cascades from both B and C.
+        assert!(
+            outcome.severities.contains_key(&pkg_d),
+            "D must be in outcome"
+        );
+        assert!(
+            outcome.severities.contains_key(&pkg_b),
+            "B must cascade from D"
+        );
+        assert!(
+            outcome.severities.contains_key(&pkg_c),
+            "C must cascade from D"
+        );
+        assert!(
+            outcome.severities.contains_key(&pkg_a),
+            "A must cascade from B and C (both bumped to 2.0.0, out of ^1.0.0)"
+        );
+
+        // The critical deduplication check: A must appear exactly ONCE even
+        // though two separate cascade paths (via B and via C) both reach A.
+        // BTreeMap guarantees at most one entry per key; iterating and
+        // filtering by key yields exactly 1.
+        let a_severity_count = outcome.severities.keys().filter(|k| *k == &pkg_a).count();
+        assert_eq!(
+            a_severity_count, 1,
+            "pkg-a must appear exactly once in severities map, got {a_severity_count}"
+        );
+
+        let a_target_count = outcome.targets.keys().filter(|k| *k == &pkg_a).count();
+        assert_eq!(
+            a_target_count, 1,
+            "pkg-a must appear exactly once in targets map, got {a_target_count}"
+        );
+
+        assert_eq!(
+            outcome.severities[&pkg_d],
+            Severity::Major,
+            "D must have Major severity (seeded directly)"
+        );
+        assert_eq!(
+            outcome.severities[&pkg_a],
+            Severity::Patch,
+            "A's cascaded severity must be Patch (Patch cascade config)"
+        );
+    }
+
+    /// Pre-release cascade: when D bumps to a pre-release version (via
+    /// `PreMode::Pre`) and a dependent B has a stable-only spec that does NOT
+    /// cover the pre-release version, B is cascaded and its target is also a
+    /// pre-release (because `bump_target` in `PreMode::Pre` calls
+    /// `bump_prerelease`). This test documents and pins that behavior.
+    ///
+    /// The concrete scenario:
+    ///   - D is at 1.0.0, seeded with Major severity in pre-release mode
+    ///   - D bumps to 2.0.0-alpha.0
+    ///   - B depends on D with "^1.0.0" (stable-only)
+    ///   - "^1.0.0" does NOT cover 2.0.0-alpha.0 (different major, and cargo
+    ///     semver excludes pre-releases from stable ranges)
+    ///   - B IS cascaded (DoesNotCover → cascade) and also bumps to a
+    ///     pre-release version
+    #[test]
+    fn test_prerelease_cascade_stable_spec_out_of_range_triggers_cascade() {
+        let pkg_b = PackageId::parse("pkg-b").unwrap();
+        let pkg_d = PackageId::parse("pkg-d").unwrap();
+
+        let eco = callisto_model::Ecosystem::Cargo;
+        let edges = vec![make_dep_edge(&pkg_b, &pkg_d, "^1.0.0", eco)];
+
+        let graph = TestGraph {
+            packages: vec![bare_package(&pkg_b), bare_package(&pkg_d)],
+            edges,
+        };
+
+        let mut base = BTreeMap::new();
+        base.insert(
+            pkg_b.clone(),
+            Version::parse("1.0.0", callisto_model::VersionGrammar::SemVer).unwrap(),
+        );
+        base.insert(
+            pkg_d.clone(),
+            Version::parse("1.0.0", callisto_model::VersionGrammar::SemVer).unwrap(),
+        );
+
+        let mut initial_versions = indexmap::IndexMap::new();
+        initial_versions.insert(
+            "pkg-d".to_string(),
+            Version::parse("1.0.0", callisto_model::VersionGrammar::SemVer).unwrap(),
+        );
+        initial_versions.insert(
+            "pkg-b".to_string(),
+            Version::parse("1.0.0", callisto_model::VersionGrammar::SemVer).unwrap(),
+        );
+
+        let pre = callisto_format::PreState {
+            mode: callisto_format::PreMode::Pre,
+            tag: "alpha".to_string(),
+            initial_versions,
+            changesets: Vec::new(),
+        };
+
+        // D is seeded with Major; in PreMode::Pre it bumps to 2.0.0-alpha.0.
+        let mut seed = BTreeMap::new();
+        seed.insert(pkg_d.clone(), Severity::Major);
+
+        let cfg = CascadeConfig {
+            mode: CascadeMode::OutOfRange,
+            bump_severity: CascadeBumpSeverity::Patch,
+            peer_escalation: false,
+            preserve_npm_ranges: false,
+        };
+        let groups = crate::config::GroupTable::default();
+        let reasons = BTreeMap::new();
+        let named_by = BTreeMap::new();
+
+        let input = CascadeInput {
+            graph: &graph,
+            groups: &groups,
+            cfg: &cfg,
+            seed: &seed,
+            reasons: &reasons,
+            named_by: &named_by,
+            base: &base,
+            pre: Some(&pre),
+        };
+
+        let outcome = run_cascade(input).unwrap();
+
+        // D bumps to a pre-release version.
+        let d_target = outcome.targets.get(&pkg_d).expect("D must have a target");
+        assert!(
+            d_target.is_prerelease(),
+            "D must bump to a pre-release version in PreMode::Pre; got {}",
+            d_target.render()
+        );
+        assert!(
+            d_target.render().starts_with("2.0.0-"),
+            "D's pre-release bump from 1.0.0 with Major severity must start with 2.0.0-; got {}",
+            d_target.render()
+        );
+
+        // B is cascaded because ^1.0.0 does not cover 2.0.0-alpha.0.
+        assert!(
+            outcome.severities.contains_key(&pkg_b),
+            "B must be cascaded when D's pre-release version is out of range for ^1.0.0"
+        );
+        let b_target = outcome.targets.get(&pkg_b).expect("B must have a target");
+        assert!(
+            b_target.is_prerelease(),
+            "B's cascade target in PreMode::Pre must also be a pre-release; got {}",
+            b_target.render()
+        );
+    }
+
     #[test]
     fn test_bump_target_uses_pinned_pre_baseline_not_current_prerelease() {
         let pkg_a = PackageId::parse("pkg-a").unwrap();
