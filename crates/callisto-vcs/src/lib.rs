@@ -990,6 +990,115 @@ mod tests {
         );
     }
 
+    /// Spec: CRLF line endings in commit messages are normalized to LF in the
+    /// returned `GitCommit.summary` and `GitCommit.body` fields. The
+    /// implementation replaces `\r\n` with `\n` after reading the raw gix
+    /// message bytes; this test verifies that normalization is applied and
+    /// that the caller never sees bare carriage-return characters.
+    #[test]
+    fn test_commits_since_crlf_message_normalized_to_lf() {
+        let ws_dir = tempfile::tempdir().unwrap();
+        let root = ws_dir.path();
+        init_repo(root);
+
+        // Write a commit message file that contains CRLF line endings.
+        let msg_file = root.join("commit_msg.txt");
+        std::fs::write(
+            &msg_file,
+            "fix: CRLF summary line\r\n\r\nBody paragraph with CRLF.\r\nSecond body line.\r\n",
+        )
+        .unwrap();
+
+        std::fs::write(root.join("a.txt"), "content\n").unwrap();
+        run_git(root, &["add", "."]);
+        run_git(root, &["commit", "-q", "-F", msg_file.to_str().unwrap()]);
+
+        let repo = GitRepository::discover(root).unwrap();
+        let commits = repo.commits_since_with_pathspec(None, &[]).unwrap();
+
+        assert_eq!(commits.len(), 1, "expected exactly one commit");
+        let commit = &commits[0];
+
+        // The summary must not contain any bare CR after normalization.
+        assert!(
+            !commit.summary.contains('\r'),
+            "summary must not contain CR after normalization; got: {:?}",
+            commit.summary
+        );
+        assert_eq!(
+            commit.summary, "fix: CRLF summary line",
+            "summary must match the first commit message line (normalized)"
+        );
+
+        // Body must also be normalized when present.
+        if let Some(body) = &commit.body {
+            assert!(
+                !body.contains('\r'),
+                "body must not contain CR after normalization; got: {:?}",
+                body
+            );
+        }
+    }
+
+    /// Spec: `GitRepository::commits_since_with_pathspec` must not panic when
+    /// HEAD is detached (i.e., no branch is checked out). Detached HEAD is a
+    /// valid and common repository state (e.g. after `git checkout <sha>`,
+    /// during a rebase, or in CI). The method must either return commits
+    /// reachable from HEAD or a clear `VcsError`, never an unwrap panic.
+    #[test]
+    fn test_commits_since_detached_head_does_not_panic() {
+        let ws_dir = tempfile::tempdir().unwrap();
+        let root = ws_dir.path();
+        init_repo(root);
+
+        // Commit #1 – the one we will check out by SHA to detach HEAD.
+        std::fs::write(root.join("a.txt"), "first\n").unwrap();
+        run_git(root, &["add", "."]);
+        run_git(root, &["commit", "-q", "-m", "feat: first commit"]);
+
+        let sha_out = std::process::Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(root)
+            .output()
+            .unwrap();
+        let first_sha = String::from_utf8_lossy(&sha_out.stdout).trim().to_string();
+
+        // Commit #2 – created on the branch so detaching at #1 leaves it
+        // unreachable from HEAD.
+        std::fs::write(root.join("b.txt"), "second\n").unwrap();
+        run_git(root, &["add", "."]);
+        run_git(root, &["commit", "-q", "-m", "feat: second commit"]);
+
+        // Detach HEAD by checking out the first commit SHA directly.
+        run_git(root, &["checkout", "-q", &first_sha]);
+
+        let repo = GitRepository::discover(root).unwrap();
+
+        // Must not panic; Ok with at least one commit is the expected outcome.
+        let result = repo.commits_since_with_pathspec(None, &[]);
+        match result {
+            Ok(commits) => {
+                // Detached HEAD at commit #1: only that commit is reachable.
+                assert_eq!(
+                    commits.len(),
+                    1,
+                    "expected 1 commit reachable from detached HEAD; got {:?}",
+                    commits.len()
+                );
+                assert_eq!(commits[0].summary, "feat: first commit");
+            }
+            Err(e) => {
+                // A clear VcsError (not a panic) is acceptable as a fallback,
+                // but gix reads detached HEAD just fine, so this arm should
+                // not be reached in practice.
+                assert!(
+                    matches!(e, VcsError::Git(_)),
+                    "unexpected error type from detached HEAD: {e:?}"
+                );
+            }
+        }
+    }
+
     /// Bug regression: when a feature branch was created BEFORE the `since`
     /// tag commit (branching from an ancestor of the tag), gix's topological
     /// walk visits the tag commit before some commits on the feature branch.
