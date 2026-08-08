@@ -52,7 +52,7 @@ pub enum GraphError {
     #[diagnostic(transparent)]
     Model(#[from] callisto_model::ModelError),
 
-    #[error("vcs error: {0}")]
+    #[error(transparent)]
     #[diagnostic(transparent)]
     Vcs(#[from] callisto_vcs::VcsError),
 
@@ -165,6 +165,27 @@ pub enum GraphError {
         help("Check that .changeset/pre.json is readable. Delete the file and re-run `callisto pre enter` to recover.")
     )]
     PreJsonRead { message: String },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use callisto_vcs::VcsError;
+
+    /// Spec: GraphError::Vcs must be transparent — wrapping a VcsError must
+    /// not add any prefix (e.g. "vcs error: ") to the display message.
+    /// Before the fix, format!("{err}") produces "vcs error: <inner>".
+    #[test]
+    fn graph_error_vcs_is_transparent_no_prefix() {
+        let inner = VcsError::Git("some git error".to_string());
+        let expected_msg = format!("{inner}");
+        let graph_err = GraphError::Vcs(inner);
+        assert_eq!(
+            format!("{graph_err}"),
+            expected_msg,
+            "GraphError::Vcs must be transparent (no 'vcs error: ' prefix)"
+        );
+    }
 }
 
 #[derive(Clone, Debug, thiserror::Error, miette::Diagnostic, PartialEq, Eq)]
