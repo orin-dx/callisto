@@ -1,0 +1,68 @@
+You are working on the Callisto Rust monorepo at `/Users/gabe/Projects/callisto`.
+
+Before doing anything else, load these two files in order:
+
+1. `/Users/gabe/Projects/callisto/.claude/plans/ACTIVE.md`
+   — what's in flight, pipeline protocol, constraints
+
+2. `/Users/gabe/Projects/callisto/.claude/semantic-model/INDEX.md`
+   — maps your current task to which topic files to load next
+
+Do NOT load all semantic-model files. Load only what INDEX.md directs you to
+based on the specific task at hand.
+
+Non-negotiables (do not wait for the files to confirm these):
+- NEVER create a git commit without explicit user instruction
+- NEVER invoke `callisto publish` against any real registry
+- Verify with `just ci` — must exit 0 before declaring any work done
+- TDD iron law: confirm the test FAILS before writing any im
+
+Pipeline for all implementation work: canon → vector → lambd
+ACTIVE.md has the full step sequence.
+
+Current work:
+
+Track B — `crates/callisto-graph/src/apply.rs`
+  3 RED tests are written and failing. Implementation needed
+  manifest write loop (read version, skip write if already at target, error if unexpected).
+  Also: remove the `if full.exists()` gate on changeset pathtten
+  first via canon pipeline before any code changes.
+
+Track E — `crates/callisto-graph/src/walk.rs`
+  Design decided (Option 3). No spec written yet, no impleme
+  Fix 1: specificity ordering — prefixed [[package]] rules beat bare rules regardless of
+  declaration order. Fix 2: diagnostic when a bare rule matcems.
+  Do NOT change `PackageId::matches()`. Spec must be written first via canon pipeline.
+
+Start with whichever track the user directs. If no direction given, start with Track B
+(tests already exist — canon pipeline has a shorter path to
+
+The additions do two things: they tell the agent what it's w reads ACTIVE.md (saving a round-trip of "what should I workon?"), and the final line removes an ambiguity that would otherwise require the agent to ask you which track to start with.
+
+---
+
+WTF, we did not have a spec written after all our research?
+
+---
+
+This seems quite weird, we're writing code in prose to write it in code??? WTF
+
+---
+
+Sorry, I do mean that the spec writing is ok
+
+---
+
+What's next?
+
+---
+
+Pickup where you got interrupted please
+
+---
+
+Yes, proceed with caution and don’t forget to validate very thoroughly
+
+---
+
+What shall we do about the notes?
