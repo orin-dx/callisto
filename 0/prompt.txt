@@ -158,3 +158,13 @@ Verification: `grep -c 'BareRuleMatchesMultipleEcosystems' docs/01-spec.md` retu
 ```</result>
 <usage><subagent_tokens>45710</subagent_tokens><tool_uses>5</tool_uses><duration_ms>107871</duration_ms></usage>
 </task-notification>
+
+---
+
+<task-notification>
+<task-id>bj8i0mp5k</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a7b3643b-af0c-4790-a38d-870e88a7dd3e/tasks/bj8i0mp5k.output</output-file>
+<status>killed</status>
+<summary>Background command "Run full CI to confirm everything passes" was stopped</summary>
+</task-notification>
