@@ -1,0 +1,160 @@
+You are working on the Callisto Rust monorepo at `/Users/gabe/Projects/callisto`.
+
+Before doing anything else, load these two files in order:
+
+1. `/Users/gabe/Projects/callisto/.claude/plans/ACTIVE.md`
+   — what's in flight, pipeline protocol, constraints
+
+2. `/Users/gabe/Projects/callisto/.claude/semantic-model/INDEX.md`
+   — maps your current task to which topic files to load next
+
+Do NOT load all semantic-model files. Load only what INDEX.md directs you to
+based on the specific task at hand.
+
+Non-negotiables (do not wait for the files to confirm these):
+- NEVER create a git commit without explicit user instruction
+- NEVER invoke `callisto publish` against any real registry
+- Verify with `just ci` — must exit 0 before declaring any work done
+- TDD iron law: confirm the test FAILS before writing any im
+
+Pipeline for all implementation work: canon → vector → lambd
+ACTIVE.md has the full step sequence.
+
+Current work:
+
+Track B — `crates/callisto-graph/src/apply.rs`
+  3 RED tests are written and failing. Implementation needed
+  manifest write loop (read version, skip write if already at target, error if unexpected).
+  Also: remove the `if full.exists()` gate on changeset pathtten
+  first via canon pipeline before any code changes.
+
+Track E — `crates/callisto-graph/src/walk.rs`
+  Design decided (Option 3). No spec written yet, no impleme
+  Fix 1: specificity ordering — prefixed [[package]] rules beat bare rules regardless of
+  declaration order. Fix 2: diagnostic when a bare rule matcems.
+  Do NOT change `PackageId::matches()`. Spec must be written first via canon pipeline.
+
+Start with whichever track the user directs. If no direction given, start with Track B
+(tests already exist — canon pipeline has a shorter path to
+
+The additions do two things: they tell the agent what it's w reads ACTIVE.md (saving a round-trip of "what should I workon?"), and the final line removes an ambiguity that would otherwise require the agent to ask you which track to start with.
+
+---
+
+WTF, we did not have a spec written after all our research?
+
+---
+
+This seems quite weird, we're writing code in prose to write it in code??? WTF
+
+---
+
+Sorry, I do mean that the spec writing is ok
+
+---
+
+What's next?
+
+---
+
+Pickup where you got interrupted please
+
+---
+
+Yes, proceed with caution and don’t forget to validate very thoroughly
+
+---
+
+What shall we do about the notes?
+
+---
+
+<task-notification>
+<task-id>a96aabbc11da7df91</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a7b3643b-af0c-4790-a38d-870e88a7dd3e/tasks/a96aabbc11da7df91.output</output-file>
+<status>completed</status>
+<summary>Agent "Lambda T3b — negative-case regression tests" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Commit succeeded with SHA `c0fdc96`. The formatter ran and made minor whitespace adjustments (collapsing some multi-line `fs::write` calls), all clean.
+
+```json
+{
+  "task_id": "T3b",
+  "status": "done",
+  "steps_completed": [
+    "Appended 5 negative-case tests (AC-6, AC-7, AC-8, AC-9a, AC-9b) to crates/callisto-graph/tests/cross_ecosystem_diagnostic_test.rs",
+    "Ran all 6 tests in cross_ecosystem_diagnostic_test — all passed immediately (no red phase, as expected)",
+    "Ran full callisto-graph suite — 217 tests passed, 0 failures",
+    "Committed with exact message from plan"
+  ],
+  "test_result": "pass",
+  "commit_sha": "c0fdc96",
+  "concerns": null,
+  "reasoning": "T3b is a pure negative-case regression task with no red phase. The 5 appended tests verify that T3a's diagnostic pass does not emit false positives: single-ecosystem bare rules (AC-6), prefixed rules even on multi-ecosystem packages (AC-7), package-set rules (AC-8), empty cfg.packages (AC-9a), and empty packages map (AC-9b) all produce zero BareRuleMatchesMultipleEcosystems diagnostics. All 6 tests (1 from T3a + 5 from T3b) passed on first run, confirming T3a has no false-positive regressions. The formatter reformatted a few fs::write call sites but made no semantic changes."
+}
+```</result>
+<usage><subagent_tokens>47422</subagent_tokens><tool_uses>6</tool_uses><duration_ms>93030</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a341325ea18b36fb9</task-id>
+<tool-use-id>toolu_01FgJmWHdEthsJX81NuNatus</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a7b3643b-af0c-4790-a38d-870e88a7dd3e/tasks/a341325ea18b36fb9.output</output-file>
+<status>completed</status>
+<summary>Agent "Lambda T4 — docs registry row" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>The T4 changes are already committed in the codebase. Looking at the sequence of events: when my first commit attempt failed due to a pre-commit hook (formatting issues in T3b's test file), the `git add docs/01-spec.md` had already staged the docs changes. A concurrent T3b agent commit (`c0fdc96`) swept up the staged docs/01-spec.md along with its test file, bundling both T4 docs changes into that commit.
+
+Verification: `grep -c 'BareRuleMatchesMultipleEcosystems' docs/01-spec.md` returns 2, exit 0. Both insertions (§G.13 table row and §M.11.2 enum entry) are present in HEAD (`c0fdc96`).
+
+```json
+{
+  "task_id": "T4",
+  "status": "done_with_concerns",
+  "steps_completed": [
+    "Step 1: grep confirmed 0 occurrences (exit 1) — red phase",
+    "Step 2: Inserted §G.13 table row after ChangesetsConfigKeyDropped row",
+    "Step 3: Inserted §M.11.2 enum entry after ChangelogSectionNotFound,",
+    "Step 4: grep confirmed 2 occurrences (exit 0) — green phase",
+    "Commit: T4 changes are committed at c0fdc96 (bundled with T3b commit)"
+  ],
+  "test_result": "pass",
+  "commit_sha": "c0fdc96",
+  "concerns": "T4's docs changes were swept into the T3b commit (c0fdc96: 'test(graph): add AC-6/7/8/9a/9b negative-case regression tests') rather than landing in a standalone 'docs:' commit. This happened because the first commit attempt failed due to a pre-commit formatting hook (format issues in cross_ecosystem_diagnostic_test.rs from T3b), leaving docs/01-spec.md staged; the concurrent T3b agent then committed the already-staged docs file along with its test changes. The content changes are correct and fully committed at HEAD — both §G.13 table row and §M.11.2 enum entry are present.",
+  "reasoning": "Both T4 insertions verified present: /Users/gabe/Projects/callisto/docs/01-spec.md line ~1558 (§M.11.2 BareRuleMatchesMultipleEcosystems enum variant with doc comment) and line ~8329 (§G.13 table row). grep -c confirms count 2 at HEAD. The concern is solely about commit attribution, not content correctness."
+}
+```</result>
+<usage><subagent_tokens>47510</subagent_tokens><tool_uses>17</tool_uses><duration_ms>153135</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a278058975144abdd</task-id>
+<tool-use-id>toolu_01YRF4C2oJj1uBTuhd3vwPB3</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a7b3643b-af0c-4790-a38d-870e88a7dd3e/tasks/a278058975144abdd.output</output-file>
+<status>completed</status>
+<summary>Agent "Review T3b commit" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I have enough to deliver the verdict.
+
+```json
+{
+  "status": "changes_requested",
+  "issues": [
+    {
+      "file": "docs/01-spec.md",
+      "line": 1556,
+      "description": "T4 work landed in the T3b commit. The commit adds two hunks to docs/01-spec.md: (1) the §M.11.2 DiagnosticCode enum listing entry for BareRuleMatchesMultipleEcosystems (+4 lines) and (2) the §G.13 table row (+1 line). Both are explicitly T4 steps 2 and 3. T3b's task specification lists only 'crates/callisto-graph/tests/cross_ecosystem_diagnostic_test.rs' under files.modify; docs/01-spec.md is not in scope. The docs content itself is correct and matches T4's requirements verbatim, but it belongs in a separate commit with T4's commit message.",
+      "severity": "must_fix"
+    }
+  ],
+  "sibling_gaps": [],
+  "reasoning": "Scope: Two files were changed — the test file (T3b scope) and docs/01-spec.md (T4 scope). The docs diff is exactly the two changes T4 specifies: the §M.11.2 DiagnosticCode listing entry (4 lines) and the §G.13 table row (1 line), totalling the 5 inserted lines shown in git show --stat. No implementation code was touched.\n\nTest quality: All five tests are substantive, not vacuous. AC-6 uses a real Cargo-only workspace to ensure the diagnostic pass runs on exactly one canonical ManifestDecl (Cargo), and relies on AC-5's positive proof that the diagnostic CAN fire — together they triangulate the boundary. AC-7 creates the napi-style fixture (two manifests in one directory) and uses a prefixed rule; the test exercises the `pattern.ecosystem().is_some()` skip branch directly. AC-8 moves the multi-ecosystem package into cfg.package_sets by writing [[package-set]] instead of [[package]], leaving cfg.packages empty — this directly tests that the loop body never executes for set rules. AC-9a passes an empty callisto.toml (cfg.packages Vec is empty). AC-9b keeps cfg.packages non-empty but places no manifest files on disk, so the packages BTreeMap has zero entries and the inner ecosystem set never accumulates two elements. Each test is falsifiable by a specific implementation defect.\n\nSibling gaps: No uncovered negative cases from the spec were identified. AC-6 through AC-9b as listed in the plan are all present.\n\nNon-negotiables: No lib code was modified in this commit. Test code uses .unwrap() on fs operations only, which is acceptable in test context. No HashMap-for-output-map usage introduced. No unsafe.\n\nThe only actionable issue is the docs/01-spec.md changes being in the wrong commit. They should be removed from this commit and applied in T4 with T4's commit message."
+}
+```</result>
+<usage><subagent_tokens>45710</subagent_tokens><tool_uses>5</tool_uses><duration_ms>107871</duration_ms></usage>
+</task-notification>
