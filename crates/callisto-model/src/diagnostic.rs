@@ -103,4 +103,33 @@ pub enum DiagnosticCode {
     ChangesetsConfigKeyDropped,
     PreMajorInferenceInert,
     ChangelogSectionNotFound,
+    ChangesetReadError,
+    GitDiscoveryFailed,
+    BareRuleMatchesMultipleEcosystems,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::DiagnosticCode;
+
+    /// AC-10: DiagnosticCode::BareRuleMatchesMultipleEcosystems must serialize
+    /// to the kebab-case string "bare-rule-matches-multiple-ecosystems" and
+    /// deserialize back to the same variant. The existing
+    /// `#[serde(rename_all = "kebab-case")]` on DiagnosticCode handles this
+    /// automatically — no per-variant annotation is needed.
+    #[test]
+    fn bare_rule_matches_multiple_ecosystems_serializes_to_kebab_case() {
+        let code = DiagnosticCode::BareRuleMatchesMultipleEcosystems;
+        let json = serde_json::to_string(&code).unwrap();
+        assert_eq!(
+            json,
+            r#""bare-rule-matches-multiple-ecosystems""#,
+            "DiagnosticCode::BareRuleMatchesMultipleEcosystems must serialize to \"bare-rule-matches-multiple-ecosystems\"",
+        );
+        let roundtrip: DiagnosticCode = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            roundtrip, code,
+            "deserialized value must equal the original variant",
+        );
+    }
 }
