@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -9,8 +9,8 @@ use callisto_manifests::{
     detect_npm_workspace_kind, Manifest, OpenContext, WorkspaceCargoResolver,
 };
 use callisto_model::{
-    CommandRunner, DepEdge, Ecosystem, ManifestDecl, ManifestFormat, ManifestRole, Package,
-    PackageId, PublishTarget, ReleaseTrigger,
+    CommandRunner, DepEdge, Diagnostic, DiagnosticCode, DiagnosticSeverity, Ecosystem,
+    ManifestDecl, ManifestFormat, ManifestRole, Package, PackageId, PublishTarget, ReleaseTrigger,
 };
 
 use crate::config::ResolvedConfig;
@@ -209,6 +209,60 @@ impl ManifestWalkResolver {
                 tag_template,
             };
             packages.insert(id, pkg);
+        }
+
+        // SPEC-002 AC-5: Cross-ecosystem diagnostic pass.
+        //
+        // For each bare [[package]] rule in cfg.packages (pattern.ecosystem() == None),
+        // compute the distinct-ecosystem set: the Ecosystem values found in the canonical
+        // ManifestDecls of every packages-map entry matched by this rule.
+        //
+        // Packages-map keys are ALWAYS PackageId::Bare (IgnoreWalkLocator builds ids
+        // from raw manifest name strings via PackageId::parse, which yields Bare for
+        // plain names). Ecosystem information is therefore sourced from pkg.manifests,
+        // not from map keys. Calling key.ecosystem() would always return None and the
+        // diagnostic would never fire — do NOT use key.ecosystem().
+        //
+        // The primary trigger is a single directory containing both Cargo.toml and
+        // package.json (the napi case): one packages-map entry with two canonical
+        // ManifestDecls whose ecosystems are {Cargo, Npm}.
+        //
+        // Prefixed [[package]] rules are skipped unconditionally (AC-7).
+        // [[package-set]] rules are never iterated here (AC-8).
+        for (pattern, _) in &cfg.packages {
+            if pattern.ecosystem().is_some() {
+                continue; // Prefixed rules never trigger this diagnostic (AC-7).
+            }
+            let ecosystems: BTreeSet<Ecosystem> = packages
+                .iter()
+                .filter(|(key, _)| pattern.matches(key))
+                // Use the existing Package::canonical_manifests() helper
+                // (package.rs) which filters to ManifestRole::Canonical.
+                .flat_map(|(_, pkg)| pkg.canonical_manifests().map(|d| d.ecosystem()))
+                .collect();
+            if ecosystems.len() >= 2 {
+                let eco_list: Vec<&str> = ecosystems.iter().map(|e| e.prefix()).collect();
+                diagnostics.push(Diagnostic {
+                    code: DiagnosticCode::BareRuleMatchesMultipleEcosystems,
+                    severity: DiagnosticSeverity::Warning,
+                    message: format!(
+                        "[[package]] rule `{}` matches packages in multiple ecosystems ({}); \
+                         use an ecosystem-prefixed pattern like `{}/{}` to target only one",
+                        pattern.name(),
+                        eco_list.join(", "),
+                        ecosystems
+                            .iter()
+                            .next()
+                            .map(|e| e.prefix())
+                            .unwrap_or("cargo"),
+                        pattern.name(),
+                    ),
+                    package: None,
+                    path: None,
+                    escalated_by: None,
+                    governed_by: None,
+                });
+            }
         }
 
         let mut edges = Vec::new();
