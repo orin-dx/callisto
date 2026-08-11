@@ -1556,6 +1556,10 @@ pub enum DiagnosticCode {
     /// `ReleaseEntry.changelog_section` is omitted; the plan is still valid, since a missing
     /// release note must not block a publish plan.
     ChangelogSectionNotFound,
+    /// §G.4 walk — a bare [[package]] rule matches packages whose canonical
+    /// manifests span two or more ecosystems; use an ecosystem-prefixed
+    /// pattern such as `cargo/name` to target only one.
+    BareRuleMatchesMultipleEcosystems,
 }
 ```
 
@@ -8326,6 +8330,7 @@ governs it — the concrete form of §13 invariant 28 applied to diagnostics.
 | `PreMajorInferenceInert` | §G.6.3 (v0.2+) | — | `PRE_MAJOR_INFERENCE` |
 | `ChangelogSectionNotFound` | §G.11 `plan_publish` (§CL.7.1, v0.2) | — | — |
 | `ChangesetsConfigKeyDropped` | `init` (§18 Q4, v0.4) | — | — |
+| `BareRuleMatchesMultipleEcosystems` | §G.4 walk | — | — |
 
 `RangeNotRoundTrippable` and `CatalogSpecNotRewritten` carry no `escalated_by`: §13 invariant 15
 makes leave-alone-and-warn the *correct* outcome, not a tolerated one, so there is no flag that
