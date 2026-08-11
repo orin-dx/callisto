@@ -215,6 +215,7 @@ release-trigger = "auto"
 /// After the fix, the prefixed rule wins for all fields:
 ///   - changelog ends with RELEASES.md   (prefixed rule's explicit setting)
 ///   - release_trigger is Changeset       (prefixed rule has no override → default)
+///
 /// The bare rule's `auto` trigger must NOT be applied.
 #[test]
 fn prefixed_rule_wins_over_bare_rule_regardless_of_declaration_order() {

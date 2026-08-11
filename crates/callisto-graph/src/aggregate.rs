@@ -213,7 +213,8 @@ where
         let policy = config
             .packages
             .iter()
-            .find(|(id, _)| pkg.id.matches(id))
+            .find(|(id, _)| pkg.id.matches(id) && id.ecosystem().is_some())
+            .or_else(|| config.packages.iter().find(|(id, _)| pkg.id.matches(id)))
             .and_then(|(_, pcfg)| pcfg.pre_major_inference)
             .unwrap_or(PreMajorInferencePolicy::OFF);
 
