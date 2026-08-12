@@ -53,3 +53,13 @@ If you have a high degree of confidence you have not regressed anything or lost 
 <status>completed</status>
 <summary>Background command "Full workspace test suite as final integrity confirmation" completed (exit code 0)</summary>
 </task-notification>
+
+---
+
+<task-notification>
+<task-id>bu6i1c14q</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a7b3643b-af0c-4790-a38d-870e88a7dd3e/tasks/bu6i1c14q.output</output-file>
+<status>completed</status>
+<summary>Background command "Re-run via rtk proxy raw mode to bypass any output filtering and get true full results" completed (exit code 0)</summary>
+</task-notification>
