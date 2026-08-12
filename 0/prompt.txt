@@ -1,0 +1,73 @@
+<task-notification>
+<task-id>bsc4hk1f3</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a7b3643b-af0c-4790-a38d-870e88a7dd3e/tasks/bsc4hk1f3.output</output-file>
+<status>completed</status>
+<summary>Background command "Full just ci run for Track G completion" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+How do we feel about a deep adversarial analysis of our codebase for architectural issues, modeling, looking for seams, gaps and bugs, performance issues, security issues, etc? Make a comprehensive report that thinks through the issues and what patterns semantically and architecturally. Consider crates we should use or use better.
+
+Anything we should re-organize, extract, test, document better?
+
+---
+
+<task-notification>
+<task-id>wrlupad1a</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a7b3643b-af0c-4790-a38d-870e88a7dd3e/tasks/wrlupad1a.output</output-file>
+<status>completed</status>
+<summary>Dynamic workflow "Deep adversarial audit of the Callisto workspace: architecture, modeling, bugs, security, performance, dependencies, tests, docs" completed</summary>
+<result>{"report":"# Callisto Workspace Audit Report\n\n**Scope:** 10-crate Cargo+Moon monorepo, adversarial multi-agent audit. 12 findings confirmed after adversarial refutation, 41 medium/low findings triaged by file:line evidence but not independently re-verified, 2 refuted findings excluded entirely.\n\n---\n\n## 1. Executive Summary\n\nCallisto is a mature, disciplined codebase — strict layering, `unsafe_code = \"forbid\"` everywhere, format-preserving CST editors instead of regex hacks, atomic-write-with-fsync persistence, and a CI gate (`just ci`) that actually enforces zero clippy warnings and full E2E coverage. Most of what this audit surfaces is exactly what you'd expect from a fast-moving session on top of a solid base: a handful of real correctness/security bugs in brand-new code (the publish pipeline hardening and the new `matrix.rs`/`config/pattern.rs` modules), a long tail of documentation drift, and dependency hygiene that has slipped slightly out of sync with the workspace's own stated policy. There is no evidence of systemic architectural rot — the layer boundaries hold, the AGPL/permissive split is intentional (if inconsistently labeled in docs), and the confirmed bugs are concentrated in exactly the areas the audit was told to focus on: `publish_client.rs`, the new `matrix.rs`/`pattern.rs` modules, and the CLI publish/status wiring.\n\n**The five things worth acting on first:**\n\n1. **The version-inheritance parser bug is a self-inflicted outage.** `cargo_publish`'s pre-publish version guard cannot parse `version.workspace = true` — the exact pattern all 10 of this repo's own crates use. Right now, running `callisto publish` on itself would hard-fail on every crate. This is a same-day fix and a same-day regression test.\n2. **`PublishTarget::NuGet`/`GitHubRelease` are accepted but never wired to a publisher**, and the release-tag gate doesn't check whether anything was actually published. A config typo or an operator misunderstanding one flag can produce a git tag and a `ReleaseEntry` claiming a release happened when nothing was pushed to any registry, with zero diagnostic. This is the highest-consequence bug in the batch precisely because it fails silently.\n3. **Two real path-traversal / SSRF holes reachable from config or manifest files that get normal PR review but no automated containment check** — an absolute or `..`-laden `changelog`/`changesets.dir` value can write or read outside the workspace root on CI, and an npm package's own `publishConfig.registry` field (not operator config — manifest content) can redirect `npm publish`/`npm view` to an arbitrary host while `NPM_TOKEN` is in the environment. Both are cheap to fix with one shared path-containment helper and one registry allowlist check.\n4. **The `[[package-set]]` ecosystem-prefix feature is dead on arrival**, and — notably — three separate audit passes independently rediscovered the same bug from three different angles (doc-mismatch, dead-diagnostic-code, undertested-glob), which is a strong signal it's real and worth fixing rather than documenting around.\n5. **Documentation drift is real but not urgent**: `callisto matrix` (a ~1,000-line flagship feature shipped this session) is entirely absent from `docs/00-design.md` and nearly absent from `docs/01-spec.md`; `callisto-vcs` has no crate-letter section at all. None of this blocks anything today, but it's exactly the kind of gap that compounds if left across another session.\n\nCalibration: nothing here should be read as \"this codebase is in trouble.\" The confirmed-critical findings are narrow, mechanical, and fast to fix (parser edge case, missing exhaustiveness check, missing path containment). The bulk of the 41 unverified findings are legitimate but low-stakes — undocumented traits, redundant git discoveries that cost milliseconds, unused dependencies. Treat the confirmed bucket as a punch list for this week; treat the unverified bucket as a backlog to burn down opportunistically, prioritizing the ones that touch the freshly-written publish/matrix/pattern surface over the long-stable Layer 1/2 crates.\n\n---\n\n## 2. Findings by Theme\n\n### Architecture &amp; Layering\n\n**[HIGH] `[[package-set]]` ecosystem-prefix matching is structurally dead — independently found three times**\n`crates/callisto-graph/src/config/pattern.rs:1-45` (consumed at `resolve.rs:418-424`)\n`PackagePattern`'s doc comment promises `\"cargo:pkg-*\"` matches only Cargo packages, but `matches()` glob-matches only against `PackageId::name()`, which always has ecosystem prefixes stripped before it reaches the matcher. A glob compiled from `\"cargo:pkg-*\"` requires the target string to literally start with `cargo:`, which `name()` never returns — so any ecosystem-scoped `[[package-set]]` rule matches zero packages, silently. Compounding this: `GraphError::PackageSetMatchedNothing` exists specifically to catch a zero-match pattern but is constructed nowhere in the codebase, so the safety net that would have caught this in the field is itself dead code. No test in the workspace exercises an ecosystem-prefixed `[[package-set]]` pattern.\n*Failure scenario:* An operator writes `match = \"cargo:internal-*\"` intending to suppress publishing for internal Cargo crates while leaving an npm package of the same name unaffected. The rule matches nothing; the crate publishes normally with no warning.\n*Recommendation:* Split an optional `ecosystem:`/`ecosystem/` prefix off the pattern in `PackagePattern::parse` (reuse `Ecosystem::from_prefix`), store it, and check `id.ecosystem()` before glob-matching the remainder against `id.name()`. Wire up `GraphError::PackageSetMatchedNothing` so a zero-match pattern is surfaced rather than silent. Add a regression test asserting `\"cargo:pkg-*\"` matches a Cargo package and rejects an npm one of the same name.\n\n**[MEDIUM] `IdentityResolver` duplicates `callisto-manifests`' `package_name()` instead of reusing it** *(not independently verified)*\n`crates/callisto-graph/src/identity.rs:12-107`\n`IdentityResolver::resolve` hand-parses `Cargo.toml`/`package.json`/`pyproject.toml` directly with `toml_edit`/`serde_json` to extract package names, duplicating logic that Layer 2's `callisto-manifests` already owns via `CargoManifest::package_name()`, `NpmManifest::package_name()`, `PythonManifest::package_name()`. This is exactly the drift the layer split exists to prevent — a future fix to, e.g., PEP 621 dynamic-name handling in `PythonManifest::package_name()` won't propagate here, and the graph and manifest layers can disagree about a package's own identity.\n*Recommendation:* Route `IdentityResolver::resolve` through `callisto-manifests`' existing `open_cached`/`Manifest` machinery and call `.package_name()` instead of re-parsing.\n\n**[MEDIUM] `CliCommandRunner` unconditionally streams subprocess stderr live, including from internal probes** *(not independently verified)*\n`crates/callisto-cli/src/runner.rs:25-27, 84-97`\n`run`/`run_with_timeout` echo raw subprocess stderr to the terminal unconditionally, with no \"this is an internal probe\" signal available to callers. `SubprocessRegistryClient::npm_is_published` runs `npm view` purely as an existence check where a 404-shaped failure is the expected \"not yet published\" signal — but its stderr streams live anyway, so every first-time npm publish shows what looks like a failure (`npm error code E404`) interleaved with a successful run.\n*Recommendation:* Add a \"probe, not action\" mode to `CommandRunner` (or a `run_quiet` variant) so `is_published`-style calls don't stream live stderr; reserve live streaming for the actual mutating `publish()` call.\n\n**[LOW] Layer 1 crates (`callisto-model`, `callisto-format`) dev-depend on the AGPL-licensed `callisto-fixtures`** *(not independently verified)*\n`crates/callisto-model/Cargo.toml`, `crates/callisto-format/Cargo.toml` ([dev-dependencies])\nCLAUDE.md's invariant #4 states Layer 1 must \"never depend on AGPL crates\" w
+... (truncated 166749 chars, full result in /private/tmp/claude-501/-Users-gabe-Projects-callisto/a7b3643b-af0c-4790-a38d-870e88a7dd3e/tasks/wrlupad1a.output)</result>
+<diagnostics>Per-agent results: /Users/gabe/.claude/projects/-Users-gabe-Projects-callisto/976a8c55-1d23-4fe4-9a7b-08d843d7be34/subagents/workflows/wf_a06f5329-3fe/journal.jsonl — one {"type":"result",...} line per completed agent with its full return value.
+If the result above is empty or unexpected, Read this file BEFORE diagnosing — do not assume agents returned non-empty results.
+To re-run with edited post-processing: Workflow({scriptPath: '/Users/gabe/.claude/projects/-Users-gabe-Projects-callisto/976a8c55-1d23-4fe4-9a7b-08d843d7be34/workflows/scripts/callisto-adversarial-audit-wf_a06f5329-3fe.js', resumeFromRunId: 'wf_a06f5329-3fe'}) — agents whose (prompt, opts) are unchanged replay from cache.</diagnostics>
+<usage><agent_count>24</agent_count><agents_done>24</agents_done><agents_error>0</agents_error><agents_skipped>0</agents_skipped><agents_empty_result>0</agents_empty_result><subagent_tokens>2080476</subagent_tokens><tool_uses>765</tool_uses><duration_ms>1380272</duration_ms></usage>
+</task-notification>
+
+---
+
+We've published this repo before, how did it work and now you say it would not??? WTF Are you dumb or did you break it?
+
+---
+
+How come we didn't catch this regression?? This means we could have introduced 10000 regressions and not know. How can SDD not have caught this? How come our tests didn't catch this regression? This is not acceptable.
+
+---
+
+I think both but we need to heavily strengthen the TDD side of our codebase because this should have been caught by tests. That means our test coverage is not even close to appropriate at all.
+
+---
+
+If you have a high degree of confidence you have not regressed anything or lost codebase I'm ok
+
+---
+
+<task-notification>
+<task-id>bog5dj8sk</task-id>
+<tool-use-id>toolu_016Pxn6hxNsZ1Lbh3KG3cbXJ</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a7b3643b-af0c-4790-a38d-870e88a7dd3e/tasks/bog5dj8sk.output</output-file>
+<status>completed</status>
+<summary>Background command "Full workspace test suite as final integrity confirmation" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bu6i1c14q</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a7b3643b-af0c-4790-a38d-870e88a7dd3e/tasks/bu6i1c14q.output</output-file>
+<status>completed</status>
+<summary>Background command "Re-run via rtk proxy raw mode to bypass any output filtering and get true full results" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+Can you save a file of the current important context so we can pickup in a fresh session with a prompt to get us started? This session has built a massive context and it's time to switch up
+
+---
+
+What prompts should we give the new session?
