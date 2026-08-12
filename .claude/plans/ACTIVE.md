@@ -24,6 +24,29 @@ Implementation: `crates/callisto-graph/src/config/resolve.rs`, `src/walk.rs`, `s
 Exit-gate: PASS (high confidence, mutation-tested). 627 tests, clippy clean, AC-F1 through AC-F9 verified.
 Commits: T1a+T1b+T1c c53a7e7, T3a+T3b dccf070
 
+### Track G: callisto matrix (napi + maturin auto-discovery) — DONE
+
+Spec: `.claude/specs/track-g-matrix-napi-maturin.json` (7 canon rounds, 4 vector-challenger rounds)
+Plan: `.claude/plans/track-g-matrix-napi-maturin.plan.json` (24 tasks)
+Exit-gate: PASS. 24 tasks implemented, all reviewed, 3 gaps found and fixed post-exit-gate
+(stale docs, missing `callisto schema` arm, missing assertion). `just ci` green.
+Commits: eb5d6b4 (spec+plan) through 5164971 (action.yml wiring), then d18dc92 (exit-gate fixes)
+
+### Post-Track-G: full workspace audit + 8-bug remediation — DONE (see SESSION_HANDOFF.md)
+
+Full adversarial audit (8-dimension, 24-agent workflow) found 3 critical + 7 high confirmed bugs,
+concentrated almost entirely in pre-existing code committed early this session (`e0cc091`, `60e0bef`)
+that never went through canon→vector→lambda — NOT in Track F/G's own freshly-built code. All 8
+confirmed critical/high findings fixed via strict TDD, commits `bca04b1` through `def6862`.
+Report: https://claude.ai/code/artifact/80f347f5-afea-488c-886b-518bea99a458
+**See `.claude/plans/SESSION_HANDOFF.md` for full detail and the recommended next step** (4 named
+test-coverage gaps + 41 unverified medium/low findings as backlog).
+
+**Process lesson from this incident** (saved to memory, read it):
+code found already-written in a dirty working tree gets the SAME rigor as freshly-written code —
+"compiles + existing tests pass" is not verification. See
+`feedback_found_code_needs_same_rigor.md` in the memory index.
+
 ---
 
 ## Pipeline Protocol (follow for every track, in order)
