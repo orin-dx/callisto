@@ -684,3 +684,110 @@ fn matrix_conflicting_platform_target_sources_exits_1() {
         "stderr must name maturin_source: {stderr}"
     );
 }
+
+/// AC-010: malformed pyproject.toml (unterminated string) exits 1. The
+/// directory also carries a valid, name-bearing package.json so it
+/// registers via npm -- ignore_walk.rs silently drops a directory whose
+/// SOLE manifest is a malformed pyproject.toml, so without this co-located
+/// package.json matrix() would never reach the malformed file at all.
+#[test]
+fn matrix_malformed_pyproject_toml_exits_1() {
+    let tmp = base_workspace();
+    let dir = tmp.path().join("bad-py");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("package.json"), r#"{"name":"bad-py"}"#).unwrap();
+    std::fs::write(
+        dir.join("pyproject.toml"),
+        "[tool.maturin]\ntargets = [\"unterminated\n",
+    )
+    .unwrap();
+
+    let output = run_matrix_json(tmp.path());
+    assert_error_exit_no_report(&output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("pyproject.toml"),
+        "stderr must name the malformed path: {stderr}"
+    );
+}
+
+/// AC-010b: malformed package.json (trailing comma) exits 1. The directory
+/// also carries a valid, name-bearing pyproject.toml so it registers via
+/// python -- mirroring AC-010's registration workaround for the JSON side
+/// of the same read pass.
+#[test]
+fn matrix_malformed_package_json_exits_1() {
+    let tmp = base_workspace();
+    let dir = tmp.path().join("bad-js");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("pyproject.toml"),
+        "[project]\nname = \"bad-js\"\nversion = \"0.1.0\"\n",
+    )
+    .unwrap();
+    std::fs::write(dir.join("package.json"), r#"{"napi":{"targets":["a",]}}"#).unwrap();
+
+    let output = run_matrix_json(tmp.path());
+    assert_error_exit_no_report(&output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("package.json"),
+        "stderr must name the malformed path: {stderr}"
+    );
+}
+
+/// AC-010c: napi.targets present but not an array (a bare string) exits 1.
+/// The package.json itself carries a valid "name" field so it registers on
+/// its own -- ignore_walk.rs's package.json registration only requires a
+/// valid top-level "name" key, independent of napi.targets' own validity.
+#[test]
+fn matrix_napi_targets_wrong_type_exits_1() {
+    let tmp = base_workspace();
+    let dir = tmp.path().join("wrong-type");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("package.json"),
+        r#"{"name":"wrong-type","napi":{"targets":"aarch64-apple-darwin"}}"#,
+    )
+    .unwrap();
+
+    let output = run_matrix_json(tmp.path());
+    assert_error_exit_no_report(&output);
+}
+
+/// AC-010c sibling (a): [tool.maturin].targets present but a bare string,
+/// not an array. The pyproject.toml carries a valid [project].name so it
+/// registers on its own via the locator, independent of the
+/// package.json-co-location workaround used by the two tests above.
+#[test]
+fn matrix_maturin_targets_wrong_type_exits_1() {
+    let tmp = base_workspace();
+    let dir = tmp.path().join("maturin-wrong-type");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("pyproject.toml"),
+        "[project]\nname = \"maturin-wrong-type\"\nversion = \"0.1.0\"\n\n[tool.maturin]\ntargets = \"x86_64-unknown-linux-gnu\"\n",
+    )
+    .unwrap();
+
+    let output = run_matrix_json(tmp.path());
+    assert_error_exit_no_report(&output);
+}
+
+/// AC-010c sibling (b): engines.node present but a JSON number, not a
+/// string. The package.json carries a valid "name" field so it registers
+/// on its own.
+#[test]
+fn matrix_engines_node_wrong_type_exits_1() {
+    let tmp = base_workspace();
+    let dir = tmp.path().join("engines-wrong-type");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("package.json"),
+        r#"{"name":"engines-wrong-type","engines":{"node":20}}"#,
+    )
+    .unwrap();
+
+    let output = run_matrix_json(tmp.path());
+    assert_error_exit_no_report(&output);
+}
