@@ -1,0 +1,77 @@
+{
+  "cli_version": "0.9.1-nightly.202608120634.6e7985f4e",
+  "checkpoint_id": "01KZVZVPF300PT6TTGX56EM4KE",
+  "session_id": "ae412d01-e061-4047-918b-0d1df3d4d118",
+  "strategy": "manual-commit",
+  "created_at": "2026-08-12T22:00:38.186205Z",
+  "branch": "main",
+  "checkpoints_count": 2,
+  "save_step_count": 2,
+  "files_touched": [
+    "crates/callisto-conventional/src/pre_cursor.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5",
+  "turn_id": "00731d355707",
+  "checkpoint_transcript_start": 696,
+  "transcript_lines_at_start": 696,
+  "compact_transcript_start": 115,
+  "token_usage": {
+    "input_tokens": 136,
+    "cache_creation_tokens": 110815,
+    "cache_read_tokens": 20234578,
+    "output_tokens": 52997,
+    "api_call_count": 68,
+    "subagent_tokens": {
+      "input_tokens": 46,
+      "cache_creation_tokens": 130032,
+      "cache_read_tokens": 1068896,
+      "output_tokens": 12825,
+      "api_call_count": 23
+    }
+  },
+  "session_metrics": {
+    "turn_count": 7
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-08-12T22:00:38.08247Z",
+    "agent_lines": 217,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 217,
+    "total_lines_changed": 217,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 5,
+      "user_lines_removed": 0,
+      "agent_lines_added": 4,
+      "agent_lines_removed": 94,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 5
+      }
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 5,
+      "user_lines_removed": 0,
+      "agent_lines_added": 217,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 5
+      }
+    }
+  ]
+}

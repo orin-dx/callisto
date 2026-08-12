@@ -1,0 +1,57 @@
+<task-notification>
+<task-id>a00cb6b67ea1e8098</task-id>
+<tool-use-id>toolu_01UJLaxLebmykUaNZeqoYrqj</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/tasks/a00cb6b67ea1e8098.output</output-file>
+<status>completed</status>
+<summary>Agent "Read-only review of pre_cursor removal decision" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Review Findings
+
+**Diff verified against the description.** `git diff --stat` and `git diff` confirm the 8-file change is exactly as described: deletion of `crates/callisto-conventional/src/pre_cursor.rs`, the `pub mod pre_cursor` declaration/re-export in `lib.rs`, the two `ConventionalError` variants and the unused `PathBuf` import in `error.rs`, the `TagIndex.pre_cursor` field/accessor/population in `tags.rs`, `VersionPlan.pre_cursor_updates` in `plan.rs`, and the four construction-site removals in `version.rs`/`snapshot.rs`/`pr_body.rs` (×2).
+
+**Mechanical checks (all clean):**
+- `cargo build --workspace --all-targets` — succeeds.
+- `cargo clippy --workspace --all-targets -- -D warnings` — succeeds.
+- `cargo test --workspace` — all tests pass, no `FAILED` results.
+- `grep -rn "MalformedPreCursorRef\|PreCursorAdvanceFailed"` across `*.rs` — zero remaining references; no orphaned match arms, no masked compile error.
+- No `.snap` files reference `pre_cursor`/`pre_cursor_updates`.
+
+**Critical finding — the central justification for deletion is factually wrong.**
+
+The task's reasoning claims: *"None of this is specified in any doc, comment, spec file, or commit message anywhere in the repo."* This is false. `docs/01-spec.md` and `docs/00-design.md` specify this feature in extensive, precise detail:
+
+- `docs/00-design.md:770-786` (§8): explains *why* `refs/callisto/pre-cursor/&lt;PackageId&gt;` exists as "a separate git ref namespace" distinct from release tags, specifically to make repeated `version` invocations idempotent for `Auto`-trigger packages during a pre-release cycle — commits already counted toward inference must not be recounted.
+- `docs/01-spec.md:4378-4420` (§C.6): specifies the exact function signatures for `pre_cursor_ref_name`, `resolve_pre_cursor`, `advance_pre_cursor` — matching the deleted `pre_cursor.rs` almost verbatim, including the `MalformedPreCursorRef`/`PreCursorAdvanceFailed` error variants that were also just deleted.
+- `docs/01-spec.md:6531`: in the aggregation pipeline spec, `since: pre-mode ? tags.pre_cursor(P) : last-tag sha for P` — this is the exact wiring point that answers the task's own open question (a) about when `aggregate.rs` should prefer the cursor over `last_tag`: **during active pre-mode, always**, for `Auto`-trigger packages.
+- `docs/01-spec.md:7696-7713` (§G.9.2): `TagIndex.pre_cursor` field and `pre_cursor()` accessor specified with doc comments matching the deleted code exactly.
+- `docs/01-spec.md:7799-7800, 7926, 7947` (§G.10.1/§G.10.2): `VersionPlan.pre_cursor_updates` specified, with `apply_version_plan` step 8 required to "advance pre-cursor refs" in the same mutation phase as the `pre.json` write, and `plan_snapshot` required to leave it empty (which — separately — is correctly true today, but for the wrong reason: not because the mechanism is dead, but because snapshot mode is explicitly transient).
+
+I checked whether `PreState.initial_versions` genuinely supersedes this, per the task's hypothesis. It does not — they solve different problems. `PreState.initial_versions` (used in `aggregate.rs` ~line 317) answers "what version do we bump *from*" for monotonic `pre.0 → pre.1 → pre.2` sequencing. `pre_cursor` answers a distinct question: "which commits has commit-severity inference already counted," scoping the `since` boundary in `InferenceWindowSpec` for `ReleaseTrigger::Auto` packages only. I confirmed in `crates/callisto-graph/src/aggregate.rs:212` that `since` is *unconditionally* computed as `last_tag.and_then(|t| resolve_since(...))` — there is no pre-mode branch at all today, meaning the code was already spec-non-compliant even before this deletion (Auto-trigger inference in pre-mode would recount already-covered commits each run). Deleting `pre_cursor.rs` doesn't fix that latent gap; it removes the documented mechanism for fixing it and leaves no trace that the gap exists.
+
+The "day-1 scaffolding, never revisited" framing (git log showing only 2 touches) is true of the *code's history* but not of the *spec's* — the spec sections above read as a deliberate, reasoned design (the "why a separate ref namespace, not a `pre.json` field" argument is detailed and non-trivial), not a speculative stub.
+
+**Verdict on the reasoning:** deletion was the wrong call. This is a documented, specified, unimplemented feature with a real (if latent) correctness gap it was meant to close, not dead/superseded scaffolding. The correct path is closer to the "wire it up" alternative the task considered and rejected — though genuinely, doing that safely does require the canon→vector→lambda cycle the task worried about, since the pre-mode branch in `aggregate.rs`'s `since` resolution and the `apply_version_plan` step-8 wiring are real, unspecified-in-code integration points. At minimum, deletion should not proceed silently: if the team decides the spec itself is stale and `pre_cursor` should be retired, `docs/01-spec.md` and `docs/00-design.md` need a corresponding edit (spec deviation, decision record) — not just quiet code deletion while the spec still promises the feature.
+
+```json
+{
+  "status": "changes_requested",
+  "issues": [
+    {
+      "file": "docs/01-spec.md",
+      "line": 4378,
+      "description": "pre_cursor.rs (pre_cursor_ref_name, resolve_pre_cursor, advance_pre_cursor), the ConventionalError::MalformedPreCursorRef/PreCursorAdvanceFailed variants, TagIndex.pre_cursor, and VersionPlan.pre_cursor_updates are all specified in detail in docs/01-spec.md (§C.6, §G.9.2, §G.10.1) and docs/00-design.md (§8) as part of the pre-release-cycle Auto-trigger inference design. The deletion's justification ('not specified anywhere') is factually incorrect. Deleting the code without an accompanying spec deviation/decision record leaves the spec promising a feature the codebase no longer has, with no trace of why.",
+      "severity": "must_fix"
+    },
+    {
+      "file": "crates/callisto-graph/src/aggregate.rs",
+      "line": 212,
+      "description": "Confirmed separately from the deletion itself: aggregate()'s since-resolution for InferenceWindowSpec is unconditional on last_tag and never branches on pre-mode, even though docs/01-spec.md:6531 specifies 'since: pre-mode ? tags.pre_cursor(P) : last-tag sha for P'. This means Auto-trigger packages in an active pre-release cycle would (once implemented per spec) recount already-inferred commits on every version run — a real idempotency gap that pre_cursor existed to close. This predates the deletion but the deletion removes the mechanism for fixing it without addressing the underlying gap.",
+      "severity": "must_fix"
+    }
+  ],
+  "sibling_gaps": [],
+  "reasoning": "Ran the requested adversarial checks per the task. Point 2 (search workspace for spec references) surfaced the decisive counter-evidence: docs/01-spec.md and docs/00-design.md specify this feature in significant, deliberate detail (function signatures matching the deleted code almost verbatim, an explicit design rationale for why it's a separate git-ref namespace rather than a pre.json field, and exact wiring points in aggregate.rs and apply_version_plan). This directly contradicts the task's central premise that the feature was 'never specified/promised anywhere as a real feature.' Mechanical checks (build/clippy/test, orphaned-reference grep, snapshot grep) all came back clean — the deletion itself is technically well-executed and doesn't break anything mechanically. But 'compiles and tests pass' is not the bar here; the bar is whether the deletion decision was correct, and it wasn't. This is a judgment-call task, not a mechanical-compliance task, so I'm flagging the reasoning itself as the blocker rather than any code defect in the diff. I did not find any sibling gap in the classic 'adjacent function untouched' sense since this is a pure deletion, so sibling_gaps is empty; the real gap is the missing spec update / the wrong overall decision, captured in the issues above."
+}
+```</result>
+<usage><subagent_tokens>66490</subagent_tokens><tool_uses>20</tool_uses><duration_ms>260378</duration_ms></usage>
+</task-notification>
