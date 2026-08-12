@@ -8,6 +8,7 @@ use callisto_model::{
 };
 
 use crate::config::groups::{GroupTable, RawGroupTable};
+use crate::config::pattern::PackagePattern;
 use crate::config::raw::RawConfig;
 use crate::error::ConfigError;
 
@@ -18,9 +19,14 @@ pub struct ResolvedConfig {
     pub cascade: CascadeConfig,
     pub validation: ValidationConfig,
     pub registries: BTreeMap<RegistryKey, RegistryConfig>,
-    /// Per-package override rules in TOML declaration order.
+    /// Per-package override rules from `[[package]]` blocks, in TOML declaration order.
     /// The first rule whose `PackageId` matches a discovered package wins.
     pub packages: Vec<(PackageId, PackageConfig)>,
+    /// Bulk config-override rules from `[[package-set]]` blocks, in TOML declaration order.
+    /// Applied as a fallback when no `[[package]]` rule matches a package.
+    /// Unlike `[[package]]` (exact `PackageId` match, first-wins), each
+    /// `[[package-set]]` rule uses a glob pattern and can match many packages simultaneously.
+    pub package_sets: Vec<(PackagePattern, PackageConfig)>,
     pub groups: GroupTable,
     /// Raw group declarations from `callisto.toml`, kept so that
     /// `Workspace::load` can call `GroupTable::resolve` once the
@@ -131,6 +137,24 @@ impl PreMajorInferencePolicy {
         breaking_to_minor: false,
         feat_to_patch: false,
     };
+}
+
+pub fn parse_publish_target(s: &str) -> Result<PublishTarget, ConfigError> {
+    match s {
+        "crates-io" => Ok(PublishTarget::CratesIo),
+        "npm" => Ok(PublishTarget::Npm {
+            registry: None,
+            restricted: false,
+        }),
+        "pypi" => Ok(PublishTarget::Pypi { index: None }),
+        "nuget" => Ok(PublishTarget::NuGet { source: None }),
+        "github-release" => Ok(PublishTarget::GitHubRelease),
+        "none" => Ok(PublishTarget::None),
+        other => Err(ConfigError::UnknownKey {
+            path: PathBuf::new(),
+            key: format!("publish-to = {other:?}"),
+        }),
+    }
 }
 
 pub fn parse_release_trigger(s: &str) -> Result<ReleaseTrigger, ConfigError> {
@@ -276,8 +300,14 @@ pub fn load(root: &Path) -> Result<ResolvedConfig, ConfigError> {
             let key = RegistryKey(k_str);
             let kind = match reg.kind.as_deref() {
                 Some("cargo") => Ecosystem::Cargo,
-                Some("npm") => Ecosystem::Npm,
-                _ => Ecosystem::Npm,
+                Some("npm") | None => Ecosystem::Npm,
+                Some("pypi") => Ecosystem::Pypi,
+                Some(other) => {
+                    return Err(ConfigError::UnknownKey {
+                        path: callisto_toml.clone(),
+                        key: format!("[registries] kind = {other:?}"),
+                    })
+                }
             };
             registries.insert(key, RegistryConfig { kind, url: reg.url });
         }
@@ -319,11 +349,91 @@ pub fn load(root: &Path) -> Result<ResolvedConfig, ConfigError> {
             .map(parse_pre_major_policy)
             .transpose()?;
 
+        let publish_to = raw_pkg
+            .publish_to
+            .as_deref()
+            .map(|targets| {
+                targets
+                    .iter()
+                    .map(|s| parse_publish_target(s))
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .transpose()
+            .map_err(|e| match e {
+                ConfigError::UnknownKey { key, .. } => ConfigError::UnknownKey {
+                    path: callisto_toml.clone(),
+                    key: format!("[[package]] publish-to: {key}"),
+                },
+                other => other,
+            })?;
+
         packages.push((
             pattern,
             PackageConfig {
                 release_trigger,
-                publish_to: None,
+                publish_to,
+                tag_template,
+                changelog,
+                pre_major_inference,
+            },
+        ));
+    }
+
+    // Resolve [[package-set]] blocks into bulk config-override rules.
+    // Semantics: each rule matches ALL packages whose PackageId matches the pattern.
+    // A [[package]] rule takes priority; [[package-set]] is the fallback (see walk.rs).
+    let mut package_sets: Vec<(PackagePattern, PackageConfig)> = Vec::new();
+    for raw_pkg in raw.package_set.unwrap_or_default() {
+        let pattern =
+            PackagePattern::parse(&raw_pkg.pattern).map_err(|e| ConfigError::UnknownKey {
+                path: callisto_toml.clone(),
+                key: format!("[[package-set]] match = {:?}: {e}", raw_pkg.pattern),
+            })?;
+
+        let release_trigger = raw_pkg
+            .release_trigger
+            .as_deref()
+            .map(parse_release_trigger)
+            .transpose()?;
+
+        let tag_template = raw_pkg
+            .tag_template
+            .as_deref()
+            .map(TagTemplate::parse)
+            .transpose()
+            .map_err(ConfigError::Tag)?;
+
+        let changelog = raw_pkg.changelog.as_deref().map(PathBuf::from);
+
+        let pre_major_inference = raw_pkg
+            .pre_major_inference
+            .as_deref()
+            .map(parse_pre_major_policy)
+            .transpose()?;
+
+        let publish_to = raw_pkg
+            .publish_to
+            .as_deref()
+            .map(|targets| {
+                targets
+                    .iter()
+                    .map(|s| parse_publish_target(s))
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .transpose()
+            .map_err(|e| match e {
+                ConfigError::UnknownKey { key, .. } => ConfigError::UnknownKey {
+                    path: callisto_toml.clone(),
+                    key: format!("[[package-set]] publish-to: {key}"),
+                },
+                other => other,
+            })?;
+
+        package_sets.push((
+            pattern,
+            PackageConfig {
+                release_trigger,
+                publish_to,
                 tag_template,
                 changelog,
                 pre_major_inference,
@@ -345,6 +455,7 @@ pub fn load(root: &Path) -> Result<ResolvedConfig, ConfigError> {
         },
         registries,
         packages,
+        package_sets,
         groups: GroupTable::default(),
         raw_groups,
         provenance,
@@ -392,6 +503,130 @@ mod tests {
         assert!(
             result.is_ok(),
             "expected load() to succeed for normal changesets dir, got: {result:?}"
+        );
+    }
+
+    #[test]
+    fn test_package_set_is_parsed_into_resolved_config() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path();
+        fs::write(
+            root.join("callisto.toml"),
+            "[[package-set]]\nmatch = \"pkg-*\"\npublish-to = [\"none\"]\nrelease-trigger = \"auto\"\n",
+        )
+        .expect("write callisto.toml");
+
+        let config = load(root).expect("load should succeed");
+        assert_eq!(
+            config.package_sets.len(),
+            1,
+            "one [[package-set]] rule expected; got: {:?}",
+            config.package_sets
+        );
+        let (pattern, pkg_cfg) = &config.package_sets[0];
+        assert!(
+            pattern.matches(&callisto_model::PackageId::parse("pkg-a").unwrap()),
+            "pattern 'pkg-*' must match 'pkg-a'"
+        );
+        assert_eq!(
+            pkg_cfg.publish_to,
+            Some(vec![callisto_model::PublishTarget::None]),
+            "publish-to = [\"none\"] must be parsed"
+        );
+        assert_eq!(
+            pkg_cfg.release_trigger,
+            Some(callisto_model::ReleaseTrigger::Auto),
+            "release-trigger = \"auto\" must be parsed"
+        );
+    }
+
+    #[test]
+    fn test_typo_in_callisto_toml_is_rejected_not_silently_ignored() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path();
+        // "cascade_mode" is a common typo for [cascade] mode = "always"
+        fs::write(
+            root.join("callisto.toml"),
+            "[cascade]\ncascade_mode = \"always\"\n",
+        )
+        .expect("write callisto.toml");
+
+        let result = load(root);
+        assert!(
+            result.is_err(),
+            "load() must reject unknown field 'cascade_mode'; \
+             silently ignoring it means the user's typo has no effect and they have no idea why"
+        );
+    }
+
+    #[test]
+    fn test_package_override_publish_to_is_parsed_not_discarded() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path();
+        fs::write(
+            root.join("callisto.toml"),
+            "[[package]]\nmatch = \"my-crate\"\npublish-to = [\"none\"]\n",
+        )
+        .expect("write callisto.toml");
+
+        let config = load(root).expect("load should succeed");
+        assert_eq!(config.packages.len(), 1, "one [[package]] rule expected");
+        let (_, pkg_cfg) = &config.packages[0];
+        assert!(
+            pkg_cfg.publish_to.is_some(),
+            "PackageConfig.publish_to must not be None when [[package]] publish-to is set;\
+             got: {:?}",
+            pkg_cfg.publish_to
+        );
+        let targets = pkg_cfg.publish_to.as_ref().unwrap();
+        assert_eq!(
+            targets,
+            &vec![PublishTarget::None],
+            "publish-to = [\"none\"] must produce [PublishTarget::None]; got: {targets:?}"
+        );
+    }
+
+    #[test]
+    fn test_registry_kind_pypi_resolves_to_pypi_ecosystem() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path();
+        fs::write(
+            root.join("callisto.toml"),
+            "[registries.my-pypi]\nkind = \"pypi\"\nurl = \"https://pypi.example.com/simple\"\n",
+        )
+        .expect("write callisto.toml");
+
+        let config = load(root).expect("load should succeed");
+        let reg = config
+            .registries
+            .get(&RegistryKey("my-pypi".to_string()))
+            .expect("my-pypi registry should be present");
+        assert_eq!(
+            reg.kind,
+            Ecosystem::Pypi,
+            "registry with kind = \"pypi\" must resolve to Ecosystem::Pypi, not {:?}",
+            reg.kind
+        );
+    }
+
+    #[test]
+    fn test_registry_kind_unknown_is_rejected() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path();
+        fs::write(
+            root.join("callisto.toml"),
+            "[registries.bad-registry]\nkind = \"maven\"\n",
+        )
+        .expect("write callisto.toml");
+
+        let result = load(root);
+        assert!(
+            result.is_err(),
+            "load() should fail for unknown registry kind, got Ok"
+        );
+        assert!(
+            matches!(result.unwrap_err(), ConfigError::UnknownKey { .. }),
+            "expected UnknownKey error for unknown registry kind"
         );
     }
 }

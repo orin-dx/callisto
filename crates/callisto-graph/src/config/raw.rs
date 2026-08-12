@@ -2,6 +2,7 @@ use serde::Deserialize;
 use std::collections::BTreeMap;
 
 #[derive(Clone, Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RawConfig {
     pub changesets: Option<RawChangesetsConfig>,
     pub cascade: Option<RawCascadeConfig>,
@@ -22,6 +23,7 @@ pub struct RawConfig {
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RawInitConfig {
     /// Ecosystem prefixes (`Ecosystem::prefix()`: `"cargo"`, `"npm"`, ...)
     /// present in the workspace as of the last `init` run that wrote or
@@ -30,11 +32,13 @@ pub struct RawInitConfig {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RawChangesetsConfig {
     pub dir: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RawCascadeConfig {
     pub mode: Option<String>,
     #[serde(rename = "bump-severity")]
@@ -46,18 +50,21 @@ pub struct RawCascadeConfig {
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RawValidationConfig {
     #[serde(rename = "allow-empty-changesets")]
     pub allow_empty_changesets: Option<bool>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RawRegistryConfig {
     pub kind: Option<String>,
     pub url: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RawPackageConfig {
     #[serde(rename = "match")]
     pub pattern: String,
@@ -73,6 +80,7 @@ pub struct RawPackageConfig {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RawPackageSetConfig {
     #[serde(rename = "match")]
     pub pattern: String,
