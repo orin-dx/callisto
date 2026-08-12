@@ -890,4 +890,161 @@ mod tests {
             pcfg.release_trigger
         );
     }
+
+    // --- parse_publish_target / parse_release_trigger direct coverage ------
+
+    #[test]
+    fn parse_publish_target_parses_all_known_variants() {
+        assert_eq!(
+            parse_publish_target("crates-io").unwrap(),
+            PublishTarget::CratesIo
+        );
+        assert_eq!(
+            parse_publish_target("npm").unwrap(),
+            PublishTarget::Npm {
+                registry: None,
+                restricted: false
+            }
+        );
+        assert_eq!(
+            parse_publish_target("pypi").unwrap(),
+            PublishTarget::Pypi { index: None }
+        );
+        assert_eq!(
+            parse_publish_target("nuget").unwrap(),
+            PublishTarget::NuGet { source: None }
+        );
+        assert_eq!(
+            parse_publish_target("github-release").unwrap(),
+            PublishTarget::GitHubRelease
+        );
+        assert_eq!(parse_publish_target("none").unwrap(), PublishTarget::None);
+    }
+
+    #[test]
+    fn parse_publish_target_rejects_unknown_string() {
+        let result = parse_publish_target("bogus-registry");
+        assert!(
+            result.is_err(),
+            "expected Err for unknown publish-to value, got Ok"
+        );
+        assert!(
+            matches!(result.unwrap_err(), ConfigError::UnknownKey { .. }),
+            "expected UnknownKey error variant"
+        );
+    }
+
+    #[test]
+    fn parse_release_trigger_parses_both_known_variants() {
+        assert_eq!(
+            parse_release_trigger("changeset").unwrap(),
+            ReleaseTrigger::Changeset
+        );
+        assert_eq!(parse_release_trigger("auto").unwrap(), ReleaseTrigger::Auto);
+    }
+
+    #[test]
+    fn parse_release_trigger_rejects_unknown_string() {
+        let result = parse_release_trigger("sometimes");
+        assert!(
+            result.is_err(),
+            "expected Err for unknown release-trigger value, got Ok"
+        );
+        assert!(
+            matches!(result.unwrap_err(), ConfigError::UnknownKey { .. }),
+            "expected UnknownKey error variant"
+        );
+    }
+
+    /// End-to-end: `[[package]] publish-to = ["npm"|"pypi"|"nuget"|"github-release"]`
+    /// must actually reach `PackageConfig.publish_to` through the full TOML load path,
+    /// not just through calling `parse_publish_target` directly. Previously only
+    /// "none"/"crates-io" were ever exercised through `load()`.
+    #[test]
+    fn package_block_parses_npm_pypi_nuget_github_release_publish_targets() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path();
+        fs::write(
+            root.join("callisto.toml"),
+            "[[package]]\nmatch = \"npm/pkg-a\"\npublish-to = [\"npm\"]\n\n\
+             [[package]]\nmatch = \"pypi/pkg-b\"\npublish-to = [\"pypi\"]\n\n\
+             [[package]]\nmatch = \"cargo/pkg-c\"\npublish-to = [\"nuget\"]\n\n\
+             [[package]]\nmatch = \"cargo/pkg-d\"\npublish-to = [\"github-release\"]\n",
+        )
+        .expect("write callisto.toml");
+
+        let cfg = load(root).expect("load should succeed");
+        assert_eq!(cfg.packages.len(), 4);
+        assert_eq!(
+            cfg.packages[0].1.publish_to,
+            Some(vec![PublishTarget::Npm {
+                registry: None,
+                restricted: false
+            }]),
+            "npm/pkg-a publish-to = [\"npm\"] must resolve to PublishTarget::Npm"
+        );
+        assert_eq!(
+            cfg.packages[1].1.publish_to,
+            Some(vec![PublishTarget::Pypi { index: None }]),
+            "pypi/pkg-b publish-to = [\"pypi\"] must resolve to PublishTarget::Pypi"
+        );
+        assert_eq!(
+            cfg.packages[2].1.publish_to,
+            Some(vec![PublishTarget::NuGet { source: None }]),
+            "cargo/pkg-c publish-to = [\"nuget\"] must resolve to PublishTarget::NuGet"
+        );
+        assert_eq!(
+            cfg.packages[3].1.publish_to,
+            Some(vec![PublishTarget::GitHubRelease]),
+            "cargo/pkg-d publish-to = [\"github-release\"] must resolve to PublishTarget::GitHubRelease"
+        );
+    }
+
+    /// An unknown `publish-to` value inside a `[[package]]` block must fail
+    /// `load()` with a `[[package]] publish-to: ...`-prefixed `UnknownKey`
+    /// error, not be silently dropped or panic.
+    #[test]
+    fn package_block_rejects_unknown_publish_to_value() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path();
+        fs::write(
+            root.join("callisto.toml"),
+            "[[package]]\nmatch = \"my-crate\"\npublish-to = [\"bogus\"]\n",
+        )
+        .expect("write callisto.toml");
+
+        let result = load(root);
+        assert!(
+            result.is_err(),
+            "expected load() to reject unknown publish-to value in [[package]] block, got Ok"
+        );
+        let err = result.unwrap_err();
+        assert!(
+            matches!(&err, ConfigError::UnknownKey { key, .. } if key.contains("[[package]] publish-to")),
+            "expected UnknownKey error mentioning '[[package]] publish-to', got: {err:?}"
+        );
+    }
+
+    /// An unknown `release-trigger` value inside a `[[package]]` block must
+    /// fail `load()` rather than be silently dropped.
+    #[test]
+    fn package_block_rejects_unknown_release_trigger_value() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path();
+        fs::write(
+            root.join("callisto.toml"),
+            "[[package]]\nmatch = \"my-crate\"\nrelease-trigger = \"sometimes\"\n",
+        )
+        .expect("write callisto.toml");
+
+        let result = load(root);
+        assert!(
+            result.is_err(),
+            "expected load() to reject unknown release-trigger value in [[package]] block, got Ok"
+        );
+        assert!(
+            matches!(result.unwrap_err(), ConfigError::UnknownKey { .. }),
+            "expected UnknownKey error variant"
+        );
+    }
 }
