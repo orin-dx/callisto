@@ -605,4 +605,42 @@ mod tests {
             "table must mention the triple: {text}"
         );
     }
+
+    /// AC-011: render_matrix must surface a diagnostic's triple/message in
+    /// the human-readable table output, not just its presence.
+    #[test]
+    fn render_matrix_renders_diagnostics_for_unrecognised_triple() {
+        use callisto_model::{
+            Diagnostic, DiagnosticCode, DiagnosticSeverity, MatrixReport, PackageId,
+        };
+        use std::collections::BTreeMap;
+
+        let report = MatrixReport {
+            schema_version: 1,
+            platform_targets: BTreeMap::new(),
+            runtime_versions: BTreeMap::new(),
+            diagnostics: vec![Diagnostic {
+                code: DiagnosticCode::UnrecognisedPlatformTriple,
+                severity: DiagnosticSeverity::Warning,
+                message: "package `native-mod` declares unrecognised platform triple `sparc64-unknown-linux-gnu` in `napi.targets`".to_string(),
+                package: Some(PackageId::Bare("native-mod".to_string())),
+                path: None,
+                escalated_by: None,
+                governed_by: None,
+            }],
+        };
+
+        let mut buf = Vec::new();
+        render_matrix(&report, &mut buf).unwrap();
+        let text = String::from_utf8(buf).unwrap();
+
+        assert!(
+            text.contains("sparc64-unknown-linux-gnu"),
+            "table output must mention the unrecognised triple: {text}"
+        );
+        assert!(
+            text.contains("native-mod"),
+            "table output must mention the offending package: {text}"
+        );
+    }
 }

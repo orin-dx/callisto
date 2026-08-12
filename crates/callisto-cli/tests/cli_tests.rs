@@ -465,3 +465,96 @@ fn matrix_empty_workspace_produces_exact_empty_report_shape() {
         "diagnostics key must be entirely absent when empty"
     );
 }
+
+/// AC-011 (full end-to-end contract): a package with one recognised and one
+/// unrecognised triple, plus a second package with only a recognised triple,
+/// must exit 0, report exactly one UnrecognisedPlatformTriple diagnostic,
+/// exclude the bad triple from every targets[] array, and keep every other
+/// recognised triple (from both packages) present.
+#[test]
+fn matrix_unrecognised_triple_end_to_end_diagnostic_contract() {
+    use std::process::Command;
+
+    let tmp = tempfile::TempDir::new().unwrap();
+    let root = tmp.path();
+    std::fs::write(
+        root.join("Cargo.toml"),
+        "[workspace]\nmembers = []\nresolver = \"2\"\n",
+    )
+    .unwrap();
+    std::fs::write(root.join("callisto.toml"), "").unwrap();
+
+    let mixed_dir = root.join("mixed-mod");
+    std::fs::create_dir_all(&mixed_dir).unwrap();
+    std::fs::write(
+        mixed_dir.join("package.json"),
+        r#"{"name":"mixed-mod","napi":{"targets":["aarch64-apple-darwin","sparc64-unknown-linux-gnu"]}}"#,
+    )
+    .unwrap();
+
+    let clean_dir = root.join("clean-mod");
+    std::fs::create_dir_all(&clean_dir).unwrap();
+    std::fs::write(
+        clean_dir.join("package.json"),
+        r#"{"name":"clean-mod","napi":{"targets":["x86_64-unknown-linux-gnu"]}}"#,
+    )
+    .unwrap();
+
+    let bin = env!("CARGO_BIN_EXE_callisto");
+    let output = Command::new(bin)
+        .args([
+            "--cwd",
+            &root.to_string_lossy(),
+            "--format",
+            "json",
+            "matrix",
+        ])
+        .output()
+        .expect("failed to spawn callisto binary");
+
+    assert!(
+        output.status.success(),
+        "an unrecognised triple must not fail the call; stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+
+    let diagnostics = json["diagnostics"]
+        .as_array()
+        .expect("diagnostics must be an array");
+    assert_eq!(
+        diagnostics.len(),
+        1,
+        "exactly one diagnostic expected: {diagnostics:?}"
+    );
+    assert_eq!(diagnostics[0]["code"], "unrecognised-platform-triple");
+
+    let all_triples: Vec<String> = json["platformTargets"]
+        .as_object()
+        .unwrap()
+        .values()
+        .flat_map(|group| group["targets"].as_array().unwrap().iter())
+        .map(|t| t["triple"].as_str().unwrap().to_string())
+        .collect();
+    assert!(
+        !all_triples.contains(&"sparc64-unknown-linux-gnu".to_string()),
+        "the bad triple must not appear in any targets[] triple field: {all_triples:?}"
+    );
+
+    let mixed_triples: Vec<String> = json["platformTargets"]["mixed-mod"]["targets"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["triple"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(mixed_triples, vec!["aarch64-apple-darwin".to_string()]);
+
+    let clean_triples: Vec<String> = json["platformTargets"]["clean-mod"]["targets"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["triple"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(clean_triples, vec!["x86_64-unknown-linux-gnu".to_string()]);
+}
