@@ -47,6 +47,9 @@ outputs:
   publishedPackages:
     description: 'JSON list of published packages'
     value: ${{ steps.callisto-orchestrate.outputs.publishedPackages }}
+  nativeMatrix:
+    description: 'JSON array of native platform build targets discovered from manifests (callisto matrix output). Empty array when no native packages are present or callisto matrix is not yet available.'
+    value: ${{ steps.callisto-orchestrate.outputs.nativeMatrix }}
 
 runs:
   using: 'composite'
@@ -68,6 +71,9 @@ runs:
         INPUT_BRANCH: ${{ inputs.branch }}
         INPUT_CWD: ${{ inputs.cwd }}
         GH_TOKEN: ${{ env.GITHUB_TOKEN }}
+        NPM_TOKEN: ${{ env.NPM_TOKEN }}
+        CARGO_REGISTRY_TOKEN: ${{ env.CARGO_REGISTRY_TOKEN }}
+        TWINE_PASSWORD: ${{ env.TWINE_PASSWORD }}
         FORCE_COLOR: "1"
         CLICOLOR_FORCE: "1"
       run: |
@@ -148,11 +154,25 @@ runs:
         else
           echo "hasChangesets=false" >> $GITHUB_OUTPUT
 
+          # Emit native matrix targets for downstream build jobs. The callisto
+          # matrix subcommand is planned but not yet available in all releases;
+          # the fallback to '{"platformTargets":{}}' ensures downstream jobs
+          # that consume this output receive valid JSON and do not fail.
+          NATIVE_MATRIX=$(callisto matrix --format json 2>/dev/null || echo '{"platformTargets":{}}')
+          echo "nativeMatrix=$NATIVE_MATRIX" >> $GITHUB_OUTPUT
+
           if [[ -n "$INPUT_PUBLISH" && "$INPUT_PUBLISH" != "false" ]]; then
             echo "::group::2. Calculating Topological Publish Plan"
             PLAN_JSON=$(callisto plan-publish --format json)
             echo "$PLAN_JSON"
             echo "::endgroup::"
+
+            # Wire NPM_TOKEN into npm config so npm publish can authenticate.
+            # NPM_TOKEN is forwarded explicitly in this step's env: block so it
+            # is available regardless of how the caller sets it.
+            if [[ -n "$NPM_TOKEN" ]]; then
+              npm config set //registry.npmjs.org/:_authToken "$NPM_TOKEN"
+            fi
 
             echo "::group::3. Executing Package Publishing"
             if [[ "$INPUT_PUBLISH" != "true" ]]; then
