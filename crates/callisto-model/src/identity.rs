@@ -269,6 +269,10 @@ impl RegistryKey {
     pub const CRATES_IO: &'static str = "cratesIo";
     /// Well-known registry key for the npm registry.
     pub const NPM: &'static str = "npm";
+    /// Well-known registry key for PyPI.
+    pub const PYPI: &'static str = "pypi";
+    /// Well-known registry key for NuGet.
+    pub const NUGET: &'static str = "nuget";
 
     /// Returns the registry key as a string slice.
     pub fn as_str(&self) -> &str {

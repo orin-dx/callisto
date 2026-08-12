@@ -59,13 +59,47 @@ pub fn render_publish<W: io::Write>(report: &PublishPlan, w: &mut W) -> io::Resu
         + report.npm_main_packages.len()
         + report.pypi_packages.len();
     writeln!(w, "Publish Plan (schema v{}):", report.schema_version)?;
-    if total_packages == 0 {
-        writeln!(w, "  No packages to publish.")?;
-        return Ok(());
-    }
     for rel in &report.releases {
         writeln!(w, "  Tag: {} (sha: {})", rel.tag_name, rel.sha.as_str())?;
     }
+    if total_packages == 0 && report.releases.is_empty() {
+        writeln!(w, "  No packages to publish.")?;
+        render_diagnostics(&report.diagnostics, w)?;
+        return Ok(());
+    }
+    if total_packages == 0 {
+        render_diagnostics(&report.diagnostics, w)?;
+        return Ok(());
+    }
+    if !report.rust_crates.is_empty() {
+        writeln!(w, "  Crates ({}):", report.rust_crates.len())?;
+        for pkg in &report.rust_crates {
+            writeln!(w, "    {} {}", pkg.name, pkg.version.raw())?;
+        }
+    }
+    if !report.npm_main_packages.is_empty() {
+        writeln!(w, "  npm packages ({}):", report.npm_main_packages.len())?;
+        for pkg in &report.npm_main_packages {
+            writeln!(w, "    {} {}", pkg.name, pkg.version.raw())?;
+        }
+    }
+    if !report.npm_platform_packages.is_empty() {
+        writeln!(
+            w,
+            "  npm platform packages ({}):",
+            report.npm_platform_packages.len()
+        )?;
+        for pkg in &report.npm_platform_packages {
+            writeln!(w, "    {} {}", pkg.name, pkg.version.raw())?;
+        }
+    }
+    if !report.pypi_packages.is_empty() {
+        writeln!(w, "  PyPI packages ({}):", report.pypi_packages.len())?;
+        for pkg in &report.pypi_packages {
+            writeln!(w, "    {} {}", pkg.name, pkg.version.raw())?;
+        }
+    }
+    render_diagnostics(&report.diagnostics, w)?;
     Ok(())
 }
 
@@ -75,7 +109,7 @@ pub fn render_publish_report<W: io::Write>(report: &PublishReport, w: &mut W) ->
         let status = match &attempt.result {
             PublishAttemptResult::Published => "published".to_string(),
             PublishAttemptResult::AlreadyPublished => "already published".to_string(),
-            PublishAttemptResult::Failed { error } => format!("FAILED: {error}"),
+            PublishAttemptResult::Failed { kind, error } => format!("FAILED [{kind}]: {error}"),
         };
         writeln!(
             w,
@@ -194,7 +228,7 @@ mod tests {
 
     fn mixed_report() -> PublishReport {
         PublishReport {
-            schema_version: 1,
+            schema_version: callisto_model::SCHEMA_VERSION,
             attempts: vec![
                 PublishAttempt {
                     package: pkg("crate-a"),
@@ -210,6 +244,7 @@ mod tests {
                     package: pkg("crate-c"),
                     version: v1(),
                     result: PublishAttemptResult::Failed {
+                        kind: "authFailed".to_string(),
                         error: "auth failed: bad token".to_string(),
                     },
                 },
@@ -237,7 +272,7 @@ mod tests {
     #[test]
     fn render_status_no_some_wrapper_in_output() {
         let report = StatusReport {
-            schema_version: 1,
+            schema_version: callisto_model::SCHEMA_VERSION,
             packages: vec![status_pkg("crate-a", Some(Severity::Minor), vec!["cs-001"])],
             diagnostics: vec![],
         };
@@ -254,11 +289,81 @@ mod tests {
         );
     }
 
+    fn full_plan() -> PublishPlan {
+        use callisto_model::{
+            CratePublish, NpmMainPublish, NpmPublish, PypiPublish, RegistryKey, Version,
+            SCHEMA_VERSION,
+        };
+        let v = Version::parse("1.0.0", callisto_model::VersionGrammar::SemVer).unwrap();
+        PublishPlan {
+            schema_version: SCHEMA_VERSION,
+            rust_crates: vec![CratePublish {
+                name: "my-crate".to_string(),
+                version: v.clone(),
+                publish_to: RegistryKey(RegistryKey::CRATES_IO.to_string()),
+                registry: None,
+                package_dir: None,
+            }],
+            npm_main_packages: vec![NpmMainPublish {
+                name: "@scope/main-pkg".to_string(),
+                version: v.clone(),
+                publish_to: RegistryKey(RegistryKey::NPM.to_string()),
+                registry: None,
+                tag: None,
+                access: None,
+                depends_on_platforms: vec![],
+                package_dir: std::path::PathBuf::new(),
+            }],
+            npm_platform_packages: vec![NpmPublish {
+                name: "@scope/main-pkg-linux-x64-gnu".to_string(),
+                version: v.clone(),
+                publish_to: RegistryKey(RegistryKey::NPM.to_string()),
+                registry: None,
+                tag: None,
+                access: None,
+                package_dir: std::path::PathBuf::new(),
+            }],
+            pypi_packages: vec![PypiPublish {
+                name: "my-pypi-pkg".to_string(),
+                version: v,
+                publish_to: RegistryKey(RegistryKey::PYPI.to_string()),
+                index: None,
+                package_dir: std::path::PathBuf::new(),
+            }],
+            releases: vec![],
+            diagnostics: vec![],
+        }
+    }
+
+    #[test]
+    fn render_publish_lists_all_four_package_types() {
+        let plan = full_plan();
+        let mut out = Vec::new();
+        render_publish(&plan, &mut out).unwrap();
+        let text = String::from_utf8(out).unwrap();
+        assert!(
+            text.contains("my-crate"),
+            "render_publish must list rust crates; got:\n{text}"
+        );
+        assert!(
+            text.contains("@scope/main-pkg"),
+            "render_publish must list npm main packages; got:\n{text}"
+        );
+        assert!(
+            text.contains("@scope/main-pkg-linux-x64-gnu"),
+            "render_publish must list npm platform packages; got:\n{text}"
+        );
+        assert!(
+            text.contains("my-pypi-pkg"),
+            "render_publish must list pypi packages; got:\n{text}"
+        );
+    }
+
     // QW-9: render_publish with empty plan should say "nothing to publish".
     #[test]
     fn render_publish_empty_plan_shows_nothing_to_publish() {
         let plan = PublishPlan {
-            schema_version: 1,
+            schema_version: callisto_model::SCHEMA_VERSION,
             rust_crates: vec![],
             npm_platform_packages: vec![],
             npm_main_packages: vec![],
@@ -275,6 +380,61 @@ mod tests {
         );
     }
 
+    /// Diagnostics emitted during plan computation (e.g. GitDiscoveryFailed,
+    /// ChangesetReadError) must appear in the text output of render_publish.
+    /// Without this, an operator using `plan-publish --format text` gets no
+    /// explanation when releases are silently omitted due to a git error.
+    #[test]
+    fn render_publish_surfaces_plan_diagnostics() {
+        use callisto_model::{Diagnostic, DiagnosticCode, DiagnosticSeverity};
+
+        let mut plan = PublishPlan {
+            schema_version: callisto_model::SCHEMA_VERSION,
+            rust_crates: vec![],
+            npm_platform_packages: vec![],
+            npm_main_packages: vec![],
+            pypi_packages: vec![],
+            releases: vec![],
+            diagnostics: vec![Diagnostic {
+                code: DiagnosticCode::GitDiscoveryFailed,
+                severity: DiagnosticSeverity::Warning,
+                message: "could not discover git repository: not a git repo".to_string(),
+                package: None,
+                path: None,
+                escalated_by: None,
+                governed_by: None,
+            }],
+        };
+
+        use callisto_model::{CratePublish, RegistryKey};
+
+        // Non-empty plan case: diagnostic must appear alongside package list.
+        plan.rust_crates.push(CratePublish {
+            name: "my-crate".to_string(),
+            version: v1(),
+            publish_to: RegistryKey(RegistryKey::CRATES_IO.to_string()),
+            registry: None,
+            package_dir: None,
+        });
+        let mut out = Vec::new();
+        render_publish(&plan, &mut out).unwrap();
+        let text = String::from_utf8(out).unwrap();
+        assert!(
+            text.to_ascii_lowercase().contains("git") || text.contains("GitDiscoveryFailed"),
+            "render_publish must include diagnostic text; got:\n{text}"
+        );
+
+        // Empty-plan case: diagnostic must appear even when no packages are listed.
+        plan.rust_crates.clear();
+        let mut out2 = Vec::new();
+        render_publish(&plan, &mut out2).unwrap();
+        let text2 = String::from_utf8(out2).unwrap();
+        assert!(
+            text2.to_ascii_lowercase().contains("git") || text2.contains("GitDiscoveryFailed"),
+            "render_publish must include diagnostic text even for empty plan; got:\n{text2}"
+        );
+    }
+
     #[test]
     fn render_publish_report_text_distinguishes_per_package_outcomes() {
         let mut out = Vec::new();
@@ -283,7 +443,56 @@ mod tests {
 
         assert!(text.contains("crate-a") && text.contains("published"));
         assert!(text.contains("crate-b") && text.contains("already published"));
-        assert!(text.contains("crate-c") && text.contains("FAILED: auth failed: bad token"));
+        assert!(
+            text.contains("crate-c")
+                && text.contains("FAILED [authFailed]: auth failed: bad token")
+        );
+    }
+
+    /// The text renderer must surface the `kind` discriminator so operators can
+    /// distinguish "authFailed" (permanent — rotate credentials) from
+    /// "rateLimited" (transient — safe to retry) without parsing the human-
+    /// readable error string.
+    #[test]
+    fn render_publish_report_failed_includes_error_kind() {
+        use callisto_model::{PublishAttempt, PublishReport, SCHEMA_VERSION};
+
+        let report = PublishReport {
+            schema_version: SCHEMA_VERSION,
+            attempts: vec![
+                PublishAttempt {
+                    package: pkg("pkg-a"),
+                    version: v1(),
+                    result: callisto_model::PublishAttemptResult::Failed {
+                        kind: "authFailed".to_string(),
+                        error: "invalid token".to_string(),
+                    },
+                },
+                PublishAttempt {
+                    package: pkg("pkg-b"),
+                    version: v1(),
+                    result: callisto_model::PublishAttemptResult::Failed {
+                        kind: "rateLimited".to_string(),
+                        error: "try again in 60s".to_string(),
+                    },
+                },
+            ],
+            diagnostics: vec![],
+        };
+
+        let mut out = Vec::new();
+        render_publish_report(&report, &mut out).unwrap();
+        let text = String::from_utf8(out).unwrap();
+
+        assert!(
+            text.contains("authFailed"),
+            "text output must include the error kind 'authFailed' so operators \
+             can distinguish it from transient failures; got:\n{text}"
+        );
+        assert!(
+            text.contains("rateLimited"),
+            "text output must include the error kind 'rateLimited'; got:\n{text}"
+        );
     }
 
     #[test]

@@ -166,14 +166,22 @@ pub struct InitArgs {
     pub yes: bool,
 }
 
-/// Arguments for the `plan-publish` command (currently none).
+/// Arguments for the `plan-publish` command.
 #[derive(Args, Clone, Debug, Default)]
-pub struct PlanPublishArgs {}
+pub struct PlanPublishArgs {
+    /// Plan only the named package(s). Repeatable: `--package foo --package bar`.
+    #[arg(long = "package", value_name = "NAME")]
+    pub only: Vec<String>,
+}
 
-/// Arguments for the `publish` command (currently none — use the global
-/// `--dry-run` flag to preview the plan without publishing anything).
+/// Arguments for the `publish` command.
 #[derive(Args, Clone, Debug, Default)]
-pub struct PublishArgs {}
+pub struct PublishArgs {
+    /// Publish only the named package(s). Repeatable: `--package foo --package bar`.
+    /// When omitted, all packages in the plan are published.
+    #[arg(long = "package", value_name = "NAME")]
+    pub only: Vec<String>,
+}
 
 /// Arguments for the `compose-pr-body` command.
 #[derive(Args, Clone, Debug)]

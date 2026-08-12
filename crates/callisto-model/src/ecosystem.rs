@@ -73,9 +73,21 @@ impl Ecosystem {
 #[non_exhaustive]
 pub enum PublishTarget {
     CratesIo,
-    Npm { registry: Option<String> },
-    Pypi { index: Option<String> },
-    NuGet { source: Option<String> },
+    Npm {
+        registry: Option<String>,
+        /// `true` when `publishConfig.access` in `package.json` is `"restricted"`.
+        /// When set, `plan_publish` uses `NpmAccess::Restricted` instead of the
+        /// scoped-package default of `NpmAccess::Public`, so `--access restricted`
+        /// is passed to the package manager rather than `--access public`, which
+        /// would silently override the operator's intent.
+        restricted: bool,
+    },
+    Pypi {
+        index: Option<String>,
+    },
+    NuGet {
+        source: Option<String>,
+    },
     GitHubRelease,
     None,
 }
@@ -85,8 +97,8 @@ impl PublishTarget {
         match self {
             PublishTarget::CratesIo => Some(RegistryKey(RegistryKey::CRATES_IO.to_string())),
             PublishTarget::Npm { .. } => Some(RegistryKey(RegistryKey::NPM.to_string())),
-            PublishTarget::Pypi { .. } => Some(RegistryKey("pypi".to_string())),
-            PublishTarget::NuGet { .. } => Some(RegistryKey("nuget".to_string())),
+            PublishTarget::Pypi { .. } => Some(RegistryKey(RegistryKey::PYPI.to_string())),
+            PublishTarget::NuGet { .. } => Some(RegistryKey(RegistryKey::NUGET.to_string())),
             PublishTarget::GitHubRelease | PublishTarget::None => None,
         }
     }

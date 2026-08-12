@@ -31,13 +31,24 @@ use callisto_model::{
     ApplyPermit, CommandOutput, CommandRunner, Ecosystem, NpmAccess, PackageId, PublishOutcome,
     RegistryClient, RegistryError, Version,
 };
+use toml;
 
 use super::publish::parse_retry_after;
+
+/// Maximum wall-clock time (in seconds) allowed for a single publish command
+/// (`cargo publish`, `npm publish`, `twine upload`). If the process does not
+/// exit within this window it is killed and the attempt is recorded as a
+/// timeout failure.
+const PUBLISH_TIMEOUT_SECS: u64 = 300;
 
 /// Per-package npm publish metadata stored in the metadata map.
 struct NpmMeta {
     tag: Option<String>,
     access: Option<NpmAccess>,
+    /// Private npm registry URL from `publishConfig.registry` in `package.json`.
+    /// When `Some`, `--registry <url>` is appended to `npm publish` and
+    /// `npm view`. When `None`, the public npm registry is used.
+    registry: Option<String>,
 }
 
 /// Dispatches [`RegistryClient`] calls to the right ecosystem CLI based on
@@ -45,20 +56,33 @@ struct NpmMeta {
 ///
 /// Before calling through the [`RegistryClient`] trait, invoke
 /// [`Self::load_plan`] so that per-package metadata (dist-tag, access level,
-/// registry URL, private index URL) is threaded through to the CLI args.
+/// registry URL, private index URL, package directory) is threaded through to
+/// the CLI args and working directory.
 pub struct SubprocessRegistryClient<R: CommandRunner> {
     runner: R,
-    /// Working directory the ecosystem CLIs are invoked from — typically the
-    /// callisto workspace root. `cargo publish -p <name>` and `npm publish
-    /// --workspace <name>` both resolve their target package relative to
-    /// this directory rather than needing a per-package path.
+    /// Workspace root. Used as the base for resolving per-package directories
+    /// and as the working directory for package managers that resolve packages
+    /// by name from the workspace root (`cargo`, `pnpm`, `yarn`, `npm`).
     cwd: PathBuf,
     /// npm publish metadata keyed by package name.
     npm_meta: HashMap<String, NpmMeta>,
     /// Cargo registry name (e.g. `"my-private-registry"`) keyed by crate name.
     cargo_registry: HashMap<String, Option<String>>,
+    /// Per-package directory (relative to workspace root) for Cargo crates.
+    /// Used to read the on-disk `Cargo.toml` for a pre-publish version check.
+    cargo_pkg_dir: HashMap<String, std::path::PathBuf>,
+    /// Planned publish version per crate name, populated from the plan.
+    cargo_planned_version: HashMap<String, Version>,
     /// PyPI index URL keyed by distribution name.
     pypi_index: HashMap<String, Option<String>>,
+    /// Per-package directory (relative to workspace root) for npm packages,
+    /// keyed by package name. Used for package managers that must be invoked
+    /// from the package directory (bun).
+    npm_pkg_dir: HashMap<String, PathBuf>,
+    /// Per-package directory (relative to workspace root) for PyPI packages,
+    /// keyed by distribution name. `twine upload` runs from this directory so
+    /// that `dist/` resolves to the package's own dist directory in a monorepo.
+    pypi_pkg_dir: HashMap<String, PathBuf>,
 }
 
 impl<R: CommandRunner> SubprocessRegistryClient<R> {
@@ -68,7 +92,11 @@ impl<R: CommandRunner> SubprocessRegistryClient<R> {
             cwd,
             npm_meta: HashMap::new(),
             cargo_registry: HashMap::new(),
+            cargo_pkg_dir: HashMap::new(),
+            cargo_planned_version: HashMap::new(),
             pypi_index: HashMap::new(),
+            npm_pkg_dir: HashMap::new(),
+            pypi_pkg_dir: HashMap::new(),
         }
     }
 
@@ -84,8 +112,11 @@ impl<R: CommandRunner> SubprocessRegistryClient<R> {
                 NpmMeta {
                     tag: pkg.tag.clone(),
                     access: pkg.access.clone(),
+                    registry: pkg.registry.clone(),
                 },
             );
+            self.npm_pkg_dir
+                .insert(pkg.name.clone(), pkg.package_dir.clone());
         }
         for pkg in &plan.npm_main_packages {
             self.npm_meta.insert(
@@ -93,21 +124,45 @@ impl<R: CommandRunner> SubprocessRegistryClient<R> {
                 NpmMeta {
                     tag: pkg.tag.clone(),
                     access: pkg.access.clone(),
+                    registry: pkg.registry.clone(),
                 },
             );
+            self.npm_pkg_dir
+                .insert(pkg.name.clone(), pkg.package_dir.clone());
         }
         for pkg in &plan.rust_crates {
             self.cargo_registry
                 .insert(pkg.name.clone(), pkg.registry.clone());
+            self.cargo_planned_version
+                .insert(pkg.name.clone(), pkg.version.clone());
+            if let Some(dir) = &pkg.package_dir {
+                self.cargo_pkg_dir.insert(pkg.name.clone(), dir.clone());
+            }
         }
         for pkg in &plan.pypi_packages {
             self.pypi_index.insert(pkg.name.clone(), pkg.index.clone());
+            self.pypi_pkg_dir
+                .insert(pkg.name.clone(), pkg.package_dir.clone());
         }
     }
 
     fn run(&self, program: &str, args: &[&str]) -> Result<CommandOutput, RegistryError> {
+        self.run_in(program, args, &self.cwd)
+    }
+
+    fn run_in(
+        &self,
+        program: &str,
+        args: &[&str],
+        cwd: &std::path::Path,
+    ) -> Result<CommandOutput, RegistryError> {
         self.runner
-            .run(program, args, &self.cwd)
+            .run_with_timeout(
+                program,
+                args,
+                cwd,
+                Duration::from_secs(PUBLISH_TIMEOUT_SECS),
+            )
             .map_err(|e| RegistryError::Other(e.to_string()))
     }
 
@@ -129,6 +184,57 @@ impl<R: CommandRunner> SubprocessRegistryClient<R> {
                 package.name()
             )));
         }
+
+        // Pre-publish version sanity check: if load_plan provided a package
+        // directory, read the on-disk Cargo.toml and verify its version matches
+        // the planned version before invoking `cargo publish`. This catches the
+        // common mistake of running `callisto publish` without first running
+        // `callisto version`, which would silently publish the old version.
+        if let (Some(pkg_dir), Some(planned)) = (
+            self.cargo_pkg_dir.get(package.name()),
+            self.cargo_planned_version.get(package.name()),
+        ) {
+            let manifest_path = self.cwd.join(pkg_dir).join("Cargo.toml");
+            // Parse only the [package].version field — no need for full CST.
+            #[derive(serde::Deserialize)]
+            struct MinimalManifest {
+                package: MinimalPackage,
+            }
+            #[derive(serde::Deserialize)]
+            struct MinimalPackage {
+                version: String,
+            }
+            let contents = std::fs::read_to_string(&manifest_path).map_err(|e| {
+                RegistryError::Other(format!(
+                    "could not read `{}` for pre-publish version check: {e}. \
+                         Ensure the package_dir in the publish plan points to the \
+                         individual crate directory, not the workspace root.",
+                    manifest_path.display(),
+                ))
+            })?;
+            let m = toml::from_str::<MinimalManifest>(&contents).map_err(|e| {
+                RegistryError::Other(format!(
+                    "could not parse `{}` for pre-publish version check: {e}. \
+                     The file must contain a [package].version field. \
+                     If this is a workspace Cargo.toml, set package_dir to the \
+                     individual crate subdirectory instead.",
+                    manifest_path.display(),
+                ))
+            })?;
+            let on_disk = m.package.version;
+            let expected = planned.render();
+            if on_disk != expected {
+                return Err(RegistryError::Other(format!(
+                    "version mismatch for `{}`: Cargo.toml on disk has version `{}` \
+                     but the publish plan expects `{}`. \
+                     Run `callisto version` first to write the new version to disk.",
+                    package.name(),
+                    on_disk,
+                    expected,
+                )));
+            }
+        }
+
         let output = if let Some(reg) = registry {
             self.run(
                 "cargo",
@@ -153,12 +259,20 @@ impl<R: CommandRunner> SubprocessRegistryClient<R> {
         &self,
         package: &PackageId,
         version: &Version,
+        registry: Option<&str>,
     ) -> Result<bool, RegistryError> {
         let spec = format!("{}@{}", package.name(), version.render());
-        let output = self.run("npm", &["view", &spec, "--json"])?;
+        let output = if let Some(reg) = registry {
+            self.run("npm", &["view", &spec, "--json", "--registry", reg])?
+        } else {
+            self.run("npm", &["view", &spec, "--json"])?
+        };
 
         if output.success() && !output.stdout_trimmed().is_empty() {
             return Ok(true);
+        }
+        if output.success() && output.stdout_trimmed().is_empty() {
+            return Ok(false);
         }
 
         let combined = combined_lower(&output);
@@ -196,7 +310,7 @@ impl<R: CommandRunner> SubprocessRegistryClient<R> {
     /// |--------------------|---------|----------------------------------------------|
     /// | `pnpm-lock.yaml`   | `pnpm`  | `publish --filter <name>`                    |
     /// | `yarn.lock`        | `yarn`  | `workspace <name> npm publish`               |
-    /// | `bun.lockb`        | `bun`   | `publish`                                    |
+    /// | `bun.lockb`/`.lock`| `bun`   | `publish`                                    |
     /// | (none)             | `npm`   | `publish --workspace <name>`                 |
     ///
     /// `tag` and `access` flags are appended after the base args by the caller
@@ -206,6 +320,7 @@ impl<R: CommandRunner> SubprocessRegistryClient<R> {
         package_name: &str,
         tag: Option<&str>,
         access: Option<&str>,
+        registry: Option<&str>,
     ) -> (String, Vec<String>) {
         let mut extra: Vec<String> = Vec::new();
         if let Some(t) = tag {
@@ -216,12 +331,21 @@ impl<R: CommandRunner> SubprocessRegistryClient<R> {
             extra.push("--access".to_string());
             extra.push(av.to_string());
         }
+        if let Some(reg) = registry {
+            extra.push("--registry".to_string());
+            extra.push(reg.to_string());
+        }
 
         if self.cwd.join("pnpm-lock.yaml").exists() {
             let mut args = vec![
                 "publish".to_string(),
                 "--filter".to_string(),
                 package_name.to_string(),
+                // pnpm ≥ 7 refuses to publish from a dirty working tree by
+                // default. After `callisto version` stages manifest bumps,
+                // the tree is always dirty until the operator commits, so
+                // we must bypass the git-status check here.
+                "--no-git-checks".to_string(),
             ];
             args.extend(extra);
             return ("pnpm".to_string(), args);
@@ -238,7 +362,9 @@ impl<R: CommandRunner> SubprocessRegistryClient<R> {
             return ("yarn".to_string(), args);
         }
 
-        if self.cwd.join("bun.lockb").exists() {
+        // bun.lockb is the legacy binary lockfile format; bun.lock (text) is
+        // written by Bun >= 1.1.1. Both signal a bun-managed workspace.
+        if self.cwd.join("bun.lockb").exists() || self.cwd.join("bun.lock").exists() {
             let mut args = vec!["publish".to_string()];
             args.extend(extra);
             return ("bun".to_string(), args);
@@ -269,6 +395,7 @@ impl<R: CommandRunner> SubprocessRegistryClient<R> {
         package: &PackageId,
         tag: Option<&str>,
         access: Option<&NpmAccess>,
+        registry: Option<&str>,
     ) -> Result<PublishOutcome, RegistryError> {
         if package.name().starts_with('-') {
             return Err(RegistryError::Other(format!(
@@ -281,9 +408,23 @@ impl<R: CommandRunner> SubprocessRegistryClient<R> {
             NpmAccess::Restricted => "restricted",
         });
         let (program, args_owned) =
-            self.build_npm_publish_command(package.name(), tag, access_value);
+            self.build_npm_publish_command(package.name(), tag, access_value, registry);
         let args_refs: Vec<&str> = args_owned.iter().map(|s| s.as_str()).collect();
-        let output = self.run(&program, &args_refs)?;
+
+        // bun publish must run from the package directory — it has no
+        // --filter or --workspace flag to target a named package. All other
+        // package managers (pnpm --filter, yarn workspace, npm --workspace)
+        // run from the workspace root and select the package by name.
+        let effective_cwd = if program == "bun" {
+            self.npm_pkg_dir
+                .get(package.name())
+                .map(|rel| self.cwd.join(rel))
+                .unwrap_or_else(|| self.cwd.clone())
+        } else {
+            self.cwd.clone()
+        };
+
+        let output = self.run_in(&program, &args_refs, &effective_cwd)?;
         classify_npm_publish_output(&output)
     }
 
@@ -322,10 +463,46 @@ impl<R: CommandRunner> SubprocessRegistryClient<R> {
                 package.name()
             )));
         }
-        let normalized = package.name().to_lowercase().replace(['-', '.'], "_");
+        // PEP 427 wheel filename normalization: lowercase, then collapse any run
+        // of hyphens, dots, or underscores into a single underscore. Using a
+        // simple split-and-join avoids pulling in the `regex` crate.
+        let normalized = package
+            .name()
+            .to_lowercase()
+            .split(['-', '.', '_'])
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>()
+            .join("_");
         let pattern = format!("dist/{normalized}-{}*", version.render());
+
+        // Both build and upload run from the package directory so that `dist/`
+        // resolves to the package's own dist/ folder. When no package_dir was
+        // stored by load_plan (e.g. tests that call this method directly),
+        // fall back to the workspace root.
+        let pkg_cwd = self
+            .pypi_pkg_dir
+            .get(package.name())
+            .map(|rel| self.cwd.join(rel))
+            .unwrap_or_else(|| self.cwd.clone());
+
+        // Build step (spec §8.3): produce the sdist and wheel before uploading.
+        // Build failures are not transient registry errors — do NOT retry them.
+        let build_out = self.run_in(
+            "python",
+            &["-m", "build", "--sdist", "--wheel", "--outdir", "dist/"],
+            &pkg_cwd,
+        )?;
+        if !build_out.success() {
+            return Err(RegistryError::Other(format!(
+                "python -m build failed for `{}` (exit {:?}): {}",
+                package.name(),
+                build_out.exit_code,
+                build_out.stderr.trim()
+            )));
+        }
+
         let output = if let Some(idx) = index {
-            self.run(
+            self.run_in(
                 "twine",
                 &[
                     "upload",
@@ -334,9 +511,10 @@ impl<R: CommandRunner> SubprocessRegistryClient<R> {
                     idx,
                     &pattern,
                 ],
+                &pkg_cwd,
             )?
         } else {
-            self.run("twine", &["upload", "--skip-existing", &pattern])?
+            self.run_in("twine", &["upload", "--skip-existing", &pattern], &pkg_cwd)?
         };
         classify_twine_output(&output)
     }
@@ -347,8 +525,15 @@ impl<R: CommandRunner> RegistryClient for SubprocessRegistryClient<R> {
         match package {
             PackageId::Prefixed {
                 ecosystem: Ecosystem::Npm,
+                name,
                 ..
-            } => self.npm_is_published(package, version),
+            } => {
+                let registry = self
+                    .npm_meta
+                    .get(name.as_str())
+                    .and_then(|m| m.registry.as_deref());
+                self.npm_is_published(package, version, registry)
+            }
 
             // Cargo: no reliable cargo-CLI-only existence check exists
             // (crates.io has no local "is this on the index" subcommand
@@ -396,7 +581,8 @@ impl<R: CommandRunner> RegistryClient for SubprocessRegistryClient<R> {
                 let meta = self.npm_meta.get(name.as_str());
                 let tag = meta.and_then(|m| m.tag.as_deref());
                 let access = meta.and_then(|m| m.access.as_ref());
-                self.npm_publish(package, tag, access)
+                let registry = meta.and_then(|m| m.registry.as_deref());
+                self.npm_publish(package, tag, access, registry)
             }
             PackageId::Prefixed {
                 ecosystem: Ecosystem::Pypi,
@@ -439,11 +625,21 @@ fn extract_retry_after_duration(text_lower: &str) -> Option<Duration> {
 }
 
 fn detect_rate_limit(text_lower: &str) -> Option<RegistryError> {
-    if text_lower.contains("429")
-        || text_lower.contains("too many requests")
+    // Match rate-limit signals with context, never on bare digits alone.
+    // Bare "429" in cargo's compressed-size output ("429.1KiB compressed")
+    // would otherwise trigger this — causing an infinite retry on unrelated
+    // failures. Require at least one contextual phrase alongside any "429".
+    let is_rate_limited = text_lower.contains("too many requests")
         || text_lower.contains("rate limit")
-    {
-        let dur = extract_retry_after_duration(text_lower).unwrap_or(Duration::from_secs(60));
+        || text_lower.contains("erate_limit")
+        || (text_lower.contains("429")
+            && (text_lower.contains("too many")
+                || text_lower.contains("rate")
+                || text_lower.contains("retry")));
+    if is_rate_limited {
+        let dur = extract_retry_after_duration(text_lower).unwrap_or(Duration::from_secs(
+            crate::commands::publish::DEFAULT_RATE_LIMIT_WAIT_SECS,
+        ));
         Some(RegistryError::RateLimited(dur))
     } else {
         None
@@ -492,6 +688,8 @@ fn classify_npm_publish_output(output: &CommandOutput) -> Result<PublishOutcome,
     if combined.contains("epublishconflict")
         || combined.contains("previously published")
         || combined.contains("cannot publish over")
+        || combined.contains("e409")
+        || combined.contains("409 conflict")
     {
         return Ok(PublishOutcome::AlreadyPublished);
     }
@@ -515,12 +713,15 @@ fn classify_npm_publish_output(output: &CommandOutput) -> Result<PublishOutcome,
 /// [`RegistryError`].
 ///
 /// Priority order (highest wins):
-/// 1. Any `"already exist"` substring (from `--skip-existing`) →
-///    [`PublishOutcome::AlreadyPublished`]. Partial skips (e.g. sdist
-///    skipped, wheel uploaded) cannot be distinguished from a complete skip
-///    by text alone, so any skip mention is conservatively classified as
-///    already-published rather than over-reporting a fresh publish.
-/// 2. Zero exit code with no skip mention → [`PublishOutcome::Published`].
+/// 1. `"already exist"` substring (from `--skip-existing`) without any
+///    `"uploading"` line → [`PublishOutcome::AlreadyPublished`] (all artifacts
+///    were skipped; none were freshly uploaded).
+///    When both phrases appear, at least one artifact was newly uploaded
+///    alongside the skipped stale artifact, so the result is `Published`.
+///    This handles the common case where `dist/` accumulates stale pre-release
+///    artifacts: glob `dist/my_pkg-1.0.0*` matches both `my_pkg-1.0.0a0.whl`
+///    (skipped) and `my_pkg-1.0.0.whl` (uploaded), producing mixed output.
+/// 2. Zero exit code with no skip-only mention → [`PublishOutcome::Published`].
 /// 3. Rate-limit signal (`429`, `too many requests`, `rate limit`) →
 ///    [`RegistryError::RateLimited`] with a parsed or default 60-second
 ///    retry-after duration.
@@ -530,7 +731,9 @@ fn classify_npm_publish_output(output: &CommandOutput) -> Result<PublishOutcome,
 fn classify_twine_output(output: &CommandOutput) -> Result<PublishOutcome, RegistryError> {
     let combined = combined_lower(output);
 
-    if combined.contains("already exist") {
+    let has_skip = combined.contains("already exist");
+    let has_upload = combined.contains("uploading");
+    if has_skip && !has_upload {
         return Ok(PublishOutcome::AlreadyPublished);
     }
     if output.success() {
@@ -558,18 +761,22 @@ mod tests {
     use super::*;
     use callisto_model::{CommandError, VersionGrammar};
 
-    /// Returns a fixed, canned [`CommandOutput`] regardless of the program
-    /// or args it's invoked with — each test constructs one client and
-    /// drives exactly one `CommandRunner::run` call through it.
+    /// Returns the configured output for ecosystem CLI calls (`cargo`, `npm`,
+    /// `twine`) but always returns exit(0) for `python` (the build step added
+    /// in front of twine). Tests that need to exercise build-step failures use
+    /// [`OrderedCallCapture`] directly.
     struct ScriptedRunner(CommandOutput);
 
     impl CommandRunner for ScriptedRunner {
         fn run(
             &self,
-            _program: &str,
+            program: &str,
             _args: &[&str],
             _cwd: &std::path::Path,
         ) -> Result<CommandOutput, CommandError> {
+            if program == "python" {
+                return Ok(output(0, "", ""));
+            }
             Ok(self.0.clone())
         }
     }
@@ -663,7 +870,31 @@ mod tests {
     fn cargo_publish_rate_limited_without_parseable_duration_uses_default() {
         let c = client(output(101, "", "error: 429 too many requests\n"));
         let err = c.publish(&cargo_pkg(), &v1(), &permit()).unwrap_err();
-        assert_eq!(err, RegistryError::RateLimited(Duration::from_secs(60)));
+        assert_eq!(
+            err,
+            RegistryError::RateLimited(Duration::from_secs(
+                crate::commands::publish::DEFAULT_RATE_LIMIT_WAIT_SECS
+            ))
+        );
+    }
+
+    /// Regression guard: cargo's packaging summary ("Packaged X files, 1.4MiB
+    /// (429.1KiB compressed)") contains the digits "429" in a non-rate-limit
+    /// context. A genuine auth or manifest failure whose stderr happens to also
+    /// carry cargo's packaging summary must NOT be classified as rate-limited —
+    /// it must be `RegistryError::Other`, not an infinite retry trigger.
+    #[test]
+    fn cargo_publish_compressed_size_containing_429_is_not_rate_limited() {
+        let c = client(output(
+            101,
+            "Packaged 42 files, 1.4MiB (429.1KiB compressed)\n",
+            "error: failed to publish to the registry\n",
+        ));
+        let err = c.publish(&cargo_pkg(), &v1(), &permit()).unwrap_err();
+        assert!(
+            matches!(err, RegistryError::Other(_)),
+            "compressed-size '429' in output must NOT be treated as rate-limited; got: {err:?}"
+        );
     }
 
     #[test]
@@ -708,6 +939,17 @@ mod tests {
             "",
             "npm ERR! code EPUBLISHCONFLICT\nnpm ERR! 403 Forbidden - PUT - you cannot publish over the previously published version\n",
         ));
+        assert_eq!(
+            c.publish(&npm_pkg(), &v1(), &permit()).unwrap(),
+            PublishOutcome::AlreadyPublished
+        );
+    }
+
+    #[test]
+    fn npm_publish_private_registry_409_is_already_published() {
+        // Verdaccio, Nexus, and Artifactory return E409 / 409 Conflict instead
+        // of EPUBLISHCONFLICT when a version already exists on a private registry.
+        let c = client(output(1, "", "npm ERR! code E409\nnpm ERR! 409 Conflict\n"));
         assert_eq!(
             c.publish(&npm_pkg(), &v1(), &permit()).unwrap(),
             PublishOutcome::AlreadyPublished
@@ -774,6 +1016,15 @@ mod tests {
     }
 
     #[test]
+    fn npm_is_published_exit_zero_empty_stdout_returns_false() {
+        // exit 0 with empty stdout signals "not found" on some private registry
+        // configurations (e.g. 204 / no-content responses from Verdaccio). Must
+        // return Ok(false), not fall through to the ambiguous Err path.
+        let c = client(output(0, "", ""));
+        assert!(!c.is_published(&npm_pkg(), &v1()).unwrap());
+    }
+
+    #[test]
     fn npm_is_published_ambiguous_failure_propagates_as_error() {
         // A network blip or unexpected npm failure must NOT be silently
         // treated as "not published" — that would risk a duplicate publish.
@@ -814,6 +1065,31 @@ mod tests {
         );
     }
 
+    /// When twine's output includes both a "skip" line for a stale pre-release
+    /// artifact AND an "Uploading" line for the target stable version, the
+    /// result must be `Published`, not `AlreadyPublished`. A stale pre-release
+    /// in `dist/` triggers the "already exist" phrase via `--skip-existing`, but
+    /// the stable artifact was still successfully uploaded in the same run.
+    #[test]
+    fn pypi_publish_mixed_skip_and_upload_is_published() {
+        // Twine output when dist/ contains both stale pre-release (skipped) and
+        // new stable artifact (uploaded). The "already exist" phrase appears for
+        // the skipped pre-release; "Uploading" appears for the stable wheel.
+        let c = client(output(
+            0,
+            "Skipping callisto_py-1.2.3a0-py3-none-any.whl because it appears to already exist\n\
+             Uploading callisto_py-1.2.3-py3-none-any.whl\n\
+             100%|████████| 43.2k/43.2k\n",
+            "",
+        ));
+        assert_eq!(
+            c.publish(&pypi_pkg(), &v1(), &permit()).unwrap(),
+            PublishOutcome::Published,
+            "when twine both skips a stale artifact and uploads a new one, the \
+             result must be Published, not AlreadyPublished"
+        );
+    }
+
     #[test]
     fn pypi_publish_rate_limited() {
         let c = client(output(
@@ -847,6 +1123,84 @@ mod tests {
     fn pypi_is_published_always_false() {
         let c = client(output(0, "", ""));
         assert!(!c.is_published(&pypi_pkg(), &v1()).unwrap());
+    }
+
+    // ---- python build step tests ----------------------------------------
+
+    type OrderedCallLog = std::sync::Arc<std::sync::Mutex<Vec<(String, Vec<String>)>>>;
+
+    /// Records every (program, args) call in order. Used to verify call
+    /// sequencing: python -m build must appear before twine upload.
+    struct OrderedCallCapture {
+        #[allow(clippy::type_complexity)]
+        calls: OrderedCallLog,
+        response: CommandOutput,
+    }
+
+    impl CommandRunner for OrderedCallCapture {
+        fn run(
+            &self,
+            program: &str,
+            args: &[&str],
+            _cwd: &std::path::Path,
+        ) -> Result<CommandOutput, CommandError> {
+            self.calls.lock().unwrap().push((
+                program.to_string(),
+                args.iter().map(|s| s.to_string()).collect(),
+            ));
+            Ok(self.response.clone())
+        }
+    }
+
+    /// Spec §8.3: python -m build MUST be called before twine upload.
+    /// On a clean checkout there is no dist/ directory; skipping the build
+    /// step causes twine to fail with "Cannot find file (or expand pattern)".
+    #[test]
+    fn pypi_publish_runs_python_build_before_twine() {
+        let calls = std::sync::Arc::new(std::sync::Mutex::new(Vec::<(String, Vec<String>)>::new()));
+        let runner = OrderedCallCapture {
+            calls: std::sync::Arc::clone(&calls),
+            response: output(0, "Uploading my_lib-1.2.3-py3-none-any.whl\n", ""),
+        };
+        let c = SubprocessRegistryClient::new(runner, PathBuf::from("/workspace"));
+        c.publish(&pypi_pkg(), &v1(), &permit()).unwrap();
+
+        let recorded = calls.lock().unwrap().clone();
+        // First call must be python -m build
+        assert!(
+            recorded.first().is_some_and(|(prog, args)| {
+                prog == "python" && args.iter().any(|a| a == "build")
+            }),
+            "first call must be `python -m build`; calls: {recorded:?}"
+        );
+        // Second call must be twine
+        assert!(
+            recorded.get(1).is_some_and(|(prog, _)| prog == "twine"),
+            "second call must be `twine`; calls: {recorded:?}"
+        );
+    }
+
+    /// Spec §8.3: a build failure must NOT invoke twine and must return an
+    /// error (not a rate-limit error — build failures are not transient).
+    #[test]
+    fn pypi_publish_build_failure_does_not_call_twine() {
+        let calls = std::sync::Arc::new(std::sync::Mutex::new(Vec::<(String, Vec<String>)>::new()));
+        let runner = OrderedCallCapture {
+            calls: std::sync::Arc::clone(&calls),
+            response: output(1, "", "error: No module named 'build'\n"), // build exits non-zero
+        };
+        let c = SubprocessRegistryClient::new(runner, PathBuf::from("/workspace"));
+        let err = c.publish(&pypi_pkg(), &v1(), &permit()).unwrap_err();
+
+        let recorded = calls.lock().unwrap().clone();
+        assert!(
+            !recorded.iter().any(|(prog, _)| prog == "twine"),
+            "twine must NOT be called after a build failure; calls: {recorded:?}"
+        );
+        assert!(
+            matches!(err, RegistryError::Other(_)),
+            "build failure must be RegistryError::Other (non-retriable); got: {err:?}"
+        );
     }
 
     /// A runner that captures the last set of args it was called with so tests
@@ -890,6 +1244,32 @@ mod tests {
         assert!(
             args.iter().any(|a| a == "dist/my_lib-1.2.3*"),
             "expected glob arg 'dist/my_lib-1.2.3*' (PEP 427 underscore) but got: {:?}",
+            *args
+        );
+    }
+
+    /// PEP 427 also requires dots to be replaced with underscores, matching
+    /// the same normalization applied to hyphens. A package named `my-pkg.lib`
+    /// must produce `dist/my_pkg_lib-1.2.3*`, not `dist/my-pkg.lib-1.2.3*`.
+    #[test]
+    fn pypi_glob_pattern_normalizes_dots_to_underscore() {
+        let captured = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let runner = CapturingRunner {
+            captured_args: std::sync::Arc::clone(&captured),
+            response: output(0, "Uploading my_pkg_lib-1.2.3-py3-none-any.whl\n", ""),
+        };
+        let pkg = PackageId::Prefixed {
+            ecosystem: Ecosystem::Pypi,
+            name: "my-pkg.lib".to_string(),
+        };
+        let version = Version::parse("1.2.3", VersionGrammar::SemVer).unwrap();
+        let c = SubprocessRegistryClient::new(runner, PathBuf::from("/workspace"));
+        c.publish(&pkg, &version, &permit()).unwrap();
+
+        let args = captured.lock().unwrap();
+        assert!(
+            args.iter().any(|a| a == "dist/my_pkg_lib-1.2.3*"),
+            "expected glob 'dist/my_pkg_lib-1.2.3*' (PEP 427 dot+hyphen → underscore) but got: {:?}",
             *args
         );
     }
@@ -1157,7 +1537,7 @@ mod tests {
             response: output(0, "+ @callisto/cli@1.2.3\n", ""),
         };
         let c = SubprocessRegistryClient::new(runner, PathBuf::from("/workspace"));
-        c.npm_publish(&npm_pkg(), Some("next"), None).unwrap();
+        c.npm_publish(&npm_pkg(), Some("next"), None, None).unwrap();
         let args = captured.lock().unwrap();
         assert!(
             args.contains(&"--tag".to_string()),
@@ -1180,7 +1560,7 @@ mod tests {
             response: output(0, "+ @callisto/cli@1.2.3\n", ""),
         };
         let c = SubprocessRegistryClient::new(runner, PathBuf::from("/workspace"));
-        c.npm_publish(&npm_pkg(), None, None).unwrap();
+        c.npm_publish(&npm_pkg(), None, None, None).unwrap();
         let args = captured.lock().unwrap();
         assert!(
             !args.contains(&"--access".to_string()),
@@ -1197,7 +1577,7 @@ mod tests {
             response: output(0, "+ @callisto/cli@1.2.3\n", ""),
         };
         let c = SubprocessRegistryClient::new(runner, PathBuf::from("/workspace"));
-        c.npm_publish(&npm_pkg(), None, Some(&NpmAccess::Public))
+        c.npm_publish(&npm_pkg(), None, Some(&NpmAccess::Public), None)
             .unwrap();
         let args = captured.lock().unwrap();
         assert!(
@@ -1207,6 +1587,52 @@ mod tests {
         assert!(
             args.contains(&"public".to_string()),
             "expected 'public' in args: {args:?}"
+        );
+    }
+
+    #[test]
+    fn npm_publish_passes_registry_when_set() {
+        // AUTH-005 / F-04: when a private npm registry URL is supplied,
+        // `--registry <url>` must appear in the npm publish args.
+        let captured = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let runner = CapturingRunner {
+            captured_args: std::sync::Arc::clone(&captured),
+            response: output(0, "+ @callisto/cli@1.2.3\n", ""),
+        };
+        let c = SubprocessRegistryClient::new(runner, PathBuf::from("/workspace"));
+        c.npm_publish(
+            &npm_pkg(),
+            None,
+            None,
+            Some("https://npm.my-org.example.com"),
+        )
+        .unwrap();
+        let args = captured.lock().unwrap();
+        assert!(
+            args.contains(&"--registry".to_string()),
+            "expected --registry in npm publish args: {args:?}"
+        );
+        assert!(
+            args.contains(&"https://npm.my-org.example.com".to_string()),
+            "expected registry URL in npm publish args: {args:?}"
+        );
+    }
+
+    #[test]
+    fn npm_publish_no_registry_flag_when_registry_none() {
+        // When no registry is set, --registry must NOT appear — npm uses its
+        // own default (the public registry).
+        let captured = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let runner = CapturingRunner {
+            captured_args: std::sync::Arc::clone(&captured),
+            response: output(0, "+ @callisto/cli@1.2.3\n", ""),
+        };
+        let c = SubprocessRegistryClient::new(runner, PathBuf::from("/workspace"));
+        c.npm_publish(&npm_pkg(), None, None, None).unwrap();
+        let args = captured.lock().unwrap();
+        assert!(
+            !args.contains(&"--registry".to_string()),
+            "expected no --registry flag when registry is None: {args:?}"
         );
     }
 
@@ -1247,12 +1673,44 @@ mod tests {
             .unwrap();
         let args = captured.lock().unwrap();
         assert!(
+            args.contains(&"-p".to_string()),
+            "expected -p in cargo publish args: {args:?}"
+        );
+        assert!(
+            args.contains(&"--locked".to_string()),
+            "expected --locked in cargo publish args: {args:?}"
+        );
+        assert!(
             args.contains(&"--registry".to_string()),
             "expected --registry in args: {args:?}"
         );
         assert!(
             args.contains(&"my-private-registry".to_string()),
             "expected registry name in args: {args:?}"
+        );
+    }
+
+    #[test]
+    fn cargo_publish_always_includes_p_and_locked_without_registry() {
+        let captured = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let runner = CapturingRunner {
+            captured_args: std::sync::Arc::clone(&captured),
+            response: output(0, "Uploading callisto-model v1.2.3\n", ""),
+        };
+        let c = SubprocessRegistryClient::new(runner, PathBuf::from("/workspace"));
+        c.cargo_publish(&cargo_pkg(), None).unwrap();
+        let args = captured.lock().unwrap();
+        assert!(
+            args.contains(&"-p".to_string()),
+            "expected -p in cargo publish args (no registry): {args:?}"
+        );
+        assert!(
+            args.contains(&"--locked".to_string()),
+            "expected --locked in cargo publish args (no registry): {args:?}"
+        );
+        assert!(
+            !args.contains(&"--registry".to_string()),
+            "--registry must NOT be present when no registry specified: {args:?}"
         );
     }
 
@@ -1278,6 +1736,7 @@ mod tests {
         }
     }
 
+    #[allow(clippy::type_complexity)]
     fn program_capturing_runner(
         out: CommandOutput,
     ) -> (
@@ -1302,7 +1761,7 @@ mod tests {
 
         let (runner, captured_program, captured_args) = program_capturing_runner(output(0, "", ""));
         let c = SubprocessRegistryClient::new(runner, dir.path().to_path_buf());
-        c.npm_publish(&npm_pkg(), None, None).unwrap();
+        c.npm_publish(&npm_pkg(), None, None, None).unwrap();
 
         assert_eq!(
             *captured_program.lock().unwrap(),
@@ -1324,6 +1783,28 @@ mod tests {
         );
     }
 
+    /// pnpm ≥ 7 refuses to publish from a dirty working tree by default
+    /// (`ERR_PNPM_GIT_UNCLEAN`). After `callisto version` bumps and stages
+    /// manifests, the tree is always dirty until the operator commits —
+    /// `--no-git-checks` must always be passed to pnpm publish so that the
+    /// publish step is not blocked by staged-but-uncommitted version bumps.
+    #[test]
+    fn pnpm_publish_includes_no_git_checks_flag() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("pnpm-lock.yaml"), "").unwrap();
+
+        let (runner, _, captured_args) = program_capturing_runner(output(0, "", ""));
+        let c = SubprocessRegistryClient::new(runner, dir.path().to_path_buf());
+        c.npm_publish(&npm_pkg(), None, None, None).unwrap();
+
+        let args = captured_args.lock().unwrap();
+        assert!(
+            args.contains(&"--no-git-checks".to_string()),
+            "pnpm publish must include --no-git-checks to allow publishing from a \
+             dirty working tree (staged version bumps); got args: {args:?}"
+        );
+    }
+
     #[test]
     fn npm_publish_uses_yarn_when_yarn_lock_present() {
         let dir = tempfile::tempdir().unwrap();
@@ -1331,7 +1812,7 @@ mod tests {
 
         let (runner, captured_program, captured_args) = program_capturing_runner(output(0, "", ""));
         let c = SubprocessRegistryClient::new(runner, dir.path().to_path_buf());
-        c.npm_publish(&npm_pkg(), None, None).unwrap();
+        c.npm_publish(&npm_pkg(), None, None, None).unwrap();
 
         assert_eq!(
             *captured_program.lock().unwrap(),
@@ -1364,12 +1845,35 @@ mod tests {
 
         let (runner, captured_program, captured_args) = program_capturing_runner(output(0, "", ""));
         let c = SubprocessRegistryClient::new(runner, dir.path().to_path_buf());
-        c.npm_publish(&npm_pkg(), None, None).unwrap();
+        c.npm_publish(&npm_pkg(), None, None, None).unwrap();
 
         assert_eq!(
             *captured_program.lock().unwrap(),
             "bun",
             "expected bun when bun.lockb is present"
+        );
+        let args = captured_args.lock().unwrap();
+        assert!(
+            args.contains(&"publish".to_string()),
+            "expected 'publish' in args: {args:?}"
+        );
+    }
+
+    #[test]
+    fn npm_publish_uses_bun_when_bun_lock_text_present() {
+        // Bun >= 1.1.1 writes "bun.lock" (text TOML-like format) instead of
+        // "bun.lockb" (binary). Both must resolve to the bun CLI.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("bun.lock"), "").unwrap();
+
+        let (runner, captured_program, captured_args) = program_capturing_runner(output(0, "", ""));
+        let c = SubprocessRegistryClient::new(runner, dir.path().to_path_buf());
+        c.npm_publish(&npm_pkg(), None, None, None).unwrap();
+
+        assert_eq!(
+            *captured_program.lock().unwrap(),
+            "bun",
+            "expected bun when bun.lock (text format) is present"
         );
         let args = captured_args.lock().unwrap();
         assert!(
@@ -1385,7 +1889,7 @@ mod tests {
 
         let (runner, captured_program, captured_args) = program_capturing_runner(output(0, "", ""));
         let c = SubprocessRegistryClient::new(runner, dir.path().to_path_buf());
-        c.npm_publish(&npm_pkg(), None, None).unwrap();
+        c.npm_publish(&npm_pkg(), None, None, None).unwrap();
 
         assert_eq!(
             *captured_program.lock().unwrap(),
@@ -1404,6 +1908,359 @@ mod tests {
         assert!(
             args.contains(&"@callisto/cli".to_string()),
             "expected package name after --workspace in args: {args:?}"
+        );
+    }
+
+    // ---- per-package directory routing (RED → GREEN) --------------------
+
+    /// Captures the working directory that CommandRunner::run is called with.
+    struct CwdCapturingRunner {
+        captured_cwd: std::sync::Arc<std::sync::Mutex<Option<PathBuf>>>,
+        response: CommandOutput,
+    }
+
+    impl CommandRunner for CwdCapturingRunner {
+        fn run(
+            &self,
+            _program: &str,
+            _args: &[&str],
+            cwd: &std::path::Path,
+        ) -> Result<CommandOutput, CommandError> {
+            *self.captured_cwd.lock().unwrap() = Some(cwd.to_path_buf());
+            Ok(self.response.clone())
+        }
+    }
+
+    #[test]
+    fn pypi_publish_uses_package_dir_as_cwd() {
+        // load_plan with a PypiPublish carrying package_dir must cause twine to
+        // run from <workspace>/<package_dir>, not the workspace root.
+        use callisto_model::{PypiPublish, RegistryKey, SCHEMA_VERSION};
+
+        let captured_cwd = std::sync::Arc::new(std::sync::Mutex::new(None::<PathBuf>));
+        let runner = CwdCapturingRunner {
+            captured_cwd: std::sync::Arc::clone(&captured_cwd),
+            response: output(0, "Uploading callisto_py-1.2.3-py3-none-any.whl\n", ""),
+        };
+        let mut c = SubprocessRegistryClient::new(runner, PathBuf::from("/workspace"));
+
+        let plan = callisto_model::PublishPlan {
+            schema_version: SCHEMA_VERSION,
+            rust_crates: vec![],
+            npm_platform_packages: vec![],
+            npm_main_packages: vec![],
+            pypi_packages: vec![PypiPublish {
+                name: "callisto-py".to_string(),
+                version: v1(),
+                publish_to: RegistryKey(RegistryKey::PYPI.to_string()),
+                index: None,
+                package_dir: PathBuf::from("packages/callisto-py"),
+            }],
+            releases: vec![],
+            diagnostics: vec![],
+        };
+        c.load_plan(&plan);
+        c.publish(&pypi_pkg(), &v1(), &permit()).unwrap();
+
+        let cwd = captured_cwd
+            .lock()
+            .unwrap()
+            .clone()
+            .expect("CommandRunner::run was not called");
+        assert_eq!(
+            cwd,
+            PathBuf::from("/workspace/packages/callisto-py"),
+            "twine must run from the package directory, not the workspace root"
+        );
+    }
+
+    #[test]
+    fn bun_publish_uses_package_dir_as_cwd() {
+        // bun publish is invoked from the workspace root by the current impl but
+        // must be invoked from the per-package directory after the fix.
+        use callisto_model::{NpmMainPublish, RegistryKey, SCHEMA_VERSION};
+
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("bun.lockb"), "").unwrap();
+
+        let captured_cwd = std::sync::Arc::new(std::sync::Mutex::new(None::<PathBuf>));
+        let runner = CwdCapturingRunner {
+            captured_cwd: std::sync::Arc::clone(&captured_cwd),
+            response: output(0, "+ @callisto/cli@1.2.3\n", ""),
+        };
+        let mut c = SubprocessRegistryClient::new(runner, dir.path().to_path_buf());
+
+        let plan = callisto_model::PublishPlan {
+            schema_version: SCHEMA_VERSION,
+            rust_crates: vec![],
+            npm_platform_packages: vec![],
+            npm_main_packages: vec![NpmMainPublish {
+                name: "@callisto/cli".to_string(),
+                version: v1(),
+                publish_to: RegistryKey("npm".to_string()),
+                registry: None,
+                tag: None,
+                access: None,
+                depends_on_platforms: vec![],
+                package_dir: PathBuf::from("packages/callisto-cli"),
+            }],
+            pypi_packages: vec![],
+            releases: vec![],
+            diagnostics: vec![],
+        };
+        c.load_plan(&plan);
+        c.publish(&npm_pkg(), &v1(), &permit()).unwrap();
+
+        let cwd = captured_cwd
+            .lock()
+            .unwrap()
+            .clone()
+            .expect("CommandRunner::run was not called");
+        assert_eq!(
+            cwd,
+            dir.path().join("packages/callisto-cli"),
+            "bun publish must run from the package directory, not the workspace root"
+        );
+    }
+
+    /// PUB-001 regression guard: a client that has NOT had load_plan called
+    /// must fall back to the workspace root for the cwd, not the per-package
+    /// directory. This test documents the pre-fix behavior and ensures that
+    /// the fix (calling load_plan before execute) cannot be silently removed
+    /// without a test failure.
+    #[test]
+    fn publish_without_load_plan_uses_workspace_root_as_cwd() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("bun.lockb"), "").unwrap();
+
+        let captured_cwd = std::sync::Arc::new(std::sync::Mutex::new(None::<PathBuf>));
+        let runner = CwdCapturingRunner {
+            captured_cwd: std::sync::Arc::clone(&captured_cwd),
+            response: output(0, "+ @callisto/cli@1.2.3\n", ""),
+        };
+        // Deliberately NOT calling load_plan — simulates the PUB-001 bug.
+        let c = SubprocessRegistryClient::new(runner, dir.path().to_path_buf());
+        c.publish(&npm_pkg(), &v1(), &permit()).unwrap();
+
+        let cwd = captured_cwd
+            .lock()
+            .unwrap()
+            .clone()
+            .expect("CommandRunner::run was not called");
+        assert_eq!(
+            cwd,
+            dir.path().to_path_buf(),
+            "without load_plan, publish must fall back to the workspace root"
+        );
+    }
+
+    // -- NEW-version: pre-publish version mismatch guard ---------------------
+
+    /// `cargo publish` publishes whatever version is on disk in Cargo.toml.
+    /// If a user runs `callisto publish` without first running `callisto version`
+    /// (or if Cargo.toml wasn't saved), the on-disk version is the OLD one,
+    /// and the wrong version gets published silently.
+    ///
+    /// After `load_plan`, `SubprocessRegistryClient::cargo_publish` must read
+    /// the on-disk Cargo.toml for the package and fail with a clear error if
+    /// the version there doesn't match the planned version.
+    #[test]
+    fn cargo_publish_fails_when_on_disk_version_does_not_match_plan() {
+        let dir = tempfile::tempdir().unwrap();
+
+        // On disk: version 1.0.0
+        let pkg_subdir = dir.path().join("crates/my-crate");
+        std::fs::create_dir_all(&pkg_subdir).unwrap();
+        std::fs::write(
+            pkg_subdir.join("Cargo.toml"),
+            "[package]\nname = \"my-crate\"\nversion = \"1.0.0\"\nedition = \"2021\"\n",
+        )
+        .unwrap();
+
+        // Plan: version 2.0.0 (not yet written to disk)
+        let planned_version = Version::parse("2.0.0", VersionGrammar::SemVer).unwrap();
+        let plan = callisto_model::PublishPlan {
+            schema_version: callisto_model::SCHEMA_VERSION,
+            rust_crates: vec![callisto_model::CratePublish {
+                name: "my-crate".to_string(),
+                version: planned_version.clone(),
+                publish_to: callisto_model::RegistryKey(
+                    callisto_model::RegistryKey::CRATES_IO.to_string(),
+                ),
+                registry: None,
+                package_dir: Some(std::path::PathBuf::from("crates/my-crate")),
+            }],
+            npm_main_packages: vec![],
+            npm_platform_packages: vec![],
+            pypi_packages: vec![],
+            releases: vec![],
+            diagnostics: vec![],
+        };
+
+        let pkg = PackageId::Prefixed {
+            ecosystem: Ecosystem::Cargo,
+            name: "my-crate".to_string(),
+        };
+
+        let mut c = SubprocessRegistryClient::new(
+            ScriptedRunner(output(0, "", "")),
+            dir.path().to_path_buf(),
+        );
+        c.load_plan(&plan);
+
+        let err = c.publish(&pkg, &planned_version, &permit()).unwrap_err();
+        assert!(
+            matches!(err, RegistryError::Other(ref msg) if msg.contains("version mismatch")),
+            "expected version mismatch error, got: {err:?}"
+        );
+    }
+
+    /// When the on-disk version matches the plan, `cargo_publish` must proceed
+    /// normally and not raise a version mismatch error.
+    #[test]
+    fn cargo_publish_proceeds_when_on_disk_version_matches_plan() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let pkg_subdir = dir.path().join("crates/my-crate");
+        std::fs::create_dir_all(&pkg_subdir).unwrap();
+        std::fs::write(
+            pkg_subdir.join("Cargo.toml"),
+            "[package]\nname = \"my-crate\"\nversion = \"2.0.0\"\nedition = \"2021\"\n",
+        )
+        .unwrap();
+
+        let planned_version = Version::parse("2.0.0", VersionGrammar::SemVer).unwrap();
+        let plan = callisto_model::PublishPlan {
+            schema_version: callisto_model::SCHEMA_VERSION,
+            rust_crates: vec![callisto_model::CratePublish {
+                name: "my-crate".to_string(),
+                version: planned_version.clone(),
+                publish_to: callisto_model::RegistryKey(
+                    callisto_model::RegistryKey::CRATES_IO.to_string(),
+                ),
+                registry: None,
+                package_dir: Some(std::path::PathBuf::from("crates/my-crate")),
+            }],
+            npm_main_packages: vec![],
+            npm_platform_packages: vec![],
+            pypi_packages: vec![],
+            releases: vec![],
+            diagnostics: vec![],
+        };
+
+        let pkg = PackageId::Prefixed {
+            ecosystem: Ecosystem::Cargo,
+            name: "my-crate".to_string(),
+        };
+
+        let mut c = SubprocessRegistryClient::new(
+            ScriptedRunner(output(0, "Uploading my-crate v2.0.0\n", "")),
+            dir.path().to_path_buf(),
+        );
+        c.load_plan(&plan);
+
+        let outcome = c.publish(&pkg, &planned_version, &permit()).unwrap();
+        assert_eq!(outcome, PublishOutcome::Published);
+    }
+
+    /// Version guard: when load_plan provides a package_dir but the on-disk
+    /// Cargo.toml cannot be read (e.g. the path is wrong or the file is
+    /// missing), publish must return Err rather than silently skipping the guard
+    /// and potentially publishing the wrong version.
+    #[test]
+    fn cargo_version_guard_errors_when_manifest_unreadable() {
+        let dir = tempfile::tempdir().unwrap();
+        // Note: we do NOT create <dir>/crates/my-crate/Cargo.toml — that is the
+        // point. The guard must detect the missing file and refuse to proceed.
+
+        let planned_version = Version::parse("2.0.0", VersionGrammar::SemVer).unwrap();
+        let plan = callisto_model::PublishPlan {
+            schema_version: callisto_model::SCHEMA_VERSION,
+            rust_crates: vec![callisto_model::CratePublish {
+                name: "my-crate".to_string(),
+                version: planned_version.clone(),
+                publish_to: callisto_model::RegistryKey(
+                    callisto_model::RegistryKey::CRATES_IO.to_string(),
+                ),
+                registry: None,
+                package_dir: Some(std::path::PathBuf::from("crates/my-crate")),
+            }],
+            npm_main_packages: vec![],
+            npm_platform_packages: vec![],
+            pypi_packages: vec![],
+            releases: vec![],
+            diagnostics: vec![],
+        };
+        let pkg = PackageId::Prefixed {
+            ecosystem: Ecosystem::Cargo,
+            name: "my-crate".to_string(),
+        };
+        let mut c = SubprocessRegistryClient::new(
+            ScriptedRunner(output(0, "Uploading my-crate v2.0.0\n", "")),
+            dir.path().to_path_buf(),
+        );
+        c.load_plan(&plan);
+
+        let err = c
+            .publish(&pkg, &planned_version, &permit())
+            .expect_err("expected an error when the on-disk Cargo.toml cannot be read");
+        assert!(
+            matches!(err, RegistryError::Other(_)),
+            "unreadable manifest must produce RegistryError::Other, got: {err:?}"
+        );
+    }
+
+    /// Version guard: when the on-disk Cargo.toml exists but cannot be parsed
+    /// as a minimal `[package].version` manifest (e.g. it is malformed TOML or
+    /// a workspace root without a `[package]` table), publish must return Err
+    /// rather than silently skipping the guard.
+    #[test]
+    fn cargo_version_guard_errors_when_manifest_unparseable() {
+        let dir = tempfile::tempdir().unwrap();
+        let crate_dir = dir.path().join("crates/my-crate");
+        std::fs::create_dir_all(&crate_dir).unwrap();
+        // Write TOML that has no [package] table — matches a workspace root or a
+        // subtly malformed crate manifest.
+        std::fs::write(
+            crate_dir.join("Cargo.toml"),
+            "[workspace]\nmembers = [\"crates/*\"]\n",
+        )
+        .unwrap();
+
+        let planned_version = Version::parse("2.0.0", VersionGrammar::SemVer).unwrap();
+        let plan = callisto_model::PublishPlan {
+            schema_version: callisto_model::SCHEMA_VERSION,
+            rust_crates: vec![callisto_model::CratePublish {
+                name: "my-crate".to_string(),
+                version: planned_version.clone(),
+                publish_to: callisto_model::RegistryKey(
+                    callisto_model::RegistryKey::CRATES_IO.to_string(),
+                ),
+                registry: None,
+                package_dir: Some(std::path::PathBuf::from("crates/my-crate")),
+            }],
+            npm_main_packages: vec![],
+            npm_platform_packages: vec![],
+            pypi_packages: vec![],
+            releases: vec![],
+            diagnostics: vec![],
+        };
+        let pkg = PackageId::Prefixed {
+            ecosystem: Ecosystem::Cargo,
+            name: "my-crate".to_string(),
+        };
+        let mut c = SubprocessRegistryClient::new(
+            ScriptedRunner(output(0, "Uploading my-crate v2.0.0\n", "")),
+            dir.path().to_path_buf(),
+        );
+        c.load_plan(&plan);
+
+        let err = c
+            .publish(&pkg, &planned_version, &permit())
+            .expect_err("expected an error when Cargo.toml has no [package] table");
+        assert!(
+            matches!(err, RegistryError::Other(_)),
+            "unparseable manifest must produce RegistryError::Other, got: {err:?}"
         );
     }
 }

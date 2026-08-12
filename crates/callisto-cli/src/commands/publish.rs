@@ -9,7 +9,7 @@ use callisto_model::ApplyPermit;
 
 use crate::cli::{GlobalArgs, OutputFormat, PublishArgs};
 use crate::error::CliError;
-use crate::output::write_json;
+use crate::output::write_report_json;
 use crate::render;
 use crate::runner::CliCommandRunner;
 use crate::workspace::load_workspace;
@@ -24,9 +24,10 @@ pub(crate) fn write_dry_run_text<W: std::io::Write>(
     let is_empty = plan.rust_crates.is_empty()
         && plan.npm_main_packages.is_empty()
         && plan.npm_platform_packages.is_empty()
-        && plan.pypi_packages.is_empty();
+        && plan.pypi_packages.is_empty()
+        && plan.releases.is_empty();
     if is_empty {
-        writeln!(w, "No packages published (dry run).")?;
+        writeln!(w, "Nothing to publish (dry run).")?;
     } else {
         writeln!(
             w,
@@ -35,6 +36,62 @@ pub(crate) fn write_dry_run_text<W: std::io::Write>(
         render::render_publish(plan, w)?;
     }
     Ok(())
+}
+
+/// Checks whether the environment contains credentials for each ecosystem
+/// represented in the plan. Returns a [`Vec`] of human-readable warning
+/// messages for any missing credentials so the operator can identify auth
+/// problems before any packages are published. Returns an empty [`Vec`] when
+/// all required credentials are present.
+///
+/// `env` is an injectable lookup function (pass [`std::env::var`] in
+/// production; pass a closure in tests to avoid mutating the process
+/// environment).
+///
+/// This is a soft pre-flight check only — it does not fail hard. Missing
+/// credentials may still allow publish to succeed when an alternative auth
+/// mechanism is in place (e.g. a pre-configured `.npmrc` or
+/// `~/.cargo/credentials`).
+fn check_credentials(
+    plan: &callisto_model::PublishPlan,
+    env: impl Fn(&str) -> Result<String, std::env::VarError>,
+) -> Vec<String> {
+    let mut warnings = Vec::new();
+
+    // Cargo: crates targeting the default crates.io registry need
+    // CARGO_REGISTRY_TOKEN; crates targeting a named private registry need
+    // CARGO_REGISTRIES_<UPPERCASE_NAME>_TOKEN. Collect the distinct variable
+    // names required and warn once per missing variable.
+    let mut cargo_vars_checked = std::collections::BTreeSet::new();
+    for pkg in &plan.rust_crates {
+        let var = match &pkg.registry {
+            None => "CARGO_REGISTRY_TOKEN".to_string(),
+            Some(name) => format!(
+                "CARGO_REGISTRIES_{}_TOKEN",
+                name.to_uppercase().replace('-', "_")
+            ),
+        };
+        if cargo_vars_checked.insert(var.clone()) && env(&var).is_err() {
+            warnings.push(format!(
+                "warning: {var} is not set; cargo publish may fail authentication"
+            ));
+        }
+    }
+
+    if (!plan.npm_main_packages.is_empty() || !plan.npm_platform_packages.is_empty())
+        && env("NPM_TOKEN").is_err()
+    {
+        warnings
+            .push("warning: NPM_TOKEN is not set; npm publish may fail authentication".to_string());
+    }
+
+    if !plan.pypi_packages.is_empty() && env("TWINE_PASSWORD").is_err() {
+        warnings.push(
+            "warning: TWINE_PASSWORD is not set; twine upload may fail authentication".to_string(),
+        );
+    }
+
+    warnings
 }
 
 /// Publishes every package in the workspace's publish plan to its ecosystem
@@ -46,27 +103,38 @@ pub(crate) fn write_dry_run_text<W: std::io::Write>(
 /// prints the plan that WOULD be published (the same plan `plan-publish`
 /// reports) and returns without constructing a [`PublishOrchestrator`] or
 /// running any publisher command.
-pub fn handle(_args: PublishArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
+pub fn handle(args: PublishArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
     let runner = CliCommandRunner;
     let ws = load_workspace(global, &runner)?;
 
-    let opts = PublishOptions::default();
+    let opts = PublishOptions { only: args.only };
     let plan = plan_publish(&ws, &opts)?;
 
     let Some(permit) = ApplyPermit::granted_unless_dry_run(global.dry_run) else {
         match global.format {
-            OutputFormat::Json => write_json(&mut std::io::stdout(), &plan)?,
+            OutputFormat::Json => write_report_json(&mut std::io::stdout(), &plan)?,
             OutputFormat::Text => write_dry_run_text(&plan, &mut std::io::stdout())?,
         }
         return Ok(ExitCode::SUCCESS);
     };
 
-    let client = SubprocessRegistryClient::new(CliCommandRunner, ws.root.clone());
-    let orchestrator = PublishOrchestrator::new(client, AlwaysRetryPolicy, SystemTimeProvider);
+    // Pre-flight credential check — warns before any packages are published so
+    // the operator can identify missing auth tokens early.
+    for warning in check_credentials(&plan, |s| std::env::var(s)) {
+        eprintln!("{warning}");
+    }
+
+    let mut client = SubprocessRegistryClient::new(CliCommandRunner, ws.root.clone());
+    client.load_plan(&plan);
+    let format = global.format;
+    let orchestrator = PublishOrchestrator::new(client, AlwaysRetryPolicy, SystemTimeProvider)
+        .with_progress(move |msg| {
+            crate::output::log_line(format, &msg);
+        });
     let report = orchestrator.execute(&plan, &permit);
 
     match global.format {
-        OutputFormat::Json => write_json(&mut std::io::stdout(), &report)?,
+        OutputFormat::Json => write_report_json(&mut std::io::stdout(), &report)?,
         OutputFormat::Text => render::render_publish_report(&report, &mut std::io::stdout())?,
     }
 
@@ -94,6 +162,124 @@ mod tests {
         }
     }
 
+    // Inject a closure that always returns NotPresent — no process-environment
+    // mutation needed, so these tests are safe under parallel test execution.
+    fn missing_env(_var: &str) -> Result<String, std::env::VarError> {
+        Err(std::env::VarError::NotPresent)
+    }
+
+    fn present_env(_var: &str) -> Result<String, std::env::VarError> {
+        Ok("token".to_string())
+    }
+
+    #[test]
+    fn credential_check_warns_when_npm_token_missing() {
+        use callisto_model::{NpmMainPublish, RegistryKey, Version, VersionGrammar};
+        use std::path::PathBuf;
+
+        let v1 = Version::parse("1.0.0", VersionGrammar::SemVer).unwrap();
+        let plan = callisto_model::PublishPlan {
+            schema_version: SCHEMA_VERSION,
+            rust_crates: vec![],
+            npm_main_packages: vec![NpmMainPublish {
+                name: "@callisto/cli".to_string(),
+                version: v1,
+                publish_to: RegistryKey("npm".to_string()),
+                registry: None,
+                tag: None,
+                access: None,
+                depends_on_platforms: vec![],
+                package_dir: PathBuf::from("packages/callisto-cli"),
+            }],
+            npm_platform_packages: vec![],
+            pypi_packages: vec![],
+            releases: vec![],
+            diagnostics: vec![],
+        };
+
+        let warnings = check_credentials(&plan, missing_env);
+        assert!(
+            !warnings.is_empty(),
+            "expected a warning for missing NPM_TOKEN but got none"
+        );
+        assert!(
+            warnings.iter().any(|w| w.contains("NPM_TOKEN")),
+            "warning must mention NPM_TOKEN, got: {:?}",
+            warnings
+        );
+    }
+
+    #[test]
+    fn credential_check_no_warnings_when_all_tokens_present() {
+        use callisto_model::{NpmMainPublish, RegistryKey, Version, VersionGrammar};
+        use std::path::PathBuf;
+
+        let v1 = Version::parse("1.0.0", VersionGrammar::SemVer).unwrap();
+        let plan = callisto_model::PublishPlan {
+            schema_version: SCHEMA_VERSION,
+            rust_crates: vec![],
+            npm_main_packages: vec![NpmMainPublish {
+                name: "@callisto/cli".to_string(),
+                version: v1,
+                publish_to: RegistryKey("npm".to_string()),
+                registry: None,
+                tag: None,
+                access: None,
+                depends_on_platforms: vec![],
+                package_dir: PathBuf::from("packages/callisto-cli"),
+            }],
+            npm_platform_packages: vec![],
+            pypi_packages: vec![],
+            releases: vec![],
+            diagnostics: vec![],
+        };
+
+        let warnings = check_credentials(&plan, present_env);
+        assert!(
+            warnings.is_empty(),
+            "expected no warnings when all tokens present, got: {:?}",
+            warnings
+        );
+    }
+
+    #[test]
+    fn credential_check_private_cargo_registry_checks_correct_var() {
+        use callisto_model::{CratePublish, RegistryKey, Version, VersionGrammar};
+
+        let v1 = Version::parse("1.0.0", VersionGrammar::SemVer).unwrap();
+        let plan = callisto_model::PublishPlan {
+            schema_version: SCHEMA_VERSION,
+            rust_crates: vec![CratePublish {
+                name: "my-crate".to_string(),
+                version: v1,
+                publish_to: RegistryKey("cloudsmith".to_string()),
+                registry: Some("cloudsmith".to_string()),
+                package_dir: None,
+            }],
+            npm_main_packages: vec![],
+            npm_platform_packages: vec![],
+            pypi_packages: vec![],
+            releases: vec![],
+            diagnostics: vec![],
+        };
+
+        // Only CARGO_REGISTRIES_CLOUDSMITH_TOKEN should trigger a warning,
+        // not CARGO_REGISTRY_TOKEN (which is for crates.io only).
+        let warnings = check_credentials(&plan, missing_env);
+        assert!(
+            warnings
+                .iter()
+                .any(|w| w.contains("CARGO_REGISTRIES_CLOUDSMITH_TOKEN")),
+            "expected warning about CARGO_REGISTRIES_CLOUDSMITH_TOKEN, got: {:?}",
+            warnings
+        );
+        assert!(
+            !warnings.iter().any(|w| w.contains("CARGO_REGISTRY_TOKEN") && !w.contains("REGISTRIES")),
+            "should NOT warn about bare CARGO_REGISTRY_TOKEN for private-registry crates, got: {:?}",
+            warnings
+        );
+    }
+
     /// Spec: when no packages would be published and --dry-run is active,
     /// the text output must contain "dry run" (case-insensitive) so the
     /// operator can see that nothing was published.
@@ -106,6 +292,88 @@ mod tests {
         assert!(
             text.to_ascii_lowercase().contains("dry run"),
             "dry-run text output must contain 'dry run', got: {text:?}"
+        );
+    }
+
+    /// Spec: the empty-plan dry-run message must use present tense ("nothing to
+    /// publish") not past tense ("no packages published"), because nothing has
+    /// actually happened yet during a dry run. Past-tense wording misleads
+    /// operators into thinking the publish already occurred.
+    #[test]
+    fn dry_run_empty_plan_message_is_present_tense() {
+        let plan = empty_plan();
+        let mut out = Vec::<u8>::new();
+        write_dry_run_text(&plan, &mut out).unwrap();
+        let text = String::from_utf8(out).unwrap();
+        assert!(
+            !text.to_ascii_lowercase().contains("published"),
+            "dry-run empty-plan message must NOT use past tense 'published'; got: {text:?}"
+        );
+        assert!(
+            text.to_ascii_lowercase().contains("nothing"),
+            "dry-run empty-plan message must say 'nothing'; got: {text:?}"
+        );
+    }
+
+    /// PUB-010: JSON output for `plan-publish` must include a `"command"`
+    /// discriminator field so consumers can distinguish it from `PublishReport`
+    /// without inspecting the payload structure.
+    #[test]
+    fn plan_publish_json_includes_command_discriminator() {
+        use crate::output::write_report_json;
+        use callisto_model::Report;
+
+        let plan = empty_plan();
+        let mut out = Vec::<u8>::new();
+        write_report_json(&mut out, &plan).unwrap();
+        let text = String::from_utf8(out).unwrap();
+        assert!(
+            text.contains("\"command\""),
+            "plan-publish JSON must contain 'command' field; got: {text}"
+        );
+        let expected_command = callisto_model::PublishPlan::COMMAND;
+        assert!(
+            text.contains(&format!("\"{}\"", expected_command)),
+            "plan-publish JSON 'command' must be {:?}; got: {text}",
+            expected_command
+        );
+    }
+
+    /// A plan that has pending release entries (e.g. a GitHub release tag) but
+    /// no registry packages must NOT print "Nothing to publish" in dry-run
+    /// output — the release tag is real pending work that the operator needs
+    /// to be aware of before approving the publish.
+    #[test]
+    fn dry_run_release_only_plan_is_not_empty() {
+        use callisto_model::{CommitSha, PackageId, ReleaseEntry, TagName, SCHEMA_VERSION};
+
+        let sha = CommitSha::parse("a".repeat(40).as_str()).unwrap();
+        let plan = callisto_model::PublishPlan {
+            schema_version: SCHEMA_VERSION,
+            rust_crates: vec![],
+            npm_main_packages: vec![],
+            npm_platform_packages: vec![],
+            pypi_packages: vec![],
+            releases: vec![ReleaseEntry {
+                package: PackageId::Bare("my-lib".to_string()),
+                tag_name: TagName("my-lib@1.0.0".to_string()),
+                sha,
+                changelog_section: None,
+            }],
+            diagnostics: vec![],
+        };
+
+        let mut out = Vec::<u8>::new();
+        write_dry_run_text(&plan, &mut out).unwrap();
+        let text = String::from_utf8(out).unwrap();
+        assert!(
+            !text.to_ascii_lowercase().contains("nothing to publish"),
+            "dry-run output for a release-only plan must NOT say 'nothing to publish'; \
+             the pending release tag must be visible; got: {text:?}"
+        );
+        assert!(
+            text.contains("my-lib@1.0.0"),
+            "dry-run output must mention the pending release tag; got: {text:?}"
         );
     }
 }

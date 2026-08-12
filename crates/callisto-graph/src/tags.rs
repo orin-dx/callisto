@@ -144,6 +144,17 @@ impl TagIndex {
     pub fn pre_cursor(&self, id: &PackageId) -> Option<&CommitSha> {
         self.pre_cursor.get(id).and_then(|opt| opt.as_ref())
     }
+
+    /// Constructs an empty `TagIndex` with no packages or tags — useful in
+    /// unit tests that do not exercise tag-based logic.
+    pub fn empty() -> Self {
+        TagIndex {
+            last: BTreeMap::new(),
+            templates: BTreeMap::new(),
+            pre_cursor: BTreeMap::new(),
+            diagnostics: Vec::new(),
+        }
+    }
 }
 
 #[cfg(test)]

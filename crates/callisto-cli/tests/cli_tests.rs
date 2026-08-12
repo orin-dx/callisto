@@ -63,7 +63,7 @@ fn test_add_non_interactive_via_pipe() {
     .unwrap();
 
     // callisto.toml must exist for `load_workspace` to succeed.
-    std::fs::write(root.join("callisto.toml"), "[workspace]\n").unwrap();
+    std::fs::write(root.join("callisto.toml"), "").unwrap();
 
     let bin = env!("CARGO_BIN_EXE_callisto");
 

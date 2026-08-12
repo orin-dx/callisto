@@ -126,6 +126,11 @@ impl PackageBuilder {
         self
     }
 
+    pub fn manifests(mut self, m: Vec<ManifestDecl>) -> Self {
+        self.manifests = m;
+        self
+    }
+
     pub fn build(self) -> Package {
         Package {
             id: self.id,

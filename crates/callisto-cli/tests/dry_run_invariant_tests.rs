@@ -274,7 +274,7 @@ fn publish_dry_run_writes_nothing() {
     seed_initialized_workspace(root);
 
     assert_no_disk_mutation(root, || {
-        commands::publish::handle(PublishArgs {}, &global(root, true)).unwrap();
+        commands::publish::handle(PublishArgs { only: vec![] }, &global(root, true)).unwrap();
     });
 }
 

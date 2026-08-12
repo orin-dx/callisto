@@ -8,11 +8,16 @@ use crate::resolver::{DependencyResolver, DependencyResolverExt};
 use crate::Workspace;
 
 #[derive(Clone, Debug, Default)]
-pub struct PublishOptions {}
+pub struct PublishOptions {
+    /// When non-empty, only packages whose bare name (without ecosystem prefix)
+    /// appears in this list are included in the plan. An empty `only` list
+    /// means "include all packages" (the default).
+    pub only: Vec<String>,
+}
 
 pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
     ws: &Workspace<'_, R, D>,
-    _opts: &PublishOptions,
+    opts: &PublishOptions,
 ) -> Result<PublishPlan, GraphError> {
     let mut rust_crates = Vec::new();
     let mut npm_main_packages = Vec::new();
@@ -22,12 +27,26 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
 
     let base_versions = ws.base_versions()?;
     let inference = crate::infer::NoInference;
-    let version_plan = crate::commands::version::plan_version(
+    let mut diagnostics: Vec<callisto_model::Diagnostic> = Vec::new();
+    let version_plan = match crate::commands::version::plan_version(
         ws,
         &inference,
         &crate::commands::version::VersionOptions::default(),
-    )
-    .ok();
+    ) {
+        Ok(plan) => Some(plan),
+        Err(e) => {
+            diagnostics.push(callisto_model::Diagnostic {
+                code: callisto_model::DiagnosticCode::ChangesetReadError,
+                severity: callisto_model::DiagnosticSeverity::Warning,
+                message: format!("Could not read changesets: {e}"),
+                package: None,
+                path: None,
+                escalated_by: None,
+                governed_by: None,
+            });
+            None
+        }
+    };
 
     // Build a single lookup map once — eliminates O(N) scans inside the topo loop
     // (PERF-003/004/005). Keys and values are borrowed from the graph for the
@@ -37,10 +56,60 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
     let all_ids: std::collections::HashSet<_> = pkg_map.keys().map(|&id| id.clone()).collect();
     let topo_ids = ws.graph.toposort(&all_ids)?;
 
-    let head_sha = if let Ok(repo) = callisto_vcs::GitRepository::discover(&ws.root) {
-        repo.head_sha().ok()
-    } else {
-        None
+    let head_sha = match callisto_vcs::GitRepository::discover(&ws.root) {
+        Ok(repo) => match repo.head_sha() {
+            Ok(sha) => Some(sha),
+            Err(e) => {
+                diagnostics.push(callisto_model::Diagnostic {
+                    code: callisto_model::DiagnosticCode::GitDiscoveryFailed,
+                    severity: callisto_model::DiagnosticSeverity::Warning,
+                    message: format!("Could not resolve HEAD SHA: {e}; release entries will be omitted from the plan"),
+                    package: None,
+                    path: None,
+                    escalated_by: None,
+                    governed_by: None,
+                });
+                None
+            }
+        },
+        Err(e) => {
+            diagnostics.push(callisto_model::Diagnostic {
+                code: callisto_model::DiagnosticCode::GitDiscoveryFailed,
+                severity: callisto_model::DiagnosticSeverity::Warning,
+                message: format!(
+                    "Git repository not found: {e}; release entries will be omitted from the plan"
+                ),
+                package: None,
+                path: None,
+                escalated_by: None,
+                governed_by: None,
+            });
+            None
+        }
+    };
+
+    // Build the tag index once before the loop. If git is unavailable (no
+    // .git directory, no git binary, or any other VCS error), emit a soft
+    // diagnostic and treat every package as a release candidate for this
+    // plan (tag_match = false). Hard-propagating the error here would
+    // contradict the soft GitDiscoveryFailed diagnostic already emitted by
+    // the head_sha block above.
+    let tag_index = match ws.tags() {
+        Ok(idx) => Some(idx),
+        Err(e) => {
+            diagnostics.push(callisto_model::Diagnostic {
+                code: callisto_model::DiagnosticCode::GitDiscoveryFailed,
+                severity: callisto_model::DiagnosticSeverity::Warning,
+                message: format!(
+                    "Could not read git tags: {e}; all packages treated as release candidates"
+                ),
+                package: None,
+                path: None,
+                escalated_by: None,
+                governed_by: None,
+            });
+            None
+        }
     };
 
     for id in &topo_ids {
@@ -66,9 +135,8 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
                     field: "version",
                 })
             })?;
-            let tag_match = ws
-                .tags()?
-                .last_tag(&pkg.id)
+            let tag_match = tag_index
+                .and_then(|idx| idx.last_tag(&pkg.id))
                 .map(|t| t.version == cur_ver)
                 .unwrap_or(false);
             (!tag_match, cur_ver)
@@ -79,6 +147,23 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
                 .publish_to
                 .iter()
                 .any(|t| matches!(t, callisto_model::PublishTarget::CratesIo));
+            // Extract the private registry URL and access restriction from
+            // PublishTarget::Npm, both read from `publishConfig` in package.json.
+            let (npm_registry_url, npm_restricted) = pkg
+                .publish_to
+                .iter()
+                .find_map(|t| {
+                    if let callisto_model::PublishTarget::Npm {
+                        registry,
+                        restricted,
+                    } = t
+                    {
+                        Some((registry.clone(), *restricted))
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or((None, false));
             let publishes_npm = pkg
                 .publish_to
                 .iter()
@@ -92,6 +177,19 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
                 .iter()
                 .any(|m| matches!(m.role, callisto_model::ManifestRole::Platform { .. }));
 
+            // Resolve the package directory (relative to workspace root) from
+            // the first manifest path. All manifests for a package share the
+            // same parent directory, so any first manifest is correct.
+            let pkg_dir = pkg
+                .manifests
+                .first()
+                .and_then(|m| m.path.parent())
+                .map(|p| p.to_path_buf())
+                // SAFETY: unwrap_or_default produces an empty PathBuf only when
+                // no manifests exist; in that case package_dir being empty just
+                // disables the pre-publish version check, which is acceptable.
+                .unwrap_or_default();
+
             if publishes_cargo {
                 rust_crates.push(CratePublish {
                     name: pkg.id.name().to_string(),
@@ -100,12 +198,33 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
                         callisto_model::RegistryKey::CRATES_IO.to_string(),
                     ),
                     registry: None,
+                    package_dir: if pkg_dir.as_os_str().is_empty() {
+                        None
+                    } else {
+                        Some(pkg_dir.clone())
+                    },
                 });
             }
 
             if publishes_npm {
                 let tag = if ver.is_prerelease() {
                     Some("next".to_string())
+                } else {
+                    None
+                };
+
+                // npm's ecosystem default for @scoped packages is `restricted`,
+                // which requires a paid org plan on the public registry and
+                // Determine npm access level. Honour the operator's explicit
+                // `publishConfig.access` from package.json first: if it is
+                // "restricted", pass `--access restricted` rather than the
+                // scoped-package default of `--access public`. npm's CLI flag
+                // takes full precedence over publishConfig.access, so callisto
+                // must read and propagate the intent explicitly here.
+                let access = if npm_restricted {
+                    Some(callisto_model::NpmAccess::Restricted)
+                } else if pkg.id.name().starts_with('@') {
+                    Some(callisto_model::NpmAccess::Public)
                 } else {
                     None
                 };
@@ -117,14 +236,10 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
                         publish_to: callisto_model::RegistryKey(
                             callisto_model::RegistryKey::NPM.to_string(),
                         ),
-                        registry: None,
+                        package_dir: pkg_dir.clone(),
+                        registry: npm_registry_url.clone(),
                         tag: tag.clone(),
-                        // `access: None` lets npm use its ecosystem default:
-                        // restricted for @scoped packages, public for unscoped.
-                        // Callers that need explicit public access should set
-                        // this to Some(NpmAccess::Public) before passing the
-                        // plan to SubprocessRegistryClient::load_plan.
-                        access: None,
+                        access: access.clone(),
                     });
                 } else {
                     let platform_deps: Vec<String> = ws
@@ -152,9 +267,10 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
                         publish_to: callisto_model::RegistryKey(
                             callisto_model::RegistryKey::NPM.to_string(),
                         ),
-                        registry: None,
+                        package_dir: pkg_dir.clone(),
+                        registry: npm_registry_url,
                         tag,
-                        access: None,
+                        access,
                         depends_on_platforms: platform_deps,
                     });
                 }
@@ -179,7 +295,8 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
                 pypi_packages.push(PypiPublish {
                     name: pkg.id.name().to_string(),
                     version: ver.clone(),
-                    publish_to: RegistryKey("pypi".to_string()),
+                    publish_to: RegistryKey(RegistryKey::PYPI.to_string()),
+                    package_dir: pkg_dir,
                     index,
                 });
             }
@@ -187,14 +304,49 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
             if !pkg.publish_to.is_empty()
                 && !pkg.publish_to.iter().all(|t| *t == PublishTarget::None)
             {
-                if let Some(ref sha) = head_sha {
+                // Both head_sha and tag_index must be available: head_sha supplies
+                // the commit to tag and tag_index supplies the template to render
+                // the tag name. When tag_index is None (ws.tags() failed and was
+                // soft-handled above), release entries are omitted — consistent
+                // with the GitDiscoveryFailed diagnostic already pushed.
+                if let (Some(ref sha), Some(idx)) = (&head_sha, tag_index) {
                     releases.push(ReleaseEntry {
                         package: pkg.id.clone(),
-                        tag_name: ws.tags()?.template(&pkg.id).render(&ver),
+                        tag_name: idx.template(&pkg.id).render(&ver),
                         sha: sha.clone(),
                         changelog_section: None,
                     });
                 }
+            }
+        }
+    }
+
+    // Apply the `only` filter: when the caller specifies a set of package names,
+    // drop everything not in that set from every ecosystem list. An empty `only`
+    // means "all packages".
+    if !opts.only.is_empty() {
+        let keep = |name: &str| opts.only.iter().any(|n| n == name);
+        rust_crates.retain(|c| keep(&c.name));
+        npm_main_packages.retain(|c| keep(&c.name));
+        npm_platform_packages.retain(|c| keep(&c.name));
+        pypi_packages.retain(|c| keep(&c.name));
+        releases.retain(|r| keep(r.package.name()));
+
+        // Validate: every requested name must match at least one retained entry.
+        // A typo in --package silently produces an empty plan and exits 0 without
+        // this check, making CI report "nothing to publish" instead of an error.
+        let retained: std::collections::HashSet<&str> = rust_crates
+            .iter()
+            .map(|c| c.name.as_str())
+            .chain(npm_main_packages.iter().map(|c| c.name.as_str()))
+            .chain(npm_platform_packages.iter().map(|c| c.name.as_str()))
+            .chain(pypi_packages.iter().map(|c| c.name.as_str()))
+            .collect();
+        for requested in &opts.only {
+            if !retained.contains(requested.as_str()) {
+                return Err(crate::error::GraphError::UnknownPackage {
+                    id: callisto_model::PackageId::Bare(requested.clone()),
+                });
             }
         }
     }
@@ -206,7 +358,7 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
         npm_platform_packages,
         pypi_packages,
         releases,
-        diagnostics: Vec::new(),
+        diagnostics,
     })
 }
 
@@ -215,6 +367,19 @@ use callisto_model::{
     PublishReport, RateLimitPolicy, RegistryClient, RegistryError, TimeProvider, Version,
 };
 use std::time::Duration;
+
+/// Maximum number of rate-limit retries per package before the orchestrator
+/// gives up and records a failure. Prevents an infinite retry loop when a
+/// registry consistently returns 429 responses with a short `retry_after`.
+pub(crate) const MAX_RATE_LIMIT_RETRIES: usize = 10;
+
+/// Maximum `retry_after` duration (seconds) the orchestrator will honor
+/// before treating the rate-limit as a hard failure.
+const MAX_RETRY_AFTER_SECS: u64 = 600;
+
+/// Default fallback wait (seconds) when the registry does not supply a
+/// `retry_after` value and the client cannot parse one from output.
+pub(crate) const DEFAULT_RATE_LIMIT_WAIT_SECS: u64 = 60;
 
 /// Parses a numeric retry-after value (seconds) as reported by a registry
 /// tool's output. Shared by [`PublishOrchestrator::parse_http_429_ttl`] and
@@ -252,6 +417,7 @@ pub struct PublishOrchestrator<R, P, T> {
     client: R,
     policy: P,
     time: T,
+    progress: Option<Box<dyn Fn(String) + Send + Sync>>,
 }
 
 impl<R, P, T> PublishOrchestrator<R, P, T>
@@ -265,11 +431,25 @@ where
             client,
             policy,
             time,
+            progress: None,
         }
+    }
+
+    /// Attach a progress callback that is invoked before each package publish
+    /// attempt. The message includes the package name and version.
+    pub fn with_progress<F: Fn(String) + Send + Sync + 'static>(mut self, f: F) -> Self {
+        self.progress = Some(Box::new(f));
+        self
     }
 
     pub fn parse_http_429_ttl(retry_after_header: &str) -> Option<Duration> {
         parse_retry_after(retry_after_header)
+    }
+
+    fn emit_progress(&self, name: &str, version: &Version) {
+        if let Some(ref cb) = self.progress {
+            cb(format!("Publishing {name}@{version}…"));
+        }
     }
 
     /// Attempts to publish every package in `plan` to its ecosystem
@@ -286,6 +466,7 @@ where
                 ecosystem: Ecosystem::Cargo,
                 name: rust_crate.name.clone(),
             };
+            self.emit_progress(&rust_crate.name, &rust_crate.version);
             attempts.push(self.attempt_publish(pkg_id, rust_crate.version.clone(), permit));
         }
 
@@ -294,6 +475,7 @@ where
                 ecosystem: Ecosystem::Npm,
                 name: npm_pkg.name.clone(),
             };
+            self.emit_progress(&npm_pkg.name, &npm_pkg.version);
             attempts.push(self.attempt_publish(pkg_id, npm_pkg.version.clone(), permit));
         }
 
@@ -302,6 +484,7 @@ where
                 ecosystem: Ecosystem::Npm,
                 name: npm_pkg.name.clone(),
             };
+            self.emit_progress(&npm_pkg.name, &npm_pkg.version);
             attempts.push(self.attempt_publish(pkg_id, npm_pkg.version.clone(), permit));
         }
 
@@ -310,6 +493,7 @@ where
                 ecosystem: Ecosystem::Pypi,
                 name: pypi_pkg.name.clone(),
             };
+            self.emit_progress(&pypi_pkg.name, &pypi_pkg.version);
             attempts.push(self.attempt_publish(pkg_id, pypi_pkg.version.clone(), permit));
         }
 
@@ -330,6 +514,7 @@ where
             Ok(PublishOutcome::Published) => PublishAttemptResult::Published,
             Ok(PublishOutcome::AlreadyPublished) => PublishAttemptResult::AlreadyPublished,
             Err(err) => PublishAttemptResult::Failed {
+                kind: err.kind_str().to_string(),
                 error: err.to_string(),
             },
         };
@@ -347,10 +532,16 @@ where
         version: &Version,
         permit: &ApplyPermit,
     ) -> Result<PublishOutcome, RegistryError> {
-        if self.client.is_published(pkg_id, version)? {
+        // Treat any is_published error as "unknown — proceed to publish". The
+        // pre-check is an optional optimization, not a required gate. Propagating
+        // errors here aborts the publish without ever calling publish(), which
+        // records a misleading failure (e.g. "rateLimited") that never reached
+        // the actual publish step.
+        if self.client.is_published(pkg_id, version).unwrap_or(false) {
             return Ok(PublishOutcome::AlreadyPublished);
         }
 
+        let mut retries = 0usize;
         loop {
             match self.client.publish(pkg_id, version, permit) {
                 // Both a fresh publish and a publish-time "already there"
@@ -361,8 +552,14 @@ where
                     return Ok(outcome)
                 }
                 Err(RegistryError::RateLimited(retry_after)) => {
-                    if retry_after > Duration::from_secs(600) {
+                    if retry_after > Duration::from_secs(MAX_RETRY_AFTER_SECS) {
                         return Err(RegistryError::RateLimited(retry_after));
+                    }
+                    retries += 1;
+                    if retries >= MAX_RATE_LIMIT_RETRIES {
+                        return Err(RegistryError::Other(format!(
+                            "rate-limited {MAX_RATE_LIMIT_RETRIES} consecutive times; giving up"
+                        )));
                     }
                     self.policy.check_rate_limit(retry_after)?;
                     self.time.sleep(retry_after);
@@ -453,8 +650,11 @@ mod tests {
             rust_crates: vec![callisto_model::CratePublish {
                 name: "test-crate".to_string(),
                 version: Version::parse("1.0.0", callisto_model::VersionGrammar::SemVer).unwrap(),
-                publish_to: callisto_model::RegistryKey("crates.io".to_string()),
+                publish_to: callisto_model::RegistryKey(
+                    callisto_model::RegistryKey::CRATES_IO.to_string(),
+                ),
                 registry: None,
+                package_dir: None,
             }],
             npm_main_packages: vec![],
             npm_platform_packages: vec![],
@@ -468,7 +668,8 @@ mod tests {
         callisto_model::PypiPublish {
             name: name.to_string(),
             version: v100(),
-            publish_to: callisto_model::RegistryKey("pypi".to_string()),
+            publish_to: callisto_model::RegistryKey(callisto_model::RegistryKey::PYPI.to_string()),
+            package_dir: std::path::PathBuf::new(),
             index: None,
         }
     }
@@ -549,7 +750,7 @@ mod tests {
         let client = MockRegistryClient {
             published: Mutex::new(std::collections::HashSet::new()),
             responses: Mutex::new(vec![Err(RegistryError::RateLimited(Duration::from_secs(
-                601,
+                MAX_RETRY_AFTER_SECS + 1,
             )))]),
         };
         let policy = MockRateLimitPolicy;
@@ -561,10 +762,78 @@ mod tests {
         let report = orchestrator.execute(&create_test_plan(), &permit());
         assert_eq!(report.attempts.len(), 1);
         match &report.attempts[0].result {
-            PublishAttemptResult::Failed { error } => {
+            PublishAttemptResult::Failed { error, .. } => {
                 assert!(error.contains("601"));
             }
             other => panic!("expected Failed outcome, got {other:?}"),
+        }
+    }
+
+    /// After MAX_RATE_LIMIT_RETRIES consecutive 429 responses the orchestrator
+    /// must give up and record a failure rather than retrying indefinitely.
+    /// Without an iteration cap the loop would spin through all responses and
+    /// then succeed (MockRegistryClient returns Published when exhausted),
+    /// so this test would incorrectly pass as Published.
+    ///
+    /// The cap must fire after exactly MAX_RATE_LIMIT_RETRIES responses — not
+    /// MAX_RATE_LIMIT_RETRIES + 1. The constant names the limit; the loop must
+    /// honour it without an off-by-one.
+    #[test]
+    fn test_publish_rate_limit_cap_fires_at_exactly_max_retries() {
+        // Exactly MAX_RATE_LIMIT_RETRIES rate-limit responses — the cap must
+        // fire on the Nth response, not require an (N+1)th attempt first.
+        let rate_limits: Vec<_> = (0..MAX_RATE_LIMIT_RETRIES)
+            .map(|_| Err(RegistryError::RateLimited(Duration::from_secs(1))))
+            .collect();
+        let client = MockRegistryClient {
+            published: Mutex::new(std::collections::HashSet::new()),
+            responses: Mutex::new(rate_limits),
+        };
+        let policy = MockRateLimitPolicy;
+        let time = MockTimeProvider {
+            time: Mutex::new(SystemTime::UNIX_EPOCH),
+        };
+        let orchestrator = PublishOrchestrator::new(client, policy, time);
+
+        let report = orchestrator.execute(&create_test_plan(), &permit());
+        assert_eq!(report.attempts.len(), 1);
+        assert!(
+            matches!(
+                report.attempts[0].result,
+                PublishAttemptResult::Failed { .. }
+            ),
+            "cap must fire after exactly MAX_RATE_LIMIT_RETRIES ({MAX_RATE_LIMIT_RETRIES}) \
+             responses; got: {:?}",
+            report.attempts[0].result
+        );
+    }
+
+    #[test]
+    fn test_publish_rate_limit_cap_aborts_after_max_retries() {
+        // Push more rate-limit responses than the cap allows.
+        let many_rate_limits: Vec<_> = (0..=MAX_RATE_LIMIT_RETRIES)
+            .map(|_| Err(RegistryError::RateLimited(Duration::from_secs(1))))
+            .collect();
+        let client = MockRegistryClient {
+            published: Mutex::new(std::collections::HashSet::new()),
+            responses: Mutex::new(many_rate_limits),
+        };
+        let policy = MockRateLimitPolicy;
+        let time = MockTimeProvider {
+            time: Mutex::new(SystemTime::UNIX_EPOCH),
+        };
+        let orchestrator = PublishOrchestrator::new(client, policy, time);
+
+        let report = orchestrator.execute(&create_test_plan(), &permit());
+        assert_eq!(report.attempts.len(), 1);
+        match &report.attempts[0].result {
+            PublishAttemptResult::Failed { error, .. } => {
+                assert!(
+                    error.to_lowercase().contains("rate") || error.to_lowercase().contains("retry"),
+                    "failure message should mention rate-limit or retry; got: {error}"
+                );
+            }
+            other => panic!("expected Failed after retry cap, got {other:?}"),
         }
     }
 
@@ -585,7 +854,7 @@ mod tests {
         let report = orchestrator.execute(&create_test_plan(), &permit());
         assert_eq!(report.attempts.len(), 1);
         match &report.attempts[0].result {
-            PublishAttemptResult::Failed { error } => {
+            PublishAttemptResult::Failed { error, .. } => {
                 assert!(error.contains("Invalid token"));
             }
             other => panic!("expected Failed outcome, got {other:?}"),
@@ -600,8 +869,11 @@ mod tests {
         callisto_model::CratePublish {
             name: name.to_string(),
             version: v100(),
-            publish_to: callisto_model::RegistryKey("crates.io".to_string()),
+            publish_to: callisto_model::RegistryKey(
+                callisto_model::RegistryKey::CRATES_IO.to_string(),
+            ),
             registry: None,
+            package_dir: None,
         }
     }
 
@@ -653,7 +925,7 @@ mod tests {
         ));
         assert_eq!(report.attempts[2].package.name(), "crate-c");
         match &report.attempts[2].result {
-            callisto_model::PublishAttemptResult::Failed { error } => {
+            callisto_model::PublishAttemptResult::Failed { error, .. } => {
                 assert!(error.contains("bad token"));
             }
             other => panic!("expected Failed outcome for crate-c, got {other:?}"),
@@ -766,6 +1038,7 @@ mod tests {
                 publish_to: callisto_model::RegistryKey(
                     callisto_model::RegistryKey::NPM.to_string(),
                 ),
+                package_dir: std::path::PathBuf::new(),
                 registry: None,
                 tag: None,
                 access: None,
@@ -776,6 +1049,7 @@ mod tests {
                 publish_to: callisto_model::RegistryKey(
                     callisto_model::RegistryKey::NPM.to_string(),
                 ),
+                package_dir: std::path::PathBuf::new(),
                 registry: None,
                 tag: None,
                 access: None,
@@ -833,10 +1107,128 @@ mod tests {
 
         assert_eq!(report.attempts.len(), 1);
         match &report.attempts[0].result {
-            PublishAttemptResult::Failed { error } => {
+            PublishAttemptResult::Failed { error, .. } => {
                 assert!(error.contains("invalid PyPI token"));
             }
             other => panic!("expected Failed, got {other:?}"),
         }
+    }
+
+    /// PUB-005: the orchestrator must invoke a progress callback before each
+    /// package attempt so that the CLI layer (or any other caller) can report
+    /// "Publishing pkg@version…" lines in real time rather than printing
+    /// nothing until the entire batch completes.
+    #[test]
+    fn progress_callback_is_called_once_per_package_before_attempt() {
+        use std::sync::Arc;
+
+        let messages: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let messages_clone = Arc::clone(&messages);
+
+        let client = MockRegistryClient {
+            published: Mutex::new(std::collections::HashSet::new()),
+            responses: Mutex::new(vec![
+                Ok(PublishOutcome::Published),
+                Ok(PublishOutcome::Published),
+            ]),
+        };
+        let policy = MockRateLimitPolicy;
+        let time = MockTimeProvider {
+            time: Mutex::new(std::time::SystemTime::UNIX_EPOCH),
+        };
+
+        let plan = callisto_model::PublishPlan {
+            schema_version: callisto_model::SCHEMA_VERSION,
+            rust_crates: vec![crate_publish("crate-a"), crate_publish("crate-b")],
+            npm_main_packages: vec![],
+            npm_platform_packages: vec![],
+            pypi_packages: vec![],
+            releases: vec![],
+            diagnostics: vec![],
+        };
+
+        let orchestrator =
+            PublishOrchestrator::new(client, policy, time).with_progress(move |msg: String| {
+                messages_clone.lock().unwrap().push(msg);
+            });
+
+        let _report = orchestrator.execute(&plan, &permit());
+
+        let recorded = messages.lock().unwrap().clone();
+        assert_eq!(
+            recorded.len(),
+            2,
+            "expected 2 progress messages (one per package); got: {recorded:?}"
+        );
+        assert!(
+            recorded[0].contains("crate-a"),
+            "first progress message must mention crate-a; got: {:?}",
+            recorded[0]
+        );
+        assert!(
+            recorded[1].contains("crate-b"),
+            "second progress message must mention crate-b; got: {:?}",
+            recorded[1]
+        );
+    }
+
+    /// When `is_published` returns an error (e.g. a transient rate-limit on the
+    /// npm pre-check), the orchestrator must treat the package as "not yet
+    /// published" and proceed to call `publish()`. Propagating the error aborts
+    /// the publish entirely without ever calling the actual publish command —
+    /// the user sees a misleading "rate-limited" failure when in reality no
+    /// publish was attempted at all.
+    #[test]
+    fn is_published_error_is_ignored_and_publish_proceeds() {
+        struct FlakyPreCheckClient {
+            publish_called: Mutex<bool>,
+        }
+
+        impl RegistryClient for FlakyPreCheckClient {
+            fn is_published(
+                &self,
+                _pkg: &PackageId,
+                _ver: &Version,
+            ) -> Result<bool, RegistryError> {
+                Err(RegistryError::RateLimited(Duration::from_secs(5)))
+            }
+
+            fn publish(
+                &self,
+                _pkg: &PackageId,
+                _ver: &Version,
+                _permit: &ApplyPermit,
+            ) -> Result<PublishOutcome, RegistryError> {
+                *self.publish_called.lock().unwrap() = true;
+                Ok(PublishOutcome::Published)
+            }
+        }
+
+        let client = FlakyPreCheckClient {
+            publish_called: Mutex::new(false),
+        };
+        let policy = MockRateLimitPolicy;
+        let time = MockTimeProvider {
+            time: Mutex::new(SystemTime::UNIX_EPOCH),
+        };
+        let orchestrator = PublishOrchestrator::new(client, policy, time);
+
+        let report = orchestrator.execute(&create_test_plan(), &permit());
+
+        assert!(
+            *orchestrator.client.publish_called.lock().unwrap(),
+            "publish() must be called even when is_published() returns an error"
+        );
+        assert_eq!(
+            report.attempts.len(),
+            1,
+            "one attempt must be recorded for the package"
+        );
+        assert!(
+            matches!(report.attempts[0].result, PublishAttemptResult::Published),
+            "result must be Published when is_published() errs and publish() succeeds; \
+             got: {:?}",
+            report.attempts[0].result
+        );
     }
 }

@@ -2,15 +2,35 @@ use crate::{ApplyPermit, PackageId, Version};
 use std::time::Duration;
 
 #[derive(Debug, thiserror::Error, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum RegistryError {
     #[error("Rate limited. Retry after {0:?}")]
     RateLimited(Duration),
     #[error("Authentication failed: {0}")]
     AuthFailed(String),
+    /// Distinct network-layer failure (e.g. DNS resolution, TCP connect
+    /// timeout) separate from a registry-level auth or rate-limit response.
+    /// Reserved for registry implementations that can reliably distinguish
+    /// network failures from other errors; `SubprocessRegistryClient` currently
+    /// maps all unrecognised subprocess failures to `Other`.
     #[error("Network error: {0}")]
     Network(String),
     #[error("Other registry error: {0}")]
     Other(String),
+}
+
+impl RegistryError {
+    /// Returns a camelCase string identifying the variant for use as a
+    /// machine-readable discriminator in JSON output. Matches the `errorKind`
+    /// field on `PublishAttemptResult::Failed`.
+    pub fn kind_str(&self) -> &'static str {
+        match self {
+            RegistryError::RateLimited(_) => "rateLimited",
+            RegistryError::AuthFailed(_) => "authFailed",
+            RegistryError::Network(_) => "network",
+            RegistryError::Other(_) => "other",
+        }
+    }
 }
 
 /// Outcome of a [`RegistryClient::publish`] call that did not error.

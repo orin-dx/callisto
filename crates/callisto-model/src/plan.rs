@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -46,6 +48,13 @@ pub struct CratePublish {
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub registry: Option<String>,
+
+    /// Directory of this package relative to the workspace root (e.g.
+    /// `"crates/my-crate"`). Used to locate the on-disk `Cargo.toml` for a
+    /// pre-publish version sanity check. Absent in older plan files — treated
+    /// as unknown package location, skipping the version check in that case.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub package_dir: Option<PathBuf>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -54,6 +63,10 @@ pub struct NpmPublish {
     pub name: String,
     pub version: Version,
     pub publish_to: RegistryKey,
+    /// Directory of this package relative to the workspace root (e.g.
+    /// `"packages/my-pkg"`). Required by package managers that run from the
+    /// package directory (bun) rather than the workspace root.
+    pub package_dir: PathBuf,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub registry: Option<String>,
@@ -76,6 +89,9 @@ pub struct NpmMainPublish {
     pub name: String,
     pub version: Version,
     pub publish_to: RegistryKey,
+    /// Directory of this package relative to the workspace root. See
+    /// [`NpmPublish::package_dir`] for semantics.
+    pub package_dir: PathBuf,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub registry: Option<String>,
@@ -109,6 +125,10 @@ pub struct PypiPublish {
     pub name: String,
     pub version: Version,
     pub publish_to: RegistryKey,
+    /// Directory of this package relative to the workspace root (e.g.
+    /// `"packages/callisto-py"`). `twine upload` and `python -m build` run
+    /// from this directory so that `dist/` resolves correctly in a monorepo.
+    pub package_dir: PathBuf,
 
     /// Custom index URL passed to `twine upload --repository-url`. `None`
     /// targets the default public PyPI index.

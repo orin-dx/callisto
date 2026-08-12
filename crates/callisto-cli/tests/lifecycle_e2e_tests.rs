@@ -71,7 +71,7 @@ fn test_full_polyglot_workspace_release_lifecycle() {
     assert!(updated_pkg.contains("\"version\": \"1.0.1\""));
 
     // 5. callisto plan-publish
-    let plan_res = commands::plan_publish::handle(PlanPublishArgs {}, &global);
+    let plan_res = commands::plan_publish::handle(PlanPublishArgs { only: vec![] }, &global);
     assert!(plan_res.is_ok());
 
     // 6. callisto publish --dry-run: must report the plan without ever
@@ -82,7 +82,7 @@ fn test_full_polyglot_workspace_release_lifecycle() {
         dry_run: true,
         ..global.clone()
     };
-    let publish_res = commands::publish::handle(PublishArgs {}, &dry_run_global);
+    let publish_res = commands::publish::handle(PublishArgs { only: vec![] }, &dry_run_global);
     assert!(publish_res.is_ok());
 }
 

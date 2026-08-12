@@ -1,10 +1,28 @@
 use std::path::Path;
+use std::time::Duration;
 
 pub const REQUIRED_GIT: &str = ">=2.20";
 
 /// Trait for executing subprocess commands.
 pub trait CommandRunner: Send + Sync {
     fn run(&self, program: &str, args: &[&str], cwd: &Path) -> Result<CommandOutput, CommandError>;
+
+    /// Run a command with a hard wall-clock timeout. If the process does not
+    /// exit before `timeout` elapses it is killed and
+    /// [`CommandError::TimedOut`] is returned.
+    ///
+    /// The default implementation ignores `timeout` and delegates to [`Self::run`].
+    /// Implementors that control a real subprocess should override this with an
+    /// actual deadline check.
+    fn run_with_timeout(
+        &self,
+        program: &str,
+        args: &[&str],
+        cwd: &Path,
+        _timeout: Duration,
+    ) -> Result<CommandOutput, CommandError> {
+        self.run(program, args, cwd)
+    }
 }
 
 /// Output from executing a command.
@@ -66,6 +84,10 @@ pub enum CommandError {
     #[error("failed to run `{program}`: {message}")]
     #[diagnostic(code(E024))]
     Io { program: String, message: String },
+
+    #[error("`{program}` timed out after {seconds}s")]
+    #[diagnostic(code(E025), help("The process did not exit within the allowed time. This usually indicates a network stall or a registry that is unreachable."))]
+    TimedOut { program: String, seconds: u64 },
 }
 
 /// Validates git version against REQUIRED_GIT floor.

@@ -185,6 +185,33 @@ impl Manifest for PackageJson {
         true
     }
 
+    fn publish_targets(&self) -> Vec<callisto_model::PublishTarget> {
+        if !self.is_publishable() {
+            return vec![callisto_model::PublishTarget::None];
+        }
+        // Read `publishConfig.registry` from package.json, the standard npm
+        // mechanism for targeting a private registry. When set, `npm publish`
+        // must receive `--registry <url>`; when absent, the public registry is
+        // used (npm's built-in default).
+        let publish_config = self.doc.get("publishConfig");
+        let registry = publish_config
+            .and_then(|pc| pc.get("registry"))
+            .and_then(|r| r.as_str())
+            .map(|s| s.to_string());
+        // Read `publishConfig.access` to propagate the operator's explicit
+        // access intent. npm's `--access` CLI flag overrides publishConfig.access,
+        // so callisto must read it here and honour it in plan_publish rather than
+        // blindly passing `--access public` for all scoped packages.
+        let restricted = publish_config
+            .and_then(|pc| pc.get("access"))
+            .and_then(|a| a.as_str())
+            == Some("restricted");
+        vec![callisto_model::PublishTarget::Npm {
+            registry,
+            restricted,
+        }]
+    }
+
     fn role(&self) -> ManifestRole {
         self.role.clone()
     }

@@ -77,7 +77,7 @@ mod tests {
 
     fn make_report(changesets: Vec<Vec<&str>>) -> StatusReport {
         StatusReport {
-            schema_version: 1,
+            schema_version: callisto_model::SCHEMA_VERSION,
             packages: changesets
                 .into_iter()
                 .enumerate()

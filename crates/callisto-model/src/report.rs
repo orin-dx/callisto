@@ -79,8 +79,17 @@ pub enum PublishAttemptResult {
     Published,
     /// The package/version was already present on the registry.
     AlreadyPublished,
-    /// The publish attempt failed; `error` is the registry error's message.
-    Failed { error: String },
+    /// The publish attempt failed.
+    ///
+    /// `kind` is a camelCase discriminator matching the `RegistryError` variant
+    /// ("rateLimited", "authFailed", "network", "other") so callers can
+    /// programmatically distinguish error types without parsing `error`.
+    /// `error` is the human-readable message.
+    Failed {
+        #[serde(rename = "errorKind")]
+        kind: String,
+        error: String,
+    },
 }
 
 impl PublishAttemptResult {
@@ -131,6 +140,7 @@ mod tests {
         let r = report(vec![
             attempt(PublishAttemptResult::Published),
             attempt(PublishAttemptResult::Failed {
+                kind: "other".to_string(),
                 error: "registry unavailable".to_string(),
             }),
         ]);
@@ -141,9 +151,11 @@ mod tests {
     fn has_failures_returns_true_when_all_attempts_failed() {
         let r = report(vec![
             attempt(PublishAttemptResult::Failed {
+                kind: "authFailed".to_string(),
                 error: "auth error".to_string(),
             }),
             attempt(PublishAttemptResult::Failed {
+                kind: "network".to_string(),
                 error: "network error".to_string(),
             }),
         ]);
@@ -168,11 +180,32 @@ mod tests {
     #[test]
     fn is_failure_is_true_only_for_failed_variant() {
         assert!(PublishAttemptResult::Failed {
+            kind: "other".to_string(),
             error: "oops".to_string()
         }
         .is_failure());
         assert!(!PublishAttemptResult::Published.is_failure());
         assert!(!PublishAttemptResult::AlreadyPublished.is_failure());
+    }
+
+    /// PUB-007: the JSON for a failed attempt must carry a machine-readable
+    /// `errorKind` discriminator so callers can distinguish rate-limit failures
+    /// from auth failures without parsing the human-readable `error` string.
+    #[test]
+    fn failed_attempt_json_contains_error_kind_discriminator() {
+        let attempt = attempt(PublishAttemptResult::Failed {
+            kind: "rateLimited".to_string(),
+            error: "Rate limited. Retry after 60s".to_string(),
+        });
+        let json = serde_json::to_string(&attempt).unwrap();
+        assert!(
+            json.contains("\"errorKind\""),
+            "failed attempt JSON must contain 'errorKind' field; got: {json}"
+        );
+        assert!(
+            json.contains("\"rateLimited\""),
+            "failed attempt JSON must carry the kind value; got: {json}"
+        );
     }
 }
 
