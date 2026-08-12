@@ -14,3 +14,6 @@ lcov.info
 # unfixed-bug ledger — deliberately kept out of this public repo, lives at
 # /Users/gabe/Projects/callisto-findings/FINDINGS.md
 .agents/skills/bug-hunter/FINDINGS.md
+
+# per-session parallel-agent worktree checkouts — full repo copies, never committed
+.claude/worktrees/

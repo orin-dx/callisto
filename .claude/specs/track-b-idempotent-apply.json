@@ -1,0 +1,76 @@
+{
+  "schema": "spec@1",
+  "id": "SPEC-001",
+  "purpose": "Make apply_version_plan idempotent so a crashed apply can be safely retried without manual intervention.",
+  "scope": "The VersionWriteTarget::Manifest arm of the manifest write loop and the consumed_changesets loop in apply_version_plan. modified_paths is a local Vec<PathBuf> accumulator assigned verbatim to ApplyOutcome::staged at the end of the function — all criteria that reference 'pushed to modified_paths' and 'appears in ApplyOutcome::staged' refer to this single collection. Version equality uses the PartialEq implementation on callisto_model::Version: build metadata suffixes (the + segment per semver 2.0.0 §10) are ignored, so '1.1.0+build' is considered equal to '1.1.0'. ManifestFormat::from_path is assumed infallible for paths with a recognized extension; test fixtures may use any extension handled by that function without triggering a ManifestError — extension-validation behavior is out of scope for this spec. When plan.bumps is empty, or all bumps have empty writes arrays and consumed_changesets is empty, apply_version_plan returns Ok and ApplyOutcome::staged is an empty Vec; empty input is not an error.",
+  "non_goals": [
+    "CargoWorkspacePackage idempotency: the three-way version check is NOT applied to the VersionWriteTarget::CargoWorkspacePackage arm in this cycle. write_version on WorkspaceCargoResolver is assumed idempotent. If that assumption is wrong it is a defect deferred to a later cycle. No test covers this arm.",
+    "Lockfile refresh logic, rewrite loops, changelog writes, pre_state_update, and delete_pre_json handling.",
+    "Persisting VersionPlan to disk."
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "AC-1",
+      "description": "When a VersionWriteTarget::Manifest(p) has current on-disk version == bump.to (per PartialEq), write_version is NOT called and apply_version_plan returns Ok. The path p is still pushed to modified_paths and appears in ApplyOutcome::staged.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-2",
+      "description": "When a VersionWriteTarget::Manifest(p) has current on-disk version == bump.from (per PartialEq), write_version is called once with bump.to, path p is pushed to modified_paths, p appears in ApplyOutcome::staged, and apply_version_plan returns Ok. After apply the on-disk version at p equals bump.to.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-3",
+      "description": "When a VersionWriteTarget::Manifest(p) has current on-disk version that is neither bump.from nor bump.to (per PartialEq), apply_version_plan returns Err(GraphError::UnexpectedManifestVersion { path: p, expected_from: bump.from, expected_to: bump.to, found: <actual> }) immediately, without processing any remaining VersionWriteTarget entries in the writes array for this bump or any subsequent bumps in the plan. The manifest is not modified. No path is pushed to modified_paths for this failing target or any remaining targets in this bump. Paths already accumulated in modified_paths from earlier targets processed before this failure are retained as-is — they are not rolled back.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-4",
+      "description": "When a VersionWriteTarget::Manifest(p) does not exist on disk, apply_version_plan returns Err(GraphError::Manifest(_)) — the ManifestError produced by the manifest open/read call propagated via the ? operator through the existing From<ManifestError> impl on GraphError. The manifest is not created and no path for this bump is pushed to modified_paths.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-5",
+      "description": "When a VersionWriteTarget::Manifest(p) exists on disk but its version field cannot be parsed as a valid semver string, apply_version_plan returns Err(GraphError::Manifest(_)) — the ManifestError produced by the version-read call propagated via the ? operator. The manifest is not modified and no path is pushed to modified_paths.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-6",
+      "description": "Paths in plan.consumed_changesets are pushed to modified_paths unconditionally after any delete attempt. When the changeset file is present, it is removed from disk, then its path is pushed to modified_paths. When it is absent, no delete is attempted, and its path is still pushed to modified_paths. In both cases the path appears in ApplyOutcome::staged.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-7",
+      "description": "When fs::remove_file fails for a reason other than the file being absent (e.g., permission denied), apply_version_plan propagates Err(GraphError::Command(CommandError::Io { ... })) immediately via the ? operator. The changeset path is NOT pushed to modified_paths in this case.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-8",
+      "description": "When write_version returns Err in the VersionWriteTarget::Manifest(p) arm (current version == bump.from path), apply_version_plan propagates that Err immediately via the ? operator. No path is pushed to modified_paths for this bump's failing target or remaining targets. Paths already accumulated from earlier targets in this bump are not rolled back.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-9",
+      "description": "The test apply_is_idempotent_when_manifest_already_at_target_version passes. Test setup: bump.from=1.0.0, bump.to=1.1.0; manifest on disk is at 1.1.0 (== bump.to); changeset file exists on disk. After apply_version_plan: (1) on-disk manifest remains at 1.1.0, (2) changeset file is removed from disk, (3) both the Cargo.toml path and the changeset path appear in ApplyOutcome::staged.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-10",
+      "description": "The test apply_returns_error_when_manifest_has_unexpected_version passes. Test setup: bump.from=1.0.0, bump.to=1.1.0; manifest on disk is at 2.0.0 (neither from nor to). apply_version_plan returns Err(GraphError::UnexpectedManifestVersion) and the manifest is unchanged.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-11",
+      "description": "The test apply_stages_changeset_path_even_when_file_already_deleted passes. Test setup: bump.from=1.0.0, bump.to=1.1.0; manifest on disk is at 1.1.0 (== bump.to); changeset file does NOT exist on disk. After apply_version_plan: returns Ok and the changeset path appears in ApplyOutcome::staged.",
+      "is_error_case": false
+    }
+  ],
+  "api_surface": {
+    "function": "apply_version_plan",
+    "file": "crates/callisto-graph/src/apply.rs",
+    "changes": [
+      "In the VersionWriteTarget::Manifest arm of the write loop: read the current version via handle.version() after opening the manifest. If current == bump.to (PartialEq), skip write_version and push p to modified_paths. If current == bump.from, call write_version(&bump.to, permit)? and push p to modified_paths. Otherwise return Err(GraphError::UnexpectedManifestVersion { path: p.clone(), expected_from: bump.from.clone(), expected_to: bump.to.clone(), found: current }) immediately. GraphError::UnexpectedManifestVersion is an existing variant (E117 in error.rs) — do not create a new one. All propagation uses the existing ? operator; no new From impls or map_err calls.",
+      "In the consumed_changesets loop: move modified_paths.push(cs_path.clone()) outside the if full.exists() block so it executes unconditionally after the delete attempt. Keep the if full.exists() guard around fs::remove_file only. The ? on fs::remove_file remains — permission errors and other IO failures still propagate and abort the loop before the push."
+    ]
+  }
+}

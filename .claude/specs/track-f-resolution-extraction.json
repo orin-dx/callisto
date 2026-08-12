@@ -1,0 +1,82 @@
+{
+  "schema": "spec@1",
+  "id": "SPEC-003",
+  "depends_on": ["SPEC-002"],
+  "purpose": "Extract a canonical resolve_package_config function from duplicated inline two-pass [[package]] lookup code in walk.rs and aggregate.rs, making two-pass specificity (Prefixed beats Bare; declaration order wins within each tier) a single testable, centralized operation, and migrate all call sites to it with full TDD coverage.",
+  "scope": "Three files in crates/callisto-graph: (1) src/config/resolve.rs gains the new pub(crate) function resolve_package_config and an updated doc comment on the packages field of ResolvedConfig; (2) src/walk.rs has its inline two-pass lookup (lines 160-169) replaced by a call to resolve_package_config; (3) src/aggregate.rs undergoes a strict TDD cycle: the post-exit-gate two-pass patch is first reverted to a single-pass inline lookup, a RED test is written inside aggregate.rs's #[cfg(test)] mod tests and confirmed failing, then the single-pass inline is replaced by resolve_package_config and the test is confirmed green. No changes to PackageId::matches(), package_sets resolution, the cross-ecosystem diagnostic loop, DiagnosticCode, callisto-model beyond what already exists, or any crate outside callisto-graph. This spec requires SPEC-002 to be fully merged. The two-pass inline at walk.rs lines 160-169 introduced by SPEC-002 must be present before implementing AC-F6. Do not implement this spec in parallel with SPEC-002 on the same branch.",
+  "non_goals": [
+    "PrefixedRuleEcosystemMismatch diagnostic: separate design decision handled in a future spec.",
+    "package_sets (Vec<(PackagePattern, PackageConfig)>) resolution: glob matching against PackagePattern is a separate tier and is not touched.",
+    "Cross-ecosystem diagnostic loop in walk.rs: the BareRuleMatchesMultipleEcosystems diagnostic pass added by SPEC-002 is not modified.",
+    "PackageId::matches() semantics: bare-matches-all-ecosystems is correct and intentional; the fix is at the call site.",
+    "Config loading, TOML parsing, or any changes to how cfg.packages is populated.",
+    "Specificity ordering among multiple Prefixed matches with the same ecosystem: first-match-wins (Vec declaration order) is already correct.",
+    "Any crate outside callisto-graph (no changes to callisto-model, callisto-manifests, callisto-cli, etc.)."
+  ],
+  "api_surface": [
+    {
+      "name": "resolve_package_config",
+      "signature": "pub(crate) fn resolve_package_config<'a>(id: &PackageId, cfg: &'a ResolvedConfig) -> Option<&'a PackageConfig>",
+      "description": "Two-pass [[package]] rule lookup. cfg.packages is Vec<(PackageId, PackageConfig)>; the first element of each tuple is rule_id: &PackageId (NOT a PackagePattern — that type is used only for package_sets). Pass 1: iterate cfg.packages in Vec order, return a reference to the PackageConfig of the first entry (rule_id, pkg_cfg) where rule_id.ecosystem().is_some() AND rule_id.matches(id) is true. Pass 2 (or_else): iterate cfg.packages in Vec order, return a reference to the PackageConfig of the first entry where rule_id.matches(id) is true (no ecosystem restriction). Returns None if neither pass finds a match. Lives in crates/callisto-graph/src/config/resolve.rs. The function MUST iterate cfg.packages in the slice order as provided by the caller. It MUST NOT sort, partition-then-sort, or otherwise reorder the entries. The two-pass structure is achieved solely by running two separate linear scans over the same unmodified slice."
+    }
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "AC-F1",
+      "criterion": "Given cfg.packages = [(Bare(\"pkg\"), cfgA), (Prefixed { ecosystem: Ecosystem::Npm, name: \"pkg\" }, cfgB)], calling resolve_package_config(&Bare(\"pkg\"), &cfg) returns Some(&cfgB). Pass 1 iterates cfg.packages in Vec order and short-circuits at the first entry where rule_id.ecosystem().is_some() AND rule_id.matches(id). It skips Bare(\"pkg\") (ecosystem() is None) and finds the Prefixed entry at position 1, returning cfgB immediately. Pass 2 is never reached. The Prefixed entry wins even though the Bare entry is declared first.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-F2",
+      "criterion": "Given cfg.packages = [(Prefixed { ecosystem: Ecosystem::Cargo, name: \"other\" }, cfgA), (Prefixed { ecosystem: Ecosystem::Npm, name: \"pkg\" }, cfgB), (Prefixed { ecosystem: Ecosystem::Pypi, name: \"pkg\" }, cfgC)], calling resolve_package_config(&Bare(\"pkg\"), &cfg) returns Some(&cfgB). Pass 1 skips the first entry because rule_id.matches(Bare(\"pkg\")) is false (name \"other\" != \"pkg\"); it finds the second entry (Npm, \"pkg\") as the first Prefixed entry whose name matches, and returns cfgB. cfgC at position 2 is never reached. This tests that first-match-wins is governed by which Prefixed entry first satisfies BOTH conditions (ecosystem().is_some() AND matches(id)), not merely by which Prefixed entry appears first in the Vec.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-F3",
+      "criterion": "Given cfg.packages = [(Prefixed { ecosystem: Ecosystem::Cargo, name: \"other\" }, cfgA), (Bare(\"pkg\"), cfgB)], calling resolve_package_config(&Bare(\"pkg\"), &cfg) returns Some(&cfgB). Pass 1 finds no Prefixed entry that matches \"pkg\" (the only Prefixed entry matches \"other\"), so Pass 2 finds the Bare(\"pkg\") entry and returns cfgB.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-F4",
+      "criterion": "Given cfg.packages = [(Prefixed { ecosystem: Ecosystem::Cargo, name: \"other\" }, cfgA)], calling resolve_package_config(&Bare(\"pkg\"), &cfg) returns None. No Prefixed entry matches \"pkg\" and no Bare entry matches \"pkg\", so both passes yield nothing.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-F4b",
+      "criterion": "Given cfg.packages = [] (empty Vec), resolve_package_config returns None for any id argument, including Bare(\"pkg\"), Prefixed { ecosystem: Ecosystem::Cargo, name: \"pkg\" }, and Prefixed { ecosystem: Ecosystem::Npm, name: \"pkg\" }. Both Pass 1 and Pass 2 iterate zero entries and fall through to None.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-F5",
+      "criterion": "Given cfg.packages = [(Prefixed { ecosystem: Ecosystem::Npm, name: \"foo\" }, cfgA), (Prefixed { ecosystem: Ecosystem::Cargo, name: \"foo\" }, cfgB)], calling resolve_package_config(&Bare(\"foo\"), &cfg) returns Some(&cfgA). The test is structured with npm/foo declared first and cargo/foo second, asserting cfgA is returned. This test must be structured such that if cfg.packages were iterated as a BTreeMap sorted by ecosystem prefix (cargo < npm alphabetically), cargo/foo would appear first and the test would return cfgB and FAIL — confirming that Vec declaration order, not alphabetical sort, governs first-match-wins within the Prefixed tier. A correct implementation that sorted Prefixed entries by ecosystem name before iterating would produce cargo/foo before npm/foo (cargo < npm lexicographically) and return cfgB, failing this test and confirming that internal sorting is not permitted.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-F6",
+      "criterion": "The inline two-pass [[package]] lookup in walk.rs (lines 160-169, the two cfg.packages.iter().find(...) calls joined by .or_else, followed by .map(|(_, cfg)| cfg)) is removed and replaced by a single call to resolve_package_config(&id, cfg). The trailing .map(|(_, cfg)| cfg) at line 169 is deleted because resolve_package_config already returns Option<&PackageConfig>, not Option<&(PackageId, PackageConfig)>. The resulting binding is: let pkg_override = resolve_package_config(&id, cfg);. All tests in crates/callisto-graph/tests/per_package_config_test.rs pass without modification.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-F7a",
+      "criterion": "A test named test_pre_major_inference_prefixed_beats_bare_when_bare_declared_first exists in the #[cfg(test)] mod tests block in crates/callisto-graph/src/aggregate.rs, alongside the existing test_aggregate_pre_major_inference_policy_applied. The test initializes config.packages from a callisto.toml fixture string: \"[[package]]\\nmatch = \\\"pkg\\\"\\npre-major-inference = \\\"conservative\\\"\\n\\n[[package]]\\nmatch = \\\"npm:pkg\\\"\\npre-major-inference = \\\"off\\\"\\n\". The graph and version fixtures mirror test_aggregate_pre_major_inference_policy_applied (aggregate.rs:1483-1491): pkg_id is PackageId::parse(\"pkg\").unwrap(), the graph is SinglePackageGraph { pkg: make_pkg(pkg_id.clone()) }, config is loaded via crate::config::load(root), tags via TagIndex::build(&runner, root, &graph, &cfg), and base_versions maps pkg_id to Version::semver(0, 1, 0) so the package is pre-1.0 and pre-major-inference policy is consulted. A PolicyCapturingInference mock carries two AtomicBool fields: invoked (set to true unconditionally at the top of infer, before any policy check) and saw_non_off (set to true when window.policy != PreMajorInferencePolicy::OFF). Two assertions are required in this order: (1) assert!(capturing.invoked.load(Ordering::SeqCst), \"inference was never invoked; fixture is wrong and cannot distinguish OFF policy from no invocation\"); (2) assert!(!capturing.saw_non_off.load(Ordering::SeqCst), \"expected OFF policy from Prefixed rule; Bare rule (conservative) was applied instead\"). The test passes when resolve_package_config is used for the lookup in aggregate.rs.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-F7b",
+      "criterion": "The two-pass inline lookup at crates/callisto-graph/src/aggregate.rs — the .find(|(id, _)| pkg.id.matches(id) && id.ecosystem().is_some()).or_else(...) chain over config.packages — is replaced by a single call to resolve_package_config(&pkg.id, config), with .and_then(|pcfg| pcfg.pre_major_inference).unwrap_or(PreMajorInferencePolicy::OFF) chained after. (resolve_package_config returns Option<&PackageConfig>, not Option<&(PackageId, PackageConfig)>, so the closure destructures a &PackageConfig, not a 2-tuple.) The existing tests test_aggregate_pre_major_inference_policy_applied (aggregate.rs line 1463) and test_aggregate_bare_name_config_policy_matches_prefixed_package (each declaring only a single Bare [[package]] rule, so single-pass and two-pass resolve identically for them) remain green throughout the TDD cycle including during the revert step.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-F8",
+      "criterion": "The doc comment on the packages field of ResolvedConfig in crates/callisto-graph/src/config/resolve.rs is updated to replace the outdated \"first rule whose PackageId matches wins\" text with a description of two-pass specificity: a Prefixed pattern (rule_id.ecosystem().is_some()) wins over a Bare pattern regardless of declaration order; within each tier (Prefixed or Bare), the first matching entry in TOML declaration order wins.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-F9",
+      "criterion": "Running `just ci` exits with status 0 after all changes, with no compiler warnings (Clippy -D warnings), all unit and integration tests passing, and WASM target check passing.",
+      "is_error_case": false
+    }
+  ],
+  "linked_requirement": "REQ-006",
+  "reasoning": "Fixes applied from exit-gate blockers: AC-F1 trailing duplicate sentence removed; AC-F2 repointed to a three-rule scenario where the winner is the first MATCHING Prefixed entry (index 1) not merely the first Prefixed entry in the Vec — this is genuinely distinct from AC-F5; AC-F4 and AC-F4b is_error_case corrected to true (None-return cases are error cases); AC-F5 is_error_case corrected to false (it is a happy-path returning Some(&cfgA), not an error case — the 'anti-sort' property is a correctness constraint on the implementation, not an error in the domain); AC-F7 split into AC-F7a (artifact proposition: the test exists with a specific name, fixture, mock, and assertion) and AC-F7b (artifact proposition: the inline lookup is replaced); the <new_test_function_name> placeholder resolved to test_pre_major_inference_prefixed_beats_bare_when_bare_declared_first; 'integration test' corrected to '#[cfg(test)] mod tests block in aggregate.rs' since PolicyCapturingInference and related fixtures are private to that module; the callisto.toml fixture form is the sole fixture (struct-literal alternative deleted); ac_surface 'pattern' binding renamed to 'rule_id: &PackageId' to prevent confusion with PackagePattern (used for package_sets). PackageId variants written as struct form throughout to match Rust syntax: Prefixed { ecosystem: Ecosystem::X, name: \"y\" }.\n\nTDD procedure for AC-F7a+AC-F7b (procedure only, not an artifact proposition): Step 1 — Edit aggregate.rs lines 213-219 to revert to single-pass: config.packages.iter().find(|(id, _)| pkg.id.matches(id)).and_then(|(_, pcfg)| pcfg.pre_major_inference).unwrap_or(PreMajorInferencePolicy::OFF). Step 2 — Write the test named test_pre_major_inference_prefixed_beats_bare_when_bare_declared_first in aggregate.rs #[cfg(test)] mod tests. Step 3 — Run: cargo test -p callisto-graph test_pre_major_inference_prefixed_beats_bare_when_bare_declared_first -- --nocapture. Confirm FAILED. Also confirm test_aggregate_pre_major_inference_policy_applied and test_aggregate_bare_name_config_policy_matches_prefixed_package remain ok (both declare only a single Bare rule, so single-pass and two-pass resolve identically for them). Step 4 — Replace single-pass with resolve_package_config(&pkg.id, config).and_then(|pcfg| pcfg.pre_major_inference).unwrap_or(PreMajorInferencePolicy::OFF). Step 5 — Run same command. Confirm ok.\n\nPackage-set resolution and the cross-ecosystem diagnostic are kept strictly out of scope to avoid scope creep from SPEC-002. AC-F5 also implicitly validates the Vec<(PackageId, PackageConfig)> field type invariant documented in resolve.rs:24 — a future change from Vec to BTreeMap would cause AC-F5 to fail immediately."
+}

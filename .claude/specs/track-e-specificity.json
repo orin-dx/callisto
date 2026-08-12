@@ -1,0 +1,102 @@
+{
+  "schema": "spec@1",
+  "id": "SPEC-002",
+  "purpose": "Make [[package]] rule lookup specificity-ordered so a prefixed pattern (cargo:foo) always wins over a bare pattern (foo) regardless of TOML declaration order, and emit a warning diagnostic when a bare rule matches packages in more than one ecosystem.",
+  "scope": "Three changes: (1) the [[package]] rule lookup in ManifestWalkResolver::build in crates/callisto-graph/src/walk.rs, (2) a new cross-ecosystem diagnostic pass after the packages loop in the same function, (3) one new DiagnosticCode variant in crates/callisto-model/src/diagnostic.rs plus a corresponding row in the diagnostic registry table at docs/01-spec.md §G.13. PackageId::matches() is NOT changed. Packages map keys are always Bare PackageIds (the locator constructs ids from manifest name strings alone, which do not carry an ecosystem prefix). Ecosystem information for a given package is derived from the canonical ManifestDecl entries in the Package value — specifically ManifestDecl::ecosystem(), which delegates to ManifestFormat::ecosystem() and returns Ecosystem directly.",
+  "non_goals": [
+    "PackageId::matches() in identity.rs: bare-matches-all-ecosystems is correct and intentional. The fix is at the call site, not in the type.",
+    "[[package-set]] rules: multi-ecosystem glob matching is their explicit purpose; they are exempt from the cross-ecosystem diagnostic.",
+    "Specificity ordering among multiple Prefixed matches with different ecosystems: first-match-wins (declaration order) is correct for that case.",
+    "Specificity ordering among multiple Bare matches: first-match-wins (declaration order) is unchanged.",
+    "No new E-code is added: the diagnostic is a Warning, not a miette-diagnosed Error.",
+    "Deduplication of identical PackageId entries in cfg.packages is out of scope; the diagnostic pass iterates the Vec as-is, so two identical Bare entries each produce their own diagnostic if both qualify.",
+    "Packages whose name appears in two different directories but with different ecosystems: walk.rs returns DuplicatePackage for this case (same Bare key, two paths) before the diagnostic pass is reached. The diagnostic pass is only reachable when a single directory contains manifests from multiple ecosystems (the napi case)."
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "AC-1",
+      "description": "When cfg.packages contains at least one Prefixed PackageId rule (ecosystem() is Some) that matches a given package P and at least one Bare PackageId rule (ecosystem() is None) that also matches that same package P, the first-matching Prefixed rule in declaration order has its PackageConfig applied to P (first-match-wins within the Prefixed tier), regardless of how many Bare rules also match P and regardless of their declaration order relative to the Prefixed rules.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-1b",
+      "description": "A Prefixed PackageId rule in cfg.packages takes priority over a Bare rule by name alone — no ecosystem-compatibility check against the package's canonical manifests is performed. Concrete example: if cfg.packages contains [Prefixed{Cargo,\"foo\"}, Bare(\"foo\")] and the workspace contains only an npm-only package named \"foo\" (package.json only, no Cargo.toml), the Prefixed rule's PackageConfig is applied. This is a consequence of PackageId::matches() semantics being unchanged (Prefixed(E,x).matches(Bare(x)) == true), and is the intended behaviour for the specificity ordering introduced in this spec.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-2",
+      "description": "When the set of [[package]] rules in cfg.packages that match a given package consists entirely of Bare PackageId rules (no Prefixed rule in cfg.packages matches that package — other Prefixed rules matching different packages may still be present in the Vec), the first-matching Bare rule in declaration order is applied to that package.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-3",
+      "description": "When the set of [[package]] rules in cfg.packages that match a given package consists entirely of Prefixed PackageId rules (no Bare rule in cfg.packages matches that package — other Bare rules that match different packages may still be present in the Vec), the first-matching Prefixed rule in declaration order is applied to that package.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-4a",
+      "description": "When no [[package]] rule in cfg.packages matches a given package but a [[package-set]] rule does match, the [[package-set]] rule's PackageConfig is returned for that package. When multiple [[package-set]] rules match, the first matching rule in cfg.package_sets declaration order is applied (first-match-wins).",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-4b",
+      "description": "When no [[package]] rule and no [[package-set]] rule matches a given package, None is returned for that package.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-5",
+      "description": "After all packages have been discovered and inserted into the packages map (i.e., after the full packages loop in ManifestWalkResolver::build completes), for each Bare PackageId rule (pattern, _) in cfg.packages, compute the distinct-ecosystem set: the set of Ecosystem values E such that there exists an entry (key, pkg) in the packages map for which pattern.matches(key) returns true and E == d.ecosystem() for some ManifestDecl d in pkg.manifests where d.role == ManifestRole::Canonical. Note: all packages map keys are Bare — ecosystem information is sourced from each matched Package's canonical ManifestDecl entries via ManifestDecl::ecosystem(), not from the key. The primary trigger is a single-directory package containing both Cargo.toml and package.json (napi), which produces a single map entry whose canonical manifests span {Cargo, Npm}. If the distinct-ecosystem set has two or more elements, exactly one Diagnostic is pushed for that rule. N qualifying Bare rules (cfg.packages is iterated as-is, including duplicates) produce N diagnostics with code BareRuleMatchesMultipleEcosystems. Among diagnostics filtered by code == BareRuleMatchesMultipleEcosystems, the Nth such diagnostic corresponds to the Nth qualifying Bare rule in cfg.packages declaration order. Each diagnostic has: severity = Warning, code = DiagnosticCode::BareRuleMatchesMultipleEcosystems (new variant), package = None, path = None, escalated_by = None, governed_by = None, and a message containing the rule's pattern.name() string as a contiguous substring and, for each Ecosystem value E in the distinct-ecosystem set, E.prefix() (e.g. \"cargo\", \"npm\") as a contiguous substring. The message format is otherwise unconstrained. Example acceptable message: \"bare rule \\\"foo\\\" matches packages in multiple ecosystems: cargo, npm\".",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-6",
+      "description": "When the distinct-ecosystem set computed per AC-5 for a Bare PackageId rule has fewer than two elements (zero or one), no Diagnostic with code BareRuleMatchesMultipleEcosystems is pushed for that rule.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-7",
+      "description": "Prefixed PackageId rules in cfg.packages never trigger a BareRuleMatchesMultipleEcosystems diagnostic regardless of what they match.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-8",
+      "description": "Rules in cfg.package_sets never trigger the cross-ecosystem diagnostic regardless of what they match.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-8b",
+      "description": "The Diagnostic pushed per AC-5 has escalated_by = None and governed_by = None. The warning is advisory under --strict and --strict-graph; it does not escalate to a build failure in either strict mode.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-9a",
+      "description": "When cfg.packages is empty, no BareRuleMatchesMultipleEcosystems diagnostic is present in the resolver's diagnostics and the [[package]]-tier lookup returns None for every queried package. The [[package-set]]-tier fallback (AC-4a) continues to apply normally.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-9b",
+      "description": "When cfg.packages is non-empty but the packages map contains zero entries (no packages discovered during the walk), no BareRuleMatchesMultipleEcosystems diagnostic is present in the resolver's diagnostics, because pattern.matches(key) is never evaluated and the distinct-ecosystem set for every Bare rule is empty.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-10",
+      "description": "Serializing a Diagnostic whose code is DiagnosticCode::BareRuleMatchesMultipleEcosystems to JSON produces the string \"bare-rule-matches-multiple-ecosystems\" for the code field. Deserializing that string yields the variant. This is enforced by the existing #[serde(rename_all = \"kebab-case\")] on DiagnosticCode — no additional serde annotation on the new variant is needed.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-11",
+      "description": "The diagnostic attribution table in docs/01-spec.md section G.13 contains a row whose Code cell is `BareRuleMatchesMultipleEcosystems`, whose Emitted-by cell references the walk module (§G.4 walk), whose escalated_by cell is the em-dash placeholder (—), and whose governed_by cell is the em-dash placeholder (—), consistent with escalated_by = None and governed_by = None from AC-8b.",
+      "is_error_case": false
+    }
+  ],
+  "api_surface": {
+    "file": "crates/callisto-graph/src/walk.rs",
+    "changes": [
+      "Replace the cfg.packages.iter().find(...) call (the [[package]] lookup, ~line 154) with a two-pass search: first pass finds any Prefixed-pattern match (pattern.ecosystem().is_some()); second pass (only if first is None) finds any Bare-pattern match. Both passes use first-match-wins within their tier. Result is the same Option<&PackageConfig> type as before.",
+      "After the packages loop (after packages.insert), add a pass over cfg.packages: for each (pattern, _) where pattern.ecosystem().is_none() (Bare), compute the distinct-ecosystem set by iterating packages.iter(), filtering to entries where pattern.matches(key) is true, then flat-mapping over pkg.manifests to collect d.ecosystem() for each ManifestDecl d where d.role == ManifestRole::Canonical. Collect into a BTreeSet<Ecosystem>. If the set has 2+ elements, push one Diagnostic { code: DiagnosticCode::BareRuleMatchesMultipleEcosystems, severity: DiagnosticSeverity::Warning, message: format!(...), package: None, path: None, escalated_by: None, governed_by: None }. Note: Diagnostic derives no Default — all seven fields must be written explicitly."
+    ],
+    "new_variants": [
+      "DiagnosticCode::BareRuleMatchesMultipleEcosystems in crates/callisto-model/src/diagnostic.rs — add to the end of the DiagnosticCode enum, kebab-case serde name 'bare-rule-matches-multiple-ecosystems'."
+    ]
+  }
+}
