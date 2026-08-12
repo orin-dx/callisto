@@ -1,0 +1,48 @@
+{
+  "cli_version": "0.9.1-nightly.202608050700.76dff6a81",
+  "checkpoint_id": "01KZTNHRG6XEYNYH4PQF9RP8RK",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "crates/callisto-cli/src/cli.rs",
+    "crates/callisto-cli/src/commands/plan_publish.rs",
+    "crates/callisto-cli/src/commands/publish.rs",
+    "crates/callisto-cli/src/commands/status.rs",
+    "crates/callisto-cli/src/output.rs",
+    "crates/callisto-cli/src/render/mod.rs",
+    "crates/callisto-cli/src/runner.rs",
+    "crates/callisto-cli/tests/cli_tests.rs",
+    "crates/callisto-cli/tests/dry_run_invariant_tests.rs",
+    "crates/callisto-cli/tests/lifecycle_e2e_tests.rs",
+    "crates/callisto-graph/src/commands/publish.rs",
+    "crates/callisto-graph/src/commands/publish_client.rs",
+    "crates/callisto-graph/src/tags.rs",
+    "crates/callisto-graph/tests/fixtures/graph_builder.rs",
+    "crates/callisto-graph/tests/publish_tests.rs",
+    "crates/callisto-manifests/src/lib.rs",
+    "crates/callisto-manifests/src/npm.rs",
+    "crates/callisto-model/src/ecosystem.rs",
+    "crates/callisto-model/src/exec.rs",
+    "crates/callisto-model/src/identity.rs",
+    "crates/callisto-model/src/plan.rs",
+    "crates/callisto-model/src/registry.rs",
+    "crates/callisto-model/src/report.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 439,
+    "cache_creation_tokens": 1761226,
+    "cache_read_tokens": 40376781,
+    "output_tokens": 285794,
+    "api_call_count": 309
+  }
+}
