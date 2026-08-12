@@ -2,11 +2,9 @@ use std::path::PathBuf;
 
 use callisto_model::{DeclaredEdge, ProjectRoot};
 
-pub mod git;
 pub mod ignore_walk;
 pub mod root;
 
-pub use git::probe_git;
 pub use ignore_walk::IgnoreWalkLocator;
 pub use root::find_workspace_root;
 
