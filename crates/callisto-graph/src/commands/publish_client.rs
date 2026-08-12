@@ -27,6 +27,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
+use callisto_manifests::WorkspaceCargoResolver;
 use callisto_model::{
     ApplyPermit, CommandOutput, CommandRunner, Ecosystem, NpmAccess, PackageId, PublishOutcome,
     RegistryClient, RegistryError, Version,
@@ -196,14 +197,12 @@ impl<R: CommandRunner> SubprocessRegistryClient<R> {
         ) {
             let manifest_path = self.cwd.join(pkg_dir).join("Cargo.toml");
             // Parse only the [package].version field — no need for full CST.
-            #[derive(serde::Deserialize)]
-            struct MinimalManifest {
-                package: MinimalPackage,
-            }
-            #[derive(serde::Deserialize)]
-            struct MinimalPackage {
-                version: String,
-            }
+            // Use a permissive `toml::Value` intermediate rather than
+            // deserializing straight into `String`: `version.workspace = true`
+            // (Cargo's workspace-version-inheritance syntax) parses `version`
+            // as a table, not a string, and a direct `String` deserialization
+            // would fail with "invalid type: map, expected a string" on every
+            // crate using that pattern.
             let contents = std::fs::read_to_string(&manifest_path).map_err(|e| {
                 RegistryError::Other(format!(
                     "could not read `{}` for pre-publish version check: {e}. \
@@ -212,7 +211,7 @@ impl<R: CommandRunner> SubprocessRegistryClient<R> {
                     manifest_path.display(),
                 ))
             })?;
-            let m = toml::from_str::<MinimalManifest>(&contents).map_err(|e| {
+            let parsed = toml::from_str::<toml::Value>(&contents).map_err(|e| {
                 RegistryError::Other(format!(
                     "could not parse `{}` for pre-publish version check: {e}. \
                      The file must contain a [package].version field. \
@@ -221,7 +220,56 @@ impl<R: CommandRunner> SubprocessRegistryClient<R> {
                     manifest_path.display(),
                 ))
             })?;
-            let on_disk = m.package.version;
+            let version_value = parsed
+                .get("package")
+                .and_then(|p| p.get("version"))
+                .ok_or_else(|| {
+                    RegistryError::Other(format!(
+                        "could not find [package].version in `{}` for pre-publish version check. \
+                     The file must contain a [package].version field. \
+                     If this is a workspace Cargo.toml, set package_dir to the \
+                     individual crate subdirectory instead.",
+                        manifest_path.display(),
+                    ))
+                })?;
+            let on_disk = if let Some(s) = version_value.as_str() {
+                s.to_string()
+            } else if version_value.get("workspace").and_then(|w| w.as_bool()) == Some(true) {
+                let root_manifest_path = self.cwd.join("Cargo.toml");
+                let resolver = WorkspaceCargoResolver::load(&root_manifest_path).map_err(|e| {
+                    RegistryError::Other(format!(
+                        "`{}` has version.workspace = true but the workspace root `{}` \
+                             could not be loaded to resolve it: {e}",
+                        manifest_path.display(),
+                        root_manifest_path.display(),
+                    ))
+                })?;
+                let ws_version = resolver
+                    .workspace_version()
+                    .map_err(|e| {
+                        RegistryError::Other(format!(
+                            "could not resolve [workspace.package].version from `{}` \
+                             for `{}`: {e}",
+                            root_manifest_path.display(),
+                            manifest_path.display(),
+                        ))
+                    })?
+                    .ok_or_else(|| {
+                        RegistryError::Other(format!(
+                            "`{}` has version.workspace = true but the workspace root `{}` \
+                             has no [workspace.package].version",
+                            manifest_path.display(),
+                            root_manifest_path.display(),
+                        ))
+                    })?;
+                ws_version.render().to_string()
+            } else {
+                return Err(RegistryError::Other(format!(
+                    "could not parse [package].version in `{}` for pre-publish version \
+                     check: expected a string or a `{{ workspace = true }}` table.",
+                    manifest_path.display(),
+                )));
+            };
             let expected = planned.render();
             if on_disk != expected {
                 return Err(RegistryError::Other(format!(
@@ -2262,5 +2310,72 @@ mod tests {
             matches!(err, RegistryError::Other(_)),
             "unparseable manifest must produce RegistryError::Other, got: {err:?}"
         );
+    }
+
+    /// Regression: `version.workspace = true` (Cargo's workspace-version
+    /// inheritance syntax, used by all 10 of this repo's own crates) parses
+    /// to a TOML *table* for `[package]`, not a string, so the old
+    /// `MinimalManifest { package: MinimalPackage { version: String } }`
+    /// deserialization failed with "invalid type: map, expected a string" on
+    /// every crate using this pattern — even when the on-disk version was
+    /// correct. The pre-publish guard must resolve the inherited version via
+    /// the workspace root's `[workspace.package].version` and succeed when it
+    /// matches the plan.
+    #[test]
+    fn cargo_publish_proceeds_when_on_disk_version_is_workspace_inherited() {
+        let dir = tempfile::tempdir().unwrap();
+
+        // Workspace root Cargo.toml declaring the inherited version, matching
+        // this repo's own real layout (see e.g. crates/callisto-model/Cargo.toml).
+        std::fs::write(
+            dir.path().join("Cargo.toml"),
+            "[workspace]\nmembers = [\"crates/*\"]\n\n[workspace.package]\nversion = \"1.2.0\"\n",
+        )
+        .unwrap();
+
+        // Member crate uses `version.workspace = true` instead of a literal
+        // string version.
+        let pkg_subdir = dir.path().join("crates/my-crate");
+        std::fs::create_dir_all(&pkg_subdir).unwrap();
+        std::fs::write(
+            pkg_subdir.join("Cargo.toml"),
+            "[package]\nname = \"my-crate\"\nversion.workspace = true\nedition = \"2021\"\n",
+        )
+        .unwrap();
+
+        let planned_version = Version::parse("1.2.0", VersionGrammar::SemVer).unwrap();
+        let plan = callisto_model::PublishPlan {
+            schema_version: callisto_model::SCHEMA_VERSION,
+            rust_crates: vec![callisto_model::CratePublish {
+                name: "my-crate".to_string(),
+                version: planned_version.clone(),
+                publish_to: callisto_model::RegistryKey(
+                    callisto_model::RegistryKey::CRATES_IO.to_string(),
+                ),
+                registry: None,
+                package_dir: Some(std::path::PathBuf::from("crates/my-crate")),
+            }],
+            npm_main_packages: vec![],
+            npm_platform_packages: vec![],
+            pypi_packages: vec![],
+            releases: vec![],
+            diagnostics: vec![],
+        };
+
+        let pkg = PackageId::Prefixed {
+            ecosystem: Ecosystem::Cargo,
+            name: "my-crate".to_string(),
+        };
+
+        let mut c = SubprocessRegistryClient::new(
+            ScriptedRunner(output(0, "Uploading my-crate v1.2.0\n", "")),
+            dir.path().to_path_buf(),
+        );
+        c.load_plan(&plan);
+
+        let outcome = c
+            .publish(&pkg, &planned_version, &permit())
+            .expect("pre-publish version guard must resolve version.workspace = true, not error");
+        assert_eq!(outcome, PublishOutcome::Published);
     }
 }
