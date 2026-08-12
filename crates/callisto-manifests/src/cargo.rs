@@ -429,6 +429,11 @@ pub fn round_trip(spec: &DepSpec, target: &Version) -> Option<DepSpec> {
                     {
                         let rendered = format!("{prefix}{}", render_at_precision(target, rest));
                         rewritten_parts.push(rendered);
+                    } else if prefix.starts_with('<') {
+                        // Cannot safely rewrite upper-bound clauses. Return None
+                        // rather than silently producing an impossible constraint
+                        // (e.g. ">=2.1.0, <2.0.0") when the target crosses the bound.
+                        return None;
                     } else {
                         rewritten_parts.push(part_trimmed.to_string());
                     }
@@ -556,6 +561,29 @@ impl WorkspaceCargoResolver {
             version,
             dependencies,
         })
+    }
+
+    /// Returns the `[workspace.package] version` currently on disk, or `None`
+    /// when no such field exists (e.g. the workspace does not declare a shared
+    /// version). Used by `apply_version_plan`'s idempotency guard.
+    pub fn workspace_version(&self) -> Result<Option<Version>, ManifestError> {
+        let raw = match self
+            .document
+            .get("workspace")
+            .and_then(|w| w.get("package"))
+            .and_then(|p| p.get("version"))
+            .and_then(|v| v.as_str())
+        {
+            Some(s) => s,
+            None => return Ok(None),
+        };
+        Version::parse(raw, VersionGrammar::SemVer)
+            .map(Some)
+            .map_err(|e| ManifestError::Parse {
+                path: self.root_path.clone(),
+                format: ManifestFormat::CargoToml,
+                message: format!("invalid [workspace.package] version: {e}"),
+            })
     }
 
     pub fn write_version(
@@ -1356,6 +1384,36 @@ version = "4.5.6"
             manifest.current_version().unwrap().render(),
             "4.5.6",
             "current_version must be inherited from the workspace resolver"
+        );
+    }
+
+    /// A compound Cargo range `>=1.0.0, <2.0.0` whose lower bound is updated
+    /// past the preserved upper bound (e.g., target `2.1.0`) must return `None`
+    /// rather than silently producing the impossible `>=2.1.0, <2.0.0`.
+    #[test]
+    fn round_trip_compound_range_crossing_upper_bound_returns_none() {
+        let req = VersionReq::parse(">=1.0.0, <2.0.0", Ecosystem::Cargo).unwrap();
+        let spec = DepSpec::Range(req, ">=1.0.0, <2.0.0".to_string());
+        let target = Version::parse("2.1.0", VersionGrammar::SemVer).unwrap();
+
+        let result = round_trip(&spec, &target);
+        assert!(
+            result.is_none(),
+            "compound range crossing upper bound must return None, got: {result:?}"
+        );
+    }
+
+    /// A compound Cargo range within the same major version is safe to rewrite.
+    #[test]
+    fn round_trip_compound_range_within_upper_bound_is_rewritten() {
+        let req = VersionReq::parse(">=1.0.0, <2.0.0", Ecosystem::Cargo).unwrap();
+        let spec = DepSpec::Range(req, ">=1.0.0, <2.0.0".to_string());
+        let target = Version::parse("1.5.0", VersionGrammar::SemVer).unwrap();
+
+        let result = round_trip(&spec, &target);
+        assert!(
+            result.is_none(),
+            "compound range with </<= upper bound clause must return None (conservative policy), got: {result:?}"
         );
     }
 

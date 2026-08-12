@@ -181,8 +181,16 @@ impl Manifest for PyprojectToml {
             }
         };
 
-        if let Some(proj) = self.document.get_mut("project") {
-            set_with_decor(proj, "version");
+        let has_project_version = self
+            .document
+            .get("project")
+            .and_then(|p| p.get("version"))
+            .is_some();
+
+        if has_project_version {
+            if let Some(proj) = self.document.get_mut("project") {
+                set_with_decor(proj, "version");
+            }
         } else if let Some(poetry) = self
             .document
             .get_mut("tool")
@@ -372,6 +380,25 @@ impl Manifest for PyprojectToml {
             path: self.path.clone(),
             message: e.to_string(),
         })
+    }
+
+    fn is_publishable(&self) -> bool {
+        // A pyproject.toml without [project].name or [tool.poetry].name is a
+        // workspace root or build-system-only file — not a publishable package.
+        let has_pep621_name = self
+            .document
+            .get("project")
+            .and_then(|p| p.get("name"))
+            .and_then(|n| n.as_str())
+            .is_some();
+        let has_poetry_name = self
+            .document
+            .get("tool")
+            .and_then(|t| t.get("poetry"))
+            .and_then(|p| p.get("name"))
+            .and_then(|n| n.as_str())
+            .is_some();
+        has_pep621_name || has_poetry_name
     }
 
     fn publish_targets(&self) -> Vec<PublishTarget> {
@@ -1251,5 +1278,116 @@ exclude = ["tests/"]
         let spec = make_pypi_spec(">=1.0.0,<2.0.0,!=1.5.0");
         let target = make_pep440_version("1.2.0");
         assert!(round_trip(&spec, &target).is_none());
+    }
+
+    // ---- F-07: is_publishable must be false for nameless pyproject.toml ----
+
+    fn open_pyproject(dir: &std::path::Path, content: &str) -> PyprojectToml {
+        let path = dir.join("pyproject.toml");
+        std::fs::write(&path, content).unwrap();
+        let decl = callisto_model::ManifestDecl {
+            path: std::path::PathBuf::from("pyproject.toml"),
+            format: ManifestFormat::PyprojectToml,
+            role: callisto_model::ManifestRole::Canonical,
+        };
+        let ctx = OpenContext {
+            workspace_root: dir,
+            cargo_workspace: None,
+            npm_workspace_kind: None,
+        };
+        PyprojectToml::open(&decl, &ctx).unwrap()
+    }
+
+    /// A `pyproject.toml` that has no `[project].name` or `[tool.poetry].name`
+    /// is a workspace root or build-system-only file — it is not publishable.
+    /// Before this fix, `is_publishable` always returned `true` (trait default),
+    /// causing such files to produce a `Pypi` publish target and get included
+    /// in publish plans spuriously.
+    #[test]
+    fn pyproject_without_name_is_not_publishable() {
+        let dir = tempdir().unwrap();
+        let manifest = open_pyproject(
+            dir.path(),
+            "[build-system]\nrequires = [\"hatchling\"]\nbuild-backend = \"hatchling.build\"\n",
+        );
+        assert!(
+            !manifest.is_publishable(),
+            "pyproject.toml without [project].name must not be publishable"
+        );
+        assert_eq!(
+            manifest.publish_targets(),
+            vec![PublishTarget::None],
+            "a non-publishable pyproject.toml must return PublishTarget::None"
+        );
+    }
+
+    /// A `pyproject.toml` with `[project].name` IS publishable.
+    #[test]
+    fn pyproject_with_pep621_name_is_publishable() {
+        let dir = tempdir().unwrap();
+        let manifest = open_pyproject(
+            dir.path(),
+            "[project]\nname = \"my-pkg\"\nversion = \"1.0.0\"\n",
+        );
+        assert!(
+            manifest.is_publishable(),
+            "pyproject.toml with [project].name must be publishable"
+        );
+        assert_eq!(
+            manifest.publish_targets(),
+            vec![PublishTarget::Pypi { index: None }],
+        );
+    }
+
+    /// A `pyproject.toml` with `[tool.poetry].name` IS publishable (Poetry schema).
+    #[test]
+    fn pyproject_with_poetry_name_is_publishable() {
+        let dir = tempdir().unwrap();
+        let manifest = open_pyproject(
+            dir.path(),
+            "[tool.poetry]\nname = \"my-pkg\"\nversion = \"1.0.0\"\n\n[tool.poetry.dependencies]\npython = \"^3.10\"\n",
+        );
+        assert!(
+            manifest.is_publishable(),
+            "pyproject.toml with [tool.poetry].name must be publishable"
+        );
+    }
+
+    /// Poetry 2.x projects can have a `[project]` table (for `requires-python`,
+    /// `name`, `dynamic = ["version"]`, etc.) WITHOUT a `version` field in
+    /// `[project]`.  The canonical version lives in `[tool.poetry].version`.
+    ///
+    /// Before this fix, `write_version` dispatched on whether `[project]` exists
+    /// (not whether `[project].version` exists), so it inserted a new
+    /// `[project].version` key and left `[tool.poetry].version` at the old value.
+    /// `current_version()` then read the newly-inserted `[project].version` and
+    /// reported the write successful — but Poetry still published the old version.
+    #[test]
+    fn write_version_uses_poetry_section_when_project_table_has_no_version_field() {
+        let dir = tempdir().unwrap();
+        let content = "[project]\nname = \"my-project\"\nrequires-python = \">=3.9\"\ndynamic = [\"version\"]\n\n[tool.poetry]\nname = \"my-project\"\nversion = \"1.0.0\"\n\n[tool.poetry.dependencies]\npython = \"^3.9\"\n";
+        let mut manifest = open_pyproject(dir.path(), content);
+
+        let new_v = Version::parse("1.1.0", VersionGrammar::Pep440).unwrap();
+        manifest.write_version(&new_v, &permit()).unwrap();
+
+        let on_disk = fs::read_to_string(dir.path().join("pyproject.toml")).unwrap();
+        let doc: toml_edit::DocumentMut = on_disk.parse().unwrap();
+
+        assert!(
+            doc.get("project").and_then(|p| p.get("version")).is_none(),
+            "[project].version must NOT be inserted when [project] has no version field;\
+             got document:\n{on_disk}"
+        );
+        let poetry_ver = doc
+            .get("tool")
+            .and_then(|t| t.get("poetry"))
+            .and_then(|p| p.get("version"))
+            .and_then(|v| v.as_str())
+            .expect("[tool.poetry].version must be present");
+        assert_eq!(
+            poetry_ver, "1.1.0",
+            "[tool.poetry].version must be updated to 1.1.0; got document:\n{on_disk}"
+        );
     }
 }
