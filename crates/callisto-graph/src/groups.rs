@@ -1,8 +1,9 @@
 use std::collections::BTreeMap;
+use std::path::Path;
 
 use crate::config::groups::{GroupDef, GroupMember, GroupMemberKind, GroupTable};
 use crate::error::GraphError;
-use crate::napi::NapiTargetsIndex;
+use crate::napi::{napi_drift, NapiTargetsIndex};
 use crate::resolver::DependencyResolver;
 use crate::tags::TagIndex;
 use callisto_format::Versioning;
@@ -19,7 +20,8 @@ pub fn pre_mutation_checks<D: DependencyResolver>(
     groups: &GroupTable,
     base: &BTreeMap<PackageId, Version>,
     tags: &TagIndex,
-    _napi: &NapiTargetsIndex,
+    napi: &NapiTargetsIndex,
+    root: &Path,
 ) -> Result<GroupCheckOutcome, GraphError> {
     let mut outcome = GroupCheckOutcome::default();
 
@@ -82,6 +84,11 @@ pub fn pre_mutation_checks<D: DependencyResolver>(
         if !fresh.is_empty() {
             outcome.new_members.insert(g.name.clone(), fresh);
         }
+
+        // napi.targets drift cross-check (§G.8.4).
+        if let Some(declared) = napi.declared_for(&g.name) {
+            outcome.diagnostics.extend(napi_drift(g, declared, root));
+        }
     }
 
     Ok(outcome)
@@ -132,4 +139,93 @@ pub fn fixed_group_target(
     versioning
         .bump(&aligned_base, max_sev)
         .map_err(GraphError::Bump)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+    use std::path::PathBuf;
+
+    use callisto_model::{GroupKind, GroupName, ManifestRole, PackageId, Version};
+
+    use super::*;
+    use crate::config::groups::{GroupDef, GroupMember, GroupTable};
+    use crate::napi::NapiTargetsIndex;
+    use crate::tags::TagIndex;
+
+    struct EmptyResolver;
+    impl crate::resolver::DependencyResolver for EmptyResolver {
+        fn packages(&self) -> impl Iterator<Item = &callisto_model::Package> {
+            std::iter::empty()
+        }
+        fn dependencies_of(
+            &self,
+            _id: &PackageId,
+        ) -> impl Iterator<Item = &callisto_model::DepEdge> {
+            std::iter::empty()
+        }
+        fn dependents_of(&self, _id: &PackageId) -> impl Iterator<Item = &callisto_model::DepEdge> {
+            std::iter::empty()
+        }
+        fn diagnostics(&self) -> &[callisto_model::Diagnostic] {
+            &[]
+        }
+    }
+
+    #[test]
+    fn pre_mutation_checks_calls_napi_drift_for_napi_groups() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path();
+
+        let group_name = GroupName("my-lib".to_string());
+        let pkg_id = PackageId::Bare("my-lib".to_string());
+
+        // One platform member with a known triple (darwin/arm64 → aarch64-apple-darwin).
+        // We do NOT create a platform manifest on disk, so the only diagnostic emitted
+        // should be NapiTargetAddedNotInMembers (declared triple not in members).
+        let platform_role = ManifestRole::Platform {
+            platform: "linux".to_string(),
+            arch: "x64".to_string(),
+            abi: Some("gnu".to_string()),
+        };
+
+        let group = GroupDef {
+            name: group_name.clone(),
+            kind: GroupKind::Fixed,
+            members: vec![
+                GroupMember::Package(pkg_id.clone()),
+                GroupMember::PlatformManifest {
+                    owner: pkg_id.clone(),
+                    role: platform_role,
+                    path: PathBuf::from("platform/linux-x64-gnu/package.json"),
+                    name: "my-lib.linux-x64-gnu".to_string(),
+                },
+            ],
+        };
+
+        let groups = GroupTable::from_groups(vec![group], vec![]);
+
+        // Build the NapiTargetsIndex from a real package.json file —
+        let pkg_dir = root.join("my-lib");
+        std::fs::create_dir_all(&pkg_dir).unwrap();
+        std::fs::write(
+            pkg_dir.join("package.json"),
+            r#"{"name":"my-lib","napi":{"targets":["aarch64-apple-darwin"]}}"#,
+        )
+        .unwrap();
+
+        let napi = NapiTargetsIndex::load(&groups, root).expect("load");
+
+        let base: BTreeMap<PackageId, Version> = BTreeMap::new();
+        let tags = TagIndex::empty();
+        let resolver = EmptyResolver;
+
+        let outcome = pre_mutation_checks(&resolver, &groups, &base, &tags, &napi, root)
+            .expect("pre_mutation_checks");
+
+        assert!(
+            !outcome.diagnostics.is_empty(),
+            "expected at least one napi_drift diagnostic"
+        );
+    }
 }
