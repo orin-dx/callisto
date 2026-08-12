@@ -1,0 +1,68 @@
+{
+  "cli_version": "0.9.1-nightly.202608120634.6e7985f4e",
+  "checkpoint_id": "01KZVY3VJKRK8QSAM3S6AVEPBA",
+  "session_id": "ae412d01-e061-4047-918b-0d1df3d4d118",
+  "strategy": "manual-commit",
+  "created_at": "2026-08-12T21:30:08.1953Z",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "crates/callisto-graph/src/locate/git.rs",
+    "crates/callisto-graph/src/locate/mod.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5",
+  "turn_id": "b50da8f2536d",
+  "checkpoint_transcript_start": 528,
+  "transcript_lines_at_start": 528,
+  "compact_transcript_start": 89,
+  "token_usage": {
+    "input_tokens": 44,
+    "cache_creation_tokens": 46865,
+    "cache_read_tokens": 4937211,
+    "output_tokens": 23936,
+    "api_call_count": 22,
+    "subagent_tokens": {
+      "input_tokens": 1990,
+      "cache_creation_tokens": 78826,
+      "cache_read_tokens": 786960,
+      "output_tokens": 6575,
+      "api_call_count": 17
+    }
+  },
+  "session_metrics": {
+    "turn_count": 5
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-08-12T21:30:08.128136Z",
+    "agent_lines": 0,
+    "agent_removed": 15,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 0,
+    "total_lines_changed": 15,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 5,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 15,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 5
+      }
+    }
+  ]
+}
