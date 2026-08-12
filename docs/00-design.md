@@ -9,10 +9,10 @@
 This revision supersedes the prior draft in three structural ways, each explained in the
 relevant section below:
 
-1. **Callisto is a versioning coordinator, not a release orchestrator.** It decides what
-   version each package should be next and updates the workspace to reflect that. It does
-   not run `cargo publish`, `npm publish`, or any registry-publishing command. Those stay
-   the job of the ecosystem's own tooling. See §9.
+1. **Callisto manages both versioning and publishing.** It decides what version each package
+   should be next, updates the workspace to reflect that, and runs `cargo publish`,
+   `npm publish`, and `twine upload` via `callisto publish` (shelling out to each
+   ecosystem's own tool — never reimplementing registry HTTP protocols). See §9.
 2. **Scope is deliberately narrower than "polyglot for every language."** Rust and npm are
    the committed core. Python, Go, and JVM support is real but demand-gated, not scheduled.
    Java/Scala/C are explicitly out of scope. See §2 and §17.
@@ -916,13 +916,22 @@ The tag creation on success is the signal that makes next run's stateless detect
 no callisto command "reads back" what got published; the tag existing (or not) at the
 expected version is the only source of truth.
 
-### 9.4 Idempotence — provided by the ecosystem tools, not callisto
+### 9.4 Idempotence — two layers
 
-`cargo publish` refuses to overwrite an existing version. So does `npm publish`. Callisto
-relies on this for retry safety rather than re-implementing "is this already published?"
-registry queries itself. If a `plan-publish` output names a package that's already on the
-registry, the ecosystem tool's own refusal is the safety net — cheap, correct, and not
-callisto's problem to duplicate.
+**Publish idempotence** is provided by the ecosystem tools: `cargo publish` refuses to
+overwrite an existing version; so does `npm publish`. Callisto relies on this for publish
+retry safety rather than re-implementing "is this already published?" registry queries. If a
+`plan-publish` output names a package that's already on the registry, the ecosystem tool's
+own refusal is the safety net — cheap, correct, and not callisto's problem to duplicate.
+
+**Version-apply idempotence** is provided by callisto itself: `apply_version_plan` reads each
+manifest's current on-disk version before writing. If it matches `bump.to` (the target version
+was already written by a prior crashed run), the write is skipped and the path is staged
+without modification — safe to retry. If it matches neither `bump.from` nor `bump.to`, the
+function returns `Err(GraphError::UnexpectedManifestVersion)` to require human intervention
+rather than silently writing an unplanned version. Changeset paths are always staged regardless
+of whether the changeset file exists on disk, so `git rm --cached --ignore-unmatch` cleans
+the index on retry even after a prior run deleted the file.
 
 ### 9.5 What this removes from the prior design
 
@@ -1233,13 +1242,14 @@ Structural requirements, each traceable to a named principle in §4:
    lockfile-refresh subprocesses — §7.6 step 9, §10's `exec_command` calls) to stderr
    structurally, at the spawn site, so nothing but the intended JSON ever reaches stdout —
    P5, P7.
-6. **Plan shape, not plan-consuming execution, is what callisto guarantees idempotent.**
-   (Revised — the prior wording asserted idempotence of "plan-consuming operations," but per
-   §9 those are executed by the calling workflow, not callisto; callisto cannot guarantee
-   anything about code it doesn't run.) `plan-publish`'s output is safe to consume more than
-   once *because* it relies on the ecosystem tool's own refusal-to-overwrite (§9.4) — the
-   invariant is that the plan never asks for something that isn't idempotent by construction
-   when the calling workflow does the natural thing with it — P3.
+6. **Callisto guarantees idempotence at two layers: version-apply and publish.**
+   `apply_version_plan` is idempotent: if a manifest is already at the target version (from a
+   prior crashed apply), the write is skipped and the outcome is the same as a fresh apply —
+   paths are staged, changesets are removed. If the manifest is at an unexpected version,
+   `UnexpectedManifestVersion` is returned rather than silently writing an unplanned bump (§9.4).
+   `plan-publish`'s output is safe to consume more than once because each ecosystem tool refuses
+   to overwrite an already-published version (§9.4) — the plan never asks for something that
+   isn't idempotent by construction when the calling workflow does the natural thing with it — P3.
 7. Cargo topological sort scoped to the intra-release set, not the whole workspace, and
    `rustCrates[]`'s array order **is** that topological order — a load-bearing contract
    fact (§9.3's worked example consumes it positionally), not just prose in §9.2, and part

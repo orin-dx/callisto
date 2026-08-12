@@ -111,10 +111,18 @@ natively.
 
 ## Python (PyPI) Authentication
 
-Python publishing via `twine` is demand-gated (see `00-design.md` §2.2). When implemented,
-authentication follows the same pattern: set the appropriate secret (`TWINE_PASSWORD` or a
-PyPI API token) and pass it to the job environment. Twine reads `TWINE_USERNAME` and
-`TWINE_PASSWORD` (or `TWINE_API_TOKEN`) directly from the environment.
+Python publishing uses `twine upload`. Twine reads credentials from two environment
+variables: `TWINE_USERNAME` (set to `__token__` when using a PyPI API token) and
+`TWINE_PASSWORD` (set to the API token value). Set these in the job environment before
+the Callisto release action runs:
+
+```yaml
+env:
+  TWINE_USERNAME: __token__
+  TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+```
+
+Do not use `TWINE_API_TOKEN` — twine does not recognise that variable name.
 
 ---
 

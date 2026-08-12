@@ -182,17 +182,20 @@ JSON specifications do not preserve formatting. `callisto-manifests` addresses t
 To guarantee crash-safety during file writes:
 
 ```rust
-pub fn atomic_write(target_path: &Path, content: &[u8]) -> Result<(), ManifestError> {
-    let parent_dir = target_path.parent().ok_or(...)?;
+pub fn atomic_write(path: &Path, content: &str, permit: &ApplyPermit) -> io::Result<()> {
+    let parent_dir = path.parent().ok_or(...)?;
     let mut temp_file = NamedTempFile::new_in(parent_dir)?;
-    temp_file.write_all(content)?;
-    temp_file.flush()?;
-    temp_file.persist(target_path)?;
+    temp_file.write_all(content.as_bytes())?;
+    temp_file.as_file().sync_all()?;
+    temp_file.persist(path)?;
+    // fsync parent and grandparent directories for durability after rename.
+    sync_dir(parent_dir)?;
+    if let Some(grandparent) = parent_dir.parent() { sync_dir(grandparent)?; }
     Ok(())
 }
 ```
 
-By creating `NamedTempFile` in the same directory as the target file, Callisto ensures the final `fs::rename` step is an atomic OS kernel operation on POSIX and Windows filesystems.
+`ApplyPermit` is a capability token that must be obtained before any mutating operation (see §7). By creating `NamedTempFile` in the same directory as the target file, the final `fs::rename` is an atomic OS kernel operation on POSIX and Windows filesystems. Parent and grandparent directory fsyncs ensure the rename is durable on power-loss.
 
 ---
 
@@ -292,22 +295,36 @@ pub trait ProjectLocator {
     fn projects(&self) -> Result<Vec<ProjectRoot>, LocateError>;
 }
 
-// 2. Supply graph node and edge metadata
-pub trait DependencyResolver {
-    fn packages(&self) -> impl Iterator<Item = &Package>;
-    fn dependencies_of(&self, id: &PackageId) -> impl Iterator<Item = &DepEdge>;
-}
-
-// 3. Command execution abstraction
+// 2. Command execution abstraction
 pub trait CommandRunner: Send + Sync {
-    fn exec(&self, cmd: &str, args: &[&str], cwd: &Path) -> Result<CommandOutput, CommandError>;
+    fn run(&self, program: &str, args: &[&str], cwd: &Path) -> Result<CommandOutput, CommandError>;
+
+    // Default: delegates to run(). CliCommandRunner overrides with real
+    // spawn + poll + kill so that hung publish commands do not block forever.
+    fn run_with_timeout(&self, program: &str, args: &[&str], cwd: &Path, timeout: Duration)
+        -> Result<CommandOutput, CommandError>;
 }
 
 // 4. Per-ecosystem manifest reader/writer
 pub trait Manifest {
+    fn path(&self) -> &Path;
+    fn ecosystem(&self) -> Ecosystem;
+    fn role(&self) -> ManifestRole;
+    fn package_name(&self) -> Result<String, ManifestError>;
     fn current_version(&self) -> Result<Version, ManifestError>;
-    fn write_version(&mut self, new_version: &Version) -> Result<(), ManifestError>;
-    fn write_dependency(&mut self, name: &str, new_spec: DepSpec) -> Result<(), ManifestError>;
+    fn write_version(&mut self, new_version: &Version, permit: &ApplyPermit) -> Result<(), ManifestError>;
+    fn iter_dependencies(&self) -> Box<dyn Iterator<Item = DependencyEntry> + '_>;
+    fn update_dependency_spec(&mut self, name: &str, new_spec: DepSpec, permit: &ApplyPermit) -> Result<(), ManifestError>;
+    fn update_optional_dependencies(&mut self, name: &str, new_spec: DepSpec, permit: &ApplyPermit) -> Result<(), ManifestError>;
+    // publish_targets() and persist() are also required; omitted for brevity.
+}
+
+// 5. DependencyResolver supplies graph nodes and edges
+pub trait DependencyResolver {
+    fn packages(&self) -> impl Iterator<Item = &Package>;
+    fn dependencies_of(&self, id: &PackageId) -> impl Iterator<Item = &DepEdge>;
+    fn dependents_of(&self, id: &PackageId) -> impl Iterator<Item = &DepEdge>;
+    // diagnostics() has a default impl returning an empty slice.
 }
 ```
 

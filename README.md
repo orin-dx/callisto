@@ -29,8 +29,8 @@
 > **Topological Directed Graph Solver**  
 > Models workspace package dependencies using `petgraph`'s Kahn topological solver and Tarjan's SCC algorithm to compute cascading version bumps and catch circular dependency cycles.
 
-> **Zero-Config Native Matrix Auto-Discovery**  
-> Auto-discovers build matrix targets (`napi.triplets`, `maturin.targets`, `engines.node`, `java.version`) directly from manifests as the single source of truth (`callisto matrix`).
+> **Zero-Config Native Matrix Auto-Discovery** *(planned)*
+> Will auto-discover build matrix targets (`napi.triplets`, `maturin.targets`, `engines.node`, `java.version`) directly from manifests as the single source of truth. The `callisto matrix` subcommand is not yet implemented.
 
 > **Hermetic & Build-System Agnostic**  
 > Pure Rust CLI engine runs seamlessly in Bazel sandboxes (`rules_callisto`), Buck2, Nix flakes, Moon WASM (`callisto-moon`), GitHub Actions, GitLab CI, and local VCS hooks (`just hooks`).
@@ -186,12 +186,9 @@ Callisto brings together the best ideas from `@changesets/cli`, Google's `releas
 - **Callisto**: Uses `petgraph`'s Kahn topological solver and Tarjan's SCC algorithm to calculate exact version bump cascades and catch circular dependency cycles with rich diagnostic cards (`miette`).
 - **Alternatives**: `release-please` focuses on single-repo releases. `nx release` is coupled to Nx JavaScript trees.
 
-### Zero-Config Native Matrix Auto-Discovery (`callisto matrix`)
-- **Callisto**: Auto-discovers build matrix targets (`napi.triplets`, `maturin.targets`, `engines.node`, `java.version`) directly from manifests as the single source of truth, eliminating duplicate CI YAML configuration drift.
+### Zero-Config Native Matrix Auto-Discovery (`callisto matrix`) — Planned
+- **Callisto**: Will auto-discover build matrix targets (`napi.triplets`, `maturin.targets`, `engines.node`, `java.version`) directly from manifests as the single source of truth, eliminating duplicate CI YAML configuration drift. Not yet implemented.
 - **Alternatives**: Requires manually maintaining 50-line matrix arrays in GitHub Actions YAML.
-
-> [!NOTE]
-> `callisto matrix --format json` extracts build matrix targets directly from package manifests (`napi.triplets`, `maturin.targets`, `engines.node`, `java.version`) as the single origin source of truth, eliminating duplicate CI YAML configuration drift across runner OS platforms.
 
 ### Hermetic & Build-System Agnostic
 - **Callisto**: Pure Rust CLI engine runs seamlessly in Bazel sandboxes (`rules_callisto`), Buck2, Nix flakes, Moon WASM (`callisto-moon`), GitHub Actions, GitLab CI, and local Git hooks (`just hooks`).
