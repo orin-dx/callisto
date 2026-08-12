@@ -430,10 +430,23 @@ pub fn round_trip(spec: &DepSpec, target: &Version) -> Option<DepSpec> {
                         let rendered = format!("{prefix}{}", render_at_precision(target, rest));
                         rewritten_parts.push(rendered);
                     } else if prefix.starts_with('<') {
-                        // Cannot safely rewrite upper-bound clauses. Return None
-                        // rather than silently producing an impossible constraint
-                        // (e.g. ">=2.1.0, <2.0.0") when the target crosses the bound.
-                        return None;
+                        // Upper-bound clauses are never rewritten (the clause text
+                        // is preserved verbatim), but we must still check whether
+                        // the target actually falls within it. If it doesn't, the
+                        // rewrite would silently produce an impossible constraint
+                        // (e.g. ">=2.1.0, <2.0.0"), so decline with None. If it
+                        // does, the upper bound clause is passed through unchanged.
+                        let bound = Version::parse(rest, target.grammar()).ok()?;
+                        let ordering = target.partial_compare(&bound)?;
+                        let exceeds_bound = if prefix == "<=" {
+                            ordering == std::cmp::Ordering::Greater
+                        } else {
+                            ordering != std::cmp::Ordering::Less
+                        };
+                        if exceeds_bound {
+                            return None;
+                        }
+                        rewritten_parts.push(part_trimmed.to_string());
                     } else {
                         rewritten_parts.push(part_trimmed.to_string());
                     }
@@ -1411,10 +1424,17 @@ version = "4.5.6"
         let target = Version::parse("1.5.0", VersionGrammar::SemVer).unwrap();
 
         let result = round_trip(&spec, &target);
-        assert!(
-            result.is_none(),
-            "compound range with </<= upper bound clause must return None (conservative policy), got: {result:?}"
-        );
+        match result {
+            Some(DepSpec::Range(_, rendered)) => {
+                assert_eq!(
+                    rendered, ">=1.5.0, <2.0.0",
+                    "lower clause must be rewritten to the target while the upper bound clause is preserved unchanged"
+                );
+            }
+            other => panic!(
+                "compound range within upper bound must be rewritten to Some(..), got: {other:?}"
+            ),
+        }
     }
 
     use proptest::prelude::*;
