@@ -400,6 +400,16 @@ mod tests {
         );
     }
 
+    /// [tool.maturin].targets = [] (present, explicitly empty) must be
+    /// distinguishable from absent -- Some(vec![]), not None.
+    #[test]
+    fn read_maturin_targets_present_empty_is_some_empty_vec() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("empty.toml");
+        std::fs::write(&path, "[tool.maturin]\ntargets = []\n").unwrap();
+        assert_eq!(read_maturin_targets(&path).unwrap(), Some(vec![]));
+    }
+
     /// AC-010: malformed TOML syntax must be a hard error naming the path.
     #[test]
     fn read_maturin_targets_malformed_toml_is_error() {
