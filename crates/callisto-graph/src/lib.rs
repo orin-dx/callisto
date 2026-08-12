@@ -23,6 +23,7 @@ pub mod identity;
 pub mod infer;
 pub mod locate;
 mod manifest_cache;
+pub(crate) mod matrix;
 pub mod napi;
 pub mod plan;
 pub mod resolver;
