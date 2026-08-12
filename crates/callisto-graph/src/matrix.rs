@@ -193,6 +193,64 @@ pub(crate) fn read_maturin_targets(
     Ok(Some(out))
 }
 
+/// Reads `engines.node` directly from `pkg_json_path` as a raw string.
+/// `Ok(None)` when absent; `Err` when present but not a JSON string.
+pub(crate) fn read_engines_node(pkg_json_path: &Path) -> Result<Option<String>, GraphError> {
+    let content = std::fs::read_to_string(pkg_json_path).map_err(|e| {
+        GraphError::Manifest(ManifestError::Read {
+            path: pkg_json_path.to_path_buf(),
+            message: e.to_string(),
+        })
+    })?;
+    let val: serde_json::Value = serde_json::from_str(&content).map_err(|e| {
+        GraphError::Manifest(ManifestError::Parse {
+            path: pkg_json_path.to_path_buf(),
+            format: ManifestFormat::PackageJson,
+            message: e.to_string(),
+        })
+    })?;
+    let Some(node) = val.get("engines").and_then(|e| e.get("node")) else {
+        return Ok(None);
+    };
+    let s = node.as_str().ok_or_else(|| {
+        GraphError::Manifest(ManifestError::Parse {
+            path: pkg_json_path.to_path_buf(),
+            format: ManifestFormat::PackageJson,
+            message: "engines.node must be a string".to_string(),
+        })
+    })?;
+    Ok(Some(s.to_string()))
+}
+
+/// Reads `requires-python` directly from `pyproject_path` as a raw string.
+/// `Ok(None)` when absent; `Err` when present but not a TOML string.
+pub(crate) fn read_requires_python(pyproject_path: &Path) -> Result<Option<String>, GraphError> {
+    let content = std::fs::read_to_string(pyproject_path).map_err(|e| {
+        GraphError::Manifest(ManifestError::Read {
+            path: pyproject_path.to_path_buf(),
+            message: e.to_string(),
+        })
+    })?;
+    let val: toml::Value = content.parse().map_err(|e: toml::de::Error| {
+        GraphError::Manifest(ManifestError::Parse {
+            path: pyproject_path.to_path_buf(),
+            format: ManifestFormat::PyprojectToml,
+            message: e.to_string(),
+        })
+    })?;
+    let Some(rp) = val.get("project").and_then(|p| p.get("requires-python")) else {
+        return Ok(None);
+    };
+    let s = rp.as_str().ok_or_else(|| {
+        GraphError::Manifest(ManifestError::Parse {
+            path: pyproject_path.to_path_buf(),
+            format: ManifestFormat::PyprojectToml,
+            message: "requires-python must be a string".to_string(),
+        })
+    })?;
+    Ok(Some(s.to_string()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -439,5 +497,56 @@ mod tests {
             format!("{err}").contains(&path.display().to_string()),
             "error must name the malformed path: {err}"
         );
+    }
+
+    /// AC-004: engines.node reads as a raw string; absent is None.
+    #[test]
+    fn read_engines_node_reads_present_and_absent() {
+        let tmp = tempfile::tempdir().unwrap();
+        let present = tmp.path().join("present.json");
+        std::fs::write(&present, r#"{"engines":{"node":">=20.0.0"}}"#).unwrap();
+        assert_eq!(
+            read_engines_node(&present).unwrap(),
+            Some(">=20.0.0".to_string())
+        );
+
+        let absent = tmp.path().join("absent.json");
+        std::fs::write(&absent, r#"{"name":"pkg"}"#).unwrap();
+        assert_eq!(read_engines_node(&absent).unwrap(), None);
+    }
+
+    /// AC-010c: engines.node present but not a string (e.g. a number) is a
+    /// hard error.
+    #[test]
+    fn read_engines_node_non_string_value_is_error() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("wrong_type.json");
+        std::fs::write(&path, r#"{"engines":{"node":20}}"#).unwrap();
+        assert!(read_engines_node(&path).is_err());
+    }
+
+    /// AC-005: requires-python reads as a raw string; absent is None.
+    #[test]
+    fn read_requires_python_reads_present_and_absent() {
+        let tmp = tempfile::tempdir().unwrap();
+        let present = tmp.path().join("present.toml");
+        std::fs::write(&present, "[project]\nrequires-python = \">=3.9\"\n").unwrap();
+        assert_eq!(
+            read_requires_python(&present).unwrap(),
+            Some(">=3.9".to_string())
+        );
+
+        let absent = tmp.path().join("absent.toml");
+        std::fs::write(&absent, "[project]\nname = \"pkg\"\n").unwrap();
+        assert_eq!(read_requires_python(&absent).unwrap(), None);
+    }
+
+    /// AC-010c: requires-python present but not a string is a hard error.
+    #[test]
+    fn read_requires_python_non_string_value_is_error() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("wrong_type.toml");
+        std::fs::write(&path, "[project]\nrequires-python = 39\n").unwrap();
+        assert!(read_requires_python(&path).is_err());
     }
 }
