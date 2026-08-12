@@ -73,15 +73,26 @@ impl CommandRunner for CliCommandRunner {
         let stdout_handle = child.stdout.take().unwrap();
         let stderr_handle = child.stderr.take().unwrap();
 
-        let stdout_thread = std::thread::spawn(move || {
+        // The reader threads signal completion over a channel rather than
+        // being joined directly. Killing (or the natural exit of) the
+        // direct child does NOT close pipe fds held open by a descendant
+        // process that inherited them (common for npm/cargo/python publish
+        // lifecycle scripts spawning subprocesses). If that happens, the
+        // blocking `read()` inside these threads never returns. Using
+        // `recv_timeout` below lets us bound how long we wait for them
+        // without ever blocking the caller indefinitely.
+        let (stdout_tx, stdout_rx) = std::sync::mpsc::channel::<String>();
+        let (stderr_tx, stderr_rx) = std::sync::mpsc::channel::<String>();
+
+        std::thread::spawn(move || {
             let mut buf = String::new();
             drop(std::io::BufReader::new(stdout_handle).read_to_string(&mut buf));
-            buf
+            drop(stdout_tx.send(buf));
         });
         // Stream stderr line-by-line so publish progress (cargo/npm/twine
         // write to stderr) appears in real time rather than after the process
         // exits. The full text is still accumulated for caller analysis.
-        let stderr_thread = std::thread::spawn(move || {
+        std::thread::spawn(move || {
             use std::io::BufRead;
             let mut buf = String::new();
             for line in std::io::BufReader::new(stderr_handle).lines() {
@@ -94,8 +105,13 @@ impl CommandRunner for CliCommandRunner {
                     Err(_) => break,
                 }
             }
-            buf
+            drop(stderr_tx.send(buf));
         });
+
+        // Grace period to wait for the reader threads after the direct
+        // child has exited (or been killed). Bounded so a lingering
+        // descendant holding the pipe open can never hang the caller.
+        const READER_GRACE: Duration = Duration::from_secs(3);
 
         let deadline = Instant::now() + timeout;
         let status = loop {
@@ -108,8 +124,22 @@ impl CommandRunner for CliCommandRunner {
                     if Instant::now() >= deadline {
                         drop(child.kill());
                         drop(child.wait());
-                        drop(stdout_thread.join());
-                        drop(stderr_thread.join());
+                        // Reader threads are intentionally not joined here:
+                        // if a descendant process is still holding a pipe
+                        // fd open, join() could block forever. We wait a
+                        // bounded grace period for output, then abandon the
+                        // threads (they leak until the descendant
+                        // eventually exits and closes the fd -- a thread
+                        // leak, not a memory-safety issue).
+                        let stdout = stdout_rx.recv_timeout(READER_GRACE).ok();
+                        let stderr = stderr_rx.recv_timeout(READER_GRACE).ok();
+                        if stdout.is_none() || stderr.is_none() {
+                            eprintln!(
+                                "warning: `{program}` timed out and a descendant process \
+                                 appears to still hold its output pipes open; captured \
+                                 output may be incomplete"
+                            );
+                        }
                         return Err(CommandError::TimedOut {
                             program: program.to_string(),
                             seconds: timeout.as_secs(),
@@ -120,13 +150,22 @@ impl CommandRunner for CliCommandRunner {
             }
         };
 
-        let stdout = stdout_thread.join().unwrap_or_default();
-        let stderr = stderr_thread.join().unwrap_or_default();
+        // The direct child has exited on its own. Even so, a descendant
+        // process can still hold the pipe fds open (e.g. a backgrounded
+        // job spawned by a shell script), so bound the wait here too.
+        let stdout_result = stdout_rx.recv_timeout(READER_GRACE);
+        let stderr_result = stderr_rx.recv_timeout(READER_GRACE);
+        if stdout_result.is_err() || stderr_result.is_err() {
+            eprintln!(
+                "warning: `{program}` exited but a descendant process appears to still \
+                 hold its output pipes open; captured output may be incomplete"
+            );
+        }
 
         Ok(CommandOutput {
             exit_code: status.code(),
-            stdout,
-            stderr,
+            stdout: stdout_result.unwrap_or_default(),
+            stderr: stderr_result.unwrap_or_default(),
         })
     }
 }
@@ -165,6 +204,36 @@ mod tests {
             )
             .unwrap();
         assert!(out.success());
+    }
+
+    /// Regression test for a hung-descendant deadlock: killing the direct
+    /// child does not close pipe fds inherited by a grandchild process that
+    /// outlives it. The direct child (`sh`) exits almost immediately, but a
+    /// backgrounded grandchild (`sleep 30`) keeps stderr open well past
+    /// that. If the reader threads are joined unconditionally, this call
+    /// hangs for ~30s regardless of the requested timeout. The fix bounds
+    /// how long we wait on the reader threads so the call always returns
+    /// promptly.
+    #[test]
+    fn run_with_timeout_bounds_reader_join_when_descendant_holds_pipe_open() {
+        let runner = CliCommandRunner;
+        let start = Instant::now();
+        let result = runner.run_with_timeout(
+            "sh",
+            &["-c", "sleep 30 >&2 & exit 0"],
+            std::path::Path::new("."),
+            Duration::from_secs(2),
+        );
+        let elapsed = start.elapsed();
+        assert!(
+            elapsed < Duration::from_secs(6),
+            "run_with_timeout must not block on a descendant process holding \
+             stdio pipes open; took {elapsed:?}, result: {result:?}"
+        );
+        assert!(
+            result.is_ok(),
+            "expected Ok despite a lingering descendant holding the pipe open, got: {result:?}"
+        );
     }
 
     /// F-007: subprocess stderr must be streamed line-by-line rather than
