@@ -240,3 +240,7 @@ Yes, commit
 ---
 
 Are we done all our work?
+
+---
+
+Yes and dig into the rest of the files to understand what the changes are
