@@ -45,9 +45,70 @@ pub(crate) fn artifact_name_for_triple(triple: &str) -> String {
     format!("native-{triple}")
 }
 
-use callisto_model::{ManifestRole, PlatformTarget};
+use std::path::Path;
 
+use callisto_model::{ManifestError, ManifestFormat, ManifestRole, PlatformTarget};
+
+use crate::error::GraphError;
 use crate::napi::triple_to_role;
+
+/// Result of reading the `napi.targets` field from a package.json. Distinct
+/// from `Option<Vec<String>>` so AC-001b (present-but-empty vs absent) is a
+/// type-level distinction, not a magic-empty-vec convention.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum NapiTargetsField {
+    Absent,
+    Present(Vec<String>),
+}
+
+/// Reads `napi.targets` directly from `pkg_json_path`. A missing `napi` key
+/// or missing `napi.targets` key is `Absent` (AC-003: no platformTargets
+/// entry). A present `napi.targets` that is not a JSON array of strings is a
+/// hard error (AC-010c) -- unlike `NapiTargetsIndex::load`, which silently
+/// drops non-array values.
+pub(crate) fn read_napi_targets(pkg_json_path: &Path) -> Result<NapiTargetsField, GraphError> {
+    let content = std::fs::read_to_string(pkg_json_path).map_err(|e| {
+        GraphError::Manifest(ManifestError::Read {
+            path: pkg_json_path.to_path_buf(),
+            message: e.to_string(),
+        })
+    })?;
+    let val: serde_json::Value = serde_json::from_str(&content).map_err(|e| {
+        GraphError::Manifest(ManifestError::Parse {
+            path: pkg_json_path.to_path_buf(),
+            format: ManifestFormat::PackageJson,
+            message: e.to_string(),
+        })
+    })?;
+
+    let Some(napi) = val.get("napi") else {
+        return Ok(NapiTargetsField::Absent);
+    };
+    let Some(targets) = napi.get("targets") else {
+        return Ok(NapiTargetsField::Absent);
+    };
+
+    let arr = targets.as_array().ok_or_else(|| {
+        GraphError::Manifest(ManifestError::Parse {
+            path: pkg_json_path.to_path_buf(),
+            format: ManifestFormat::PackageJson,
+            message: "napi.targets must be a JSON array of strings".to_string(),
+        })
+    })?;
+
+    let mut out = Vec::with_capacity(arr.len());
+    for item in arr {
+        let s = item.as_str().ok_or_else(|| {
+            GraphError::Manifest(ManifestError::Parse {
+                path: pkg_json_path.to_path_buf(),
+                format: ManifestFormat::PackageJson,
+                message: "napi.targets entries must all be strings".to_string(),
+            })
+        })?;
+        out.push(s.to_string());
+    }
+    Ok(NapiTargetsField::Present(out))
+}
 
 /// Builds a PlatformTarget for `triple`, combining `triple_to_role`'s
 /// platform/arch/abi with this module's hostRunner/useCross/artifactName
@@ -84,6 +145,67 @@ pub(crate) fn build_platform_target(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// AC-001b: an explicitly empty napi.targets = [] must be distinguishable
+    /// from the field being absent entirely.
+    #[test]
+    fn read_napi_targets_distinguishes_absent_from_present_empty() {
+        let tmp = tempfile::tempdir().unwrap();
+        let absent_path = tmp.path().join("absent.json");
+        std::fs::write(&absent_path, r#"{"name":"pkg"}"#).unwrap();
+        assert_eq!(
+            read_napi_targets(&absent_path).unwrap(),
+            NapiTargetsField::Absent
+        );
+
+        let empty_path = tmp.path().join("empty.json");
+        std::fs::write(&empty_path, r#"{"napi":{"targets":[]}}"#).unwrap();
+        assert_eq!(
+            read_napi_targets(&empty_path).unwrap(),
+            NapiTargetsField::Present(vec![])
+        );
+
+        let populated_path = tmp.path().join("populated.json");
+        std::fs::write(
+            &populated_path,
+            r#"{"napi":{"targets":["aarch64-apple-darwin","x86_64-unknown-linux-gnu"]}}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            read_napi_targets(&populated_path).unwrap(),
+            NapiTargetsField::Present(vec![
+                "aarch64-apple-darwin".to_string(),
+                "x86_64-unknown-linux-gnu".to_string()
+            ])
+        );
+    }
+
+    /// AC-010b: malformed JSON syntax must be a hard read error naming the path.
+    #[test]
+    fn read_napi_targets_malformed_json_is_error() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("bad.json");
+        std::fs::write(&path, r#"{"napi":{"targets":["a",]}}"#).unwrap(); // trailing comma
+        let err = read_napi_targets(&path).unwrap_err();
+        assert!(
+            format!("{err}").contains(&path.display().to_string()),
+            "error must name the malformed path: {err}"
+        );
+    }
+
+    /// AC-010c: napi.targets present but not a JSON array (a bare string) must
+    /// be a hard error, not silently treated as absent.
+    #[test]
+    fn read_napi_targets_non_array_value_is_error() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("wrong_type.json");
+        std::fs::write(&path, r#"{"napi":{"targets":"aarch64-apple-darwin"}}"#).unwrap();
+        let err = read_napi_targets(&path).unwrap_err();
+        assert!(
+            format!("{err}").contains(&path.display().to_string()),
+            "error must name the malformed path: {err}"
+        );
+    }
 
     /// AC-012: table-driven assertion of all 18 (hostRunner, useCross) pairs.
     #[test]
