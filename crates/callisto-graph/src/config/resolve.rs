@@ -241,23 +241,17 @@ pub fn load(root: &Path) -> Result<ResolvedConfig, ConfigError> {
         .and_then(|c| c.dir.as_deref())
         .unwrap_or(".changeset");
 
-    // Reject any changesets.dir value that contains '..' components — they
-    // would allow load_changesets / atomic_write to escape the workspace root.
-    // We check Path::components() rather than canonicalizing because the
-    // directory may not exist yet (e.g. a fresh workspace).
-    {
-        use std::path::Component;
-        if PathBuf::from(changesets_dir_str)
-            .components()
-            .any(|c| c == Component::ParentDir)
-        {
-            return Err(ConfigError::InvalidChangesetsDir {
+    // Reject any changesets.dir value that is absolute or contains '..'
+    // components — either would allow load_changesets / atomic_write to
+    // escape the workspace root. We check components() rather than
+    // canonicalizing because the directory may not exist yet (e.g. a fresh
+    // workspace).
+    let changesets_dir =
+        callisto_model::workspace_relative(changesets_dir_str).map_err(|_err| {
+            ConfigError::InvalidChangesetsDir {
                 dir: changesets_dir_str.to_string(),
-            });
-        }
-    }
-
-    let changesets_dir = PathBuf::from(changesets_dir_str);
+            }
+        })?;
 
     let cascade_raw = raw.cascade.unwrap_or_default();
     let mode = match cascade_raw.mode.as_deref() {
@@ -374,7 +368,18 @@ pub fn load(root: &Path) -> Result<ResolvedConfig, ConfigError> {
             .transpose()
             .map_err(ConfigError::Tag)?;
 
-        let changelog = raw_pkg.changelog.as_deref().map(PathBuf::from);
+        let changelog = raw_pkg
+            .changelog
+            .as_deref()
+            .map(|s| {
+                callisto_model::workspace_relative(s).map_err(|_err| {
+                    ConfigError::InvalidChangelogPath {
+                        pattern: raw_pkg.pattern.clone(),
+                        value: s.to_string(),
+                    }
+                })
+            })
+            .transpose()?;
 
         let pre_major_inference = raw_pkg
             .pre_major_inference
@@ -436,7 +441,18 @@ pub fn load(root: &Path) -> Result<ResolvedConfig, ConfigError> {
             .transpose()
             .map_err(ConfigError::Tag)?;
 
-        let changelog = raw_pkg.changelog.as_deref().map(PathBuf::from);
+        let changelog = raw_pkg
+            .changelog
+            .as_deref()
+            .map(|s| {
+                callisto_model::workspace_relative(s).map_err(|_err| {
+                    ConfigError::InvalidChangelogPath {
+                        pattern: raw_pkg.pattern.clone(),
+                        value: s.to_string(),
+                    }
+                })
+            })
+            .transpose()?;
 
         let pre_major_inference = raw_pkg
             .pre_major_inference
@@ -519,6 +535,51 @@ mod tests {
         assert!(
             matches!(err, ConfigError::InvalidChangesetsDir { .. }),
             "expected InvalidChangesetsDir error, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn test_config_resolve_rejects_absolute_changesets_dir() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path();
+        fs::write(root.join("callisto.toml"), "[changesets]\ndir = \"/etc\"\n")
+            .expect("write callisto.toml");
+
+        let result = load(root);
+        assert!(
+            result.is_err(),
+            "expected load() to fail for absolute changesets dir '/etc', got Ok \
+             (the traversal guard only checks '..' components, not absolute paths — \
+             this is the bug under test)"
+        );
+        let err = result.unwrap_err();
+        assert!(
+            matches!(err, ConfigError::InvalidChangesetsDir { .. }),
+            "expected InvalidChangesetsDir error, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn test_config_resolve_rejects_absolute_changelog_in_package_block() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path();
+        fs::write(
+            root.join("callisto.toml"),
+            "[[package]]\nmatch = \"some-pkg\"\nchangelog = \"/tmp/should-not-be-written-here.md\"\n",
+        )
+        .expect("write callisto.toml");
+
+        let result = load(root);
+        assert!(
+            result.is_err(),
+            "expected load() to fail for absolute changelog path, got Ok \
+             (raw_pkg.changelog is currently read straight into a PathBuf with no validation \
+             — this is the bug under test)"
+        );
+        let err = result.unwrap_err();
+        assert!(
+            matches!(err, ConfigError::InvalidChangelogPath { .. }),
+            "expected InvalidChangelogPath error, got: {err:?}"
         );
     }
 

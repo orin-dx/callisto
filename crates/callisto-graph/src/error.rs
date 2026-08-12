@@ -318,6 +318,13 @@ pub enum ConfigError {
     )]
     InvalidChangesetsDir { dir: String },
 
+    #[error("`changelog = \"{value}\"` on `{pattern}` is an absolute path or contains `..` path components and would escape the workspace root")]
+    #[diagnostic(
+        code(E117),
+        help("Use a path relative to the package root that does not contain '..' components.")
+    )]
+    InvalidChangelogPath { pattern: String, value: String },
+
     #[error(transparent)]
     Tag(#[from] TagTemplateError),
 
