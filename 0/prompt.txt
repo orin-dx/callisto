@@ -258,3 +258,7 @@ Yes and dig into the rest of the files to understand what the changes are
 ---
 
 Where are the specs for the matrix support? Can we finish implementing it?
+
+---
+
+Yes please
