@@ -310,11 +310,11 @@ pub enum ConfigError {
     InvalidPreMajorInference { found: String },
 
     #[error(
-        "changesets.dir `{dir}` contains `..` path components and would escape the workspace root"
+        "changesets.dir `{dir}` is an absolute path or contains `..` path components and would escape the workspace root"
     )]
     #[diagnostic(
         code(E116),
-        help("Use a path relative to the workspace root that does not contain '..' components.")
+        help("Use a path relative to the workspace root that is not absolute and does not contain '..' components.")
     )]
     InvalidChangesetsDir { dir: String },
 
