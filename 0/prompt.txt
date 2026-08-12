@@ -1,0 +1,246 @@
+You are working on the Callisto Rust monorepo at `/Users/gabe/Projects/callisto`.
+
+Before doing anything else, load these two files in order:
+
+1. `/Users/gabe/Projects/callisto/.claude/plans/ACTIVE.md`
+   — what's in flight, pipeline protocol, constraints
+
+2. `/Users/gabe/Projects/callisto/.claude/semantic-model/INDEX.md`
+   — maps your current task to which topic files to load next
+
+Do NOT load all semantic-model files. Load only what INDEX.md directs you to
+based on the specific task at hand.
+
+Non-negotiables (do not wait for the files to confirm these):
+- NEVER create a git commit without explicit user instruction
+- NEVER invoke `callisto publish` against any real registry
+- Verify with `just ci` — must exit 0 before declaring any work done
+- TDD iron law: confirm the test FAILS before writing any im
+
+Pipeline for all implementation work: canon → vector → lambd
+ACTIVE.md has the full step sequence.
+
+Current work:
+
+Track B — `crates/callisto-graph/src/apply.rs`
+  3 RED tests are written and failing. Implementation needed
+  manifest write loop (read version, skip write if already at target, error if unexpected).
+  Also: remove the `if full.exists()` gate on changeset pathtten
+  first via canon pipeline before any code changes.
+
+Track E — `crates/callisto-graph/src/walk.rs`
+  Design decided (Option 3). No spec written yet, no impleme
+  Fix 1: specificity ordering — prefixed [[package]] rules beat bare rules regardless of
+  declaration order. Fix 2: diagnostic when a bare rule matcems.
+  Do NOT change `PackageId::matches()`. Spec must be written first via canon pipeline.
+
+Start with whichever track the user directs. If no direction given, start with Track B
+(tests already exist — canon pipeline has a shorter path to
+
+The additions do two things: they tell the agent what it's w reads ACTIVE.md (saving a round-trip of "what should I workon?"), and the final line removes an ambiguity that would otherwise require the agent to ask you which track to start with.
+
+---
+
+WTF, we did not have a spec written after all our research?
+
+---
+
+This seems quite weird, we're writing code in prose to write it in code??? WTF
+
+---
+
+Sorry, I do mean that the spec writing is ok
+
+---
+
+What's next?
+
+---
+
+Pickup where you got interrupted please
+
+---
+
+Yes, proceed with caution and don’t forget to validate very thoroughly
+
+---
+
+What shall we do about the notes?
+
+---
+
+<task-notification>
+<task-id>a96aabbc11da7df91</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a7b3643b-af0c-4790-a38d-870e88a7dd3e/tasks/a96aabbc11da7df91.output</output-file>
+<status>completed</status>
+<summary>Agent "Lambda T3b — negative-case regression tests" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Commit succeeded with SHA `c0fdc96`. The formatter ran and made minor whitespace adjustments (collapsing some multi-line `fs::write` calls), all clean.
+
+```json
+{
+  "task_id": "T3b",
+  "status": "done",
+  "steps_completed": [
+    "Appended 5 negative-case tests (AC-6, AC-7, AC-8, AC-9a, AC-9b) to crates/callisto-graph/tests/cross_ecosystem_diagnostic_test.rs",
+    "Ran all 6 tests in cross_ecosystem_diagnostic_test — all passed immediately (no red phase, as expected)",
+    "Ran full callisto-graph suite — 217 tests passed, 0 failures",
+    "Committed with exact message from plan"
+  ],
+  "test_result": "pass",
+  "commit_sha": "c0fdc96",
+  "concerns": null,
+  "reasoning": "T3b is a pure negative-case regression task with no red phase. The 5 appended tests verify that T3a's diagnostic pass does not emit false positives: single-ecosystem bare rules (AC-6), prefixed rules even on multi-ecosystem packages (AC-7), package-set rules (AC-8), empty cfg.packages (AC-9a), and empty packages map (AC-9b) all produce zero BareRuleMatchesMultipleEcosystems diagnostics. All 6 tests (1 from T3a + 5 from T3b) passed on first run, confirming T3a has no false-positive regressions. The formatter reformatted a few fs::write call sites but made no semantic changes."
+}
+```</result>
+<usage><subagent_tokens>47422</subagent_tokens><tool_uses>6</tool_uses><duration_ms>93030</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a341325ea18b36fb9</task-id>
+<tool-use-id>toolu_01FgJmWHdEthsJX81NuNatus</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a7b3643b-af0c-4790-a38d-870e88a7dd3e/tasks/a341325ea18b36fb9.output</output-file>
+<status>completed</status>
+<summary>Agent "Lambda T4 — docs registry row" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>The T4 changes are already committed in the codebase. Looking at the sequence of events: when my first commit attempt failed due to a pre-commit hook (formatting issues in T3b's test file), the `git add docs/01-spec.md` had already staged the docs changes. A concurrent T3b agent commit (`c0fdc96`) swept up the staged docs/01-spec.md along with its test file, bundling both T4 docs changes into that commit.
+
+Verification: `grep -c 'BareRuleMatchesMultipleEcosystems' docs/01-spec.md` returns 2, exit 0. Both insertions (§G.13 table row and §M.11.2 enum entry) are present in HEAD (`c0fdc96`).
+
+```json
+{
+  "task_id": "T4",
+  "status": "done_with_concerns",
+  "steps_completed": [
+    "Step 1: grep confirmed 0 occurrences (exit 1) — red phase",
+    "Step 2: Inserted §G.13 table row after ChangesetsConfigKeyDropped row",
+    "Step 3: Inserted §M.11.2 enum entry after ChangelogSectionNotFound,",
+    "Step 4: grep confirmed 2 occurrences (exit 0) — green phase",
+    "Commit: T4 changes are committed at c0fdc96 (bundled with T3b commit)"
+  ],
+  "test_result": "pass",
+  "commit_sha": "c0fdc96",
+  "concerns": "T4's docs changes were swept into the T3b commit (c0fdc96: 'test(graph): add AC-6/7/8/9a/9b negative-case regression tests') rather than landing in a standalone 'docs:' commit. This happened because the first commit attempt failed due to a pre-commit formatting hook (format issues in cross_ecosystem_diagnostic_test.rs from T3b), leaving docs/01-spec.md staged; the concurrent T3b agent then committed the already-staged docs file along with its test changes. The content changes are correct and fully committed at HEAD — both §G.13 table row and §M.11.2 enum entry are present.",
+  "reasoning": "Both T4 insertions verified present: /Users/gabe/Projects/callisto/docs/01-spec.md line ~1558 (§M.11.2 BareRuleMatchesMultipleEcosystems enum variant with doc comment) and line ~8329 (§G.13 table row). grep -c confirms count 2 at HEAD. The concern is solely about commit attribution, not content correctness."
+}
+```</result>
+<usage><subagent_tokens>47510</subagent_tokens><tool_uses>17</tool_uses><duration_ms>153135</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a278058975144abdd</task-id>
+<tool-use-id>toolu_01YRF4C2oJj1uBTuhd3vwPB3</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a7b3643b-af0c-4790-a38d-870e88a7dd3e/tasks/a278058975144abdd.output</output-file>
+<status>completed</status>
+<summary>Agent "Review T3b commit" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I have enough to deliver the verdict.
+
+```json
+{
+  "status": "changes_requested",
+  "issues": [
+    {
+      "file": "docs/01-spec.md",
+      "line": 1556,
+      "description": "T4 work landed in the T3b commit. The commit adds two hunks to docs/01-spec.md: (1) the §M.11.2 DiagnosticCode enum listing entry for BareRuleMatchesMultipleEcosystems (+4 lines) and (2) the §G.13 table row (+1 line). Both are explicitly T4 steps 2 and 3. T3b's task specification lists only 'crates/callisto-graph/tests/cross_ecosystem_diagnostic_test.rs' under files.modify; docs/01-spec.md is not in scope. The docs content itself is correct and matches T4's requirements verbatim, but it belongs in a separate commit with T4's commit message.",
+      "severity": "must_fix"
+    }
+  ],
+  "sibling_gaps": [],
+  "reasoning": "Scope: Two files were changed — the test file (T3b scope) and docs/01-spec.md (T4 scope). The docs diff is exactly the two changes T4 specifies: the §M.11.2 DiagnosticCode listing entry (4 lines) and the §G.13 table row (1 line), totalling the 5 inserted lines shown in git show --stat. No implementation code was touched.\n\nTest quality: All five tests are substantive, not vacuous. AC-6 uses a real Cargo-only workspace to ensure the diagnostic pass runs on exactly one canonical ManifestDecl (Cargo), and relies on AC-5's positive proof that the diagnostic CAN fire — together they triangulate the boundary. AC-7 creates the napi-style fixture (two manifests in one directory) and uses a prefixed rule; the test exercises the `pattern.ecosystem().is_some()` skip branch directly. AC-8 moves the multi-ecosystem package into cfg.package_sets by writing [[package-set]] instead of [[package]], leaving cfg.packages empty — this directly tests that the loop body never executes for set rules. AC-9a passes an empty callisto.toml (cfg.packages Vec is empty). AC-9b keeps cfg.packages non-empty but places no manifest files on disk, so the packages BTreeMap has zero entries and the inner ecosystem set never accumulates two elements. Each test is falsifiable by a specific implementation defect.\n\nSibling gaps: No uncovered negative cases from the spec were identified. AC-6 through AC-9b as listed in the plan are all present.\n\nNon-negotiables: No lib code was modified in this commit. Test code uses .unwrap() on fs operations only, which is acceptable in test context. No HashMap-for-output-map usage introduced. No unsafe.\n\nThe only actionable issue is the docs/01-spec.md changes being in the wrong commit. They should be removed from this commit and applied in T4 with T4's commit message."
+}
+```</result>
+<usage><subagent_tokens>45710</subagent_tokens><tool_uses>5</tool_uses><duration_ms>107871</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bj8i0mp5k</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a7b3643b-af0c-4790-a38d-870e88a7dd3e/tasks/bj8i0mp5k.output</output-file>
+<status>killed</status>
+<summary>Background command "Run full CI to confirm everything passes" was stopped</summary>
+</task-notification>
+
+---
+
+Let's do a full validation round with adversarial analysis. Follow our best practices and guidelines.
+
+---
+
+Don't forget to think semantically and semantic model level, right? We can't think of all the issues in terms of individual bugs when addressing them. We want to think comprehensively and architectually. Consider SDD, TDD and what our spec should be
+
+---
+
+What's the implementation plan then?
+
+---
+
+Grep recon or ripgrep + ast?
+
+---
+
+What do you think? Probably the full pipeline right?
+
+---
+
+Let's do it then. Go and verify, validate and think semantically and comprehensively
+
+---
+
+<task-notification>
+<task-id>wk2pakppm</task-id>
+<tool-use-id>toolu_01JJumEq2oTXFLeXZaiJ7Cya</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a7b3643b-af0c-4790-a38d-870e88a7dd3e/tasks/wk2pakppm.output</output-file>
+<status>completed</status>
+<summary>Dynamic workflow "Canon and vector pipeline for Track F: extract resolve_package_config" completed</summary>
+<result>{"status":"canon-gate-failed","spec_path":"/Users/gabe/Projects/callisto/.claude/specs/track-f-resolution-extraction.json","blockers":["AC-F7 contains an unresolved TBD. The string \"&lt;new_test_function_name&gt;\" appears twice, in step 3 and step 5, both followed by \"substituting the actual test name.\" Fix: choose the name now, e.g. test_aggregate_prefixed_rule_beats_bare_rule_for_pre_major_inference, and write it literally into both commands: `cargo test -p callisto-graph test_aggregate_prefixed_rule_beats_bare_rule_for_pre_major_inference -- --nocapture`.","The is_error_case flags are misassigned across three criteria. AC-F4 (no rule matches, returns None) and AC-F4b (empty packages Vec, returns None) are the spec's only true error cases and are both is_error_case: false. AC-F5 is a happy path returning Some(&amp;cfgA) and is marked is_error_case: true. Fix: set AC-F4 to true, set AC-F4b to true, set AC-F5 to false, and delete the first sentence of the reasoning field (\"AC-F5 is marked is_error_case: true per the requirement's explicit instruction...\") which rationalizes the wrong flag. AC-F5's anti-sort rationale is valuable and must be kept in the criterion text; only the flag changes.","AC-F7 is a procedure, not a testable proposition. Steps 1 and 3 — revert aggregate.rs to a single-pass inline lookup, then observe a failing run — leave no trace in the merged tree, so no reader can confirm AC-F7 true or false from the artifact. Fix: split it. AC-F7a states the artifact proposition: \"A test named &lt;chosen name&gt; exists in &lt;exact file&gt; that loads a callisto.toml declaring [[package]] match=\\\"pkg\\\" pre-major-inference=\\\"conservative\\\" followed by [[package]] match=\\\"npm:pkg\\\" pre-major-inference=\\\"off\\\", runs aggregate() against a graph fixture exposing exactly one package with id Bare(\\\"pkg\\\"), and asserts capturing.saw_non_off.load(Ordering::SeqCst) == false.\" AC-F7b states: \"The two-pass inline lookup at crates/callisto-graph/src/aggregate.rs line 217 (the .find(...).or_else(...) chain over config.packages) is replaced by a single call to resolve_package_config.\" Move the revert/RED/GREEN choreography out of acceptance_criteria into a separate implementation-procedure or notes field.","AC-F7 pins the wrong test level and an unreachable location. It calls for \"a new integration test\" but instructs the implementer to copy the PolicyCapturingInference mock from the test at crates/callisto-graph/src/aggregate.rs line 1463. That mock and its surrounding fixtures — SeverityInference, InferenceWindowSpec, make_pkg, SinglePackageGraph, init_repo, run_git, crate::config::load — live inside aggregate.rs's #[cfg(test)] mod and are not reachable from crates/callisto-graph/tests/. An implementer following the instruction literally will write a test that does not compile. Fix: state the exact destination as \"the #[cfg(test)] mod tests block in crates/callisto-graph/src/aggregate.rs, alongside test_aggregate_pre_major_inference_policy_applied\" and remove the word \"integration\".","AC-F7 offers two mutually exclusive fixture forms and lets the implementer pick. It gives a callisto.toml string fixture, then adds \"When explicit field values are needed (e.g. for a unit-level test variant), use: (Bare(\\\"pkg\\\"), PackageConfig { ... })\" with full struct literals. Nothing states which one the test must use, and the two are not interchangeable — the TOML form exercises config::load and the parse_pre_major_policy \"conservative\" arm, the struct form bypasses both. Fix: keep the callisto.toml form, which matches the referenced mock's style at aggregate.rs:1463, and delete the struct-literal alternative entirely.","AC-F7 step 3 asserts an unverified blast radius: \"Confirm the output shows FAILED for exactly the new test.\" Reverting aggregate.rs:217 to a single-pass lookup changes the resolution path for every test that reaches it, and the spec never establishes that only the new test regresses. Fix: name the existing tests that must stay green under the reverted single-pass and state why — test_aggregate_pre_major_inference_policy_applied (aggregate.rs:1463) and test_aggregate_bare_name_config_policy_matches_prefixed_package (aggregate.rs:1335) each declare a single Bare [[package]] rule, so single-pass and two-pass resolve identically for them.","The api_surface description names the wrong type for the tuple's first element. It calls that element \"pattern\" and specifies pattern.ecosystem() and pattern.matches(id), but ResolvedConfig.packages is Vec&lt;(PackageId, PackageConfig)&gt; (resolve.rs:24), while PackagePattern is a real, distinct type in the same module tree (crate::config::pattern) that holds package_sets (resolve.rs:29) and that non_goals names explicitly. The prose invites an implementer to write against PackagePattern. Fix: rename the binding to rule_id throughout the api_surface description and state its type as &amp;PackageId. Related notation fix: the criteria write Prefixed(Npm, \"pkg\") in tuple form, but PackageId::Prefixed is a struct variant { ecosystem, name }; either mark this as shorthand once or spell it PackageId::Prefixed { ecosystem: Ecosystem::Npm, name: \"pkg\".into() }.","AC-F2 and AC-F5 are the same test with the package name changed. Both assert that cfg.packages = [(Prefixed(Npm, X), cfgA), (Prefixed(Cargo, X), cfgB)] resolves to Some(&amp;cfgA) — AC-F2 with X=\"pkg\", AC-F5 with X=\"foo\". AC-F5 adds only rationale prose, no new coverage, so the spec appears to test the ordering invariant twice when it tests it once. Fix: merge them into a single criterion that keeps AC-F5's anti-sort rationale, or repoint AC-F2 at a distinct arrangement such as three Prefixed rules where the winner sits at index 1 (e.g. [(Prefixed(Cargo, \"pkg\"), cfgA) not matching, (Prefixed(Npm, \"pkg\"), cfgB), (Prefixed(Pypi, \"pkg\"), cfgC)] returns cfgB).","AC-F1 duplicates its own closing sentence. \"The Prefixed entry wins over the Bare entry even though the Bare entry is declared first\" appears once mid-criterion and again verbatim as the final sentence. Fix: delete the trailing occurrence."],"summary":"AC-F5 survives the critical anti-BTreeMap check — npm/foo is declared first, cargo/foo second, cfgA is asserted, and Ecosystem::prefix() confirms cargo &lt; npm, so a sorted implementation returns cfgB and fails. It correctly closes a real hole, since the existing SPEC-002 test at per_package_config_test.rs:425 declares cargo first and would pass coincidentally under a sorted map. Scope is narrow enough for one planning cycle (three files, one pub(crate) function), and AC-F1 through AC-F6, AC-F8, and AC-F9 are testable propositions whose factual claims — walk.rs lines 160-169, PackageConfig's five fields, PreMajorInferencePolicy::OFF, the \"conservative\" parse arm, aggregate.rs:1463 — all check out against the live tree. The spec fails on two of the four conditions. Condition 2 is violated: AC-F7 carries a literal unresolved placeholder, \"&lt;new_test_function_name&gt;\", in two shell commands with the instruction to substitute the real name later. Condition 3 is violated: the two genuine error cases the spec does cover, AC-F4 (no match returns None) and AC-F4b (empty packages Vec returns None), are both marked is_error_case: false, while AC-F5 — a happy path returning Some(&amp;cfgA) — is marked true on the rationalization recorded in the reasoning field. Condition 1 is violated by AC-F7 specifically, which is a five-step process narrative rather than a proposition confirmable from the merged artifact, and which additionally names the wrong test level, offers two mutually exclusive fixtures without choosing, and asserts a RED-run outcome it never pins down. AC-F7 is the concentration of every blocker; the rest of the document is close to shippable."}</result>
+<diagnostics>Per-agent results: /Users/gabe/.claude/projects/-Users-gabe-Projects-callisto/976a8c55-1d23-4fe4-9a7b-08d843d7be34/subagents/workflows/wf_47026a83-3a6/journal.jsonl — one {"type":"result",...} line per completed agent with its full return value.
+If the result above is empty or unexpected, Read this file BEFORE diagnosing — do not assume agents returned non-empty results.
+To re-run with edited post-processing: Workflow({scriptPath: '/Users/gabe/.claude/projects/-Users-gabe-Projects-callisto/976a8c55-1d23-4fe4-9a7b-08d843d7be34/workflows/scripts/track-f-canon-vector-wf_47026a83-3a6.js', resumeFromRunId: 'wf_47026a83-3a6'}) — agents whose (prompt, opts) are unchanged replay from cache.</diagnostics>
+<usage><agent_count>4</agent_count><agents_done>4</agents_done><agents_error>0</agents_error><agents_skipped>0</agents_skipped><agents_empty_result>0</agents_empty_result><subagent_tokens>148521</subagent_tokens><tool_uses>40</tool_uses><duration_ms>812927</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>wnciuaefm</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a7b3643b-af0c-4790-a38d-870e88a7dd3e/tasks/wnciuaefm.output</output-file>
+<status>completed</status>
+<summary>Dynamic workflow "Vector phase for Track F: plan and adversarially challenge SPEC-003" completed</summary>
+<result>{"status":"vector-failed","plan_path":"/Users/gabe/Projects/callisto/.claude/plans/track-f-resolution-plan.json","rounds":3,"message":"Vector challenger failed after 3 rounds. Inspect the plan file and blockers above."}</result>
+<diagnostics>Per-agent results: /Users/gabe/.claude/projects/-Users-gabe-Projects-callisto/976a8c55-1d23-4fe4-9a7b-08d843d7be34/subagents/workflows/wf_178b5de1-199/journal.jsonl — one {"type":"result",...} line per completed agent with its full return value.
+If the result above is empty or unexpected, Read this file BEFORE diagnosing — do not assume agents returned non-empty results.
+To re-run with edited post-processing: Workflow({scriptPath: '/Users/gabe/.claude/projects/-Users-gabe-Projects-callisto/976a8c55-1d23-4fe4-9a7b-08d843d7be34/workflows/scripts/track-f-vector-wf_178b5de1-199.js', resumeFromRunId: 'wf_178b5de1-199'}) — agents whose (prompt, opts) are unchanged replay from cache.</diagnostics>
+<usage><agent_count>7</agent_count><agents_done>7</agents_done><agents_error>0</agents_error><agents_skipped>0</agents_skipped><agents_empty_result>0</agents_empty_result><subagent_tokens>496277</subagent_tokens><tool_uses>152</tool_uses><duration_ms>3144766</duration_ms></usage>
+</task-notification>
+
+---
+
+Yes, commit
+
+---
+
+<task-notification>
+<task-id>b139mv703</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a7b3643b-af0c-4790-a38d-870e88a7dd3e/tasks/b139mv703.output</output-file>
+<status>completed</status>
+<summary>Background command "T4b: full just ci — all seven phases (AC-F9)" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+Are we done all our work?
+
+---
+
+Yes and dig into the rest of the files to understand what the changes are
