@@ -334,3 +334,134 @@ fn matrix_package_filter_and_unknown_package_via_binary() {
         "no valid MatrixReport JSON must be printed to stdout on error"
     );
 }
+
+/// AC-009: platformTargets/runtimeVersions keys and each group's targets[]
+/// are lexicographically ordered across 3+ packages. AC-001b: an explicitly
+/// empty napi.targets = [] still produces a present platformTargets entry.
+#[test]
+fn matrix_orders_keys_lexicographically_across_three_packages() {
+    use std::process::Command;
+
+    let tmp = tempfile::TempDir::new().unwrap();
+    let root = tmp.path();
+    std::fs::write(
+        root.join("Cargo.toml"),
+        "[workspace]\nmembers = []\nresolver = \"2\"\n",
+    )
+    .unwrap();
+    std::fs::write(root.join("callisto.toml"), "").unwrap();
+
+    let zeta = root.join("zeta");
+    std::fs::create_dir_all(&zeta).unwrap();
+    std::fs::write(
+        zeta.join("package.json"),
+        r#"{"name":"zeta","napi":{"targets":["x86_64-unknown-linux-gnu","aarch64-apple-darwin"]}}"#,
+    )
+    .unwrap();
+
+    let alpha = root.join("alpha");
+    std::fs::create_dir_all(&alpha).unwrap();
+    std::fs::write(
+        alpha.join("package.json"),
+        r#"{"name":"alpha","napi":{"targets":[]}}"#, // AC-001b
+    )
+    .unwrap();
+
+    let mid = root.join("mid");
+    std::fs::create_dir_all(&mid).unwrap();
+    std::fs::write(
+        mid.join("package.json"),
+        r#"{"name":"mid","napi":{"targets":["aarch64-apple-darwin"]}}"#,
+    )
+    .unwrap();
+
+    let bin = env!("CARGO_BIN_EXE_callisto");
+    let output = Command::new(bin)
+        .args([
+            "--cwd",
+            &root.to_string_lossy(),
+            "--format",
+            "json",
+            "matrix",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let keys: Vec<&String> = json["platformTargets"]
+        .as_object()
+        .unwrap()
+        .keys()
+        .collect();
+    assert_eq!(
+        keys,
+        vec!["alpha", "mid", "zeta"],
+        "keys must be lexicographically ordered"
+    );
+
+    // AC-001b: alpha's entry is present-but-empty, not absent.
+    assert_eq!(
+        json["platformTargets"]["alpha"]["targets"],
+        serde_json::json!([])
+    );
+
+    // Within zeta's group, targets[] must be ascending by triple.
+    let zeta_triples: Vec<String> = json["platformTargets"]["zeta"]["targets"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["triple"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(
+        zeta_triples,
+        vec![
+            "aarch64-apple-darwin".to_string(),
+            "x86_64-unknown-linux-gnu".to_string()
+        ]
+    );
+}
+
+/// AC-003: a workspace with no relevant manifests anywhere produces exactly
+/// {"schemaVersion":1,"platformTargets":{},"runtimeVersions":{}} with no
+/// "diagnostics" key, and exits 0.
+#[test]
+fn matrix_empty_workspace_produces_exact_empty_report_shape() {
+    use std::process::Command;
+
+    let tmp = tempfile::TempDir::new().unwrap();
+    let root = tmp.path();
+    std::fs::write(
+        root.join("Cargo.toml"),
+        "[workspace]\nmembers = []\nresolver = \"2\"\n",
+    )
+    .unwrap();
+    std::fs::write(root.join("callisto.toml"), "").unwrap();
+
+    let bin = env!("CARGO_BIN_EXE_callisto");
+    let output = Command::new(bin)
+        .args([
+            "--cwd",
+            &root.to_string_lossy(),
+            "--format",
+            "json",
+            "matrix",
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        json,
+        serde_json::json!({"schemaVersion": 1, "platformTargets": {}, "runtimeVersions": {}})
+    );
+    assert!(
+        json.as_object().unwrap().get("diagnostics").is_none(),
+        "diagnostics key must be entirely absent when empty"
+    );
+}
