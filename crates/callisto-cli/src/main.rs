@@ -59,6 +59,7 @@ fn main() -> ExitCode {
     let res = match cli.command {
         Command::Add(args) => add::handle(args, &cli.global),
         Command::Status(args) => status::handle(args, &cli.global),
+        Command::Matrix(_) => unimplemented!("callisto matrix handler is wired in T15"),
         Command::Version(args) => version::handle(args, &cli.global),
         Command::Pre(args) => pre::handle(args, &cli.global),
         Command::Validate(args) => validate::handle(args, &cli.global),

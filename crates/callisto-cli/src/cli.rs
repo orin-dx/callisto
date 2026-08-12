@@ -45,6 +45,8 @@ pub enum Command {
     Add(AddArgs),
     /// Show the workspace's pending changesets and diagnostics.
     Status(StatusArgs),
+    /// Print the workspace's native-build target matrix as JSON or a table.
+    Matrix(MatrixArgs),
     /// Consume pending changesets and bump package versions accordingly.
     Version(VersionArgs),
     /// Manage prerelease mode for the workspace.
@@ -101,6 +103,14 @@ pub struct StatusArgs {
     /// Exit with a distinct status code indicating whether any changesets are pending.
     #[arg(long)]
     pub check: bool,
+}
+
+/// Arguments for the `matrix` command.
+#[derive(Args, Clone, Debug, Default)]
+pub struct MatrixArgs {
+    /// Restrict output to one registered package's name (PackageId::name()).
+    #[arg(long)]
+    pub package: Option<String>,
 }
 
 /// Arguments for the `version` command.
@@ -263,5 +273,31 @@ mod tests {
             help.len() > 20,
             "--strict help text is too short to be meaningful: {help:?}"
         );
+    }
+
+    /// AC-006/AC-007 (parse slice): `callisto matrix --package foo` parses
+    /// into Command::Matrix with the package field populated; MatrixArgs
+    /// declares no --format of its own (the global flag is used instead).
+    #[test]
+    fn test_cli_parse_matrix_command_with_package() {
+        use clap::Parser;
+        let cli = Cli::parse_from(["callisto", "matrix", "--package", "foo"]);
+        if let Command::Matrix(args) = cli.command {
+            assert_eq!(args.package, Some("foo".to_string()));
+        } else {
+            panic!("Expected Matrix command");
+        }
+    }
+
+    /// AC-003b: bare `callisto matrix` (no --package) parses with package: None.
+    #[test]
+    fn test_cli_parse_matrix_command_bare() {
+        use clap::Parser;
+        let cli = Cli::parse_from(["callisto", "matrix"]);
+        if let Command::Matrix(args) = cli.command {
+            assert_eq!(args.package, None);
+        } else {
+            panic!("Expected Matrix command");
+        }
     }
 }

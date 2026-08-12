@@ -7,6 +7,7 @@ Usage: callisto [OPTIONS] <COMMAND>
 Commands:
   add              Create a new changeset describing pending package changes
   status           Show the workspace's pending changesets and diagnostics
+  matrix           Print the workspace's native-build target matrix as JSON or a table
   version          Consume pending changesets and bump package versions accordingly
   pre              Manage prerelease mode for the workspace
   validate         Check that changesets and the dependency graph are well-formed
