@@ -478,6 +478,7 @@ dependencies = [
  "callisto-fixtures",
  "callisto-model",
  "callisto-vcs",
+ "proptest",
  "tempfile",
  "thiserror 1.0.69",
 ]
