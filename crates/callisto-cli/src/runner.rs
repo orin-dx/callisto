@@ -265,4 +265,74 @@ mod tests {
             out.stderr
         );
     }
+
+    /// Regression test for the timeout-KILL branch's own grace-period logic
+    /// (runner.rs:124-146), which is structurally similar to but
+    /// independently written from the normal-exit branch's grace-period
+    /// logic (runner.rs:153-163) covered by
+    /// `run_with_timeout_bounds_reader_join_when_descendant_holds_pipe_open`.
+    /// That existing test's direct child (`sh`) exits almost immediately, so
+    /// it only ever exercises the exit branch. Here the direct child itself
+    /// (`sh -c "sleep 30 >&2 & sleep 10"`) outlives the configured timeout,
+    /// so `run_with_timeout` must actually kill it, while a backgrounded
+    /// grandchild (`sleep 30 >&2`) keeps stderr open independently of the
+    /// kill.
+    ///
+    /// Because the warning text is emitted via `eprintln!` from inside
+    /// `run_with_timeout` itself (not captured in `CommandOutput`), this
+    /// test re-execs the current test binary as a child process with
+    /// `--nocapture` so the real OS-level stderr can be captured and
+    /// asserted on, rather than being swallowed by the outer test harness.
+    #[test]
+    fn run_with_timeout_warns_on_timeout_branch_when_descendant_holds_pipe_open() {
+        const CHILD_ENV: &str = "CALLISTO_RUN_TIMEOUT_KILL_CHILD";
+
+        if std::env::var(CHILD_ENV).is_ok() {
+            let runner = CliCommandRunner;
+            // `sh` on this platform forks a separate process for the
+            // foreground `sleep 10` rather than exec-replacing itself (it
+            // must remain able to reap the backgrounded job), so killing
+            // the direct child does not kill either descendant. Both the
+            // backgrounded `sleep 30` and the foreground `sleep 10` inherit
+            // the piped stdout/stderr fds unless redirected away, so each
+            // is redirected explicitly: `sleep 30`'s stdout goes to
+            // /dev/null so only its stderr lingers (the condition under
+            // test), and `sleep 10`'s stdout/stderr both go to /dev/null so
+            // it doesn't *also* hold either pipe open, which would stack a
+            // second sequential 3s grace wait on top of the first.
+            drop(runner.run_with_timeout(
+                "sh",
+                &["-c", "sleep 30 >&2 1>/dev/null & sleep 10 >/dev/null 2>&1"],
+                std::path::Path::new("."),
+                Duration::from_millis(800),
+            ));
+            return;
+        }
+
+        let exe = std::env::current_exe().expect("current_exe should be available in tests");
+        let start = Instant::now();
+        let output = std::process::Command::new(exe)
+            .arg("--exact")
+            .arg("runner::tests::run_with_timeout_warns_on_timeout_branch_when_descendant_holds_pipe_open")
+            .arg("--nocapture")
+            .env(CHILD_ENV, "1")
+            .output()
+            .expect("failed to re-exec test binary");
+        let elapsed = start.elapsed();
+
+        assert!(
+            elapsed < Duration::from_secs(6),
+            "run_with_timeout's timeout-kill branch must not block past its \
+             bounded grace period even when a descendant holds stdio pipes \
+             open; took {elapsed:?}"
+        );
+
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains(
+                "timed out and a descendant process appears to still hold its output pipes open"
+            ),
+            "expected the timeout branch's specific warning text in child stderr, got: {stderr}"
+        );
+    }
 }
