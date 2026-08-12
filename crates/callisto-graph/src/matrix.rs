@@ -142,6 +142,57 @@ pub(crate) fn build_platform_target(
     })
 }
 
+/// Reads `[tool.maturin].targets` directly from `pyproject_path`. Returns
+/// `Ok(None)` when the table or field is absent (AC-003: no platformTargets
+/// entry). A present value that is not a TOML array of strings is a hard
+/// error (AC-010c).
+pub(crate) fn read_maturin_targets(
+    pyproject_path: &Path,
+) -> Result<Option<Vec<String>>, GraphError> {
+    let content = std::fs::read_to_string(pyproject_path).map_err(|e| {
+        GraphError::Manifest(ManifestError::Read {
+            path: pyproject_path.to_path_buf(),
+            message: e.to_string(),
+        })
+    })?;
+    let val: toml::Value = content.parse().map_err(|e: toml::de::Error| {
+        GraphError::Manifest(ManifestError::Parse {
+            path: pyproject_path.to_path_buf(),
+            format: ManifestFormat::PyprojectToml,
+            message: e.to_string(),
+        })
+    })?;
+
+    let Some(targets) = val
+        .get("tool")
+        .and_then(|t| t.get("maturin"))
+        .and_then(|m| m.get("targets"))
+    else {
+        return Ok(None);
+    };
+
+    let arr = targets.as_array().ok_or_else(|| {
+        GraphError::Manifest(ManifestError::Parse {
+            path: pyproject_path.to_path_buf(),
+            format: ManifestFormat::PyprojectToml,
+            message: "[tool.maturin].targets must be an array of strings".to_string(),
+        })
+    })?;
+
+    let mut out = Vec::with_capacity(arr.len());
+    for item in arr {
+        let s = item.as_str().ok_or_else(|| {
+            GraphError::Manifest(ManifestError::Parse {
+                path: pyproject_path.to_path_buf(),
+                format: ManifestFormat::PyprojectToml,
+                message: "[tool.maturin].targets entries must all be strings".to_string(),
+            })
+        })?;
+        out.push(s.to_string());
+    }
+    Ok(Some(out))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -323,5 +374,60 @@ mod tests {
             );
             assert_eq!(t.abi, None, "abi must be null for `{triple}`");
         }
+    }
+
+    /// AC-002 precursor: [tool.maturin].targets reads as a plain Vec<String>
+    /// when present, None when absent.
+    #[test]
+    fn read_maturin_targets_reads_present_and_absent() {
+        let tmp = tempfile::tempdir().unwrap();
+        let absent_path = tmp.path().join("absent.toml");
+        std::fs::write(&absent_path, "[project]\nname = \"pkg\"\n").unwrap();
+        assert_eq!(read_maturin_targets(&absent_path).unwrap(), None);
+
+        let present_path = tmp.path().join("present.toml");
+        std::fs::write(
+            &present_path,
+            "[tool.maturin]\ntargets = [\"x86_64-unknown-linux-gnu\", \"aarch64-apple-darwin\"]\n",
+        )
+        .unwrap();
+        assert_eq!(
+            read_maturin_targets(&present_path).unwrap(),
+            Some(vec![
+                "x86_64-unknown-linux-gnu".to_string(),
+                "aarch64-apple-darwin".to_string()
+            ])
+        );
+    }
+
+    /// AC-010: malformed TOML syntax must be a hard error naming the path.
+    #[test]
+    fn read_maturin_targets_malformed_toml_is_error() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("bad.toml");
+        std::fs::write(&path, "[tool.maturin]\ntargets = [\"unterminated\n").unwrap();
+        let err = read_maturin_targets(&path).unwrap_err();
+        assert!(
+            format!("{err}").contains(&path.display().to_string()),
+            "error must name the malformed path: {err}"
+        );
+    }
+
+    /// AC-010c: [tool.maturin].targets present but not an array must be a
+    /// hard error.
+    #[test]
+    fn read_maturin_targets_non_array_value_is_error() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("wrong_type.toml");
+        std::fs::write(
+            &path,
+            "[tool.maturin]\ntargets = \"x86_64-unknown-linux-gnu\"\n",
+        )
+        .unwrap();
+        let err = read_maturin_targets(&path).unwrap_err();
+        assert!(
+            format!("{err}").contains(&path.display().to_string()),
+            "error must name the malformed path: {err}"
+        );
     }
 }
