@@ -251,9 +251,104 @@ pub(crate) fn read_requires_python(pyproject_path: &Path) -> Result<Option<Strin
     Ok(Some(s.to_string()))
 }
 
+use callisto_model::{PackageId, PlatformTargetKind};
+
+/// Reads napi.targets and [tool.maturin].targets from `package_dir_abs`
+/// (the package's on-disk directory) and determines which single source (if
+/// any) declares platform targets.
+///
+/// - Neither declared: `Ok(None)` (AC-003).
+/// - Both declared: `Err(GraphError::ConflictingPlatformTargetSources)` (AC-017).
+/// - Exactly one declared (even as an explicitly empty array, AC-001b):
+///   `Ok(Some((kind, source, triples)))`.
+pub(crate) fn select_platform_target_source(
+    package_dir_abs: &Path,
+    package_id: &PackageId,
+) -> Result<Option<(PlatformTargetKind, String, Vec<String>)>, GraphError> {
+    let napi_path = package_dir_abs.join("package.json");
+    let napi_field = if napi_path.exists() {
+        read_napi_targets(&napi_path)?
+    } else {
+        NapiTargetsField::Absent
+    };
+
+    let maturin_path = package_dir_abs.join("pyproject.toml");
+    let maturin_targets = if maturin_path.exists() {
+        read_maturin_targets(&maturin_path)?
+    } else {
+        None
+    };
+
+    match (napi_field, maturin_targets) {
+        (NapiTargetsField::Present(_), Some(_)) => {
+            Err(GraphError::ConflictingPlatformTargetSources {
+                package: package_id.clone(),
+                napi_source: "napi.targets",
+                maturin_source: "[tool.maturin].targets",
+            })
+        }
+        (NapiTargetsField::Present(triples), None) => Ok(Some((
+            PlatformTargetKind::Napi,
+            "napi.targets".to_string(),
+            triples,
+        ))),
+        (NapiTargetsField::Absent, Some(triples)) => Ok(Some((
+            PlatformTargetKind::Maturin,
+            "[tool.maturin].targets".to_string(),
+            triples,
+        ))),
+        (NapiTargetsField::Absent, None) => Ok(None),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use callisto_model::PackageId;
+
+    fn pkg_id(name: &str) -> PackageId {
+        PackageId::Bare(name.to_string())
+    }
+
+    /// AC-017: a package.json with napi.targets AND a pyproject.toml with
+    /// [tool.maturin].targets in the same directory is a hard error.
+    #[test]
+    fn select_platform_target_source_conflicting_sources_errors() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join("package.json"),
+            r#"{"napi":{"targets":["aarch64-apple-darwin"]}}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            tmp.path().join("pyproject.toml"),
+            "[tool.maturin]\ntargets = [\"x86_64-unknown-linux-gnu\"]\n",
+        )
+        .unwrap();
+
+        let err = select_platform_target_source(tmp.path(), &pkg_id("native-mod")).unwrap_err();
+        match err {
+            GraphError::ConflictingPlatformTargetSources {
+                package,
+                napi_source,
+                maturin_source,
+            } => {
+                assert_eq!(package, pkg_id("native-mod"));
+                assert_eq!(napi_source, "napi.targets");
+                assert_eq!(maturin_source, "[tool.maturin].targets");
+            }
+            other => panic!("expected ConflictingPlatformTargetSources, got {other:?}"),
+        }
+    }
+
+    /// AC-003 (per-package slice): neither manifest declares platform
+    /// targets -> None.
+    #[test]
+    fn select_platform_target_source_no_manifests_returns_none() {
+        let tmp = tempfile::tempdir().unwrap();
+        let result = select_platform_target_source(tmp.path(), &pkg_id("plain-pkg")).unwrap();
+        assert!(result.is_none());
+    }
 
     /// AC-001b: an explicitly empty napi.targets = [] must be distinguishable
     /// from the field being absent entirely.
