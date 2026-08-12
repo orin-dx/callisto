@@ -106,6 +106,7 @@ pub enum DiagnosticCode {
     ChangesetReadError,
     GitDiscoveryFailed,
     BareRuleMatchesMultipleEcosystems,
+    UnrecognisedPlatformTriple,
 }
 
 #[cfg(test)]
@@ -125,6 +126,25 @@ mod tests {
             json,
             r#""bare-rule-matches-multiple-ecosystems""#,
             "DiagnosticCode::BareRuleMatchesMultipleEcosystems must serialize to \"bare-rule-matches-multiple-ecosystems\"",
+        );
+        let roundtrip: DiagnosticCode = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            roundtrip, code,
+            "deserialized value must equal the original variant",
+        );
+    }
+
+    /// AC-018: DiagnosticCode::UnrecognisedPlatformTriple must serialize to
+    /// the kebab-case string "unrecognised-platform-triple" and deserialize
+    /// back to the same variant.
+    #[test]
+    fn unrecognised_platform_triple_serializes_to_kebab_case() {
+        let code = DiagnosticCode::UnrecognisedPlatformTriple;
+        let json = serde_json::to_string(&code).unwrap();
+        assert_eq!(
+            json,
+            r#""unrecognised-platform-triple""#,
+            "DiagnosticCode::UnrecognisedPlatformTriple must serialize to \"unrecognised-platform-triple\"",
         );
         let roundtrip: DiagnosticCode = serde_json::from_str(&json).unwrap();
         assert_eq!(

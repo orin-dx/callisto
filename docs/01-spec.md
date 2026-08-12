@@ -1560,6 +1560,8 @@ pub enum DiagnosticCode {
     /// manifests span two or more ecosystems; use an ecosystem-prefixed
     /// pattern such as `cargo/name` to target only one.
     BareRuleMatchesMultipleEcosystems,
+    /// A napi/maturin platform triple was not recognised by triple_to_role.
+    UnrecognisedPlatformTriple,
 }
 ```
 
@@ -8331,6 +8333,7 @@ governs it — the concrete form of §13 invariant 28 applied to diagnostics.
 | `ChangelogSectionNotFound` | §G.11 `plan_publish` (§CL.7.1, v0.2) | — | — |
 | `ChangesetsConfigKeyDropped` | `init` (§18 Q4, v0.4) | — | — |
 | `BareRuleMatchesMultipleEcosystems` | §G.4 walk | — | — |
+| `UnrecognisedPlatformTriple` | `matrix` module (§SPEC-004) | — | — |
 
 `RangeNotRoundTrippable` and `CatalogSpecNotRewritten` carry no `escalated_by`: §13 invariant 15
 makes leave-alone-and-warn the *correct* outcome, not a tolerated one, so there is no flag that
