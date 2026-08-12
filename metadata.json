@@ -1,0 +1,33 @@
+{
+  "cli_version": "0.9.1-nightly.202608120634.6e7985f4e",
+  "checkpoint_id": "01KZVX9QW9C5WAJPA77Z56KS8J",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "crates/callisto-graph/src/config/resolve.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 28,
+    "cache_creation_tokens": 39042,
+    "cache_read_tokens": 2613386,
+    "output_tokens": 10375,
+    "api_call_count": 14,
+    "subagent_tokens": {
+      "input_tokens": 32,
+      "cache_creation_tokens": 58784,
+      "cache_read_tokens": 915961,
+      "output_tokens": 4914,
+      "api_call_count": 16
+    }
+  }
+}
