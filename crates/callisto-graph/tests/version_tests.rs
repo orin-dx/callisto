@@ -117,3 +117,42 @@ fn test_plan_version_produces_correct_bumps_in_cascade() {
         app_bump.severity
     );
 }
+
+/// Two packages in different directories sharing the same name must NOT
+/// silently discard one of them. Before the fix, `ManifestWalkResolver::build`
+/// used `BTreeMap::insert` with the `PackageId` (name-only) as key; the
+/// second crate with the same name silently replaced the first with no error
+/// or diagnostic, making one crate permanently invisible to all operations.
+///
+/// After the fix, `Workspace::load` must return `Err(GraphError::DuplicatePackage)`.
+#[test]
+fn duplicate_package_name_is_rejected_with_an_error() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+
+    // Two directories, both with a Cargo.toml declaring the same package name.
+    for dir in &["packages/a", "packages/b"] {
+        let pkg_dir = root.join(dir);
+        fs::create_dir_all(&pkg_dir).unwrap();
+        fs::write(
+            pkg_dir.join("Cargo.toml"),
+            "[package]\nname = \"shared-core\"\nversion = \"1.0.0\"\nedition = \"2021\"\n",
+        )
+        .unwrap();
+    }
+    git_init_with_commit(root);
+
+    let runner = NoopRunner;
+    let locator = callisto_graph::locate::IgnoreWalkLocator::new(root);
+    let result = Workspace::load(root.to_path_buf(), &locator, &runner);
+
+    match result {
+        Ok(_) => panic!(
+            "Workspace::load must return Err when two packages share the same name, but got Ok"
+        ),
+        Err(e) => assert!(
+            matches!(e, callisto_graph::GraphError::DuplicatePackage { .. }),
+            "expected GraphError::DuplicatePackage, got: {e:?}"
+        ),
+    }
+}
