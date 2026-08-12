@@ -558,3 +558,60 @@ fn matrix_unrecognised_triple_end_to_end_diagnostic_contract() {
         .collect();
     assert_eq!(clean_triples, vec!["x86_64-unknown-linux-gnu".to_string()]);
 }
+
+/// AC-008 + AC-003b: `--format text` and bare invocation (no --format flag)
+/// must both exit 0 and produce identical non-empty, non-JSON stdout.
+#[test]
+fn matrix_text_format_and_bare_invocation_match_and_are_non_json() {
+    use std::process::Command;
+
+    let tmp = tempfile::TempDir::new().unwrap();
+    let root = tmp.path();
+    std::fs::write(
+        root.join("Cargo.toml"),
+        "[workspace]\nmembers = []\nresolver = \"2\"\n",
+    )
+    .unwrap();
+    std::fs::write(root.join("callisto.toml"), "").unwrap();
+
+    let dir = root.join("native-mod");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("package.json"),
+        r#"{"name":"native-mod","napi":{"targets":["aarch64-apple-darwin"]},"engines":{"node":">=20.0.0"}}"#,
+    )
+    .unwrap();
+
+    let bin = env!("CARGO_BIN_EXE_callisto");
+
+    let explicit_text = Command::new(bin)
+        .args([
+            "--cwd",
+            &root.to_string_lossy(),
+            "--format",
+            "text",
+            "matrix",
+        ])
+        .output()
+        .unwrap();
+    assert!(explicit_text.status.success());
+
+    let bare = Command::new(bin)
+        .args(["--cwd", &root.to_string_lossy(), "matrix"])
+        .output()
+        .unwrap();
+    assert!(bare.status.success());
+
+    for output in [&explicit_text, &bare] {
+        assert!(!output.stdout.is_empty(), "output must not be empty");
+        assert!(
+            serde_json::from_slice::<serde_json::Value>(&output.stdout).is_err(),
+            "output must not parse as JSON"
+        );
+    }
+
+    assert_eq!(
+        explicit_text.stdout, bare.stdout,
+        "--format text and the bare (no-flag) invocation must produce identical output"
+    );
+}
