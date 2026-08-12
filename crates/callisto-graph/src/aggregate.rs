@@ -9,6 +9,7 @@ use callisto_model::{
 };
 use callisto_vcs::{GitAccess, GitDataSource};
 
+use crate::config::resolve::resolve_package_config;
 use crate::config::GroupTable;
 use crate::config::{PreMajorInferencePolicy, ResolvedConfig};
 use crate::error::GraphError;
@@ -210,12 +211,8 @@ where
 
         let since = last_tag.and_then(|t| resolve_since(&git, t.name.as_str()));
 
-        let policy = config
-            .packages
-            .iter()
-            .find(|(id, _)| pkg.id.matches(id) && id.ecosystem().is_some())
-            .or_else(|| config.packages.iter().find(|(id, _)| pkg.id.matches(id)))
-            .and_then(|(_, pcfg)| pcfg.pre_major_inference)
+        let policy = resolve_package_config(&pkg.id, config)
+            .and_then(|pcfg| pcfg.pre_major_inference)
             .unwrap_or(PreMajorInferencePolicy::OFF);
 
         let window = crate::infer::InferenceWindowSpec {
@@ -1525,6 +1522,98 @@ mod tests {
             capturing.saw_non_off.load(Ordering::SeqCst),
             "aggregate() must pass the per-package pre_major_inference policy from config.packages \
              into InferenceWindowSpec; received OFF even though callisto.toml sets conservative"
+        );
+    }
+
+    /// AC-F7a: Prefixed rule (npm:pkg, OFF policy) must win over Bare rule (pkg, conservative)
+    /// even when the Bare rule is declared first in callisto.toml.
+    /// With single-pass lookup: the Bare rule (declared first) wins -> conservative applied.
+    /// With resolve_package_config (two-pass): the Prefixed rule wins -> OFF applied.
+    ///
+    /// Two AtomicBool flags:
+    /// - invoked: true if infer() was called at all (proves the package is pre-1.0 and
+    ///   pre-major-inference was consulted; distinguishes OFF-applied from never-called).
+    /// - saw_non_off: true if infer() received a non-OFF policy (single-pass failure mode).
+    #[test]
+    fn test_pre_major_inference_prefixed_beats_bare_when_bare_declared_first() {
+        use crate::config::resolve::PreMajorInferencePolicy;
+        use std::sync::atomic::AtomicBool;
+
+        let ws_dir = tempfile::tempdir().unwrap();
+        let root = ws_dir.path();
+
+        init_repo(root);
+        std::fs::write(root.join("README.md"), "hello\n").unwrap();
+        run_git(root, &["add", "."]);
+        run_git(root, &["commit", "-q", "-m", "initial commit"]);
+
+        // Bare rule declared FIRST in TOML: match = "pkg", pre-major-inference = "conservative"
+        // Prefixed rule declared SECOND: match = "npm:pkg", pre-major-inference = "off"
+        // Single-pass find() returns pkg (Bare, declared first) -> conservative applied.
+        // Two-pass resolve_package_config: pass 1 finds npm:pkg (Prefixed) -> OFF applied.
+        std::fs::write(
+            root.join("callisto.toml"),
+            "[[package]]\nmatch = \"pkg\"\npre-major-inference = \"conservative\"\n\n[[package]]\nmatch = \"npm:pkg\"\npre-major-inference = \"off\"\n",
+        )
+        .unwrap();
+
+        let pkg_id = PackageId::parse("pkg").unwrap();
+        let graph = SinglePackageGraph {
+            pkg: make_pkg(pkg_id.clone()),
+        };
+        let cfg = crate::config::load(root).unwrap();
+        let runner = RealGitRunner;
+        let tags = crate::tags::TagIndex::build(&runner, root, &graph, &cfg).unwrap();
+        let mut base_versions = BTreeMap::new();
+        // Version 0.1.0 (pre-1.0) ensures pre-major-inference is consulted.
+        base_versions.insert(pkg_id.clone(), Version::semver(0, 1, 0));
+
+        struct PolicyCapturingInference {
+            invoked: AtomicBool,
+            saw_non_off: AtomicBool,
+        }
+        impl SeverityInference for PolicyCapturingInference {
+            fn infer(
+                &self,
+                _pkg: &Package,
+                window: InferenceWindowSpec<'_>,
+            ) -> Result<Option<InferenceOutcome>, GraphError> {
+                // Set invoked before any policy check so we can distinguish
+                // OFF-policy-applied from never-called.
+                self.invoked.store(true, Ordering::SeqCst);
+                if window.policy != PreMajorInferencePolicy::OFF {
+                    self.saw_non_off.store(true, Ordering::SeqCst);
+                }
+                Ok(None)
+            }
+        }
+
+        let capturing = PolicyCapturingInference {
+            invoked: AtomicBool::new(false),
+            saw_non_off: AtomicBool::new(false),
+        };
+        aggregate(
+            &graph,
+            &cfg,
+            &runner,
+            &tags,
+            &base_versions,
+            None,
+            &capturing,
+        )
+        .unwrap();
+
+        assert!(
+            capturing.invoked.load(Ordering::SeqCst),
+            "inference was never invoked; fixture is wrong and cannot distinguish OFF policy \
+             from no invocation. Ensure Version::semver(0, 1, 0) is in base_versions so the \
+             package is pre-1.0 and pre-major-inference is consulted."
+        );
+        assert!(
+            !capturing.saw_non_off.load(Ordering::SeqCst),
+            "expected OFF policy from Prefixed rule (npm:pkg); Bare rule (conservative) was \
+             applied instead. Two-pass specificity is required: Prefixed rules must win over \
+             Bare rules regardless of declaration order."
         );
     }
 }
