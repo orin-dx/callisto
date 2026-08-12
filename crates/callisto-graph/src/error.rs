@@ -178,6 +178,17 @@ pub enum GraphError {
         help("Check that .changeset/pre.json is readable. Delete the file and re-run `callisto pre enter` to recover.")
     )]
     PreJsonRead { message: String },
+
+    #[error("package `{package}` declares platform targets via both `{napi_source}` and `{maturin_source}`; only one source is allowed")]
+    #[diagnostic(
+        code(E118),
+        help("Remove one of the two target declarations -- either napi.targets in package.json or [tool.maturin].targets in pyproject.toml -- from the package's manifest.")
+    )]
+    ConflictingPlatformTargetSources {
+        package: PackageId,
+        napi_source: &'static str,
+        maturin_source: &'static str,
+    },
 }
 
 #[cfg(test)]
@@ -197,6 +208,33 @@ mod tests {
             format!("{graph_err}"),
             expected_msg,
             "GraphError::Vcs must be transparent (no 'vcs error: ' prefix)"
+        );
+    }
+
+    /// AC-017 (message shape): ConflictingPlatformTargetSources must name the
+    /// package and both source field names in its Display text, and carry
+    /// diagnostic code E118 with help text pointing at the fix.
+    #[test]
+    fn conflicting_platform_target_sources_message_names_package_and_both_sources() {
+        use callisto_model::PackageId;
+
+        let err = GraphError::ConflictingPlatformTargetSources {
+            package: PackageId::Bare("native-mod".to_string()),
+            napi_source: "napi.targets",
+            maturin_source: "[tool.maturin].targets",
+        };
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("native-mod"),
+            "message must name the package: {msg}"
+        );
+        assert!(
+            msg.contains("napi.targets"),
+            "message must name napi_source: {msg}"
+        );
+        assert!(
+            msg.contains("[tool.maturin].targets"),
+            "message must name maturin_source: {msg}"
         );
     }
 }
