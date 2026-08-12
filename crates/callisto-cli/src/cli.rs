@@ -75,7 +75,7 @@ pub enum Command {
 /// Arguments for the `schema` command.
 #[derive(Args, Clone, Debug, Default)]
 pub struct SchemaArgs {
-    /// Report type to print the schema for (status, version, snapshot, validate, tag, init, plan-publish, changeset, pre); defaults to status.
+    /// Report type to print the schema for (status, version, snapshot, validate, tag, init, plan-publish, changeset, pre, matrix); defaults to status.
     #[arg(long = "type", value_name = "TYPE")]
     pub target_type: Option<String>,
 }

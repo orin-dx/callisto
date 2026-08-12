@@ -148,6 +148,8 @@ fn matrix_napi_and_maturin_share_triple_derivation() {
     let maturin_group = &json["platformTargets"]["maturin-mod"];
     assert_eq!(napi_group["kind"], "napi");
     assert_eq!(maturin_group["kind"], "maturin");
+    assert_eq!(napi_group["source"], "napi.targets");
+    assert_eq!(maturin_group["source"], "[tool.maturin].targets");
 
     let napi_targets = napi_group["targets"].as_array().unwrap();
     let maturin_targets = maturin_group["targets"].as_array().unwrap();

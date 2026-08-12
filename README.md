@@ -29,8 +29,8 @@
 > **Topological Directed Graph Solver**  
 > Models workspace package dependencies using `petgraph`'s Kahn topological solver and Tarjan's SCC algorithm to compute cascading version bumps and catch circular dependency cycles.
 
-> **Zero-Config Native Matrix Auto-Discovery** *(planned)*
-> Will auto-discover build matrix targets (`napi.triplets`, `maturin.targets`, `engines.node`, `java.version`) directly from manifests as the single source of truth. The `callisto matrix` subcommand is not yet implemented.
+> **Zero-Config Native Matrix Auto-Discovery**
+> `callisto matrix` auto-discovers napi-rs and maturin native build targets (`napi.targets`, `[tool.maturin].targets`) plus npm/PyPI runtime-version constraints (`engines.node`, `requires-python`) directly from manifests as the single source of truth, eliminating duplicate CI YAML configuration drift. Java (`java.version`) and .NET native-AOT target discovery are planned for a future release.
 
 > **Hermetic & Build-System Agnostic**  
 > Pure Rust CLI engine runs seamlessly in Bazel sandboxes (`rules_callisto`), Buck2, Nix flakes, Moon WASM (`callisto-moon`), GitHub Actions, GitLab CI, and local VCS hooks (`just hooks`).
@@ -186,8 +186,8 @@ Callisto brings together the best ideas from `@changesets/cli`, Google's `releas
 - **Callisto**: Uses `petgraph`'s Kahn topological solver and Tarjan's SCC algorithm to calculate exact version bump cascades and catch circular dependency cycles with rich diagnostic cards (`miette`).
 - **Alternatives**: `release-please` focuses on single-repo releases. `nx release` is coupled to Nx JavaScript trees.
 
-### Zero-Config Native Matrix Auto-Discovery (`callisto matrix`) — Planned
-- **Callisto**: Will auto-discover build matrix targets (`napi.triplets`, `maturin.targets`, `engines.node`, `java.version`) directly from manifests as the single source of truth, eliminating duplicate CI YAML configuration drift. Not yet implemented.
+### Zero-Config Native Matrix Auto-Discovery (`callisto matrix`)
+- **Callisto**: Auto-discovers napi-rs and maturin native build targets plus npm/PyPI runtime-version constraints directly from manifests as the single source of truth, eliminating duplicate CI YAML configuration drift. Java and .NET native-AOT target discovery are planned for a future release.
 - **Alternatives**: Requires manually maintaining 50-line matrix arrays in GitHub Actions YAML.
 
 ### Hermetic & Build-System Agnostic

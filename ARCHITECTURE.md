@@ -419,11 +419,11 @@ All contributions to Callisto must adhere to the following 4 engineering invaria
 
 ---
 
-## 12. Zero-Config Multi-Platform Native Matrix Auto-Discovery (`callisto matrix`) [planned]
+## 12. Zero-Config Multi-Platform Native Matrix Auto-Discovery (`callisto matrix`) [partially implemented]
 
-> **Status: PLANNED.** The `callisto matrix` and `callisto publish-target` subcommands described in this section are not yet implemented. The CLI today does not expose these subcommands. This section documents the intended design for a future release.
+> **Status: napi-rs and maturin platform-target discovery, plus npm/PyPI runtime-version constraints, are implemented** (`callisto matrix [--package <name>]`, `--format text|json` via the global flag). Java (JNI) target discovery, .NET native-AOT target discovery, and the `callisto publish-target` subcommand described later in this section remain unimplemented and are planned for a future release.
 
-To eliminate configuration duplication and configuration drift across native Rust, NAPI-RS, Maturin (Python), and Java (JNI) polyglot monorepos, the planned `callisto matrix` command would provide dynamic matrix auto-discovery:
+To eliminate configuration duplication and configuration drift across native Rust, NAPI-RS, Maturin (Python), and Java (JNI) polyglot monorepos, `callisto matrix` provides dynamic matrix auto-discovery:
 
 ```text
 ┌────────────────────────────────────────────────────────────────────────┐
@@ -489,7 +489,7 @@ Callisto's core engine is decoupled from GitHub Actions. All versioning, status 
 │ callisto plan-publish             │ Hermetic JSON                      │
 │ callisto status                   │ Struct/JSON workspace state        │
 │ callisto tag                      │ Native Git refs or build outputs   │
-│ callisto matrix [planned]         │ Standard JSON array for any runner │
+│ callisto matrix                   │ Standard JSON array for any runner │
 └───────────────────────────────────┴────────────────────────────────────┘
 ```
 
@@ -516,7 +516,7 @@ callisto_release_plan(
 
 ### Guarantees for Non-GitHub Environments
 
-1. **Zero Network / API Lock-in**: `callisto status` and `callisto plan-publish` operate entirely on local workspace files and write to stdout/JSON. They run identically inside Bazel sandboxes, Nix flakes, GitLab CI, Buildkite, and Jenkins. (The planned `callisto matrix` subcommand will extend this guarantee to native build matrix generation.)
+1. **Zero Network / API Lock-in**: `callisto status`, `callisto plan-publish`, and `callisto matrix` operate entirely on local workspace files and write to stdout/JSON. They run identically inside Bazel sandboxes, Nix flakes, GitLab CI, Buildkite, and Jenkins.
 2. **Hermetic File Inputs**: Accepts explicit `--cwd` and `--config` overrides to run inside isolated build tool sandboxes without relying on global environment variables.
 3. **Thin Adapter Seams**: GitHub Actions ([`callisto-action`](.github/actions/callisto-action/action.yml)), Moon WASM ([`callisto-moon`](crates/callisto-moon)), and Bazel (`rules_callisto`) are thin adapter layers wrapping the same core Rust CLI engine.
 
