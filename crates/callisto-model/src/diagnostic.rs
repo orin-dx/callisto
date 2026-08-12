@@ -107,6 +107,7 @@ pub enum DiagnosticCode {
     GitDiscoveryFailed,
     BareRuleMatchesMultipleEcosystems,
     UnrecognisedPlatformTriple,
+    PublishTargetNotImplemented,
 }
 
 #[cfg(test)]

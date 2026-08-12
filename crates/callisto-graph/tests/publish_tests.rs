@@ -1051,3 +1051,86 @@ fn package_rule_takes_priority_over_package_set_rule() {
          must suppress it; pkg-b must NOT appear in rust_crates"
     );
 }
+
+// ---- Fix: release-tag/ReleaseEntry gate decoupled from actual publish dispatch ----
+
+/// `PublishTarget::GitHubRelease` has an `ecosystem()` of `None`, so it
+/// passes the walk.rs ecosystem-mismatch check regardless of the package's
+/// real ecosystem — but `plan_publish`'s dispatch loop has no real
+/// implementation for it (only `CratesIo`/`Npm`/`Pypi` are dispatched).
+///
+/// Before this fix, the release-tag/`ReleaseEntry` gate only checked that
+/// `publish_to` was non-empty and not all `PublishTarget::None`, completely
+/// decoupled from whether anything was actually dispatchable. A package
+/// configured with only `publish-to = ["github-release"]` would get a
+/// `ReleaseEntry` (claiming a release happened) while zero registries were
+/// ever contacted and no diagnostic was emitted.
+///
+/// After the fix: no `ReleaseEntry` is created for a package whose only
+/// configured targets have no real dispatch, and an explicit
+/// `PublishTargetNotImplemented` diagnostic is emitted instead.
+#[test]
+fn package_with_only_undispatchable_target_gets_no_release_entry_and_a_diagnostic() {
+    use callisto_graph::commands::{plan_publish, PublishOptions};
+    use callisto_model::{DiagnosticCode, ManifestDecl, ManifestFormat, ManifestRole};
+
+    let runner = DummyRunner;
+    let ws_dir = tempfile::tempdir().unwrap();
+    let root = ws_dir.path();
+
+    std::fs::write(
+        root.join("Cargo.toml"),
+        "[package]\nname = \"my-crate\"\nversion = \"1.0.0\"\nedition = \"2021\"\n",
+    )
+    .unwrap();
+
+    // Real git repo so head_sha() and tag_index both succeed — the
+    // release-entry block is fully reachable, isolating this test to the
+    // gate logic itself rather than the git-unavailable soft-fail path.
+    init_git_repo(root);
+
+    let pkg_id = PackageId::parse("my-crate").unwrap();
+    let cargo_decl = ManifestDecl::new(
+        PathBuf::from("Cargo.toml"),
+        ManifestRole::Canonical,
+        ManifestFormat::CargoToml,
+    )
+    .unwrap();
+
+    let graph = GraphBuilder::new()
+        .package(pkg_id.clone(), |p: PackageBuilder| {
+            p.manifests(vec![cargo_decl])
+                .publish_to(vec![PublishTarget::GitHubRelease])
+        })
+        .build()
+        .unwrap();
+
+    let cfg = callisto_graph::config::load(root).unwrap();
+    let ws = callisto_graph::Workspace {
+        root: root.to_path_buf(),
+        config: cfg,
+        graph,
+        tags: OnceCell::new(),
+        runner: &runner,
+        manifest_cache: Default::default(),
+    };
+
+    let plan = plan_publish(&ws, &PublishOptions::default())
+        .expect("plan_publish must succeed for a GitHubRelease-only package");
+
+    assert!(
+        plan.releases.iter().all(|r| r.package != pkg_id),
+        "no ReleaseEntry must be created for a package whose only configured \
+         target (GitHubRelease) has no real dispatch implementation; got: {:?}",
+        plan.releases
+    );
+
+    let has_not_implemented_diagnostic = plan.diagnostics.iter().any(|d| {
+        d.code == DiagnosticCode::PublishTargetNotImplemented && d.package.as_ref() == Some(&pkg_id)
+    });
+    assert!(
+        has_not_implemented_diagnostic,
+        "expected a PublishTargetNotImplemented diagnostic for my-crate; got: {:?}",
+        plan.diagnostics
+    );
+}

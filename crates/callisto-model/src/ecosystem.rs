@@ -112,6 +112,21 @@ impl PublishTarget {
             PublishTarget::GitHubRelease | PublishTarget::None => None,
         }
     }
+
+    /// The `publish-to` config string this variant parses from, mirroring
+    /// `parse_publish_target` in `callisto_graph::config::resolve`. Used to
+    /// name the mismatched target in diagnostics/errors without leaking the
+    /// `Debug` representation of the variant's payload.
+    pub fn config_str(&self) -> &'static str {
+        match self {
+            PublishTarget::CratesIo => "crates-io",
+            PublishTarget::Npm { .. } => "npm",
+            PublishTarget::Pypi { .. } => "pypi",
+            PublishTarget::NuGet { .. } => "nuget",
+            PublishTarget::GitHubRelease => "github-release",
+            PublishTarget::None => "none",
+        }
+    }
 }
 
 /// Trigger mechanism for generating releases.

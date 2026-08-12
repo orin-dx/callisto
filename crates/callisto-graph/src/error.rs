@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 
-use callisto_model::{GroupName, ManifestError, PackageId, TagTemplateError, VersionParseError};
+use callisto_model::{
+    Ecosystem, GroupName, ManifestError, PackageId, TagTemplateError, VersionParseError,
+};
 
 pub use crate::locate::LocateError;
 
@@ -188,6 +190,22 @@ pub enum GraphError {
         package: PackageId,
         napi_source: &'static str,
         maturin_source: &'static str,
+    },
+
+    #[error(
+        "package `{package}` configures publish-to target `{target}` (ecosystem `{}`), but its detected ecosystem is `{}`",
+        .target_ecosystem.prefix(),
+        .package_ecosystems.iter().map(|e| e.prefix()).collect::<Vec<_>>().join(", ")
+    )]
+    #[diagnostic(
+        code(E119),
+        help("Remove the mismatched target from publish-to, or fix the [[package]]/[[package-set]] rule so it only matches packages in that ecosystem.")
+    )]
+    PublishTargetEcosystemMismatch {
+        package: PackageId,
+        target: String,
+        target_ecosystem: Ecosystem,
+        package_ecosystems: Vec<Ecosystem>,
     },
 }
 

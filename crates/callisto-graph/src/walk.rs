@@ -188,7 +188,31 @@ impl ManifestWalkResolver {
                 };
 
             // Apply the resolved override's publish-to if the operator explicitly set it.
+            //
+            // A `[[package]]`/`[[package-set]]` rule has no package context at
+            // config-parse time (it's just a pattern + string list), so the
+            // only place the package's real, detected ecosystem is known is
+            // here, once `decls` (the package's actual manifests) have been
+            // walked. Reject any configured target whose `.ecosystem()` does
+            // not match one of the package's detected ecosystems — e.g.
+            // `publish-to = ["nuget"]` on a Cargo-only crate — rather than
+            // silently accepting it and having the crate vanish from every
+            // real publish downstream with zero diagnostic.
             if let Some(override_targets) = active_override.and_then(|o| o.publish_to.as_deref()) {
+                let package_ecosystems: Vec<Ecosystem> =
+                    decls.iter().map(|d| d.ecosystem()).collect();
+                for target in override_targets {
+                    if let Some(target_ecosystem) = target.ecosystem() {
+                        if !package_ecosystems.contains(&target_ecosystem) {
+                            return Err(GraphError::PublishTargetEcosystemMismatch {
+                                package: id.clone(),
+                                target: target.config_str().to_string(),
+                                target_ecosystem,
+                                package_ecosystems,
+                            });
+                        }
+                    }
+                }
                 publish_to = override_targets.to_vec();
             }
 

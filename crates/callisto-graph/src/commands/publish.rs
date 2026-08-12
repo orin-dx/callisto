@@ -143,35 +143,103 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
         };
 
         if is_release {
-            let publishes_cargo = pkg
-                .publish_to
-                .iter()
-                .any(|t| matches!(t, callisto_model::PublishTarget::CratesIo));
-            // Extract the private registry URL and access restriction from
-            // PublishTarget::Npm, both read from `publishConfig` in package.json.
-            let (npm_registry_url, npm_restricted) = pkg
-                .publish_to
-                .iter()
-                .find_map(|t| {
-                    if let callisto_model::PublishTarget::Npm {
+            // Single exhaustive dispatch match over every configured target —
+            // replaces the old ad-hoc `.any(matches!(...))` membership checks,
+            // which silently dropped `PublishTarget::NuGet`/`GitHubRelease` on
+            // the floor with no diagnostic. `PublishTarget` is `#[non_exhaustive]`
+            // (defined in callisto-model), so a wildcard arm is still required
+            // by the compiler even though every current variant is named
+            // explicitly below; the wildcard exists only to catch a future
+            // variant added without a corresponding arm here, not to silently
+            // swallow one of today's variants.
+            let mut publishes_cargo = false;
+            let mut publishes_npm = false;
+            let mut publishes_pypi = false;
+            let mut npm_registry_url: Option<String> = None;
+            let mut npm_restricted = false;
+            // True once at least one configured target has a real dispatch
+            // implementation. Drives the release-tag/ReleaseEntry gate below —
+            // a package configured only with not-yet-implemented targets
+            // (NuGet, GitHubRelease) must not get a ReleaseEntry claiming a
+            // release happened when nothing was actually publishable.
+            let mut has_dispatchable_target = false;
+
+            for target in &pkg.publish_to {
+                match target {
+                    callisto_model::PublishTarget::CratesIo => {
+                        publishes_cargo = true;
+                        has_dispatchable_target = true;
+                    }
+                    callisto_model::PublishTarget::Npm {
                         registry,
                         restricted,
-                    } = t
-                    {
-                        Some((registry.clone(), *restricted))
-                    } else {
-                        None
+                    } => {
+                        publishes_npm = true;
+                        has_dispatchable_target = true;
+                        // Extract the private registry URL and access
+                        // restriction from the first Npm target, both read
+                        // from `publishConfig` in package.json.
+                        if npm_registry_url.is_none() {
+                            npm_registry_url = registry.clone();
+                            npm_restricted = *restricted;
+                        }
                     }
-                })
-                .unwrap_or((None, false));
-            let publishes_npm = pkg
-                .publish_to
-                .iter()
-                .any(|t| matches!(t, callisto_model::PublishTarget::Npm { .. }));
-            let publishes_pypi = pkg
-                .publish_to
-                .iter()
-                .any(|t| matches!(t, callisto_model::PublishTarget::Pypi { .. }));
+                    callisto_model::PublishTarget::Pypi { .. } => {
+                        publishes_pypi = true;
+                        has_dispatchable_target = true;
+                    }
+                    callisto_model::PublishTarget::NuGet { .. } => {
+                        diagnostics.push(callisto_model::Diagnostic {
+                            code: callisto_model::DiagnosticCode::PublishTargetNotImplemented,
+                            severity: callisto_model::DiagnosticSeverity::Warning,
+                            message: format!(
+                                "package `{}` configures publish-to = [\"nuget\"], but NuGet \
+                                 publishing is not yet implemented; this target will not be \
+                                 published",
+                                pkg.id.display_name()
+                            ),
+                            package: Some(pkg.id.clone()),
+                            path: None,
+                            escalated_by: None,
+                            governed_by: None,
+                        });
+                    }
+                    callisto_model::PublishTarget::GitHubRelease => {
+                        diagnostics.push(callisto_model::Diagnostic {
+                            code: callisto_model::DiagnosticCode::PublishTargetNotImplemented,
+                            severity: callisto_model::DiagnosticSeverity::Warning,
+                            message: format!(
+                                "package `{}` configures publish-to = [\"github-release\"], but \
+                                 GitHub Release publishing is not yet implemented; this target \
+                                 will not be published",
+                                pkg.id.display_name()
+                            ),
+                            package: Some(pkg.id.clone()),
+                            path: None,
+                            escalated_by: None,
+                            governed_by: None,
+                        });
+                    }
+                    callisto_model::PublishTarget::None => {}
+                    #[allow(unreachable_patterns)]
+                    _ => {
+                        diagnostics.push(callisto_model::Diagnostic {
+                            code: callisto_model::DiagnosticCode::PublishTargetNotImplemented,
+                            severity: callisto_model::DiagnosticSeverity::Warning,
+                            message: format!(
+                                "package `{}` configures a publish-to target with no \
+                                 implemented dispatch; this target will not be published",
+                                pkg.id.display_name()
+                            ),
+                            package: Some(pkg.id.clone()),
+                            path: None,
+                            escalated_by: None,
+                            governed_by: None,
+                        });
+                    }
+                }
+            }
+
             let is_platform_pkg = pkg
                 .manifests
                 .iter()
@@ -303,6 +371,7 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
 
             if !pkg.publish_to.is_empty()
                 && !pkg.publish_to.iter().all(|t| *t == PublishTarget::None)
+                && has_dispatchable_target
             {
                 // Both head_sha and tag_index must be available: head_sha supplies
                 // the commit to tag and tag_index supplies the template to render
