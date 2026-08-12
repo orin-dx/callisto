@@ -45,6 +45,42 @@ pub(crate) fn artifact_name_for_triple(triple: &str) -> String {
     format!("native-{triple}")
 }
 
+use callisto_model::{ManifestRole, PlatformTarget};
+
+use crate::napi::triple_to_role;
+
+/// Builds a PlatformTarget for `triple`, combining `triple_to_role`'s
+/// platform/arch/abi with this module's hostRunner/useCross/artifactName
+/// table. Returns `None` when `triple` is not recognised by either --
+/// callers must route that case to an UnrecognisedPlatformTriple diagnostic
+/// (AC-011) rather than treating it as an error.
+pub(crate) fn build_platform_target(
+    triple: &str,
+    package_dir: &str,
+    package_name: &str,
+) -> Option<PlatformTarget> {
+    let ManifestRole::Platform {
+        platform,
+        arch,
+        abi,
+    } = triple_to_role(triple)?
+    else {
+        return None;
+    };
+    let (host_runner, use_cross) = triple_host_runner_use_cross(triple)?;
+    Some(PlatformTarget {
+        triple: triple.to_string(),
+        platform,
+        arch,
+        abi,
+        host_runner: host_runner.to_string(),
+        use_cross,
+        artifact_name: artifact_name_for_triple(triple),
+        package_dir: package_dir.to_string(),
+        package_name: package_name.to_string(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -108,5 +144,62 @@ mod tests {
     #[test]
     fn triple_host_runner_use_cross_unknown_triple_returns_none() {
         assert!(triple_host_runner_use_cross("sparc64-unknown-linux-gnu").is_none());
+    }
+
+    /// AC-001 (mapping slice) + AC-014 (abi null on non-linux platforms):
+    /// build_platform_target must combine triple_to_role's platform/arch/abi
+    /// with the CI table's hostRunner/useCross/artifactName.
+    #[test]
+    fn build_platform_target_combines_role_and_ci_table() {
+        let t = build_platform_target("aarch64-apple-darwin", "packages/native-mod", "native-mod")
+            .expect("aarch64-apple-darwin must be recognised");
+        assert_eq!(t.triple, "aarch64-apple-darwin");
+        assert_eq!(t.platform, "darwin");
+        assert_eq!(t.arch, "arm64");
+        assert_eq!(t.abi, None, "darwin targets must serialize abi as null");
+        assert_eq!(t.host_runner, "macos-latest");
+        assert!(!t.use_cross);
+        assert_eq!(t.artifact_name, "native-aarch64-apple-darwin");
+        assert_eq!(t.package_dir, "packages/native-mod");
+        assert_eq!(t.package_name, "native-mod");
+    }
+
+    /// AC-014: a linux triple must carry a non-null abi string.
+    #[test]
+    fn build_platform_target_linux_triple_has_non_null_abi() {
+        let t = build_platform_target("x86_64-unknown-linux-gnu", "pkg-dir", "pkg-name")
+            .expect("x86_64-unknown-linux-gnu must be recognised");
+        assert_eq!(t.abi, Some("gnu".to_string()));
+    }
+
+    /// An unrecognised triple must return None -- this is the hook the AC-011
+    /// diagnostic path (added in a later task) relies on.
+    #[test]
+    fn build_platform_target_unrecognised_triple_returns_none() {
+        assert!(build_platform_target("sparc64-unknown-linux-gnu", "dir", "name").is_none());
+    }
+
+    /// AC-014: one triple per remaining platform family (win32, freebsd,
+    /// android, wasi, and unknown/wasm32-unknown-unknown) must all carry a
+    /// null abi -- extending the darwin/linux coverage above to the rest of
+    /// the recognised triples' platform families.
+    #[test]
+    fn build_platform_target_null_abi_families_table_driven() {
+        let cases: &[(&str, &str)] = &[
+            ("x86_64-pc-windows-msvc", "win32"),
+            ("x86_64-unknown-freebsd", "freebsd"),
+            ("aarch64-linux-android", "android"),
+            ("wasm32-wasip1", "wasi"),
+            ("wasm32-unknown-unknown", "unknown"),
+        ];
+        for &(triple, expected_platform) in cases {
+            let t = build_platform_target(triple, "dir", "name")
+                .unwrap_or_else(|| panic!("{triple} must be recognised"));
+            assert_eq!(
+                t.platform, expected_platform,
+                "platform mismatch for `{triple}`"
+            );
+            assert_eq!(t.abi, None, "abi must be null for `{triple}`");
+        }
     }
 }
