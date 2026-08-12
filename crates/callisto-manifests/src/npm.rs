@@ -413,6 +413,9 @@ pub fn round_trip(spec: &DepSpec, target: &Version) -> Option<DepSpec> {
 }
 
 fn render_at_precision(target: &Version, original_clause: &str) -> String {
+    if target.is_prerelease() {
+        return target.render().to_string();
+    }
     let parts: Vec<&str> = original_clause.split('.').collect();
     let maj = target.major().unwrap_or(0);
     let min = target.minor().unwrap_or(0);
@@ -1124,5 +1127,149 @@ mod tests {
             updated.contains("\t\"version\""),
             "tab indentation must be preserved after version write"
         );
+    }
+
+    // --- round_trip tests ---------------------------------------------------
+
+    fn make_npm_spec(raw: &str) -> DepSpec {
+        let req = VersionReq::parse(raw, Ecosystem::Npm).unwrap();
+        DepSpec::Range(req, raw.to_string())
+    }
+
+    fn npm_version(s: &str) -> Version {
+        Version::parse(s, VersionGrammar::SemVer).unwrap()
+    }
+
+    fn raw_of(spec: Option<DepSpec>) -> Option<String> {
+        match spec {
+            Some(DepSpec::Range(_, raw)) => Some(raw),
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn round_trip_exact_spec_rewrites_to_target_version() {
+        let spec = DepSpec::Exact(npm_version("1.0.0"));
+        let target = npm_version("2.3.4");
+        match round_trip(&spec, &target) {
+            Some(DepSpec::Exact(v)) => assert_eq!(v.render(), "2.3.4"),
+            other => panic!("expected Some(Exact(2.3.4)), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn round_trip_caret_range_rewrites_to_target_version() {
+        let spec = make_npm_spec("^1.0.0");
+        let target = npm_version("1.5.2");
+        assert_eq!(
+            raw_of(round_trip(&spec, &target)).as_deref(),
+            Some("^1.5.2")
+        );
+    }
+
+    #[test]
+    fn round_trip_tilde_range_rewrites_to_target_version() {
+        let spec = make_npm_spec("~1.0.0");
+        let target = npm_version("1.0.9");
+        assert_eq!(
+            raw_of(round_trip(&spec, &target)).as_deref(),
+            Some("~1.0.9")
+        );
+    }
+
+    #[test]
+    fn round_trip_gte_range_rewrites_to_target_version() {
+        let spec = make_npm_spec(">=1.0.0");
+        let target = npm_version("2.5.1");
+        assert_eq!(
+            raw_of(round_trip(&spec, &target)).as_deref(),
+            Some(">=2.5.1")
+        );
+    }
+
+    #[test]
+    fn round_trip_exact_operator_range_rewrites_to_target_version() {
+        let spec = make_npm_spec("=1.0.0");
+        let target = npm_version("1.2.3");
+        assert_eq!(
+            raw_of(round_trip(&spec, &target)).as_deref(),
+            Some("=1.2.3")
+        );
+    }
+
+    #[test]
+    fn round_trip_preserves_two_part_precision() {
+        let spec = make_npm_spec("^1.0");
+        let target = npm_version("1.5.2");
+        assert_eq!(raw_of(round_trip(&spec, &target)).as_deref(), Some("^1.5"));
+    }
+
+    #[test]
+    fn round_trip_preserves_one_part_precision() {
+        let spec = make_npm_spec("^1");
+        let target = npm_version("2.5.2");
+        assert_eq!(raw_of(round_trip(&spec, &target)).as_deref(), Some("^2"));
+    }
+
+    /// A prerelease target version (e.g. publishing `2.0.0-beta.1`) must be
+    /// rendered in full, not truncated to `major.minor.patch` -- dropping the
+    /// prerelease suffix would produce a range that does not actually match
+    /// the version it claims to pin to (`^2.0.0` excludes `2.0.0-beta.1`
+    /// under semver precedence rules).
+    #[test]
+    fn round_trip_prerelease_target_is_rendered_in_full() {
+        let spec = make_npm_spec("^1.0.0");
+        let target = npm_version("2.0.0-beta.1");
+        assert_eq!(
+            raw_of(round_trip(&spec, &target)).as_deref(),
+            Some("^2.0.0-beta.1")
+        );
+    }
+
+    #[test]
+    fn round_trip_non_range_variants_return_none() {
+        let target = npm_version("2.0.0");
+        assert!(round_trip(&DepSpec::Opaque("weird".to_string()), &target).is_none());
+        assert!(round_trip(&DepSpec::Workspace(WorkspaceKind::Npm), &target).is_none());
+        assert!(round_trip(&DepSpec::Catalog(None), &target).is_none());
+        assert!(round_trip(&DepSpec::CargoBare(npm_version("1.0.0")), &target).is_none());
+    }
+
+    /// A clause with a prerelease suffix (e.g. `^1.0.0-beta.1`) is declined
+    /// rather than rewritten -- `render_at_precision` only knows how to
+    /// truncate a plain `major.minor.patch` clause, so a prerelease-qualified
+    /// original clause safely falls back to `RewriteOutcome::LeftAlone`.
+    #[test]
+    fn round_trip_prerelease_clause_returns_none() {
+        let spec = make_npm_spec("^1.0.0-beta.1");
+        let target = npm_version("2.0.0");
+        assert!(round_trip(&spec, &target).is_none());
+    }
+
+    /// A wildcard clause (`1.x`, `1.X`, `^1.x`) is declined rather than
+    /// rewritten -- these are not simple `{operator}{version}` clauses and
+    /// `render_at_precision` has no wildcard-preserving behavior.
+    #[test]
+    fn round_trip_wildcard_clause_returns_none() {
+        let target = npm_version("2.5.0");
+        assert!(round_trip(&make_npm_spec("1.x"), &target).is_none());
+        assert!(round_trip(&make_npm_spec("1.X"), &target).is_none());
+        assert!(round_trip(&make_npm_spec("^1.x"), &target).is_none());
+    }
+
+    /// A comma-separated compound range (`>=1.0.0, <2.0.0`) parses
+    /// successfully -- npm and Cargo share the same underlying semver
+    /// requirement grammar in this codebase (`semver::VersionReq`), so this
+    /// atypical-for-npm-but-syntactically-valid form does reach this
+    /// function -- but it is declined rather than rewritten. Unlike
+    /// `cargo::round_trip`, `npm::round_trip` has no per-clause compound-range
+    /// handling, so this documents current, intentional (safe-fallback)
+    /// behavior: the caller falls back to `RewriteOutcome::LeftAlone` with a
+    /// diagnostic instead of guessing at a rewrite.
+    #[test]
+    fn round_trip_comma_compound_range_returns_none() {
+        let spec = make_npm_spec(">=1.0.0, <2.0.0");
+        let target = npm_version("1.5.0");
+        assert!(round_trip(&spec, &target).is_none());
     }
 }
