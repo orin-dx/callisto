@@ -250,3 +250,87 @@ fn matrix_runtime_versions_npm_python_and_dual_manifest() {
         ])
     );
 }
+
+/// AC-006: --package restricts output to exactly one package's entries, in
+/// BOTH platformTargets and runtimeVersions. AC-007: an unknown --package
+/// name exits 1 and names the package in stderr, never a structurally valid
+/// empty report on stdout.
+#[test]
+fn matrix_package_filter_and_unknown_package_via_binary() {
+    use std::process::Command;
+
+    let tmp = tempfile::TempDir::new().unwrap();
+    let root = tmp.path();
+    std::fs::write(
+        root.join("Cargo.toml"),
+        "[workspace]\nmembers = []\nresolver = \"2\"\n",
+    )
+    .unwrap();
+    std::fs::write(root.join("callisto.toml"), "").unwrap();
+
+    for name in ["pkg-a", "pkg-b"] {
+        let dir = root.join(name);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("package.json"),
+            format!(
+                r#"{{"name":"{name}","napi":{{"targets":["aarch64-apple-darwin"]}},"engines":{{"node":">=20.0.0"}}}}"#
+            ),
+        )
+        .unwrap();
+    }
+
+    let bin = env!("CARGO_BIN_EXE_callisto");
+
+    let filtered = Command::new(bin)
+        .args([
+            "--cwd",
+            &root.to_string_lossy(),
+            "--format",
+            "json",
+            "matrix",
+            "--package",
+            "pkg-a",
+        ])
+        .output()
+        .unwrap();
+    assert!(filtered.status.success());
+    let json: serde_json::Value = serde_json::from_slice(&filtered.stdout).unwrap();
+    assert!(json["platformTargets"].get("pkg-a").is_some());
+    assert!(json["platformTargets"].get("pkg-b").is_none());
+    assert!(
+        json["runtimeVersions"].get("pkg-a").is_some(),
+        "runtimeVersions must include pkg-a"
+    );
+    assert!(
+        json["runtimeVersions"].get("pkg-b").is_none(),
+        "runtimeVersions must exclude pkg-b"
+    );
+
+    let unknown = Command::new(bin)
+        .args([
+            "--cwd",
+            &root.to_string_lossy(),
+            "--format",
+            "json",
+            "matrix",
+            "--package",
+            "does-not-exist",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        !unknown.status.success(),
+        "unknown --package must exit non-zero"
+    );
+    let stderr = String::from_utf8_lossy(&unknown.stderr);
+    assert!(
+        stderr.contains("does-not-exist"),
+        "stderr must name the unknown package: {stderr}"
+    );
+    assert!(
+        serde_json::from_slice::<serde_json::Value>(&unknown.stdout).is_err()
+            || unknown.stdout.is_empty(),
+        "no valid MatrixReport JSON must be printed to stdout on error"
+    );
+}
