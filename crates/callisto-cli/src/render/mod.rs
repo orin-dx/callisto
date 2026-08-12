@@ -207,6 +207,43 @@ pub fn render_init<W: io::Write>(report: &InitReport, w: &mut W) -> io::Result<(
     Ok(())
 }
 
+pub fn render_matrix<W: io::Write>(
+    report: &callisto_model::MatrixReport,
+    w: &mut W,
+) -> io::Result<()> {
+    writeln!(w, "Matrix (schema v{}):", report.schema_version)?;
+
+    if report.platform_targets.is_empty() && report.runtime_versions.is_empty() {
+        writeln!(
+            w,
+            "  (no platform targets or runtime-version constraints declared)"
+        )?;
+    }
+
+    for (pkg, group) in &report.platform_targets {
+        writeln!(w, "  {pkg} [{:?} <- {}]:", group.kind, group.source)?;
+        for t in &group.targets {
+            writeln!(
+                w,
+                "    {:<32} abi={:<8} runner={:<14} cross={:<5} artifact={}",
+                t.triple,
+                t.abi.as_deref().unwrap_or("-"),
+                t.host_runner,
+                t.use_cross,
+                t.artifact_name
+            )?;
+        }
+    }
+
+    for (pkg, entries) in &report.runtime_versions {
+        for e in entries {
+            writeln!(w, "  {pkg} [{:?}] {} = {}", e.ecosystem, e.field, e.range)?;
+        }
+    }
+
+    render_diagnostics(&report.diagnostics, w)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -502,5 +539,70 @@ mod tests {
         assert!(json.contains("\"status\":\"published\""));
         assert!(json.contains("\"status\":\"alreadyPublished\""));
         assert!(json.contains("\"status\":\"failed\"") && json.contains("auth failed: bad token"));
+    }
+
+    /// AC-008: text-format output for a report with at least one platform
+    /// target and one runtime-version entry must be non-empty and must not
+    /// parse as JSON.
+    #[test]
+    fn render_matrix_produces_non_json_non_empty_output() {
+        use callisto_model::{
+            MatrixReport, PlatformTarget, PlatformTargetGroup, PlatformTargetKind,
+            RuntimeEcosystem, RuntimeVersionEntry,
+        };
+        use std::collections::BTreeMap;
+
+        let mut platform_targets = BTreeMap::new();
+        platform_targets.insert(
+            "native-mod".to_string(),
+            PlatformTargetGroup {
+                kind: PlatformTargetKind::Napi,
+                source: "napi.targets".to_string(),
+                targets: vec![PlatformTarget {
+                    triple: "aarch64-apple-darwin".to_string(),
+                    platform: "darwin".to_string(),
+                    arch: "arm64".to_string(),
+                    abi: None,
+                    host_runner: "macos-latest".to_string(),
+                    use_cross: false,
+                    artifact_name: "native-aarch64-apple-darwin".to_string(),
+                    package_dir: "native-mod".to_string(),
+                    package_name: "native-mod".to_string(),
+                }],
+            },
+        );
+        let mut runtime_versions = BTreeMap::new();
+        runtime_versions.insert(
+            "native-mod".to_string(),
+            vec![RuntimeVersionEntry {
+                ecosystem: RuntimeEcosystem::Npm,
+                field: "engines.node".to_string(),
+                range: ">=20.0.0".to_string(),
+            }],
+        );
+        let report = MatrixReport {
+            schema_version: 1,
+            platform_targets,
+            runtime_versions,
+            diagnostics: vec![],
+        };
+
+        let mut buf = Vec::new();
+        render_matrix(&report, &mut buf).unwrap();
+        let text = String::from_utf8(buf).unwrap();
+
+        assert!(!text.is_empty(), "table output must not be empty");
+        assert!(
+            serde_json::from_str::<serde_json::Value>(&text).is_err(),
+            "table output must not itself parse as JSON: {text}"
+        );
+        assert!(
+            text.contains("native-mod"),
+            "table must mention the package name: {text}"
+        );
+        assert!(
+            text.contains("aarch64-apple-darwin"),
+            "table must mention the triple: {text}"
+        );
     }
 }
