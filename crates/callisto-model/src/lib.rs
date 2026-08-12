@@ -51,6 +51,9 @@ pub use plan::*;
 pub mod report;
 pub use report::*;
 
+pub mod matrix;
+pub use matrix::*;
+
 pub mod registry;
 pub use registry::*;
 
