@@ -154,11 +154,14 @@ runs:
         else
           echo "hasChangesets=false" >> $GITHUB_OUTPUT
 
-          # Emit native matrix targets for downstream build jobs. The callisto
-          # matrix subcommand is planned but not yet available in all releases;
-          # the fallback to '{"platformTargets":{}}' ensures downstream jobs
-          # that consume this output receive valid JSON and do not fail.
-          NATIVE_MATRIX=$(callisto matrix --format json 2>/dev/null || echo '{"platformTargets":{}}')
+          # Emit native matrix targets for downstream build jobs, deduplicated
+          # by artifactName in case the same triple is declared by more than
+          # one package's platform-target group. set -o pipefail ensures a
+          # hard `callisto matrix` error (e.g. malformed manifest, conflicting
+          # platform-target sources) fails this step instead of silently
+          # producing empty output.
+          set -o pipefail
+          NATIVE_MATRIX=$(callisto matrix --format json | jq -c '[.platformTargets[].targets[]] | unique_by(.artifactName)') || { echo "::error::callisto matrix failed"; exit 1; }
           echo "nativeMatrix=$NATIVE_MATRIX" >> $GITHUB_OUTPUT
 
           if [[ -n "$INPUT_PUBLISH" && "$INPUT_PUBLISH" != "false" ]]; then
