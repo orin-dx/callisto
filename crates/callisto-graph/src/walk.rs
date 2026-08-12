@@ -133,6 +133,13 @@ impl ManifestWalkResolver {
             }
         }
 
+        // Tracks, per cfg.package_sets entry (by index), whether it matched at
+        // least one real discovered package during this walk. A [[package-set]]
+        // rule that matches nothing is almost always a typo or a stale
+        // ecosystem prefix (see PackageSetMatchedNothing below) rather than
+        // intentional, so it must be surfaced instead of silently ignored.
+        let mut package_set_matched = vec![false; cfg.package_sets.len()];
+
         let mut packages = BTreeMap::new();
         for (id, (rel_path, decls)) in package_manifest_decls {
             let ch_path = rel_path.join("CHANGELOG.md");
@@ -150,6 +157,13 @@ impl ManifestWalkResolver {
                 publish_to.push(PublishTarget::None);
             }
 
+            // The real ecosystem(s) this package's manifests were discovered
+            // in. `id` itself is always PackageId::Bare here (see the
+            // SPEC-002 AC-5 note below), so this is the only place an
+            // ecosystem-prefixed [[package-set]] pattern has anything to
+            // match against.
+            let package_ecosystems: Vec<Ecosystem> = decls.iter().map(|d| d.ecosystem()).collect();
+
             // Two-pass specificity search for [[package]] rules (SPEC-002 AC-1/2/3).
             // Pass 1: find the first Prefixed rule (pattern.ecosystem().is_some())
             //         that matches this package's ID. Prefixed rules always win
@@ -160,13 +174,25 @@ impl ManifestWalkResolver {
             // Within each pass, first-match-wins (TOML declaration order) applies.
             let pkg_override = resolve_package_config(&id, cfg);
 
+            // Record which [[package-set]] patterns match this package,
+            // independent of whether a [[package]] rule ends up shadowing the
+            // fallback below — a pattern that is always shadowed still
+            // "matched" for the purpose of the zero-match diagnostic.
+            for (idx, (pattern, _)) in cfg.package_sets.iter().enumerate() {
+                if pattern.matches_in_ecosystems(id.name(), &package_ecosystems) {
+                    package_set_matched[idx] = true;
+                }
+            }
+
             // If no [[package]] rule matched, look for a [[package-set]] fallback.
             // [[package-set]] uses glob patterns and can match many packages at once;
             // [[package]] always takes priority over [[package-set]] for the same package.
             let set_override = if pkg_override.is_none() {
                 cfg.package_sets
                     .iter()
-                    .find(|(pattern, _)| pattern.matches(&id))
+                    .find(|(pattern, _)| {
+                        pattern.matches_in_ecosystems(id.name(), &package_ecosystems)
+                    })
                     .map(|(_, cfg)| cfg)
             } else {
                 None
@@ -199,8 +225,6 @@ impl ManifestWalkResolver {
             // silently accepting it and having the crate vanish from every
             // real publish downstream with zero diagnostic.
             if let Some(override_targets) = active_override.and_then(|o| o.publish_to.as_deref()) {
-                let package_ecosystems: Vec<Ecosystem> =
-                    decls.iter().map(|d| d.ecosystem()).collect();
                 for target in override_targets {
                     if let Some(target_ecosystem) = target.ecosystem() {
                         if !package_ecosystems.contains(&target_ecosystem) {
@@ -225,6 +249,30 @@ impl ManifestWalkResolver {
                 tag_template,
             };
             packages.insert(id, pkg);
+        }
+
+        // A [[package-set]] rule that matched zero real packages is almost
+        // always a mistake (e.g. an ecosystem prefix that doesn't correspond
+        // to any discovered package, or a typo in the glob) rather than
+        // intentional, so surface it as a visible, non-fatal diagnostic
+        // instead of letting the rule silently do nothing. This is
+        // deliberately advisory rather than a hard `GraphError`: a
+        // `[[package-set]]` rule declared for a monorepo-wide callisto.toml
+        // can legitimately match nothing when only part of the workspace is
+        // present (e.g. a partial checkout or filtered walk), and a hard
+        // error would break that case.
+        for (idx, (pattern, _)) in cfg.package_sets.iter().enumerate() {
+            if !package_set_matched[idx] {
+                diagnostics.push(Diagnostic {
+                    code: DiagnosticCode::PackageSetMatchedNothing,
+                    severity: DiagnosticSeverity::Warning,
+                    message: format!("[[package-set]] `{}` matched no packages", pattern.as_str()),
+                    package: None,
+                    path: None,
+                    escalated_by: None,
+                    governed_by: None,
+                });
+            }
         }
 
         // SPEC-002 AC-5: Cross-ecosystem diagnostic pass.

@@ -108,6 +108,7 @@ pub enum DiagnosticCode {
     BareRuleMatchesMultipleEcosystems,
     UnrecognisedPlatformTriple,
     PublishTargetNotImplemented,
+    PackageSetMatchedNothing,
 }
 
 #[cfg(test)]
