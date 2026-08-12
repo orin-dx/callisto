@@ -20,6 +20,11 @@ use callisto_cli::commands::*;
 //                  1 when any diagnostic is Error-severity (or Warning under --strict)
 //                  2 (ExitCode::from(2)) when --check is set and no changesets are pending
 //
+//   matrix         0 on success (report printed, including an empty report or
+//                  one carrying UnrecognisedPlatformTriple warnings)
+//                  1 on any error (unknown --package, malformed/wrong-type
+//                  manifest, conflicting platform-target sources)
+//
 //   version        0 on success (versions bumped or dry-run preview)
 //                  1 on any error (graph error, strict violation, etc.)
 //
@@ -59,7 +64,7 @@ fn main() -> ExitCode {
     let res = match cli.command {
         Command::Add(args) => add::handle(args, &cli.global),
         Command::Status(args) => status::handle(args, &cli.global),
-        Command::Matrix(_) => unimplemented!("callisto matrix handler is wired in T15"),
+        Command::Matrix(args) => matrix::handle(args, &cli.global),
         Command::Version(args) => version::handle(args, &cli.global),
         Command::Pre(args) => pre::handle(args, &cli.global),
         Command::Validate(args) => validate::handle(args, &cli.global),

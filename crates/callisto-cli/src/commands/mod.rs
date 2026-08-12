@@ -2,6 +2,7 @@ pub mod add;
 pub mod completions;
 pub mod compose_pr_body;
 pub mod init;
+pub mod matrix;
 pub mod plan_publish;
 pub mod pre;
 pub mod publish;
