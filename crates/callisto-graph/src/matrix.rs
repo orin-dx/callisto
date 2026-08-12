@@ -1,9 +1,3 @@
-#![allow(dead_code)]
-// Removed in T12 once crates/callisto-graph/src/commands/matrix.rs (the
-// public entry point) becomes a non-test caller of this module's
-// pub(crate) functions; until then `cargo clippy --all-targets -- -D
-// warnings` flags every function in this file as dead_code.
-
 //! Manifest reading and MatrixReport assembly for `callisto matrix`.
 //! Private helpers only -- the public entry point is
 //! `crate::commands::matrix::matrix`.

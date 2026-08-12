@@ -1,6 +1,7 @@
 use callisto_model::{Diagnostic, DiagnosticSeverity};
 
 pub mod init;
+pub mod matrix;
 pub mod pr_body;
 pub mod publish;
 pub mod publish_client;
@@ -11,6 +12,7 @@ pub mod validate;
 pub mod version;
 
 pub use init::{init, InitOptions};
+pub use matrix::{matrix, MatrixOptions};
 pub use pr_body::{compose_pr_body, PrBodyOptions};
 pub use publish::{
     parse_retry_after, plan_publish, AlwaysRetryPolicy, PublishOptions, PublishOrchestrator,
