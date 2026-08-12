@@ -615,3 +615,72 @@ fn matrix_text_format_and_bare_invocation_match_and_are_non_json() {
         "--format text and the bare (no-flag) invocation must produce identical output"
     );
 }
+
+fn base_workspace() -> tempfile::TempDir {
+    let tmp = tempfile::TempDir::new().unwrap();
+    std::fs::write(
+        tmp.path().join("Cargo.toml"),
+        "[workspace]\nmembers = []\nresolver = \"2\"\n",
+    )
+    .unwrap();
+    std::fs::write(tmp.path().join("callisto.toml"), "").unwrap();
+    tmp
+}
+
+fn run_matrix_json(root: &std::path::Path) -> std::process::Output {
+    std::process::Command::new(env!("CARGO_BIN_EXE_callisto"))
+        .args([
+            "--cwd",
+            &root.to_string_lossy(),
+            "--format",
+            "json",
+            "matrix",
+        ])
+        .output()
+        .unwrap()
+}
+
+fn assert_error_exit_no_report(output: &std::process::Output) {
+    assert!(!output.status.success(), "expected non-zero exit");
+    assert!(
+        serde_json::from_slice::<serde_json::Value>(&output.stdout).is_err()
+            || output.stdout.is_empty(),
+        "no MatrixReport JSON must be printed to stdout on error"
+    );
+}
+
+/// AC-017: a package declaring both napi.targets and [tool.maturin].targets
+/// exits 1 via GraphError::ConflictingPlatformTargetSources (E118), naming
+/// the package and both source field names.
+#[test]
+fn matrix_conflicting_platform_target_sources_exits_1() {
+    let tmp = base_workspace();
+    let dir = tmp.path().join("conflict-pkg");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("package.json"),
+        r#"{"name":"conflict-pkg","napi":{"targets":["aarch64-apple-darwin"]}}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("pyproject.toml"),
+        "[project]\nname = \"conflict-pkg\"\nversion = \"0.1.0\"\n\n[tool.maturin]\ntargets = [\"x86_64-unknown-linux-gnu\"]\n",
+    )
+    .unwrap();
+
+    let output = run_matrix_json(tmp.path());
+    assert_error_exit_no_report(&output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("conflict-pkg"),
+        "stderr must name the package: {stderr}"
+    );
+    assert!(
+        stderr.contains("napi.targets"),
+        "stderr must name napi_source: {stderr}"
+    );
+    assert!(
+        stderr.contains("[tool.maturin].targets"),
+        "stderr must name maturin_source: {stderr}"
+    );
+}
