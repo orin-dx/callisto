@@ -13,6 +13,7 @@ use callisto_model::{
     ManifestDecl, ManifestFormat, ManifestRole, Package, PackageId, PublishTarget, ReleaseTrigger,
 };
 
+use crate::config::resolve::resolve_package_config;
 use crate::config::ResolvedConfig;
 use crate::crosscheck::crosscheck_declared_edges;
 use crate::error::GraphError;
@@ -157,16 +158,7 @@ impl ManifestWalkResolver {
             //         (any rule, since no Prefixed rule matched, the first match
             //          is necessarily Bare) that matches this package's ID.
             // Within each pass, first-match-wins (TOML declaration order) applies.
-            let pkg_override = cfg
-                .packages
-                .iter()
-                .find(|(pattern, _)| pattern.matches(&id) && pattern.ecosystem().is_some())
-                .or_else(|| {
-                    cfg.packages
-                        .iter()
-                        .find(|(pattern, _)| pattern.matches(&id))
-                })
-                .map(|(_, cfg)| cfg);
+            let pkg_override = resolve_package_config(&id, cfg);
 
             // If no [[package]] rule matched, look for a [[package-set]] fallback.
             // [[package-set]] uses glob patterns and can match many packages at once;

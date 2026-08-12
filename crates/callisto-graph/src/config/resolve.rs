@@ -20,7 +20,13 @@ pub struct ResolvedConfig {
     pub validation: ValidationConfig,
     pub registries: BTreeMap<RegistryKey, RegistryConfig>,
     /// Per-package override rules from `[[package]]` blocks, in TOML declaration order.
-    /// The first rule whose `PackageId` matches a discovered package wins.
+    ///
+    /// Lookup uses two-pass specificity (see `resolve_package_config`):
+    /// - Pass 1 (Prefixed tier): the first entry whose `rule_id.ecosystem().is_some()` AND
+    ///   `rule_id.matches(pkg_id)` is true wins, regardless of its position relative to Bare rules.
+    /// - Pass 2 (Bare tier): only if Pass 1 finds nothing, the first entry where
+    ///   `rule_id.matches(pkg_id)` is true wins.
+    ///   Within each tier, first-match-wins in TOML declaration order.
     pub packages: Vec<(PackageId, PackageConfig)>,
     /// Bulk config-override rules from `[[package-set]]` blocks, in TOML declaration order.
     /// Applied as a fallback when no `[[package]]` rule matches a package.
@@ -166,6 +172,33 @@ pub fn parse_release_trigger(s: &str) -> Result<ReleaseTrigger, ConfigError> {
             key: format!("release-trigger = {other}"),
         }),
     }
+}
+
+/// Two-pass `[[package]]` rule lookup with Prefixed-over-Bare specificity.
+///
+/// Pass 1: iterate `cfg.packages` in Vec (TOML declaration) order. Return a reference
+/// to the `PackageConfig` of the first entry `(rule_id, pkg_cfg)` where
+/// `rule_id.ecosystem().is_some()` AND `rule_id.matches(id)`. Prefixed rules
+/// (those with an explicit ecosystem prefix such as `cargo/`, `npm/`, `pypi/`)
+/// always beat Bare rules regardless of declaration order in `callisto.toml`.
+///
+/// Pass 2 (only if Pass 1 found nothing): iterate `cfg.packages` in Vec order.
+/// Return the first entry where `rule_id.matches(id)` (no ecosystem restriction).
+///
+/// Returns `None` if neither pass finds a match.
+///
+/// The function MUST NOT sort, partition-then-sort, or otherwise reorder `cfg.packages`.
+/// Two-pass specificity is achieved solely by two separate linear scans over the
+/// unmodified slice.
+pub(crate) fn resolve_package_config<'a>(
+    id: &PackageId,
+    cfg: &'a ResolvedConfig,
+) -> Option<&'a PackageConfig> {
+    cfg.packages
+        .iter()
+        .find(|(rule_id, _)| rule_id.ecosystem().is_some() && rule_id.matches(id))
+        .or_else(|| cfg.packages.iter().find(|(rule_id, _)| rule_id.matches(id)))
+        .map(|(_, pcfg)| pcfg)
 }
 
 pub fn parse_pre_major_policy(s: &str) -> Result<PreMajorInferencePolicy, ConfigError> {
@@ -627,6 +660,173 @@ mod tests {
         assert!(
             matches!(result.unwrap_err(), ConfigError::UnknownKey { .. }),
             "expected UnknownKey error for unknown registry kind"
+        );
+    }
+
+    /// AC-F1: Bare rule declared first, Prefixed rule declared second.
+    /// Both rules set release_trigger with different values so the winner is directly observable.
+    /// Bare foo: release-trigger = "auto" -> release_trigger = Some(Auto).
+    /// Prefixed npm/foo: release-trigger = "changeset" -> release_trigger = Some(Changeset).
+    /// Pass 1 finds npm/foo first (ecosystem is Some, name matches) -> result must be Some(Changeset).
+    /// If the Bare rule incorrectly won: release_trigger == Some(Auto).
+    #[test]
+    fn resolve_package_config_prefixed_beats_bare_when_bare_declared_first() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path();
+        fs::write(
+            root.join("callisto.toml"),
+            "[[package]]\nmatch = \"foo\"\nrelease-trigger = \"auto\"\n\n[[package]]\nmatch = \"npm/foo\"\nrelease-trigger = \"changeset\"\n",
+        )
+        .expect("write callisto.toml");
+        let cfg = load(root).expect("load should succeed");
+        let id = PackageId::parse("foo").unwrap();
+        let result = resolve_package_config(&id, &cfg);
+        let pcfg = result.expect("resolve_package_config must return Some for npm/foo (Prefixed)");
+        assert_eq!(
+            pcfg.release_trigger,
+            Some(ReleaseTrigger::Changeset),
+            "Prefixed rule (npm/foo, changeset) must win over Bare rule (foo, auto) (AC-F1); \
+             Some(Auto) means the Bare rule incorrectly won. Got: {:?}",
+            pcfg.release_trigger
+        );
+    }
+
+    /// AC-F2: Three-rule scenario. First Prefixed rule matches a different name.
+    /// Pass 1 skips cargo/other (name mismatch), finds npm/pkg as the first Prefixed entry
+    /// whose name matches, and returns it. The third entry (pypi/pkg) is never reached.
+    #[test]
+    fn resolve_package_config_first_matching_prefixed_wins_name_mismatch_skipped() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path();
+        // cargo/other: Prefixed but name "other" != "pkg" — skipped in pass 1
+        // npm/pkg:     Prefixed, name matches — wins: changelog = "FIRST.md"
+        // pypi/pkg:    Prefixed, name matches — never reached
+        fs::write(
+            root.join("callisto.toml"),
+            "[[package]]\nmatch = \"cargo/other\"\nchangelog = \"WRONG.md\"\n\n[[package]]\nmatch = \"npm/pkg\"\nchangelog = \"FIRST.md\"\n\n[[package]]\nmatch = \"pypi/pkg\"\nchangelog = \"SECOND.md\"\n",
+        )
+        .expect("write callisto.toml");
+        let cfg = load(root).expect("load should succeed");
+        let id = PackageId::parse("pkg").unwrap();
+        let result = resolve_package_config(&id, &cfg);
+        let pcfg =
+            result.expect("resolve_package_config must return Some for npm/pkg matching pkg");
+        assert!(
+            pcfg.changelog
+                .as_ref()
+                .map(|p| p.ends_with("FIRST.md"))
+                .unwrap_or(false),
+            "First MATCHING Prefixed entry (npm/pkg) must win (AC-F2): expected changelog ending \
+             in FIRST.md. cargo/other skipped (name mismatch); pypi/pkg never reached. \
+             Got changelog: {:?}",
+            pcfg.changelog
+        );
+    }
+
+    /// AC-F3: No Prefixed rule matches "pkg". Pass 1 finds nothing.
+    /// Pass 2 finds the Bare "pkg" entry and returns it.
+    #[test]
+    fn resolve_package_config_bare_rule_wins_via_pass_2_when_no_prefixed_matches() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path();
+        // cargo/other: Prefixed but name "other" != "pkg" — pass 1 skips, pass 2 skips
+        // pkg (Bare):  pass 1 skips (ecosystem() is None), pass 2 finds it — wins
+        fs::write(
+            root.join("callisto.toml"),
+            "[[package]]\nmatch = \"cargo/other\"\nchangelog = \"WRONG.md\"\n\n[[package]]\nmatch = \"pkg\"\nrelease-trigger = \"auto\"\n",
+        )
+        .expect("write callisto.toml");
+        let cfg = load(root).expect("load should succeed");
+        let id = PackageId::parse("pkg").unwrap();
+        let result = resolve_package_config(&id, &cfg);
+        let pcfg =
+            result.expect("resolve_package_config must return Some via pass 2 for Bare(\"pkg\")");
+        assert_eq!(
+            pcfg.release_trigger,
+            Some(ReleaseTrigger::Auto),
+            "Bare rule must win via pass 2 (AC-F3): expected release_trigger = Some(Auto). \
+             Got: {:?}",
+            pcfg.release_trigger
+        );
+    }
+
+    /// AC-F4: No rule matches "pkg" at all.
+    /// Pass 1 and pass 2 both iterate zero matching entries; result is None.
+    #[test]
+    fn resolve_package_config_returns_none_when_no_rule_matches() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path();
+        // Only a Prefixed rule for "other" — neither pass finds a match for "pkg".
+        fs::write(
+            root.join("callisto.toml"),
+            "[[package]]\nmatch = \"cargo/other\"\nchangelog = \"WRONG.md\"\n",
+        )
+        .expect("write callisto.toml");
+        let cfg = load(root).expect("load should succeed");
+        let id = PackageId::parse("pkg").unwrap();
+        let result = resolve_package_config(&id, &cfg);
+        assert!(
+            result.is_none(),
+            "resolve_package_config must return None when no rule matches (AC-F4); got Some(...)"
+        );
+    }
+
+    /// AC-F4b: cfg.packages is empty. Both passes iterate zero entries.
+    /// Every query returns None regardless of the id argument.
+    #[test]
+    fn resolve_package_config_returns_none_for_empty_packages() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path();
+        // No [[package]] sections at all — packages Vec is empty.
+        fs::write(root.join("callisto.toml"), "").expect("write callisto.toml");
+        let cfg = load(root).expect("load should succeed");
+        assert!(
+            cfg.packages.is_empty(),
+            "fixture must produce an empty packages Vec (AC-F4b); got: {:?}",
+            cfg.packages
+        );
+        for id_str in &["pkg", "npm/pkg", "cargo/pkg"] {
+            let id = PackageId::parse(id_str).unwrap();
+            let result = resolve_package_config(&id, &cfg);
+            assert!(
+                result.is_none(),
+                "resolve_package_config must return None for empty packages, \
+                 id={id_str} (AC-F4b)"
+            );
+        }
+    }
+
+    /// AC-F5: Two Prefixed rules — npm/foo declared first, cargo/foo declared second in Vec order.
+    /// Both rules set release_trigger with different values so the winner is directly observable.
+    /// npm/foo (first): release-trigger = "auto" -> release_trigger = Some(Auto).
+    /// cargo/foo (second): release-trigger = "changeset" -> release_trigger = Some(Changeset).
+    /// Pass 1 returns the first matching Prefixed entry in Vec (TOML declaration) order.
+    /// Vec order must govern: npm/foo is first -> release_trigger must be Some(Auto).
+    /// A sorted implementation (cargo < npm alphabetically) would return Some(Changeset).
+    #[test]
+    fn resolve_package_config_vec_declaration_order_not_alphabetical_sort() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path();
+        // npm/foo FIRST in Vec: release-trigger = "auto"
+        // cargo/foo SECOND in Vec: release-trigger = "changeset"
+        // Querying Bare("foo"): pass 1 returns npm/foo (first Prefixed match) -> Some(Auto).
+        // A sorted implementation would return cargo/foo (cargo < npm) -> Some(Changeset).
+        fs::write(
+            root.join("callisto.toml"),
+            "[[package]]\nmatch = \"npm/foo\"\nrelease-trigger = \"auto\"\n\n[[package]]\nmatch = \"cargo/foo\"\nrelease-trigger = \"changeset\"\n",
+        )
+        .expect("write callisto.toml");
+        let cfg = load(root).expect("load should succeed");
+        let id = PackageId::parse("foo").unwrap();
+        let result = resolve_package_config(&id, &cfg);
+        let pcfg = result.expect("resolve_package_config must return Some for Bare(\"foo\")");
+        assert_eq!(
+            pcfg.release_trigger,
+            Some(ReleaseTrigger::Auto),
+            "npm/foo (declared first) must win over cargo/foo (declared second) — Vec order, \
+             not alphabetical sort, governs first-match-wins (AC-F5). \
+             Some(Changeset) means cargo/foo won due to alphabetical sort. Got: {:?}",
+            pcfg.release_trigger
         );
     }
 }
