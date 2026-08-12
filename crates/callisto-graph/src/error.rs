@@ -207,6 +207,22 @@ pub enum GraphError {
         target_ecosystem: Ecosystem,
         package_ecosystems: Vec<Ecosystem>,
     },
+
+    #[error(
+        "package `{package}` sets `publishConfig.registry` to `{url}`, which is not an operator-approved npm registry"
+    )]
+    #[diagnostic(
+        code(E120),
+        help(
+            "`publishConfig.registry` in package.json is manifest-controlled data (a PR author \
+             can set it in their own package.json), not operator config, so it is never trusted \
+             verbatim as a publish destination. The URL must use the `https` scheme and must \
+             exactly match a `url` configured on an `npm`-kind entry in `[registries]` in \
+             callisto.toml. Add the registry there if it is a legitimate private registry, or \
+             remove the override from package.json."
+        )
+    )]
+    UntrustedNpmRegistry { package: PackageId, url: String },
 }
 
 #[cfg(test)]

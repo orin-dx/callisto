@@ -317,11 +317,14 @@ fn pub_001_load_plan_required_for_private_registry_routing() {
 
 // ---- F-04: npm registry from PublishTarget propagated to plan ----------------
 
-/// A package whose `callisto.toml` specifies a private npm registry URL in
-/// `publishTo = [{npm = {registry = "..."}}]` must produce a `NpmMainPublish`
-/// plan entry whose `registry` field carries that URL. Before this fix,
-/// `plan_publish` always set `registry: None`, causing `npm publish` to target
-/// the public npm registry regardless of per-package configuration.
+/// A package whose `publishConfig.registry` in `package.json` matches a URL
+/// the operator has explicitly approved via `[registries]` in `callisto.toml`
+/// must produce a `NpmMainPublish` plan entry whose `registry` field carries
+/// that URL. Before the SSRF fix, `plan_publish` always set `registry: None`;
+/// after the SSRF fix, an operator-approved registry must still be propagated
+/// (this is the legitimate private-registry case, distinct from an
+/// unapproved override -- see `unapproved_publish_config_registry_is_rejected`
+/// below).
 #[test]
 fn npm_registry_from_publish_target_is_propagated_to_plan() {
     use callisto_graph::commands::{plan_publish, PublishOptions};
@@ -332,10 +335,18 @@ fn npm_registry_from_publish_target_is_propagated_to_plan() {
     // npm's `publishConfig.registry` in package.json is the standard mechanism
     // for targeting a private npm registry. The manifest editor must read it
     // and return PublishTarget::Npm { registry: Some(url) }, and plan_publish
-    // must propagate that URL to the NpmMainPublish entry's `registry` field.
+    // must propagate that URL to the NpmMainPublish entry's `registry` field
+    // -- but only because callisto.toml below explicitly approves this exact
+    // URL via [registries]. Without that operator approval, this same
+    // publishConfig.registry value must be rejected (SSRF guard).
     std::fs::write(
         root.join("package.json"),
         r#"{"name":"my-pkg","version":"1.0.0","publishConfig":{"registry":"https://npm.my-org.example.com"}}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("callisto.toml"),
+        "[registries.my-org-npm]\nkind = \"npm\"\nurl = \"https://npm.my-org.example.com\"\n",
     )
     .unwrap();
     init_git_repo(root);
@@ -354,8 +365,87 @@ fn npm_registry_from_publish_target_is_propagated_to_plan() {
     assert_eq!(
         plan.npm_main_packages[0].registry.as_deref(),
         Some("https://npm.my-org.example.com"),
-        "publishConfig.registry from package.json must appear in plan entry; got {:?}",
+        "publishConfig.registry from package.json must appear in plan entry when operator-approved; got {:?}",
         plan.npm_main_packages[0].registry
+    );
+}
+
+// ---- SSRF guard: publishConfig.registry is manifest-controlled, not trusted ----
+
+/// `publishConfig.registry` in `package.json` is data a PR author controls in
+/// their own manifest -- it is NOT operator-controlled config. If a package
+/// sets it to an arbitrary URL and there is no matching entry in the
+/// operator's `[registries]` table in `callisto.toml`, `plan_publish` must
+/// reject the plan rather than silently propagating the attacker-chosen URL
+/// through to `npm publish --registry <url>` / `npm view --registry <url>`,
+/// both of which run with `NPM_TOKEN` live in the environment in CI.
+#[test]
+fn unapproved_publish_config_registry_is_rejected() {
+    use callisto_graph::commands::{plan_publish, PublishOptions};
+
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+
+    // No callisto.toml at all -- the operator has configured no custom
+    // registries, so this override must be rejected outright.
+    std::fs::write(
+        root.join("package.json"),
+        r#"{"name":"my-pkg","version":"1.0.0","publishConfig":{"registry":"https://attacker.example/"}}"#,
+    )
+    .unwrap();
+    init_git_repo(root);
+
+    let runner = DummyRunner;
+    let locator = IgnoreWalkLocator::new(root);
+    let ws = callisto_graph::Workspace::load(root.to_path_buf(), &locator, &runner)
+        .expect("workspace load");
+
+    let result = plan_publish(&ws, &PublishOptions::default());
+
+    assert!(
+        result.is_err(),
+        "plan_publish must reject an unapproved publishConfig.registry override, got: {result:?}"
+    );
+    let msg = format!("{}", result.unwrap_err());
+    assert!(
+        msg.contains("attacker.example"),
+        "error must name the rejected URL; got: {msg}"
+    );
+}
+
+/// A non-`https` `publishConfig.registry` scheme must always be rejected,
+/// even if the operator happens to have approved that same host over
+/// `https` in `[registries]` -- scheme downgrade is itself the attack this
+/// guard defends against.
+#[test]
+fn non_https_publish_config_registry_is_rejected() {
+    use callisto_graph::commands::{plan_publish, PublishOptions};
+
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+
+    std::fs::write(
+        root.join("package.json"),
+        r#"{"name":"my-pkg","version":"1.0.0","publishConfig":{"registry":"http://npm.my-org.example.com"}}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("callisto.toml"),
+        "[registries.my-org-npm]\nkind = \"npm\"\nurl = \"http://npm.my-org.example.com\"\n",
+    )
+    .unwrap();
+    init_git_repo(root);
+
+    let runner = DummyRunner;
+    let locator = IgnoreWalkLocator::new(root);
+    let ws = callisto_graph::Workspace::load(root.to_path_buf(), &locator, &runner)
+        .expect("workspace load");
+
+    let result = plan_publish(&ws, &PublishOptions::default());
+
+    assert!(
+        result.is_err(),
+        "plan_publish must reject a non-https publishConfig.registry scheme, got: {result:?}"
     );
 }
 

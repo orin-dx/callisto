@@ -15,6 +15,51 @@ pub struct PublishOptions {
     pub only: Vec<String>,
 }
 
+/// Validates a `publishConfig.registry` URL read from a package's own
+/// `package.json` before it is threaded into the publish plan (and
+/// eventually into `npm publish --registry <url>` / `npm view --registry
+/// <url>`, both run with `NPM_TOKEN` live in the process environment in CI).
+///
+/// `publishConfig.registry` is manifest-controlled data -- something a PR
+/// author can set in their own package.json -- not operator-controlled
+/// config, so it must never be trusted verbatim as a publish destination.
+/// Two checks are enforced, mirroring the leading-`-` flag-injection guard
+/// already applied to package names before they reach these same CLI
+/// invocations (see `SubprocessRegistryClient::npm_publish`):
+///
+/// 1. The URL must use the `https` scheme. A scheme downgrade (e.g. `http`)
+///    is rejected even if the host would otherwise be approved, since scheme
+///    downgrade is itself part of the attack this guard defends against.
+/// 2. The URL must exactly match a `url` configured on an `npm`-kind entry
+///    in the operator's `[registries]` table in `callisto.toml`.
+///
+/// If the operator has configured no custom npm registries at all (no
+/// `[registries.*]` block with `kind = "npm"` and a `url`), any override is
+/// rejected. This is the conservative choice: `callisto.toml`, not an
+/// attacker-influenced `package.json`, must always be the source of truth
+/// for where credentials-bearing publish requests are allowed to go, so
+/// operators who need a private npm registry must opt in explicitly by
+/// declaring it in `[registries]`.
+fn validate_npm_registry_url(
+    url: &str,
+    package: &PackageId,
+    registries: &std::collections::BTreeMap<RegistryKey, crate::config::RegistryConfig>,
+) -> Result<(), GraphError> {
+    let is_approved = url.starts_with("https://")
+        && registries
+            .values()
+            .any(|cfg| cfg.kind == Ecosystem::Npm && cfg.url.as_deref() == Some(url));
+
+    if is_approved {
+        Ok(())
+    } else {
+        Err(GraphError::UntrustedNpmRegistry {
+            package: package.clone(),
+            url: url.to_string(),
+        })
+    }
+}
+
 pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
     ws: &Workspace<'_, R, D>,
     opts: &PublishOptions,
@@ -180,6 +225,9 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
                         // restriction from the first Npm target, both read
                         // from `publishConfig` in package.json.
                         if npm_registry_url.is_none() {
+                            if let Some(url) = registry {
+                                validate_npm_registry_url(url, &pkg.id, &ws.config.registries)?;
+                            }
                             npm_registry_url = registry.clone();
                             npm_restricted = *restricted;
                         }
