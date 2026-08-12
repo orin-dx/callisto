@@ -301,6 +301,55 @@ pub(crate) fn select_platform_target_source(
     }
 }
 
+use callisto_model::{Diagnostic, DiagnosticCode, DiagnosticSeverity, PlatformTargetGroup};
+
+/// Calls `select_platform_target_source` and, when a source is present,
+/// builds a PlatformTarget for every declared triple (AC-001, AC-002),
+/// excluding any triple `build_platform_target` does not recognise and
+/// pushing an `UnrecognisedPlatformTriple` warning Diagnostic for each one
+/// instead (AC-011). `group.targets` is sorted ascending by triple string
+/// (AC-009) before returning.
+pub(crate) fn assemble_platform_target_group(
+    package_dir_abs: &Path,
+    package_dir_rel: &str,
+    package_name: &str,
+    package_id: &PackageId,
+) -> Result<(Option<PlatformTargetGroup>, Vec<Diagnostic>), GraphError> {
+    let Some((kind, source, triples)) = select_platform_target_source(package_dir_abs, package_id)?
+    else {
+        return Ok((None, Vec::new()));
+    };
+
+    let mut targets = Vec::new();
+    let mut diagnostics = Vec::new();
+    for triple in &triples {
+        match build_platform_target(triple, package_dir_rel, package_name) {
+            Some(t) => targets.push(t),
+            None => diagnostics.push(Diagnostic {
+                code: DiagnosticCode::UnrecognisedPlatformTriple,
+                severity: DiagnosticSeverity::Warning,
+                message: format!(
+                    "package `{package_name}` declares unrecognised platform triple `{triple}` in `{source}`"
+                ),
+                package: Some(package_id.clone()),
+                path: None,
+                escalated_by: None,
+                governed_by: None,
+            }),
+        }
+    }
+    targets.sort_by(|a, b| a.triple.cmp(&b.triple));
+
+    Ok((
+        Some(PlatformTargetGroup {
+            kind,
+            source,
+            targets,
+        }),
+        diagnostics,
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -643,5 +692,66 @@ mod tests {
         let path = tmp.path().join("wrong_type.toml");
         std::fs::write(&path, "[project]\nrequires-python = 39\n").unwrap();
         assert!(read_requires_python(&path).is_err());
+    }
+
+    /// AC-011: an unrecognised triple is excluded from targets[] and reported
+    /// as a warning diagnostic naming the triple and the package; recognised
+    /// triples in the same declaration remain present.
+    #[test]
+    fn assemble_platform_target_group_unrecognised_triple_produces_diagnostic() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join("package.json"),
+            r#"{"napi":{"targets":["sparc64-unknown-linux-gnu","aarch64-apple-darwin"]}}"#,
+        )
+        .unwrap();
+
+        let (group, diagnostics) = assemble_platform_target_group(
+            tmp.path(),
+            "native-mod",
+            "native-mod",
+            &pkg_id("native-mod"),
+        )
+        .unwrap();
+        let group = group.expect("group must be present");
+        assert_eq!(
+            group.targets.len(),
+            1,
+            "only the recognised triple must remain"
+        );
+        assert_eq!(group.targets[0].triple, "aarch64-apple-darwin");
+
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(
+            diagnostics[0].code,
+            DiagnosticCode::UnrecognisedPlatformTriple
+        );
+        assert!(diagnostics[0].message.contains("sparc64-unknown-linux-gnu"));
+        assert_eq!(diagnostics[0].package, Some(pkg_id("native-mod")));
+    }
+
+    /// AC-001b: napi.targets = [] (present, explicitly empty) produces a
+    /// present-but-empty group, not None.
+    #[test]
+    fn assemble_platform_target_group_empty_array_is_present_not_absent() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join("package.json"),
+            r#"{"napi":{"targets":[]}}"#,
+        )
+        .unwrap();
+
+        let (group, diagnostics) = assemble_platform_target_group(
+            tmp.path(),
+            "native-mod",
+            "native-mod",
+            &pkg_id("native-mod"),
+        )
+        .unwrap();
+        let group = group.expect("an explicitly empty napi.targets must still produce a group");
+        assert_eq!(group.kind, PlatformTargetKind::Napi);
+        assert_eq!(group.source, "napi.targets");
+        assert!(group.targets.is_empty());
+        assert!(diagnostics.is_empty());
     }
 }
