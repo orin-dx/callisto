@@ -350,6 +350,91 @@ pub(crate) fn assemble_platform_target_group(
     ))
 }
 
+use std::collections::BTreeMap;
+use std::path::PathBuf;
+
+use callisto_model::{MatrixReport, RuntimeEcosystem, RuntimeVersionEntry};
+
+/// One registered package's identity and on-disk location, adapted from a
+/// real `Workspace` by `crate::commands::matrix::matrix` (or built directly
+/// by tests).
+pub(crate) struct MatrixPackageInput {
+    pub id: PackageId,
+    /// Absolute path to the package's directory (used for manifest reads).
+    pub dir_abs: PathBuf,
+    /// Workspace-root-relative path string, stored verbatim on each
+    /// PlatformTarget.package_dir.
+    pub dir_rel: String,
+    pub name: String,
+}
+
+/// Reads engines.node (npm) and requires-python (python) from `package_dir_abs`,
+/// in that order, so callers preserve the npm-before-python ordering AC-005b
+/// requires without a separate sort step.
+pub(crate) fn assemble_runtime_versions(
+    package_dir_abs: &Path,
+) -> Result<Vec<RuntimeVersionEntry>, GraphError> {
+    let mut entries = Vec::new();
+
+    let pkg_json = package_dir_abs.join("package.json");
+    if pkg_json.exists() {
+        if let Some(range) = read_engines_node(&pkg_json)? {
+            entries.push(RuntimeVersionEntry {
+                ecosystem: RuntimeEcosystem::Npm,
+                field: "engines.node".to_string(),
+                range,
+            });
+        }
+    }
+
+    let pyproject = package_dir_abs.join("pyproject.toml");
+    if pyproject.exists() {
+        if let Some(range) = read_requires_python(&pyproject)? {
+            entries.push(RuntimeVersionEntry {
+                ecosystem: RuntimeEcosystem::Python,
+                field: "requires-python".to_string(),
+                range,
+            });
+        }
+    }
+
+    Ok(entries)
+}
+
+/// Assembles the full MatrixReport for `packages`. Map keys are each
+/// package's bare name (AC-009's BTreeMap ordering comes from this for free);
+/// a package contributes no platformTargets entry when it declares neither
+/// napi.targets nor [tool.maturin].targets, and no runtimeVersions entry when
+/// it declares neither engines.node nor requires-python.
+pub(crate) fn build_matrix_report(
+    packages: &[MatrixPackageInput],
+) -> Result<MatrixReport, GraphError> {
+    let mut platform_targets = BTreeMap::new();
+    let mut runtime_versions = BTreeMap::new();
+    let mut diagnostics = Vec::new();
+
+    for pkg in packages {
+        let (group, diags) =
+            assemble_platform_target_group(&pkg.dir_abs, &pkg.dir_rel, &pkg.name, &pkg.id)?;
+        if let Some(group) = group {
+            platform_targets.insert(pkg.name.clone(), group);
+        }
+        diagnostics.extend(diags);
+
+        let rv = assemble_runtime_versions(&pkg.dir_abs)?;
+        if !rv.is_empty() {
+            runtime_versions.insert(pkg.name.clone(), rv);
+        }
+    }
+
+    Ok(MatrixReport {
+        schema_version: callisto_model::SCHEMA_VERSION,
+        platform_targets,
+        runtime_versions,
+        diagnostics,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -357,6 +442,80 @@ mod tests {
 
     fn pkg_id(name: &str) -> PackageId {
         PackageId::Bare(name.to_string())
+    }
+
+    fn input(name: &str, dir: &std::path::Path) -> MatrixPackageInput {
+        MatrixPackageInput {
+            id: pkg_id(name),
+            dir_abs: dir.to_path_buf(),
+            dir_rel: name.to_string(),
+            name: name.to_string(),
+        }
+    }
+
+    /// AC-003: no packages declare anything -> the empty-report shape.
+    #[test]
+    fn build_matrix_report_empty_workspace_produces_empty_report() {
+        let report = build_matrix_report(&[]).unwrap();
+        assert_eq!(report.schema_version, callisto_model::SCHEMA_VERSION);
+        assert!(report.platform_targets.is_empty());
+        assert!(report.runtime_versions.is_empty());
+        assert!(report.diagnostics.is_empty());
+    }
+
+    /// AC-009: platformTargets and runtimeVersions keys are ordered
+    /// lexicographically by package name across 3+ packages.
+    #[test]
+    fn build_matrix_report_orders_packages_lexicographically() {
+        let tmp = tempfile::tempdir().unwrap();
+        for name in ["zeta", "alpha", "mid"] {
+            let dir = tmp.path().join(name);
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(
+                dir.join("package.json"),
+                r#"{"napi":{"targets":["aarch64-apple-darwin"]}}"#,
+            )
+            .unwrap();
+        }
+        let inputs = vec![
+            input("zeta", &tmp.path().join("zeta")),
+            input("alpha", &tmp.path().join("alpha")),
+            input("mid", &tmp.path().join("mid")),
+        ];
+        let report = build_matrix_report(&inputs).unwrap();
+        let keys: Vec<&String> = report.platform_targets.keys().collect();
+        assert_eq!(keys, vec!["alpha", "mid", "zeta"]);
+    }
+
+    /// AC-005b: a package with both engines.node and requires-python gets a
+    /// two-element runtimeVersions array, npm before python, and this is not
+    /// an error.
+    #[test]
+    fn build_matrix_report_dual_manifest_runtime_versions_npm_before_python() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("dual-pkg");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("package.json"),
+            r#"{"engines":{"node":">=20.0.0"}}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("pyproject.toml"),
+            "[project]\nrequires-python = \">=3.9\"\n",
+        )
+        .unwrap();
+
+        let report = build_matrix_report(&[input("dual-pkg", &dir)]).unwrap();
+        let entries = report
+            .runtime_versions
+            .get("dual-pkg")
+            .expect("dual-pkg must have runtimeVersions entries");
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].ecosystem, RuntimeEcosystem::Npm);
+        assert_eq!(entries[0].range, ">=20.0.0");
+        assert_eq!(entries[1].ecosystem, RuntimeEcosystem::Python);
+        assert_eq!(entries[1].range, ">=3.9");
     }
 
     /// AC-017: a package.json with napi.targets AND a pyproject.toml with
