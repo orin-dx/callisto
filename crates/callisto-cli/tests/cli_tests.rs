@@ -170,3 +170,83 @@ fn matrix_napi_and_maturin_share_triple_derivation() {
         }
     }
 }
+
+/// AC-004, AC-005, AC-005b: npm-only, python-only, and dual-manifest
+/// packages each produce the exact runtimeVersions shape the spec pins.
+#[test]
+fn matrix_runtime_versions_npm_python_and_dual_manifest() {
+    use std::process::Command;
+
+    let tmp = tempfile::TempDir::new().unwrap();
+    let root = tmp.path();
+    std::fs::write(
+        root.join("Cargo.toml"),
+        "[workspace]\nmembers = []\nresolver = \"2\"\n",
+    )
+    .unwrap();
+    std::fs::write(root.join("callisto.toml"), "").unwrap();
+
+    let npm_dir = root.join("npm-only");
+    std::fs::create_dir_all(&npm_dir).unwrap();
+    std::fs::write(
+        npm_dir.join("package.json"),
+        r#"{"name":"npm-only","engines":{"node":">=20.0.0"}}"#,
+    )
+    .unwrap();
+
+    let py_dir = root.join("py-only");
+    std::fs::create_dir_all(&py_dir).unwrap();
+    std::fs::write(
+        py_dir.join("pyproject.toml"),
+        "[project]\nname = \"py-only\"\nversion = \"0.1.0\"\nrequires-python = \">=3.9\"\n",
+    )
+    .unwrap();
+
+    let dual_dir = root.join("dual-pkg");
+    std::fs::create_dir_all(&dual_dir).unwrap();
+    std::fs::write(
+        dual_dir.join("package.json"),
+        r#"{"name":"dual-pkg","engines":{"node":">=20.0.0"}}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        dual_dir.join("pyproject.toml"),
+        "[project]\nname = \"dual-pkg\"\nversion = \"0.1.0\"\nrequires-python = \">=3.9\"\n",
+    )
+    .unwrap();
+
+    let bin = env!("CARGO_BIN_EXE_callisto");
+    let output = Command::new(bin)
+        .args([
+            "--cwd",
+            &root.to_string_lossy(),
+            "--format",
+            "json",
+            "matrix",
+        ])
+        .output()
+        .expect("failed to spawn callisto binary");
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+
+    assert_eq!(
+        json["runtimeVersions"]["npm-only"],
+        serde_json::json!([{"ecosystem":"npm","field":"engines.node","range":">=20.0.0"}])
+    );
+    assert_eq!(
+        json["runtimeVersions"]["py-only"],
+        serde_json::json!([{"ecosystem":"python","field":"requires-python","range":">=3.9"}])
+    );
+    assert_eq!(
+        json["runtimeVersions"]["dual-pkg"],
+        serde_json::json!([
+            {"ecosystem":"npm","field":"engines.node","range":">=20.0.0"},
+            {"ecosystem":"python","field":"requires-python","range":">=3.9"}
+        ])
+    );
+}
