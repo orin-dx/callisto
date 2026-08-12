@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use callisto_manifests::{open, OpenContext, WorkspaceCargoResolver};
 use callisto_model::{
-    ApplyPermit, CommandError, CommandRunner, LockfileRefreshResult, ManifestRole,
+    ApplyPermit, CommandError, CommandOutput, CommandRunner, LockfileRefreshResult, ManifestRole,
 };
 
 use crate::cascade::DepWriteTarget;
@@ -46,7 +46,7 @@ pub fn apply_version_plan<R: CommandRunner>(
     root: &Path,
     plan: &VersionPlan,
     runner: &R,
-    _opts: &ApplyOptions,
+    opts: &ApplyOptions,
     permit: &ApplyPermit,
 ) -> Result<ApplyOutcome, GraphError> {
     let mut outcome = ApplyOutcome::default();
@@ -80,7 +80,19 @@ pub fn apply_version_plan<R: CommandRunner>(
                     let decl =
                         callisto_model::ManifestDecl::new(p.clone(), ManifestRole::Canonical, fmt)?;
                     let mut handle = open(&decl, &ctx)?;
-                    handle.write_version(&bump.to, permit)?;
+                    let current = handle.current_version()?;
+                    if current == bump.to {
+                        // Already at target — skip write but still stage so git add re-stages on retry.
+                    } else if current == bump.from {
+                        handle.write_version(&bump.to, permit)?;
+                    } else {
+                        return Err(GraphError::UnexpectedManifestVersion {
+                            path: p.clone(),
+                            expected_from: bump.from.clone(),
+                            expected_to: bump.to.clone(),
+                            found: current,
+                        });
+                    }
                     modified_paths.push(p.clone());
                 }
                 VersionWriteTarget::CargoWorkspacePackage { root_manifest } => {
@@ -136,8 +148,8 @@ pub fn apply_version_plan<R: CommandRunner>(
                     message: e.to_string(),
                 })
             })?;
-            modified_paths.push(cs_path.clone());
         }
+        modified_paths.push(cs_path.clone());
     }
 
     if let Some(ref pre_state) = plan.pre_state_update {
@@ -199,6 +211,65 @@ pub fn apply_version_plan<R: CommandRunner>(
             None
         })
         .collect();
+
+    // Regenerate lockfiles when the caller requested a refresh. This must run
+    // BEFORE the git-staging loop so the refreshed files are on disk when they
+    // are picked up by the staging pass below.
+    if opts.refresh_lockfiles {
+        let mut refresh_results: Vec<LockfileRefreshResult> = Vec::new();
+
+        if active_ecosystems.contains(&Ecosystem::Cargo) {
+            let out = runner
+                .run("cargo", &["update", "--workspace"], root)
+                .unwrap_or_else(|e| CommandOutput {
+                    exit_code: None,
+                    stdout: String::new(),
+                    stderr: e.to_string(),
+                });
+            refresh_results.push(LockfileRefreshResult {
+                filename: PathBuf::from("Cargo.lock"),
+                refresh_command: "cargo update --workspace".to_string(),
+                success: out.success(),
+                exit_code: out.exit_code,
+            });
+        }
+
+        if active_ecosystems.contains(&Ecosystem::Pypi) {
+            if root.join("uv.lock").exists() {
+                let out = runner
+                    .run("uv", &["lock"], root)
+                    .unwrap_or_else(|e| CommandOutput {
+                        exit_code: None,
+                        stdout: String::new(),
+                        stderr: e.to_string(),
+                    });
+                refresh_results.push(LockfileRefreshResult {
+                    filename: PathBuf::from("uv.lock"),
+                    refresh_command: "uv lock".to_string(),
+                    success: out.success(),
+                    exit_code: out.exit_code,
+                });
+            } else if root.join("poetry.lock").exists() {
+                let out = runner
+                    .run("poetry", &["lock", "--no-update"], root)
+                    .unwrap_or_else(|e| CommandOutput {
+                        exit_code: None,
+                        stdout: String::new(),
+                        stderr: e.to_string(),
+                    });
+                refresh_results.push(LockfileRefreshResult {
+                    filename: PathBuf::from("poetry.lock"),
+                    refresh_command: "poetry lock --no-update".to_string(),
+                    success: out.success(),
+                    exit_code: out.exit_code,
+                });
+            }
+        }
+
+        if !refresh_results.is_empty() {
+            outcome.lockfile_refresh_results = Some(refresh_results);
+        }
+    }
 
     // Map each well-known lockfile to its ecosystem, then include the file
     // only when that ecosystem is active and the file exists on disk.
@@ -295,6 +366,33 @@ mod tests {
         }
     }
 
+    type CallLog = std::sync::Arc<std::sync::Mutex<Vec<(String, Vec<String>)>>>;
+
+    /// Records every (program, args) pair that CommandRunner::run is called with.
+    struct RecordingRunner {
+        #[allow(clippy::type_complexity)]
+        calls: CallLog,
+    }
+
+    impl CommandRunner for RecordingRunner {
+        fn run(
+            &self,
+            program: &str,
+            args: &[&str],
+            _cwd: &Path,
+        ) -> Result<CommandOutput, CommandError> {
+            self.calls.lock().unwrap().push((
+                program.to_string(),
+                args.iter().map(|s| s.to_string()).collect(),
+            ));
+            Ok(CommandOutput {
+                exit_code: Some(0),
+                stdout: String::new(),
+                stderr: String::new(),
+            })
+        }
+    }
+
     fn cargo_version(v: &str) -> Version {
         Version::parse(v, VersionGrammar::SemVer).expect("valid semver")
     }
@@ -338,6 +436,288 @@ mod tests {
         assert!(
             !staged_names.contains(&"uv.lock"),
             "uv.lock must NOT be staged when no Python package is bumped, got: {staged_names:?}"
+        );
+    }
+
+    /// When `refresh_lockfiles: true` and the plan bumps a Cargo package,
+    /// `cargo update --workspace` must be called so that `Cargo.lock` is
+    /// regenerated after the version bump. This prevents `cargo publish --locked`
+    /// from failing with "lock file needs to be updated but --locked was passed".
+    ///
+    /// The result must appear in `ApplyOutcome::lockfile_refresh_results`.
+    #[test]
+    fn refresh_lockfiles_calls_cargo_update_workspace_when_cargo_bumped() {
+        let dir = tempfile::tempdir().expect("create tempdir");
+        let root = dir.path();
+        std::fs::write(root.join("Cargo.lock"), "# stale lock").unwrap();
+
+        let calls = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let runner = RecordingRunner {
+            calls: std::sync::Arc::clone(&calls),
+        };
+
+        let plan = VersionPlan {
+            bumps: vec![PlannedBump {
+                package: PackageId::parse("cargo:my-crate").expect("valid package id"),
+                from: cargo_version("1.0.0"),
+                to: cargo_version("1.1.0"),
+                severity: Severity::Minor,
+                governed_by: None,
+                reason: None,
+                writes: vec![],
+            }],
+            ..Default::default()
+        };
+
+        let permit = ApplyPermit::force_for_tests();
+        let opts = ApplyOptions {
+            refresh_lockfiles: true,
+        };
+        let outcome = apply_version_plan(root, &plan, &runner, &opts, &permit)
+            .expect("apply_version_plan should succeed");
+
+        let recorded = calls.lock().unwrap().clone();
+        let cargo_update_called = recorded
+            .iter()
+            .any(|(prog, args)| prog == "cargo" && args.iter().any(|a| a == "update"));
+        assert!(
+            cargo_update_called,
+            "cargo update must be called when refresh_lockfiles=true and Cargo package is bumped; calls: {recorded:?}"
+        );
+
+        let refresh_results = outcome
+            .lockfile_refresh_results
+            .expect("lockfile_refresh_results must be Some when refresh ran");
+        assert!(
+            refresh_results
+                .iter()
+                .any(|r| r.filename.as_os_str() == "Cargo.lock"),
+            "Cargo.lock must appear in lockfile_refresh_results; got: {refresh_results:?}"
+        );
+    }
+
+    /// When `refresh_lockfiles: false` (the default), `cargo update` must NOT
+    /// be called — callers that do not request a refresh should see no extra
+    /// subprocess invocations.
+    #[test]
+    fn refresh_lockfiles_false_does_not_call_cargo_update() {
+        let dir = tempfile::tempdir().expect("create tempdir");
+        let root = dir.path();
+        std::fs::write(root.join("Cargo.lock"), "# lock").unwrap();
+
+        let calls = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let runner = RecordingRunner {
+            calls: std::sync::Arc::clone(&calls),
+        };
+
+        let plan = VersionPlan {
+            bumps: vec![PlannedBump {
+                package: PackageId::parse("cargo:my-crate").expect("valid package id"),
+                from: cargo_version("1.0.0"),
+                to: cargo_version("1.1.0"),
+                severity: Severity::Minor,
+                governed_by: None,
+                reason: None,
+                writes: vec![],
+            }],
+            ..Default::default()
+        };
+
+        let permit = ApplyPermit::force_for_tests();
+        let opts = ApplyOptions::default(); // refresh_lockfiles: false
+        let outcome = apply_version_plan(root, &plan, &runner, &opts, &permit)
+            .expect("apply_version_plan should succeed");
+
+        let recorded = calls.lock().unwrap().clone();
+        let cargo_update_called = recorded
+            .iter()
+            .any(|(prog, args)| prog == "cargo" && args.iter().any(|a| a == "update"));
+        assert!(
+            !cargo_update_called,
+            "cargo update must NOT be called when refresh_lockfiles=false; calls: {recorded:?}"
+        );
+        assert!(
+            outcome.lockfile_refresh_results.is_none(),
+            "lockfile_refresh_results must be None when refresh_lockfiles=false"
+        );
+    }
+
+    /// When a manifest is already at the plan's target version (from a prior
+    /// partially-applied run that crashed), `apply_version_plan` must NOT bump
+    /// it again (which would produce an unplanned 1.1.0 → 1.2.0 bump) and must
+    /// return `Ok` so the caller can complete the remaining operations safely.
+    ///
+    /// The manifest write is skipped, but the path is still pushed to staged so
+    /// that `git add` re-stages any changes that were made in the prior run.
+    #[test]
+    fn apply_is_idempotent_when_manifest_already_at_target_version() {
+        let dir = tempfile::tempdir().expect("create tempdir");
+        let root = dir.path();
+
+        // Manifest already at 1.1.0 — simulates a prior crashed apply.
+        let cargo_toml_path = root.join("Cargo.toml");
+        std::fs::write(
+            &cargo_toml_path,
+            "[package]\nname = \"my-crate\"\nversion = \"1.1.0\"\nedition = \"2021\"\n",
+        )
+        .unwrap();
+
+        // Changeset file that would be consumed.
+        let changeset_dir = root.join(".changeset");
+        std::fs::create_dir_all(&changeset_dir).unwrap();
+        std::fs::write(
+            changeset_dir.join("my-change.md"),
+            "---\nmy-crate: minor\n---\n",
+        )
+        .unwrap();
+
+        let manifest_rel = PathBuf::from("Cargo.toml");
+        let cs_rel = PathBuf::from(".changeset/my-change.md");
+
+        let plan = VersionPlan {
+            bumps: vec![PlannedBump {
+                package: PackageId::parse("cargo:my-crate").expect("valid id"),
+                from: cargo_version("1.0.0"),
+                to: cargo_version("1.1.0"),
+                severity: Severity::Minor,
+                governed_by: None,
+                reason: None,
+                writes: vec![VersionWriteTarget::Manifest(manifest_rel.clone())],
+            }],
+            consumed_changesets: vec![cs_rel.clone()],
+            ..Default::default()
+        };
+
+        let permit = ApplyPermit::force_for_tests();
+        let opts = ApplyOptions::default();
+        let outcome = apply_version_plan(root, &plan, &NoopRunner, &opts, &permit)
+            .expect("apply_version_plan must succeed when manifest is already at target version");
+
+        // Manifest must stay at 1.1.0, not be bumped to 1.2.0.
+        let content = std::fs::read_to_string(&cargo_toml_path).unwrap();
+        assert!(
+            content.contains("version = \"1.1.0\""),
+            "manifest must remain at 1.1.0 after idempotent apply; content: {content}"
+        );
+
+        // Changeset file must be deleted.
+        assert!(
+            !root.join(&cs_rel).exists(),
+            "changeset file must be deleted even on an idempotent apply"
+        );
+
+        // Manifest must still be staged (re-add for git).
+        assert!(
+            outcome.staged.contains(&manifest_rel),
+            "Cargo.toml must be in staged even when the write was skipped; staged: {:?}",
+            outcome.staged
+        );
+
+        // Changeset path must be staged for git rm.
+        assert!(
+            outcome.staged.contains(&cs_rel),
+            "changeset path must be in staged so git rm --cached runs; staged: {:?}",
+            outcome.staged
+        );
+    }
+
+    /// When a manifest is at a version that is neither `from` nor `to`,
+    /// `apply_version_plan` must return an error — the workspace is in an
+    /// unexpected state that requires human intervention.
+    #[test]
+    fn apply_returns_error_when_manifest_has_unexpected_version() {
+        let dir = tempfile::tempdir().expect("create tempdir");
+        let root = dir.path();
+
+        // Manifest at 2.0.0 — neither from=1.0.0 nor to=1.1.0.
+        let cargo_toml_path = root.join("Cargo.toml");
+        std::fs::write(
+            &cargo_toml_path,
+            "[package]\nname = \"my-crate\"\nversion = \"2.0.0\"\nedition = \"2021\"\n",
+        )
+        .unwrap();
+
+        let manifest_rel = PathBuf::from("Cargo.toml");
+        let plan = VersionPlan {
+            bumps: vec![PlannedBump {
+                package: PackageId::parse("cargo:my-crate").expect("valid id"),
+                from: cargo_version("1.0.0"),
+                to: cargo_version("1.1.0"),
+                severity: Severity::Minor,
+                governed_by: None,
+                reason: None,
+                writes: vec![VersionWriteTarget::Manifest(manifest_rel.clone())],
+            }],
+            ..Default::default()
+        };
+
+        let permit = ApplyPermit::force_for_tests();
+        let opts = ApplyOptions::default();
+        let result = apply_version_plan(root, &plan, &NoopRunner, &opts, &permit);
+
+        assert!(
+            matches!(result, Err(GraphError::UnexpectedManifestVersion { .. })),
+            "apply must fail with UnexpectedManifestVersion when manifest is at an unexpected \
+             version; got: {result:?}"
+        );
+
+        // Manifest must be unchanged.
+        let content = std::fs::read_to_string(&cargo_toml_path).unwrap();
+        assert!(
+            content.contains("version = \"2.0.0\""),
+            "manifest must not be modified when apply fails; content: {content}"
+        );
+    }
+
+    /// When a changeset file was already deleted by a prior partial run,
+    /// `apply_version_plan` must still push its path to `staged` so that
+    /// `git rm --cached --ignore-unmatch` is called for it. Without this,
+    /// a crashed-then-retried apply leaves the changeset in the git index.
+    #[test]
+    fn apply_stages_changeset_path_even_when_file_already_deleted() {
+        let dir = tempfile::tempdir().expect("create tempdir");
+        let root = dir.path();
+
+        // Manifest already at 1.1.0 (prior run bumped it).
+        let cargo_toml_path = root.join("Cargo.toml");
+        std::fs::write(
+            &cargo_toml_path,
+            "[package]\nname = \"my-crate\"\nversion = \"1.1.0\"\nedition = \"2021\"\n",
+        )
+        .unwrap();
+
+        // Changeset file does NOT exist — deleted by the prior partial run.
+        let cs_rel = PathBuf::from(".changeset/deleted-change.md");
+        assert!(
+            !root.join(&cs_rel).exists(),
+            "changeset file must not exist at test start"
+        );
+
+        let manifest_rel = PathBuf::from("Cargo.toml");
+        let plan = VersionPlan {
+            bumps: vec![PlannedBump {
+                package: PackageId::parse("cargo:my-crate").expect("valid id"),
+                from: cargo_version("1.0.0"),
+                to: cargo_version("1.1.0"),
+                severity: Severity::Minor,
+                governed_by: None,
+                reason: None,
+                writes: vec![VersionWriteTarget::Manifest(manifest_rel.clone())],
+            }],
+            consumed_changesets: vec![cs_rel.clone()],
+            ..Default::default()
+        };
+
+        let permit = ApplyPermit::force_for_tests();
+        let opts = ApplyOptions::default();
+        let outcome = apply_version_plan(root, &plan, &NoopRunner, &opts, &permit)
+            .expect("apply_version_plan must succeed");
+
+        // Changeset path must be in staged regardless of whether the file existed.
+        assert!(
+            outcome.staged.contains(&cs_rel),
+            "changeset path must be in staged even when file is already deleted; staged: {:?}",
+            outcome.staged
         );
     }
 }

@@ -146,6 +146,19 @@ pub enum GraphError {
         found: callisto_model::Version,
     },
 
+    #[error("cannot apply version plan: manifest `{}` is at version {}, expected {} (pre-apply) or {} (already applied — safe to retry)", .path.display(), .found.render(), .expected_from.render(), .expected_to.render())]
+    #[diagnostic(
+        code(E117),
+        help("The manifest version does not match the plan's from or to version. \
+              This may indicate the manifest was modified outside of callisto after the plan was generated.")
+    )]
+    UnexpectedManifestVersion {
+        path: PathBuf,
+        expected_from: callisto_model::Version,
+        expected_to: callisto_model::Version,
+        found: callisto_model::Version,
+    },
+
     #[error("workspace root `{root_manifest}` has conflicting version updates: {details}")]
     WorkspaceVersionConflict {
         root_manifest: PathBuf,
