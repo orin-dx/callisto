@@ -84,3 +84,225 @@ pub trait TimeProvider: Send + Sync {
     fn now(&self) -> std::time::SystemTime;
     fn sleep(&self, duration: Duration);
 }
+
+/// Redacts every occurrence of any non-empty string in `secrets` from
+/// `text`, replacing each with `[REDACTED]`, then strips any URL userinfo
+/// component (`scheme://user:pass@host` -> `scheme://host`) regardless of
+/// whether it matched a known secret.
+///
+/// Callers use this on raw subprocess stderr before it's embedded in a
+/// [`RegistryError`] and, downstream, a JSON report or CI log — registry
+/// CLIs (`cargo publish`, `npm publish`, `twine upload`) can echo a
+/// credential verbatim in their own error diagnostics on auth failure.
+///
+/// Pure and injectable (`secrets` rather than reading the environment
+/// directly) so it stays deterministic and test-friendly; see
+/// [`known_credential_env_values`] for the real caller-side source of
+/// `secrets`.
+pub fn redact_known_secrets(text: &str, secrets: &[String]) -> String {
+    let mut redacted = text.to_string();
+    for secret in secrets {
+        if !secret.is_empty() {
+            redacted = redacted.replace(secret.as_str(), "[REDACTED]");
+        }
+    }
+    redact_url_userinfo(&redacted)
+}
+
+/// Filters a full environment-variable snapshot down to the values of
+/// registry-credential variables this codebase's publish flow reads:
+/// the fixed `NPM_TOKEN`/`TWINE_PASSWORD`/`CARGO_REGISTRY_TOKEN` names,
+/// plus any `CARGO_REGISTRIES_<NAME>_TOKEN` (the registry name is
+/// operator-configured and unbounded, so this matches the name pattern
+/// rather than a fixed list).
+///
+/// Takes the snapshot as a parameter (callers pass `std::env::vars()`)
+/// rather than reading the environment itself, mirroring the
+/// `env: impl Fn(&str) -> Result<String, VarError>` pattern
+/// `callisto-cli`'s `check_credentials` already uses for the same
+/// reason: deterministic, no process-env mutation needed in tests.
+pub fn known_credential_env_values(vars: impl Iterator<Item = (String, String)>) -> Vec<String> {
+    vars.filter(|(key, value)| {
+        !value.is_empty()
+            && (matches!(
+                key.as_str(),
+                "NPM_TOKEN" | "TWINE_PASSWORD" | "CARGO_REGISTRY_TOKEN"
+            ) || (key.starts_with("CARGO_REGISTRIES_") && key.ends_with("_TOKEN")))
+    })
+    .map(|(_, value)| value)
+    .collect()
+}
+
+/// Strips a URL's userinfo component (`user:pass@` between `scheme://`
+/// and the host) from every `scheme://...` occurrence in `text`,
+/// replacing it with `[REDACTED]@`. Operates token-by-token: within the
+/// span from `scheme://` to the next whitespace/quote/`<`/`>` character,
+/// everything up to the *last* `@` is treated as userinfo and redacted.
+///
+/// This is deliberately conservative rather than strictly RFC 3986-aware:
+/// userinfo containing a raw `/` or a second `@` (e.g. an unescaped
+/// base64-ish token) is realistic in free-form CLI stderr text, and using
+/// the *first* `@` (or bailing out on any `/` before it) would under-
+/// redact exactly that case -- the one this function exists to catch. The
+/// cost is a rare false positive (an `@` that's actually part of a path,
+/// e.g. an npm scoped package name in `registry.npmjs.org/@myorg/pkg`,
+/// gets redacted too) — acceptable, since over-redaction only costs log
+/// noise while under-redaction leaks a credential.
+fn redact_url_userinfo(text: &str) -> String {
+    let mut result = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(scheme_pos) = rest.find("://") {
+        let split_at = scheme_pos + 3;
+        result.push_str(&rest[..split_at]);
+        let after = &rest[split_at..];
+        let stop = after
+            .find(|c: char| c.is_whitespace() || matches!(c, '"' | '\'' | '<' | '>'))
+            .unwrap_or(after.len());
+        let candidate = &after[..stop];
+        if let Some(at_pos) = candidate.rfind('@') {
+            result.push_str("[REDACTED]@");
+            rest = &after[at_pos + 1..];
+            continue;
+        }
+        rest = after;
+    }
+    result.push_str(rest);
+    result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn redacts_a_known_secret_value_from_text() {
+        let text = "npm ERR! 403 Forbidden - PUT https://registry.npmjs.org/pkg - token abc123secret was rejected";
+        let redacted = redact_known_secrets(text, &["abc123secret".to_string()]);
+        assert!(!redacted.contains("abc123secret"));
+        assert!(redacted.contains("[REDACTED]"));
+    }
+
+    #[test]
+    fn redacts_multiple_occurrences_of_the_same_secret() {
+        let text = "token=s3cr3t failed; retrying with token=s3cr3t again";
+        let redacted = redact_known_secrets(text, &["s3cr3t".to_string()]);
+        assert!(!redacted.contains("s3cr3t"));
+        assert_eq!(redacted.matches("[REDACTED]").count(), 2);
+    }
+
+    #[test]
+    fn leaves_text_unchanged_when_no_secrets_match() {
+        let text = "cargo publish failed: crate version already exists";
+        let redacted = redact_known_secrets(text, &["unrelated-secret".to_string()]);
+        assert_eq!(redacted, text);
+    }
+
+    #[test]
+    fn empty_string_secret_in_the_list_does_not_corrupt_output() {
+        // `"".replace("", "X")` would insert "X" between every character --
+        // confirm the empty-secret guard actually prevents that footgun.
+        let text = "normal error message";
+        let redacted = redact_known_secrets(text, &[String::new(), "real-secret".to_string()]);
+        assert_eq!(redacted, text);
+    }
+
+    #[test]
+    fn redacts_url_userinfo_even_when_it_matches_no_known_secret() {
+        // A private-registry URL with embedded basic-auth credentials,
+        // echoed verbatim by a registry CLI's own error diagnostics, is
+        // not necessarily one of the fixed credential env vars -- this
+        // must be caught independently of the `secrets` list.
+        let text = "error: failed to fetch https://alice:hunter2@registry.example.com/pkg.tgz: 401";
+        let redacted = redact_known_secrets(text, &[]);
+        assert!(!redacted.contains("hunter2"));
+        assert!(!redacted.contains("alice"));
+        assert_eq!(
+            redacted,
+            "error: failed to fetch https://[REDACTED]@registry.example.com/pkg.tgz: 401"
+        );
+    }
+
+    #[test]
+    fn does_not_touch_a_url_with_no_userinfo() {
+        let text = "fetching https://registry.npmjs.org/pkg failed with 404";
+        let redacted = redact_known_secrets(text, &[]);
+        assert_eq!(redacted, text);
+    }
+
+    #[test]
+    fn redacts_userinfo_when_the_password_itself_contains_a_slash() {
+        // A raw '/' inside userinfo isn't RFC 3986-valid, but this is
+        // free-form CLI stderr text, not a parsed URL -- a base64-ish
+        // token/password containing '/' is realistic, and under-redacting
+        // it would defeat the whole point of this function. Bias toward
+        // over-redaction, never under-redaction.
+        let text = "error: failed to fetch https://alice:p/ss@registry.example.com/index: 401";
+        let redacted = redact_known_secrets(text, &[]);
+        assert!(!redacted.contains("p/ss"));
+        assert_eq!(
+            redacted,
+            "error: failed to fetch https://[REDACTED]@registry.example.com/index: 401"
+        );
+    }
+
+    #[test]
+    fn redacts_userinfo_when_the_password_itself_contains_an_at_sign() {
+        let text = "error: failed to fetch https://alice:p@ssw0rd@registry.example.com/index: 401";
+        let redacted = redact_known_secrets(text, &[]);
+        assert!(!redacted.contains("ssw0rd"));
+        assert_eq!(
+            redacted,
+            "error: failed to fetch https://[REDACTED]@registry.example.com/index: 401"
+        );
+    }
+
+    #[test]
+    fn conservatively_redacts_a_bare_at_sign_after_a_path_segment_too() {
+        // An `@` appearing after a `/` (e.g. an npm scoped package name
+        // embedded in a URL path, `registry.npmjs.org/@myorg/pkg`) is
+        // usually not userinfo -- but distinguishing that from a
+        // slash-containing password with plain text scanning is not
+        // reliable, and this function's whole purpose is credential
+        // redaction, so it deliberately treats *any* `@` before the next
+        // whitespace/quote boundary as a userinfo marker. A little log
+        // noise on an unusual scoped-package error is an acceptable
+        // trade-off for never under-redacting a real credential.
+        let text = "GET https://registry.npmjs.org/@myorg/pkg failed";
+        let redacted = redact_known_secrets(text, &[]);
+        assert_eq!(redacted, "GET https://[REDACTED]@myorg/pkg failed");
+    }
+
+    #[test]
+    fn known_credential_env_values_matches_fixed_and_dynamic_names() {
+        let snapshot = vec![
+            ("NPM_TOKEN".to_string(), "npm-secret".to_string()),
+            ("TWINE_PASSWORD".to_string(), "twine-secret".to_string()),
+            (
+                "CARGO_REGISTRY_TOKEN".to_string(),
+                "cargo-secret".to_string(),
+            ),
+            (
+                "CARGO_REGISTRIES_MY_REGISTRY_TOKEN".to_string(),
+                "dynamic-secret".to_string(),
+            ),
+            ("PATH".to_string(), "/usr/bin".to_string()),
+            (
+                "NPM_TOKEN_BUT_NOT_QUITE".to_string(),
+                "not-a-match".to_string(),
+            ),
+        ];
+        let values = known_credential_env_values(snapshot.into_iter());
+        assert_eq!(values.len(), 4);
+        assert!(values.contains(&"npm-secret".to_string()));
+        assert!(values.contains(&"twine-secret".to_string()));
+        assert!(values.contains(&"cargo-secret".to_string()));
+        assert!(values.contains(&"dynamic-secret".to_string()));
+    }
+
+    #[test]
+    fn known_credential_env_values_skips_empty_values() {
+        let snapshot = vec![("NPM_TOKEN".to_string(), String::new())];
+        let values = known_credential_env_values(snapshot.into_iter());
+        assert!(values.is_empty());
+    }
+}

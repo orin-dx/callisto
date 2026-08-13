@@ -29,8 +29,8 @@ use std::time::Duration;
 
 use callisto_manifests::WorkspaceCargoResolver;
 use callisto_model::{
-    ApplyPermit, CommandOutput, CommandRunner, Ecosystem, NpmAccess, PackageId, PublishOutcome,
-    RegistryClient, RegistryError, Version,
+    known_credential_env_values, redact_known_secrets, ApplyPermit, CommandOutput, CommandRunner,
+    Ecosystem, NpmAccess, PackageId, PublishOutcome, RegistryClient, RegistryError, Version,
 };
 use toml;
 
@@ -344,7 +344,7 @@ impl<R: CommandRunner> SubprocessRegistryClient<R> {
         Err(RegistryError::Other(format!(
             "npm view failed ambiguously (exit {:?}): {}",
             output.exit_code,
-            output.stderr.trim()
+            redact_stderr(output.stderr.trim())
         )))
     }
 
@@ -545,7 +545,7 @@ impl<R: CommandRunner> SubprocessRegistryClient<R> {
                 "python -m build failed for `{}` (exit {:?}): {}",
                 package.name(),
                 build_out.exit_code,
-                build_out.stderr.trim()
+                redact_stderr(build_out.stderr.trim())
             )));
         }
 
@@ -694,6 +694,16 @@ fn detect_rate_limit(text_lower: &str) -> Option<RegistryError> {
     }
 }
 
+/// Redacts known registry-credential env-var values and any URL userinfo
+/// component from subprocess stderr before it's embedded in a
+/// [`RegistryError`] -- registry CLIs (`cargo publish`, `npm publish`,
+/// `twine upload`) can echo a credential verbatim in their own error
+/// diagnostics on auth failure, and this text flows verbatim into the JSON
+/// `PublishReport` and CI logs downstream.
+fn redact_stderr(text: &str) -> String {
+    redact_known_secrets(text, &known_credential_env_values(std::env::vars()))
+}
+
 fn detect_auth_failure(text_lower: &str, raw_stderr: &str) -> Option<RegistryError> {
     if text_lower.contains("401")
         || text_lower.contains("403")
@@ -702,7 +712,7 @@ fn detect_auth_failure(text_lower: &str, raw_stderr: &str) -> Option<RegistryErr
         || text_lower.contains("invalid token")
         || text_lower.contains("forbidden")
     {
-        Some(RegistryError::AuthFailed(raw_stderr.trim().to_string()))
+        Some(RegistryError::AuthFailed(redact_stderr(raw_stderr.trim())))
     } else {
         None
     }
@@ -726,7 +736,7 @@ fn classify_cargo_output(output: &CommandOutput) -> Result<PublishOutcome, Regis
     Err(RegistryError::Other(format!(
         "cargo publish failed (exit {:?}): {}",
         output.exit_code,
-        output.stderr.trim()
+        redact_stderr(output.stderr.trim())
     )))
 }
 
@@ -753,7 +763,7 @@ fn classify_npm_publish_output(output: &CommandOutput) -> Result<PublishOutcome,
     Err(RegistryError::Other(format!(
         "npm publish failed (exit {:?}): {}",
         output.exit_code,
-        output.stderr.trim()
+        redact_stderr(output.stderr.trim())
     )))
 }
 
@@ -796,7 +806,7 @@ fn classify_twine_output(output: &CommandOutput) -> Result<PublishOutcome, Regis
     Err(RegistryError::Other(format!(
         "twine upload failed (exit {:?}): {}",
         output.exit_code,
-        output.stderr.trim()
+        redact_stderr(output.stderr.trim())
     )))
 }
 
@@ -961,6 +971,29 @@ mod tests {
         let c = client(output(101, "", "error: failed to parse manifest\n"));
         let err = c.publish(&cargo_pkg(), &v1(), &permit()).unwrap_err();
         assert!(matches!(err, RegistryError::Other(_)));
+    }
+
+    /// A registry CLI's own error diagnostics can echo a credential-bearing
+    /// URL verbatim (e.g. a private registry URL with embedded basic-auth,
+    /// sourced from operator config rather than a known env var) -- this
+    /// must be redacted from the `RegistryError`'s message regardless of
+    /// which credential env vars happen to be set in the test process.
+    #[test]
+    fn cargo_publish_error_redacts_url_userinfo_from_stderr() {
+        let c = client(output(
+            101,
+            "",
+            "error: failed to fetch https://alice:hunter2@registry.example.com/index: 500\n",
+        ));
+        let err = c.publish(&cargo_pkg(), &v1(), &permit()).unwrap_err();
+        let RegistryError::Other(msg) = &err else {
+            panic!("expected RegistryError::Other, got {err:?}");
+        };
+        assert!(
+            !msg.contains("hunter2") && !msg.contains("alice"),
+            "credential must be redacted from the error message, got: {msg}"
+        );
+        assert!(msg.contains("[REDACTED]@registry.example.com"));
     }
 
     #[test]
