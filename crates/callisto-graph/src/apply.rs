@@ -507,6 +507,159 @@ mod tests {
         Version::parse(v, VersionGrammar::SemVer).expect("valid semver")
     }
 
+    /// AC-014: a bump-precondition failure inside a batched group must block
+    /// every rewrite in that group and leave the manifest byte-for-byte
+    /// unchanged (no rewrite is ever attempted, persist is never called).
+    #[test]
+    fn batched_group_bump_precondition_failure_skips_all_rewrites_in_group() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let cargo_toml_path = root.join("Cargo.toml");
+        let original = "[package]\nname = \"my-crate\"\nversion = \"2.0.0\"\nedition = \"2021\"\n\n[dependencies]\nhelper = \"1.0.0\"\nother = \"1.0.0\"\n";
+        std::fs::write(&cargo_toml_path, original).unwrap();
+
+        let manifest_rel = PathBuf::from("Cargo.toml");
+        let plan = VersionPlan {
+            bumps: vec![PlannedBump {
+                package: PackageId::parse("cargo:my-crate").unwrap(),
+                from: cargo_version("1.0.0"),
+                to: cargo_version("1.1.0"),
+                severity: Severity::Minor,
+                governed_by: None,
+                reason: None,
+                writes: vec![VersionWriteTarget::Manifest(manifest_rel.clone())],
+            }],
+            rewrites: vec![
+                crate::cascade::SpecRewrite {
+                    key: crate::cascade::RewriteKey {
+                        target: DepWriteTarget::Manifest(manifest_rel.clone()),
+                        name: "helper".to_string(),
+                        kind: Some(callisto_model::DepKind::Runtime),
+                    },
+                    dependency: PackageId::parse("cargo:helper").unwrap(),
+                    from: callisto_model::DepSpec::Range(
+                        callisto_model::VersionReq::parse(
+                            "^1.0.0",
+                            callisto_model::Ecosystem::Cargo,
+                        )
+                        .unwrap(),
+                        "^1.0.0".to_string(),
+                    ),
+                    to: callisto_model::DepSpec::Range(
+                        callisto_model::VersionReq::parse(
+                            "^1.1.0",
+                            callisto_model::Ecosystem::Cargo,
+                        )
+                        .unwrap(),
+                        "^1.1.0".to_string(),
+                    ),
+                },
+                crate::cascade::SpecRewrite {
+                    key: crate::cascade::RewriteKey {
+                        target: DepWriteTarget::Manifest(manifest_rel.clone()),
+                        name: "other".to_string(),
+                        kind: Some(callisto_model::DepKind::Runtime),
+                    },
+                    dependency: PackageId::parse("cargo:other").unwrap(),
+                    from: callisto_model::DepSpec::Range(
+                        callisto_model::VersionReq::parse(
+                            "^1.0.0",
+                            callisto_model::Ecosystem::Cargo,
+                        )
+                        .unwrap(),
+                        "^1.0.0".to_string(),
+                    ),
+                    to: callisto_model::DepSpec::Range(
+                        callisto_model::VersionReq::parse(
+                            "^1.1.0",
+                            callisto_model::Ecosystem::Cargo,
+                        )
+                        .unwrap(),
+                        "^1.1.0".to_string(),
+                    ),
+                },
+            ],
+            ..Default::default()
+        };
+
+        let permit = ApplyPermit::force_for_tests();
+        let opts = ApplyOptions::default();
+        let result = apply_version_plan(root, &plan, &NoopRunner, &opts, &permit);
+
+        assert!(
+            matches!(result, Err(GraphError::UnexpectedManifestVersion { .. })),
+            "bump precondition failure must return UnexpectedManifestVersion; got: {result:?}"
+        );
+
+        let on_disk = std::fs::read_to_string(&cargo_toml_path).unwrap();
+        assert_eq!(
+            on_disk, original,
+            "manifest must be byte-for-byte unchanged: no rewrite in the group may be applied and persist must never be called when the bump precondition fails"
+        );
+    }
+
+    /// AC-016 (byte half): a batched group where the bump is skipped
+    /// (already at target) but a rewrite succeeds must still write the
+    /// rewrite's mutation to disk (not silently dropped).
+    #[test]
+    fn batched_group_skipped_bump_still_writes_a_successful_rewrite_to_disk() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let cargo_toml_path = root.join("Cargo.toml");
+        let original = "[package]\nname = \"my-crate\"\nversion = \"1.1.0\"\nedition = \"2021\"\n\n[dependencies]\nhelper = \"1.0.0\"\n";
+        std::fs::write(&cargo_toml_path, original).unwrap();
+
+        let manifest_rel = PathBuf::from("Cargo.toml");
+        let plan = VersionPlan {
+            bumps: vec![PlannedBump {
+                package: PackageId::parse("cargo:my-crate").unwrap(),
+                from: cargo_version("1.0.0"),
+                to: cargo_version("1.1.0"),
+                severity: Severity::Minor,
+                governed_by: None,
+                reason: None,
+                writes: vec![VersionWriteTarget::Manifest(manifest_rel.clone())],
+            }],
+            rewrites: vec![crate::cascade::SpecRewrite {
+                key: crate::cascade::RewriteKey {
+                    target: DepWriteTarget::Manifest(manifest_rel.clone()),
+                    name: "helper".to_string(),
+                    kind: Some(callisto_model::DepKind::Runtime),
+                },
+                dependency: PackageId::parse("cargo:helper").unwrap(),
+                from: callisto_model::DepSpec::Range(
+                    callisto_model::VersionReq::parse("^1.0.0", callisto_model::Ecosystem::Cargo)
+                        .unwrap(),
+                    "^1.0.0".to_string(),
+                ),
+                to: callisto_model::DepSpec::Range(
+                    callisto_model::VersionReq::parse("^1.2.0", callisto_model::Ecosystem::Cargo)
+                        .unwrap(),
+                    "^1.2.0".to_string(),
+                ),
+            }],
+            ..Default::default()
+        };
+
+        let permit = ApplyPermit::force_for_tests();
+        let opts = ApplyOptions::default();
+        let result = apply_version_plan(root, &plan, &NoopRunner, &opts, &permit);
+        assert!(
+            result.is_ok(),
+            "apply_version_plan should succeed: {result:?}"
+        );
+
+        let on_disk = std::fs::read_to_string(&cargo_toml_path).unwrap();
+        assert!(
+            on_disk.contains("version = \"1.1.0\""),
+            "version must remain at the already-correct target"
+        );
+        assert!(
+            on_disk.contains("helper = \"^1.2.0\""),
+            "the rewrite's mutation must not be silently dropped"
+        );
+    }
+
     /// When only a Cargo package is bumped, the Python lockfile (`uv.lock`)
     /// must NOT appear in `staged`, even when it exists on disk alongside
     /// `Cargo.lock`.

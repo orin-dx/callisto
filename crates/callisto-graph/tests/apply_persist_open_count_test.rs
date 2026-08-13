@@ -260,3 +260,72 @@ fn mixed_routing_root_cargo_toml_excludes_plain_dependencies_from_batching() {
     assert!(on_disk.contains("plain-b = \"^1.2.0\""));
     assert!(on_disk.contains("inherited-c = \"^1.3.0\""));
 }
+
+/// AC-016 (persist_call_count half): a batched group where the bump is
+/// skipped (already at target) but a rewrite succeeds must still cause
+/// exactly one persist call -- the skipped bump must not suppress the
+/// persist a successful rewrite on the same path requires.
+///
+/// DEVIATION FROM AC-016'S LITERAL FILE-PLACEMENT WORDING (documented, per
+/// plan T13): AC-016's text places this assertion in apply.rs's
+/// `#[cfg(test)]` module, but PERSIST_CALL_COUNT is a process-global
+/// counter and apply.rs's own `--lib` module has 9+ other non-#[serial]
+/// tests that would race it -- the same hazard this file's module doc
+/// already isolates OPEN_CALL_COUNT from. This test lives here instead,
+/// reusing this file's already-imported types.
+#[test]
+#[serial]
+fn batched_group_skipped_bump_still_increments_persist_call_count_by_one() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    std::fs::write(
+        root.join("Cargo.toml"),
+        "[package]\nname = \"my-crate\"\nversion = \"1.1.0\"\nedition = \"2021\"\n\n[dependencies]\nhelper = \"1.0.0\"\n",
+    )
+    .unwrap();
+
+    let manifest_rel = PathBuf::from("Cargo.toml");
+    let plan = VersionPlan {
+        bumps: vec![PlannedBump {
+            package: PackageId::parse("cargo:my-crate").unwrap(),
+            from: Version::parse("1.0.0", VersionGrammar::SemVer).unwrap(),
+            to: Version::parse("1.1.0", VersionGrammar::SemVer).unwrap(),
+            severity: Severity::Minor,
+            governed_by: None,
+            reason: None,
+            writes: vec![VersionWriteTarget::Manifest(manifest_rel.clone())],
+        }],
+        rewrites: vec![SpecRewrite {
+            key: RewriteKey {
+                target: DepWriteTarget::Manifest(manifest_rel.clone()),
+                name: "helper".to_string(),
+                kind: Some(DepKind::Runtime),
+            },
+            dependency: PackageId::parse("cargo:helper").unwrap(),
+            from: DepSpec::Range(
+                VersionReq::parse("^1.0.0", Ecosystem::Cargo).unwrap(),
+                "^1.0.0".to_string(),
+            ),
+            to: DepSpec::Range(
+                VersionReq::parse("^1.2.0", Ecosystem::Cargo).unwrap(),
+                "^1.2.0".to_string(),
+            ),
+        }],
+        ..Default::default()
+    };
+
+    let permit = ApplyPermit::force_for_tests();
+    let opts = ApplyOptions::default();
+    callisto_manifests::reset_persist_call_count();
+    let result = apply_version_plan(root, &plan, &NoopRunner, &opts, &permit);
+    assert!(
+        result.is_ok(),
+        "apply_version_plan should succeed: {result:?}"
+    );
+
+    assert_eq!(
+        callisto_manifests::persist_call_count(),
+        1,
+        "a skipped bump must not suppress the persist a successful rewrite on the same path requires"
+    );
+}
