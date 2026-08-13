@@ -1,3 +1,4 @@
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -42,6 +43,67 @@ pub struct ApplyOutcome {
 /// - Manifest parse or write failures (malformed TOML/JSON, unsupported format).
 /// - Git subprocess failures (`git add` or `git rm --cached` returns a non-zero exit code).
 /// - I/O errors writing changelog sections or `pre.json`.
+#[derive(Debug, Default)]
+#[allow(dead_code)] // consumed by apply_version_plan in the next commit
+pub(crate) struct ManifestWriteGroup {
+    pub(crate) bump: Option<(usize, callisto_model::Version)>,
+    pub(crate) rewrite_indices: Vec<usize>,
+}
+
+#[derive(Debug, Default)]
+#[allow(dead_code)] // consumed by apply_version_plan in the next commit
+pub(crate) struct ManifestWriteClassification {
+    pub(crate) batched: BTreeMap<PathBuf, ManifestWriteGroup>,
+    pub(crate) excluded: BTreeSet<PathBuf>,
+}
+
+#[allow(dead_code)] // consumed by apply_version_plan in the next commit
+pub(crate) fn classify_manifest_writes(plan: &VersionPlan) -> ManifestWriteClassification {
+    let mut resolver_routed: BTreeSet<PathBuf> = BTreeSet::new();
+    for bump in &plan.bumps {
+        for write in &bump.writes {
+            if let VersionWriteTarget::CargoWorkspacePackage { root_manifest } = write {
+                resolver_routed.insert(root_manifest.clone());
+            }
+        }
+    }
+    for rewrite in &plan.rewrites {
+        if let DepWriteTarget::CargoWorkspaceDependency { root_manifest } = &rewrite.key.target {
+            resolver_routed.insert(root_manifest.clone());
+        }
+    }
+
+    let mut by_path: BTreeMap<PathBuf, ManifestWriteGroup> = BTreeMap::new();
+    for (idx, bump) in plan.bumps.iter().enumerate() {
+        for write in &bump.writes {
+            if let VersionWriteTarget::Manifest(p) = write {
+                by_path.entry(p.clone()).or_default().bump = Some((idx, bump.to.clone()));
+            }
+        }
+    }
+    for (idx, rewrite) in plan.rewrites.iter().enumerate() {
+        if let DepWriteTarget::Manifest(p) = &rewrite.key.target {
+            by_path
+                .entry(p.clone())
+                .or_default()
+                .rewrite_indices
+                .push(idx);
+        }
+    }
+
+    let mut batched = BTreeMap::new();
+    let mut excluded = BTreeSet::new();
+    for (path, group) in by_path {
+        if resolver_routed.contains(&path) {
+            excluded.insert(path);
+        } else {
+            batched.insert(path, group);
+        }
+    }
+
+    ManifestWriteClassification { batched, excluded }
+}
+
 pub fn apply_version_plan<R: CommandRunner>(
     root: &Path,
     plan: &VersionPlan,
@@ -1265,5 +1327,82 @@ mod tests {
             crate_b_on_disk, crate_b_original,
             "the second rewrite's manifest must be byte-for-byte unchanged when its own persist() fails"
         );
+    }
+
+    #[test]
+    fn classify_manifest_writes_partitions_by_path_with_correct_groups() {
+        let bump_only = PathBuf::from("bump-only/Cargo.toml");
+        let rewrites_only = PathBuf::from("rewrites-only/Cargo.toml");
+        let both = PathBuf::from("both/Cargo.toml");
+
+        fn spec(v: &str) -> callisto_model::DepSpec {
+            callisto_model::DepSpec::Range(
+                callisto_model::VersionReq::parse(v, callisto_model::Ecosystem::Cargo).unwrap(),
+                v.to_string(),
+            )
+        }
+
+        let plan = VersionPlan {
+            bumps: vec![
+                PlannedBump {
+                    package: PackageId::parse("cargo:bump-only").unwrap(),
+                    from: cargo_version("1.0.0"),
+                    to: cargo_version("1.1.0"),
+                    severity: Severity::Minor,
+                    governed_by: None,
+                    reason: None,
+                    writes: vec![VersionWriteTarget::Manifest(bump_only.clone())],
+                },
+                PlannedBump {
+                    package: PackageId::parse("cargo:both").unwrap(),
+                    from: cargo_version("2.0.0"),
+                    to: cargo_version("2.1.0"),
+                    severity: Severity::Minor,
+                    governed_by: None,
+                    reason: None,
+                    writes: vec![VersionWriteTarget::Manifest(both.clone())],
+                },
+            ],
+            rewrites: vec![
+                crate::cascade::SpecRewrite {
+                    key: crate::cascade::RewriteKey {
+                        target: DepWriteTarget::Manifest(rewrites_only.clone()),
+                        name: "helper".to_string(),
+                        kind: Some(callisto_model::DepKind::Runtime),
+                    },
+                    dependency: PackageId::parse("cargo:helper").unwrap(),
+                    from: spec("^1.0.0"),
+                    to: spec("^1.1.0"),
+                },
+                crate::cascade::SpecRewrite {
+                    key: crate::cascade::RewriteKey {
+                        target: DepWriteTarget::Manifest(both.clone()),
+                        name: "other".to_string(),
+                        kind: Some(callisto_model::DepKind::Runtime),
+                    },
+                    dependency: PackageId::parse("cargo:other").unwrap(),
+                    from: spec("^1.0.0"),
+                    to: spec("^1.1.0"),
+                },
+            ],
+            ..Default::default()
+        };
+
+        let classification = classify_manifest_writes(&plan);
+
+        assert!(classification.excluded.is_empty());
+        assert_eq!(classification.batched.len(), 3);
+
+        let g = classification.batched.get(&bump_only).unwrap();
+        assert_eq!(g.bump.as_ref().unwrap().1, cargo_version("1.1.0"));
+        assert!(g.rewrite_indices.is_empty());
+
+        let g = classification.batched.get(&rewrites_only).unwrap();
+        assert!(g.bump.is_none());
+        assert_eq!(g.rewrite_indices, vec![0]);
+
+        let g = classification.batched.get(&both).unwrap();
+        assert_eq!(g.bump.as_ref().unwrap().1, cargo_version("2.1.0"));
+        assert_eq!(g.rewrite_indices, vec![1]);
     }
 }
