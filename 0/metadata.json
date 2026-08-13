@@ -1,0 +1,73 @@
+{
+  "cli_version": "0.10.1-nightly.202608121908.a47cf0c70",
+  "checkpoint_id": "01KZYC1ZR38GS5S9HB9916K1RJ",
+  "session_id": "ae412d01-e061-4047-918b-0d1df3d4d118",
+  "strategy": "manual-commit",
+  "created_at": "2026-08-13T20:12:18.111055Z",
+  "branch": "main",
+  "checkpoints_count": 32,
+  "save_step_count": 1,
+  "files_touched": [
+    "crates/callisto-manifests/src/python.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5",
+  "turn_id": "c358a8fefe3f",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 1316,
+    "cache_creation_tokens": 2817842,
+    "cache_read_tokens": 302542352,
+    "output_tokens": 510482,
+    "api_call_count": 658
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_012rCYNRAZsYmqiF8NNi747S",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "canon:canon"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "c358a8fefe3f",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 1796,
+        "end": 1797,
+        "entry_ids": [
+          "8d95a7ab-50fc-4a4f-a5f0-51fa16450006"
+        ],
+        "tool_use_id": "toolu_012rCYNRAZsYmqiF8NNi747S"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_012rCYNRAZsYmqiF8NNi747S"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: canon:canon",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 113
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-08-13T20:12:17.761524Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 33,
+    "human_modified": 1,
+    "human_removed": 0,
+    "total_committed": 33,
+    "total_lines_changed": 34,
+    "agent_percentage": 0,
+    "metric_version": 2
+  }
+}
