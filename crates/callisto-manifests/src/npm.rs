@@ -71,43 +71,6 @@ impl PackageJson {
             npm_workspace_kind: ctx.npm_workspace_kind,
         })
     }
-
-    fn persist(&mut self, permit: &ApplyPermit) -> Result<(), ManifestError> {
-        let indent_str = match self.fingerprint.indent {
-            Indent::Spaces(n) => " ".repeat(n as usize),
-            Indent::Tabs => "\t".to_string(),
-            Indent::DefaultTwoSpaces => "  ".to_string(),
-        };
-
-        let mut map = IndexMap::new();
-        for (k, v) in &self.doc {
-            map.insert(k, v);
-        }
-
-        let mut out = format_json_pretty(&map, &indent_str)?;
-        if self.fingerprint.line_ending == LineEnding::CrLf {
-            out = out.replace("\r\n", "\n").replace('\n', "\r\n");
-        }
-
-        if !self.fingerprint.trailing_newline && out.ends_with('\n') {
-            if out.ends_with("\r\n") {
-                out.truncate(out.len() - 2);
-            } else {
-                out.truncate(out.len() - 1);
-            }
-        }
-
-        if self.fingerprint.has_bom {
-            out = format!("\u{FEFF}{}", out);
-        }
-
-        crate::atomic::atomic_write(&self.absolute, &out, permit).map_err(|e| {
-            ManifestError::Write {
-                path: self.path.clone(),
-                message: e.to_string(),
-            }
-        })
-    }
 }
 
 fn detect_fingerprint(content: &str) -> FormatFingerprint {
@@ -165,6 +128,43 @@ fn format_json_pretty(
 }
 
 impl Manifest for PackageJson {
+    fn persist(&mut self, permit: &ApplyPermit) -> Result<(), ManifestError> {
+        let indent_str = match self.fingerprint.indent {
+            Indent::Spaces(n) => " ".repeat(n as usize),
+            Indent::Tabs => "\t".to_string(),
+            Indent::DefaultTwoSpaces => "  ".to_string(),
+        };
+
+        let mut map = IndexMap::new();
+        for (k, v) in &self.doc {
+            map.insert(k, v);
+        }
+
+        let mut out = format_json_pretty(&map, &indent_str)?;
+        if self.fingerprint.line_ending == LineEnding::CrLf {
+            out = out.replace("\r\n", "\n").replace('\n', "\r\n");
+        }
+
+        if !self.fingerprint.trailing_newline && out.ends_with('\n') {
+            if out.ends_with("\r\n") {
+                out.truncate(out.len() - 2);
+            } else {
+                out.truncate(out.len() - 1);
+            }
+        }
+
+        if self.fingerprint.has_bom {
+            out = format!("\u{FEFF}{}", out);
+        }
+
+        crate::atomic::atomic_write(&self.absolute, &out, permit).map_err(|e| {
+            ManifestError::Write {
+                path: self.path.clone(),
+                message: e.to_string(),
+            }
+        })
+    }
+
     fn path(&self) -> &Path {
         &self.path
     }

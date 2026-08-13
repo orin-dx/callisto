@@ -98,7 +98,9 @@ impl CargoToml {
             has_bom,
         })
     }
+}
 
+impl Manifest for CargoToml {
     fn persist(&mut self, permit: &ApplyPermit) -> Result<(), ManifestError> {
         let mut text = self.document.to_string();
         if self.has_bom {
@@ -111,9 +113,7 @@ impl CargoToml {
             }
         })
     }
-}
 
-impl Manifest for CargoToml {
     fn path(&self) -> &Path {
         &self.path
     }
@@ -725,6 +725,35 @@ mod tests {
     use super::*;
     use callisto_model::{ManifestDecl, ManifestFormat, ManifestRole};
     use tempfile::tempdir;
+
+    #[test]
+    fn persist_is_exposed_as_a_manifest_trait_method() {
+        let dir = tempdir().unwrap();
+        let manifest_path = dir.path().join("Cargo.toml");
+        let content = "[package]\nname = \"my-crate\"\nversion = \"0.1.0\"\n";
+        fs::write(&manifest_path, content).unwrap();
+
+        let decl = ManifestDecl::new(
+            "Cargo.toml",
+            ManifestRole::Canonical,
+            ManifestFormat::CargoToml,
+        )
+        .unwrap();
+        let ctx = OpenContext {
+            workspace_root: dir.path(),
+            cargo_workspace: None,
+            npm_workspace_kind: None,
+        };
+
+        let mut manifest = CargoToml::open(&decl, &ctx).unwrap();
+        <CargoToml as Manifest>::persist(&mut manifest, &permit()).unwrap();
+
+        let after = fs::read_to_string(&manifest_path).unwrap();
+        assert_eq!(
+            after, content,
+            "persist() with no prior mutation must reproduce the file unchanged"
+        );
+    }
 
     #[test]
     fn parses_cargo_toml_and_updates_version() {

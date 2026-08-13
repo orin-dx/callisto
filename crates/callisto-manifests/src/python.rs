@@ -76,6 +76,14 @@ impl PyprojectToml {
 }
 
 impl Manifest for PyprojectToml {
+    fn persist(&mut self, permit: &ApplyPermit) -> Result<(), ManifestError> {
+        let content = self.render();
+        atomic_write(&self.absolute, &content, permit).map_err(|e| ManifestError::Write {
+            path: self.path.clone(),
+            message: e.to_string(),
+        })
+    }
+
     fn path(&self) -> &Path {
         &self.path
     }

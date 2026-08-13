@@ -28,6 +28,7 @@ pub trait Manifest: Send + Sync {
     fn package_name(&self) -> Result<String, ManifestError>;
     fn current_version(&self) -> Result<Version, ManifestError>;
     fn write_version(&mut self, v: &Version, permit: &ApplyPermit) -> Result<(), ManifestError>;
+    fn persist(&mut self, permit: &ApplyPermit) -> Result<(), ManifestError>;
     fn iter_dependencies(&self) -> Box<dyn Iterator<Item = callisto_model::DependencyEntry> + '_>;
     fn update_dependency_spec(
         &mut self,
