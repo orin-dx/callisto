@@ -1090,4 +1090,127 @@ mod tests {
             "the second bump's manifest must be byte-for-byte unchanged when its own persist() fails"
         );
     }
+
+    #[test]
+    #[cfg(unix)]
+    fn rewrites_loop_persist_failure_leaves_earlier_successful_write_intact_and_later_manifest_unchanged(
+    ) {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().expect("create tempdir");
+        let root = dir.path();
+
+        let crate_a_path = root.join("Cargo.toml");
+        let crate_a_original = "[package]\nname = \"crate-a\"\nversion = \"1.0.0\"\nedition = \"2021\"\n\n[dependencies]\nhelper = \"1.0.0\"\n";
+        std::fs::write(&crate_a_path, crate_a_original).unwrap();
+
+        let pkg_b_dir = root.join("pkg-b");
+        std::fs::create_dir_all(&pkg_b_dir).unwrap();
+        let crate_b_path = pkg_b_dir.join("Cargo.toml");
+        let crate_b_original = "[package]\nname = \"crate-b\"\nversion = \"1.0.0\"\nedition = \"2021\"\n\n[dependencies]\nhelper = \"1.0.0\"\n";
+        std::fs::write(&crate_b_path, crate_b_original).unwrap();
+
+        let crate_a_rel = PathBuf::from("Cargo.toml");
+        let crate_b_rel = PathBuf::from("pkg-b/Cargo.toml");
+
+        let plan = VersionPlan {
+            rewrites: vec![
+                crate::cascade::SpecRewrite {
+                    key: crate::cascade::RewriteKey {
+                        target: DepWriteTarget::Manifest(crate_a_rel.clone()),
+                        name: "helper".to_string(),
+                        kind: Some(callisto_model::DepKind::Runtime),
+                    },
+                    dependency: PackageId::parse("cargo:helper").expect("valid id"),
+                    from: callisto_model::DepSpec::Range(
+                        callisto_model::VersionReq::parse(
+                            "^1.0.0",
+                            callisto_model::Ecosystem::Cargo,
+                        )
+                        .unwrap(),
+                        "^1.0.0".to_string(),
+                    ),
+                    to: callisto_model::DepSpec::Range(
+                        callisto_model::VersionReq::parse(
+                            "^1.1.0",
+                            callisto_model::Ecosystem::Cargo,
+                        )
+                        .unwrap(),
+                        "^1.1.0".to_string(),
+                    ),
+                },
+                crate::cascade::SpecRewrite {
+                    key: crate::cascade::RewriteKey {
+                        target: DepWriteTarget::Manifest(crate_b_rel.clone()),
+                        name: "helper".to_string(),
+                        kind: Some(callisto_model::DepKind::Runtime),
+                    },
+                    dependency: PackageId::parse("cargo:helper").expect("valid id"),
+                    from: callisto_model::DepSpec::Range(
+                        callisto_model::VersionReq::parse(
+                            "^1.0.0",
+                            callisto_model::Ecosystem::Cargo,
+                        )
+                        .unwrap(),
+                        "^1.0.0".to_string(),
+                    ),
+                    to: callisto_model::DepSpec::Range(
+                        callisto_model::VersionReq::parse(
+                            "^1.1.0",
+                            callisto_model::Ecosystem::Cargo,
+                        )
+                        .unwrap(),
+                        "^1.1.0".to_string(),
+                    ),
+                },
+            ],
+            ..Default::default()
+        };
+
+        let permit = ApplyPermit::force_for_tests();
+        let opts = ApplyOptions::default();
+
+        let original_mode = std::fs::metadata(&pkg_b_dir).unwrap().permissions().mode();
+        std::fs::set_permissions(&pkg_b_dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+
+        // Same root-uid guard as the bumps-loop version of this test (T16):
+        // skip rather than assert if the chmod did not actually block writes.
+        let probe_path = pkg_b_dir.join(".rtk-write-probe");
+        let probe_write_succeeded = std::fs::write(&probe_path, b"probe").is_ok();
+        if probe_write_succeeded {
+            std::fs::remove_file(&probe_path).ok();
+            std::fs::set_permissions(&pkg_b_dir, std::fs::Permissions::from_mode(original_mode))
+                .unwrap();
+            eprintln!(
+                "skipping rewrites_loop_persist_failure_leaves_earlier_successful_write_intact_and_later_manifest_unchanged: \
+                 process can write into a 0o555 directory (likely running as root); chmod-based failure injection is a no-op here"
+            );
+            return;
+        }
+
+        let result = apply_version_plan(root, &plan, &NoopRunner, &opts, &permit);
+
+        std::fs::set_permissions(&pkg_b_dir, std::fs::Permissions::from_mode(original_mode))
+            .unwrap();
+
+        assert!(
+            matches!(
+                result,
+                Err(GraphError::Manifest(callisto_model::ManifestError::Write { .. }))
+            ),
+            "persist failure on the second rewrite must propagate as GraphError::Manifest(ManifestError::Write); got: {result:?}"
+        );
+
+        let crate_a_on_disk = std::fs::read_to_string(&crate_a_path).unwrap();
+        assert!(
+            crate_a_on_disk.contains("helper = \"^1.1.0\""),
+            "the first rewrite's successful mutate-then-persist must remain on disk even though the second rewrite later failed; got:\n{crate_a_on_disk}"
+        );
+
+        let crate_b_on_disk = std::fs::read_to_string(&crate_b_path).unwrap();
+        assert_eq!(
+            crate_b_on_disk, crate_b_original,
+            "the second rewrite's manifest must be byte-for-byte unchanged when its own persist() fails"
+        );
+    }
 }
