@@ -981,7 +981,7 @@ mod tests {
         assert!(
             matches!(
                 result,
-                Err(GraphError::Manifest(callisto_model::ManifestError::MissingField { ref field, .. })) if *field == "package"
+                Err(GraphError::Manifest(callisto_model::ManifestError::MissingField { field, .. })) if field == "package"
             ),
             "write_version must fail at the [package] as_table_mut() step, not earlier in open()/current_version(); got: {result:?}"
         );
