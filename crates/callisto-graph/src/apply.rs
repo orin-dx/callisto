@@ -813,6 +813,59 @@ mod tests {
         );
     }
 
+    #[test]
+    fn rewrites_loop_update_dependency_spec_error_leaves_manifest_untouched_and_skips_persist() {
+        let dir = tempfile::tempdir().expect("create tempdir");
+        let root = dir.path();
+        let cargo_toml_path = root.join("Cargo.toml");
+        let original = "[package]\nname = \"my-crate\"\nversion = \"1.0.0\"\nedition = \"2021\"\n";
+        std::fs::write(&cargo_toml_path, original).unwrap();
+
+        let manifest_rel = PathBuf::from("Cargo.toml");
+        let key = crate::cascade::RewriteKey {
+            target: DepWriteTarget::Manifest(manifest_rel.clone()),
+            name: "nonexistent-dep".to_string(),
+            kind: Some(callisto_model::DepKind::Runtime),
+        };
+        let plan = VersionPlan {
+            rewrites: vec![crate::cascade::SpecRewrite {
+                key: key.clone(),
+                dependency: PackageId::parse("cargo:nonexistent-dep").expect("valid id"),
+                from: callisto_model::DepSpec::Range(
+                    callisto_model::VersionReq::parse("^1.0.0", callisto_model::Ecosystem::Cargo)
+                        .unwrap(),
+                    "^1.0.0".to_string(),
+                ),
+                to: callisto_model::DepSpec::Range(
+                    callisto_model::VersionReq::parse("^1.1.0", callisto_model::Ecosystem::Cargo)
+                        .unwrap(),
+                    "^1.1.0".to_string(),
+                ),
+            }],
+            ..Default::default()
+        };
+
+        let permit = ApplyPermit::force_for_tests();
+        let opts = ApplyOptions::default();
+        let result = apply_version_plan(root, &plan, &NoopRunner, &opts, &permit);
+
+        assert!(
+            matches!(
+                result,
+                Err(GraphError::Manifest(
+                    callisto_model::ManifestError::DependencyNotFound { .. }
+                ))
+            ),
+            "missing dependency must propagate as DependencyNotFound; got: {result:?}"
+        );
+
+        let on_disk = std::fs::read_to_string(&cargo_toml_path).unwrap();
+        assert_eq!(
+            on_disk, original,
+            "manifest must be byte-for-byte unchanged when update_dependency_spec errors before persist"
+        );
+    }
+
     /// AC-009 check (b): running `apply_version_plan` end-to-end over a Cargo
     /// bump must produce on-disk bytes byte-identical to a direct
     /// `open()` -> `write_version()` -> `persist()` sequence over the same
