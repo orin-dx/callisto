@@ -141,6 +141,14 @@ fn is_valid_git_ref_name(s: &str) -> bool {
     if s.is_empty() || s.starts_with('/') || s.ends_with('/') || s.contains("//") || s == "@" {
         return false;
     }
+    // Git ref names may legally start with `-`, but every caller in this
+    // codebase passes the rendered name as a bare positional to `git tag`
+    // (or an equivalent CLI), whose argument parser treats a leading `-`
+    // as an option rather than a ref name -- reject it here so a malicious
+    // or accidental `tag-template` can never produce one.
+    if s.starts_with('-') {
+        return false;
+    }
     if s.contains("..") || s.contains("@{") {
         return false;
     }
@@ -314,5 +322,19 @@ mod tests {
     fn rejects_no_anchor() {
         let err = TagTemplate::parse("{version}").unwrap_err();
         assert!(matches!(err, TagTemplateError::NoLiteralAnchor { .. }));
+    }
+
+    #[test]
+    fn rejects_template_rendering_a_leading_hyphen() {
+        // "-f{version}" renders to "-f1.0.0" for the test-render probe --
+        // git ref names may legally start with `-`, but `git tag`'s CLI
+        // argument parser treats a leading-`-` positional as an option,
+        // so this must be rejected at template-parse time rather than
+        // surfacing as a broken/misinterpreted `git tag` invocation later.
+        let err = TagTemplate::parse("-f{version}").unwrap_err();
+        assert!(
+            matches!(err, TagTemplateError::InvalidGitRefName { .. }),
+            "expected InvalidGitRefName, got {err:?}"
+        );
     }
 }

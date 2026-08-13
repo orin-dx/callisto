@@ -328,7 +328,7 @@ mod tests {
 
         assert_eq!(
             *runner.calls.lock().unwrap(),
-            vec![vec!["tag", "-f", "pkg-a@1", sha.as_str()]]
+            vec![vec!["tag", "-f", "--", "pkg-a@1", sha.as_str()]]
         );
     }
 

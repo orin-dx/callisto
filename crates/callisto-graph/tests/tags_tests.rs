@@ -216,13 +216,16 @@ fn test_create_tags_without_gix_falls_back_to_command_runner() {
 
     // ...to create the annotated release tag itself, matching
     // `GitRepository::create_tag`'s current annotated-tag semantics
-    // (`Some(message)` branch: `tag -a <name> -m <message> <sha>`)...
+    // (`Some(message)` branch: `tag -a -m <message> -- <name> <sha>`,
+    // with a `--` in front of `<name>` so a leading-`-` ref name can never
+    // be misread as a `git tag` flag)...
     let expected_create_call: Vec<String> = vec![
         "tag".into(),
         "-a".into(),
-        "callisto-cli@1.0.0".into(),
         "-m".into(),
         "Release callisto-cli@1.0.0".into(),
+        "--".into(),
+        "callisto-cli@1.0.0".into(),
         sha.as_str().to_string(),
     ];
     assert!(
@@ -232,10 +235,11 @@ fn test_create_tags_without_gix_falls_back_to_command_runner() {
 
     // ...and to force-move the floating major tag, matching
     // `GitRepository::create_floating_major`'s unconditional-overwrite
-    // (`PreviousValue::Any`) semantics.
+    // (`PreviousValue::Any`) semantics, with the same `--` defense.
     let expected_floating_call: Vec<String> = vec![
         "tag".into(),
         "-f".into(),
+        "--".into(),
         "callisto-cli@1".into(),
         sha.as_str().to_string(),
     ];

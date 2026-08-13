@@ -166,15 +166,19 @@ impl GitDataSource for ShellGit<'_> {
         message: Option<&str>,
         _permit: &ApplyPermit,
     ) -> Result<(), VcsError> {
+        // `--` marks the end of option parsing so `name` (validated
+        // upstream by `is_valid_git_ref_name`, but defended here too) can
+        // never be misread as a `git tag` flag even if it started with `-`.
         let output = match message {
             Some(msg) => self.runner.run(
                 "git",
-                &["tag", "-a", name, "-m", msg, target_sha.as_str()],
+                &["tag", "-a", "-m", msg, "--", name, target_sha.as_str()],
                 &self.root,
             )?,
-            None => self
-                .runner
-                .run("git", &["tag", name, target_sha.as_str()], &self.root)?,
+            None => {
+                self.runner
+                    .run("git", &["tag", "--", name, target_sha.as_str()], &self.root)?
+            }
         };
         if !output.success() {
             return Err(VcsError::Git(format!(
@@ -194,7 +198,7 @@ impl GitDataSource for ShellGit<'_> {
     ) -> Result<(), VcsError> {
         let output = self.runner.run(
             "git",
-            &["tag", "-f", major_name, target_sha.as_str()],
+            &["tag", "-f", "--", major_name, target_sha.as_str()],
             &self.root,
         )?;
         if !output.success() {
@@ -449,9 +453,10 @@ mod tests {
             vec![
                 "tag",
                 "-a",
-                "pkg-a@1.0.0",
                 "-m",
                 "Release pkg-a@1.0.0",
+                "--",
+                "pkg-a@1.0.0",
                 sha.as_str(),
             ]
         );
@@ -470,7 +475,7 @@ mod tests {
             .unwrap();
 
         let calls = runner.calls.lock().unwrap();
-        assert_eq!(calls[0], vec!["tag", "pkg-a@1.0.0", sha.as_str()]);
+        assert_eq!(calls[0], vec!["tag", "--", "pkg-a@1.0.0", sha.as_str()]);
     }
 
     #[test]
@@ -486,7 +491,7 @@ mod tests {
             .unwrap();
 
         let calls = runner.calls.lock().unwrap();
-        assert_eq!(calls[0], vec!["tag", "-f", "pkg-a@1", sha.as_str()]);
+        assert_eq!(calls[0], vec!["tag", "-f", "--", "pkg-a@1", sha.as_str()]);
     }
 
     #[test]

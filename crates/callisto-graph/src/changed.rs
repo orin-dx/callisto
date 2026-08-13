@@ -38,14 +38,26 @@ pub fn changed_since_last_tag<R: CommandRunner>(
     // repository. A failure on either backend is not fatal -- it just means
     // the cheap short-circuit below is skipped in favor of the exact `git
     // diff --quiet` check.
-    if let Ok(commits) = git.commits_since(Some(last.name.as_str()), &[]) {
+    //
+    // `last.name` is a tag read back from the repository's own tag list
+    // (via `TagIndex`), not text Callisto renders itself -- unlike a
+    // `tag-template`-rendered name, it is not run through
+    // `is_valid_git_ref_name`. It is fully qualified as `refs/tags/<name>`
+    // before being shelled to `git log`/`git diff` so it can never be
+    // misread as a CLI flag by either command's argument parser, even in
+    // the (currently unreachable, given `TagTemplate::parse`'s and
+    // `PackageId::parse`'s own leading-hyphen rejections) case of a
+    // hyphen-leading tag reaching this far.
+    let qualified = format!("refs/tags/{}", last.name.as_str());
+
+    if let Ok(commits) = git.commits_since(Some(&qualified), &[]) {
         if !commits.is_empty() {
             return Ok(true);
         }
     }
 
     let paths = package_paths(pkg);
-    let mut args = vec!["diff", "--quiet", last.name.as_str(), "--"];
+    let mut args = vec!["diff", "--quiet", qualified.as_str(), "--"];
     let path_strs: Vec<String> = paths.iter().map(|p| p.display().to_string()).collect();
     for p in &path_strs {
         args.push(p);
@@ -142,12 +154,16 @@ mod tests {
 
     /// Routes `git log` (the `commits_since` short-circuit) and `git diff
     /// --quiet` (the exact fallback check) to independently canned
-    /// responses, counting each kind of invocation separately.
+    /// responses, counting each kind of invocation separately and
+    /// recording the exact args of the most recent call of each kind so
+    /// tests can inspect exactly what was shelled.
     struct RoutingRunner {
         log_calls: AtomicUsize,
         diff_calls: AtomicUsize,
         log_stdout: String,
         diff_exit_code: i32,
+        last_log_args: std::sync::Mutex<Vec<String>>,
+        last_diff_args: std::sync::Mutex<Vec<String>>,
     }
 
     impl CommandRunner for RoutingRunner {
@@ -161,6 +177,8 @@ mod tests {
             match args.first() {
                 Some(&"log") => {
                     self.log_calls.fetch_add(1, Ordering::SeqCst);
+                    *self.last_log_args.lock().unwrap() =
+                        args.iter().map(|s| s.to_string()).collect();
                     Ok(CommandOutput {
                         exit_code: Some(0),
                         stdout: self.log_stdout.clone(),
@@ -169,6 +187,8 @@ mod tests {
                 }
                 Some(&"diff") => {
                     self.diff_calls.fetch_add(1, Ordering::SeqCst);
+                    *self.last_diff_args.lock().unwrap() =
+                        args.iter().map(|s| s.to_string()).collect();
                     Ok(CommandOutput {
                         exit_code: Some(self.diff_exit_code),
                         stdout: String::new(),
@@ -180,17 +200,23 @@ mod tests {
         }
     }
 
+    fn routing_runner(log_stdout: String, diff_exit_code: i32) -> RoutingRunner {
+        RoutingRunner {
+            log_calls: AtomicUsize::new(0),
+            diff_calls: AtomicUsize::new(0),
+            log_stdout,
+            diff_exit_code,
+            last_log_args: std::sync::Mutex::new(Vec::new()),
+            last_diff_args: std::sync::Mutex::new(Vec::new()),
+        }
+    }
+
     #[test]
     fn returns_true_immediately_when_package_has_no_last_tag() {
         let dir = non_repo_dir();
         let pkg = make_pkg("pkg-a");
         let tags = TagIndex::empty();
-        let runner = RoutingRunner {
-            log_calls: AtomicUsize::new(0),
-            diff_calls: AtomicUsize::new(0),
-            log_stdout: String::new(),
-            diff_exit_code: 0,
-        };
+        let runner = routing_runner(String::new(), 0);
         let git = GitAccess::discover(dir.path(), &runner);
 
         let changed = changed_since_last_tag(&runner, dir.path(), &pkg, &tags, &git).unwrap();
@@ -212,12 +238,7 @@ mod tests {
         // One well-formed `git log --format=<RS>%H<FS>%B` record.
         let sha = "a".repeat(40);
         let log_stdout = format!("\u{1e}{sha}\u{1f}feat: something\n");
-        let runner = RoutingRunner {
-            log_calls: AtomicUsize::new(0),
-            diff_calls: AtomicUsize::new(0),
-            log_stdout,
-            diff_exit_code: 0,
-        };
+        let runner = routing_runner(log_stdout, 0);
         let git = GitAccess::discover(dir.path(), &runner);
 
         let changed = changed_since_last_tag(&runner, dir.path(), &pkg, &tags, &git).unwrap();
@@ -229,6 +250,17 @@ mod tests {
             0,
             "commits_since already found commits; diff --quiet must not run"
         );
+        assert!(
+            runner
+                .last_log_args
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|a| a == "refs/tags/pkg-a@1.0.0..HEAD"),
+            "the tag must be shelled as a fully-qualified refs/tags/ ref, not a bare name that \
+             a maliciously-named tag could get misread as a `git log` flag, got: {:?}",
+            runner.last_log_args.lock().unwrap()
+        );
     }
 
     #[test]
@@ -236,12 +268,7 @@ mod tests {
         let dir = non_repo_dir();
         let pkg = make_pkg("pkg-a");
         let tags = tag_index_with_tag(dir.path(), "pkg-a", "pkg-a@1.0.0");
-        let runner = RoutingRunner {
-            log_calls: AtomicUsize::new(0),
-            diff_calls: AtomicUsize::new(0),
-            log_stdout: String::new(),
-            diff_exit_code: 1, // non-zero exit == files differ == changed
-        };
+        let runner = routing_runner(String::new(), 1); // non-zero exit == files differ == changed
         let git = GitAccess::discover(dir.path(), &runner);
 
         let changed = changed_since_last_tag(&runner, dir.path(), &pkg, &tags, &git).unwrap();
@@ -249,6 +276,17 @@ mod tests {
         assert!(changed, "non-zero diff --quiet exit must mean changed");
         assert_eq!(runner.log_calls.load(Ordering::SeqCst), 1);
         assert_eq!(runner.diff_calls.load(Ordering::SeqCst), 1);
+        assert!(
+            runner
+                .last_diff_args
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|a| a == "refs/tags/pkg-a@1.0.0"),
+            "the tag must be shelled as a fully-qualified refs/tags/ ref in the `git diff` \
+             positional too, got: {:?}",
+            runner.last_diff_args.lock().unwrap()
+        );
     }
 
     #[test]
@@ -256,12 +294,7 @@ mod tests {
         let dir = non_repo_dir();
         let pkg = make_pkg("pkg-a");
         let tags = tag_index_with_tag(dir.path(), "pkg-a", "pkg-a@1.0.0");
-        let runner = RoutingRunner {
-            log_calls: AtomicUsize::new(0),
-            diff_calls: AtomicUsize::new(0),
-            log_stdout: String::new(),
-            diff_exit_code: 0, // zero exit == no differences == unchanged
-        };
+        let runner = routing_runner(String::new(), 0); // zero exit == no differences == unchanged
         let git = GitAccess::discover(dir.path(), &runner);
 
         let changed = changed_since_last_tag(&runner, dir.path(), &pkg, &tags, &git).unwrap();
@@ -283,12 +316,7 @@ mod tests {
         let pkg_b = make_pkg("pkg-b");
         let tags_a = tag_index_with_tag(dir.path(), "pkg-a", "pkg-a@1.0.0");
         let tags_b = tag_index_with_tag(dir.path(), "pkg-b", "pkg-b@1.0.0");
-        let runner = RoutingRunner {
-            log_calls: AtomicUsize::new(0),
-            diff_calls: AtomicUsize::new(0),
-            log_stdout: String::new(),
-            diff_exit_code: 0,
-        };
+        let runner = routing_runner(String::new(), 0);
         // Built once, exactly as `status()` now does before its per-package loop.
         let git = GitAccess::discover(dir.path(), &runner);
 
