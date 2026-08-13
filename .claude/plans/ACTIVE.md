@@ -32,6 +32,30 @@ Exit-gate: PASS. 24 tasks implemented, all reviewed, 3 gaps found and fixed post
 (stale docs, missing `callisto schema` arm, missing assertion). `just ci` green.
 Commits: eb5d6b4 (spec+plan) through 5164971 (action.yml wiring), then d18dc92 (exit-gate fixes)
 
+### Track: Manifest trait mutate/persist split (SPEC-MANIFEST-PERSIST-001, "Spec A") — DONE
+
+Spec: `.claude/specs/SPEC-MANIFEST-PERSIST-001.json` (21 acceptance criteria, AC-001 through AC-020 + AC-011b)
+Plan: `.claude/plans/manifest-persist-001-plan.json` (25 tasks: T01a-T21c)
+Origin: one of the 2 remaining HIGH-severity performance findings from the post-Track-G audit
+(apply_version_plan's redundant per-entry open+parse+persist cycles). Scoped down from an original
+combined spec that also covered write-batching/grouping after a formal escalation (data-loss ordering
+bug in the batching design); split into this safe, zero-grouping mechanical refactor (Spec A, shipped)
+and a deferred future track for the actual batching/grouping logic (Spec B, not started).
+Implementation: `Manifest::persist` promoted to a required trait method; `write_version`/
+`update_dependency_spec`/`update_optional_dependencies` across `crates/callisto-manifests/src/{cargo,npm,python}.rs`
+now do pure in-memory mutation only; `apply_version_plan` (`crates/callisto-graph/src/apply.rs`) calls
+`persist()` explicitly per loop; `ManifestError::InvariantViolation` (E027) guards CargoToml's
+self-delegation edge case; `cascade.rs` invariant (inherited edges never target `DepWriteTarget::Manifest`)
+locked in with a regression test.
+Exit-gate: PASS (high confidence). All 21 AC verified fresh from disk/code. `just ci` full 7-phase suite
+green (fmt-check, lint, test, audit, doc-check, wasm-check, coverage) plus `cargo check -p callisto-manifests
+--all-features`. Mutation-tested at the gate (skipped during implementation — process note for next time):
+both new `persist()` call sites confirmed load-bearing via direct-deletion testing; all mutation survivors
+traced to pre-existing, untouched code. 3 non-blocking gaps recorded (no Python-ecosystem byte-identity
+test alongside the Cargo/npm ones; mutation gate ran late; pre-existing survivors in adjacent code).
+Commits: 7883c3b (trait promotion) through d7ec596 (T20), fix 235ab55 (clippy), fa73260 (spec/plan committed).
+Deferred: Spec B (apply_version_plan write-batching/grouping across per-file dirty sets) — not started.
+
 ### Post-Track-G: full workspace audit + 8-bug remediation — DONE (see SESSION_HANDOFF.md)
 
 Full adversarial audit (8-dimension, 24-agent workflow) found 3 critical + 7 high confirmed bugs,
