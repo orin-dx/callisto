@@ -123,6 +123,32 @@ pub fn open_call_count() -> usize {
     OPEN_CALL_COUNT.load(std::sync::atomic::Ordering::SeqCst)
 }
 
+/// Test-observability counter: total number of times a `Manifest`
+/// implementor's `persist` has returned `Ok`. Production code never reads
+/// this; it exists so callers can write regression tests asserting a given
+/// manifest path is flushed to disk at most once per logical operation.
+/// Distinct from `OPEN_CALL_COUNT` so open-count and persist-count
+/// assertions in the same test are independent.
+static PERSIST_CALL_COUNT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// Resets the internal manifest-persist call counter to zero. Intended for use in test setup.
+pub fn reset_persist_call_count() {
+    PERSIST_CALL_COUNT.store(0, std::sync::atomic::Ordering::SeqCst);
+}
+
+/// Reads the current value of the internal manifest-persist call counter.
+pub fn persist_call_count() -> usize {
+    PERSIST_CALL_COUNT.load(std::sync::atomic::Ordering::SeqCst)
+}
+
+/// Increments PERSIST_CALL_COUNT by one. Called by each Manifest
+/// implementor's persist() immediately after its own atomic_write returns
+/// Ok; PERSIST_CALL_COUNT itself is private to this module, so this is the
+/// only way other modules in this crate may increment it.
+pub(crate) fn record_persist_call() {
+    PERSIST_CALL_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+}
+
 /// Opens a manifest file matching `decl.format`.
 pub fn open(
     decl: &ManifestDecl,

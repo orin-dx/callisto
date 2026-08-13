@@ -547,6 +547,7 @@ dependencies = [
  "proptest",
  "serde",
  "serde_json",
+ "serial_test",
  "tempfile",
  "thiserror 1.0.69",
  "toml_edit 0.22.27",
