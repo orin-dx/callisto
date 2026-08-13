@@ -1496,10 +1496,19 @@ mod tests {
     /// AC-004: a batched group's bump succeeds, but the second of two
     /// rewrites destined for the same path fails. Neither the bump nor the
     /// first rewrite may land on disk, because persist() for the group is
-    /// never reached -- proven both by the on-disk bytes being unchanged and
-    /// by `persist_call_count()` staying at zero.
+    /// never reached -- proven by the on-disk bytes being unchanged (if
+    /// persist() had run, it would have written the mutated in-memory
+    /// document, so identical bytes are only possible if persist() never
+    /// executed). A `persist_call_count()` assertion is deliberately not
+    /// used here: `PERSIST_CALL_COUNT` is a process-global counter shared
+    /// with several non-#[serial] sibling tests in this same module that
+    /// also call `persist()`, so asserting an exact count in this file
+    /// would be racy under a plain multi-threaded `cargo test` run (see
+    /// `crates/callisto-manifests/tests/persist_call_count_test.rs` and
+    /// `crates/callisto-graph/tests/apply_persist_open_count_test.rs` for
+    /// the dedicated, isolated integration binaries where such counter
+    /// assertions belong).
     #[test]
-    #[serial_test::serial]
     fn batched_group_rewrite_failure_leaves_bump_and_first_rewrite_unpersisted() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
@@ -1573,7 +1582,6 @@ mod tests {
 
         let permit = ApplyPermit::force_for_tests();
         let opts = ApplyOptions::default();
-        callisto_manifests::reset_persist_call_count();
         let result = apply_version_plan(root, &plan, &NoopRunner, &opts, &permit);
 
         assert!(
@@ -1591,12 +1599,6 @@ mod tests {
             on_disk, original,
             "all-or-nothing: neither the bump nor the first rewrite may be persisted when a later rewrite in the same group fails"
         );
-
-        assert_eq!(
-            callisto_manifests::persist_call_count(),
-            0,
-            "persist() must never be reached for a group whose rewrite failed before the persist step"
-        );
     }
 
     /// AC-012: `classify_manifest_writes`' `BTreeMap<PathBuf, _>` iteration
@@ -1607,7 +1609,6 @@ mod tests {
     /// even attempted.
     #[test]
     #[cfg(unix)]
-    #[serial_test::serial]
     fn batched_groups_process_strictly_sequentially_in_btreemap_path_order() {
         use std::os::unix::fs::PermissionsExt;
 
