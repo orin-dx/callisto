@@ -54,7 +54,39 @@ both new `persist()` call sites confirmed load-bearing via direct-deletion testi
 traced to pre-existing, untouched code. 3 non-blocking gaps recorded (no Python-ecosystem byte-identity
 test alongside the Cargo/npm ones; mutation gate ran late; pre-existing survivors in adjacent code).
 Commits: 7883c3b (trait promotion) through d7ec596 (T20), fix 235ab55 (clippy), fa73260 (spec/plan committed).
-Deferred: Spec B (apply_version_plan write-batching/grouping across per-file dirty sets) — not started.
+
+### Track: apply_version_plan write-batching (SPEC-APPLY-BATCH-002, "Spec B") — DONE
+
+Spec: `.claude/specs/SPEC-APPLY-BATCH-002.json` (18 acceptance criteria, AC-001 through AC-018)
+Plan: `.claude/plans/apply-batch-002-plan.json` (12 tasks: T01-T08, T07c, T07b, T10, T11, T13)
+Origin: the deferred second half of the post-Track-G audit's redundant-open/persist performance
+finding — the actual batching/grouping win Spec A was groundwork for.
+Design decision: after re-deriving the exact data-loss ordering hazard that killed the original
+combined spec (a workspace root Cargo.toml that receives writes through both the `Manifest` trait
+and the separate `WorkspaceCargoResolver` type), user chose the lowest-risk of three options —
+exclude any physical file receiving writes through both mechanisms from batching entirely, rather
+than reordering writes or extending Spec A's mutate/persist split to `WorkspaceCargoResolver` too.
+Implementation: `classify_manifest_writes`/`ManifestWriteGroup`/`ManifestWriteClassification`
+(new, `crates/callisto-graph/src/apply.rs`) partition a plan's Manifest-trait-routed writes into
+per-path batchable groups and a mixed-routing exclusion set via a full pre-scan; `apply_version_plan`
+opens each batchable path's manifest exactly once, applies its bump (same skip/write/error
+precondition as before) then its rewrites in order, and persists exactly once — processing groups
+strictly sequentially (one path fully persisted-or-errored before the next handle opens) to prevent
+the stale-handle-clobber hazard. `persist_call_count`/`reset_persist_call_count` added to
+`callisto-manifests` mirroring the existing `open_call_count` precedent.
+Both the spec (5 drafting/audit rounds, canon-exit-gate passed on retry 2) and the plan (7
+vector-challenger rounds) went through unusually heavy adversarial review before implementation —
+real bugs caught each round, including a silent-data-loss ambiguity in the persist-trigger condition,
+a self-contradictory test fixture, an unconstructible acceptance criterion, a dishonest red-phase
+waiver, and flaky process-global-counter tests.
+Exit-gate: PASS (high confidence). All 18 AC verified fresh from disk/code. `just ci` full 7-phase
+suite green (766 tests, up from 751) plus `--all-features` prechecks on both touched crates.
+Mutation-tested at the gate (cargo-mutants run directly by the gate, same as Spec A): 12/13 mutants
+caught; the one survivor (a hardcoded `persist_call_count()`) closed with a follow-up precision test.
+Core safety property (strict per-group sequential processing, preventing the original spec's
+stale-handle-clobber bug) confirmed both by code trace and by killed mutants on the exclusion guards.
+Commits: d2b1014 (persist_call_count) through c880280 (T13 evidence correction), c661b38 (mutation
+gap closed), a739773/7346f48 (spec/plan committed).
 
 ### Post-Track-G: full workspace audit + 8-bug remediation — DONE (see SESSION_HANDOFF.md)
 
