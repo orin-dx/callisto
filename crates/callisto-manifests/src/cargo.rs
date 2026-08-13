@@ -1329,6 +1329,18 @@ edition = "2021"
         // Apply bump to 1.1.0 on the MEMBER ONLY
         let new_ver = Version::parse("1.1.0", VersionGrammar::SemVer).unwrap();
         manifest.write_version(&new_ver, &permit()).unwrap();
+
+        // Regression lock for AC-002's workspace-inherited-version branch:
+        // write_version alone must not touch disk. The member file must
+        // still read exactly as it was originally written -- still
+        // `version.workspace = true`, not yet pinned.
+        let member_before_persist = fs::read_to_string(&member_cargo_path).unwrap();
+        assert_eq!(
+            member_before_persist,
+            "[package]\nname = \"member-crate\"\nversion.workspace = true\nedition = \"2021\"\n",
+            "write_version on the inherited-version branch must not touch disk before persist() is called"
+        );
+
         manifest.persist(&permit()).unwrap();
 
         // Workspace root must be UNCHANGED
