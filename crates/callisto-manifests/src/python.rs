@@ -1398,4 +1398,32 @@ exclude = ["tests/"]
             "[tool.poetry].version must be updated to 1.1.0; got document:\n{on_disk}"
         );
     }
+
+    #[test]
+    fn persist_is_exposed_as_a_manifest_trait_method() {
+        let dir = tempdir().unwrap();
+        let pyproject_path = dir.path().join("pyproject.toml");
+        let content = "[project]\nname = \"my-python-lib\"\nversion = \"0.3.1\"\n";
+        fs::write(&pyproject_path, content).unwrap();
+
+        let decl = ManifestDecl {
+            path: PathBuf::from("pyproject.toml"),
+            role: ManifestRole::Canonical,
+            format: ManifestFormat::PyprojectToml,
+        };
+        let ctx = OpenContext {
+            workspace_root: dir.path(),
+            cargo_workspace: None,
+            npm_workspace_kind: None,
+        };
+
+        let mut manifest = PyprojectToml::open(&decl, &ctx).unwrap();
+        <PyprojectToml as Manifest>::persist(&mut manifest, &permit()).unwrap();
+
+        let after = fs::read_to_string(&pyproject_path).unwrap();
+        assert_eq!(
+            after, content,
+            "persist() with no prior mutation must reproduce the file unchanged"
+        );
+    }
 }

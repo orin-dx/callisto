@@ -1272,4 +1272,20 @@ mod tests {
         let target = npm_version("1.5.0");
         assert!(round_trip(&spec, &target).is_none());
     }
+
+    #[test]
+    fn persist_is_exposed_as_a_manifest_trait_method() {
+        let dir = tempdir().unwrap();
+        let content = "{\n  \"name\": \"@myorg/pkg\",\n  \"version\": \"1.0.0\"\n}\n";
+        let manifest_path = dir.path().join("package.json");
+        let mut manifest = open_manifest(&dir, content);
+
+        <PackageJson as Manifest>::persist(&mut manifest, &permit()).unwrap();
+
+        let after = fs::read_to_string(&manifest_path).unwrap();
+        assert_eq!(
+            after, content,
+            "persist() with no prior mutation must reproduce the file unchanged"
+        );
+    }
 }
