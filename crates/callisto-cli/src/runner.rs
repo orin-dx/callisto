@@ -5,6 +5,14 @@ use std::time::{Duration, Instant};
 
 use callisto_model::{CommandError, CommandOutput, CommandRunner};
 
+/// Caps how much of a subprocess's stdout/stderr this process will retain
+/// in memory. The pipe is still drained in full past this point (bytes
+/// beyond the cap are read and discarded, never accumulated) so a chatty
+/// child can never deadlock waiting on a full OS pipe buffer -- this
+/// bounds memory, not duration (`PUBLISH_TIMEOUT_SECS` bounds that
+/// separately).
+const MAX_CAPTURED_OUTPUT_BYTES: usize = 10 * 1024 * 1024;
+
 pub struct CliCommandRunner;
 
 impl CommandRunner for CliCommandRunner {
@@ -85,27 +93,87 @@ impl CommandRunner for CliCommandRunner {
         let (stderr_tx, stderr_rx) = std::sync::mpsc::channel::<String>();
 
         std::thread::spawn(move || {
-            let mut buf = String::new();
-            drop(std::io::BufReader::new(stdout_handle).read_to_string(&mut buf));
-            drop(stdout_tx.send(buf));
-        });
-        // Stream stderr line-by-line so publish progress (cargo/npm/twine
-        // write to stderr) appears in real time rather than after the process
-        // exits. The full text is still accumulated for caller analysis.
-        std::thread::spawn(move || {
-            use std::io::BufRead;
-            let mut buf = String::new();
-            for line in std::io::BufReader::new(stderr_handle).lines() {
-                match line {
-                    Ok(l) => {
-                        eprintln!("{l}");
-                        buf.push_str(&l);
-                        buf.push('\n');
+            let mut reader = stdout_handle;
+            let mut captured: Vec<u8> = Vec::new();
+            let mut truncated = false;
+            let mut chunk = [0u8; 65536];
+            loop {
+                match reader.read(&mut chunk) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        // Bytes past the cap are still read (draining the
+                        // pipe so the child never blocks on a full buffer)
+                        // but not retained.
+                        if !truncated {
+                            let remaining = MAX_CAPTURED_OUTPUT_BYTES - captured.len();
+                            let take = n.min(remaining);
+                            captured.extend_from_slice(&chunk[..take]);
+                            if take < n {
+                                truncated = true;
+                            }
+                        }
                     }
                     Err(_) => break,
                 }
             }
-            drop(stderr_tx.send(buf));
+            let mut text = String::from_utf8_lossy(&captured).into_owned();
+            if truncated {
+                text.push_str("\n...[output truncated]\n");
+            }
+            drop(stdout_tx.send(text));
+        });
+        // Stream stderr line-by-line so publish progress (cargo/npm/twine
+        // write to stderr) appears in real time rather than after the
+        // process exits, while capping the accumulated text returned to
+        // the caller. Deliberately reads raw bytes rather than using
+        // `BufReader::lines()`: that iterator has no size bound on a
+        // single line, so a flood with no newlines at all would still
+        // buffer unboundedly inside it before ever yielding a line to cap.
+        std::thread::spawn(move || {
+            let mut reader = stderr_handle;
+            let mut captured: Vec<u8> = Vec::new();
+            let mut truncated = false;
+            let mut pending_line: Vec<u8> = Vec::new();
+            let mut chunk = [0u8; 65536];
+            loop {
+                match reader.read(&mut chunk) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        let data = &chunk[..n];
+                        for &b in data {
+                            if b == b'\n' {
+                                if pending_line.last() == Some(&b'\r') {
+                                    pending_line.pop();
+                                }
+                                eprintln!("{}", String::from_utf8_lossy(&pending_line));
+                                pending_line.clear();
+                            } else {
+                                pending_line.push(b);
+                            }
+                        }
+                        if !truncated {
+                            let remaining = MAX_CAPTURED_OUTPUT_BYTES - captured.len();
+                            let take = data.len().min(remaining);
+                            captured.extend_from_slice(&data[..take]);
+                            if take < data.len() {
+                                truncated = true;
+                            }
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+            if !pending_line.is_empty() {
+                if pending_line.last() == Some(&b'\r') {
+                    pending_line.pop();
+                }
+                eprintln!("{}", String::from_utf8_lossy(&pending_line));
+            }
+            let mut text = String::from_utf8_lossy(&captured).into_owned();
+            if truncated {
+                text.push_str("\n...[output truncated]\n");
+            }
+            drop(stderr_tx.send(text));
         });
 
         // Grace period to wait for the reader threads after the direct
@@ -334,5 +402,101 @@ mod tests {
             ),
             "expected the timeout branch's specific warning text in child stderr, got: {stderr}"
         );
+    }
+
+    /// A subprocess that writes far more than `MAX_CAPTURED_OUTPUT_BYTES`
+    /// to stdout must not have all of it retained in `CommandOutput` (an
+    /// unbounded accumulation is a memory-exhaustion DoS before the
+    /// wall-clock publish timeout ever fires), but the pipe must still be
+    /// drained in full -- proven here by the call completing well within
+    /// its timeout instead of hanging (a reader that stops calling
+    /// `read()` after the cap would leave the child blocked writing to a
+    /// full OS pipe buffer).
+    #[test]
+    fn run_with_timeout_caps_accumulated_stdout_and_still_drains_the_pipe() {
+        let runner = CliCommandRunner;
+        let over_cap = MAX_CAPTURED_OUTPUT_BYTES + 1_000_000;
+        let start = Instant::now();
+        let out = runner
+            .run_with_timeout(
+                "sh",
+                &["-c", &format!("head -c {over_cap} /dev/zero")],
+                std::path::Path::new("."),
+                Duration::from_secs(30),
+            )
+            .unwrap();
+        let elapsed = start.elapsed();
+
+        assert!(out.success());
+        assert!(
+            elapsed < Duration::from_secs(15),
+            "must not hang waiting for the child to finish writing past the cap; took {elapsed:?}"
+        );
+        assert!(
+            out.stdout.len() < over_cap,
+            "captured stdout must be bounded, not the full {over_cap} bytes written; got {} bytes",
+            out.stdout.len()
+        );
+        assert!(
+            out.stdout.contains("[output truncated]"),
+            "truncated output must say so"
+        );
+    }
+
+    /// Same as the stdout case, but for stderr -- and deliberately with NO
+    /// newlines at all, so the flood can't be capped by a per-line
+    /// mechanism (a `BufReader::lines()`-based reader has no size bound on
+    /// a single line and would buffer the entire flood internally before
+    /// ever handing a line back, defeating any cap applied only after a
+    /// line is yielded).
+    #[test]
+    fn run_with_timeout_caps_accumulated_stderr_with_no_newlines_and_still_drains_the_pipe() {
+        let runner = CliCommandRunner;
+        let over_cap = MAX_CAPTURED_OUTPUT_BYTES + 1_000_000;
+        let start = Instant::now();
+        let out = runner
+            .run_with_timeout(
+                "sh",
+                &["-c", &format!("head -c {over_cap} /dev/zero >&2")],
+                std::path::Path::new("."),
+                Duration::from_secs(30),
+            )
+            .unwrap();
+        let elapsed = start.elapsed();
+
+        assert!(out.success());
+        assert!(
+            elapsed < Duration::from_secs(15),
+            "must not hang waiting for the child to finish writing past the cap; took {elapsed:?}"
+        );
+        assert!(
+            out.stderr.len() < over_cap,
+            "captured stderr must be bounded, not the full {over_cap} bytes written; got {} bytes",
+            out.stderr.len()
+        );
+        assert!(
+            out.stderr.contains("[output truncated]"),
+            "truncated output must say so"
+        );
+    }
+
+    /// Output comfortably under the cap must be completely unaffected --
+    /// no truncation marker, byte-for-byte length preserved.
+    #[test]
+    fn run_with_timeout_does_not_truncate_output_under_the_cap() {
+        let runner = CliCommandRunner;
+        let out = runner
+            .run_with_timeout(
+                "sh",
+                &["-c", "printf 'hello stdout'; printf 'hello stderr' >&2"],
+                std::path::Path::new("."),
+                Duration::from_secs(5),
+            )
+            .unwrap();
+
+        assert_eq!(out.stdout, "hello stdout");
+        assert!(!out.stdout.contains("[output truncated]"));
+        assert!(out.stderr.contains("hello stderr"));
+        assert!(!out.stderr.contains("[output truncated]"));
     }
 }
