@@ -1702,4 +1702,91 @@ mod tests {
             "P2's own group must be byte-for-byte unchanged since its persist never succeeded"
         );
     }
+
+    #[test]
+    fn batched_group_applies_bump_and_multiple_rewrites_preserving_untouched_formatting() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let cargo_toml_path = root.join("Cargo.toml");
+        let original = "# top comment\n[package]\nname = \"my-crate\"\nversion = \"1.0.0\"\nedition = \"2021\"\n\n[dependencies]\nhelper = \"1.0.0\"  # inline comment\nother = \"2.0.0\"\n";
+        std::fs::write(&cargo_toml_path, original).unwrap();
+
+        let manifest_rel = PathBuf::from("Cargo.toml");
+        let plan = VersionPlan {
+            bumps: vec![PlannedBump {
+                package: PackageId::parse("cargo:my-crate").unwrap(),
+                from: cargo_version("1.0.0"),
+                to: cargo_version("1.1.0"),
+                severity: Severity::Minor,
+                governed_by: None,
+                reason: None,
+                writes: vec![VersionWriteTarget::Manifest(manifest_rel.clone())],
+            }],
+            rewrites: vec![
+                crate::cascade::SpecRewrite {
+                    key: crate::cascade::RewriteKey {
+                        target: DepWriteTarget::Manifest(manifest_rel.clone()),
+                        name: "helper".to_string(),
+                        kind: Some(callisto_model::DepKind::Runtime),
+                    },
+                    dependency: PackageId::parse("cargo:helper").unwrap(),
+                    from: callisto_model::DepSpec::Range(
+                        callisto_model::VersionReq::parse(
+                            "^1.0.0",
+                            callisto_model::Ecosystem::Cargo,
+                        )
+                        .unwrap(),
+                        "^1.0.0".to_string(),
+                    ),
+                    to: callisto_model::DepSpec::Range(
+                        callisto_model::VersionReq::parse(
+                            "^1.1.0",
+                            callisto_model::Ecosystem::Cargo,
+                        )
+                        .unwrap(),
+                        "^1.1.0".to_string(),
+                    ),
+                },
+                crate::cascade::SpecRewrite {
+                    key: crate::cascade::RewriteKey {
+                        target: DepWriteTarget::Manifest(manifest_rel.clone()),
+                        name: "other".to_string(),
+                        kind: Some(callisto_model::DepKind::Runtime),
+                    },
+                    dependency: PackageId::parse("cargo:other").unwrap(),
+                    from: callisto_model::DepSpec::Range(
+                        callisto_model::VersionReq::parse(
+                            "^2.0.0",
+                            callisto_model::Ecosystem::Cargo,
+                        )
+                        .unwrap(),
+                        "^2.0.0".to_string(),
+                    ),
+                    to: callisto_model::DepSpec::Range(
+                        callisto_model::VersionReq::parse(
+                            "^2.1.0",
+                            callisto_model::Ecosystem::Cargo,
+                        )
+                        .unwrap(),
+                        "^2.1.0".to_string(),
+                    ),
+                },
+            ],
+            ..Default::default()
+        };
+
+        let permit = ApplyPermit::force_for_tests();
+        let opts = ApplyOptions::default();
+        let result = apply_version_plan(root, &plan, &NoopRunner, &opts, &permit);
+        assert!(
+            result.is_ok(),
+            "apply_version_plan should succeed: {result:?}"
+        );
+
+        let on_disk = std::fs::read_to_string(&cargo_toml_path).unwrap();
+        assert!(on_disk.contains("version = \"1.1.0\""));
+        assert!(on_disk.contains("helper = \"^1.1.0\"  # inline comment"));
+        assert!(on_disk.contains("other = \"^2.1.0\""));
+        assert!(on_disk.starts_with("# top comment\n"));
+    }
 }
