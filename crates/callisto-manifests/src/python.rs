@@ -411,7 +411,7 @@ impl Manifest for PyprojectToml {
     fn update_optional_dependencies(
         &mut self,
         updates: &[(String, Version)],
-        permit: &ApplyPermit,
+        _permit: &ApplyPermit,
     ) -> Result<(), ManifestError> {
         if updates.is_empty() {
             return Ok(());
@@ -426,8 +426,6 @@ impl Manifest for PyprojectToml {
             .and_then(|od| od.as_table_like())
             .map(|t| t.iter().map(|(k, _)| k.to_string()).collect())
             .unwrap_or_default();
-
-        let mut any_updated = false;
 
         for group_key in &group_keys {
             let Some(arr) = self
@@ -470,17 +468,8 @@ impl Manifest for PyprojectToml {
                     let rendered_ver = new_ver.render();
                     let new_req = format!("{pkg_name}{extras}>={rendered_ver}{marker}");
                     arr.replace(idx, new_req);
-                    any_updated = true;
                 }
             }
-        }
-
-        if any_updated {
-            let content = self.render();
-            atomic_write(&self.absolute, &content, permit).map_err(|e| ManifestError::Write {
-                path: self.path.clone(),
-                message: e.to_string(),
-            })?;
         }
 
         Ok(())
@@ -1276,12 +1265,48 @@ docs = ["sphinx>=4.0.0"]
         manifest
             .update_optional_dependencies(&[("sphinx".to_string(), new_v)], &permit())
             .unwrap();
+        manifest.persist(&permit()).unwrap();
 
         let updated = fs::read_to_string(&pyproject_path).unwrap();
         assert!(
             updated.contains("sphinx>=5.0.0"),
             "expected sphinx to be updated to >=5.0.0, got:\n{updated}"
         );
+    }
+
+    #[test]
+    fn update_optional_dependencies_does_not_touch_disk_until_persist_called() {
+        let dir = tempdir().unwrap();
+        let pyproject_path = dir.path().join("pyproject.toml");
+        let content = "[project]\nname = \"my-app\"\nversion = \"0.1.0\"\ndependencies = []\n\n[project.optional-dependencies]\ndocs = [\"sphinx>=4.0.0\"]\n";
+        fs::write(&pyproject_path, content).unwrap();
+
+        let decl = ManifestDecl {
+            path: PathBuf::from("pyproject.toml"),
+            role: ManifestRole::Canonical,
+            format: ManifestFormat::PyprojectToml,
+        };
+        let ctx = OpenContext {
+            workspace_root: dir.path(),
+            cargo_workspace: None,
+            npm_workspace_kind: None,
+        };
+
+        let mut manifest = PyprojectToml::open(&decl, &ctx).unwrap();
+        let new_v = Version::parse("5.0.0", VersionGrammar::Pep440).unwrap();
+        manifest
+            .update_optional_dependencies(&[("sphinx".to_string(), new_v)], &permit())
+            .unwrap();
+
+        let unchanged = fs::read_to_string(&pyproject_path).unwrap();
+        assert_eq!(
+            unchanged, content,
+            "update_optional_dependencies alone must not write to disk"
+        );
+
+        manifest.persist(&permit()).unwrap();
+        let updated = fs::read_to_string(&pyproject_path).unwrap();
+        assert!(updated.contains("sphinx>=5.0.0"));
     }
 
     /// Spec: `PyprojectToml` must support the `[tool.poetry]` schema as a
