@@ -1789,4 +1789,79 @@ mod tests {
         assert!(on_disk.contains("other = \"^2.1.0\""));
         assert!(on_disk.starts_with("# top comment\n"));
     }
+
+    #[test]
+    fn rewrite_indices_within_one_group_apply_in_plan_rewrites_order() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let cargo_toml_path = root.join("Cargo.toml");
+        let original = "[package]\nname = \"my-crate\"\nversion = \"1.0.0\"\nedition = \"2021\"\n\n[dependencies]\nhelper = \"1.0.0\"\n";
+        std::fs::write(&cargo_toml_path, original).unwrap();
+
+        let manifest_rel = PathBuf::from("Cargo.toml");
+        let key = crate::cascade::RewriteKey {
+            target: DepWriteTarget::Manifest(manifest_rel.clone()),
+            name: "helper".to_string(),
+            kind: Some(callisto_model::DepKind::Runtime),
+        };
+        let plan = VersionPlan {
+            rewrites: vec![
+                crate::cascade::SpecRewrite {
+                    key: key.clone(),
+                    dependency: PackageId::parse("cargo:helper").unwrap(),
+                    from: callisto_model::DepSpec::Range(
+                        callisto_model::VersionReq::parse(
+                            "^1.0.0",
+                            callisto_model::Ecosystem::Cargo,
+                        )
+                        .unwrap(),
+                        "^1.0.0".to_string(),
+                    ),
+                    to: callisto_model::DepSpec::Range(
+                        callisto_model::VersionReq::parse(
+                            "^1.1.0",
+                            callisto_model::Ecosystem::Cargo,
+                        )
+                        .unwrap(),
+                        "^1.1.0".to_string(),
+                    ),
+                },
+                crate::cascade::SpecRewrite {
+                    key: key.clone(),
+                    dependency: PackageId::parse("cargo:helper").unwrap(),
+                    from: callisto_model::DepSpec::Range(
+                        callisto_model::VersionReq::parse(
+                            "^1.1.0",
+                            callisto_model::Ecosystem::Cargo,
+                        )
+                        .unwrap(),
+                        "^1.1.0".to_string(),
+                    ),
+                    to: callisto_model::DepSpec::Range(
+                        callisto_model::VersionReq::parse(
+                            "^1.2.0",
+                            callisto_model::Ecosystem::Cargo,
+                        )
+                        .unwrap(),
+                        "^1.2.0".to_string(),
+                    ),
+                },
+            ],
+            ..Default::default()
+        };
+
+        let permit = ApplyPermit::force_for_tests();
+        let opts = ApplyOptions::default();
+        let result = apply_version_plan(root, &plan, &NoopRunner, &opts, &permit);
+        assert!(
+            result.is_ok(),
+            "apply_version_plan should succeed: {result:?}"
+        );
+
+        let on_disk = std::fs::read_to_string(&cargo_toml_path).unwrap();
+        assert!(
+            on_disk.contains("helper = \"^1.2.0\""),
+            "final on-disk spec must reflect the SECOND same-RewriteKey entry's `to` value, proving rewrite_indices iterate in plan.rewrites order; got:\n{on_disk}"
+        );
+    }
 }
