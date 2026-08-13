@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use callisto_model::{CommandRunner, Package, PackageId, Severity, StatusReport, SCHEMA_VERSION};
+use callisto_vcs::GitAccess;
 
 use crate::aggregate::{resolve_target_package, LoadedChangeset};
 use crate::changed::changed_since_last_tag;
@@ -68,6 +69,12 @@ pub fn status<R: CommandRunner, D: DependencyResolver>(
     let all_packages: Vec<&Package> = ws.graph.packages().collect();
     let pending = resolve_pending_changesets(all_packages.iter().copied(), &loaded_changesets)?;
 
+    // Built once and shared across every package below -- discovering the
+    // repository fresh per package (as `changed_since_last_tag` used to do
+    // internally) is N redundant discoveries of the exact same repository
+    // for an N-package workspace.
+    let git = GitAccess::discover(&ws.root, ws.runner);
+
     for pkg in all_packages.iter().copied() {
         let current_version = base_versions.get(&pkg.id).cloned().ok_or_else(|| {
             GraphError::Manifest(callisto_model::ManifestError::MissingField {
@@ -80,7 +87,7 @@ pub fn status<R: CommandRunner, D: DependencyResolver>(
             })
         })?;
         let last_tag = tags.last_tag(&pkg.id).map(|t| t.name.clone());
-        let changed = changed_since_last_tag(ws.runner, &ws.root, pkg, tags)?;
+        let changed = changed_since_last_tag(ws.runner, &ws.root, pkg, tags, &git)?;
 
         let (pkg_changesets, max_sev) = pending.get(&pkg.id).cloned().unwrap_or_default();
 

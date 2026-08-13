@@ -2,6 +2,7 @@ use callisto_model::{
     CommandRunner, CratePublish, NpmMainPublish, PublishPlan, PublishTarget, PypiPublish,
     RegistryKey, ReleaseEntry, SCHEMA_VERSION,
 };
+use callisto_vcs::GitDataSource;
 
 use crate::error::GraphError;
 use crate::resolver::{DependencyResolver, DependencyResolverExt};
@@ -101,29 +102,19 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
     let all_ids: std::collections::HashSet<_> = pkg_map.keys().map(|&id| id.clone()).collect();
     let topo_ids = ws.graph.toposort(&all_ids)?;
 
-    let head_sha = match callisto_vcs::GitRepository::discover(&ws.root) {
-        Ok(repo) => match repo.head_sha() {
-            Ok(sha) => Some(sha),
-            Err(e) => {
-                diagnostics.push(callisto_model::Diagnostic {
-                    code: callisto_model::DiagnosticCode::GitDiscoveryFailed,
-                    severity: callisto_model::DiagnosticSeverity::Warning,
-                    message: format!("Could not resolve HEAD SHA: {e}; release entries will be omitted from the plan"),
-                    package: None,
-                    path: None,
-                    escalated_by: None,
-                    governed_by: None,
-                });
-                None
-            }
-        },
+    // `GitAccess` (native gix, falling back to the `CommandRunner` shell
+    // path when unavailable -- always true on wasm32) rather than a direct
+    // `GitRepository::discover`, which has no such fallback: on wasm32,
+    // `GitRepository::discover` unconditionally fails (gix is excluded from
+    // that target's dependency set), so `head_sha` was always `None` there,
+    // silently omitting every release entry from the plan.
+    let head_sha = match callisto_vcs::GitAccess::discover(&ws.root, ws.runner).head_sha() {
+        Ok(sha) => Some(sha),
         Err(e) => {
             diagnostics.push(callisto_model::Diagnostic {
                 code: callisto_model::DiagnosticCode::GitDiscoveryFailed,
                 severity: callisto_model::DiagnosticSeverity::Warning,
-                message: format!(
-                    "Git repository not found: {e}; release entries will be omitted from the plan"
-                ),
+                message: format!("Could not resolve HEAD SHA: {e}; release entries will be omitted from the plan"),
                 package: None,
                 path: None,
                 escalated_by: None,

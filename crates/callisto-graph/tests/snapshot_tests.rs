@@ -3,9 +3,10 @@ use callisto_model::PackageId;
 use fixtures::GraphBuilder;
 use std::cell::OnceCell;
 
-/// Runs `git` for test-fixture setup only (not exercised through `CommandRunner`,
-/// since `plan_snapshot`'s HEAD sha resolution goes through `callisto_vcs::GitRepository`,
-/// which talks to a real on-disk repo directly).
+/// Runs `git` for test-fixture setup only (not exercised through `CommandRunner`;
+/// `plan_snapshot`'s HEAD sha resolution goes through `callisto_vcs::GitAccess`, which
+/// tries native gix against the real on-disk repo first and only falls back to
+/// `CommandRunner` when gix is unavailable).
 fn run_git(dir: &std::path::Path, args: &[&str]) {
     let status = std::process::Command::new("git")
         .args(args)
@@ -194,4 +195,69 @@ fn test_snapshot_sha_resolution_failure_is_surfaced_error() {
         matches!(result, Err(callisto_graph::GraphError::Vcs(_))),
         "expected a GraphError::Vcs from failed sha discovery, got: {result:?}"
     );
+}
+
+/// `plan_snapshot` must resolve HEAD via `GitAccess`'s `CommandRunner` shell fallback when
+/// native gix cannot discover a repository -- always true on wasm32, since gix is excluded
+/// from that target's dependency set. Before this was wired through `GitAccess` (instead of
+/// calling `callisto_vcs::GitRepository::discover` directly, which has no such fallback and
+/// consults `CommandRunner` for nothing), this exact scenario -- no gix-discoverable repo,
+/// but a runner able to answer `git rev-parse HEAD` -- would hard-fail regardless of what
+/// the runner returned, because the direct `GitRepository::discover` call never looked at it.
+#[test]
+fn test_snapshot_resolves_head_sha_via_command_runner_fallback_when_gix_unavailable() {
+    use callisto_graph::commands::plan_snapshot;
+
+    struct FakeHeadShaRunner(String);
+    impl callisto_model::CommandRunner for FakeHeadShaRunner {
+        fn run(
+            &self,
+            program: &str,
+            args: &[&str],
+            _cwd: &std::path::Path,
+        ) -> Result<callisto_model::CommandOutput, callisto_model::CommandError> {
+            assert_eq!(program, "git");
+            match args {
+                ["rev-parse", "HEAD"] => Ok(callisto_model::CommandOutput {
+                    exit_code: Some(0),
+                    stdout: format!("{}\n", self.0),
+                    stderr: String::new(),
+                }),
+                ["tag", "--list"] => Ok(callisto_model::CommandOutput {
+                    exit_code: Some(0),
+                    stdout: String::new(),
+                    stderr: String::new(),
+                }),
+                other => panic!("unexpected git invocation: {other:?}"),
+            }
+        }
+    }
+
+    let head_sha = "b".repeat(40);
+    let runner = FakeHeadShaRunner(head_sha.clone());
+    let ws_dir = tempfile::tempdir().unwrap();
+    // Deliberately no `git init`: gix discovery must fail here, forcing the shell fallback.
+    assert!(
+        callisto_vcs::GitRepository::discover(ws_dir.path()).is_err(),
+        "test fixture must not be discoverable as a Git repo"
+    );
+
+    let cfg = callisto_graph::config::load(&ws_dir.path().join("callisto.toml")).unwrap();
+    let graph = GraphBuilder::new().build().unwrap();
+    let tags = callisto_graph::tags::TagIndex::build(&runner, ws_dir.path(), &graph, &cfg).unwrap();
+    let ws = callisto_graph::Workspace {
+        root: ws_dir.path().to_path_buf(),
+        config: cfg,
+        graph,
+        tags: OnceCell::from(tags),
+        runner: &runner,
+        manifest_cache: Default::default(),
+    };
+
+    let (_, report) = plan_snapshot(&ws, "canary").expect(
+        "plan_snapshot must succeed via the CommandRunner fallback when gix cannot discover a repo",
+    );
+
+    let expected_version = format!("0.0.0-canary-{}", &head_sha[..7]);
+    assert_eq!(report.snapshot_tag, expected_version);
 }
