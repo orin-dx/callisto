@@ -299,7 +299,7 @@ impl Manifest for PyprojectToml {
         name: &str,
         kind: DepKind,
         new: DepSpec,
-        permit: &ApplyPermit,
+        _permit: &ApplyPermit,
     ) -> Result<(), ManifestError> {
         let new_spec_str = match new {
             DepSpec::Range(req, _) => req.render().to_string(),
@@ -379,11 +379,7 @@ impl Manifest for PyprojectToml {
             });
         }
 
-        let content = self.render();
-        atomic_write(&self.absolute, &content, permit).map_err(|e| ManifestError::Write {
-            path: self.path.clone(),
-            message: e.to_string(),
-        })
+        Ok(())
     }
 
     fn is_publishable(&self) -> bool {
@@ -1024,8 +1020,87 @@ dependencies = [
             )
             .unwrap();
 
+        manifest.persist(&permit()).unwrap();
         let updated_content = fs::read_to_string(&pyproject_path).unwrap();
         assert!(updated_content.contains("my-lib>=0.3.2"));
+    }
+
+    #[test]
+    fn update_dependency_spec_does_not_touch_disk_until_persist_called() {
+        let dir = tempdir().unwrap();
+        let pyproject_path = dir.path().join("pyproject.toml");
+        let content = "[project]\nname = \"my-app\"\nversion = \"0.1.0\"\ndependencies = [\n    \"my-lib>=0.3.0\",\n]\n";
+        fs::write(&pyproject_path, content).unwrap();
+
+        let decl = ManifestDecl {
+            path: PathBuf::from("pyproject.toml"),
+            role: ManifestRole::Canonical,
+            format: ManifestFormat::PyprojectToml,
+        };
+        let ctx = OpenContext {
+            workspace_root: dir.path(),
+            cargo_workspace: None,
+            npm_workspace_kind: None,
+        };
+
+        let mut manifest = PyprojectToml::open(&decl, &ctx).unwrap();
+        let req = VersionReq::parse(">=0.3.2", Ecosystem::Pypi).unwrap();
+        manifest
+            .update_dependency_spec(
+                "my-lib",
+                DepKind::Runtime,
+                DepSpec::Range(req, ">=0.3.2".to_string()),
+                &permit(),
+            )
+            .unwrap();
+
+        let unchanged = fs::read_to_string(&pyproject_path).unwrap();
+        assert_eq!(
+            unchanged, content,
+            "update_dependency_spec alone must not write to disk"
+        );
+
+        manifest.persist(&permit()).unwrap();
+        let updated = fs::read_to_string(&pyproject_path).unwrap();
+        assert!(updated.contains("my-lib>=0.3.2"));
+    }
+
+    #[test]
+    fn update_dependency_spec_non_range_variant_is_ok_and_persist_is_a_no_op() {
+        let dir = tempdir().unwrap();
+        let pyproject_path = dir.path().join("pyproject.toml");
+        let content = "[project]\nname = \"my-app\"\nversion = \"0.1.0\"\ndependencies = [\n    \"my-lib>=0.3.0\",\n]\n";
+        fs::write(&pyproject_path, content).unwrap();
+
+        let decl = ManifestDecl {
+            path: PathBuf::from("pyproject.toml"),
+            role: ManifestRole::Canonical,
+            format: ManifestFormat::PyprojectToml,
+        };
+        let ctx = OpenContext {
+            workspace_root: dir.path(),
+            cargo_workspace: None,
+            npm_workspace_kind: None,
+        };
+
+        let mut manifest = PyprojectToml::open(&decl, &ctx).unwrap();
+        let result = manifest.update_dependency_spec(
+            "my-lib",
+            DepKind::Runtime,
+            DepSpec::Opaque("path-dep".to_string()),
+            &permit(),
+        );
+        assert!(
+            result.is_ok(),
+            "non-Range/non-Exact DepSpec must return Ok(()) without mutating"
+        );
+
+        manifest.persist(&permit()).unwrap();
+        let on_disk = fs::read_to_string(&pyproject_path).unwrap();
+        assert_eq!(
+            on_disk, content,
+            "persist of an untouched document must reproduce identical bytes"
+        );
     }
 
     // -- round_trip tests ---------------------------------------------------
