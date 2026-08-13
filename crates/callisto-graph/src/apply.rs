@@ -927,4 +927,69 @@ mod tests {
             "apply_version_plan's on-disk bytes must be byte-identical to a direct open->write_version->persist sequence"
         );
     }
+
+    #[test]
+    fn bumps_loop_write_version_error_leaves_manifest_untouched_and_skips_persist() {
+        let dir = tempfile::tempdir().expect("create tempdir");
+        let root = dir.path();
+        let cargo_toml_path = root.join("Cargo.toml");
+        let original =
+            "package = { name = \"my-crate\", version = \"1.0.0\", edition = \"2021\" }\n";
+        std::fs::write(&cargo_toml_path, original).unwrap();
+
+        // Positive precondition: confirm this fixture opens successfully and
+        // current_version() succeeds via toml_edit's inline-table Item::get,
+        // proving that any later failure is write_version's own
+        // as_table_mut() step failing, not open()/current_version() failing
+        // upstream of it.
+        let decl = ManifestDecl::new(
+            "Cargo.toml",
+            ManifestRole::Canonical,
+            ManifestFormat::CargoToml,
+        )
+        .unwrap();
+        let ctx = OpenContext {
+            workspace_root: root,
+            cargo_workspace: None,
+            npm_workspace_kind: None,
+        };
+        let precondition_handle = open(&decl, &ctx).unwrap();
+        assert_eq!(
+            precondition_handle.current_version().unwrap().render(),
+            "1.0.0",
+            "fixture must open successfully and current_version() must succeed via the inline table"
+        );
+
+        let manifest_rel = PathBuf::from("Cargo.toml");
+        let plan = VersionPlan {
+            bumps: vec![PlannedBump {
+                package: PackageId::parse("cargo:my-crate").expect("valid id"),
+                from: cargo_version("1.0.0"),
+                to: cargo_version("1.1.0"),
+                severity: Severity::Minor,
+                governed_by: None,
+                reason: None,
+                writes: vec![VersionWriteTarget::Manifest(manifest_rel.clone())],
+            }],
+            ..Default::default()
+        };
+
+        let permit = ApplyPermit::force_for_tests();
+        let opts = ApplyOptions::default();
+        let result = apply_version_plan(root, &plan, &NoopRunner, &opts, &permit);
+
+        assert!(
+            matches!(
+                result,
+                Err(GraphError::Manifest(callisto_model::ManifestError::MissingField { ref field, .. })) if *field == "package"
+            ),
+            "write_version must fail at the [package] as_table_mut() step, not earlier in open()/current_version(); got: {result:?}"
+        );
+
+        let on_disk = std::fs::read_to_string(&cargo_toml_path).unwrap();
+        assert_eq!(
+            on_disk, original,
+            "manifest must be byte-for-byte unchanged when write_version errors before persist"
+        );
+    }
 }
