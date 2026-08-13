@@ -173,7 +173,7 @@ impl Manifest for PyprojectToml {
         })
     }
 
-    fn write_version(&mut self, v: &Version, permit: &ApplyPermit) -> Result<(), ManifestError> {
+    fn write_version(&mut self, v: &Version, _permit: &ApplyPermit) -> Result<(), ManifestError> {
         let new_ver = v.render();
 
         let set_with_decor = |table: &mut toml_edit::Item, key: &str| {
@@ -216,11 +216,7 @@ impl Manifest for PyprojectToml {
             self.document["project"]["version"] = value(new_ver);
         }
 
-        let content = self.render();
-        atomic_write(&self.absolute, &content, permit).map_err(|e| ManifestError::Write {
-            path: self.path.clone(),
-            message: e.to_string(),
-        })
+        Ok(())
     }
 
     fn iter_dependencies(&self) -> Box<dyn Iterator<Item = DependencyEntry> + '_> {
@@ -646,11 +642,45 @@ dependencies = [
 
         let new_v = Version::parse("0.3.2", VersionGrammar::Pep440).unwrap();
         manifest.write_version(&new_v, &permit()).unwrap();
+        manifest.persist(&permit()).unwrap();
 
         let updated_content = fs::read_to_string(&pyproject_path).unwrap();
         assert!(updated_content.contains("version = \"0.3.2\""));
         assert!(updated_content.contains("# Main project metadata"));
         assert!(updated_content.contains("# Current release version"));
+    }
+
+    #[test]
+    fn write_version_does_not_touch_disk_until_persist_called() {
+        let dir = tempdir().unwrap();
+        let pyproject_path = dir.path().join("pyproject.toml");
+        let content = "[project]\nname = \"my-python-lib\"\nversion = \"0.3.1\"\n";
+        fs::write(&pyproject_path, content).unwrap();
+
+        let decl = ManifestDecl {
+            path: PathBuf::from("pyproject.toml"),
+            role: ManifestRole::Canonical,
+            format: ManifestFormat::PyprojectToml,
+        };
+        let ctx = OpenContext {
+            workspace_root: dir.path(),
+            cargo_workspace: None,
+            npm_workspace_kind: None,
+        };
+
+        let mut manifest = PyprojectToml::open(&decl, &ctx).unwrap();
+        let new_v = Version::parse("0.3.2", VersionGrammar::Pep440).unwrap();
+        manifest.write_version(&new_v, &permit()).unwrap();
+
+        let unchanged = fs::read_to_string(&pyproject_path).unwrap();
+        assert_eq!(
+            unchanged, content,
+            "write_version alone must not write to disk"
+        );
+
+        manifest.persist(&permit()).unwrap();
+        let updated = fs::read_to_string(&pyproject_path).unwrap();
+        assert!(updated.contains("version = \"0.3.2\""));
     }
 
     #[test]
@@ -706,6 +736,7 @@ dependencies = [
 
         let new_v = Version::parse("1.0.1", VersionGrammar::Pep440).unwrap();
         manifest.write_version(&new_v, &permit()).unwrap();
+        manifest.persist(&permit()).unwrap();
 
         let updated_bytes = fs::read(&pyproject_path).unwrap();
         let updated = String::from_utf8(updated_bytes).unwrap();
@@ -753,6 +784,7 @@ dependencies = [
 
         let new_v = Version::parse("1.0.1", VersionGrammar::Pep440).unwrap();
         manifest.write_version(&new_v, &permit()).unwrap();
+        manifest.persist(&permit()).unwrap();
 
         let updated_bytes = fs::read(&pyproject_path).unwrap();
         let updated = String::from_utf8(updated_bytes).unwrap();
@@ -800,6 +832,7 @@ dependencies = [
 
         let new_v = Version::parse("1.0.1", VersionGrammar::Pep440).unwrap();
         manifest.write_version(&new_v, &permit()).unwrap();
+        manifest.persist(&permit()).unwrap();
 
         let updated_bytes = fs::read(&pyproject_path).unwrap();
         let updated = String::from_utf8(updated_bytes).unwrap();
@@ -913,6 +946,7 @@ dependencies = [
 
         let new_v = Version::parse("1.0.1", VersionGrammar::Pep440).unwrap();
         manifest.write_version(&new_v, &permit()).unwrap();
+        manifest.persist(&permit()).unwrap();
 
         let updated = fs::read_to_string(&pyproject_path).unwrap();
         assert!(updated.contains("\t\"requests>=2.28.0\""));
@@ -1378,6 +1412,7 @@ exclude = ["tests/"]
 
         let new_v = Version::parse("1.1.0", VersionGrammar::Pep440).unwrap();
         manifest.write_version(&new_v, &permit()).unwrap();
+        manifest.persist(&permit()).unwrap();
 
         let on_disk = fs::read_to_string(dir.path().join("pyproject.toml")).unwrap();
         let doc: toml_edit::DocumentMut = on_disk.parse().unwrap();
