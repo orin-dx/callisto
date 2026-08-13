@@ -37,6 +37,11 @@ fn cargo_persist_increments_persist_call_count_on_success() {
     let mut manifest = open(&decl, &ctx).unwrap();
 
     callisto_manifests::reset_persist_call_count();
+    assert_eq!(
+        callisto_manifests::persist_call_count(),
+        0,
+        "reset_persist_call_count() must genuinely zero the counter, not merely be a no-op alongside a hardcoded getter"
+    );
     manifest.persist(&permit()).unwrap();
 
     assert_eq!(
