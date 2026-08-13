@@ -76,3 +76,34 @@ fn npm_persist_increments_persist_call_count_on_success() {
         "a successful persist() must increment PERSIST_CALL_COUNT by exactly 1"
     );
 }
+
+#[test]
+#[serial]
+fn python_persist_increments_persist_call_count_on_success() {
+    let dir = tempfile::tempdir().unwrap();
+    let manifest_path = dir.path().join("pyproject.toml");
+    let content = "[project]\nname = \"my-python-lib\"\nversion = \"0.3.1\"\n";
+    fs::write(&manifest_path, content).unwrap();
+
+    let decl = ManifestDecl::new(
+        "pyproject.toml",
+        ManifestRole::Canonical,
+        ManifestFormat::PyprojectToml,
+    )
+    .unwrap();
+    let ctx = OpenContext {
+        workspace_root: dir.path(),
+        cargo_workspace: None,
+        npm_workspace_kind: None,
+    };
+    let mut manifest = open(&decl, &ctx).unwrap();
+
+    callisto_manifests::reset_persist_call_count();
+    manifest.persist(&permit()).unwrap();
+
+    assert_eq!(
+        callisto_manifests::persist_call_count(),
+        1,
+        "a successful persist() must increment PERSIST_CALL_COUNT by exactly 1"
+    );
+}

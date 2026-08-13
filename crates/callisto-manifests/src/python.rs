@@ -81,7 +81,9 @@ impl Manifest for PyprojectToml {
         atomic_write(&self.absolute, &content, permit).map_err(|e| ManifestError::Write {
             path: self.path.clone(),
             message: e.to_string(),
-        })
+        })?;
+        crate::record_persist_call();
+        Ok(())
     }
 
     fn path(&self) -> &Path {
