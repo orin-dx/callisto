@@ -302,6 +302,15 @@ impl Manifest for CargoToml {
 
         if self.inherited_deps.contains(&(kind, name.to_string())) {
             let root_cargo = self.workspace_root.join("Cargo.toml");
+            if self.absolute == root_cargo {
+                return Err(ManifestError::InvariantViolation {
+                    path: self.path.clone(),
+                    message: format!(
+                        "dependency `{name}` is workspace-inherited but this manifest IS the workspace root (`{}`); refusing to delegate to avoid overwriting the just-written root manifest with a stale in-memory document",
+                        root_cargo.display()
+                    ),
+                });
+            }
             let mut ws_res = WorkspaceCargoResolver::load(&root_cargo)?;
             return ws_res.write_dependency(name, new, permit);
         }
@@ -1472,5 +1481,58 @@ version = "4.5.6"
         fn proptest_cargo_toml_parse_never_panics(s in "\\PC*") {
             let _res = s.parse::<toml_edit::DocumentMut>();
         }
+    }
+
+    #[test]
+    fn update_dependency_spec_self_referential_workspace_delegation_returns_invariant_violation() {
+        let dir = tempdir().unwrap();
+        let root_cargo_path = dir.path().join("Cargo.toml");
+        let content = "[workspace]\nmembers = [\".\"]\n\n[package]\nname = \"self-referential-root\"\nversion = \"1.0.0\"\nedition = \"2021\"\n\n[dependencies]\nserde = { workspace = true }\n\n[workspace.dependencies]\nserde = \"1.0.0\"\n";
+        fs::write(&root_cargo_path, content).unwrap();
+
+        let inheritance = WorkspaceCargoResolver::load(&root_cargo_path)
+            .unwrap()
+            .inheritance()
+            .unwrap();
+
+        let decl = ManifestDecl::new(
+            "Cargo.toml",
+            ManifestRole::Canonical,
+            ManifestFormat::CargoToml,
+        )
+        .unwrap();
+        let ctx = OpenContext {
+            workspace_root: dir.path(),
+            cargo_workspace: Some(Arc::new(inheritance)),
+            npm_workspace_kind: None,
+        };
+
+        let mut manifest = CargoToml::open(&decl, &ctx).unwrap();
+
+        let new_spec = DepSpec::Range(
+            VersionReq::parse("^1.1.0", Ecosystem::Cargo).unwrap(),
+            "^1.1.0".to_string(),
+        );
+        let result = manifest.update_dependency_spec(
+            "serde",
+            callisto_model::DepKind::Runtime,
+            new_spec,
+            &permit(),
+        );
+
+        assert!(
+            matches!(result, Err(ManifestError::InvariantViolation { .. })),
+            "expected InvariantViolation, got: {result:?}"
+        );
+
+        let on_disk = fs::read_to_string(&root_cargo_path).unwrap();
+        assert_eq!(on_disk, content, "manifest file must be unchanged on disk");
+
+        manifest.persist(&permit()).unwrap();
+        let after_persist = fs::read_to_string(&root_cargo_path).unwrap();
+        assert_eq!(
+            after_persist, content,
+            "in-memory document must not have been mutated by the failed call"
+        );
     }
 }

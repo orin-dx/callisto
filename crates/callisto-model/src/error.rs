@@ -145,4 +145,8 @@ pub enum ManifestError {
     #[error("format-preserving write of `{path}` would not round-trip: {message}")]
     #[diagnostic(code(E019), help("Ensure CST document retains formatting structure."))]
     FormattingNotPreserved { path: PathBuf, message: String },
+
+    #[error("`{path}`: {message}")]
+    #[diagnostic(code(E027))]
+    InvariantViolation { path: PathBuf, message: String },
 }
