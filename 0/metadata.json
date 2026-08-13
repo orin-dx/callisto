@@ -1,0 +1,74 @@
+{
+  "cli_version": "0.10.1-nightly.202608121908.a47cf0c70",
+  "checkpoint_id": "01KZXX2KB6XAA5E1X4WR6YZHSB",
+  "session_id": "ae412d01-e061-4047-918b-0d1df3d4d118",
+  "strategy": "manual-commit",
+  "created_at": "2026-08-13T15:50:29.178342Z",
+  "branch": "main",
+  "checkpoints_count": 3,
+  "save_step_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5",
+  "turn_id": "96f319cd6148",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 1094,
+    "cache_creation_tokens": 2560610,
+    "cache_read_tokens": 266847814,
+    "output_tokens": 404297,
+    "api_call_count": 547
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_012rCYNRAZsYmqiF8NNi747S",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "canon:canon"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "96f319cd6148",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 1796,
+        "end": 1797,
+        "entry_ids": [
+          "8d95a7ab-50fc-4a4f-a5f0-51fa16450006"
+        ],
+        "tool_use_id": "toolu_012rCYNRAZsYmqiF8NNi747S"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_012rCYNRAZsYmqiF8NNi747S"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: canon:canon",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 81
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 662,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/plans/manifest-persist-001-plan.json": 504,
+        ".claude/scheduled_tasks.lock": 1,
+        ".claude/settings.local.json": 5,
+        ".claude/specs/SPEC-MANIFEST-PERSIST-001.json": 152
+      }
+    }
+  ]
+}
