@@ -7,7 +7,7 @@
 
 use std::fs;
 
-use callisto_manifests::{open, Manifest, OpenContext};
+use callisto_manifests::{open, OpenContext};
 use callisto_model::{ApplyPermit, ManifestDecl, ManifestFormat, ManifestRole};
 use serial_test::serial;
 
