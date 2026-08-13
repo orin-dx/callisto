@@ -738,6 +738,47 @@ mod tests {
     use tempfile::tempdir;
 
     #[test]
+    fn workspace_root_manifest_path_normalizes_to_bare_cargo_toml() {
+        let content = "[workspace]\nmembers = [\".\"]\n\n[package]\nname = \"root-pkg\"\nversion = \"1.0.0\"\nedition = \"2021\"\n";
+
+        // Absolute root case: exercises WorkspaceCargoResolver::load's
+        // is_absolute()==true branch (root_manifest_path.file_name()).
+        let dir = tempdir().unwrap();
+        let abs_root_cargo = dir.path().join("Cargo.toml");
+        fs::write(&abs_root_cargo, content).unwrap();
+        let abs_inheritance = WorkspaceCargoResolver::load(&abs_root_cargo)
+            .unwrap()
+            .inheritance()
+            .unwrap();
+        assert_eq!(abs_inheritance.root_manifest, PathBuf::from("Cargo.toml"));
+
+        // Relative-input case: WorkspaceCargoResolver::load's is_absolute()==false
+        // branch delegates directly to workspace_relative(root_manifest_path) with
+        // no other transformation -- asserted directly here (rather than via a
+        // cwd-swapping call to load()) since workspace_relative is the exact,
+        // pure, cwd-independent function that branch calls.
+        assert_eq!(
+            callisto_model::workspace_relative(Path::new("Cargo.toml")).unwrap(),
+            PathBuf::from("Cargo.toml")
+        );
+
+        // The other side of classify_manifest_writes' comparison: ManifestDecl::new's
+        // own workspace_relative normalization of the workspace root's own canonical
+        // manifest path.
+        let decl = ManifestDecl::new(
+            PathBuf::from(".").join("Cargo.toml"),
+            ManifestRole::Canonical,
+            ManifestFormat::CargoToml,
+        )
+        .unwrap();
+        assert_eq!(decl.path, PathBuf::from("Cargo.toml"));
+        assert_eq!(
+            decl.path, abs_inheritance.root_manifest,
+            "a root package's own canonical manifest path and WorkspaceCargoResolver's root_manifest must normalize identically for classify_manifest_writes' plain PathBuf equality to detect them as the same physical file"
+        );
+    }
+
+    #[test]
     fn persist_is_exposed_as_a_manifest_trait_method() {
         let dir = tempdir().unwrap();
         let manifest_path = dir.path().join("Cargo.toml");
