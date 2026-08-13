@@ -28,21 +28,6 @@ pub struct ApplyOutcome {
     pub staged: Vec<PathBuf>,
 }
 
-/// Writes `plan` to disk and stages the touched paths in git.
-///
-/// Every side effect this performs is unconditional -- the decision of whether
-/// to apply at all belongs to the caller, which is why an [`ApplyPermit`] is
-/// required rather than a `dry_run` flag being passed in. The previous
-/// `ApplyOptions::transient` field was that flag, and being a plain bool it
-/// carried no guarantee that any caller consulted it before constructing the
-/// options. A dry-run caller now cannot obtain a permit and simply does not
-/// call this function; it reports `plan` instead.
-///
-/// # Errors
-///
-/// - Manifest parse or write failures (malformed TOML/JSON, unsupported format).
-/// - Git subprocess failures (`git add` or `git rm --cached` returns a non-zero exit code).
-/// - I/O errors writing changelog sections or `pre.json`.
 #[derive(Debug, Default)]
 #[allow(dead_code)] // consumed by apply_version_plan in the next commit
 pub(crate) struct ManifestWriteGroup {
@@ -104,6 +89,21 @@ pub(crate) fn classify_manifest_writes(plan: &VersionPlan) -> ManifestWriteClass
     ManifestWriteClassification { batched, excluded }
 }
 
+/// Writes `plan` to disk and stages the touched paths in git.
+///
+/// Every side effect this performs is unconditional -- the decision of whether
+/// to apply at all belongs to the caller, which is why an [`ApplyPermit`] is
+/// required rather than a `dry_run` flag being passed in. The previous
+/// `ApplyOptions::transient` field was that flag, and being a plain bool it
+/// carried no guarantee that any caller consulted it before constructing the
+/// options. A dry-run caller now cannot obtain a permit and simply does not
+/// call this function; it reports `plan` instead.
+///
+/// # Errors
+///
+/// - Manifest parse or write failures (malformed TOML/JSON, unsupported format).
+/// - Git subprocess failures (`git add` or `git rm --cached` returns a non-zero exit code).
+/// - I/O errors writing changelog sections or `pre.json`.
 pub fn apply_version_plan<R: CommandRunner>(
     root: &Path,
     plan: &VersionPlan,
