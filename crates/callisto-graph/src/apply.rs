@@ -1405,4 +1405,45 @@ mod tests {
         assert_eq!(g.bump.as_ref().unwrap().1, cargo_version("2.1.0"));
         assert_eq!(g.rewrite_indices, vec![1]);
     }
+
+    #[test]
+    fn classify_manifest_writes_excludes_cargo_workspace_package_mixed_path() {
+        let p = PathBuf::from("Cargo.toml");
+        let plan = VersionPlan {
+            bumps: vec![PlannedBump {
+                package: PackageId::parse("cargo:root-pkg").unwrap(),
+                from: cargo_version("1.0.0"),
+                to: cargo_version("1.1.0"),
+                severity: Severity::Minor,
+                governed_by: None,
+                reason: None,
+                writes: vec![VersionWriteTarget::CargoWorkspacePackage {
+                    root_manifest: p.clone(),
+                }],
+            }],
+            rewrites: vec![crate::cascade::SpecRewrite {
+                key: crate::cascade::RewriteKey {
+                    target: DepWriteTarget::Manifest(p.clone()),
+                    name: "helper".to_string(),
+                    kind: Some(callisto_model::DepKind::Runtime),
+                },
+                dependency: PackageId::parse("cargo:helper").unwrap(),
+                from: callisto_model::DepSpec::Range(
+                    callisto_model::VersionReq::parse("^1.0.0", callisto_model::Ecosystem::Cargo)
+                        .unwrap(),
+                    "^1.0.0".to_string(),
+                ),
+                to: callisto_model::DepSpec::Range(
+                    callisto_model::VersionReq::parse("^1.1.0", callisto_model::Ecosystem::Cargo)
+                        .unwrap(),
+                    "^1.1.0".to_string(),
+                ),
+            }],
+            ..Default::default()
+        };
+
+        let classification = classify_manifest_writes(&plan);
+        assert!(classification.excluded.contains(&p));
+        assert!(!classification.batched.contains_key(&p));
+    }
 }
