@@ -1,0 +1,101 @@
+//! AC-009 check (c): apply_version_plan must open each distinct manifest
+//! path exactly once. Isolated in its own integration-test binary because
+//! callisto_manifests::open_call_count is a process-global counter that
+//! other, non-#[serial] tests in a shared binary would pollute (see
+//! crates/callisto-graph/tests/manifest_cache_test.rs for the precedent).
+
+use std::path::PathBuf;
+
+use callisto_graph::apply::{apply_version_plan, ApplyOptions};
+use callisto_graph::cascade::{DepWriteTarget, RewriteKey, SpecRewrite};
+use callisto_graph::plan::{PlannedBump, VersionPlan, VersionWriteTarget};
+use callisto_model::{
+    ApplyPermit, CommandError, CommandOutput, CommandRunner, DepKind, DepSpec, Ecosystem,
+    PackageId, Severity, Version, VersionGrammar, VersionReq,
+};
+use serial_test::serial;
+
+struct NoopRunner;
+
+impl CommandRunner for NoopRunner {
+    fn run(
+        &self,
+        _program: &str,
+        _args: &[&str],
+        _cwd: &std::path::Path,
+    ) -> Result<CommandOutput, CommandError> {
+        Ok(CommandOutput {
+            exit_code: Some(0),
+            stdout: String::new(),
+            stderr: String::new(),
+        })
+    }
+}
+
+#[test]
+#[serial]
+fn apply_version_plan_opens_each_distinct_manifest_path_exactly_once() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+
+    std::fs::write(
+        root.join("Cargo.toml"),
+        "[package]\nname = \"my-crate\"\nversion = \"1.0.0\"\nedition = \"2021\"\n\n[dependencies]\nhelper = \"1.0.0\"\n",
+    )
+    .unwrap();
+    let other_dir = root.join("other-pkg");
+    std::fs::create_dir_all(&other_dir).unwrap();
+    std::fs::write(
+        other_dir.join("Cargo.toml"),
+        "[package]\nname = \"other-pkg\"\nversion = \"1.0.0\"\nedition = \"2021\"\n\n[dependencies]\nhelper = \"1.0.0\"\n",
+    )
+    .unwrap();
+
+    let bump_manifest = PathBuf::from("Cargo.toml");
+    let rewrite_manifest = PathBuf::from("other-pkg/Cargo.toml");
+
+    let plan = VersionPlan {
+        bumps: vec![PlannedBump {
+            package: PackageId::parse("cargo:my-crate").unwrap(),
+            from: Version::parse("1.0.0", VersionGrammar::SemVer).unwrap(),
+            to: Version::parse("1.1.0", VersionGrammar::SemVer).unwrap(),
+            severity: Severity::Minor,
+            governed_by: None,
+            reason: None,
+            writes: vec![VersionWriteTarget::Manifest(bump_manifest.clone())],
+        }],
+        rewrites: vec![SpecRewrite {
+            key: RewriteKey {
+                target: DepWriteTarget::Manifest(rewrite_manifest.clone()),
+                name: "helper".to_string(),
+                kind: Some(DepKind::Runtime),
+            },
+            dependency: PackageId::parse("cargo:helper").unwrap(),
+            from: DepSpec::Range(
+                VersionReq::parse("^1.0.0", Ecosystem::Cargo).unwrap(),
+                "^1.0.0".to_string(),
+            ),
+            to: DepSpec::Range(
+                VersionReq::parse("^1.1.0", Ecosystem::Cargo).unwrap(),
+                "^1.1.0".to_string(),
+            ),
+        }],
+        ..Default::default()
+    };
+
+    let permit = ApplyPermit::force_for_tests();
+    let opts = ApplyOptions::default();
+
+    callisto_manifests::reset_open_call_count();
+    let result = apply_version_plan(root, &plan, &NoopRunner, &opts, &permit);
+    assert!(
+        result.is_ok(),
+        "apply_version_plan should succeed: {result:?}"
+    );
+
+    assert_eq!(
+        callisto_manifests::open_call_count(),
+        2,
+        "apply_version_plan must open each of the 2 distinct manifest paths exactly once"
+    );
+}
