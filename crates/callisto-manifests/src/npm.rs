@@ -247,10 +247,10 @@ impl Manifest for PackageJson {
         })
     }
 
-    fn write_version(&mut self, v: &Version, permit: &ApplyPermit) -> Result<(), ManifestError> {
+    fn write_version(&mut self, v: &Version, _permit: &ApplyPermit) -> Result<(), ManifestError> {
         self.doc
             .insert("version".to_string(), Value::String(v.render().to_string()));
-        self.persist(permit)
+        Ok(())
     }
 
     fn iter_dependencies(&self) -> Box<dyn Iterator<Item = DependencyEntry> + '_> {
@@ -509,6 +509,27 @@ mod tests {
     }
 
     #[test]
+    fn write_version_does_not_touch_disk_until_persist_called() {
+        let dir = tempdir().unwrap();
+        let content = "{\n  \"name\": \"@myorg/pkg\",\n  \"version\": \"1.0.0\"\n}\n";
+        let manifest_path = dir.path().join("package.json");
+        let mut manifest = open_manifest(&dir, content);
+
+        let new_ver = Version::parse("1.1.0", VersionGrammar::SemVer).unwrap();
+        manifest.write_version(&new_ver, &permit()).unwrap();
+
+        let unchanged = fs::read_to_string(&manifest_path).unwrap();
+        assert_eq!(
+            unchanged, content,
+            "write_version alone must not write to disk"
+        );
+
+        manifest.persist(&permit()).unwrap();
+        let updated = fs::read_to_string(&manifest_path).unwrap();
+        assert!(updated.contains("\"version\": \"1.1.0\""));
+    }
+
+    #[test]
     fn parses_package_json_and_updates_version() {
         let dir = tempdir().unwrap();
         let manifest_path = dir.path().join("package.json");
@@ -540,6 +561,7 @@ mod tests {
 
         let new_ver = Version::parse("1.1.0", VersionGrammar::SemVer).unwrap();
         manifest.write_version(&new_ver, &permit()).unwrap();
+        manifest.persist(&permit()).unwrap();
 
         let updated_content = fs::read_to_string(&manifest_path).unwrap();
         assert!(updated_content.contains("\"version\": \"1.1.0\""));
@@ -1120,6 +1142,7 @@ mod tests {
             &permit(),
         )
         .unwrap();
+        pj.persist(&permit()).unwrap();
 
         let updated = fs::read_to_string(&path).unwrap();
         assert!(updated.contains("\"version\": \"1.1.0\""));
