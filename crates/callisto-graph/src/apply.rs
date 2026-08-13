@@ -1492,4 +1492,213 @@ mod tests {
         assert!(classification.excluded.contains(&p));
         assert!(!classification.batched.contains_key(&p));
     }
+
+    /// AC-004: a batched group's bump succeeds, but the second of two
+    /// rewrites destined for the same path fails. Neither the bump nor the
+    /// first rewrite may land on disk, because persist() for the group is
+    /// never reached -- proven both by the on-disk bytes being unchanged and
+    /// by `persist_call_count()` staying at zero.
+    #[test]
+    #[serial_test::serial]
+    fn batched_group_rewrite_failure_leaves_bump_and_first_rewrite_unpersisted() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let cargo_toml_path = root.join("Cargo.toml");
+        let original = "[package]\nname = \"my-crate\"\nversion = \"1.0.0\"\nedition = \"2021\"\n\n[dependencies]\nhelper = \"1.0.0\"\n";
+        std::fs::write(&cargo_toml_path, original).unwrap();
+
+        let manifest_rel = PathBuf::from("Cargo.toml");
+        let plan = VersionPlan {
+            bumps: vec![PlannedBump {
+                package: PackageId::parse("cargo:my-crate").unwrap(),
+                from: cargo_version("1.0.0"),
+                to: cargo_version("1.1.0"),
+                severity: Severity::Minor,
+                governed_by: None,
+                reason: None,
+                writes: vec![VersionWriteTarget::Manifest(manifest_rel.clone())],
+            }],
+            rewrites: vec![
+                crate::cascade::SpecRewrite {
+                    key: crate::cascade::RewriteKey {
+                        target: DepWriteTarget::Manifest(manifest_rel.clone()),
+                        name: "helper".to_string(),
+                        kind: Some(callisto_model::DepKind::Runtime),
+                    },
+                    dependency: PackageId::parse("cargo:helper").unwrap(),
+                    from: callisto_model::DepSpec::Range(
+                        callisto_model::VersionReq::parse(
+                            "^1.0.0",
+                            callisto_model::Ecosystem::Cargo,
+                        )
+                        .unwrap(),
+                        "^1.0.0".to_string(),
+                    ),
+                    to: callisto_model::DepSpec::Range(
+                        callisto_model::VersionReq::parse(
+                            "^1.1.0",
+                            callisto_model::Ecosystem::Cargo,
+                        )
+                        .unwrap(),
+                        "^1.1.0".to_string(),
+                    ),
+                },
+                crate::cascade::SpecRewrite {
+                    key: crate::cascade::RewriteKey {
+                        target: DepWriteTarget::Manifest(manifest_rel.clone()),
+                        name: "nonexistent-dep".to_string(),
+                        kind: Some(callisto_model::DepKind::Runtime),
+                    },
+                    dependency: PackageId::parse("cargo:nonexistent-dep").unwrap(),
+                    from: callisto_model::DepSpec::Range(
+                        callisto_model::VersionReq::parse(
+                            "^1.0.0",
+                            callisto_model::Ecosystem::Cargo,
+                        )
+                        .unwrap(),
+                        "^1.0.0".to_string(),
+                    ),
+                    to: callisto_model::DepSpec::Range(
+                        callisto_model::VersionReq::parse(
+                            "^1.1.0",
+                            callisto_model::Ecosystem::Cargo,
+                        )
+                        .unwrap(),
+                        "^1.1.0".to_string(),
+                    ),
+                },
+            ],
+            ..Default::default()
+        };
+
+        let permit = ApplyPermit::force_for_tests();
+        let opts = ApplyOptions::default();
+        callisto_manifests::reset_persist_call_count();
+        let result = apply_version_plan(root, &plan, &NoopRunner, &opts, &permit);
+
+        assert!(
+            matches!(
+                result,
+                Err(GraphError::Manifest(
+                    callisto_model::ManifestError::DependencyNotFound { .. }
+                ))
+            ),
+            "second rewrite's missing dependency must propagate; got: {result:?}"
+        );
+
+        let on_disk = std::fs::read_to_string(&cargo_toml_path).unwrap();
+        assert_eq!(
+            on_disk, original,
+            "all-or-nothing: neither the bump nor the first rewrite may be persisted when a later rewrite in the same group fails"
+        );
+
+        assert_eq!(
+            callisto_manifests::persist_call_count(),
+            0,
+            "persist() must never be reached for a group whose rewrite failed before the persist step"
+        );
+    }
+
+    /// AC-012: `classify_manifest_writes`' `BTreeMap<PathBuf, _>` iteration
+    /// order -- not `plan.bumps`' encounter order -- determines which
+    /// batched group is processed first. b-crate's bump is listed first in
+    /// the plan but a-crate sorts first as a path, so a-crate's group must
+    /// be fully persisted before b-crate's group (whose persist fails) is
+    /// even attempted.
+    #[test]
+    #[cfg(unix)]
+    #[serial_test::serial]
+    fn batched_groups_process_strictly_sequentially_in_btreemap_path_order() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+
+        let a_dir = root.join("a-crate");
+        std::fs::create_dir_all(&a_dir).unwrap();
+        let a_path = a_dir.join("Cargo.toml");
+        let a_original = "[package]\nname = \"crate-a\"\nversion = \"1.0.0\"\nedition = \"2021\"\n";
+        std::fs::write(&a_path, a_original).unwrap();
+
+        let b_dir = root.join("b-crate");
+        std::fs::create_dir_all(&b_dir).unwrap();
+        let b_path = b_dir.join("Cargo.toml");
+        let b_original = "[package]\nname = \"crate-b\"\nversion = \"1.0.0\"\nedition = \"2021\"\n";
+        std::fs::write(&b_path, b_original).unwrap();
+
+        let a_rel = PathBuf::from("a-crate/Cargo.toml");
+        let b_rel = PathBuf::from("b-crate/Cargo.toml");
+
+        // b-crate's PlannedBump is listed FIRST and a-crate's SECOND, deliberately
+        // reversed from lexicographic path order, so plan-encounter order and
+        // BTreeMap path order disagree -- see this task's own reasoning.
+        let plan = VersionPlan {
+            bumps: vec![
+                PlannedBump {
+                    package: PackageId::parse("cargo:crate-b").unwrap(),
+                    from: cargo_version("1.0.0"),
+                    to: cargo_version("1.1.0"),
+                    severity: Severity::Minor,
+                    governed_by: None,
+                    reason: None,
+                    writes: vec![VersionWriteTarget::Manifest(b_rel.clone())],
+                },
+                PlannedBump {
+                    package: PackageId::parse("cargo:crate-a").unwrap(),
+                    from: cargo_version("1.0.0"),
+                    to: cargo_version("1.1.0"),
+                    severity: Severity::Minor,
+                    governed_by: None,
+                    reason: None,
+                    writes: vec![VersionWriteTarget::Manifest(a_rel.clone())],
+                },
+            ],
+            ..Default::default()
+        };
+
+        let permit = ApplyPermit::force_for_tests();
+        let opts = ApplyOptions::default();
+
+        let original_mode = std::fs::metadata(&b_dir).unwrap().permissions().mode();
+        std::fs::set_permissions(&b_dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+
+        let probe_path = b_dir.join(".rtk-write-probe");
+        let probe_write_succeeded = std::fs::write(&probe_path, b"probe").is_ok();
+        if probe_write_succeeded {
+            std::fs::remove_file(&probe_path).ok();
+            std::fs::set_permissions(&b_dir, std::fs::Permissions::from_mode(original_mode))
+                .unwrap();
+            eprintln!(
+                "skipping batched_groups_process_strictly_sequentially_in_btreemap_path_order: \
+                 process can write into a 0o555 directory (likely running as root); chmod-based failure injection is a no-op here"
+            );
+            return;
+        }
+
+        let result = apply_version_plan(root, &plan, &NoopRunner, &opts, &permit);
+
+        std::fs::set_permissions(&b_dir, std::fs::Permissions::from_mode(original_mode)).unwrap();
+
+        assert!(
+            matches!(
+                result,
+                Err(GraphError::Manifest(
+                    callisto_model::ManifestError::Write { .. }
+                ))
+            ),
+            "P2's persist failure must propagate; got: {result:?}"
+        );
+
+        let a_on_disk = std::fs::read_to_string(&a_path).unwrap();
+        assert!(
+            a_on_disk.contains("version = \"1.1.0\""),
+            "P1 (a-crate/Cargo.toml, sorts before P2) must already be fully processed and persisted before P2 is even attempted; got:\n{a_on_disk}"
+        );
+
+        let b_on_disk = std::fs::read_to_string(&b_path).unwrap();
+        assert_eq!(
+            b_on_disk, b_original,
+            "P2's own group must be byte-for-byte unchanged since its persist never succeeded"
+        );
+    }
 }
