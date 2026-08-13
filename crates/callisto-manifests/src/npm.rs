@@ -343,7 +343,7 @@ impl Manifest for PackageJson {
     fn update_optional_dependencies(
         &mut self,
         updates: &[(String, Version)],
-        permit: &ApplyPermit,
+        _permit: &ApplyPermit,
     ) -> Result<(), ManifestError> {
         let section = self
             .doc
@@ -359,7 +359,7 @@ impl Manifest for PackageJson {
             section.insert(name.clone(), Value::String(ver.render().to_string()));
         }
 
-        self.persist(permit)
+        Ok(())
     }
 }
 
@@ -527,6 +527,29 @@ mod tests {
         manifest.persist(&permit()).unwrap();
         let updated = fs::read_to_string(&manifest_path).unwrap();
         assert!(updated.contains("\"version\": \"1.1.0\""));
+    }
+
+    #[test]
+    fn update_optional_dependencies_does_not_touch_disk_until_persist_called() {
+        let dir = tempdir().unwrap();
+        let content = "{\n  \"name\": \"@myorg/pkg\",\n  \"version\": \"1.0.0\",\n  \"optionalDependencies\": {\n    \"fsevents\": \"1.0.0\"\n  }\n}\n";
+        let manifest_path = dir.path().join("package.json");
+        let mut manifest = open_manifest(&dir, content);
+
+        let new_v = Version::parse("2.0.0", VersionGrammar::SemVer).unwrap();
+        manifest
+            .update_optional_dependencies(&[("fsevents".to_string(), new_v)], &permit())
+            .unwrap();
+
+        let unchanged = fs::read_to_string(&manifest_path).unwrap();
+        assert_eq!(
+            unchanged, content,
+            "update_optional_dependencies alone must not write to disk"
+        );
+
+        manifest.persist(&permit()).unwrap();
+        let updated = fs::read_to_string(&manifest_path).unwrap();
+        assert!(updated.contains("\"fsevents\": \"2.0.0\""));
     }
 
     #[test]
