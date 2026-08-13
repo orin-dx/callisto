@@ -99,3 +99,75 @@ fn apply_version_plan_opens_each_distinct_manifest_path_exactly_once() {
         "apply_version_plan must open each of the 2 distinct manifest paths exactly once"
     );
 }
+
+#[test]
+#[serial]
+fn apply_version_plan_batches_open_persist_and_dedupes_staged_for_shared_path() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+
+    std::fs::write(
+        root.join("Cargo.toml"),
+        "[package]\nname = \"my-crate\"\nversion = \"1.0.0\"\nedition = \"2021\"\n\n[dependencies]\nhelper = \"1.0.0\"\n",
+    )
+    .unwrap();
+
+    let manifest_rel = PathBuf::from("Cargo.toml");
+    let plan = VersionPlan {
+        bumps: vec![PlannedBump {
+            package: PackageId::parse("cargo:my-crate").unwrap(),
+            from: Version::parse("1.0.0", VersionGrammar::SemVer).unwrap(),
+            to: Version::parse("1.1.0", VersionGrammar::SemVer).unwrap(),
+            severity: Severity::Minor,
+            governed_by: None,
+            reason: None,
+            writes: vec![VersionWriteTarget::Manifest(manifest_rel.clone())],
+        }],
+        rewrites: vec![SpecRewrite {
+            key: RewriteKey {
+                target: DepWriteTarget::Manifest(manifest_rel.clone()),
+                name: "helper".to_string(),
+                kind: Some(DepKind::Runtime),
+            },
+            dependency: PackageId::parse("cargo:helper").unwrap(),
+            from: DepSpec::Range(
+                VersionReq::parse("^1.0.0", Ecosystem::Cargo).unwrap(),
+                "^1.0.0".to_string(),
+            ),
+            to: DepSpec::Range(
+                VersionReq::parse("^1.1.0", Ecosystem::Cargo).unwrap(),
+                "^1.1.0".to_string(),
+            ),
+        }],
+        ..Default::default()
+    };
+
+    let permit = ApplyPermit::force_for_tests();
+    let opts = ApplyOptions::default();
+
+    callisto_manifests::reset_open_call_count();
+    callisto_manifests::reset_persist_call_count();
+    let outcome = apply_version_plan(root, &plan, &NoopRunner, &opts, &permit)
+        .expect("apply_version_plan should succeed");
+
+    assert_eq!(
+        callisto_manifests::open_call_count(),
+        1,
+        "N=2 Manifest-trait entries sharing one path must open that path exactly once, not N times"
+    );
+    assert_eq!(
+        callisto_manifests::persist_call_count(),
+        1,
+        "N=2 Manifest-trait entries sharing one path must persist that path exactly once, not N times"
+    );
+    assert_eq!(
+        outcome
+            .staged
+            .iter()
+            .filter(|p| **p == manifest_rel)
+            .count(),
+        1,
+        "the shared path must appear in staged exactly once, not N times; staged: {:?}",
+        outcome.staged
+    );
+}

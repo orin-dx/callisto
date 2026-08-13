@@ -29,20 +29,17 @@ pub struct ApplyOutcome {
 }
 
 #[derive(Debug, Default)]
-#[allow(dead_code)] // consumed by apply_version_plan in the next commit
 pub(crate) struct ManifestWriteGroup {
     pub(crate) bump: Option<(usize, callisto_model::Version)>,
     pub(crate) rewrite_indices: Vec<usize>,
 }
 
 #[derive(Debug, Default)]
-#[allow(dead_code)] // consumed by apply_version_plan in the next commit
 pub(crate) struct ManifestWriteClassification {
     pub(crate) batched: BTreeMap<PathBuf, ManifestWriteGroup>,
     pub(crate) excluded: BTreeSet<PathBuf>,
 }
 
-#[allow(dead_code)] // consumed by apply_version_plan in the next commit
 pub(crate) fn classify_manifest_writes(plan: &VersionPlan) -> ManifestWriteClassification {
     let mut resolver_routed: BTreeSet<PathBuf> = BTreeSet::new();
     for bump in &plan.bumps {
@@ -134,10 +131,56 @@ pub fn apply_version_plan<R: CommandRunner>(
         npm_workspace_kind,
     };
 
+    let classification = classify_manifest_writes(plan);
+
+    for (path, group) in &classification.batched {
+        let fmt = callisto_model::ManifestFormat::from_path(path)?;
+        let decl = callisto_model::ManifestDecl::new(path.clone(), ManifestRole::Canonical, fmt)?;
+        let mut handle = open(&decl, &ctx)?;
+        let mut mutated = false;
+
+        if let Some((bump_idx, target_version)) = &group.bump {
+            let bump = &plan.bumps[*bump_idx];
+            let current = handle.current_version()?;
+            if current == *target_version {
+                // Already at target — skip write, fall through to rewrites.
+            } else if current == bump.from {
+                handle.write_version(target_version, permit)?;
+                mutated = true;
+            } else {
+                return Err(GraphError::UnexpectedManifestVersion {
+                    path: path.clone(),
+                    expected_from: bump.from.clone(),
+                    expected_to: bump.to.clone(),
+                    found: current,
+                });
+            }
+        }
+
+        for rewrite_idx in &group.rewrite_indices {
+            let rewrite = &plan.rewrites[*rewrite_idx];
+            handle.update_dependency_spec(
+                &rewrite.key.name,
+                rewrite.key.kind.unwrap_or(callisto_model::DepKind::Runtime),
+                rewrite.to.clone(),
+                permit,
+            )?;
+            mutated = true;
+        }
+
+        if mutated {
+            handle.persist(permit)?;
+        }
+        modified_paths.push(path.clone());
+    }
+
     for bump in &plan.bumps {
         for write in &bump.writes {
             match write {
                 VersionWriteTarget::Manifest(p) => {
+                    if !classification.excluded.contains(p) {
+                        continue;
+                    }
                     let fmt = callisto_model::ManifestFormat::from_path(p)?;
                     let decl =
                         callisto_model::ManifestDecl::new(p.clone(), ManifestRole::Canonical, fmt)?;
@@ -170,6 +213,9 @@ pub fn apply_version_plan<R: CommandRunner>(
     for rewrite in &plan.rewrites {
         match &rewrite.key.target {
             DepWriteTarget::Manifest(p) => {
+                if !classification.excluded.contains(p) {
+                    continue;
+                }
                 let fmt = callisto_model::ManifestFormat::from_path(p)?;
                 let decl =
                     callisto_model::ManifestDecl::new(p.clone(), ManifestRole::Canonical, fmt)?;
