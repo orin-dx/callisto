@@ -171,3 +171,92 @@ fn apply_version_plan_batches_open_persist_and_dedupes_staged_for_shared_path() 
         outcome.staged
     );
 }
+
+#[test]
+#[serial]
+fn mixed_routing_root_cargo_toml_excludes_plain_dependencies_from_batching() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    std::fs::write(
+        root.join("Cargo.toml"),
+        "[workspace]\nmembers = [\".\"]\n\n[package]\nname = \"root-pkg\"\nversion = \"1.0.0\"\nedition = \"2021\"\n\n[dependencies]\nplain-a = \"1.0.0\"\nplain-b = \"1.0.0\"\n\n[workspace.dependencies]\ninherited-c = \"1.0.0\"\n",
+    )
+    .unwrap();
+
+    let manifest_rel = PathBuf::from("Cargo.toml");
+    let plan = VersionPlan {
+        rewrites: vec![
+            SpecRewrite {
+                key: RewriteKey {
+                    target: DepWriteTarget::Manifest(manifest_rel.clone()),
+                    name: "plain-a".to_string(),
+                    kind: Some(DepKind::Runtime),
+                },
+                dependency: PackageId::parse("cargo:plain-a").unwrap(),
+                from: DepSpec::Range(
+                    VersionReq::parse("^1.0.0", Ecosystem::Cargo).unwrap(),
+                    "^1.0.0".to_string(),
+                ),
+                to: DepSpec::Range(
+                    VersionReq::parse("^1.1.0", Ecosystem::Cargo).unwrap(),
+                    "^1.1.0".to_string(),
+                ),
+            },
+            SpecRewrite {
+                key: RewriteKey {
+                    target: DepWriteTarget::Manifest(manifest_rel.clone()),
+                    name: "plain-b".to_string(),
+                    kind: Some(DepKind::Runtime),
+                },
+                dependency: PackageId::parse("cargo:plain-b").unwrap(),
+                from: DepSpec::Range(
+                    VersionReq::parse("^1.0.0", Ecosystem::Cargo).unwrap(),
+                    "^1.0.0".to_string(),
+                ),
+                to: DepSpec::Range(
+                    VersionReq::parse("^1.2.0", Ecosystem::Cargo).unwrap(),
+                    "^1.2.0".to_string(),
+                ),
+            },
+            SpecRewrite {
+                key: RewriteKey {
+                    target: DepWriteTarget::CargoWorkspaceDependency {
+                        root_manifest: manifest_rel.clone(),
+                    },
+                    name: "inherited-c".to_string(),
+                    kind: Some(DepKind::Runtime),
+                },
+                dependency: PackageId::parse("cargo:inherited-c").unwrap(),
+                from: DepSpec::Range(
+                    VersionReq::parse("^1.0.0", Ecosystem::Cargo).unwrap(),
+                    "^1.0.0".to_string(),
+                ),
+                to: DepSpec::Range(
+                    VersionReq::parse("^1.3.0", Ecosystem::Cargo).unwrap(),
+                    "^1.3.0".to_string(),
+                ),
+            },
+        ],
+        ..Default::default()
+    };
+
+    let permit = ApplyPermit::force_for_tests();
+    let opts = ApplyOptions::default();
+    callisto_manifests::reset_open_call_count();
+    let result = apply_version_plan(root, &plan, &NoopRunner, &opts, &permit);
+    assert!(
+        result.is_ok(),
+        "apply_version_plan should succeed: {result:?}"
+    );
+
+    assert_eq!(
+        callisto_manifests::open_call_count(),
+        2,
+        "the two plain DepWriteTarget::Manifest entries must each be opened separately via the excluded/unbatched path, not folded into one batched group"
+    );
+
+    let on_disk = std::fs::read_to_string(root.join("Cargo.toml")).unwrap();
+    assert!(on_disk.contains("plain-a = \"^1.1.0\""));
+    assert!(on_disk.contains("plain-b = \"^1.2.0\""));
+    assert!(on_disk.contains("inherited-c = \"^1.3.0\""));
+}
