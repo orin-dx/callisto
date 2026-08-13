@@ -195,7 +195,7 @@ impl Manifest for CargoToml {
         })
     }
 
-    fn write_version(&mut self, v: &Version, permit: &ApplyPermit) -> Result<(), ManifestError> {
+    fn write_version(&mut self, v: &Version, _permit: &ApplyPermit) -> Result<(), ManifestError> {
         if self.inherited_version {
             // The member uses `version.workspace = true` (or `version = { workspace = true }`).
             // Routing the bump to [workspace.package] would silently change the version for
@@ -212,7 +212,7 @@ impl Manifest for CargoToml {
                 })?;
             pkg.insert("version", toml_edit::value(v.render()));
             self.inherited_version = false;
-            return self.persist(permit);
+            return Ok(());
         }
 
         let pkg = self
@@ -236,7 +236,7 @@ impl Manifest for CargoToml {
         } else {
             pkg.insert("version", toml_edit::value(v.render()));
         }
-        self.persist(permit)
+        Ok(())
     }
 
     fn iter_dependencies(&self) -> Box<dyn Iterator<Item = DependencyEntry> + '_> {
@@ -796,9 +796,44 @@ serde = "1.0"
 
         let new_ver = Version::parse("0.2.0", VersionGrammar::SemVer).unwrap();
         manifest.write_version(&new_ver, &permit()).unwrap();
+        manifest.persist(&permit()).unwrap();
 
         let updated_content = fs::read_to_string(&manifest_path).unwrap();
         assert!(updated_content.contains("version = \"0.2.0\""));
+    }
+
+    #[test]
+    fn write_version_does_not_touch_disk_until_persist_called() {
+        let dir = tempdir().unwrap();
+        let manifest_path = dir.path().join("Cargo.toml");
+        let content = "[package]\nname = \"my-crate\"\nversion = \"0.1.0\"\n";
+        fs::write(&manifest_path, content).unwrap();
+
+        let decl = ManifestDecl::new(
+            "Cargo.toml",
+            ManifestRole::Canonical,
+            ManifestFormat::CargoToml,
+        )
+        .unwrap();
+        let ctx = OpenContext {
+            workspace_root: dir.path(),
+            cargo_workspace: None,
+            npm_workspace_kind: None,
+        };
+
+        let mut manifest = CargoToml::open(&decl, &ctx).unwrap();
+        let new_ver = Version::parse("0.2.0", VersionGrammar::SemVer).unwrap();
+        manifest.write_version(&new_ver, &permit()).unwrap();
+
+        let unchanged = fs::read_to_string(&manifest_path).unwrap();
+        assert_eq!(
+            unchanged, content,
+            "write_version alone must not write to disk"
+        );
+
+        manifest.persist(&permit()).unwrap();
+        let updated = fs::read_to_string(&manifest_path).unwrap();
+        assert!(updated.contains("version = \"0.2.0\""));
     }
 
     #[test]
@@ -853,6 +888,7 @@ serde = "1.0"
         let mut manifest = CargoToml::open(&decl, &ctx).unwrap();
         let new_ver = Version::parse("1.0.1", VersionGrammar::SemVer).unwrap();
         manifest.write_version(&new_ver, &permit()).unwrap();
+        manifest.persist(&permit()).unwrap();
 
         let updated_bytes = fs::read(&manifest_path).unwrap();
         let updated = String::from_utf8(updated_bytes).unwrap();
@@ -1019,6 +1055,7 @@ path = "../serde"
 
         let new_ver = Version::parse("1.0.1", VersionGrammar::SemVer).unwrap();
         manifest.write_version(&new_ver, &permit()).unwrap();
+        manifest.persist(&permit()).unwrap();
 
         let updated = fs::read_to_string(&manifest_path).unwrap();
         assert!(updated.contains("\tversion = \"1.0.1\""));
@@ -1136,6 +1173,7 @@ edition = "2021"
         let mut manifest = CargoToml::open(&decl, &ctx).unwrap();
         let new_ver = Version::parse("0.2.0", VersionGrammar::SemVer).unwrap();
         manifest.write_version(&new_ver, &permit()).unwrap();
+        manifest.persist(&permit()).unwrap();
 
         let updated = fs::read_to_string(&manifest_path).unwrap();
         assert!(updated.contains("version = \"0.2.0\" # preserve this inline comment"));
@@ -1291,6 +1329,7 @@ edition = "2021"
         // Apply bump to 1.1.0 on the MEMBER ONLY
         let new_ver = Version::parse("1.1.0", VersionGrammar::SemVer).unwrap();
         manifest.write_version(&new_ver, &permit()).unwrap();
+        manifest.persist(&permit()).unwrap();
 
         // Workspace root must be UNCHANGED
         let root_updated = fs::read_to_string(&root_cargo_path).unwrap();
