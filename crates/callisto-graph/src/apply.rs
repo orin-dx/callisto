@@ -343,8 +343,8 @@ mod tests {
     use std::path::Path;
 
     use callisto_model::{
-        ApplyPermit, CommandError, CommandOutput, CommandRunner, PackageId, Severity, Version,
-        VersionGrammar,
+        ApplyPermit, CommandError, CommandOutput, CommandRunner, ManifestDecl, ManifestFormat,
+        PackageId, Severity, Version, VersionGrammar,
     };
 
     use super::*;
@@ -810,6 +810,121 @@ mod tests {
         assert!(
             on_disk.contains("helper = \"^1.1.0\""),
             "rewrites loop must persist update_dependency_spec's mutation to disk; got:\n{on_disk}"
+        );
+    }
+
+    /// AC-009 check (b): running `apply_version_plan` end-to-end over a Cargo
+    /// bump must produce on-disk bytes byte-identical to a direct
+    /// `open()` -> `write_version()` -> `persist()` sequence over the same
+    /// starting fixture — not merely a substring match.
+    #[test]
+    fn apply_version_plan_cargo_bump_produces_byte_identical_output_to_direct_mutate_then_persist()
+    {
+        let fixture = "[package]\nname = \"my-crate\"\nversion = \"1.0.0\"\nedition = \"2021\"\n";
+        let manifest_rel = PathBuf::from("Cargo.toml");
+        let permit = ApplyPermit::force_for_tests();
+
+        let dir_a = tempfile::tempdir().expect("create tempdir");
+        std::fs::write(dir_a.path().join("Cargo.toml"), fixture).unwrap();
+        let plan = VersionPlan {
+            bumps: vec![PlannedBump {
+                package: PackageId::parse("cargo:my-crate").expect("valid id"),
+                from: cargo_version("1.0.0"),
+                to: cargo_version("1.1.0"),
+                severity: Severity::Minor,
+                governed_by: None,
+                reason: None,
+                writes: vec![VersionWriteTarget::Manifest(manifest_rel.clone())],
+            }],
+            ..Default::default()
+        };
+        let opts = ApplyOptions::default();
+        let result = apply_version_plan(dir_a.path(), &plan, &NoopRunner, &opts, &permit);
+        assert!(
+            result.is_ok(),
+            "apply_version_plan should succeed: {result:?}"
+        );
+        let via_apply = std::fs::read_to_string(dir_a.path().join("Cargo.toml")).unwrap();
+
+        let dir_b = tempfile::tempdir().expect("create tempdir");
+        std::fs::write(dir_b.path().join("Cargo.toml"), fixture).unwrap();
+        let decl = ManifestDecl::new(
+            manifest_rel.clone(),
+            ManifestRole::Canonical,
+            ManifestFormat::CargoToml,
+        )
+        .unwrap();
+        let ctx = OpenContext {
+            workspace_root: dir_b.path(),
+            cargo_workspace: None,
+            npm_workspace_kind: None,
+        };
+        let mut handle = open(&decl, &ctx).unwrap();
+        handle
+            .write_version(&cargo_version("1.1.0"), &permit)
+            .unwrap();
+        handle.persist(&permit).unwrap();
+        let via_direct = std::fs::read_to_string(dir_b.path().join("Cargo.toml")).unwrap();
+
+        assert_eq!(
+            via_apply, via_direct,
+            "apply_version_plan's on-disk bytes must be byte-identical to a direct open->write_version->persist sequence"
+        );
+    }
+
+    /// AC-009 check (b), npm sibling: same byte-identity proof for a
+    /// `package.json` bump.
+    #[test]
+    fn apply_version_plan_npm_bump_produces_byte_identical_output_to_direct_mutate_then_persist() {
+        let fixture = "{\n  \"name\": \"@myorg/pkg\",\n  \"version\": \"1.0.0\"\n}\n";
+        let manifest_rel = PathBuf::from("package.json");
+        let permit = ApplyPermit::force_for_tests();
+
+        let dir_a = tempfile::tempdir().expect("create tempdir");
+        std::fs::write(dir_a.path().join("package.json"), fixture).unwrap();
+        let plan = VersionPlan {
+            bumps: vec![PlannedBump {
+                package: PackageId::parse("npm:@myorg/pkg").expect("valid id"),
+                from: cargo_version("1.0.0"),
+                to: cargo_version("1.1.0"),
+                severity: Severity::Minor,
+                governed_by: None,
+                reason: None,
+                writes: vec![VersionWriteTarget::Manifest(manifest_rel.clone())],
+            }],
+            ..Default::default()
+        };
+        let opts = ApplyOptions::default();
+        let result = apply_version_plan(dir_a.path(), &plan, &NoopRunner, &opts, &permit);
+        assert!(
+            result.is_ok(),
+            "apply_version_plan should succeed: {result:?}"
+        );
+        let via_apply = std::fs::read_to_string(dir_a.path().join("package.json")).unwrap();
+
+        let dir_b = tempfile::tempdir().expect("create tempdir");
+        std::fs::write(dir_b.path().join("package.json"), fixture).unwrap();
+        let decl = ManifestDecl::new(
+            manifest_rel.clone(),
+            ManifestRole::Canonical,
+            ManifestFormat::PackageJson,
+        )
+        .unwrap();
+        let ctx = OpenContext {
+            workspace_root: dir_b.path(),
+            cargo_workspace: None,
+            npm_workspace_kind: None,
+        };
+        let mut handle = open(&decl, &ctx).unwrap();
+        handle
+            .write_version(&cargo_version("1.1.0"), &permit)
+            .unwrap();
+        handle.persist(&permit).unwrap();
+        let via_direct = std::fs::read_to_string(dir_b.path().join("package.json")).unwrap();
+
+        assert_eq!(
+            via_apply, via_direct,
+            "apply_version_plan's on-disk bytes must be byte-identical to a direct open->write_version->persist sequence"
         );
     }
 }
