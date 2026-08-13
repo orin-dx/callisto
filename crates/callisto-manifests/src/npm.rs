@@ -162,7 +162,9 @@ impl Manifest for PackageJson {
                 path: self.path.clone(),
                 message: e.to_string(),
             }
-        })
+        })?;
+        crate::record_persist_call();
+        Ok(())
     }
 
     fn path(&self) -> &Path {
