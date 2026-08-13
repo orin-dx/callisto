@@ -231,4 +231,43 @@ mod tests {
             "update_version_cst must persist the mutation to disk; got:\n{on_disk}"
         );
     }
+
+    #[test]
+    fn update_dependency_cst_persists_to_disk() {
+        let dir = tempdir().unwrap();
+        fs::write(
+            dir.path().join("pyproject.toml"),
+            "[project]\nname = \"demo-pkg\"\nversion = \"1.2.3\"\ndependencies = [\n    \"my-lib>=0.3.0\",\n]\n",
+        )
+        .unwrap();
+
+        let decl = ManifestDecl {
+            path: PathBuf::from("pyproject.toml"),
+            role: ManifestRole::Canonical,
+            format: ManifestFormat::PyprojectToml,
+        };
+        let ctx = OpenContext {
+            workspace_root: dir.path(),
+            cargo_workspace: None,
+            npm_workspace_kind: None,
+        };
+
+        let mut manifest = open(&decl, &ctx).unwrap();
+        let permit = callisto_model::ApplyPermit::force_for_tests();
+        let req = callisto_model::VersionReq::parse(">=0.3.2", Ecosystem::Pypi).unwrap();
+        manifest
+            .update_dependency_cst(
+                "my-lib",
+                callisto_model::DepKind::Runtime,
+                DepSpec::Range(req, ">=0.3.2".to_string()),
+                &permit,
+            )
+            .unwrap();
+
+        let on_disk = fs::read_to_string(dir.path().join("pyproject.toml")).unwrap();
+        assert!(
+            on_disk.contains("my-lib>=0.3.2"),
+            "update_dependency_cst must persist the mutation to disk; got:\n{on_disk}"
+        );
+    }
 }
