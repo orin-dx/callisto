@@ -285,7 +285,7 @@ impl Manifest for PackageJson {
         name: &str,
         kind: DepKind,
         new: DepSpec,
-        permit: &ApplyPermit,
+        _permit: &ApplyPermit,
     ) -> Result<(), ManifestError> {
         if kind == DepKind::Build {
             return Err(ManifestError::DependencyNotFound {
@@ -337,7 +337,7 @@ impl Manifest for PackageJson {
             }
         }
 
-        self.persist(permit)
+        Ok(())
     }
 
     fn update_optional_dependencies(
@@ -527,6 +527,33 @@ mod tests {
         manifest.persist(&permit()).unwrap();
         let updated = fs::read_to_string(&manifest_path).unwrap();
         assert!(updated.contains("\"version\": \"1.1.0\""));
+    }
+
+    #[test]
+    fn update_dependency_spec_does_not_touch_disk_until_persist_called() {
+        let dir = tempdir().unwrap();
+        let content = "{\n  \"name\": \"@myorg/pkg\",\n  \"version\": \"1.0.0\",\n  \"dependencies\": {\n    \"lodash\": \"^4.17.0\"\n  }\n}\n";
+        let manifest_path = dir.path().join("package.json");
+        let mut manifest = open_manifest(&dir, content);
+
+        manifest
+            .update_dependency_spec(
+                "lodash",
+                DepKind::Runtime,
+                DepSpec::Opaque("^5.0.0".to_string()),
+                &permit(),
+            )
+            .unwrap();
+
+        let unchanged = fs::read_to_string(&manifest_path).unwrap();
+        assert_eq!(
+            unchanged, content,
+            "update_dependency_spec alone must not write to disk"
+        );
+
+        manifest.persist(&permit()).unwrap();
+        let updated = fs::read_to_string(&manifest_path).unwrap();
+        assert!(updated.contains("\"lodash\": \"^5.0.0\""));
     }
 
     #[test]
