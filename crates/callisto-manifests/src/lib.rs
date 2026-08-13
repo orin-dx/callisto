@@ -82,7 +82,8 @@ impl<T: Manifest + ?Sized> ManifestCstEditor for T {
         new_version: &Version,
         permit: &ApplyPermit,
     ) -> Result<(), ManifestError> {
-        self.write_version(new_version, permit)
+        self.write_version(new_version, permit)?;
+        self.persist(permit)
     }
 
     fn update_dependency_cst(
@@ -92,7 +93,8 @@ impl<T: Manifest + ?Sized> ManifestCstEditor for T {
         new_spec: DepSpec,
         permit: &ApplyPermit,
     ) -> Result<(), ManifestError> {
-        self.update_dependency_spec(name, kind, new_spec, permit)
+        self.update_dependency_spec(name, kind, new_spec, permit)?;
+        self.persist(permit)
     }
 }
 
@@ -196,5 +198,37 @@ mod tests {
         assert_eq!(manifest.role(), ManifestRole::Canonical);
         assert_eq!(manifest.package_name().unwrap(), "demo-pkg");
         assert_eq!(manifest.current_version().unwrap().render(), "1.2.3");
+    }
+
+    #[test]
+    fn update_version_cst_persists_to_disk() {
+        let dir = tempdir().unwrap();
+        fs::write(
+            dir.path().join("pyproject.toml"),
+            "[project]\nname = \"demo-pkg\"\nversion = \"1.2.3\"\n",
+        )
+        .unwrap();
+
+        let decl = ManifestDecl {
+            path: PathBuf::from("pyproject.toml"),
+            role: ManifestRole::Canonical,
+            format: ManifestFormat::PyprojectToml,
+        };
+        let ctx = OpenContext {
+            workspace_root: dir.path(),
+            cargo_workspace: None,
+            npm_workspace_kind: None,
+        };
+
+        let mut manifest = open(&decl, &ctx).unwrap();
+        let permit = callisto_model::ApplyPermit::force_for_tests();
+        let new_version = Version::parse("1.3.0", callisto_model::VersionGrammar::Pep440).unwrap();
+        manifest.update_version_cst(&new_version, &permit).unwrap();
+
+        let on_disk = fs::read_to_string(dir.path().join("pyproject.toml")).unwrap();
+        assert!(
+            on_disk.contains("1.3.0"),
+            "update_version_cst must persist the mutation to disk; got:\n{on_disk}"
+        );
     }
 }
