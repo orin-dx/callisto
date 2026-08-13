@@ -85,6 +85,7 @@ pub fn apply_version_plan<R: CommandRunner>(
                         // Already at target — skip write but still stage so git add re-stages on retry.
                     } else if current == bump.from {
                         handle.write_version(&bump.to, permit)?;
+                        handle.persist(permit)?;
                     } else {
                         return Err(GraphError::UnexpectedManifestVersion {
                             path: p.clone(),
@@ -718,6 +719,46 @@ mod tests {
             outcome.staged.contains(&cs_rel),
             "changeset path must be in staged even when file is already deleted; staged: {:?}",
             outcome.staged
+        );
+    }
+
+    #[test]
+    fn apply_persists_bumps_loop_write_version_to_disk() {
+        let dir = tempfile::tempdir().expect("create tempdir");
+        let root = dir.path();
+        let cargo_toml_path = root.join("Cargo.toml");
+        std::fs::write(
+            &cargo_toml_path,
+            "[package]\nname = \"my-crate\"\nversion = \"1.0.0\"\nedition = \"2021\"\n",
+        )
+        .unwrap();
+
+        let manifest_rel = PathBuf::from("Cargo.toml");
+        let plan = VersionPlan {
+            bumps: vec![PlannedBump {
+                package: PackageId::parse("cargo:my-crate").expect("valid id"),
+                from: cargo_version("1.0.0"),
+                to: cargo_version("1.1.0"),
+                severity: Severity::Minor,
+                governed_by: None,
+                reason: None,
+                writes: vec![VersionWriteTarget::Manifest(manifest_rel.clone())],
+            }],
+            ..Default::default()
+        };
+
+        let permit = ApplyPermit::force_for_tests();
+        let opts = ApplyOptions::default();
+        let result = apply_version_plan(root, &plan, &NoopRunner, &opts, &permit);
+        assert!(
+            result.is_ok(),
+            "apply_version_plan should succeed: {result:?}"
+        );
+
+        let on_disk = std::fs::read_to_string(&cargo_toml_path).unwrap();
+        assert!(
+            on_disk.contains("version = \"1.1.0\""),
+            "bumps loop must persist write_version's mutation to disk; got:\n{on_disk}"
         );
     }
 }
