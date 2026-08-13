@@ -118,6 +118,7 @@ pub fn apply_version_plan<R: CommandRunner>(
                     rewrite.to.clone(),
                     permit,
                 )?;
+                handle.persist(permit)?;
                 modified_paths.push(p.clone());
             }
             DepWriteTarget::CargoWorkspaceDependency { root_manifest } => {
@@ -759,6 +760,56 @@ mod tests {
         assert!(
             on_disk.contains("version = \"1.1.0\""),
             "bumps loop must persist write_version's mutation to disk; got:\n{on_disk}"
+        );
+    }
+
+    #[test]
+    fn apply_persists_rewrites_loop_update_dependency_spec_to_disk() {
+        let dir = tempfile::tempdir().expect("create tempdir");
+        let root = dir.path();
+        let cargo_toml_path = root.join("Cargo.toml");
+        std::fs::write(
+            &cargo_toml_path,
+            "[package]\nname = \"my-crate\"\nversion = \"1.0.0\"\nedition = \"2021\"\n\n[dependencies]\nhelper = \"1.0.0\"\n",
+        )
+        .unwrap();
+
+        let manifest_rel = PathBuf::from("Cargo.toml");
+        let key = crate::cascade::RewriteKey {
+            target: DepWriteTarget::Manifest(manifest_rel.clone()),
+            name: "helper".to_string(),
+            kind: Some(callisto_model::DepKind::Runtime),
+        };
+        let plan = VersionPlan {
+            rewrites: vec![crate::cascade::SpecRewrite {
+                key: key.clone(),
+                dependency: PackageId::parse("cargo:helper").expect("valid id"),
+                from: callisto_model::DepSpec::Range(
+                    callisto_model::VersionReq::parse("^1.0.0", callisto_model::Ecosystem::Cargo)
+                        .unwrap(),
+                    "^1.0.0".to_string(),
+                ),
+                to: callisto_model::DepSpec::Range(
+                    callisto_model::VersionReq::parse("^1.1.0", callisto_model::Ecosystem::Cargo)
+                        .unwrap(),
+                    "^1.1.0".to_string(),
+                ),
+            }],
+            ..Default::default()
+        };
+
+        let permit = ApplyPermit::force_for_tests();
+        let opts = ApplyOptions::default();
+        let result = apply_version_plan(root, &plan, &NoopRunner, &opts, &permit);
+        assert!(
+            result.is_ok(),
+            "apply_version_plan should succeed: {result:?}"
+        );
+
+        let on_disk = std::fs::read_to_string(&cargo_toml_path).unwrap();
+        assert!(
+            on_disk.contains("helper = \"^1.1.0\""),
+            "rewrites loop must persist update_dependency_spec's mutation to disk; got:\n{on_disk}"
         );
     }
 }
