@@ -1148,4 +1148,114 @@ mod tests {
 
         assert_eq!(target.render(), "1.1.0-next.0");
     }
+
+    /// AC-017: solve_cascade's rewrite-construction logic must never route an
+    /// inherited Cargo dependency edge through `DepWriteTarget::Manifest` --
+    /// it must always route through `DepWriteTarget::CargoWorkspaceDependency`
+    /// instead. This is the cross-module invariant that CargoToml's own
+    /// self-delegation guard (AC-018) relies on being true of real planner
+    /// output.
+    #[test]
+    fn inherited_cargo_dependency_edge_never_produces_manifest_rewrite_target() {
+        let pkg_root = PackageId::parse("cargo:root-crate").unwrap();
+        let pkg_member = PackageId::parse("cargo:member-crate").unwrap();
+        let pkg_dep = PackageId::parse("cargo:shared-dep").unwrap();
+
+        let inherited_edge = DepEdge {
+            from: pkg_root.clone(),
+            to: pkg_dep.clone(),
+            kind: DepKind::Runtime,
+            spec: DepSpec::Range(
+                callisto_model::VersionReq::parse("^1.0.0", callisto_model::Ecosystem::Cargo)
+                    .unwrap(),
+                "^1.0.0".to_string(),
+            ),
+            from_manifest: std::path::PathBuf::from("Cargo.toml"),
+            inherited: true,
+        };
+        let non_inherited_edge = DepEdge {
+            from: pkg_member.clone(),
+            to: pkg_dep.clone(),
+            kind: DepKind::Runtime,
+            spec: DepSpec::Range(
+                callisto_model::VersionReq::parse("^1.0.0", callisto_model::Ecosystem::Cargo)
+                    .unwrap(),
+                "^1.0.0".to_string(),
+            ),
+            from_manifest: std::path::PathBuf::from("member/Cargo.toml"),
+            inherited: false,
+        };
+
+        let graph = TestGraph {
+            packages: vec![
+                bare_package(&pkg_root),
+                bare_package(&pkg_member),
+                bare_package(&pkg_dep),
+            ],
+            edges: vec![inherited_edge, non_inherited_edge],
+        };
+
+        let mut base = BTreeMap::new();
+        base.insert(pkg_root.clone(), Version::semver(1, 0, 0));
+        base.insert(pkg_member.clone(), Version::semver(1, 0, 0));
+        base.insert(pkg_dep.clone(), Version::semver(1, 0, 0));
+
+        let mut seed = BTreeMap::new();
+        seed.insert(pkg_dep.clone(), Severity::Major);
+
+        let groups = GroupTable::default();
+        let cfg = CascadeConfig {
+            mode: CascadeMode::OutOfRange,
+            bump_severity: CascadeBumpSeverity::Patch,
+            peer_escalation: true,
+            preserve_npm_ranges: false,
+        };
+        let reasons = BTreeMap::new();
+        let named_by = BTreeMap::new();
+
+        let input = CascadeInput {
+            graph: &graph,
+            groups: &groups,
+            cfg: &cfg,
+            seed: &seed,
+            reasons: &reasons,
+            named_by: &named_by,
+            base: &base,
+            pre: None,
+        };
+
+        let outcome = run_cascade(input).unwrap();
+
+        let has_manifest_target_for_inherited = outcome.rewrites.values().any(|r| {
+            r.key.name == pkg_dep.name()
+                && matches!(&r.key.target, DepWriteTarget::Manifest(p) if p == &PathBuf::from("Cargo.toml"))
+        });
+        assert!(
+            !has_manifest_target_for_inherited,
+            "inherited edge must never produce DepWriteTarget::Manifest; rewrites: {:?}",
+            outcome.rewrites
+        );
+
+        let has_workspace_dep_target_for_inherited = outcome.rewrites.values().any(|r| {
+            r.key.name == pkg_dep.name()
+                && r.key.target
+                    == DepWriteTarget::CargoWorkspaceDependency {
+                        root_manifest: PathBuf::from("Cargo.toml"),
+                    }
+        });
+        assert!(
+            has_workspace_dep_target_for_inherited,
+            "inherited edge must produce a CargoWorkspaceDependency rewrite target; rewrites: {:?}",
+            outcome.rewrites
+        );
+
+        let has_manifest_target_for_non_inherited = outcome.rewrites.values().any(|r| {
+            matches!(&r.key.target, DepWriteTarget::Manifest(p) if p == &PathBuf::from("member/Cargo.toml"))
+        });
+        assert!(
+            has_manifest_target_for_non_inherited,
+            "non-inherited edge must produce a DepWriteTarget::Manifest rewrite; rewrites: {:?}",
+            outcome.rewrites
+        );
+    }
 }
