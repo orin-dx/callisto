@@ -371,7 +371,7 @@ impl Manifest for CargoToml {
             }
         }
 
-        self.persist(permit)
+        Ok(())
     }
 
     fn update_optional_dependencies(
@@ -1141,10 +1141,55 @@ helper = { version = "1.0.0", path = "../helper" }
                 &permit(),
             )
             .unwrap();
+        manifest.persist(&permit()).unwrap();
 
         let updated = fs::read_to_string(&manifest_path).unwrap();
         assert!(updated.contains("version = \"^1.1.0\""));
         assert!(updated.contains("path = \"../helper\""));
+    }
+
+    #[test]
+    fn update_dependency_spec_does_not_touch_disk_until_persist_called() {
+        let dir = tempdir().unwrap();
+        let manifest_path = dir.path().join("Cargo.toml");
+        let content = "[package]\nname = \"my-crate\"\nversion = \"0.1.0\"\n\n[dependencies]\nhelper = \"1.0.0\"\n";
+        fs::write(&manifest_path, content).unwrap();
+
+        let decl = ManifestDecl::new(
+            "Cargo.toml",
+            ManifestRole::Canonical,
+            ManifestFormat::CargoToml,
+        )
+        .unwrap();
+        let ctx = OpenContext {
+            workspace_root: dir.path(),
+            cargo_workspace: None,
+            npm_workspace_kind: None,
+        };
+
+        let mut manifest = CargoToml::open(&decl, &ctx).unwrap();
+        let new_spec = DepSpec::Range(
+            VersionReq::parse("^1.1.0", Ecosystem::Cargo).unwrap(),
+            "^1.1.0".to_string(),
+        );
+        manifest
+            .update_dependency_spec(
+                "helper",
+                callisto_model::DepKind::Runtime,
+                new_spec,
+                &permit(),
+            )
+            .unwrap();
+
+        let unchanged = fs::read_to_string(&manifest_path).unwrap();
+        assert_eq!(
+            unchanged, content,
+            "update_dependency_spec alone must not write to disk"
+        );
+
+        manifest.persist(&permit()).unwrap();
+        let updated = fs::read_to_string(&manifest_path).unwrap();
+        assert!(updated.contains("helper = \"^1.1.0\""));
     }
 
     #[test]
@@ -1218,6 +1263,7 @@ path = "../helper"
                 &permit(),
             )
             .unwrap();
+        manifest.persist(&permit()).unwrap();
 
         let updated = fs::read_to_string(&manifest_path).unwrap();
         assert!(updated.contains("version = \"^1.1.0\""));
@@ -1265,6 +1311,7 @@ helper = { version = "1.0.0", path = "../helper" } # dep comment
                 &permit(),
             )
             .unwrap();
+        manifest.persist(&permit()).unwrap();
 
         let updated = fs::read_to_string(&manifest_path).unwrap();
         assert!(updated.contains("# dep comment"));
