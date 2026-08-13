@@ -992,4 +992,102 @@ mod tests {
             "manifest must be byte-for-byte unchanged when write_version errors before persist"
         );
     }
+
+    #[test]
+    #[cfg(unix)]
+    fn bumps_loop_persist_failure_leaves_earlier_successful_write_intact_and_later_manifest_unchanged(
+    ) {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().expect("create tempdir");
+        let root = dir.path();
+
+        let crate_a_path = root.join("Cargo.toml");
+        let crate_a_original =
+            "[package]\nname = \"crate-a\"\nversion = \"1.0.0\"\nedition = \"2021\"\n";
+        std::fs::write(&crate_a_path, crate_a_original).unwrap();
+
+        let pkg_b_dir = root.join("pkg-b");
+        std::fs::create_dir_all(&pkg_b_dir).unwrap();
+        let crate_b_path = pkg_b_dir.join("Cargo.toml");
+        let crate_b_original =
+            "[package]\nname = \"crate-b\"\nversion = \"1.0.0\"\nedition = \"2021\"\n";
+        std::fs::write(&crate_b_path, crate_b_original).unwrap();
+
+        let crate_a_rel = PathBuf::from("Cargo.toml");
+        let crate_b_rel = PathBuf::from("pkg-b/Cargo.toml");
+
+        let plan = VersionPlan {
+            bumps: vec![
+                PlannedBump {
+                    package: PackageId::parse("cargo:crate-a").expect("valid id"),
+                    from: cargo_version("1.0.0"),
+                    to: cargo_version("1.1.0"),
+                    severity: Severity::Minor,
+                    governed_by: None,
+                    reason: None,
+                    writes: vec![VersionWriteTarget::Manifest(crate_a_rel.clone())],
+                },
+                PlannedBump {
+                    package: PackageId::parse("cargo:crate-b").expect("valid id"),
+                    from: cargo_version("1.0.0"),
+                    to: cargo_version("1.1.0"),
+                    severity: Severity::Minor,
+                    governed_by: None,
+                    reason: None,
+                    writes: vec![VersionWriteTarget::Manifest(crate_b_rel.clone())],
+                },
+            ],
+            ..Default::default()
+        };
+
+        let permit = ApplyPermit::force_for_tests();
+        let opts = ApplyOptions::default();
+
+        let original_mode = std::fs::metadata(&pkg_b_dir).unwrap().permissions().mode();
+        std::fs::set_permissions(&pkg_b_dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+
+        // Some environments (e.g. containers running the test process as uid 0)
+        // ignore directory write-permission bits entirely, which would make the
+        // chmod above a no-op and this test's failure-injection premise false.
+        // Probe for that before proceeding rather than assuming the chmod took
+        // effect.
+        let probe_path = pkg_b_dir.join(".rtk-write-probe");
+        let probe_write_succeeded = std::fs::write(&probe_path, b"probe").is_ok();
+        if probe_write_succeeded {
+            std::fs::remove_file(&probe_path).ok();
+            std::fs::set_permissions(&pkg_b_dir, std::fs::Permissions::from_mode(original_mode))
+                .unwrap();
+            eprintln!(
+                "skipping bumps_loop_persist_failure_leaves_earlier_successful_write_intact_and_later_manifest_unchanged: \
+                 process can write into a 0o555 directory (likely running as root); chmod-based failure injection is a no-op here"
+            );
+            return;
+        }
+
+        let result = apply_version_plan(root, &plan, &NoopRunner, &opts, &permit);
+
+        std::fs::set_permissions(&pkg_b_dir, std::fs::Permissions::from_mode(original_mode))
+            .unwrap();
+
+        assert!(
+            matches!(
+                result,
+                Err(GraphError::Manifest(callisto_model::ManifestError::Write { .. }))
+            ),
+            "persist failure on the second bump must propagate as GraphError::Manifest(ManifestError::Write); got: {result:?}"
+        );
+
+        let crate_a_on_disk = std::fs::read_to_string(&crate_a_path).unwrap();
+        assert!(
+            crate_a_on_disk.contains("version = \"1.1.0\""),
+            "the first bump's successful mutate-then-persist must remain on disk even though the second bump later failed; got:\n{crate_a_on_disk}"
+        );
+
+        let crate_b_on_disk = std::fs::read_to_string(&crate_b_path).unwrap();
+        assert_eq!(
+            crate_b_on_disk, crate_b_original,
+            "the second bump's manifest must be byte-for-byte unchanged when its own persist() fails"
+        );
+    }
 }
