@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use callisto_model::{Ecosystem, ManifestFormat, PackageId};
+use callisto_model::{Ecosystem, ManifestFormat, ManifestRole, PackageId};
 
 use crate::error::GraphError;
 
@@ -237,7 +237,15 @@ pub struct IdentityIndex {
     pub bare: BTreeMap<String, PackageId>,
     pub prefixed: BTreeMap<(Ecosystem, String), PackageId>,
     pub native: BTreeMap<(Ecosystem, String), PackageId>,
-    pub platform: BTreeMap<String, (PackageId, PathBuf)>,
+    /// Keyed by a platform npm manifest's own package name (e.g.
+    /// `"@myorg/my-crate-linux-x64-gnu"`) -- distinct from `owner`'s name
+    /// when the owning package's primary identity comes from a
+    /// higher-priority ecosystem sharing the same directory (a Cargo+npm
+    /// Case D project, §M.6.1 M7: platform manifests belong to the owning
+    /// `Package`, they are never independently-registered `Package`s of
+    /// their own). The `ManifestRole::Platform` is carried alongside so
+    /// `GroupTable::resolve` doesn't need a second disk read to recover it.
+    pub platform: BTreeMap<String, (PackageId, PathBuf, ManifestRole)>,
 }
 
 impl IdentityIndex {
@@ -408,7 +416,7 @@ impl IdentityIndex {
 
     pub fn platforms_of(&self, owner: &PackageId) -> impl Iterator<Item = (&str, &Path)> {
         let mut results = Vec::new();
-        for (name, (plat_owner, path)) in &self.platform {
+        for (name, (plat_owner, path, _role)) in &self.platform {
             if plat_owner == owner {
                 results.push((name.as_str(), path.as_path()));
             }

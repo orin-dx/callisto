@@ -147,14 +147,10 @@ impl GroupTable {
                 if let Ok(id) = index.resolve_human(name, &[]) {
                     members.push(GroupMember::Package(id.clone()));
                     fixed_of.insert(id, rg.name.clone());
-                } else if let Some((owner, path)) = index.platform.get(name) {
+                } else if let Some((owner, path, role)) = index.platform.get(name) {
                     members.push(GroupMember::PlatformManifest {
                         owner: owner.clone(),
-                        role: ManifestRole::Platform {
-                            platform: "unknown".to_string(),
-                            arch: "unknown".to_string(),
-                            abi: None,
-                        },
+                        role: role.clone(),
                         path: path.clone(),
                         name: name.clone(),
                     });
@@ -182,14 +178,10 @@ impl GroupTable {
                 if let Ok(id) = index.resolve_human(name, &[]) {
                     members.push(GroupMember::Package(id.clone()));
                     linked_of.insert(id, rg.name.clone());
-                } else if let Some((owner, path)) = index.platform.get(name) {
+                } else if let Some((owner, path, role)) = index.platform.get(name) {
                     members.push(GroupMember::PlatformManifest {
                         owner: owner.clone(),
-                        role: ManifestRole::Platform {
-                            platform: "unknown".to_string(),
-                            arch: "unknown".to_string(),
-                            abi: None,
-                        },
+                        role: role.clone(),
                         path: path.clone(),
                         name: name.clone(),
                     });

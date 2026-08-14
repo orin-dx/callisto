@@ -82,7 +82,7 @@ impl ManifestWalkResolver {
                 .insert(primary_id.name().to_string(), primary_id.clone());
 
             let mut decls = Vec::new();
-            for (eco, _id) in &list {
+            for (eco, id) in &list {
                 let (fmt, filename) = match eco {
                     Ecosystem::Cargo => (ManifestFormat::CargoToml, "Cargo.toml"),
                     Ecosystem::Npm => (ManifestFormat::PackageJson, "package.json"),
@@ -99,23 +99,23 @@ impl ManifestWalkResolver {
                 // also push a Platform-role decl so plan_publish can route them
                 // into npm_platform_packages instead of npm_main_packages.
                 if *eco == Ecosystem::Npm {
-                    if let ManifestRole::Platform {
-                        platform,
-                        arch,
-                        abi,
-                    } = detect_npm_role(&root.join(&manifest_rel))
-                    {
-                        if let Ok(platform_decl) = ManifestDecl::new(
-                            manifest_rel,
-                            ManifestRole::Platform {
-                                platform,
-                                arch,
-                                abi,
-                            },
-                            fmt,
-                        ) {
+                    let role = detect_npm_role(&root.join(&manifest_rel));
+                    if let ManifestRole::Platform { .. } = role {
+                        if let Ok(platform_decl) =
+                            ManifestDecl::new(manifest_rel.clone(), role.clone(), fmt)
+                        {
                             decls.push(platform_decl);
                         }
+                        // `id` is this manifest's own npm identity, resolved from its
+                        // own `name` field -- distinct from `primary_id` whenever a
+                        // higher-priority ecosystem (Cargo) shares this directory
+                        // (Case D). Config authors reference the platform package by
+                        // its own name in `[[fixed-group]] members`, so that must be
+                        // the index key; `primary_id` is who it belongs to.
+                        index.platform.insert(
+                            id.name().to_string(),
+                            (primary_id.clone(), manifest_rel, role),
+                        );
                     }
                 }
                 index
@@ -504,6 +504,95 @@ fn ecosystem_primary_priority(e: Ecosystem) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct NoopRunner;
+    impl CommandRunner for NoopRunner {
+        fn run(
+            &self,
+            _program: &str,
+            _args: &[&str],
+            _cwd: &Path,
+        ) -> Result<callisto_model::CommandOutput, callisto_model::CommandError> {
+            panic!("this test's workspace build never needs to shell out");
+        }
+    }
+
+    /// End-to-end: a real disk-discovered napi platform manifest (Case D --
+    /// a `Cargo.toml` and a differently-named `package.json` sharing one
+    /// directory, the platform npm package's own identity distinct from the
+    /// owning crate's) must resolve through `[[fixed-group]] members`
+    /// naming the platform package by its own npm name, via
+    /// `IdentityIndex.platform` -- not the hand-constructed
+    /// `GroupMember::PlatformManifest` fixtures other tests use, which
+    /// bypass this wiring entirely and would not have caught the gap this
+    /// test pins.
+    #[test]
+    fn real_platform_manifest_resolves_via_fixed_group_and_feeds_napi_drift() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+
+        std::fs::write(
+            root.join("Cargo.toml"),
+            "[package]\nname = \"my-crate\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("package.json"),
+            r#"{"name":"@myorg/my-crate-linux-x64-gnu","version":"0.1.0","os":["linux"],"cpu":["x64"]}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("callisto.toml"),
+            "[[fixed-group]]\nname = \"my-group\"\nmembers = [\"my-crate\", \"@myorg/my-crate-linux-x64-gnu\"]\n",
+        )
+        .unwrap();
+
+        let locator = crate::locate::IgnoreWalkLocator::new(root);
+        let runner = NoopRunner;
+        let ws = crate::Workspace::load(root.to_path_buf(), &locator, &runner)
+            .expect("group resolution must succeed now that the real platform manifest resolves");
+
+        let group = ws
+            .config
+            .groups
+            .fixed
+            .get(&callisto_model::GroupName("my-group".to_string()))
+            .expect("fixed group must exist");
+
+        let platform_member = group
+            .members
+            .iter()
+            .find(|m| {
+                matches!(
+                    m,
+                    crate::config::groups::GroupMember::PlatformManifest { .. }
+                )
+            })
+            .expect("platform member must resolve, not be silently dropped or errored");
+
+        let crate::config::groups::GroupMember::PlatformManifest { role, name, .. } =
+            platform_member
+        else {
+            unreachable!()
+        };
+        assert_eq!(name, "@myorg/my-crate-linux-x64-gnu");
+        assert_eq!(
+            crate::napi::role_to_triple(role).as_deref(),
+            Some("x86_64-unknown-linux-gnu"),
+            "role must be the real, disk-derived role, not the old hardcoded \
+             platform=\"unknown\" stub -- got: {role:?}"
+        );
+
+        // Feed straight into napi_drift, matching the task's own framing:
+        // "napi_drift receives real group members".
+        let declared = vec!["x86_64-unknown-linux-gnu".to_string()];
+        let diagnostics = crate::napi::napi_drift(group, &declared, root);
+        assert!(
+            diagnostics.is_empty(),
+            "declared napi.targets matches the real group member; expected no drift \
+             diagnostics, got: {diagnostics:?}"
+        );
+    }
 
     /// Real disk-discovered Linux napi platform packages always have
     /// `abi: None` from `detect_npm_role` (npm's standard `os`/`cpu`
