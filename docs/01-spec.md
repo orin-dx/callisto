@@ -8551,8 +8551,32 @@ pub enum ConfigError {
              `conservative-feat`")]
     InvalidPreMajorInference { found: String },
 
+    /// `[changesets].dir` (`config/raw.rs`'s `RawChangesetsConfig.dir` doc comment) rejected
+    /// for being absolute or containing `..` components — same portability/escape rule as
+    /// `[[package]]`/`[[package-set]]` `changelog` below, applied to the workspace-root-
+    /// relative changesets directory instead of a package-root-relative changelog path.
+    #[error("changesets.dir `{dir}` is an absolute path or contains `..` path components and \
+             would escape the workspace root")]
+    InvalidChangesetsDir { dir: String },
+
+    /// `[[package]]`/`[[package-set]]` `changelog` (`config/raw.rs`'s `RawPackageConfig`/
+    /// `RawPackageSetConfig.changelog` doc comments) rejected for being absolute or containing
+    /// `..` components — a value that could otherwise resolve outside the package root once
+    /// joined with it.
+    #[error("`changelog = \"{value}\"` on `{pattern}` is an absolute path or contains `..` \
+             path components and would escape the workspace root")]
+    InvalidChangelogPath { pattern: String, value: String },
+
     #[error(transparent)]
     Tag(#[from] TagTemplateError),
+
+    /// Transparent from `callisto-model`'s `VersionParseError`. As of this writing, no
+    /// production code path in this crate's config module actually parses a `Version` from
+    /// config text (grep confirms no `Version::parse`/`VersionParseError` reference anywhere
+    /// under `config/`), so this variant is currently unconstructed — the `#[from]` conversion
+    /// exists but nothing triggers it yet.
+    #[error(transparent)]
+    VersionParse(#[from] callisto_model::VersionParseError),
 }
 ```
 
