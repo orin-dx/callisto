@@ -21,7 +21,7 @@ impl IgnoreWalkLocator {
         skip.insert(".moon");
         skip.insert("dist");
 
-        let canonical = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+        let canonical = dunce::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
         IgnoreWalkLocator {
             root: canonical,
             skip,

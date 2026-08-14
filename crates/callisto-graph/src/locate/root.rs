@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use crate::locate::LocateError;
 
 pub fn find_workspace_root(start: &Path) -> Result<PathBuf, LocateError> {
-    let canonical = start.canonicalize().unwrap_or_else(|_| start.to_path_buf());
+    let canonical = dunce::canonicalize(start).unwrap_or_else(|_| start.to_path_buf());
     let mut current: &Path = &canonical;
 
     loop {

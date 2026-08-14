@@ -10,7 +10,7 @@ pub fn load_workspace<'a>(
     global: &GlobalArgs,
     runner: &'a CliCommandRunner,
 ) -> Result<Workspace<'a, CliCommandRunner, ManifestWalkResolver>, CliError> {
-    let start = global.cwd.canonicalize().map_err(|source| CliError::Io {
+    let start = dunce::canonicalize(&global.cwd).map_err(|source| CliError::Io {
         source,
         path: Some(global.cwd.clone()),
     })?;

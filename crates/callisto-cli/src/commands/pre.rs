@@ -121,7 +121,7 @@ pub fn handle(args: PreArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
             }
         }
         PreArgs::Exit => {
-            let start = global.cwd.canonicalize().map_err(|source| CliError::Io {
+            let start = dunce::canonicalize(&global.cwd).map_err(|source| CliError::Io {
                 source,
                 path: Some(global.cwd.clone()),
             })?;
