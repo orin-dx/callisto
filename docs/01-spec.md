@@ -8032,8 +8032,11 @@ pub struct PlannedBump {
     pub governed_by: Option<ConfigKey>,
     pub reason: Option<BumpReason>,
     /// Every version write this bump implies, as a **typed** target rather than a bare path.
-    /// A Case D package has two entries; a Cargo member inheriting `version.workspace = true`
-    /// has a `CargoWorkspacePackage` entry instead of a `Manifest` one (§CM.4.4).
+    /// A Case D package has two entries. *Intended* (§CM.4.4): a Cargo member inheriting
+    /// `version.workspace = true` has a `CargoWorkspacePackage` entry instead of a `Manifest`
+    /// one. **Not implemented as of this writing** — `commands/version.rs`'s planner always
+    /// emits `Manifest` entries regardless of inheritance; see §G.10.2 step 3's note for why
+    /// this is safe rather than a live bug.
     pub writes: Vec<VersionWriteTarget>,
 }
 
@@ -8119,12 +8122,27 @@ pub struct ApplyOutcome {
           → callisto_manifests::open(p, &ctx)?.write_version(&bump.to)
       VersionWriteTarget::CargoWorkspacePackage { root_manifest }
           → WorkspaceCargoResolver::load(root_manifest)?.write_version(&bump.to)
-    The `CargoWorkspacePackage` entries are collected across all bumps and **de-duplicated by
-    root before writing**: N members inheriting `version.workspace = true` all name the same
-    root, and one write serves all of them. Two bumps naming the same root with *different*
-    `to` versions is `GraphError::WorkspaceVersionConflict` (§G.12), raised before any write —
-    a workspace whose members share one inherited version cannot have them diverge, and
-    silently letting the last write win would pick a winner by iteration order.
+    *Intended* (§18 Q2, P5): `CargoWorkspacePackage` entries collected across all bumps,
+    de-duplicated by root before writing — N members inheriting `version.workspace = true`
+    all name the same root, one write serves all of them — with two bumps naming the same
+    root at *different* `to` versions raising `GraphError::WorkspaceVersionConflict` (§G.12)
+    before any write, since a workspace whose members share one inherited version cannot have
+    them diverge and silently letting the last write win would pick a winner by iteration
+    order. **Not implemented as of this writing**: `apply_version_plan` applies each
+    `CargoWorkspacePackage` write independently, in bump order, with no de-duplication or
+    conflict check — and moot in practice today, since `commands/version.rs`'s planner never
+    actually constructs a `CargoWorkspacePackage` write target for any real plan (grep confirms
+    zero production call sites); the type and this dispatch arm are exercised only by
+    `apply.rs`'s own hand-constructed test fixtures. A workspace-inheriting Cargo member's
+    version bump today instead always goes through the `VersionWriteTarget::Manifest(p)` arm
+    above, which `CargoToml::write_version`'s own inherited-version branch
+    (`callisto-manifests/src/cargo.rs`, tested by
+    `write_version_pins_explicitly_on_workspace_inheriting_member`) handles safely on its own
+    by writing an explicit pinned version directly into the member's `[package]` section,
+    without touching the shared root at all — which is why the unimplemented dedup/conflict
+    path above is unreachable rather than unsafe. (§CM.1's own prose describing
+    `write_version` as refusing-and-redirecting for an inherited member is itself stale
+    relative to this pin-explicitly behavior — tracked separately, not fixed by this note.)
  4. Platform manifests    → same, from `plan.platform_writes` (inherit parent version)
  5. optionalDependencies  → Manifest::update_optional_dependencies
  6. Dependency specs, from every `plan.rewrites` entry, dispatched on its `DepWriteTarget`
@@ -8713,12 +8731,17 @@ it, which is exactly what a read-only `status` should do.
    structural; that the write lands in the root file, format-preserved; and that a direct
    write attempt against a member still produces `ManifestError::WorkspaceInherited` as the
    backstop.
-6b. **Typed version write targets.** A Cargo root that is both a workspace and a package
-   (§G.2.2), itself declaring `version.workspace = true`, asserting its `PlannedBump.writes`
-   contains **both** `VersionWriteTarget::Manifest(root)` and
+6b. **Typed version write targets.** *Required, not yet present.* A Cargo root that is both a
+   workspace and a package (§G.2.2), itself declaring `version.workspace = true`, asserting its
+   `PlannedBump.writes` contains **both** `VersionWriteTarget::Manifest(root)` and
    `::CargoWorkspacePackage { root_manifest: root }` and that apply writes two different keys
    in one file. Plus the conflict case: two members inheriting one root, planned to different
-   versions → `GraphError::WorkspaceVersionConflict` before any write.
+   versions → `GraphError::WorkspaceVersionConflict` before any write. As of this writing,
+   neither `data/manifests/cargo-workspace-inherit/` nor any matching test exists (confirmed by
+   direct search of `callisto-graph/tests/`) — consistent with `commands/version.rs`'s planner
+   never constructing a `CargoWorkspacePackage` write target at all (§G.10.2 step 3's note).
+   This fixture would be the thing that actually exercises the currently-dead dedup/conflict
+   path if that path is ever wired into the planner.
 7. **Group validation.** One fixture per `ConflictingGroupNames` / `ConflictingGroupMembership`
    shape, including the identity-level case (`cargo/foo` in a fixed group, `npm/foo` in a linked
    one) that pass 1 cannot catch and pass 2 must.
