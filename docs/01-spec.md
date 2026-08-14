@@ -2282,11 +2282,20 @@ default behaviour "abort the version pass," which is the opposite of what the in
 
 §15: *"`LocateError` and `GraphError` are ordinary per-crate error enums (`callisto-graph`),
 not given full signatures here."* This spec **keeps that placement** — they are not
-`callisto-model` exports. Their full definitions are pinned here anyway, because the values
-they accompany (`ProjectRoot`, `DeclaredEdge`, `PackageId`, `Version`) are model types and the
-two crates' specs must agree on the vocabulary. §G.12 adds the transparent `Config`/
-`Changelog`/`Conventional` wrappers (§11.2 R18) and `WorkspaceVersionConflict`; nothing else in
-this list moves.
+`callisto-model` exports. `LocateError`'s full definition is pinned here anyway, and `GraphError`'s
+transparent-wrapper variants (`Locate` through `Command`, below) are pinned in their real
+declaration order, because the values they accompany (`ProjectRoot`, `DeclaredEdge`,
+`PackageId`, `Version`) are model types and the two crates' specs must agree on the vocabulary.
+`#[diagnostic(...)]` attributes and the `#[allow(clippy::result_large_err)]`/enum-level
+`#[diagnostic]` derive real source also carries are omitted here for readability. **`GraphError`
+is not reproduced in full**: its own coded (non-wrapper) variants below are a representative
+subset, not exhaustive — real source also declares `UnexpectedManifestVersion`, `PreJson`,
+`PreJsonRead`, `PublishTargetEcosystemMismatch`, and `UntrustedNpmRegistry`, none of which are
+shown here. The wrapper variants (`Locate` through `Command`) match real source exactly, field
+for field; the coded variants shown below are not independently re-audited by this pass and may
+carry pre-existing drift of their own (e.g. `MissingGroupMember.member` and
+`WorkspaceVersionConflict`'s fields are known, as of this writing, to differ from real source —
+tracked separately, not fixed by this revision).
 
 ```rust
 // crates/callisto-graph/src/locate.rs
@@ -2434,26 +2443,41 @@ pub enum GraphError {
     Locate(#[from] LocateError),
     #[error(transparent)]
     Manifest(#[from] ManifestError),
-    #[error(transparent)]
-    Command(#[from] CommandError),
-    #[error(transparent)]
-    Tag(#[from] TagTemplateError),
-    #[error(transparent)]
-    Version(#[from] VersionParseError),
-    #[error(transparent)]
-    Model(#[from] ModelError),
     /// Added by §G.12.
     #[error(transparent)]
     Config(#[from] ConfigError),
+    #[error(transparent)]
+    Format(#[from] callisto_format::ParseError),
+    /// A changeset file's own parse failure, distinguished from the bare transparent `Format`
+    /// wrapper above by carrying which changeset `path` failed — `Format` alone loses that
+    /// context, and a parse failure deep in `load_changesets` (§G.6.1) needs to name the file.
+    #[error("parsing changeset {}: {source}", .path.display())]
+    ParseChangeset { path: PathBuf, source: callisto_format::ParseError },
+    #[error(transparent)]
+    Bump(#[from] callisto_format::BumpError),
     /// Added by §CL.8's placement: `apply_version_plan` step 7 delegates to
     /// `callisto-changelog`, whose failures must propagate through the one error type
     /// `callisto-cli` matches on.
     #[error(transparent)]
-    Changelog(#[from] ChangelogError),
+    Changelog(#[from] callisto_changelog::ChangelogError),
     /// Added by §C.8's placement, reachable only when `callisto-graph`'s `inference` feature
     /// is enabled (§G.6.4).
+    #[cfg(feature = "inference")]
     #[error(transparent)]
-    Conventional(#[from] ConventionalError),
+    Conventional(#[from] callisto_conventional::ConventionalError),
+    #[error(transparent)]
+    TagTemplate(#[from] TagTemplateError),
+    #[error(transparent)]
+    VersionParse(#[from] VersionParseError),
+    #[error(transparent)]
+    Model(#[from] ModelError),
+    /// Transparent from `callisto-vcs` (§V.2) — a failing `git` operation reached through
+    /// `Workspace::git_access()`/`TagIndex::build`/`plan_publish`'s `head_sha` resolution and
+    /// the other `GitAccess` call sites across this crate.
+    #[error(transparent)]
+    Vcs(#[from] callisto_vcs::VcsError),
+    #[error("command error: {0}")]
+    Command(#[from] CommandError),
 }
 ```
 
@@ -4421,8 +4445,8 @@ actually applies it).
 ### C.5 Commit fetching — `window.rs`
 
 ```rust
-use callisto_model::{CommandRunner, CommitSha};
-use std::path::{Path, PathBuf};
+use callisto_model::{CommitSha, CommitWalker};
+use std::path::PathBuf;
 
 /// The lower bound of the commit range to scan. An **exclusive** bound when `SinceCommit` —
 /// `git log <sha>..HEAD`, matching `..` range semantics — and the case §7.1 calls "since last
@@ -4444,10 +4468,11 @@ pub enum InferenceWindow {
     FullHistory,
 }
 
-/// Runs `git log` over `window`, scoped to `pathspecs` (workspace-root-relative, resolved
-/// against `cwd`), and parses every resulting commit via [`parse_commit`]. Order is git's own
-/// reverse-chronological log order; callers that need a count do not care about order, and
-/// nothing in this crate's output is order-sensitive.
+/// Runs `git log` over `window`, scoped to `pathspecs` (workspace-root-relative — resolved
+/// against whatever root `walker` itself carries internally, e.g. `GitAccess::discover`'s
+/// `root`; see the "no `cwd` parameter" note below), and parses every resulting commit via
+/// [`parse_commit`]. Order is git's own reverse-chronological log order; callers that need a
+/// count do not care about order, and nothing in this crate's output is order-sensitive.
 ///
 /// **Excludes merge commits** (`--no-merges`). A merge commit's own subject ("Merge pull
 /// request #123 from …") is never conventional, and on a workflow that squash-merges this has
@@ -4455,20 +4480,31 @@ pub enum InferenceWindow {
 /// counting an auto-generated subject as a `Severity::None` no-op line that would otherwise
 /// just inflate `commit_count` for no informational gain.
 ///
-/// Uses a control-character delimiter format (`%x1f` between sha and body, `%x1e` between
-/// records) rather than any printable delimiter, since a commit body can legally contain
-/// almost any printable text including something that looks like a delimiter line.
+/// Sourcing the history is entirely `walker`'s business — this crate names only the Layer 1
+/// [`callisto_model::CommitWalker`] contract (`callisto-model/src/commit.rs`), so it links
+/// against no VCS engine at all: callers hand it native gix, a shelled-out `git`,
+/// `callisto-vcs`'s gix-with-shell-fallback `GitAccess` selector, or a test double, and the
+/// delimiter parsing below is identical either way. `CommandRunner`-shelling `git log`
+/// directly used to live here; it moved behind this trait so this crate has no
+/// *production* dependency on `callisto-vcs` at all (§C.0's dependency table lists only
+/// `callisto-model`; `callisto-vcs` appears only as a **dev**-dependency exercising the real
+/// `GitAccess` backend in tests, e.g. `test_real_git_access_backend_satisfies_commit_walker...`
+/// below).
 pub fn fetch_commits(
-    runner: &dyn CommandRunner,
-    cwd: &Path,
+    walker: &dyn CommitWalker,
     window: &InferenceWindow,
     pathspecs: &[PathBuf],
 ) -> Result<Vec<ParsedCommit>, ConventionalError>;
 ```
 
-`&dyn CommandRunner` rather than a generic parameter is a deliberate, compatible choice:
-§M.10 keeps the trait dyn-compatible precisely so that a `&R` from `callisto-graph`'s generic
-call sites coerces here with no adapter. Neither form is privileged.
+`&dyn CommitWalker` rather than a generic parameter is a deliberate, compatible choice: it
+keeps the trait dyn-compatible (mirroring `CommandRunner`'s own dyn-compatible design, §M.10)
+precisely so that any `&GitAccess`/`&GitRepository`/`&ShellGit` (all three implement
+`CommitWalker`, §V.7) coerces here with no adapter. Neither form is privileged. Note there is
+no `cwd: &Path` parameter here — unlike the `CommandRunner`-based
+functions elsewhere in this crate (§C.6), a `CommitWalker` implementation already carries its
+own repository root internally (e.g. `GitAccess::discover`'s `root`), so this function has no
+separate root to be told.
 
 ### C.6 Pre-mode cursor ref — `pre_cursor.rs`
 
@@ -4525,12 +4561,15 @@ step it already has (§8) — no callisto command pushes anything (§13 inv. 16,
 ### C.7 Top-level entry point — `infer.rs`
 
 ```rust
-use callisto_model::{PackageId, Severity, Version};
+use std::path::PathBuf;
+
+use callisto_model::{CommitWalker, PackageId, Severity, Version};
 
 /// Everything §7.1/§8's inference needs about one package, for one call. Deliberately flat —
 /// this crate has no `Package` type to destructure one from (§C.0), so a caller in
 /// `callisto-graph` builds this from its own `Package` plus whatever it already resolved
-/// (last-tag sha, pre-cursor sha).
+/// (last-tag sha, pre-cursor sha). No pre-major policy field — see `InferredSeverity::severity`
+/// below for why.
 pub struct InferenceInput<'a> {
     /// Used only to compute the pre-cursor ref name if the caller needs
     /// `pre_cursor_ref_name`/`resolve_pre_cursor`/`advance_pre_cursor` — `infer_severity`
@@ -4542,7 +4581,6 @@ pub struct InferenceInput<'a> {
     pub package: &'a PackageId,
     pub pathspecs: &'a [PathBuf],
     pub window: InferenceWindow,
-    pub policy: PreMajorInferencePolicy,
     pub current_version: &'a Version,
     /// Whether this package has ever had a stable release tag — resolved by the caller from
     /// `last_tag_for`/`select_last_tag` (§M.9.4, §G.9.1), independent of `window`: a pre-mode
@@ -4584,8 +4622,7 @@ pub struct InferredSeverity {
 /// unconditional and cheap, and "ignore this result if a changeset exists" is a one-line
 /// caller-side check.
 pub fn infer_severity(
-    runner: &dyn CommandRunner,
-    cwd: &Path,
+    walker: &dyn CommitWalker,
     input: &InferenceInput<'_>,
 ) -> Result<InferredSeverity, ConventionalError>;
 ```
@@ -4593,29 +4630,24 @@ pub fn infer_severity(
 ### C.8 Errors — `error.rs`
 
 ```rust
-use callisto_model::CommandError;
+use callisto_model::{CommandError, CommitWalkError};
 
 #[derive(Clone, Debug, thiserror::Error, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ConventionalError {
-    /// The process could not be run at all (`git` missing, WASM host with no `exec_command`,
-    /// etc.) — propagated as-is from `CommandRunner::run`.
+    /// `resolve_pre_cursor`/`advance_pre_cursor`'s `CommandRunner`-shelled `git` calls
+    /// (§C.6) failing outright — the process could not be run at all (`git` missing, WASM
+    /// host with no `exec_command`, etc.) — propagated as-is from `CommandRunner::run`.
     #[error(transparent)]
     Command(#[from] CommandError),
 
-    /// `git log` ran (exit code returned) but exited non-zero — e.g. `<sha>..HEAD` where
-    /// `<sha>` no longer resolves (a pruned pre-cursor commit, an unexpectedly shallow
-    /// clone). Treated as a hard error rather than silently falling back to zero commits:
-    /// under-inferring a severity because a ref vanished underfoot is a correctness bug, and
-    /// P5 says structural failures surface loudly, not as a quiet `Severity::None`.
-    #[error("`git log` failed in `{cwd}`: {stderr}")]
-    GitLogFailed { cwd: PathBuf, stderr: String },
-
-    /// The captured `git log` stdout did not split into the expected sha/body records —
-    /// a defensive case (mismatched git version's `--format` behaviour, a corrupted
-    /// `CommandRunner` implementation), not expected to fire against any real `git`.
-    #[error("could not parse `git log` output in `{cwd}` into commit records: {message}")]
-    MalformedGitLogOutput { cwd: PathBuf, message: String },
+    /// Any failure reported by the [`CommitWalker`] backing `fetch_commits`/`infer_severity`
+    /// (§C.5, §C.7) — `git log` itself failing, an unparsable log stream, or an
+    /// explicitly-requested `since` ref that doesn't resolve to a commit. Named for the
+    /// Layer 1 contract, not for whichever VCS engine happens to satisfy it: this crate
+    /// parses conventional commits and has no opinion on where the history came from.
+    #[error(transparent)]
+    CommitWalk(#[from] CommitWalkError),
 
     /// `git rev-parse --verify` on a pre-cursor ref exited non-zero for a reason other than
     /// "ref does not exist" (§C.6) — e.g. an ambiguous or corrupt ref.
@@ -4627,6 +4659,18 @@ pub enum ConventionalError {
     PreCursorAdvanceFailed { cwd: PathBuf, ref_name: String, sha: String, stderr: String },
 }
 ```
+
+`Command` and `CommitWalk` cover the two different subprocess-facing surfaces this crate has:
+§C.6's `resolve_pre_cursor`/`advance_pre_cursor` still shell `git` directly via `CommandRunner`
+(unlike `fetch_commits`/`infer_severity`, which moved behind `CommitWalker`, §C.5/§C.7), so a
+`CommandRunner::run` failure from *those* two functions surfaces as `Command`, while a `git
+log`/history-walk failure from `fetch_commits`/`infer_severity` surfaces as `CommitWalk` —
+distinct variants because they're reached through genuinely distinct call paths, not two names
+for the same condition. `CommitWalkError` (`callisto-model/src/commit.rs`) itself narrows a much wider
+set of possible backend failures (gix, `ShellGit`, or any other `CommitWalker` implementation)
+down to three: `Command` (the walk's own subprocess couldn't run), `RefNotFound` (an explicit
+`since` ref didn't resolve), and `Backend` (everything else, carrying the backend's own
+rendering) — see `callisto-vcs`'s §V.7 for how a `VcsError` narrows into this contract.
 
 `callisto-graph` wraps this transparently (`GraphError::Conventional`, §M.13.3), reachable
 only when its `inference` feature is on.
@@ -11111,7 +11155,7 @@ falling back to `self.shell` only in the cases the policy above allows.
 impl From<VcsError> for CommitWalkError { /* narrows to the Layer 1 vocabulary, below */ }
 ```
 
-`callisto_model::CommitWalker` (§M.10) is a Layer 1 trait — it must not know `VcsError` exists,
+`callisto_model::CommitWalker` (`callisto-model/src/commit.rs`) is a Layer 1 trait — it must not know `VcsError` exists,
 since `callisto-model` depends on no `callisto-*` crate (§M.5). This crate bridges the gap:
 `CommitWalkError::Command` and `CommitWalkError::RefNotFound` survive the narrowing as
 themselves (the two distinctions Layer 1 callers branch on); every other `VcsError` variant —
