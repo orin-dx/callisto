@@ -1,0 +1,114 @@
+<task-notification>
+<task-id>ada3f2017e95076fe</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/ada3f2017e95076fe.output</output-file>
+<status>completed</status>
+<summary>Agent "Verify docs/01-spec.md CommitWalker and GraphError fixes" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>This confirms §C.0's table only lists two edges and its "Deliberately absent" prose names only `callisto-graph` — `callisto-vcs` is never mentioned as "deliberately absent" anywhere in §C.0. I now have all findings verified. Final report:
+
+## Findings
+
+**1. §M.13.3 `GraphError` block: new completeness claim is false.** The intro (lines 2285–2291) now says "Their full definitions (every variant, including every transparent wrapper — this block is not abbreviated)... every field, variant name, and `#[from]` source type is exact." But the pinned block (lines 2335–2474) is missing 5 real variants that exist in `crates/callisto-graph/src/error.rs`: `UnexpectedManifestVersion`, `PreJson`, `PreJsonRead`, `PublishTargetEcosystemMismatch`, `UntrustedNpmRegistry`. Pre-existing gap, not introduced by this diff, but the reworded intro now asserts completeness more strongly and is factually wrong. Fix: either add the missing variants or soften the completeness claim.
+
+**2. §C.5 and §C.8 cite §M.10 for `CommitWalker`'s dyn-compatibility — wrong section.** §M.10 (`docs/01-spec.md:1326`) is titled "The exec seam — `exec.rs`" and its entire body is about `CommandRunner`; it never mentions `CommitWalker`. `callisto-model/src/commit.rs` (which defines `CommitWalker`/`CommitRecord`/`CommitWalkError`) has no dedicated M-section anywhere in the doc at all. Lines 4476, 4489 (§C.5) and line 4658 (§C.8) all cite §M.10 for `CommitWalker`. Note: this mirrors a pre-existing miscitation at line 11146 (§V.7), so it's a systemic pattern, not unique to this diff — but this diff adds two more instances of it.
+
+**3. §C.5 misquotes §C.0.** Line 4481: `matching §C.0's "deliberately absent: callisto-vcs" boundary`. §C.0 (line 4225) actually reads "**Deliberately absent:** `callisto-graph`." — it never says `callisto-vcs` is deliberately absent (the dependency table simply omits it). The claim itself (that `callisto-vcs` is absent from this crate's deps) is true, but the quoted attribution to §C.0 is fabricated.
+
+**4. §M.13.3's `ParseChangeset` comment cites the wrong section for `load_changesets`.** Line 2446: "a parse failure deep in `load_changesets` (§G.4)". `load_changesets` is actually defined and documented under §G.6.1 "Loading changesets" (line 6579, under §G.6 "Aggregation"), not §G.4 ("Graph construction — `walk.rs`, `identity.rs`, `crosscheck.rs`"). Should cite §G.6.1.
+
+**5. Stale `cwd` reference left directly above the fixed `fetch_commits` signature.** Lines 4464–4466 (untouched by this diff): "Runs `git log` over `window`, scoped to `pathspecs` (workspace-root-relative, **resolved against `cwd`**)..." — but `fetch_commits` no longer takes a `cwd` parameter, and the diff's own new text 25 lines below (line 4492) explicitly says "there is no `cwd: &amp;Path` parameter here." This is a direct self-contradiction within the same section that the staleness sweep should have caught.
+
+**6. Reordering claim is only true for the touched subset.** The summary says "the block was reordered to match real source's actual declaration order exactly." Within the touched wrapper-variant subset (`Locate…Command`), the new order does exactly match real source. But real source's overall enum order is wrappers-first-then-domain-variants (`Locate…Command`, then `DuplicatePackage…UntrustedNpmRegistry`), while the doc still has domain-variants-first (`Cycle…ConflictingPlatformTargetSources`) then wrappers — the reverse, at the top level. Minor/pre-existing, not something this diff attempted to fix, but the claim overstates scope.
+
+**Verified clean:** §C.6 (`resolve_pre_cursor`/`advance_pre_cursor`, still `CommandRunner`/`cwd`-based) matches source exactly, correctly left unchanged. §C.7 `InferenceInput`/`infer_severity` matches source field-for-field, no stray `policy` field. §C.8 `ConventionalError` matches source's 4 variants exactly, same order. `CommitWalkError`'s 3-variant description (`Command`/`RefNotFound`/`Backend`) in §C.8 prose matches `callisto-model/src/commit.rs` exactly. §V.7/§V.2/§G.4(exists)/§G.12/§CL.8 section labels all resolve and their content generally supports the citations (except item 4 above). Grep across the whole file found zero leftover instances of `GitLogFailed`, `MalformedGitLogOutput`, `GraphError::Tag`, `GraphError::Version`, or a stray `policy: PreMajorInferencePolicy` on `InferenceInput`. Brace balance confirmed for all four edited code blocks (`GraphError`, `fetch_commits`/`InferenceWindow`, `InferenceInput`/`infer_severity`, `ConventionalError`) and file-wide fence count (402, even).
+
+**Adjacent, out-of-scope observation:** §G.12's separately-pinned `ConfigError` block (line 8431–8481) is missing `InvalidChangesetsDir`, `InvalidChangelogPath`, and `VersionParse` compared to real source's `ConfigError` — a similar completeness gap to finding #1, but in a section this diff didn't touch.</result>
+<usage><subagent_tokens>128049</subagent_tokens><tool_uses>41</tool_uses><duration_ms>329804</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a7b038aa2a2fe227a</task-id>
+<tool-use-id>toolu_01VbNNZS1tF55BuWQjvKtNAv</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a7b038aa2a2fe227a.output</output-file>
+<status>completed</status>
+<summary>Agent "Re-verify docs/01-spec.md fixes" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result># Verification Report: docs/01-spec.md fixes
+
+**1. M.13.3 completeness claim — STILL BROKEN (new false claim introduced)**
+The omission list itself is correct: grepped `crates/callisto-graph/src/error.rs` and confirmed `UnexpectedManifestVersion` (L157), `PreJson` (L175), `PreJsonRead` (L182), `PublishTargetEcosystemMismatch` (L204), `UntrustedNpmRegistry` (L225) all exist in real source and are genuinely absent from the doc's shown block (docs/01-spec.md:2338-2477). However, the newly-added sentence "Every variant and field that *is* shown below matches real source exactly" (docs/01-spec.md:2294) is **false**: two shown variants have field mismatches vs. real source:
+- `MissingGroupMember { group: GroupName, member: PackageId }` (docs/01-spec.md:2395) vs. real `member: String` (crates/callisto-graph/src/error.rs:125)
+- `WorkspaceVersionConflict { root_manifest: PathBuf, wanted: Vec&lt;(PackageId, Version)&gt; }` (docs/01-spec.md:2423) vs. real `details: String` (crates/callisto-graph/src/error.rs:167)
+
+These mismatches predate this session's diff (outside the touched lines), but the exactness guarantee is new text this fix added, so it now makes a false claim about pre-existing content.
+
+**2. §M.10 miscitation for CommitWalker — FIXED**
+Zero remaining instances of §M.10 cited as CommitWalker's own location. docs/01-spec.md:11154 now reads "`callisto_model::CommitWalker` (`callisto-model/src/commit.rs`) is a Layer 1 trait". The one remaining §M.10 near CommitWalker (docs/01-spec.md:4497) is a legitimate CommandRunner-analogy usage.
+
+**3. Fabricated §C.0 quote — FIXED**
+No quoted "deliberately absent" claim about callisto-vcs in §C.5. Real §C.0 (docs/01-spec.md:4228) only says "Deliberately absent: `callisto-graph`." — never mentions callisto-vcs. Current §C.5 text (docs/01-spec.md:4485-4487) states the fact plainly without quotation marks.
+
+**4. §G.4 → §G.6.1 citation — FIXED**
+docs/01-spec.md:2449 cites `load_changesets` (§G.6.1). Confirmed §G.6 "Aggregation" (docs/01-spec.md:6566) has subsection "§G.6.1 Loading changesets" (docs/01-spec.md:6568) where `load_changesets` is defined (docs/01-spec.md:6587).
+
+**5. Stale "resolved against cwd" text — FIXED**
+docs/01-spec.md:4467-4469 now says pathspecs are "resolved against whatever root `walker` itself carries internally... see the 'no `cwd` parameter' note below" — consistent with the real signature (crates/callisto-conventional/src/window.rs:23-27), which has no `cwd` parameter.
+
+**6. Overstated reordering claim — FIXED**
+No "reordered to match real source's actual declaration order exactly" claim anywhere. The only related sentence (docs/01-spec.md:2286) is narrowly scoped: "wrapper variants (`Locate` through `Command`) are pinned in their real declaration order" — verified this 13-variant subset's relative order does match real source exactly.
+
+**Fence balance:** `grep -c '^```' docs/01-spec.md` = 402, even, matches pre-session baseline.</result>
+<usage><subagent_tokens>96691</subagent_tokens><tool_uses>26</tool_uses><duration_ms>183602</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b51lpty8z</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/b51lpty8z.output</output-file>
+<status>completed</status>
+<summary>Background command "cd /Users/gabe/Projects/callisto
+cargo test -p callisto-graph 2&gt;&amp;1 | tail -40" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+# Autonomous loop check
+
+You're being invoked on a timer while the user is away or occupied. The point is to keep work moving forward without the user driving every step — finishing things they started, maintaining PRs they're building, catching problems before they come back to find them. You're a steward, not an initiator. The user set you loose on their work, and the value you provide comes from reliably advancing things they've already set in motion, not from finding new things to do.
+
+The key tension to navigate: the user trusts you enough to run autonomously, but that trust is easily lost. Acting on what the conversation already established is safe and valuable. Inventing new work or making irreversible changes without clear authorization erodes trust fast. When you're unsure whether something falls into "continuing established work" or "inventing new work," lean toward the former only when the transcript provides clear evidence the user wanted it done. If you find yourself reaching for justifications about why a push is probably fine, that's a signal to wait.
+
+## What to act on
+
+The current conversation is your highest-signal source — re-read the transcript above, since everything there is something the user was actively engaged with. The strongest signal is an in-progress PR you've been building together: review comments to address and resolve, failing CI checks to diagnose (and re-enqueue if they're flakes), merge conflicts to fix. The goal is to get the PR into a state where it's ready to merge pending only human review — the user shouldn't come back to find a PR blocked on things you could have handled. After that, look for unfinished implementation where the last exchange left something half-done, and explicit "I'll also..." or "next I'll..." commitments the conversation made and didn't honor. Weaker but still real: dangling questions you could now answer, verification steps that were skipped, edge cases that were mentioned but not handled, and natural continuations that don't require new decisions.
+
+If you find anything in this category, act on it — actually do the work, don't describe what could be done. Run the tests, don't say "you could run the tests." The whole point of autonomous operation is that work gets done while the user is away.
+
+When the conversation transcript has nothing left, the current branch's pull/merge request on the user's SCM is the next-best place to look. This is maintenance work — valuable, but lower priority than continuing the user's active work. Find the PR/MR for the current branch via the SCM's CLI, then check three things: CI status, unresolved review threads, and whether the branch has fallen behind the base. For failing CI, pull the failing job's logs and diagnose before acting — flaky-shaped failures (timeout, runner died, transient network) can be re-enqueued; real failures need a reproduction and a minimal fix. For unresolved review threads, fetch the comment, address the feedback, push, and resolve the thread via, for example, the GitHub GraphQL `resolveReviewThread` mutation (or the equivalent for whichever SCM the project uses). Before pushing anything, check whether someone else has pushed to the branch while you were working — if so, rebase (don't merge) to keep history clean.
+
+When CI is green, threads are clear, and there's idle time, sweeping the branch for issues is a good use of that time — bug-hunt or simplification passes catch problems before reviewers do, saving everyone a round-trip.
+
+If everything is genuinely quiet — no conversation work, no PR maintenance — say so in one sentence and stop. No summary of what you checked, no list of what you might do later. The user will see your message in the transcript when they come back; three consecutive "nothing to do" results means you should scale back to a quick CI check and stop, not narrate.
+
+## Repeated invocations
+
+If you see earlier autonomous checks in this conversation, adjust your scope accordingly. If a previous check left a question the user hasn't answered, the cost of acting depends on reversibility: for reversible actions (local edits, running tests), make your best call and proceed; for irreversible ones (pushing, deleting, sending), keep waiting — the cost of acting wrongly on something irreversible is much higher than the cost of waiting one more cycle. If three or more consecutive checks have found nothing actionable, things are quiet — do one quick CI/threads check and stop in a single line. Repeated "nothing to do" messages clutter the transcript and waste the user's attention when they come back to review.
+
+Read and analyze freely — understanding the state of things has no blast radius. Make edits and run tests when you're confident they continue established work. Commit and push only when you're clearly continuing something the user authorized, or when the work pattern makes the intent obvious — like fixing CI on a PR you've been building together.
+
+---
+
+# Autonomous loop tick (dynamic pacing)
+
+Run the autonomous check using the loop instructions established earlier in this conversation. If you cannot find them, treat this as a no-op tick.
+
+You scheduled this tick via the ScheduleWakeup tool (not a recurring cron). To keep the loop alive, call ScheduleWakeup again at the end of this turn with `prompt` set to the literal sentinel `<<autonomous-loop-dynamic>>` — otherwise the loop ends after this tick.
+
+If a Monitor is armed (check TaskList), keep `delaySeconds` at 1200–1800s — the Monitor is the wake signal and this is only the fallback heartbeat. If you were woken by a `<task-notification>`, handle the event before deciding whether to re-arm. To stop the loop, call ScheduleWakeup with `stop: true` and TaskStop the monitor (use TaskList to find its task ID if no longer in context).
+
+Use PushNotification when the loop can't move further without the user, or when something landed that they'd want to act on now: newly blocked on a decision you won't make alone, third straight tick with nothing to do, you're ending the loop, or a major update arrived (CI went red, a review changes the plan). Progress you made yourself isn't a trigger — the transcript covers that. One ping per state, not per tick.
