@@ -1,0 +1,10 @@
+<task-notification>
+<task-id>bvbtz0nnh</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/e9efeaba-9875-4c8b-ad83-aa1c06f21756/tasks/bvbtz0nnh.output</output-file>
+<status>completed</status>
+<summary>Background command "cd /Users/gabe/Projects/callisto
+cargo test -p callisto-graph --lib commands::status 2&gt;&amp;1 | tail -20
+echo "=== integration test binaries too ==="
+cargo test -p callisto-graph --test '*' status 2&gt;&amp;1 | tail -40" completed (exit code 0)</summary>
+</task-notification>
