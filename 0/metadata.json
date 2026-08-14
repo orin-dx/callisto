@@ -1,0 +1,75 @@
+{
+  "cli_version": "0.10.1-nightly.202608121908.a47cf0c70",
+  "checkpoint_id": "01KZYVKQBT6ZG52WN4WH3PXS6G",
+  "session_id": "ae412d01-e061-4047-918b-0d1df3d4d118",
+  "strategy": "manual-commit",
+  "created_at": "2026-08-14T00:44:09.545507Z",
+  "branch": "main",
+  "checkpoints_count": 9,
+  "files_touched": [
+    "crates/callisto-graph/src/matrix.rs",
+    "crates/callisto-model/src/diagnostic.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5",
+  "turn_id": "ece2d54acf6b",
+  "checkpoint_transcript_start": 7673,
+  "transcript_lines_at_start": 7673,
+  "compact_transcript_start": 1223,
+  "token_usage": {
+    "input_tokens": 34,
+    "cache_creation_tokens": 19994,
+    "cache_read_tokens": 9140797,
+    "output_tokens": 8083,
+    "api_call_count": 17
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_012rCYNRAZsYmqiF8NNi747S",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "canon:canon"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "ece2d54acf6b",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 1796,
+        "end": 1797,
+        "entry_ids": [
+          "8d95a7ab-50fc-4a4f-a5f0-51fa16450006"
+        ],
+        "tool_use_id": "toolu_012rCYNRAZsYmqiF8NNi747S"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_012rCYNRAZsYmqiF8NNi747S"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: canon:canon",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 127
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-08-14T00:44:08.959071Z",
+    "agent_lines": 54,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 54,
+    "total_lines_changed": 54,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
