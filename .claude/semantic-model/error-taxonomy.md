@@ -55,7 +55,6 @@ surface to the user as GraphError.
 |---|---|---|
 | E110 | `Read { path, message }` | Failed to read callisto.toml or moon.yml |
 | E111 | `ParseToml { path, message }` | Invalid TOML syntax in callisto.toml |
-| E112 | `ParseYaml { path, message }` | Invalid YAML syntax in moon.yml |
 | E116 | `InvalidChangesetsDir { dir }` | changesets.dir escapes workspace root |
 
 ### Without E-codes

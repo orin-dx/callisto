@@ -14,7 +14,7 @@
 
 `00-design.md` says *what callisto does and why*. This document says *what an implementer
 types*. It is exactly one level more concrete: every type, trait, function signature, error
-variant, algorithm, and fixture obligation for all nine crates in §15's layout, organised by
+variant, algorithm, and fixture obligation for all ten crates in §15's layout, organised by
 crate, with each element traced back to the design-doc section that motivates it.
 
 It is deliberately **not** a second design document. Where this spec and `00-design.md`
@@ -53,9 +53,9 @@ Every crate section below follows the same five-part shape, in this order:
 style. Within each crate section, subsections keep a stable crate-letter prefix — `M` for
 `callisto-model`, `F` for `callisto-format`, `CM` for `callisto-manifests`, `C` for
 `callisto-conventional`, `CL` for `callisto-changelog`, `G` for `callisto-graph`, `CLI` for
-`callisto-cli`, `MO` for `callisto-moon`, `CF` for `callisto-fixtures` — so that a
-cross-reference like §M.12.3 or §G.7.7 is unambiguous and stable regardless of where the
-crate's section lands in the document order.
+`callisto-cli`, `MO` for `callisto-moon`, `CF` for `callisto-fixtures`, `V` for
+`callisto-vcs` — so that a cross-reference like §M.12.3 or §G.7.7 is unambiguous and stable
+regardless of where the crate's section lands in the document order.
 
 Design-doc references are bare (§7.4, §13 invariant 15). This document's own references
 carry the crate letter (§M.12.3, §CM.4.4).
@@ -2087,7 +2087,89 @@ impl Report for TagReport      { const COMMAND: &'static str = "tag";      /* �
 impl Report for InitReport     { const COMMAND: &'static str = "init";     /* … */ }
 ```
 
-#### M.12.7 What is deliberately *not* a model type
+#### M.12.7 `MatrixReport` — §19, §G.11 `matrix`, §CLI.6.13
+
+`callisto matrix`'s report is keyed by package name rather than shaped as a per-`Package` list
+like every other report above, because two packages can independently populate the *same* two
+maps without either being "the" subject of the report — there is no natural single-array shape
+that avoids repeating each package's identity once per contributing field.
+
+```rust
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct MatrixReport {
+    pub schema_version: u32,
+    /// Keyed by `PackageId::name()`. `BTreeMap` gives lexicographic key order for free — no
+    /// separate sort step (AC-009). A package that declares neither `napi.targets` nor
+    /// `[tool.maturin].targets` contributes no entry; the map is `{}`, not omitted, for a
+    /// workspace with no platform packages at all (§13 invariant 14's schema-version-on-every-
+    /// output rule still needs a report to attach to).
+    pub platform_targets: BTreeMap<String, PlatformTargetGroup>,
+    /// Same keying rule, independent of `platform_targets` — a package may populate either map,
+    /// both, or neither.
+    pub runtime_versions: BTreeMap<String, Vec<RuntimeVersionEntry>>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub diagnostics: Vec<Diagnostic>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PlatformTargetGroup {
+    pub kind: PlatformTargetKind,
+    /// The raw manifest field name (`"napi.targets"` or `"[tool.maturin].targets"`) — used for
+    /// audit output only, never a filesystem path.
+    pub source: String,
+    /// Sorted ascending by `triple` before serialization (AC-009).
+    pub targets: Vec<PlatformTarget>,
+}
+
+/// Deliberately two variants. No `DotnetAot` — out of scope for this spec (§G.11's SPEC
+/// DECISION on escalation makes the same "not yet" call for the diagnostics that would
+/// accompany it). Deserializing an unrecognised variant string is a hard error, not a silent
+/// fallback to one of the two real ones.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum PlatformTargetKind { Napi, Maturin }
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PlatformTarget {
+    pub triple: String,
+    pub platform: String,
+    pub arch: String,
+    /// `null` for every non-Linux platform family; a string for every Linux triple (AC-014).
+    /// No `skip_serializing_if` — the key is always present, `null` or not, so a consumer never
+    /// has to distinguish "no abi" from "field omitted."
+    pub abi: Option<String>,
+    pub host_runner: String,
+    pub use_cross: bool,
+    /// Always `"native-" + triple` (AC-013).
+    pub artifact_name: String,
+    /// Workspace-root-relative.
+    pub package_dir: String,
+    pub package_name: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeVersionEntry {
+    pub ecosystem: RuntimeEcosystem,
+    /// `"engines.node"` or `"requires-python"`.
+    pub field: String,
+    /// The raw, unvalidated manifest string — `matrix` reports what a manifest declares, it
+    /// does not parse or validate the range grammar.
+    pub range: String,
+}
+
+/// Deliberately two variants, same reasoning as `PlatformTargetKind`. No `Dotnet`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum RuntimeEcosystem { Npm, Python }
+
+impl Report for MatrixReport { const COMMAND: &'static str = "matrix"; /* … */ }
+```
+
+#### M.12.8 What is deliberately *not* a model type
 
 §12.4's `published-packages` output — `[{name, version, ecosystem, publishedTo}]` — is
 **not** declared here. §12.4 is explicit that it "reflects what the *workflow* reported back
@@ -2335,6 +2417,19 @@ pub enum GraphError {
                 .map(|(id, v)| format!("{id} wants {v}")).collect::<Vec<_>>().join(", "))]
     WorkspaceVersionConflict { root_manifest: PathBuf, wanted: Vec<(PackageId, Version)> },
 
+    /// §G.11's `matrix` (AC-017): a package declares platform targets via both
+    /// `napi.targets` (`package.json`) and `[tool.maturin].targets` (`pyproject.toml`) in the
+    /// same directory. Exactly one source is allowed per package — accepting both would leave
+    /// no principled way to decide which list is authoritative, so it is refused rather than
+    /// silently preferring one.
+    #[error("package `{package}` declares platform targets via both `{napi_source}` and \
+             `{maturin_source}`; only one source is allowed")]
+    ConflictingPlatformTargetSources {
+        package: PackageId,
+        napi_source: &'static str,
+        maturin_source: &'static str,
+    },
+
     #[error(transparent)]
     Locate(#[from] LocateError),
     #[error(transparent)]
@@ -2426,7 +2521,7 @@ Notes on three rows worth calling out:
 | `MoonProjectLocator`, the `DependencyScope → DeclaredEdgeKind` mapping | `callisto-moon` | §15; pinned to a moon compatibility range and expected to break pre-1.0. |
 | `callisto.toml` parsing and the resolved-config type (`[[package-set]]`, `[[package]]`, `[[fixed-group]]`, `[[linked-group]]`, `[cascade]`, `[validation]`, `[registries.*]`, `pre-major-inference`) | `callisto-graph::config` (§G.5) | §14. This crate declares `Package` as the *resolved* product, plus `GroupName`/`ConfigKey` so decisions can be attributed without depending on the parser. Group membership is a relation over packages, not a field on one (§M.6.1). |
 | `.callisto/plan.json` | `callisto-cli` | §7.6 step 10 — `.gitignore`d, never load-bearing (P2, §13 inv. 4), and explicitly **not** the versioned contract (decision doc rule 4). `PublishPlan` is the stdout shape; whether a copy is also dropped on disk is an I/O concern. |
-| `published-packages` (§12.4) | `orin-dx/callisto-action` | §M.12.7. |
+| `published-packages` (§12.4) | `orin-dx/callisto-action` | §M.12.8. |
 | `refs/callisto/pre-cursor/<PackageId>` (§8) | `callisto-conventional` (§C.6) | A git ref namespace, not a value type. Its *name* is derived from `PackageId::display_name`, so this crate supplies the string; the ref itself is I/O. |
 
 ### M.16 Index of `[SPEC DECISION]` flags
@@ -5151,9 +5246,11 @@ callisto-graph/
     ├── changed.rs           # §G.9.3 — changed_since_last_tag, §6.3 validation
     ├── plan.rs              # §G.10.1 — VersionPlan
     ├── apply.rs             # §G.10.2 — apply_version_plan
+    ├── matrix.rs             # §G.11 `matrix` — manifest parsing, triple/role join, the
+    │                        #   18-entry hostRunner/useCross table (own, not napi.rs's)
     ├── commands/            # §G.11 — one pure compute fn per subcommand
     │   ├── status.rs  version.rs  publish.rs  snapshot.rs
-    │   └── validate.rs  tag.rs  pr_body.rs  init.rs
+    │   └── validate.rs  tag.rs  pr_body.rs  init.rs  matrix.rs
     └── error.rs             # §G.12 — GraphError, ConfigError (LocateError in locate/)
 ```
 
@@ -8027,6 +8124,7 @@ pub fn create_tags(ws: &…, plan: &PublishPlan) -> Result<TagReport, GraphError
 pub fn compose_pr_body<I: SeverityInference>(ws: &…, inference: &I, opts: &PrBodyOptions)
     -> Result<ComposePrBodyReport, GraphError>;
 pub fn init(ws: &…, opts: &InitOptions) -> Result<InitReport, GraphError>;
+pub fn matrix(ws: &…, opts: &MatrixOptions) -> Result<MatrixReport, GraphError>;
 
 #[derive(Clone, Debug, Default)] pub struct StatusOptions {
     pub strict: bool, pub strict_graph: bool,
@@ -8049,6 +8147,7 @@ pub fn init(ws: &…, opts: &InitOptions) -> Result<InitReport, GraphError>;
     pub existing_body: Option<String>, pub labels: Vec<String>, pub branch: Option<String>,
 }
 #[derive(Clone, Debug, Default)] pub struct InitOptions { pub yes: bool }
+#[derive(Clone, Debug, Default)] pub struct MatrixOptions { pub package: Option<String> }
 ```
 
 **Strictness escalation is one function, applied at the command boundary.** Graph construction
@@ -8102,7 +8201,7 @@ pub fn escalate(diagnostics: &mut [Diagnostic], strict: bool, strict_graph: bool
 > so the write and read sides cannot drift — §13 invariant 25's discipline applied to a third
 > identity-shaped mapping.
 
-Four of these have behaviour worth pinning here rather than leaving to the milestone:
+Five of these have behaviour worth pinning here rather than leaving to the milestone:
 
 **`plan_publish` (§9.2, §13 inv. 7/8/20).** The release set is the set of packages whose
 on-disk version differs from their last release tag's version (P2: stateless, compare disk to
@@ -8235,6 +8334,51 @@ callisto needs no arbitration mechanism.
 > `SnapshotReport.version` (§M.12.5) carries this one value; `packages[]` carries the affected
 > names and ecosystems, no per-package version, for the same reason.
 
+**`matrix` (§19, §M.12.7, §CLI.6.13).** Read-only and on-demand: unlike the four functions above, it
+does not participate in the release cycle, consumes no changesets, and touches no `TagIndex`.
+For each package in scope (all registered packages, or exactly one under `opts.package`, which
+is `Err(GraphError::UnknownPackage)` if the name doesn't match anything — checked before any
+manifest is read, so an unknown `--package` never reaches a parse), it reads at most one
+`package.json` and one `pyproject.toml`, shares each parsed value between the platform-target
+and runtime-version derivations for that package (§G.1's P2 — one read, not one per
+consumer), and produces two independent map entries: `platformTargets[name]` from
+`napi.targets`/`[tool.maturin].targets`, and `runtimeVersions[name]` from
+`engines.node`/`requires-python`. A package can contribute to either map, both, or neither; the
+two are computed and reported independently.
+
+A platform-target entry's `targets[]` comes from a per-triple join of two independently-pinned
+tables: `napi.rs`'s `triple_to_role` (platform/arch/abi — shared with §G.4.5's unrelated napi
+platform auto-derivation, which this module does not otherwise touch) and a table of exactly 18
+`(hostRunner, useCross)` pairs new to this module (§G.11's justification: `ManifestRole::Platform`
+carries no CI-scheduling information, so it cannot be derived from the shared table alone).
+`artifactName` is always `"native-" + triple`. A triple absent from *either* table is excluded
+from `targets[]` and reported as an `UnrecognisedPlatformTriple` diagnostic naming the triple and
+the package — never a hard error, since one unrecognised triple in a declaration must not hide
+the ones that were recognised. A triple repeated within one package's own declaration is
+likewise not an error: the duplicate is dropped (first occurrence wins) and reported as
+`DuplicatePlatformTriple`, since a hand-maintained `napi.targets` array is exactly the kind of
+list a copy-paste duplicates without anyone noticing, and two identical `PlatformTarget` entries
+would mean two identical CI jobs racing on the same artifact upload.
+
+A package declaring platform targets via **both** `napi.targets` and `[tool.maturin].targets` —
+even as an explicitly empty array on one side — is `Err(GraphError::ConflictingPlatformTargetSources)`
+(AC-017): there is no principled way to prefer one source over the other, so neither is used.
+A runtime-version entry orders `engines.node` before `requires-python` when a package declares
+both (AC-005b) — arbitrary as a tiebreak, but fixed so `--format json` output is deterministic
+run to run.
+
+> `[SPEC DECISION, not in 00-design.md: neither `UnrecognisedPlatformTriple` nor
+> `DuplicatePlatformTriple` carries an `escalated_by`, and `matrix`'s command handler never
+> calls §G.11's `escalate`.]` Every other command function's diagnostics are subject to
+> `--strict`/`--strict-graph` promotion (§G.11's opening paragraph); `matrix` has neither flag
+> on `MatrixOptions` at all. `matrix` is a read-only discovery report consumed by CI tooling
+> that expects a matrix even when some packages have manifest quirks — a workspace with one
+> unrecognised triple should still emit a usable matrix for every other package, not fail the
+> whole CI run on the strength of an unregistered target platform. Malformed manifest *syntax*
+> (§AC-010/010b/010c) is still a hard `Err`, since there is no report to degrade to once a
+> `package.json`/`pyproject.toml` doesn't parse at all — the diagnostic path exists specifically
+> for the "each half parsed fine, this platform triple is merely unrecognised" case.
+
 ### G.12 Errors — `error.rs`
 
 `LocateError` and `GraphError` are declared here, verbatim as pinned in §M.13.3. That text is
@@ -8258,9 +8402,6 @@ pub enum ConfigError {
 
     #[error("`{path}` is not valid TOML: {message}")]
     ParseToml { path: PathBuf, message: String },
-
-    #[error("`{path}` is not valid YAML: {message}")]
-    ParseYaml { path: PathBuf, message: String },
 
     /// §14. A set that matches nothing is almost always a typo'd glob, and silently ignoring
     /// it means a whole directory of packages never gets versioned.
@@ -8333,7 +8474,8 @@ governs it — the concrete form of §13 invariant 28 applied to diagnostics.
 | `ChangelogSectionNotFound` | §G.11 `plan_publish` (§CL.7.1, v0.2) | — | — |
 | `ChangesetsConfigKeyDropped` | `init` (§18 Q4, v0.4) | — | — |
 | `BareRuleMatchesMultipleEcosystems` | §G.4 walk | — | — |
-| `UnrecognisedPlatformTriple` | `matrix` module (§SPEC-004) | — | — |
+| `UnrecognisedPlatformTriple` | §G.11 `matrix` | — | — |
+| `DuplicatePlatformTriple` | §G.11 `matrix` | — | — |
 
 `RangeNotRoundTrippable` and `CatalogSpecNotRewritten` carry no `escalated_by`: §13 invariant 15
 makes leave-alone-and-warn the *correct* outcome, not a tolerated one, so there is no flag that
@@ -8358,6 +8500,7 @@ should turn it into a failure.
 | §6.3's empty-changeset *validation* (the check, the diagnostic, `allow-empty-changesets`) | | ✓ | |
 | `commands::status`, `plan_version`, `init`, `apply` | ✓ | | |
 | `commands::plan_publish`, `validate`, `create_tags`, `compose_pr_body`, `plan_snapshot` | | ✓ | |
+| `commands::matrix` (§G.11, §CLI.6.13) | | | ✓ |
 
 §17 v0.1's "all six edge-kind/coverage rows ship here since neither peer-escalation nor
 dev-none is napi-specific" is why `cascade.rs` is complete at v0.1 while `groups.rs` is not.
@@ -8511,6 +8654,9 @@ it, which is exactly what a read-only `status` should do.
 | 34 | §G.11 | `compose-pr-body` computes real prospective versions via `plan_version` instead of rendering `## Unreleased`. |
 | 35 | §G.11 | Strictness escalation is one `escalate` call at the command boundary; `--strict`/`--strict-graph` exist on `status` and `version`, not only `validate`. |
 | 36 | §G.7.4/§G.8.3 | `bump_target` delegates to `fixed_group_target` for every fixed-group member, which is what realises §7.5's new-member force-set. |
+| 37 | §G.11 | `matrix` joins two independently-pinned tables per triple (`napi.rs`'s shared platform/arch/abi table, and a new 18-entry hostRunner/useCross table); a triple absent from either is excluded and diagnosed, never a hard error. |
+| 38 | §G.11 | `matrix`'s `UnrecognisedPlatformTriple`/`DuplicatePlatformTriple` diagnostics carry no `escalated_by`, and `MatrixOptions` has no `--strict`/`--strict-graph` — a discovery report degrades gracefully rather than failing CI over one unregistered platform. |
+| 39 | §G.11 | A package declaring both `engines.node` and `requires-python` orders the npm entry before the python entry in `runtimeVersions[]`, fixed for deterministic `--format json` output. |
 
 ### G.17 Deliberately not owned by this crate
 
@@ -8656,6 +8802,7 @@ pub enum Command {
     ComposePrBody(ComposePrBodyArgs),
     Tag(TagArgs),
     Completions(CompletionsArgs),
+    Matrix(MatrixArgs),
 }
 ```
 
@@ -8740,7 +8887,8 @@ pub fn load_workspace<'a>(
     global: &GlobalArgs,
     runner: &'a CliCommandRunner,
 ) -> Result<Workspace<'a, CliCommandRunner, ManifestWalkResolver>, CliError> {
-    let start = global.cwd.canonicalize().map_err(CliError::from)?;
+    let start = dunce::canonicalize(&global.cwd)
+        .map_err(|source| CliError::Io { source, path: Some(global.cwd.clone()) })?;
     let root = callisto_graph::locate::find_workspace_root(&start)?;
     let locator = callisto_graph::locate::IgnoreWalkLocator::new(&root);
     Ok(Workspace::load(root, &locator, runner)?)
@@ -9221,6 +9369,31 @@ mirrors `Report::COMMAND`'s role for a consumer that multiplexes several invocat
 What these envelopes do *not* get is a §12.6 golden file: they are unfixtured by the same
 decision that keeps them out of §12.5, and a future edit is free to add fields to them without
 that being a contract change.
+
+#### CLI.6.13 `matrix` — §19, §G.11, §M.12.7
+
+```rust
+#[derive(clap::Args, Clone, Debug, Default)]
+pub struct MatrixArgs {
+    /// Restrict output to one registered package's name (`PackageId::name()`). An unknown name
+    /// is `Err(GraphError::UnknownPackage)`, checked before any manifest is read (AC-007).
+    #[arg(long)]
+    pub package: Option<String>,
+}
+```
+
+`load_workspace` → `callisto_graph::commands::matrix(&ws, &MatrixOptions { package: args.package.clone() })`
+→ `emit_report`. No `--strict`/`--strict-graph`: §G.11's SPEC DECISION 38 makes this deliberate,
+not an oversight — `matrix` is a read-only discovery report, not a release-gating command, and
+its diagnostics are unconditionally `Warning`. `--format text` and the bare invocation (no flags
+at all, since `text` is `GlobalArgs::format`'s default) render identically (AC-003b/AC-008).
+
+Two failure modes are worth distinguishing for a caller: an unrecognised platform triple or a
+duplicate triple within one package's declaration never fails the command (§G.11) — the package
+still contributes whatever it validly declares, plus a diagnostic; a package declaring platform
+targets via *both* `napi.targets` and `[tool.maturin].targets`, or a manifest that fails to parse
+at all, is `Err` (AC-017, AC-010/010b/010c) — there is no partial matrix to fall back to once a
+source manifest itself is unreadable.
 
 ### CLI.7 Errors and exit codes
 
@@ -10499,7 +10672,7 @@ lives where the "asserted in" column says.
 
 Two lists. **§11.1** collects every `[SPEC DECISION, not in 00-design.md: …]` marker, by crate,
 so they can be reviewed as a batch rather than found in prose. **§11.2** collects the
-reconciliations made while merging the nine independently-drafted crate specs into this
+reconciliations made while merging the ten independently-drafted crate specs into this
 document — cases where two drafts disagreed and one shape had to win.
 
 Neither list changes anything in `00-design.md`. Every item is either filling a gap the design
@@ -10602,6 +10775,9 @@ feature-gated `callisto-cli` edge.
 **`callisto-fixtures`** — 2 decisions, both introduced during assembly and listed in §11.2
 (the license/dependency correction, and the `graph` feature split).
 
+**`callisto-vcs` (§V.9)** — 0 decisions: written directly from shipped source rather than
+from a design-doc gap, so no open reading needed resolving.
+
 ### 11.2 Reconciliations made while assembling this document
 
 Each row is a case where two independently-drafted crate specs described the same thing
@@ -10656,6 +10832,333 @@ be guessing:
    tolerance. Until then, P5's refuse-rather-than-guess applies.
 
 
+## 12. `callisto-vcs`
+
+**Purpose.** One `GitDataSource` trait, two backends, and a selector that picks between them
+per operation so every other crate that needs Git — `callisto-graph` (tags, changed-since,
+publish SHAs) and `callisto-conventional` (commit-severity inference windows) — calls one API
+regardless of whether native `gix` is available on the running target.
+
+**License:** MIT/Apache-2.0 (§16 — despite sitting below AGPL `callisto-graph` in the
+dependency graph, this crate depends on nothing but `callisto-model`, so nothing AGPL leaks
+into it; the permissive/AGPL boundary is a one-way constraint on what a permissive crate may
+depend on, not on who may depend on a permissive crate).
+**Milestone:** v0.1 (§17 — repository discovery and tag/commit reads are load-bearing for
+`status`'s `last_tag_for`/`changed_since_last_tag` from the first shipped milestone).
+
+### V.0 Dependencies and boundaries
+
+| Edge | Kind | Why |
+|---|---|---|
+| `callisto-vcs → callisto-model` | normal | `ApplyPermit`, `CommandError`, `CommandRunner`, `CommitRecord`, `CommitSha`, `CommitWalkError`, `CommitWalker`, `TagName` |
+| `gix` | normal, `cfg(not(target_arch = "wasm32"))` only | native backend (§V.4) |
+| `globset` | normal | tag-glob matching, shared identically by both backends (§V.4, §V.5) |
+| `dunce` | normal | UNC-prefix-stripped canonicalization before `gix::discover` (§V.4) |
+| `callisto-model` (`test-util` feature) | **dev** | `ApplyPermit::force_for_tests` — tests mint a write permit directly, with no dry-run flag to consult |
+| `tempfile` | **dev** | temporary repository fixtures built with the real `git` binary (§V.8) |
+
+**Deliberately absent:** `callisto-graph`, `callisto-manifests`, `callisto-format`. This crate
+has no concept of a `Package`, a manifest, or a changeset — it answers exactly two kinds of
+question, "what does history/refs say" and "write this ref," using only `CommitSha`/`TagName`
+as vocabulary. `callisto-moon` never depends on this crate at all (not even for the shell
+backend): gix's mmap-based object reads hit `ENOSYS` under `wasm32-wasip1` (confirmed by a
+2026 probe, `ARCHITECTURE.md`'s §"In-Process VCS Engine"), so `GitRepository::discover` is
+`cfg`-gated out entirely on that target and would
+contribute nothing `callisto-moon` could use — the WASM extension's own exec seam calls
+`CommandRunner` directly against moon's `exec_command` host function instead, without going
+through this crate's `ShellGit` wrapper.
+
+**What this crate is not responsible for:** deciding *which* ref format a tag name should take
+(`tag_template` resolution is `callisto-model`'s `last_tag_for`, §M.9.4, plus
+`callisto-graph`'s `git tag --list` glob execution, §G.9.1 — this crate only ever receives an
+already-resolved literal name or glob string), and deciding *when* a tag should be created
+(§9.1's "never at `version` time" rule is enforced by callers; `create_tag` will happily create
+a tag the instant it's called).
+
+### V.1 Module layout
+
+```
+callisto-vcs/
+├── Cargo.toml   # deps: callisto-model, thiserror, miette, globset, dunce; gix (non-wasm32
+│                  target only). dev-deps: callisto-model (test-util), tempfile.
+└── src/
+    ├── lib.rs     # VcsError, GitCommit alias, GitVcsProvider, GitDataSource, GitRepository,
+    │                CommitWalker bridge (§V.7)
+    ├── access.rs  # GitAccess — per-operation native/shell selection (§V.6)
+    └── shell.rs   # ShellGit — CommandRunner-shelled backend (§V.5)
+```
+
+### V.2 Errors — `VcsError` (`lib.rs`)
+
+```rust
+#[derive(Clone, Debug, thiserror::Error, miette::Diagnostic, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum VcsError {
+    #[error("failed to discover Git repository at `{path}`: {message}")]
+    #[diagnostic(code(E050), help("Ensure target directory is inside a valid Git repository."))]
+    RepoNotFound { path: PathBuf, message: String },
+
+    #[error("git error: {0}")]
+    #[diagnostic(code(E051))]
+    Git(String),
+
+    #[error("reference `{ref_name}` was not found")]
+    #[diagnostic(code(E052), help("Check if reference or tag exists in local or remote Git refs."))]
+    RefNotFound { ref_name: String },
+
+    #[error("tag glob pattern `{pattern}` is not a valid glob: {message}")]
+    #[diagnostic(code(E053), help("Fix the glob syntax or use a literal tag name."))]
+    InvalidGlob { pattern: String, message: String },
+
+    /// Wraps a `CommandError` surfaced by the shell backend — e.g. `git` itself couldn't be
+    /// spawned. Kept `transparent` so callers that only care about the underlying
+    /// `CommandError` can match through it regardless of which backend served the call.
+    #[error(transparent)]
+    Command(#[from] CommandError),
+}
+```
+
+`callisto-graph` wraps this transparently (`GraphError::Vcs`, §error-taxonomy — no dedicated
+E-code of its own; the four codes above are `VcsError`'s own and survive unchanged through the
+transparent wrap). `E050`–`E053` is this crate's own contiguous block, chosen not to collide
+with `callisto-model`'s or `callisto-graph`'s ranges (§error-taxonomy).
+
+**`RefNotFound` is not always an error at the trait level.** `GitDataSource::resolve_commit`
+returns `Ok(None)` for an unresolvable ref — a caller-visible "no bound" signal, not a failure.
+`VcsError::RefNotFound` exists for the one place resolution failure *is* fatal:
+`GitDataSource::commits_since`'s `since_ref: Some(r)` where `r` fails to resolve (§V.4) — the
+distinction matters because a caller that explicitly bounded its walk must never silently fall
+back to unbounded history (§V.4's regression note).
+
+### V.3 `GitDataSource` — the unified access trait (`lib.rs`)
+
+```rust
+pub type GitCommit = callisto_model::CommitRecord;
+
+pub trait GitDataSource {
+    fn head_sha(&self) -> Result<CommitSha, VcsError>;
+    fn list_tags(&self, glob: Option<&str>) -> Result<Vec<TagName>, VcsError>;
+    fn resolve_commit(&self, refname: &str) -> Result<Option<CommitSha>, VcsError>;
+    fn commits_since(&self, since_ref: Option<&str>, pathspecs: &[PathBuf])
+        -> Result<Vec<GitCommit>, VcsError>;
+    fn create_tag(&self, name: &str, target_sha: &CommitSha, message: Option<&str>,
+        permit: &ApplyPermit) -> Result<(), VcsError>;
+    fn create_floating_major(&self, major_name: &str, target_sha: &CommitSha,
+        permit: &ApplyPermit) -> Result<(), VcsError>;
+}
+```
+
+`GitCommit` is a type alias for `callisto_model::CommitRecord`, not a redeclaration — a commit
+crosses the `CommitWalker` seam (§V.7, Layer 1) without a conversion, and there is exactly one
+definition of "what a commit looks like" in the workspace. Three implementors: `GitRepository`
+(§V.4), `ShellGit` (§V.5), and `GitAccess` (§V.6, the one callers actually construct).
+`create_tag`/`create_floating_major` take an `ApplyPermit` (§M.10) because they write a ref; a
+dry run mints no permit and so cannot reach either call.
+
+`list_tags`'s `glob` parameter is matched with `globset::Glob` — **identically** by both
+backends (§V.4 filters `gix`'s own reference iterator locally; §V.5 always fetches the
+*unfiltered* `git tag --list` and filters locally too, deliberately never delegating to `git
+tag --list <pattern>`'s own, different glob dialect) — so tag selection is byte-identical
+regardless of which backend served the request. A pattern that fails to compile is
+`Err(VcsError::InvalidGlob)`, never a silent "match everything," since a malformed
+`tag_template`-derived glob silently matching every tag in the repo would let `last_tag_for`
+(§M.9.4) pick an unrelated package's tag.
+
+### V.4 `GitRepository` — native `gix` backend (`lib.rs`)
+
+```rust
+pub struct GitRepository { /* wraps gix::Repository, cfg(not(wasm32)) only */ }
+
+impl GitRepository {
+    pub fn discover(path: impl AsRef<Path>) -> Result<Self, VcsError>;
+    pub fn head_sha(&self) -> Result<CommitSha, VcsError>;
+    pub fn list_tags(&self, glob_pattern: Option<&str>) -> Result<Vec<TagName>, VcsError>;
+    pub fn resolve_commit(&self, refname: &str) -> Result<Option<CommitSha>, VcsError>;
+    pub fn commits_since_with_pathspec(&self, since: Option<&CommitSha>, pathspecs: &[PathBuf])
+        -> Result<Vec<GitCommit>, VcsError>;
+    pub fn create_tag(&self, name: &str, target_sha: &CommitSha, message: Option<&str>,
+        permit: &ApplyPermit) -> Result<(), VcsError>;
+    pub fn create_floating_major(&self, major_name: &str, target_sha: &CommitSha,
+        permit: &ApplyPermit) -> Result<(), VcsError>;
+}
+```
+
+`discover` runs `path` through `dunce::canonicalize` first (falling back to the raw path if
+canonicalization itself fails) before handing it to `gix::discover` — the same UNC-stripping
+concern as every other canonicalization site in the workspace. Every method is `cfg`-split
+in its body: the non-`wasm32` half does the real `gix` call; the `wasm32` half is either an
+always-`Err` (`discover`, `create_tag`, `create_floating_major` — no meaningful degraded
+behavior for a write or for the root discovery call itself) or a harmless always-empty/`Ok(None)`
+(`list_tags`, `resolve_commit` — a caller on that target never actually reaches these, since
+`discover` already failed upstream, but the bodies stay total rather than panicking).
+
+**`resolve_commit` treats an unresolvable ref as `Ok(None)`, not `Err`** — chained `let...else`
+steps (rev-parse → object → peel-to-commit) each degrade to `None` on failure. This is a
+deliberate two-tier contract with `commits_since`: an *implicit* absence of a bound
+(`since_ref: None`) and an *explicit* bound that fails to resolve are different situations, and
+only `GitDataSource::commits_since` (not `resolve_commit` itself) is where the second case
+becomes `Err(VcsError::RefNotFound)`.
+
+**Regression fixed by this shape: no silent unbounded fallback.** An earlier version of this
+method resolved `since_ref` *internally* and, on a resolution failure, fell through to walking
+the entire history unbounded — a correctness bug (already-released commits could re-surface
+into changelog/severity inference) masquerading as graceful degradation. The fix routes
+`since_ref` resolution through `resolve_commit` and an explicit `Ok(None) =>
+Err(RefNotFound)` step in `commits_since`, so an unresolvable *explicit* bound is always
+surfaced as an error; `since_ref: None` (no bound requested at all) is unaffected.
+
+`commits_since_with_pathspec` walks `gix::Repository::rev_walk` from `HEAD`, excluding every
+SHA reachable from `since` (computed as its own full walk, collected into a `HashSet`, so
+membership is checked with `continue` rather than terminating the outer walk with `break` — a
+topological walk can visit `since` before it has emitted every commit on a branch that
+diverged *before* `since`, and a `break` would silently drop those still-queued commits; this
+was a real bug, pinned by `test_commits_since_with_pathspec_includes_pre_tag_branch_commits`).
+Merge commits (more than one parent) are always skipped, matching `git log --no-merges`.
+Path-scoping diffs each commit's tree against its first parent (or the empty tree, for a root
+commit) with `track_rewrites(None)` — a rename is reported as a separate `Deletion`+`Addition`
+rather than one `Rewrite`, and either half matching a pathspec counts as "touched," which is
+also why a file moved *out of* a matching directory still shows that commit as touching it.
+Commit message CRLF sequences are normalized to `\n` in both `summary` and `body`.
+
+### V.5 `ShellGit` — `CommandRunner`-shelled backend (`shell.rs`)
+
+```rust
+pub struct ShellGit<'r> { /* runner: &'r dyn CommandRunner, root: PathBuf */ }
+
+impl<'r> ShellGit<'r> {
+    pub fn new(runner: &'r dyn CommandRunner, root: impl Into<PathBuf>) -> Self;
+}
+```
+
+Implements `GitDataSource` by shelling exactly the `git` subcommands each operation needs,
+consolidating five previously independent hand-rolled fallbacks (`callisto-graph`'s
+`changed.rs`, `tags.rs`, `commands/tag.rs`, `aggregate.rs`, and `callisto-conventional`'s
+`window.rs`). Works on every target, including `wasm32`, since it never touches `gix`.
+
+| Operation | Shell command |
+|---|---|
+| `head_sha` | `git rev-parse HEAD` |
+| `list_tags` | `git tag --list`, filtered locally with `globset` (§V.3) |
+| `resolve_commit` | `git rev-parse --verify --quiet <ref>^{commit}` — non-zero or empty stdout is `Ok(None)`, never `Err` |
+| `commits_since` | `git log --no-merges --format=<RS>%H<US>%B <since>..HEAD\|HEAD [-- <pathspecs>]` |
+| `create_tag` | `git tag [-a -m <message>] -- <name> <sha>` |
+| `create_floating_major` | `git tag -f -- <major_name> <sha>` |
+
+`commits_since` deliberately does **not** pre-resolve `since_ref` with a separate `rev-parse`
+round-trip: an unresolvable `since_ref` already makes `git log <since_ref>..HEAD` itself exit
+non-zero, which the method surfaces as `Err(VcsError::Git(..))` exactly like any other `git
+log` failure — one shell call either way, and the same no-silent-unbounded-walk guarantee
+§V.4 documents for the native backend, achieved by a different mechanism (a failing command
+instead of a resolved-then-checked ref).
+
+`--format=` uses two control characters as delimiters, never present in ordinary commit text:
+`\u{1e}` (record separator) immediately before each commit's SHA, and `\u{1f}` (field
+separator) between the SHA and the raw `%B` message body. This makes a commit message
+containing literal newlines — or even one that happened to contain the record separator
+itself, if a commit author somehow typed it — unambiguous to split back into records, which a
+newline- or blank-line-based delimiter could not guarantee. Parsing then splits each raw
+message on its *first* blank line into `summary`/`body`, mirroring how `gix`'s own
+commit-message parsing splits title from body on the native path, so both backends hand
+callers byte-identical shapes. `--` before pathspecs and before `name`/`target_sha` in every
+tag-writing command marks the end of option parsing, so a value that happens to start with `-`
+(defended against upstream by `is_valid_git_ref_name`, but defended here too) is never
+misread as a flag.
+
+### V.6 `GitAccess` — backend selection (`access.rs`)
+
+```rust
+pub struct GitAccess<'r> { /* native: Option<GitRepository>, shell: ShellGit<'r> */ }
+
+impl<'r> GitAccess<'r> {
+    pub fn discover(root: impl AsRef<Path>, runner: &'r dyn CommandRunner) -> Self;
+}
+```
+
+The type every production caller outside this crate actually constructs — exclusively within
+`callisto-graph` (§G.9, and the command handlers §G.11 documents). `callisto-conventional`
+touches `GitAccess` only inside its own test code — its production `infer_severity` and
+`fetch_commits` take `&dyn CommitWalker` directly and link against no VCS crate at all, per
+their own doc comments in source (`crates/callisto-conventional/src/{infer,window}.rs`; §C.5
+and §C.7 of this document still show an older `CommandRunner`-based signature for both and
+are tracked as stale — see the backlog item this finding produced). `discover`
+never fails: it attempts native `gix` discovery and keeps the `Option<GitRepository>` result
+either way, while unconditionally preparing a `ShellGit` against the same root as the
+fallback (or sole) backend. A discovery failure — not a repo, or `wasm32` where `gix` is
+excluded from the dependency set entirely — just means every operation on this `GitAccess`
+runs through the shell.
+
+**Fallback policy differs by operation category, deliberately:**
+
+- **Reads** (`head_sha`, `list_tags`, `resolve_commit`, `commits_since`): fall back to the
+  shell backend whenever native `gix` errors for *any* reason — failed discovery as well as a
+  discovered repo's own operation failing. Retrying a read through the shell can only help: at
+  worst it fails too and the error propagates from there instead.
+- **Writes** (`create_tag`, `create_floating_major`): fall back to the shell *only* when
+  native `gix` was never available to begin with (discovery failed). If a repo *was*
+  discovered, its result — success or failure — is authoritative and returned as-is,
+  never retried through the shell. Retrying a failed mutation through a second, different
+  code path risks masking a genuine failure (e.g. "tag already exists") or double-applying a
+  mutation the first attempt partially completed — a risk read-only retries don't carry.
+
+`GitAccess` implements `GitDataSource` by trying `self.native`'s corresponding method first
+(reads: `if let Ok(..) = ...`, falling through on any `Err`; writes: an unconditional early
+`return` when `self.native` is `Some`, regardless of whether the call itself succeeds) and
+falling back to `self.shell` only in the cases the policy above allows.
+
+### V.7 `CommitWalker` integration — bridging to Layer 1 (`lib.rs`)
+
+```rust
+impl From<VcsError> for CommitWalkError { /* narrows to the Layer 1 vocabulary, below */ }
+```
+
+`callisto_model::CommitWalker` (§M.10) is a Layer 1 trait — it must not know `VcsError` exists,
+since `callisto-model` depends on no `callisto-*` crate (§M.5). This crate bridges the gap:
+`CommitWalkError::Command` and `CommitWalkError::RefNotFound` survive the narrowing as
+themselves (the two distinctions Layer 1 callers branch on); every other `VcsError` variant —
+`RepoNotFound`, `Git`, `InvalidGlob` — is gix- or repository-specific with no Layer 1
+equivalent, so it collapses into `CommitWalkError::Backend { message }` carrying the original
+`Display` rendering, losing nothing a user would see. `GitAccess`, `GitRepository`, and
+`ShellGit` each get a `CommitWalker` impl whose body is identical (delegate `commits_since`,
+map the error through the `From` above) — written via a macro rather than a blanket `impl<T:
+GitDataSource> CommitWalker for T`, since `CommitWalker` is foreign to this crate and a
+blanket impl over an uncovered type parameter is forbidden by Rust's orphan rules.
+
+### V.8 Fixture obligations
+
+Per §12.6's "broader than JSON shape alone" (this crate has no JSON output of its own — its
+data feeds `callisto-graph`'s tag/commit logic, not stdout directly):
+
+1. **Backend-parity corpus.** Every `GitDataSource` operation exercised against a real
+   temporary repository (built with the real `git` binary, not mocked) through both
+   `GitRepository` directly and `ShellGit` against a `CommandRunner` shelling that same real
+   `git`, asserting identical results — this is what makes §V.3's "byte-identical regardless
+   of backend" claim a tested property, not an aspiration.
+2. **`GitAccess` selection corpus.** A poisoned `CommandRunner` (panics/errors on any
+   invocation) proves a real-repo read never touches the shell; a non-repo root with a
+   call-counting `CommandRunner` proves exactly one shell call serves the read fallback; a
+   real repo with a failing write (`create_tag` on an already-existing name) proves the
+   failure propagates without a rescue attempt through the poisoned shell.
+3. **`commits_since` regression corpus.** The pre-tag-branch-commit scenario (§V.4) and the
+   ref-not-found-must-error scenario (§V.4, §V.5), each proven independently through both
+   backends.
+4. **Glob-parity corpus.** The same malformed glob pattern against both backends, asserting
+   `Err(VcsError::InvalidGlob)` from each — not "some" error, the specific variant, since a
+   caller pattern-matches on it.
+5. **`wasm32-wasip1` build check.** This crate must compile for that target (native `gix`
+   `cfg`'d out, `GitRepository::discover` always `Err`) — no runtime test suite, since
+   `callisto-moon` never constructs `GitRepository`/`GitAccess` directly (§V.0); a build
+   failure here would still indicate a real problem (an accidental non-`cfg`-gated `gix` call).
+
+### V.9 Index of `[SPEC DECISION]` flags
+
+None. Every shape and policy in this section — the four `VcsError` codes, the read/write
+fallback-policy split, the `CommitWalker` narrowing rule — is either pinned directly by
+`00-design.md` §9.4/§13 or is existing, shipped behavior with no open reading of the design
+doc left to resolve; this crate's section was written directly from source (§1's "traced back
+to source" standard) rather than from a design-doc gap requiring a documented choice.
+
+---
+
 ## 13. Callisto v1.0 Production Hardening & Moon Alignment
 
 This section documents the formal specification additions for Callisto's v1.0 initial release, incorporating architectural patterns from `moonrepo` (`moon`) and modern Rust CLI engineering standards.
@@ -10682,29 +11185,23 @@ This section documents the formal specification additions for Callisto's v1.0 in
 
 ### 13.6 Native VCS Engine Architecture (`callisto-vcs` & `gix`)
 
-**Purpose.** In-process Git operations powered by `gix` (gitoxide v0.72), eliminating subprocess fork/exec overhead for repository discovery, ref matching, commit history revwalks, tag filtering, and HEAD SHA retrieval.
+**Purpose.** In-process Git operations powered by `gix` (gitoxide), eliminating subprocess
+fork/exec overhead for repository discovery, ref matching, commit history revwalks, tag
+filtering, and HEAD SHA retrieval where available, with a `CommandRunner`-shelled fallback
+everywhere else. Full type signatures, the read/write fallback-policy split, and fixture
+obligations live in **§V (`callisto-vcs`, §12)** — this subsection states the two MUST-level
+requirements only; it is not a second, independent sketch of the crate's shapes.
 
-```rust
-pub struct GitRepository {
-    repo: gix::Repository,
-}
-
-impl GitRepository {
-    pub fn discover(path: &Path) -> Result<Self, VcsError>;
-    pub fn head_sha(&self) -> Result<CommitSha, VcsError>;
-    pub fn list_tags(&self, glob_pattern: Option<&str>) -> Result<Vec<(TagName, CommitSha)>, VcsError>;
-    pub fn commits_since(&self, revision: &str) -> Result<Vec<GitCommitInfo>, VcsError>;
-}
-
-pub struct GitCommitInfo {
-    pub sha: CommitSha,
-    pub summary: String,
-    pub body: Option<String>,
-}
-```
-
-1. **In-Process Git Engine**: Repository discovery (`discover`), ref resolution, tag enumeration (`list_tags`), commit history revwalks (`commits_since`), and HEAD SHA retrieval (`head_sha`) MUST be encapsulated within `callisto-vcs` using pure-Rust `gix`.
-2. **Subprocess Fallback**: `callisto-graph` tag lookups (`last_tag_for`) and change detection (`changed_since_last_tag`) MUST use `GitRepository` for fast in-process traversal, seamlessly falling back to `CommandRunner` subprocess calls if `gix` discovery is bypassed.
+1. **In-Process Git Engine**: Repository discovery (`GitRepository::discover`), ref resolution
+   (`resolve_commit`), tag enumeration (`list_tags`), commit history revwalks
+   (`commits_since_with_pathspec`), and HEAD SHA retrieval (`head_sha`) MUST be encapsulated
+   within `callisto-vcs` using pure-Rust `gix` (§V.4) — never called directly by
+   `callisto-graph` or `callisto-conventional`.
+2. **Subprocess Fallback**: Every caller MUST reach Git through `GitAccess::discover` (§V.6),
+   not through `GitRepository` or `ShellGit` directly — `GitAccess` is what applies the
+   read/write fallback-policy split (§V.6) that makes "seamlessly falls back to `CommandRunner`
+   subprocess calls when `gix` is unavailable" true without each call site re-implementing the
+   policy itself.
 
 ### 13.7 GitHub Actions Workflow & Moon Alignment (`callisto-action`)
 1. **Action Architecture**: Callisto release orchestration in CI MUST be composed as a CLI consumer using `callisto-cli` binary calls, `gh` CLI for Pull Requests, and `moon run :publish` for multi-ecosystem package publishing.

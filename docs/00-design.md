@@ -1440,6 +1440,27 @@ callisto/
 │   │                            supply what §7.4's cascade needs — moon's edges are only
 │   │                            ever a cross-check (`declared_edges()`, below), never a
 │   │                            resolver.
+│   ├── callisto-vcs/          # MIT/Apache-2.0 — native `gix` Git engine (repo
+│   │                            discovery, commit history, tag listing/creation)
+│   │                            with a `ShellGit` (CommandRunner-shelled)
+│   │                            fallback, selected per-operation by `GitAccess`,
+│   │                            which applies a read/write fallback-policy split
+│   │                            of its own (reads retry through the shell on any
+│   │                            native failure; writes only fall back when
+│   │                            native was never available to begin with, so a
+│   │                            discovered repo's own write failure is never
+│   │                            silently retried). Permissively licensed despite
+│   │                            sitting below AGPL callisto-graph in the dependency
+│   │                            graph — a permissive crate depending on
+│   │                            nothing but callisto-model creates no
+│   │                            AGPL-into-Layer-1 leak the other direction
+│   │                            would. `callisto-moon` never links it: gix's
+│   │                            mmap-based reads hit ENOSYS under
+│   │                            `wasm32-wasip1` (verified by spike, not
+│   │                            assumed), so the WASM extension's own exec
+│   │                            seam goes through `CommandRunner` directly
+│   │                            instead, the same as every other wasm32 path
+│   │                            in this crate list.
 │   ├── callisto-manifests/    # AGPL-3.0 — per-ecosystem read/write, feature-flagged
 │   ├── callisto-conventional/ # AGPL-3.0 — commit parsing for auto-mode (v0.2, §17)
 │   ├── callisto-changelog/    # AGPL-3.0 — changelog generation (v0.1, §17 — previously
@@ -1589,7 +1610,10 @@ scope discipline this revision imposes.
 - **v0.3 — napi.** `Platform` manifest role + auto-derivation, fixed/linked groups with
   alignment checks (§7.5, including the fixed-∩-linked parse-time validation and the
   `napi.targets` drift cross-check), pre-mode (§8, including its fixed-group and
-  `Auto`-trigger interactions).
+  `Auto`-trigger interactions), `callisto matrix` (§19 — CI matrix generation over the
+  same platform-target/runtime-version data napi coordination already reads; ships
+  alongside general napi availability rather than earlier, since it has nothing to
+  report before `Platform` manifests and fixed/linked groups exist).
 - **v0.4 — moon integration + the Action.** `callisto-moon` WASM extension,
   `orin-dx/callisto-action` (single composite, modes per §12.2), `setup-moon-callisto`,
   migration guide from `@changesets/cli` (including `callisto init`'s
@@ -2011,6 +2035,108 @@ field:
 Everything else Q5 raised is satisfied by features already scheduled where they are: the
 cascade table and `[cascade]` keys in v0.1, `Auto`/`pre-major-inference`/`snapshot`/
 migration in v0.2/v0.4, groups and pre-mode in v0.3.
+
+---
+
+## 19. `callisto matrix`
+
+**Read-only CI matrix generation, not a planning or publish command.** Once a workspace
+has `napi`- or `maturin`-based platform packages (§7.5), the calling CI workflow needs to
+know which OS/arch/ABI triples to build on, which GitHub-Actions-style runner label and
+`use-cross` setting each triple needs, and which Node/Python engine ranges each package
+declares — all before it can construct its own build matrix. `callisto matrix` answers
+exactly that question by reading each package's manifest (`napi.targets` or
+`[tool.maturin].targets`, plus `engines.node`/`requires-python`) and reporting the union,
+without computing a version plan, touching any file, or talking to a registry.
+
+Deliberately absent: no `--dry-run` flag (the command has no side effect to suppress), no
+interaction with the cascade or publish plan (a triple appearing here says nothing about
+whether the package it belongs to is ready to release), and no attempt to *validate* the
+CI configuration a caller builds from this data (the calling workflow owns whatever
+`strategy.matrix` shape it constructs from the JSON).
+
+### 19.1 What it reports
+
+```json
+{
+  "schemaVersion": 1,
+  "platformTargets": {
+    "@myorg/foo": {
+      "kind": "napi",
+      "source": "napi.targets",
+      "targets": [
+        {
+          "triple": "aarch64-apple-darwin",
+          "platform": "darwin",
+          "arch": "arm64",
+          "abi": null,
+          "hostRunner": "macos-latest",
+          "useCross": false,
+          "artifactName": "native-aarch64-apple-darwin",
+          "packageDir": "packages/foo",
+          "packageName": "@myorg/foo"
+        }
+      ]
+    }
+  },
+  "runtimeVersions": {
+    "@myorg/foo": [
+      { "ecosystem": "npm", "field": "engines.node", "range": ">=18" }
+    ]
+  }
+}
+```
+
+Both top-level maps are keyed by the *registered package's* `PackageId::name()` — not by
+triple or by manifest path — so a caller resolving CI jobs per package (the common case:
+one build job fans out over that package's own triples) never has to invert an
+index. Map ordering is lexicographic by construction (`BTreeMap`), so output is stable
+across runs without a separate sort step. `platformTargets[pkg].targets` is itself sorted
+ascending by triple string for the same reason.
+
+A package with no `napi.targets`/`[tool.maturin].targets` and no
+`engines.node`/`requires-python` simply has no entry in either map — matrix never
+synthesizes a placeholder, and an empty workspace produces
+`{"schemaVersion":1,"platformTargets":{},"runtimeVersions":{}}` with no `diagnostics` key
+at all (an empty array is never serialized, matching every other report type's convention
+of omitting rather than emitting an empty `diagnostics: []`).
+
+### 19.2 The host-runner table is new data, not derived data
+
+`napi::triple_to_role` (§7.5) already recognizes each of the (currently 18) supported
+triples well enough to classify them into `ManifestRole::Platform` — but that
+classification carries only platform/arch/abi, because that's all `napi.targets` drift
+checking ever needed. Which GitHub Actions runner label builds a given triple, and
+whether it needs `cross` rather than native `cargo build`, is CI-scheduling knowledge with
+no other consumer in callisto — so `matrix` owns a second, independent
+triple-to-scheduling-hint table rather than trying to widen `triple_to_role`'s existing
+contract to serve a second, unrelated purpose. A triple `triple_to_role` doesn't recognize
+is reported via a diagnostic (§19.3), never silently defaulted to some runner guess.
+
+### 19.3 Diagnostics, not errors
+
+Matches §13's general escalation posture (invariant 22): everything `matrix` finds wrong
+is reported as data in the response, never as a process failure that aborts CI before a
+human sees what's actually broken. An unrecognized platform triple
+(`UnrecognisedPlatformTriple`) or two manifest sources both claiming platform-target
+ownership for one package (`ConflictingPlatformTargetSources`, surfaced as
+`GraphError::ConflictingPlatformTargetSources` — the one case that *is* a hard `Err`,
+because there is no well-defined single group to report if napi and maturin config
+disagree about what this package's targets even are) both produce diagnostics rather than
+non-zero exit codes on their own; `--strict` (shared with every other command, §13
+invariant 22) is what promotes them to a failing exit code, and that choice belongs to the
+calling workflow, not to `matrix` itself.
+
+### 19.4 Where it sits relative to publish planning
+
+`matrix` and `plan-publish` (§9) read overlapping manifest fields but answer different
+questions on different schedules: `plan-publish` runs once, after `version`, to decide
+*what* ships this release; `matrix` runs independently, typically once per CI trigger
+before any version decision exists yet, to decide *which machines* need to exist to build
+whatever eventually ships. A workspace with no pending changesets still has a matrix (the
+triples don't change just because nothing is releasing this run) — this is why `matrix`
+takes no changeset/cascade input at all and cannot be affected by cascade or pre-mode
+state (§7, §8).
 
 ---
 
