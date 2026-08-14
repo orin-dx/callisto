@@ -112,35 +112,67 @@ pub enum CommandError {
     TimedOut { program: String, seconds: u64 },
 }
 
-/// Validates git version against REQUIRED_GIT floor.
+/// Returns the leading run of ASCII digits in `s`, stopping at the first
+/// non-digit character (or the end of the string). Used to strip anything
+/// `semver` would otherwise interpret as pre-release/build metadata (a
+/// hyphen or plus) or a non-numeric trailing suffix, since a git version's
+/// own reported string was never intended to carry semver's meaning for
+/// those -- see [`check_git_version`]'s doc comment.
+fn leading_digits(s: &str) -> &str {
+    let end = s.find(|c: char| !c.is_ascii_digit()).unwrap_or(s.len());
+    &s[..end]
+}
+
+/// Validates git version against the [`REQUIRED_GIT`] floor.
+///
+/// `reported` is the raw `git --version` output (e.g. `"git version 2.39.5"`,
+/// `"git version 2.39.5.windows.1"` on Git for Windows, which appends a
+/// non-semver `.windows.N` suffix onto the real version, or
+/// `"git version 2.39.5-rc1"` for a pre-release build). Only the leading
+/// `major.minor.patch` triple is parsed, each component truncated to its own
+/// leading digit run (discarding anything past the first non-digit
+/// character, e.g. `5-rc1` -> `5`) before being handed to `semver`: passing
+/// a hyphenated suffix through unstripped would make `semver::VersionReq`
+/// exclude it from the `>=2.20` floor entirely, since semver requirements
+/// never match a pre-release version unless the requirement's own comparator
+/// carries a matching pre-release tag -- a real git build tag has nothing to
+/// do with that semantics and must not affect whether the floor is met. Any
+/// dot-separated components after the third (like `.windows.1`) are ignored,
+/// and a missing `minor`/`patch` is treated as `0`, matching how git itself
+/// never omits them in practice but keeping this tolerant of a truncated
+/// report.
+///
+/// The actual comparison is delegated to [`semver::VersionReq`] parsing
+/// [`REQUIRED_GIT`], so the floor is defined in exactly one place instead of
+/// a separately hand-maintained numeric comparison that could silently drift
+/// from the constant used in the error message.
 pub fn check_git_version(reported: &str) -> Result<(), CommandError> {
+    let incompatible = || CommandError::IncompatibleVersion {
+        program: "git".to_string(),
+        found: reported.to_string(),
+        required: REQUIRED_GIT.to_string(),
+    };
+
     let version_str = reported.trim();
     let digits = version_str
         .split_whitespace()
         .find(|word| word.chars().next().is_some_and(|c| c.is_ascii_digit()))
         .unwrap_or(version_str);
 
-    let parts: Vec<&str> = digits.split('.').collect();
-    if parts.len() < 2 {
-        return Err(CommandError::IncompatibleVersion {
-            program: "git".to_string(),
-            found: reported.to_string(),
-            required: REQUIRED_GIT.to_string(),
-        });
+    let mut parts = digits.splitn(4, '.').take(3);
+    let major = leading_digits(parts.next().unwrap_or("0"));
+    let minor = leading_digits(parts.next().unwrap_or("0"));
+    let patch = leading_digits(parts.next().unwrap_or("0"));
+    let core = format!("{major}.{minor}.{patch}");
+
+    let version = semver::Version::parse(&core).map_err(|_parse_err| incompatible())?;
+    let required = semver::VersionReq::parse(REQUIRED_GIT).map_err(|_parse_err| incompatible())?;
+
+    if required.matches(&version) {
+        Ok(())
+    } else {
+        Err(incompatible())
     }
-
-    let major: u64 = parts[0].parse().unwrap_or(0);
-    let minor: u64 = parts[1].parse().unwrap_or(0);
-
-    if major < 2 || (major == 2 && minor < 20) {
-        return Err(CommandError::IncompatibleVersion {
-            program: "git".to_string(),
-            found: reported.to_string(),
-            required: REQUIRED_GIT.to_string(),
-        });
-    }
-
-    Ok(())
 }
 
 #[cfg(test)]
@@ -152,5 +184,57 @@ mod tests {
         assert!(check_git_version("git version 2.39.5").is_ok());
         assert!(check_git_version("git version 2.20.0").is_ok());
         assert!(check_git_version("git version 1.8.5").is_err());
+    }
+
+    /// Boundary check: REQUIRED_GIT's floor is exactly 2.20 -- one patch
+    /// below and one minor below must both be rejected, matching the
+    /// version-requirement string itself rather than a separately
+    /// hand-maintained numeric comparison that could silently drift from it.
+    #[test]
+    fn rejects_versions_just_below_the_required_floor() {
+        assert!(check_git_version("git version 2.19.9").is_err());
+        assert!(check_git_version("git version 1.99.99").is_err());
+    }
+
+    /// Regression: `semver::VersionReq`'s `>=2.20` never matches a
+    /// pre-release version unless the requirement itself carries a matching
+    /// pre-release tag, which would make a hyphenated git build tag like
+    /// `-rc1` falsely reject an otherwise-satisfying version if passed
+    /// through to `semver::Version::parse` unstripped. A pre-release build
+    /// well above the floor must still be accepted.
+    #[test]
+    fn accepts_hyphenated_prerelease_suffix_above_the_floor() {
+        assert!(check_git_version("git version 2.39.5-rc1").is_ok());
+        assert!(check_git_version("git version 2.19.9-rc1").is_err());
+    }
+
+    /// Git for Windows appends a non-semver `.windows.N` suffix onto the
+    /// real version (e.g. `2.39.5.windows.1`). Only the leading
+    /// major.minor.patch triple must be parsed; the suffix must not cause a
+    /// spurious parse failure.
+    #[test]
+    fn ignores_trailing_windows_suffix() {
+        assert!(check_git_version("git version 2.39.5.windows.1").is_ok());
+        assert!(check_git_version("git version 2.19.9.windows.1").is_err());
+    }
+
+    /// A truncated report (major.minor with no patch) must not be rejected
+    /// outright -- the missing patch is treated as 0, same as the original
+    /// hand-rolled comparison's behavior.
+    #[test]
+    fn treats_missing_patch_as_zero() {
+        assert!(check_git_version("git version 2.20").is_ok());
+        assert!(check_git_version("git version 2.19").is_err());
+    }
+
+    /// Garbage input must be rejected as incompatible, not silently
+    /// defaulted to 0 and evaluated as if it were a real (if very old)
+    /// version -- there is a real difference between "we don't know what
+    /// version this is" and "this version is definitely too old", even
+    /// though both currently produce the same IncompatibleVersion error.
+    #[test]
+    fn rejects_unparseable_version_string() {
+        assert!(check_git_version("git version unknown").is_err());
+        assert!(check_git_version("").is_err());
     }
 }

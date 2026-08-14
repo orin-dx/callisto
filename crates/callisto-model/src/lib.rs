@@ -94,7 +94,7 @@ mod tests {
             "E049", "E050", "E052", // callisto-vcs: lib.rs
             "E051", // callisto-changelog: error.rs
             "E060", "E061", "E062", "E063", // callisto-graph: error.rs
-            "E101", "E107", "E108", "E109", "E110", "E111", "E112", "E118",
+            "E101", "E107", "E108", "E109", "E110", "E111", "E118",
         ];
         let mut seen = std::collections::BTreeSet::new();
         for code in codes {

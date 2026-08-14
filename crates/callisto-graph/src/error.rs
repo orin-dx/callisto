@@ -284,10 +284,6 @@ pub enum ConfigError {
     #[diagnostic(code(E111), help("Verify callisto.toml TOML syntax formatting."))]
     ParseToml { path: PathBuf, message: String },
 
-    #[error("`{path}` is not valid YAML: {message}")]
-    #[diagnostic(code(E112))]
-    ParseYaml { path: PathBuf, message: String },
-
     #[error("[[package-set]] `{pattern}` matched no packages")]
     PackageSetMatchedNothing { pattern: String },
 

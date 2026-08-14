@@ -9,9 +9,9 @@ readme = "README.md"
 
 [dependencies]
 callisto-model = { path = "../callisto-model", version = "0.3.0" }
-tempfile = { workspace = true }
 thiserror = { workspace = true }
 miette = { workspace = true }
 
 [dev-dependencies]
 callisto-model = { path = "../callisto-model", features = ["test-util"] }
+tempfile = { workspace = true }
