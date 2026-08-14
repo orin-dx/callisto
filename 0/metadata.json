@@ -62,6 +62,37 @@
         "label": "Skill: canon:canon",
         "default_collapsed": true
       }
+    },
+    {
+      "id": "claude-skill-toolu_01WGvnnCKVW2vdoqEUK7994m",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "artifact-design"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "2fa32ab9aabe",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 9258,
+        "end": 9259,
+        "entry_ids": [
+          "40e03207-5312-4c67-91d1-e543f61cc47c"
+        ],
+        "tool_use_id": "toolu_01WGvnnCKVW2vdoqEUK7994m"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01WGvnnCKVW2vdoqEUK7994m"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: artifact-design",
+        "default_collapsed": true
+      }
     }
   ],
   "session_metrics": {
