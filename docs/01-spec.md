@@ -6906,12 +6906,10 @@ impl SeverityInference for CommitInference {
 }
 ```
 
-As of this writing, `CommitInference` is never constructed anywhere in production — grep
-confirms `callisto-cli` (§CLI.6.3.1) hardcodes `NoInference` unconditionally, regardless of
-whether the `inference` feature is enabled, so v0.2's "wire `CommitInference` in behind the
-feature flag" milestone commitment (§G.14) has not actually landed in the shipped binary
-despite the library-level type existing and being unit-tested. `apply_pre_major`'s call site
-inside `infer` (below) is real code, just not yet reachable from any command.
+`callisto-cli`'s `select_inference` (§CLI.6.3.1) constructs `CommitInference` when the
+`inference` feature is enabled, so v0.2's "wire `CommitInference` in behind the feature flag"
+milestone commitment (§G.14) has landed. `apply_pre_major`'s call site inside `infer` (below)
+is reachable from `version`/`compose-pr-body` on a build with that feature on.
 
 `callisto_conventional::infer_severity` (§C.7) returns a **raw**, unremapped severity — the
 pre-major policy is deliberately not applied inside `callisto-conventional` at all, even
@@ -9282,7 +9280,7 @@ pub struct VersionArgs {
 
 ```rust
 let ws = load_workspace(&global, &runner)?;
-let inference = NoInference;      // hardcoded as of this writing -- see §CLI.6.3.1
+let inference = select_inference();                     // §CLI.6.3.1
 let plan = callisto_graph::commands::plan_version(&ws, &inference, &VersionOptions {
     strict: args.strict,
     strict_graph: args.strict_graph,
@@ -9296,26 +9294,21 @@ let report = plan.to_report(outcome.lockfile_refresh_results);
 emit_report(&report, global.format)
 ```
 
-**CLI.6.3.1 — `SeverityInference` selection, *intended* to be milestone-gated by Cargo feature:**
+**CLI.6.3.1 — `SeverityInference` selection, milestone-gated by Cargo feature:**
 
-This was the plan; it has not shipped. `callisto-cli` does forward an `inference` Cargo
-feature to `callisto-graph/inference` (`Cargo.toml`), but no command handler consults it —
-`commands/version.rs` and `commands/compose_pr_body.rs` both hardcode `let inference =
-NoInference;` unconditionally, with no `#[cfg(feature = "inference")]` branch anywhere in
-either file. Enabling `--features inference` on `callisto-cli` today compiles
-`callisto_graph::infer::CommitInference` into the dependency tree but nothing ever selects it,
-so it has no effect on the binary's behavior. The `select_inference` function below never
-existed in real code; it describes the intended shape, not a call site that was removed:
+Lives in `workspace.rs`, alongside `load_workspace` — `select_inference` needs no workspace or
+runner context of its own (`CommitInference` is a zero-field marker; its `infer` receives the
+caller's `GitAccess` per call, §G.6.4), so unlike an earlier draft of this section, the real
+function takes no parameters and no lifetime:
 
 ```rust
-// INTENDED (§17, §G.14) -- not implemented in callisto-cli as of this writing.
 #[cfg(not(feature = "inference"))]
-fn select_inference(_: &Workspace<'_, …>) -> impl SeverityInference {
+pub fn select_inference() -> impl SeverityInference {
     callisto_graph::infer::NoInference
 }
 
 #[cfg(feature = "inference")]
-fn select_inference<'a>(ws: &'a Workspace<'a, …>) -> impl SeverityInference + 'a {
+pub fn select_inference() -> impl SeverityInference {
     callisto_graph::infer::CommitInference
 }
 ```
@@ -9328,8 +9321,7 @@ fn select_inference<'a>(ws: &'a Workspace<'a, …>) -> impl SeverityInference + 
 > mechanism consistent with P4's bounded-work promise: v0.2's binary flips the default-features
 > list, no handler code changes. The impl itself is `callisto-graph`'s, not this crate's
 > (§G.6.4) — an earlier draft placed it in `callisto-conventional`, which cannot see the trait;
-> §11 records the reconciliation. As the paragraph above notes, this decision was made but the
-> handler-side wiring it describes was never actually implemented.
+> §11 records the reconciliation.
 
 #### CLI.6.4 `pre` — §8
 
@@ -9465,7 +9457,7 @@ pub struct ComposePrBodyArgs {
 }
 ```
 
-`load_workspace` → `NoInference` (hardcoded, same as `version`; see §CLI.6.3.1) →
+`load_workspace` → `select_inference()` (§CLI.6.3.1, the same selection `version` uses) →
 resolve `existing_body` (read stdin when it is `-`, else pass through) →
 `callisto_graph::commands::compose_pr_body(&ws, &inference, &PrBodyOptions { … })` →
 `emit_report`. The handler never calls `apply_version_plan` and never receives a `VersionPlan`
