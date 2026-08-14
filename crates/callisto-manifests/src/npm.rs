@@ -127,6 +127,14 @@ fn format_json_pretty(
     Ok(out)
 }
 
+/// Extracts `name` from an already-parsed `package.json` document. Pure and
+/// I/O-free -- see [`crate::cargo::cargo_package_name`]'s doc comment for
+/// why this exists as a standalone function rather than only living inside
+/// [`Manifest::package_name`].
+pub fn npm_package_name(doc: &serde_json::Map<String, serde_json::Value>) -> Option<&str> {
+    doc.get("name").and_then(|n| n.as_str())
+}
+
 impl Manifest for PackageJson {
     fn persist(&mut self, permit: &ApplyPermit) -> Result<(), ManifestError> {
         let indent_str = match self.fingerprint.indent {
@@ -223,14 +231,10 @@ impl Manifest for PackageJson {
     }
 
     fn package_name(&self) -> Result<String, ManifestError> {
-        let name = self
-            .doc
-            .get("name")
-            .and_then(|n| n.as_str())
-            .ok_or_else(|| ManifestError::MissingField {
-                path: self.path.clone(),
-                field: "name",
-            })?;
+        let name = npm_package_name(&self.doc).ok_or_else(|| ManifestError::MissingField {
+            path: self.path.clone(),
+            field: "name",
+        })?;
         Ok(name.to_string())
     }
 
@@ -472,6 +476,20 @@ mod tests {
         callisto_model::ApplyPermit::force_for_tests()
     }
     use super::*;
+
+    #[test]
+    fn npm_package_name_reads_name() {
+        let doc: serde_json::Map<String, serde_json::Value> =
+            serde_json::from_str(r#"{"name":"my-pkg","version":"1.0.0"}"#).unwrap();
+        assert_eq!(npm_package_name(&doc), Some("my-pkg"));
+    }
+
+    #[test]
+    fn npm_package_name_returns_none_when_absent() {
+        let doc: serde_json::Map<String, serde_json::Value> =
+            serde_json::from_str(r#"{"version":"1.0.0"}"#).unwrap();
+        assert_eq!(npm_package_name(&doc), None);
+    }
 
     /// Spec: `format_json_pretty` must propagate errors via Result rather
     /// than unwrapping. The return type must be `Result<String, _>` so

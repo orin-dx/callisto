@@ -100,6 +100,20 @@ impl CargoToml {
     }
 }
 
+/// Extracts `[package].name` from an already-parsed `Cargo.toml` document.
+/// Pure and I/O-free -- operates on a document the caller already has,
+/// whether that's a fully-opened [`CargoToml`] (via [`Manifest::package_name`])
+/// or a bare parse a caller made for some other purpose entirely (e.g.
+/// `callisto-graph`'s `IdentityResolver`, which needs only a package name
+/// and deliberately does not go through the full [`CargoToml::open`]
+/// lifecycle -- that requires workspace-inheritance context this function
+/// has no need for, since a package's *name* is never workspace-inherited).
+pub fn cargo_package_name(doc: &toml_edit::DocumentMut) -> Option<&str> {
+    doc.get("package")
+        .and_then(|p| p.get("name"))
+        .and_then(|n| n.as_str())
+}
+
 impl Manifest for CargoToml {
     fn persist(&mut self, permit: &ApplyPermit) -> Result<(), ManifestError> {
         let mut text = self.document.to_string();
@@ -153,12 +167,8 @@ impl Manifest for CargoToml {
     }
 
     fn package_name(&self) -> Result<String, ManifestError> {
-        let name = self
-            .document
-            .get("package")
-            .and_then(|p| p.get("name"))
-            .and_then(|n| n.as_str())
-            .ok_or_else(|| ManifestError::MissingField {
+        let name =
+            cargo_package_name(&self.document).ok_or_else(|| ManifestError::MissingField {
                 path: self.path.clone(),
                 field: "package.name",
             })?;
@@ -756,6 +766,21 @@ mod tests {
     use super::*;
     use callisto_model::{ManifestDecl, ManifestFormat, ManifestRole};
     use tempfile::tempdir;
+
+    #[test]
+    fn cargo_package_name_reads_package_name() {
+        let doc: toml_edit::DocumentMut = "[package]\nname = \"my-crate\"\nversion = \"0.1.0\"\n"
+            .parse()
+            .unwrap();
+        assert_eq!(cargo_package_name(&doc), Some("my-crate"));
+    }
+
+    #[test]
+    fn cargo_package_name_returns_none_when_absent() {
+        let doc: toml_edit::DocumentMut =
+            "[workspace]\nmembers = [\"crates/*\"]\n".parse().unwrap();
+        assert_eq!(cargo_package_name(&doc), None);
+    }
 
     #[test]
     fn workspace_root_manifest_path_normalizes_to_bare_cargo_toml() {

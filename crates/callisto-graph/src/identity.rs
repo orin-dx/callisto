@@ -39,9 +39,7 @@ impl IdentityResolver {
                             message: e.to_string(),
                         }
                     })?;
-                doc.get("package")
-                    .and_then(|p| p.get("name"))
-                    .and_then(|n| n.as_str())
+                callisto_manifests::cargo_package_name(&doc)
                     .ok_or_else(|| callisto_model::ManifestError::MissingField {
                         path: project_root.join("Cargo.toml"),
                         field: "package.name",
@@ -56,15 +54,15 @@ impl IdentityResolver {
                         message: e.to_string(),
                     }
                 })?;
-                let val: serde_json::Value = serde_json::from_str(&content).map_err(|e| {
-                    callisto_model::ManifestError::Parse {
-                        path: project_root.join("package.json"),
-                        format: ManifestFormat::PackageJson,
-                        message: e.to_string(),
-                    }
-                })?;
-                val.get("name")
-                    .and_then(|n| n.as_str())
+                let doc: serde_json::Map<String, serde_json::Value> =
+                    serde_json::from_str(&content).map_err(|e| {
+                        callisto_model::ManifestError::Parse {
+                            path: project_root.join("package.json"),
+                            format: ManifestFormat::PackageJson,
+                            message: e.to_string(),
+                        }
+                    })?;
+                callisto_manifests::npm_package_name(&doc)
                     .ok_or_else(|| callisto_model::ManifestError::MissingField {
                         path: project_root.join("package.json"),
                         field: "name",
@@ -87,19 +85,10 @@ impl IdentityResolver {
                             message: e.to_string(),
                         }
                     })?;
-                // PEP 621: [project].name; Poetry: [tool.poetry].name
-                doc.get("project")
-                    .and_then(|p| p.get("name"))
-                    .and_then(|n| n.as_str())
-                    .or_else(|| {
-                        doc.get("tool")
-                            .and_then(|t| t.get("poetry"))
-                            .and_then(|p| p.get("name"))
-                            .and_then(|n| n.as_str())
-                    })
+                callisto_manifests::python_package_name(&doc)
                     .ok_or_else(|| callisto_model::ManifestError::MissingField {
                         path: project_root.join("pyproject.toml"),
-                        field: "project.name",
+                        field: "project.name / tool.poetry.name / tool.flit.metadata.module",
                     })?
                     .to_string()
             }
@@ -115,6 +104,131 @@ impl IdentityResolver {
             name: name.clone(),
             candidates: Vec::new(),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolves_cargo_package_name() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("Cargo.toml"),
+            "[package]\nname = \"my-crate\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+        let resolver = IdentityResolver::new(dir.path()).unwrap();
+        let id = resolver
+            .resolve(std::path::Path::new("."), Ecosystem::Cargo)
+            .unwrap();
+        assert_eq!(id.name(), "my-crate");
+    }
+
+    /// A `Cargo.toml` using `version.workspace = true` (real-world common
+    /// case) must still resolve by name alone -- a package's *name* is
+    /// never workspace-inherited in Cargo, so this must succeed without
+    /// any `WorkspaceInheritance` context, which `IdentityResolver` (used
+    /// from `callisto-moon`'s WASM PDK entry points, which have no such
+    /// context available) deliberately never builds.
+    #[test]
+    fn resolves_cargo_package_name_with_workspace_inherited_version() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("Cargo.toml"),
+            "[package]\nname = \"inheriting-crate\"\nversion.workspace = true\nedition.workspace = true\n",
+        )
+        .unwrap();
+        let resolver = IdentityResolver::new(dir.path()).unwrap();
+        let id = resolver
+            .resolve(std::path::Path::new("."), Ecosystem::Cargo)
+            .unwrap();
+        assert_eq!(id.name(), "inheriting-crate");
+    }
+
+    #[test]
+    fn resolves_npm_package_name() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("package.json"),
+            r#"{"name":"my-pkg","version":"1.0.0"}"#,
+        )
+        .unwrap();
+        let resolver = IdentityResolver::new(dir.path()).unwrap();
+        let id = resolver
+            .resolve(std::path::Path::new("."), Ecosystem::Npm)
+            .unwrap();
+        assert_eq!(id.name(), "my-pkg");
+    }
+
+    #[test]
+    fn resolves_pypi_package_name_pep621() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("pyproject.toml"),
+            "[project]\nname = \"my-lib\"\nversion = \"1.0.0\"\n",
+        )
+        .unwrap();
+        let resolver = IdentityResolver::new(dir.path()).unwrap();
+        let id = resolver
+            .resolve(std::path::Path::new("."), Ecosystem::Pypi)
+            .unwrap();
+        assert_eq!(id.name(), "my-lib");
+    }
+
+    #[test]
+    fn resolves_pypi_package_name_poetry_fallback() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("pyproject.toml"),
+            "[tool.poetry]\nname = \"my-poetry-lib\"\nversion = \"1.0.0\"\n",
+        )
+        .unwrap();
+        let resolver = IdentityResolver::new(dir.path()).unwrap();
+        let id = resolver
+            .resolve(std::path::Path::new("."), Ecosystem::Pypi)
+            .unwrap();
+        assert_eq!(id.name(), "my-poetry-lib");
+    }
+
+    /// Before the shared-extractor refactor, IdentityResolver's Pypi branch
+    /// only checked PEP 621 then Poetry -- unlike
+    /// `PyprojectToml::package_name()`, which also falls back to Flit's
+    /// `[tool.flit.metadata].module`. A Flit-based Python package could be
+    /// resolved via the Manifest trait but not via IdentityResolver. The
+    /// shared `python_package_name` extractor closes this gap as a
+    /// side effect of removing the duplication.
+    #[test]
+    fn resolves_pypi_package_name_flit_fallback() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("pyproject.toml"),
+            "[tool.flit.metadata]\nmodule = \"my_flit_lib\"\n",
+        )
+        .unwrap();
+        let resolver = IdentityResolver::new(dir.path()).unwrap();
+        let id = resolver
+            .resolve(std::path::Path::new("."), Ecosystem::Pypi)
+            .unwrap();
+        assert_eq!(id.name(), "my_flit_lib");
+    }
+
+    #[test]
+    fn resolve_errors_when_manifest_file_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let resolver = IdentityResolver::new(dir.path()).unwrap();
+        let result = resolver.resolve(std::path::Path::new("."), Ecosystem::Cargo);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn resolve_errors_when_name_field_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("Cargo.toml"), "[workspace]\nmembers = []\n").unwrap();
+        let resolver = IdentityResolver::new(dir.path()).unwrap();
+        let result = resolver.resolve(std::path::Path::new("."), Ecosystem::Cargo);
+        assert!(result.is_err());
     }
 }
 

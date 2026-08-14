@@ -76,6 +76,31 @@ impl PyprojectToml {
     }
 }
 
+/// Extracts a package name from an already-parsed `pyproject.toml`
+/// document, checking (1) PEP 621 `[project].name`, (2) Poetry
+/// `[tool.poetry].name`, (3) Flit `[tool.flit.metadata].module`, in that
+/// order. Pure and I/O-free -- see `crate::cargo::cargo_package_name`'s
+/// doc comment for why this exists as a standalone function rather than
+/// only living inside [`Manifest::package_name`].
+pub fn python_package_name(doc: &toml_edit::DocumentMut) -> Option<&str> {
+    doc.get("project")
+        .and_then(|p| p.get("name"))
+        .and_then(|n| n.as_str())
+        .or_else(|| {
+            doc.get("tool")
+                .and_then(|t| t.get("poetry"))
+                .and_then(|p| p.get("name"))
+                .and_then(|n| n.as_str())
+        })
+        .or_else(|| {
+            doc.get("tool")
+                .and_then(|t| t.get("flit"))
+                .and_then(|f| f.get("metadata"))
+                .and_then(|m| m.get("module"))
+                .and_then(|n| n.as_str())
+        })
+}
+
 impl Manifest for PyprojectToml {
     fn persist(&mut self, permit: &ApplyPermit) -> Result<(), ManifestError> {
         let content = self.render();
@@ -100,43 +125,12 @@ impl Manifest for PyprojectToml {
     }
 
     fn package_name(&self) -> Result<String, ManifestError> {
-        // 1. PEP 621 [project].name
-        if let Some(name) = self
-            .document
-            .get("project")
-            .and_then(|p| p.get("name"))
-            .and_then(|n| n.as_str())
-        {
-            return Ok(name.to_string());
-        }
-
-        // 2. Poetry [tool.poetry].name
-        if let Some(name) = self
-            .document
-            .get("tool")
-            .and_then(|t| t.get("poetry"))
-            .and_then(|p| p.get("name"))
-            .and_then(|n| n.as_str())
-        {
-            return Ok(name.to_string());
-        }
-
-        // 3. Flit [tool.flit.metadata].module
-        if let Some(module) = self
-            .document
-            .get("tool")
-            .and_then(|t| t.get("flit"))
-            .and_then(|f| f.get("metadata"))
-            .and_then(|m| m.get("module"))
-            .and_then(|n| n.as_str())
-        {
-            return Ok(module.to_string());
-        }
-
-        Err(ManifestError::MissingField {
-            path: self.path.clone(),
-            field: "project.name / tool.poetry.name",
-        })
+        python_package_name(&self.document)
+            .map(|s| s.to_string())
+            .ok_or_else(|| ManifestError::MissingField {
+                path: self.path.clone(),
+                field: "project.name / tool.poetry.name / tool.flit.metadata.module",
+            })
     }
 
     fn current_version(&self) -> Result<Version, ManifestError> {
@@ -587,6 +581,45 @@ mod tests {
     use super::*;
     use callisto_model::ManifestFormat;
     use tempfile::tempdir;
+
+    #[test]
+    fn python_package_name_reads_pep621_name() {
+        let doc: toml_edit::DocumentMut = "[project]\nname = \"my-lib\"\nversion = \"1.0.0\"\n"
+            .parse()
+            .unwrap();
+        assert_eq!(python_package_name(&doc), Some("my-lib"));
+    }
+
+    #[test]
+    fn python_package_name_falls_back_to_poetry_name() {
+        let doc: toml_edit::DocumentMut =
+            "[tool.poetry]\nname = \"my-poetry-lib\"\nversion = \"1.0.0\"\n"
+                .parse()
+                .unwrap();
+        assert_eq!(python_package_name(&doc), Some("my-poetry-lib"));
+    }
+
+    #[test]
+    fn python_package_name_falls_back_to_flit_module() {
+        let doc: toml_edit::DocumentMut = "[tool.flit.metadata]\nmodule = \"my_flit_lib\"\n"
+            .parse()
+            .unwrap();
+        assert_eq!(python_package_name(&doc), Some("my_flit_lib"));
+    }
+
+    #[test]
+    fn python_package_name_prefers_pep621_over_poetry_and_flit() {
+        let doc: toml_edit::DocumentMut = "[project]\nname = \"pep621-name\"\n\n[tool.poetry]\nname = \"poetry-name\"\n\n[tool.flit.metadata]\nmodule = \"flit-name\"\n"
+            .parse()
+            .unwrap();
+        assert_eq!(python_package_name(&doc), Some("pep621-name"));
+    }
+
+    #[test]
+    fn python_package_name_returns_none_when_all_absent() {
+        let doc: toml_edit::DocumentMut = "[build-system]\nrequires = []\n".parse().unwrap();
+        assert_eq!(python_package_name(&doc), None);
+    }
 
     #[test]
     fn parses_pep621_pyproject_and_updates_version_with_comment_preservation() {

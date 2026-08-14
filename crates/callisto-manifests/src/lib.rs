@@ -16,9 +16,11 @@ mod common;
 pub mod npm;
 pub mod python;
 
-pub use cargo::{CargoToml, InheritedDep, WorkspaceCargoResolver, WorkspaceInheritance};
-pub use npm::{detect_npm_workspace_kind, PackageJson};
-pub use python::PyprojectToml;
+pub use cargo::{
+    cargo_package_name, CargoToml, InheritedDep, WorkspaceCargoResolver, WorkspaceInheritance,
+};
+pub use npm::{detect_npm_workspace_kind, npm_package_name, PackageJson};
+pub use python::{python_package_name, PyprojectToml};
 
 /// Trait implemented by per-ecosystem manifest editors.
 pub trait Manifest: Send + Sync {
