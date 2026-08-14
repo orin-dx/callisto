@@ -149,4 +149,11 @@ pub enum ManifestError {
     #[error("`{path}`: {message}")]
     #[diagnostic(code(E027))]
     InvariantViolation { path: PathBuf, message: String },
+
+    #[error("`{path}` dependency `{name}` has a TOML value that is neither a string nor a table; refusing to silently no-op the rewrite")]
+    #[diagnostic(
+        code(E028),
+        help("Fix the dependency's TOML shape to a plain string or a table before running callisto again.")
+    )]
+    UnrecognizedDependencyValue { path: PathBuf, name: String },
 }

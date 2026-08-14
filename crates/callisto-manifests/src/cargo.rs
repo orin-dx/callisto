@@ -359,6 +359,11 @@ impl Manifest for CargoToml {
                 } else {
                     inline.insert("version", toml_edit::Value::from(new_str));
                 }
+            } else {
+                return Err(ManifestError::UnrecognizedDependencyValue {
+                    path: self.path.clone(),
+                    name: name.to_string(),
+                });
             }
         } else if let Some(tbl) = item.as_table_mut() {
             let decor = tbl
@@ -371,6 +376,11 @@ impl Manifest for CargoToml {
                     *new_item.decor_mut() = decor;
                 }
             }
+        } else {
+            return Err(ManifestError::UnrecognizedDependencyValue {
+                path: self.path.clone(),
+                name: name.to_string(),
+            });
         }
 
         Ok(())
@@ -695,6 +705,11 @@ impl WorkspaceCargoResolver {
                         *new_value.decor_mut() = decor;
                     }
                 }
+            } else {
+                return Err(ManifestError::UnrecognizedDependencyValue {
+                    path: self.root_path.clone(),
+                    name: name.to_string(),
+                });
             }
         } else if let Some(tbl) = item.as_table_mut() {
             let decor = tbl
@@ -707,6 +722,11 @@ impl WorkspaceCargoResolver {
                     *new_item.decor_mut() = decor;
                 }
             }
+        } else {
+            return Err(ManifestError::UnrecognizedDependencyValue {
+                path: self.root_path.clone(),
+                name: name.to_string(),
+            });
         }
 
         self.persist(permit)
@@ -1013,6 +1033,69 @@ serde = "1.0"
     }
 
     #[test]
+    fn write_dependency_errors_on_unrecognized_value_shape_instead_of_silently_no_opping() {
+        let dir = tempdir().unwrap();
+        let manifest_path = dir.path().join("Cargo.toml");
+        let content =
+            "[workspace]\nmembers = [\"crates/*\"]\n\n[workspace.dependencies]\nserde = 1\n";
+        fs::write(&manifest_path, content).unwrap();
+
+        let mut resolver = WorkspaceCargoResolver::load(&manifest_path).unwrap();
+        let new_spec = DepSpec::Range(
+            VersionReq::parse("^1.1.0", Ecosystem::Cargo).unwrap(),
+            "^1.1.0".to_string(),
+        );
+        let result = resolver.write_dependency("serde", new_spec, &permit());
+
+        assert!(
+            matches!(
+                result,
+                Err(ManifestError::UnrecognizedDependencyValue { .. })
+            ),
+            "expected UnrecognizedDependencyValue, got: {result:?}"
+        );
+
+        let unchanged = fs::read_to_string(&manifest_path).unwrap();
+        assert_eq!(
+            unchanged, content,
+            "an error return must not persist a stale/unchanged document to disk"
+        );
+    }
+
+    /// Same as above but for the *outer* `else` branch (array-of-tables
+    /// dependency shape) -- see the identical case's comment on
+    /// `CargoToml::update_dependency_spec`'s own test for why this is a
+    /// distinct code path from a bare-value shape like `serde = 1`.
+    #[test]
+    fn write_dependency_errors_on_array_of_tables_dependency_shape() {
+        let dir = tempdir().unwrap();
+        let manifest_path = dir.path().join("Cargo.toml");
+        let content = "[workspace]\nmembers = [\"crates/*\"]\n\n[[workspace.dependencies.serde]]\nversion = \"1.0.0\"\n";
+        fs::write(&manifest_path, content).unwrap();
+
+        let mut resolver = WorkspaceCargoResolver::load(&manifest_path).unwrap();
+        let new_spec = DepSpec::Range(
+            VersionReq::parse("^1.1.0", Ecosystem::Cargo).unwrap(),
+            "^1.1.0".to_string(),
+        );
+        let result = resolver.write_dependency("serde", new_spec, &permit());
+
+        assert!(
+            matches!(
+                result,
+                Err(ManifestError::UnrecognizedDependencyValue { .. })
+            ),
+            "expected UnrecognizedDependencyValue, got: {result:?}"
+        );
+
+        let unchanged = fs::read_to_string(&manifest_path).unwrap();
+        assert_eq!(
+            unchanged, content,
+            "an error return must not persist a stale/unchanged document to disk"
+        );
+    }
+
+    #[test]
     fn write_dependency_preserves_trailing_comment_on_full_table_version() {
         let dir = tempdir().unwrap();
         let manifest_path = dir.path().join("Cargo.toml");
@@ -1189,6 +1272,98 @@ helper = { version = "1.0.0", path = "../helper" }
         let updated = fs::read_to_string(&manifest_path).unwrap();
         assert!(updated.contains("version = \"^1.1.0\""));
         assert!(updated.contains("path = \"../helper\""));
+    }
+
+    /// A TOML-syntactically-valid but semantically malformed dependency
+    /// value (an integer, here -- Cargo itself would reject this at build
+    /// time, but callisto's own CST editor doesn't validate shape before
+    /// attempting a rewrite) must surface as an error, not a silent no-op
+    /// success that leaves the manifest byte-for-byte unchanged.
+    #[test]
+    fn update_dependency_spec_errors_on_unrecognized_value_shape_instead_of_silently_no_opping() {
+        let dir = tempdir().unwrap();
+        let manifest_path = dir.path().join("Cargo.toml");
+        let content =
+            "[package]\nname = \"my-crate\"\nversion = \"0.1.0\"\n\n[dependencies]\nhelper = 1\n";
+        fs::write(&manifest_path, content).unwrap();
+
+        let decl = ManifestDecl::new(
+            "Cargo.toml",
+            ManifestRole::Canonical,
+            ManifestFormat::CargoToml,
+        )
+        .unwrap();
+        let ctx = OpenContext {
+            workspace_root: dir.path(),
+            cargo_workspace: None,
+            npm_workspace_kind: None,
+        };
+
+        let mut manifest = CargoToml::open(&decl, &ctx).unwrap();
+        let new_spec = DepSpec::Range(
+            VersionReq::parse("^1.1.0", Ecosystem::Cargo).unwrap(),
+            "^1.1.0".to_string(),
+        );
+        let result = manifest.update_dependency_spec(
+            "helper",
+            callisto_model::DepKind::Runtime,
+            new_spec,
+            &permit(),
+        );
+
+        assert!(
+            matches!(
+                result,
+                Err(ManifestError::UnrecognizedDependencyValue { .. })
+            ),
+            "expected UnrecognizedDependencyValue, got: {result:?}"
+        );
+    }
+
+    /// Same fallback, but for the *outer* `else` branch: a dependency
+    /// entry keyed via TOML array-of-tables syntax (`[[dependencies.x]]`)
+    /// is neither `as_value_mut()` (it's not a bare value/inline table)
+    /// nor `as_table_mut()` (a `Vec<Table>`, not a `Table`) -- an even
+    /// more obscure but still syntactically-legal shape than a bare
+    /// integer.
+    #[test]
+    fn update_dependency_spec_errors_on_array_of_tables_dependency_shape() {
+        let dir = tempdir().unwrap();
+        let manifest_path = dir.path().join("Cargo.toml");
+        let content = "[package]\nname = \"my-crate\"\nversion = \"0.1.0\"\n\n[[dependencies.helper]]\nversion = \"1.0.0\"\n";
+        fs::write(&manifest_path, content).unwrap();
+
+        let decl = ManifestDecl::new(
+            "Cargo.toml",
+            ManifestRole::Canonical,
+            ManifestFormat::CargoToml,
+        )
+        .unwrap();
+        let ctx = OpenContext {
+            workspace_root: dir.path(),
+            cargo_workspace: None,
+            npm_workspace_kind: None,
+        };
+
+        let mut manifest = CargoToml::open(&decl, &ctx).unwrap();
+        let new_spec = DepSpec::Range(
+            VersionReq::parse("^1.1.0", Ecosystem::Cargo).unwrap(),
+            "^1.1.0".to_string(),
+        );
+        let result = manifest.update_dependency_spec(
+            "helper",
+            callisto_model::DepKind::Runtime,
+            new_spec,
+            &permit(),
+        );
+
+        assert!(
+            matches!(
+                result,
+                Err(ManifestError::UnrecognizedDependencyValue { .. })
+            ),
+            "expected UnrecognizedDependencyValue, got: {result:?}"
+        );
     }
 
     #[test]
