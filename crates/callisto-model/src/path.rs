@@ -1,11 +1,21 @@
 use std::path::{Component, Path, PathBuf};
 
+use camino::Utf8PathBuf;
+use path_slash::PathExt as _;
+
 use crate::ModelError;
 
 /// Normalizes a path to be workspace-root-relative and UTF-8.
 ///
 /// Rejects absolute paths and non-UTF-8 paths, and normalizes `.` and `..` components
 /// lexically (without accessing the filesystem).
+///
+/// Separator normalization is platform-native, via `path_slash::PathExt::to_slash`: on
+/// Windows, `\` (the native separator) is converted to `/`; on POSIX, `/` is already
+/// native, so a literal `\` in a real filename is preserved as-is rather than being
+/// mistaken for a separator and corrupting the path. The previous unconditional
+/// `.replace('\\', "/")` treated `\` as a separator on every platform, which was
+/// byte-incorrect on POSIX (where `\` is a legal filename character).
 pub fn workspace_relative(path: impl AsRef<Path>) -> Result<PathBuf, ModelError> {
     let p = path.as_ref();
     if p.is_absolute() {
@@ -14,14 +24,19 @@ pub fn workspace_relative(path: impl AsRef<Path>) -> Result<PathBuf, ModelError>
         });
     }
 
-    if p.to_str().is_none() {
-        return Err(ModelError::NonUtf8Path {
-            path: p.to_path_buf(),
-        });
-    }
+    let utf8 = Utf8PathBuf::from_path_buf(p.to_path_buf())
+        .map_err(|path| ModelError::NonUtf8Path { path })?;
 
-    let normalized_str = p.to_str().unwrap().replace('\\', "/");
-    let normalized_path = Path::new(&normalized_str);
+    // `to_slash()` can only return `None` for non-UTF-8 input, which `utf8` has
+    // already ruled out -- unreachable in practice, kept as a typed error path
+    // rather than a panic in case that invariant ever changes upstream.
+    let slash_str = utf8
+        .as_std_path()
+        .to_slash()
+        .ok_or_else(|| ModelError::NonUtf8Path {
+            path: utf8.as_std_path().to_path_buf(),
+        })?;
+    let normalized_path = Path::new(slash_str.as_ref());
 
     let mut components = Vec::new();
     for component in normalized_path.components() {
@@ -80,9 +95,26 @@ mod tests {
         assert!(matches!(err, ModelError::PathTraversal { .. }));
     }
 
+    /// On Windows, `\` is the native path separator, so `path_slash::to_slash`
+    /// converts it -- a path authored with Windows-style separators still
+    /// normalizes to POSIX-style output.
+    #[cfg(target_os = "windows")]
     #[test]
     fn normalizes_windows_backslashes_to_posix_slashes() {
         let p = workspace_relative("crates\\callisto-cli\\src\\lib.rs").unwrap();
         assert_eq!(p, PathBuf::from("crates/callisto-cli/src/lib.rs"));
+    }
+
+    /// Regression: on POSIX, `\` is a legal filename character, not a path
+    /// separator. The previous unconditional `.replace('\\', "/")` treated
+    /// every backslash as a separator regardless of platform, silently
+    /// corrupting a real POSIX filename containing one (e.g. splitting
+    /// `weird\file.txt` into two path components). `path_slash::to_slash`
+    /// is a no-op on POSIX, so the literal backslash must survive intact.
+    #[cfg(not(target_os = "windows"))]
+    #[test]
+    fn preserves_literal_backslash_in_posix_filename() {
+        let p = workspace_relative("a/weird\\file.txt").unwrap();
+        assert_eq!(p, PathBuf::from("a/weird\\file.txt"));
     }
 }

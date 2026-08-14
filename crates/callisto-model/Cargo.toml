@@ -24,6 +24,7 @@ serde_json.workspace = true
 thiserror.workspace = true
 miette.workspace = true
 camino.workspace = true
+path-slash.workspace = true
 schemars = "0.8"
 tempfile.workspace = true
 

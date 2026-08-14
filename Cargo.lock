@@ -558,6 +558,7 @@ version = "0.3.3"
 dependencies = [
  "camino",
  "miette 7.6.0",
+ "path-slash",
  "pep440_rs",
  "proptest",
  "schemars",
