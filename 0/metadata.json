@@ -104,6 +104,37 @@
         "label": "Skill: artifact-design",
         "default_collapsed": true
       }
+    },
+    {
+      "id": "claude-skill-toolu_01A41qYmUMU5kNmDE3TvWo3M",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "artifact-design"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "5518c588ddd9",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 11917,
+        "end": 11918,
+        "entry_ids": [
+          "8459f76c-3b2c-4714-909d-739d68f48fe6"
+        ],
+        "tool_use_id": "toolu_01A41qYmUMU5kNmDE3TvWo3M"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01A41qYmUMU5kNmDE3TvWo3M"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: artifact-design",
+        "default_collapsed": true
+      }
     }
   ],
   "session_metrics": {
