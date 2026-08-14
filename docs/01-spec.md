@@ -6842,11 +6842,14 @@ failure.
 /// The seam between aggregation and conventional-commit inference. Owned by this crate, not
 /// by `callisto-conventional`, so that v0.1 can ship a working `version` with no inference
 /// crate in the dependency tree at all (§17).
-pub trait SeverityInference {
+pub trait SeverityInference: Send + Sync {
     /// `Ok(None)` means "this package has no inferred severity" — the routine answer at v0.1
-    /// and for any `ReleaseTrigger::Changeset` package.
-    fn infer(&self, pkg: &Package, window: InferenceWindowSpec<'_>)
-        -> Result<Option<InferenceOutcome>, GraphError>;
+    /// and for any `ReleaseTrigger::Changeset` package. `git` is the caller's already-
+    /// discovered `GitAccess` (`aggregate()`'s own parameter, itself `Workspace`-shared) — an
+    /// impl needing commit history uses this rather than discovering its own, so an
+    /// N-package workspace pays for one discovery, not N.
+    fn infer(&self, pkg: &Package, git: &callisto_vcs::GitAccess<'_>,
+              window: InferenceWindowSpec<'_>) -> Result<Option<InferenceOutcome>, GraphError>;
 }
 
 /// What the caller knows and the impl needs: pathspecs, the lower bound, and the pre-major
@@ -6875,18 +6878,19 @@ pub struct InferenceOutcome {
 /// cascade tests that have no business running `git`.
 pub struct NoInference;
 
-/// v0.2's impl, behind the `inference` feature. A thin adapter over
-/// `callisto_conventional::infer_severity` (§C.7) — it holds a `&dyn CommandRunner` and the
-/// workspace root, translates `InferenceWindowSpec` into `InferenceInput`, and translates the
-/// result back.
+/// v0.2's impl, behind the `inference` feature. A thin, **stateless** adapter over
+/// `callisto_conventional::infer_severity` (§C.7) — it holds no fields of its own; the
+/// caller's `GitAccess` is handed in per call via `infer`'s `git` parameter rather than
+/// discovered here, so this type carries nothing to discover it with.
 #[cfg(feature = "inference")]
-pub struct CommitInference<'a> { /* runner, root */ }
+pub struct CommitInference;
 
-impl<'a> SeverityInference for CommitInference<'a> {
-    fn infer(&self, pkg: &Package, window: InferenceWindowSpec<'_>)
-        -> Result<Option<InferenceOutcome>, GraphError>
+impl SeverityInference for CommitInference {
+    fn infer(&self, pkg: &Package, git: &callisto_vcs::GitAccess<'_>,
+              window: InferenceWindowSpec<'_>) -> Result<Option<InferenceOutcome>, GraphError>
     {
-        let raw = callisto_conventional::infer_severity(self.runner, &self.root, &input)?;
+        let input = /* InferenceWindowSpec -> callisto_conventional::InferenceInput */;
+        let raw = callisto_conventional::infer_severity(git, &input)?;
         if raw.commit_count == 0 { return Ok(None); }
         let (severity, remapped) =
             apply_pre_major(raw.severity, window.policy, window.current_version,
@@ -6896,6 +6900,13 @@ impl<'a> SeverityInference for CommitInference<'a> {
     }
 }
 ```
+
+As of this writing, `CommitInference` is never constructed anywhere in production — grep
+confirms `callisto-cli` (§CLI.6.3.1) hardcodes `NoInference` unconditionally, regardless of
+whether the `inference` feature is enabled, so v0.2's "wire `CommitInference` in behind the
+feature flag" milestone commitment (§G.14) has not actually landed in the shipped binary
+despite the library-level type existing and being unit-tested. `apply_pre_major`'s call site
+inside `infer` (below) is real code, just not yet reachable from any command.
 
 `callisto_conventional::infer_severity` (§C.7) returns a **raw**, unremapped severity — the
 pre-major policy is deliberately not applied inside `callisto-conventional` at all, even
@@ -9243,7 +9254,7 @@ pub struct VersionArgs {
 
 ```rust
 let ws = load_workspace(&global, &runner)?;
-let inference = select_inference(&ws);                  // §CLI.6.3.1
+let inference = NoInference;      // hardcoded as of this writing -- see §CLI.6.3.1
 let plan = callisto_graph::commands::plan_version(&ws, &inference, &VersionOptions {
     strict: args.strict,
     strict_graph: args.strict_graph,
@@ -9257,9 +9268,19 @@ let report = plan.to_report(outcome.lockfile_refresh_results);
 emit_report(&report, global.format)
 ```
 
-**CLI.6.3.1 — `SeverityInference` selection, milestone-gated by Cargo feature:**
+**CLI.6.3.1 — `SeverityInference` selection, *intended* to be milestone-gated by Cargo feature:**
+
+This was the plan; it has not shipped. `callisto-cli` does forward an `inference` Cargo
+feature to `callisto-graph/inference` (`Cargo.toml`), but no command handler consults it —
+`commands/version.rs` and `commands/compose_pr_body.rs` both hardcode `let inference =
+NoInference;` unconditionally, with no `#[cfg(feature = "inference")]` branch anywhere in
+either file. Enabling `--features inference` on `callisto-cli` today compiles
+`callisto_graph::infer::CommitInference` into the dependency tree but nothing ever selects it,
+so it has no effect on the binary's behavior. The `select_inference` function below never
+existed in real code; it describes the intended shape, not a call site that was removed:
 
 ```rust
+// INTENDED (§17, §G.14) -- not implemented in callisto-cli as of this writing.
 #[cfg(not(feature = "inference"))]
 fn select_inference(_: &Workspace<'_, …>) -> impl SeverityInference {
     callisto_graph::infer::NoInference
@@ -9267,7 +9288,7 @@ fn select_inference(_: &Workspace<'_, …>) -> impl SeverityInference {
 
 #[cfg(feature = "inference")]
 fn select_inference<'a>(ws: &'a Workspace<'a, …>) -> impl SeverityInference + 'a {
-    callisto_graph::infer::CommitInference::new(ws.runner, &ws.root)
+    callisto_graph::infer::CommitInference
 }
 ```
 
@@ -9279,7 +9300,8 @@ fn select_inference<'a>(ws: &'a Workspace<'a, …>) -> impl SeverityInference + 
 > mechanism consistent with P4's bounded-work promise: v0.2's binary flips the default-features
 > list, no handler code changes. The impl itself is `callisto-graph`'s, not this crate's
 > (§G.6.4) — an earlier draft placed it in `callisto-conventional`, which cannot see the trait;
-> §11 records the reconciliation.
+> §11 records the reconciliation. As the paragraph above notes, this decision was made but the
+> handler-side wiring it describes was never actually implemented.
 
 #### CLI.6.4 `pre` — §8
 
@@ -9415,7 +9437,7 @@ pub struct ComposePrBodyArgs {
 }
 ```
 
-`load_workspace` → `select_inference(&ws)` (§CLI.6.3.1, the same selection `version` uses) →
+`load_workspace` → `NoInference` (hardcoded, same as `version`; see §CLI.6.3.1) →
 resolve `existing_body` (read stdin when it is `-`, else pass through) →
 `callisto_graph::commands::compose_pr_body(&ws, &inference, &PrBodyOptions { … })` →
 `emit_report`. The handler never calls `apply_version_plan` and never receives a `VersionPlan`
