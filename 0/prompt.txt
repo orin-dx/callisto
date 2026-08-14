@@ -26,3 +26,40 @@
 **Adjacent, out-of-scope observation:** §G.12's separately-pinned `ConfigError` block (line 8431–8481) is missing `InvalidChangesetsDir`, `InvalidChangelogPath`, and `VersionParse` compared to real source's `ConfigError` — a similar completeness gap to finding #1, but in a section this diff didn't touch.</result>
 <usage><subagent_tokens>128049</subagent_tokens><tool_uses>41</tool_uses><duration_ms>329804</duration_ms></usage>
 </task-notification>
+
+---
+
+<task-notification>
+<task-id>a7b038aa2a2fe227a</task-id>
+<tool-use-id>toolu_01VbNNZS1tF55BuWQjvKtNAv</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a7b038aa2a2fe227a.output</output-file>
+<status>completed</status>
+<summary>Agent "Re-verify docs/01-spec.md fixes" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result># Verification Report: docs/01-spec.md fixes
+
+**1. M.13.3 completeness claim — STILL BROKEN (new false claim introduced)**
+The omission list itself is correct: grepped `crates/callisto-graph/src/error.rs` and confirmed `UnexpectedManifestVersion` (L157), `PreJson` (L175), `PreJsonRead` (L182), `PublishTargetEcosystemMismatch` (L204), `UntrustedNpmRegistry` (L225) all exist in real source and are genuinely absent from the doc's shown block (docs/01-spec.md:2338-2477). However, the newly-added sentence "Every variant and field that *is* shown below matches real source exactly" (docs/01-spec.md:2294) is **false**: two shown variants have field mismatches vs. real source:
+- `MissingGroupMember { group: GroupName, member: PackageId }` (docs/01-spec.md:2395) vs. real `member: String` (crates/callisto-graph/src/error.rs:125)
+- `WorkspaceVersionConflict { root_manifest: PathBuf, wanted: Vec&lt;(PackageId, Version)&gt; }` (docs/01-spec.md:2423) vs. real `details: String` (crates/callisto-graph/src/error.rs:167)
+
+These mismatches predate this session's diff (outside the touched lines), but the exactness guarantee is new text this fix added, so it now makes a false claim about pre-existing content.
+
+**2. §M.10 miscitation for CommitWalker — FIXED**
+Zero remaining instances of §M.10 cited as CommitWalker's own location. docs/01-spec.md:11154 now reads "`callisto_model::CommitWalker` (`callisto-model/src/commit.rs`) is a Layer 1 trait". The one remaining §M.10 near CommitWalker (docs/01-spec.md:4497) is a legitimate CommandRunner-analogy usage.
+
+**3. Fabricated §C.0 quote — FIXED**
+No quoted "deliberately absent" claim about callisto-vcs in §C.5. Real §C.0 (docs/01-spec.md:4228) only says "Deliberately absent: `callisto-graph`." — never mentions callisto-vcs. Current §C.5 text (docs/01-spec.md:4485-4487) states the fact plainly without quotation marks.
+
+**4. §G.4 → §G.6.1 citation — FIXED**
+docs/01-spec.md:2449 cites `load_changesets` (§G.6.1). Confirmed §G.6 "Aggregation" (docs/01-spec.md:6566) has subsection "§G.6.1 Loading changesets" (docs/01-spec.md:6568) where `load_changesets` is defined (docs/01-spec.md:6587).
+
+**5. Stale "resolved against cwd" text — FIXED**
+docs/01-spec.md:4467-4469 now says pathspecs are "resolved against whatever root `walker` itself carries internally... see the 'no `cwd` parameter' note below" — consistent with the real signature (crates/callisto-conventional/src/window.rs:23-27), which has no `cwd` parameter.
+
+**6. Overstated reordering claim — FIXED**
+No "reordered to match real source's actual declaration order exactly" claim anywhere. The only related sentence (docs/01-spec.md:2286) is narrowly scoped: "wrapper variants (`Locate` through `Command`) are pinned in their real declaration order" — verified this 13-variant subset's relative order does match real source exactly.
+
+**Fence balance:** `grep -c '^```' docs/01-spec.md` = 402, even, matches pre-session baseline.</result>
+<usage><subagent_tokens>96691</subagent_tokens><tool_uses>26</tool_uses><duration_ms>183602</duration_ms></usage>
+</task-notification>
