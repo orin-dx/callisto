@@ -56,186 +56,222 @@ impl CommandRunner for CliCommandRunner {
         cwd: &Path,
         timeout: Duration,
     ) -> Result<CommandOutput, CommandError> {
-        let mut child = std::process::Command::new(program)
-            .args(args)
-            .current_dir(cwd)
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|e| {
-                if e.kind() == std::io::ErrorKind::NotFound {
-                    CommandError::NotFound {
-                        program: program.to_string(),
-                    }
-                } else {
-                    CommandError::Io {
-                        program: program.to_string(),
-                        message: e.to_string(),
-                    }
+        run_with_timeout_impl(program, args, cwd, timeout, StderrMode::Live)
+    }
+
+    fn run_quiet(
+        &self,
+        program: &str,
+        args: &[&str],
+        cwd: &Path,
+        timeout: Duration,
+    ) -> Result<CommandOutput, CommandError> {
+        run_with_timeout_impl(program, args, cwd, timeout, StderrMode::Quiet)
+    }
+}
+
+/// Controls whether [`run_with_timeout_impl`]'s stderr reader thread prints
+/// each line live as it arrives. Captured `CommandOutput.stderr` is
+/// identical either way -- this only affects what's echoed to the
+/// terminal while the subprocess runs.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum StderrMode {
+    Live,
+    Quiet,
+}
+
+fn run_with_timeout_impl(
+    program: &str,
+    args: &[&str],
+    cwd: &Path,
+    timeout: Duration,
+    stderr_mode: StderrMode,
+) -> Result<CommandOutput, CommandError> {
+    let mut child = std::process::Command::new(program)
+        .args(args)
+        .current_dir(cwd)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                CommandError::NotFound {
+                    program: program.to_string(),
                 }
-            })?;
+            } else {
+                CommandError::Io {
+                    program: program.to_string(),
+                    message: e.to_string(),
+                }
+            }
+        })?;
 
-        // Read stdout/stderr in separate threads to prevent pipe-buffer deadlock
-        // when the child produces output while we wait for it to exit.
-        let stdout_handle = child.stdout.take().unwrap();
-        let stderr_handle = child.stderr.take().unwrap();
+    // Read stdout/stderr in separate threads to prevent pipe-buffer deadlock
+    // when the child produces output while we wait for it to exit.
+    let stdout_handle = child.stdout.take().unwrap();
+    let stderr_handle = child.stderr.take().unwrap();
 
-        // The reader threads signal completion over a channel rather than
-        // being joined directly. Killing (or the natural exit of) the
-        // direct child does NOT close pipe fds held open by a descendant
-        // process that inherited them (common for npm/cargo/python publish
-        // lifecycle scripts spawning subprocesses). If that happens, the
-        // blocking `read()` inside these threads never returns. Using
-        // `recv_timeout` below lets us bound how long we wait for them
-        // without ever blocking the caller indefinitely.
-        let (stdout_tx, stdout_rx) = std::sync::mpsc::channel::<String>();
-        let (stderr_tx, stderr_rx) = std::sync::mpsc::channel::<String>();
+    // The reader threads signal completion over a channel rather than
+    // being joined directly. Killing (or the natural exit of) the
+    // direct child does NOT close pipe fds held open by a descendant
+    // process that inherited them (common for npm/cargo/python publish
+    // lifecycle scripts spawning subprocesses). If that happens, the
+    // blocking `read()` inside these threads never returns. Using
+    // `recv_timeout` below lets us bound how long we wait for them
+    // without ever blocking the caller indefinitely.
+    let (stdout_tx, stdout_rx) = std::sync::mpsc::channel::<String>();
+    let (stderr_tx, stderr_rx) = std::sync::mpsc::channel::<String>();
 
-        std::thread::spawn(move || {
-            let mut reader = stdout_handle;
-            let mut captured: Vec<u8> = Vec::new();
-            let mut truncated = false;
-            let mut chunk = [0u8; 65536];
-            loop {
-                match reader.read(&mut chunk) {
-                    Ok(0) => break,
-                    Ok(n) => {
-                        // Bytes past the cap are still read (draining the
-                        // pipe so the child never blocks on a full buffer)
-                        // but not retained.
-                        if !truncated {
-                            let remaining = MAX_CAPTURED_OUTPUT_BYTES - captured.len();
-                            let take = n.min(remaining);
-                            captured.extend_from_slice(&chunk[..take]);
-                            if take < n {
-                                truncated = true;
-                            }
+    std::thread::spawn(move || {
+        let mut reader = stdout_handle;
+        let mut captured: Vec<u8> = Vec::new();
+        let mut truncated = false;
+        let mut chunk = [0u8; 65536];
+        loop {
+            match reader.read(&mut chunk) {
+                Ok(0) => break,
+                Ok(n) => {
+                    // Bytes past the cap are still read (draining the
+                    // pipe so the child never blocks on a full buffer)
+                    // but not retained.
+                    if !truncated {
+                        let remaining = MAX_CAPTURED_OUTPUT_BYTES - captured.len();
+                        let take = n.min(remaining);
+                        captured.extend_from_slice(&chunk[..take]);
+                        if take < n {
+                            truncated = true;
                         }
                     }
-                    Err(_) => break,
                 }
+                Err(_) => break,
             }
-            let mut text = String::from_utf8_lossy(&captured).into_owned();
-            if truncated {
-                text.push_str("\n...[output truncated]\n");
-            }
-            drop(stdout_tx.send(text));
-        });
-        // Stream stderr line-by-line so publish progress (cargo/npm/twine
-        // write to stderr) appears in real time rather than after the
-        // process exits, while capping the accumulated text returned to
-        // the caller. Deliberately reads raw bytes rather than using
-        // `BufReader::lines()`: that iterator has no size bound on a
-        // single line, so a flood with no newlines at all would still
-        // buffer unboundedly inside it before ever yielding a line to cap.
-        std::thread::spawn(move || {
-            let mut reader = stderr_handle;
-            let mut captured: Vec<u8> = Vec::new();
-            let mut truncated = false;
-            let mut pending_line: Vec<u8> = Vec::new();
-            let mut chunk = [0u8; 65536];
-            loop {
-                match reader.read(&mut chunk) {
-                    Ok(0) => break,
-                    Ok(n) => {
-                        let data = &chunk[..n];
-                        for &b in data {
-                            if b == b'\n' {
-                                if pending_line.last() == Some(&b'\r') {
-                                    pending_line.pop();
-                                }
+        }
+        let mut text = String::from_utf8_lossy(&captured).into_owned();
+        if truncated {
+            text.push_str("\n...[output truncated]\n");
+        }
+        drop(stdout_tx.send(text));
+    });
+    // Stream stderr line-by-line so publish progress (cargo/npm/twine
+    // write to stderr) appears in real time rather than after the
+    // process exits, while capping the accumulated text returned to
+    // the caller. Deliberately reads raw bytes rather than using
+    // `BufReader::lines()`: that iterator has no size bound on a
+    // single line, so a flood with no newlines at all would still
+    // buffer unboundedly inside it before ever yielding a line to cap.
+    // `stderr_mode` gates only the live eprintln -- captured output is
+    // identical either way.
+    std::thread::spawn(move || {
+        let mut reader = stderr_handle;
+        let mut captured: Vec<u8> = Vec::new();
+        let mut truncated = false;
+        let mut pending_line: Vec<u8> = Vec::new();
+        let mut chunk = [0u8; 65536];
+        loop {
+            match reader.read(&mut chunk) {
+                Ok(0) => break,
+                Ok(n) => {
+                    let data = &chunk[..n];
+                    for &b in data {
+                        if b == b'\n' {
+                            if pending_line.last() == Some(&b'\r') {
+                                pending_line.pop();
+                            }
+                            if stderr_mode == StderrMode::Live {
                                 eprintln!("{}", String::from_utf8_lossy(&pending_line));
-                                pending_line.clear();
-                            } else {
-                                pending_line.push(b);
                             }
-                        }
-                        if !truncated {
-                            let remaining = MAX_CAPTURED_OUTPUT_BYTES - captured.len();
-                            let take = data.len().min(remaining);
-                            captured.extend_from_slice(&data[..take]);
-                            if take < data.len() {
-                                truncated = true;
-                            }
+                            pending_line.clear();
+                        } else {
+                            pending_line.push(b);
                         }
                     }
-                    Err(_) => break,
+                    if !truncated {
+                        let remaining = MAX_CAPTURED_OUTPUT_BYTES - captured.len();
+                        let take = data.len().min(remaining);
+                        captured.extend_from_slice(&data[..take]);
+                        if take < data.len() {
+                            truncated = true;
+                        }
+                    }
                 }
+                Err(_) => break,
             }
-            if !pending_line.is_empty() {
-                if pending_line.last() == Some(&b'\r') {
-                    pending_line.pop();
-                }
+        }
+        if !pending_line.is_empty() {
+            if pending_line.last() == Some(&b'\r') {
+                pending_line.pop();
+            }
+            if stderr_mode == StderrMode::Live {
                 eprintln!("{}", String::from_utf8_lossy(&pending_line));
             }
-            let mut text = String::from_utf8_lossy(&captured).into_owned();
-            if truncated {
-                text.push_str("\n...[output truncated]\n");
-            }
-            drop(stderr_tx.send(text));
-        });
+        }
+        let mut text = String::from_utf8_lossy(&captured).into_owned();
+        if truncated {
+            text.push_str("\n...[output truncated]\n");
+        }
+        drop(stderr_tx.send(text));
+    });
 
-        // Grace period to wait for the reader threads after the direct
-        // child has exited (or been killed). Bounded so a lingering
-        // descendant holding the pipe open can never hang the caller.
-        const READER_GRACE: Duration = Duration::from_secs(3);
+    // Grace period to wait for the reader threads after the direct
+    // child has exited (or been killed). Bounded so a lingering
+    // descendant holding the pipe open can never hang the caller.
+    const READER_GRACE: Duration = Duration::from_secs(3);
 
-        let deadline = Instant::now() + timeout;
-        let status = loop {
-            match child.try_wait().map_err(|e| CommandError::Io {
-                program: program.to_string(),
-                message: e.to_string(),
-            })? {
-                Some(s) => break s,
-                None => {
-                    if Instant::now() >= deadline {
-                        drop(child.kill());
-                        drop(child.wait());
-                        // Reader threads are intentionally not joined here:
-                        // if a descendant process is still holding a pipe
-                        // fd open, join() could block forever. We wait a
-                        // bounded grace period for output, then abandon the
-                        // threads (they leak until the descendant
-                        // eventually exits and closes the fd -- a thread
-                        // leak, not a memory-safety issue).
-                        let stdout = stdout_rx.recv_timeout(READER_GRACE).ok();
-                        let stderr = stderr_rx.recv_timeout(READER_GRACE).ok();
-                        if stdout.is_none() || stderr.is_none() {
-                            eprintln!(
-                                "warning: `{program}` timed out and a descendant process \
+    let deadline = Instant::now() + timeout;
+    let status = loop {
+        match child.try_wait().map_err(|e| CommandError::Io {
+            program: program.to_string(),
+            message: e.to_string(),
+        })? {
+            Some(s) => break s,
+            None => {
+                if Instant::now() >= deadline {
+                    drop(child.kill());
+                    drop(child.wait());
+                    // Reader threads are intentionally not joined here:
+                    // if a descendant process is still holding a pipe
+                    // fd open, join() could block forever. We wait a
+                    // bounded grace period for output, then abandon the
+                    // threads (they leak until the descendant
+                    // eventually exits and closes the fd -- a thread
+                    // leak, not a memory-safety issue).
+                    let stdout = stdout_rx.recv_timeout(READER_GRACE).ok();
+                    let stderr = stderr_rx.recv_timeout(READER_GRACE).ok();
+                    if stdout.is_none() || stderr.is_none() {
+                        eprintln!(
+                            "warning: `{program}` timed out and a descendant process \
                                  appears to still hold its output pipes open; captured \
                                  output may be incomplete"
-                            );
-                        }
-                        return Err(CommandError::TimedOut {
-                            program: program.to_string(),
-                            seconds: timeout.as_secs(),
-                        });
+                        );
                     }
-                    std::thread::sleep(Duration::from_millis(50));
+                    return Err(CommandError::TimedOut {
+                        program: program.to_string(),
+                        seconds: timeout.as_secs(),
+                    });
                 }
+                std::thread::sleep(Duration::from_millis(50));
             }
-        };
-
-        // The direct child has exited on its own. Even so, a descendant
-        // process can still hold the pipe fds open (e.g. a backgrounded
-        // job spawned by a shell script), so bound the wait here too.
-        let stdout_result = stdout_rx.recv_timeout(READER_GRACE);
-        let stderr_result = stderr_rx.recv_timeout(READER_GRACE);
-        if stdout_result.is_err() || stderr_result.is_err() {
-            eprintln!(
-                "warning: `{program}` exited but a descendant process appears to still \
-                 hold its output pipes open; captured output may be incomplete"
-            );
         }
+    };
 
-        Ok(CommandOutput {
-            exit_code: status.code(),
-            stdout: stdout_result.unwrap_or_default(),
-            stderr: stderr_result.unwrap_or_default(),
-        })
+    // The direct child has exited on its own. Even so, a descendant
+    // process can still hold the pipe fds open (e.g. a backgrounded
+    // job spawned by a shell script), so bound the wait here too.
+    let stdout_result = stdout_rx.recv_timeout(READER_GRACE);
+    let stderr_result = stderr_rx.recv_timeout(READER_GRACE);
+    if stdout_result.is_err() || stderr_result.is_err() {
+        eprintln!(
+            "warning: `{program}` exited but a descendant process appears to still \
+                 hold its output pipes open; captured output may be incomplete"
+        );
     }
+
+    Ok(CommandOutput {
+        exit_code: status.code(),
+        stdout: stdout_result.unwrap_or_default(),
+        stderr: stderr_result.unwrap_or_default(),
+    })
 }
 
 #[cfg(test)]
@@ -498,5 +534,125 @@ mod tests {
         assert!(!out.stdout.contains("[output truncated]"));
         assert!(out.stderr.contains("hello stderr"));
         assert!(!out.stderr.contains("[output truncated]"));
+    }
+
+    /// `run_quiet` must still fully capture stderr into the returned
+    /// `CommandOutput` -- only the live terminal echo is suppressed, not
+    /// the capture callers rely on to classify probe results (e.g.
+    /// `npm view`'s 404-shaped "not published yet" text).
+    #[test]
+    fn run_quiet_still_captures_stderr_in_output() {
+        let runner = CliCommandRunner;
+        let out = runner
+            .run_quiet(
+                "sh",
+                &["-c", "echo captured-probe-text >&2"],
+                std::path::Path::new("."),
+                Duration::from_secs(5),
+            )
+            .unwrap();
+        assert!(
+            out.stderr.contains("captured-probe-text"),
+            "run_quiet must still capture stderr, got: {:?}",
+            out.stderr
+        );
+    }
+
+    /// The actual point of `run_quiet`: it must not echo stderr live to the
+    /// terminal the way `run_with_timeout` does. Because the live echo goes
+    /// via `eprintln!` from inside `run_quiet` itself (not captured in
+    /// `CommandOutput`), this re-execs the current test binary as a child
+    /// process with `--nocapture` so the real OS-level stderr can be
+    /// observed and asserted on -- same pattern as
+    /// `run_with_timeout_warns_on_timeout_branch_when_descendant_holds_pipe_open`.
+    #[test]
+    fn run_quiet_does_not_stream_stderr_live() {
+        const CHILD_ENV: &str = "CALLISTO_RUN_QUIET_CHILD";
+
+        if std::env::var(CHILD_ENV).is_ok() {
+            let runner = CliCommandRunner;
+            let out = runner
+                .run_quiet(
+                    "sh",
+                    &["-c", "echo should-not-appear-live >&2"],
+                    std::path::Path::new("."),
+                    Duration::from_secs(5),
+                )
+                .expect("run_quiet must succeed");
+            // Positive proof the call actually ran and captured correctly,
+            // not just "produced no live output" -- a crashed or no-op
+            // child would leave the negative assertion below vacuously
+            // true. Printed to the child's own real stdout, entirely
+            // separate from anything `run_quiet` itself captures or emits.
+            assert!(
+                out.stderr.contains("should-not-appear-live"),
+                "run_quiet must still capture the text it doesn't stream live"
+            );
+            println!("CHILD_REACHED_AND_VERIFIED_CAPTURE");
+            return;
+        }
+
+        let exe = std::env::current_exe().expect("current_exe should be available in tests");
+        let output = std::process::Command::new(exe)
+            .arg("--exact")
+            .arg("runner::tests::run_quiet_does_not_stream_stderr_live")
+            .arg("--nocapture")
+            .env(CHILD_ENV, "1")
+            .output()
+            .expect("failed to re-exec test binary");
+
+        assert!(
+            output.status.success(),
+            "child process must exit successfully, got: {:?}, stderr: {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            stdout.contains("CHILD_REACHED_AND_VERIFIED_CAPTURE"),
+            "child must have actually reached and verified the run_quiet call, not crashed \
+             or no-op'd before it; got stdout: {stdout}"
+        );
+
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            !stderr.contains("should-not-appear-live"),
+            "run_quiet must not stream stderr live to the terminal, got: {stderr}"
+        );
+    }
+
+    /// Sibling regression guard: `run_with_timeout` (the live-streaming
+    /// path `run_quiet` is deliberately different from) must still echo
+    /// live -- otherwise this pair of tests could both pass by accident if
+    /// `stderr_mode` were wired backwards.
+    #[test]
+    fn run_with_timeout_still_streams_stderr_live() {
+        const CHILD_ENV: &str = "CALLISTO_RUN_TIMEOUT_LIVE_CHILD";
+
+        if std::env::var(CHILD_ENV).is_ok() {
+            let runner = CliCommandRunner;
+            drop(runner.run_with_timeout(
+                "sh",
+                &["-c", "echo should-appear-live >&2"],
+                std::path::Path::new("."),
+                Duration::from_secs(5),
+            ));
+            return;
+        }
+
+        let exe = std::env::current_exe().expect("current_exe should be available in tests");
+        let output = std::process::Command::new(exe)
+            .arg("--exact")
+            .arg("runner::tests::run_with_timeout_still_streams_stderr_live")
+            .arg("--nocapture")
+            .env(CHILD_ENV, "1")
+            .output()
+            .expect("failed to re-exec test binary");
+
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains("should-appear-live"),
+            "run_with_timeout must still stream stderr live, got: {stderr}"
+        );
     }
 }

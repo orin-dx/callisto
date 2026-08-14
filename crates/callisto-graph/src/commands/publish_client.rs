@@ -168,6 +168,21 @@ impl<R: CommandRunner> SubprocessRegistryClient<R> {
             .map_err(|e| RegistryError::Other(e.to_string()))
     }
 
+    /// For an internal existence/probe check, not a real publish action --
+    /// see [`callisto_model::CommandRunner::run_quiet`]. Its stderr is
+    /// expected to look like a failure on the common case (e.g. `npm view`
+    /// against an unpublished package), so it must not stream live.
+    fn run_quiet(&self, program: &str, args: &[&str]) -> Result<CommandOutput, RegistryError> {
+        self.runner
+            .run_quiet(
+                program,
+                args,
+                &self.cwd,
+                Duration::from_secs(PUBLISH_TIMEOUT_SECS),
+            )
+            .map_err(|e| RegistryError::Other(e.to_string()))
+    }
+
     // ---- Cargo / crates.io -------------------------------------------
 
     /// Publishes a crate via `cargo publish`.
@@ -312,9 +327,9 @@ impl<R: CommandRunner> SubprocessRegistryClient<R> {
     ) -> Result<bool, RegistryError> {
         let spec = format!("{}@{}", package.name(), version.render());
         let output = if let Some(reg) = registry {
-            self.run("npm", &["view", &spec, "--json", "--registry", reg])?
+            self.run_quiet("npm", &["view", &spec, "--json", "--registry", reg])?
         } else {
-            self.run("npm", &["view", &spec, "--json"])?
+            self.run_quiet("npm", &["view", &spec, "--json"])?
         };
 
         if output.success() && !output.stdout_trimmed().is_empty() {
@@ -1106,6 +1121,79 @@ mod tests {
     fn npm_is_published_true_on_success_with_output() {
         let c = client(output(0, "{\"version\":\"1.2.3\"}\n", ""));
         assert!(c.is_published(&npm_pkg(), &v1()).unwrap());
+    }
+
+    /// `npm view`'s 404-shaped "not published yet" failure is the expected,
+    /// routine outcome of this existence-check probe -- it must not stream
+    /// live to the terminal the way a real, user-facing `npm publish` call
+    /// does. Distinguishes `run_quiet` from `run`/`run_with_timeout` by
+    /// tracking which one the underlying `CommandRunner` actually receives.
+    struct QuietTrackingRunner {
+        quiet_called: std::sync::atomic::AtomicBool,
+        live_called: std::sync::atomic::AtomicBool,
+        response: CommandOutput,
+    }
+
+    impl CommandRunner for QuietTrackingRunner {
+        fn run(
+            &self,
+            _program: &str,
+            _args: &[&str],
+            _cwd: &std::path::Path,
+        ) -> Result<CommandOutput, CommandError> {
+            self.live_called
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+            Ok(self.response.clone())
+        }
+
+        fn run_with_timeout(
+            &self,
+            _program: &str,
+            _args: &[&str],
+            _cwd: &std::path::Path,
+            _timeout: Duration,
+        ) -> Result<CommandOutput, CommandError> {
+            self.live_called
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+            Ok(self.response.clone())
+        }
+
+        fn run_quiet(
+            &self,
+            _program: &str,
+            _args: &[&str],
+            _cwd: &std::path::Path,
+            _timeout: Duration,
+        ) -> Result<CommandOutput, CommandError> {
+            self.quiet_called
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+            Ok(self.response.clone())
+        }
+    }
+
+    #[test]
+    fn npm_is_published_uses_run_quiet_not_the_live_streaming_path() {
+        let runner = QuietTrackingRunner {
+            quiet_called: std::sync::atomic::AtomicBool::new(false),
+            live_called: std::sync::atomic::AtomicBool::new(false),
+            response: output(0, "{\"version\":\"1.2.3\"}\n", ""),
+        };
+        let c = SubprocessRegistryClient::new(runner, PathBuf::from("/workspace"));
+
+        c.is_published(&npm_pkg(), &v1()).unwrap();
+
+        assert!(
+            c.runner
+                .quiet_called
+                .load(std::sync::atomic::Ordering::SeqCst),
+            "npm_is_published must call CommandRunner::run_quiet"
+        );
+        assert!(
+            !c.runner
+                .live_called
+                .load(std::sync::atomic::Ordering::SeqCst),
+            "npm_is_published must not call the live-streaming run/run_with_timeout path"
+        );
     }
 
     #[test]
