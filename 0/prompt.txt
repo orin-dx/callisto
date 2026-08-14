@@ -1,0 +1,28 @@
+<task-notification>
+<task-id>ada3f2017e95076fe</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/ada3f2017e95076fe.output</output-file>
+<status>completed</status>
+<summary>Agent "Verify docs/01-spec.md CommitWalker and GraphError fixes" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>This confirms §C.0's table only lists two edges and its "Deliberately absent" prose names only `callisto-graph` — `callisto-vcs` is never mentioned as "deliberately absent" anywhere in §C.0. I now have all findings verified. Final report:
+
+## Findings
+
+**1. §M.13.3 `GraphError` block: new completeness claim is false.** The intro (lines 2285–2291) now says "Their full definitions (every variant, including every transparent wrapper — this block is not abbreviated)... every field, variant name, and `#[from]` source type is exact." But the pinned block (lines 2335–2474) is missing 5 real variants that exist in `crates/callisto-graph/src/error.rs`: `UnexpectedManifestVersion`, `PreJson`, `PreJsonRead`, `PublishTargetEcosystemMismatch`, `UntrustedNpmRegistry`. Pre-existing gap, not introduced by this diff, but the reworded intro now asserts completeness more strongly and is factually wrong. Fix: either add the missing variants or soften the completeness claim.
+
+**2. §C.5 and §C.8 cite §M.10 for `CommitWalker`'s dyn-compatibility — wrong section.** §M.10 (`docs/01-spec.md:1326`) is titled "The exec seam — `exec.rs`" and its entire body is about `CommandRunner`; it never mentions `CommitWalker`. `callisto-model/src/commit.rs` (which defines `CommitWalker`/`CommitRecord`/`CommitWalkError`) has no dedicated M-section anywhere in the doc at all. Lines 4476, 4489 (§C.5) and line 4658 (§C.8) all cite §M.10 for `CommitWalker`. Note: this mirrors a pre-existing miscitation at line 11146 (§V.7), so it's a systemic pattern, not unique to this diff — but this diff adds two more instances of it.
+
+**3. §C.5 misquotes §C.0.** Line 4481: `matching §C.0's "deliberately absent: callisto-vcs" boundary`. §C.0 (line 4225) actually reads "**Deliberately absent:** `callisto-graph`." — it never says `callisto-vcs` is deliberately absent (the dependency table simply omits it). The claim itself (that `callisto-vcs` is absent from this crate's deps) is true, but the quoted attribution to §C.0 is fabricated.
+
+**4. §M.13.3's `ParseChangeset` comment cites the wrong section for `load_changesets`.** Line 2446: "a parse failure deep in `load_changesets` (§G.4)". `load_changesets` is actually defined and documented under §G.6.1 "Loading changesets" (line 6579, under §G.6 "Aggregation"), not §G.4 ("Graph construction — `walk.rs`, `identity.rs`, `crosscheck.rs`"). Should cite §G.6.1.
+
+**5. Stale `cwd` reference left directly above the fixed `fetch_commits` signature.** Lines 4464–4466 (untouched by this diff): "Runs `git log` over `window`, scoped to `pathspecs` (workspace-root-relative, **resolved against `cwd`**)..." — but `fetch_commits` no longer takes a `cwd` parameter, and the diff's own new text 25 lines below (line 4492) explicitly says "there is no `cwd: &amp;Path` parameter here." This is a direct self-contradiction within the same section that the staleness sweep should have caught.
+
+**6. Reordering claim is only true for the touched subset.** The summary says "the block was reordered to match real source's actual declaration order exactly." Within the touched wrapper-variant subset (`Locate…Command`), the new order does exactly match real source. But real source's overall enum order is wrappers-first-then-domain-variants (`Locate…Command`, then `DuplicatePackage…UntrustedNpmRegistry`), while the doc still has domain-variants-first (`Cycle…ConflictingPlatformTargetSources`) then wrappers — the reverse, at the top level. Minor/pre-existing, not something this diff attempted to fix, but the claim overstates scope.
+
+**Verified clean:** §C.6 (`resolve_pre_cursor`/`advance_pre_cursor`, still `CommandRunner`/`cwd`-based) matches source exactly, correctly left unchanged. §C.7 `InferenceInput`/`infer_severity` matches source field-for-field, no stray `policy` field. §C.8 `ConventionalError` matches source's 4 variants exactly, same order. `CommitWalkError`'s 3-variant description (`Command`/`RefNotFound`/`Backend`) in §C.8 prose matches `callisto-model/src/commit.rs` exactly. §V.7/§V.2/§G.4(exists)/§G.12/§CL.8 section labels all resolve and their content generally supports the citations (except item 4 above). Grep across the whole file found zero leftover instances of `GitLogFailed`, `MalformedGitLogOutput`, `GraphError::Tag`, `GraphError::Version`, or a stray `policy: PreMajorInferencePolicy` on `InferenceInput`. Brace balance confirmed for all four edited code blocks (`GraphError`, `fetch_commits`/`InferenceWindow`, `InferenceInput`/`infer_severity`, `ConventionalError`) and file-wide fence count (402, even).
+
+**Adjacent, out-of-scope observation:** §G.12's separately-pinned `ConfigError` block (line 8431–8481) is missing `InvalidChangesetsDir`, `InvalidChangelogPath`, and `VersionParse` compared to real source's `ConfigError` — a similar completeness gap to finding #1, but in a section this diff didn't touch.</result>
+<usage><subagent_tokens>128049</subagent_tokens><tool_uses>41</tool_uses><duration_ms>329804</duration_ms></usage>
+</task-notification>
