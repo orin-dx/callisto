@@ -419,7 +419,7 @@ pub fn apply_version_plan<R: CommandRunner>(
                 return Err(GraphError::Command(CommandError::Failed {
                     program: "git".to_string(),
                     exit_code: output.exit_code,
-                    stderr: output.stderr,
+                    stderr: redact_git_stderr(&output.stderr),
                 }));
             }
         }
@@ -435,7 +435,7 @@ pub fn apply_version_plan<R: CommandRunner>(
                 return Err(GraphError::Command(CommandError::Failed {
                     program: "git".to_string(),
                     exit_code: output.exit_code,
-                    stderr: output.stderr,
+                    stderr: redact_git_stderr(&output.stderr),
                 }));
             }
         }
@@ -444,6 +444,43 @@ pub fn apply_version_plan<R: CommandRunner>(
     }
 
     Ok(outcome)
+}
+
+/// Redacts known registry/VCS credential env-var values and any URL userinfo
+/// component from raw `git` subprocess stderr before it is embedded in a
+/// [`GraphError`] -- a failing `git` invocation (this module's `git add`/
+/// `git rm --cached` staging calls, `commands::validate`'s `git diff`) can
+/// surface an authenticated remote URL (e.g. GitHub Actions'
+/// `https://x-access-token:TOKEN@github.com/...`) verbatim in its own error
+/// output, and that text flows into `--format json` and miette diagnostic
+/// output downstream. Shared crate-wide (`pub(crate)`) rather than
+/// duplicated per call site, matching a single definition of "how do we
+/// redact git stderr in this crate."
+pub(crate) fn redact_git_stderr(text: &str) -> String {
+    callisto_model::redact_known_secrets(
+        text,
+        &callisto_model::known_credential_env_values(std::env::vars()),
+    )
+}
+
+/// A `git` stderr containing a GitHub Actions authenticated remote URL must
+/// have its userinfo stripped before reaching a `GraphError` -- proving the
+/// helper both `git add`/`git rm --cached` staging failures route through
+/// actually redacts, not just that the underlying primitive can.
+#[cfg(test)]
+mod redact_git_stderr_tests {
+    use super::redact_git_stderr;
+
+    #[test]
+    fn strips_authenticated_remote_url_userinfo() {
+        let stderr = "fatal: unable to access 'https://x-access-token:ghs_supersecret123@github.com/org/repo.git/': The requested URL returned error: 403";
+        let redacted = redact_git_stderr(stderr);
+        assert!(
+            !redacted.contains("ghs_supersecret123"),
+            "token must not survive redaction, got: {redacted}"
+        );
+        assert!(redacted.contains("[REDACTED]"));
+    }
 }
 
 #[cfg(test)]
@@ -700,6 +737,60 @@ mod tests {
             !staged_names.contains(&"uv.lock"),
             "uv.lock must NOT be staged when no Python package is bumped, got: {staged_names:?}"
         );
+    }
+
+    /// A `CommandRunner` that fails every call, echoing a stderr containing
+    /// an authenticated GitHub remote URL -- the realistic shape a `git add`/
+    /// `git rm --cached` failure could surface in CI.
+    struct LeakyGitRunner;
+
+    impl CommandRunner for LeakyGitRunner {
+        fn run(
+            &self,
+            _program: &str,
+            _args: &[&str],
+            _cwd: &Path,
+        ) -> Result<CommandOutput, CommandError> {
+            Ok(CommandOutput {
+                exit_code: Some(128),
+                stdout: String::new(),
+                stderr: "fatal: unable to access 'https://x-access-token:ghs_leaked_secret@github.com/org/repo.git/': The requested URL returned error: 403".to_string(),
+            })
+        }
+    }
+
+    /// A `git add` failure while staging a bumped lockfile must not leak an
+    /// authenticated remote URL's credential into the resulting `GraphError`.
+    #[test]
+    fn git_add_staging_failure_redacts_credential_from_error() {
+        let dir = tempfile::tempdir().expect("create tempdir");
+        let root = dir.path();
+        std::fs::write(root.join("Cargo.lock"), "# fake Cargo.lock").unwrap();
+
+        let plan = VersionPlan {
+            bumps: vec![PlannedBump {
+                package: PackageId::parse("cargo:my-crate").expect("valid package id"),
+                from: cargo_version("1.0.0"),
+                to: cargo_version("1.1.0"),
+                severity: Severity::Minor,
+                governed_by: None,
+                reason: None,
+                writes: vec![],
+            }],
+            ..Default::default()
+        };
+
+        let permit = ApplyPermit::force_for_tests();
+        let opts = ApplyOptions::default();
+        let err = apply_version_plan(root, &plan, &LeakyGitRunner, &opts, &permit)
+            .expect_err("git add failure must surface as an Err");
+
+        let rendered = format!("{err}");
+        assert!(
+            !rendered.contains("ghs_leaked_secret"),
+            "credential must not survive redaction, got: {rendered}"
+        );
+        assert!(rendered.contains("[REDACTED]"), "got: {rendered}");
     }
 
     /// When `refresh_lockfiles: true` and the plan bumps a Cargo package,

@@ -27,7 +27,7 @@ pub fn validate<R: CommandRunner, D: DependencyResolver>(
         if !out.success() {
             return Err(GraphError::Command(callisto_model::CommandError::Io {
                 program: "git".to_string(),
-                message: out.stderr,
+                message: crate::apply::redact_git_stderr(&out.stderr),
             }));
         }
         let files: Vec<String> = out
@@ -53,7 +53,7 @@ pub fn validate<R: CommandRunner, D: DependencyResolver>(
         if !out.success() {
             return Err(GraphError::Command(callisto_model::CommandError::Io {
                 program: "git".to_string(),
-                message: out.stderr,
+                message: crate::apply::redact_git_stderr(&out.stderr),
             }));
         }
         let files: Vec<String> = out
@@ -145,4 +145,68 @@ pub fn validate<R: CommandRunner, D: DependencyResolver>(
         valid: is_valid,
         diagnostics,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use callisto_model::{CommandError, CommandOutput, CommandRunner};
+
+    use super::*;
+    use crate::locate::IgnoreWalkLocator;
+    use crate::Workspace;
+
+    /// A `CommandRunner` that fails every call, echoing a stderr containing
+    /// an authenticated GitHub remote URL -- the realistic shape a `git
+    /// diff --cached` failure could surface in CI (e.g. a shallow clone or a
+    /// detached-HEAD checkout with no cached index to diff against).
+    struct LeakyGitRunner;
+
+    impl CommandRunner for LeakyGitRunner {
+        fn run(
+            &self,
+            _program: &str,
+            _args: &[&str],
+            _cwd: &Path,
+        ) -> Result<CommandOutput, CommandError> {
+            Ok(CommandOutput {
+                exit_code: Some(128),
+                stdout: String::new(),
+                stderr: "fatal: unable to access 'https://x-access-token:ghs_leaked_secret@github.com/org/repo.git/': The requested URL returned error: 403".to_string(),
+            })
+        }
+    }
+
+    /// `validate --staged`'s `git diff --cached` failure must not leak an
+    /// authenticated remote URL's credential into the resulting `GraphError`.
+    #[test]
+    fn staged_diff_failure_redacts_credential_from_error() {
+        let dir = tempfile::tempdir().expect("create tempdir");
+        let root = dir.path();
+        std::fs::write(
+            root.join("Cargo.toml"),
+            "[workspace]\nmembers = []\nresolver = \"2\"\n",
+        )
+        .unwrap();
+        std::fs::write(root.join("callisto.toml"), "").unwrap();
+
+        let runner = LeakyGitRunner;
+        let locator = IgnoreWalkLocator::new(root);
+        let ws = Workspace::load(root.to_path_buf(), &locator, &runner)
+            .expect("empty workspace should load");
+
+        let opts = ValidateOptions {
+            staged: true,
+            ..Default::default()
+        };
+        let err = validate(&ws, &opts).expect_err("git diff failure must surface as an Err");
+
+        let rendered = format!("{err}");
+        assert!(
+            !rendered.contains("ghs_leaked_secret"),
+            "credential must not survive redaction, got: {rendered}"
+        );
+        assert!(rendered.contains("[REDACTED]"), "got: {rendered}");
+    }
 }

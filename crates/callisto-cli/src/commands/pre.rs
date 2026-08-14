@@ -1,4 +1,5 @@
 use std::fs;
+use std::path::Path;
 use std::process::ExitCode;
 
 use callisto_format::{parse_pre_json, write_pre_json, PreMode, PreState};
@@ -14,6 +15,38 @@ use crate::workspace::load_workspace;
 /// Relative path reported in dry-run previews, so the output names the file
 /// the user would find rather than an absolute path.
 const PRE_JSON_REL: &str = ".changeset/pre.json";
+
+/// Redacts known registry/VCS credential env-var values and any URL
+/// userinfo component from raw `git` subprocess stderr before it is
+/// embedded in a [`CliError`] -- a failing `git` invocation can surface an
+/// authenticated remote URL (e.g. GitHub Actions'
+/// `https://x-access-token:TOKEN@github.com/...`) verbatim in its own
+/// error output, and that text flows into `--format json` output downstream.
+fn redact_git_stderr(text: &str) -> String {
+    callisto_model::redact_known_secrets(
+        text,
+        &callisto_model::known_credential_env_values(std::env::vars()),
+    )
+}
+
+/// Stages `.changeset/pre.json` via `git add`, called by `pre enter` on a
+/// real (non-dry-run) write so the new file is included in the next commit.
+/// Extracted from [`handle`] so it's directly testable with a fake
+/// [`CommandRunner`] -- `handle` itself always constructs a real
+/// [`crate::runner::CliCommandRunner`], which shells out for real.
+fn stage_pre_json(runner: &dyn CommandRunner, root: &Path) -> Result<(), CliError> {
+    let output = runner
+        .run("git", &["add", PRE_JSON_REL], root)
+        .map_err(|e| CliError::Other(format!("git add failed: {e}")))?;
+    if !output.success() {
+        return Err(CliError::Other(format!(
+            "git add .changeset/pre.json failed (exit {:?}): {}",
+            output.exit_code,
+            redact_git_stderr(&output.stderr)
+        )));
+    }
+    Ok(())
+}
 
 /// Reports the `.changeset/pre.json` content a real run would have written,
 /// mirroring `add`'s dry-run preview in both output formats.
@@ -95,15 +128,7 @@ pub fn handle(args: PreArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
             callisto_manifests::atomic::atomic_write(&pre_path, &text, &permit)?;
 
             // Bug 4: stage pre.json so it is included in the next commit.
-            let output = runner
-                .run("git", &["add", PRE_JSON_REL], &ws.root)
-                .map_err(|e| CliError::Other(format!("git add failed: {e}")))?;
-            if !output.success() {
-                return Err(CliError::Other(format!(
-                    "git add .changeset/pre.json failed (exit {:?}): {}",
-                    output.exit_code, output.stderr
-                )));
-            }
+            stage_pre_json(&runner, &ws.root)?;
 
             match global.format {
                 OutputFormat::Json => {
@@ -172,4 +197,44 @@ pub fn handle(args: PreArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
     }
 
     Ok(ExitCode::SUCCESS)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use callisto_model::{CommandError, CommandOutput, CommandRunner};
+
+    use super::stage_pre_json;
+
+    /// A `git add` failure echoing an authenticated GitHub remote URL (the
+    /// realistic CI shape: `https://x-access-token:TOKEN@github.com/...`)
+    /// must not leak the credential into the resulting `CliError`.
+    #[test]
+    fn stage_pre_json_failure_redacts_credential_from_error() {
+        struct LeakyGitRunner;
+        impl CommandRunner for LeakyGitRunner {
+            fn run(
+                &self,
+                _program: &str,
+                _args: &[&str],
+                _cwd: &Path,
+            ) -> Result<CommandOutput, CommandError> {
+                Ok(CommandOutput {
+                    exit_code: Some(128),
+                    stdout: String::new(),
+                    stderr: "fatal: unable to access 'https://x-access-token:ghs_leaked_secret@github.com/org/repo.git/': The requested URL returned error: 403".to_string(),
+                })
+            }
+        }
+
+        let err = stage_pre_json(&LeakyGitRunner, Path::new("."))
+            .expect_err("git add failure must surface as an Err");
+        let rendered = format!("{err}");
+        assert!(
+            !rendered.contains("ghs_leaked_secret"),
+            "credential must not survive redaction, got: {rendered}"
+        );
+        assert!(rendered.contains("[REDACTED]"), "got: {rendered}");
+    }
 }

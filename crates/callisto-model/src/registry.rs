@@ -123,10 +123,15 @@ pub fn redact_known_secrets(text: &str, secrets: &[String]) -> String {
 
 /// Filters a full environment-variable snapshot down to the values of
 /// registry-credential variables this codebase's publish flow reads:
-/// the fixed `NPM_TOKEN`/`TWINE_PASSWORD`/`CARGO_REGISTRY_TOKEN` names,
-/// plus any `CARGO_REGISTRIES_<NAME>_TOKEN` (the registry name is
-/// operator-configured and unbounded, so this matches the name pattern
-/// rather than a fixed list).
+/// the fixed `NPM_TOKEN`/`TWINE_PASSWORD`/`CARGO_REGISTRY_TOKEN`/
+/// `GITHUB_TOKEN`/`GH_TOKEN` names, plus any `CARGO_REGISTRIES_<NAME>_TOKEN`
+/// (the registry name is operator-configured and unbounded, so this matches
+/// the name pattern rather than a fixed list). `GITHUB_TOKEN`/`GH_TOKEN`
+/// cover GitHub Actions' own ambient credential, whose most realistic
+/// subprocess-stderr exposure is an authenticated remote URL
+/// (`https://x-access-token:TOKEN@github.com/...`) that `redact_url_userinfo`
+/// already catches independently of this list -- matching the env var names
+/// directly is cheap insurance for a token that leaks in some other shape.
 ///
 /// Takes the snapshot as a parameter (callers pass `std::env::vars()`)
 /// rather than reading the environment itself, mirroring the
@@ -138,7 +143,11 @@ pub fn known_credential_env_values(vars: impl Iterator<Item = (String, String)>)
         !value.is_empty()
             && (matches!(
                 key.as_str(),
-                "NPM_TOKEN" | "TWINE_PASSWORD" | "CARGO_REGISTRY_TOKEN"
+                "NPM_TOKEN"
+                    | "TWINE_PASSWORD"
+                    | "CARGO_REGISTRY_TOKEN"
+                    | "GITHUB_TOKEN"
+                    | "GH_TOKEN"
             ) || (key.starts_with("CARGO_REGISTRIES_") && key.ends_with("_TOKEN")))
     })
     .map(|(_, value)| value)
@@ -316,5 +325,23 @@ mod tests {
         let snapshot = vec![("NPM_TOKEN".to_string(), String::new())];
         let values = known_credential_env_values(snapshot.into_iter());
         assert!(values.is_empty());
+    }
+
+    /// GITHUB_TOKEN/GH_TOKEN cover GitHub Actions' own ambient credential --
+    /// realistic exposure is git echoing an authenticated remote URL
+    /// (`https://x-access-token:TOKEN@github.com/...`) in subprocess stderr.
+    /// The URL form is already caught by `redact_url_userinfo` regardless of
+    /// this list, but matching the env var names directly is cheap
+    /// insurance for a token that leaks in some other, non-URL shape.
+    #[test]
+    fn known_credential_env_values_matches_github_token_names() {
+        let snapshot = vec![
+            ("GITHUB_TOKEN".to_string(), "gh-secret".to_string()),
+            ("GH_TOKEN".to_string(), "gh-cli-secret".to_string()),
+        ];
+        let values = known_credential_env_values(snapshot.into_iter());
+        assert_eq!(values.len(), 2);
+        assert!(values.contains(&"gh-secret".to_string()));
+        assert!(values.contains(&"gh-cli-secret".to_string()));
     }
 }

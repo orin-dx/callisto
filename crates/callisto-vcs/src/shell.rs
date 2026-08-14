@@ -27,6 +27,20 @@ const RECORD_SEP: char = '\u{1e}';
 /// `git log --format=` output.
 const FIELD_SEP: char = '\u{1f}';
 
+/// Redacts known registry/VCS credential env-var values and any URL
+/// userinfo component from raw `git` subprocess stderr before it is
+/// embedded in a [`VcsError`] -- a failing `git` invocation can surface an
+/// authenticated remote URL (e.g. GitHub Actions'
+/// `https://x-access-token:TOKEN@github.com/...`) verbatim in its own
+/// error output, and that text flows into `--format json` and miette
+/// diagnostic output downstream.
+fn redact_git_stderr(text: &str) -> String {
+    callisto_model::redact_known_secrets(
+        text,
+        &callisto_model::known_credential_env_values(std::env::vars()),
+    )
+}
+
 /// Shells `git` subcommands via a [`CommandRunner`] to implement
 /// [`GitDataSource`]. See the module docs for the consolidation this
 /// replaces.
@@ -65,7 +79,7 @@ impl GitDataSource for ShellGit<'_> {
             return Err(VcsError::Git(format!(
                 "`git rev-parse HEAD` failed in `{}`: {}",
                 self.root.display(),
-                output.stderr
+                redact_git_stderr(&output.stderr)
             )));
         }
         let sha_str = output.stdout_trimmed();
@@ -152,7 +166,7 @@ impl GitDataSource for ShellGit<'_> {
             return Err(VcsError::Git(format!(
                 "`git log` failed in `{}`: {}",
                 self.root.display(),
-                output.stderr
+                redact_git_stderr(&output.stderr)
             )));
         }
 
@@ -184,7 +198,7 @@ impl GitDataSource for ShellGit<'_> {
             return Err(VcsError::Git(format!(
                 "`git tag` failed in `{}`: {}",
                 self.root.display(),
-                output.stderr
+                redact_git_stderr(&output.stderr)
             )));
         }
         Ok(())
@@ -205,7 +219,7 @@ impl GitDataSource for ShellGit<'_> {
             return Err(VcsError::Git(format!(
                 "`git tag -f` failed in `{}`: {}",
                 self.root.display(),
-                output.stderr
+                redact_git_stderr(&output.stderr)
             )));
         }
         Ok(())
@@ -526,5 +540,75 @@ mod tests {
         };
         let git = ShellGit::new(&runner, PathBuf::from("."));
         assert!(matches!(git.head_sha(), Err(VcsError::Git(_))));
+    }
+
+    /// A leaking authenticated remote URL in `git`'s stderr (the realistic
+    /// GitHub Actions shape: `https://x-access-token:TOKEN@github.com/...`)
+    /// must not survive into a `VcsError` from any of the four operations
+    /// that embed raw subprocess stderr.
+    fn leaky_response(_args: &[&str]) -> Result<CommandOutput, CommandError> {
+        Ok(CommandOutput {
+            exit_code: Some(128),
+            stdout: String::new(),
+            stderr: "fatal: unable to access 'https://x-access-token:ghs_leaked_secret@github.com/org/repo.git/': The requested URL returned error: 403".to_string(),
+        })
+    }
+
+    #[test]
+    fn head_sha_failure_redacts_credential() {
+        let runner = FakeRunner {
+            calls: Mutex::new(Vec::new()),
+            response: Box::new(leaky_response),
+        };
+        let git = ShellGit::new(&runner, PathBuf::from("."));
+        let err = git.head_sha().expect_err("must fail");
+        let rendered = format!("{err}");
+        assert!(!rendered.contains("ghs_leaked_secret"), "got: {rendered}");
+        assert!(rendered.contains("[REDACTED]"), "got: {rendered}");
+    }
+
+    #[test]
+    fn commits_since_failure_redacts_credential() {
+        let runner = FakeRunner {
+            calls: Mutex::new(Vec::new()),
+            response: Box::new(leaky_response),
+        };
+        let git = ShellGit::new(&runner, PathBuf::from("."));
+        let err = git.commits_since(None, &[]).expect_err("must fail");
+        let rendered = format!("{err}");
+        assert!(!rendered.contains("ghs_leaked_secret"), "got: {rendered}");
+        assert!(rendered.contains("[REDACTED]"), "got: {rendered}");
+    }
+
+    #[test]
+    fn create_tag_failure_redacts_credential() {
+        let runner = FakeRunner {
+            calls: Mutex::new(Vec::new()),
+            response: Box::new(leaky_response),
+        };
+        let git = ShellGit::new(&runner, PathBuf::from("."));
+        let sha = CommitSha::parse(&"a".repeat(40)).unwrap();
+        let err = git
+            .create_tag("v1.0.0", &sha, None, &permit())
+            .expect_err("must fail");
+        let rendered = format!("{err}");
+        assert!(!rendered.contains("ghs_leaked_secret"), "got: {rendered}");
+        assert!(rendered.contains("[REDACTED]"), "got: {rendered}");
+    }
+
+    #[test]
+    fn create_floating_major_failure_redacts_credential() {
+        let runner = FakeRunner {
+            calls: Mutex::new(Vec::new()),
+            response: Box::new(leaky_response),
+        };
+        let git = ShellGit::new(&runner, PathBuf::from("."));
+        let sha = CommitSha::parse(&"a".repeat(40)).unwrap();
+        let err = git
+            .create_floating_major("v1", &sha, &permit())
+            .expect_err("must fail");
+        let rendered = format!("{err}");
+        assert!(!rendered.contains("ghs_leaked_secret"), "got: {rendered}");
+        assert!(rendered.contains("[REDACTED]"), "got: {rendered}");
     }
 }

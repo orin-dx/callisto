@@ -8,6 +8,20 @@ pub fn pre_cursor_ref_name(package: &PackageId) -> String {
     format!("refs/callisto/pre-cursor/{}", package.display_name())
 }
 
+/// Redacts known registry/VCS credential env-var values and any URL
+/// userinfo component from raw `git` subprocess stderr before it is
+/// embedded in a [`ConventionalError`] -- a failing `git` invocation can
+/// surface an authenticated remote URL (e.g. GitHub Actions'
+/// `https://x-access-token:TOKEN@github.com/...`) verbatim in its own
+/// error output, and that text flows into `--format json` and miette
+/// diagnostic output downstream.
+fn redact_git_stderr(text: String) -> String {
+    callisto_model::redact_known_secrets(
+        &text,
+        &callisto_model::known_credential_env_values(std::env::vars()),
+    )
+}
+
 pub fn resolve_pre_cursor(
     runner: &dyn CommandRunner,
     cwd: &Path,
@@ -29,7 +43,7 @@ pub fn resolve_pre_cursor(
         CommitSha::parse(sha_str).map_err(|_err| ConventionalError::MalformedPreCursorRef {
             cwd: cwd.to_path_buf(),
             ref_name,
-            stderr: output.stderr,
+            stderr: redact_git_stderr(output.stderr),
         })?;
 
     Ok(Some(sha))
@@ -49,7 +63,7 @@ pub fn advance_pre_cursor(
             cwd: cwd.to_path_buf(),
             ref_name,
             sha: sha.as_str().to_string(),
-            stderr: output.stderr,
+            stderr: redact_git_stderr(output.stderr),
         });
     }
 
@@ -267,6 +281,47 @@ mod tests {
                 assert_eq!(ref_name, "refs/callisto/pre-cursor/my-crate");
                 assert_eq!(reported_sha, sha40('e'));
                 assert_eq!(stderr, "fatal: cannot lock ref");
+            }
+            other => panic!("expected Err(PreCursorAdvanceFailed), got {other:?}"),
+        }
+    }
+
+    /// A leaking authenticated remote URL in `git`'s stderr (the realistic
+    /// GitHub Actions shape) must not survive into `MalformedPreCursorRef`.
+    #[test]
+    fn resolve_pre_cursor_redacts_credential_from_malformed_ref_error() {
+        let runner = CannedRunner(Ok(CommandOutput {
+            exit_code: Some(0),
+            stdout: "not-a-sha".to_string(),
+            stderr: "warning: unable to access 'https://x-access-token:ghs_leaked_secret@github.com/org/repo.git/': The requested URL returned error: 403".to_string(),
+        }));
+        let id = PackageId::parse("my-crate").unwrap();
+        let result = resolve_pre_cursor(&runner, Path::new("/repo"), &id);
+        match result {
+            Err(ConventionalError::MalformedPreCursorRef { stderr, .. }) => {
+                assert!(!stderr.contains("ghs_leaked_secret"), "got: {stderr}");
+                assert!(stderr.contains("[REDACTED]"), "got: {stderr}");
+            }
+            other => panic!("expected Err(MalformedPreCursorRef), got {other:?}"),
+        }
+    }
+
+    /// Same leak vector, but through `advance_pre_cursor`'s `git update-ref`
+    /// failure path into `PreCursorAdvanceFailed`.
+    #[test]
+    fn advance_pre_cursor_redacts_credential_from_advance_failed_error() {
+        let runner = CannedRunner(Ok(CommandOutput {
+            exit_code: Some(1),
+            stdout: String::new(),
+            stderr: "fatal: unable to access 'https://x-access-token:ghs_leaked_secret@github.com/org/repo.git/': The requested URL returned error: 403".to_string(),
+        }));
+        let id = PackageId::parse("my-crate").unwrap();
+        let sha = CommitSha::parse(&sha40('e')).unwrap();
+        let result = advance_pre_cursor(&runner, Path::new("/repo"), &id, &sha);
+        match result {
+            Err(ConventionalError::PreCursorAdvanceFailed { stderr, .. }) => {
+                assert!(!stderr.contains("ghs_leaked_secret"), "got: {stderr}");
+                assert!(stderr.contains("[REDACTED]"), "got: {stderr}");
             }
             other => panic!("expected Err(PreCursorAdvanceFailed), got {other:?}"),
         }
