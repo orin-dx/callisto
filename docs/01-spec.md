@@ -2291,10 +2291,11 @@ their real declaration order, because the values they accompany (`ProjectRoot`, 
 `GraphError`'s coded (non-transparent) variants are shown below: 19 grouped together above, plus
 `ParseChangeset` and `Command`, which sit among the otherwise-transparent wrapper range in real
 source's own declaration order (neither is itself transparent — see their own doc comments
-below). The wrapper variants themselves match real source exactly, field for field. The coded
-variants are not all independently re-audited by this pass, though: `MissingGroupMember.member`
-and `WorkspaceVersionConflict`'s fields are known, as of this writing, to differ from real
-source — tracked separately, not fixed by this revision.
+below). The wrapper variants themselves match real source exactly, field for field. All 21
+coded variants' fields (names and types) match real source exactly too, but — unlike the
+wrappers — several of their `#[error(...)]` messages below are paraphrased rather than the
+verbatim real string, for readability; treat the field shapes as exact and the message text as
+illustrative unless a variant's own doc comment says otherwise.
 
 ```rust
 // crates/callisto-graph/src/locate.rs
@@ -2391,11 +2392,15 @@ pub enum GraphError {
                 .map(|(id, v)| format!("{id}={v}")).collect::<Vec<_>>().join(", "))]
     FixedGroupDivergent { group: GroupName, members: Vec<(PackageId, Version)> },
 
-    /// §7.5: "`members` lists a platform whose manifest file is missing entirely" — a hard
-    /// error unconditionally, not a drift diagnostic. A config-declared required member that
-    /// does not exist on disk fails loudly (P5) rather than being silently skipped.
-    #[error("group `{group}` declares member `{member}`, whose manifest is missing from disk")]
-    MissingGroupMember { group: GroupName, member: PackageId },
+    /// `GroupTable::resolve` (§G.5.5): a `[[fixed-group]]`/`[[linked-group]]` config `member`
+    /// name resolves to neither a real package identity (via `IdentityIndex::resolve_human`)
+    /// nor a platform manifest name (via `IdentityIndex.platform`) — a config-declared member
+    /// that does not exist in the workspace at all under either lookup, so it fails loudly
+    /// (P5) rather than being silently skipped. `member` carries the raw, unresolved config
+    /// string, not a `PackageId` (there is no identity to name — resolution is exactly what
+    /// failed).
+    #[error("group `{group}` lists member `{member}`, which was not found in the workspace")]
+    MissingGroupMember { group: GroupName, member: String },
 
     /// §14's parse-time group validation (§18's group-priority follow-on): a package must
     /// belong to at most one fixed group and at most one linked group, and the two member
@@ -2431,15 +2436,20 @@ pub enum GraphError {
         found: Version,
     },
 
-    /// §G.10.2 step 3. Two packages' bumps both resolve to `[workspace.package].version` at
-    /// the same Cargo root (`VersionWriteTarget::CargoWorkspacePackage`, §G.10.1) but want
-    /// different versions. Members sharing one inherited version cannot diverge, and letting
-    /// the last write win would pick a winner by iteration order — so it is refused before
-    /// any write happens (§18 Q2, P5).
-    #[error("Cargo workspace root `{root_manifest}` would receive conflicting \
-             `[workspace.package].version` writes: {}", .wanted.iter()
-                .map(|(id, v)| format!("{id} wants {v}")).collect::<Vec<_>>().join(", "))]
-    WorkspaceVersionConflict { root_manifest: PathBuf, wanted: Vec<(PackageId, Version)> },
+    /// §G.10.2 step 3's *intended* guard: two packages' bumps both resolving to
+    /// `[workspace.package].version` at the same Cargo root
+    /// (`VersionWriteTarget::CargoWorkspacePackage`, §G.10.1) but wanting different versions
+    /// should be refused before any write happens, since members sharing one inherited
+    /// version cannot diverge and letting the last write win would pick a winner by iteration
+    /// order (§18 Q2, P5). As of this writing, however, this variant is never constructed —
+    /// grep confirms no production call site builds it, and `apply_version_plan`
+    /// (`apply.rs`) applies each `CargoWorkspacePackage` write independently with no
+    /// cross-bump conflict check, so the last-write-wins outcome this variant exists to
+    /// prevent is not actually prevented today. `details` is a caller-assembled description
+    /// (this variant does not build its own message from structured fields the way its
+    /// sibling coded variants do).
+    #[error("workspace root `{root_manifest}` has conflicting version updates: {details}")]
+    WorkspaceVersionConflict { root_manifest: PathBuf, details: String },
 
     /// `.changeset/pre.json` failed to parse as valid pre-mode state (§8) — the file exists
     /// and was read, but `callisto_format::parse_pre_json` rejected its contents.
