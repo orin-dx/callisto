@@ -448,11 +448,40 @@ fn detect_npm_role(abs_path: &Path) -> ManifestRole {
         return ManifestRole::Canonical;
     };
 
+    // npm's standard `os`/`cpu` manifest fields have no libc/ABI concept at
+    // all, so a real disk-discovered Linux napi platform package always
+    // produced `abi: None` here -- but `napi.rs::role_to_triple`'s Linux
+    // match arms all require a concrete ABI, meaning such a package could
+    // never resolve to its triple. napi-rs's own package-generation
+    // convention encodes the ABI in the package *name*'s suffix instead
+    // (e.g. "@scope/pkg-linux-x64-gnu"), so infer it from there when the
+    // platform is linux.
+    let abi = if platform == "linux" {
+        map.get("name")
+            .and_then(|v| v.as_str())
+            .and_then(napi_linux_abi_from_package_name)
+    } else {
+        None
+    };
+
     ManifestRole::Platform {
         platform,
         arch,
-        abi: None,
+        abi,
     }
+}
+
+/// Infers a Linux napi-rs platform package's libc ABI from its package
+/// name's trailing suffix. Returns `None` when the name has no recognized
+/// suffix -- this infers when the signal is present, it doesn't invent an
+/// ABI that isn't actually there.
+fn napi_linux_abi_from_package_name(name: &str) -> Option<String> {
+    for abi in ["gnueabihf", "gnu", "musl"] {
+        if name.ends_with(&format!("-{abi}")) {
+            return Some(abi.to_string());
+        }
+    }
+    None
 }
 
 /// Explicit ecosystem precedence for primary-ID selection when a single
@@ -469,5 +498,126 @@ fn ecosystem_primary_priority(e: Ecosystem) -> u8 {
         Ecosystem::Npm => 1,
         Ecosystem::Pypi => 2,
         _ => u8::MAX,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Real disk-discovered Linux napi platform packages always have
+    /// `abi: None` from `detect_npm_role` (npm's standard `os`/`cpu`
+    /// manifest fields have no libc/ABI concept), but `napi.rs::role_to_triple`'s
+    /// Linux match arms all require `Some("gnu")`/`Some("musl")`/
+    /// `Some("gnueabihf")` -- so before this fix, `role_to_triple` could
+    /// never resolve a real, disk-discovered Linux platform package to its
+    /// triple, and `napi_drift` would spuriously report it as a
+    /// declared-but-missing group member even though it's genuinely present
+    /// on disk with the correct name.
+    #[test]
+    fn detect_npm_role_infers_linux_gnu_abi_from_package_name_suffix() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("package.json");
+        std::fs::write(
+            &path,
+            r#"{"name":"@scope/my-lib-linux-x64-gnu","version":"1.0.0","os":["linux"],"cpu":["x64"]}"#,
+        )
+        .unwrap();
+
+        let role = detect_npm_role(&path);
+
+        assert_eq!(
+            crate::napi::role_to_triple(&role).as_deref(),
+            Some("x86_64-unknown-linux-gnu"),
+            "expected a resolvable triple, got role: {role:?}"
+        );
+    }
+
+    #[test]
+    fn detect_npm_role_infers_linux_musl_abi_from_package_name_suffix() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("package.json");
+        std::fs::write(
+            &path,
+            r#"{"name":"@scope/my-lib-linux-arm64-musl","version":"1.0.0","os":["linux"],"cpu":["arm64"]}"#,
+        )
+        .unwrap();
+
+        let role = detect_npm_role(&path);
+
+        assert_eq!(
+            crate::napi::role_to_triple(&role).as_deref(),
+            Some("aarch64-unknown-linux-musl"),
+            "expected a resolvable triple, got role: {role:?}"
+        );
+    }
+
+    #[test]
+    fn detect_npm_role_infers_linux_gnueabihf_abi_from_package_name_suffix() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("package.json");
+        std::fs::write(
+            &path,
+            r#"{"name":"@scope/my-lib-linux-arm-gnueabihf","version":"1.0.0","os":["linux"],"cpu":["arm"]}"#,
+        )
+        .unwrap();
+
+        let role = detect_npm_role(&path);
+
+        assert_eq!(
+            crate::napi::role_to_triple(&role).as_deref(),
+            Some("armv7-unknown-linux-gnueabihf"),
+            "expected a resolvable triple, got role: {role:?}"
+        );
+    }
+
+    /// Non-Linux platforms have no ABI concept in `role_to_triple`'s table
+    /// (`abi` is always `None` there) -- must not be affected by the
+    /// name-suffix inference at all.
+    #[test]
+    fn detect_npm_role_does_not_infer_abi_for_non_linux_platforms() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("package.json");
+        std::fs::write(
+            &path,
+            r#"{"name":"@scope/my-lib-darwin-arm64-gnu","version":"1.0.0","os":["darwin"],"cpu":["arm64"]}"#,
+        )
+        .unwrap();
+
+        let role = detect_npm_role(&path);
+
+        assert_eq!(
+            role,
+            ManifestRole::Platform {
+                platform: "darwin".to_string(),
+                arch: "arm64".to_string(),
+                abi: None,
+            }
+        );
+    }
+
+    /// A Linux platform package whose name has no recognized ABI suffix at
+    /// all stays `abi: None` -- this function infers when it can, it
+    /// doesn't invent an ABI that isn't actually signaled anywhere.
+    #[test]
+    fn detect_npm_role_leaves_abi_none_when_linux_name_has_no_recognized_suffix() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("package.json");
+        std::fs::write(
+            &path,
+            r#"{"name":"@scope/my-lib-linux-x64","version":"1.0.0","os":["linux"],"cpu":["x64"]}"#,
+        )
+        .unwrap();
+
+        let role = detect_npm_role(&path);
+
+        assert_eq!(
+            role,
+            ManifestRole::Platform {
+                platform: "linux".to_string(),
+                arch: "x64".to_string(),
+                abi: None,
+            }
+        );
     }
 }
