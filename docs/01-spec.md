@@ -2283,19 +2283,18 @@ default behaviour "abort the version pass," which is the opposite of what the in
 §15: *"`LocateError` and `GraphError` are ordinary per-crate error enums (`callisto-graph`),
 not given full signatures here."* This spec **keeps that placement** — they are not
 `callisto-model` exports. `LocateError`'s full definition is pinned here anyway, and `GraphError`'s
-transparent-wrapper variants (`Locate` through `Command`, below) are pinned in their real
-declaration order, because the values they accompany (`ProjectRoot`, `DeclaredEdge`,
+`Locate` through `Command` variant range (below), mostly transparent wrappers, are pinned in
+their real declaration order, because the values they accompany (`ProjectRoot`, `DeclaredEdge`,
 `PackageId`, `Version`) are model types and the two crates' specs must agree on the vocabulary.
 `#[diagnostic(...)]` attributes and the `#[allow(clippy::result_large_err)]`/enum-level
-`#[diagnostic]` derive real source also carries are omitted here for readability. **`GraphError`
-is not reproduced in full**: its own coded (non-wrapper) variants below are a representative
-subset, not exhaustive — real source also declares `UnexpectedManifestVersion`, `PreJson`,
-`PreJsonRead`, `PublishTargetEcosystemMismatch`, and `UntrustedNpmRegistry`, none of which are
-shown here. The wrapper variants (`Locate` through `Command`) match real source exactly, field
-for field; the coded variants shown below are not independently re-audited by this pass and may
-carry pre-existing drift of their own (e.g. `MissingGroupMember.member` and
-`WorkspaceVersionConflict`'s fields are known, as of this writing, to differ from real source —
-tracked separately, not fixed by this revision).
+`#[diagnostic]` derive real source also carries are omitted here for readability. All 21 of
+`GraphError`'s coded (non-transparent) variants are shown below: 19 grouped together above, plus
+`ParseChangeset` and `Command`, which sit among the otherwise-transparent wrapper range in real
+source's own declaration order (neither is itself transparent — see their own doc comments
+below). The wrapper variants themselves match real source exactly, field for field. The coded
+variants are not all independently re-audited by this pass, though: `MissingGroupMember.member`
+and `WorkspaceVersionConflict`'s fields are known, as of this writing, to differ from real
+source — tracked separately, not fixed by this revision.
 
 ```rust
 // crates/callisto-graph/src/locate.rs
@@ -2416,6 +2415,22 @@ pub enum GraphError {
     #[error("cascade did not converge after {iterations} iterations")]
     CascadeNotConverged { iterations: usize },
 
+    /// `apply_version_plan`'s rerun-safety check for a single manifest write (§7.6 step 1's
+    /// package-level sibling to `OnDiskVersionDrift` above): the manifest at `path` is at
+    /// neither the plan's `from` nor `to` version when the write is about to happen. Real
+    /// call sites (`apply.rs`) take a separate early branch whenever `found` already equals
+    /// the target version — this variant is only ever constructed once that branch is ruled
+    /// out, so `found` here is guaranteed to differ from *both* `expected_from` and
+    /// `expected_to`; there is no "already applied" case reachable through this error.
+    #[error("cannot apply version plan: manifest `{path}` is at version {found}, expected \
+             {expected_from} (pre-apply) or {expected_to} (already applied — safe to retry)")]
+    UnexpectedManifestVersion {
+        path: PathBuf,
+        expected_from: Version,
+        expected_to: Version,
+        found: Version,
+    },
+
     /// §G.10.2 step 3. Two packages' bumps both resolve to `[workspace.package].version` at
     /// the same Cargo root (`VersionWriteTarget::CargoWorkspacePackage`, §G.10.1) but want
     /// different versions. Members sharing one inherited version cannot diverge, and letting
@@ -2425,6 +2440,16 @@ pub enum GraphError {
              `[workspace.package].version` writes: {}", .wanted.iter()
                 .map(|(id, v)| format!("{id} wants {v}")).collect::<Vec<_>>().join(", "))]
     WorkspaceVersionConflict { root_manifest: PathBuf, wanted: Vec<(PackageId, Version)> },
+
+    /// `.changeset/pre.json` failed to parse as valid pre-mode state (§8) — the file exists
+    /// and was read, but `callisto_format::parse_pre_json` rejected its contents.
+    #[error("failed to parse .changeset/pre.json: {0}")]
+    PreJson(callisto_format::PreJsonError),
+
+    /// `.changeset/pre.json` exists but couldn't be read at all (permissions, I/O failure) —
+    /// distinct from `PreJson` above, which is a read that succeeded but a parse that didn't.
+    #[error("failed to read .changeset/pre.json: {message}")]
+    PreJsonRead { message: String },
 
     /// §G.11's `matrix` (AC-017): a package declares platform targets via both
     /// `napi.targets` (`package.json`) and `[tool.maturin].targets` (`pyproject.toml`) in the
@@ -2438,6 +2463,34 @@ pub enum GraphError {
         napi_source: &'static str,
         maturin_source: &'static str,
     },
+
+    /// A resolved `[[package]]`/`[[package-set]]` `publish-to` override names a target whose
+    /// `.ecosystem()` (e.g. `nuget`) is not one of `package`'s own detected ecosystems (e.g. a
+    /// Cargo-only crate) — caught in `walk.rs`'s identity-building loop, the only place both
+    /// the resolved override and the package's real, detected ecosystems are known at once.
+    /// Rejected rather than silently accepted, since a silently-accepted mismatch makes the
+    /// package vanish from every real publish downstream with zero diagnostic.
+    #[error(
+        "package `{package}` configures publish-to target `{target}` (ecosystem `{}`), but \
+         its detected ecosystem is `{}`",
+        .target_ecosystem.prefix(),
+        .package_ecosystems.iter().map(|e| e.prefix()).collect::<Vec<_>>().join(", ")
+    )]
+    PublishTargetEcosystemMismatch {
+        package: PackageId,
+        target: String,
+        target_ecosystem: Ecosystem,
+        package_ecosystems: Vec<Ecosystem>,
+    },
+
+    /// `package.json`'s `publishConfig.registry` is manifest-controlled data (a PR author can
+    /// set it), never trusted verbatim as a publish destination: `url` must use `https` and
+    /// exactly match a `url` configured on an `npm`-kind `[registries]` entry in
+    /// `callisto.toml`. An npm package setting a registry that isn't operator-approved this
+    /// way hits this variant rather than being silently published to an untrusted host.
+    #[error("package `{package}` sets `publishConfig.registry` to `{url}`, which is not an \
+             operator-approved npm registry")]
+    UntrustedNpmRegistry { package: PackageId, url: String },
 
     #[error(transparent)]
     Locate(#[from] LocateError),
