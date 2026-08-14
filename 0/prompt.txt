@@ -1,0 +1,28 @@
+<task-notification>
+<task-id>aa7a30c07be611620</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/aa7a30c07be611620.output</output-file>
+<status>completed</status>
+<summary>Agent "Review docs/01-spec.md WorkspaceCargoResolver fix" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>`InvariantViolation` is confirmed as a real, distinct error variant (used and asserted in a test at cargo.rs:1865), not conflated with `WorkspaceInherited`. All verification complete.
+
+## Verdict
+
+**1. WorkspaceInherited construction site (read-time guard).** Confirmed exactly. Grep shows exactly one construction, at `cargo.rs:185`, inside `current_version()`, guarded by `self.inherited_version` true but `self.inheritance`/`inh.version` absent (lines 179-189). It is never returned by `write_version` or `update_dependency_spec`. Accurate.
+
+**2. `write_version` behavior + cited test.** Confirmed. Lines 210-228: on `self.inherited_version`, it pins `v.render()` directly into `[package].version`, sets `self.inherited_version = false`, returns `Ok(())` — never touches the root, never errors. Test `write_version_pins_explicitly_on_workspace_inheriting_member` (line 1567+) asserts exactly this: `write_version(...).unwrap()` succeeds, disk untouched pre-persist, root stays `1.0.0` post-persist, member gets pinned `1.1.0` without `workspace = true`. Doc claim accurate.
+
+**3. `update_dependency_spec` branching.** Confirmed. Lines 300-328: for an inherited dep, if `self.absolute == root_cargo` it returns `ManifestError::InvariantViolation` (not `WorkspaceInherited`, confirmed as a distinct variant used/tested elsewhere); otherwise it loads `WorkspaceCargoResolver::load` and calls `ws_res.write_dependency(...)` directly, transparent delegation with no error to its caller. Doc description accurate.
+
+**4. `WorkspaceCargoResolver::write_version` reachability.** Confirmed dead in production. Its only real call is `apply.rs:206`, inside the `VersionWriteTarget::CargoWorkspacePackage` dispatch arm. `CargoWorkspacePackage` is constructed only once outside its own enum definition — at `apply.rs:1710`, which is inside `mod tests` (`#[cfg(test)]` at line 486). Real planners (`commands/version.rs:119`, `commands/snapshot.rs:87`) only ever construct `VersionWriteTarget::Manifest`. No live production caller — accurate.
+
+**5. `WorkspaceCargoResolver::write_dependency` reachability.** Confirmed live on both paths. `cascade.rs:263` (well before `mod tests` at line 543) constructs `DepWriteTarget::CargoWorkspaceDependency` in real rewrite planning, gated on `edge.inherited`. `apply.rs:232-234` dispatches that target to `ws_res.write_dependency(...)`. Separately, `cargo.rs:326-327` shows `update_dependency_spec` delegating here too. This is the one "actually wired" claim in the diff, and it holds up — correctly not following the "everything unwired" pattern.
+
+**6. Fence balance.** `grep -c '^```' docs/01-spec.md` = 402 (even, unbroken).
+
+**7. Prose/comment consistency.** The new paragraph and the three edited doc comments are mutually consistent and match verified behavior — no overclaiming found.
+
+No discrepancies found anywhere in the diff.</result>
+<usage><subagent_tokens>52946</subagent_tokens><tool_uses>14</tool_uses><duration_ms>67627</duration_ms></usage>
+</task-notification>
