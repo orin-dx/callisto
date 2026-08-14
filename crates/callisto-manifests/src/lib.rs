@@ -48,7 +48,7 @@ pub trait Manifest: Send + Sync {
             Ecosystem::Cargo => vec![callisto_model::PublishTarget::CratesIo],
             Ecosystem::Npm => vec![callisto_model::PublishTarget::Npm {
                 registry: None,
-                restricted: false,
+                access: None,
             }],
             _ => vec![callisto_model::PublishTarget::None],
         }

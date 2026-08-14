@@ -152,7 +152,7 @@ pub fn parse_publish_target(s: &str) -> Result<PublishTarget, ConfigError> {
         "crates-io" => Ok(PublishTarget::CratesIo),
         "npm" => Ok(PublishTarget::Npm {
             registry: None,
-            restricted: false,
+            access: None,
         }),
         "pypi" => Ok(PublishTarget::Pypi { index: None }),
         "nuget" => Ok(PublishTarget::NuGet { source: None }),
@@ -899,7 +899,7 @@ mod tests {
             parse_publish_target("npm").unwrap(),
             PublishTarget::Npm {
                 registry: None,
-                restricted: false
+                access: None
             }
         );
         assert_eq!(
@@ -1004,7 +1004,7 @@ mod tests {
             cfg.packages[0].1.publish_to,
             Some(vec![PublishTarget::Npm {
                 registry: None,
-                restricted: false
+                access: None
             }]),
             "npm/pkg-a publish-to = [\"npm\"] must resolve to PublishTarget::Npm"
         );

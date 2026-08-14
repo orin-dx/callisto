@@ -113,7 +113,7 @@ impl<R: CommandRunner> SubprocessRegistryClient<R> {
                 pkg.name.clone(),
                 NpmMeta {
                     tag: pkg.tag.clone(),
-                    access: pkg.access.clone(),
+                    access: pkg.access,
                     registry: pkg.registry.clone(),
                 },
             );
@@ -125,7 +125,7 @@ impl<R: CommandRunner> SubprocessRegistryClient<R> {
                 pkg.name.clone(),
                 NpmMeta {
                     tag: pkg.tag.clone(),
-                    access: pkg.access.clone(),
+                    access: pkg.access,
                     registry: pkg.registry.clone(),
                 },
             );

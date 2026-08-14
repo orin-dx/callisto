@@ -203,15 +203,19 @@ impl Manifest for PackageJson {
         // Read `publishConfig.access` to propagate the operator's explicit
         // access intent. npm's `--access` CLI flag overrides publishConfig.access,
         // so callisto must read it here and honour it in plan_publish rather than
-        // blindly passing `--access public` for all scoped packages.
-        let restricted = publish_config
+        // blindly passing `--access public` for all scoped packages. Any value
+        // other than the two npm recognises (including absence) is `None`,
+        // not an error -- an unrecognised value here isn't this layer's job
+        // to validate.
+        let access = publish_config
             .and_then(|pc| pc.get("access"))
             .and_then(|a| a.as_str())
-            == Some("restricted");
-        vec![callisto_model::PublishTarget::Npm {
-            registry,
-            restricted,
-        }]
+            .and_then(|s| match s {
+                "public" => Some(callisto_model::NpmAccess::Public),
+                "restricted" => Some(callisto_model::NpmAccess::Restricted),
+                _ => None,
+            });
+        vec![callisto_model::PublishTarget::Npm { registry, access }]
     }
 
     fn role(&self) -> ManifestRole {

@@ -1,7 +1,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::{RegistryKey, VersionGrammar};
+use crate::{NpmAccess, RegistryKey, VersionGrammar};
 
 /// Ecosystem supported by callisto.
 #[derive(
@@ -75,12 +75,14 @@ pub enum PublishTarget {
     CratesIo,
     Npm {
         registry: Option<String>,
-        /// `true` when `publishConfig.access` in `package.json` is `"restricted"`.
-        /// When set, `plan_publish` uses `NpmAccess::Restricted` instead of the
-        /// scoped-package default of `NpmAccess::Public`, so `--access restricted`
-        /// is passed to the package manager rather than `--access public`, which
-        /// would silently override the operator's intent.
-        restricted: bool,
+        /// The operator's explicit `publishConfig.access` from `package.json`,
+        /// if set. `None` means npm's `publishConfig.access` was absent --
+        /// distinct from an explicit `"public"`, which a bare bool couldn't
+        /// represent (both collapsed to `false`, silently dropping an
+        /// unscoped package's explicit `"public"` setting). When `Some`,
+        /// `plan_publish` passes the corresponding `--access` flag rather
+        /// than falling back to the `@scope/name`-implies-public heuristic.
+        access: Option<NpmAccess>,
     },
     Pypi {
         index: Option<String>,

@@ -192,7 +192,7 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
             let mut publishes_npm = false;
             let mut publishes_pypi = false;
             let mut npm_registry_url: Option<String> = None;
-            let mut npm_restricted = false;
+            let mut npm_access: Option<callisto_model::NpmAccess> = None;
             // True once at least one configured target has a real dispatch
             // implementation. Drives the release-tag/ReleaseEntry gate below —
             // a package configured only with not-yet-implemented targets
@@ -206,21 +206,18 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
                         publishes_cargo = true;
                         has_dispatchable_target = true;
                     }
-                    callisto_model::PublishTarget::Npm {
-                        registry,
-                        restricted,
-                    } => {
+                    callisto_model::PublishTarget::Npm { registry, access } => {
                         publishes_npm = true;
                         has_dispatchable_target = true;
                         // Extract the private registry URL and access
-                        // restriction from the first Npm target, both read
+                        // setting from the first Npm target, both read
                         // from `publishConfig` in package.json.
                         if npm_registry_url.is_none() {
                             if let Some(url) = registry {
                                 validate_npm_registry_url(url, &pkg.id, &ws.config.registries)?;
                             }
                             npm_registry_url = registry.clone();
-                            npm_restricted = *restricted;
+                            npm_access = *access;
                         }
                     }
                     callisto_model::PublishTarget::Pypi { .. } => {
@@ -320,21 +317,23 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
                     None
                 };
 
-                // npm's ecosystem default for @scoped packages is `restricted`,
-                // which requires a paid org plan on the public registry and
                 // Determine npm access level. Honour the operator's explicit
-                // `publishConfig.access` from package.json first: if it is
-                // "restricted", pass `--access restricted` rather than the
-                // scoped-package default of `--access public`. npm's CLI flag
-                // takes full precedence over publishConfig.access, so callisto
-                // must read and propagate the intent explicitly here.
-                let access = if npm_restricted {
-                    Some(callisto_model::NpmAccess::Restricted)
-                } else if pkg.id.name().starts_with('@') {
-                    Some(callisto_model::NpmAccess::Public)
-                } else {
-                    None
-                };
+                // `publishConfig.access` from package.json first, whatever it
+                // is -- "restricted", or "public" (which a bare bool used to
+                // silently drop for unscoped packages, since it collapsed
+                // "absent" and "explicit public" to the same value). Only
+                // fall back to the `@scope/name`-implies-public heuristic
+                // when nothing was explicitly set. npm's `--access` CLI flag
+                // takes full precedence over publishConfig.access, so
+                // callisto must read and propagate the intent explicitly
+                // here.
+                let access = npm_access.or_else(|| {
+                    if pkg.id.name().starts_with('@') {
+                        Some(callisto_model::NpmAccess::Public)
+                    } else {
+                        None
+                    }
+                });
 
                 if is_platform_pkg {
                     npm_platform_packages.push(callisto_model::NpmPublish {
@@ -346,7 +345,7 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
                         package_dir: pkg_dir.clone(),
                         registry: npm_registry_url.clone(),
                         tag: tag.clone(),
-                        access: access.clone(),
+                        access,
                     });
                 } else {
                     let platform_deps: Vec<String> = ws

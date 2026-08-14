@@ -1015,6 +1015,46 @@ fn scoped_npm_package_with_restricted_access_produces_restricted_access_in_plan(
     );
 }
 
+/// `PublishTarget::Npm.restricted: bool` collapsed "publishConfig.access
+/// absent" and "publishConfig.access explicitly 'public'" into the same
+/// `false` value, so an *unscoped* package's explicit `"public"` setting
+/// was silently dropped (the only fallback that produced
+/// `Some(NpmAccess::Public)` was the `@scope/name`-starts-with-`@` heuristic,
+/// which never fires for an unscoped name). An operator who explicitly
+/// wrote `publishConfig.access: "public"` on an unscoped package expects
+/// that intent to be honoured, not silently discarded.
+#[test]
+fn unscoped_npm_package_with_explicit_public_access_produces_public_access_in_plan() {
+    use callisto_graph::commands::{plan_publish, PublishOptions};
+    use callisto_model::NpmAccess;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+
+    std::fs::write(
+        root.join("package.json"),
+        r#"{"name":"my-unscoped-pkg","version":"1.0.0","publishConfig":{"access":"public"}}"#,
+    )
+    .unwrap();
+    init_git_repo(root);
+
+    let runner = DummyRunner;
+    let locator = callisto_graph::locate::IgnoreWalkLocator::new(root);
+    let ws = callisto_graph::Workspace::load(root.to_path_buf(), &locator, &runner)
+        .expect("workspace load");
+
+    let plan = plan_publish(&ws, &PublishOptions::default()).expect("plan_publish");
+
+    assert_eq!(plan.npm_main_packages.len(), 1);
+    assert_eq!(
+        plan.npm_main_packages[0].access,
+        Some(NpmAccess::Public),
+        "an unscoped package's explicit publishConfig.access:\"public\" must be \
+         honoured, not silently dropped; got: {:?}",
+        plan.npm_main_packages[0].access
+    );
+}
+
 // ---- [[package-set]]: bulk config-override via glob pattern ----
 
 /// When `callisto.toml` contains `[[package-set]] match = "pkg-*" publish-to = ["none"]`,

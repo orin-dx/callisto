@@ -10,7 +10,7 @@ use crate::{CommitSha, Diagnostic, PackageId, RegistryKey, TagName, Version};
 /// When `None` is set on a publish entry, no `--access` flag is passed and
 /// npm uses its default: `restricted` for scoped packages (`@scope/name`),
 /// `public` for unscoped packages.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum NpmAccess {
     /// Publish as publicly accessible. Required for scoped packages that
