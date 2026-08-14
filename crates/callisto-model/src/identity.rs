@@ -152,6 +152,32 @@ impl PackageId {
             false
         }
     }
+
+    /// The single implementation of the collect-and-error pattern
+    /// [`matches`](Self::matches)'s own doc comment requires every caller
+    /// to hand-roll: filters `items` down to those whose id (via `id_of`)
+    /// matches `self`, then resolves the result to exactly one, none, or
+    /// reports the ambiguity.
+    ///
+    /// - `Ok(None)`: no item matches.
+    /// - `Ok(Some(item))`: exactly one item matches -- the unambiguous case.
+    /// - `Err(candidates)`: two or more items match. The caller decides how
+    ///   to report this (e.g. as a domain-specific "ambiguous name" error
+    ///   naming `self` and `candidates`) -- this method stays generic over
+    ///   any `T` (a `Package`, a bare `PackageId`, ...) rather than forcing
+    ///   a particular error type on every layer that needs this check.
+    pub fn resolve_unique<'a, T>(
+        &self,
+        items: impl Iterator<Item = &'a T>,
+        id_of: impl Fn(&'a T) -> &'a PackageId,
+    ) -> Result<Option<&'a T>, Vec<&'a T>> {
+        let matching: Vec<&'a T> = items.filter(|item| id_of(item).matches(self)).collect();
+        match matching.len() {
+            0 => Ok(None),
+            1 => Ok(Some(matching[0])),
+            _ => Err(matching),
+        }
+    }
 }
 
 /// Trait for package identity resolution across ecosystem boundaries.
@@ -391,6 +417,70 @@ mod tests {
         assert!(prefixed_cargo.matches(&bare));
         assert!(bare.matches(&prefixed_npm));
         assert!(!prefixed_cargo.matches(&prefixed_npm));
+    }
+
+    #[test]
+    fn resolve_unique_returns_none_when_nothing_matches() {
+        let ids = [
+            PackageId::parse("cargo/foo").unwrap(),
+            PackageId::parse("cargo/bar").unwrap(),
+        ];
+        let target = PackageId::parse("baz").unwrap();
+        let result = target.resolve_unique(ids.iter(), |id| id);
+        assert_eq!(result, Ok(None));
+    }
+
+    #[test]
+    fn resolve_unique_returns_the_single_match() {
+        let ids = [
+            PackageId::parse("cargo/foo").unwrap(),
+            PackageId::parse("cargo/bar").unwrap(),
+        ];
+        let target = PackageId::parse("foo").unwrap();
+        let result = target.resolve_unique(ids.iter(), |id| id);
+        assert_eq!(result, Ok(Some(&ids[0])));
+    }
+
+    #[test]
+    fn resolve_unique_errs_with_all_candidates_on_ambiguity() {
+        // A bare target name that exists in two ecosystems is exactly the
+        // polyglot-workspace ambiguity `matches()`'s doc comment warns
+        // about -- both must be returned, not silently the first one.
+        let ids = [
+            PackageId::parse("cargo/foo").unwrap(),
+            PackageId::parse("npm/foo").unwrap(),
+        ];
+        let target = PackageId::parse("foo").unwrap();
+        let result = target.resolve_unique(ids.iter(), |id| id);
+        let candidates = result.expect_err("two matches must be Err, not silently the first");
+        assert_eq!(candidates.len(), 2);
+        assert!(candidates.contains(&&ids[0]));
+        assert!(candidates.contains(&&ids[1]));
+    }
+
+    #[test]
+    fn resolve_unique_works_generically_over_a_wrapping_type() {
+        // Proves the `id_of` projection generalizes beyond bare PackageId
+        // (e.g. aggregate.rs's real use case: resolving against &Package,
+        // not &PackageId directly).
+        #[derive(Debug)]
+        struct Item {
+            id: PackageId,
+            label: &'static str,
+        }
+        let items = [
+            Item {
+                id: PackageId::parse("cargo/foo").unwrap(),
+                label: "first",
+            },
+            Item {
+                id: PackageId::parse("npm/bar").unwrap(),
+                label: "second",
+            },
+        ];
+        let target = PackageId::parse("bar").unwrap();
+        let result = target.resolve_unique(items.iter(), |item| &item.id);
+        assert_eq!(result.unwrap().unwrap().label, "second");
     }
 
     #[test]

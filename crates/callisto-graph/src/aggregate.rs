@@ -153,15 +153,11 @@ pub(crate) fn resolve_target_package<'a>(
     packages: impl Iterator<Item = &'a Package>,
     id: &PackageId,
 ) -> Result<Option<&'a Package>, GraphError> {
-    let matching: Vec<&Package> = packages.filter(|p| p.id.matches(id)).collect();
-    match matching.len() {
-        0 => Ok(None),
-        1 => Ok(Some(matching[0])),
-        _ => Err(GraphError::AmbiguousName {
+    id.resolve_unique(packages, |p| &p.id)
+        .map_err(|candidates| GraphError::AmbiguousName {
             name: id.display_name(),
-            candidates: matching.iter().map(|p| p.id.clone()).collect(),
-        }),
-    }
+            candidates: candidates.iter().map(|p| p.id.clone()).collect(),
+        })
 }
 
 pub fn aggregate<D, R, I>(
