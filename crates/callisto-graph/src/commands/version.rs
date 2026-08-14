@@ -39,7 +39,7 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
     let mut agg = aggregate(
         &ws.graph,
         &ws.config,
-        ws.runner,
+        ws.git_access(),
         ws.tags()?,
         &base_versions,
         pre_state.as_ref(),

@@ -102,13 +102,16 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
     let all_ids: std::collections::HashSet<_> = pkg_map.keys().map(|&id| id.clone()).collect();
     let topo_ids = ws.graph.toposort(&all_ids)?;
 
-    // `GitAccess` (native gix, falling back to the `CommandRunner` shell
-    // path when unavailable -- always true on wasm32) rather than a direct
-    // `GitRepository::discover`, which has no such fallback: on wasm32,
-    // `GitRepository::discover` unconditionally fails (gix is excluded from
-    // that target's dependency set), so `head_sha` was always `None` there,
-    // silently omitting every release entry from the plan.
-    let head_sha = match callisto_vcs::GitAccess::discover(&ws.root, ws.runner).head_sha() {
+    // `Workspace::git_access` (native gix, falling back to the
+    // `CommandRunner` shell path when unavailable -- always true on
+    // wasm32) rather than a fresh `GitAccess::discover`, which has no
+    // such fallback: on wasm32, native discovery unconditionally fails
+    // (gix is excluded from that target's dependency set), so `head_sha`
+    // was always `None` there, silently omitting every release entry
+    // from the plan. Sharing the workspace-scoped instance also means
+    // this command's tag-index lookup below (via `ws.tags()`) reuses the
+    // same discovery instead of paying for a second one.
+    let head_sha = match ws.git_access().head_sha() {
         Ok(sha) => Some(sha),
         Err(e) => {
             diagnostics.push(callisto_model::Diagnostic {

@@ -57,12 +57,14 @@ fn test_tag_dry_run_does_not_create_git_tags() {
         .current_dir(ws_dir.path())
         .output()
         .unwrap();
-    let tags = callisto_graph::tags::TagIndex::build(&runner, ws_dir.path(), &graph, &cfg).unwrap();
+    let git = callisto_vcs::GitAccess::discover(ws_dir.path(), &runner);
+    let tags = callisto_graph::tags::TagIndex::build(&git, &graph, &cfg).unwrap();
     let ws = callisto_graph::Workspace {
         root: ws_dir.path().to_path_buf(),
         config: cfg,
         graph,
         tags: OnceCell::from(tags),
+        git: OnceCell::from(git),
         runner: &runner,
         manifest_cache: Default::default(),
     };
@@ -165,12 +167,14 @@ fn test_create_tags_without_gix_falls_back_to_command_runner() {
         .package(pkg_id.clone(), |p| p)
         .build()
         .unwrap();
-    let tags = callisto_graph::tags::TagIndex::build(&runner, ws_dir.path(), &graph, &cfg).unwrap();
+    let git = callisto_vcs::GitAccess::discover(ws_dir.path(), &runner);
+    let tags = callisto_graph::tags::TagIndex::build(&git, &graph, &cfg).unwrap();
     let ws = callisto_graph::Workspace {
         root: ws_dir.path().to_path_buf(),
         config: cfg,
         graph,
         tags: OnceCell::from(tags),
+        git: OnceCell::from(git),
         runner: &runner,
         manifest_cache: Default::default(),
     };
@@ -324,12 +328,14 @@ fn test_create_tags_without_gix_skips_creation_for_existing_tag() {
         .package(pkg_id.clone(), |p| p)
         .build()
         .unwrap();
-    let tags = callisto_graph::tags::TagIndex::build(&runner, ws_dir.path(), &graph, &cfg).unwrap();
+    let git = callisto_vcs::GitAccess::discover(ws_dir.path(), &runner);
+    let tags = callisto_graph::tags::TagIndex::build(&git, &graph, &cfg).unwrap();
     let ws = callisto_graph::Workspace {
         root: ws_dir.path().to_path_buf(),
         config: cfg,
         graph,
         tags: OnceCell::from(tags),
+        git: OnceCell::from(git),
         runner: &runner,
         manifest_cache: Default::default(),
     };

@@ -24,8 +24,7 @@ use crate::resolver::DependencyResolver;
 /// batched once across every package (see [`TagIndex::build`]) instead of
 /// once per package -- important on `wasm32`, where each `CommandRunner`
 /// call is a full Extism guest<->host round-trip.
-fn fetch_all_tags<R: CommandRunner>(runner: &R, root: &Path) -> Result<Vec<String>, GraphError> {
-    let git = GitAccess::discover(root, runner);
+fn fetch_all_tags(git: &GitAccess<'_>) -> Result<Vec<String>, GraphError> {
     let tags = git.list_tags(None)?;
     Ok(tags.into_iter().map(|t| t.0).collect())
 }
@@ -87,7 +86,8 @@ pub fn last_tag_for<R: CommandRunner>(
     template: &TagTemplate,
     grammar: VersionGrammar,
 ) -> Result<LastTagSelection, GraphError> {
-    let all_tags = fetch_all_tags(runner, root)?;
+    let git = GitAccess::discover(root, runner);
+    let all_tags = fetch_all_tags(&git)?;
     select_from_tags(&all_tags, template, grammar)
 }
 
@@ -99,9 +99,8 @@ pub struct TagIndex {
 }
 
 impl TagIndex {
-    pub fn build<R: CommandRunner, D: DependencyResolver>(
-        runner: &R,
-        root: &Path,
+    pub fn build<D: DependencyResolver>(
+        git: &GitAccess<'_>,
         graph: &D,
         _cfg: &ResolvedConfig,
     ) -> Result<Self, GraphError> {
@@ -112,8 +111,12 @@ impl TagIndex {
 
         // Fetch the raw tag list exactly once for the whole build, not once
         // per package -- see `fetch_all_tags` for why (avoids N gix
-        // discoveries / N host round-trips for N packages).
-        let all_tags = fetch_all_tags(runner, root)?;
+        // discoveries / N host round-trips for N packages). `git` is shared
+        // with the caller rather than discovered fresh here, so a single
+        // `Workspace`-scoped command that also needs git for other reasons
+        // (e.g. `plan_publish`'s head_sha resolution) doesn't pay for a
+        // second discovery.
+        let all_tags = fetch_all_tags(git)?;
 
         for pkg in graph.packages() {
             let default_tmpl =
@@ -287,8 +290,9 @@ mod tests {
             pkgs: vec![make_pkg("pkg-a")],
         };
         let cfg = crate::config::load(dir.path()).unwrap();
+        let git = GitAccess::discover(dir.path(), &runner);
 
-        let tags = TagIndex::build(&runner, dir.path(), &graph, &cfg)
+        let tags = TagIndex::build(&git, &graph, &cfg)
             .expect("TagIndex::build must succeed via the CommandRunner fallback when gix cannot discover a repo");
 
         let pkg_id = PackageId::parse("pkg-a").unwrap();
@@ -315,8 +319,9 @@ mod tests {
             pkgs: vec![make_pkg("pkg-a"), make_pkg("pkg-b"), make_pkg("pkg-c")],
         };
         let cfg = crate::config::load(dir.path()).unwrap();
+        let git = GitAccess::discover(dir.path(), &runner);
 
-        let tags = TagIndex::build(&runner, dir.path(), &graph, &cfg).unwrap();
+        let tags = TagIndex::build(&git, &graph, &cfg).unwrap();
 
         for name in ["pkg-a", "pkg-b", "pkg-c"] {
             let id = PackageId::parse(name).unwrap();
@@ -420,8 +425,9 @@ mod tests {
             pkgs: vec![make_pkg("pkg-a"), make_pkg("pkg-b")],
         };
         let cfg = crate::config::load(dir.path()).unwrap();
+        let git = GitAccess::discover(dir.path(), &runner);
 
-        let tags = TagIndex::build(&runner, dir.path(), &graph, &cfg).unwrap();
+        let tags = TagIndex::build(&git, &graph, &cfg).unwrap();
 
         for name in ["pkg-a", "pkg-b"] {
             let id = PackageId::parse(name).unwrap();
@@ -451,8 +457,9 @@ mod tests {
             pkgs: vec![make_pkg("pkg-a"), make_pkg("pkg-ab")],
         };
         let cfg = crate::config::load(dir.path()).unwrap();
+        let git = GitAccess::discover(dir.path(), &runner);
 
-        let tags = TagIndex::build(&runner, dir.path(), &graph, &cfg).unwrap();
+        let tags = TagIndex::build(&git, &graph, &cfg).unwrap();
 
         let pkg_a = PackageId::parse("pkg-a").unwrap();
         let pkg_ab = PackageId::parse("pkg-ab").unwrap();
@@ -550,9 +557,9 @@ mod tests {
             pkgs: vec![custom_pkg, default_pkg],
         };
         let cfg = crate::config::load(dir.path()).unwrap();
+        let git = GitAccess::discover(dir.path(), &runner);
 
-        let tags = TagIndex::build(&runner, dir.path(), &graph, &cfg)
-            .expect("TagIndex::build must succeed");
+        let tags = TagIndex::build(&git, &graph, &cfg).expect("TagIndex::build must succeed");
 
         let custom_id = PackageId::parse("custom-pkg").unwrap();
         let default_id = PackageId::parse("pkg-default").unwrap();
@@ -582,9 +589,10 @@ mod tests {
             pkgs: vec![make_pkg("pkg-a")],
         };
         let cfg = crate::config::load(dir.path()).unwrap();
+        let git = GitAccess::discover(dir.path(), &runner);
 
         let is_command_err = matches!(
-            TagIndex::build(&runner, dir.path(), &graph, &cfg),
+            TagIndex::build(&git, &graph, &cfg),
             Err(GraphError::Vcs(callisto_vcs::VcsError::Command(_)))
         );
 

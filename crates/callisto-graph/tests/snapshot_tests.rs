@@ -65,12 +65,14 @@ fn test_snapshot_version_template_placeholders() {
 
     let cfg = callisto_graph::config::load(&root.join("callisto.toml")).unwrap();
     let graph = GraphBuilder::new().build().unwrap();
-    let tags = callisto_graph::tags::TagIndex::build(&runner, root, &graph, &cfg).unwrap();
+    let git = callisto_vcs::GitAccess::discover(root, &runner);
+    let tags = callisto_graph::tags::TagIndex::build(&git, &graph, &cfg).unwrap();
     let ws = callisto_graph::Workspace {
         root: root.to_path_buf(),
         config: cfg,
         graph,
         tags: OnceCell::from(tags),
+        git: OnceCell::from(git),
         runner: &runner,
         manifest_cache: Default::default(),
     };
@@ -125,12 +127,14 @@ fn test_snapshot_version_format_matches_spec() {
         .unwrap();
 
     let cfg = callisto_graph::config::load(&root.join("callisto.toml")).unwrap();
-    let tags = callisto_graph::tags::TagIndex::build(&runner, root, &graph, &cfg).unwrap();
+    let git = callisto_vcs::GitAccess::discover(root, &runner);
+    let tags = callisto_graph::tags::TagIndex::build(&git, &graph, &cfg).unwrap();
     let ws = callisto_graph::Workspace {
         root: root.to_path_buf(),
         config: cfg,
         graph,
         tags: OnceCell::from(tags),
+        git: OnceCell::from(git),
         runner: &runner,
         manifest_cache: Default::default(),
     };
@@ -174,12 +178,14 @@ fn test_snapshot_sha_resolution_failure_is_surfaced_error() {
     // so HEAD sha resolution must fail.
     let cfg = callisto_graph::config::load(&ws_dir.path().join("callisto.toml")).unwrap();
     let graph = GraphBuilder::new().build().unwrap();
-    let tags = callisto_graph::tags::TagIndex::build(&runner, ws_dir.path(), &graph, &cfg).unwrap();
+    let git = callisto_vcs::GitAccess::discover(ws_dir.path(), &runner);
+    let tags = callisto_graph::tags::TagIndex::build(&git, &graph, &cfg).unwrap();
     let ws = callisto_graph::Workspace {
         root: ws_dir.path().to_path_buf(),
         config: cfg,
         graph,
         tags: OnceCell::from(tags),
+        git: OnceCell::from(git),
         runner: &runner,
         manifest_cache: Default::default(),
     };
@@ -244,12 +250,14 @@ fn test_snapshot_resolves_head_sha_via_command_runner_fallback_when_gix_unavaila
 
     let cfg = callisto_graph::config::load(&ws_dir.path().join("callisto.toml")).unwrap();
     let graph = GraphBuilder::new().build().unwrap();
-    let tags = callisto_graph::tags::TagIndex::build(&runner, ws_dir.path(), &graph, &cfg).unwrap();
+    let git = callisto_vcs::GitAccess::discover(ws_dir.path(), &runner);
+    let tags = callisto_graph::tags::TagIndex::build(&git, &graph, &cfg).unwrap();
     let ws = callisto_graph::Workspace {
         root: ws_dir.path().to_path_buf(),
         config: cfg,
         graph,
         tags: OnceCell::from(tags),
+        git: OnceCell::from(git),
         runner: &runner,
         manifest_cache: Default::default(),
     };

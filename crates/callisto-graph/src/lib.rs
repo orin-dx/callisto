@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 use callisto_manifests::Manifest;
 use callisto_model::{CommandRunner, PackageId, Version};
+use callisto_vcs::GitAccess;
 
 pub mod aggregate;
 pub mod apply;
@@ -71,6 +72,18 @@ pub struct Workspace<'a, R: CommandRunner, D: DependencyResolver = ManifestWalkR
     /// transparent to every existing caller -- go through [`Workspace::tags`]
     /// rather than this field directly.
     pub tags: OnceCell<TagIndex>,
+    /// Deferred [`GitAccess`]: built at most once, the first time
+    /// [`Workspace::git_access`] is called, mirroring the `tags` field
+    /// above. `GitAccess::discover` never fails (native gix, falling back
+    /// to a `CommandRunner` shell round-trip when unavailable), so this is
+    /// simpler than `tags` -- no `Result` to thread through callers.
+    /// Consolidates what were previously multiple independent
+    /// `GitAccess::discover` calls within a single command invocation
+    /// (e.g. `plan_publish`'s own head_sha resolution, and `TagIndex::build`
+    /// via [`Workspace::tags`]) into one shared discovery. `pub` (like
+    /// `tags` above) so tests can hand-construct a `Workspace` via struct
+    /// literal with a pre-seeded value, bypassing discovery entirely.
+    pub git: OnceCell<GitAccess<'a>>,
     pub runner: &'a R,
     /// Path-keyed cache of manifest handles opened read-only during this
     /// workspace's lifetime. Populated during graph discovery
@@ -100,6 +113,7 @@ impl<'a, R: CommandRunner> Workspace<'a, R, ManifestWalkResolver> {
             config,
             graph,
             tags: OnceCell::new(),
+            git: OnceCell::new(),
             runner,
             manifest_cache,
         })
@@ -115,7 +129,7 @@ impl<'a, R: CommandRunner, D: DependencyResolver> Workspace<'a, R, D> {
         if let Some(existing) = self.tags.get() {
             return Ok(existing);
         }
-        let built = TagIndex::build(self.runner, &self.root, &self.graph, &self.config)?;
+        let built = TagIndex::build(self.git_access(), &self.graph, &self.config)?;
         // `OnceCell::set` only fails if another write already raced it in;
         // `Workspace` is only ever accessed through `&self` here (never
         // shared across threads -- `R`/`D` carry no such bound), so the
@@ -127,6 +141,19 @@ impl<'a, R: CommandRunner, D: DependencyResolver> Workspace<'a, R, D> {
             .tags
             .get()
             .expect("tags was just set above, or already set by a prior call"))
+    }
+
+    /// Returns the workspace's shared [`GitAccess`], discovering it on
+    /// first access and reusing the cached result afterwards -- mirrors
+    /// [`Workspace::tags`]. Every command that needs git (tag resolution,
+    /// head SHA lookup, commit history walks, ...) should go through this
+    /// rather than calling `GitAccess::discover` itself, so a single
+    /// command invocation never pays for more than one discovery
+    /// (native gix repository-open, or a `CommandRunner` shell round-trip
+    /// when gix is unavailable) regardless of how many of those it needs.
+    pub fn git_access(&self) -> &GitAccess<'a> {
+        self.git
+            .get_or_init(|| GitAccess::discover(&self.root, self.runner))
     }
 
     pub fn base_versions(&self) -> Result<BTreeMap<PackageId, Version>, GraphError> {

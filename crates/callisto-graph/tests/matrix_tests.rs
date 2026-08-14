@@ -65,6 +65,7 @@ fn matrix_package_filter_restricts_to_one_package() {
         config: cfg,
         graph,
         tags: OnceCell::new(),
+        git: OnceCell::new(),
         runner: &runner,
         manifest_cache: Default::default(),
     };
@@ -102,6 +103,7 @@ fn matrix_unknown_package_errors() {
         config: cfg,
         graph,
         tags: OnceCell::new(),
+        git: OnceCell::new(),
         runner: &runner,
         manifest_cache: Default::default(),
     };

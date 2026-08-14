@@ -107,12 +107,14 @@ fn test_validate_since_git_diff_argument_ordering() {
     let ws_dir = tempfile::tempdir().unwrap();
     let cfg = callisto_graph::config::load(&ws_dir.path().join("callisto.toml")).unwrap();
     let graph = GraphBuilder::new().build().unwrap();
-    let tags = callisto_graph::tags::TagIndex::build(&runner, ws_dir.path(), &graph, &cfg).unwrap();
+    let git = callisto_vcs::GitAccess::discover(ws_dir.path(), &runner);
+    let tags = callisto_graph::tags::TagIndex::build(&git, &graph, &cfg).unwrap();
     let ws = callisto_graph::Workspace {
         root: ws_dir.path().to_path_buf(),
         config: cfg,
         graph,
         tags: OnceCell::from(tags),
+        git: OnceCell::from(git),
         runner: &runner,
         manifest_cache: Default::default(),
     };
@@ -173,12 +175,14 @@ fn test_validate_detects_malformed_package_name_in_changeset() {
     let runner = DummyRunner;
     let cfg = callisto_graph::config::load(root).unwrap();
     let graph = GraphBuilder::new().build().unwrap();
-    let tags = callisto_graph::tags::TagIndex::build(&runner, root, &graph, &cfg).unwrap();
+    let git = callisto_vcs::GitAccess::discover(root, &runner);
+    let tags = callisto_graph::tags::TagIndex::build(&git, &graph, &cfg).unwrap();
     let ws = callisto_graph::Workspace {
         root: root.to_path_buf(),
         config: cfg,
         graph,
         tags: OnceCell::from(tags),
+        git: OnceCell::from(git),
         runner: &runner,
         manifest_cache: Default::default(),
     };

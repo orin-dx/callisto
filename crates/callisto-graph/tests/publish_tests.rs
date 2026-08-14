@@ -162,12 +162,14 @@ fn test_publish_plan_uses_correct_topological_order() {
         .unwrap();
 
     let cfg = callisto_graph::config::load(&root.join("callisto.toml")).unwrap();
-    let tags = callisto_graph::tags::TagIndex::build(&runner, root, &graph, &cfg).unwrap();
+    let git = callisto_vcs::GitAccess::discover(root, &runner);
+    let tags = callisto_graph::tags::TagIndex::build(&git, &graph, &cfg).unwrap();
     let ws = callisto_graph::Workspace {
         root: root.to_path_buf(),
         config: cfg,
         graph,
         tags: OnceCell::from(tags),
+        git: OnceCell::from(git),
         runner: &runner,
         manifest_cache: Default::default(),
     };
@@ -672,12 +674,14 @@ fn publish_options_only_filter_excludes_unlisted_packages() {
 
     use std::cell::OnceCell;
     let cfg = callisto_graph::config::load(&root.join("callisto.toml")).unwrap();
-    let tags = callisto_graph::tags::TagIndex::build(&runner, root, &graph, &cfg).unwrap();
+    let git = callisto_vcs::GitAccess::discover(root, &runner);
+    let tags = callisto_graph::tags::TagIndex::build(&git, &graph, &cfg).unwrap();
     let ws = callisto_graph::Workspace {
         root: root.to_path_buf(),
         config: cfg,
         graph,
         tags: OnceCell::from(tags),
+        git: OnceCell::from(git),
         runner: &runner,
         manifest_cache: Default::default(),
     };
@@ -733,12 +737,14 @@ fn publish_options_only_unknown_package_returns_error() {
 
     use std::cell::OnceCell;
     let cfg = callisto_graph::config::load(&root.join("callisto.toml")).unwrap();
-    let tags = callisto_graph::tags::TagIndex::build(&runner, root, &graph, &cfg).unwrap();
+    let git = callisto_vcs::GitAccess::discover(root, &runner);
+    let tags = callisto_graph::tags::TagIndex::build(&git, &graph, &cfg).unwrap();
     let ws = callisto_graph::Workspace {
         root: root.to_path_buf(),
         config: cfg,
         graph,
         tags: OnceCell::from(tags),
+        git: OnceCell::from(git),
         runner: &runner,
         manifest_cache: Default::default(),
     };
@@ -801,6 +807,102 @@ fn plan_publish_succeeds_when_git_binary_unavailable() {
         has_git_diagnostic,
         "git unavailability must produce a GitDiscoveryFailed diagnostic; got: {:?}",
         plan.diagnostics
+    );
+}
+
+/// Consolidation regression test: `plan_publish`'s `head_sha` resolution and
+/// `ws.tags()`'s tag-list resolution now go through the single shared
+/// `Workspace::git_access()` instead of two independent `GitAccess::discover`
+/// calls. Proves that instance's `CommandRunner` shell fallback (exercised
+/// when gix cannot discover a repository, as is permanently the case on
+/// `wasm32`) is enough on its own to produce a real, populated
+/// `ReleaseEntry` end-to-end -- not just that the plan degrades gracefully
+/// when git is totally unavailable (see
+/// `plan_publish_succeeds_when_git_binary_unavailable`, which uses a
+/// `FailingRunner`). Mirrors `snapshot_tests.rs`'s analogous
+/// `test_snapshot_resolves_head_sha_via_command_runner_fallback_when_gix_unavailable`.
+#[test]
+fn plan_publish_populates_release_entry_via_command_runner_fallback_when_gix_unavailable() {
+    use callisto_graph::commands::{plan_publish, PublishOptions};
+
+    struct FakeHeadShaRunner(String);
+    impl callisto_model::CommandRunner for FakeHeadShaRunner {
+        fn run(
+            &self,
+            program: &str,
+            args: &[&str],
+            _cwd: &std::path::Path,
+        ) -> Result<callisto_model::CommandOutput, callisto_model::CommandError> {
+            assert_eq!(program, "git");
+            match args {
+                ["rev-parse", "HEAD"] => Ok(callisto_model::CommandOutput {
+                    exit_code: Some(0),
+                    stdout: format!("{}\n", self.0),
+                    stderr: String::new(),
+                }),
+                ["tag", "--list"] => Ok(callisto_model::CommandOutput {
+                    exit_code: Some(0),
+                    stdout: String::new(),
+                    stderr: String::new(),
+                }),
+                other => panic!("unexpected git invocation: {other:?}"),
+            }
+        }
+    }
+
+    let head_sha = "c".repeat(40);
+    let runner = FakeHeadShaRunner(head_sha.clone());
+    let ws_dir = tempfile::tempdir().unwrap();
+    let root = ws_dir.path();
+
+    // Deliberately no `git init`: gix discovery must fail here, forcing the
+    // shell fallback for BOTH head_sha and tag-list resolution -- through
+    // the same shared `GitAccess`.
+    assert!(
+        callisto_vcs::GitRepository::discover(root).is_err(),
+        "test fixture must not be discoverable as a Git repo"
+    );
+
+    std::fs::write(
+        root.join("Cargo.toml"),
+        "[package]\nname = \"my-crate\"\nversion = \"1.0.0\"\nedition = \"2021\"\n",
+    )
+    .unwrap();
+
+    let locator = callisto_graph::locate::IgnoreWalkLocator::new(root);
+    let ws = callisto_graph::Workspace::load(root.to_path_buf(), &locator, &runner)
+        .expect("workspace load must not require git");
+
+    let plan = plan_publish(&ws, &PublishOptions::default()).expect(
+        "plan_publish must succeed via the CommandRunner fallback when gix cannot discover a repo",
+    );
+
+    assert!(
+        !plan
+            .diagnostics
+            .iter()
+            .any(|d| d.code == callisto_model::DiagnosticCode::GitDiscoveryFailed),
+        "the CommandRunner fallback must resolve git successfully, so no GitDiscoveryFailed \
+         diagnostic should be emitted: got {:?}",
+        plan.diagnostics
+    );
+
+    let pkg_id = PackageId::parse("my-crate").unwrap();
+    let release = plan
+        .releases
+        .iter()
+        .find(|r| r.package == pkg_id)
+        .unwrap_or_else(|| {
+            panic!(
+                "expected a ReleaseEntry for my-crate via the CommandRunner fallback, got: {:?}",
+                plan.releases
+            )
+        });
+
+    assert_eq!(
+        release.sha.as_str(),
+        head_sha,
+        "the release entry's sha must be the one resolved via the CommandRunner fallback"
     );
 }
 
@@ -874,6 +976,7 @@ fn plan_publish_release_entry_block_does_not_hard_fail_when_tag_index_is_none() 
         config: cfg,
         graph,
         tags: OnceCell::new(),
+        git: OnceCell::new(),
         runner: &runner,
         manifest_cache: Default::default(),
     };
@@ -1241,6 +1344,7 @@ fn package_with_only_undispatchable_target_gets_no_release_entry_and_a_diagnosti
         config: cfg,
         graph,
         tags: OnceCell::new(),
+        git: OnceCell::new(),
         runner: &runner,
         manifest_cache: Default::default(),
     };

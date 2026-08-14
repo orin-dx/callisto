@@ -4,9 +4,7 @@ use std::path::{Path, PathBuf};
 
 use callisto_changelog::{ChangeSource, ChangelogEntry, ChangelogInput};
 use callisto_format::{parse_changeset, Changeset};
-use callisto_model::{
-    BumpReason, CommandRunner, CommitSha, Diagnostic, Package, PackageId, Severity, Version,
-};
+use callisto_model::{BumpReason, CommitSha, Diagnostic, Package, PackageId, Severity, Version};
 use callisto_vcs::{GitAccess, GitDataSource};
 
 use crate::config::resolve::resolve_package_config;
@@ -163,10 +161,10 @@ pub(crate) fn resolve_target_package<'a>(
         })
 }
 
-pub fn aggregate<D, R, I>(
+pub fn aggregate<D, I>(
     graph: &D,
     config: &ResolvedConfig,
-    runner: &R,
+    git: &GitAccess<'_>,
     tags: &TagIndex,
     base_versions: &BTreeMap<PackageId, Version>,
     pre: Option<&callisto_format::PreState>,
@@ -174,17 +172,17 @@ pub fn aggregate<D, R, I>(
 ) -> Result<Aggregation, GraphError>
 where
     D: DependencyResolver,
-    R: CommandRunner,
     I: SeverityInference,
 {
     let loaded = load_changesets(&config.root, config)?;
     let mut agg = Aggregation::default();
 
-    // Constructed once and reused for every package's since-resolution
-    // below (native gix, falling back to `runner` when unavailable); a
+    // `git` is shared with the caller (a single `Workspace`-scoped
+    // `GitAccess`, via `Workspace::git_access`) rather than discovered
+    // fresh here, so a caller resolving both this and e.g. a head SHA in
+    // the same command invocation only pays for one discovery. A
     // resolution failure degrades gracefully to `None`, same as
     // `resolve_since`'s own per-tag failure handling.
-    let git = GitAccess::discover(&config.root, runner);
 
     for pkg in graph.packages() {
         let cur_sev = agg
@@ -208,7 +206,7 @@ where
                 })
             })?;
 
-        let since = last_tag.and_then(|t| resolve_since(&git, t.name.as_str()));
+        let since = last_tag.and_then(|t| resolve_since(git, t.name.as_str()));
 
         let policy = resolve_package_config(&pkg.id, config)
             .and_then(|pcfg| pcfg.pre_major_inference)
@@ -547,8 +545,8 @@ mod tests {
     use std::sync::Mutex;
 
     use callisto_model::{
-        CommandError, CommandOutput, DepEdge, GroupKind, GroupName, ManifestDecl, ManifestFormat,
-        ManifestRole, Package,
+        CommandError, CommandOutput, CommandRunner, DepEdge, GroupKind, GroupName, ManifestDecl,
+        ManifestFormat, ManifestRole, Package,
     };
 
     use crate::config::{GroupDef, GroupMember};
@@ -867,8 +865,9 @@ mod tests {
                 tag_template: None,
             },
         };
+        let git = GitAccess::discover(root, &runner);
         let cfg = crate::config::load(root).unwrap();
-        let tags = TagIndex::build(&runner, root, &graph, &cfg).unwrap();
+        let tags = TagIndex::build(&git, &graph, &cfg).unwrap();
 
         // Sanity: the tag we just created was actually picked up.
         assert_eq!(
@@ -880,16 +879,7 @@ mod tests {
         let inference = RecordingInference::default();
         let base_versions = BTreeMap::new();
 
-        aggregate(
-            &graph,
-            &cfg,
-            &runner,
-            &tags,
-            &base_versions,
-            None,
-            &inference,
-        )
-        .unwrap();
+        aggregate(&graph, &cfg, &git, &tags, &base_versions, None, &inference).unwrap();
 
         let captured = inference.captured_since.lock().unwrap().clone();
         assert_eq!(
@@ -955,8 +945,9 @@ mod tests {
                 tag_template: None,
             },
         };
+        let git = GitAccess::discover(root, &poisoned);
         let cfg = crate::config::load(root).unwrap();
-        let tags = TagIndex::build(&poisoned, root, &graph, &cfg).unwrap();
+        let tags = TagIndex::build(&git, &graph, &cfg).unwrap();
 
         assert_eq!(
             tags.last_tag(&pkg_id)
@@ -967,16 +958,7 @@ mod tests {
         let inference = RecordingInference::default();
         let base_versions = BTreeMap::new();
 
-        aggregate(
-            &graph,
-            &cfg,
-            &poisoned,
-            &tags,
-            &base_versions,
-            None,
-            &inference,
-        )
-        .unwrap();
+        aggregate(&graph, &cfg, &git, &tags, &base_versions, None, &inference).unwrap();
 
         let captured = inference.captured_since.lock().unwrap().clone();
         assert_eq!(
@@ -1144,22 +1126,14 @@ mod tests {
         };
         let cfg = crate::config::load(root).unwrap();
         let runner = RealGitRunner;
-        let tags = crate::tags::TagIndex::build(&runner, root, &graph, &cfg).unwrap();
+        let git = GitAccess::discover(root, &runner);
+        let tags = crate::tags::TagIndex::build(&git, &graph, &cfg).unwrap();
 
         let mut base_versions = BTreeMap::new();
         base_versions.insert(pkg_bar_id.clone(), Version::semver(1, 0, 0));
 
         let inference = RecordingInference::default();
-        let agg = aggregate(
-            &graph,
-            &cfg,
-            &runner,
-            &tags,
-            &base_versions,
-            None,
-            &inference,
-        )
-        .unwrap();
+        let agg = aggregate(&graph, &cfg, &git, &tags, &base_versions, None, &inference).unwrap();
 
         assert!(
             agg.consumed.is_empty(),
@@ -1354,7 +1328,8 @@ mod tests {
         };
         let cfg = crate::config::load(root).unwrap();
         let runner = RealGitRunner;
-        let tags = crate::tags::TagIndex::build(&runner, root, &graph, &cfg).unwrap();
+        let git = GitAccess::discover(root, &runner);
+        let tags = crate::tags::TagIndex::build(&git, &graph, &cfg).unwrap();
         let mut base_versions = BTreeMap::new();
         base_versions.insert(pkg_id.clone(), Version::semver(1, 0, 0));
 
@@ -1374,7 +1349,7 @@ mod tests {
         let agg = aggregate(
             &graph,
             &cfg,
-            &runner,
+            &git,
             &tags,
             &base_versions,
             None,
@@ -1419,7 +1394,8 @@ mod tests {
         };
         let cfg = crate::config::load(root).unwrap();
         let runner = RealGitRunner;
-        let tags = crate::tags::TagIndex::build(&runner, root, &graph, &cfg).unwrap();
+        let git = GitAccess::discover(root, &runner);
+        let tags = crate::tags::TagIndex::build(&git, &graph, &cfg).unwrap();
         let mut base_versions = BTreeMap::new();
         base_versions.insert(pkg_id.clone(), Version::semver(0, 1, 0));
 
@@ -1442,16 +1418,7 @@ mod tests {
         let capturing = PolicyCapturingInference2 {
             saw_non_off: AtomicBool::new(false),
         };
-        aggregate(
-            &graph,
-            &cfg,
-            &runner,
-            &tags,
-            &base_versions,
-            None,
-            &capturing,
-        )
-        .unwrap();
+        aggregate(&graph, &cfg, &git, &tags, &base_versions, None, &capturing).unwrap();
 
         assert!(
             capturing.saw_non_off.load(Ordering::SeqCst),
@@ -1489,7 +1456,8 @@ mod tests {
         };
         let cfg = crate::config::load(root).unwrap();
         let runner = RealGitRunner;
-        let tags = crate::tags::TagIndex::build(&runner, root, &graph, &cfg).unwrap();
+        let git = GitAccess::discover(root, &runner);
+        let tags = crate::tags::TagIndex::build(&git, &graph, &cfg).unwrap();
         let mut base_versions = BTreeMap::new();
         base_versions.insert(pkg_id.clone(), Version::semver(1, 0, 0));
 
@@ -1502,7 +1470,7 @@ mod tests {
         let agg = aggregate(
             &graph,
             &cfg,
-            &runner,
+            &git,
             &tags,
             &base_versions,
             Some(&pre_state),
@@ -1547,7 +1515,8 @@ mod tests {
         };
         let cfg = crate::config::load(root).unwrap();
         let runner = RealGitRunner;
-        let tags = crate::tags::TagIndex::build(&runner, root, &graph, &cfg).unwrap();
+        let git = GitAccess::discover(root, &runner);
+        let tags = crate::tags::TagIndex::build(&git, &graph, &cfg).unwrap();
         let mut base_versions = BTreeMap::new();
         base_versions.insert(pkg_id.clone(), Version::semver(0, 1, 0));
 
@@ -1571,16 +1540,7 @@ mod tests {
         let capturing = PolicyCapturingInference {
             saw_non_off: AtomicBool::new(false),
         };
-        aggregate(
-            &graph,
-            &cfg,
-            &runner,
-            &tags,
-            &base_versions,
-            None,
-            &capturing,
-        )
-        .unwrap();
+        aggregate(&graph, &cfg, &git, &tags, &base_versions, None, &capturing).unwrap();
 
         assert!(
             capturing.saw_non_off.load(Ordering::SeqCst),
@@ -1627,7 +1587,8 @@ mod tests {
         };
         let cfg = crate::config::load(root).unwrap();
         let runner = RealGitRunner;
-        let tags = crate::tags::TagIndex::build(&runner, root, &graph, &cfg).unwrap();
+        let git = GitAccess::discover(root, &runner);
+        let tags = crate::tags::TagIndex::build(&git, &graph, &cfg).unwrap();
         let mut base_versions = BTreeMap::new();
         // Version 0.1.0 (pre-1.0) ensures pre-major-inference is consulted.
         base_versions.insert(pkg_id.clone(), Version::semver(0, 1, 0));
@@ -1656,16 +1617,7 @@ mod tests {
             invoked: AtomicBool::new(false),
             saw_non_off: AtomicBool::new(false),
         };
-        aggregate(
-            &graph,
-            &cfg,
-            &runner,
-            &tags,
-            &base_versions,
-            None,
-            &capturing,
-        )
-        .unwrap();
+        aggregate(&graph, &cfg, &git, &tags, &base_versions, None, &capturing).unwrap();
 
         assert!(
             capturing.invoked.load(Ordering::SeqCst),

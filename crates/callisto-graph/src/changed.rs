@@ -149,7 +149,9 @@ mod tests {
             pkgs: vec![make_pkg(pkg_name)],
         };
         let cfg = crate::config::load(dir).unwrap();
-        TagIndex::build(&TagListRunner(tag.to_string()), dir, &graph, &cfg).unwrap()
+        let runner = TagListRunner(tag.to_string());
+        let git = GitAccess::discover(dir, &runner);
+        TagIndex::build(&git, &graph, &cfg).unwrap()
     }
 
     /// Routes `git log` (the `commits_since` short-circuit) and `git diff
