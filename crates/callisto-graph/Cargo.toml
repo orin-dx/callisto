@@ -41,4 +41,4 @@ callisto-fixtures = { path = "../callisto-fixtures" }
 tempfile = { workspace = true }
 rstest.workspace = true
 insta.workspace = true
-serial_test = "3"
+serial_test.workspace = true

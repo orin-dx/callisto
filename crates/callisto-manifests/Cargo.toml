@@ -34,4 +34,4 @@ callisto-model = { path = "../callisto-model", features = ["test-util"] }
 callisto-fixtures = { path = "../callisto-fixtures", default-features = false }
 tempfile.workspace = true
 proptest.workspace = true
-serial_test = "3"
+serial_test.workspace = true
