@@ -1,0 +1,74 @@
+{
+  "cli_version": "0.10.1-nightly.202608121908.a47cf0c70",
+  "checkpoint_id": "01KZYSJG6V42Y298SYHMS6889P",
+  "session_id": "ae412d01-e061-4047-918b-0d1df3d4d118",
+  "strategy": "manual-commit",
+  "created_at": "2026-08-14T00:08:31.931966Z",
+  "branch": "main",
+  "checkpoints_count": 9,
+  "save_step_count": 1,
+  "files_touched": [
+    "crates/callisto-manifests/src/cargo.rs",
+    "crates/callisto-model/src/error.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5",
+  "turn_id": "ece2d54acf6b",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 1876,
+    "cache_creation_tokens": 3569238,
+    "cache_read_tokens": 409055947,
+    "output_tokens": 749941,
+    "api_call_count": 938
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_012rCYNRAZsYmqiF8NNi747S",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "canon:canon"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "ece2d54acf6b",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 1796,
+        "end": 1797,
+        "entry_ids": [
+          "8d95a7ab-50fc-4a4f-a5f0-51fa16450006"
+        ],
+        "tool_use_id": "toolu_012rCYNRAZsYmqiF8NNi747S"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_012rCYNRAZsYmqiF8NNi747S"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: canon:canon",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 127
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-08-14T00:08:31.430106Z",
+    "agent_lines": 103,
+    "agent_removed": 0,
+    "human_added": 79,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 182,
+    "total_lines_changed": 182,
+    "agent_percentage": 56.59340659340659,
+    "metric_version": 2
+  }
+}
