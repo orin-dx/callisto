@@ -199,22 +199,23 @@ the same adversarial-review posture that produced this cut in the first place.
 
 ### 3.2 Where callisto sits
 
-Callisto is not "the polyglot release tool." That space has real, mature, well-resourced
-incumbents:
+Callisto isn't trying to out-language release-please or Nx Release — that's not the fight
+worth picking. Both have real, mature investment in broad ecosystem coverage:
 
 - **release-please** — Google-backed, genuinely multi-language, manifest+plugin
   architecture, ships as a library. The default choice for a team starting from scratch
-  today with no changesets legacy and no moon commitment.
+  today with no changesets legacy.
 - **Nx Release** — deeply integrated with Nx, handles npm/Rust/Docker, actively investing
   in polyglot support (Java/Gradle, .NET announced for 2025). The default choice for teams
   already on Nx.
 
-Callisto's defensible niche is narrower and specific: **teams that prefer the changesets
-file format over Conventional Commits, and need napi-style cross-registry coordination
-that nothing else handles.** Both conditions should plausibly hold for the same team to
-make callisto the right choice over the incumbents. This is a real niche — changesets has
-a large loyal JS user base that dislikes Conventional-Commits-only tools, napi coordination
-is a documented pain point nobody solves — but it is a niche, not a mass-market claim.
+Callisto's edge is sharper and more specific: **teams that prefer the changesets file
+format over Conventional Commits, and need napi-style cross-registry coordination that
+nothing else handles.** Both conditions should plausibly hold for the same team to make
+callisto the right choice over the incumbents. Changesets has a large loyal JS user base
+that dislikes Conventional-Commits-only tools; napi coordination is a documented pain point
+nobody else solves. It's a specific, well-defined edge — not a claim to have out-built
+release-please or Nx on raw language coverage, which isn't where callisto is trying to win.
 
 The core itself doesn't require any particular build system to use: it runs as a
 standalone CLI (Bazel sandboxes, Buck2, Nix flakes, GitHub Actions, GitLab CI, local Git
