@@ -23,6 +23,5 @@ miette.workspace = true
 schemars = "0.8"
 
 [dev-dependencies]
-callisto-fixtures = { path = "../callisto-fixtures", default-features = false }
 proptest = "1"
 rstest.workspace = true
