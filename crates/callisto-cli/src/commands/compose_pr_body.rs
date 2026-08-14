@@ -2,14 +2,13 @@ use std::io::Read;
 use std::process::ExitCode;
 
 use callisto_graph::commands::PrBodyOptions;
-use callisto_graph::infer::NoInference;
 
 use crate::cli::{ComposePrBodyArgs, GlobalArgs, OutputFormat};
 use crate::error::CliError;
 use crate::output::write_json;
 use crate::render;
 use crate::runner::CliCommandRunner;
-use crate::workspace::load_workspace;
+use crate::workspace::{load_workspace, select_inference};
 
 pub fn handle(args: ComposePrBodyArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
     let runner = CliCommandRunner;
@@ -28,7 +27,7 @@ pub fn handle(args: ComposePrBodyArgs, global: &GlobalArgs) -> Result<ExitCode, 
         other => other,
     };
 
-    let inference = NoInference;
+    let inference = select_inference();
     let opts = PrBodyOptions {
         existing_body,
         labels: args.labels,
