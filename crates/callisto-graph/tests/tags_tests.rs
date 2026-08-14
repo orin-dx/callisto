@@ -362,3 +362,172 @@ fn test_create_tags_without_gix_skips_creation_for_existing_tag() {
         "must not attempt to re-create a tag the fallback reported as already existing, got: {calls:?}"
     );
 }
+
+/// Regression: `create_tags_with_options` used to check each release's tag
+/// existence with its own `git.list_tags(Some(tag_str))` call -- a full
+/// `git tag --list` shell round-trip per release, even though `TagIndex`
+/// (built once via `ws.tags()`) had already fetched the complete tag list.
+/// For a plan with N releases this cost 1 (TagIndex::build) + N
+/// (per-release) `tag --list` invocations. After the fix, existence is
+/// checked against `TagIndex::contains_tag`'s in-memory set, so a plan with
+/// any number of releases costs exactly 1 `tag --list` invocation total.
+///
+/// The runner also simulates real git's behavior of failing a `tag -a` call
+/// for a ref that already exists, so this test fails loudly (not
+/// vacuously) if the existence check is ever disabled or inverted -- a
+/// pure call-count assertion alone would still pass even if
+/// `already_existed` were hardcoded to `false`, since `created_tags` is
+/// pushed unconditionally regardless of that check's outcome.
+#[test]
+fn test_create_tags_checks_existence_against_cached_tag_index_not_per_release() {
+    use callisto_graph::commands::TagOptions;
+    use callisto_model::{
+        CommandError, CommandOutput, CommitSha, PackageId, PublishPlan, ReleaseEntry, TagName,
+        SCHEMA_VERSION,
+    };
+    use std::sync::Mutex;
+
+    let pkg_a = PackageId::parse("pkg-a").unwrap();
+    let pkg_b = PackageId::parse("pkg-b").unwrap();
+    let sha = CommitSha::parse("a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0").unwrap();
+
+    let plan = PublishPlan {
+        schema_version: SCHEMA_VERSION,
+        rust_crates: Vec::new(),
+        npm_main_packages: Vec::new(),
+        npm_platform_packages: Vec::new(),
+        pypi_packages: Vec::new(),
+        releases: vec![
+            ReleaseEntry {
+                package: pkg_a.clone(),
+                tag_name: TagName("pkg-a@1.0.0".to_string()),
+                sha: sha.clone(),
+                changelog_section: None,
+            },
+            ReleaseEntry {
+                package: pkg_b.clone(),
+                tag_name: TagName("pkg-b@2.0.0".to_string()),
+                sha,
+                changelog_section: None,
+            },
+        ],
+        diagnostics: Vec::new(),
+    };
+
+    /// `pkg-a@1.0.0` is the one pre-existing tag (per the canned
+    /// `tag --list` output below). Real `git tag -a` refuses to
+    /// re-create an existing ref, so this runner mirrors that: a
+    /// creation attempt naming `pkg-a@1.0.0` is treated as a caller bug
+    /// (the existence check should have skipped it) and errors instead
+    /// of silently succeeding.
+    struct CountingTagListRunner {
+        tag_list_calls: Mutex<usize>,
+        create_calls: Mutex<Vec<String>>,
+    }
+
+    impl callisto_model::CommandRunner for CountingTagListRunner {
+        fn run(
+            &self,
+            program: &str,
+            args: &[&str],
+            _cwd: &std::path::Path,
+        ) -> Result<CommandOutput, CommandError> {
+            assert_eq!(program, "git");
+            if args == ["tag", "--list"] {
+                *self.tag_list_calls.lock().unwrap() += 1;
+                return Ok(CommandOutput {
+                    exit_code: Some(0),
+                    stdout: "pkg-a@1.0.0".to_string(),
+                    stderr: String::new(),
+                });
+            }
+            if args.first() == Some(&"tag") && args.get(1) == Some(&"-a") {
+                // Real args are `["tag", "-a", "-m", msg, "--", name, sha]`
+                // (see `ShellGit::create_tag`) -- the tag name is the
+                // element right after the `--` end-of-options marker, not
+                // a fixed index.
+                let dash_dash = args
+                    .iter()
+                    .position(|a| *a == "--")
+                    .expect("git tag -a must pass -- before the tag name");
+                let tag_name = args
+                    .get(dash_dash + 1)
+                    .copied()
+                    .expect("git tag -a must have a tag name after --")
+                    .to_string();
+                self.create_calls.lock().unwrap().push(tag_name.clone());
+                if tag_name == "pkg-a@1.0.0" {
+                    return Ok(CommandOutput {
+                        exit_code: Some(128),
+                        stdout: String::new(),
+                        stderr: format!("fatal: tag '{tag_name}' already exists"),
+                    });
+                }
+            }
+            Ok(CommandOutput {
+                exit_code: Some(0),
+                stdout: String::new(),
+                stderr: String::new(),
+            })
+        }
+    }
+
+    let runner = CountingTagListRunner {
+        tag_list_calls: Mutex::new(0),
+        create_calls: Mutex::new(Vec::new()),
+    };
+
+    let ws_dir = tempfile::tempdir().unwrap();
+    assert!(
+        callisto_vcs::GitRepository::discover(ws_dir.path()).is_err(),
+        "test fixture must not be discoverable as a Git repo"
+    );
+
+    let cfg = callisto_graph::config::load(ws_dir.path()).unwrap();
+    let graph = GraphBuilder::new()
+        .package(pkg_a.clone(), |p| p)
+        .package(pkg_b.clone(), |p| p)
+        .build()
+        .unwrap();
+    let git = callisto_vcs::GitAccess::discover(ws_dir.path(), &runner);
+    let tags = callisto_graph::tags::TagIndex::build(&git, &graph, &cfg).unwrap();
+    let ws = callisto_graph::Workspace {
+        root: ws_dir.path().to_path_buf(),
+        config: cfg,
+        graph,
+        tags: OnceCell::from(tags),
+        git: OnceCell::from(git),
+        runner: &runner,
+        manifest_cache: Default::default(),
+    };
+
+    let opts = TagOptions {
+        floating_major: false,
+    };
+
+    let report = callisto_graph::commands::create_tags_with_options(
+        &ws,
+        &plan,
+        &opts,
+        Some(&ApplyPermit::force_for_tests()),
+    )
+    .expect(
+        "create_tags_with_options must succeed -- it must skip pkg-a@1.0.0 (already exists) \
+         rather than attempt to re-create it and hit the runner's simulated failure",
+    );
+    assert_eq!(report.created_tags.len(), 2);
+
+    assert_eq!(
+        *runner.create_calls.lock().unwrap(),
+        vec!["pkg-b@2.0.0".to_string()],
+        "only the genuinely new tag (pkg-b@2.0.0) must be created; pkg-a@1.0.0 already exists \
+         per the cached TagIndex and must be skipped"
+    );
+
+    assert_eq!(
+        *runner.tag_list_calls.lock().unwrap(),
+        1,
+        "tag existence must be checked against the cached TagIndex, not re-queried via `git \
+         tag --list` once per release -- expected exactly 1 invocation for a 2-release plan"
+    );
+}

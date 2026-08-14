@@ -95,6 +95,12 @@ pub struct TagIndex {
     last: BTreeMap<PackageId, Option<LastTag>>,
     templates: BTreeMap<PackageId, TagTemplate>,
     pre_cursor: BTreeMap<PackageId, Option<CommitSha>>,
+    /// The full, unfiltered raw tag list fetched once during `build` (see
+    /// `fetch_all_tags`), kept around so callers checking whether a specific
+    /// tag name already exists (e.g. `create_tags_with_options`, once per
+    /// release) can consult this in-memory set instead of re-querying `git`
+    /// once per check.
+    all_tags: std::collections::BTreeSet<String>,
     pub diagnostics: Vec<Diagnostic>,
 }
 
@@ -117,6 +123,7 @@ impl TagIndex {
         // (e.g. `plan_publish`'s head_sha resolution) doesn't pay for a
         // second discovery.
         let all_tags = fetch_all_tags(git)?;
+        let all_tags_set: std::collections::BTreeSet<String> = all_tags.iter().cloned().collect();
 
         for pkg in graph.packages() {
             let default_tmpl =
@@ -132,6 +139,7 @@ impl TagIndex {
             last,
             templates,
             pre_cursor,
+            all_tags: all_tags_set,
             diagnostics,
         })
     }
@@ -148,6 +156,15 @@ impl TagIndex {
         self.pre_cursor.get(id).and_then(|opt| opt.as_ref())
     }
 
+    /// Returns whether `tag_name` is present in the raw tag list fetched
+    /// during `build` -- an exact match, not a glob. Lets callers checking
+    /// tag existence once per release (e.g. `create_tags_with_options`)
+    /// consult this in-memory set instead of shelling out to `git` again
+    /// for each one.
+    pub fn contains_tag(&self, tag_name: &str) -> bool {
+        self.all_tags.contains(tag_name)
+    }
+
     /// Constructs an empty `TagIndex` with no packages or tags — useful in
     /// unit tests that do not exercise tag-based logic.
     pub fn empty() -> Self {
@@ -155,6 +172,7 @@ impl TagIndex {
             last: BTreeMap::new(),
             templates: BTreeMap::new(),
             pre_cursor: BTreeMap::new(),
+            all_tags: std::collections::BTreeSet::new(),
             diagnostics: Vec::new(),
         }
     }

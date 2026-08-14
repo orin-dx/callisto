@@ -672,10 +672,10 @@ mod tests {
     /// `list_tags` return `Err(VcsError::InvalidGlob)`, not silently
     /// disable filtering and match every tag in the repo. Matching every
     /// tag is a real correctness risk for release tagging: e.g.
-    /// `create_tags_with_options` uses `list_tags(Some(tag_str))` to check
-    /// whether a tag already exists, and a caller path that constructs a
-    /// broken pattern must not spuriously report "already exists" against
-    /// an unrelated tag.
+    /// `TagIndex::build`'s per-package tag-template matching (see
+    /// `callisto-graph`'s `tags.rs`) relies on this, and a caller path
+    /// that constructs a broken pattern must not spuriously report
+    /// "already exists" against an unrelated tag.
     #[test]
     fn test_list_tags_rejects_malformed_glob_instead_of_matching_everything() {
         let ws_dir = tempfile::tempdir().unwrap();

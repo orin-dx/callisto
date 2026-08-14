@@ -1,7 +1,7 @@
 use callisto_model::{
     ApplyPermit, CommandRunner, CreatedTag, PublishPlan, TagReport, SCHEMA_VERSION,
 };
-use callisto_vcs::{GitAccess, GitDataSource};
+use callisto_vcs::GitDataSource;
 
 use crate::error::GraphError;
 use crate::resolver::DependencyResolver;
@@ -35,14 +35,17 @@ pub fn create_tags_with_options<R: CommandRunner, D: DependencyResolver>(
 ) -> Result<TagReport, GraphError> {
     let mut tags = Vec::new();
 
-    // `GitAccess` never hard-fails on a missing gix discovery: `wasm32` has
-    // no gix at all (excluded from that target's dependency set), and even
-    // natively a failed discovery just means every op below runs through
-    // the `CommandRunner` fallback instead. Its write operations
-    // (`create_tag`/`create_floating_major`) additionally guarantee a
-    // discovered repo's result is authoritative and never masked by a
-    // shell retry -- see `GitAccess`'s doc comment.
-    let git = GitAccess::discover(&ws.root, ws.runner);
+    // `Workspace::git_access` never hard-fails on a missing gix discovery:
+    // `wasm32` has no gix at all (excluded from that target's dependency
+    // set), and even natively a failed discovery just means every op below
+    // runs through the `CommandRunner` fallback instead. Its write
+    // operations (`create_tag`/`create_floating_major`) additionally
+    // guarantee a discovered repo's result is authoritative and never
+    // masked by a shell retry -- see `GitAccess`'s doc comment. Sharing the
+    // workspace-scoped instance (rather than a fresh `GitAccess::discover`)
+    // means this command doesn't pay for a second discovery when `ws.tags()`
+    // below also needs one.
+    let git = ws.git_access();
 
     for release in &plan.releases {
         let tag_str = release.tag_name.as_str();
@@ -76,7 +79,7 @@ pub fn create_tags_with_options<R: CommandRunner, D: DependencyResolver>(
             continue;
         };
 
-        let already_existed = !git.list_tags(Some(tag_str))?.is_empty();
+        let already_existed = ws.tags()?.contains_tag(tag_str);
 
         if !already_existed {
             let msg = format!("Release {}", tag_str);
