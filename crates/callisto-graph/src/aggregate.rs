@@ -102,7 +102,7 @@ pub fn apply_pre_major(
     current: &Version,
     has_prior_release: bool,
 ) -> (Severity, bool) {
-    if policy == PreMajorInferencePolicy::OFF {
+    if policy == PreMajorInferencePolicy::Off {
         return (inferred, false);
     }
     if current.major() != Some(0) || current.minor() == Some(0) || !has_prior_release {
@@ -110,8 +110,11 @@ pub fn apply_pre_major(
     }
 
     match (policy, inferred) {
-        (p, Severity::Major) if p.breaking_to_minor => (Severity::Minor, true),
-        (p, Severity::Minor) if p.feat_to_patch => (Severity::Patch, true),
+        (
+            PreMajorInferencePolicy::Conservative | PreMajorInferencePolicy::ConservativeFeat,
+            Severity::Major,
+        ) => (Severity::Minor, true),
+        (PreMajorInferencePolicy::ConservativeFeat, Severity::Minor) => (Severity::Patch, true),
         (_, s) => (s, false),
     }
 }
@@ -209,7 +212,7 @@ where
 
         let policy = resolve_package_config(&pkg.id, config)
             .and_then(|pcfg| pcfg.pre_major_inference)
-            .unwrap_or(PreMajorInferencePolicy::OFF);
+            .unwrap_or(PreMajorInferencePolicy::Off);
 
         let window = crate::infer::InferenceWindowSpec {
             pathspecs: &pathspecs,
@@ -551,6 +554,71 @@ mod tests {
     use crate::config::{GroupDef, GroupMember};
     use crate::infer::{InferenceOutcome, InferenceWindowSpec, SeverityInference};
     use callisto_fixtures::git::{init_repo, run_git, PoisonedRunner};
+
+    /// Direct unit coverage for `apply_pre_major` across all three policy
+    /// states, previously only exercised indirectly through full-config
+    /// integration tests. `Off` never downgrades; `Conservative` downgrades
+    /// Major->Minor only; `ConservativeFeat` downgrades both Major->Minor
+    /// and Minor->Patch.
+    #[test]
+    fn apply_pre_major_off_never_downgrades() {
+        let v = Version::semver(0, 1, 0);
+        assert_eq!(
+            apply_pre_major(Severity::Major, PreMajorInferencePolicy::Off, &v, true),
+            (Severity::Major, false)
+        );
+        assert_eq!(
+            apply_pre_major(Severity::Minor, PreMajorInferencePolicy::Off, &v, true),
+            (Severity::Minor, false)
+        );
+    }
+
+    #[test]
+    fn apply_pre_major_conservative_downgrades_major_to_minor_only() {
+        let v = Version::semver(0, 1, 0);
+        assert_eq!(
+            apply_pre_major(
+                Severity::Major,
+                PreMajorInferencePolicy::Conservative,
+                &v,
+                true
+            ),
+            (Severity::Minor, true)
+        );
+        assert_eq!(
+            apply_pre_major(
+                Severity::Minor,
+                PreMajorInferencePolicy::Conservative,
+                &v,
+                true
+            ),
+            (Severity::Minor, false),
+            "Conservative must not also downgrade Minor->Patch"
+        );
+    }
+
+    #[test]
+    fn apply_pre_major_conservative_feat_downgrades_both_levels() {
+        let v = Version::semver(0, 1, 0);
+        assert_eq!(
+            apply_pre_major(
+                Severity::Major,
+                PreMajorInferencePolicy::ConservativeFeat,
+                &v,
+                true
+            ),
+            (Severity::Minor, true)
+        );
+        assert_eq!(
+            apply_pre_major(
+                Severity::Minor,
+                PreMajorInferencePolicy::ConservativeFeat,
+                &v,
+                true
+            ),
+            (Severity::Patch, true)
+        );
+    }
 
     /// Shells out to the real `git` binary. Retained as the `CommandRunner`
     /// implementation passed to `aggregate()`/`TagIndex::build` in most
@@ -1364,7 +1432,7 @@ mod tests {
                 _pkg: &Package,
                 window: InferenceWindowSpec<'_>,
             ) -> Result<Option<InferenceOutcome>, GraphError> {
-                if window.policy != PreMajorInferencePolicy::OFF {
+                if window.policy != PreMajorInferencePolicy::Off {
                     self.saw_non_off.store(true, Ordering::SeqCst);
                 }
                 Ok(None)
@@ -1493,7 +1561,7 @@ mod tests {
                 _pkg: &Package,
                 window: InferenceWindowSpec<'_>,
             ) -> Result<Option<InferenceOutcome>, GraphError> {
-                if window.policy != PreMajorInferencePolicy::OFF {
+                if window.policy != PreMajorInferencePolicy::Off {
                     self.saw_non_off.store(true, Ordering::SeqCst);
                 }
                 Ok(None)
@@ -1577,7 +1645,7 @@ mod tests {
                 // Set invoked before any policy check so we can distinguish
                 // OFF-policy-applied from never-called.
                 self.invoked.store(true, Ordering::SeqCst);
-                if window.policy != PreMajorInferencePolicy::OFF {
+                if window.policy != PreMajorInferencePolicy::Off {
                     self.saw_non_off.store(true, Ordering::SeqCst);
                 }
                 Ok(None)

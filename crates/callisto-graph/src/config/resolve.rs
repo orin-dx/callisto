@@ -132,17 +132,19 @@ pub struct PackageConfig {
     pub pre_major_inference: Option<PreMajorInferencePolicy>,
 }
 
+/// Pre-1.0 (`0.y.z`) severity-downgrade policy. A closed 3-state choice --
+/// modeled as an enum rather than two independent bools so the type system
+/// rules out the unreachable-via-parser 4th combination a `{breaking_to_minor:
+/// false, feat_to_patch: true}`-shaped struct literal could otherwise
+/// construct.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct PreMajorInferencePolicy {
-    pub breaking_to_minor: bool,
-    pub feat_to_patch: bool,
-}
-
-impl PreMajorInferencePolicy {
-    pub const OFF: Self = Self {
-        breaking_to_minor: false,
-        feat_to_patch: false,
-    };
+pub enum PreMajorInferencePolicy {
+    #[default]
+    Off,
+    /// Downgrades an inferred Major bump to Minor.
+    Conservative,
+    /// Downgrades an inferred Major bump to Minor, and Minor to Patch.
+    ConservativeFeat,
 }
 
 pub fn parse_publish_target(s: &str) -> Result<PublishTarget, ConfigError> {
@@ -203,15 +205,9 @@ pub(crate) fn resolve_package_config<'a>(
 
 pub fn parse_pre_major_policy(s: &str) -> Result<PreMajorInferencePolicy, ConfigError> {
     match s {
-        "off" | "false" => Ok(PreMajorInferencePolicy::OFF),
-        "conservative" => Ok(PreMajorInferencePolicy {
-            breaking_to_minor: true,
-            feat_to_patch: false,
-        }),
-        "conservative-feat" => Ok(PreMajorInferencePolicy {
-            breaking_to_minor: true,
-            feat_to_patch: true,
-        }),
+        "off" | "false" => Ok(PreMajorInferencePolicy::Off),
+        "conservative" => Ok(PreMajorInferencePolicy::Conservative),
+        "conservative-feat" => Ok(PreMajorInferencePolicy::ConservativeFeat),
         _ => Err(ConfigError::InvalidPreMajorInference {
             found: s.to_string(),
         }),
@@ -953,6 +949,35 @@ mod tests {
         assert!(
             matches!(result.unwrap_err(), ConfigError::UnknownKey { .. }),
             "expected UnknownKey error variant"
+        );
+    }
+
+    #[test]
+    fn parse_pre_major_policy_parses_all_known_variants() {
+        assert_eq!(
+            parse_pre_major_policy("off").unwrap(),
+            PreMajorInferencePolicy::Off
+        );
+        assert_eq!(
+            parse_pre_major_policy("false").unwrap(),
+            PreMajorInferencePolicy::Off
+        );
+        assert_eq!(
+            parse_pre_major_policy("conservative").unwrap(),
+            PreMajorInferencePolicy::Conservative
+        );
+        assert_eq!(
+            parse_pre_major_policy("conservative-feat").unwrap(),
+            PreMajorInferencePolicy::ConservativeFeat
+        );
+    }
+
+    #[test]
+    fn parse_pre_major_policy_rejects_unknown_string() {
+        let result = parse_pre_major_policy("aggressive");
+        assert!(
+            matches!(result, Err(ConfigError::InvalidPreMajorInference { .. })),
+            "expected InvalidPreMajorInference, got: {result:?}"
         );
     }
 
