@@ -1389,6 +1389,17 @@ type = "cargo"
 type = "npm"
 ```
 
+**Path-like values (`[changesets].dir`, `[[package]]`/`[[package-set]] changelog`) always use
+forward slashes (`/`), never backslashes, regardless of the OS the value was authored or is
+read on.** `callisto.toml` is checked into version control and read by developers and CI on
+whatever platform they're on; the parsed value goes through the same `workspace_relative`
+normalization used for real filesystem-discovered paths (`callisto-model`'s `workspace_relative`), which only *converts* a
+native separator to `/` on the platform that's actually running — on POSIX, `\` is a legal
+filename character, not a separator, so a Windows-authored `dir = "custom\\subdir"` value
+would be read back as one oddly-named directory (`custom\subdir`, one component) rather than
+two nested ones the moment the same file is read on macOS or Linux CI. Writing `dir =
+"custom/subdir"` is portable on every platform this tool runs on, including Windows.
+
 ```yaml
 # packages/foo/moon.yml
 extensions:

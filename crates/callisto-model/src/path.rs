@@ -16,6 +16,16 @@ use crate::ModelError;
 /// mistaken for a separator and corrupting the path. The previous unconditional
 /// `.replace('\\', "/")` treated `\` as a separator on every platform, which was
 /// byte-incorrect on POSIX (where `\` is a legal filename character).
+///
+/// **Caveat for callers parsing a user-authored config string** (as opposed to a path this
+/// process discovered on its own local filesystem): "platform-native" means the platform
+/// *running this call*, not the platform the string was *written* on. `callisto.toml` is
+/// checked into version control and read on whatever OS a given developer or CI runner
+/// happens to be using, so a `\`-separated value authored on Windows normalizes correctly
+/// there but is read back as one literal, oddly-named path component the moment the same
+/// file is read on POSIX. Callers taking a config value (e.g. `[changesets].dir`,
+/// `[[package]] changelog`) must document that the value should always use `/`, regardless
+/// of authoring platform — this function does not and cannot enforce that on their behalf.
 pub fn workspace_relative(path: impl AsRef<Path>) -> Result<PathBuf, ModelError> {
     let p = path.as_ref();
     if p.is_absolute() {

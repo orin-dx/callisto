@@ -34,6 +34,12 @@ pub struct RawInitConfig {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RawChangesetsConfig {
+    /// Workspace-root-relative. Always forward-slash-separated (`/`), never `\`, regardless
+    /// of the OS this value was authored or is read on — `\` is a legal filename character
+    /// on POSIX, not a separator, so a backslash-separated value would silently name a
+    /// single oddly-named directory rather than a nested path the moment this file is read
+    /// on a non-Windows host. Rejected if absolute or containing `..` components
+    /// (`ConfigError::InvalidChangesetsDir`, E116).
     pub dir: Option<String>,
 }
 
@@ -74,6 +80,12 @@ pub struct RawPackageConfig {
     pub publish_to: Option<Vec<String>>,
     #[serde(rename = "tag-template")]
     pub tag_template: Option<String>,
+    /// Package-root-relative. Always forward-slash-separated (`/`), never `\` — same
+    /// portability rule as `[changesets].dir` (see its doc comment): this value is parsed
+    /// through `workspace_relative`, which only normalizes the *host* platform's native
+    /// separator, so a `\`-separated value written on Windows is misread as one literal
+    /// path component the moment the same config is read on a non-Windows host. Rejected
+    /// if absolute or containing `..` components (`ConfigError::InvalidChangelogPath`, E117).
     pub changelog: Option<String>,
     #[serde(rename = "pre-major-inference")]
     pub pre_major_inference: Option<String>,
@@ -90,6 +102,12 @@ pub struct RawPackageSetConfig {
     pub publish_to: Option<Vec<String>>,
     #[serde(rename = "tag-template")]
     pub tag_template: Option<String>,
+    /// Package-root-relative. Always forward-slash-separated (`/`), never `\` — same
+    /// portability rule as `[changesets].dir` (see its doc comment): this value is parsed
+    /// through `workspace_relative`, which only normalizes the *host* platform's native
+    /// separator, so a `\`-separated value written on Windows is misread as one literal
+    /// path component the moment the same config is read on a non-Windows host. Rejected
+    /// if absolute or containing `..` components (`ConfigError::InvalidChangelogPath`, E117).
     pub changelog: Option<String>,
     #[serde(rename = "pre-major-inference")]
     pub pre_major_inference: Option<String>,
@@ -115,6 +133,12 @@ pub struct RawMoonCallistoConfig {
     pub publish_to: Option<Vec<String>>,
     #[serde(rename = "tag-template")]
     pub tag_template: Option<String>,
+    /// Package-root-relative; intended to follow the same forward-slash-only portability
+    /// rule as `[changesets].dir` (see its doc comment) and to be rejected the same way if
+    /// absolute or containing `..` components (`ConfigError::InvalidChangelogPath`, E117) —
+    /// but nothing in this crate actually deserializes a `moon.yml` file into
+    /// `RawMoonCallistoConfig` today, so none of that is enforced in practice; this
+    /// documents the intended contract for whenever that wiring exists, not current behavior.
     pub changelog: Option<String>,
     #[serde(rename = "pre-major-inference")]
     pub pre_major_inference: Option<String>,

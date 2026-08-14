@@ -326,14 +326,14 @@ pub enum ConfigError {
     )]
     #[diagnostic(
         code(E116),
-        help("Use a path relative to the workspace root that is not absolute and does not contain '..' components.")
+        help("Use a forward-slash-separated path relative to the workspace root that is not absolute and does not contain '..' components.")
     )]
     InvalidChangesetsDir { dir: String },
 
     #[error("`changelog = \"{value}\"` on `{pattern}` is an absolute path or contains `..` path components and would escape the workspace root")]
     #[diagnostic(
         code(E117),
-        help("Use a path relative to the package root that does not contain '..' components.")
+        help("Use a forward-slash-separated path relative to the package root that does not contain '..' components.")
     )]
     InvalidChangelogPath { pattern: String, value: String },
 
