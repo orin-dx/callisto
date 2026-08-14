@@ -29,7 +29,7 @@ impl PackageId {
             return Err(PackageIdParseError::LeadingSlash { raw: s.to_string() });
         }
         if s.starts_with('-') {
-            return Err(PackageIdParseError::PathTraversal { raw: s.to_string() });
+            return Err(PackageIdParseError::LeadingHyphen { raw: s.to_string() });
         }
         if s.contains("..") {
             return Err(PackageIdParseError::PathTraversal { raw: s.to_string() });
@@ -43,7 +43,10 @@ impl PackageId {
                         prefix: prefix.to_string(),
                     });
                 }
-                if remainder.starts_with('-') || remainder.contains("..") {
+                if remainder.starts_with('-') {
+                    return Err(PackageIdParseError::LeadingHyphen { raw: s.to_string() });
+                }
+                if remainder.contains("..") {
                     return Err(PackageIdParseError::PathTraversal { raw: s.to_string() });
                 }
                 return Ok(PackageId::Prefixed {
@@ -61,7 +64,10 @@ impl PackageId {
                         prefix: prefix.to_string(),
                     });
                 }
-                if remainder.starts_with('-') || remainder.contains("..") {
+                if remainder.starts_with('-') {
+                    return Err(PackageIdParseError::LeadingHyphen { raw: s.to_string() });
+                }
+                if remainder.contains("..") {
                     return Err(PackageIdParseError::PathTraversal { raw: s.to_string() });
                 }
                 return Ok(PackageId::Prefixed {
@@ -251,6 +257,10 @@ pub enum PackageIdParseError {
     LeadingSlash { raw: String },
     #[error("package identity `{raw}` contains path traversal `..`")]
     PathTraversal { raw: String },
+    #[error(
+        "package identity `{raw}` starts with `-`, which could be misread as a command-line flag"
+    )]
+    LeadingHyphen { raw: String },
 }
 
 /// A group name for fixed or linked package groups.
@@ -489,14 +499,42 @@ mod tests {
             PackageId::parse("/etc/passwd").is_err(),
             "must reject leading slashes"
         );
+
+        let dotdot_err = PackageId::parse("../../secret").unwrap_err();
         assert!(
-            PackageId::parse("../../secret").is_err(),
-            "must reject path traversal via .."
+            matches!(dotdot_err, PackageIdParseError::PathTraversal { .. }),
+            "expected PathTraversal for a genuine `..` traversal, got: {dotdot_err:?}"
         );
         assert!(
-            PackageId::parse("-x").is_err(),
-            "must reject leading hyphen"
+            dotdot_err.to_string().contains(".."),
+            "PathTraversal's message must actually reference the `..` it found, got: {dotdot_err}"
         );
+    }
+
+    /// A leading `-` is not path traversal at all (no `..` anywhere in the
+    /// input) -- it's rejected because it could be misread as a CLI flag by
+    /// a shelled-out command downstream. The old shared `PathTraversal`
+    /// variant's message ("contains path traversal `..`") was factually
+    /// false for this input; it must get its own variant with an accurate
+    /// message, for the bare form and both prefixed forms.
+    #[test]
+    fn package_id_rejects_leading_hyphen_with_accurate_error() {
+        for input in ["-x", "cargo:-x", "cargo/-x"] {
+            let err = PackageId::parse(input).unwrap_err();
+            assert!(
+                matches!(err, PackageIdParseError::LeadingHyphen { .. }),
+                "expected LeadingHyphen for `{input}`, got: {err:?}"
+            );
+            let msg = err.to_string();
+            assert!(
+                !msg.contains(".."),
+                "LeadingHyphen's message must not falsely claim `..` path traversal, got: {msg}"
+            );
+            assert!(
+                msg.contains('-'),
+                "LeadingHyphen's message should reference the offending `-`, got: {msg}"
+            );
+        }
     }
 
     #[test]
