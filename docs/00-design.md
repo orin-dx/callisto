@@ -1,4 +1,4 @@
-# callisto — polyglot version coordination for moon workspaces
+# callisto — polyglot version coordination for Cargo, npm, and PyPI monorepos
 
 **Status:** IMPLEMENTED & VERIFIED (Canonical Spec)
 **Date:** 2026-07-24
@@ -142,8 +142,8 @@ release-please."
 An earlier draft of this design treated "support every language" as an implicit goal and
 grew scope accordingly (Python, Go, Java, Scala, C#, Ruby, Deno all got design attention).
 An adversarial review of that draft concluded the scope had outrun the addressable market:
-callisto's actual niche is narrow (moon workspaces, changesets-format preference, napi
-coordination), and building for languages nobody in that niche has asked for is waste.
+callisto's actual niche is narrow (changesets-format preference, napi coordination), and
+building for languages nobody in that niche has asked for is waste.
 
 Revised posture:
 
@@ -209,13 +209,18 @@ incumbents:
   in polyglot support (Java/Gradle, .NET announced for 2025). The default choice for teams
   already on Nx.
 
-Callisto's defensible niche is narrower and specific: **moon workspaces, where the team
-prefers the changesets file format over Conventional Commits, and needs napi-style
-cross-registry coordination that nothing else handles.** All three conditions should
-plausibly hold for the same team to make callisto the right choice over the incumbents.
-This is a real niche — moon has real adopters, changesets has a large loyal JS user base
-that dislikes Conventional-Commits-only tools, napi coordination is a documented pain point
-nobody solves — but it is a niche, not a mass-market claim.
+Callisto's defensible niche is narrower and specific: **teams that prefer the changesets
+file format over Conventional Commits, and need napi-style cross-registry coordination
+that nothing else handles.** Both conditions should plausibly hold for the same team to
+make callisto the right choice over the incumbents. This is a real niche — changesets has
+a large loyal JS user base that dislikes Conventional-Commits-only tools, napi coordination
+is a documented pain point nobody solves — but it is a niche, not a mass-market claim.
+
+The core itself doesn't require any particular build system to use: it runs as a
+standalone CLI (Bazel sandboxes, Buck2, Nix flakes, GitHub Actions, GitLab CI, local Git
+hooks) or as a moon WASM extension. moon is one first-class integration among several —
+the reference one, in the narrow §0.1 sense — not a precondition for callisto to be
+useful.
 
 **Risk to name plainly:** the changesets team has an open, long-standing issue (#665)
 requesting native polyglot support. If `@changesets/cli` ships that natively, callisto's
