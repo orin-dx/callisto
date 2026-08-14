@@ -1,0 +1,26 @@
+<task-notification>
+<task-id>a6dc4b2b716223a14</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a6dc4b2b716223a14.output</output-file>
+<status>completed</status>
+<summary>Agent "Review docs/01-spec.md select_inference update" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>**Verdict: diff is accurate. All 7 items pass.**
+
+1. **§CLI.6.3.1 code block — MATCH.** `workspace.rs` (lines 28-36) has exactly `pub fn select_inference() -&gt; impl SeverityInference` with no params/lifetime, `#[cfg(not(feature = "inference"))]` → `NoInference`, `#[cfg(feature = "inference")]` → `CommitInference`. Doc block matches verbatim.
+
+2. **version.rs — MATCH.** `handle()` line 18: `let inference = select_inference();` — real call, imported from `crate::workspace` (line 12), not hardcoded.
+
+3. **compose_pr_body.rs — MATCH.** `handle()` line 30: `let inference = select_inference();`, same import. Doc prose ("`select_inference()` (§CLI.6.3.1), the same selection `version` uses") accurately describes it.
+
+4. **§G.6.4 paragraph — MATCH.** The paragraph after the code block (docs lines 6909-6912) now reads "`callisto-cli`'s `select_inference` (§CLI.6.3.1) constructs `CommitInference` when the `inference` feature is enabled, so v0.2's ... milestone commitment (§G.14) has landed." No trace of the old "never constructed anywhere in production" claim.
+
+5. **Stale-claim sweep — clean.** Grepped whole file for "never constructed", "hardcod(e/es/ed)", "not implemented", "never existed in real code" near CommitInference/select_inference/NoInference — zero remaining stale hits. A separate `grep -in "hardcod"` over the whole file returns nothing at all. The only other "never constructed" hit (line 2449) is about the unrelated `WorkspaceVersionConflict` variant, correctly untouched (see item 7).
+
+6. **Fence balance — confirmed.** `grep -c '^```' docs/01-spec.md` = 402 (even).
+
+7. **Unrelated feature untouched — confirmed.** `git diff docs/01-spec.md` contains zero lines mentioning `CargoWorkspacePackage` or `WorkspaceVersionConflict`; that section (docs line 2444-2457) still honestly documents it as unimplemented, unaffected by this diff.
+
+No issues found.</result>
+<usage><subagent_tokens>50848</subagent_tokens><tool_uses>13</tool_uses><duration_ms>49919</duration_ms></usage>
+</task-notification>
