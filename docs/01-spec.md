@@ -3880,12 +3880,11 @@ pub struct InheritedDep<'a> {
 }
 
 /// The mutable editor for the workspace root's `Cargo.toml` — the only type in this crate
-/// that writes `[workspace.package]`/`[workspace.dependencies]`. A member `CargoToml` whose
-/// `write_version`/`update_dependency_spec` is called on an inherited field refuses
-/// (`ManifestError::WorkspaceInherited`, §CM.1.2) specifically so the caller is forced
-/// through this type instead of writing a member-local override that would silently shadow
-/// the workspace value — exactly the failure mode `WorkspaceInherited`'s own doc comment
-/// names (§M.13.2).
+/// that writes `[workspace.package]`/`[workspace.dependencies]`. A member `CargoToml`'s two
+/// write methods handle an inherited field very differently from each other, and neither
+/// actually surfaces `ManifestError::WorkspaceInherited` to do it (see the prose below the
+/// method list) — `write_version` pins an explicit value into the member itself rather than
+/// touching the root at all; `update_dependency_spec` transparently delegates to this type.
 pub struct WorkspaceCargoResolver {
     root_path: PathBuf,
     document: toml_edit::DocumentMut,
@@ -3905,20 +3904,26 @@ impl WorkspaceCargoResolver {
     /// wrapped in `Arc` for `OpenContext` (§CM.2).
     pub fn inheritance(&self) -> Result<WorkspaceInheritance, ManifestError>;
 
-    /// Writes `[workspace.package].version`. The correct target for *any* member whose
-    /// `write_version` refused with `WorkspaceInherited { key: "version", .. }` — since
-    /// `version.workspace = true` is (in practice) used by every member that opts in, one
-    /// call here typically satisfies every such member for the run, which is the entire point
-    /// of the Cargo feature this resolves (§18 Q2).
+    /// Writes `[workspace.package].version`. *Intended* as the single write that satisfies
+    /// every member inheriting `version.workspace = true` at once (§18 Q2) — but as of this
+    /// writing, a member's own `CargoToml::write_version` never delegates here; it pins an
+    /// explicit version directly into the member instead (see the prose below the method
+    /// list). This method is reachable only through `apply_version_plan`'s
+    /// `VersionWriteTarget::CargoWorkspacePackage` dispatch arm, and that write target is
+    /// itself never constructed by the real planner today (§G.10.2 step 3's note) — so this
+    /// method has no live production caller.
     pub fn write_version(&mut self, v: &Version) -> Result<(), ManifestError>;
 
-    /// Writes one `[workspace.dependencies]` entry. The apply-phase target for every
-    /// `SpecRewrite` whose `DepWriteTarget` is `CargoWorkspaceDependency` (§G.7.3, §G.10.2
-    /// step 6), and the correct target for a member's `update_dependency_spec` refusal with
-    /// `WorkspaceInherited { key: name, .. }` — rewriting it here is correct Cargo semantics
-    /// (§18 Q2: *"Bumping a member's dep means editing the root, not the member"*), and
-    /// affects every member that inherits `name`, which is the intended effect, not a side
-    /// effect to guard against.
+    /// Writes one `[workspace.dependencies]` entry. Two real, independent callers reach this:
+    /// (1) the apply-phase target for every `SpecRewrite` whose `DepWriteTarget` is
+    /// `CargoWorkspaceDependency` (§G.7.3, §G.10.2 step 6) — `cascade.rs`'s real rewrite
+    /// planning does construct this target for a genuinely inherited dependency edge, unlike
+    /// `CargoWorkspacePackage` above; and (2) a member's own `update_dependency_spec`, called
+    /// directly on an inherited dependency, which transparently delegates here itself rather
+    /// than returning an error the caller must redirect on (see the prose below). Rewriting
+    /// it here is correct Cargo semantics (§18 Q2: *"Bumping a member's dep means editing the
+    /// root, not the member"*), and affects every member that inherits `name`, which is the
+    /// intended effect, not a side effect to guard against.
     ///
     /// **Takes no `DepKind`**, for the same reason `WorkspaceInheritance::inherited` returns
     /// none: the root's table has no sections. One call updates the entry every inheriting
@@ -3927,13 +3932,26 @@ impl WorkspaceCargoResolver {
 }
 ```
 
-**Reads are transparent; writes are refused and redirected.** A member `CargoToml` opened
-with `ctx.cargo_workspace = Some(inheritance)` answers `current_version()` and
-`iter_dependencies()` with the *real, resolved* values — a caller reading a member's version
-or dependency list never needs to know inheritance was involved. Only a *write* attempt
-directly on the member surfaces `WorkspaceInherited`, because that is the one operation where
-"which file actually gets edited" matters and getting it wrong (writing a local override) is a
-silent correctness bug, not merely redundant work.
+**Reads are transparent; the two write methods handle inheritance differently, and neither
+surfaces `WorkspaceInherited`.** A member `CargoToml` opened with `ctx.cargo_workspace =
+Some(inheritance)` answers `current_version()` and `iter_dependencies()` with the *real,
+resolved* values — a caller reading a member's version or dependency list never needs to know
+inheritance was involved. Grep of `callisto-manifests/src/cargo.rs` confirms
+`ManifestError::WorkspaceInherited` is constructed in exactly one place, and it's not a write
+path at all: `current_version()`, when `self.inherited_version` is set but no
+`WorkspaceCargoResolver` context was ever supplied to `open()` — a caller-contract violation
+caught the first time anyone tries to read the version, not a "which file gets edited" signal.
+
+`write_version` on an inherited member never touches the root and never errors: it writes an
+explicit pinned version string directly into the member's own `[package]` section, replacing
+the inheritance declaration (tested by
+`write_version_pins_explicitly_on_workspace_inheriting_member`). `update_dependency_spec` on
+an inherited dependency instead delegates transparently — it loads a
+`WorkspaceCargoResolver` for the root and calls `write_dependency` itself, with no error
+surfaced to its own caller — *unless* the manifest being edited **is** the workspace root
+itself, in which case it refuses with `ManifestError::InvariantViolation` (not
+`WorkspaceInherited`) to avoid overwriting the just-written root with a stale in-memory
+document.
 
 If `open()` is called for a decl that uses `.workspace = true` but `ctx.cargo_workspace` is
 `None` (no resolver context was ever built for this invocation), `open()` itself fails with
