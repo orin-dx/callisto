@@ -81,6 +81,12 @@ pub struct RuntimeVersionEntry {
     pub range: String,
 }
 
+/// Which manifest field a [`RuntimeVersionEntry`] was read from. Exactly two variants —
+/// `callisto matrix` reads `engines.node` from `package.json` or `requires-python` from
+/// `pyproject.toml` and nothing else; a third ecosystem (e.g. a future `.NET`
+/// `TargetFramework` field) is deliberately out of scope, not merely unimplemented, so
+/// deserializing an unrecognized ecosystem string is a schema error rather than silently
+/// accepted (§M.12.7 — this module's own test suite pins this).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum RuntimeEcosystem {

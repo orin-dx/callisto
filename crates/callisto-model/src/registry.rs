@@ -76,10 +76,22 @@ pub trait RegistryClient: Send + Sync {
     ) -> Result<PublishOutcome, RegistryError>;
 }
 
+/// Gate on whether a publish retry should proceed after a registry reports
+/// [`RegistryError::RateLimited`]. Called with the registry-supplied `retry_after` duration
+/// immediately before the caller would sleep and retry; returning `Err` aborts the retry
+/// instead (the `?`-propagated error becomes the publish attempt's final failure). The
+/// production implementation (`AlwaysRetryPolicy`, `callisto-graph`) always permits the
+/// retry — the caller's own overall wait-time cutoff is what bounds retries, not this trait —
+/// but the seam exists so a caller with a stricter policy (or a test asserting retry
+/// behavior without real waiting) can substitute one without touching the retry loop itself.
 pub trait RateLimitPolicy: Send + Sync {
     fn check_rate_limit(&self, retry_after: Duration) -> Result<(), RegistryError>;
 }
 
+/// Injectable clock and sleep seam for publish-retry backoff, so retry logic is testable
+/// without a real wall-clock wait. The production implementation (`SystemTimeProvider`,
+/// `callisto-graph`) wraps `std::time::SystemTime::now()`/`std::thread::sleep`; a test
+/// double can record calls and return instantly instead.
 pub trait TimeProvider: Send + Sync {
     fn now(&self) -> std::time::SystemTime;
     fn sleep(&self, duration: Duration);

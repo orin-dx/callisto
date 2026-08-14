@@ -153,7 +153,10 @@ pub struct CascadeOutcome {
     pub iterations: usize,
 }
 
-/// Trait for dependency graph cascade solving.
+/// Trait mirror of [`solve_cascade`]'s signature — no implementation exists in this crate
+/// today (the free function is called directly by every current caller); kept as a seam for
+/// a future test double the same way [`DependencyResolver`] is, rather than a live extension
+/// point.
 pub trait CascadeSolver<D: DependencyResolver> {
     fn solve_cascade(&self, input: CascadeInput<'_, D>) -> Result<CascadeOutcome, GraphError>;
 }
@@ -164,6 +167,24 @@ pub fn run_cascade<D: DependencyResolver>(
     solve_cascade(input)
 }
 
+/// Propagates `input.seed`'s severities outward to dependents until no target version
+/// changes, or `convergence_bound`'s iteration cap is exceeded
+/// ([`GraphError::CascadeNotConverged`]) — the safety bound that turns a would-be infinite
+/// loop into a reportable bug rather than a hang, derived from the package count rather than
+/// hand-tuned.
+///
+/// One pass: pop a package off the worklist, compute its bumped target version, then walk
+/// every dependent edge and apply [`cascade_action`] to decide whether that dependent's own
+/// severity/target needs to change and gets re-queued. A genuine cross-grammar coverage
+/// failure (`coverage`'s `Err`, e.g. comparing a SemVer target against a PEP440 spec) does
+/// abort the whole cascade with `Err(GraphError::GrammarMismatch)` — this function does not
+/// swallow that. What *is* soft: a `DepSpec::Catalog`/`DepSpec::Opaque` entry never has its
+/// coverage tested at all (`coverage` returns `Coverage::Unknown` unconditionally for both),
+/// so it can't block anything either way — a `Catalog` entry is reported as
+/// [`DiagnosticCode::CatalogSpecNotRewritten`], an `Opaque` one gets no diagnostic at all.
+/// [`DiagnosticCode::RangeNotRoundTrippable`]'s own dominant real-world trigger is a
+/// different step entirely — [`rewrite_spec`], below, when a mechanical range rewrite (not a
+/// coverage test) fails on an otherwise-known-coverage spec.
 pub fn solve_cascade<D: DependencyResolver>(
     input: CascadeInput<'_, D>,
 ) -> Result<CascadeOutcome, GraphError> {

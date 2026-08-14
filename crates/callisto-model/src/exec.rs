@@ -1,6 +1,10 @@
 use std::path::Path;
 use std::time::Duration;
 
+/// The minimum `git` version callisto supports, as a [`semver::VersionReq`] grammar string
+/// consumed directly by [`check_git_version`] — the single place this floor is defined, so
+/// the requirement used for the actual comparison and the one rendered in
+/// [`CommandError::IncompatibleVersion`]'s message can never drift apart.
 pub const REQUIRED_GIT: &str = ">=2.20";
 
 /// Trait for executing subprocess commands.
