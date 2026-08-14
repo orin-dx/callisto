@@ -107,7 +107,7 @@ pub enum ParseError {
     /// A changeset with one or more entries must have a non-empty summary.
     #[error("changeset has entries but an empty or whitespace-only summary")]
     #[diagnostic(
-        code(E048),
+        code(E055),
         help("Add a non-empty summary after the closing `---` delimiter.")
     )]
     EmptySummary,
@@ -123,12 +123,12 @@ pub enum WriteError {
 
     /// A changeset with one or more entries must have a non-empty summary.
     #[error("cannot write changeset: entries present but summary is empty or whitespace-only")]
-    #[diagnostic(code(E050), help("Provide a non-empty summary describing the change."))]
+    #[diagnostic(code(E056), help("Provide a non-empty summary describing the change."))]
     EmptySummary,
 
     /// `entries[index]`'s name is the empty string.
     #[error("entry {index} has an empty package name")]
-    #[diagnostic(code(E052))]
+    #[diagnostic(code(E057))]
     EmptyName { index: usize },
 
     /// `entries[index]`'s name contains a literal `"`, which cannot be written — no escaping

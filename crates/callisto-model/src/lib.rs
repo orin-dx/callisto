@@ -76,29 +76,122 @@ mod tests {
         assert_send_sync_static::<StatusReport>();
     }
 
-    /// Asserts that every #[diagnostic(code(...))] value across all callisto crates is unique.
-    /// This test enumerates every code found by audit; a duplicate entry here mirrors a duplicate
-    /// in source and causes an immediate, named failure.
+    /// Every source file across the workspace that declares at least one `#[diagnostic(code(E..))]`,
+    /// embedded at compile time via `include_str!` (paths relative to this file). This list is
+    /// the actual audit surface — a file added here needs no further wiring, since the scan below
+    /// extracts every code occurrence directly from the text.
+    ///
+    /// A prior version of this test used a hand-maintained `&[&str]` list of expected codes,
+    /// which (a) had to be updated by hand every time a code was added anywhere in the workspace,
+    /// and (b) was missing two entire files (`commit.rs`, `version.rs`) and roughly a third of
+    /// `callisto-graph/src/error.rs`'s own codes, entirely undetected until an actual duplicate
+    /// (`E117` on two unrelated `callisto-graph` variants) was found by unrelated code review —
+    /// a hand-maintained completeness list is exactly the kind of check that silently stops
+    /// checking anything the moment someone forgets to update it. Scanning the real source text
+    /// at compile time removes the maintenance step entirely: a new file with diagnostic codes
+    /// simply needs adding to this array, and every code that file ever gains is covered from
+    /// then on with no further edits here.
+    const DIAGNOSTIC_CODE_SOURCE_FILES: &[(&str, &str)] = &[
+        ("callisto-model/src/error.rs", include_str!("error.rs")),
+        ("callisto-model/src/exec.rs", include_str!("exec.rs")),
+        ("callisto-model/src/commit.rs", include_str!("commit.rs")),
+        ("callisto-model/src/version.rs", include_str!("version.rs")),
+        (
+            "callisto-graph/src/locate/mod.rs",
+            include_str!("../../callisto-graph/src/locate/mod.rs"),
+        ),
+        (
+            "callisto-graph/src/error.rs",
+            include_str!("../../callisto-graph/src/error.rs"),
+        ),
+        (
+            "callisto-format/src/bump.rs",
+            include_str!("../../callisto-format/src/bump.rs"),
+        ),
+        (
+            "callisto-format/src/changeset/mod.rs",
+            include_str!("../../callisto-format/src/changeset/mod.rs"),
+        ),
+        (
+            "callisto-vcs/src/lib.rs",
+            include_str!("../../callisto-vcs/src/lib.rs"),
+        ),
+        (
+            "callisto-changelog/src/error.rs",
+            include_str!("../../callisto-changelog/src/error.rs"),
+        ),
+    ];
+
+    /// Extracts every `code(E<digits>)` occurrence from `text`, in order of appearance. Deliberately
+    /// a hand-rolled scan rather than a `regex` dependency — the pattern is fixed-shape and simple
+    /// enough that adding a whole crate dependency for it isn't warranted.
+    fn extract_diagnostic_codes(text: &str) -> Vec<String> {
+        let mut codes = Vec::new();
+        let mut rest = text;
+        while let Some(start) = rest.find("code(E") {
+            let after_marker = &rest[start + "code(".len()..];
+            let digit_end = after_marker
+                .find(|c: char| !c.is_ascii_digit() && c != 'E')
+                .unwrap_or(after_marker.len());
+            let candidate = &after_marker[..digit_end];
+            // `code(` is also used for things like `code(callisto::foo)` in test-double
+            // diagnostics elsewhere in the workspace (out of scope for this scan, since those
+            // files aren't in `DIAGNOSTIC_CODE_SOURCE_FILES`) -- guard here anyway so a stray
+            // non-numeric match can't silently produce a bogus "code".
+            if candidate.len() > 1 && candidate[1..].chars().all(|c| c.is_ascii_digit()) {
+                codes.push(candidate.to_string());
+            }
+            rest = &after_marker[digit_end..];
+        }
+        codes
+    }
+
+    /// Asserts that every `#[diagnostic(code(...))]` value across every file in
+    /// [`DIAGNOSTIC_CODE_SOURCE_FILES`] is unique workspace-wide. Duplicate diagnostic codes are
+    /// a real user-facing bug (E-codes are meant to be a stable, searchable identifier for one
+    /// specific error condition) — see this test's doc comment on `DIAGNOSTIC_CODE_SOURCE_FILES`
+    /// for the collision this replaced a broken, silently-incomplete version of the check.
     #[test]
     fn test_all_diagnostic_codes_are_unique() {
-        let codes: &[&str] = &[
-            // callisto-model: error.rs
-            "E004", "E005", "E006", "E008", "E009", "E010", "E011", "E012", "E013", "E015", "E016",
-            "E017", "E018", "E019", // callisto-model: exec.rs
-            "E021", "E022", "E023", "E024", // callisto-graph: locate/mod.rs
-            "E031", "E032", // callisto-format: bump.rs
-            "E035", "E036", "E037", "E038", "E039",
-            // callisto-format: changeset/mod.rs ParseError
-            "E041", "E042", "E043", "E044", "E045", "E046", "E047", "E048",
-            // callisto-format: changeset/mod.rs WriteError
-            "E049", "E050", "E052", // callisto-vcs: lib.rs
-            "E051", // callisto-changelog: error.rs
-            "E060", "E061", "E062", "E063", // callisto-graph: error.rs
-            "E101", "E107", "E108", "E109", "E110", "E111", "E118",
-        ];
-        let mut seen = std::collections::BTreeSet::new();
-        for code in codes {
-            assert!(seen.insert(*code), "Duplicate diagnostic code: {code}");
+        let mut seen: std::collections::BTreeMap<String, &str> = std::collections::BTreeMap::new();
+        for (file, text) in DIAGNOSTIC_CODE_SOURCE_FILES {
+            for code in extract_diagnostic_codes(text) {
+                if let Some(first_file) = seen.insert(code.clone(), file) {
+                    panic!(
+                        "Duplicate diagnostic code {code}: declared in both {first_file} and {file}"
+                    );
+                }
+            }
         }
+        assert!(
+            seen.len() > 50,
+            "expected at least 50 distinct diagnostic codes across the workspace (81 at the \
+             time this test was written), got {} -- extract_diagnostic_codes likely stopped \
+             matching real source (check DIAGNOSTIC_CODE_SOURCE_FILES's include_str! paths \
+             still resolve)",
+            seen.len()
+        );
+    }
+
+    #[test]
+    fn extract_diagnostic_codes_finds_every_code_in_a_small_fixture() {
+        let text = r#"
+            #[diagnostic(code(E001))]
+            struct Foo;
+            #[diagnostic(
+                code(E042),
+                help("do something")
+            )]
+            struct Bar;
+        "#;
+        assert_eq!(extract_diagnostic_codes(text), vec!["E001", "E042"]);
+    }
+
+    #[test]
+    fn extract_diagnostic_codes_detects_a_duplicate_within_one_string() {
+        let text = "code(E001) ... code(E001)";
+        let codes = extract_diagnostic_codes(text);
+        let mut seen = std::collections::BTreeSet::new();
+        assert!(!codes.iter().all(|c| seen.insert(c.clone())));
     }
 }

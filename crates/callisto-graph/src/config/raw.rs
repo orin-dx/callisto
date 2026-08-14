@@ -85,7 +85,7 @@ pub struct RawPackageConfig {
     /// through `workspace_relative`, which only normalizes the *host* platform's native
     /// separator, so a `\`-separated value written on Windows is misread as one literal
     /// path component the moment the same config is read on a non-Windows host. Rejected
-    /// if absolute or containing `..` components (`ConfigError::InvalidChangelogPath`, E117).
+    /// if absolute or containing `..` components (`ConfigError::InvalidChangelogPath`, E113).
     pub changelog: Option<String>,
     #[serde(rename = "pre-major-inference")]
     pub pre_major_inference: Option<String>,
@@ -107,7 +107,7 @@ pub struct RawPackageSetConfig {
     /// through `workspace_relative`, which only normalizes the *host* platform's native
     /// separator, so a `\`-separated value written on Windows is misread as one literal
     /// path component the moment the same config is read on a non-Windows host. Rejected
-    /// if absolute or containing `..` components (`ConfigError::InvalidChangelogPath`, E117).
+    /// if absolute or containing `..` components (`ConfigError::InvalidChangelogPath`, E113).
     pub changelog: Option<String>,
     #[serde(rename = "pre-major-inference")]
     pub pre_major_inference: Option<String>,
@@ -135,7 +135,7 @@ pub struct RawMoonCallistoConfig {
     pub tag_template: Option<String>,
     /// Package-root-relative; intended to follow the same forward-slash-only portability
     /// rule as `[changesets].dir` (see its doc comment) and to be rejected the same way if
-    /// absolute or containing `..` components (`ConfigError::InvalidChangelogPath`, E117) —
+    /// absolute or containing `..` components (`ConfigError::InvalidChangelogPath`, E113) —
     /// but nothing in this crate actually deserializes a `moon.yml` file into
     /// `RawMoonCallistoConfig` today, so none of that is enforced in practice; this
     /// documents the intended contract for whenever that wiring exists, not current behavior.

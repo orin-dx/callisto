@@ -48,7 +48,7 @@ pub enum CommitWalkError {
     /// already-released commits into severity and changelog inference.
     #[error("reference `{ref_name}` was not found")]
     #[diagnostic(
-        code(E025),
+        code(E054),
         help("Check if the reference or tag exists in local or remote Git refs.")
     )]
     RefNotFound { ref_name: String },

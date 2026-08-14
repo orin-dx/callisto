@@ -332,7 +332,7 @@ pub enum ConfigError {
 
     #[error("`changelog = \"{value}\"` on `{pattern}` is an absolute path or contains `..` path components and would escape the workspace root")]
     #[diagnostic(
-        code(E117),
+        code(E113),
         help("Use a forward-slash-separated path relative to the package root that does not contain '..' components.")
     )]
     InvalidChangelogPath { pattern: String, value: String },

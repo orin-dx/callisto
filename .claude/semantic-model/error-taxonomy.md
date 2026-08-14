@@ -55,6 +55,7 @@ surface to the user as GraphError.
 |---|---|---|
 | E110 | `Read { path, message }` | Failed to read callisto.toml or moon.yml |
 | E111 | `ParseToml { path, message }` | Invalid TOML syntax in callisto.toml |
+| E113 | `InvalidChangelogPath { pattern, value }` | `changelog` on `[[package]]`/`[[package-set]]` escapes the package root (previously mis-numbered E117, colliding with `GraphError::UnexpectedManifestVersion`; renumbered) |
 | E116 | `InvalidChangesetsDir { dir }` | changesets.dir escapes workspace root |
 
 ### Without E-codes
