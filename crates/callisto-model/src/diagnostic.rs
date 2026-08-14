@@ -109,6 +109,7 @@ pub enum DiagnosticCode {
     UnrecognisedPlatformTriple,
     PublishTargetNotImplemented,
     PackageSetMatchedNothing,
+    DuplicatePlatformTriple,
 }
 
 #[cfg(test)]

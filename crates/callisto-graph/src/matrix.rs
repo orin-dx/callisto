@@ -316,7 +316,22 @@ pub(crate) fn assemble_platform_target_group(
 
     let mut targets = Vec::new();
     let mut diagnostics = Vec::new();
+    let mut seen_triples = std::collections::BTreeSet::new();
     for triple in &triples {
+        if !seen_triples.insert(triple.as_str()) {
+            diagnostics.push(Diagnostic {
+                code: DiagnosticCode::DuplicatePlatformTriple,
+                severity: DiagnosticSeverity::Warning,
+                message: format!(
+                    "package `{package_name}` declares duplicate platform triple `{triple}` in `{source}`; only the first occurrence is used"
+                ),
+                package: Some(package_id.clone()),
+                path: None,
+                escalated_by: None,
+                governed_by: None,
+            });
+            continue;
+        }
         match build_platform_target(triple, package_dir_rel, package_name) {
             Some(t) => targets.push(t),
             None => diagnostics.push(Diagnostic {
@@ -881,6 +896,44 @@ mod tests {
         );
         assert!(diagnostics[0].message.contains("sparc64-unknown-linux-gnu"));
         assert_eq!(diagnostics[0].package, Some(pkg_id("native-mod")));
+    }
+
+    /// A copy-paste duplicate triple in a hand-maintained napi.targets/
+    /// [tool.maturin].targets list must not produce two identical
+    /// PlatformTarget entries -- that would produce duplicate CI matrix
+    /// jobs racing on the same artifact upload. The duplicate is dropped
+    /// (first occurrence wins) and reported as a warning diagnostic.
+    #[test]
+    fn assemble_platform_target_group_dedupes_duplicate_triple() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join("package.json"),
+            r#"{"napi":{"targets":["aarch64-apple-darwin","x86_64-apple-darwin","aarch64-apple-darwin"]}}"#,
+        )
+        .unwrap();
+
+        let (group, diagnostics) = assemble_platform_target_group(
+            tmp.path(),
+            "native-mod",
+            "native-mod",
+            &pkg_id("native-mod"),
+        )
+        .unwrap();
+        let group = group.expect("group must be present");
+        assert_eq!(
+            group.targets.len(),
+            2,
+            "the duplicate triple must be dropped, not produce a second entry; got: {:?}",
+            group.targets.iter().map(|t| &t.triple).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            diagnostics
+                .iter()
+                .filter(|d| d.code == DiagnosticCode::DuplicatePlatformTriple)
+                .count(),
+            1,
+            "expected exactly one DuplicatePlatformTriple diagnostic, got: {diagnostics:?}"
+        );
     }
 
     /// AC-001b: napi.targets = [] (present, explicitly empty) produces a
