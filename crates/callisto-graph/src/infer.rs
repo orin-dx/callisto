@@ -1,16 +1,20 @@
 use std::path::PathBuf;
 
-#[cfg(feature = "inference")]
-use callisto_model::CommandRunner;
 use callisto_model::{CommitSha, Package, Severity, Version};
+use callisto_vcs::GitAccess;
 
 use crate::config::PreMajorInferencePolicy;
 use crate::error::GraphError;
 
 pub trait SeverityInference: Send + Sync {
+    /// `git` is the caller's already-discovered [`GitAccess`] (e.g.
+    /// `aggregate()`'s own parameter, itself `Workspace`-shared) -- an impl
+    /// that needs commit history must use this rather than discovering its
+    /// own, so an N-package workspace pays for one discovery, not N.
     fn infer(
         &self,
         pkg: &Package,
+        git: &GitAccess<'_>,
         window: InferenceWindowSpec<'_>,
     ) -> Result<Option<InferenceOutcome>, GraphError>;
 }
@@ -37,27 +41,29 @@ impl SeverityInference for NoInference {
     fn infer(
         &self,
         _pkg: &Package,
+        _git: &GitAccess<'_>,
         _window: InferenceWindowSpec<'_>,
     ) -> Result<Option<InferenceOutcome>, GraphError> {
         Ok(None)
     }
 }
 
+/// v0.2's impl, behind the `inference` feature. A thin, stateless adapter over
+/// `callisto_conventional::infer_severity` -- it holds no fields of its own; the caller's
+/// [`GitAccess`] is handed in per call via [`SeverityInference::infer`]'s `git` parameter
+/// rather than discovered here, so this type carries nothing to discover it with.
 #[cfg(feature = "inference")]
-pub struct CommitInference<'a, R: CommandRunner> {
-    pub runner: &'a R,
-    pub root: PathBuf,
-}
+pub struct CommitInference;
 
 #[cfg(feature = "inference")]
-impl<'a, R: CommandRunner> SeverityInference for CommitInference<'a, R> {
+impl SeverityInference for CommitInference {
     fn infer(
         &self,
         pkg: &Package,
+        git: &GitAccess<'_>,
         window: InferenceWindowSpec<'_>,
     ) -> Result<Option<InferenceOutcome>, GraphError> {
         use callisto_conventional::{infer_severity, InferenceInput, InferenceWindow};
-        use callisto_vcs::GitAccess;
 
         let inf_window = match window.since {
             Some(sha) => InferenceWindow::SinceCommit(sha),
@@ -74,8 +80,7 @@ impl<'a, R: CommandRunner> SeverityInference for CommitInference<'a, R> {
 
         // Selecting the VCS backend is this layer's job now: callisto-conventional
         // takes any `callisto_model::CommitWalker` and never names a VCS crate.
-        let git = GitAccess::discover(&self.root, self.runner);
-        let raw = infer_severity(&git, &input)?;
+        let raw = infer_severity(git, &input)?;
         if raw.commit_count == 0 {
             return Ok(None);
         }

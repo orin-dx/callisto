@@ -220,7 +220,7 @@ where
             policy,
         };
 
-        match inference.infer(pkg, window) {
+        match inference.infer(pkg, git, window) {
             Ok(Some(outcome)) => {
                 if outcome.severity > cur_sev {
                     agg.severities.insert(pkg.id.clone(), outcome.severity);
@@ -793,6 +793,7 @@ mod tests {
         fn infer(
             &self,
             _pkg: &Package,
+            _git: &GitAccess<'_>,
             window: InferenceWindowSpec<'_>,
         ) -> Result<Option<InferenceOutcome>, GraphError> {
             *self.captured_since.lock().unwrap() = window.since.clone();
@@ -1338,6 +1339,7 @@ mod tests {
             fn infer(
                 &self,
                 _pkg: &Package,
+                _git: &GitAccess<'_>,
                 _window: InferenceWindowSpec<'_>,
             ) -> Result<Option<InferenceOutcome>, GraphError> {
                 Err(GraphError::Vcs(callisto_vcs::VcsError::Git(
@@ -1406,6 +1408,7 @@ mod tests {
             fn infer(
                 &self,
                 _pkg: &Package,
+                _git: &GitAccess<'_>,
                 window: InferenceWindowSpec<'_>,
             ) -> Result<Option<InferenceOutcome>, GraphError> {
                 if window.policy != PreMajorInferencePolicy::Off {
@@ -1528,6 +1531,7 @@ mod tests {
             fn infer(
                 &self,
                 _pkg: &Package,
+                _git: &GitAccess<'_>,
                 window: InferenceWindowSpec<'_>,
             ) -> Result<Option<InferenceOutcome>, GraphError> {
                 if window.policy != PreMajorInferencePolicy::Off {
@@ -1601,6 +1605,7 @@ mod tests {
             fn infer(
                 &self,
                 _pkg: &Package,
+                _git: &GitAccess<'_>,
                 window: InferenceWindowSpec<'_>,
             ) -> Result<Option<InferenceOutcome>, GraphError> {
                 // Set invoked before any policy check so we can distinguish
