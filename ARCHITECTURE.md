@@ -17,7 +17,7 @@ Callisto addresses key architectural deficiencies in existing release management
 - **AST Format Preservation**: Replaces destructive text/regex search-and-replace with concrete syntax tree (CST) editors (`toml_edit` and `serde_json` with indentation fingerprinting), preserving comments, table order, and whitespace.
 - **Crash-Safe File Mutations**: Enforces atomic filesystem transactions using temporary directory file swaps (`NamedTempFile` + `fs::rename`) to prevent half-written or corrupt manifests during unexpected process termination.
 - **In-Process Git Engine**: Eliminates external `git` subprocess spawns by leveraging `gix` (gitoxide) for fast, thread-safe repository discovery, commit traversal, and ref resolution.
-- **Formal Graph Solver**: Constructs a directed acyclic graph (DAG) using `petgraph`, executing Tarjan's Strongly Connected Components (SCC) algorithm to detect circular dependencies before applying topological version cascades.
+- **Formal Graph Solver**: Constructs the workspace dependency graph as a hand-rolled adjacency structure (`ManifestWalkResolver`), then runs `petgraph`'s Tarjan Strongly Connected Components (SCC) algorithm over a transient graph built specifically for cycle-path extraction, to detect circular dependencies before applying topological version cascades.
 - **Dual Licensing Isolation**: Separates permissive data types (`MIT/Apache-2.0`) from copyleft execution logic (`AGPL-3.0`), allowing third-party tools to consume Callisto's domain contracts without importing AGPL code.
 
 ---
@@ -39,7 +39,7 @@ flowchart TB
     end
 
     subgraph Stage3 ["Stage 3 — Graph Construction & Cycle Detection"]
-        MR --> DAG(["callisto-graph<br/>(petgraph DiGraph)"])
+        MR --> DAG(["callisto-graph<br/>(ManifestWalkResolver adjacency graph)"])
         VCS --> DAG
         DAG --> SCC{"Tarjan SCC<br/>Cycle Check"}
         SCC -- "Cycle Detected" --> Err(["Emit miette<br/>Diagnostic Card"])
@@ -87,7 +87,7 @@ flowchart TB
         VCS(["callisto-vcs<br/>(Native gix Git Engine)"])
     end
 
-    subgraph Layer1 ["Layer 1 — Permissive Data Contracts & Utilities"]
+    subgraph Layer1 ["Layer 1 — Foundational Leaf Crates (mixed license — see below)"]
         Model(["callisto-model<br/>(Domain Types & Schemas)"])
         Format(["callisto-format<br/>(Changeset & pre.json Parsers)"])
         Conventional(["callisto-conventional<br/>(Conventional Commit Parser)"])
@@ -120,13 +120,24 @@ flowchart TB
 | `callisto-model` | MIT/Apache-2.0 | Layer 1 | Core domain primitives, version grammars, JSON report schemas, atomic disk writes | `semver`, `schemars`, `serde`, `tempfile` |
 | `callisto-format` | MIT/Apache-2.0 | Layer 1 | Byte-compatible parser and writer for changeset `.md` and `pre.json` | `indexmap`, `serde` |
 | `callisto-conventional` | AGPL-3.0 | Layer 1 | Conventional commit parsing and severity classification | `thiserror` |
-| `callisto-changelog` | AGPL-3.0 | Layer 1 | Sectioned Markdown changelog rendering | `pulldown-cmark` |
-| `callisto-manifests` | AGPL-3.0 | Layer 2 | Format-preserving manifest AST editing and atomic writes | `toml_edit`, `serde_json`, `tempfile` |
+| `callisto-changelog` | AGPL-3.0 | Layer 1 | Sectioned Markdown changelog rendering | `callisto-model`, `thiserror`, `miette` |
+| `callisto-manifests` | AGPL-3.0 | Layer 2 | Format-preserving manifest AST editing (atomic writes live in `callisto-model`, §5) | `toml_edit`, `serde_json`, `indexmap` |
 | `callisto-vcs` | MIT/Apache-2.0 | Layer 2 | Git operations via `gix` (native, non-wasm32) with `ShellGit` fallback | `gix`, `globset` |
 | `callisto-graph` | AGPL-3.0 | Layer 3 | Dependency DAG construction, Tarjan SCC cycle detection, cascade engine | `petgraph`, `ignore` |
 | `callisto-cli` | AGPL-3.0 | Layer 4 | Standalone CLI binary, colored diff previews, `miette` error reporting | `clap`, `miette`, `anstream`, `similar` |
 | `callisto-moon` | AGPL-3.0 | Layer 4 | Moon extension host integration and WASM compilation target | `extism-pdk` (`wasm32-wasip1`) |
 | `callisto-fixtures` | AGPL-3.0 | Dev | Multi-ecosystem corpus and in-memory test doubles | Dev-only test helpers |
+
+**"Layer 1" is a dependency-depth tier here, not a license tier.** The diagram above groups
+`callisto-model`, `callisto-format`, `callisto-conventional`, and `callisto-changelog` into one
+"Layer 1" box because all four are leaf crates whose only internal dependency is
+`callisto-model` itself — but only the first two are actually permissively licensed. The
+project's enforced licensing invariant (`CLAUDE.md`) is narrower and does not use this
+diagram's layer numbers: **only `callisto-model` and `callisto-format` are required to stay
+MIT/Apache-2.0 and never depend on an AGPL crate.** `callisto-conventional` and
+`callisto-changelog` are AGPL-3.0 leaf crates that happen to sit at the same dependency depth,
+not members of that protected set — the table's own License column is the authoritative source
+for any given crate's actual license, not this section's diagram grouping.
 
 ---
 
@@ -205,9 +216,9 @@ Workspace package relationships form a directed graph `G = (V, E)` where vertice
 
 ### Topological Sorting & Cycle Diagnostics
 
-1. **Graph Construction**: `callisto-graph` builds a `petgraph::graph::DiGraph<PackageId, DepEdge>`.
+1. **Graph Construction**: `callisto-graph` builds `ManifestWalkResolver` — a hand-rolled adjacency structure (`Vec<DepEdge>` plus `BTreeMap<PackageId, Vec<usize>>` in/out indexes), not a `petgraph` type. `petgraph` is used narrowly for step 2 below: a transient `DiGraph<PackageId, ()>` built specifically to feed Tarjan SCC.
 2. **Cycle Detection (Tarjan's SCC Algorithm)**:
-   - Before calculating version bumps, `callisto-graph` executes Tarjan's Strongly Connected Components algorithm ($O(|V| + |E|)$ time, $O(|V|)$ space).
+   - Before calculating version bumps, `callisto-graph` executes `petgraph::algo::tarjan_scc` over that transient graph ($O(|V| + |E|)$ time, $O(|V|)$ space).
    - If circular dependencies exist (e.g. $A \to B \to C \to A$), Callisto isolates the exact cycle path and formats a colorized `miette` diagnostic card:
 
    ```text
@@ -291,8 +302,13 @@ Callisto decouples core algorithms from platform-specific I/O using four core tr
 
 ```rust
 // 1. Locate workspace project roots
-pub trait ProjectLocator {
+pub trait ProjectLocator: Send + Sync {
     fn projects(&self) -> Result<Vec<ProjectRoot>, LocateError>;
+    // Non-authoritative cross-check only (moon's declared project-graph edges);
+    // default impl returns None. Overridden by MoonProjectLocator.
+    fn declared_edges(&self) -> Option<Vec<DeclaredEdge>> {
+        None
+    }
 }
 
 // 2. Command execution abstraction
@@ -305,22 +321,29 @@ pub trait CommandRunner: Send + Sync {
         -> Result<CommandOutput, CommandError>;
 }
 
-// 4. Per-ecosystem manifest reader/writer
-pub trait Manifest {
+// 3. Per-ecosystem manifest reader/writer
+pub trait Manifest: Send + Sync {
     fn path(&self) -> &Path;
     fn ecosystem(&self) -> Ecosystem;
     fn role(&self) -> ManifestRole;
     fn package_name(&self) -> Result<String, ManifestError>;
     fn current_version(&self) -> Result<Version, ManifestError>;
-    fn write_version(&mut self, new_version: &Version, permit: &ApplyPermit) -> Result<(), ManifestError>;
+    // Mutating methods only touch the in-memory CST; nothing reaches disk
+    // until persist() is called explicitly (write-batching lets a caller
+    // apply several mutations to one open manifest before one disk write).
+    fn write_version(&mut self, v: &Version, permit: &ApplyPermit) -> Result<(), ManifestError>;
+    fn persist(&mut self, permit: &ApplyPermit) -> Result<(), ManifestError>;
     fn iter_dependencies(&self) -> Box<dyn Iterator<Item = DependencyEntry> + '_>;
-    fn update_dependency_spec(&mut self, name: &str, new_spec: DepSpec, permit: &ApplyPermit) -> Result<(), ManifestError>;
-    fn update_optional_dependencies(&mut self, name: &str, new_spec: DepSpec, permit: &ApplyPermit) -> Result<(), ManifestError>;
-    // publish_targets() and persist() are also required; omitted for brevity.
+    fn update_dependency_spec(&mut self, name: &str, kind: DepKind, new: DepSpec, permit: &ApplyPermit)
+        -> Result<(), ManifestError>;
+    // Batched: applies every (name, version) pair against one open manifest handle.
+    fn update_optional_dependencies(&mut self, updates: &[(String, Version)], permit: &ApplyPermit)
+        -> Result<(), ManifestError>;
+    // is_publishable() and publish_targets() are also required; omitted for brevity.
 }
 
-// 5. DependencyResolver supplies graph nodes and edges
-pub trait DependencyResolver {
+// 4. DependencyResolver supplies graph nodes and edges
+pub trait DependencyResolver: Send + Sync {
     fn packages(&self) -> impl Iterator<Item = &Package>;
     fn dependencies_of(&self, id: &PackageId) -> impl Iterator<Item = &DepEdge>;
     fn dependents_of(&self, id: &PackageId) -> impl Iterator<Item = &DepEdge>;
@@ -373,8 +396,8 @@ sequenceDiagram
 | :--- | :--- | :--- |
 | `publish` | `""` | Command to execute when publishing packages (`cargo publish`, `pnpm publish`, `moon run :publish`). |
 | `version_command` | `"callisto version"` | Custom versioning command. |
-| `commit_message` | `"chore: version packages"` | Commit message for the Version Packages PR. |
-| `title` | `"chore: version packages"` | Pull Request title. |
+| `commit_message` | `"chore(release): version packages"` | Commit message for the Version Packages PR. |
+| `title` | `"chore(release): version packages"` | Pull Request title. |
 | `pr_label` | `"callisto: release"` | Label automatically attached to the Version Packages PR. |
 | `create_github_release` | `"true"` | Toggle GitHub Release entry creation for calculated tags. |
 | `setup_git_user` | `"true"` | Automatically configure `git config user.name` & `user.email` bot credentials. |
@@ -430,7 +453,7 @@ To eliminate configuration duplication and configuration drift across native Rus
 │               CALLISTO NATIVE MATRIX AUTO-DISCOVERY                     │
 ├────────────────────────────────────────────────────────────────────────┤
 │ Workspace Manifests (Cargo.toml, package.json, pyproject.toml)        │
-│ ↳ Single Source of Truth: napi.triplets, maturin.targets, engines      │
+│ ↳ Single Source of Truth: napi.targets, maturin.targets, engines.node  │
 ├────────────────────────────────────────────────────────────────────────┤
 │ callisto matrix --format json                                          │
 │ ↳ Dynamically computes runner OS, target triples, & runtime versions   │
@@ -442,9 +465,9 @@ To eliminate configuration duplication and configuration drift across native Rus
 
 ### Manifest-Driven Target Auto-Detection
 
-1. **NAPI-RS (`package.json`)**: Auto-detects `napi.triplets` (e.g. `x86_64-unknown-linux-gnu`, `aarch64-apple-darwin`, `x86_64-pc-windows-msvc`) and maps them to GitHub Actions runner OS (`ubuntu-latest`, `macos-14`, `windows-latest`).
+1. **NAPI-RS (`package.json`)**: Auto-detects `napi.targets` (e.g. `x86_64-unknown-linux-gnu`, `aarch64-apple-darwin`, `x86_64-pc-windows-msvc`) and maps them to a GitHub Actions runner label per triple (`ubuntu-latest`, `macos-latest`/`macos-13`, `windows-latest`, plus `cross`-gated Linux/Android/FreeBSD targets).
 2. **Maturin (`pyproject.toml`)**: Auto-detects `tool.maturin.targets` and Python runtime compatibility bounds.
-3. **Runtime Engine Compatibility**: Automatically extracts Node.js (`engines.node`) and Java (`java.version` / `pom.xml`) versions directly from package manifests, eliminating duplicate version strings in CI YAML.
+3. **Runtime Engine Compatibility**: Automatically extracts Node.js (`engines.node`) and Python (`requires-python`) version ranges directly from package manifests, eliminating duplicate version strings in CI YAML. Java (`java.version`/`pom.xml`) extraction is not yet implemented, consistent with this section's status note above.
 
 ### Zero-Config GitHub Actions Workflow Pattern
 
@@ -489,7 +512,7 @@ Callisto's core engine is decoupled from GitHub Actions. All versioning, status 
 │ callisto plan-publish             │ Hermetic JSON                      │
 │ callisto status                   │ Struct/JSON workspace state        │
 │ callisto tag                      │ Native Git refs or build outputs   │
-│ callisto matrix                   │ Standard JSON array for any runner │
+│ callisto matrix                   │ Keyed JSON object, any CI runner   │
 └───────────────────────────────────┴────────────────────────────────────┘
 ```
 
