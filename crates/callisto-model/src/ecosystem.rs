@@ -129,6 +129,23 @@ impl PublishTarget {
     }
 }
 
+/// PEP 503 / PEP 427 style Python package-name normalization: lowercase,
+/// then collapse any run of hyphens, dots, or underscores into a single
+/// underscore. This makes name-equality comparisons and wheel-filename
+/// construction agree that "my-package", "my_package", "my.package", and
+/// "My--Package" all refer to the same PyPI distribution -- PEP 503's own
+/// canonicalization rule (`re.sub(r"[-_.]+", "-", name).lower()`), joined
+/// with `_` to match PEP 427's wheel-filename escaping instead of PEP
+/// 503's own `-` (the join character doesn't affect equality comparisons,
+/// only which convention a caller building a filename needs).
+pub fn normalize_pypi_package_name(name: &str) -> String {
+    name.to_lowercase()
+        .split(['-', '.', '_'])
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join("_")
+}
+
 /// Trigger mechanism for generating releases.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -154,5 +171,20 @@ mod tests {
         assert!(Ecosystem::Cargo.is_implemented());
         assert!(Ecosystem::Npm.is_implemented());
         assert!(Ecosystem::Pypi.is_implemented());
+    }
+
+    #[test]
+    fn normalize_pypi_package_name_treats_hyphen_underscore_dot_as_equivalent() {
+        assert_eq!(normalize_pypi_package_name("my-package"), "my_package");
+        assert_eq!(normalize_pypi_package_name("my_package"), "my_package");
+        assert_eq!(normalize_pypi_package_name("my.package"), "my_package");
+        assert_eq!(normalize_pypi_package_name("My--Package"), "my_package");
+        assert_eq!(normalize_pypi_package_name("MY.PACKAGE"), "my_package");
+    }
+
+    #[test]
+    fn normalize_pypi_package_name_collapses_mixed_runs() {
+        assert_eq!(normalize_pypi_package_name("foo-.-bar"), "foo_bar");
+        assert_eq!(normalize_pypi_package_name("foo___bar"), "foo_bar");
     }
 }

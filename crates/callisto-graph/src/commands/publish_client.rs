@@ -29,8 +29,9 @@ use std::time::Duration;
 
 use callisto_manifests::WorkspaceCargoResolver;
 use callisto_model::{
-    known_credential_env_values, redact_known_secrets, ApplyPermit, CommandOutput, CommandRunner,
-    Ecosystem, NpmAccess, PackageId, PublishOutcome, RegistryClient, RegistryError, Version,
+    known_credential_env_values, normalize_pypi_package_name, redact_known_secrets, ApplyPermit,
+    CommandOutput, CommandRunner, Ecosystem, NpmAccess, PackageId, PublishOutcome, RegistryClient,
+    RegistryError, Version,
 };
 use toml;
 
@@ -511,16 +512,7 @@ impl<R: CommandRunner> SubprocessRegistryClient<R> {
                 package.name()
             )));
         }
-        // PEP 427 wheel filename normalization: lowercase, then collapse any run
-        // of hyphens, dots, or underscores into a single underscore. Using a
-        // simple split-and-join avoids pulling in the `regex` crate.
-        let normalized = package
-            .name()
-            .to_lowercase()
-            .split(['-', '.', '_'])
-            .filter(|s| !s.is_empty())
-            .collect::<Vec<_>>()
-            .join("_");
+        let normalized = normalize_pypi_package_name(package.name());
         let pattern = format!("dist/{normalized}-{}*", version.render());
 
         // Both build and upload run from the package directory so that `dist/`

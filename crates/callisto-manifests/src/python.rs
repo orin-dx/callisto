@@ -2,8 +2,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use callisto_model::{
-    ApplyPermit, DepKind, DepSpec, DependencyEntry, Ecosystem, ManifestDecl, ManifestError,
-    ManifestFormat, ManifestRole, PublishTarget, Version, VersionGrammar, VersionReq,
+    normalize_pypi_package_name, ApplyPermit, DepKind, DepSpec, DependencyEntry, Ecosystem,
+    ManifestDecl, ManifestError, ManifestFormat, ManifestRole, PublishTarget, Version,
+    VersionGrammar, VersionReq,
 };
 use toml_edit::value;
 
@@ -327,7 +328,7 @@ impl Manifest for PyprojectToml {
                         None => spec_part,
                     };
                     let pkg_name = pkg_part.split('[').next().unwrap_or(pkg_part).trim();
-                    if pkg_name.eq_ignore_ascii_case(name) {
+                    if normalize_pypi_package_name(pkg_name) == normalize_pypi_package_name(name) {
                         let extras = if pkg_part.contains('[') {
                             &pkg_part[pkg_part.find('[').unwrap()..]
                         } else {
@@ -453,10 +454,9 @@ impl Manifest for PyprojectToml {
                 };
                 let pkg_name = pkg_part.split('[').next().unwrap_or(pkg_part).trim();
 
-                if let Some((_dep_name, new_ver)) = updates
-                    .iter()
-                    .find(|(dep_name, _)| dep_name.eq_ignore_ascii_case(pkg_name))
-                {
+                if let Some((_dep_name, new_ver)) = updates.iter().find(|(dep_name, _)| {
+                    normalize_pypi_package_name(dep_name) == normalize_pypi_package_name(pkg_name)
+                }) {
                     let extras = if pkg_part.contains('[') {
                         &pkg_part[pkg_part.find('[').unwrap()..]
                     } else {
@@ -1233,6 +1233,50 @@ dependencies = [
         );
     }
 
+    /// PEP 503: "-", "_", and "." are interchangeable in package names for
+    /// equality purposes. A dependent's pyproject.toml spelling a
+    /// requirement with a different-but-equivalent separator than the
+    /// depended-upon package's canonical name (as passed by the cascade
+    /// caller) must still be found and rewritten, not spuriously error as
+    /// DependencyNotFound.
+    #[test]
+    fn update_dependency_spec_matches_pep503_equivalent_separator_spelling() {
+        let dir = tempdir().unwrap();
+        let pyproject_path = dir.path().join("pyproject.toml");
+        let content = "[project]\nname = \"my-app\"\nversion = \"0.1.0\"\ndependencies = [\n    \"my_lib>=0.3.0\",\n]\n";
+        fs::write(&pyproject_path, content).unwrap();
+
+        let decl = ManifestDecl {
+            path: PathBuf::from("pyproject.toml"),
+            role: ManifestRole::Canonical,
+            format: ManifestFormat::PyprojectToml,
+        };
+        let ctx = OpenContext {
+            workspace_root: dir.path(),
+            cargo_workspace: None,
+            npm_workspace_kind: None,
+        };
+
+        let mut manifest = PyprojectToml::open(&decl, &ctx).unwrap();
+        let req = VersionReq::parse(">=0.3.2", Ecosystem::Pypi).unwrap();
+        // Caller passes the canonical hyphenated name; the manifest spells
+        // the requirement with an underscore.
+        let result = manifest.update_dependency_spec(
+            "my-lib",
+            DepKind::Runtime,
+            DepSpec::Range(req, ">=0.3.2".to_string()),
+            &permit(),
+        );
+        assert!(result.is_ok(), "expected Ok, got: {result:?}");
+
+        manifest.persist(&permit()).unwrap();
+        let updated = fs::read_to_string(&pyproject_path).unwrap();
+        assert!(
+            updated.contains(">=0.3.2"),
+            "expected the underscore-spelled requirement to be rewritten, got:\n{updated}"
+        );
+    }
+
     #[test]
     fn update_optional_dependencies_actually_writes_to_document() {
         // Bug 2: update_optional_dependencies must iterate
@@ -1273,6 +1317,43 @@ docs = ["sphinx>=4.0.0"]
         assert!(
             updated.contains("sphinx>=5.0.0"),
             "expected sphinx to be updated to >=5.0.0, got:\n{updated}"
+        );
+    }
+
+    /// PEP 503 equivalence for the optional-dependencies matcher too: an
+    /// update keyed by the canonical hyphenated name must still find a
+    /// requirement spelled with an underscore.
+    #[test]
+    fn update_optional_dependencies_matches_pep503_equivalent_separator_spelling() {
+        let dir = tempdir().unwrap();
+        let pyproject_path = dir.path().join("pyproject.toml");
+        let content = "[project]\nname = \"my-app\"\nversion = \"0.1.0\"\ndependencies = []\n\n[project.optional-dependencies]\ndocs = [\"sphinx_rtd_theme>=4.0.0\"]\n";
+        fs::write(&pyproject_path, content).unwrap();
+
+        let decl = ManifestDecl {
+            path: PathBuf::from("pyproject.toml"),
+            role: ManifestRole::Canonical,
+            format: ManifestFormat::PyprojectToml,
+        };
+        let ctx = OpenContext {
+            workspace_root: dir.path(),
+            cargo_workspace: None,
+            npm_workspace_kind: None,
+        };
+
+        let mut manifest = PyprojectToml::open(&decl, &ctx).unwrap();
+        let new_v = Version::parse("5.0.0", VersionGrammar::Pep440).unwrap();
+        // Caller passes the canonical hyphenated name; the manifest spells
+        // the requirement with underscores.
+        manifest
+            .update_optional_dependencies(&[("sphinx-rtd-theme".to_string(), new_v)], &permit())
+            .unwrap();
+        manifest.persist(&permit()).unwrap();
+
+        let updated = fs::read_to_string(&pyproject_path).unwrap();
+        assert!(
+            updated.contains("sphinx_rtd_theme>=5.0.0"),
+            "expected sphinx_rtd_theme to be updated to >=5.0.0, got:\n{updated}"
         );
     }
 
