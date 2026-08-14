@@ -35,18 +35,18 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 indexmap = { workspace = true }
-miette = { version = "7", features = ["fancy"] }
+miette = { workspace = true }
 anstream = "0.6"
 comfy-table = "7"
 similar = { version = "2", features = ["inline"] }
-schemars = "0.8"
+schemars = { workspace = true }
 dialoguer = "0.11"
 dunce = { workspace = true }
 path-slash = { workspace = true }
 
 [dev-dependencies]
 callisto-model = { path = "../callisto-model", features = ["test-util"] }
-tempfile = "3"
+tempfile = { workspace = true }
 callisto-fixtures = { path = "../callisto-fixtures" }
 callisto-manifests = { path = "../callisto-manifests" }
 callisto-graph = { path = "../callisto-graph" }

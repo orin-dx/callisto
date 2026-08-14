@@ -20,8 +20,8 @@ serde_json.workspace = true
 indexmap.workspace = true
 thiserror.workspace = true
 miette.workspace = true
-schemars = "0.8"
+schemars.workspace = true
 
 [dev-dependencies]
-proptest = "1"
+proptest.workspace = true
 rstest.workspace = true

@@ -33,12 +33,12 @@ globset = { workspace = true }
 thiserror = { workspace = true }
 miette = { workspace = true }
 indexmap = { workspace = true }
-petgraph = "0.6"
+petgraph = { workspace = true }
 
 [dev-dependencies]
 callisto-model = { path = "../callisto-model", features = ["test-util"] }
 callisto-fixtures = { path = "../callisto-fixtures" }
-tempfile = "3"
+tempfile = { workspace = true }
 rstest.workspace = true
 insta.workspace = true
 serial_test = "3"

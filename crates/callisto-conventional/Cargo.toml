@@ -17,5 +17,5 @@ thiserror = { workspace = true }
 # drive that seam with the real gix/shell backend as an integration check.
 callisto-vcs = { path = "../callisto-vcs", version = "0.3.0" }
 callisto-fixtures = { path = "../callisto-fixtures" }
-proptest = "1"
-tempfile = "3"
+proptest.workspace = true
+tempfile.workspace = true

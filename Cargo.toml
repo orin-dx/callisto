@@ -35,6 +35,8 @@ petgraph = "0.6"
 tracing = "0.1"
 rstest = "0.23"
 insta = { version = "1.41", features = ["json", "redactions"] }
+proptest = "1"
+schemars = "0.8"
 
 [profile.release]
 lto = true
