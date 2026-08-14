@@ -1,0 +1,14 @@
+<task-notification>
+<task-id>bjcxkjtlf</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/e9efeaba-9875-4c8b-ad83-aa1c06f21756/tasks/bjcxkjtlf.output</output-file>
+<status>completed</status>
+<summary>Background command "cd /Users/gabe/Projects/callisto
+cargo test -p callisto-graph --lib config:: 2&gt;&amp;1 | tail -30
+echo "=== clippy ==="
+cargo clippy -p callisto-model -p callisto-graph --all-targets -- -D warnings 2&gt;&amp;1 | tail -40" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+What's next? I think you got interrupted
