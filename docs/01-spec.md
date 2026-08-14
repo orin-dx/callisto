@@ -2292,10 +2292,10 @@ their real declaration order, because the values they accompany (`ProjectRoot`, 
 `ParseChangeset` and `Command`, which sit among the otherwise-transparent wrapper range in real
 source's own declaration order (neither is itself transparent — see their own doc comments
 below). The wrapper variants themselves match real source exactly, field for field. All 21
-coded variants' fields (names and types) match real source exactly too, but — unlike the
-wrappers — several of their `#[error(...)]` messages below are paraphrased rather than the
-verbatim real string, for readability; treat the field shapes as exact and the message text as
-illustrative unless a variant's own doc comment says otherwise.
+coded variants match real source exactly too — fields and `#[error(...)]` message text alike
+(mod `{name}`-style named interpolation standing in for an equivalent explicit method call
+real source writes instead, e.g. `{v}` for `.render()`, `{id}` for `.display_name()` — provably
+identical output, not a wording difference).
 
 ```rust
 // crates/callisto-graph/src/locate.rs
@@ -2342,34 +2342,36 @@ pub enum LocateError {
 pub enum GraphError {
     /// `DependencyResolver::toposort` (§15). The cycle is reported in traversal order so the
     /// message names a walkable path, not a set.
-    #[error("dependency cycle: {}", .cycle.iter().map(|p| p.to_string())
+    #[error("dependency cycle detected: {}", .cycle.iter().map(|i| i.display_name())
                                           .collect::<Vec<_>>().join(" -> "))]
     Cycle { cycle: Vec<PackageId> },
 
-    #[error("unknown package `{id}`")]
+    #[error("package `{id}` was not found in the workspace")]
     UnknownPackage { id: PackageId },
 
     /// §14: "two sets claiming the same package is a hard config error"; also two discovered
     /// projects resolving to one identity.
-    #[error("package `{id}` is declared more than once: {}", .paths.iter()
+    #[error("package `{id}` is defined at multiple paths: {}", .paths.iter()
                 .map(|p| p.display().to_string()).collect::<Vec<_>>().join(", "))]
     DuplicatePackage { id: PackageId, paths: Vec<PathBuf> },
 
     /// §5.4: "error listing candidates."
-    #[error("`{name}` is ambiguous; candidates: {}", .candidates.iter()
-                .map(|c| c.to_string()).collect::<Vec<_>>().join(", "))]
+    #[error("name `{name}` is ambiguous in this workspace; candidates: {}", .candidates.iter()
+                .map(|c| c.display_name()).collect::<Vec<_>>().join(", "))]
     AmbiguousName { name: String, candidates: Vec<PackageId> },
 
     /// §5.4(b): a Case D root whose two canonical manifests resolved to different identities.
-    /// The single-`Package`, aggregate-by-max model depends on this never happening silently.
-    #[error("`{path}` resolves to more than one identity ({}); a dual-published package must \
-             resolve to exactly one", .ids.iter().map(|i| i.to_string())
-                 .collect::<Vec<_>>().join(", "))]
+    /// The single-`Package`, aggregate-by-max model depends on this never happening silently
+    /// (real source's message itself doesn't spell out the "dual-published" framing — that's
+    /// this comment's context, not the `#[error(...)]` text).
+    #[error("package at `{path}` declares conflicting identities: {}",
+             .ids.iter().map(|i| i.display_name()).collect::<Vec<_>>().join(", "))]
     SplitIdentity { path: PathBuf, ids: Vec<PackageId> },
 
     /// A dependency edge whose two endpoints parsed under different `VersionGrammar`s —
     /// the shape §G.7.4's cascade produces, where `from`/`to` are the edge's own endpoints.
-    #[error("edge {from} -> {to} crosses version grammars: {source}")]
+    #[error("version dependency edge from `{from}` to `{to}` involves incompatible grammars: \
+             {source}")]
     GrammarMismatch { from: PackageId, to: PackageId, #[source] source: GrammarMismatch },
 
     /// A group-internal version comparison with mixed grammars — §G.6.7's linked-group joint
@@ -2377,10 +2379,11 @@ pub enum GraphError {
     /// compare versions across a *group's members*, which has no natural edge to hang a
     /// `from`/`to` pair on, unlike the variant above. Kept distinct rather than reusing
     /// `GrammarMismatch` with placeholder endpoints, since a fabricated edge would misdescribe
-    /// what actually happened. `members`' grammars are each recoverable via
-    /// `Version::grammar()` — no separate `source: GrammarMismatch` field needed.
-    #[error("group `{group}` compares versions across grammars: {}", .members.iter()
-                .map(|(id, v)| format!("{id}={v} ({:?})", v.grammar()))
+    /// what actually happened. The message shows each member's grammar only (via
+    /// `Version::grammar()`), not its version value — there is no separate
+    /// `source: GrammarMismatch` field.
+    #[error("group `{group}` members use incompatible versioning grammars: {}", .members.iter()
+                .map(|(id, v)| format!("{}={:?}", id.display_name(), v.grammar()))
                 .collect::<Vec<_>>().join(", "))]
     GroupGrammarMismatch { group: GroupName, members: Vec<(PackageId, Version)> },
 
@@ -2388,7 +2391,7 @@ pub enum GraphError {
     /// **on-disk** versions, in pre-mode exactly as in normal mode — `initialVersions` is a
     /// bump-computation input only, never an alignment-check input (§8). Members with no
     /// prior release tag are exempt and never reach this variant (§7.5, §13 inv. 22).
-    #[error("fixed group `{group}` is already divergent: {}", .members.iter()
+    #[error("fixed group `{group}` members have divergent on-disk versions: {}", .members.iter()
                 .map(|(id, v)| format!("{id}={v}")).collect::<Vec<_>>().join(", "))]
     FixedGroupDivergent { group: GroupName, members: Vec<(PackageId, Version)> },
 
@@ -2405,19 +2408,21 @@ pub enum GraphError {
     /// §14's parse-time group validation (§18's group-priority follow-on): a package must
     /// belong to at most one fixed group and at most one linked group, and the two member
     /// sets must be disjoint. Rejected at parse time rather than arbitrated at runtime.
-    #[error("package `{package}` belongs to conflicting groups: {}", .groups.iter()
-                .map(|g| g.0.as_str()).collect::<Vec<_>>().join(", "))]
+    #[error("package `{package}` is listed in multiple conflicting groups: {}", .groups.iter()
+                .map(|g| g.as_str()).collect::<Vec<_>>().join(", "))]
     ConflictingGroupMembership { package: PackageId, groups: Vec<GroupName> },
 
     /// §7.6 step 1's rerun-safety check (§13 inv. 12): the on-disk version moved between
-    /// aggregation and mutation.
-    #[error("`{package}` was `{expected}` at aggregation time but is `{found}` on disk now; \
-             re-run `callisto version`")]
+    /// aggregation and mutation. Real source's message does not itself suggest a fix — the
+    /// "re-run `callisto version`" advice used to live in this `#[error(...)]` text but real
+    /// source never carried it; that's this comment's context, not the message.
+    #[error("on-disk versions changed since plan was generated for `{package}`: expected \
+             {expected}, found {found}")]
     OnDiskVersionDrift { package: PackageId, expected: Version, found: Version },
 
     /// §7.4 runs to fixpoint; this is the safety bound that turns a would-be hang into a
     /// reportable bug (P5). See §G.7.6 for why the bound is derived rather than tuned.
-    #[error("cascade did not converge after {iterations} iterations")]
+    #[error("cascade failed to converge after {iterations} iterations")]
     CascadeNotConverged { iterations: usize },
 
     /// `apply_version_plan`'s rerun-safety check for a single manifest write (§7.6 step 1's
