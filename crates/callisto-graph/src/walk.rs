@@ -120,7 +120,7 @@ impl ManifestWalkResolver {
                 }
                 index
                     .native
-                    .insert((*eco, primary_id.name().to_string()), primary_id.clone());
+                    .insert((*eco, id.name().to_string()), primary_id.clone());
             }
 
             if let Some((existing_path, _)) =
@@ -591,6 +591,58 @@ mod tests {
             diagnostics.is_empty(),
             "declared napi.targets matches the real group member; expected no drift \
              diagnostics, got: {diagnostics:?}"
+        );
+    }
+
+    /// A real `optionalDependencies` edge onto a Case D platform package (a
+    /// `Cargo.toml` and a differently-named `package.json` sharing one
+    /// directory, per the test above) must resolve through `IdentityIndex.native`,
+    /// keyed by the platform manifest's own npm name -- not the owning
+    /// crate's `primary_id` name, which is what a sibling package's
+    /// dependency entry never names. Before this fix, `index.native` was
+    /// keyed by `primary_id.name()` for every ecosystem in a Case D
+    /// directory, so a dependency naming the platform package by its real
+    /// npm name silently failed to resolve and the edge was dropped with no
+    /// diagnostic.
+    #[test]
+    fn optional_dependency_on_case_d_platform_package_resolves_via_native_index() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+
+        std::fs::write(
+            root.join("Cargo.toml"),
+            "[package]\nname = \"my-crate\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("package.json"),
+            r#"{"name":"@myorg/my-crate-linux-x64-gnu","version":"0.1.0","os":["linux"],"cpu":["x64"]}"#,
+        )
+        .unwrap();
+
+        std::fs::create_dir_all(root.join("consumer")).unwrap();
+        std::fs::write(
+            root.join("consumer/package.json"),
+            r#"{"name":"@myorg/consumer","version":"0.1.0","optionalDependencies":{"@myorg/my-crate-linux-x64-gnu":"0.1.0"}}"#,
+        )
+        .unwrap();
+
+        let locator = crate::locate::IgnoreWalkLocator::new(root);
+        let runner = NoopRunner;
+        let ws = crate::Workspace::load(root.to_path_buf(), &locator, &runner)
+            .expect("workspace load must succeed");
+
+        let owning_crate = callisto_model::PackageId::Bare("my-crate".to_string());
+        let consumer = callisto_model::PackageId::Bare("@myorg/consumer".to_string());
+
+        let edge = ws.graph.edges().iter().find(|e| e.from == consumer).expect(
+            "consumer's optionalDependencies edge onto the Case D platform package must \
+                 resolve, not be silently dropped",
+        );
+        assert_eq!(
+            edge.to, owning_crate,
+            "the platform package belongs to the owning crate (Case D); the edge must resolve \
+             to the owning crate's identity, not fail to resolve at all"
         );
     }
 
