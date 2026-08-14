@@ -1,0 +1,81 @@
+{
+  "cli_version": "0.10.1-nightly.202608121908.a47cf0c70",
+  "checkpoint_id": "01KZZV3WS2QA0B28WWAY86R5XD",
+  "session_id": "ae412d01-e061-4047-918b-0d1df3d4d118",
+  "strategy": "manual-commit",
+  "created_at": "2026-08-14T09:54:45.420448Z",
+  "branch": "main",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "crates/callisto-graph/src/commands/publish.rs",
+    "crates/callisto-graph/src/commands/publish_client.rs",
+    "crates/callisto-graph/src/config/resolve.rs",
+    "crates/callisto-graph/tests/publish_tests.rs",
+    "crates/callisto-manifests/src/lib.rs",
+    "crates/callisto-manifests/src/npm.rs",
+    "crates/callisto-model/src/ecosystem.rs",
+    "crates/callisto-model/src/plan.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5",
+  "turn_id": "2fa32ab9aabe",
+  "checkpoint_transcript_start": 8495,
+  "transcript_lines_at_start": 8495,
+  "compact_transcript_start": 1336,
+  "token_usage": {
+    "input_tokens": 98,
+    "cache_creation_tokens": 50246,
+    "cache_read_tokens": 34132739,
+    "output_tokens": 21276,
+    "api_call_count": 49
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_012rCYNRAZsYmqiF8NNi747S",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "canon:canon"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "2fa32ab9aabe",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 1796,
+        "end": 1797,
+        "entry_ids": [
+          "8d95a7ab-50fc-4a4f-a5f0-51fa16450006"
+        ],
+        "tool_use_id": "toolu_012rCYNRAZsYmqiF8NNi747S"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_012rCYNRAZsYmqiF8NNi747S"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: canon:canon",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 132
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-08-14T09:54:44.819514Z",
+    "agent_lines": 88,
+    "agent_removed": 43,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 88,
+    "total_lines_changed": 131,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
