@@ -705,8 +705,14 @@ fn redact_stderr(text: &str) -> String {
 }
 
 fn detect_auth_failure(text_lower: &str, raw_stderr: &str) -> Option<RegistryError> {
-    if text_lower.contains("401")
-        || text_lower.contains("403")
+    // Match "401"/"403" with context, never on bare digits alone -- same
+    // rationale as detect_rate_limit's guard against bare "429": a byte
+    // count or elapsed-time figure in cargo's own packaging/build output
+    // ("403129 bytes", "elapsed 4013ms") would otherwise misclassify an
+    // unrelated failure as an auth failure.
+    if (text_lower.contains("401") && text_lower.contains("auth"))
+        || (text_lower.contains("403")
+            && (text_lower.contains("auth") || text_lower.contains("forbidden")))
         || text_lower.contains("authentication")
         || text_lower.contains("not logged in")
         || text_lower.contains("invalid token")
@@ -964,6 +970,40 @@ mod tests {
         ));
         let err = c.publish(&cargo_pkg(), &v1(), &permit()).unwrap_err();
         assert!(matches!(err, RegistryError::AuthFailed(_)));
+    }
+
+    /// Regression guard, mirroring
+    /// `cargo_publish_compressed_size_containing_429_is_not_rate_limited`:
+    /// bare "401"/"403" digit substrings have no word-boundary guard, unlike
+    /// the adjacent rate-limit detector's guard against bare "429". A byte
+    /// count embedded in an unrelated failure's output must not be
+    /// misclassified as an auth failure.
+    #[test]
+    fn cargo_publish_byte_count_containing_403_is_not_auth_failed() {
+        let c = client(output(
+            101,
+            "Packaged 12 files, 403129 bytes\n",
+            "error: failed to publish to the registry\n",
+        ));
+        let err = c.publish(&cargo_pkg(), &v1(), &permit()).unwrap_err();
+        assert!(
+            matches!(err, RegistryError::Other(_)),
+            "'403' embedded in an unrelated byte count must NOT be treated as an auth failure; got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn cargo_publish_elapsed_time_containing_401_is_not_auth_failed() {
+        let c = client(output(
+            101,
+            "note: elapsed 4013ms\n",
+            "error: could not compile `foo`\n",
+        ));
+        let err = c.publish(&cargo_pkg(), &v1(), &permit()).unwrap_err();
+        assert!(
+            matches!(err, RegistryError::Other(_)),
+            "'401' embedded in an unrelated number must NOT be treated as an auth failure; got: {err:?}"
+        );
     }
 
     #[test]
