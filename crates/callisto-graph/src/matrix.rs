@@ -55,12 +55,20 @@ pub(crate) enum NapiTargetsField {
     Present(Vec<String>),
 }
 
-/// Reads `napi.targets` directly from `pkg_json_path`. A missing `napi` key
-/// or missing `napi.targets` key is `Absent` (AC-003: no platformTargets
-/// entry). A present `napi.targets` that is not a JSON array of strings is a
-/// hard error (AC-010c) -- unlike `NapiTargetsIndex::load`, which silently
-/// drops non-array values.
-pub(crate) fn read_napi_targets(pkg_json_path: &Path) -> Result<NapiTargetsField, GraphError> {
+/// Reads and parses `pkg_json_path` as JSON, if it exists. `Ok(None)` when
+/// the file is absent -- not every package has a `package.json`.
+///
+/// Callers needing more than one field out of the same `package.json` (e.g.
+/// both `napi.targets` and `engines.node`, see `build_matrix_report`) must
+/// call this once and pass the resulting `Value` to each field-extraction
+/// function (`read_napi_targets`, `read_engines_node`) rather than letting
+/// each one independently re-read and re-parse the file from disk.
+pub(crate) fn parse_package_json(
+    pkg_json_path: &Path,
+) -> Result<Option<serde_json::Value>, GraphError> {
+    if !pkg_json_path.exists() {
+        return Ok(None);
+    }
     let content = std::fs::read_to_string(pkg_json_path).map_err(|e| {
         GraphError::Manifest(ManifestError::Read {
             path: pkg_json_path.to_path_buf(),
@@ -74,7 +82,18 @@ pub(crate) fn read_napi_targets(pkg_json_path: &Path) -> Result<NapiTargetsField
             message: e.to_string(),
         })
     })?;
+    Ok(Some(val))
+}
 
+/// Extracts `napi.targets` from an already-parsed `package.json` value (see
+/// `parse_package_json`). A missing `napi` key or missing `napi.targets` key
+/// is `Absent` (AC-003: no platformTargets entry). A present `napi.targets`
+/// that is not a JSON array of strings is a hard error (AC-010c) -- unlike
+/// `NapiTargetsIndex::load`, which silently drops non-array values.
+pub(crate) fn read_napi_targets(
+    pkg_json_path: &Path,
+    val: &serde_json::Value,
+) -> Result<NapiTargetsField, GraphError> {
     let Some(napi) = val.get("napi") else {
         return Ok(NapiTargetsField::Absent);
     };
@@ -136,13 +155,21 @@ pub(crate) fn build_platform_target(
     })
 }
 
-/// Reads `[tool.maturin].targets` directly from `pyproject_path`. Returns
-/// `Ok(None)` when the table or field is absent (AC-003: no platformTargets
-/// entry). A present value that is not a TOML array of strings is a hard
-/// error (AC-010c).
-pub(crate) fn read_maturin_targets(
+/// Reads and parses `pyproject_path` as TOML, if it exists. `Ok(None)` when
+/// the file is absent -- not every package has a `pyproject.toml`.
+///
+/// Callers needing more than one field out of the same `pyproject.toml`
+/// (e.g. both `[tool.maturin].targets` and `requires-python`, see
+/// `build_matrix_report`) must call this once and pass the resulting
+/// `Value` to each field-extraction function (`read_maturin_targets`,
+/// `read_requires_python`) rather than letting each one independently
+/// re-read and re-parse the file from disk.
+pub(crate) fn parse_pyproject_toml(
     pyproject_path: &Path,
-) -> Result<Option<Vec<String>>, GraphError> {
+) -> Result<Option<toml::Value>, GraphError> {
+    if !pyproject_path.exists() {
+        return Ok(None);
+    }
     let content = std::fs::read_to_string(pyproject_path).map_err(|e| {
         GraphError::Manifest(ManifestError::Read {
             path: pyproject_path.to_path_buf(),
@@ -156,7 +183,17 @@ pub(crate) fn read_maturin_targets(
             message: e.to_string(),
         })
     })?;
+    Ok(Some(val))
+}
 
+/// Extracts `[tool.maturin].targets` from an already-parsed `pyproject.toml`
+/// value (see `parse_pyproject_toml`). Returns `Ok(None)` when the table or
+/// field is absent (AC-003: no platformTargets entry). A present value that
+/// is not a TOML array of strings is a hard error (AC-010c).
+pub(crate) fn read_maturin_targets(
+    pyproject_path: &Path,
+    val: &toml::Value,
+) -> Result<Option<Vec<String>>, GraphError> {
     let Some(targets) = val
         .get("tool")
         .and_then(|t| t.get("maturin"))
@@ -187,22 +224,13 @@ pub(crate) fn read_maturin_targets(
     Ok(Some(out))
 }
 
-/// Reads `engines.node` directly from `pkg_json_path` as a raw string.
-/// `Ok(None)` when absent; `Err` when present but not a JSON string.
-pub(crate) fn read_engines_node(pkg_json_path: &Path) -> Result<Option<String>, GraphError> {
-    let content = std::fs::read_to_string(pkg_json_path).map_err(|e| {
-        GraphError::Manifest(ManifestError::Read {
-            path: pkg_json_path.to_path_buf(),
-            message: e.to_string(),
-        })
-    })?;
-    let val: serde_json::Value = serde_json::from_str(&content).map_err(|e| {
-        GraphError::Manifest(ManifestError::Parse {
-            path: pkg_json_path.to_path_buf(),
-            format: ManifestFormat::PackageJson,
-            message: e.to_string(),
-        })
-    })?;
+/// Extracts `engines.node` as a raw string from an already-parsed
+/// `package.json` value (see `parse_package_json`). `Ok(None)` when absent;
+/// `Err` when present but not a JSON string.
+pub(crate) fn read_engines_node(
+    pkg_json_path: &Path,
+    val: &serde_json::Value,
+) -> Result<Option<String>, GraphError> {
     let Some(node) = val.get("engines").and_then(|e| e.get("node")) else {
         return Ok(None);
     };
@@ -216,22 +244,13 @@ pub(crate) fn read_engines_node(pkg_json_path: &Path) -> Result<Option<String>, 
     Ok(Some(s.to_string()))
 }
 
-/// Reads `requires-python` directly from `pyproject_path` as a raw string.
-/// `Ok(None)` when absent; `Err` when present but not a TOML string.
-pub(crate) fn read_requires_python(pyproject_path: &Path) -> Result<Option<String>, GraphError> {
-    let content = std::fs::read_to_string(pyproject_path).map_err(|e| {
-        GraphError::Manifest(ManifestError::Read {
-            path: pyproject_path.to_path_buf(),
-            message: e.to_string(),
-        })
-    })?;
-    let val: toml::Value = content.parse().map_err(|e: toml::de::Error| {
-        GraphError::Manifest(ManifestError::Parse {
-            path: pyproject_path.to_path_buf(),
-            format: ManifestFormat::PyprojectToml,
-            message: e.to_string(),
-        })
-    })?;
+/// Extracts `requires-python` as a raw string from an already-parsed
+/// `pyproject.toml` value (see `parse_pyproject_toml`). `Ok(None)` when
+/// absent; `Err` when present but not a TOML string.
+pub(crate) fn read_requires_python(
+    pyproject_path: &Path,
+    val: &toml::Value,
+) -> Result<Option<String>, GraphError> {
     let Some(rp) = val.get("project").and_then(|p| p.get("requires-python")) else {
         return Ok(None);
     };
@@ -251,6 +270,11 @@ use callisto_model::{PackageId, PlatformTargetKind};
 /// (the package's on-disk directory) and determines which single source (if
 /// any) declares platform targets.
 ///
+/// `pkg_json_val`/`pyproject_val` are the package's already-parsed manifest
+/// values (see `parse_package_json`/`parse_pyproject_toml`), `None` when the
+/// corresponding file doesn't exist -- shared with `assemble_runtime_versions`
+/// so `build_matrix_report` parses each file at most once per package.
+///
 /// - Neither declared: `Ok(None)` (AC-003).
 /// - Both declared: `Err(GraphError::ConflictingPlatformTargetSources)` (AC-017).
 /// - Exactly one declared (even as an explicitly empty array, AC-001b):
@@ -258,19 +282,19 @@ use callisto_model::{PackageId, PlatformTargetKind};
 pub(crate) fn select_platform_target_source(
     package_dir_abs: &Path,
     package_id: &PackageId,
+    pkg_json_val: Option<&serde_json::Value>,
+    pyproject_val: Option<&toml::Value>,
 ) -> Result<Option<(PlatformTargetKind, String, Vec<String>)>, GraphError> {
     let napi_path = package_dir_abs.join("package.json");
-    let napi_field = if napi_path.exists() {
-        read_napi_targets(&napi_path)?
-    } else {
-        NapiTargetsField::Absent
+    let napi_field = match pkg_json_val {
+        Some(val) => read_napi_targets(&napi_path, val)?,
+        None => NapiTargetsField::Absent,
     };
 
     let maturin_path = package_dir_abs.join("pyproject.toml");
-    let maturin_targets = if maturin_path.exists() {
-        read_maturin_targets(&maturin_path)?
-    } else {
-        None
+    let maturin_targets = match pyproject_val {
+        Some(val) => read_maturin_targets(&maturin_path, val)?,
+        None => None,
     };
 
     match (napi_field, maturin_targets) {
@@ -308,8 +332,11 @@ pub(crate) fn assemble_platform_target_group(
     package_dir_rel: &str,
     package_name: &str,
     package_id: &PackageId,
+    pkg_json_val: Option<&serde_json::Value>,
+    pyproject_val: Option<&toml::Value>,
 ) -> Result<(Option<PlatformTargetGroup>, Vec<Diagnostic>), GraphError> {
-    let Some((kind, source, triples)) = select_platform_target_source(package_dir_abs, package_id)?
+    let Some((kind, source, triples)) =
+        select_platform_target_source(package_dir_abs, package_id, pkg_json_val, pyproject_val)?
     else {
         return Ok((None, Vec::new()));
     };
@@ -377,17 +404,23 @@ pub(crate) struct MatrixPackageInput {
     pub name: String,
 }
 
-/// Reads engines.node (npm) and requires-python (python) from `package_dir_abs`,
-/// in that order, so callers preserve the npm-before-python ordering AC-005b
-/// requires without a separate sort step.
+/// Reads engines.node (npm) and requires-python (python) from
+/// `package_dir_abs`'s already-parsed manifest values, in that order, so
+/// callers preserve the npm-before-python ordering AC-005b requires without
+/// a separate sort step. `pkg_json_val`/`pyproject_val` are shared with
+/// `assemble_platform_target_group` (see `select_platform_target_source`'s
+/// doc comment) so `build_matrix_report` parses each file at most once per
+/// package.
 pub(crate) fn assemble_runtime_versions(
     package_dir_abs: &Path,
+    pkg_json_val: Option<&serde_json::Value>,
+    pyproject_val: Option<&toml::Value>,
 ) -> Result<Vec<RuntimeVersionEntry>, GraphError> {
     let mut entries = Vec::new();
 
     let pkg_json = package_dir_abs.join("package.json");
-    if pkg_json.exists() {
-        if let Some(range) = read_engines_node(&pkg_json)? {
+    if let Some(val) = pkg_json_val {
+        if let Some(range) = read_engines_node(&pkg_json, val)? {
             entries.push(RuntimeVersionEntry {
                 ecosystem: RuntimeEcosystem::Npm,
                 field: "engines.node".to_string(),
@@ -397,8 +430,8 @@ pub(crate) fn assemble_runtime_versions(
     }
 
     let pyproject = package_dir_abs.join("pyproject.toml");
-    if pyproject.exists() {
-        if let Some(range) = read_requires_python(&pyproject)? {
+    if let Some(val) = pyproject_val {
+        if let Some(range) = read_requires_python(&pyproject, val)? {
             entries.push(RuntimeVersionEntry {
                 ecosystem: RuntimeEcosystem::Python,
                 field: "requires-python".to_string(),
@@ -415,6 +448,11 @@ pub(crate) fn assemble_runtime_versions(
 /// a package contributes no platformTargets entry when it declares neither
 /// napi.targets nor [tool.maturin].targets, and no runtimeVersions entry when
 /// it declares neither engines.node nor requires-python.
+///
+/// Each package's `package.json`/`pyproject.toml` is read and parsed at most
+/// once here and the resulting value shared between the platform-target and
+/// runtime-version extraction paths, instead of each independently
+/// re-reading and re-parsing the same file from disk.
 pub(crate) fn build_matrix_report(
     packages: &[MatrixPackageInput],
 ) -> Result<MatrixReport, GraphError> {
@@ -423,14 +461,24 @@ pub(crate) fn build_matrix_report(
     let mut diagnostics = Vec::new();
 
     for pkg in packages {
-        let (group, diags) =
-            assemble_platform_target_group(&pkg.dir_abs, &pkg.dir_rel, &pkg.name, &pkg.id)?;
+        let pkg_json_val = parse_package_json(&pkg.dir_abs.join("package.json"))?;
+        let pyproject_val = parse_pyproject_toml(&pkg.dir_abs.join("pyproject.toml"))?;
+
+        let (group, diags) = assemble_platform_target_group(
+            &pkg.dir_abs,
+            &pkg.dir_rel,
+            &pkg.name,
+            &pkg.id,
+            pkg_json_val.as_ref(),
+            pyproject_val.as_ref(),
+        )?;
         if let Some(group) = group {
             platform_targets.insert(pkg.name.clone(), group);
         }
         diagnostics.extend(diags);
 
-        let rv = assemble_runtime_versions(&pkg.dir_abs)?;
+        let rv =
+            assemble_runtime_versions(&pkg.dir_abs, pkg_json_val.as_ref(), pyproject_val.as_ref())?;
         if !rv.is_empty() {
             runtime_versions.insert(pkg.name.clone(), rv);
         }
@@ -527,6 +575,42 @@ mod tests {
         assert_eq!(entries[1].range, ">=3.9");
     }
 
+    /// Regression: `package.json` is parsed at most once per package (see
+    /// `build_matrix_report`'s doc comment) and the resulting value is
+    /// shared between the platformTargets and runtimeVersions extraction
+    /// paths. A package.json declaring BOTH `napi.targets` and
+    /// `engines.node` -- fields consumed by the two different paths -- must
+    /// still populate both report sections correctly from that one shared
+    /// parse, not just one or the other.
+    #[test]
+    fn build_matrix_report_single_file_serves_both_platform_and_runtime_extraction() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("dual-field-pkg");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("package.json"),
+            r#"{"napi":{"targets":["aarch64-apple-darwin"]},"engines":{"node":">=20.0.0"}}"#,
+        )
+        .unwrap();
+
+        let report = build_matrix_report(&[input("dual-field-pkg", &dir)]).unwrap();
+
+        let group = report
+            .platform_targets
+            .get("dual-field-pkg")
+            .expect("dual-field-pkg must have a platformTargets entry");
+        assert_eq!(group.targets.len(), 1);
+        assert_eq!(group.targets[0].triple, "aarch64-apple-darwin");
+
+        let entries = report
+            .runtime_versions
+            .get("dual-field-pkg")
+            .expect("dual-field-pkg must have a runtimeVersions entry");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].ecosystem, RuntimeEcosystem::Npm);
+        assert_eq!(entries[0].range, ">=20.0.0");
+    }
+
     /// AC-017: a package.json with napi.targets AND a pyproject.toml with
     /// [tool.maturin].targets in the same directory is a hard error.
     #[test]
@@ -542,8 +626,16 @@ mod tests {
             "[tool.maturin]\ntargets = [\"x86_64-unknown-linux-gnu\"]\n",
         )
         .unwrap();
+        let pkg_json_val = parse_package_json(&tmp.path().join("package.json")).unwrap();
+        let pyproject_val = parse_pyproject_toml(&tmp.path().join("pyproject.toml")).unwrap();
 
-        let err = select_platform_target_source(tmp.path(), &pkg_id("native-mod")).unwrap_err();
+        let err = select_platform_target_source(
+            tmp.path(),
+            &pkg_id("native-mod"),
+            pkg_json_val.as_ref(),
+            pyproject_val.as_ref(),
+        )
+        .unwrap_err();
         match err {
             GraphError::ConflictingPlatformTargetSources {
                 package,
@@ -563,7 +655,8 @@ mod tests {
     #[test]
     fn select_platform_target_source_no_manifests_returns_none() {
         let tmp = tempfile::tempdir().unwrap();
-        let result = select_platform_target_source(tmp.path(), &pkg_id("plain-pkg")).unwrap();
+        let result =
+            select_platform_target_source(tmp.path(), &pkg_id("plain-pkg"), None, None).unwrap();
         assert!(result.is_none());
     }
 
@@ -574,15 +667,17 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let absent_path = tmp.path().join("absent.json");
         std::fs::write(&absent_path, r#"{"name":"pkg"}"#).unwrap();
+        let absent_val = parse_package_json(&absent_path).unwrap().unwrap();
         assert_eq!(
-            read_napi_targets(&absent_path).unwrap(),
+            read_napi_targets(&absent_path, &absent_val).unwrap(),
             NapiTargetsField::Absent
         );
 
         let empty_path = tmp.path().join("empty.json");
         std::fs::write(&empty_path, r#"{"napi":{"targets":[]}}"#).unwrap();
+        let empty_val = parse_package_json(&empty_path).unwrap().unwrap();
         assert_eq!(
-            read_napi_targets(&empty_path).unwrap(),
+            read_napi_targets(&empty_path, &empty_val).unwrap(),
             NapiTargetsField::Present(vec![])
         );
 
@@ -592,8 +687,9 @@ mod tests {
             r#"{"napi":{"targets":["aarch64-apple-darwin","x86_64-unknown-linux-gnu"]}}"#,
         )
         .unwrap();
+        let populated_val = parse_package_json(&populated_path).unwrap().unwrap();
         assert_eq!(
-            read_napi_targets(&populated_path).unwrap(),
+            read_napi_targets(&populated_path, &populated_val).unwrap(),
             NapiTargetsField::Present(vec![
                 "aarch64-apple-darwin".to_string(),
                 "x86_64-unknown-linux-gnu".to_string()
@@ -601,13 +697,16 @@ mod tests {
         );
     }
 
-    /// AC-010b: malformed JSON syntax must be a hard read error naming the path.
+    /// AC-010b: malformed JSON syntax must be a hard read error naming the
+    /// path. Now surfaced by `parse_package_json` (the shared read+parse
+    /// step), rather than by `read_napi_targets` itself, since parsing is no
+    /// longer that function's job.
     #[test]
-    fn read_napi_targets_malformed_json_is_error() {
+    fn parse_package_json_malformed_json_is_error() {
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp.path().join("bad.json");
         std::fs::write(&path, r#"{"napi":{"targets":["a",]}}"#).unwrap(); // trailing comma
-        let err = read_napi_targets(&path).unwrap_err();
+        let err = parse_package_json(&path).unwrap_err();
         assert!(
             format!("{err}").contains(&path.display().to_string()),
             "error must name the malformed path: {err}"
@@ -621,7 +720,8 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp.path().join("wrong_type.json");
         std::fs::write(&path, r#"{"napi":{"targets":"aarch64-apple-darwin"}}"#).unwrap();
-        let err = read_napi_targets(&path).unwrap_err();
+        let val = parse_package_json(&path).unwrap().unwrap();
+        let err = read_napi_targets(&path, &val).unwrap_err();
         assert!(
             format!("{err}").contains(&path.display().to_string()),
             "error must name the malformed path: {err}"
@@ -753,7 +853,11 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let absent_path = tmp.path().join("absent.toml");
         std::fs::write(&absent_path, "[project]\nname = \"pkg\"\n").unwrap();
-        assert_eq!(read_maturin_targets(&absent_path).unwrap(), None);
+        let absent_val = parse_pyproject_toml(&absent_path).unwrap().unwrap();
+        assert_eq!(
+            read_maturin_targets(&absent_path, &absent_val).unwrap(),
+            None
+        );
 
         let present_path = tmp.path().join("present.toml");
         std::fs::write(
@@ -761,8 +865,9 @@ mod tests {
             "[tool.maturin]\ntargets = [\"x86_64-unknown-linux-gnu\", \"aarch64-apple-darwin\"]\n",
         )
         .unwrap();
+        let present_val = parse_pyproject_toml(&present_path).unwrap().unwrap();
         assert_eq!(
-            read_maturin_targets(&present_path).unwrap(),
+            read_maturin_targets(&present_path, &present_val).unwrap(),
             Some(vec![
                 "x86_64-unknown-linux-gnu".to_string(),
                 "aarch64-apple-darwin".to_string()
@@ -777,16 +882,20 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp.path().join("empty.toml");
         std::fs::write(&path, "[tool.maturin]\ntargets = []\n").unwrap();
-        assert_eq!(read_maturin_targets(&path).unwrap(), Some(vec![]));
+        let val = parse_pyproject_toml(&path).unwrap().unwrap();
+        assert_eq!(read_maturin_targets(&path, &val).unwrap(), Some(vec![]));
     }
 
     /// AC-010: malformed TOML syntax must be a hard error naming the path.
+    /// Now surfaced by `parse_pyproject_toml` (the shared read+parse step),
+    /// rather than by `read_maturin_targets` itself, since parsing is no
+    /// longer that function's job.
     #[test]
-    fn read_maturin_targets_malformed_toml_is_error() {
+    fn parse_pyproject_toml_malformed_toml_is_error() {
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp.path().join("bad.toml");
         std::fs::write(&path, "[tool.maturin]\ntargets = [\"unterminated\n").unwrap();
-        let err = read_maturin_targets(&path).unwrap_err();
+        let err = parse_pyproject_toml(&path).unwrap_err();
         assert!(
             format!("{err}").contains(&path.display().to_string()),
             "error must name the malformed path: {err}"
@@ -804,7 +913,8 @@ mod tests {
             "[tool.maturin]\ntargets = \"x86_64-unknown-linux-gnu\"\n",
         )
         .unwrap();
-        let err = read_maturin_targets(&path).unwrap_err();
+        let val = parse_pyproject_toml(&path).unwrap().unwrap();
+        let err = read_maturin_targets(&path, &val).unwrap_err();
         assert!(
             format!("{err}").contains(&path.display().to_string()),
             "error must name the malformed path: {err}"
@@ -817,14 +927,16 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let present = tmp.path().join("present.json");
         std::fs::write(&present, r#"{"engines":{"node":">=20.0.0"}}"#).unwrap();
+        let present_val = parse_package_json(&present).unwrap().unwrap();
         assert_eq!(
-            read_engines_node(&present).unwrap(),
+            read_engines_node(&present, &present_val).unwrap(),
             Some(">=20.0.0".to_string())
         );
 
         let absent = tmp.path().join("absent.json");
         std::fs::write(&absent, r#"{"name":"pkg"}"#).unwrap();
-        assert_eq!(read_engines_node(&absent).unwrap(), None);
+        let absent_val = parse_package_json(&absent).unwrap().unwrap();
+        assert_eq!(read_engines_node(&absent, &absent_val).unwrap(), None);
     }
 
     /// AC-010c: engines.node present but not a string (e.g. a number) is a
@@ -834,7 +946,8 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp.path().join("wrong_type.json");
         std::fs::write(&path, r#"{"engines":{"node":20}}"#).unwrap();
-        assert!(read_engines_node(&path).is_err());
+        let val = parse_package_json(&path).unwrap().unwrap();
+        assert!(read_engines_node(&path, &val).is_err());
     }
 
     /// AC-005: requires-python reads as a raw string; absent is None.
@@ -843,14 +956,16 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let present = tmp.path().join("present.toml");
         std::fs::write(&present, "[project]\nrequires-python = \">=3.9\"\n").unwrap();
+        let present_val = parse_pyproject_toml(&present).unwrap().unwrap();
         assert_eq!(
-            read_requires_python(&present).unwrap(),
+            read_requires_python(&present, &present_val).unwrap(),
             Some(">=3.9".to_string())
         );
 
         let absent = tmp.path().join("absent.toml");
         std::fs::write(&absent, "[project]\nname = \"pkg\"\n").unwrap();
-        assert_eq!(read_requires_python(&absent).unwrap(), None);
+        let absent_val = parse_pyproject_toml(&absent).unwrap().unwrap();
+        assert_eq!(read_requires_python(&absent, &absent_val).unwrap(), None);
     }
 
     /// AC-010c: requires-python present but not a string is a hard error.
@@ -859,7 +974,8 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp.path().join("wrong_type.toml");
         std::fs::write(&path, "[project]\nrequires-python = 39\n").unwrap();
-        assert!(read_requires_python(&path).is_err());
+        let val = parse_pyproject_toml(&path).unwrap().unwrap();
+        assert!(read_requires_python(&path, &val).is_err());
     }
 
     /// AC-011: an unrecognised triple is excluded from targets[] and reported
@@ -874,11 +990,16 @@ mod tests {
         )
         .unwrap();
 
+        let pkg_json_val = parse_package_json(&tmp.path().join("package.json")).unwrap();
+        let pyproject_val = parse_pyproject_toml(&tmp.path().join("pyproject.toml")).unwrap();
+
         let (group, diagnostics) = assemble_platform_target_group(
             tmp.path(),
             "native-mod",
             "native-mod",
             &pkg_id("native-mod"),
+            pkg_json_val.as_ref(),
+            pyproject_val.as_ref(),
         )
         .unwrap();
         let group = group.expect("group must be present");
@@ -912,11 +1033,16 @@ mod tests {
         )
         .unwrap();
 
+        let pkg_json_val = parse_package_json(&tmp.path().join("package.json")).unwrap();
+        let pyproject_val = parse_pyproject_toml(&tmp.path().join("pyproject.toml")).unwrap();
+
         let (group, diagnostics) = assemble_platform_target_group(
             tmp.path(),
             "native-mod",
             "native-mod",
             &pkg_id("native-mod"),
+            pkg_json_val.as_ref(),
+            pyproject_val.as_ref(),
         )
         .unwrap();
         let group = group.expect("group must be present");
@@ -947,11 +1073,16 @@ mod tests {
         )
         .unwrap();
 
+        let pkg_json_val = parse_package_json(&tmp.path().join("package.json")).unwrap();
+        let pyproject_val = parse_pyproject_toml(&tmp.path().join("pyproject.toml")).unwrap();
+
         let (group, diagnostics) = assemble_platform_target_group(
             tmp.path(),
             "native-mod",
             "native-mod",
             &pkg_id("native-mod"),
+            pkg_json_val.as_ref(),
+            pyproject_val.as_ref(),
         )
         .unwrap();
         let group = group.expect("an explicitly empty napi.targets must still produce a group");
