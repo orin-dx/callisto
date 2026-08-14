@@ -1,0 +1,75 @@
+{
+  "cli_version": "0.10.1-nightly.202608121908.a47cf0c70",
+  "checkpoint_id": "01KZZRPDEGM61RT86Y2DRN4YJT",
+  "session_id": "ae412d01-e061-4047-918b-0d1df3d4d118",
+  "strategy": "manual-commit",
+  "created_at": "2026-08-14T09:12:26.796794Z",
+  "branch": "main",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "crates/callisto-graph/src/aggregate.rs",
+    "crates/callisto-graph/src/config/resolve.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5",
+  "turn_id": "705cf7665666",
+  "checkpoint_transcript_start": 8053,
+  "transcript_lines_at_start": 8053,
+  "compact_transcript_start": 1274,
+  "token_usage": {
+    "input_tokens": 64,
+    "cache_creation_tokens": 32879,
+    "cache_read_tokens": 20145881,
+    "output_tokens": 15046,
+    "api_call_count": 32
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_012rCYNRAZsYmqiF8NNi747S",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "canon:canon"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "705cf7665666",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 1796,
+        "end": 1797,
+        "entry_ids": [
+          "8d95a7ab-50fc-4a4f-a5f0-51fa16450006"
+        ],
+        "tool_use_id": "toolu_012rCYNRAZsYmqiF8NNi747S"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_012rCYNRAZsYmqiF8NNi747S"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: canon:canon",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 129
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-08-14T09:12:26.106707Z",
+    "agent_lines": 118,
+    "agent_removed": 26,
+    "human_added": 0,
+    "human_modified": 1,
+    "human_removed": 0,
+    "total_committed": 119,
+    "total_lines_changed": 145,
+    "agent_percentage": 99.3103448275862,
+    "metric_version": 2
+  }
+}
