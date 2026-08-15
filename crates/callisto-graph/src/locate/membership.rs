@@ -57,6 +57,19 @@ impl CargoMembership {
     }
 }
 
+/// Safely parses a TOML array-of-strings item, returning `None` for any
+/// other shape (bare string, table, non-string entries, etc.) instead of
+/// panicking.
+#[allow(dead_code)]
+fn parse_toml_string_array(item: &toml_edit::Item) -> Option<Vec<String>> {
+    let arr = item.as_array()?;
+    let mut out = Vec::with_capacity(arr.len());
+    for v in arr.iter() {
+        out.push(v.as_str()?.to_string());
+    }
+    Some(out)
+}
+
 #[allow(dead_code)]
 fn absent_cargo_membership() -> CargoMembership {
     CargoMembership {
@@ -87,30 +100,11 @@ pub(crate) fn read_cargo_membership(root: &Path) -> CargoMembership {
         .expect("naive: TASK-03d replaces this with a safe fallback when [workspace] is absent");
     let members = workspace
         .get("members")
-        .expect("naive: TASK-03e replaces this with a safe fallback when members key is absent")
-        .as_array()
-        .expect("naive: TASK-03b replaces this with a safe fallback for non-array members")
-        .iter()
-        .map(|v| {
-            v.as_str()
-                .expect("naive: TASK-03b hardens non-string entries")
-                .to_string()
-        })
-        .collect::<Vec<_>>();
-    let members = Some(build_globset(&members));
+        .expect("naive: TASK-03e replaces this with a safe fallback when members key is absent");
+    let members = parse_toml_string_array(members).map(|v| build_globset(&v));
     let exclude = workspace
         .get("exclude")
-        .map(|item| {
-            item.as_array()
-                .expect("naive: TASK-03b replaces this with a safe fallback for non-array exclude")
-                .iter()
-                .map(|v| {
-                    v.as_str()
-                        .expect("naive: TASK-03b hardens non-string entries")
-                        .to_string()
-                })
-                .collect::<Vec<_>>()
-        })
+        .and_then(parse_toml_string_array)
         .map(|v| build_globset(&v))
         .unwrap_or_else(GlobSet::empty);
     CargoMembership {
@@ -144,6 +138,31 @@ mod cargo_membership_tests {
         let m = read_cargo_membership(dir.path());
         assert!(m.admits(Path::new("crates/kept-example"), false));
         assert!(!m.admits(Path::new("crates/scratch-example"), false));
+        assert!(!m.admits(Path::new("tools/outside"), false));
+    }
+
+    #[test]
+    fn read_cargo_membership_falls_back_to_absent_when_members_is_bare_string() {
+        let dir = tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("Cargo.toml"),
+            "[workspace]\nmembers = \"crates/*\"\n",
+        )
+        .unwrap();
+        let m = read_cargo_membership(dir.path());
+        assert!(m.admits(Path::new("tools/outside"), false));
+    }
+
+    #[test]
+    fn read_cargo_membership_falls_back_to_excluding_nothing_when_exclude_is_bare_string() {
+        let dir = tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("Cargo.toml"),
+            "[workspace]\nmembers = [\"crates/*\"]\nexclude = \"crates/scratch-example\"\n",
+        )
+        .unwrap();
+        let m = read_cargo_membership(dir.path());
+        assert!(m.admits(Path::new("crates/scratch-example"), false));
         assert!(!m.admits(Path::new("tools/outside"), false));
     }
 }
