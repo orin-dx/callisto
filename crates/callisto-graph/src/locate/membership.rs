@@ -252,27 +252,21 @@ pub(crate) fn read_npm_membership(root: &Path) -> NpmMembership {
     }
 }
 
-/// YAML-parse-Err, zero-documents, and packages-key-missing-or-wrong-shape
-/// all safely fall back to `None` (which causes `read_npm_membership` to
-/// fall through to `read_package_json_workspaces` or admit-all). Non-string
-/// sequence elements still panic via `.as_str().unwrap()`; TASK-04e hardens
-/// that remaining naive call.
+/// YAML-parse-Err, zero-documents, packages-key-missing-or-wrong-shape, and
+/// a non-string sequence element all safely fall back to `None` (which
+/// causes `read_npm_membership` to fall through to
+/// `read_package_json_workspaces` or admit-all).
 #[allow(dead_code)]
 fn read_pnpm_packages(root: &Path) -> Option<Vec<String>> {
     let content = std::fs::read_to_string(root.join("pnpm-workspace.yaml")).ok()?;
     let docs = yaml_rust2::YamlLoader::load_from_str(&content).ok()?;
     let doc = docs.first()?;
     let packages = doc["packages"].as_vec()?;
-    Some(
-        packages
-            .iter()
-            .map(|v| {
-                v.as_str()
-                    .expect("naive: TASK-04e hardens non-string sequence elements")
-                    .to_string()
-            })
-            .collect(),
-    )
+    let mut out = Vec::with_capacity(packages.len());
+    for item in packages {
+        out.push(item.as_str()?.to_string());
+    }
+    Some(out)
 }
 
 /// File-absent, field-absent, non-array "workspaces", and non-string array
@@ -446,6 +440,31 @@ mod npm_membership_tests {
         .unwrap();
         let m = read_npm_membership(dir.path());
         assert!(m.admits(Path::new("tools/outside")));
+    }
+
+    #[test]
+    fn read_npm_membership_falls_back_to_absent_when_pnpm_packages_sequence_has_non_string_element()
+    {
+        let dir = tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("pnpm-workspace.yaml"),
+            "packages:\n  - \"a\"\n  - 42\n",
+        )
+        .unwrap();
+        let m = read_npm_membership(dir.path());
+        assert!(m.admits(Path::new("packages/anything")));
+    }
+
+    #[test]
+    fn read_npm_membership_falls_back_to_absent_when_root_package_json_syntax_is_invalid() {
+        let dir = tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("package.json"),
+            "{\"workspaces\": [\"packages/*\"],}",
+        )
+        .unwrap();
+        let m = read_npm_membership(dir.path());
+        assert!(m.admits(Path::new("packages/anything")));
     }
 }
 
