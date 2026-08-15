@@ -242,9 +242,40 @@ impl NpmMembership {
 
 #[allow(dead_code)]
 pub(crate) fn read_npm_membership(root: &Path) -> NpmMembership {
+    if let Some(packages) = read_pnpm_packages(root) {
+        return NpmMembership {
+            globs: Some(build_globset(&packages)),
+        };
+    }
     NpmMembership {
         globs: read_package_json_workspaces(root).map(|v| build_globset(&v)),
     }
+}
+
+/// NAIVE first pass: only the well-formed and empty-array shapes are
+/// exercised by this task's own tests. YAML-parse-Err, zero-documents, and
+/// packages-key-missing-or-wrong-shape all currently panic via `.unwrap()`/
+/// `&docs[0]`/`.as_vec().unwrap()`/`.as_str().unwrap()`. TASK-04c/04e
+/// replace these naive calls.
+#[allow(dead_code)]
+fn read_pnpm_packages(root: &Path) -> Option<Vec<String>> {
+    let content = std::fs::read_to_string(root.join("pnpm-workspace.yaml")).ok()?;
+    let docs = yaml_rust2::YamlLoader::load_from_str(&content)
+        .expect("naive: TASK-04c replaces this with a safe fallback for YAML parse errors");
+    let doc = &docs[0];
+    let packages = doc["packages"].as_vec().expect(
+        "naive: TASK-04c/04e replace this with a safe fallback for missing/wrong-shape packages",
+    );
+    Some(
+        packages
+            .iter()
+            .map(|v| {
+                v.as_str()
+                    .expect("naive: TASK-04e hardens non-string sequence elements")
+                    .to_string()
+            })
+            .collect(),
+    )
 }
 
 /// NAIVE first pass: file-absent and field-absent are already safe (a plain
@@ -309,6 +340,32 @@ mod npm_membership_tests {
     fn read_npm_membership_empty_workspaces_array_admits_nothing() {
         let dir = tempdir().unwrap();
         std::fs::write(dir.path().join("package.json"), r#"{"workspaces": []}"#).unwrap();
+        let m = read_npm_membership(dir.path());
+        assert!(!m.admits(Path::new("packages/anything")));
+    }
+
+    #[test]
+    fn read_npm_membership_prefers_pnpm_packages_over_package_json_workspaces() {
+        let dir = tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("package.json"),
+            r#"{"workspaces": ["packages/*"]}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("pnpm-workspace.yaml"),
+            "packages:\n  - \"tools/*\"\n",
+        )
+        .unwrap();
+        let m = read_npm_membership(dir.path());
+        assert!(m.admits(Path::new("tools/x")));
+        assert!(!m.admits(Path::new("packages/y")));
+    }
+
+    #[test]
+    fn read_npm_membership_pnpm_empty_packages_list_admits_nothing() {
+        let dir = tempdir().unwrap();
+        std::fs::write(dir.path().join("pnpm-workspace.yaml"), "packages: []\n").unwrap();
         let m = read_npm_membership(dir.path());
         assert!(!m.admits(Path::new("packages/anything")));
     }
