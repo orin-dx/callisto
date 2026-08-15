@@ -275,28 +275,20 @@ fn read_pnpm_packages(root: &Path) -> Option<Vec<String>> {
     )
 }
 
-/// NAIVE first pass: file-absent and field-absent are already safe (a plain
-/// `?`-chain), but the array/string SHAPE of a present "workspaces" field is
-/// not yet validated -- `.as_array().unwrap()`/`.as_str().unwrap()` will
-/// panic on a bare-string field or a non-string array entry. TASK-04d
-/// replaces these two naive calls.
+/// File-absent, field-absent, non-array "workspaces", and non-string array
+/// entries all safely fall back to `None` (a plain `?`-chain), which causes
+/// `read_npm_membership` to admit-all.
 #[allow(dead_code)]
 fn read_package_json_workspaces(root: &Path) -> Option<Vec<String>> {
     let content = std::fs::read_to_string(root.join("package.json")).ok()?;
     let val: serde_json::Value = serde_json::from_str(&content).ok()?;
     let field = val.get("workspaces")?;
-    let arr = field
-        .as_array()
-        .expect("naive: TASK-04d replaces this with a safe fallback for non-array workspaces");
-    Some(
-        arr.iter()
-            .map(|v| {
-                v.as_str()
-                    .expect("naive: TASK-04d hardens non-string entries")
-                    .to_string()
-            })
-            .collect(),
-    )
+    let arr = field.as_array()?;
+    let mut out = Vec::with_capacity(arr.len());
+    for v in arr {
+        out.push(v.as_str()?.to_string());
+    }
+    Some(out)
 }
 
 #[cfg(test)]
@@ -430,6 +422,30 @@ mod npm_membership_tests {
         .unwrap();
         let m_wrong_type = read_npm_membership(dir_wrong_type.path());
         assert!(m_wrong_type.admits(Path::new("packages/anything")));
+    }
+
+    #[test]
+    fn read_npm_membership_falls_back_to_absent_when_workspaces_is_bare_string() {
+        let dir = tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("package.json"),
+            r#"{"workspaces": "packages/*"}"#,
+        )
+        .unwrap();
+        let m = read_npm_membership(dir.path());
+        assert!(m.admits(Path::new("tools/outside")));
+    }
+
+    #[test]
+    fn read_npm_membership_falls_back_to_absent_when_workspaces_array_has_non_string_entry() {
+        let dir = tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("package.json"),
+            r#"{"workspaces": ["packages/*", 42]}"#,
+        )
+        .unwrap();
+        let m = read_npm_membership(dir.path());
+        assert!(m.admits(Path::new("tools/outside")));
     }
 }
 
