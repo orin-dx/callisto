@@ -165,6 +165,18 @@ mod cargo_membership_tests {
         assert!(m.admits(Path::new("crates/scratch-example"), false));
         assert!(!m.admits(Path::new("tools/outside"), false));
     }
+
+    #[test]
+    fn read_cargo_membership_detects_hybrid_root_and_exempts_it_from_exclude() {
+        let dir = tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("Cargo.toml"),
+            "[package]\nname = \"root-crate\"\nversion = \"0.1.0\"\n\n[workspace]\nmembers = [\"crates/*\"]\nexclude = [\".\"]\n",
+        )
+        .unwrap();
+        let m = read_cargo_membership(dir.path());
+        assert!(m.admits(Path::new("."), true));
+    }
 }
 
 #[cfg(test)]
