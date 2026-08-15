@@ -105,8 +105,8 @@ pub(crate) fn read_cargo_membership(root: &Path) -> CargoMembership {
     };
     let members = workspace
         .get("members")
-        .expect("naive: TASK-03e replaces this with a safe fallback when members key is absent");
-    let members = parse_toml_string_array(members).map(|v| build_globset(&v));
+        .and_then(parse_toml_string_array)
+        .map(|v| build_globset(&v));
     let exclude = workspace
         .get("exclude")
         .and_then(parse_toml_string_array)
@@ -201,6 +201,27 @@ mod cargo_membership_tests {
         std::fs::write(dir.path().join("Cargo.toml"), "[workspace\nmembers = [\n").unwrap();
         let m = read_cargo_membership(dir.path());
         assert!(m.admits(Path::new("crates/anything"), false));
+    }
+
+    #[test]
+    fn read_cargo_membership_honors_exclude_when_no_members_key_present() {
+        let dir = tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("Cargo.toml"),
+            "[workspace]\nexclude = [\"crates/foo\"]\n",
+        )
+        .unwrap();
+        let m = read_cargo_membership(dir.path());
+        assert!(!m.admits(Path::new("crates/foo"), false));
+        assert!(m.admits(Path::new("crates/kept"), false));
+    }
+
+    #[test]
+    fn read_cargo_membership_empty_members_array_admits_nothing() {
+        let dir = tempdir().unwrap();
+        std::fs::write(dir.path().join("Cargo.toml"), "[workspace]\nmembers = []\n").unwrap();
+        let m = read_cargo_membership(dir.path());
+        assert!(!m.admits(Path::new("crates/anything"), false));
     }
 }
 
