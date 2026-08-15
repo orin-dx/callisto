@@ -91,13 +91,18 @@ pub(crate) fn read_cargo_membership(root: &Path) -> CargoMembership {
         Ok(c) => c,
         Err(_) => return absent_cargo_membership(),
     };
-    let doc = content
-        .parse::<toml_edit::DocumentMut>()
-        .expect("naive: TASK-03d replaces this with a safe fallback for unparseable TOML");
+    let doc = match content.parse::<toml_edit::DocumentMut>() {
+        Ok(d) => d,
+        Err(_) => return absent_cargo_membership(),
+    };
     let hybrid_root = doc.get("package").is_some() && doc.get("workspace").is_some();
-    let workspace = doc
-        .get("workspace")
-        .expect("naive: TASK-03d replaces this with a safe fallback when [workspace] is absent");
+    let Some(workspace) = doc.get("workspace") else {
+        return CargoMembership {
+            members: None,
+            exclude: GlobSet::empty(),
+            hybrid_root,
+        };
+    };
     let members = workspace
         .get("members")
         .expect("naive: TASK-03e replaces this with a safe fallback when members key is absent");
@@ -176,6 +181,26 @@ mod cargo_membership_tests {
         .unwrap();
         let m = read_cargo_membership(dir.path());
         assert!(m.admits(Path::new("."), true));
+    }
+
+    #[test]
+    fn read_cargo_membership_admits_all_when_workspace_table_absent_but_file_exists() {
+        let dir = tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("Cargo.toml"),
+            "[package]\nname = \"solo\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+        let m = read_cargo_membership(dir.path());
+        assert!(m.admits(Path::new("crates/anything"), false));
+    }
+
+    #[test]
+    fn read_cargo_membership_falls_back_to_absent_when_root_toml_is_unparseable() {
+        let dir = tempdir().unwrap();
+        std::fs::write(dir.path().join("Cargo.toml"), "[workspace\nmembers = [\n").unwrap();
+        let m = read_cargo_membership(dir.path());
+        assert!(m.admits(Path::new("crates/anything"), false));
     }
 }
 
