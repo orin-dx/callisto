@@ -1,0 +1,270 @@
+{
+  "cli_version": "0.10.1-nightly.202608121908.a47cf0c70",
+  "checkpoint_id": "01M03W21982B78D9KZ9E0G261H",
+  "session_id": "ae412d01-e061-4047-918b-0d1df3d4d118",
+  "strategy": "manual-commit",
+  "created_at": "2026-08-15T23:28:18.947563Z",
+  "branch": "main",
+  "checkpoints_count": 4,
+  "save_step_count": 5,
+  "files_touched": [
+    "crates/callisto-graph/src/locate/membership.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5",
+  "turn_id": "dba087d08cf0",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 7200,
+    "cache_creation_tokens": 12779184,
+    "cache_read_tokens": 1829500608,
+    "output_tokens": 2404179,
+    "api_call_count": 3601,
+    "subagent_tokens": {
+      "input_tokens": 188,
+      "cache_creation_tokens": 137923,
+      "cache_read_tokens": 4965135,
+      "output_tokens": 21724,
+      "api_call_count": 94
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_012rCYNRAZsYmqiF8NNi747S",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "canon:canon"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "dba087d08cf0",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 1796,
+        "end": 1797,
+        "entry_ids": [
+          "8d95a7ab-50fc-4a4f-a5f0-51fa16450006"
+        ],
+        "tool_use_id": "toolu_012rCYNRAZsYmqiF8NNi747S"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_012rCYNRAZsYmqiF8NNi747S"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: canon:canon",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01WGvnnCKVW2vdoqEUK7994m",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "artifact-design"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "dba087d08cf0",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 9258,
+        "end": 9259,
+        "entry_ids": [
+          "40e03207-5312-4c67-91d1-e543f61cc47c"
+        ],
+        "tool_use_id": "toolu_01WGvnnCKVW2vdoqEUK7994m"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01WGvnnCKVW2vdoqEUK7994m"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: artifact-design",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01A41qYmUMU5kNmDE3TvWo3M",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "artifact-design"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "dba087d08cf0",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 11917,
+        "end": 11918,
+        "entry_ids": [
+          "8459f76c-3b2c-4714-909d-739d68f48fe6"
+        ],
+        "tool_use_id": "toolu_01A41qYmUMU5kNmDE3TvWo3M"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01A41qYmUMU5kNmDE3TvWo3M"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: artifact-design",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01FXNTNGnarQ62L85EpAw8f9",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "artifact-design"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "dba087d08cf0",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 23162,
+        "end": 23163,
+        "entry_ids": [
+          "965063be-7e26-4441-87fb-d468496ae76e"
+        ],
+        "tool_use_id": "toolu_01FXNTNGnarQ62L85EpAw8f9"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01FXNTNGnarQ62L85EpAw8f9"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: artifact-design",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_015pLdgs34ZfmQg8bARSMRbQ",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "canon:canon"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "dba087d08cf0",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 23995,
+        "end": 23996,
+        "entry_ids": [
+          "eba08368-f94a-41f1-8f3b-e4006e4ffb58"
+        ],
+        "tool_use_id": "toolu_015pLdgs34ZfmQg8bARSMRbQ"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_015pLdgs34ZfmQg8bARSMRbQ"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: canon:canon",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 318
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-08-15T23:28:17.20136Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 135,
+    "human_modified": 16,
+    "human_removed": 0,
+    "total_committed": 135,
+    "total_lines_changed": 151,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 1056,
+      "user_lines_removed": 0,
+      "agent_lines_added": 78,
+      "agent_lines_removed": 41,
+      "user_added_per_file": {
+        ".claude/plans/PLAN-TRACK3B1-IDENTITY-PROMOTION-CORE.json": 511,
+        ".claude/scheduled_tasks.lock": 1,
+        ".claude/settings.local.json": 5,
+        ".claude/specs/SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json": 210,
+        ".claude/specs/SPEC-TRACK3B1-IDENTITY-PROMOTION-CORE.json": 193,
+        ".claude/specs/SPEC-TRACK3B2-CONSUMER-COLLISION-SAFETY.json": 136
+      }
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 1056,
+      "user_lines_removed": 0,
+      "agent_lines_added": 78,
+      "agent_lines_removed": 41,
+      "user_added_per_file": {
+        ".claude/plans/PLAN-TRACK3B1-IDENTITY-PROMOTION-CORE.json": 511,
+        ".claude/scheduled_tasks.lock": 1,
+        ".claude/settings.local.json": 5,
+        ".claude/specs/SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json": 210,
+        ".claude/specs/SPEC-TRACK3B1-IDENTITY-PROMOTION-CORE.json": 193,
+        ".claude/specs/SPEC-TRACK3B2-CONSUMER-COLLISION-SAFETY.json": 136
+      }
+    },
+    {
+      "checkpoint_number": 4,
+      "user_lines_added": 1056,
+      "user_lines_removed": 0,
+      "agent_lines_added": 78,
+      "agent_lines_removed": 41,
+      "user_added_per_file": {
+        ".claude/plans/PLAN-TRACK3B1-IDENTITY-PROMOTION-CORE.json": 511,
+        ".claude/scheduled_tasks.lock": 1,
+        ".claude/settings.local.json": 5,
+        ".claude/specs/SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json": 210,
+        ".claude/specs/SPEC-TRACK3B1-IDENTITY-PROMOTION-CORE.json": 193,
+        ".claude/specs/SPEC-TRACK3B2-CONSUMER-COLLISION-SAFETY.json": 136
+      }
+    },
+    {
+      "checkpoint_number": 5,
+      "user_lines_added": 1202,
+      "user_lines_removed": 14,
+      "agent_lines_added": 78,
+      "agent_lines_removed": 160,
+      "user_added_per_file": {
+        ".claude/plans/PLAN-TRACK3B1-IDENTITY-PROMOTION-CORE.json": 511,
+        ".claude/scheduled_tasks.lock": 1,
+        ".claude/settings.local.json": 5,
+        ".claude/specs/SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json": 210,
+        ".claude/specs/SPEC-TRACK3B1-IDENTITY-PROMOTION-CORE.json": 193,
+        ".claude/specs/SPEC-TRACK3B2-CONSUMER-COLLISION-SAFETY.json": 136,
+        "crates/callisto-graph/src/locate/membership.rs": 146
+      },
+      "user_removed_per_file": {
+        "crates/callisto-graph/src/locate/membership.rs": 14
+      }
+    }
+  ]
+}
