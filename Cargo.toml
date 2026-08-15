@@ -38,6 +38,7 @@ insta = { version = "1.41", features = ["json", "redactions"] }
 proptest = "1"
 schemars = "0.8"
 serial_test = "3"
+yaml-rust2 = { version = "0.11", default-features = false }
 
 [profile.release]
 lto = true

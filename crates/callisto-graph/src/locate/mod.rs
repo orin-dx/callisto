@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use callisto_model::{DeclaredEdge, ProjectRoot};
 
 pub mod ignore_walk;
+mod membership;
 pub mod root;
 
 pub use ignore_walk::IgnoreWalkLocator;

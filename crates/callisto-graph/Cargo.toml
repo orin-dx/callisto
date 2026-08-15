@@ -30,6 +30,7 @@ toml_edit = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true, features = ["preserve_order"] }
 globset = { workspace = true }
+yaml-rust2 = { workspace = true }
 thiserror = { workspace = true }
 miette = { workspace = true }
 indexmap = { workspace = true }
