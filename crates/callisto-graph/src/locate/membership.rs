@@ -228,11 +228,17 @@ mod cargo_membership_tests {
 #[allow(dead_code)]
 pub(crate) struct NpmMembership {
     globs: Option<GlobSet>,
+    hybrid_root: bool,
 }
 
 impl NpmMembership {
+    /// `rel` must be a workspace-relative, forward-slash-normalized path.
+    /// `is_root` is true exactly when `rel == Path::new(".")`.
     #[allow(dead_code)]
-    pub(crate) fn admits(&self, rel: &Path) -> bool {
+    pub(crate) fn admits(&self, rel: &Path, is_root: bool) -> bool {
+        if is_root && self.hybrid_root {
+            return true;
+        }
         match &self.globs {
             None => true,
             Some(globs) => globs.is_match(rel),
@@ -240,15 +246,33 @@ impl NpmMembership {
     }
 }
 
+/// True when the root package.json exists, parses as JSON, and declares a
+/// "name" field. Independent of which arm (package.json "workspaces" or a
+/// sibling pnpm-workspace.yaml) governs the rest of npm membership -- see
+/// AC-16/AC-16b/AC-17/AC-10d.
+#[allow(dead_code)]
+fn package_json_declares_name(root: &Path) -> bool {
+    let Ok(content) = std::fs::read_to_string(root.join("package.json")) else {
+        return false;
+    };
+    let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) else {
+        return false;
+    };
+    val.get("name").is_some()
+}
+
 #[allow(dead_code)]
 pub(crate) fn read_npm_membership(root: &Path) -> NpmMembership {
+    let hybrid_root = package_json_declares_name(root);
     if let Some(packages) = read_pnpm_packages(root) {
         return NpmMembership {
             globs: Some(build_globset(&packages)),
+            hybrid_root,
         };
     }
     NpmMembership {
         globs: read_package_json_workspaces(root).map(|v| build_globset(&v)),
+        hybrid_root,
     }
 }
 
@@ -295,7 +319,7 @@ mod npm_membership_tests {
     fn read_npm_membership_admits_all_when_no_package_json_file_exists() {
         let dir = tempdir().unwrap();
         let m = read_npm_membership(dir.path());
-        assert!(m.admits(Path::new("packages/anything")));
+        assert!(m.admits(Path::new("packages/anything"), false));
     }
 
     #[test]
@@ -303,7 +327,7 @@ mod npm_membership_tests {
         let dir = tempdir().unwrap();
         std::fs::write(dir.path().join("package.json"), r#"{"name": "root"}"#).unwrap();
         let m = read_npm_membership(dir.path());
-        assert!(m.admits(Path::new("packages/anything")));
+        assert!(m.admits(Path::new("packages/anything"), false));
     }
 
     #[test]
@@ -315,8 +339,8 @@ mod npm_membership_tests {
         )
         .unwrap();
         let m = read_npm_membership(dir.path());
-        assert!(m.admits(Path::new("packages/kept")));
-        assert!(!m.admits(Path::new("tools/outside")));
+        assert!(m.admits(Path::new("packages/kept"), false));
+        assert!(!m.admits(Path::new("tools/outside"), false));
     }
 
     #[test]
@@ -324,7 +348,7 @@ mod npm_membership_tests {
         let dir = tempdir().unwrap();
         std::fs::write(dir.path().join("package.json"), r#"{"workspaces": []}"#).unwrap();
         let m = read_npm_membership(dir.path());
-        assert!(!m.admits(Path::new("packages/anything")));
+        assert!(!m.admits(Path::new("packages/anything"), false));
     }
 
     #[test]
@@ -341,8 +365,8 @@ mod npm_membership_tests {
         )
         .unwrap();
         let m = read_npm_membership(dir.path());
-        assert!(m.admits(Path::new("tools/x")));
-        assert!(!m.admits(Path::new("packages/y")));
+        assert!(m.admits(Path::new("tools/x"), false));
+        assert!(!m.admits(Path::new("packages/y"), false));
     }
 
     #[test]
@@ -350,7 +374,7 @@ mod npm_membership_tests {
         let dir = tempdir().unwrap();
         std::fs::write(dir.path().join("pnpm-workspace.yaml"), "packages: []\n").unwrap();
         let m = read_npm_membership(dir.path());
-        assert!(!m.admits(Path::new("packages/anything")));
+        assert!(!m.admits(Path::new("packages/anything"), false));
     }
 
     #[test]
@@ -363,7 +387,7 @@ mod npm_membership_tests {
         )
         .unwrap();
         let m = read_npm_membership(dir.path());
-        assert!(m.admits(Path::new("packages/anything")));
+        assert!(m.admits(Path::new("packages/anything"), false));
     }
 
     #[test]
@@ -381,7 +405,7 @@ mod npm_membership_tests {
         )
         .unwrap();
         let m = read_npm_membership(dir.path());
-        assert!(m.admits(Path::new("packages/y")));
+        assert!(m.admits(Path::new("packages/y"), false));
     }
 
     #[test]
@@ -393,7 +417,7 @@ mod npm_membership_tests {
         )
         .unwrap();
         let m = read_npm_membership(dir.path());
-        assert!(m.admits(Path::new("packages/anything")));
+        assert!(m.admits(Path::new("packages/anything"), false));
     }
 
     #[test]
@@ -406,7 +430,7 @@ mod npm_membership_tests {
         )
         .unwrap();
         let m_missing = read_npm_membership(dir_missing.path());
-        assert!(m_missing.admits(Path::new("packages/anything")));
+        assert!(m_missing.admits(Path::new("packages/anything"), false));
 
         let dir_wrong_type = tempdir().unwrap();
         std::fs::write(
@@ -415,7 +439,7 @@ mod npm_membership_tests {
         )
         .unwrap();
         let m_wrong_type = read_npm_membership(dir_wrong_type.path());
-        assert!(m_wrong_type.admits(Path::new("packages/anything")));
+        assert!(m_wrong_type.admits(Path::new("packages/anything"), false));
     }
 
     #[test]
@@ -427,7 +451,7 @@ mod npm_membership_tests {
         )
         .unwrap();
         let m = read_npm_membership(dir.path());
-        assert!(m.admits(Path::new("tools/outside")));
+        assert!(m.admits(Path::new("tools/outside"), false));
     }
 
     #[test]
@@ -439,7 +463,7 @@ mod npm_membership_tests {
         )
         .unwrap();
         let m = read_npm_membership(dir.path());
-        assert!(m.admits(Path::new("tools/outside")));
+        assert!(m.admits(Path::new("tools/outside"), false));
     }
 
     #[test]
@@ -452,7 +476,7 @@ mod npm_membership_tests {
         )
         .unwrap();
         let m = read_npm_membership(dir.path());
-        assert!(m.admits(Path::new("packages/anything")));
+        assert!(m.admits(Path::new("packages/anything"), false));
     }
 
     #[test]
@@ -464,7 +488,19 @@ mod npm_membership_tests {
         )
         .unwrap();
         let m = read_npm_membership(dir.path());
-        assert!(m.admits(Path::new("packages/anything")));
+        assert!(m.admits(Path::new("packages/anything"), false));
+    }
+
+    #[test]
+    fn read_npm_membership_hybrid_root_is_admitted_even_when_workspaces_glob_does_not_match_root() {
+        let dir = tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("package.json"),
+            r#"{"name": "root-package", "workspaces": ["packages/*"]}"#,
+        )
+        .unwrap();
+        let m = read_npm_membership(dir.path());
+        assert!(m.admits(Path::new("."), true));
     }
 }
 
@@ -514,5 +550,35 @@ mod glob_tests {
             double_star.is_match(Path::new("crates/a/b")),
             "** must match zero or more full path segments recursively"
         );
+    }
+}
+
+#[cfg(test)]
+mod ac09e_probe {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn probe_unparseable_package_json_before_04e() {
+        let dir = tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("package.json"),
+            "{\"workspaces\": [\"packages/*\"],}",
+        )
+        .unwrap();
+        let m = read_npm_membership(dir.path());
+        assert!(m.admits(std::path::Path::new("packages/anything"), false));
+    }
+
+    #[test]
+    fn probe_pnpm_non_string_seq_before_04e() {
+        let dir = tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("pnpm-workspace.yaml"),
+            "packages:\n  - \"a\"\n  - 42\n",
+        )
+        .unwrap();
+        let m = read_npm_membership(dir.path());
+        assert!(m.admits(std::path::Path::new("packages/anything"), false));
     }
 }
