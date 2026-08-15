@@ -187,18 +187,24 @@ appears in a public signature. Pinning it once at `[workspace.dependencies]` mat
 because §6.2's byte-exactness claim for `bump_version` (§F.6.2) is meaningless if two crates in
 the workspace disagree about what SemVer parsing and rendering do.
 
-#### M.1.2 No I/O
+#### M.1.2 I/O boundary
 
-**This crate performs no filesystem, process, or network I/O.** It declares the traits
-through which I/O happens (`CommandRunner`, §M.10) and the value types I/O produces, and it
-implements neither. Two consequences worth stating rather than leaving implicit:
+**As of this writing, this crate is not I/O-free.** `atomic.rs`'s `atomic_write` performs
+real filesystem I/O (`create_dir_all`, a tempfile write/flush/sync_all, an atomic rename, and
+an explicit `File::open(...).sync_all()` on the parent and grandparent directories for
+durability) — moved here deliberately from `callisto-manifests` so that Layer 1 consumers
+(the changelog writer in particular) can reach the filesystem without depending on a Layer 2
+crate. This section previously claimed "no filesystem, process, or network I/O" as a hard
+invariant; that claim predates the move and is now stale, not a description of a violation to
+revert. `atomic_write` has no `#[cfg(not(target_arch = "wasm32"))]` gate today — its
+`wasm32-wasip1` behavior (§0.1 rule 2) has not been separately verified, unlike the claim this
+section used to make.
 
-- `wasm32-wasip1` conformance (§0.1 rule 2) is trivially satisfied here, which is why this
-  crate is the cheapest place to prove the `wasmtime` fixture harness works at all
-  (§M.17 item 8).
-- Any future PR adding a `std::fs` or `std::process` call to this crate is a boundary
-  violation, not a convenience — the same class of change §13 invariant 26's audit exists to
-  catch for moon.
+The invariant that *is* still real and load-bearing (per `CLAUDE.md`'s Layer Isolation rule):
+this crate stays license-permissive (MIT OR Apache-2.0) and never depends on an AGPL crate.
+That is what "Layer 1" actually guarantees here — not the absence of I/O. `CommandRunner`
+(§M.10) remains the trait through which *process* I/O is declared without being implemented
+in this crate; that half of the original claim still holds.
 
 #### M.1.3 Paths are workspace-root-relative and UTF-8
 
@@ -217,8 +223,8 @@ implements neither. Two consequences worth stating rather than leaving implicit:
 ```rust
 /// The one path constructor every model type that holds a path funnels through. Rejects
 /// absolute paths and non-UTF-8 paths, and normalizes `.` and `..` components **lexically** —
-/// never by touching the filesystem, which this crate does not do (§M.1.2) — so two spellings
-/// of the same relative path compare equal.
+/// this function itself never touches the filesystem (unlike `atomic_write`, §M.1.2) — so two
+/// spellings of the same relative path compare equal.
 pub fn workspace_relative(path: impl AsRef<Path>) -> Result<PathBuf, ModelError>;
 ```
 
@@ -1279,10 +1285,10 @@ pub fn select_last_tag<'a>(
 > invocation that feeds it lives in `callisto-graph`, which owns the `CommandRunner` call
 > sites.]` §17 v0.1 commits to a "stateless `last_tag_for` primitive (§9.1's glob-and-extract
 > resolution)" without naming a crate, and §13 invariant 25 only requires that the
-> *resolution* be one function in `callisto-model`. Splitting it keeps §M.1.2's no-I/O rule
-> intact and keeps the interesting half — the part with the `#2207` failure mode in it —
-> unit-testable from a literal list of tag strings with no git repository, which is what
-> makes it a fixture per §12.6.
+> *resolution* be one function in `callisto-model`. Splitting it keeps `select_last_tag`
+> itself pure (§M.1.2) and keeps the interesting half — the part with the `#2207` failure
+> mode in it — unit-testable from a literal list of tag strings with no git repository, which
+> is what makes it a fixture per §12.6.
 
 #### M.9.5 `TagTemplateError`
 
