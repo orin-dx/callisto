@@ -1929,4 +1929,108 @@ mod tests {
             );
         }
     }
+
+    /// AC-14 (npm slice): consolidated regression group reassembling the
+    /// fixtures already proven individually by
+    /// ac09c_malformed_workspaces_field_falls_back_to_absent_npm_filter,
+    /// ac09e_malformed_root_package_json_syntax_falls_back_to_absent_npm_filter,
+    /// ac09g_invalid_glob_in_npm_workspaces_is_skipped_without_disabling_sibling_entries,
+    /// and ac10_empty_npm_workspaces_array_excludes_everything. Reassembles
+    /// the exact fixtures from AC-14's spec text for the npm sub-slice
+    /// (AC-09c, AC-09e, AC-09g, AC-10) into a single regression group so
+    /// future changes to npm membership handling that break any one of
+    /// these no-panic/fallback behaviors are caught here.
+    #[test]
+    fn ac14_npm_malformed_edge_case_regression_slice() {
+        // AC-09c: bare-string `workspaces` falls back to absent npm filter
+        // (admits everything, including paths outside any glob).
+        {
+            let tmp = tempdir().unwrap();
+            let root = tmp.path();
+            fs::write(root.join("package.json"), r#"{"workspaces": "packages/*"}"#).unwrap();
+            fs::create_dir_all(root.join("tools/outside")).unwrap();
+            fs::write(
+                root.join("tools/outside/package.json"),
+                r#"{"name":"outside"}"#,
+            )
+            .unwrap();
+            let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+            assert!(
+                projects
+                    .iter()
+                    .any(|p| p.path == Path::new("tools/outside")),
+                "AC-09c: tools/outside must be admitted, got: {projects:?}"
+            );
+        }
+
+        // AC-09e: syntactically invalid JSON falls back to absent npm
+        // filter without panicking or erroring the whole walk.
+        {
+            let tmp = tempdir().unwrap();
+            let root = tmp.path();
+            fs::write(
+                root.join("package.json"),
+                "{\"workspaces\": [\"packages/*\"],}",
+            )
+            .unwrap();
+            fs::create_dir_all(root.join("packages/kept")).unwrap();
+            fs::write(
+                root.join("packages/kept/package.json"),
+                r#"{"name":"kept"}"#,
+            )
+            .unwrap();
+            let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+            assert!(
+                projects
+                    .iter()
+                    .any(|p| p.path == Path::new("packages/kept")),
+                "AC-09e: packages/kept must be admitted, got: {projects:?}"
+            );
+        }
+
+        // AC-09g: an invalid glob entry in npm `workspaces` is skipped
+        // without disabling sibling well-formed entries.
+        {
+            let tmp = tempdir().unwrap();
+            let root = tmp.path();
+            fs::write(
+                root.join("package.json"),
+                r#"{"workspaces": ["packages/kept-example", "packages/[unterminated"]}"#,
+            )
+            .unwrap();
+            fs::create_dir_all(root.join("packages/kept-example")).unwrap();
+            fs::write(
+                root.join("packages/kept-example/package.json"),
+                r#"{"name":"kept-example"}"#,
+            )
+            .unwrap();
+            let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+            assert!(
+                projects
+                    .iter()
+                    .any(|p| p.path == Path::new("packages/kept-example")),
+                "AC-09g: packages/kept-example must be admitted, got: {projects:?}"
+            );
+        }
+
+        // AC-10: an explicitly empty `workspaces` array is a real
+        // membership filter that matches nothing (distinguished from an
+        // absent `workspaces` field).
+        {
+            let tmp = tempdir().unwrap();
+            let root = tmp.path();
+            fs::write(root.join("package.json"), r#"{"workspaces": []}"#).unwrap();
+            fs::create_dir_all(root.join("packages/other")).unwrap();
+            fs::write(
+                root.join("packages/other/package.json"),
+                r#"{"name":"other"}"#,
+            )
+            .unwrap();
+            let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+            assert!(
+                !projects.iter().any(|p| p.ecosystem == Ecosystem::Npm),
+                "AC-10: no Npm entries expected, got: {projects:?}"
+            );
+        }
+    }
 }
