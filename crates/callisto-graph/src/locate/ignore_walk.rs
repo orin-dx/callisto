@@ -389,4 +389,31 @@ mod tests {
             "crates/child must be admitted, got: {projects:?}"
         );
     }
+
+    /// Spec (AC-05b): given a workspace root with no Cargo.toml file at all
+    /// (the file does not exist), and crates/kept/Cargo.toml elsewhere in
+    /// the tree with a valid [package] table, the complete absence of a
+    /// root Cargo.toml is treated identically to a root Cargo.toml with no
+    /// [workspace] table (AC-05): no Cargo membership filter applies, not
+    /// zero packages admitted, and the walk does not error.
+    #[test]
+    fn ac05b_admits_cargo_candidates_when_root_has_no_cargo_toml_file_at_all() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        std::fs::create_dir_all(root.join("crates/kept")).unwrap();
+        std::fs::write(
+            root.join("crates/kept/Cargo.toml"),
+            "[package]\nname = \"kept\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+
+        let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+
+        assert!(
+            projects
+                .iter()
+                .any(|p| p.path == Path::new("crates/kept") && p.ecosystem == Ecosystem::Cargo),
+            "crates/kept must be admitted as Cargo, got: {projects:?}"
+        );
+    }
 }
