@@ -594,6 +594,36 @@ mod tests {
         );
     }
 
+    /// Spec (AC-06b): given a workspace root directory containing no
+    /// package.json file at all (the file does not exist at the root) and
+    /// no pnpm-workspace.yaml anywhere in the workspace, and
+    /// packages/kept/package.json elsewhere in the tree with a valid
+    /// "name" field, projects() includes an entry with path ==
+    /// "packages/kept" and ecosystem == Ecosystem::Npm -- the complete
+    /// absence of a root package.json file is treated identically to a
+    /// root package.json with no "workspaces" field (AC-06): no npm
+    /// membership filter applies.
+    #[test]
+    fn ac06b_admits_npm_candidates_when_root_has_no_package_json_file_at_all() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        std::fs::create_dir_all(root.join("packages/kept")).unwrap();
+        std::fs::write(
+            root.join("packages/kept/package.json"),
+            r#"{"name":"kept"}"#,
+        )
+        .unwrap();
+
+        let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+
+        assert!(
+            projects
+                .iter()
+                .any(|p| p.path == Path::new("packages/kept") && p.ecosystem == Ecosystem::Npm),
+            "AC-06b: packages/kept must be admitted as Npm, got: {projects:?}"
+        );
+    }
+
     /// AC-12: consolidated Cargo workspace-membership regression group.
     /// Reassembles the exact fixtures from AC-01/AC-02, AC-05, AC-05b,
     /// AC-07 (both the plain inclusion case and the exclude-exemption
