@@ -477,4 +477,42 @@ mod tests {
             "empty members = [] must exclude every Cargo candidate, got: {projects:?}"
         );
     }
+
+    /// AC-15: a [workspace] table with an exclude key but no members key at
+    /// all is treated identically to an absent [workspace] table for
+    /// filtering purposes (every non-excluded candidate is admitted), not as
+    /// an empty members = [] list which excludes everything (AC-10c).
+    #[test]
+    fn ac15_workspace_table_with_exclude_only_and_no_members_key_admits_non_excluded() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        std::fs::write(
+            root.join("Cargo.toml"),
+            "[workspace]\nexclude = [\"crates/foo\"]\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join("crates/foo")).unwrap();
+        std::fs::write(
+            root.join("crates/foo/Cargo.toml"),
+            "[package]\nname = \"foo\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join("crates/kept")).unwrap();
+        std::fs::write(
+            root.join("crates/kept/Cargo.toml"),
+            "[package]\nname = \"kept\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+
+        let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+
+        assert!(
+            !projects.iter().any(|p| p.path == Path::new("crates/foo")),
+            "excluded crate must not appear, got: {projects:?}"
+        );
+        assert!(
+            projects.iter().any(|p| p.path == Path::new("crates/kept")),
+            "non-excluded crate must appear, got: {projects:?}"
+        );
+    }
 }
