@@ -1320,6 +1320,29 @@ mod tests {
     }
 
     #[test]
+    fn ac09g_invalid_glob_in_npm_workspaces_is_skipped_without_disabling_sibling_entries() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        std::fs::write(
+            root.join("package.json"),
+            r#"{"workspaces": ["packages/kept-example", "packages/[unterminated"]}"#,
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join("packages/kept-example")).unwrap();
+        std::fs::write(
+            root.join("packages/kept-example/package.json"),
+            r#"{"name":"kept-example"}"#,
+        )
+        .unwrap();
+
+        let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+
+        assert!(projects
+            .iter()
+            .any(|p| p.path == Path::new("packages/kept-example")));
+    }
+
+    #[test]
     fn ac09i_invalid_glob_in_cargo_exclude_is_skipped_without_disabling_sibling_entries() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
