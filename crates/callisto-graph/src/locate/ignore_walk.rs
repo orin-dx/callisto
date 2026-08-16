@@ -416,4 +416,42 @@ mod tests {
             "crates/kept must be admitted as Cargo, got: {projects:?}"
         );
     }
+
+    /// AC-07: the root's [package]-declared crate is an implicit member
+    /// exempt from the exclude list. Even a workspace root Cargo.toml whose
+    /// exclude glob would textually match "." must still include the root
+    /// package entry, and the members filter must still admit crates/child
+    /// normally alongside the root exemption.
+    #[test]
+    fn ac07_includes_root_package_as_implicit_member_even_when_exclude_would_match_it() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        std::fs::write(
+            root.join("Cargo.toml"),
+            "[package]\nname = \"root-crate\"\nversion = \"0.1.0\"\n\n[workspace]\nmembers = [\"crates/*\"]\nexclude = [\".\"]\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join("crates/child")).unwrap();
+        std::fs::write(
+            root.join("crates/child/Cargo.toml"),
+            "[package]\nname = \"child\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+
+        let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+
+        let root_entry = projects
+            .iter()
+            .find(|p| p.path == Path::new(".") && p.ecosystem == Ecosystem::Cargo);
+        assert!(
+            root_entry.is_some(),
+            "root package must never be silently dropped, got: {projects:?}"
+        );
+        assert!(
+            projects
+                .iter()
+                .any(|p| p.path == Path::new("crates/child") && p.ecosystem == Ecosystem::Cargo),
+            "the members filter must still admit crates/child normally alongside the root exemption, got: {projects:?}"
+        );
+    }
 }
