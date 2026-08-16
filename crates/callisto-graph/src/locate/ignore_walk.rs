@@ -1375,6 +1375,29 @@ mod tests {
     }
 
     #[test]
+    fn ac09h_invalid_glob_in_pnpm_packages_is_skipped_without_disabling_sibling_entries() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        std::fs::write(
+            root.join("pnpm-workspace.yaml"),
+            "packages:\n  - \"packages/kept-example\"\n  - \"packages/[unterminated\"\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join("packages/kept-example")).unwrap();
+        std::fs::write(
+            root.join("packages/kept-example/package.json"),
+            r#"{"name":"kept-example"}"#,
+        )
+        .unwrap();
+
+        let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+
+        assert!(projects
+            .iter()
+            .any(|p| p.path == Path::new("packages/kept-example")));
+    }
+
+    #[test]
     fn ac09c_malformed_npm_workspaces_bare_string_falls_back_to_absent_filter() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
