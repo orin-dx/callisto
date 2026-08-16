@@ -356,4 +356,37 @@ mod tests {
             "AC-03: tools/helper must not be discovered, got: {projects:?}"
         );
     }
+
+    /// Spec (AC-05): given a Cargo.toml at the workspace root with no
+    /// [workspace] table at all (a single-crate repo), every Cargo candidate
+    /// directory discovered by the walk is included in projects() -- the
+    /// absence of a [workspace] table means no membership filter applies,
+    /// not that zero packages are admitted.
+    #[test]
+    fn ac05_admits_all_cargo_candidates_when_root_has_no_workspace_table() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        std::fs::write(
+            root.join("Cargo.toml"),
+            "[package]\nname = \"solo\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join("crates/child")).unwrap();
+        std::fs::write(
+            root.join("crates/child/Cargo.toml"),
+            "[package]\nname = \"child\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+
+        let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+
+        assert!(
+            projects.iter().any(|p| p.path == Path::new(".")),
+            "root package must be admitted, got: {projects:?}"
+        );
+        assert!(
+            projects.iter().any(|p| p.path == Path::new("crates/child")),
+            "crates/child must be admitted, got: {projects:?}"
+        );
+    }
 }
