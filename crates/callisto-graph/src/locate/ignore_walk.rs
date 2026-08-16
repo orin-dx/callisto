@@ -1291,6 +1291,46 @@ mod tests {
         }
     }
 
+    /// AC-16: given a root package.json declaring both "name" and
+    /// "workspaces": ["packages/*"] (the ordinary npm/yarn-classic
+    /// monorepo root layout), and no pnpm-workspace.yaml anywhere,
+    /// IgnoreWalkLocator::new(root).projects() returns an entry for the
+    /// root itself (path == ".", ecosystem == Ecosystem::Npm) in addition
+    /// to entries discovered under packages/* -- the root package is never
+    /// silently dropped merely because it matches no entry in its own
+    /// "workspaces" glob list.
+    #[test]
+    fn ac16_npm_hybrid_root_admitted_when_workspaces_field_governs() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        std::fs::write(
+            root.join("package.json"),
+            r#"{"name": "root-package", "workspaces": ["packages/*"]}"#,
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join("packages/child")).unwrap();
+        std::fs::write(
+            root.join("packages/child/package.json"),
+            r#"{"name":"child"}"#,
+        )
+        .unwrap();
+
+        let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+
+        assert!(
+            projects
+                .iter()
+                .any(|p| p.path == Path::new(".") && p.ecosystem == Ecosystem::Npm),
+            "AC-16: root package must be admitted as Npm, got: {projects:?}"
+        );
+        assert!(
+            projects
+                .iter()
+                .any(|p| p.path == Path::new("packages/child") && p.ecosystem == Ecosystem::Npm),
+            "AC-16: packages/child must be admitted as Npm, got: {projects:?}"
+        );
+    }
+
     #[test]
     fn ac09_malformed_cargo_members_bare_string_falls_back_to_absent_filter() {
         let tmp = tempfile::tempdir().unwrap();
