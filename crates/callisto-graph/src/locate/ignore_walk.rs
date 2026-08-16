@@ -1213,4 +1213,86 @@ mod tests {
 
         assert!(projects.iter().any(|p| p.path == Path::new("crates/kept")));
     }
+
+    #[test]
+    fn ac09b_malformed_cargo_exclude_bare_string_falls_back_to_excluding_nothing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        std::fs::write(
+            root.join("Cargo.toml"),
+            "[workspace]\nmembers = [\"crates/*\"]\nexclude = \"crates/scratch-example\"\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join("crates/scratch-example")).unwrap();
+        std::fs::write(
+            root.join("crates/scratch-example/Cargo.toml"),
+            "[package]\nname = \"scratch-example\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join("crates/kept-example")).unwrap();
+        std::fs::write(
+            root.join("crates/kept-example/Cargo.toml"),
+            "[package]\nname = \"kept-example\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join("tools/outside")).unwrap();
+        std::fs::write(
+            root.join("tools/outside/Cargo.toml"),
+            "[package]\nname = \"outside\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+
+        let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+
+        assert!(projects
+            .iter()
+            .any(|p| p.path == Path::new("crates/scratch-example")));
+        assert!(projects
+            .iter()
+            .any(|p| p.path == Path::new("crates/kept-example")));
+        assert!(!projects
+            .iter()
+            .any(|p| p.path == Path::new("tools/outside")));
+    }
+
+    #[test]
+    fn ac09b_malformed_cargo_exclude_non_string_entry_falls_back_to_excluding_nothing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        std::fs::write(
+            root.join("Cargo.toml"),
+            "[workspace]\nmembers = [\"crates/*\"]\nexclude = [\"crates/scratch-example\", 42]\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join("crates/scratch-example")).unwrap();
+        std::fs::write(
+            root.join("crates/scratch-example/Cargo.toml"),
+            "[package]\nname = \"scratch-example\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join("crates/kept-example")).unwrap();
+        std::fs::write(
+            root.join("crates/kept-example/Cargo.toml"),
+            "[package]\nname = \"kept-example\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join("tools/outside")).unwrap();
+        std::fs::write(
+            root.join("tools/outside/Cargo.toml"),
+            "[package]\nname = \"outside\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+
+        let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+
+        assert!(projects
+            .iter()
+            .any(|p| p.path == Path::new("crates/scratch-example")));
+        assert!(projects
+            .iter()
+            .any(|p| p.path == Path::new("crates/kept-example")));
+        assert!(!projects
+            .iter()
+            .any(|p| p.path == Path::new("tools/outside")));
+    }
 }
