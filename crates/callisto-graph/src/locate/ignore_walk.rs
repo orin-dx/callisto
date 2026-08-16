@@ -624,6 +624,112 @@ mod tests {
         );
     }
 
+    /// Spec (AC-10): given a root package.json with "workspaces": []
+    /// (present but empty array) and at least one package.json elsewhere in
+    /// the tree, projects() returns zero Npm-ecosystem entries -- an
+    /// explicitly empty workspaces list is a real membership filter
+    /// (matches nothing), not a no-op.
+    #[test]
+    fn ac10_empty_npm_workspaces_array_admits_zero_npm_entries() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        std::fs::write(root.join("package.json"), r#"{"workspaces": []}"#).unwrap();
+        std::fs::create_dir_all(root.join("packages/other")).unwrap();
+        std::fs::write(
+            root.join("packages/other/package.json"),
+            r#"{"name":"other"}"#,
+        )
+        .unwrap();
+
+        let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+
+        assert!(
+            !projects.iter().any(|p| p.ecosystem == Ecosystem::Npm),
+            "AC-10: no npm entries expected when workspaces = [], got: {projects:?}"
+        );
+    }
+
+    /// Spec (AC-10, hybrid-root clause): the same empty "workspaces": []
+    /// list must not exclude a hybrid root -- a root package.json that also
+    /// declares a "name" field remains an implicit member of its own
+    /// workspace (AC-16's exemption) and is admitted at path "." even
+    /// though the empty workspaces list matches nothing.
+    #[test]
+    fn ac10_empty_npm_workspaces_array_still_admits_hybrid_root() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        std::fs::write(
+            root.join("package.json"),
+            r#"{"name": "root-package", "workspaces": []}"#,
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join("packages/other")).unwrap();
+        std::fs::write(
+            root.join("packages/other/package.json"),
+            r#"{"name":"other"}"#,
+        )
+        .unwrap();
+
+        let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+
+        assert!(
+            projects
+                .iter()
+                .any(|p| p.path == Path::new(".") && p.ecosystem == Ecosystem::Npm),
+            "AC-10: hybrid root at '.' must still be admitted, got: {projects:?}"
+        );
+        assert!(
+            !projects
+                .iter()
+                .any(|p| p.path == Path::new("packages/other") && p.ecosystem == Ecosystem::Npm),
+            "AC-10: non-root packages/other must remain excluded, got: {projects:?}"
+        );
+    }
+
+    /// Spec (AC-10, distinguished-from-absent clause): an explicitly empty
+    /// "workspaces": [] list excludes a sibling package.json, whereas a root
+    /// package.json with no "workspaces" field at all (AC-06) admits the
+    /// same sibling -- proving the empty list is a real filter distinct
+    /// from, and not conflated with, an absent field.
+    #[test]
+    fn ac10_empty_workspaces_array_distinguished_from_absent_workspaces_field() {
+        let tmp_empty = tempfile::tempdir().unwrap();
+        let root_empty = tmp_empty.path();
+        std::fs::write(root_empty.join("package.json"), r#"{"workspaces": []}"#).unwrap();
+        std::fs::create_dir_all(root_empty.join("packages/other")).unwrap();
+        std::fs::write(
+            root_empty.join("packages/other/package.json"),
+            r#"{"name":"other"}"#,
+        )
+        .unwrap();
+
+        let tmp_absent = tempfile::tempdir().unwrap();
+        let root_absent = tmp_absent.path();
+        std::fs::write(root_absent.join("package.json"), r#"{"name":"root"}"#).unwrap();
+        std::fs::create_dir_all(root_absent.join("packages/other")).unwrap();
+        std::fs::write(
+            root_absent.join("packages/other/package.json"),
+            r#"{"name":"other"}"#,
+        )
+        .unwrap();
+
+        let projects_empty = IgnoreWalkLocator::new(root_empty).projects().unwrap();
+        let projects_absent = IgnoreWalkLocator::new(root_absent).projects().unwrap();
+
+        assert!(
+            !projects_empty
+                .iter()
+                .any(|p| p.path == Path::new("packages/other") && p.ecosystem == Ecosystem::Npm),
+            "AC-10: empty workspaces = [] must exclude packages/other, got: {projects_empty:?}"
+        );
+        assert!(
+            projects_absent
+                .iter()
+                .any(|p| p.path == Path::new("packages/other") && p.ecosystem == Ecosystem::Npm),
+            "AC-06: absent workspaces field must admit packages/other, got: {projects_absent:?}"
+        );
+    }
+
     /// Spec (AC-08): given a root package.json declaring
     /// {"workspaces": ["packages/*"]} and a sibling pnpm-workspace.yaml
     /// declaring `packages:\n  - "tools/*"` (a different glob than the
