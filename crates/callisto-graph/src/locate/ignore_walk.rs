@@ -866,4 +866,34 @@ mod tests {
             "AC-10b: non-root packages/other must remain excluded, got: {projects:?}"
         );
     }
+
+    /// AC-11c: a sibling pnpm-workspace.yaml that fails to parse as YAML
+    /// does not count as "present" for AC-08's precedence purposes -- the
+    /// root package.json's "workspaces" field is still consulted and
+    /// governs npm-ecosystem membership normally.
+    #[test]
+    fn ac11c_malformed_pnpm_yaml_does_not_count_as_present_for_precedence() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        std::fs::write(
+            root.join("package.json"),
+            r#"{"workspaces": ["packages/*"]}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("pnpm-workspace.yaml"),
+            "packages: [\"packages/*\"\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join("packages/y")).unwrap();
+        std::fs::write(root.join("packages/y/package.json"), r#"{"name":"y"}"#).unwrap();
+
+        let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+
+        assert!(
+            projects.iter().any(|p| p.path == Path::new("packages/y")),
+            "AC-11c: package.json workspaces field must still govern membership when \
+             pnpm-workspace.yaml is malformed YAML, got: {projects:?}"
+        );
+    }
 }
