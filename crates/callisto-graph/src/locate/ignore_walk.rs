@@ -1350,4 +1350,69 @@ mod tests {
             .iter()
             .any(|p| p.path == Path::new("crates/kept-example")));
     }
+
+    #[test]
+    fn ac09c_malformed_npm_workspaces_bare_string_falls_back_to_absent_filter() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        std::fs::write(root.join("package.json"), r#"{"workspaces": "packages/*"}"#).unwrap();
+        std::fs::create_dir_all(root.join("tools/outside")).unwrap();
+        std::fs::write(
+            root.join("tools/outside/package.json"),
+            r#"{"name":"outside"}"#,
+        )
+        .unwrap();
+
+        let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+
+        assert!(projects
+            .iter()
+            .any(|p| p.path == Path::new("tools/outside")));
+    }
+
+    #[test]
+    fn ac09c_malformed_npm_workspaces_non_string_entry_falls_back_to_absent_filter() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        std::fs::write(
+            root.join("package.json"),
+            r#"{"workspaces": ["packages/*", 42]}"#,
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join("tools/outside")).unwrap();
+        std::fs::write(
+            root.join("tools/outside/package.json"),
+            r#"{"name":"outside"}"#,
+        )
+        .unwrap();
+
+        let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+
+        assert!(projects
+            .iter()
+            .any(|p| p.path == Path::new("tools/outside")));
+    }
+
+    #[test]
+    fn ac09e_malformed_root_package_json_syntax_falls_back_to_absent_npm_filter() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        std::fs::write(
+            root.join("package.json"),
+            "{\"workspaces\": [\"packages/*\"],}",
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join("packages/kept")).unwrap();
+        std::fs::write(
+            root.join("packages/kept/package.json"),
+            r#"{"name":"kept"}"#,
+        )
+        .unwrap();
+
+        let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+
+        assert!(projects
+            .iter()
+            .any(|p| p.path == Path::new("packages/kept")));
+    }
 }
