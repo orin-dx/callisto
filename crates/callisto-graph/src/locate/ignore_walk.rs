@@ -896,4 +896,258 @@ mod tests {
              pnpm-workspace.yaml is malformed YAML, got: {projects:?}"
         );
     }
+
+    /// AC-13: consolidated npm/pnpm workspace-membership regression group.
+    /// Reassembles the exact fixtures required by AC-03, AC-04, AC-06,
+    /// AC-06b, AC-08, AC-10, AC-10b, AC-10d, AC-11c, AC-16, AC-16b, and
+    /// AC-17 into a single regression test.
+    #[test]
+    fn ac13_npm_pnpm_workspace_membership_regression_group() {
+        // AC-03
+        {
+            let tmp = tempfile::tempdir().unwrap();
+            let root = tmp.path();
+            std::fs::write(
+                root.join("package.json"),
+                r#"{"workspaces": ["packages/*"]}"#,
+            )
+            .unwrap();
+            std::fs::create_dir_all(root.join("tools/helper")).unwrap();
+            std::fs::write(
+                root.join("tools/helper/package.json"),
+                r#"{"name":"helper"}"#,
+            )
+            .unwrap();
+            let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+            assert!(!projects.iter().any(|p| p.path == Path::new("tools/helper")));
+        }
+        // AC-04
+        {
+            let tmp = tempfile::tempdir().unwrap();
+            let root = tmp.path();
+            std::fs::write(
+                root.join("pnpm-workspace.yaml"),
+                "packages:\n  - \"packages/*\"\n",
+            )
+            .unwrap();
+            std::fs::create_dir_all(root.join("packages/kept")).unwrap();
+            std::fs::write(
+                root.join("packages/kept/package.json"),
+                r#"{"name":"kept"}"#,
+            )
+            .unwrap();
+            std::fs::create_dir_all(root.join("tools/outside")).unwrap();
+            std::fs::write(
+                root.join("tools/outside/package.json"),
+                r#"{"name":"outside"}"#,
+            )
+            .unwrap();
+            let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+            assert!(projects
+                .iter()
+                .any(|p| p.path == Path::new("packages/kept")));
+            assert!(!projects
+                .iter()
+                .any(|p| p.path == Path::new("tools/outside")));
+        }
+        // AC-06
+        {
+            let tmp = tempfile::tempdir().unwrap();
+            let root = tmp.path();
+            std::fs::write(root.join("package.json"), r#"{"name":"root"}"#).unwrap();
+            std::fs::create_dir_all(root.join("packages/child")).unwrap();
+            std::fs::write(
+                root.join("packages/child/package.json"),
+                r#"{"name":"child"}"#,
+            )
+            .unwrap();
+            let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+            assert!(projects
+                .iter()
+                .any(|p| p.path == Path::new("packages/child") && p.ecosystem == Ecosystem::Npm));
+        }
+        // AC-06b
+        {
+            let tmp = tempfile::tempdir().unwrap();
+            let root = tmp.path();
+            std::fs::create_dir_all(root.join("packages/kept")).unwrap();
+            std::fs::write(
+                root.join("packages/kept/package.json"),
+                r#"{"name":"kept"}"#,
+            )
+            .unwrap();
+            let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+            assert!(projects
+                .iter()
+                .any(|p| p.path == Path::new("packages/kept")));
+        }
+        // AC-08
+        {
+            let tmp = tempfile::tempdir().unwrap();
+            let root = tmp.path();
+            std::fs::write(
+                root.join("package.json"),
+                r#"{"workspaces": ["packages/*"]}"#,
+            )
+            .unwrap();
+            std::fs::write(
+                root.join("pnpm-workspace.yaml"),
+                "packages:\n  - \"tools/*\"\n",
+            )
+            .unwrap();
+            std::fs::create_dir_all(root.join("tools/x")).unwrap();
+            std::fs::write(root.join("tools/x/package.json"), r#"{"name":"x"}"#).unwrap();
+            std::fs::create_dir_all(root.join("packages/y")).unwrap();
+            std::fs::write(root.join("packages/y/package.json"), r#"{"name":"y"}"#).unwrap();
+            let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+            assert!(projects.iter().any(|p| p.path == Path::new("tools/x")));
+            assert!(!projects.iter().any(|p| p.path == Path::new("packages/y")));
+        }
+        // AC-10b
+        {
+            let tmp = tempfile::tempdir().unwrap();
+            let root = tmp.path();
+            std::fs::write(root.join("pnpm-workspace.yaml"), "packages: []\n").unwrap();
+            std::fs::create_dir_all(root.join("packages/other")).unwrap();
+            std::fs::write(
+                root.join("packages/other/package.json"),
+                r#"{"name":"other"}"#,
+            )
+            .unwrap();
+            let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+            assert!(!projects.iter().any(|p| p.ecosystem == Ecosystem::Npm));
+        }
+        // AC-11c
+        {
+            let tmp = tempfile::tempdir().unwrap();
+            let root = tmp.path();
+            std::fs::write(
+                root.join("package.json"),
+                r#"{"workspaces": ["packages/*"]}"#,
+            )
+            .unwrap();
+            std::fs::write(
+                root.join("pnpm-workspace.yaml"),
+                "packages: [\"packages/*\"\n",
+            )
+            .unwrap();
+            std::fs::create_dir_all(root.join("packages/y")).unwrap();
+            std::fs::write(root.join("packages/y/package.json"), r#"{"name":"y"}"#).unwrap();
+            let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+            assert!(projects.iter().any(|p| p.path == Path::new("packages/y")));
+        }
+
+        // AC-10
+        {
+            let tmp = tempfile::tempdir().unwrap();
+            let root = tmp.path();
+            std::fs::write(root.join("package.json"), r#"{"workspaces": []}"#).unwrap();
+            std::fs::create_dir_all(root.join("packages/other")).unwrap();
+            std::fs::write(
+                root.join("packages/other/package.json"),
+                r#"{"name":"other"}"#,
+            )
+            .unwrap();
+            let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+            assert!(!projects.iter().any(|p| p.ecosystem == Ecosystem::Npm));
+        }
+        // AC-16
+        {
+            let tmp = tempfile::tempdir().unwrap();
+            let root = tmp.path();
+            std::fs::write(
+                root.join("package.json"),
+                r#"{"name": "root-package", "workspaces": ["packages/*"]}"#,
+            )
+            .unwrap();
+            std::fs::create_dir_all(root.join("packages/child")).unwrap();
+            std::fs::write(
+                root.join("packages/child/package.json"),
+                r#"{"name":"child"}"#,
+            )
+            .unwrap();
+            let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+            assert!(projects
+                .iter()
+                .any(|p| p.path == Path::new(".") && p.ecosystem == Ecosystem::Npm));
+            assert!(projects
+                .iter()
+                .any(|p| p.path == Path::new("packages/child") && p.ecosystem == Ecosystem::Npm));
+        }
+        // AC-16b
+        {
+            let tmp = tempfile::tempdir().unwrap();
+            let root = tmp.path();
+            std::fs::write(
+                root.join("package.json"),
+                r#"{"name": "root-package", "workspaces": ["packages/*"]}"#,
+            )
+            .unwrap();
+            std::fs::write(
+                root.join("pnpm-workspace.yaml"),
+                "packages: [\"packages/*\"\n",
+            )
+            .unwrap();
+            std::fs::create_dir_all(root.join("packages/child")).unwrap();
+            std::fs::write(
+                root.join("packages/child/package.json"),
+                r#"{"name":"child"}"#,
+            )
+            .unwrap();
+            let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+            assert!(projects
+                .iter()
+                .any(|p| p.path == Path::new(".") && p.ecosystem == Ecosystem::Npm));
+            assert!(projects
+                .iter()
+                .any(|p| p.path == Path::new("packages/child") && p.ecosystem == Ecosystem::Npm));
+        }
+        // AC-10d
+        {
+            let tmp = tempfile::tempdir().unwrap();
+            let root = tmp.path();
+            std::fs::write(
+                root.join("package.json"),
+                r#"{"name": "root-package", "workspaces": []}"#,
+            )
+            .unwrap();
+            std::fs::create_dir_all(root.join("packages/other")).unwrap();
+            std::fs::write(
+                root.join("packages/other/package.json"),
+                r#"{"name":"other"}"#,
+            )
+            .unwrap();
+            let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+            let npm_entries: Vec<_> = projects
+                .iter()
+                .filter(|p| p.ecosystem == Ecosystem::Npm)
+                .collect();
+            assert_eq!(npm_entries.len(), 1);
+            assert_eq!(npm_entries[0].path, Path::new("."));
+        }
+        // AC-17
+        {
+            let tmp = tempfile::tempdir().unwrap();
+            let root = tmp.path();
+            std::fs::write(root.join("package.json"), r#"{"name": "root-package"}"#).unwrap();
+            std::fs::write(
+                root.join("pnpm-workspace.yaml"),
+                "packages:\n  - \"packages/*\"\n",
+            )
+            .unwrap();
+            std::fs::create_dir_all(root.join("packages/child")).unwrap();
+            std::fs::write(
+                root.join("packages/child/package.json"),
+                r#"{"name":"child"}"#,
+            )
+            .unwrap();
+            let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+            assert!(projects
+                .iter()
+                .any(|p| p.path == Path::new(".") && p.ecosystem == Ecosystem::Npm));
+            assert!(projects
+                .iter()
+                .any(|p| p.path == Path::new("packages/child") && p.ecosystem == Ecosystem::Npm));
+        }
+    }
 }
