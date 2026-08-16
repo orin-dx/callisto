@@ -1150,4 +1150,67 @@ mod tests {
                 .any(|p| p.path == Path::new("packages/child") && p.ecosystem == Ecosystem::Npm));
         }
     }
+
+    #[test]
+    fn ac09_malformed_cargo_members_bare_string_falls_back_to_absent_filter() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        std::fs::write(
+            root.join("Cargo.toml"),
+            "[workspace]\nmembers = \"crates/*\"\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join("tools/outside")).unwrap();
+        std::fs::write(
+            root.join("tools/outside/Cargo.toml"),
+            "[package]\nname = \"outside\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+
+        let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+
+        assert!(projects
+            .iter()
+            .any(|p| p.path == Path::new("tools/outside")));
+    }
+
+    #[test]
+    fn ac09_malformed_cargo_members_non_string_entry_falls_back_to_absent_filter() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        std::fs::write(
+            root.join("Cargo.toml"),
+            "[workspace]\nmembers = [\"crates/*\", 42]\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join("tools/outside")).unwrap();
+        std::fs::write(
+            root.join("tools/outside/Cargo.toml"),
+            "[package]\nname = \"outside\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+
+        let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+
+        assert!(projects
+            .iter()
+            .any(|p| p.path == Path::new("tools/outside")));
+    }
+
+    #[test]
+    fn ac09d_malformed_root_cargo_toml_syntax_falls_back_to_absent_cargo_filter() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        std::fs::write(root.join("Cargo.toml"), "[workspace\nmembers = [\n").unwrap();
+        std::fs::create_dir_all(root.join("crates/kept")).unwrap();
+        std::fs::write(
+            root.join("crates/kept/Cargo.toml"),
+            "[package]\nname = \"kept\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+
+        let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+
+        assert!(projects.iter().any(|p| p.path == Path::new("crates/kept")));
+    }
 }
