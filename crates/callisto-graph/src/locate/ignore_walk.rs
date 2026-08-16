@@ -1331,6 +1331,135 @@ mod tests {
         );
     }
 
+    /// AC-16b: given a root package.json declaring both "name" and
+    /// "workspaces": ["packages/*"], and a sibling pnpm-workspace.yaml whose
+    /// content is malformed YAML, calling projects() still returns an entry
+    /// with path == "." and ecosystem == Npm for the root's own package.
+    /// A malformed pnpm-workspace.yaml does not count as "present" for
+    /// AC-08/AC-11c's precedence purposes, so package.json's "workspaces"
+    /// field governs and AC-16's hybrid-root exemption applies exactly as it
+    /// would if no pnpm-workspace.yaml existed at all.
+    #[test]
+    fn ac16b_npm_hybrid_root_admitted_when_sibling_pnpm_workspace_yaml_is_malformed() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        std::fs::write(
+            root.join("package.json"),
+            r#"{"name": "root-package", "workspaces": ["packages/*"]}"#,
+        )
+        .unwrap();
+        // Deliberately malformed YAML — yaml_rust2::YamlLoader::load_from_str
+        // must return Err(..) for this content.
+        std::fs::write(
+            root.join("pnpm-workspace.yaml"),
+            b": {\x00 invalid yaml \xff\xfe",
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join("packages/child")).unwrap();
+        std::fs::write(
+            root.join("packages/child/package.json"),
+            r#"{"name":"child"}"#,
+        )
+        .unwrap();
+
+        let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+
+        assert!(
+            projects
+                .iter()
+                .any(|p| p.path == Path::new(".") && p.ecosystem == Ecosystem::Npm),
+            "AC-16b: root package must be admitted as Npm despite malformed pnpm-workspace.yaml, got: {projects:?}"
+        );
+        assert!(
+            projects
+                .iter()
+                .any(|p| p.path == Path::new("packages/child") && p.ecosystem == Ecosystem::Npm),
+            "AC-16b: packages/child must be admitted as Npm, got: {projects:?}"
+        );
+    }
+
+    /// AC-17: given a root package.json declaring "name": "root-package" and a
+    /// sibling pnpm-workspace.yaml that exists, parses successfully, and
+    /// declares packages: ["packages/*"] (a glob that does not itself match
+    /// "."), calling projects() returns an entry with path == "." and
+    /// ecosystem == Npm for the root's own package, in addition to any entries
+    /// discovered under packages/* — the root package's identity is never
+    /// silently dropped merely because the governing pnpm-workspace.yaml's
+    /// packages: list contains no entry matching ".".
+    #[test]
+    fn ac17_npm_hybrid_root_admitted_when_pnpm_workspace_yaml_governs() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        std::fs::write(root.join("package.json"), r#"{"name": "root-package"}"#).unwrap();
+        std::fs::write(
+            root.join("pnpm-workspace.yaml"),
+            "packages:\n  - \"packages/*\"\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join("packages/child")).unwrap();
+        std::fs::write(
+            root.join("packages/child/package.json"),
+            r#"{"name":"child"}"#,
+        )
+        .unwrap();
+
+        let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+
+        assert!(
+            projects
+                .iter()
+                .any(|p| p.path == Path::new(".") && p.ecosystem == Ecosystem::Npm),
+            "AC-17: root package must be admitted as Npm when pnpm-workspace.yaml governs, got: {projects:?}"
+        );
+        assert!(
+            projects
+                .iter()
+                .any(|p| p.path == Path::new("packages/child") && p.ecosystem == Ecosystem::Npm),
+            "AC-17: packages/child must be admitted as Npm, got: {projects:?}"
+        );
+    }
+
+    /// AC-10d: given a root package.json declaring both "name": "root-package"
+    /// and "workspaces": [] (present, empty array) and at least one other
+    /// package.json elsewhere in the tree, calling projects() returns exactly
+    /// one Npm-ecosystem entry: path == "." for the root's own package.
+    /// The empty workspaces list excludes every non-root candidate but never
+    /// excludes the root's own AC-16-exempt package.
+    #[test]
+    fn ac10d_npm_hybrid_root_admitted_despite_empty_workspaces_array() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        std::fs::write(
+            root.join("package.json"),
+            r#"{"name": "root-package", "workspaces": []}"#,
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join("packages/child")).unwrap();
+        std::fs::write(
+            root.join("packages/child/package.json"),
+            r#"{"name":"child"}"#,
+        )
+        .unwrap();
+
+        let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+
+        let npm_projects: Vec<_> = projects
+            .iter()
+            .filter(|p| p.ecosystem == Ecosystem::Npm)
+            .collect();
+
+        assert_eq!(
+            npm_projects.len(),
+            1,
+            "AC-10d: empty workspaces array must admit exactly one Npm entry (the hybrid root), got: {npm_projects:?}"
+        );
+        assert_eq!(
+            npm_projects[0].path,
+            Path::new("."),
+            "AC-10d: the single Npm entry must be the root package at path '.', got: {npm_projects:?}"
+        );
+    }
+
     #[test]
     fn ac09_malformed_cargo_members_bare_string_falls_back_to_absent_filter() {
         let tmp = tempfile::tempdir().unwrap();
