@@ -624,6 +624,49 @@ mod tests {
         );
     }
 
+    /// Spec (AC-08): given a root package.json declaring
+    /// {"workspaces": ["packages/*"]} and a sibling pnpm-workspace.yaml
+    /// declaring `packages:\n  - "tools/*"` (a different glob than the
+    /// package.json field), projects() discovers a package.json at
+    /// tools/x/package.json (matching only the pnpm-workspace.yaml glob)
+    /// and does not discover a package.json at packages/y/package.json
+    /// (matching only the package.json glob) -- pnpm-workspace.yaml
+    /// governs npm membership filtering whenever both markers are present
+    /// at the same root; the package.json "workspaces" field is ignored
+    /// in that case.
+    #[test]
+    fn ac08_pnpm_workspace_yaml_takes_precedence_over_package_json_workspaces_field() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        std::fs::write(
+            root.join("package.json"),
+            r#"{"workspaces": ["packages/*"]}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("pnpm-workspace.yaml"),
+            "packages:\n  - \"tools/*\"\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join("tools/x")).unwrap();
+        std::fs::write(root.join("tools/x/package.json"), r#"{"name":"x"}"#).unwrap();
+        std::fs::create_dir_all(root.join("packages/y")).unwrap();
+        std::fs::write(root.join("packages/y/package.json"), r#"{"name":"y"}"#).unwrap();
+
+        let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+
+        assert!(
+            projects
+                .iter()
+                .any(|p| p.path == Path::new("tools/x") && p.ecosystem == Ecosystem::Npm),
+            "AC-08: tools/x must be discovered as Npm, got: {projects:?}"
+        );
+        assert!(
+            !projects.iter().any(|p| p.path == Path::new("packages/y")),
+            "AC-08: packages/y must not be discovered, got: {projects:?}"
+        );
+    }
+
     /// AC-12: consolidated Cargo workspace-membership regression group.
     /// Reassembles the exact fixtures from AC-01/AC-02, AC-05, AC-05b,
     /// AC-07 (both the plain inclusion case and the exclude-exemption
