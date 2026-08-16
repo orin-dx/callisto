@@ -403,17 +403,18 @@ impl CommitSha {
 ### M.3 Ecosystem, publish target, release trigger — `ecosystem.rs`
 
 ```rust
-/// §5.1. Committed variants first; demand-gated variants are declared so the traits in §7
-/// and §15 stay open (P4), with **no behaviour built behind them** (§2.2's scope discipline,
-/// restated by §CM.7).
+/// §5.1. Cargo, Npm, and Pypi are implemented. The remaining variants are declared so the
+/// traits in §7 and §15 stay open (P4), with **no behaviour built behind them** (§2.2's
+/// scope discipline, restated by §CM.7) — Pypi was originally in that group too; §2.2 notes
+/// it as the one case where that discipline was not followed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 #[non_exhaustive]
 pub enum Ecosystem {
     Cargo,
     Npm,
-    // Demand-gated (§2.2), declared for forward compatibility, not implemented:
     Pypi,
+    // Demand-gated (§2.2), declared for forward compatibility, not implemented:
     Go,
     Maven,
     NuGet,
@@ -435,9 +436,12 @@ impl Ecosystem {
     /// implementation has one place to change rather than N.
     pub fn version_grammar(&self) -> VersionGrammar;
 
-    /// Whether v0.1–v0.4's committed scope actually implements this ecosystem (§2.2) — `true`
-    /// for `Cargo` and `Npm` only. Used by `callisto-manifests::open` (§CM.2) and by `init`'s
-    /// discovery narration (§G.11) to refuse clearly rather than half-supporting.
+    /// Whether callisto actually implements this ecosystem — `true` for `Cargo`, `Npm`, and
+    /// `Pypi`; `false` for every other variant. Pypi was not part of the original v0.1–v0.4
+    /// committed scope (§2.2) but has since shipped a full manifest editor and publish
+    /// integration, ahead of that scope's own discipline — see §2.2's note. Used by
+    /// `callisto-manifests::open` (§CM.2) and by `init`'s discovery narration (§G.11) to
+    /// refuse clearly rather than half-supporting for the ecosystems that remain unimplemented.
     pub fn is_implemented(&self) -> bool;
 }
 ```
@@ -453,8 +457,10 @@ impl Ecosystem {
 pub enum PublishTarget {
     CratesIo,
     Npm { registry: Option<String> },
-    // demand-gated:
+    /// Implemented — dispatches to `twine upload` (§CM.7, §9). Not part of the original
+    /// committed scope; see §2.2's note.
     Pypi { index: Option<String> },
+    // demand-gated:
     NuGet { source: Option<String> },
     /// Orphaned by §9.5's scope cut: creating a GitHub Release is a registry-publish-shaped
     /// action, and callisto has no HTTP client. Retained only so a calling workflow's own
@@ -874,16 +880,17 @@ pub enum ManifestRole {
     Lockfile,
 }
 
-/// §5.2. Committed formats first; the rest are declared-only (§CM.7).
+/// §5.2. Implemented formats first (`CargoToml`, `PackageJson`, `PyprojectToml`, `SetupCfg`);
+/// the rest are declared-only (§CM.7).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[non_exhaustive]
 pub enum ManifestFormat {
     CargoToml,
     PackageJson,
+    PyprojectToml,          // implemented (§CM.7); not part of the original committed scope
+    SetupCfg,               // implemented, deliberately read-only; write target is pyproject.toml (§7.8)
     // demand-gated:
-    PyprojectToml,
-    SetupCfg,               // read-only; write target is pyproject.toml (§7.8)
     GoMod,
     PomXml,
     GradleVersionCatalog,
@@ -3665,14 +3672,21 @@ pub fn open(decl: &ManifestDecl, ctx: &OpenContext<'_>)
         ManifestFormat::CargoToml => Ok(Box::new(cargo::CargoToml::open(decl, ctx)?)),
         #[cfg(feature = "npm")]
         ManifestFormat::PackageJson => Ok(Box::new(npm::PackageJson::open(decl, ctx)?)),
+        #[cfg(feature = "pypi")]
+        ManifestFormat::PyprojectToml => Ok(Box::new(python::PyprojectToml::open(decl, ctx)?)),
         other => Err(ManifestError::ReadOnlyFormat {
             path: decl.path.clone(),
             format: other,
-            reason: "not implemented — demand-gated per §2.2, see §CM.7",
+            reason: "not implemented — demand-gated per §2.2",
         }),
     }
 }
 ```
+
+The `pypi` feature is on by default alongside `cargo`/`npm` (§CM.7), so in an ordinary build
+this match has three real arms, not two; `SetupCfg` still falls through to the `other` arm
+deliberately (§7.8's read-only posture for it, not a demand-gated refusal) alongside the
+genuinely unimplemented `go`/`maven`/`nuget`/`deno`/`jsr` formats.
 
 > `[SPEC DECISION, not in 00-design.md: `OpenContext`'s exact shape and the `open()` factory
 > signature.]` §15 gives the `Manifest` trait but not a constructor — someone has to turn a
@@ -4168,12 +4182,15 @@ package's handle:
 
 ### CM.7 Ecosystem write-target conventions (§7.8)
 
-Committed, implemented at v0.1 — Rust and npm:
+Implemented — Rust, npm, and Python. Python was not part of the original v0.1–v0.4
+committed scope below; it shipped later, ahead of §2.2's own scope discipline (see §2.2's
+note), and is listed here as current status rather than moved to a "v0.1" it never had:
 
 | Ecosystem | Write target | Notes |
 |---|---|---|
 | Cargo | `Cargo.toml` (member and/or root, §CM.4.4) | `Cargo.lock` is `ManifestRole::Lockfile`, never opened as a `Manifest` (§CM.2.4). |
 | npm | `package.json` | `package-lock.json`/`pnpm-lock.yaml`/`yarn.lock` are `ManifestRole::Lockfile`, same treatment. |
+| Python | `pyproject.toml` | `SetupCfg` is deliberately read-only — hard error (not silent skip) directing the user to migrate, same posture §7.8 documents. Publish dispatches to `twine upload` (§9). |
 
 Demand-gated, **not implemented** — declared only as `ManifestFormat` variants already
 present in `callisto-model` (§M.6.2) so the enum stays open per P4, with no behaviour built
@@ -4183,7 +4200,6 @@ until a real user need promotes it:
 
 | Ecosystem | Write target when built | Read-only / unwritable | §7.8 citation |
 |---|---|---|---|
-| Python | `pyproject.toml` | `SetupCfg` — hard error (not silent skip) directing the user to migrate | *"hard error if only `setup.py` exists"* |
 | JVM | `PomXml`, `GradleVersionCatalog`, `SettingsGradle`, `VersionSbt` | `build.gradle[.kts]`, `build.sbt` — AST-aware editing of Turing-complete scripts is not planned | *"imperative… are not [writable]"* |
 | Go | `GoMod`, **downstream `require` lines only** | the module's own version — it has none; the git tag *is* the version (§7.7) | *"no write for the module's own version"* |
 
@@ -10917,7 +10933,8 @@ byte-shape plus §F.6.3's pre-release arithmetic, but not §8's cross-package or
 `OpenContext`/`open()` shape; lockfile-role refusal; `WorkspaceCargoResolver`/
 `WorkspaceInheritance` split; `PackageJson`'s format fingerprint and 2-space fallback;
 `serde_json/preserve_order` unifies workspace-wide; `WorkspaceKind` from lockfile presence;
-demand-gated formats get refusal only.
+remaining demand-gated formats (JVM, Go, and beyond) get refusal only — Python shipped and
+is no longer in this bucket (§CM.7).
 
 **`callisto-conventional` (§C.10)** — 4 decisions: case-sensitive type-token classification;
 simplified footer-block detection; pre-major policy applied to the aggregate; the pre-major

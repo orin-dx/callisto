@@ -14,8 +14,10 @@ relevant section below:
    `npm publish`, and `twine upload` via `callisto publish` (shelling out to each
    ecosystem's own tool — never reimplementing registry HTTP protocols). See §9.
 2. **Scope is deliberately narrower than "polyglot for every language."** Rust and npm are
-   the committed core. Python, Go, and JVM support is real but demand-gated, not scheduled.
-   Java/Scala/C are explicitly out of scope. See §2 and §17.
+   the committed core; Python has since been built as a third fully-implemented ecosystem,
+   ahead of this document's own scope discipline (see §2.2's note). Go and JVM support is
+   real but demand-gated, not scheduled. Java/Scala/C are explicitly out of scope. See §2
+   and §17.
 3. **Resolved: Option C — library-first internals, moon as the single reference
    integration**, in the narrow, four-CI-rule sense (not a symmetric multi-consumer API).
    See §0.1 and `docs/02-library-vs-moon-decision.md` for the full argument and the concrete
@@ -152,7 +154,7 @@ Revised posture:
 | Rust / Cargo | **Committed, v0.1** |
 | npm (npm/pnpm/yarn workspaces) | **Committed, v0.1** |
 | napi platform packages | **Committed, v0.3** |
-| Python (uv/hatch/poetry, PEP 440) | Real, tractable, **demand-gated** — not scheduled until a user asks. Design supports it (§7.7) but it is not release-blocking for any v0.1–v0.4 milestone. |
+| Python (uv/hatch/poetry, PEP 440) | **Implemented, default-on** — a full manifest editor (`pyproject.toml` read/write, PEP 440 versioning, `twine upload` publish integration) shipped in `callisto-manifests`/`callisto-format`. This row originally read "demand-gated — not scheduled until a user asks"; that was true when this table was written and is no longer true. Kept here as the historical record of the original posture, not as current status — see the note below the table. |
 | Go modules | Real, tractable (git-tag-only publish, no registry backend needed), **demand-gated**. |
 | Maven / Gradle-catalog / sbt-version-file | Tractable under the versioning-coordinator posture (§9) because callisto never touches Maven Central/Sonatype's publish machinery — only version bumps and dependency-graph coordination. **Demand-gated.** |
 | NuGet, Deno/JSR, Ruby | Tractable, **demand-gated**. |
@@ -177,6 +179,14 @@ languages nobody had asked for — not naming the variants a trait needs to stay
 future edit starts fleshing out unimplemented variants' behavior beyond what §7.7/§7.8
 already say, that's scope creep by this section's own definition and should be caught by
 the same adversarial-review posture that produced this cut in the first place.
+
+**Python is the one ecosystem where exactly that happened.** A full `pyproject.toml`
+manifest editor, PEP 440 versioning, and `twine upload` publish integration were built and
+shipped, default-on, without a corresponding revision to this section or to the table
+above — the scope-creep guard this paragraph describes did not catch it. The code is not
+wrong; it is ahead of this document. Treat the table's Python row as stale rather than
+authoritative, and treat this paragraph's "declared-but-unimplemented" claim as still
+accurate for Go/Maven/NuGet/Deno/Ruby/JSR specifically, not as a claim about every row.
 
 ---
 
@@ -253,9 +263,10 @@ survive a branch merge or a tool-version upgrade. Any state file callisto writes
 partial failure followed by a retry does not double-apply anything.
 
 **P4 — Polyglot uniformity, including grammar and workspace concept, not just manifest
-format.** Cargo, npm, and (when demand-gated ecosystems are added) Python/Go/Maven are all
-"an ecosystem" behind the same traits. Adding one is bounded: one grammar impl, one
-manifest impl, one identity-resolution note. Anywhere the design assumes SemVer implicitly,
+format.** Cargo, npm, Python, and (when the remaining demand-gated ecosystems are added)
+Go/Maven are all "an ecosystem" behind the same traits. Adding one is bounded: one grammar
+impl, one manifest impl, one identity-resolution note — Python is the proof this bound
+holds in practice, not just in the abstract. Anywhere the design assumes SemVer implicitly,
 that's a trait boundary in disguise and should be named as one.
 
 **P5 — Structural fixes over discipline.** When a class of failure is identified, the fix
@@ -344,14 +355,15 @@ enum ReleaseTrigger {
 enum PublishTarget {
     CratesIo,
     Npm { registry: Option<String> },
-    // demand-gated:
+    // implemented — dispatches to `twine upload` (§2.2, §7.8):
     Pypi { index: Option<String> },
+    // demand-gated:
     NuGet { source: Option<String> },
     // orphaned by §9.5's scope cut: creating a GitHub Release is a registry-publish-shaped
     // action, and §9.5 removed octocrab/reqwest/GitHub-release creation from callisto's
     // dependency tree entirely. Retained as a variant only if a calling workflow's own `gh
     // release create` step wants callisto's plan to name it as a target for planning
-    // purposes; callisto itself never creates one — not demand-gated the way Pypi/NuGet are,
+    // purposes; callisto itself never creates one — not demand-gated the way NuGet is,
     // just a plan-shape label with no corresponding execution capability in callisto.
     GitHubRelease,
     None,                      // internal-only, never published
@@ -1629,10 +1641,12 @@ scope discipline this revision imposes.
   `orin-dx/callisto-action` (single composite, modes per §12.2), `setup-moon-callisto`,
   migration guide from `@changesets/cli` (including `callisto init`'s
   `.changeset/config.json` translation, §18 Q4).
-- **Beyond v0.4 — demand-gated only.** Python, Go, JVM, NuGet, Deno/JSR, Ruby, a proto
+- **Beyond v0.4 — demand-gated only.** Go, JVM, NuGet, Deno/JSR, Ruby, a proto
   plugin, an npm installer wrapper, a GitHub App alternative to the Action. None of these
   are scheduled; each ships if and when a real user asks, using the trait boundaries in §7
-  and §15 that were designed to make each one bounded work.
+  and §15 that were designed to make each one bounded work. Python was originally listed in
+  this milestone too; it has since shipped (see §2.2's note) and is removed from this list
+  accordingly.
 
 ---
 
