@@ -357,6 +357,50 @@ mod tests {
         );
     }
 
+    /// Spec (AC-04): given a root with no package.json "workspaces" field but
+    /// a sibling pnpm-workspace.yaml containing `packages:\n  - "packages/*"`,
+    /// parsed via yaml_rust2::YamlLoader::load_from_str, a package.json at
+    /// packages/kept/package.json (matching the glob) is discovered by
+    /// projects(), and a package.json at tools/outside/package.json (not
+    /// matching the glob) is not discovered by projects().
+    #[test]
+    fn ac04_pnpm_workspace_yaml_governs_npm_membership_when_no_workspaces_field() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        std::fs::write(
+            root.join("pnpm-workspace.yaml"),
+            "packages:\n  - \"packages/*\"\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join("packages/kept")).unwrap();
+        std::fs::write(
+            root.join("packages/kept/package.json"),
+            r#"{"name":"kept"}"#,
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join("tools/outside")).unwrap();
+        std::fs::write(
+            root.join("tools/outside/package.json"),
+            r#"{"name":"outside"}"#,
+        )
+        .unwrap();
+
+        let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+
+        assert!(
+            projects
+                .iter()
+                .any(|p| p.path == Path::new("packages/kept") && p.ecosystem == Ecosystem::Npm),
+            "AC-04: packages/kept must be discovered as Npm, got: {projects:?}"
+        );
+        assert!(
+            !projects
+                .iter()
+                .any(|p| p.path == Path::new("tools/outside")),
+            "AC-04: tools/outside must not be discovered, got: {projects:?}"
+        );
+    }
+
     /// Spec (AC-05): given a Cargo.toml at the workspace root with no
     /// [workspace] table at all (a single-crate repo), every Cargo candidate
     /// directory discovered by the walk is included in projects() -- the
