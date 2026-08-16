@@ -1003,6 +1003,40 @@ mod tests {
         );
     }
 
+    /// AC-11: a root package.json with no "workspaces" field, alongside a
+    /// pnpm-workspace.yaml whose YAML is malformed (unterminated flow
+    /// sequence -> yaml_rust2::YamlLoader::load_from_str returns Err), must
+    /// not panic or error the whole walk. The npm membership filter is
+    /// treated as absent for that workspace (falls back to AC-06's
+    /// admit-all behavior), matching AC-09's malformed-TOML treatment.
+    #[test]
+    fn ac11_malformed_pnpm_yaml_with_no_package_json_workspaces_falls_back_to_absent_filter() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        std::fs::write(root.join("package.json"), r#"{"name":"root"}"#).unwrap();
+        std::fs::write(
+            root.join("pnpm-workspace.yaml"),
+            "packages: [\"packages/*\"\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join("packages/kept")).unwrap();
+        std::fs::write(
+            root.join("packages/kept/package.json"),
+            r#"{"name":"kept"}"#,
+        )
+        .unwrap();
+
+        let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+
+        assert!(
+            projects
+                .iter()
+                .any(|p| p.path == Path::new("packages/kept")),
+            "AC-11: malformed pnpm-workspace.yaml with no package.json workspaces field \
+             must fall back to admit-all npm membership, got: {projects:?}"
+        );
+    }
+
     /// AC-13: consolidated npm/pnpm workspace-membership regression group.
     /// Reassembles the exact fixtures required by AC-03, AC-04, AC-06,
     /// AC-06b, AC-08, AC-10, AC-10b, AC-10d, AC-11c, AC-16, AC-16b, and
