@@ -560,6 +560,40 @@ mod tests {
         );
     }
 
+    /// Spec (AC-06): given a root package.json with no "workspaces" field
+    /// and no pnpm-workspace.yaml anywhere in the workspace, every Npm
+    /// candidate directory discovered by the walk is included in
+    /// projects() -- absence of both markers means no npm membership
+    /// filter applies. This mirrors AC-05's Cargo analog by asserting both
+    /// the root package and the child package are admitted, not just one.
+    #[test]
+    fn ac06_admits_all_npm_candidates_when_no_workspaces_field_and_no_pnpm_yaml() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        std::fs::write(root.join("package.json"), r#"{"name":"root"}"#).unwrap();
+        std::fs::create_dir_all(root.join("packages/child")).unwrap();
+        std::fs::write(
+            root.join("packages/child/package.json"),
+            r#"{"name":"child"}"#,
+        )
+        .unwrap();
+
+        let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+
+        assert!(
+            projects
+                .iter()
+                .any(|p| p.path == Path::new(".") && p.ecosystem == Ecosystem::Npm),
+            "AC-06: root package must be admitted as Npm, got: {projects:?}"
+        );
+        assert!(
+            projects
+                .iter()
+                .any(|p| p.path == Path::new("packages/child") && p.ecosystem == Ecosystem::Npm),
+            "AC-06: packages/child must be admitted as Npm, got: {projects:?}"
+        );
+    }
+
     /// AC-12: consolidated Cargo workspace-membership regression group.
     /// Reassembles the exact fixtures from AC-01/AC-02, AC-05, AC-05b,
     /// AC-07 (both the plain inclusion case and the exclude-exemption
