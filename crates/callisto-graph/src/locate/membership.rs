@@ -219,7 +219,6 @@ mod cargo_membership_tests {
     }
 }
 
-#[allow(dead_code)]
 pub(crate) struct NpmMembership {
     globs: Option<GlobSet>,
     hybrid_root: bool,
@@ -228,7 +227,6 @@ pub(crate) struct NpmMembership {
 impl NpmMembership {
     /// `rel` must be a workspace-relative, forward-slash-normalized path.
     /// `is_root` is true exactly when `rel == Path::new(".")`.
-    #[allow(dead_code)]
     pub(crate) fn admits(&self, rel: &Path, is_root: bool) -> bool {
         if is_root && self.hybrid_root {
             return true;
@@ -244,7 +242,6 @@ impl NpmMembership {
 /// "name" field. Independent of which arm (package.json "workspaces" or a
 /// sibling pnpm-workspace.yaml) governs the rest of npm membership -- see
 /// AC-16/AC-16b/AC-17/AC-10d.
-#[allow(dead_code)]
 fn package_json_declares_name(root: &Path) -> bool {
     let Ok(content) = std::fs::read_to_string(root.join("package.json")) else {
         return false;
@@ -255,7 +252,6 @@ fn package_json_declares_name(root: &Path) -> bool {
     val.get("name").is_some()
 }
 
-#[allow(dead_code)]
 pub(crate) fn read_npm_membership(root: &Path) -> NpmMembership {
     let hybrid_root = package_json_declares_name(root);
     if let Some(packages) = read_pnpm_packages(root) {
@@ -274,7 +270,6 @@ pub(crate) fn read_npm_membership(root: &Path) -> NpmMembership {
 /// a non-string sequence element all safely fall back to `None` (which
 /// causes `read_npm_membership` to fall through to
 /// `read_package_json_workspaces` or admit-all).
-#[allow(dead_code)]
 fn read_pnpm_packages(root: &Path) -> Option<Vec<String>> {
     let content = std::fs::read_to_string(root.join("pnpm-workspace.yaml")).ok()?;
     let docs = yaml_rust2::YamlLoader::load_from_str(&content).ok()?;
@@ -290,7 +285,6 @@ fn read_pnpm_packages(root: &Path) -> Option<Vec<String>> {
 /// File-absent, field-absent, non-array "workspaces", and non-string array
 /// entries all safely fall back to `None` (a plain `?`-chain), which causes
 /// `read_npm_membership` to admit-all.
-#[allow(dead_code)]
 fn read_package_json_workspaces(root: &Path) -> Option<Vec<String>> {
     let content = std::fs::read_to_string(root.join("package.json")).ok()?;
     let val: serde_json::Value = serde_json::from_str(&content).ok()?;

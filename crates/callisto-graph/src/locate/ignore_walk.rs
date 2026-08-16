@@ -39,6 +39,7 @@ impl ProjectLocator for IgnoreWalkLocator {
     fn projects(&self) -> Result<Vec<ProjectRoot>, LocateError> {
         let mut results = Vec::new();
         let cargo_membership = membership::read_cargo_membership(&self.root);
+        let npm_membership = membership::read_npm_membership(&self.root);
         let walker = WalkBuilder::new(&self.root)
             .hidden(true)
             .git_ignore(true)
@@ -101,13 +102,16 @@ impl ProjectLocator for IgnoreWalkLocator {
                     if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
                         if let Some(name) = val.get("name").and_then(|n| n.as_str()) {
                             let rel = to_workspace_relative(path, &self.root)?;
-                            let id = PackageId::parse(name)
-                                .unwrap_or_else(|_| PackageId::Bare(name.to_string()));
-                            results.push(ProjectRoot {
-                                id,
-                                path: rel,
-                                ecosystem: Ecosystem::Npm,
-                            });
+                            let is_root = rel == Path::new(".");
+                            if npm_membership.admits(&rel, is_root) {
+                                let id = PackageId::parse(name)
+                                    .unwrap_or_else(|_| PackageId::Bare(name.to_string()));
+                                results.push(ProjectRoot {
+                                    id,
+                                    path: rel,
+                                    ecosystem: Ecosystem::Npm,
+                                });
+                            }
                         }
                     }
                 }
@@ -324,5 +328,32 @@ mod tests {
             .find(|p| p.path == Path::new("crates/kept-example"))
             .unwrap();
         assert_eq!(kept.ecosystem, Ecosystem::Cargo);
+    }
+
+    /// Spec (AC-03): a root package.json declaring `{"workspaces": ["packages/*"]}`
+    /// (no pnpm-workspace.yaml anywhere) must cause `projects()` to exclude a
+    /// package.json found at a path outside every workspaces glob.
+    #[test]
+    fn ac03_excludes_package_outside_npm_workspaces_glob() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        std::fs::write(
+            root.join("package.json"),
+            r#"{"workspaces": ["packages/*"]}"#,
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join("tools/helper")).unwrap();
+        std::fs::write(
+            root.join("tools/helper/package.json"),
+            r#"{"name":"helper"}"#,
+        )
+        .unwrap();
+
+        let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+
+        assert!(
+            !projects.iter().any(|p| p.path == Path::new("tools/helper")),
+            "AC-03: tools/helper must not be discovered, got: {projects:?}"
+        );
     }
 }
