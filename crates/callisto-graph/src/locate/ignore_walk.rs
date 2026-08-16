@@ -454,4 +454,27 @@ mod tests {
             "the members filter must still admit crates/child normally alongside the root exemption, got: {projects:?}"
         );
     }
+
+    /// AC-10c: an explicitly empty `members = []` is a real filter matching
+    /// nothing, not a no-op. A Cargo.toml elsewhere in the tree must be
+    /// excluded from the Cargo ecosystem entries.
+    #[test]
+    fn ac10c_empty_members_array_admits_zero_cargo_entries() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        std::fs::write(root.join("Cargo.toml"), "[workspace]\nmembers = []\n").unwrap();
+        std::fs::create_dir_all(root.join("crates/other")).unwrap();
+        std::fs::write(
+            root.join("crates/other/Cargo.toml"),
+            "[package]\nname = \"other\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+
+        let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+
+        assert!(
+            !projects.iter().any(|p| p.ecosystem == Ecosystem::Cargo),
+            "empty members = [] must exclude every Cargo candidate, got: {projects:?}"
+        );
+    }
 }
