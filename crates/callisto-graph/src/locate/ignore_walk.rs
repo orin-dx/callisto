@@ -515,4 +515,142 @@ mod tests {
             "non-excluded crate must appear, got: {projects:?}"
         );
     }
+
+    /// AC-12: consolidated Cargo workspace-membership regression group.
+    /// Reassembles the exact fixtures from AC-01/AC-02, AC-05, AC-05b,
+    /// AC-07 (both the plain inclusion case and the exclude-exemption
+    /// case), AC-10c, and AC-15 into a single regression test function per
+    /// AC-12's literal "ships with at least one regression test using
+    /// these exact fixtures" wording.
+    #[test]
+    fn ac12_cargo_workspace_membership_regression_group() {
+        // AC-01 / AC-02
+        {
+            let tmp = tempfile::tempdir().unwrap();
+            let root = tmp.path();
+            std::fs::write(
+                root.join("Cargo.toml"),
+                "[workspace]\nmembers = [\"crates/*\"]\nexclude = [\"crates/scratch-example\"]\n",
+            )
+            .unwrap();
+            std::fs::create_dir_all(root.join("crates/scratch-example")).unwrap();
+            std::fs::write(
+                root.join("crates/scratch-example/Cargo.toml"),
+                "[package]\nname = \"scratch-example\"\nversion = \"0.1.0\"\n",
+            )
+            .unwrap();
+            std::fs::create_dir_all(root.join("crates/kept-example")).unwrap();
+            std::fs::write(
+                root.join("crates/kept-example/Cargo.toml"),
+                "[package]\nname = \"kept-example\"\nversion = \"0.1.0\"\n",
+            )
+            .unwrap();
+            let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+            assert!(!projects
+                .iter()
+                .any(|p| p.path == Path::new("crates/scratch-example")));
+            let kept_count = projects
+                .iter()
+                .filter(|p| p.path == Path::new("crates/kept-example"))
+                .count();
+            assert_eq!(kept_count, 1);
+            let kept = projects
+                .iter()
+                .find(|p| p.path == Path::new("crates/kept-example"))
+                .unwrap();
+            assert_eq!(kept.ecosystem, Ecosystem::Cargo);
+        }
+        // AC-05
+        {
+            let tmp = tempfile::tempdir().unwrap();
+            let root = tmp.path();
+            std::fs::write(
+                root.join("Cargo.toml"),
+                "[package]\nname = \"solo\"\nversion = \"0.1.0\"\n",
+            )
+            .unwrap();
+            let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+            assert!(projects.iter().any(|p| p.path == Path::new(".")));
+        }
+        // AC-05b
+        {
+            let tmp = tempfile::tempdir().unwrap();
+            let root = tmp.path();
+            std::fs::create_dir_all(root.join("crates/kept")).unwrap();
+            std::fs::write(
+                root.join("crates/kept/Cargo.toml"),
+                "[package]\nname = \"kept\"\nversion = \"0.1.0\"\n",
+            )
+            .unwrap();
+            let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+            assert!(projects.iter().any(|p| p.path == Path::new("crates/kept")));
+        }
+        // AC-07 (plain inclusion)
+        {
+            let tmp = tempfile::tempdir().unwrap();
+            let root = tmp.path();
+            std::fs::write(
+                root.join("Cargo.toml"),
+                "[package]\nname = \"root-crate\"\nversion = \"0.1.0\"\n\n[workspace]\nmembers = [\"crates/*\"]\n",
+            )
+            .unwrap();
+            let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+            assert!(projects
+                .iter()
+                .any(|p| p.path == Path::new(".") && p.ecosystem == Ecosystem::Cargo));
+        }
+        // AC-07 (exclude-exemption: exclude = ["."] still admits the root)
+        {
+            let tmp = tempfile::tempdir().unwrap();
+            let root = tmp.path();
+            std::fs::write(
+                root.join("Cargo.toml"),
+                "[package]\nname = \"root-crate\"\nversion = \"0.1.0\"\n\n[workspace]\nmembers = [\"crates/*\"]\nexclude = [\".\"]\n",
+            )
+            .unwrap();
+            let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+            assert!(projects
+                .iter()
+                .any(|p| p.path == Path::new(".") && p.ecosystem == Ecosystem::Cargo));
+        }
+        // AC-10c
+        {
+            let tmp = tempfile::tempdir().unwrap();
+            let root = tmp.path();
+            std::fs::write(root.join("Cargo.toml"), "[workspace]\nmembers = []\n").unwrap();
+            std::fs::create_dir_all(root.join("crates/other")).unwrap();
+            std::fs::write(
+                root.join("crates/other/Cargo.toml"),
+                "[package]\nname = \"other\"\nversion = \"0.1.0\"\n",
+            )
+            .unwrap();
+            let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+            assert!(!projects.iter().any(|p| p.ecosystem == Ecosystem::Cargo));
+        }
+        // AC-15
+        {
+            let tmp = tempfile::tempdir().unwrap();
+            let root = tmp.path();
+            std::fs::write(
+                root.join("Cargo.toml"),
+                "[workspace]\nexclude = [\"crates/foo\"]\n",
+            )
+            .unwrap();
+            std::fs::create_dir_all(root.join("crates/foo")).unwrap();
+            std::fs::write(
+                root.join("crates/foo/Cargo.toml"),
+                "[package]\nname = \"foo\"\nversion = \"0.1.0\"\n",
+            )
+            .unwrap();
+            std::fs::create_dir_all(root.join("crates/kept")).unwrap();
+            std::fs::write(
+                root.join("crates/kept/Cargo.toml"),
+                "[package]\nname = \"kept\"\nversion = \"0.1.0\"\n",
+            )
+            .unwrap();
+            let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+            assert!(!projects.iter().any(|p| p.path == Path::new("crates/foo")));
+            assert!(projects.iter().any(|p| p.path == Path::new("crates/kept")));
+        }
+    }
 }
