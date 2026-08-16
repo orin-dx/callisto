@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use callisto_model::{workspace_relative, Ecosystem, PackageId, ProjectRoot};
 use ignore::WalkBuilder;
 
+use crate::locate::membership;
 use crate::locate::{find_workspace_root, LocateError, ProjectLocator};
 
 pub struct IgnoreWalkLocator {
@@ -37,6 +38,7 @@ impl IgnoreWalkLocator {
 impl ProjectLocator for IgnoreWalkLocator {
     fn projects(&self) -> Result<Vec<ProjectRoot>, LocateError> {
         let mut results = Vec::new();
+        let cargo_membership = membership::read_cargo_membership(&self.root);
         let walker = WalkBuilder::new(&self.root)
             .hidden(true)
             .git_ignore(true)
@@ -77,13 +79,16 @@ impl ProjectLocator for IgnoreWalkLocator {
                                 .and_then(|n| n.as_str())
                             {
                                 let rel = to_workspace_relative(path, &self.root)?;
-                                let id = PackageId::parse(name)
-                                    .unwrap_or_else(|_| PackageId::Bare(name.to_string()));
-                                results.push(ProjectRoot {
-                                    id,
-                                    path: rel,
-                                    ecosystem: Ecosystem::Cargo,
-                                });
+                                let is_root = rel == Path::new(".");
+                                if cargo_membership.admits(&rel, is_root) {
+                                    let id = PackageId::parse(name)
+                                        .unwrap_or_else(|_| PackageId::Bare(name.to_string()));
+                                    results.push(ProjectRoot {
+                                        id,
+                                        path: rel,
+                                        ecosystem: Ecosystem::Cargo,
+                                    });
+                                }
                             }
                         }
                     }
@@ -270,5 +275,54 @@ mod tests {
                 .map(|p| format!("{:?}:{}", p.ecosystem, p.id.name()))
                 .collect::<Vec<_>>()
         );
+    }
+
+    /// Spec (AC-01, AC-02): a Cargo.toml `[workspace]` `exclude` entry must
+    /// prevent `projects()` from returning the excluded crate, while a crate
+    /// that matches `members` and is not excluded must still be returned
+    /// exactly once with `Ecosystem::Cargo`.
+    #[test]
+    fn ac01_ac02_excludes_scratch_example_and_includes_kept_example_via_cargo_workspace_exclude() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        std::fs::write(
+            root.join("Cargo.toml"),
+            "[workspace]\nmembers = [\"crates/*\"]\nexclude = [\"crates/scratch-example\"]\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join("crates/scratch-example")).unwrap();
+        std::fs::write(
+            root.join("crates/scratch-example/Cargo.toml"),
+            "[package]\nname = \"scratch-example\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join("crates/kept-example")).unwrap();
+        std::fs::write(
+            root.join("crates/kept-example/Cargo.toml"),
+            "[package]\nname = \"kept-example\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+
+        let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+
+        assert!(
+            !projects
+                .iter()
+                .any(|p| p.path == Path::new("crates/scratch-example")),
+            "AC-01: crates/scratch-example must be excluded, got: {projects:?}"
+        );
+        let kept_count = projects
+            .iter()
+            .filter(|p| p.path == Path::new("crates/kept-example"))
+            .count();
+        assert_eq!(
+            kept_count, 1,
+            "AC-02: exactly one entry for crates/kept-example, got: {projects:?}"
+        );
+        let kept = projects
+            .iter()
+            .find(|p| p.path == Path::new("crates/kept-example"))
+            .unwrap();
+        assert_eq!(kept.ecosystem, Ecosystem::Cargo);
     }
 }

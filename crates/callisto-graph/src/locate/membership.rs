@@ -9,7 +9,6 @@ use std::path::Path;
 /// skipped and treated as never-matching; every other syntactically valid
 /// entry in the same list is still compiled and matched normally. Never
 /// panics, never returns an error.
-#[allow(dead_code)]
 pub(crate) fn build_globset(entries: &[String]) -> GlobSet {
     let mut builder = GlobSetBuilder::new();
     for entry in entries {
@@ -32,7 +31,6 @@ mod tests {
 /// Cargo `[workspace]` members/exclude membership filter, computed once per
 /// `IgnoreWalkLocator::projects()` call from the workspace root's
 /// `Cargo.toml`.
-#[allow(dead_code)]
 pub(crate) struct CargoMembership {
     members: Option<GlobSet>,
     exclude: GlobSet,
@@ -42,7 +40,6 @@ pub(crate) struct CargoMembership {
 impl CargoMembership {
     /// `rel` must be a workspace-relative, forward-slash-normalized path.
     /// `is_root` is true exactly when `rel == Path::new(".")`.
-    #[allow(dead_code)]
     pub(crate) fn admits(&self, rel: &Path, is_root: bool) -> bool {
         if is_root && self.hybrid_root {
             return true;
@@ -60,7 +57,6 @@ impl CargoMembership {
 /// Safely parses a TOML array-of-strings item, returning `None` for any
 /// other shape (bare string, table, non-string entries, etc.) instead of
 /// panicking.
-#[allow(dead_code)]
 fn parse_toml_string_array(item: &toml_edit::Item) -> Option<Vec<String>> {
     let arr = item.as_array()?;
     let mut out = Vec::with_capacity(arr.len());
@@ -70,7 +66,6 @@ fn parse_toml_string_array(item: &toml_edit::Item) -> Option<Vec<String>> {
     Some(out)
 }
 
-#[allow(dead_code)]
 fn absent_cargo_membership() -> CargoMembership {
     CargoMembership {
         members: None,
@@ -85,7 +80,6 @@ fn absent_cargo_membership() -> CargoMembership {
 /// exclude present but not an array-of-strings, members key absent) is
 /// NOT yet handled safely -- this deliberately panics or misbehaves on
 /// those inputs today; TASK-03b/03c/03d/03e replace these naive lines.
-#[allow(dead_code)]
 pub(crate) fn read_cargo_membership(root: &Path) -> CargoMembership {
     let content = match std::fs::read_to_string(root.join("Cargo.toml")) {
         Ok(c) => c,
