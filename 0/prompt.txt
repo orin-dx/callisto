@@ -1,0 +1,771 @@
+<task-notification>
+<task-id>a759cdcd598071bf8</task-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a759cdcd598071bf8.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement Track 3a TASK-02" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Committed successfully as `7ee08c1`, with pre-commit hooks (format-check) passing.
+
+TASK-02 complete via full TDD cycle:
+
+- Confirmed baseline at commit `23ed5af` (TASK-01) before starting.
+- Wrote the failing test module `glob_tests` first in `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs`.
+- Confirmed red: `cargo test -p callisto-graph build_globset_` failed with `E0425: cannot find function 'build_globset'`, matching the expected failure signature.
+- Added the minimal implementation (`build_globset`, lines 1-19, function at line 12) above the existing test modules.
+- Confirmed green: all 3 tests passed (`cargo test -p callisto-graph --lib build_globset_`).
+- Ran `cargo fmt` (found and fixed one formatting diff) and `cargo clippy -p callisto-graph --lib -- -D warnings` (clean), then re-verified tests still green after the fmt fix.
+- Committed only `crates/callisto-graph/src/locate/membership.rs` with the specified conventional commit message.
+
+covers_criteria was empty (pure infrastructure task), so no spec acceptance criteria needed to be read or proven, and no criteria_evidence applies. No precision tests were supplied. No contradiction encountered.
+
+```json
+{
+  "task_id": "TASK-02",
+  "status": "done",
+  "steps_completed": [
+    "confirmed baseline at commit 23ed5af",
+    "wrote failing test module glob_tests",
+    "confirmed red: E0425 cannot find function build_globset",
+    "wrote minimal build_globset implementation",
+    "confirmed green: 3/3 tests pass",
+    "ran cargo fmt and cargo clippy -D warnings clean",
+    "re-verified green after fmt fix",
+    "committed membership.rs only"
+  ],
+  "test_result": "pass",
+  "commit_sha": "7ee08c1",
+  "concerns": null,
+  "reasoning": "covers_criteria was empty so no spec criteria needed reading; no precision_tests were supplied; implementation matched the plan's exact code with no deviation needed."
+}
+```</result>
+<usage><subagent_tokens>52636</subagent_tokens><tool_uses>19</tool_uses><duration_ms>299622</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a798ddb4ef36474a4</task-id>
+<tool-use-id>toolu_01RiyRJ1F1hQTxouQ4DDiEkU</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a798ddb4ef36474a4.output</output-file>
+<status>completed</status>
+<summary>Agent "Review Track 3a TASK-01 and TASK-02" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>No other GlobSetBuilder usage sites exist elsewhere in the codebase, so no sibling gap there. Both commits match their task specs closely, use no unsafe code, and introduce no new panics in library (non-test) code beyond a documented, tested, never-triggered fallback. Review complete.
+
+```json
+{
+  "status": "approved",
+  "issues": [
+    {
+      "file": "Cargo.toml",
+      "line": 12,
+      "description": "TASK-01's plan rationale states default-features = false avoids pulling in arraydeque/hashlink transitive deps. The committed Cargo.lock diff shows yaml-rust2 0.11.0 pulls in both arraydeque and hashlink unconditionally regardless of the default-features flag (they are not gated by the 'encoding' feature in this version). The flag itself is harmless to include and the commit's actual code matches the task spec exactly, so this is not a functional defect in the commit -- it's a factual inaccuracy in the plan's stated rationale that a future reader relying on this comment/rationale for feature-trimming decisions would be misled by.",
+      "severity": "suggestion"
+    },
+    {
+      "file": "crates/callisto-graph/src/locate/membership.rs",
+      "line": 21,
+      "description": "build_globset()'s final `builder.build().unwrap_or_else(|_| GlobSet::empty())` matches the T2 Silent-Unwrap-Fallback hazard pattern textually. In practice GlobSetBuilder::build() essentially cannot fail once every added Glob was already independently validated via GlobBuilder::build() in the loop above, and the fallback is explicitly documented ('Never panics, never returns an error') and covered by build_globset_of_all_invalid_entries_matches_nothing_without_panicking. Treating as a note rather than a blocker since the behavior is intentional and tested, but flagging since a genuinely-reachable build() error here would silently produce an empty (never-matching) GlobSet with no log/signal to the caller."
+    }
+  ],
+  "sibling_gaps": [],
+  "reasoning": "Both commits (23ed5af7 TASK-01, 7ee08c1 TASK-02) were diffed via git show and compared line-for-line against the plan's failing_test/implementation code blocks read from plan-track3a-v2.json. TASK-01's diff (Cargo.lock, Cargo.toml, callisto-graph/Cargo.toml, membership.rs new file, locate/mod.rs) matches the spec's exact code content; dependency line placement (after serial_test in root Cargo.toml, after globset in callisto-graph/Cargo.toml) was verified directly against the current file state via grep and matches the task's stated placement. TASK-02's diff matches the spec's build_globset() implementation and all three glob_tests verbatim, including the #[allow(dead_code)] (intentional per plan, removed in TASK-03a which is out of scope here). Checked rust-hazards.md T1-T10: no discarded params, no silent error swallowing beyond the documented/tested build_globset() Result fallback, no panics in non-test code, no integer overflow, no unsafe blocks (consistent with workspace's unsafe_code=forbid invariant), no map_err/to_string error downgrades, no duplicate diagnostic codes -- these commits touch no error-enum code at all. Searched for other GlobSetBuilder/GlobBuilder call sites in the workspace; none exist outside membership.rs, so there is no sibling gap of an adjacent glob-building call site that should have adopted the same per-entry-skip pattern but didn't. Test quality: TASK-01's smoke test and TASK-02's three glob_tests all assert on real observable behavior (is_match results) rather than internal implementation details, and directly exercise the literal_separator semantics and skip-on-compile-failure contract the docstring promises. The one documentation/rationale inaccuracy flagged by the implementer (default-features=false not actually excluding arraydeque/hashlink in yaml-rust2 0.11.0) is real and confirmed via the Cargo.lock diff showing both crates added unconditionally -- surfaced as a suggestion-level note since it doesn't affect any covers_criteria (both empty) or current functionality, but could mislead a future reader of the plan's reasoning field who trusts it as accurate."
+}
+```</result>
+<usage><subagent_tokens>71825</subagent_tokens><tool_uses>9</tool_uses><duration_ms>119223</duration_ms></usage>
+</task-notification>
+
+---
+
+Just make sure you're not losing track of the subagents
+
+---
+
+<task-notification>
+<task-id>a48ef89b7149d6700</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a48ef89b7149d6700.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement Track 3a TASK-03a" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Committed as `5b35c636775da84795033d743d96c144856942e3`. Task complete.
+
+Summary:
+- File: `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs`
+- Red phase confirmed: `cargo test -p callisto-graph read_cargo_membership_` failed with `E0425: cannot find function 'read_cargo_membership'`, matching the plan's expected_failure_output.
+- Implemented `CargoMembership` struct, `admits()`, `absent_cargo_membership()`, and `read_cargo_membership()` verbatim per the plan's naive/minimal spec (using `.expect()`/`.unwrap()`-style access, intentionally not hardened — that's 03b-03e's job). Also removed `#[allow(dead_code)]` from `build_globset` and moved `use std::path::Path;` to the top of the file, as the plan specified.
+- Green phase confirmed: both `read_cargo_membership_admits_all_when_no_cargo_toml_file_exists` and `read_cargo_membership_honors_well_formed_members_and_exclude` pass.
+- One deviation from the plan's exact code: `cargo clippy -p callisto-graph --all-targets -- -D warnings` (required by this repo's CI per CLAUDE.md) failed with dead-code errors on `build_globset`, `CargoMembership`, `admits`, `absent_cargo_membership`, and `read_cargo_membership`, because none of these are called from production code yet (only from `#[cfg(test)]`) — the plan's assumption that `admits()` being "its first real caller" of `build_globset` would satisfy clippy's reachability analysis turned out not to hold, since transitively-dead call chains still trigger `dead_code` even when a call site exists. I added back `#[allow(dead_code)]` to all five newly-dead items (matching the existing pattern already used for `build_globset` in TASK-02) rather than fabricating a real caller out of scope for this task. This is a mechanical build-hygiene fix, not a change to the task's specified logic or test behavior — clippy is now clean.
+- `covers_criteria` is empty for this task per the plan (infrastructure/happy-path only), so no `criteria_evidence` entries are produced.
+
+```json
+{
+  "task_id": "TASK-03a",
+  "status": "done_with_concerns",
+  "steps_completed": [
+    "read task TASK-03a from plan file",
+    "wrote failing test (cargo_membership_tests module) appended to membership.rs",
+    "confirmed red: cargo test -p callisto-graph read_cargo_membership_ failed with E0425 cannot find function `read_cargo_membership`",
+    "wrote minimal naive implementation (CargoMembership, admits, absent_cargo_membership, read_cargo_membership) verbatim per plan",
+    "removed #[allow(dead_code)] from build_globset and moved `use std::path::Path;` to top of file per plan",
+    "confirmed green: both read_cargo_membership_ tests pass",
+    "ran cargo fmt -p callisto-graph",
+    "ran cargo clippy -p callisto-graph --all-targets -- -D warnings; failed on dead_code for the new unused-outside-tests items",
+    "added #[allow(dead_code)] back to build_globset, admits, absent_cargo_membership, read_cargo_membership, CargoMembership to satisfy clippy -D warnings (mirrors TASK-02's existing pattern for staged incremental code)",
+    "reconfirmed clippy clean and tests green",
+    "staged and committed"
+  ],
+  "test_result": "pass",
+  "commit_sha": "5b35c636775da84795033d743d96c144856942e3",
+  "concerns": "The plan's implementation.description said removing #[allow(dead_code)] from build_globset was safe because admits() is 'its first real caller' -- but admits(), CargoMembership, absent_cargo_membership, and read_cargo_membership are themselves only reachable from #[cfg(test)] code, so clippy's dead_code lint (under --all-targets -D warnings, which this repo's CI requires per CLAUDE.md/just lint) still flagged the whole chain. I re-added #[allow(dead_code)] to all five items, consistent with the same guard TASK-02 originally used for build_globset, since these are staged incrementally and get wired to a real (non-test) caller in later sub-tasks 03b-03e. No test logic, assertions, or the naive implementation behavior described in the plan were changed -- this is purely a lint-satisfying annotation.",
+  "reasoning": "Task executed as a strict TDD cycle per plan JSON verbatim for test code and implementation code. covers_criteria is empty by design (infra/happy-path task), so no criteria_evidence. The only deviation was adding #[allow(dead_code)] annotations to satisfy the repo's mandatory clippy -D warnings gate, which the plan's prose assumed wouldn't be necessary but was factually required given how clippy's dead_code reachability analysis treats test-only call chains."
+}
+```</result>
+<usage><subagent_tokens>64858</subagent_tokens><tool_uses>32</tool_uses><duration_ms>677066</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a94f8eb8ea74bbba5</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a94f8eb8ea74bbba5.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement Track 3a TASK-03b" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Committed successfully at `af2e6975c14782c5fc4546d2db11e9f10b97a575`.
+
+## Summary
+
+Executed TASK-03b via full TDD cycle:
+
+1. **Red**: Added two tests to `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs` (in `cargo_membership_tests` module) exercising bare-string `members` and bare-string `exclude` values in `Cargo.toml`. Ran `cargo test -p callisto-graph read_cargo_membership_falls_back` and confirmed both panicked with the exact expected messages at lines 92 and 105 (`"naive: TASK-03b replaces this with a safe fallback for non-array members"` / `"...exclude"`).
+2. **Green**: Added `parse_toml_string_array(item: &amp;toml_edit::Item) -&gt; Option&lt;Vec&lt;String&gt;&gt;` helper and replaced the naive `.as_array().expect()/.as_str().expect()` chains for both `members` and `exclude` extraction with it, matching the plan's implementation verbatim. Reran the tests — all 4 tests in the module passed (2 new + 2 pre-existing).
+3. Ran `cargo fmt -p callisto-graph` and `cargo clippy -p callisto-graph --all-targets -- -D warnings` — clean, no dead_code or other warnings (the item is already reachable via the existing `#[allow(dead_code)]` pattern from TASK-03a).
+4. Committed with the exact conventional-commit message specified in the plan.
+
+`covers_criteria` for TASK-03b was empty in the plan, so no `criteria_evidence` entries apply.
+
+```json
+{
+  "task_id": "TASK-03b",
+  "status": "done",
+  "steps_completed": [
+    "read_task_from_plan",
+    "wrote_failing_tests",
+    "confirmed_red_exact_panic_messages",
+    "wrote_minimal_implementation",
+    "confirmed_green",
+    "cargo_fmt",
+    "cargo_clippy_all_targets_-D_warnings_clean",
+    "committed"
+  ],
+  "test_result": "pass",
+  "commit_sha": "af2e6975c14782c5fc4546d2db11e9f10b97a575",
+  "concerns": null,
+  "reasoning": "Task's covers_criteria was empty, so no spec criteria to read or prove. failing_test and implementation fields used verbatim from plan. Confirmed genuine red (both new tests panicked with plan's expected messages) before implementing, then green after. No precision_tests were supplied for this task."
+}
+```</result>
+<usage><subagent_tokens>54582</subagent_tokens><tool_uses>15</tool_uses><duration_ms>296975</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a4868995c42ce8c61</task-id>
+<tool-use-id>toolu_01KjTVkearLb2btd86LGhhUb</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a4868995c42ce8c61.output</output-file>
+<status>completed</status>
+<summary>Agent "Review Track 3a TASK-03a and TASK-03b" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I'll pause here and wait for the test-run notification before producing the final review.</result>
+<usage><subagent_tokens>87176</subagent_tokens><tool_uses>19</tool_uses><duration_ms>392912</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>acfd7f1f82603c14f</task-id>
+<tool-use-id>toolu_019mhic1D1LKgKvNpLdwuK2C</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/acfd7f1f82603c14f.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement Track 3a TASK-03c" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Waiting for the cargo test build to finish (first compile can be slow); will report results once the monitor notifies.</result>
+<usage><subagent_tokens>49677</subagent_tokens><tool_uses>11</tool_uses><duration_ms>474303</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a4868995c42ce8c61</task-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a4868995c42ce8c61.output</output-file>
+<status>completed</status>
+<summary>Agent "Review Track 3a TASK-03a and TASK-03b" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I'll pause tool calls now and wait for the monitor notification.</result>
+<usage><subagent_tokens>88485</subagent_tokens><tool_uses>25</tool_uses><duration_ms>644284</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>acfd7f1f82603c14f</task-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/acfd7f1f82603c14f.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement Track 3a TASK-03c" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>TASK-03c is complete and committed.
+
+Summary:
+- Read TASK-03c from the plan file at `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/plan-track3a-v2.json`.
+- `covers_criteria` was empty, so no spec acceptance criteria needed to be read/proven.
+- Verified against the actual code in `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs` that the task's "honest non-red" claim was true: `admits()` already short-circuits `if is_root &amp;&amp; self.hybrid_root { return true; }` before the exclude check (was already committed in TASK-03a), and `hybrid_root` was already computed as `doc.get("package").is_some() &amp;&amp; doc.get("workspace").is_some()`. No test previously exercised a root whose own exclude glob matches `"."`.
+- Added the specified test `read_cargo_membership_detects_hybrid_root_and_exempts_it_from_exclude` verbatim to `crates/callisto-graph/src/locate/membership.rs` (in `cargo_membership_tests`).
+- Ran it: `cargo test -p callisto-graph read_cargo_membership_detects_hybrid_root_and_exempts_it_from_exclude` — passed immediately (`1 passed; 0 failed`), matching the task's documented expectation exactly (no implementation change required, no false red claimed).
+- Ran `cargo fmt -p callisto-graph` and `cargo clippy -p callisto-graph --all-targets -- -D warnings` — both clean.
+- Committed only the test file: `344b93dbfd5f592f49cdbf6bd08d1dbe9db87348` — "test(graph): pin hybrid-root exclude-exemption behavior (AC-07)".
+
+```json
+{
+  "task_id": "TASK-03c",
+  "status": "done",
+  "steps_completed": [
+    "read_plan_task",
+    "verified_honest_non_red_claim_against_actual_code",
+    "wrote_test_verbatim",
+    "ran_test_passed_as_documented",
+    "cargo_fmt",
+    "cargo_clippy_-D_warnings_clean",
+    "committed"
+  ],
+  "test_result": "pass",
+  "commit_sha": "344b93dbfd5f592f49cdbf6bd08d1dbe9db87348",
+  "concerns": "This task's own definition is an explicitly documented 'honest non-red' step: the fixture is new but the code path (admits()'s is_root/hybrid_root short-circuit) was already correctly implemented in TASK-03a, so no red phase occurred. I independently verified this claim was true by reading crates/callisto-graph/src/locate/membership.rs before writing the test, rather than trusting the task note, and confirmed it is not a case of writing a test after the fact to mask missing coverage -- the implementation genuinely predates this test and is unchanged.",
+  "reasoning": "covers_criteria was empty in the plan, so no criteria_evidence to record. No precision_tests were supplied. Verified the task's central claim (no red phase needed) against the real committed code rather than accepting it on faith, per the contradiction-check requirement -- claim held up. Only the test file was modified; implementation files touched: none."
+}
+```</result>
+<usage><subagent_tokens>58525</subagent_tokens><tool_uses>19</tool_uses><duration_ms>790180</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a4868995c42ce8c61</task-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a4868995c42ce8c61.output</output-file>
+<status>completed</status>
+<summary>Agent "Review Track 3a TASK-03a and TASK-03b" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Now compiling the final review.
+
+**Summary of what I checked:** read both commits' full diffs (`git show`), read the full resulting `membership.rs` file, cross-referenced against TASK-03a and TASK-03b in the plan JSON verbatim (implementation code, test code, notes), confirmed no other files were touched, confirmed the new code is genuinely unreachable outside `#[cfg(test)]` (grepped for external callers — none), and actually ran `cargo test -p callisto-graph --lib membership::` (8/8 passed) and `cargo clippy -p callisto-graph --all-targets -- -D warnings` (clean) against an isolated worktree checked out exactly at `af2e6975c14782c5fc4546d2db11e9f10b97a575`, not against the working tree (which has an uncommitted TASK-03c addition from a concurrent agent that I did not let leak into this verdict).
+
+**Findings:**
+
+1. Scope adherence — both commits match their plan tasks almost exactly, line for line, including doc comments, struct shape, and test fixtures.
+2. One minor deviation: TASK-03a's plan explicitly instructed removing `#[allow(dead_code)]` from `build_globset` "now that `admits()` is its first real caller." That removal never happened — `build_globset` still carries the attribute in both commits. Functionally harmless (clippy is clean either way since the whole chain is still unreachable from any live root until later sub-tasks wire it up), but it is a literal spec deviation, not license-covered by the parent's given context (which covers *additions* of `#[allow(dead_code)]`, not a specified *removal* that was skipped).
+3. `.expect()`/`.unwrap()`-style panics in TASK-03a (`read_cargo_membership`'s TOML-parse, workspace-table, members-key, array/string extraction) are genuinely intentional per the task's own note and confirmed still exactly matching the documented naive-first-pass design in the post-03b state — the ones 03b promised to fix (non-array/non-string members/exclude) are fixed; the ones 03d/03e are slated to fix (workspace-absent, TOML-unparseable, members-key-absent) are still present, exactly as designed. Not a hazard-taxonomy violation given the explicit staged-hardening design.
+4. `parse_toml_string_array`'s `?`-chain in TASK-03b is correct: bare string, table, or any non-string entry all safely fall back to `None` → `absent`-equivalent behavior, matching AC-09/AC-09b.
+5. Tests are real-behavior tests (assert on `admits()` outcomes through the public-ish surface), not implementation-detail checks — good test quality, consistent with the plan's own fixtures.
+6. Sibling gaps: none within scope. The Npm/pnpm equivalents (`read_npm_membership`, `read_pnpm_packages`) don't exist yet — they're separate, later, explicitly-scoped tasks (04a+), not siblings that should have been touched here. No other Cargo-membership-shaped code elsewhere in the crate that needed hardening in tandem.
+
+```json
+{
+  "status": "approved",
+  "issues": [
+    {
+      "file": "crates/callisto-graph/src/locate/membership.rs",
+      "line": 12,
+      "description": "TASK-03a's plan explicitly says to remove #[allow(dead_code)] from build_globset since admits() becomes its first real (non-test) caller in this task. The attribute was never removed and is still present in both commits. Clippy is clean regardless (the whole call chain remains unreachable from any live root until later wiring tasks), so this is not a functional defect, just a literal task-spec deviation left uncorrected across two commits.",
+      "severity": "suggestion"
+    }
+  ],
+  "sibling_gaps": [],
+  "reasoning": "Verified both commits diff-for-diff against plan TASK-03a/03b implementation and test code -- near-exact match. Confirmed via git worktree checkout at af2e697 (isolated from the working tree's uncommitted TASK-03c addition) that cargo test --lib membership:: passes 8/8 and cargo clippy --all-targets -D warnings is clean, validating the #[allow(dead_code)] staging claim empirically rather than by inference. Confirmed via grep that CargoMembership/read_cargo_membership/build_globset have no callers outside membership.rs, so the dead_code allowances are genuinely required at this stage, consistent with the parent's stated context. The .expect()/.unwrap() panics in read_cargo_membership match TASK-03a's own documented naive-first-pass design and are correctly incrementally hardened by 03b (array/string shape) while workspace-absent/TOML-unparseable/members-key-absent panics remain, exactly as TASK-03d/03e are slated to fix -- not a hazard violation given the explicit staged design. One literal scope deviation found: TASK-03a's plan text instructs removing #[allow(dead_code)] from build_globset, which never happened; downgraded to suggestion since it has no functional or gate impact. No sibling gaps: Npm/pnpm equivalents are explicitly out of scope for these two tasks (separate 04x tasks), and no other Cargo-membership-shaped code exists elsewhere in the crate."
+}
+```</result>
+<usage><subagent_tokens>98637</subagent_tokens><tool_uses>33</tool_uses><duration_ms>794064</duration_ms></usage>
+</task-notification>
+
+---
+
+<agent-message from="lambda:lambda-implementer">
+TASK-03e is BLOCKED: TASK-03d has not landed yet.
+
+Checked `git log --oneline -15` at the start of this run. Current HEAD tip is 344b93d (TASK-03c: "test(graph): pin hybrid-root exclude-exemption behavior (AC-07)"). TASK-03d's expected commit message ("fix(graph): fall back to no-filter when [workspace] table or root Cargo.toml itself is malformed") is not present anywhere in the log.
+
+Why this blocks TASK-03e specifically: TASK-03e's own plan note states its two tests are "HONEST NON-RED" specifically because TASK-03d already rewrote `read_cargo_membership`'s members-key extraction from the naive `.expect(...)`-panicking form (TASK-03a) into a safe `Option`-chain (`workspace.get("members")` returning `Option<&Item>`, `.and_then(parse_toml_string_array)` on `None` yielding `None` without panicking). I confirmed by reading the current file state at HEAD (344b93d) that the naive TASK-03a line is still present:
+
+```rust
+let members = workspace
+    .get("members")
+    .expect("naive: TASK-03e replaces this with a safe fallback when members key is absent")
+    ...
+```
+
+Against this actual code, TASK-03e's first test (`read_cargo_membership_honors_exclude_when_no_members_key_present`, a `[workspace]` with only `exclude`, no `members` key) would panic — contradicting the plan's own claim that it's a non-red first-fixture test. Proceeding now would either misrepresent a genuine crash as an "honest non-red" test, or force me to also implement TASK-03d's fallback logic myself, which is out of scope for TASK-03e and risks a merge conflict with the parallel agent currently working TASK-03d on the same function.
+
+Status: blocked, no code changes made, nothing committed. Recommend re-dispatching TASK-03e once TASK-03d's commit (fix(graph): fall back to no-filter when [workspace] table or root Cargo.toml itself is malformed) is confirmed present at HEAD.
+</agent-message>
+
+---
+
+<task-notification>
+<task-id>a006756bd0748b728</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a006756bd0748b728.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement Track 3a TASK-03d" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>**Summary**
+
+Executed TASK-03d from the plan via TDD on `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs`.
+
+- Confirmed baseline: 9 existing tests passing before starting.
+- Added the two failing tests verbatim from the plan (lines 186–204 in the final file): `read_cargo_membership_admits_all_when_workspace_table_absent_but_file_exists` and `read_cargo_membership_falls_back_to_absent_when_root_toml_is_unparseable`.
+- Confirmed red: both panicked exactly as the plan predicted (`.expect()` panics at the old lines 96 and 100).
+- Applied the minimal implementation from the plan: replaced `.parse::&lt;toml_edit::DocumentMut&gt;().expect(...)` with a `match`/`Err(_) =&gt; return absent_cargo_membership()`, and replaced `doc.get("workspace").expect(...)` with an `if let Some(workspace) = ... else { return ... }` fallback. The `members` key absent case (TASK-03e's scope) was deliberately left untouched.
+- Confirmed green: all 11 tests in `locate::membership` pass.
+- Ran `cargo fmt -p callisto-graph` and `cargo clippy -p callisto-graph --all-targets -- -D warnings` — clean, no warnings.
+- Staged only `membership.rs` (other unrelated modified/untracked files in the working tree belong to concurrent work from other agents) and committed.
+
+covers_criteria was empty for this task, so no spec acceptance criteria needed to be read or proven — no criteria_evidence to record.
+
+```json
+{
+  "task_id": "TASK-03d",
+  "status": "done",
+  "steps_completed": [
+    "confirmed baseline tests pass",
+    "wrote failing tests from plan verbatim",
+    "confirmed red phase with expected panic messages",
+    "implemented minimal fallback per plan",
+    "confirmed green phase, all 11 tests pass",
+    "ran cargo fmt and clippy -D warnings clean",
+    "committed"
+  ],
+  "test_result": "pass",
+  "commit_sha": "14a2384dcbfc4b4112a0d5d1b0588db38797a1c3",
+  "concerns": null,
+  "reasoning": "covers_criteria was empty in the plan for this task, so no spec criteria to read/prove; TDD cycle followed the plan's exact test code, expected failure output, and implementation code with no deviation."
+}
+```</result>
+<usage><subagent_tokens>57482</subagent_tokens><tool_uses>16</tool_uses><duration_ms>181054</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ac3ae36fe96ab5f85</task-id>
+<tool-use-id>toolu_017o8ModjBX33zfX4hVhQLMb</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/ac3ae36fe96ab5f85.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement Track 3a TASK-03e" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Committed successfully as `3ed3486`. Pre-commit hooks (format-check) ran clean.
+
+## Summary
+
+TASK-03e is complete. Key finding worth flagging: the plan's note claimed both new tests were "honest non-red" (already passing against TASK-03d's landed code), but that claim was wrong for the members-key-absent test — the actual landed code (commit `14a2384`) still had `.expect("naive: TASK-03e replaces this with a safe fallback when members key is absent")` on the `members` lookup in `read_cargo_membership`. I verified this by actually running the test before touching implementation code, and it genuinely panicked. Per the TDD contract (never trust a note's characterization over an observed test run), I treated it as a real red step, applied the minimal fix (`workspace.get("members").and_then(parse_toml_string_array).map(...)`, mirroring the pattern already used for `exclude`), and reran to green. The empty-members-array test did pass immediately as predicted (honest non-red).
+
+`covers_criteria` for TASK-03e is `[]` in the plan, so no spec acceptance-criteria lookup or `criteria_evidence` was required.
+
+- Modified: `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs`
+  - Added tests `read_cargo_membership_honors_exclude_when_no_members_key_present` (line 206) and `read_cargo_membership_empty_members_array_admits_nothing` (line 220) in `cargo_membership_tests`
+  - Fixed `read_cargo_membership` members extraction (around line 106) to use a safe `.and_then(parse_toml_string_array)` chain instead of the naive `.expect(...)`
+
+All 258 `callisto-graph` lib tests pass, `cargo fmt` clean, `cargo clippy --all-targets -- -D warnings` clean, commit `3ed3486`.
+
+```json
+{
+  "task_id": "TASK-03e",
+  "status": "done",
+  "steps_completed": [
+    "verified TASK-03d commit 14a2384 present in git log before proceeding",
+    "read TASK-03e from plan file verbatim",
+    "confirmed covers_criteria is empty for this task (no spec criteria lookup required)",
+    "wrote both failing_test cases into cargo_membership_tests",
+    "ran read_cargo_membership_honors_exclude_when_no_members_key_present alone: genuinely panicked (contradicting plan's non-red claim) -- confirmed real red",
+    "ran read_cargo_membership_empty_members_array_admits_nothing alone: passed immediately, confirming plan's honest non-red claim for this second fixture",
+    "applied minimal fix: replaced naive .expect() on members lookup with .and_then(parse_toml_string_array) chain",
+    "reran both new tests plus full read_cargo_membership_ test group: all green",
+    "ran full callisto-graph lib test suite: 258 passed",
+    "ran cargo fmt -p callisto-graph",
+    "ran cargo clippy -p callisto-graph --all-targets -- -D warnings: clean",
+    "committed"
+  ],
+  "test_result": "pass",
+  "commit_sha": "3ed3486",
+  "concerns": "The plan's task note asserted both new fixtures were 'honest non-red' against TASK-03d's landed code. On actual execution, the members-key-absent test genuinely panicked against the real committed code (the naive .expect on the members lookup had not been replaced, unlike what TASK-03d's own implementation snippet in the plan showed). This was treated as a real red step per the TDD contract's requirement to observe actual behavior rather than trust the plan's characterization, and fixed with the minimal safe change. Downstream consumers of this plan should be aware TASK-03d's actual landed diff differs slightly from its plan-recorded implementation snippet.",
+  "reasoning": "Plan note for TASK-03e claimed no implementation change was needed. Running the tests first (as TDD requires) revealed one test genuinely failed against real code, contradicting the note. Applied minimal safe fix, confirmed green, verified full suite/fmt/clippy, committed. covers_criteria was empty so no spec criteria evidence to record."
+}
+```</result>
+<usage><subagent_tokens>85172</subagent_tokens><tool_uses>25</tool_uses><duration_ms>341401</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a6741ed0b051022c9</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a6741ed0b051022c9.output</output-file>
+<status>completed</status>
+<summary>Agent "Review Track 3a TASK-03c/03d/03e" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Review Summary
+
+**Scope reviewed:** commits `344b93d` (TASK-03c), `14a2384` (TASK-03d), `3ed3486` (TASK-03e) in `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs`, against `plan-track3a-v2.json` task specs and the loaded `rust-hazards.md` (`/Users/gabe/Projects/agent-plugins/shared/references/rust-hazards.md`).
+
+Important note on method: the live working tree has uncommitted TASK-04a-in-progress content (npm/pnpm membership code) layered on top of `3ed3486`, from a concurrent session. I excluded that from the review entirely and evaluated the reviewed commits via `git show &lt;sha&gt;:crates/callisto-graph/src/locate/membership.rs` at `3ed3486` (the true end state of the three commits), not the dirty working tree.
+
+**Findings:**
+
+1. **TASK-03c** — diff-verified as test-only (12 insertions, 0 implementation changes), matching the plan's "honest non-red" claim exactly. Test fixture and assertion are correct for the hybrid-root/exclude-exemption behavior.
+
+2. **TASK-03d** — matches plan almost verbatim: replaces the naive `.expect()` on TOML parse and on `[workspace]` lookup with `match`/`let...else` fallbacks to `absent_cargo_membership()`. `cargo test -p callisto-graph read_cargo_membership_` — all 9 tests pass at this commit's descendant state.
+
+3. **TASK-03e** — the implementer's deviation from the plan is correct and verified sound. At `14a2384` (03d), the `members` extraction line still read `workspace.get("members").expect("naive: TASK-03e replaces this...")` — confirmed directly in the 03d diff — so the plan's claim that 03d already left it as a safe Option-chain was factually wrong, and treating it as genuinely red was the right call, not blind plan-trust. The fix (`.and_then(parse_toml_string_array)`) is structurally identical to `exclude`'s TASK-03b pattern, reintroduces no panic path (`and_then` on `None` short-circuits to `None`, no unwrap/expect anywhere in the chain), and the empty-array test correctly composes with `build_globset(&amp;[])` → empty `GlobSet` → admits nothing.
+
+4. **Whole-arc sibling check (03a→03e):** every naive `.expect()`/`.unwrap()` TASK-03a introduced in `read_cargo_membership` has a corresponding hardening commit by 03e's end: TOML-parse (03d), `[workspace]`-absent (03d), members-array-shape/non-string-entries (03b), exclude-array-shape/non-string-entries (03b), members-key-absent (03e). No orphaned naive call remains in the function at `3ed3486`. `rust-hazards.md` T3 (panic in lib code) — clean; T2 (silent unwrap fallback on `exclude`) — intentional/documented, matches spec; no T1/T4/T5/T6/T9/T10 hits.
+
+5. **Minor doc staleness (non-blocking):** the doc comment above `read_cargo_membership` (lines 82–87 at `3ed3486`) still reads "Every other shape... is NOT yet handled safely -- this deliberately panics or misbehaves on those inputs today," which was true after 03a but is no longer true once 03d and 03e land within this same commit — the function is now fully hardened. 03e should have updated or removed this comment since it was the task that made it fully stale. Purely a documentation-accuracy issue, no functional impact.
+
+```json
+{
+  "status": "approved",
+  "issues": [
+    {
+      "file": "crates/callisto-graph/src/locate/membership.rs",
+      "line": 82,
+      "description": "Doc comment above read_cargo_membership still claims 'Every other shape ... is NOT yet handled safely -- this deliberately panics or misbehaves on those inputs today' after TASK-03e, but by this commit every one of those shapes (workspace-table-absent, TOML-parse-err, members-key-absent, non-array members/exclude) has been hardened. The comment is stale and should have been updated or removed in TASK-03e's commit.",
+      "severity": "suggestion"
+    }
+  ],
+  "sibling_gaps": [],
+  "reasoning": "Verified via git show at each SHA (not the live working tree, which has unrelated uncommitted TASK-04a WIP layered on top of 3ed3486 from a concurrent session -- excluded from scope). 03c is a pure test-only honest-non-red commit exactly as claimed. 03d hardens TOML-parse-err and workspace-table-absent via match/let-else, matching plan almost verbatim. 03e's deviation from the plan (treating members-key-absent as genuinely red rather than the plan's claimed non-red) is independently confirmed correct: 03d's diff shows the members line was still `.expect(\"naive: TASK-03e replaces...\")` untouched, contradicting the plan's inspection claim. The fix mirrors exclude's TASK-03b `.and_then(parse_toml_string_array)` pattern exactly, introduces no unwrap/expect, and cargo test -p callisto-graph read_cargo_membership_ passes all 9 tests. Whole-arc sweep of read_cargo_membership confirms every naive .expect()/.unwrap() TASK-03a introduced (TOML parse, workspace-absent, members shape, members entries, exclude shape, exclude entries, members-key-absent) has a corresponding hardening commit within 03b/03d/03e -- no orphaned naive call remains. rust-hazards.md taxonomy check clean (T3 panic-in-lib: none outside test code; T2 silent-fallback on exclude is intentional/spec-required; no other taxonomy hits). Only finding is a stale doc comment, non-blocking. Npm/pnpm mirror hardening (04c/04d/04e) is future/separate task scope per the plan, not a sibling gap in the Cargo arc under review."
+}
+```</result>
+<usage><subagent_tokens>90922</subagent_tokens><tool_uses>18</tool_uses><duration_ms>420082</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ab7b508a034af7e90</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/ab7b508a034af7e90.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement Track 3a TASK-04a" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Summary
+
+TASK-04a executed via full TDD cycle:
+
+1. **Red**: Appended the exact test module (`npm_membership_tests`) from the task's `failing_test.code` to `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs`. Ran `cargo test -p callisto-graph read_npm_membership_` and confirmed compile failure (`error[E0425]: cannot find function 'read_npm_membership'`), matching `expected_failure_output`.
+2. **Green**: Added `NpmMembership` struct, `admits()`, `read_npm_membership()`, and the naive `read_package_json_workspaces()` helper exactly per the task's `implementation.code`. Re-ran the same test command — all 4 tests passed.
+3. **Cleanup**: `cargo fmt -p callisto-graph` (reformatted the file, no logic change), then `cargo clippy -p callisto-graph --all-targets -- -D warnings` initially flagged `clippy::question_mark` on the `let...else` in `read_package_json_workspaces` — fixed by replacing it with `val.get("workspaces")?;` (a mechanical, behavior-preserving clippy-driven fix, not a scope change). Re-ran tests (still green) and clippy (clean) and `cargo fmt --check` (clean).
+4. **Commit**: Staged only `crates/callisto-graph/src/locate/membership.rs` (other unrelated working-tree changes from other in-flight tracks were left untouched) and committed as `2c796c1`.
+
+`covers_criteria` for this task is `[]` in the plan, so no spec acceptance criteria needed to be read or proved, and `criteria_evidence` is correctly omitted.
+
+```json
+{
+  "task_id": "TASK-04a",
+  "status": "done",
+  "steps_completed": [
+    "read_task_from_plan",
+    "wrote_failing_test",
+    "confirmed_red",
+    "wrote_minimal_implementation",
+    "confirmed_green",
+    "cargo_fmt",
+    "cargo_clippy_all_targets_deny_warnings",
+    "fixed_clippy_question_mark_lint",
+    "reconfirmed_green_after_lint_fix",
+    "committed"
+  ],
+  "test_result": "pass",
+  "commit_sha": "2c796c181a6f95a08bd6638895cbc061ce72c2dd",
+  "concerns": "clippy::question_mark fired on the let-else in read_package_json_workspaces from the task's own implementation.code; fixed with the equivalent `?` operator (val.get(\"workspaces\")?;) — purely mechanical, no behavior change, still matches the task's stated naive-shape-validation scope (TASK-04d is still the one that hardens as_array()/as_str() unwraps).",
+  "reasoning": "Task's covers_criteria is empty, so no spec criteria to read or prove this cycle. Followed the plan's failing_test and implementation verbatim except for the one clippy-mandated let-else -&gt; ? rewrite, which is required by this repo's CI gate (cargo clippy --all-targets -- -D warnings) per CLAUDE.md/AGENTS.md and does not touch the naive as_array()/as_str() unwraps the task note says TASK-04d will replace."
+}
+```
+
+Relevant files:
+- `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs` (lines 228-320 approx: `NpmMembership` struct at line 229, `read_npm_membership` at line 244, `read_package_json_workspaces` helper, and `npm_membership_tests` module with the 4 new tests starting at line 281)</result>
+<usage><subagent_tokens>74130</subagent_tokens><tool_uses>42</tool_uses><duration_ms>797406</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a3a694285c0164677</task-id>
+<tool-use-id>toolu_019X3bN9P5F4R9hPdVyFNYwe</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a3a694285c0164677.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement Track 3a TASK-04b" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>TASK-04b is complete. Summary:
+
+- Read TASK-04b from `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/plan-track3a-v2.json`. `covers_criteria` was empty, so no spec cross-check was needed.
+- Wrote the two failing tests verbatim into `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs` (lines 348 and 366) before touching implementation code.
+- Confirmed red: `cargo test -p callisto-graph --lib membership::` — both new tests failed with assertion failures (the plan predicted a compile error since `read_pnpm_packages` didn't exist, but since the test only calls `read_npm_membership` — which ignored `pnpm-workspace.yaml` entirely pre-change — the actual failure mode was an assertion mismatch, not a compile error; this matches the documented gotcha that plan prose about expected failures doesn't always match observed reality, and I trusted the observation).
+- Implemented `read_pnpm_packages` and the pnpm-over-npm precedence branch in `read_npm_membership` exactly as specified (naive `.unwrap()`/`&amp;docs[0]`/`.as_vec().unwrap()`/`.as_str().unwrap()` calls, matching the deliberate non-hardened first pass called for in the task note).
+- Confirmed green: all 19 tests in `locate::membership` pass, including the 2 new ones.
+- Ran `cargo fmt -p callisto-graph` and `cargo clippy -p callisto-graph --all-targets -- -D warnings` — clean, no warnings.
+- Committed as `2c816d5` (`feat(graph): add pnpm packages resolution with pnpm-over-npm precedence`).
+
+```json
+{
+  "task_id": "TASK-04b",
+  "status": "done",
+  "steps_completed": [
+    "read_plan_task",
+    "wrote_failing_tests",
+    "confirmed_red",
+    "implemented_minimum_code",
+    "confirmed_green",
+    "fmt_and_clippy_clean",
+    "committed"
+  ],
+  "test_result": "pass",
+  "commit_sha": "2c816d529c309368c38bc1bf863426cae6c4a1ac",
+  "concerns": "Actual red-phase failure mode was two assertion failures rather than the compile error ('cannot find function read_pnpm_packages') the plan's expected_failure_output predicted, because the test only calls read_npm_membership (public entry point), not read_pnpm_packages directly, and the pre-change read_npm_membership compiled fine while silently ignoring pnpm-workspace.yaml. This does not change the red/green verdict — both tests genuinely failed before the implementation and genuinely pass after — it's just a discrepancy between predicted and observed failure text, consistent with this plan's known gotcha #3.",
+  "criteria_evidence": []
+}
+```</result>
+<usage><subagent_tokens>63230</subagent_tokens><tool_uses>25</tool_uses><duration_ms>366325</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a37cce36e8133841a</task-id>
+<tool-use-id>toolu_01HAFbFDQtUSMBERjhVfR2Mo</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a37cce36e8133841a.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement Track 3a TASK-04c" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>TASK-04c is complete. Summary:
+
+- **Task**: TASK-04c — Harden pnpm fallback chain against YAML-parse-Err, zero-documents, and packages-key-missing-or-wrong-scalar-type in `read_pnpm_packages`.
+- **covers_criteria**: empty array in the plan, so no spec acceptance-criteria lookup was required.
+- **Red phase**: Added the four tests verbatim from the task's `failing_test.code` to `crates/callisto-graph/src/locate/membership.rs` (in `npm_membership_tests`). Ran `cargo test -p callisto-graph read_npm_membership_falls_back` — all four failed with exactly the predicted panics: `.expect()` on the YAML parse error, `&amp;docs[0]` out-of-bounds on zero documents, and `.as_vec().expect()` panics for missing-key and wrong-scalar-type packages.
+- **Implementation**: Replaced the naive `.expect()`/`&amp;docs[0]`/`.as_vec().expect()` chain in `read_pnpm_packages` (`crates/callisto-graph/src/locate/membership.rs:261-276`) with `.ok()?`, `docs.first()?`, and `.as_vec()?`, exactly as specified in the task's `implementation.code`. Also corrected the now-stale NAIVE doc comment above the function to reflect that only the non-string-sequence-element case remains for TASK-04e.
+- **Green phase**: `cargo test -p callisto-graph read_npm_membership` → 10 passed, 0 failed (6 pre-existing + 4 new).
+- **Quality gates**: `cargo fmt -p callisto-graph` (reformatted whitespace only) and `cargo clippy -p callisto-graph --all-targets -- -D warnings` both clean.
+- **Commit**: `f129491870c40605178550abd3cba57ec6918fb7` on `main`, message matches the task's `commit_message` verbatim.
+
+No precision tests were supplied for this cycle. No spec contradiction encountered — the task's implementation code, as specified, worked exactly as predicted against the naive TASK-04b baseline.
+
+```json
+{
+  "task_id": "TASK-04c",
+  "status": "done",
+  "steps_completed": [
+    "read_task_from_plan",
+    "confirmed_covers_criteria_empty_no_spec_lookup_needed",
+    "wrote_failing_tests_verbatim_from_plan",
+    "ran_tests_confirmed_red_matching_expected_failure_modes",
+    "applied_minimal_implementation_verbatim_from_plan",
+    "updated_stale_naive_doc_comment",
+    "ran_tests_confirmed_green_10_passed",
+    "ran_cargo_fmt",
+    "ran_cargo_clippy_all_targets_deny_warnings_clean",
+    "committed"
+  ],
+  "test_result": "pass",
+  "commit_sha": "f129491870c40605178550abd3cba57ec6918fb7",
+  "concerns": null,
+  "reasoning": "Task's covers_criteria was an empty array, so no spec acceptance-criteria read was required per the instructions. Tests were added first and observed failing with the exact panic messages predicted in expected_failure_output before any implementation change. Implementation was applied exactly as specified in the plan's implementation.code block (ok()?/first()?/as_vec()? chain), nothing more. All 10 tests in npm_membership_tests pass, fmt and clippy -D warnings are clean, and the change was committed with the exact commit_message from the plan."
+}
+```</result>
+<usage><subagent_tokens>69270</subagent_tokens><tool_uses>30</tool_uses><duration_ms>712300</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>aba8f59acb0ed6a2c</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/aba8f59acb0ed6a2c.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement Track 3a TASK-04d" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I'll stop polling and wait for the notification to arrive.</result>
+<usage><subagent_tokens>54412</subagent_tokens><tool_uses>22</tool_uses><duration_ms>234397</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>aba8f59acb0ed6a2c</task-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/aba8f59acb0ed6a2c.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement Track 3a TASK-04d" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Committed successfully as `4731817`.
+
+## Summary
+
+Task TASK-04d executed via full TDD cycle.
+
+**File modified:** `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs`
+
+- Red: added the two exact tests from the plan (`read_npm_membership_falls_back_to_absent_when_workspaces_is_bare_string` at line 428, `read_npm_membership_falls_back_to_absent_when_workspaces_array_has_non_string_entry` at line 440), confirmed they panicked exactly as `expected_failure_output` predicted (`.expect("naive: TASK-04d ...")` panics at lines 290 and 295 of the pre-change code).
+- Green: replaced the two naive `.expect(...)` calls in `read_package_json_workspaces` (now at line 282) with a safe `?`-chained extraction, matching the plan's implementation verbatim. Re-ran the full `npm_membership_tests` module — all 12 tests pass (10 pre-existing + 2 new).
+- Updated the stale doc comment above `read_package_json_workspaces` that previously described the naive behavior as "not yet validated" — left the `TASK-04e` doc comment on `read_pnpm_packages` untouched since that task is still pending and the comment remains accurate.
+- `cargo fmt -p callisto-graph` and `cargo clippy -p callisto-graph --all-targets -- -D warnings` both clean.
+- Committed only this file with the plan's exact commit message.
+
+No precision tests were supplied for this cycle. `covers_criteria` was empty for this task, so no spec criteria reading or criteria_evidence was required.
+
+```json
+{
+  "task_id": "TASK-04d",
+  "status": "done",
+  "steps_completed": [
+    "read_task_from_plan",
+    "baseline_tests_pass_confirmed",
+    "wrote_failing_tests_verbatim_from_plan",
+    "confirmed_red_matches_expected_failure_output",
+    "wrote_minimal_implementation_verbatim_from_plan",
+    "confirmed_green_full_module_12_passed",
+    "updated_stale_doc_comment",
+    "cargo_fmt_clean",
+    "cargo_clippy_clean",
+    "committed"
+  ],
+  "test_result": "pass",
+  "commit_sha": "4731817",
+  "concerns": null,
+  "reasoning": "Task matched observed reality exactly: the two .expect() calls did panic as described, red phase reproduced expected_failure_output verbatim, minimal ? -chain implementation matched the plan and made all 12 tests in npm_membership_tests green. covers_criteria was empty so no spec cross-check or criteria_evidence was required. No precision tests were supplied."
+}
+```</result>
+<usage><subagent_tokens>59583</subagent_tokens><tool_uses>31</tool_uses><duration_ms>472681</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ac840997849f7c38f</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/ac840997849f7c38f.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement Track 3a TASK-04e" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Task TASK-04e is complete. Summary:
+
+- File modified: `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs`
+- Added two tests to `npm_membership_tests` (lines ~447-467): `read_npm_membership_falls_back_to_absent_when_pnpm_packages_sequence_has_non_string_element` (genuinely red) and `read_npm_membership_falls_back_to_absent_when_root_package_json_syntax_is_invalid` (honest non-red, confirmed by observation).
+- Red phase: ran the first test — panicked exactly as predicted with `naive: TASK-04e hardens non-string sequence elements` at line 271. Ran the second test — passed immediately (confirmed by execution, not assumption), matching the task's own note that JSON parsing has been safe via `.ok()?` since TASK-04a.
+- Implementation: replaced the naive `.map(|v| v.as_str().expect(...))` chain in `read_pnpm_packages` (now at line 260) with a `?`-chained loop (`for item in packages { out.push(item.as_str()?.to_string()); }`), matching the plan exactly. Updated the stale doc comment above the function that referenced the now-fixed naive call.
+- Green phase: all 27 tests in `locate::membership` pass; full `cargo test -p callisto-graph` suite passes; `cargo fmt -p callisto-graph` and `cargo clippy -p callisto-graph --all-targets -- -D warnings` are both clean.
+- Committed as `5ac5846`.
+
+```json
+{
+  "task_id": "TASK-04e",
+  "status": "done",
+  "steps_completed": [
+    "read task TASK-04e from plan file",
+    "confirmed covers_criteria is empty (no spec criteria to read)",
+    "verified baseline code state matches plan's stated prior-commit state",
+    "wrote two tests from failing_test.code into npm_membership_tests",
+    "ran red phase: first test failed with exact expected panic message; second test passed immediately, confirming the task note's honest non-red claim by direct observation rather than assumption",
+    "implemented minimal fix: ?-chained loop replacing naive as_str().expect() in read_pnpm_packages",
+    "updated stale doc comment referencing the now-fixed naive call",
+    "ran green phase: all membership tests pass, full crate test suite passes",
+    "ran cargo fmt -p callisto-graph (formatting only, no logic change)",
+    "ran cargo clippy -p callisto-graph --all-targets -- -D warnings: clean",
+    "committed as 5ac5846"
+  ],
+  "test_result": "pass",
+  "commit_sha": "5ac5846",
+  "concerns": null,
+  "reasoning": "Task had covers_criteria: [] so no spec read was required. One of the two required tests was genuinely red (verified by actual panic matching expected_failure_output exactly); the other was honestly non-red per the task's own note and I confirmed this by actually running it before touching implementation, not by trusting the plan's claim. Implementation change was the minimal ?-chain replacement specified in the task, applied verbatim. No precision_tests were supplied for this task. Full crate test suite and clippy -D warnings both pass cleanly after the change."
+}
+```</result>
+<usage><subagent_tokens>101678</subagent_tokens><tool_uses>39</tool_uses><duration_ms>653271</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>aeadab9ddd7ee2768</task-id>
+<tool-use-id>toolu_01Qn7dL6mqQL1g4oSVEs1x1G</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/aeadab9ddd7ee2768.output</output-file>
+<status>completed</status>
+<summary>Agent "Review Track 3a TASK-04a through 04e" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Everything is confirmed. Here is my review.
+
+```json
+{
+  "status": "approved",
+  "issues": [],
+  "sibling_gaps": [
+    "As of the true end state of TASK-04a-04e (commit 5ac5846), NpmMembership::admits(&amp;self, rel: &amp;Path) still takes a single argument with no hybrid_root/is_root support, while CargoMembership::admits(&amp;self, rel: &amp;Path, is_root: bool) has had hybrid-root support since TASK-03a. This is a real structural asymmetry between the two ecosystems' membership filters at this point in the series, but it is explicitly scoped to TASK-04f (a separate, already-planned task, noted as concurrent WIP in this review's instructions) rather than an unaddressed gap within 04a-04e's own scope — not a blocker for this review."
+  ],
+  "reasoning": "Read the plan (plan-track3a-v2.json) tasks TASK-04a through TASK-04e in full, and diffed each of the five commits (2c796c1, 2c816d5, f129491, 4731817, 5ac5846) against membership.rs. Every diff matches its task's specified implementation and test code byte-for-byte (function bodies, doc comments, test fixtures, commit messages all line up with the plan). Checked out the true end state at 5ac5846 via a git worktree (avoided touching the dirty working tree per instructions) and: (1) ran `cargo test -p callisto-graph --lib locate::membership::` — all 27 tests pass; (2) ran `cargo clippy -p callisto-graph --lib --tests -- -D warnings` — clean, no violations of the Rust hazards reference (no bare .unwrap()/.expect()/panic! remain in production code paths — grepped the final file and confirmed every remaining .unwrap()/.expect() is inside a #[cfg(test)] module); (3) independently verified the 'honest non-red' claim in TASK-04e's task note by checking out the pre-04e commit (4731817), appending both AC-09e's fixture (unparseable package.json) and the non-string-pnpm-sequence fixture as ad hoc probe tests, and running them: the package.json probe passed unchanged (confirming AC-09e genuinely was honest-non-red, not mislabeled) and the pnpm-sequence probe panicked with the exact 'naive: TASK-04e hardens non-string sequence elements' message (confirming that half was genuinely red) — this exactly matches the plan's own claim and the task prompt's hint about a pattern 'already seen and correctly handled in the Cargo series'; no discrepancy found. Verified `git log --oneline -- membership.rs` shows exactly 12 commits total (TASK-01/02/03a-e/04a-e) with no extra out-of-band corrective commits, meaning nothing needed silent patching. Verified the pnpm 'zero documents' fixture (comment-only YAML) genuinely produces docs.len()==0 via yaml_rust2, so that test's name and claimed code path are accurate, not just accidentally passing through a different branch. Checked structural symmetry against the Cargo series: array/string-shape hardening (parse_toml_string_array vs the JSON ?-chain), TOML/YAML-parse-error fallback, and non-string-entry hardening for both ecosystems' 'list of package globs' concept are all present and mirror each other appropriately, accounting for JSON's lack of a Cargo-style intermediate table (correctly not staged naive per TASK-04a's own note) and YAML's distinct 'missing key vs wrong scalar type' collapsing behavior (correctly tested together in TASK-04c per the note explaining as_vec()'s identical None result for both). The one real asymmetry — npm's admits() not yet carrying an is_root/hybrid_root parameter — is explicitly deferred to TASK-04f, which the task prompt itself names as concurrent in-progress work, so it is not a defect of the reviewed commits themselves; flagged in sibling_gaps for visibility but not blocking."
+}
+```
+
+Files inspected (all absolute paths):
+- `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs` (as of commits 2c796c1, 2c816d5, f129491, 4731817, 5ac5846)
+- `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/plan-track3a-v2.json` (TASK-04a–04f definitions)
+- `/Users/gabe/Projects/agent-plugins/shared/references/rust-hazards.md`
+
+No blockers found. All five commits (04a–04e) exactly match their plan specifications, all 27 unit tests pass at the true end state (5ac5846), clippy is clean under `-D warnings`, no naive `.unwrap()`/`.expect()` remain in production code paths, and the "honest non-red" claim in TASK-04e was independently verified against actual test execution and found accurate.</result>
+<usage><subagent_tokens>117139</subagent_tokens><tool_uses>30</tool_uses><duration_ms>433439</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>adfbd9e1cf0c5adc2</task-id>
+<tool-use-id>toolu_01LK9o9pXDQNMueMhMwZer7H</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/adfbd9e1cf0c5adc2.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement Track 3a TASK-04f" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Summary
+
+I executed TASK-04f from the plan (`/private/tmp/claude-501/.../scratchpad/plan-track3a-v2.json`) via TDD.
+
+**Red phase**: Appended `read_npm_membership_hybrid_root_is_admitted_even_when_workspaces_glob_does_not_match_root` to `npm_membership_tests` in `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs`. Ran `cargo test -p callisto-graph read_npm_membership_hybrid_root_is_admitted...` and confirmed compile failure `E0061: this method takes 1 argument but 2 arguments were supplied`, matching the task's `expected_failure_output` exactly.
+
+**Green phase**: Added `hybrid_root: bool` to `NpmMembership`, changed `admits()` to take `is_root: bool` with the short-circuit `if is_root &amp;&amp; self.hybrid_root { return true; }` (mirroring `CargoMembership::admits` exactly), added `package_json_declares_name()`, and threaded `hybrid_root` through `read_npm_membership`. Mechanically updated all 17 pre-existing `.admits(Path::new(...))` call sites in `npm_membership_tests` to pass `false` via a scoped sed. All 18 tests in `npm_membership_tests` + `ignore_walk::tests` pass. `cargo fmt` and `cargo clippy -p callisto-graph --all-targets -- -D warnings` both clean.
+
+**Contradiction found and handled without forcing**: The task's note and implementation both assumed `IgnoreWalkLocator::projects()` in `ignore_walk.rs` already contains a "sole wiring call site" (`npm_membership.admits(&amp;rel)`) from a prior "TASK-06," analogous to a Cargo-side `rel == Path::new(".")` check from "TASK-05." I verified this is false: `grep` across `crates/callisto-graph/src/` shows `CargoMembership`/`NpmMembership`/`.admits(` appear only inside `membership.rs` itself; `git log` on `ignore_walk.rs` shows no commit since `64fcb2b` touched membership logic. `projects()` does a raw walk with zero globset-based filtering for either ecosystem. Since covers_criteria for this task is `[]` (correctly — this task alone doesn't prove AC-16, which needs the actual `projects()` wiring), I did not fabricate wiring into `ignore_walk.rs` to satisfy a premise that isn't real. I left `ignore_walk.rs` untouched and documented this clearly in the commit message so downstream tooling (lambda-exit-gate, later plan tasks) knows AC-16/AC-07 end-to-end wiring is still unimplemented.
+
+I also fixed 2 unrelated pre-existing `.admits(...)` calls in a scratch `ac09e_probe` test module that appeared in the file mid-session (added by another concurrent agent) — this was necessary just to keep the crate's test target compiling under the new signature; no assertions or fixtures there were altered, only mechanically appended `false`.
+
+Commit: `9b7dba1e59fd84d74f015ea1aaeb11b3c9932138` — only `crates/callisto-graph/src/locate/membership.rs` staged and committed (other concurrently-modified files from other agents in the workspace were left untouched).
+
+```json
+{
+  "task_id": "TASK-04f",
+  "status": "done_with_concerns",
+  "steps_completed": [
+    "read_task_from_plan",
+    "verified_covers_criteria_empty_is_accurate_not_a_typo",
+    "confirmed_baseline_tests_pass",
+    "wrote_failing_test_in_npm_membership_tests",
+    "confirmed_red_matches_expected_failure_output",
+    "implemented_hybrid_root_field_and_2arg_admits_mirroring_CargoMembership",
+    "mechanically_updated_17_pre_existing_admits_call_sites_to_pass_false",
+    "confirmed_green_all_18_tests_pass",
+    "ran_cargo_fmt",
+    "ran_cargo_clippy_all_targets_D_warnings_clean",
+    "did_not_modify_ignore_walk.rs_because_the_described_wiring_call_site_does_not_exist_in_reality",
+    "committed_membership.rs_only"
+  ],
+  "test_result": "pass",
+  "commit_sha": "9b7dba1e59fd84d74f015ea1aaeb11b3c9932138",
+  "concerns": "The task's note/implementation assumed IgnoreWalkLocator::projects() in crates/callisto-graph/src/locate/ignore_walk.rs already has a 'sole wiring call site' calling NpmMembership::admits (from a claimed prior 'TASK-06'), analogous to a Cargo-side is_root check from a claimed 'TASK-05'. Verified via grep and git log that neither exists: CargoMembership/NpmMembership/.admits( appear only inside membership.rs's own definitions and test module; ignore_walk.rs has never been touched by any membership-related commit. projects() currently does zero membership-glob filtering for either Cargo or Npm -- it only checks for a bare '[package]'/'name' field presence. I did not fabricate that wiring (which would be a much larger, unspecified change) and left ignore_walk.rs untouched. covers_criteria for this task is correctly [] since this task alone does not prove AC-16 end-to-end -- a future task must actually wire membership filtering into projects() for AC-07 and AC-16 to be provable at all.",
+  "reasoning": "Confirmed genuine plan/reality mismatch via grep+git log before acting; did the real, well-specified, testable part (NpmMembership signature/hybrid_root change) via strict TDD; refused to force the unwireable ignore_walk.rs edit; also had to defensively fix two unrelated admits() call sites added mid-session by a concurrent agent's scratch probe module to keep the crate compiling, without altering their assertions."
+}
+```</result>
+<usage><subagent_tokens>98731</subagent_tokens><tool_uses>39</tool_uses><duration_ms>856366</duration_ms></usage>
+</task-notification>
