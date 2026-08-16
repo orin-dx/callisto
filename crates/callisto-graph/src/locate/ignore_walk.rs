@@ -1601,4 +1601,99 @@ mod tests {
             .iter()
             .any(|p| p.path == Path::new("packages/kept")));
     }
+
+    /// Spec (AC-11b): a pnpm-workspace.yaml that parses successfully but
+    /// whose top-level document either has no `packages:` key, or has a
+    /// `packages:` key whose value is not a YAML sequence of strings --
+    /// e.g. `packages: "packages/*"` (bare scalar), `packages: {foo: bar}`
+    /// (mapping), or a sequence containing a non-string element -- does not
+    /// panic; `IgnoreWalkLocator::projects()` treats the npm membership
+    /// filter as absent for that workspace, the same fallback as AC-11's
+    /// YAML-syntax-error case.
+    #[test]
+    fn ac11b_pnpm_packages_wrong_shape_falls_back_to_absent_filter() {
+        let dir_missing = tempfile::tempdir().unwrap();
+        let root_missing = dir_missing.path();
+        std::fs::write(
+            root_missing.join("pnpm-workspace.yaml"),
+            "other_key: true\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(root_missing.join("packages/kept")).unwrap();
+        std::fs::write(
+            root_missing.join("packages/kept/package.json"),
+            r#"{"name":"kept"}"#,
+        )
+        .unwrap();
+        let projects_missing = IgnoreWalkLocator::new(root_missing).projects().unwrap();
+        assert!(
+            projects_missing
+                .iter()
+                .any(|p| p.path == Path::new("packages/kept")),
+            "AC-11b (missing key): packages/kept must be admitted, got: {projects_missing:?}"
+        );
+
+        let dir_scalar = tempfile::tempdir().unwrap();
+        let root_scalar = dir_scalar.path();
+        std::fs::write(
+            root_scalar.join("pnpm-workspace.yaml"),
+            "packages: \"packages/*\"\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(root_scalar.join("packages/kept")).unwrap();
+        std::fs::write(
+            root_scalar.join("packages/kept/package.json"),
+            r#"{"name":"kept"}"#,
+        )
+        .unwrap();
+        let projects_scalar = IgnoreWalkLocator::new(root_scalar).projects().unwrap();
+        assert!(
+            projects_scalar
+                .iter()
+                .any(|p| p.path == Path::new("packages/kept")),
+            "AC-11b (wrong scalar type): packages/kept must be admitted, got: {projects_scalar:?}"
+        );
+
+        let dir_mapping = tempfile::tempdir().unwrap();
+        let root_mapping = dir_mapping.path();
+        std::fs::write(
+            root_mapping.join("pnpm-workspace.yaml"),
+            "packages:\n  foo: bar\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(root_mapping.join("packages/kept")).unwrap();
+        std::fs::write(
+            root_mapping.join("packages/kept/package.json"),
+            r#"{"name":"kept"}"#,
+        )
+        .unwrap();
+        let projects_mapping = IgnoreWalkLocator::new(root_mapping).projects().unwrap();
+        assert!(
+            projects_mapping
+                .iter()
+                .any(|p| p.path == Path::new("packages/kept")),
+            "AC-11b (mapping value): packages/kept must be admitted, got: {projects_mapping:?}"
+        );
+
+        let dir_nonstring = tempfile::tempdir().unwrap();
+        let root_nonstring = dir_nonstring.path();
+        std::fs::write(
+            root_nonstring.join("pnpm-workspace.yaml"),
+            "packages:\n  - \"a\"\n  - 42\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(root_nonstring.join("packages/kept")).unwrap();
+        std::fs::write(
+            root_nonstring.join("packages/kept/package.json"),
+            r#"{"name":"kept"}"#,
+        )
+        .unwrap();
+        let projects_nonstring = IgnoreWalkLocator::new(root_nonstring).projects().unwrap();
+        assert!(
+            projects_nonstring
+                .iter()
+                .any(|p| p.path == Path::new("packages/kept")),
+            "AC-11b (non-string sequence element): packages/kept must be admitted, got: {projects_nonstring:?}"
+        );
+    }
 }
