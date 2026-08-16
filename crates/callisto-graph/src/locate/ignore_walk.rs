@@ -1762,4 +1762,171 @@ mod tests {
             "AC-11d (comments only): packages/kept must be admitted, got: {projects_comments:?}"
         );
     }
+
+    /// AC-14 (Cargo slice): regression-proof consolidation of the Cargo
+    /// malformed-input criteria already proven individually as
+    /// ac09_malformed_cargo_members_bare_string_falls_back_to_absent_filter,
+    /// ac09b_malformed_cargo_exclude_bare_string_falls_back_to_excluding_nothing,
+    /// ac09d_malformed_root_cargo_toml_syntax_falls_back_to_absent_cargo_filter,
+    /// ac09f_invalid_glob_in_cargo_members_is_skipped_without_disabling_sibling_entries,
+    /// and ac09i_invalid_glob_in_cargo_exclude_is_skipped_without_disabling_sibling_entries.
+    /// Reassembles the exact fixtures from AC-14's spec text for the Cargo
+    /// sub-slice (AC-09, AC-09b, AC-09d, AC-09f, AC-09i) into a single
+    /// regression group so future changes to Cargo membership handling that
+    /// break any one of these no-panic/fallback behaviors are caught here.
+    #[test]
+    fn ac14_cargo_malformed_edge_case_regression_slice() {
+        // AC-09: bare-string `members` falls back to absent filter (admits everything).
+        {
+            let tmp = tempdir().unwrap();
+            let root = tmp.path();
+            fs::write(
+                root.join("Cargo.toml"),
+                "[workspace]\nmembers = \"crates/*\"\n",
+            )
+            .unwrap();
+            fs::create_dir_all(root.join("tools/outside")).unwrap();
+            fs::write(
+                root.join("tools/outside/Cargo.toml"),
+                "[package]\nname = \"outside\"\nversion = \"0.1.0\"\n",
+            )
+            .unwrap();
+            let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+            assert!(
+                projects
+                    .iter()
+                    .any(|p| p.path == Path::new("tools/outside")),
+                "AC-09: tools/outside must be admitted, got: {projects:?}"
+            );
+        }
+
+        // AC-09b: bare-string `exclude` falls back to excluding nothing, while
+        // the well-formed `members` filter still applies.
+        {
+            let tmp = tempdir().unwrap();
+            let root = tmp.path();
+            fs::write(
+                root.join("Cargo.toml"),
+                "[workspace]\nmembers = [\"crates/*\"]\nexclude = \"crates/scratch-example\"\n",
+            )
+            .unwrap();
+            fs::create_dir_all(root.join("crates/scratch-example")).unwrap();
+            fs::write(
+                root.join("crates/scratch-example/Cargo.toml"),
+                "[package]\nname = \"scratch-example\"\nversion = \"0.1.0\"\n",
+            )
+            .unwrap();
+            fs::create_dir_all(root.join("crates/kept-example")).unwrap();
+            fs::write(
+                root.join("crates/kept-example/Cargo.toml"),
+                "[package]\nname = \"kept-example\"\nversion = \"0.1.0\"\n",
+            )
+            .unwrap();
+            fs::create_dir_all(root.join("tools/outside")).unwrap();
+            fs::write(
+                root.join("tools/outside/Cargo.toml"),
+                "[package]\nname = \"outside\"\nversion = \"0.1.0\"\n",
+            )
+            .unwrap();
+            let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+            assert!(
+                projects
+                    .iter()
+                    .any(|p| p.path == Path::new("crates/scratch-example")),
+                "AC-09b: crates/scratch-example must be admitted, got: {projects:?}"
+            );
+            assert!(
+                projects
+                    .iter()
+                    .any(|p| p.path == Path::new("crates/kept-example")),
+                "AC-09b: crates/kept-example must be admitted, got: {projects:?}"
+            );
+            assert!(
+                !projects
+                    .iter()
+                    .any(|p| p.path == Path::new("tools/outside")),
+                "AC-09b: tools/outside must remain excluded by members, got: {projects:?}"
+            );
+        }
+
+        // AC-09d: syntactically invalid root TOML falls back to absent Cargo filter.
+        {
+            let tmp = tempdir().unwrap();
+            let root = tmp.path();
+            fs::write(root.join("Cargo.toml"), "[workspace\nmembers = [\n").unwrap();
+            fs::create_dir_all(root.join("crates/kept")).unwrap();
+            fs::write(
+                root.join("crates/kept/Cargo.toml"),
+                "[package]\nname = \"kept\"\nversion = \"0.1.0\"\n",
+            )
+            .unwrap();
+            let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+            assert!(
+                projects.iter().any(|p| p.path == Path::new("crates/kept")),
+                "AC-09d: crates/kept must be admitted, got: {projects:?}"
+            );
+        }
+
+        // AC-09f: an invalid glob entry in `members` is skipped without
+        // disabling sibling well-formed entries.
+        {
+            let tmp = tempdir().unwrap();
+            let root = tmp.path();
+            fs::write(
+                root.join("Cargo.toml"),
+                "[workspace]\nmembers = [\"crates/kept-example\", \"crates/[unterminated\"]\n",
+            )
+            .unwrap();
+            fs::create_dir_all(root.join("crates/kept-example")).unwrap();
+            fs::write(
+                root.join("crates/kept-example/Cargo.toml"),
+                "[package]\nname = \"kept-example\"\nversion = \"0.1.0\"\n",
+            )
+            .unwrap();
+            let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+            assert!(
+                projects
+                    .iter()
+                    .any(|p| p.path == Path::new("crates/kept-example")),
+                "AC-09f: crates/kept-example must be admitted, got: {projects:?}"
+            );
+        }
+
+        // AC-09i: an invalid glob entry in `exclude` is skipped without
+        // disabling sibling well-formed exclude entries.
+        {
+            let tmp = tempdir().unwrap();
+            let root = tmp.path();
+            fs::write(
+                root.join("Cargo.toml"),
+                "[workspace]\nmembers = [\"crates/*\"]\nexclude = [\"crates/scratch-example\", \"crates/[unterminated\"]\n",
+            )
+            .unwrap();
+            fs::create_dir_all(root.join("crates/scratch-example")).unwrap();
+            fs::write(
+                root.join("crates/scratch-example/Cargo.toml"),
+                "[package]\nname = \"scratch-example\"\nversion = \"0.1.0\"\n",
+            )
+            .unwrap();
+            fs::create_dir_all(root.join("crates/kept-example")).unwrap();
+            fs::write(
+                root.join("crates/kept-example/Cargo.toml"),
+                "[package]\nname = \"kept-example\"\nversion = \"0.1.0\"\n",
+            )
+            .unwrap();
+            let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+            assert!(
+                !projects
+                    .iter()
+                    .any(|p| p.path == Path::new("crates/scratch-example")),
+                "AC-09i: crates/scratch-example must remain excluded, got: {projects:?}"
+            );
+            assert!(
+                projects
+                    .iter()
+                    .any(|p| p.path == Path::new("crates/kept-example")),
+                "AC-09i: crates/kept-example must be admitted, got: {projects:?}"
+            );
+        }
+    }
 }
