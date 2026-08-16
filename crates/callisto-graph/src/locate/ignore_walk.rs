@@ -2033,4 +2033,119 @@ mod tests {
             );
         }
     }
+
+    /// AC-14 (pnpm slice): consolidated regression group reassembling the
+    /// fixtures already proven individually by
+    /// ac09h_invalid_glob_in_pnpm_packages_is_skipped_without_disabling_sibling_entries
+    /// (see TASK-25), ac11_malformed_pnpm_yaml_with_no_package_json_workspaces_falls_back_to_absent_filter
+    /// (TASK-27), ac11b_pnpm_packages_wrong_shape_falls_back_to_absent_filter
+    /// (TASK-28), and ac11d_zero_yaml_documents_falls_back_to_absent_filter_without_panic
+    /// (TASK-29). Reassembles the exact fixtures from AC-14's spec text for
+    /// the pnpm sub-slice (AC-09h, AC-11, AC-11b, AC-11d) into a single
+    /// regression group so future changes to pnpm membership handling that
+    /// break any one of these no-panic/fallback behaviors are caught here.
+    #[test]
+    fn ac14_pnpm_malformed_edge_case_regression_slice() {
+        // AC-09h: an invalid glob entry in pnpm `packages` is skipped
+        // without disabling sibling well-formed entries.
+        {
+            let tmp = tempdir().unwrap();
+            let root = tmp.path();
+            fs::write(
+                root.join("pnpm-workspace.yaml"),
+                "packages:\n  - \"packages/kept-example\"\n  - \"packages/[unterminated\"\n",
+            )
+            .unwrap();
+            fs::create_dir_all(root.join("packages/kept-example")).unwrap();
+            fs::write(
+                root.join("packages/kept-example/package.json"),
+                r#"{"name":"kept-example"}"#,
+            )
+            .unwrap();
+            let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+            assert!(
+                projects
+                    .iter()
+                    .any(|p| p.path == Path::new("packages/kept-example")),
+                "AC-09h: packages/kept-example must be admitted, got: {projects:?}"
+            );
+        }
+
+        // AC-11: malformed pnpm-workspace.yaml (unterminated flow sequence)
+        // with a root package.json present but lacking a "workspaces"
+        // field falls back to admit-all npm membership without panicking
+        // or erroring the whole walk.
+        {
+            let tmp = tempdir().unwrap();
+            let root = tmp.path();
+            fs::write(root.join("package.json"), r#"{"name":"root"}"#).unwrap();
+            fs::write(
+                root.join("pnpm-workspace.yaml"),
+                "packages: [\"packages/*\"\n",
+            )
+            .unwrap();
+            fs::create_dir_all(root.join("packages/kept")).unwrap();
+            fs::write(
+                root.join("packages/kept/package.json"),
+                r#"{"name":"kept"}"#,
+            )
+            .unwrap();
+            let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+            assert!(
+                projects
+                    .iter()
+                    .any(|p| p.path == Path::new("packages/kept")),
+                "AC-11: packages/kept must be admitted, got: {projects:?}"
+            );
+        }
+
+        // AC-11b: pnpm-workspace.yaml parses successfully but `packages:`
+        // is a bare scalar string, not a sequence -- falls back to absent
+        // npm membership filter without panicking.
+        {
+            let tmp = tempdir().unwrap();
+            let root = tmp.path();
+            fs::write(
+                root.join("pnpm-workspace.yaml"),
+                "packages: \"packages/*\"\n",
+            )
+            .unwrap();
+            fs::create_dir_all(root.join("packages/kept")).unwrap();
+            fs::write(
+                root.join("packages/kept/package.json"),
+                r#"{"name":"kept"}"#,
+            )
+            .unwrap();
+            let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+            assert!(
+                projects
+                    .iter()
+                    .any(|p| p.path == Path::new("packages/kept")),
+                "AC-11b: packages/kept must be admitted, got: {projects:?}"
+            );
+        }
+
+        // AC-11d: pnpm-workspace.yaml containing only YAML comments parses
+        // successfully to zero documents (Ok(vec![])) -- falls back to
+        // absent npm membership filter without unconditionally indexing
+        // docs[0].
+        {
+            let tmp = tempdir().unwrap();
+            let root = tmp.path();
+            fs::write(root.join("pnpm-workspace.yaml"), "# no packages here\n").unwrap();
+            fs::create_dir_all(root.join("packages/kept")).unwrap();
+            fs::write(
+                root.join("packages/kept/package.json"),
+                r#"{"name":"kept"}"#,
+            )
+            .unwrap();
+            let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+            assert!(
+                projects
+                    .iter()
+                    .any(|p| p.path == Path::new("packages/kept")),
+                "AC-11d: packages/kept must be admitted, got: {projects:?}"
+            );
+        }
+    }
 }
