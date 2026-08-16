@@ -1696,4 +1696,70 @@ mod tests {
             "AC-11b (non-string sequence element): packages/kept must be admitted, got: {projects_nonstring:?}"
         );
     }
+
+    /// Spec (AC-11d): a pnpm-workspace.yaml file that is empty (zero bytes),
+    /// contains only whitespace, or contains only YAML comments -- such that
+    /// yaml_rust2::YamlLoader::load_from_str returns Ok(vec![]), a
+    /// successful parse producing zero YAML documents rather than a single
+    /// document -- does not panic (IgnoreWalkLocator::projects() must not
+    /// unconditionally index docs[0] or call docs.first().unwrap()); it
+    /// treats the npm membership filter as absent for that workspace, the
+    /// same fallback as AC-11b's missing-packages-key case.
+    #[test]
+    fn ac11d_zero_yaml_documents_falls_back_to_absent_filter_without_panic() {
+        let dir_empty = tempfile::tempdir().unwrap();
+        let root_empty = dir_empty.path();
+        std::fs::write(root_empty.join("pnpm-workspace.yaml"), "").unwrap();
+        std::fs::create_dir_all(root_empty.join("packages/kept")).unwrap();
+        std::fs::write(
+            root_empty.join("packages/kept/package.json"),
+            r#"{"name":"kept"}"#,
+        )
+        .unwrap();
+        let projects_empty = IgnoreWalkLocator::new(root_empty).projects().unwrap();
+        assert!(
+            projects_empty
+                .iter()
+                .any(|p| p.path == Path::new("packages/kept")),
+            "AC-11d (zero bytes): packages/kept must be admitted, got: {projects_empty:?}"
+        );
+
+        let dir_whitespace = tempfile::tempdir().unwrap();
+        let root_whitespace = dir_whitespace.path();
+        std::fs::write(root_whitespace.join("pnpm-workspace.yaml"), "   \n\t\n  \n").unwrap();
+        std::fs::create_dir_all(root_whitespace.join("packages/kept")).unwrap();
+        std::fs::write(
+            root_whitespace.join("packages/kept/package.json"),
+            r#"{"name":"kept"}"#,
+        )
+        .unwrap();
+        let projects_whitespace = IgnoreWalkLocator::new(root_whitespace).projects().unwrap();
+        assert!(
+            projects_whitespace
+                .iter()
+                .any(|p| p.path == Path::new("packages/kept")),
+            "AC-11d (whitespace only): packages/kept must be admitted, got: {projects_whitespace:?}"
+        );
+
+        let dir_comments = tempfile::tempdir().unwrap();
+        let root_comments = dir_comments.path();
+        std::fs::write(
+            root_comments.join("pnpm-workspace.yaml"),
+            "# no packages here\n# another comment\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(root_comments.join("packages/kept")).unwrap();
+        std::fs::write(
+            root_comments.join("packages/kept/package.json"),
+            r#"{"name":"kept"}"#,
+        )
+        .unwrap();
+        let projects_comments = IgnoreWalkLocator::new(root_comments).projects().unwrap();
+        assert!(
+            projects_comments
+                .iter()
+                .any(|p| p.path == Path::new("packages/kept")),
+            "AC-11d (comments only): packages/kept must be admitted, got: {projects_comments:?}"
+        );
+    }
 }
