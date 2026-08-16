@@ -804,4 +804,66 @@ mod tests {
             assert!(projects.iter().any(|p| p.path == Path::new("crates/kept")));
         }
     }
+
+    /// Spec (AC-10b): given a pnpm-workspace.yaml declaring `packages: []`
+    /// (present, empty list) and at least one package.json elsewhere in the
+    /// tree, projects() returns zero Npm-ecosystem entries besides any
+    /// AC-17-style hybrid root package (a root package.json that also
+    /// declares a "name" field is still an implicit member of its own
+    /// workspace per AC-17's pnpm-governed exemption and is admitted at
+    /// path "." even though the empty packages: list matches nothing) --
+    /// mirrors AC-10 for the pnpm-driven case.
+    #[test]
+    fn ac10b_pnpm_empty_packages_list_admits_zero_npm_entries() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        std::fs::write(root.join("pnpm-workspace.yaml"), "packages: []\n").unwrap();
+        std::fs::create_dir_all(root.join("packages/other")).unwrap();
+        std::fs::write(
+            root.join("packages/other/package.json"),
+            r#"{"name":"other"}"#,
+        )
+        .unwrap();
+
+        let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+
+        assert!(
+            !projects.iter().any(|p| p.ecosystem == Ecosystem::Npm),
+            "AC-10b: no non-root npm entries expected, got: {projects:?}"
+        );
+    }
+
+    /// Spec (AC-10b, hybrid-root clause): the same empty `packages: []`
+    /// list must not exclude a hybrid root -- a root package.json that
+    /// also declares a "name" field remains an implicit member of its own
+    /// workspace (AC-17's pnpm-governed exemption) and is admitted at
+    /// path "." even though the empty packages: list matches nothing.
+    #[test]
+    fn ac10b_pnpm_empty_packages_list_still_admits_hybrid_root() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        std::fs::write(root.join("pnpm-workspace.yaml"), "packages: []\n").unwrap();
+        std::fs::write(root.join("package.json"), r#"{"name":"root-pkg"}"#).unwrap();
+        std::fs::create_dir_all(root.join("packages/other")).unwrap();
+        std::fs::write(
+            root.join("packages/other/package.json"),
+            r#"{"name":"other"}"#,
+        )
+        .unwrap();
+
+        let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+
+        assert!(
+            projects
+                .iter()
+                .any(|p| p.path == Path::new(".") && p.ecosystem == Ecosystem::Npm),
+            "AC-10b: hybrid root at '.' must still be admitted, got: {projects:?}"
+        );
+        assert!(
+            !projects
+                .iter()
+                .any(|p| p.path == Path::new("packages/other") && p.ecosystem == Ecosystem::Npm),
+            "AC-10b: non-root packages/other must remain excluded, got: {projects:?}"
+        );
+    }
 }
