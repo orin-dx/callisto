@@ -1295,4 +1295,59 @@ mod tests {
             .iter()
             .any(|p| p.path == Path::new("tools/outside")));
     }
+
+    #[test]
+    fn ac09f_invalid_glob_in_cargo_members_is_skipped_without_disabling_sibling_entries() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        std::fs::write(
+            root.join("Cargo.toml"),
+            "[workspace]\nmembers = [\"crates/kept-example\", \"crates/[unterminated\"]\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join("crates/kept-example")).unwrap();
+        std::fs::write(
+            root.join("crates/kept-example/Cargo.toml"),
+            "[package]\nname = \"kept-example\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+
+        let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+
+        assert!(projects
+            .iter()
+            .any(|p| p.path == Path::new("crates/kept-example")));
+    }
+
+    #[test]
+    fn ac09i_invalid_glob_in_cargo_exclude_is_skipped_without_disabling_sibling_entries() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        std::fs::write(
+            root.join("Cargo.toml"),
+            "[workspace]\nmembers = [\"crates/*\"]\nexclude = [\"crates/scratch-example\", \"crates/[unterminated\"]\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join("crates/scratch-example")).unwrap();
+        std::fs::write(
+            root.join("crates/scratch-example/Cargo.toml"),
+            "[package]\nname = \"scratch-example\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join("crates/kept-example")).unwrap();
+        std::fs::write(
+            root.join("crates/kept-example/Cargo.toml"),
+            "[package]\nname = \"kept-example\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+
+        let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+
+        assert!(!projects
+            .iter()
+            .any(|p| p.path == Path::new("crates/scratch-example")));
+        assert!(projects
+            .iter()
+            .any(|p| p.path == Path::new("crates/kept-example")));
+    }
 }
