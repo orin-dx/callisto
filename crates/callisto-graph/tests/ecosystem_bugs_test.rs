@@ -249,17 +249,14 @@ fn cross_ecosystem_npm_to_cargo_dep_edge_is_discovered() {
     );
 
     // An UnknownPackage Warning diagnostic naming cargo:rust-addon must be present instead.
-    let diag = ws
-        .graph
-        .diagnostics()
-        .iter()
-        .find(|d| {
+    assert!(
+        ws.graph.diagnostics().iter().any(|d| {
             d.code == callisto_model::DiagnosticCode::UnknownPackage
                 && d.severity == callisto_model::DiagnosticSeverity::Warning
                 && d.message.contains("cargo:rust-addon")
-        })
-        .expect("an UnknownPackage warning diagnostic naming cargo:rust-addon must be present");
-    let _ = diag;
+        }),
+        "an UnknownPackage warning diagnostic naming cargo:rust-addon must be present"
+    );
 }
 
 /// Unit test for `IdentityIndex::resolve_native` cross-ecosystem fallback.
