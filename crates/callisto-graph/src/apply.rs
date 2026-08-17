@@ -241,6 +241,26 @@ pub fn apply_version_plan<R: CommandRunner>(
         }
     }
 
+    for pw in &plan.platform_writes {
+        let fmt = callisto_model::ManifestFormat::from_path(&pw.manifest)?;
+        let decl =
+            callisto_model::ManifestDecl::new(pw.manifest.clone(), ManifestRole::Canonical, fmt)?;
+        let mut handle = open(&decl, &ctx)?;
+        handle.write_version(&pw.version, permit)?;
+        handle.persist(permit)?;
+        modified_paths.push(pw.manifest.clone());
+    }
+
+    for opt in &plan.optional_dep_updates {
+        let fmt = callisto_model::ManifestFormat::from_path(&opt.manifest)?;
+        let decl =
+            callisto_model::ManifestDecl::new(opt.manifest.clone(), ManifestRole::Canonical, fmt)?;
+        let mut handle = open(&decl, &ctx)?;
+        handle.update_optional_dependencies(&opt.updates, permit)?;
+        handle.persist(permit)?;
+        modified_paths.push(opt.manifest.clone());
+    }
+
     if !opts.transient {
         for cl in &plan.changelog_writes {
             let rendered = callisto_changelog::render_section(&cl.input)?;
@@ -2214,5 +2234,66 @@ mod tests {
             result.staged.is_empty(),
             "transient mode outcome staged must be empty"
         );
+    }
+
+    #[test]
+    fn apply_version_plan_executes_platform_writes_and_optional_dep_updates() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+
+        let parent_pkg_path = root.join("package.json");
+        std::fs::write(
+            &parent_pkg_path,
+            r#"{"name": "my-parent", "version": "1.0.0", "optionalDependencies": {"@my-scope/platform-linux": "1.0.0"}}"#,
+        )
+        .unwrap();
+
+        std::fs::create_dir_all(root.join("platform")).unwrap();
+        let platform_pkg_path = root.join("platform/package.json");
+        std::fs::write(
+            &platform_pkg_path,
+            r#"{"name": "@my-scope/platform-linux", "version": "1.0.0"}"#,
+        )
+        .unwrap();
+
+        let plan = VersionPlan {
+            platform_writes: vec![crate::plan::PlatformWrite {
+                manifest: PathBuf::from("platform/package.json"),
+                version: cargo_version("1.1.0"),
+            }],
+            optional_dep_updates: vec![crate::plan::OptionalDepUpdate {
+                manifest: PathBuf::from("package.json"),
+                updates: vec![(
+                    "@my-scope/platform-linux".to_string(),
+                    cargo_version("1.1.0"),
+                )],
+            }],
+            ..Default::default()
+        };
+
+        let permit = ApplyPermit::force_for_tests();
+        let opts = ApplyOptions::default();
+
+        let result =
+            apply_version_plan(root, &plan, &NoopRunner, &opts, &permit).expect("apply succeeded");
+
+        let platform_content = std::fs::read_to_string(&platform_pkg_path).unwrap();
+        assert!(
+            platform_content.contains("\"version\": \"1.1.0\"")
+                || platform_content.contains("\"version\":\"1.1.0\""),
+            "platform manifest version must be updated to 1.1.0: {platform_content}"
+        );
+
+        let parent_content = std::fs::read_to_string(&parent_pkg_path).unwrap();
+        assert!(
+            parent_content.contains("\"@my-scope/platform-linux\": \"1.1.0\"")
+                || parent_content.contains("\"@my-scope/platform-linux\":\"1.1.0\""),
+            "parent optionalDependencies must be updated: {parent_content}"
+        );
+
+        assert!(result
+            .staged
+            .contains(&PathBuf::from("platform/package.json")));
+        assert!(result.staged.contains(&PathBuf::from("package.json")));
     }
 }
