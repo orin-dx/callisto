@@ -1,0 +1,328 @@
+{
+  "goal": "Wire the already-implemented Fixed-group convergence, pre_mutation_checks divergence/napi-drift detection, and cross-group conflict detection into callisto-graph's real cascade and version-command call paths, per SPEC-TRACK1-FIXED-GROUP-CASCADE-CORRECTNESS.",
+  "architecture": "Four independent-but-sequenced slices: (1) add a `tags: &TagIndex` field to CascadeInput and update all 15 real/test construction sites so the crate compiles; (2) add a new Fixed-group convergence block to solve_cascade's fixpoint loop, structurally mirroring the existing Linked-group block, which depends on the tags field; (3) wire crate::groups::pre_mutation_checks into plan_version's real orchestration path (NapiTargetsIndex construction, six-argument call, diagnostics merge, error propagation) before run_cascade; (4) add cross-group conflict detection to GroupTable::resolve via a single combined claimed-PackageId map shared across the fixed and linked resolution loops. Slice 1 must land in full before slices 2 and 3 compile; slice 4 is independent and can run in any order. Correction: slice 4's own logic (config/groups.rs's GroupTable::resolve) is independent of slices 1-3's logic, but its test binary shares the callisto-graph lib compilation target, so T10 must still be sequenced after T04 (which closes out slice 1's full-crate compile) before its test can build and run -- otherwise its RED step fails with unrelated missing-field compile errors from cascade.rs/version.rs/snapshot.rs rather than the intended assertion failure.",
+  "tech_stack": [
+    "Rust",
+    "cargo test",
+    "callisto-graph crate",
+    "tempfile",
+    "real git subprocess fixtures"
+  ],
+  "spec_file_path": ".claude/specs/SPEC-TRACK1-FIXED-GROUP-CASCADE-CORRECTNESS.json",
+  "spec_hash": "sha256:5050ccacc14ab9b144a88e934dbadde003e480251a50227cc011a8b32249306e",
+  "linked_requirement": "REQ-TRACK1-FIXED-GROUP-CASCADE-CORRECTNESS",
+  "linked_spec": "SPEC-TRACK1-FIXED-GROUP-CASCADE-CORRECTNESS",
+  "reasoning": "Read cascade.rs, config/groups.rs, groups.rs, napi.rs, tags.rs, commands/version.rs, commands/snapshot.rs, error.rs, identity.rs, and both existing test files (cascade_tests.rs, config_resolve_tests.rs) live from disk before writing any task, confirming every line number, signature, and existing test-helper pattern the spec's api_surface cites (all matched). Key groundings: (a) TagIndex has no test-friendly constructor besides build()/empty(), so real-tags fixtures reuse the exact FakeGitTagRunner + non_repo_dir + crate::config::load pattern already proven in tags.rs's own test module, giving cascade.rs's new test a real TagIndex with last_tag(A)=Some/last_tag(B)=None without touching TagIndex's private fields. (b) GroupTable::resolve is exercised through real Workspace::load with hand-written callisto.toml fixtures (mirroring the pre-existing config_resolve_tests.rs pattern) rather than synthetic direct map construction, satisfying AC-013's bug-3 clause. (c) AC-002/AC-004's 'real call path, not fixed_group_target called directly, not raise()-triggered' requirement is satisfied by a single test that constructs CascadeInput with both siblings in seed (never touching raise()) and calls run_cascade directly, asserting on CascadeOutcome.targets -- this one test satisfies AC-001, AC-002, AC-004, and AC-013's bug-1 clause simultaneously. (d) plan_version's pre_mutation_checks wiring is tested exclusively through plan_version itself (never calling pre_mutation_checks directly), satisfying AC-013's bug-2 clause; NapiTargetsIndex::load's own ManifestError::Parse path is reached transparently through plan_version's `?` propagation via GraphError's #[from] ManifestError conversion, so AC-007b needs no new error-conversion code, only a fixture. (e) Because CascadeInput's struct addition breaks compilation crate-wide (cascade.rs's own test module lives in the same lib target as commands/version.rs and commands/snapshot.rs), tasks 1-3 in slice 1 cannot each independently reach a fully green `cargo test -p callisto-graph --no-run`; their RED/GREEN check is scoped to that file's own missing-field errors via grep, with task 4 (snapshot.rs) as the slice's closing task confirming full-crate green and covering AC-003. (f) GroupTable::resolve's cross-group check uses a single BTreeMap<PackageId, GroupName> populated across both the fixed and linked resolution loops, checked before each insert; re-inserting the same PackageId under the same group name is a no-op (preserves the explicit non-goal that within-group duplicate spellings are not deduplicated), while a different group name triggers GraphError::ConflictingGroupMembership -- this satisfies both AC-010 (fixed/fixed) and AC-010b (fixed/linked) with one code path.",
+  "tasks": [
+    {
+      "id": "T01",
+      "title": "Add tags field to CascadeInput and update cascade.rs's own 7 test literals",
+      "files": {
+        "modify": [
+          "crates/callisto-graph/src/cascade.rs"
+        ]
+      },
+      "steps": [
+        "RED: run `cargo check -p callisto-graph --lib --message-format=short 2>&1 | grep 'cascade.rs'`. At this point CascadeInput has no `tags` field yet, so this command produces no missing-field errors (nothing to grep) -- this is the baseline. Add ONLY the struct field declared below (do not touch the 7 test literals yet), save, and re-run the same grep command. Expected output: 7 lines of the form `crates/callisto-graph/src/cascade.rs:NNN:9: error[E0063]: missing field \\`tags\\` in initializer of \\`CascadeInput<'_, _>\\`` at lines 698, 779, 850, 947, 1074, 1157, 1237 (their line numbers will shift slightly once the field is added earlier in the file; match by content, not exact number).",
+        "Add `use crate::tags::TagIndex;` to cascade.rs's top-level `use` block (alongside the existing `use crate::config::GroupTable;` line).",
+        "In the `CascadeInput` struct definition, add a new field after `pub pre: Option<&'a callisto_format::PreState>,`: `pub tags: &'a TagIndex,`.",
+        "In each of the 7 pre-existing `CascadeInput { ... }` literals inside cascade.rs's `#[cfg(test)] mod tests` block (the ones ending `base: &base, pre: None,` or `pre: Some(&pre),`), add a new line `tags: &TagIndex::empty(),` immediately after the `pre: ...,` line. None of these 7 construct a Fixed group (they use Linked groups, GroupTable::default(), or no groups), so `TagIndex::empty()` is correct for all of them.",
+        "GREEN: run `cargo check -p callisto-graph --lib --message-format=short 2>&1 | grep 'cascade.rs'`. Expected output: empty (no lines) -- every missing-field error attributable to cascade.rs itself is gone. The overall `cargo check` command will still exit non-zero at this point because commands/version.rs, commands/snapshot.rs, and tests/cascade_tests.rs have not been updated yet (that is expected and resolved by T02-T04)."
+      ],
+      "commit_message": "fix(graph): add tags field to CascadeInput and update cascade.rs test literals",
+      "depends_on": [],
+      "covers_criteria": []
+    },
+    {
+      "id": "T02",
+      "title": "Update the 6 pre-existing CascadeInput literals in cascade_tests.rs",
+      "files": {
+        "modify": [
+          "crates/callisto-graph/tests/cascade_tests.rs"
+        ]
+      },
+      "steps": [
+        "RED: run `cargo test -p callisto-graph --test cascade_tests --no-run --message-format=short 2>&1 | grep 'cascade_tests.rs'`. Expected output: 6 lines of `error[E0063]: missing field \\`tags\\` in initializer of \\`CascadeInput<'_, _>\\`` referencing crates/callisto-graph/tests/cascade_tests.rs at (approximately) lines 48, 141, 196, 258, 324, 411.",
+        "Add `use callisto_graph::TagIndex;` to the file's `use` block at the top (TagIndex is re-exported at the callisto_graph crate root via `pub use tags::{last_tag_for, TagIndex};` in lib.rs).",
+        "In each of the 6 `CascadeInput { ... }` literals, add a new line `tags: &TagIndex::empty(),` immediately after each literal's `pre: None,` line. None of these 6 construct a Fixed group.",
+        "GREEN: run `cargo test -p callisto-graph --test cascade_tests --no-run --message-format=short 2>&1 | grep 'cascade_tests.rs'`. Expected output: empty -- no missing-field errors attributable to cascade_tests.rs remain. The command as a whole may still fail to link until T03/T04 land (commands/version.rs and commands/snapshot.rs are compiled as part of the same lib dependency); that is expected."
+      ],
+      "commit_message": "test(graph): update cascade_tests.rs CascadeInput literals for new tags field",
+      "depends_on": [
+        "T01"
+      ],
+      "covers_criteria": []
+    },
+    {
+      "id": "T03",
+      "title": "Bind and pass a real TagIndex into plan_version's CascadeInput",
+      "files": {
+        "modify": [
+          "crates/callisto-graph/src/commands/version.rs"
+        ]
+      },
+      "steps": [
+        "RED: run `cargo check -p callisto-graph --lib --message-format=short 2>&1 | grep 'commands/version.rs'`. Expected output: one `error[E0063]: missing field \\`tags\\`` line pointing at the `CascadeInput { ... }` literal (currently ending `base: &base_versions, pre: pre_state.as_ref(),`) around line 70-79.",
+        "In `plan_version`, immediately after the existing line `let base_versions = ws.base_versions()?;`, add a new line: `let tags = ws.tags()?;`.",
+        "In the `aggregate(...)` call a few lines below, replace the fourth positional argument `ws.tags()?,` with `tags,` (the local binding is already `&TagIndex`, matching `aggregate`'s expected parameter type, so it is passed bare -- not `&tags`).",
+        "In the `CascadeInput { ... }` literal, add a new field after `pre: pre_state.as_ref(),`: `tags,`.",
+        "GREEN: run `cargo check -p callisto-graph --lib --message-format=short 2>&1 | grep 'commands/version.rs'`. Expected output: empty -- no missing-field or type errors attributable to commands/version.rs remain."
+      ],
+      "commit_message": "fix(graph): bind and pass real TagIndex into plan_version's CascadeInput",
+      "depends_on": [
+        "T01"
+      ],
+      "covers_criteria": []
+    },
+    {
+      "id": "T04",
+      "title": "Wire tags into plan_snapshot's CascadeInput; pin AC-005, AC-006, AC-014",
+      "files": {
+        "modify": [
+          "crates/callisto-graph/src/commands/snapshot.rs"
+        ]
+      },
+      "steps": [
+        "RED: run `cargo test -p callisto-graph --no-run 2>&1 | tail -40`. Expected output includes `error[E0063]: missing field \\`tags\\`` pointing at commands/snapshot.rs's `CascadeInput { ... }` literal (currently ending `base: &base_versions, pre: None,`) around line 53-62; this is now the ONLY remaining compile error in the whole crate (T01-T03 already fixed every other site).",
+        "In `plan_snapshot`, immediately after the existing line `let base_versions = ws.base_versions()?;`, add a new line: `let tags = ws.tags()?;`. This is the new fallible code path AC-014 requires: `ws.tags()` already returns `Result<&TagIndex, GraphError>`, so the `?` here propagates a tag-build failure as `plan_snapshot`'s own `Err` before anything else runs.",
+        "In the `let cascade_input = crate::cascade::CascadeInput { ... };` literal, add a new field after `pre: None,`: `tags,`.",
+        "GREEN (compile): run `cargo test -p callisto-graph --no-run 2>&1 | tail -5`. Expected output ends with `Finished` and lists compiled test binaries, zero error lines -- this is the point at which AC-003 (the whole crate, including cascade.rs's test module and the tests/cascade_tests.rs integration binary, compiles with the new tags field fully wired) becomes true.",
+        "Add a new `#[cfg(test)] mod tests { ... }` block at the bottom of commands/snapshot.rs with these exact contents:\n```rust\n#[cfg(test)]\nmod tests {\n    use std::path::Path;\n\n    use crate::locate::IgnoreWalkLocator;\n    use crate::Workspace;\n    use callisto_model::{CommandError, CommandOutput, CommandRunner};\n\n    use super::plan_snapshot;\n\n    struct NoopSuccessRunner;\n\n    impl CommandRunner for NoopSuccessRunner {\n        fn run(\n            &self,\n            _program: &str,\n            _args: &[&str],\n            _cwd: &Path,\n        ) -> Result<CommandOutput, CommandError> {\n            Ok(CommandOutput {\n                exit_code: Some(0),\n                stdout: String::new(),\n                stderr: String::new(),\n            })\n        }\n    }\n\n    struct FailingTagsRunner;\n\n    impl CommandRunner for FailingTagsRunner {\n        fn run(\n            &self,\n            program: &str,\n            args: &[&str],\n            _cwd: &Path,\n        ) -> Result<CommandOutput, CommandError> {\n            if program == \"git\" && args == [\"tag\", \"--list\"] {\n                return Err(CommandError::NotFound {\n                    program: \"git\".to_string(),\n                });\n            }\n            Ok(CommandOutput {\n                exit_code: Some(0),\n                stdout: String::new(),\n                stderr: String::new(),\n            })\n        }\n    }\n\n    fn git_init_with_commit(root: &Path) {\n        for args in [\n            vec![\"init\", \"-q\"],\n            vec![\"config\", \"user.email\", \"test@example.com\"],\n            vec![\"config\", \"user.name\", \"Test\"],\n        ] {\n            std::process::Command::new(\"git\")\n                .args(&args)\n                .current_dir(root)\n                .output()\n                .expect(\"git must be installed\");\n        }\n        std::fs::write(root.join(\".gitkeep\"), \"\").unwrap();\n        for args in [vec![\"add\", \".\"], vec![\"commit\", \"-q\", \"-m\", \"init\"]] {\n            std::process::Command::new(\"git\")\n                .args(&args)\n                .current_dir(root)\n                .output()\n                .expect(\"git must be installed\");\n        }\n    }\n\n    /// AC-014: when ws.tags() (TagIndex::build) fails, plan_snapshot must\n    /// propagate that Err rather than silently proceeding with an\n    /// empty/partial TagIndex.\n    #[test]\n    fn plan_snapshot_propagates_tags_build_failure() {\n        let tmp = tempfile::tempdir().unwrap();\n        let root = tmp.path();\n        std::fs::create_dir_all(root.join(\"pkg-alpha\")).unwrap();\n        std::fs::write(\n            root.join(\"pkg-alpha/Cargo.toml\"),\n            \"[package]\\nname = \\\"pkg-alpha\\\"\\nversion = \\\"1.0.0\\\"\\n\",\n        )\n        .unwrap();\n        assert!(\n            callisto_vcs::GitRepository::discover(root).is_err(),\n            \"fixture must not be a discoverable git repo, forcing the CommandRunner fallback\"\n        );\n\n        let locator = IgnoreWalkLocator::new(root);\n        let runner = FailingTagsRunner;\n        let ws = Workspace::load(root.to_path_buf(), &locator, &runner)\n            .expect(\"workspace must load even though git tags will later fail\");\n\n        let result = plan_snapshot(&ws, \"canary\");\n\n        assert!(\n            result.is_err(),\n            \"plan_snapshot must propagate a tags-build failure as Err, not silently proceed\"\n        );\n    }\n\n    /// AC-005: plan_snapshot's synthetic snapshot version overwrites every\n    /// PlannedBump.to and BumpRecord.to unconditionally, even for members of\n    /// a Fixed group -- the cascade-stage target the new Fixed-group\n    /// convergence block computes internally is discarded.\n    #[test]\n    fn plan_snapshot_overwrites_fixed_group_targets_with_synthetic_version() {\n        let tmp = tempfile::tempdir().unwrap();\n        let root = tmp.path();\n        git_init_with_commit(root);\n\n        std::fs::create_dir_all(root.join(\"pkg-a\")).unwrap();\n        std::fs::write(\n            root.join(\"pkg-a/Cargo.toml\"),\n            \"[package]\\nname = \\\"pkg-a\\\"\\nversion = \\\"2.0.0\\\"\\n\",\n        )\n        .unwrap();\n        std::fs::create_dir_all(root.join(\"pkg-b\")).unwrap();\n        std::fs::write(\n            root.join(\"pkg-b/Cargo.toml\"),\n            \"[package]\\nname = \\\"pkg-b\\\"\\nversion = \\\"0.1.0\\\"\\n\",\n        )\n        .unwrap();\n        std::fs::write(\n            root.join(\"callisto.toml\"),\n            \"[[fixed-group]]\\nname = \\\"ab\\\"\\nmembers = [\\\"pkg-a\\\", \\\"pkg-b\\\"]\\n\",\n        )\n        .unwrap();\n\n        let locator = IgnoreWalkLocator::new(root);\n        let runner = NoopSuccessRunner;\n        let ws = Workspace::load(root.to_path_buf(), &locator, &runner)\n            .expect(\"workspace must load\");\n\n        let (plan, report) = plan_snapshot(&ws, \"canary\").expect(\"plan_snapshot must succeed\");\n\n        let expected_prefix = \"0.0.0-canary-\";\n        for bump in &plan.bumps {\n            assert!(\n                bump.to.render().starts_with(expected_prefix),\n                \"PlannedBump.to for {:?} must be the synthetic snapshot version, got {}\",\n                bump.package,\n                bump.to.render()\n            );\n        }\n        for bump in &report.bumps {\n            assert!(\n                bump.to.render().starts_with(expected_prefix),\n                \"BumpRecord.to for {:?} must be the synthetic snapshot version, got {}\",\n                bump.package,\n                bump.to.render()\n            );\n        }\n    }\n\n    /// AC-006 (non-goal confirmation): plan_snapshot must never call\n    /// pre_mutation_checks -- snapshot mode assigns every package the\n    /// identical synthetic version, so there is no distinct-target\n    /// divergence for pre_mutation_checks to ever catch here.\n    #[test]\n    fn plan_snapshot_source_never_calls_pre_mutation_checks() {\n        let source = include_str!(\"snapshot.rs\");\n        assert!(\n            !source.contains(\"pre_mutation_checks\"),\n            \"plan_snapshot must not call pre_mutation_checks (see spec non_goals)\"\n        );\n    }\n}\n```",
+        "GREEN (behavior): run `cargo test -p callisto-graph --lib commands::snapshot::tests::`. Expected output: `test commands::snapshot::tests::plan_snapshot_overwrites_fixed_group_targets_with_synthetic_version ... ok`, `test commands::snapshot::tests::plan_snapshot_propagates_tags_build_failure ... ok`, `test commands::snapshot::tests::plan_snapshot_source_never_calls_pre_mutation_checks ... ok`, `test result: ok. 3 passed; 0 failed`."
+      ],
+      "commit_message": "fix(graph): wire tags into plan_snapshot's CascadeInput and pin AC-005/AC-006/AC-014",
+      "depends_on": [
+        "T02",
+        "T03"
+      ],
+      "covers_criteria": [
+        "AC-003",
+        "AC-005",
+        "AC-006",
+        "AC-014"
+      ]
+    },
+    {
+      "id": "T05",
+      "title": "Add Fixed-group convergence block to solve_cascade",
+      "files": {
+        "modify": [
+          "crates/callisto-graph/src/cascade.rs"
+        ]
+      },
+      "steps": [
+        "RED: add the following test to cascade.rs's `#[cfg(test)] mod tests` block (append after the existing `inherited_cargo_dependency_edge_never_produces_manifest_rewrite_target` test), then run `cargo test -p callisto-graph --lib cascade::tests::test_fixed_group_seeded_siblings_converge_on_shared_target`. Expected output before implementation: the assertion `assert_eq!(target_a.render(), \"2.1.0\", ...)` FAILS with a message showing A's actual target is `2.1.0` (from bump_target's own independent per-seed computation, since no Fixed-group logic exists yet) but B's actual target is `0.2.0`, not `2.1.0` -- i.e. `test result: FAILED` with the panic `assertion \\`left == right\\` failed ... B must converge on the SAME target as A, not its own independently-bumped 0.2.0` reporting `left: \"0.2.0\", right: \"2.1.0\"`.\n```rust\n    /// AC-001/AC-002/AC-004/AC-013(bug1): Fixed-group members seeded\n    /// directly (not via raise()) must converge on ONE shared,\n    /// group-aligned target version computed by fixed_group_target, not on\n    /// independently-bumped per-member targets. Exercised through the real\n    /// call path run_cascade -> solve_cascade -> the new Fixed-group block\n    /// -> fixed_group_target -- fixed_group_target is never called\n    /// directly, and raise() is never invoked (both siblings arrive via\n    /// input.seed).\n    #[test]\n    fn test_fixed_group_seeded_siblings_converge_on_shared_target() {\n        use std::sync::atomic::{AtomicUsize, Ordering};\n\n        struct FakeGitTagRunner {\n            calls: AtomicUsize,\n            tags: Vec<String>,\n        }\n        impl callisto_model::CommandRunner for FakeGitTagRunner {\n            fn run(\n                &self,\n                program: &str,\n                args: &[&str],\n                _cwd: &std::path::Path,\n            ) -> Result<callisto_model::CommandOutput, callisto_model::CommandError> {\n                assert_eq!(program, \"git\");\n                assert_eq!(args, [\"tag\", \"--list\"]);\n                self.calls.fetch_add(1, Ordering::SeqCst);\n                Ok(callisto_model::CommandOutput {\n                    exit_code: Some(0),\n                    stdout: self.tags.join(\"\\n\"),\n                    stderr: String::new(),\n                })\n            }\n        }\n\n        let pkg_a = PackageId::parse(\"pkg-a\").unwrap();\n        let pkg_b = PackageId::parse(\"pkg-b\").unwrap();\n\n        let graph = TwoPackageGraph {\n            packages: vec![bare_package(&pkg_a), bare_package(&pkg_b)],\n        };\n\n        let tmp = tempfile::tempdir().unwrap();\n        let dir = tmp.path();\n        assert!(\n            callisto_vcs::GitRepository::discover(dir).is_err(),\n            \"fixture dir must not be a discoverable git repo, forcing the CommandRunner fallback\"\n        );\n        let runner = FakeGitTagRunner {\n            calls: AtomicUsize::new(0),\n            tags: vec![\"pkg-a@2.0.0\".to_string()],\n        };\n        let git = callisto_vcs::GitAccess::discover(dir, &runner);\n        let cfg_resolved = crate::config::load(dir).unwrap();\n        let tags = crate::tags::TagIndex::build(&git, &graph, &cfg_resolved).unwrap();\n\n        assert!(tags.last_tag(&pkg_a).is_some(), \"A must have a prior release tag\");\n        assert!(tags.last_tag(&pkg_b).is_none(), \"B must never have been released\");\n\n        let mut base = BTreeMap::new();\n        base.insert(pkg_a.clone(), Version::semver(2, 0, 0));\n        base.insert(pkg_b.clone(), Version::semver(0, 1, 0));\n\n        let mut seed = BTreeMap::new();\n        seed.insert(pkg_a.clone(), Severity::Minor);\n        seed.insert(pkg_b.clone(), Severity::Minor);\n\n        let group_def = GroupDef {\n            name: GroupName(\"ab-fixed\".to_string()),\n            kind: GroupKind::Fixed,\n            members: vec![\n                GroupMember::Package(pkg_a.clone()),\n                GroupMember::Package(pkg_b.clone()),\n            ],\n        };\n        let groups = GroupTable::from_groups(vec![group_def], vec![]);\n\n        let cfg = CascadeConfig {\n            mode: CascadeMode::OutOfRange,\n            bump_severity: CascadeBumpSeverity::Patch,\n            peer_escalation: true,\n            preserve_npm_ranges: false,\n        };\n        let reasons = BTreeMap::new();\n        let named_by = BTreeMap::new();\n\n        let input = CascadeInput {\n            graph: &graph,\n            groups: &groups,\n            cfg: &cfg,\n            seed: &seed,\n            reasons: &reasons,\n            named_by: &named_by,\n            base: &base,\n            pre: None,\n            tags: &tags,\n        };\n\n        let outcome = run_cascade(input).unwrap();\n\n        let target_a = outcome.targets.get(&pkg_a).unwrap();\n        let target_b = outcome.targets.get(&pkg_b).unwrap();\n\n        assert_eq!(\n            target_a.render(),\n            \"2.1.0\",\n            \"A (the released member) must land on the group-aligned target\"\n        );\n        assert_eq!(\n            target_b.render(),\n            \"2.1.0\",\n            \"B must converge on the SAME target as A, not its own independently-bumped 0.2.0\"\n        );\n        assert_eq!(target_a, target_b);\n    }\n```",
+        "Implement: in `solve_cascade`, insert a new block immediately after the closing `}` of the existing `// Spec \u00a7G.6.7: Linked group release severity propagation` block (i.e. right before the outer `while changed { ... }` loop's own closing `}`), with these exact contents:\n```rust\n        // Track 1: Fixed group convergence -- mirrors the Linked-group block\n        // above but computes each group's shared target via\n        // fixed_group_target instead of taking the max of independently\n        // bumped per-member candidates.\n        for g in input.groups.fixed.values() {\n            let member_ids: Vec<PackageId> = g\n                .members(crate::config::GroupMemberKind::Package)\n                .filter_map(|m| match m {\n                    crate::config::GroupMember::Package(ref id) => Some(id.clone()),\n                    _ => None,\n                })\n                .collect();\n\n            let mut max_sev = Severity::None;\n            for id in &member_ids {\n                if let Some(&sev) = out.severities.get(id) {\n                    max_sev = max_sev.max(sev);\n                }\n            }\n\n            if max_sev > Severity::None {\n                for id in &member_ids {\n                    let cur_sev = out.severities.get(id).copied().unwrap_or(Severity::None);\n                    if max_sev > cur_sev {\n                        out.severities.insert(id.clone(), max_sev);\n                    }\n                }\n\n                let winner = crate::groups::fixed_group_target(\n                    g,\n                    input.base,\n                    &out.severities,\n                    input.tags,\n                    input.pre,\n                )?;\n\n                for id in member_ids {\n                    if out.targets.get(&id) != Some(&winner) {\n                        out.targets.insert(id.clone(), winner.clone());\n                        out.reasons.insert(\n                            id.clone(),\n                            BumpReason::FixedGroupUnion {\n                                group: g.name.clone(),\n                            },\n                        );\n                        worklist.insert(id.clone());\n                        changed = true;\n                    }\n                }\n            }\n        }\n```",
+        "GREEN: run `cargo test -p callisto-graph --lib cascade::tests::test_fixed_group_seeded_siblings_converge_on_shared_target`. Expected output: `test cascade::tests::test_fixed_group_seeded_siblings_converge_on_shared_target ... ok`, `test result: ok. 1 passed; 0 failed`.",
+        "Run the full existing cascade.rs test module to confirm no regressions: `cargo test -p callisto-graph --lib cascade::tests::`. Expected: all tests pass, `test result: ok.` with the previously-existing count plus 1."
+      ],
+      "commit_message": "fix(graph): converge Fixed-group siblings on a shared target in solve_cascade",
+      "depends_on": [
+        "T04"
+      ],
+      "covers_criteria": [
+        "AC-001",
+        "AC-002",
+        "AC-004",
+        "AC-013"
+      ]
+    },
+    {
+      "id": "T06",
+      "title": "Wire pre_mutation_checks into plan_version's real call path",
+      "files": {
+        "modify": [
+          "crates/callisto-graph/src/commands/version.rs"
+        ]
+      },
+      "steps": [
+        "RED: add a new `#[cfg(test)] mod tests { ... }` block at the bottom of commands/version.rs (this file currently has no test module) with these exact contents, then run `cargo test -p callisto-graph --lib commands::version::tests::version_rejects_divergent_fixed_group_via_real_call_path`. Expected output before implementation: the assertion FAILS because `plan_version` currently returns `Ok(..)` (pre_mutation_checks is never called) -- panic message `plan_version must return Err(FixedGroupDivergent) for a Fixed group with divergent released-member versions, got: Ok(...)`.\n```rust\n#[cfg(test)]\nmod tests {\n    use std::path::Path;\n\n    use super::{plan_version, VersionOptions};\n    use crate::error::GraphError;\n    use crate::infer::NoInference;\n    use crate::locate::IgnoreWalkLocator;\n    use crate::Workspace;\n    use callisto_model::{CommandError, CommandOutput, CommandRunner};\n\n    struct NoopRunner;\n\n    impl CommandRunner for NoopRunner {\n        fn run(\n            &self,\n            _program: &str,\n            _args: &[&str],\n            _cwd: &Path,\n        ) -> Result<CommandOutput, CommandError> {\n            Ok(CommandOutput {\n                exit_code: Some(0),\n                stdout: String::new(),\n                stderr: String::new(),\n            })\n        }\n    }\n\n    fn git_init_with_commit(root: &Path) {\n        for args in [\n            vec![\"init\", \"-q\"],\n            vec![\"config\", \"user.email\", \"test@example.com\"],\n            vec![\"config\", \"user.name\", \"Test\"],\n        ] {\n            std::process::Command::new(\"git\")\n                .args(&args)\n                .current_dir(root)\n                .output()\n                .expect(\"git must be installed\");\n        }\n        std::fs::write(root.join(\".gitkeep\"), \"\").unwrap();\n        for args in [vec![\"add\", \".\"], vec![\"commit\", \"-q\", \"-m\", \"init\"]] {\n            std::process::Command::new(\"git\")\n                .args(&args)\n                .current_dir(root)\n                .output()\n                .expect(\"git must be installed\");\n        }\n    }\n\n    fn tag(root: &Path, name: &str) {\n        std::process::Command::new(\"git\")\n            .args([\"-c\", \"tag.gpgSign=false\", \"tag\", \"-m\", \"release\", name])\n            .current_dir(root)\n            .output()\n            .expect(\"git must be installed\");\n    }\n\n    fn commit_all(root: &Path, message: &str) {\n        std::process::Command::new(\"git\").args([\"add\", \".\"]).current_dir(root).output().expect(\"git add\");\n        std::process::Command::new(\"git\").args([\"commit\", \"-q\", \"-m\", message]).current_dir(root).output().expect(\"git commit\");\n    }\n\n    /// AC-007 (divergent case) + AC-009 + AC-013(bug2): a Fixed group whose\n    /// released members' base versions parse under the same grammar but\n    /// disagree in value must make plan_version return\n    /// Err(GraphError::FixedGroupDivergent) before run_cascade ever\n    /// executes -- exercised through plan_version itself, not a direct\n    /// pre_mutation_checks call.\n    #[test]\n    fn version_rejects_divergent_fixed_group_via_real_call_path() {\n        let tmp = tempfile::tempdir().unwrap();\n        let root = tmp.path();\n        git_init_with_commit(root);\n\n        for (name, version) in [(\"pkg-a\", \"1.0.0\"), (\"pkg-b\", \"1.1.0\")] {\n            std::fs::create_dir_all(root.join(name)).unwrap();\n            std::fs::write(\n                root.join(name).join(\"Cargo.toml\"),\n                format!(\"[package]\\nname = \\\"{name}\\\"\\nversion = \\\"{version}\\\"\\n\"),\n            )\n            .unwrap();\n        }\n        std::fs::write(\n            root.join(\"callisto.toml\"),\n            \"[[fixed-group]]\\nname = \\\"ab\\\"\\nmembers = [\\\"pkg-a\\\", \\\"pkg-b\\\"]\\n\",\n        )\n        .unwrap();\n        commit_all(root, \"add packages\");\n        tag(root, \"pkg-a@1.0.0\");\n        tag(root, \"pkg-b@1.1.0\");\n\n        let locator = IgnoreWalkLocator::new(root);\n        let runner = NoopRunner;\n        let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect(\"workspace must load\");\n\n        let inference = NoInference;\n        let opts = VersionOptions {\n            strict: false,\n            strict_graph: false,\n            allow_empty_changesets: true,\n        };\n\n        let result = plan_version(&ws, &inference, &opts);\n\n        assert!(\n            matches!(result, Err(GraphError::FixedGroupDivergent { .. })),\n            \"plan_version must return Err(FixedGroupDivergent) for a Fixed group with divergent released-member versions, got: {result:?}\"\n        );\n    }\n}\n```",
+        "Implement: in `plan_version`, insert the following block immediately after the existing `let input = CascadeInput { ... };` construction and BEFORE the existing `let outcome = run_cascade(input)?;` line:\n```rust\n    let napi = crate::napi::NapiTargetsIndex::load(&ws.config.groups, &ws.root)?;\n    let group_check = crate::groups::pre_mutation_checks(\n        &ws.graph,\n        &ws.config.groups,\n        &base_versions,\n        tags,\n        &napi,\n        &ws.root,\n    )?;\n\n```\n(placed directly before the pre-existing `let outcome = run_cascade(input)?;` line, so pre_mutation_checks -- and any Err it returns -- runs before run_cascade).",
+        "Implement: change the existing line `let mut diagnostics = outcome.diagnostics;` (further down in plan_version, just before the `EmptyChangeset` diagnostic push) to two lines:\n```rust\n    let mut diagnostics = outcome.diagnostics;\n    diagnostics.extend(group_check.diagnostics);\n```",
+        "GREEN: run `cargo test -p callisto-graph --lib commands::version::tests::version_rejects_divergent_fixed_group_via_real_call_path`. Expected output: `test commands::version::tests::version_rejects_divergent_fixed_group_via_real_call_path ... ok`."
+      ],
+      "commit_message": "fix(graph): wire pre_mutation_checks into plan_version's real call path",
+      "depends_on": [
+        "T04",
+        "T05"
+      ],
+      "covers_criteria": [
+        "AC-007",
+        "AC-009",
+        "AC-013"
+      ]
+    },
+    {
+      "id": "T07",
+      "title": "Pin AC-007's grammar-mismatch fixed-group variant via plan_version",
+      "files": {
+        "modify": [
+          "crates/callisto-graph/src/commands/version.rs"
+        ]
+      },
+      "steps": [
+        "RED: add this test to the `mod tests` block added in T06 (append after `version_rejects_divergent_fixed_group_via_real_call_path`), then run `cargo test -p callisto-graph --lib commands::version::tests::version_rejects_grammar_mismatched_fixed_group_via_real_call_path`. Since T06's implementation is already wired, this test is expected to PASS immediately (the pre_mutation_checks call already detects grammar mismatches via its existing, unmodified internal logic) -- run it once to confirm the fixture itself is correct before treating it as a pinning regression test:\n```rust\n    /// AC-007 (grammar-mismatch case): a Fixed group whose released\n    /// members use different version grammars (SemVer vs PEP 440) must\n    /// return Err(GraphError::GroupGrammarMismatch) via plan_version's real\n    /// call path, before run_cascade executes.\n    #[test]\n    fn version_rejects_grammar_mismatched_fixed_group_via_real_call_path() {\n        let tmp = tempfile::tempdir().unwrap();\n        let root = tmp.path();\n        git_init_with_commit(root);\n\n        std::fs::create_dir_all(root.join(\"pkg-a\")).unwrap();\n        std::fs::write(\n            root.join(\"pkg-a/Cargo.toml\"),\n            \"[package]\\nname = \\\"pkg-a\\\"\\nversion = \\\"1.0.0\\\"\\n\",\n        )\n        .unwrap();\n\n        std::fs::create_dir_all(root.join(\"pkg-py\")).unwrap();\n        std::fs::write(\n            root.join(\"pkg-py/pyproject.toml\"),\n            \"[project]\\nname = \\\"pkg-py\\\"\\nversion = \\\"1.0.0\\\"\\n\",\n        )\n        .unwrap();\n\n        std::fs::write(\n            root.join(\"callisto.toml\"),\n            \"[[fixed-group]]\\nname = \\\"mixed\\\"\\nmembers = [\\\"pkg-a\\\", \\\"pkg-py\\\"]\\n\",\n        )\n        .unwrap();\n        commit_all(root, \"add packages\");\n        tag(root, \"pkg-a@1.0.0\");\n        tag(root, \"pkg-py@1.0.0\");\n\n        let locator = IgnoreWalkLocator::new(root);\n        let runner = NoopRunner;\n        let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect(\"workspace must load\");\n\n        let inference = NoInference;\n        let opts = VersionOptions {\n            strict: false,\n            strict_graph: false,\n            allow_empty_changesets: true,\n        };\n\n        let result = plan_version(&ws, &inference, &opts);\n\n        assert!(\n            matches!(result, Err(GraphError::GroupGrammarMismatch { .. })),\n            \"plan_version must return Err(GroupGrammarMismatch) for a Fixed group mixing SemVer and PEP 440 released members, got: {result:?}\"\n        );\n    }\n```\nIf `Workspace::load` instead fails earlier (e.g. with a package-discovery or SplitIdentity error) rather than reaching plan_version's Err, inspect crates/callisto-graph/src/walk.rs and crates/callisto-graph/src/locate/ignore_walk.rs for the exact pyproject.toml discovery convention this workspace tree needs and adjust the fixture's file layout to match -- do not change the assertion or the error variant being tested for.",
+        "No production code changes in this task -- the implementation from T06 already covers this branch of pre_mutation_checks (the divergent-vs-grammar-mismatch distinction is pre-existing logic inside pre_mutation_checks itself, per the spec's non_goals, which this spec does not modify).",
+        "GREEN: run `cargo test -p callisto-graph --lib commands::version::tests::version_rejects_grammar_mismatched_fixed_group_via_real_call_path`. Expected output: `test commands::version::tests::version_rejects_grammar_mismatched_fixed_group_via_real_call_path ... ok`."
+      ],
+      "commit_message": "test(graph): pin AC-007 grammar-mismatch fixed-group divergence via plan_version",
+      "depends_on": [
+        "T06"
+      ],
+      "covers_criteria": [
+        "AC-007"
+      ]
+    },
+    {
+      "id": "T08",
+      "title": "Pin AC-007b: malformed napi package.json propagates as ManifestError::Parse",
+      "files": {
+        "modify": [
+          "crates/callisto-graph/src/commands/version.rs"
+        ]
+      },
+      "steps": [
+        "RED: add this test to the `mod tests` block (append after the grammar-mismatch test from T07), then run `cargo test -p callisto-graph --lib commands::version::tests::version_propagates_malformed_napi_package_json_as_manifest_parse_error`. This is expected to PASS immediately once run (T06's wiring already calls `NapiTargetsIndex::load`, whose own pre-existing internal logic already returns `ManifestError::Parse` on invalid JSON) -- run it once to confirm the fixture reaches the intended error path, then treat it as a pinning regression test going forward:\n```rust\n    /// AC-007b: a Fixed group's napi package.json existing at the\n    /// conventional path but containing malformed JSON must surface as\n    /// Err(GraphError::Manifest(ManifestError::Parse { .. })) from\n    /// plan_version, with no VersionPlan produced.\n    #[test]\n    fn version_propagates_malformed_napi_package_json_as_manifest_parse_error() {\n        let tmp = tempfile::tempdir().unwrap();\n        let root = tmp.path();\n        git_init_with_commit(root);\n\n        std::fs::create_dir_all(root.join(\"my-lib\")).unwrap();\n        std::fs::write(\n            root.join(\"my-lib/Cargo.toml\"),\n            \"[package]\\nname = \\\"my-lib\\\"\\nversion = \\\"1.0.0\\\"\\n\",\n        )\n        .unwrap();\n        // Truncated / malformed JSON at the conventional napi path.\n        std::fs::write(\n            root.join(\"my-lib/package.json\"),\n            \"{\\\"name\\\":\\\"my-lib\\\",\\\"napi\\\":{\\\"targets\\\":[\",\n        )\n        .unwrap();\n        std::fs::write(\n            root.join(\"callisto.toml\"),\n            \"[[fixed-group]]\\nname = \\\"solo\\\"\\nmembers = [\\\"my-lib\\\"]\\n\",\n        )\n        .unwrap();\n        commit_all(root, \"add package\");\n\n        let locator = IgnoreWalkLocator::new(root);\n        let runner = NoopRunner;\n        let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect(\"workspace must load\");\n\n        let inference = NoInference;\n        let opts = VersionOptions {\n            strict: false,\n            strict_graph: false,\n            allow_empty_changesets: true,\n        };\n\n        let result = plan_version(&ws, &inference, &opts);\n\n        assert!(\n            matches!(\n                result,\n                Err(GraphError::Manifest(callisto_model::ManifestError::Parse {\n                    format: callisto_model::ManifestFormat::PackageJson,\n                    ..\n                }))\n            ),\n            \"plan_version must propagate malformed napi package.json as Err(ManifestError::Parse); got: {result:?}\"\n        );\n    }\n```\nIf `Workspace::load` instead fails with a `SplitIdentity` or duplicate-package error because the walker treats `my-lib/package.json` as a second, independent npm package rather than a co-located manifest of the same `my-lib` Cargo package, consult crates/callisto-graph/src/identity.rs's `ManifestDecl`/`Package.manifests` handling for how a package legitimately declares multiple manifest files, and adjust the fixture (not the assertion) accordingly.",
+        "No production code changes in this task -- NapiTargetsIndex::load's existing, unmodified internal logic (crates/callisto-graph/src/napi.rs lines 42-48) already returns ManifestError::Parse on invalid JSON; T06 already wired its call and error propagation into plan_version.",
+        "GREEN: run `cargo test -p callisto-graph --lib commands::version::tests::version_propagates_malformed_napi_package_json_as_manifest_parse_error`. Expected output: `test commands::version::tests::version_propagates_malformed_napi_package_json_as_manifest_parse_error ... ok`."
+      ],
+      "commit_message": "test(graph): pin AC-007b malformed napi package.json propagation via plan_version",
+      "depends_on": [
+        "T06"
+      ],
+      "covers_criteria": [
+        "AC-007b"
+      ]
+    },
+    {
+      "id": "T09",
+      "title": "Pin AC-008: group-check diagnostics merge into VersionPlan",
+      "files": {
+        "modify": [
+          "crates/callisto-graph/src/commands/version.rs"
+        ]
+      },
+      "steps": [
+        "RED: add this test to the `mod tests` block (append after the T08 test), then run `cargo test -p callisto-graph --lib commands::version::tests::version_merges_group_check_diagnostics_into_plan`. This is expected to PASS immediately once run (T06's diagnostics-merge line already wires it) -- run it once to confirm the fixture actually produces a napi-drift diagnostic, then treat it as a pinning regression test:\n```rust\n    /// AC-008: GroupCheckOutcome.diagnostics returned by pre_mutation_checks\n    /// must be merged into VersionPlan.diagnostics, not discarded.\n    #[test]\n    fn version_merges_group_check_diagnostics_into_plan() {\n        let tmp = tempfile::tempdir().unwrap();\n        let root = tmp.path();\n        git_init_with_commit(root);\n\n        std::fs::create_dir_all(root.join(\"my-lib\")).unwrap();\n        std::fs::write(\n            root.join(\"my-lib/Cargo.toml\"),\n            \"[package]\\nname = \\\"my-lib\\\"\\nversion = \\\"1.0.0\\\"\\n\",\n        )\n        .unwrap();\n        // Declares a napi target not present among the fixed group's own\n        // members -- napi_drift reports NapiTargetAddedNotInMembers for this.\n        std::fs::write(\n            root.join(\"my-lib/package.json\"),\n            r#\"{\\\"name\\\":\\\"my-lib\\\",\\\"napi\\\":{\\\"targets\\\":[\\\"aarch64-apple-darwin\\\"]}}\"#,\n        )\n        .unwrap();\n        std::fs::write(\n            root.join(\"callisto.toml\"),\n            \"[[fixed-group]]\\nname = \\\"solo\\\"\\nmembers = [\\\"my-lib\\\"]\\n\",\n        )\n        .unwrap();\n        std::fs::create_dir_all(root.join(\".changeset\")).unwrap();\n        std::fs::write(\n            root.join(\".changeset/bump.md\"),\n            \"---\\n\\\"my-lib\\\": patch\\n---\\n\\nfix.\\n\",\n        )\n        .unwrap();\n        commit_all(root, \"add package\");\n\n        let locator = IgnoreWalkLocator::new(root);\n        let runner = NoopRunner;\n        let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect(\"workspace must load\");\n\n        let inference = NoInference;\n        let opts = VersionOptions {\n            strict: false,\n            strict_graph: false,\n            allow_empty_changesets: true,\n        };\n\n        let plan = plan_version(&ws, &inference, &opts).expect(\"plan_version must succeed\");\n\n        assert!(\n            plan.diagnostics.iter().any(|d| matches!(\n                d.code,\n                callisto_model::DiagnosticCode::NapiTargetAddedNotInMembers\n            )),\n            \"VersionPlan.diagnostics must include the napi-drift diagnostic produced by pre_mutation_checks; got: {:?}\",\n            plan.diagnostics\n        );\n    }\n```",
+        "No production code changes in this task -- T06 already implemented the diagnostics merge (`diagnostics.extend(group_check.diagnostics);`).",
+        "GREEN: run `cargo test -p callisto-graph --lib commands::version::tests::version_merges_group_check_diagnostics_into_plan`. Expected output: `test commands::version::tests::version_merges_group_check_diagnostics_into_plan ... ok`."
+      ],
+      "commit_message": "test(graph): pin AC-008 group-check diagnostics merge into VersionPlan",
+      "depends_on": [
+        "T06"
+      ],
+      "covers_criteria": [
+        "AC-008"
+      ]
+    },
+    {
+      "id": "T10",
+      "title": "Detect cross-group package conflicts in GroupTable::resolve",
+      "files": {
+        "modify": [
+          "crates/callisto-graph/src/config/groups.rs",
+          "crates/callisto-graph/tests/config_resolve_tests.rs"
+        ]
+      },
+      "steps": [
+        "RED: append this test to crates/callisto-graph/tests/config_resolve_tests.rs (after the existing `fixed_group_is_resolved_into_config` test, reusing that file's existing `NoopRunner`, `write_two_crate_workspace`, `IgnoreWalkLocator`, and `Workspace` imports), then run `cargo test -p callisto-graph --test config_resolve_tests conflicting_fixed_group_membership_across_spellings_is_rejected`. Expected output before implementation: the `panic!` branch fires with `expected Err(ConflictingGroupMembership) naming group-a and group-b, got: Ok(Workspace { ... })` -- currently `resolve()` silently lets group-b's insert into `fixed_of` overwrite group-a's claim.\n```rust\n/// AC-010 + AC-013(bug3): two Fixed groups' members that resolve to the\n/// SAME PackageId under different spellings must make Workspace::load\n/// (which calls GroupTable::resolve) fail with\n/// GraphError::ConflictingGroupMembership -- not silently let the second\n/// group's insert overwrite the first's claim.\n#[test]\nfn conflicting_fixed_group_membership_across_spellings_is_rejected() {\n    let tmp = tempfile::tempdir().expect(\"tempdir\");\n    let root = tmp.path();\n    write_two_crate_workspace(root, \"my-lib\", \"other-lib\");\n\n    fs::write(\n        root.join(\"callisto.toml\"),\n        r#\"\n[[fixed-group]]\nname = \"group-a\"\nmembers = [\"my-lib\"]\n\n[[fixed-group]]\nname = \"group-b\"\nmembers = [\"cargo:my-lib\"]\n\"#,\n    )\n    .unwrap();\n\n    let runner = NoopRunner;\n    let locator = IgnoreWalkLocator::new(root);\n    let result = Workspace::load(root.to_path_buf(), &locator, &runner);\n\n    match result {\n        Err(callisto_graph::error::GraphError::ConflictingGroupMembership { groups, .. }) => {\n            let names: Vec<String> = groups.iter().map(|g| g.as_str().to_string()).collect();\n            assert!(names.contains(&\"group-a\".to_string()));\n            assert!(names.contains(&\"group-b\".to_string()));\n        }\n        other => panic!(\n            \"expected Err(ConflictingGroupMembership) naming group-a and group-b, got: {other:?}\"\n        ),\n    }\n}\n```",
+        "Implement: in crates/callisto-graph/src/config/groups.rs, replace the entire body of `pub(crate) fn resolve(raw: &RawGroupTable, index: &IdentityIndex) -> Result<GroupTable, GraphError> { ... }` with:\n```rust\n    pub(crate) fn resolve(\n        raw: &RawGroupTable,\n        index: &IdentityIndex,\n    ) -> Result<GroupTable, GraphError> {\n        let mut fixed = BTreeMap::new();\n        let mut linked = BTreeMap::new();\n        let mut fixed_of = BTreeMap::new();\n        let mut linked_of = BTreeMap::new();\n        let mut claimed_by: BTreeMap<PackageId, GroupName> = BTreeMap::new();\n\n        for rg in &raw.fixed {\n            let mut members = Vec::new();\n            for name in &rg.members {\n                if let Ok(id) = index.resolve_human(name, &[]) {\n                    if let Some(other) = claimed_by.get(&id) {\n                        if other != &rg.name {\n                            return Err(GraphError::ConflictingGroupMembership {\n                                package: id.clone(),\n                                groups: vec![other.clone(), rg.name.clone()],\n                            });\n                        }\n                    } else {\n                        claimed_by.insert(id.clone(), rg.name.clone());\n                    }\n                    members.push(GroupMember::Package(id.clone()));\n                    fixed_of.insert(id, rg.name.clone());\n                } else if let Some((owner, path, role)) = index.platform.get(name) {\n                    members.push(GroupMember::PlatformManifest {\n                        owner: owner.clone(),\n                        role: role.clone(),\n                        path: path.clone(),\n                        name: name.clone(),\n                    });\n                } else {\n                    return Err(GraphError::MissingGroupMember {\n                        group: rg.name.clone(),\n                        member: name.clone(),\n                    });\n                }\n            }\n            members.sort();\n            fixed.insert(\n                rg.name.clone(),\n                GroupDef {\n                    name: rg.name.clone(),\n                    kind: GroupKind::Fixed,\n                    members,\n                },\n            );\n        }\n\n        for rg in &raw.linked {\n            let mut members = Vec::new();\n            for name in &rg.members {\n                if let Ok(id) = index.resolve_human(name, &[]) {\n                    if let Some(other) = claimed_by.get(&id) {\n                        if other != &rg.name {\n                            return Err(GraphError::ConflictingGroupMembership {\n                                package: id.clone(),\n                                groups: vec![other.clone(), rg.name.clone()],\n                            });\n                        }\n                    } else {\n                        claimed_by.insert(id.clone(), rg.name.clone());\n                    }\n                    members.push(GroupMember::Package(id.clone()));\n                    linked_of.insert(id, rg.name.clone());\n                } else if let Some((owner, path, role)) = index.platform.get(name) {\n                    members.push(GroupMember::PlatformManifest {\n                        owner: owner.clone(),\n                        role: role.clone(),\n                        path: path.clone(),\n                        name: name.clone(),\n                    });\n                } else {\n                    return Err(GraphError::MissingGroupMember {\n                        group: rg.name.clone(),\n                        member: name.clone(),\n                    });\n                }\n            }\n            members.sort();\n            linked.insert(\n                rg.name.clone(),\n                GroupDef {\n                    name: rg.name.clone(),\n                    kind: GroupKind::Linked,\n                    members,\n                },\n            );\n        }\n\n        Ok(GroupTable {\n            fixed,\n            linked,\n            fixed_of,\n            linked_of,\n        })\n    }\n```\nThis preserves the pre-existing non-goal that a duplicate spelling of the same PackageId within ONE group's own membership list is never rejected: re-inserting the same PackageId under the SAME group name (`other == &rg.name`) is a silent no-op, not an error.",
+        "GREEN: run `cargo test -p callisto-graph --test config_resolve_tests conflicting_fixed_group_membership_across_spellings_is_rejected`. Expected output: `test conflicting_fixed_group_membership_across_spellings_is_rejected ... ok`.",
+        "AC-012 regression check: run `cargo test -p callisto-graph --test config_resolve_tests` (the whole file, no filter). Expected output: `test linked_group_is_resolved_into_config ... ok`, `test fixed_group_is_resolved_into_config ... ok`, `test conflicting_fixed_group_membership_across_spellings_is_rejected ... ok`, `test result: ok. 3 passed; 0 failed` -- the two pre-existing tests pass unmodified (their own source is untouched by this task)."
+      ],
+      "commit_message": "fix(graph): detect cross-group package conflicts in GroupTable::resolve",
+      "depends_on": [
+        "T04"
+      ],
+      "covers_criteria": [
+        "AC-010",
+        "AC-012",
+        "AC-013"
+      ]
+    },
+    {
+      "id": "T11",
+      "title": "Pin AC-010b: conflict detection spans Fixed and Linked group kinds",
+      "files": {
+        "modify": [
+          "crates/callisto-graph/tests/config_resolve_tests.rs"
+        ]
+      },
+      "steps": [
+        "RED: append this test to config_resolve_tests.rs (after the T10 test), then run `cargo test -p callisto-graph --test config_resolve_tests conflicting_membership_across_fixed_and_linked_groups_is_rejected`. Since T10's implementation already checks a single combined `claimed_by` map across both loops, this is expected to PASS immediately once run -- run it once to confirm, then treat it as a pinning regression test:\n```rust\n/// AC-010b: a resolved PackageId listed as a Fixed-group member under one\n/// spelling and a Linked-group member under a different spelling must also\n/// be rejected -- confirming the conflict check spans both group kinds and\n/// is not scoped separately to fixed_of and linked_of.\n#[test]\nfn conflicting_membership_across_fixed_and_linked_groups_is_rejected() {\n    let tmp = tempfile::tempdir().expect(\"tempdir\");\n    let root = tmp.path();\n    write_two_crate_workspace(root, \"my-lib\", \"other-lib\");\n\n    fs::write(\n        root.join(\"callisto.toml\"),\n        r#\"\n[[fixed-group]]\nname = \"fixed-a\"\nmembers = [\"my-lib\"]\n\n[[linked-group]]\nname = \"linked-b\"\nmembers = [\"cargo:my-lib\"]\n\"#,\n    )\n    .unwrap();\n\n    let runner = NoopRunner;\n    let locator = IgnoreWalkLocator::new(root);\n    let result = Workspace::load(root.to_path_buf(), &locator, &runner);\n\n    match result {\n        Err(callisto_graph::error::GraphError::ConflictingGroupMembership { groups, .. }) => {\n            let names: Vec<String> = groups.iter().map(|g| g.as_str().to_string()).collect();\n            assert!(names.contains(&\"fixed-a\".to_string()));\n            assert!(names.contains(&\"linked-b\".to_string()));\n        }\n        other => panic!(\n            \"expected Err(ConflictingGroupMembership) naming fixed-a and linked-b, got: {other:?}\"\n        ),\n    }\n}\n```",
+        "No production code changes in this task -- T10's `claimed_by` map is already shared across both the fixed and linked resolution loops.",
+        "GREEN: run `cargo test -p callisto-graph --test config_resolve_tests conflicting_membership_across_fixed_and_linked_groups_is_rejected`. Expected output: `test conflicting_membership_across_fixed_and_linked_groups_is_rejected ... ok`."
+      ],
+      "commit_message": "test(graph): pin AC-010b fixed/linked cross-group conflict detection",
+      "depends_on": [
+        "T10"
+      ],
+      "covers_criteria": [
+        "AC-010b"
+      ]
+    },
+    {
+      "id": "T12",
+      "title": "Pin AC-011: non-conflicting group membership resolves Ok",
+      "files": {
+        "modify": [
+          "crates/callisto-graph/tests/config_resolve_tests.rs"
+        ]
+      },
+      "steps": [
+        "RED: append this test to config_resolve_tests.rs (after the T11 test), then run `cargo test -p callisto-graph --test config_resolve_tests non_conflicting_group_membership_resolves_ok`. Since T10's implementation only errors when a PackageId is claimed by two DIFFERENT group names, this is expected to PASS immediately once run -- run it once to confirm, then treat it as a pinning regression test:\n```rust\n/// AC-011: a workspace where each resolved PackageId belongs to exactly\n/// one group (the ordinary, allowed case) must resolve Ok, and\n/// GraphError::ConflictingGroupMembership must never be constructed during\n/// that resolve() call.\n#[test]\nfn non_conflicting_group_membership_resolves_ok() {\n    let tmp = tempfile::tempdir().expect(\"tempdir\");\n    let root = tmp.path();\n    write_two_crate_workspace(root, \"alpha\", \"beta\");\n\n    fs::write(\n        root.join(\"callisto.toml\"),\n        r#\"\n[[fixed-group]]\nname = \"fixed-a\"\nmembers = [\"alpha\"]\n\n[[linked-group]]\nname = \"linked-b\"\nmembers = [\"beta\"]\n\"#,\n    )\n    .unwrap();\n\n    let runner = NoopRunner;\n    let locator = IgnoreWalkLocator::new(root);\n    let ws = Workspace::load(root.to_path_buf(), &locator, &runner)\n        .expect(\"non-conflicting group config must resolve Ok\");\n\n    assert!(ws\n        .config\n        .groups\n        .fixed\n        .contains_key(&callisto_model::GroupName(\"fixed-a\".to_string())));\n    assert!(ws\n        .config\n        .groups\n        .linked\n        .contains_key(&callisto_model::GroupName(\"linked-b\".to_string())));\n}\n```",
+        "No production code changes in this task.",
+        "GREEN: run `cargo test -p callisto-graph --test config_resolve_tests non_conflicting_group_membership_resolves_ok`. Expected output: `test non_conflicting_group_membership_resolves_ok ... ok`."
+      ],
+      "commit_message": "test(graph): pin AC-011 non-conflicting group membership resolves Ok",
+      "depends_on": [
+        "T10"
+      ],
+      "covers_criteria": [
+        "AC-011"
+      ]
+    }
+  ],
+  "batches": [
+    {
+      "batch_id": "B1",
+      "title": "CascadeInput.tags field wiring (foundational)",
+      "target_crate": "callisto-graph",
+      "task_ids": [
+        "T01",
+        "T02",
+        "T03",
+        "T04"
+      ]
+    },
+    {
+      "batch_id": "B2",
+      "title": "Fixed-group convergence in solve_cascade",
+      "target_crate": "callisto-graph",
+      "task_ids": [
+        "T05"
+      ]
+    },
+    {
+      "batch_id": "B3",
+      "title": "plan_version pre_mutation_checks wiring",
+      "target_crate": "callisto-graph",
+      "task_ids": [
+        "T06",
+        "T07",
+        "T08",
+        "T09"
+      ]
+    },
+    {
+      "batch_id": "B4",
+      "title": "GroupTable::resolve cross-group conflict detection",
+      "target_crate": "callisto-graph",
+      "task_ids": [
+        "T10",
+        "T11",
+        "T12"
+      ]
+    }
+  ]
+}
