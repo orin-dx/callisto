@@ -1571,4 +1571,30 @@ mod tests {
             PathBuf::from("bindings/python/pyproject.toml")
         );
     }
+
+    #[test]
+    fn case_d_package_with_no_collision_stays_bare() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        write_pkg(root, "crates/foo", Ecosystem::Cargo, "foo");
+        std::fs::write(
+            root.join("crates/foo/package.json"),
+            r#"{"name":"@myorg/foo","version":"0.1.0"}"#,
+        )
+        .unwrap();
+        let locator = crate::locate::IgnoreWalkLocator::new(root);
+        let runner = NoopRunner;
+        let ws = crate::Workspace::load(root.to_path_buf(), &locator, &runner)
+            .expect("Case D load must succeed");
+        assert_eq!(ws.graph.packages().count(), 1);
+        let pkg = ws
+            .graph
+            .get(&PackageId::Bare("foo".to_string()))
+            .expect("single Bare(foo) entry must exist, unpromoted");
+        assert_eq!(
+            pkg.manifests.len(),
+            2,
+            "both the Cargo and npm manifest belong to the one Case D package"
+        );
+    }
 }
