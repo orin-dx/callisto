@@ -140,11 +140,22 @@ impl GroupTable {
         let mut linked = BTreeMap::new();
         let mut fixed_of = BTreeMap::new();
         let mut linked_of = BTreeMap::new();
+        let mut claimed_by: BTreeMap<PackageId, GroupName> = BTreeMap::new();
 
         for rg in &raw.fixed {
             let mut members = Vec::new();
             for name in &rg.members {
                 if let Ok(id) = index.resolve_human(name, &[]) {
+                    if let Some(other) = claimed_by.get(&id) {
+                        if other != &rg.name {
+                            return Err(GraphError::ConflictingGroupMembership {
+                                package: id.clone(),
+                                groups: vec![other.clone(), rg.name.clone()],
+                            });
+                        }
+                    } else {
+                        claimed_by.insert(id.clone(), rg.name.clone());
+                    }
                     members.push(GroupMember::Package(id.clone()));
                     fixed_of.insert(id, rg.name.clone());
                 } else if let Some((owner, path, role)) = index.platform.get(name) {
@@ -176,6 +187,16 @@ impl GroupTable {
             let mut members = Vec::new();
             for name in &rg.members {
                 if let Ok(id) = index.resolve_human(name, &[]) {
+                    if let Some(other) = claimed_by.get(&id) {
+                        if other != &rg.name {
+                            return Err(GraphError::ConflictingGroupMembership {
+                                package: id.clone(),
+                                groups: vec![other.clone(), rg.name.clone()],
+                            });
+                        }
+                    } else {
+                        claimed_by.insert(id.clone(), rg.name.clone());
+                    }
                     members.push(GroupMember::Package(id.clone()));
                     linked_of.insert(id, rg.name.clone());
                 } else if let Some((owner, path, role)) = index.platform.get(name) {

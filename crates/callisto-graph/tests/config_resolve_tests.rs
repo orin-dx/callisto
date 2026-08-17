@@ -113,3 +113,47 @@ members = ["foo", "bar"]
          GroupTable::resolve was not called (bug)"
     );
 }
+
+/// AC-010 + AC-013(bug3): two Fixed groups' members that resolve to the
+/// SAME PackageId under different spellings must make Workspace::load
+/// (which calls GroupTable::resolve) fail with
+/// GraphError::ConflictingGroupMembership -- not silently let the second
+/// group's insert overwrite the first's claim.
+#[test]
+fn conflicting_fixed_group_membership_across_spellings_is_rejected() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path();
+    write_two_crate_workspace(root, "my-lib", "other-lib");
+
+    fs::write(
+        root.join("callisto.toml"),
+        r#"
+[[fixed-group]]
+name = "group-a"
+members = ["my-lib"]
+
+[[fixed-group]]
+name = "group-b"
+members = ["cargo:my-lib"]
+"#,
+    )
+    .unwrap();
+
+    let runner = NoopRunner;
+    let locator = IgnoreWalkLocator::new(root);
+    let result = Workspace::load(root.to_path_buf(), &locator, &runner);
+
+    match result {
+        Err(callisto_graph::error::GraphError::ConflictingGroupMembership { groups, .. }) => {
+            let names: Vec<String> = groups.iter().map(|g| g.as_str().to_string()).collect();
+            assert!(names.contains(&"group-a".to_string()));
+            assert!(names.contains(&"group-b".to_string()));
+        }
+        Err(other) => panic!(
+            "expected Err(ConflictingGroupMembership) naming group-a and group-b, got Err({other:?})"
+        ),
+        Ok(_) => panic!(
+            "expected Err(ConflictingGroupMembership) naming group-a and group-b, got Ok(_)"
+        ),
+    }
+}
