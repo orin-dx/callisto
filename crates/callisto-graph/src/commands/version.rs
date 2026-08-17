@@ -443,4 +443,59 @@ mod tests {
             "plan_version must return Err(GroupGrammarMismatch) for a Fixed group mixing SemVer and PEP 440 released members, got: {result:?}"
         );
     }
+
+    /// AC-007b: a Fixed group's napi package.json existing at the
+    /// conventional path but containing malformed JSON must surface as
+    /// Err(GraphError::Manifest(ManifestError::Parse { .. })) from
+    /// plan_version, with no VersionPlan produced.
+    #[test]
+    fn version_propagates_malformed_napi_package_json_as_manifest_parse_error() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        git_init_with_commit(root);
+
+        std::fs::create_dir_all(root.join("my-lib")).unwrap();
+        std::fs::write(
+            root.join("my-lib/Cargo.toml"),
+            "[package]\nname = \"my-lib\"\nversion = \"1.0.0\"\n",
+        )
+        .unwrap();
+        // Truncated / malformed JSON at the conventional napi path.
+        std::fs::write(
+            root.join("my-lib/package.json"),
+            "{\"name\":\"my-lib\",\"napi\":{\"targets\":[",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("callisto.toml"),
+            "[[fixed-group]]\nname = \"solo\"\nmembers = [\"my-lib\"]\n",
+        )
+        .unwrap();
+        commit_all(root, "add package");
+
+        let locator = IgnoreWalkLocator::new(root);
+        let runner = NoopRunner;
+        let ws =
+            Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
+
+        let inference = NoInference;
+        let opts = VersionOptions {
+            strict: false,
+            strict_graph: false,
+            allow_empty_changesets: true,
+        };
+
+        let result = plan_version(&ws, &inference, &opts);
+
+        assert!(
+            matches!(
+                result,
+                Err(GraphError::Manifest(callisto_model::ManifestError::Parse {
+                    format: callisto_model::ManifestFormat::PackageJson,
+                    ..
+                }))
+            ),
+            "plan_version must propagate malformed napi package.json as Err(ManifestError::Parse); got: {result:?}"
+        );
+    }
 }
