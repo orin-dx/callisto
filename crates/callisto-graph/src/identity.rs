@@ -230,6 +230,41 @@ mod tests {
         let result = resolver.resolve(std::path::Path::new("."), Ecosystem::Cargo);
         assert!(result.is_err());
     }
+
+    #[test]
+    fn resolve_human_finds_prefixed_entry_for_unpromoted_package() {
+        let mut index = IdentityIndex::default();
+        let id = PackageId::Bare("foo".to_string());
+        index.bare.insert("foo".to_string(), id.clone());
+        index
+            .native
+            .insert((Ecosystem::Cargo, "foo".to_string()), id.clone());
+        index
+            .prefixed
+            .insert((Ecosystem::Cargo, "foo".to_string()), id.clone());
+        let resolved = index
+            .resolve_human("cargo:foo", &[])
+            .expect("cargo:foo must resolve via prefixed map");
+        assert_eq!(resolved, id);
+    }
+
+    #[test]
+    fn resolve_human_unknown_ecosystem_prefix_falls_through_to_unknown() {
+        let mut index = IdentityIndex::default();
+        let id = PackageId::Bare("foo".to_string());
+        index.bare.insert("foo".to_string(), id.clone());
+        index
+            .native
+            .insert((Ecosystem::Cargo, "foo".to_string()), id.clone());
+        index
+            .prefixed
+            .insert((Ecosystem::Cargo, "foo".to_string()), id);
+        let err = index.resolve_human("npm:foo", &[]).unwrap_err();
+        assert!(
+            matches!(err, GraphError::UnknownPackage { .. }),
+            "expected UnknownPackage, got {err:?}"
+        );
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -254,9 +289,9 @@ impl IdentityIndex {
         name: &str,
         siblings: &[PackageId],
     ) -> Result<PackageId, GraphError> {
-        if let Ok(id) = PackageId::parse(name) {
-            if self.bare.values().any(|v| v == &id) || self.prefixed.values().any(|v| v == &id) {
-                return Ok(id);
+        if let Ok(PackageId::Prefixed { ecosystem, name: n }) = PackageId::parse(name) {
+            if let Some(id) = self.prefixed.get(&(ecosystem, n)) {
+                return Ok(id.clone());
             }
         }
 
