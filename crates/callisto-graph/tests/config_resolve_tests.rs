@@ -157,3 +157,46 @@ members = ["cargo:my-lib"]
         ),
     }
 }
+
+/// AC-010b: a resolved PackageId listed as a Fixed-group member under one
+/// spelling and a Linked-group member under a different spelling must also
+/// be rejected -- confirming the conflict check spans both group kinds and
+/// is not scoped separately to fixed_of and linked_of.
+#[test]
+fn conflicting_membership_across_fixed_and_linked_groups_is_rejected() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path();
+    write_two_crate_workspace(root, "my-lib", "other-lib");
+
+    fs::write(
+        root.join("callisto.toml"),
+        r#"
+[[fixed-group]]
+name = "fixed-a"
+members = ["my-lib"]
+
+[[linked-group]]
+name = "linked-b"
+members = ["cargo:my-lib"]
+"#,
+    )
+    .unwrap();
+
+    let runner = NoopRunner;
+    let locator = IgnoreWalkLocator::new(root);
+    let result = Workspace::load(root.to_path_buf(), &locator, &runner);
+
+    match result {
+        Err(callisto_graph::error::GraphError::ConflictingGroupMembership { groups, .. }) => {
+            let names: Vec<String> = groups.iter().map(|g| g.as_str().to_string()).collect();
+            assert!(names.contains(&"fixed-a".to_string()));
+            assert!(names.contains(&"linked-b".to_string()));
+        }
+        Err(other) => panic!(
+            "expected Err(ConflictingGroupMembership) naming fixed-a and linked-b, got Err({other:?})"
+        ),
+        Ok(_) => panic!(
+            "expected Err(ConflictingGroupMembership) naming fixed-a and linked-b, got Ok(_)"
+        ),
+    }
+}
