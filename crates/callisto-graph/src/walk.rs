@@ -140,6 +140,27 @@ impl ManifestWalkResolver {
             path_native_keys.insert(rel_path.clone(), this_native_keys);
             primary_ecosystems.insert(rel_path.clone(), list[0].0);
 
+            if let Some(existing_members) = promoted_siblings.get(primary_id.name()) {
+                let this_set = claiming_ecosystems
+                    .get(&rel_path)
+                    .cloned()
+                    .unwrap_or_default();
+                let conflict = existing_members
+                    .iter()
+                    .find(|(_, member_set)| !claiming_sets_disjoint(&this_set, member_set));
+                if let Some((conflicting_id, _)) = conflict {
+                    let offending_path = package_manifest_decls
+                        .iter()
+                        .find(|(id, _)| *id == conflicting_id)
+                        .map(|(_, (p, _))| p.clone())
+                        .unwrap_or_default();
+                    return Err(GraphError::DuplicatePackage {
+                        id: primary_id,
+                        paths: vec![offending_path, rel_path],
+                    });
+                }
+            }
+
             index
                 .bare
                 .insert(primary_id.name().to_string(), primary_id.clone());
@@ -1402,5 +1423,37 @@ mod tests {
             cargo_id, npm_id,
             "a distinct-id count of 2 is required for ResolvedConfig.promoted_siblings' derivation (AC-23) to retain this name"
         );
+    }
+
+    #[test]
+    fn tri_fixture_rejects_only_the_offending_member_and_path() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        write_pkg(root, "aaa/tri", Ecosystem::Cargo, "tri");
+        std::fs::write(
+            root.join("aaa/tri/package.json"),
+            r#"{"name":"tri","version":"0.1.0"}"#,
+        )
+        .unwrap();
+        write_pkg(root, "bbb/tri", Ecosystem::Pypi, "tri");
+        write_pkg(root, "ccc/tri", Ecosystem::Npm, "tri");
+        let locator = crate::locate::IgnoreWalkLocator::new(root);
+        let runner = NoopRunner;
+        let err = match crate::Workspace::load(root.to_path_buf(), &locator, &runner) {
+            Err(e) => e,
+            Ok(_) => panic!("expected DuplicatePackage error, got Ok"),
+        };
+        match err {
+            GraphError::DuplicatePackage { id, paths } => {
+                assert_eq!(id, PackageId::Bare("tri".to_string()));
+                assert!(paths.contains(&PathBuf::from("aaa/tri")));
+                assert!(paths.contains(&PathBuf::from("ccc/tri")));
+                assert!(
+                    !paths.contains(&PathBuf::from("bbb/tri")),
+                    "the non-offending group member bbb/tri must not be named"
+                );
+            }
+            other => panic!("expected DuplicatePackage, got {other:?}"),
+        }
     }
 }
