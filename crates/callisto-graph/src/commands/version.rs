@@ -280,9 +280,16 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
     };
 
     let mut platform_writes = Vec::new();
+    let mut optional_dep_map: std::collections::BTreeMap<
+        std::path::PathBuf,
+        Vec<(String, callisto_model::Version)>,
+    > = std::collections::BTreeMap::new();
     for group in ws.config.groups.fixed.values() {
         for member in group.members(GroupMemberKind::PlatformManifest) {
-            let GroupMember::PlatformManifest { owner, path, .. } = member else {
+            let GroupMember::PlatformManifest {
+                owner, path, name, ..
+            } = member
+            else {
                 continue;
             };
             let Some(bump) = bump_by_pkg.get(owner) else {
@@ -298,14 +305,39 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
                 version: bump.to.clone(),
                 from: current,
             });
+
+            if let Some(owner_pkg) = pkg_map.get(owner) {
+                if let Some(owner_decl) = owner_pkg.canonical_manifests().next() {
+                    let owner_fmt = callisto_model::ManifestFormat::from_path(&owner_decl.path)?;
+                    let owner_manifest_decl = callisto_model::ManifestDecl::new(
+                        owner_decl.path.clone(),
+                        ManifestRole::Canonical,
+                        owner_fmt,
+                    )?;
+                    let owner_handle = open(&owner_manifest_decl, &open_ctx)?;
+                    let has_matching_optional_dep = owner_handle.iter_dependencies().any(|dep| {
+                        dep.kind == callisto_model::DepKind::Optional && &dep.name == name
+                    });
+                    if has_matching_optional_dep {
+                        optional_dep_map
+                            .entry(owner_decl.path.clone())
+                            .or_default()
+                            .push((name.clone(), bump.to.clone()));
+                    }
+                }
+            }
         }
     }
+    let optional_dep_updates: Vec<crate::plan::OptionalDepUpdate> = optional_dep_map
+        .into_iter()
+        .map(|(manifest, updates)| crate::plan::OptionalDepUpdate { manifest, updates })
+        .collect();
 
     Ok(VersionPlan {
         bumps,
         rewrites: outcome.rewrites.into_values().collect(),
         platform_writes,
-        optional_dep_updates: Vec::new(),
+        optional_dep_updates,
         changelog_writes,
         consumed_changesets: agg.consumed,
         pre_state_update,
@@ -917,6 +949,148 @@ mod tests {
         assert!(
             result.is_err(),
             "plan_version must return Err when the platform manifest content is malformed; got: {result:?}"
+        );
+    }
+
+    /// AC-003: given the AC-001 scenario (owner bumped, sibling
+    /// GroupMember::PlatformManifest with name N), and the owner's own
+    /// canonical manifest already declares an optionalDependencies entry
+    /// whose name exactly matches N, plan_version's
+    /// VersionPlan.optional_dep_updates must contain an OptionalDepUpdate
+    /// entry whose manifest is the owner's canonical manifest path and
+    /// whose updates contains the pair (N, Y) where Y is the owner's bump
+    /// target.
+    #[test]
+    fn plan_version_emits_optional_dep_update_when_owner_declares_matching_optional_dep() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        git_init_with_commit(root);
+
+        std::fs::create_dir_all(root.join("crates/hybrid")).unwrap();
+        // Owner's canonical manifest declares an existing optional
+        // dependency on the platform member's own npm name -- Cargo
+        // supports `optional = true` deps, which parse as DepKind::Optional.
+        std::fs::write(
+            root.join("crates/hybrid/Cargo.toml"),
+            "[package]\nname = \"hybrid\"\nversion = \"1.0.0\"\n\n[dependencies]\n\"@myorg/hybrid-darwin-arm64\" = { version = \"0.9.0\", optional = true }\n",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("crates/hybrid/package.json"),
+            r#"{"name":"@myorg/hybrid-darwin-arm64","version":"0.9.0","os":["darwin"],"cpu":["arm64"]}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("callisto.toml"),
+            "[[fixed-group]]\nname = \"hybrid-group\"\nmembers = [\"hybrid\", \"@myorg/hybrid-darwin-arm64\"]\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join(".changeset")).unwrap();
+        std::fs::write(
+            root.join(".changeset/bump.md"),
+            "---\n\"hybrid\": patch\n---\n\nfix.\n",
+        )
+        .unwrap();
+        commit_all(root, "add hybrid package");
+
+        let locator = IgnoreWalkLocator::new(root);
+        let runner = NoopRunner;
+        let ws =
+            Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
+
+        let inference = NoInference;
+        let opts = VersionOptions {
+            strict: false,
+            strict_graph: false,
+            allow_empty_changesets: true,
+        };
+
+        let plan = plan_version(&ws, &inference, &opts).expect("plan_version must succeed");
+
+        let owner_bump = plan
+            .bumps
+            .iter()
+            .find(|b| b.package.name() == "hybrid")
+            .expect("hybrid must have a planned bump");
+
+        assert_eq!(
+            plan.optional_dep_updates.len(),
+            1,
+            "expected exactly one OptionalDepUpdate, got: {:?}",
+            plan.optional_dep_updates
+        );
+        let update = &plan.optional_dep_updates[0];
+        assert_eq!(
+            update.manifest,
+            Path::new("crates/hybrid/Cargo.toml"),
+            "OptionalDepUpdate.manifest must be the owner's canonical manifest path"
+        );
+        assert_eq!(
+            update.updates,
+            vec![(
+                "@myorg/hybrid-darwin-arm64".to_string(),
+                owner_bump.to.clone()
+            )],
+            "OptionalDepUpdate.updates must contain (N, Y) for the matching optional dependency"
+        );
+    }
+
+    /// AC-004: given the AC-001 scenario, but the owner package's
+    /// canonical manifest has no dependency entry (of any kind) whose name
+    /// matches the platform member's name N, plan_version's
+    /// VersionPlan.optional_dep_updates must contain no entry referencing
+    /// N -- an OptionalDepUpdate is only produced when a matching
+    /// optionalDependencies entry already exists, never speculatively
+    /// created.
+    #[test]
+    fn plan_version_no_optional_dep_update_when_owner_has_no_matching_dependency() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        git_init_with_commit(root);
+
+        std::fs::create_dir_all(root.join("crates/hybrid")).unwrap();
+        std::fs::write(
+            root.join("crates/hybrid/Cargo.toml"),
+            "[package]\nname = \"hybrid\"\nversion = \"1.0.0\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("crates/hybrid/package.json"),
+            r#"{"name":"@myorg/hybrid-darwin-arm64","version":"0.9.0","os":["darwin"],"cpu":["arm64"]}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("callisto.toml"),
+            "[[fixed-group]]\nname = \"hybrid-group\"\nmembers = [\"hybrid\", \"@myorg/hybrid-darwin-arm64\"]\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join(".changeset")).unwrap();
+        std::fs::write(
+            root.join(".changeset/bump.md"),
+            "---\n\"hybrid\": patch\n---\n\nfix.\n",
+        )
+        .unwrap();
+        commit_all(root, "add hybrid package");
+
+        let locator = IgnoreWalkLocator::new(root);
+        let runner = NoopRunner;
+        let ws =
+            Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
+
+        let inference = NoInference;
+        let opts = VersionOptions {
+            strict: false,
+            strict_graph: false,
+            allow_empty_changesets: true,
+        };
+
+        let plan = plan_version(&ws, &inference, &opts).expect("plan_version must succeed");
+
+        assert!(
+            plan.optional_dep_updates.is_empty(),
+            "optional_dep_updates must be empty when the owner's canonical manifest has no \
+             matching dependency entry for the platform member's name; got: {:?}",
+            plan.optional_dep_updates
         );
     }
 }
