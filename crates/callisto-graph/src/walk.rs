@@ -1598,4 +1598,106 @@ mod tests {
             "both the Cargo and npm manifest belong to the one Case D package"
         );
     }
+
+    #[test]
+    fn ac12_ac18_npm_consumer_depending_on_cargo_only_name_gets_no_edge_and_diagnostic() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        write_pkg(root, "crates/foo", Ecosystem::Cargo, "foo");
+        std::fs::create_dir_all(root.join("packages/consumer")).unwrap();
+        std::fs::write(
+            root.join("packages/consumer/package.json"),
+            r#"{"name":"consumer","version":"0.1.0","dependencies":{"foo":"^1.0.0"}}"#,
+        )
+        .unwrap();
+        let locator = crate::locate::IgnoreWalkLocator::new(root);
+        let runner = NoopRunner;
+        let ws = crate::Workspace::load(root.to_path_buf(), &locator, &runner)
+            .expect("load must succeed even with an unresolved dependency name");
+        let cargo_foo = PackageId::Bare("foo".to_string());
+        assert!(
+            !ws.graph.edges().iter().any(|e| e.to == cargo_foo),
+            "no DepEdge must be created to the Cargo foo id from an npm consumer's same-name miss"
+        );
+        let diag = ws
+            .graph
+            .diagnostics()
+            .iter()
+            .find(|d| {
+                d.code == callisto_model::DiagnosticCode::UnknownPackage
+                    && d.severity == callisto_model::DiagnosticSeverity::Warning
+                    && d.message.contains("foo")
+            })
+            .expect("an UnknownPackage warning diagnostic naming foo must be present");
+        assert!(diag.message.contains("ambiguous") || diag.message.contains("cargo:foo"));
+    }
+
+    #[test]
+    fn ac14_ac18_npm_consumer_depending_on_serde_with_cargo_serde_present_gets_no_edge_and_diagnostic(
+    ) {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        write_pkg(root, "crates/serde", Ecosystem::Cargo, "serde");
+        std::fs::create_dir_all(root.join("packages/consumer")).unwrap();
+        std::fs::write(
+            root.join("packages/consumer/package.json"),
+            r#"{"name":"consumer","version":"0.1.0","dependencies":{"serde":"^1"}}"#,
+        )
+        .unwrap();
+        let locator = crate::locate::IgnoreWalkLocator::new(root);
+        let runner = NoopRunner;
+        let ws = crate::Workspace::load(root.to_path_buf(), &locator, &runner)
+            .expect("load must succeed");
+        let cargo_serde = PackageId::Bare("serde".to_string());
+        assert!(!ws.graph.edges().iter().any(|e| e.to == cargo_serde));
+        let diag = ws
+            .graph
+            .diagnostics()
+            .iter()
+            .find(|d| {
+                d.code == callisto_model::DiagnosticCode::UnknownPackage
+                    && d.severity == callisto_model::DiagnosticSeverity::Warning
+                    && d.message.contains("serde")
+            })
+            .expect("an UnknownPackage warning diagnostic naming serde must be present");
+        assert!(diag.message.contains("ambiguous") || diag.message.contains("cargo:serde"));
+    }
+
+    #[test]
+    fn ac15_ac18_npm_consumer_depending_on_ambiguous_lib_with_cargo_and_pypi_present_gets_exactly_one_diagnostic(
+    ) {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        write_pkg(
+            root,
+            "crates/ambiguous-lib",
+            Ecosystem::Cargo,
+            "ambiguous-lib",
+        );
+        write_pkg(root, "py/ambiguous-lib", Ecosystem::Pypi, "ambiguous-lib");
+        std::fs::create_dir_all(root.join("packages/consumer")).unwrap();
+        std::fs::write(
+            root.join("packages/consumer/package.json"),
+            r#"{"name":"consumer","version":"0.1.0","dependencies":{"ambiguous-lib":"^1"}}"#,
+        )
+        .unwrap();
+        let locator = crate::locate::IgnoreWalkLocator::new(root);
+        let runner = NoopRunner;
+        let ws = crate::Workspace::load(root.to_path_buf(), &locator, &runner)
+            .expect("load must succeed");
+        let diags: Vec<_> = ws
+            .graph
+            .diagnostics()
+            .iter()
+            .filter(|d| {
+                d.code == callisto_model::DiagnosticCode::UnknownPackage
+                    && d.message.contains("ambiguous-lib")
+            })
+            .collect();
+        assert_eq!(
+            diags.len(),
+            1,
+            "exactly one diagnostic, not one per candidate ecosystem"
+        );
+    }
 }
