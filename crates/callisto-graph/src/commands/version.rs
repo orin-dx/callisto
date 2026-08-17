@@ -25,6 +25,7 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
     opts: &VersionOptions,
 ) -> Result<VersionPlan, GraphError> {
     let base_versions = ws.base_versions()?;
+    let tags = ws.tags()?;
 
     let pre_path = ws.root.join(".changeset/pre.json");
     let pre_state = if pre_path.exists() {
@@ -40,7 +41,7 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
         &ws.graph,
         &ws.config,
         ws.git_access(),
-        ws.tags()?,
+        tags,
         &base_versions,
         pre_state.as_ref(),
         inference,
@@ -76,6 +77,7 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
         named_by: &agg.named_by,
         base: &base_versions,
         pre: pre_state.as_ref(),
+        tags,
     };
 
     let outcome = run_cascade(input)?;
