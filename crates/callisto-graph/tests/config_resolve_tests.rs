@@ -200,3 +200,44 @@ members = ["cargo:my-lib"]
         ),
     }
 }
+
+/// AC-011: a workspace where each resolved PackageId belongs to exactly
+/// one group (the ordinary, allowed case) must resolve Ok, and
+/// GraphError::ConflictingGroupMembership must never be constructed during
+/// that resolve() call.
+#[test]
+fn non_conflicting_group_membership_resolves_ok() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path();
+    write_two_crate_workspace(root, "alpha", "beta");
+
+    fs::write(
+        root.join("callisto.toml"),
+        r#"
+[[fixed-group]]
+name = "fixed-a"
+members = ["alpha"]
+
+[[linked-group]]
+name = "linked-b"
+members = ["beta"]
+"#,
+    )
+    .unwrap();
+
+    let runner = NoopRunner;
+    let locator = IgnoreWalkLocator::new(root);
+    let ws = Workspace::load(root.to_path_buf(), &locator, &runner)
+        .expect("non-conflicting group config must resolve Ok");
+
+    assert!(ws
+        .config
+        .groups
+        .fixed
+        .contains_key(&callisto_model::GroupName("fixed-a".to_string())));
+    assert!(ws
+        .config
+        .groups
+        .linked
+        .contains_key(&callisto_model::GroupName("linked-b".to_string())));
+}
