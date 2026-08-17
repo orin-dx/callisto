@@ -1276,4 +1276,42 @@ mod tests {
             "index.prefixed value must point to the promoted Npm-prefixed ID"
         );
     }
+
+    #[test]
+    fn unpromoted_standalone_cargo_package_retains_bare_id() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        write_pkg(root, "crates/single", Ecosystem::Cargo, "single");
+        let locator = crate::locate::IgnoreWalkLocator::new(root);
+        let runner = NoopRunner;
+        let ws = crate::Workspace::load(root.to_path_buf(), &locator, &runner)
+            .expect("standalone package load must succeed");
+        let bare_id = PackageId::Bare("single".to_string());
+        assert!(
+            ws.graph.get(&bare_id).is_some(),
+            "unpromoted single-ecosystem package must register under Bare ID"
+        );
+        let prefixed_id = PackageId::Prefixed {
+            ecosystem: Ecosystem::Cargo,
+            name: "single".to_string(),
+        };
+        assert!(
+            ws.graph.get(&prefixed_id).is_none(),
+            "unpromoted package must NOT register under Prefixed ID directly"
+        );
+        assert_eq!(
+            ws.graph.identity().bare.get("single"),
+            Some(&bare_id),
+            "index.bare must point to the Bare ID"
+        );
+        let resolved = ws
+            .graph
+            .identity()
+            .resolve_human("cargo:single", &[])
+            .expect("cargo:single must resolve");
+        assert_eq!(
+            resolved, bare_id,
+            "cargo:single human lookup must resolve to the Bare ID"
+        );
+    }
 }
