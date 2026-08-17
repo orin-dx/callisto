@@ -53,7 +53,7 @@
     },
     {
       "id": "AC-F6",
-      "criterion": "The inline two-pass [[package]] lookup in walk.rs (lines 160-169, the two cfg.packages.iter().find(...) calls joined by .or_else, followed by .map(|(_, cfg)| cfg)) is removed and replaced by a single call to resolve_package_config(&id, cfg). The trailing .map(|(_, cfg)| cfg) at line 169 is deleted because resolve_package_config already returns Option<&PackageConfig>, not Option<&(PackageId, PackageConfig)>. The resulting binding is: let pkg_override = resolve_package_config(&id, cfg);. All tests in crates/callisto-graph/tests/per_package_config_test.rs pass without modification.",
+      "criterion": "The inline two-pass [[package]] lookup in walk.rs (lines 160-169, the two cfg.packages.iter().find(...) calls joined by .or_else, followed by .map(|(_, cfg)| cfg)) is removed and replaced by a single call to resolve_package_config(&id, &cfg_with_local_promotions)?. The trailing .map(|(_, cfg)| cfg) at line 169 is deleted because resolve_package_config already returns Result<Option<&PackageConfig>, GraphError>, not Option<&(PackageId, PackageConfig)>. The resulting binding is: let pkg_override = resolve_package_config(&id, &cfg_with_local_promotions)?;, where cfg_with_local_promotions is the build-local ResolvedConfig overlay constructed via cfg.with_promoted_siblings(...) per SPEC-TRACK3B1-IDENTITY-PROMOTION-CORE. All tests in crates/callisto-graph/tests/per_package_config_test.rs pass without modification.",
       "is_error_case": false
     },
     {
