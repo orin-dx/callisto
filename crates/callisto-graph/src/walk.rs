@@ -22,6 +22,25 @@ use crate::locate::ProjectLocator;
 use crate::manifest_cache::open_cached;
 use crate::resolver::ManifestWalkResolver;
 
+/// Returns (name-scoped claiming-ecosystem set, complete unfiltered native-key list)
+/// for one path's own `list` of (ecosystem, declared-id) pairs. The first is filtered
+/// to entries whose declared name equals `primary_id.name()`; the second is not filtered.
+fn compute_claiming_ecosystems_and_native_keys(
+    list: &[(Ecosystem, PackageId)],
+    primary_id: &PackageId,
+) -> (BTreeSet<Ecosystem>, Vec<(Ecosystem, String)>) {
+    let claiming = list
+        .iter()
+        .filter(|(_, id)| id.name() == primary_id.name())
+        .map(|(eco, _)| *eco)
+        .collect();
+    let native_keys = list
+        .iter()
+        .map(|(eco, id)| (*eco, id.name().to_string()))
+        .collect();
+    (claiming, native_keys)
+}
+
 impl ManifestWalkResolver {
     pub fn build<L: ProjectLocator, R: CommandRunner>(
         root: &Path,
@@ -54,6 +73,9 @@ impl ManifestWalkResolver {
             BTreeMap::new();
         let mut index = IdentityIndex::default();
         let mut diagnostics = Vec::new();
+        let mut claiming_ecosystems: BTreeMap<PathBuf, BTreeSet<Ecosystem>> = BTreeMap::new();
+        let mut path_native_keys: BTreeMap<PathBuf, Vec<(Ecosystem, String)>> = BTreeMap::new();
+        let mut primary_ecosystems: BTreeMap<PathBuf, Ecosystem> = BTreeMap::new();
 
         // Use the identity already resolved by the locator (`proj.id`) rather
         // than re-reading manifests through `IdentityResolver::resolve`.
@@ -76,6 +98,11 @@ impl ManifestWalkResolver {
             // additions to `Ecosystem`.
             list.sort_by_key(|a| ecosystem_primary_priority(a.0));
             let primary_id = list[0].1.clone();
+            let (this_claiming, this_native_keys) =
+                compute_claiming_ecosystems_and_native_keys(&list, &primary_id);
+            claiming_ecosystems.insert(rel_path.clone(), this_claiming);
+            path_native_keys.insert(rel_path.clone(), this_native_keys);
+            primary_ecosystems.insert(rel_path.clone(), list[0].0);
 
             index
                 .bare
@@ -851,5 +878,53 @@ mod tests {
                 abi: None,
             }
         );
+    }
+
+    #[test]
+    fn claiming_ecosystems_is_name_scoped_not_full_path_ecosystem_set() {
+        let list = vec![
+            (Ecosystem::Cargo, PackageId::Bare("native-core".to_string())),
+            (
+                Ecosystem::Npm,
+                PackageId::Bare("@myorg/native-core-linux-x64-gnu".to_string()),
+            ),
+        ];
+        let primary_id = PackageId::Bare("native-core".to_string());
+        let (claiming, native_keys) =
+            compute_claiming_ecosystems_and_native_keys(&list, &primary_id);
+        let mut expected = std::collections::BTreeSet::new();
+        expected.insert(Ecosystem::Cargo);
+        assert_eq!(
+            claiming, expected,
+            "npm Platform entry must NOT count toward the name-scoped claiming set"
+        );
+        assert_eq!(
+            native_keys,
+            vec![
+                (Ecosystem::Cargo, "native-core".to_string()),
+                (
+                    Ecosystem::Npm,
+                    "@myorg/native-core-linux-x64-gnu".to_string()
+                ),
+            ],
+            "path_native_keys must retain the COMPLETE unfiltered key set, unlike claiming_ecosystems"
+        );
+    }
+
+    #[test]
+    fn primary_ecosystems_records_the_actual_primary_not_an_arbitrary_set_member() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        write_pkg(root, "crates/foo", Ecosystem::Cargo, "foo");
+        std::fs::write(
+            root.join("crates/foo/package.json"),
+            r#"{"name":"@myorg/foo","version":"0.1.0"}"#,
+        )
+        .unwrap();
+        let locator = crate::locate::IgnoreWalkLocator::new(root);
+        let runner = NoopRunner;
+        let ws = crate::Workspace::load(root.to_path_buf(), &locator, &runner)
+            .expect("Case D load must succeed");
+        assert!(ws.graph.get(&PackageId::Bare("foo".to_string())).is_some());
     }
 }
