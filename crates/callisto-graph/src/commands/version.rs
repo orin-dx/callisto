@@ -80,6 +80,16 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
         tags,
     };
 
+    let napi = crate::napi::NapiTargetsIndex::load(&ws.config.groups, &ws.root)?;
+    let group_check = crate::groups::pre_mutation_checks(
+        &ws.graph,
+        &ws.config.groups,
+        &base_versions,
+        tags,
+        &napi,
+        &ws.root,
+    )?;
+
     let outcome = run_cascade(input)?;
 
     let mut bumps = Vec::new();
@@ -203,6 +213,7 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
     }
 
     let mut diagnostics = outcome.diagnostics;
+    diagnostics.extend(group_check.diagnostics);
     if agg.consumed.is_empty()
         && !opts.allow_empty_changesets
         && !ws.config.validation.allow_empty_changesets
@@ -258,4 +269,125 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
         observed_versions: base_versions,
         diagnostics,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use super::{plan_version, VersionOptions};
+    use crate::error::GraphError;
+    use crate::infer::NoInference;
+    use crate::locate::IgnoreWalkLocator;
+    use crate::Workspace;
+    use callisto_model::{CommandError, CommandOutput, CommandRunner};
+
+    struct NoopRunner;
+
+    impl CommandRunner for NoopRunner {
+        fn run(
+            &self,
+            _program: &str,
+            _args: &[&str],
+            _cwd: &Path,
+        ) -> Result<CommandOutput, CommandError> {
+            Ok(CommandOutput {
+                exit_code: Some(0),
+                stdout: String::new(),
+                stderr: String::new(),
+            })
+        }
+    }
+
+    fn git_init_with_commit(root: &Path) {
+        for args in [
+            vec!["init", "-q"],
+            vec!["config", "user.email", "test@example.com"],
+            vec!["config", "user.name", "Test"],
+        ] {
+            std::process::Command::new("git")
+                .args(&args)
+                .current_dir(root)
+                .output()
+                .expect("git must be installed");
+        }
+        std::fs::write(root.join(".gitkeep"), "").unwrap();
+        for args in [vec!["add", "."], vec!["commit", "-q", "-m", "init"]] {
+            std::process::Command::new("git")
+                .args(&args)
+                .current_dir(root)
+                .output()
+                .expect("git must be installed");
+        }
+    }
+
+    fn tag(root: &Path, name: &str) {
+        std::process::Command::new("git")
+            .args(["-c", "tag.gpgSign=false", "tag", "-m", "release", name])
+            .current_dir(root)
+            .output()
+            .expect("git must be installed");
+    }
+
+    fn commit_all(root: &Path, message: &str) {
+        std::process::Command::new("git")
+            .args(["add", "."])
+            .current_dir(root)
+            .output()
+            .expect("git add");
+        std::process::Command::new("git")
+            .args(["commit", "-q", "-m", message])
+            .current_dir(root)
+            .output()
+            .expect("git commit");
+    }
+
+    /// AC-007 (divergent case) + AC-009 + AC-013(bug2): a Fixed group whose
+    /// released members' base versions parse under the same grammar but
+    /// disagree in value must make plan_version return
+    /// Err(GraphError::FixedGroupDivergent) before run_cascade ever
+    /// executes -- exercised through plan_version itself, not a direct
+    /// pre_mutation_checks call.
+    #[test]
+    fn version_rejects_divergent_fixed_group_via_real_call_path() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        git_init_with_commit(root);
+
+        for (name, version) in [("pkg-a", "1.0.0"), ("pkg-b", "1.1.0")] {
+            std::fs::create_dir_all(root.join(name)).unwrap();
+            std::fs::write(
+                root.join(name).join("Cargo.toml"),
+                format!("[package]\nname = \"{name}\"\nversion = \"{version}\"\n"),
+            )
+            .unwrap();
+        }
+        std::fs::write(
+            root.join("callisto.toml"),
+            "[[fixed-group]]\nname = \"ab\"\nmembers = [\"pkg-a\", \"pkg-b\"]\n",
+        )
+        .unwrap();
+        commit_all(root, "add packages");
+        tag(root, "pkg-a@1.0.0");
+        tag(root, "pkg-b@1.1.0");
+
+        let locator = IgnoreWalkLocator::new(root);
+        let runner = NoopRunner;
+        let ws =
+            Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
+
+        let inference = NoInference;
+        let opts = VersionOptions {
+            strict: false,
+            strict_graph: false,
+            allow_empty_changesets: true,
+        };
+
+        let result = plan_version(&ws, &inference, &opts);
+
+        assert!(
+            matches!(result, Err(GraphError::FixedGroupDivergent { .. })),
+            "plan_version must return Err(FixedGroupDivergent) for a Fixed group with divergent released-member versions, got: {result:?}"
+        );
+    }
 }
