@@ -133,13 +133,14 @@ impl ManifestWalkResolver {
             // priority function so the precedence survives future variant
             // additions to `Ecosystem`.
             list.sort_by_key(|a| ecosystem_primary_priority(a.0));
-            let primary_id = list[0].1.clone();
+            let mut primary_id = list[0].1.clone();
             let (this_claiming, this_native_keys) =
                 compute_claiming_ecosystems_and_native_keys(&list, &primary_id);
-            claiming_ecosystems.insert(rel_path.clone(), this_claiming);
+            claiming_ecosystems.insert(rel_path.clone(), this_claiming.clone());
             path_native_keys.insert(rel_path.clone(), this_native_keys);
             primary_ecosystems.insert(rel_path.clone(), list[0].0);
 
+            let mut branch_ii_promoted = false;
             if let Some(existing_members) = promoted_siblings.get(primary_id.name()) {
                 let this_set = claiming_ecosystems
                     .get(&rel_path)
@@ -159,11 +160,23 @@ impl ManifestWalkResolver {
                         paths: vec![offending_path, rel_path],
                     });
                 }
+                let promoted_id = PackageId::Prefixed {
+                    ecosystem: primary_ecosystems[&rel_path],
+                    name: primary_id.name().to_string(),
+                };
+                promoted_siblings
+                    .entry(primary_id.name().to_string())
+                    .or_default()
+                    .push((promoted_id.clone(), this_set));
+                primary_id = promoted_id;
+                branch_ii_promoted = true;
             }
 
-            index
-                .bare
-                .insert(primary_id.name().to_string(), primary_id.clone());
+            if !branch_ii_promoted {
+                index
+                    .bare
+                    .insert(primary_id.name().to_string(), primary_id.clone());
+            }
 
             let mut decls = Vec::new();
             for (eco, id) in &list {
@@ -1454,6 +1467,72 @@ mod tests {
                 );
             }
             other => panic!("expected DuplicatePackage, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn third_path_joins_already_promoted_group() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        write_pkg(root, "aaa", Ecosystem::Cargo, "multi");
+        write_pkg(root, "bbb", Ecosystem::Npm, "multi");
+        write_pkg(root, "ccc", Ecosystem::Pypi, "multi");
+        let locator = crate::locate::IgnoreWalkLocator::new(root);
+        let runner = NoopRunner;
+        let ws = crate::Workspace::load(root.to_path_buf(), &locator, &runner)
+            .expect("N=3 promotion must succeed");
+        assert_eq!(ws.graph.packages().count(), 3);
+        for eco in [Ecosystem::Cargo, Ecosystem::Npm, Ecosystem::Pypi] {
+            let id = PackageId::Prefixed {
+                ecosystem: eco,
+                name: "multi".to_string(),
+            };
+            let pkg = ws
+                .graph
+                .get(&id)
+                .unwrap_or_else(|| panic!("{eco:?} entry must exist"));
+            assert_eq!(
+                pkg.manifests.len(),
+                1,
+                "{eco:?} entry must not bleed in another path's manifest"
+            );
+        }
+    }
+
+    #[test]
+    fn third_path_joins_already_promoted_group_reverse_iteration_order() {
+        // Same three ecosystems as `third_path_joins_already_promoted_group`, but
+        // path names are chosen so BTreeMap's lexicographic by-path iteration
+        // visits Pypi first, then Npm, then Cargo -- the reverse ecosystem
+        // sequence -- proving the outcome is order-independent (AC-17a).
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        write_pkg(root, "path-a-pypi", Ecosystem::Pypi, "multi2");
+        write_pkg(root, "path-b-npm", Ecosystem::Npm, "multi2");
+        write_pkg(root, "path-c-cargo", Ecosystem::Cargo, "multi2");
+        let locator = crate::locate::IgnoreWalkLocator::new(root);
+        let runner = NoopRunner;
+        let ws = crate::Workspace::load(root.to_path_buf(), &locator, &runner)
+            .expect("N=3 promotion must succeed regardless of by-path iteration order");
+        assert_three_promoted_singletons(&ws, "multi2");
+    }
+
+    fn assert_three_promoted_singletons(ws: &crate::Workspace<NoopRunner>, name: &str) {
+        assert_eq!(ws.graph.packages().count(), 3);
+        for eco in [Ecosystem::Cargo, Ecosystem::Npm, Ecosystem::Pypi] {
+            let id = PackageId::Prefixed {
+                ecosystem: eco,
+                name: name.to_string(),
+            };
+            let pkg = ws
+                .graph
+                .get(&id)
+                .unwrap_or_else(|| panic!("{eco:?} entry must exist"));
+            assert_eq!(
+                pkg.manifests.len(),
+                1,
+                "{eco:?} entry must not bleed in another path's manifest"
+            );
         }
     }
 }
