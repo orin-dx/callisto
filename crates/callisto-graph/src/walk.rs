@@ -230,6 +230,9 @@ impl ManifestWalkResolver {
                 package_manifest_decls
                     .insert(current_id.clone(), (rel_path.clone(), current_decls));
                 package_manifest_decls.remove(&primary_id);
+                // STALE-KEY REWRITE location (1): once a bare name is promoted,
+                // it MUST NOT remain in index.bare.
+                index.bare.remove(&name);
                 promoted_siblings
                     .entry(name.clone())
                     .or_default()
@@ -1143,5 +1146,26 @@ mod tests {
             npm_pkg.manifests[0].path,
             PathBuf::from("packages/native-core/package.json")
         );
+    }
+
+    #[test]
+    fn promoted_name_removed_from_index_bare() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        write_pkg(root, "crates/native-core", Ecosystem::Cargo, "native-core");
+        write_pkg(root, "packages/native-core", Ecosystem::Npm, "native-core");
+        let locator = crate::locate::IgnoreWalkLocator::new(root);
+        let runner = NoopRunner;
+        let ws = crate::Workspace::load(root.to_path_buf(), &locator, &runner)
+            .expect("promotion must succeed");
+        assert!(
+            !ws.graph.identity().bare.contains_key("native-core"),
+            "index.bare must not retain the stale pre-promotion key once both occurrences promote"
+        );
+        let unprefixed_lookup = ws.graph.identity().resolve_human("native-core", &[]);
+        assert!(matches!(
+            unprefixed_lookup,
+            Err(GraphError::AmbiguousName { .. })
+        ));
     }
 }
