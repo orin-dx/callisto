@@ -246,6 +246,17 @@ impl ManifestWalkResolver {
                         index.native.insert(key.clone(), current_id.clone());
                     }
                 }
+                // STALE-KEY REWRITE location (3): update index.prefixed values
+                // for the primary identities so they point to the newly-promoted
+                // Prefixed id rather than the pre-promotion primary_id.
+                index.prefixed.insert(
+                    (existing_id.ecosystem().unwrap(), name.clone()),
+                    existing_id.clone(),
+                );
+                index.prefixed.insert(
+                    (current_id.ecosystem().unwrap(), name.clone()),
+                    current_id.clone(),
+                );
                 promoted_siblings
                     .entry(name.clone())
                     .or_default()
@@ -1221,6 +1232,48 @@ mod tests {
                 name: "native-core".to_string(),
             },
             "index.native value must point to the promoted Npm-prefixed ID"
+        );
+    }
+
+    #[test]
+    fn promoted_prefixed_values_point_to_prefixed_ids() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        write_pkg(root, "crates/native-core", Ecosystem::Cargo, "native-core");
+        write_pkg(root, "packages/native-core", Ecosystem::Npm, "native-core");
+        let locator = crate::locate::IgnoreWalkLocator::new(root);
+        let runner = NoopRunner;
+        let ws = crate::Workspace::load(root.to_path_buf(), &locator, &runner)
+            .expect("promotion must succeed");
+
+        let cargo_prefixed = ws
+            .graph
+            .identity()
+            .prefixed
+            .get(&(Ecosystem::Cargo, "native-core".to_string()))
+            .expect("Cargo prefixed entry must exist");
+        let npm_prefixed = ws
+            .graph
+            .identity()
+            .prefixed
+            .get(&(Ecosystem::Npm, "native-core".to_string()))
+            .expect("Npm prefixed entry must exist");
+
+        assert_eq!(
+            cargo_prefixed,
+            &PackageId::Prefixed {
+                ecosystem: Ecosystem::Cargo,
+                name: "native-core".to_string(),
+            },
+            "index.prefixed value must point to the promoted Cargo-prefixed ID"
+        );
+        assert_eq!(
+            npm_prefixed,
+            &PackageId::Prefixed {
+                ecosystem: Ecosystem::Npm,
+                name: "native-core".to_string(),
+            },
+            "index.prefixed value must point to the promoted Npm-prefixed ID"
         );
     }
 }
