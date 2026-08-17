@@ -1,0 +1,117 @@
+{
+  "id": "SPEC-TRACK2-PLATFORM-MANIFEST-WRITES",
+  "purpose": "Make callisto-graph's plan_version() the real producer of VersionPlan.platform_writes and VersionPlan.optional_dep_updates for Fixed groups containing GroupMember::PlatformManifest entries, so a napi-rs/maturin platform package's own manifest gets bumped in lockstep with its owning package and the owner's optionalDependencies pointer to that platform package tracks the same target version. Also close two confirmed-dormant correctness gaps in apply_version_plan's existing consumption of these two VersionPlan fields (crates/callisto-graph/src/apply.rs), so that once plan_version starts emitting real data, that data is applied safely and its ecosystem's lockfile is refreshed/staged like any other bump.",
+  "scope": "crates/callisto-graph/src/commands/version.rs::plan_version (new producer logic for platform_writes and optional_dep_updates, driven by Fixed-group GroupMember::PlatformManifest members and their owner's PlannedBump); crates/callisto-graph/src/plan.rs (PlatformWrite gains a `from: Version` field); crates/callisto-graph/src/apply.rs::apply_version_plan (active_ecosystems derivation extended to platform_writes/optional_dep_updates manifest paths; platform_writes dispatch loop gains a current==from precondition check mirroring the existing bump loops). Confirmed via code inspection: crates/callisto-graph/src/commands/pr_body.rs::compose_pr_body calls plan_version directly and only ever constructs a VersionPlan by calling render_pr_body_from_plan on plan_version's own output (pr_body.rs lines 21-27) -- it has no independent VersionPlan-construction path of its own for real (non-test) use, so it automatically inherits this track's fix with zero additional producer code. crates/callisto-graph/src/commands/snapshot.rs::plan_snapshot, by contrast, builds its own VersionPlan literal (lines 131-143) with synthetic snapshot_versions and never calls plan_version, so it is genuinely a separate, unaddressed producer -- covered under non_goals below, not silently assumed.",
+  "non_goals": [
+    "commands/snapshot.rs::plan_snapshot populating its own platform_writes/optional_dep_updates. Confirmed by direct inspection (snapshot.rs lines 100-143): plan_snapshot constructs VersionPlan independently of plan_version, using synthetic per-run snapshot_versions instead of real cascade-computed bump targets. A snapshot build's platform-manifest version (if any) would need to be a synthetic snapshot version, not the owner's real PlannedBump.to -- which is a different derivation than this track builds. Deferred to a separate track.",
+    "commands/pr_body.rs needing any code change in this track. Confirmed by direct inspection (pr_body.rs lines 16-27): compose_pr_body's only production code path calls plan_version and then renders its output -- it has no independent VersionPlan construction outside of its own unit tests. Once plan_version is fixed, pr_body's preview output reflects real platform_writes/optional_dep_updates with zero additional code. This is stated as a confirmed fact, not an assumption -- there is no separate 'pr_body producer' to defer.",
+    "Building a new planning-logic path for optionalDependencies updates unrelated to platform packages. OptionalDepUpdate's only production source added by this track is: an owner package's canonical manifest declares an existing DependencyEntry with kind == DepKind::Optional whose name matches a sibling GroupMember::PlatformManifest's `name` field in the same Fixed group, and that group's owner package received a real bump this run. An ordinary cross-package optionalDependencies relationship with no platform-manifest member involved is out of scope and produces no OptionalDepUpdate under this track's logic.",
+    "Any change to the Manifest trait, ManifestFormat::from_path, or update_optional_dependencies's internal logic (crates/callisto-manifests/src/{npm,cargo,python}.rs). All three already implement update_optional_dependencies and iter_dependencies correctly; this track only adds a new call site in plan_version that reads iter_dependencies() to discover existing optionalDependencies entries and a new call site in apply_version_plan's precondition check -- it does not modify these trait methods or their per-ecosystem implementations.",
+    "Redesigning apply_version_plan's write-batching (classify_manifest_writes, the batched-write groups feeding the loop at apply.rs lines 140-179). The platform_writes and optional_dep_updates dispatch loops (apply.rs lines 244-262) remain the two separate, sequential loops they are today; this track adds a precondition check and lockfile-ecosystem awareness to them without folding them into the batched-write groups.",
+    "Validating that a GroupMember::PlatformManifest's declared `owner: PackageId` actually resolves to a package present in the workspace graph. Group-membership validity is enforced by the existing group-loading/validation pipeline (crates/callisto-graph/src/groups.rs, crate::napi::NapiTargetsIndex) before plan_version ever runs; this track assumes group config already passed that validation and does not re-validate it.",
+    "Handling a platform manifest declared in group config whose file does not exist on disk, or whose content cannot be read as valid JSON/TOML for its ecosystem, as anything other than a hard error. This track does not add graceful-degradation, warning-and-skip, or partial-plan behavior for an unreadable platform manifest -- it surfaces the existing ManifestFormat::from_path / Manifest::current_version error unchanged (see AC-008).",
+    "Testing constraint, not a pass/fail acceptance criterion: all tests for AC-001 through AC-013 (and AC-007b, AC-012b) must invoke commands::version::plan_version or apply::apply_version_plan directly as their entry point; a test that only calls an internal helper function and bypasses one of these two public entry points does not satisfy its corresponding criterion."
+  ],
+  "api_surface": [
+    {
+      "name": "PlatformWrite",
+      "signature": "pub struct PlatformWrite { pub manifest: PathBuf, pub version: Version, pub from: Version }",
+      "description": "Adds a `from: Version` field (previously only `manifest` and `version` existed, crates/callisto-graph/src/plan.rs lines 45-49) capturing the platform manifest's on-disk version as observed by plan_version at plan time. Consumed by apply_version_plan's platform_writes dispatch loop as the expected-current-version precondition, mirroring PlannedBump.from's role in the sibling bump loops. This is a breaking change to any code constructing PlatformWrite directly (existing test fixtures in apply.rs and any future snapshot/pr_body producer) -- all call sites must supply `from`."
+    },
+    {
+      "name": "commands::version::plan_version",
+      "signature": "pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInference>(ws: &Workspace<'_, R, D>, inference: &I, opts: &VersionOptions) -> Result<VersionPlan, GraphError>",
+      "description": "Signature unchanged. Behavior changes: the returned VersionPlan.platform_writes and VersionPlan.optional_dep_updates are now populated per AC-001 through AC-008 (including AC-002b and AC-007b) instead of being hardcoded to Vec::new() (previously at commands/version.rs lines 262-263). Can now return a new error path (AC-008) when a Fixed group's platform manifest cannot be opened or read."
+    },
+    {
+      "name": "apply::apply_version_plan",
+      "signature": "pub fn apply_version_plan<R: CommandRunner>(root: &Path, plan: &VersionPlan, runner: &R, opts: &ApplyOptions, permit: &ApplyPermit) -> Result<ApplyOutcome, GraphError>",
+      "description": "Signature unchanged. Behavior changes: (1) active_ecosystems (apply.rs lines 325-349) is now also derived from plan.platform_writes and plan.optional_dep_updates manifest paths, affecting which lockfiles get staged (AC-009, AC-010, AC-011) -- note npm has no refresh subprocess in apply_version_plan at all, only Cargo and Pypi do, so this extension only ever adds npm STAGING, never a new refresh command; (2) the platform_writes dispatch loop (apply.rs lines 244-252) gains a current-version precondition check against PlatformWrite.from before writing, returning GraphError::UnexpectedManifestVersion on mismatch instead of overwriting unconditionally, except for the idempotent-retry case (AC-012, AC-012b, AC-013)."
+    }
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "AC-001",
+      "criterion": "Given a Fixed group with an owner Package member whose PlannedBump computes from version X to version Y this run, and a sibling GroupMember::PlatformManifest member in the same group with path P and name N, running commands::version::plan_version on that workspace produces a VersionPlan whose platform_writes contains exactly one PlatformWrite entry with manifest == P and version == Y (Y is the owner's bump target, not an independently computed value).",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-002",
+      "criterion": "In the AC-001 scenario, PlatformWrite.from equals the resolved current version of the platform manifest at path P on disk at plan time -- either the version string declared directly in P (the ordinary case), or, when P is a Cargo.toml declaring `version.workspace = true`, the version resolved from the workspace root's `[workspace.package] version` (see AC-002b for that specific case). plan_version reads P via ManifestFormat::from_path(P) to detect format, constructs ManifestDecl::new(P, ManifestRole::Canonical, format) -- ManifestRole::Canonical is used unconditionally regardless of the owning GroupMember::PlatformManifest's own `role` field, so that a Cargo/TOML-formatted platform manifest (e.g. a maturin platform crate) does not trip ManifestDecl::new's Platform-role-vs-CargoToml-format rejection (crates/callisto-model/src/package.rs:104-106) -- then opens it via callisto_manifests::open(&decl, &ctx) and calls .current_version() on the resulting handle. The OpenContext `ctx` is derived by plan_version using the exact same pattern apply_version_plan already uses (crates/callisto-graph/src/apply.rs:118-130): cargo_workspace via WorkspaceCargoResolver::load(root.join(\"Cargo.toml\")).inheritance(), and npm_workspace_kind via callisto_manifests::detect_npm_workspace_kind(root) -- both derived from the real workspace root, not passed as None. This mirrors the ManifestRole::Canonical construction already used by apply_version_plan's platform_writes and optional_dep_updates dispatch loops (crates/callisto-graph/src/apply.rs:247,257), so plan-time and apply-time reads of a given platform manifest use the same role and the same context derivation and cannot diverge.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-002b",
+      "criterion": "Given the AC-001 scenario where the platform manifest at path P is a Cargo.toml with `version.workspace = true` (a maturin platform crate inheriting its version from the workspace root, per crates/callisto-manifests/src/cargo.rs:47-52's inherited_version detection), and the workspace's root Cargo.toml declares a `[workspace.package] version` (e.g. \"3.2.1\", resolved via WorkspaceInheritance per crates/callisto-manifests/src/cargo.rs:580-587), calling commands::version::plan_version succeeds (returns Ok(..)) and the resulting VersionPlan's PlatformWrite entry for P has `from` equal to that resolved workspace version (\"3.2.1\") -- not an Err(ManifestError::WorkspaceInherited), confirming the AC-002 OpenContext derivation makes this real, common maturin layout work end-to-end as observed through plan_version's actual return value, not through a direct call to current_version() in isolation.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-003",
+      "criterion": "Given the AC-001 scenario, and the owner package's own canonical manifest contains an existing dependency entry with kind == DepKind::Optional whose name exactly matches the platform member's name N (e.g. 'my-lib.linux-x64-gnu'), plan_version's VersionPlan.optional_dep_updates contains an OptionalDepUpdate entry whose manifest is the owner's canonical manifest path and whose updates contains the pair (N, Y).",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-004",
+      "criterion": "Given the AC-001 scenario, but the owner package's canonical manifest has no dependency entry (of any kind) whose name matches the platform member's name N, plan_version's VersionPlan.optional_dep_updates contains no entry for that manifest referencing N -- an OptionalDepUpdate is only produced when a matching optionalDependencies entry already exists to update, never speculatively created.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-005",
+      "criterion": "Given a workspace where no Fixed group anywhere has any GroupMember::PlatformManifest members (only Package members across every group), plan_version's VersionPlan.platform_writes and VersionPlan.optional_dep_updates are both empty Vecs -- no regression for workspaces without platform packages. (VersionPlan carries no per-group partition, so this is necessarily a workspace-wide assertion, not a per-group one.)",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-006",
+      "criterion": "Given a Fixed group whose owner package receives no version bump this run (outcome.severities for the owner is Severity::None, so no PlannedBump is produced for it), plan_version produces no PlatformWrite and no OptionalDepUpdate entry for that group's GroupMember::PlatformManifest members, even if those platform manifests exist on disk -- platform-manifest writes are strictly driven by an actual owner PlannedBump, never speculative.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-007",
+      "criterion": "Given a Fixed group whose owner has two GroupMember::PlatformManifest siblings (e.g. linux-x64-gnu and darwin-arm64 targets) and receives a real bump to Y, plan_version's platform_writes contains one PlatformWrite entry per platform member (two entries total), each with its own manifest path and matching from/version values -- multiple platform manifests under one owner are all covered, not just the first.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-007b",
+      "criterion": "Given the AC-007 scenario (owner with two GroupMember::PlatformManifest siblings, both bumped) where the owner's canonical manifest has matching optionalDependencies entries for both platform names, plan_version's VersionPlan.optional_dep_updates contains exactly one OptionalDepUpdate entry for the owner's canonical manifest path, whose `updates` field contains both (name, version) pairs -- entries are merged per target manifest path, never duplicated as separate OptionalDepUpdate entries pointing at the same path.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-008",
+      "criterion": "Given a Fixed group's platform manifest file declared in group config does not exist on disk, or exists but cannot be parsed as valid content for its ecosystem (malformed JSON/TOML), and the owner package receives a real bump this run, plan_version returns Err(GraphError) surfacing the underlying manifest read failure -- it does not silently omit the PlatformWrite entry, does not panic, and does not produce a partial VersionPlan.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-009",
+      "criterion": "Fix 1 (apply.rs active_ecosystems): given a VersionPlan whose plan.bumps is empty but plan.platform_writes contains one entry pointing at an npm-ecosystem manifest path (e.g. 'platform/my-lib.linux-x64-gnu/package.json'), ApplyOptions.refresh_lockfiles == true, and opts.transient == false, calling apply_version_plan causes the npm lockfile (package-lock.json, pnpm-lock.yaml, yarn.lock, or bun.lockb -- whichever exists on disk at the workspace root) to be included in ApplyOutcome.staged. apply_version_plan's lockfile_ecosystems staging table (crates/callisto-graph/src/apply.rs:411-421) is not filtered by npm workspace kind, so any of the four npm lockfile filenames present on disk is staged, not specifically the one matching the detected workspace kind. Note: apply_version_plan has no npm lockfile REFRESH subprocess at all (only Cargo via `cargo update` and Pypi via `uv lock`/`poetry lock` at apply.rs:353-407) -- this is true for every plan, before and after this fix, npm-touching or not. This criterion asserts staging only; ApplyOutcome.lockfile_refresh_results contains no npm entry, matching the pre-existing, unchanged behavior for an ordinary plan.bumps-only plan touching an npm manifest.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-010",
+      "criterion": "Fix 1 (apply.rs active_ecosystems): given the AC-009 scenario but using plan.optional_dep_updates instead of plan.platform_writes (plan.bumps empty, one OptionalDepUpdate entry pointing at an npm-ecosystem manifest path, refresh_lockfiles == true, transient == false), calling apply_version_plan causes the same npm-lockfile staging-only behavior described in AC-009 -- the npm lockfile present on disk is included in ApplyOutcome.staged, and no npm entry appears in ApplyOutcome.lockfile_refresh_results.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-011",
+      "criterion": "Fix 1 regression: given an ordinary VersionPlan with only plan.bumps entries populated (plan.platform_writes and plan.optional_dep_updates both empty, as in every plan before this track), calling apply_version_plan with refresh_lockfiles == true produces byte-for-byte the same ApplyOutcome.lockfile_refresh_results and the same ApplyOutcome.staged as before this track's change -- confirmed by all pre-existing apply.rs tests passing unmodified. (active_ecosystems itself is a function-local binding with no external visibility; this criterion is expressed against ApplyOutcome's public fields, which are what a test can actually observe.)",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-012",
+      "criterion": "Fix 2 (apply.rs platform_writes precondition): given a VersionPlan.platform_writes entry whose `from` field does not match the actual on-disk current_version() of that platform manifest at apply time (drift -- e.g. someone hand-edited the platform package.json between plan and apply), calling apply_version_plan returns Err(GraphError::UnexpectedManifestVersion { path, expected_from, expected_to, found }) where path is the platform manifest's path, expected_from is PlatformWrite.from, expected_to is PlatformWrite.version, and found is the actual on-disk version -- the platform manifest is not written. This criterion applies only when the on-disk current_version() equals neither PlatformWrite.from nor PlatformWrite.version -- see AC-012b for the current==version idempotent-retry case, which is not an error.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-012b",
+      "criterion": "Fix 2 idempotent-retry case: given a VersionPlan.platform_writes entry whose `from` field does NOT match the platform manifest's on-disk current_version(), but that on-disk current_version() already equals PlatformWrite.version (the platform manifest was already written to its target by a prior, interrupted apply run), calling apply_version_plan treats this as success -- it does not write the manifest again and does not return UnexpectedManifestVersion, but still appends the manifest path to modified_paths so it is re-staged on retry.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-013",
+      "criterion": "Fix 2 regression: given a VersionPlan.platform_writes entry whose `from` field exactly matches the platform manifest's actual on-disk current_version() at apply time (the ordinary, non-drifted case), calling apply_version_plan succeeds and the platform manifest's on-disk version is exactly `version` after apply -- no behavior change from before this fix for the non-drifted path.",
+      "is_error_case": false
+    }
+  ],
+  "linked_requirement": "REQ-TRACK2-PLATFORM-MANIFEST-WRITES",
+  "reasoning": "Verified against live code before drafting: (1) GroupMember::PlatformManifest{owner,role,path,name} confirmed at crates/callisto-graph/src/config/groups.rs:28-34. (2) PlatformWrite{manifest,version} and OptionalDepUpdate{manifest,updates} confirmed at crates/callisto-graph/src/plan.rs:45-55, both currently 2-field structs -- PlatformWrite's `from` field is a genuine addition, documented in api_surface. (3) commands/version.rs plan_version hardcodes platform_writes/optional_dep_updates to Vec::new() at lines 262-263 -- confirmed, this is the exact gap the requirement describes. (4) apply.rs's two dispatch loops for platform_writes (lines 244-252) and optional_dep_updates (lines 254-262) exist and are unconditional/no-precondition for platform_writes, confirmed by direct read -- unlike the sibling bump loops at lines 146-161 and 181-214 which do check current==expected and return GraphError::UnexpectedManifestVersion (confirmed shape at error.rs:157-162) on drift. (5) active_ecosystems derivation at apply.rs:325-349 is confirmed to iterate only plan.bumps -- platform_writes/optional_dep_updates paths are never consulted, confirming Fix 1's dormant-bug claim. (6) pr_body.rs's compose_pr_body (lines 16-27) is confirmed to call plan_version directly with no independent VersionPlan construction in its production path -- so unlike the requirement's grouping of snapshot.rs and pr_body.rs together as 'deferred', pr_body.rs needs zero code change and this is stated as a confirmed fact in non_goals, not an assumption. snapshot.rs's plan_snapshot (lines 131-143) does independently construct a VersionPlan with synthetic snapshot_versions and remains a genuinely separate, deferred producer. (7) The Manifest trait's iter_dependencies() (callisto-manifests/src/lib.rs:34) returning DependencyEntry{name,kind,spec,inherited} with DepKind::Optional as a variant (callisto-model/src/dependency.rs:13-19) is the mechanism AC-003/AC-004 rely on to detect an existing optionalDependencies entry without speculatively inventing one. (8) OpenContext/open() exist at the callisto-graph crate level (used by apply.rs and manifest_cache.rs), confirming plan_version has the infrastructure available to open and read a platform manifest's current_version() at plan time for AC-002/AC-008, without needing a new manifest-reading primitive built from scratch. No TBDs remain; genuinely unresolved implementation choices (exact function name for the new plan_version helper, whether platform manifest reads are cached) are left to the planning stage since they don't affect observable behavior.",
+  "spec_file_path": ".claude/specs/SPEC-TRACK2-PLATFORM-MANIFEST-WRITES.json"
+}
