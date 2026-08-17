@@ -17,6 +17,10 @@ pub struct ApplyOptions {
     /// Plumbed from `--refresh-lockfiles` but not yet consulted here;
     /// `ApplyOutcome::lockfile_refresh_results` is consequently always `None`.
     pub refresh_lockfiles: bool,
+    /// When true (snapshot mode, §8), manifest mutations are written to disk
+    /// but changelog prepends (step 7), changeset deletions (step 8), and
+    /// git staging (step 11) are suppressed.
+    pub transient: bool,
 }
 
 /// The result of a successful [`apply_version_plan`] call, describing which paths were written and staged.
@@ -237,58 +241,60 @@ pub fn apply_version_plan<R: CommandRunner>(
         }
     }
 
-    for cl in &plan.changelog_writes {
-        let rendered = callisto_changelog::render_section(&cl.input)?;
-        callisto_changelog::prepend(
-            root,
-            &cl.changelog_path,
-            &cl.input.package.display_name(),
-            &rendered,
-            permit,
-        )?;
-        modified_paths.push(cl.changelog_path.clone());
-    }
-
-    for cs_path in &plan.consumed_changesets {
-        let full = root.join(cs_path);
-        if full.exists() {
-            fs::remove_file(&full).map_err(|e| {
-                GraphError::Command(CommandError::Io {
-                    program: "fs".to_string(),
-                    message: e.to_string(),
-                })
-            })?;
+    if !opts.transient {
+        for cl in &plan.changelog_writes {
+            let rendered = callisto_changelog::render_section(&cl.input)?;
+            callisto_changelog::prepend(
+                root,
+                &cl.changelog_path,
+                &cl.input.package.display_name(),
+                &rendered,
+                permit,
+            )?;
+            modified_paths.push(cl.changelog_path.clone());
         }
-        modified_paths.push(cs_path.clone());
-    }
 
-    if let Some(ref pre_state) = plan.pre_state_update {
-        let default_dir = PathBuf::from(".changeset");
-        let pre_dir = plan
-            .consumed_changesets
-            .first()
-            .and_then(|p| p.parent())
-            .unwrap_or(&default_dir);
-        let rel_pre_path = pre_dir.join("pre.json");
-        let pre_path = root.join(&rel_pre_path);
-        let text = callisto_format::write_pre_json(pre_state);
-        callisto_manifests::atomic::atomic_write(&pre_path, &text, permit).map_err(|e| {
-            GraphError::Command(CommandError::Io {
-                program: "fs".to_string(),
-                message: e.to_string(),
-            })
-        })?;
-        modified_paths.push(rel_pre_path);
-    } else if let Some(rel_pre_path) = &plan.delete_pre_json {
-        let pre_path = root.join(rel_pre_path);
-        if pre_path.exists() {
-            fs::remove_file(&pre_path).map_err(|e| {
+        for cs_path in &plan.consumed_changesets {
+            let full = root.join(cs_path);
+            if full.exists() {
+                fs::remove_file(&full).map_err(|e| {
+                    GraphError::Command(CommandError::Io {
+                        program: "fs".to_string(),
+                        message: e.to_string(),
+                    })
+                })?;
+            }
+            modified_paths.push(cs_path.clone());
+        }
+
+        if let Some(ref pre_state) = plan.pre_state_update {
+            let default_dir = PathBuf::from(".changeset");
+            let pre_dir = plan
+                .consumed_changesets
+                .first()
+                .and_then(|p| p.parent())
+                .unwrap_or(&default_dir);
+            let rel_pre_path = pre_dir.join("pre.json");
+            let pre_path = root.join(&rel_pre_path);
+            let text = callisto_format::write_pre_json(pre_state);
+            callisto_manifests::atomic::atomic_write(&pre_path, &text, permit).map_err(|e| {
                 GraphError::Command(CommandError::Io {
                     program: "fs".to_string(),
                     message: e.to_string(),
                 })
             })?;
-            modified_paths.push(rel_pre_path.clone());
+            modified_paths.push(rel_pre_path);
+        } else if let Some(rel_pre_path) = &plan.delete_pre_json {
+            let pre_path = root.join(rel_pre_path);
+            if pre_path.exists() {
+                fs::remove_file(&pre_path).map_err(|e| {
+                    GraphError::Command(CommandError::Io {
+                        program: "fs".to_string(),
+                        message: e.to_string(),
+                    })
+                })?;
+                modified_paths.push(rel_pre_path.clone());
+            }
         }
     }
 
@@ -322,10 +328,10 @@ pub fn apply_version_plan<R: CommandRunner>(
         })
         .collect();
 
-    // Regenerate lockfiles when the caller requested a refresh. This must run
-    // BEFORE the git-staging loop so the refreshed files are on disk when they
+    // Regenerate lockfiles when the caller requested a refresh and mode is not transient.
+    // This must run BEFORE the git-staging loop so the refreshed files are on disk when they
     // are picked up by the staging pass below.
-    if opts.refresh_lockfiles {
+    if !opts.transient && opts.refresh_lockfiles {
         let mut refresh_results: Vec<LockfileRefreshResult> = Vec::new();
 
         if active_ecosystems.contains(&Ecosystem::Cargo) {
@@ -404,7 +410,7 @@ pub fn apply_version_plan<R: CommandRunner>(
         }
     }
 
-    if !modified_paths.is_empty() {
+    if !opts.transient && !modified_paths.is_empty() {
         let (existing, deleted): (Vec<_>, Vec<_>) =
             modified_paths.iter().partition(|p| root.join(p).exists());
 
@@ -826,6 +832,7 @@ mod tests {
         let permit = ApplyPermit::force_for_tests();
         let opts = ApplyOptions {
             refresh_lockfiles: true,
+            transient: false,
         };
         let outcome = apply_version_plan(root, &plan, &runner, &opts, &permit)
             .expect("apply_version_plan should succeed");
@@ -2106,6 +2113,106 @@ mod tests {
         assert!(
             on_disk.contains("helper = \"^1.2.0\""),
             "final on-disk spec must reflect the SECOND same-RewriteKey entry's `to` value, proving rewrite_indices iterate in plan.rewrites order; got:\n{on_disk}"
+        );
+    }
+
+    #[test]
+    fn snapshot_transient_mode_mutates_manifests_but_suppresses_changelogs_changesets_and_git_staging(
+    ) {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let cargo_toml_path = root.join("Cargo.toml");
+        std::fs::write(
+            &cargo_toml_path,
+            "[package]\nname = \"my-crate\"\nversion = \"1.0.0\"\nedition = \"2021\"\n",
+        )
+        .unwrap();
+
+        let changelog_path = root.join("CHANGELOG.md");
+        std::fs::write(&changelog_path, "# Changelog\n").unwrap();
+
+        let changeset_dir = root.join(".changeset");
+        std::fs::create_dir_all(&changeset_dir).unwrap();
+        let changeset_file = changeset_dir.join("test-change.md");
+        std::fs::write(&changeset_file, "---\n\"my-crate\": patch\n---\nSome fix\n").unwrap();
+
+        let calls: CallLog = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let runner = RecordingRunner {
+            calls: std::sync::Arc::clone(&calls),
+        };
+
+        let pkg = PackageId::parse("cargo:my-crate").unwrap();
+        let plan = VersionPlan {
+            bumps: vec![PlannedBump {
+                package: pkg.clone(),
+                from: cargo_version("1.0.0"),
+                to: cargo_version("0.0.0-snapshot-abc1234"),
+                severity: Severity::Patch,
+                governed_by: None,
+                reason: None,
+                writes: vec![VersionWriteTarget::Manifest(PathBuf::from("Cargo.toml"))],
+            }],
+            changelog_writes: vec![crate::plan::ChangelogWrite {
+                changelog_path: PathBuf::from("CHANGELOG.md"),
+                input: callisto_changelog::ChangelogInput {
+                    package: pkg,
+                    from: cargo_version("1.0.0"),
+                    to: Some(cargo_version("0.0.0-snapshot-abc1234")),
+                    entries: vec![callisto_changelog::ChangelogEntry {
+                        severity: Severity::Patch,
+                        source: callisto_changelog::ChangeSource::Changeset {
+                            filename: "test-change.md".to_string(),
+                            summary: "Some fix".to_string(),
+                        },
+                    }],
+                },
+            }],
+            consumed_changesets: vec![PathBuf::from(".changeset/test-change.md")],
+            ..Default::default()
+        };
+
+        let permit = ApplyPermit::force_for_tests();
+        let opts = ApplyOptions {
+            refresh_lockfiles: false,
+            transient: true,
+        };
+
+        let result =
+            apply_version_plan(root, &plan, &runner, &opts, &permit).expect("apply succeeded");
+
+        // 1. Manifests ARE mutated to the snapshot version
+        let manifest_content = std::fs::read_to_string(&cargo_toml_path).unwrap();
+        assert!(manifest_content.contains("version = \"0.0.0-snapshot-abc1234\""));
+
+        // 2. Changelogs are NOT modified
+        let changelog_content = std::fs::read_to_string(&changelog_path).unwrap();
+        assert_eq!(changelog_content, "# Changelog\n");
+
+        // 3. Changeset file is NOT deleted
+        assert!(
+            changeset_file.exists(),
+            "changeset must not be deleted in transient mode"
+        );
+
+        // 4. Git staging commands were NOT executed
+        let recorded = calls.lock().unwrap();
+        let git_staging_calls: Vec<_> = recorded
+            .iter()
+            .filter(|(prog, args)| {
+                prog == "git"
+                    && (args.first().map(|s| s.as_str()) == Some("add")
+                        || args.first().map(|s| s.as_str()) == Some("rm"))
+            })
+            .collect();
+        assert!(
+            git_staging_calls.is_empty(),
+            "transient mode must not execute git add / git rm: {git_staging_calls:?}"
+        );
+
+        // 5. Outcome staged list is empty
+        assert!(
+            result.staged.is_empty(),
+            "transient mode outcome staged must be empty"
         );
     }
 }

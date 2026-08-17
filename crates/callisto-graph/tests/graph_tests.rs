@@ -101,6 +101,7 @@ fn test_apply_version_plan_reports_git_add_failure() {
 
     let opts = ApplyOptions {
         refresh_lockfiles: false,
+        transient: false,
     };
 
     let result = apply_version_plan(

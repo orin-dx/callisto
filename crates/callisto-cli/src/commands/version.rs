@@ -26,6 +26,7 @@ pub fn handle(args: VersionArgs, global: &GlobalArgs) -> Result<ExitCode, CliErr
 
     let apply_opts = ApplyOptions {
         refresh_lockfiles: args.refresh_lockfiles,
+        transient: false,
     };
 
     let outcome = match ApplyPermit::granted_unless_dry_run(global.dry_run) {

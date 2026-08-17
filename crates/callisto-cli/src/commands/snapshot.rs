@@ -39,6 +39,7 @@ pub fn handle(args: SnapshotArgs, global: &GlobalArgs) -> Result<ExitCode, CliEr
 
     let apply_opts = ApplyOptions {
         refresh_lockfiles: false,
+        transient: true,
     };
 
     if let Some(permit) = ApplyPermit::granted_unless_dry_run(global.dry_run) {
