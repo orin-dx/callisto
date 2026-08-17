@@ -20,7 +20,8 @@ use crate::error::GraphError;
 use crate::identity::IdentityIndex;
 use crate::locate::ProjectLocator;
 use crate::manifest_cache::open_cached;
-use crate::resolver::ManifestWalkResolver;
+#[allow(unused_imports)]
+use crate::resolver::{DependencyResolver, ManifestWalkResolver};
 
 /// Returns (name-scoped claiming-ecosystem set, complete unfiltered native-key list)
 /// for one path's own `list` of (ecosystem, declared-id) pairs. The first is filtered
@@ -39,6 +40,14 @@ fn compute_claiming_ecosystems_and_native_keys(
         .map(|(eco, id)| (*eco, id.name().to_string()))
         .collect();
     (claiming, native_keys)
+}
+
+/// The PROMOTION PREDICATE: true only when the two paths' name-scoped
+/// claiming-ecosystem sets share no ecosystem. This is a disjointness test,
+/// not an inequality test -- {Cargo,Npm} and {Npm} are unequal but not
+/// disjoint, and must NOT promote (see AC-08).
+fn claiming_sets_disjoint(a: &BTreeSet<Ecosystem>, b: &BTreeSet<Ecosystem>) -> bool {
+    a.is_disjoint(b)
 }
 
 /// Returns true iff `paths.len() > 1` AND every distinct pair of paths in `paths`
@@ -101,6 +110,8 @@ impl ManifestWalkResolver {
         let mut claiming_ecosystems: BTreeMap<PathBuf, BTreeSet<Ecosystem>> = BTreeMap::new();
         let mut path_native_keys: BTreeMap<PathBuf, Vec<(Ecosystem, String)>> = BTreeMap::new();
         let mut primary_ecosystems: BTreeMap<PathBuf, Ecosystem> = BTreeMap::new();
+        let mut promoted_siblings: BTreeMap<String, Vec<(PackageId, BTreeSet<Ecosystem>)>> =
+            BTreeMap::new();
 
         // Use the identity already resolved by the locator (`proj.id`) rather
         // than re-reading manifests through `IdentityResolver::resolve`.
@@ -180,15 +191,53 @@ impl ManifestWalkResolver {
                 }
             }
 
-            if let Some((existing_path, _)) =
+            let current_decls = decls.clone();
+            if let Some((existing_path, existing_decls)) =
                 package_manifest_decls.insert(primary_id.clone(), (rel_path.clone(), decls))
             {
-                return Err(GraphError::DuplicatePackage {
-                    id: primary_id,
-                    paths: vec![existing_path, rel_path],
-                });
+                let name = primary_id.name().to_string();
+                let existing_set = claiming_ecosystems
+                    .get(&existing_path)
+                    .cloned()
+                    .unwrap_or_default();
+                let current_set = claiming_ecosystems
+                    .get(&rel_path)
+                    .cloned()
+                    .unwrap_or_default();
+                if !claiming_sets_disjoint(&existing_set, &current_set) {
+                    return Err(GraphError::DuplicatePackage {
+                        id: primary_id,
+                        paths: vec![existing_path, rel_path],
+                    });
+                }
+                // STALE-KEY REWRITE location (4): re-key package_manifest_decls under
+                // each path's own newly-promoted Prefixed id, sourcing each path's own
+                // decls -- captured via the `existing_decls` returned by `insert` above
+                // and the `current_decls` clone taken before `insert` overwrote the map,
+                // never via a `.get(&primary_id)` lookup after the fact (a lookup miss
+                // there would silently substitute an empty Vec -- exactly the AC-04
+                // manifests-bleed bug).
+                let existing_id = PackageId::Prefixed {
+                    ecosystem: primary_ecosystems[&existing_path],
+                    name: name.clone(),
+                };
+                let current_id = PackageId::Prefixed {
+                    ecosystem: primary_ecosystems[&rel_path],
+                    name: name.clone(),
+                };
+                package_manifest_decls
+                    .insert(existing_id.clone(), (existing_path.clone(), existing_decls));
+                package_manifest_decls
+                    .insert(current_id.clone(), (rel_path.clone(), current_decls));
+                package_manifest_decls.remove(&primary_id);
+                promoted_siblings
+                    .entry(name.clone())
+                    .or_default()
+                    .extend([(existing_id, existing_set), (current_id, current_set)]);
             }
         }
+
+        let cfg = cfg.with_promoted_siblings(promoted_siblings);
 
         // Tracks, per cfg.package_sets entry (by index), whether it matched at
         // least one real discovered package during this walk. A [[package-set]]
@@ -229,7 +278,7 @@ impl ManifestWalkResolver {
             //         (any rule, since no Prefixed rule matched, the first match
             //          is necessarily Bare) that matches this package's ID.
             // Within each pass, first-match-wins (TOML declaration order) applies.
-            let pkg_override = resolve_package_config(&id, cfg);
+            let pkg_override = resolve_package_config(&id, &cfg);
 
             // Record which [[package-set]] patterns match this package,
             // independent of whether a [[package]] rule ends up shadowing the
@@ -994,6 +1043,105 @@ mod tests {
         assert!(
             !is_promoted_bare_name(&paths, &claiming),
             "overlapping ecosystem sets must NOT trigger promotion; duplicate check handles it"
+        );
+    }
+
+    #[test]
+    fn promotion_predicate_is_disjointness_not_inequality() {
+        let mut cargo_npm = BTreeSet::new();
+        cargo_npm.insert(Ecosystem::Cargo);
+        cargo_npm.insert(Ecosystem::Npm);
+        let mut npm_only = BTreeSet::new();
+        npm_only.insert(Ecosystem::Npm);
+        let mut pypi_only = BTreeSet::new();
+        pypi_only.insert(Ecosystem::Pypi);
+
+        assert!(!claiming_sets_disjoint(&cargo_npm, &npm_only));
+        assert!(claiming_sets_disjoint(&cargo_npm, &pypi_only));
+        assert!(claiming_sets_disjoint(&npm_only, &pypi_only));
+    }
+
+    #[test]
+    fn same_ecosystem_collision_still_errors_unchanged() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        write_pkg(root, "crates/a", Ecosystem::Cargo, "dup");
+        write_pkg(root, "crates/b", Ecosystem::Cargo, "dup");
+        let locator = crate::locate::IgnoreWalkLocator::new(root);
+        let runner = NoopRunner;
+        let err = match crate::Workspace::load(root.to_path_buf(), &locator, &runner) {
+            Err(e) => e,
+            Ok(_) => panic!("expected DuplicatePackage error, got Ok"),
+        };
+        match err {
+            GraphError::DuplicatePackage { id, paths } => {
+                assert_eq!(id, PackageId::Bare("dup".to_string()));
+                assert_eq!(paths.len(), 2);
+            }
+            other => panic!("expected DuplicatePackage, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn case_d_colliding_with_third_disjoint_ecosystem_still_errors() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        write_pkg(root, "crates/case-d", Ecosystem::Cargo, "hybrid");
+        write_pkg(root, "crates/case-d", Ecosystem::Npm, "hybrid");
+        write_pkg(root, "packages/npm-hybrid", Ecosystem::Npm, "hybrid");
+        let locator = crate::locate::IgnoreWalkLocator::new(root);
+        let runner = NoopRunner;
+        let err = match crate::Workspace::load(root.to_path_buf(), &locator, &runner) {
+            Err(e) => e,
+            Ok(_) => panic!("expected DuplicatePackage error, got Ok"),
+        };
+        match err {
+            GraphError::DuplicatePackage { id, paths } => {
+                assert_eq!(id, PackageId::Bare("hybrid".to_string()));
+                assert_eq!(paths.len(), 2);
+            }
+            other => panic!("expected DuplicatePackage, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn disjoint_cross_ecosystem_collision_promotes_instead_of_duplicate_package() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        write_pkg(root, "crates/native-core", Ecosystem::Cargo, "native-core");
+        write_pkg(root, "packages/native-core", Ecosystem::Npm, "native-core");
+
+        let locator = crate::locate::IgnoreWalkLocator::new(root);
+        let runner = NoopRunner;
+        let ws = crate::Workspace::load(root.to_path_buf(), &locator, &runner)
+            .expect("disjoint cross-ecosystem collision must promote, not DuplicatePackage");
+
+        let cargo_id = PackageId::Prefixed {
+            ecosystem: Ecosystem::Cargo,
+            name: "native-core".to_string(),
+        };
+        let npm_id = PackageId::Prefixed {
+            ecosystem: Ecosystem::Npm,
+            name: "native-core".to_string(),
+        };
+        assert_eq!(ws.graph.packages().count(), 2);
+        let cargo_pkg = ws
+            .graph
+            .get(&cargo_id)
+            .expect("Cargo-prefixed entry must exist");
+        let npm_pkg = ws
+            .graph
+            .get(&npm_id)
+            .expect("Npm-prefixed entry must exist");
+        assert_eq!(cargo_pkg.manifests.len(), 1);
+        assert_eq!(
+            cargo_pkg.manifests[0].path,
+            PathBuf::from("crates/native-core/Cargo.toml")
+        );
+        assert_eq!(npm_pkg.manifests.len(), 1);
+        assert_eq!(
+            npm_pkg.manifests[0].path,
+            PathBuf::from("packages/native-core/package.json")
         );
     }
 }
