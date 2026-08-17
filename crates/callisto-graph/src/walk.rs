@@ -233,6 +233,19 @@ impl ManifestWalkResolver {
                 // STALE-KEY REWRITE location (1): once a bare name is promoted,
                 // it MUST NOT remain in index.bare.
                 index.bare.remove(&name);
+                // STALE-KEY REWRITE location (2): update index.native values
+                // for all native keys declared by either path so they map to
+                // their path's newly-promoted Prefixed id, not the stale primary_id.
+                if let Some(keys) = path_native_keys.get(&existing_path) {
+                    for key in keys {
+                        index.native.insert(key.clone(), existing_id.clone());
+                    }
+                }
+                if let Some(keys) = path_native_keys.get(&rel_path) {
+                    for key in keys {
+                        index.native.insert(key.clone(), current_id.clone());
+                    }
+                }
                 promoted_siblings
                     .entry(name.clone())
                     .or_default()
@@ -1167,5 +1180,47 @@ mod tests {
             unprefixed_lookup,
             Err(GraphError::AmbiguousName { .. })
         ));
+    }
+
+    #[test]
+    fn promoted_native_values_point_to_prefixed_ids() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        write_pkg(root, "crates/native-core", Ecosystem::Cargo, "native-core");
+        write_pkg(root, "packages/native-core", Ecosystem::Npm, "native-core");
+        let locator = crate::locate::IgnoreWalkLocator::new(root);
+        let runner = NoopRunner;
+        let ws = crate::Workspace::load(root.to_path_buf(), &locator, &runner)
+            .expect("promotion must succeed");
+
+        let cargo_native = ws
+            .graph
+            .identity()
+            .native
+            .get(&(Ecosystem::Cargo, "native-core".to_string()))
+            .expect("Cargo native entry must exist");
+        let npm_native = ws
+            .graph
+            .identity()
+            .native
+            .get(&(Ecosystem::Npm, "native-core".to_string()))
+            .expect("Npm native entry must exist");
+
+        assert_eq!(
+            cargo_native,
+            &PackageId::Prefixed {
+                ecosystem: Ecosystem::Cargo,
+                name: "native-core".to_string(),
+            },
+            "index.native value must point to the promoted Cargo-prefixed ID"
+        );
+        assert_eq!(
+            npm_native,
+            &PackageId::Prefixed {
+                ecosystem: Ecosystem::Npm,
+                name: "native-core".to_string(),
+            },
+            "index.native value must point to the promoted Npm-prefixed ID"
+        );
     }
 }
