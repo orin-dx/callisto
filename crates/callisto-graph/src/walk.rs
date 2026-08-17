@@ -350,7 +350,7 @@ impl ManifestWalkResolver {
             //         (any rule, since no Prefixed rule matched, the first match
             //          is necessarily Bare) that matches this package's ID.
             // Within each pass, first-match-wins (TOML declaration order) applies.
-            let pkg_override = resolve_package_config(&id, &cfg);
+            let pkg_override = resolve_package_config(&id, &cfg)?;
 
             // Record which [[package-set]] patterns match this package,
             // independent of whether a [[package]] rule ends up shadowing the
@@ -1699,5 +1699,72 @@ mod tests {
             1,
             "exactly one diagnostic, not one per candidate ecosystem"
         );
+    }
+
+    #[test]
+    fn unprefixed_package_rule_matching_two_promoted_siblings_is_ambiguous() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        write_pkg(root, "crates/native-core", Ecosystem::Cargo, "native-core");
+        write_pkg(root, "packages/native-core", Ecosystem::Npm, "native-core");
+        std::fs::write(
+            root.join("callisto.toml"),
+            "[[package]]\nmatch = \"native-core\"\nrelease-trigger = \"auto\"\n",
+        )
+        .unwrap();
+        let locator = crate::locate::IgnoreWalkLocator::new(root);
+        let runner = NoopRunner;
+        let err = match crate::Workspace::load(root.to_path_buf(), &locator, &runner) {
+            Err(e) => e,
+            Ok(_) => panic!("expected AmbiguousName error, got Ok"),
+        };
+        match err {
+            GraphError::AmbiguousName { name, candidates } => {
+                assert_eq!(name, "native-core");
+                assert_eq!(candidates.len(), 2);
+                assert!(candidates.contains(&PackageId::Prefixed {
+                    ecosystem: Ecosystem::Cargo,
+                    name: "native-core".to_string()
+                }));
+                assert!(candidates.contains(&PackageId::Prefixed {
+                    ecosystem: Ecosystem::Npm,
+                    name: "native-core".to_string()
+                }));
+            }
+            other => panic!("expected AmbiguousName, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn prefixed_package_rules_still_apply_correctly_to_promoted_siblings() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        write_pkg(root, "crates/native-core", Ecosystem::Cargo, "native-core");
+        write_pkg(root, "packages/native-core", Ecosystem::Npm, "native-core");
+        std::fs::write(
+            root.join("callisto.toml"),
+            "[[package]]\nmatch = \"cargo:native-core\"\nrelease-trigger = \"changeset\"\n\n[[package]]\nmatch = \"npm:native-core\"\nrelease-trigger = \"auto\"\n",
+        )
+        .unwrap();
+        let locator = crate::locate::IgnoreWalkLocator::new(root);
+        let runner = NoopRunner;
+        let ws = crate::Workspace::load(root.to_path_buf(), &locator, &runner)
+            .expect("prefixed rules must not trigger the ambiguity check");
+        let cargo_pkg = ws
+            .graph
+            .get(&PackageId::Prefixed {
+                ecosystem: Ecosystem::Cargo,
+                name: "native-core".to_string(),
+            })
+            .unwrap();
+        let npm_pkg = ws
+            .graph
+            .get(&PackageId::Prefixed {
+                ecosystem: Ecosystem::Npm,
+                name: "native-core".to_string(),
+            })
+            .unwrap();
+        assert_eq!(cargo_pkg.release_trigger, ReleaseTrigger::Changeset);
+        assert_eq!(npm_pkg.release_trigger, ReleaseTrigger::Auto);
     }
 }

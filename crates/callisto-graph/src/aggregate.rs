@@ -208,7 +208,7 @@ where
 
         let since = last_tag.and_then(|t| resolve_since(git, t.name.as_str()));
 
-        let policy = resolve_package_config(&pkg.id, config)
+        let policy = resolve_package_config(&pkg.id, config)?
             .and_then(|pcfg| pcfg.pre_major_inference)
             .unwrap_or(PreMajorInferencePolicy::Off);
 

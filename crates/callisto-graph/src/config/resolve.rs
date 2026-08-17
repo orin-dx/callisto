@@ -10,7 +10,7 @@ use callisto_model::{
 use crate::config::groups::{GroupTable, RawGroupTable};
 use crate::config::pattern::PackagePattern;
 use crate::config::raw::RawConfig;
-use crate::error::ConfigError;
+use crate::error::{ConfigError, GraphError};
 
 #[derive(Clone, Debug)]
 pub struct ResolvedConfig {
@@ -205,12 +205,24 @@ pub fn parse_release_trigger(s: &str) -> Result<ReleaseTrigger, ConfigError> {
 pub(crate) fn resolve_package_config<'a>(
     id: &PackageId,
     cfg: &'a ResolvedConfig,
-) -> Option<&'a PackageConfig> {
-    cfg.packages
+) -> Result<Option<&'a PackageConfig>, GraphError> {
+    if let Some((_, pcfg)) = cfg
+        .packages
         .iter()
         .find(|(rule_id, _)| rule_id.ecosystem().is_some() && rule_id.matches(id))
-        .or_else(|| cfg.packages.iter().find(|(rule_id, _)| rule_id.matches(id)))
-        .map(|(_, pcfg)| pcfg)
+    {
+        return Ok(Some(pcfg));
+    }
+    if let Some((_, pcfg)) = cfg.packages.iter().find(|(rule_id, _)| rule_id.matches(id)) {
+        if let Some(siblings) = cfg.promoted_siblings.get(id.name()) {
+            return Err(GraphError::AmbiguousName {
+                name: id.name().to_string(),
+                candidates: siblings.iter().map(|(pid, _)| pid.clone()).collect(),
+            });
+        }
+        return Ok(Some(pcfg));
+    }
+    Ok(None)
 }
 
 pub fn parse_pre_major_policy(s: &str) -> Result<PreMajorInferencePolicy, ConfigError> {
@@ -791,8 +803,9 @@ mod tests {
         .expect("write callisto.toml");
         let cfg = load(root).expect("load should succeed");
         let id = PackageId::parse("foo").unwrap();
-        let result = resolve_package_config(&id, &cfg);
-        let pcfg = result.expect("resolve_package_config must return Some for npm/foo (Prefixed)");
+        let pcfg = resolve_package_config(&id, &cfg)
+            .unwrap()
+            .expect("resolve_package_config must return Some for npm/foo (Prefixed)");
         assert_eq!(
             pcfg.release_trigger,
             Some(ReleaseTrigger::Changeset),
@@ -819,9 +832,9 @@ mod tests {
         .expect("write callisto.toml");
         let cfg = load(root).expect("load should succeed");
         let id = PackageId::parse("pkg").unwrap();
-        let result = resolve_package_config(&id, &cfg);
-        let pcfg =
-            result.expect("resolve_package_config must return Some for npm/pkg matching pkg");
+        let pcfg = resolve_package_config(&id, &cfg)
+            .unwrap()
+            .expect("resolve_package_config must return Some for npm/pkg matching pkg");
         assert!(
             pcfg.changelog
                 .as_ref()
@@ -849,9 +862,9 @@ mod tests {
         .expect("write callisto.toml");
         let cfg = load(root).expect("load should succeed");
         let id = PackageId::parse("pkg").unwrap();
-        let result = resolve_package_config(&id, &cfg);
-        let pcfg =
-            result.expect("resolve_package_config must return Some via pass 2 for Bare(\"pkg\")");
+        let pcfg = resolve_package_config(&id, &cfg)
+            .unwrap()
+            .expect("resolve_package_config must return Some via pass 2 for Bare(\"pkg\")");
         assert_eq!(
             pcfg.release_trigger,
             Some(ReleaseTrigger::Auto),
@@ -875,7 +888,7 @@ mod tests {
         .expect("write callisto.toml");
         let cfg = load(root).expect("load should succeed");
         let id = PackageId::parse("pkg").unwrap();
-        let result = resolve_package_config(&id, &cfg);
+        let result = resolve_package_config(&id, &cfg).unwrap();
         assert!(
             result.is_none(),
             "resolve_package_config must return None when no rule matches (AC-F4); got Some(...)"
@@ -898,7 +911,7 @@ mod tests {
         );
         for id_str in &["pkg", "npm/pkg", "cargo/pkg"] {
             let id = PackageId::parse(id_str).unwrap();
-            let result = resolve_package_config(&id, &cfg);
+            let result = resolve_package_config(&id, &cfg).unwrap();
             assert!(
                 result.is_none(),
                 "resolve_package_config must return None for empty packages, \
@@ -929,16 +942,56 @@ mod tests {
         .expect("write callisto.toml");
         let cfg = load(root).expect("load should succeed");
         let id = PackageId::parse("foo").unwrap();
-        let result = resolve_package_config(&id, &cfg);
-        let pcfg = result.expect("resolve_package_config must return Some for Bare(\"foo\")");
+        let pcfg = resolve_package_config(&id, &cfg)
+            .unwrap()
+            .expect("resolve_package_config must return Some for Bare(\"foo\")");
         assert_eq!(
             pcfg.release_trigger,
             Some(ReleaseTrigger::Auto),
             "npm/foo (declared first) must win over cargo/foo (declared second) — Vec order, \
              not alphabetical sort, governs first-match-wins (AC-F5). \
-             Some(Changeset) means cargo/foo won due to alphabetical sort. Got: {:?}",
+             A sorted implementation would incorrectly return Some(Changeset). Got: {:?}",
             pcfg.release_trigger
         );
+    }
+
+    #[test]
+    fn resolve_package_config_returns_ambiguous_name_for_unprefixed_rule_matching_two_promoted_siblings(
+    ) {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path();
+        fs::write(
+            root.join("callisto.toml"),
+            "[[package]]\nmatch = \"native-core\"\nrelease-trigger = \"auto\"\n",
+        )
+        .expect("write callisto.toml");
+        let mut cfg = load(root).expect("load should succeed");
+
+        let cargo_id = PackageId::Prefixed {
+            ecosystem: Ecosystem::Cargo,
+            name: "native-core".to_string(),
+        };
+        let npm_id = PackageId::Prefixed {
+            ecosystem: Ecosystem::Npm,
+            name: "native-core".to_string(),
+        };
+        let mut cargo_set = BTreeSet::new();
+        cargo_set.insert(Ecosystem::Cargo);
+        let mut npm_set = BTreeSet::new();
+        npm_set.insert(Ecosystem::Npm);
+        cfg.promoted_siblings.insert(
+            "native-core".to_string(),
+            vec![(cargo_id.clone(), cargo_set), (npm_id, npm_set)],
+        );
+
+        let err = resolve_package_config(&cargo_id, &cfg).unwrap_err();
+        match err {
+            GraphError::AmbiguousName { name, candidates } => {
+                assert_eq!(name, "native-core");
+                assert_eq!(candidates.len(), 2);
+            }
+            other => panic!("expected AmbiguousName, got {other:?}"),
+        }
     }
 
     // --- parse_publish_target / parse_release_trigger direct coverage ------
