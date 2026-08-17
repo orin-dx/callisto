@@ -793,4 +793,130 @@ mod tests {
             plan.platform_writes
         );
     }
+
+    /// AC-008 (disjunct 1: missing file): a Fixed group's platform manifest
+    /// that validated during the walk (so it is a real
+    /// GroupMember::PlatformManifest) but has been deleted from disk before
+    /// plan_version runs -- simulating the file having gone missing between
+    /// workspace load and plan execution -- must surface as Err(GraphError),
+    /// not panic and not produce a partial VersionPlan.
+    #[test]
+    fn plan_version_returns_err_when_platform_manifest_missing_from_disk_at_plan_time() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        git_init_with_commit(root);
+
+        std::fs::create_dir_all(root.join("crates/hybrid")).unwrap();
+        std::fs::write(
+            root.join("crates/hybrid/Cargo.toml"),
+            "[package]\nname = \"hybrid\"\nversion = \"1.0.0\"\n",
+        )
+        .unwrap();
+        let platform_manifest_path = root.join("crates/hybrid/package.json");
+        std::fs::write(
+            &platform_manifest_path,
+            r#"{"name":"@myorg/hybrid-darwin-arm64","version":"0.9.0","os":["darwin"],"cpu":["arm64"]}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("callisto.toml"),
+            "[[fixed-group]]\nname = \"hybrid-group\"\nmembers = [\"hybrid\", \"@myorg/hybrid-darwin-arm64\"]\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join(".changeset")).unwrap();
+        std::fs::write(
+            root.join(".changeset/bump.md"),
+            "---\n\"hybrid\": patch\n---\n\nfix.\n",
+        )
+        .unwrap();
+        commit_all(root, "add hybrid package");
+
+        let locator = IgnoreWalkLocator::new(root);
+        let runner = NoopRunner;
+        let ws =
+            Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
+
+        // Simulate the platform manifest going missing between workspace
+        // load and plan_version execution.
+        std::fs::remove_file(&platform_manifest_path).unwrap();
+
+        let inference = NoInference;
+        let opts = VersionOptions {
+            strict: false,
+            strict_graph: false,
+            allow_empty_changesets: true,
+        };
+
+        let result = plan_version(&ws, &inference, &opts);
+
+        assert!(
+            result.is_err(),
+            "plan_version must return Err when the platform manifest is missing from disk at plan time; got: {result:?}"
+        );
+    }
+
+    /// AC-008 (disjunct 2: malformed content): a Fixed group's platform
+    /// manifest that exists on disk but cannot be parsed as valid content
+    /// for its ecosystem (malformed JSON) must also surface as
+    /// Err(GraphError), not panic and not produce a partial VersionPlan --
+    /// distinct from the missing-file disjunct above.
+    #[test]
+    fn plan_version_returns_err_when_platform_manifest_content_is_malformed() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        git_init_with_commit(root);
+
+        std::fs::create_dir_all(root.join("crates/hybrid")).unwrap();
+        std::fs::write(
+            root.join("crates/hybrid/Cargo.toml"),
+            "[package]\nname = \"hybrid\"\nversion = \"1.0.0\"\n",
+        )
+        .unwrap();
+        let platform_manifest_path = root.join("crates/hybrid/package.json");
+        std::fs::write(
+            &platform_manifest_path,
+            r#"{"name":"@myorg/hybrid-darwin-arm64","version":"0.9.0","os":["darwin"],"cpu":["arm64"]}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("callisto.toml"),
+            "[[fixed-group]]\nname = \"hybrid-group\"\nmembers = [\"hybrid\", \"@myorg/hybrid-darwin-arm64\"]\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join(".changeset")).unwrap();
+        std::fs::write(
+            root.join(".changeset/bump.md"),
+            "---\n\"hybrid\": patch\n---\n\nfix.\n",
+        )
+        .unwrap();
+        commit_all(root, "add hybrid package");
+
+        let locator = IgnoreWalkLocator::new(root);
+        let runner = NoopRunner;
+        let ws =
+            Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
+
+        // Simulate the platform manifest's content becoming malformed
+        // (truncated, unbalanced JSON) between workspace load and
+        // plan_version execution -- distinct from the file simply vanishing.
+        std::fs::write(
+            &platform_manifest_path,
+            r#"{"name":"@myorg/hybrid-darwin-arm64","version":"0.9.0","#,
+        )
+        .unwrap();
+
+        let inference = NoInference;
+        let opts = VersionOptions {
+            strict: false,
+            strict_graph: false,
+            allow_empty_changesets: true,
+        };
+
+        let result = plan_version(&ws, &inference, &opts);
+
+        assert!(
+            result.is_err(),
+            "plan_version must return Err when the platform manifest content is malformed; got: {result:?}"
+        );
+    }
 }
