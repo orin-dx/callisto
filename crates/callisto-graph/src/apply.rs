@@ -2260,6 +2260,7 @@ mod tests {
             platform_writes: vec![crate::plan::PlatformWrite {
                 manifest: PathBuf::from("platform/package.json"),
                 version: cargo_version("1.1.0"),
+                from: cargo_version("1.0.0"),
             }],
             optional_dep_updates: vec![crate::plan::OptionalDepUpdate {
                 manifest: PathBuf::from("package.json"),

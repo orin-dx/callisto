@@ -46,6 +46,7 @@ pub enum VersionWriteTarget {
 pub struct PlatformWrite {
     pub manifest: PathBuf,
     pub version: Version,
+    pub from: Version,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -80,5 +81,22 @@ impl VersionPlan {
             lockfile_refresh_results: lockfiles,
             diagnostics: self.diagnostics.clone(),
         }
+    }
+}
+
+#[cfg(test)]
+mod platform_write_from_field_tests {
+    use super::*;
+    use callisto_model::VersionGrammar;
+
+    #[test]
+    fn platform_write_carries_from_field_distinct_from_version() {
+        let pw = PlatformWrite {
+            manifest: PathBuf::from("platform/package.json"),
+            version: Version::parse("1.1.0", VersionGrammar::SemVer).unwrap(),
+            from: Version::parse("1.0.0", VersionGrammar::SemVer).unwrap(),
+        };
+        assert_eq!(pw.from.render(), "1.0.0");
+        assert_eq!(pw.version.render(), "1.1.0");
     }
 }
