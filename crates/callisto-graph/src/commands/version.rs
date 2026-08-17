@@ -390,4 +390,57 @@ mod tests {
             "plan_version must return Err(FixedGroupDivergent) for a Fixed group with divergent released-member versions, got: {result:?}"
         );
     }
+
+    /// AC-007 (grammar-mismatch case): a Fixed group whose released
+    /// members use different version grammars (SemVer vs PEP 440) must
+    /// return Err(GraphError::GroupGrammarMismatch) via plan_version's real
+    /// call path, before run_cascade executes.
+    #[test]
+    fn version_rejects_grammar_mismatched_fixed_group_via_real_call_path() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        git_init_with_commit(root);
+
+        std::fs::create_dir_all(root.join("pkg-a")).unwrap();
+        std::fs::write(
+            root.join("pkg-a/Cargo.toml"),
+            "[package]\nname = \"pkg-a\"\nversion = \"1.0.0\"\n",
+        )
+        .unwrap();
+
+        std::fs::create_dir_all(root.join("pkg-py")).unwrap();
+        std::fs::write(
+            root.join("pkg-py/pyproject.toml"),
+            "[project]\nname = \"pkg-py\"\nversion = \"1.0.0\"\n",
+        )
+        .unwrap();
+
+        std::fs::write(
+            root.join("callisto.toml"),
+            "[[fixed-group]]\nname = \"mixed\"\nmembers = [\"pkg-a\", \"pkg-py\"]\n",
+        )
+        .unwrap();
+        commit_all(root, "add packages");
+        tag(root, "pkg-a@1.0.0");
+        tag(root, "pkg-py@1.0.0");
+
+        let locator = IgnoreWalkLocator::new(root);
+        let runner = NoopRunner;
+        let ws =
+            Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
+
+        let inference = NoInference;
+        let opts = VersionOptions {
+            strict: false,
+            strict_graph: false,
+            allow_empty_changesets: true,
+        };
+
+        let result = plan_version(&ws, &inference, &opts);
+
+        assert!(
+            matches!(result, Err(GraphError::GroupGrammarMismatch { .. })),
+            "plan_version must return Err(GroupGrammarMismatch) for a Fixed group mixing SemVer and PEP 440 released members, got: {result:?}"
+        );
+    }
 }
