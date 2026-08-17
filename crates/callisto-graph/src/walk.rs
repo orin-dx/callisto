@@ -246,17 +246,27 @@ impl ManifestWalkResolver {
                         index.native.insert(key.clone(), current_id.clone());
                     }
                 }
-                // STALE-KEY REWRITE location (3): update index.prefixed values
+                // STALE-KEY REWRITE location (3)/(5): update index.prefixed values
                 // for the primary identities so they point to the newly-promoted
                 // Prefixed id rather than the pre-promotion primary_id.
-                index.prefixed.insert(
-                    (existing_id.ecosystem().unwrap(), name.clone()),
-                    existing_id.clone(),
-                );
-                index.prefixed.insert(
-                    (current_id.ecosystem().unwrap(), name.clone()),
-                    current_id.clone(),
-                );
+                for eco in claiming_ecosystems
+                    .get(&existing_path)
+                    .cloned()
+                    .unwrap_or_default()
+                {
+                    index
+                        .prefixed
+                        .insert((eco, name.clone()), existing_id.clone());
+                }
+                for eco in claiming_ecosystems
+                    .get(&rel_path)
+                    .cloned()
+                    .unwrap_or_default()
+                {
+                    index
+                        .prefixed
+                        .insert((eco, name.clone()), current_id.clone());
+                }
                 promoted_siblings
                     .entry(name.clone())
                     .or_default()
@@ -1349,6 +1359,48 @@ mod tests {
         assert_eq!(
             platform_entry.1,
             PathBuf::from("crates/hybrid/package.json")
+        );
+    }
+
+    #[test]
+    fn promoted_index_prefixed_holds_two_distinct_ids_not_stale_bare() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        write_pkg(root, "crates/native-core", Ecosystem::Cargo, "native-core");
+        write_pkg(root, "packages/native-core", Ecosystem::Npm, "native-core");
+        let locator = crate::locate::IgnoreWalkLocator::new(root);
+        let runner = NoopRunner;
+        let ws = crate::Workspace::load(root.to_path_buf(), &locator, &runner)
+            .expect("promotion must succeed");
+        let cargo_id = ws
+            .graph
+            .identity()
+            .prefixed
+            .get(&(Ecosystem::Cargo, "native-core".to_string()))
+            .expect("prefixed Cargo entry must exist");
+        let npm_id = ws
+            .graph
+            .identity()
+            .prefixed
+            .get(&(Ecosystem::Npm, "native-core".to_string()))
+            .expect("prefixed Npm entry must exist");
+        assert_eq!(
+            *cargo_id,
+            PackageId::Prefixed {
+                ecosystem: Ecosystem::Cargo,
+                name: "native-core".to_string()
+            }
+        );
+        assert_eq!(
+            *npm_id,
+            PackageId::Prefixed {
+                ecosystem: Ecosystem::Npm,
+                name: "native-core".to_string()
+            }
+        );
+        assert_ne!(
+            cargo_id, npm_id,
+            "a distinct-id count of 2 is required for ResolvedConfig.promoted_siblings' derivation (AC-23) to retain this name"
         );
     }
 }
