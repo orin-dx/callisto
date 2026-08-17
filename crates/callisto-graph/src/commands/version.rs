@@ -1,14 +1,16 @@
 use std::collections::{HashMap, HashSet};
 
 use callisto_changelog::{ChangeSource, ChangelogEntry, ChangelogInput};
-use callisto_model::{BumpReason, CommandRunner, GroupKind, Severity};
+use callisto_manifests::{open, OpenContext, WorkspaceCargoResolver};
+use callisto_model::{BumpReason, CommandRunner, GroupKind, ManifestRole, Severity};
 
 use crate::aggregate::aggregate;
 use crate::cascade::{run_cascade, CascadeInput};
 use crate::commands::escalate;
+use crate::config::groups::{GroupMember, GroupMemberKind};
 use crate::error::GraphError;
 use crate::infer::SeverityInference;
-use crate::plan::{PlannedBump, VersionPlan, VersionWriteTarget};
+use crate::plan::{PlannedBump, PlatformWrite, VersionPlan, VersionWriteTarget};
 use crate::resolver::DependencyResolver;
 use crate::Workspace;
 
@@ -256,10 +258,53 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
         (None, None)
     };
 
+    let bump_by_pkg: std::collections::BTreeMap<callisto_model::PackageId, &PlannedBump> =
+        bumps.iter().map(|b| (b.package.clone(), b)).collect();
+
+    let cargo_workspace = if ws.root.join("Cargo.toml").exists() {
+        if let Ok(resolver) = WorkspaceCargoResolver::load(&ws.root.join("Cargo.toml")) {
+            resolver.inheritance().ok().map(std::sync::Arc::new)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+    let npm_workspace_kind = callisto_manifests::detect_npm_workspace_kind(&ws.root)
+        .ok()
+        .flatten();
+    let open_ctx = OpenContext {
+        workspace_root: &ws.root,
+        cargo_workspace,
+        npm_workspace_kind,
+    };
+
+    let mut platform_writes = Vec::new();
+    for group in ws.config.groups.fixed.values() {
+        for member in group.members(GroupMemberKind::PlatformManifest) {
+            let GroupMember::PlatformManifest { owner, path, .. } = member else {
+                continue;
+            };
+            let Some(bump) = bump_by_pkg.get(owner) else {
+                continue;
+            };
+            let fmt = callisto_model::ManifestFormat::from_path(path)?;
+            let decl =
+                callisto_model::ManifestDecl::new(path.clone(), ManifestRole::Canonical, fmt)?;
+            let handle = open(&decl, &open_ctx)?;
+            let current = handle.current_version()?;
+            platform_writes.push(PlatformWrite {
+                manifest: path.clone(),
+                version: bump.to.clone(),
+                from: current,
+            });
+        }
+    }
+
     Ok(VersionPlan {
         bumps,
         rewrites: outcome.rewrites.into_values().collect(),
-        platform_writes: Vec::new(),
+        platform_writes,
         optional_dep_updates: Vec::new(),
         changelog_writes,
         consumed_changesets: agg.consumed,
@@ -554,6 +599,198 @@ mod tests {
             )),
             "VersionPlan.diagnostics must include the napi-drift diagnostic produced by pre_mutation_checks; got: {:?}",
             plan.diagnostics
+        );
+    }
+
+    /// AC-001 + AC-002: a Fixed group with an owner Package member that
+    /// receives a real PlannedBump this run, plus a sibling
+    /// GroupMember::PlatformManifest member (a Case D hybrid-root npm
+    /// package.json with non-empty os/cpu arrays living in the same
+    /// directory as the owner's Cargo.toml), must produce exactly one
+    /// PlatformWrite whose `manifest` is the platform manifest's path,
+    /// whose `version` equals the owner's bump target, and whose `from`
+    /// equals the platform manifest's on-disk current version at plan time.
+    #[test]
+    fn plan_version_emits_platform_write_for_bumped_owner_with_platform_sibling() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        git_init_with_commit(root);
+
+        std::fs::create_dir_all(root.join("crates/hybrid")).unwrap();
+        std::fs::write(
+            root.join("crates/hybrid/Cargo.toml"),
+            "[package]\nname = \"hybrid\"\nversion = \"1.0.0\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("crates/hybrid/package.json"),
+            r#"{"name":"@myorg/hybrid-darwin-arm64","version":"0.9.0","os":["darwin"],"cpu":["arm64"]}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("callisto.toml"),
+            "[[fixed-group]]\nname = \"hybrid-group\"\nmembers = [\"hybrid\", \"@myorg/hybrid-darwin-arm64\"]\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join(".changeset")).unwrap();
+        std::fs::write(
+            root.join(".changeset/bump.md"),
+            "---\n\"hybrid\": patch\n---\n\nfix.\n",
+        )
+        .unwrap();
+        commit_all(root, "add hybrid package");
+
+        let locator = IgnoreWalkLocator::new(root);
+        let runner = NoopRunner;
+        let ws =
+            Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
+
+        let inference = NoInference;
+        let opts = VersionOptions {
+            strict: false,
+            strict_graph: false,
+            allow_empty_changesets: true,
+        };
+
+        let plan = plan_version(&ws, &inference, &opts).expect("plan_version must succeed");
+
+        assert_eq!(
+            plan.platform_writes.len(),
+            1,
+            "expected exactly one PlatformWrite, got: {:?}",
+            plan.platform_writes
+        );
+        let pw = &plan.platform_writes[0];
+        assert_eq!(
+            pw.manifest,
+            Path::new("crates/hybrid/package.json"),
+            "PlatformWrite.manifest must be the platform manifest's path"
+        );
+        let owner_bump = plan
+            .bumps
+            .iter()
+            .find(|b| b.package.name() == "hybrid")
+            .expect("hybrid must have a planned bump");
+        assert_eq!(
+            pw.version, owner_bump.to,
+            "PlatformWrite.version must equal the owner's bump target"
+        );
+        assert_eq!(
+            pw.from.to_string(),
+            "0.9.0",
+            "PlatformWrite.from must equal the platform manifest's on-disk current version"
+        );
+    }
+
+    /// AC-005: when no Fixed group anywhere has any
+    /// GroupMember::PlatformManifest members, plan_version's
+    /// platform_writes and optional_dep_updates must both be empty --
+    /// no regression for workspaces without platform packages.
+    #[test]
+    fn plan_version_platform_writes_empty_when_no_platform_members_exist() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        git_init_with_commit(root);
+
+        std::fs::create_dir_all(root.join("my-lib")).unwrap();
+        std::fs::write(
+            root.join("my-lib/Cargo.toml"),
+            "[package]\nname = \"my-lib\"\nversion = \"1.0.0\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("callisto.toml"),
+            "[[fixed-group]]\nname = \"solo\"\nmembers = [\"my-lib\"]\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join(".changeset")).unwrap();
+        std::fs::write(
+            root.join(".changeset/bump.md"),
+            "---\n\"my-lib\": patch\n---\n\nfix.\n",
+        )
+        .unwrap();
+        commit_all(root, "add package");
+
+        let locator = IgnoreWalkLocator::new(root);
+        let runner = NoopRunner;
+        let ws =
+            Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
+
+        let inference = NoInference;
+        let opts = VersionOptions {
+            strict: false,
+            strict_graph: false,
+            allow_empty_changesets: true,
+        };
+
+        let plan = plan_version(&ws, &inference, &opts).expect("plan_version must succeed");
+
+        assert!(
+            plan.platform_writes.is_empty(),
+            "platform_writes must be empty when no PlatformManifest members exist; got: {:?}",
+            plan.platform_writes
+        );
+        assert!(
+            plan.optional_dep_updates.is_empty(),
+            "optional_dep_updates must be empty when no PlatformManifest members exist; got: {:?}",
+            plan.optional_dep_updates
+        );
+    }
+
+    /// AC-006: when a Fixed group's owner package receives no version bump
+    /// this run, plan_version must produce no PlatformWrite for that
+    /// group's GroupMember::PlatformManifest members, even though the
+    /// platform manifest exists on disk -- platform writes are driven
+    /// strictly by an actual owner PlannedBump, never speculatively.
+    #[test]
+    fn plan_version_no_platform_write_when_owner_not_bumped() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        git_init_with_commit(root);
+
+        std::fs::create_dir_all(root.join("crates/hybrid")).unwrap();
+        std::fs::write(
+            root.join("crates/hybrid/Cargo.toml"),
+            "[package]\nname = \"hybrid\"\nversion = \"1.0.0\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("crates/hybrid/package.json"),
+            r#"{"name":"@myorg/hybrid-darwin-arm64","version":"0.9.0","os":["darwin"],"cpu":["arm64"]}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("callisto.toml"),
+            "[[fixed-group]]\nname = \"hybrid-group\"\nmembers = [\"hybrid\", \"@myorg/hybrid-darwin-arm64\"]\n",
+        )
+        .unwrap();
+        // No changeset for "hybrid" -- outcome.severities for hybrid is
+        // Severity::None, so no PlannedBump is produced for it.
+        commit_all(root, "add hybrid package");
+
+        let locator = IgnoreWalkLocator::new(root);
+        let runner = NoopRunner;
+        let ws =
+            Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
+
+        let inference = NoInference;
+        let opts = VersionOptions {
+            strict: false,
+            strict_graph: false,
+            allow_empty_changesets: true,
+        };
+
+        let plan = plan_version(&ws, &inference, &opts).expect("plan_version must succeed");
+
+        assert!(
+            plan.bumps.iter().all(|b| b.package.name() != "hybrid"),
+            "hybrid must not have received a PlannedBump in this scenario; got bumps: {:?}",
+            plan.bumps
+        );
+        assert!(
+            plan.platform_writes.is_empty(),
+            "platform_writes must be empty when the owner package received no bump; got: {:?}",
+            plan.platform_writes
         );
     }
 }
