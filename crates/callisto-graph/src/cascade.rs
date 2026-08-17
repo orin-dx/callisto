@@ -10,6 +10,7 @@ use crate::config::GroupTable;
 use crate::config::{CascadeConfig, CascadeMode};
 use crate::error::GraphError;
 use crate::resolver::DependencyResolver;
+use crate::tags::TagIndex;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CascadeDecision {
@@ -140,6 +141,7 @@ pub struct CascadeInput<'a, D: DependencyResolver> {
     pub named_by: &'a BTreeMap<PackageId, crate::aggregate::NamedBy>,
     pub base: &'a BTreeMap<PackageId, Version>,
     pub pre: Option<&'a callisto_format::PreState>,
+    pub tags: &'a TagIndex,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -704,6 +706,7 @@ mod tests {
             named_by: &named_by,
             base: &base,
             pre: None,
+            tags: &TagIndex::empty(),
         };
 
         let outcome = run_cascade(input).unwrap();
@@ -785,6 +788,7 @@ mod tests {
             named_by: &named_by,
             base: &base,
             pre: None,
+            tags: &TagIndex::empty(),
         };
 
         let outcome = run_cascade(input).unwrap();
@@ -856,6 +860,7 @@ mod tests {
             named_by: &named_by,
             base: &base,
             pre: Some(&pre),
+            tags: &TagIndex::empty(),
         };
 
         let target = bump_target(&pkg_a, Severity::Minor, &input).unwrap();
@@ -953,6 +958,7 @@ mod tests {
             named_by: &named_by,
             base: &base,
             pre: None,
+            tags: &TagIndex::empty(),
         };
 
         let outcome = run_cascade(input).unwrap();
@@ -1080,6 +1086,7 @@ mod tests {
             named_by: &named_by,
             base: &base,
             pre: Some(&pre),
+            tags: &TagIndex::empty(),
         };
 
         let outcome = run_cascade(input).unwrap();
@@ -1163,6 +1170,7 @@ mod tests {
             named_by: &named_by,
             base: &base,
             pre: Some(&pre),
+            tags: &TagIndex::empty(),
         };
 
         let target = bump_target(&pkg_a, Severity::Minor, &input).unwrap();
@@ -1243,6 +1251,7 @@ mod tests {
             named_by: &named_by,
             base: &base,
             pre: None,
+            tags: &TagIndex::empty(),
         };
 
         let outcome = run_cascade(input).unwrap();
