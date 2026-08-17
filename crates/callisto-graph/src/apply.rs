@@ -346,6 +346,18 @@ pub fn apply_version_plan<R: CommandRunner>(
             }
             None
         })
+        .chain(
+            plan.platform_writes
+                .iter()
+                .filter_map(|pw| callisto_model::ManifestFormat::from_path(&pw.manifest).ok())
+                .map(|fmt| fmt.ecosystem()),
+        )
+        .chain(
+            plan.optional_dep_updates
+                .iter()
+                .filter_map(|opt| callisto_model::ManifestFormat::from_path(&opt.manifest).ok())
+                .map(|fmt| fmt.ecosystem()),
+        )
         .collect();
 
     // Regenerate lockfiles when the caller requested a refresh and mode is not transient.
@@ -2296,5 +2308,119 @@ mod tests {
             .staged
             .contains(&PathBuf::from("platform/package.json")));
         assert!(result.staged.contains(&PathBuf::from("package.json")));
+    }
+
+    /// AC-009: a plan with `bumps` empty but a `platform_writes` entry
+    /// pointing at an npm-ecosystem manifest must still stage the npm
+    /// lockfile present on disk. `active_ecosystems` was previously derived
+    /// solely from `plan.bumps`, so an npm lockfile went unstaged whenever
+    /// only `platform_writes` touched npm. Staging only: apply_version_plan
+    /// has no npm lockfile refresh subprocess at all, so
+    /// `lockfile_refresh_results` must contain no npm entry either way.
+    #[test]
+    fn platform_writes_only_plan_stages_npm_lockfile_without_refresh() {
+        let dir = tempfile::tempdir().expect("create tempdir");
+        let root = dir.path();
+
+        std::fs::create_dir_all(root.join("platform")).unwrap();
+        let platform_pkg_path = root.join("platform/package.json");
+        std::fs::write(
+            &platform_pkg_path,
+            r#"{"name": "@my-scope/platform-linux", "version": "1.0.0"}"#,
+        )
+        .unwrap();
+        std::fs::write(root.join("package-lock.json"), "{}").unwrap();
+
+        let plan = VersionPlan {
+            platform_writes: vec![crate::plan::PlatformWrite {
+                manifest: PathBuf::from("platform/package.json"),
+                version: cargo_version("1.1.0"),
+                from: cargo_version("1.0.0"),
+            }],
+            ..Default::default()
+        };
+
+        let permit = ApplyPermit::force_for_tests();
+        let opts = ApplyOptions {
+            refresh_lockfiles: true,
+            transient: false,
+        };
+
+        let outcome = apply_version_plan(root, &plan, &NoopRunner, &opts, &permit)
+            .expect("apply_version_plan should succeed");
+
+        assert!(
+            outcome.staged.contains(&PathBuf::from("package-lock.json")),
+            "npm lockfile must be staged when a platform_writes-only plan touches an npm manifest; staged: {:?}",
+            outcome.staged
+        );
+        let has_npm_refresh = outcome
+            .lockfile_refresh_results
+            .as_ref()
+            .is_some_and(|results| {
+                results
+                    .iter()
+                    .any(|r| r.filename.as_os_str() == "package-lock.json")
+            });
+        assert!(
+            !has_npm_refresh,
+            "no npm entry may appear in lockfile_refresh_results; apply_version_plan has no npm refresh subprocess: {:?}",
+            outcome.lockfile_refresh_results
+        );
+    }
+
+    /// AC-010: same as AC-009, but the npm manifest is touched via
+    /// `optional_dep_updates` instead of `platform_writes`.
+    #[test]
+    fn optional_dep_updates_only_plan_stages_npm_lockfile_without_refresh() {
+        let dir = tempfile::tempdir().expect("create tempdir");
+        let root = dir.path();
+
+        let parent_pkg_path = root.join("package.json");
+        std::fs::write(
+            &parent_pkg_path,
+            r#"{"name": "my-parent", "version": "1.0.0", "optionalDependencies": {"@my-scope/platform-linux": "1.0.0"}}"#,
+        )
+        .unwrap();
+        std::fs::write(root.join("package-lock.json"), "{}").unwrap();
+
+        let plan = VersionPlan {
+            optional_dep_updates: vec![crate::plan::OptionalDepUpdate {
+                manifest: PathBuf::from("package.json"),
+                updates: vec![(
+                    "@my-scope/platform-linux".to_string(),
+                    cargo_version("1.1.0"),
+                )],
+            }],
+            ..Default::default()
+        };
+
+        let permit = ApplyPermit::force_for_tests();
+        let opts = ApplyOptions {
+            refresh_lockfiles: true,
+            transient: false,
+        };
+
+        let outcome = apply_version_plan(root, &plan, &NoopRunner, &opts, &permit)
+            .expect("apply_version_plan should succeed");
+
+        assert!(
+            outcome.staged.contains(&PathBuf::from("package-lock.json")),
+            "npm lockfile must be staged when an optional_dep_updates-only plan touches an npm manifest; staged: {:?}",
+            outcome.staged
+        );
+        let has_npm_refresh = outcome
+            .lockfile_refresh_results
+            .as_ref()
+            .is_some_and(|results| {
+                results
+                    .iter()
+                    .any(|r| r.filename.as_os_str() == "package-lock.json")
+            });
+        assert!(
+            !has_npm_refresh,
+            "no npm entry may appear in lockfile_refresh_results; apply_version_plan has no npm refresh subprocess: {:?}",
+            outcome.lockfile_refresh_results
+        );
     }
 }
