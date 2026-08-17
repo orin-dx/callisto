@@ -336,10 +336,10 @@ impl ManifestWalkResolver {
             }
 
             // The real ecosystem(s) this package's manifests were discovered
-            // in. `id` itself is always PackageId::Bare here (see the
-            // SPEC-002 AC-5 note below), so this is the only place an
-            // ecosystem-prefixed [[package-set]] pattern has anything to
-            // match against.
+            // in. `id` may be PackageId::Bare (unpromoted) or PackageId::Prefixed
+            // (promoted, see SPEC-TRACK3B1-IDENTITY-PROMOTION-CORE); this is the
+            // only place an ecosystem-prefixed [[package-set]] pattern has
+            // anything to match against.
             let package_ecosystems: Vec<Ecosystem> = decls.iter().map(|d| d.ecosystem()).collect();
 
             // Two-pass specificity search for [[package]] rules (SPEC-002 AC-1/2/3).
@@ -459,11 +459,13 @@ impl ManifestWalkResolver {
         // compute the distinct-ecosystem set: the Ecosystem values found in the canonical
         // ManifestDecls of every packages-map entry matched by this rule.
         //
-        // Packages-map keys are ALWAYS PackageId::Bare (IgnoreWalkLocator builds ids
-        // from raw manifest name strings via PackageId::parse, which yields Bare for
-        // plain names). Ecosystem information is therefore sourced from pkg.manifests,
-        // not from map keys. Calling key.ecosystem() would always return None and the
-        // diagnostic would never fire — do NOT use key.ecosystem().
+        // Packages-map keys may be PackageId::Bare or PackageId::Prefixed (a
+        // promoted package, see SPEC-TRACK3B1-IDENTITY-PROMOTION-CORE). This loop
+        // remains correct regardless: ecosystem information is always sourced from
+        // pkg.canonical_manifests(), never from key.ecosystem(), and `pattern`
+        // here is always unprefixed (prefixed rules `continue` above), so
+        // pattern.matches(key) matches by name alone independent of whether `key`
+        // itself is Bare or Prefixed. Do NOT use key.ecosystem().
         //
         // The primary trigger is a single directory containing both Cargo.toml and
         // package.json (the napi case): one packages-map entry with two canonical
