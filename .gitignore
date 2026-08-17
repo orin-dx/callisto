@@ -17,3 +17,4 @@ lcov.info
 
 # per-session parallel-agent worktree checkouts — full repo copies, never committed
 .claude/worktrees/
+mutants.out/
