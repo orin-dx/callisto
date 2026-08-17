@@ -105,6 +105,42 @@ code found already-written in a dirty working tree gets the SAME rigor as freshl
 
 ---
 
+### Track 3a/3b1: Workspace-Membership Filtering + Identity-Promotion Core — DONE
+
+Spec: `.claude/specs/SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json` (34 AC), `.claude/specs/SPEC-TRACK3B1-IDENTITY-PROMOTION-CORE.json` (27 AC)
+Plan: `.claude/plans/PLAN-TRACK3B1-IDENTITY-PROMOTION-CORE.json` (22 tasks, T01a–T17)
+Implementation: `crates/callisto-graph/src/locate/{membership,ignore_walk}.rs` (Cargo/npm/pnpm workspace membership filtering, 45 tasks), `crates/callisto-graph/src/{identity,walk}.rs` (ecosystem-prefixed identity resolution, disjoint cross-ecosystem promotion, `resolve_native_with_fallback` silent-fallback removal).
+This is the master remediation plan's "Track 3b–e" (identity/ecosystem resolution hardening) — all four originally-confirmed live bugs fixed: `IgnoreWalkLocator::projects()` now filters by Cargo/npm/pnpm membership globs; `IdentityIndex.prefixed` populated; `package_manifest_decls` disambiguates same-named cross-ecosystem packages via promotion instead of erroring; `resolve_native_with_fallback`'s silent cross-ecosystem match removed.
+Exit-gate: PASS. `just ci` green throughout.
+Note: Track 3a (name-vs-path `[[package]]`/`[[package-set]] match` semantics — a *different* item, still gated on an unresolved open decision) is NOT part of this entry — do not conflate the two "Track 3a" labels from two different planning documents.
+
+### Track 6-doc / 8-doc: Stale Spec Claims (I/O boundary, Python ecosystem status) — DONE
+
+Doc-only corrections, no code change, no pipeline needed: `docs/01-spec.md` §M.1.2 corrected ("no I/O" claim predates `atomic_write`'s move into `callisto-model`; real invariant is license permissiveness); `docs/00-design.md` and `docs/01-spec.md`'s Python-ecosystem status corrected (shipped, default-on, ahead of the "demand-gated" claim both docs made).
+Commits: `7122d37`, `2e441fa`.
+
+### Track 1: Fixed-Group Cascade Correctness — DONE
+
+Spec: `.claude/specs/SPEC-TRACK1-FIXED-GROUP-CASCADE-CORRECTNESS.json` (16 AC — AC-001–013 plus AC-007b/AC-010b/AC-014)
+Plan: `.claude/plans/PLAN-TRACK1-FIXED-GROUP-CASCADE-CORRECTNESS.json` (12 tasks, 4 batches)
+Fixes three confirmed-live bugs: (1) fixed-group siblings bumped independently from their own base version instead of converging on a shared group-aligned target — fixed via a new Fixed-group convergence block in `solve_cascade` (`cascade.rs`), structurally mirroring the pre-existing Linked-group block; (2) `pre_mutation_checks` (divergence/napi-drift detection, already implemented and unit-tested) was never called from any command — now wired into `plan_version`'s real orchestration, with diagnostics merged and divergence errors aborting; (3) `GraphError::ConflictingGroupMembership` was declared but never constructed — now detected in `GroupTable::resolve` via a single map spanning both Fixed and Linked groups.
+Spec passed canon-exit-gate on the 4th attempt — round 1 caught a misdiagnosed fix location (the original spec targeted `raise()`'s sibling loop, which the gate proved unreachable for the seed-path scenario; corrected to the new `solve_cascade` block), round 2 found an over-scoped dedup requirement that traced out as not load-bearing and was removed, rounds 3–4 found a borrow-checker error, an incomplete test-file enumeration, and a nonexistent `VersionGrammar` variant.
+Exit-gate: PASS. Full `cargo test -p callisto-graph` suite green (361+ tests). Mutation testing (cargo-mutants, scoped to the 4 touched files) was dispatched but did not finish within the session — recorded as an incomplete coverage check, not a blocker; several implementer agents independently did manual adversarial verification (temporarily breaking the relevant logic, confirming the test failed, then restoring it) as partial mitigation.
+Commits: `bb9d3aa` (CascadeInput.tags) through `a7e5526` (T12), spec/plan committed at `2347446`/`6cc77ec`.
+
+**Known follow-ups from this track's exit-gate** (non-blocking, not yet scheduled):
+- `GroupTable::from_groups` (`config/groups.rs:259-289`) is a third, public, currently-test-only path for constructing a `GroupTable` with no conflict check — could construct a table violating the invariant `resolve()` now enforces. Not a spec violation (spec explicitly scoped the fix to `resolve()`), but worth closing if `from_groups` ever gets a non-test caller.
+- `fixed_group_target`'s SemVer-only hardcoding (vs. `bump_target`'s grammar dispatch) is now reachable from `plan_snapshot` for an all-PEP440 fixed group, since `plan_snapshot` deliberately doesn't call `pre_mutation_checks` (AC-006) to catch it first. Accepted by the spec's own non_goals; flagged for whoever eventually fixes the PEP440 gap.
+- `CascadeInput` gained a required field and is re-exported from a publishable AGPL crate — a semver-breaking public API change, expected and accepted by the spec, but worth noting for this crate's own next release.
+- Two minor test-robustness nits: the AC-005 test asserts a version prefix rather than exact equality; the AC-014 test asserts only `is_err()` without pinning the specific error variant.
+
+### Track 2: Platform-Manifest / optionalDependencies Writes — IN PROGRESS, NOT SPEC'd
+
+Confirmed via adversarial audit: a single ungated commit (`2d53001`) wired the *consumption* side (`apply_version_plan` writing `platform_writes`/`optional_dep_updates` to disk) but the *planning logic* deciding what goes into those fields was never built — no production call site (`commands/{version,snapshot,pr_body}.rs`) populates them; they're currently dead code. Two dormant-but-real bugs found in what did land: `active_ecosystems` (drives lockfile refresh/staging) is derived only from `plan.bumps`, so once real data flows through, lockfiles would silently go stale; `platform_writes`' write loop has no precondition/drift check unlike every sibling write loop, risking a silent unconditional overwrite.
+Depended on Track 1 landing first (platform-manifest version targets need the corrected group-aligned cascade target, or the same divergence bug ships twice). Track 1 is now done — Track 2 is unblocked. No spec has been drafted yet.
+
+---
+
 ## Pipeline Protocol (follow for every track, in order)
 
 1. `canon:canon-drafter` — write spec@1 to `.claude/specs/`
