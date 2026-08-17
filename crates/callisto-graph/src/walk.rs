@@ -41,6 +41,31 @@ fn compute_claiming_ecosystems_and_native_keys(
     (claiming, native_keys)
 }
 
+/// Returns true iff `paths.len() > 1` AND every distinct pair of paths in `paths`
+/// has disjoint claiming-ecosystem sets in `claiming_ecosystems`.
+///
+/// Overlapping claiming sets indicate a true duplicate package error (handled
+/// separately during graph construction), NOT a valid multi-ecosystem promotion.
+fn is_promoted_bare_name(
+    paths: &[PathBuf],
+    claiming_ecosystems: &BTreeMap<PathBuf, BTreeSet<Ecosystem>>,
+) -> bool {
+    if paths.len() <= 1 {
+        return false;
+    }
+    let mut seen = BTreeSet::new();
+    for path in paths {
+        if let Some(ecos) = claiming_ecosystems.get(path) {
+            for eco in ecos {
+                if !seen.insert(*eco) {
+                    return false;
+                }
+            }
+        }
+    }
+    true
+}
+
 impl ManifestWalkResolver {
     pub fn build<L: ProjectLocator, R: CommandRunner>(
         root: &Path,
@@ -926,5 +951,49 @@ mod tests {
         let ws = crate::Workspace::load(root.to_path_buf(), &locator, &runner)
             .expect("Case D load must succeed");
         assert!(ws.graph.get(&PackageId::Bare("foo".to_string())).is_some());
+    }
+
+    #[test]
+    fn is_promoted_when_multiple_paths_claim_same_bare_name_with_disjoint_ecosystems() {
+        let p1 = PathBuf::from("crates/native-core");
+        let p2 = PathBuf::from("packages/native-core");
+        let mut claiming = std::collections::BTreeMap::new();
+        let mut eco1 = std::collections::BTreeSet::new();
+        eco1.insert(Ecosystem::Cargo);
+        let mut eco2 = std::collections::BTreeSet::new();
+        eco2.insert(Ecosystem::Npm);
+        claiming.insert(p1.clone(), eco1);
+        claiming.insert(p2.clone(), eco2);
+        let paths = vec![p1, p2];
+        assert!(is_promoted_bare_name(&paths, &claiming));
+    }
+
+    #[test]
+    fn is_not_promoted_when_single_path_claims_bare_name() {
+        let p1 = PathBuf::from("crates/native-core");
+        let mut claiming = std::collections::BTreeMap::new();
+        let mut eco1 = std::collections::BTreeSet::new();
+        eco1.insert(Ecosystem::Cargo);
+        claiming.insert(p1.clone(), eco1);
+        let paths = vec![p1];
+        assert!(!is_promoted_bare_name(&paths, &claiming));
+    }
+
+    #[test]
+    fn is_not_promoted_when_multiple_paths_have_overlapping_ecosystems() {
+        let p1 = PathBuf::from("crates/native-core");
+        let p2 = PathBuf::from("crates/other-core");
+        let mut claiming = std::collections::BTreeMap::new();
+        let mut eco1 = std::collections::BTreeSet::new();
+        eco1.insert(Ecosystem::Cargo);
+        let mut eco2 = std::collections::BTreeSet::new();
+        eco2.insert(Ecosystem::Cargo);
+        claiming.insert(p1.clone(), eco1);
+        claiming.insert(p2.clone(), eco2);
+        let paths = vec![p1, p2];
+        assert!(
+            !is_promoted_bare_name(&paths, &claiming),
+            "overlapping ecosystem sets must NOT trigger promotion; duplicate check handles it"
+        );
     }
 }
