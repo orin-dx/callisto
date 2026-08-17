@@ -380,6 +380,58 @@ pub fn solve_cascade<D: DependencyResolver>(
                 }
             }
         }
+
+        // Track 1: Fixed group convergence -- mirrors the Linked-group block
+        // above but computes each group's shared target via
+        // fixed_group_target instead of taking the max of independently
+        // bumped per-member candidates.
+        for g in input.groups.fixed.values() {
+            let member_ids: Vec<PackageId> = g
+                .members(crate::config::GroupMemberKind::Package)
+                .filter_map(|m| match m {
+                    crate::config::GroupMember::Package(ref id) => Some(id.clone()),
+                    _ => None,
+                })
+                .collect();
+
+            let mut max_sev = Severity::None;
+            for id in &member_ids {
+                if let Some(&sev) = out.severities.get(id) {
+                    max_sev = max_sev.max(sev);
+                }
+            }
+
+            if max_sev > Severity::None {
+                for id in &member_ids {
+                    let cur_sev = out.severities.get(id).copied().unwrap_or(Severity::None);
+                    if max_sev > cur_sev {
+                        out.severities.insert(id.clone(), max_sev);
+                    }
+                }
+
+                let winner = crate::groups::fixed_group_target(
+                    g,
+                    input.base,
+                    &out.severities,
+                    input.tags,
+                    input.pre,
+                )?;
+
+                for id in member_ids {
+                    if out.targets.get(&id) != Some(&winner) {
+                        out.targets.insert(id.clone(), winner.clone());
+                        out.reasons.insert(
+                            id.clone(),
+                            BumpReason::FixedGroupUnion {
+                                group: g.name.clone(),
+                            },
+                        );
+                        worklist.insert(id.clone());
+                        changed = true;
+                    }
+                }
+            }
+        }
     }
 
     out.iterations = iterations;
@@ -1287,5 +1339,151 @@ mod tests {
             "non-inherited edge must produce a DepWriteTarget::Manifest rewrite; rewrites: {:?}",
             outcome.rewrites
         );
+    }
+
+    /// AC-001/AC-002/AC-004/AC-013(bug1): Fixed-group members seeded
+    /// directly (not via raise()) must converge on ONE shared,
+    /// group-aligned target version computed by fixed_group_target, not on
+    /// independently-bumped per-member targets. Exercised through the real
+    /// call path run_cascade -> solve_cascade -> the new Fixed-group block
+    /// -> fixed_group_target -- fixed_group_target is never called
+    /// directly, and raise() is never invoked (both siblings arrive via
+    /// input.seed).
+    #[test]
+    fn test_fixed_group_seeded_siblings_converge_on_shared_target() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        struct FakeGitTagRunner {
+            calls: AtomicUsize,
+            tags: Vec<String>,
+        }
+        impl callisto_model::CommandRunner for FakeGitTagRunner {
+            fn run(
+                &self,
+                program: &str,
+                args: &[&str],
+                _cwd: &std::path::Path,
+            ) -> Result<callisto_model::CommandOutput, callisto_model::CommandError> {
+                assert_eq!(program, "git");
+                assert_eq!(args, ["tag", "--list"]);
+                self.calls.fetch_add(1, Ordering::SeqCst);
+                Ok(callisto_model::CommandOutput {
+                    exit_code: Some(0),
+                    stdout: self.tags.join("\n"),
+                    stderr: String::new(),
+                })
+            }
+        }
+
+        let pkg_a = PackageId::parse("pkg-a").unwrap();
+        let pkg_b = PackageId::parse("pkg-b").unwrap();
+
+        // TagIndex::build requires each package to resolve a version
+        // grammar via a canonical manifest (Package::version_grammar);
+        // bare_package's empty `manifests` cannot satisfy that, so this
+        // fixture attaches a canonical Cargo.toml manifest to each package
+        // -- the fixture is otherwise identical to bare_package.
+        fn package_with_canonical_manifest(id: &PackageId) -> Package {
+            let manifest = callisto_model::ManifestDecl::new(
+                "Cargo.toml",
+                callisto_model::ManifestRole::Canonical,
+                callisto_model::ManifestFormat::CargoToml,
+            )
+            .unwrap();
+            Package {
+                id: id.clone(),
+                manifests: vec![manifest],
+                changelog: None,
+                release_trigger: ReleaseTrigger::Changeset,
+                publish_to: Vec::new(),
+                tag_template: None,
+            }
+        }
+
+        let graph = TwoPackageGraph {
+            packages: vec![
+                package_with_canonical_manifest(&pkg_a),
+                package_with_canonical_manifest(&pkg_b),
+            ],
+        };
+
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        assert!(
+            callisto_vcs::GitRepository::discover(dir).is_err(),
+            "fixture dir must not be a discoverable git repo, forcing the CommandRunner fallback"
+        );
+        let runner = FakeGitTagRunner {
+            calls: AtomicUsize::new(0),
+            tags: vec!["pkg-a@2.0.0".to_string()],
+        };
+        let git = callisto_vcs::GitAccess::discover(dir, &runner);
+        let cfg_resolved = crate::config::load(dir).unwrap();
+        let tags = crate::tags::TagIndex::build(&git, &graph, &cfg_resolved).unwrap();
+
+        assert!(
+            tags.last_tag(&pkg_a).is_some(),
+            "A must have a prior release tag"
+        );
+        assert!(
+            tags.last_tag(&pkg_b).is_none(),
+            "B must never have been released"
+        );
+
+        let mut base = BTreeMap::new();
+        base.insert(pkg_a.clone(), Version::semver(2, 0, 0));
+        base.insert(pkg_b.clone(), Version::semver(0, 1, 0));
+
+        let mut seed = BTreeMap::new();
+        seed.insert(pkg_a.clone(), Severity::Minor);
+        seed.insert(pkg_b.clone(), Severity::Minor);
+
+        let group_def = GroupDef {
+            name: GroupName("ab-fixed".to_string()),
+            kind: GroupKind::Fixed,
+            members: vec![
+                GroupMember::Package(pkg_a.clone()),
+                GroupMember::Package(pkg_b.clone()),
+            ],
+        };
+        let groups = GroupTable::from_groups(vec![group_def], vec![]);
+
+        let cfg = CascadeConfig {
+            mode: CascadeMode::OutOfRange,
+            bump_severity: CascadeBumpSeverity::Patch,
+            peer_escalation: true,
+            preserve_npm_ranges: false,
+        };
+        let reasons = BTreeMap::new();
+        let named_by = BTreeMap::new();
+
+        let input = CascadeInput {
+            graph: &graph,
+            groups: &groups,
+            cfg: &cfg,
+            seed: &seed,
+            reasons: &reasons,
+            named_by: &named_by,
+            base: &base,
+            pre: None,
+            tags: &tags,
+        };
+
+        let outcome = run_cascade(input).unwrap();
+
+        let target_a = outcome.targets.get(&pkg_a).unwrap();
+        let target_b = outcome.targets.get(&pkg_b).unwrap();
+
+        assert_eq!(
+            target_a.render(),
+            "2.1.0",
+            "A (the released member) must land on the group-aligned target"
+        );
+        assert_eq!(
+            target_b.render(),
+            "2.1.0",
+            "B must converge on the SAME target as A, not its own independently-bumped 0.2.0"
+        );
+        assert_eq!(target_a, target_b);
     }
 }
