@@ -1314,4 +1314,41 @@ mod tests {
             "cargo:single human lookup must resolve to the Bare ID"
         );
     }
+
+    #[test]
+    fn case_d_single_path_multi_ecosystem_retains_bare_id_and_preserves_platform() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        write_pkg(root, "crates/hybrid", Ecosystem::Cargo, "hybrid");
+        std::fs::write(
+            root.join("crates/hybrid/package.json"),
+            r#"{"name":"@myorg/hybrid-darwin-arm64","version":"0.1.0","os":["darwin"],"cpu":["arm64"]}"#,
+        )
+        .unwrap();
+
+        let locator = crate::locate::IgnoreWalkLocator::new(root);
+        let runner = NoopRunner;
+        let ws = crate::Workspace::load(root.to_path_buf(), &locator, &runner)
+            .expect("Case D load must succeed");
+
+        let bare_id = PackageId::Bare("hybrid".to_string());
+        assert!(
+            ws.graph.get(&bare_id).is_some(),
+            "Case D primary package must register under Bare ID"
+        );
+        let platform_entry = ws
+            .graph
+            .identity()
+            .platform
+            .get("@myorg/hybrid-darwin-arm64")
+            .expect("platform entry must exist in IdentityIndex.platform");
+        assert_eq!(
+            platform_entry.0, bare_id,
+            "platform entry owner must be the Bare ID"
+        );
+        assert_eq!(
+            platform_entry.1,
+            PathBuf::from("crates/hybrid/package.json")
+        );
+    }
 }
