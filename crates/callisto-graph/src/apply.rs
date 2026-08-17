@@ -246,8 +246,20 @@ pub fn apply_version_plan<R: CommandRunner>(
         let decl =
             callisto_model::ManifestDecl::new(pw.manifest.clone(), ManifestRole::Canonical, fmt)?;
         let mut handle = open(&decl, &ctx)?;
-        handle.write_version(&pw.version, permit)?;
-        handle.persist(permit)?;
+        let current = handle.current_version()?;
+        if current == pw.version {
+            // Already at target — skip write, but still stage so git add re-stages on retry.
+        } else if current == pw.from {
+            handle.write_version(&pw.version, permit)?;
+            handle.persist(permit)?;
+        } else {
+            return Err(GraphError::UnexpectedManifestVersion {
+                path: pw.manifest.clone(),
+                expected_from: pw.from.clone(),
+                expected_to: pw.version.clone(),
+                found: current,
+            });
+        }
         modified_paths.push(pw.manifest.clone());
     }
 
@@ -2308,6 +2320,108 @@ mod tests {
             .staged
             .contains(&PathBuf::from("platform/package.json")));
         assert!(result.staged.contains(&PathBuf::from("package.json")));
+    }
+
+    /// AC-012: a `platform_writes` entry whose `from` does not match the
+    /// actual on-disk `current_version()` of the platform manifest (drift)
+    /// must cause `apply_version_plan` to return
+    /// `Err(GraphError::UnexpectedManifestVersion { .. })` with the correct
+    /// fields, and the platform manifest must be left byte-for-byte
+    /// untouched on disk.
+    #[test]
+    fn platform_write_drift_returns_unexpected_manifest_version_and_leaves_manifest_untouched() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+
+        std::fs::create_dir_all(root.join("platform")).unwrap();
+        let platform_pkg_path = root.join("platform/package.json");
+        let original_content =
+            r#"{"name": "@my-scope/platform-linux", "version": "9.9.9"}"#.to_string();
+        std::fs::write(&platform_pkg_path, &original_content).unwrap();
+
+        let plan = VersionPlan {
+            platform_writes: vec![crate::plan::PlatformWrite {
+                manifest: PathBuf::from("platform/package.json"),
+                version: cargo_version("1.1.0"),
+                from: cargo_version("1.0.0"),
+            }],
+            ..Default::default()
+        };
+
+        let permit = ApplyPermit::force_for_tests();
+        let opts = ApplyOptions::default();
+
+        let result = apply_version_plan(root, &plan, &NoopRunner, &opts, &permit);
+
+        match result {
+            Err(GraphError::UnexpectedManifestVersion {
+                path,
+                expected_from,
+                expected_to,
+                found,
+            }) => {
+                assert_eq!(path, PathBuf::from("platform/package.json"));
+                assert_eq!(expected_from.render(), "1.0.0");
+                assert_eq!(expected_to.render(), "1.1.0");
+                assert_eq!(found.render(), "9.9.9");
+            }
+            other => panic!("expected Err(GraphError::UnexpectedManifestVersion), got: {other:?}"),
+        }
+
+        let platform_content_after = std::fs::read_to_string(&platform_pkg_path).unwrap();
+        assert_eq!(
+            platform_content_after, original_content,
+            "drifted platform manifest must be left byte-for-byte untouched"
+        );
+    }
+
+    /// AC-012b: a `platform_writes` entry whose `from` does not match the
+    /// on-disk `current_version()`, but the on-disk version already equals
+    /// the target `version` (idempotent retry after a prior interrupted
+    /// apply), must succeed without rewriting the manifest, and the path
+    /// must still be pushed into the staged set.
+    #[test]
+    fn platform_write_idempotent_retry_when_already_at_target_succeeds_without_rewrite() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+
+        std::fs::create_dir_all(root.join("platform")).unwrap();
+        let platform_pkg_path = root.join("platform/package.json");
+        std::fs::write(
+            &platform_pkg_path,
+            r#"{"name": "@my-scope/platform-linux", "version": "1.1.0"}"#,
+        )
+        .unwrap();
+
+        let plan = VersionPlan {
+            platform_writes: vec![crate::plan::PlatformWrite {
+                manifest: PathBuf::from("platform/package.json"),
+                version: cargo_version("1.1.0"),
+                from: cargo_version("1.0.0"),
+            }],
+            ..Default::default()
+        };
+
+        let permit = ApplyPermit::force_for_tests();
+        let opts = ApplyOptions::default();
+
+        let result = apply_version_plan(root, &plan, &NoopRunner, &opts, &permit)
+            .expect("idempotent retry when already at target must succeed");
+
+        let platform_content = std::fs::read_to_string(&platform_pkg_path).unwrap();
+        assert!(
+            platform_content.contains("\"version\": \"1.1.0\"")
+                || platform_content.contains("\"version\":\"1.1.0\""),
+            "manifest already at target must remain at target: {platform_content}"
+        );
+
+        assert!(
+            result
+                .staged
+                .contains(&PathBuf::from("platform/package.json")),
+            "idempotent-retry path must still be staged: {:?}",
+            result.staged
+        );
     }
 
     /// AC-009: a plan with `bumps` empty but a `platform_writes` entry
