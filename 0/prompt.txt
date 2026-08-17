@@ -1,0 +1,1544 @@
+<task-notification>
+<task-id>ab630de9f49358820</task-id>
+<tool-use-id>toolu_01MUuKxUN1GpV9btfNJDy2oG</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/ab630de9f49358820.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement TASK-05 (Cargo membership wiring)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All confirmed green, clippy clean, formatting clean, committed at `0971005`.
+
+```json
+{
+  "task_id": "TASK-05",
+  "status": "done",
+  "steps_completed": [
+    "Read AC-01 and AC-02 directly from .claude/specs/SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json (confirmed they match the plan's paraphrased failing_test)",
+    "Confirmed baseline test suite green (275 passed) before any change",
+    "Confirmed CargoMembership/admits/read_cargo_membership API shape and pub(crate) visibility in membership.rs",
+    "Wrote failing test ac01_ac02_excludes_scratch_example_and_includes_kept_example_via_cargo_workspace_exclude in crates/callisto-graph/src/locate/ignore_walk.rs",
+    "Ran test, confirmed RED (failure matched expected_failure_output exactly)",
+    "Added `use crate::locate::membership;`, computed cargo_membership once before the walker loop, gated the Cargo push with cargo_membership.admits(&amp;rel, is_root)",
+    "Ran test, confirmed GREEN; ran full callisto-graph suite (276 passed, 0 failed)",
+    "Removed #[allow(dead_code)] from the Cargo-side membership API (build_globset, CargoMembership, admits, parse_toml_string_array, absent_cargo_membership, read_cargo_membership) now that it has a real caller; left Npm-side allow(dead_code) untouched since npm wiring is a separate task",
+    "Ran cargo clippy -p callisto-graph --all-targets -- -D warnings: clean",
+    "Fixed clippy::cmp_owned findings in the new test (Path::new instead of PathBuf::from for comparisons)",
+    "Committed; pre-commit hook caught a format-check violation on first attempt, ran cargo fmt -p callisto-graph, re-staged, created a new commit (did not amend)"
+  ],
+  "test_result": "pass",
+  "commit_sha": "0971005",
+  "criteria_evidence": [
+    {
+      "criterion_id": "AC-01",
+      "test_file": "crates/callisto-graph/src/locate/ignore_walk.rs",
+      "test_line": 285,
+      "implementation_file": "crates/callisto-graph/src/locate/ignore_walk.rs",
+      "implementation_line": 83
+    },
+    {
+      "criterion_id": "AC-02",
+      "test_file": "crates/callisto-graph/src/locate/ignore_walk.rs",
+      "test_line": 326,
+      "implementation_file": "crates/callisto-graph/src/locate/ignore_walk.rs",
+      "implementation_line": 83
+    }
+  ],
+  "concerns": null,
+  "reasoning": "Plan's prose matched observed reality this time (unlike the noted TASK-03e/04b/04f pattern) — the spec's AC-01/AC-02 text matched the plan's paraphrase verbatim in substance, the failing_test code compiled and failed exactly as expected_failure_output predicted, and the implementation code block worked with only clippy/fmt polish needed (Path::new vs PathBuf::from for comparisons, and a fmt reflow of the fn signature). No precision_tests were supplied for this single-task invocation. No spec contradiction encountered. Left NpmMembership's #[allow(dead_code)] attributes in place since npm wiring is out of this task's scope (a later task per the plan's title pattern)."
+}
+```
+
+Files touched:
+- `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs` — new test (line 285) and implementation wiring (line 83)
+- `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs` — removed obsolete `#[allow(dead_code)]` from the six Cargo-side items now reachable via the new caller</result>
+<usage><subagent_tokens>73185</subagent_tokens><tool_uses>32</tool_uses><duration_ms>376549</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a46798a7f9353995c</task-id>
+<tool-use-id>toolu_01SWtpsovD2WBazL17Mj5Tsh</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a46798a7f9353995c.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement TASK-06 (npm membership wiring)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Standing by for the test-run monitor to report back.</result>
+<usage><subagent_tokens>81610</subagent_tokens><tool_uses>18</tool_uses><duration_ms>525433</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a46798a7f9353995c</task-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a46798a7f9353995c.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement TASK-06 (npm membership wiring)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Final test suite verified green (277 passed), clippy and fmt clean, commit in place.
+
+```json
+{
+  "task_id": "TASK-06",
+  "status": "done",
+  "steps_completed": [
+    "Verified clean tree and TASK-05's prior commit (0971005) present, touching the same file",
+    "Read current state of ignore_walk.rs and membership.rs directly rather than trusting plan prose",
+    "Confirmed AC-03 acceptance criterion text from spec file on disk",
+    "Wrote failing test ac03_excludes_package_outside_npm_workspaces_glob in ignore_walk.rs",
+    "Ran test, confirmed red (panicked: tools/helper was discovered when it should have been excluded)",
+    "Implemented: computed npm_membership via membership::read_npm_membership(&amp;self.root) once before the walker loop; gated the Npm push with npm_membership.admits(&amp;rel, is_root) using the 2-arg signature already established by TASK-04f",
+    "Ran test, confirmed green",
+    "Removed now-unneeded #[allow(dead_code)] markers from NpmMembership/read_npm_membership/admits/read_pnpm_packages/read_package_json_workspaces/package_json_declares_name in membership.rs, since projects() is now a real caller (mirrors TASK-05's precedent for the Cargo side)",
+    "Ran cargo fmt -p callisto-graph and cargo clippy -p callisto-graph --all-targets -- -D warnings, both clean",
+    "Ran full cargo test -p callisto-graph --lib suite: 277 passed, 0 failed",
+    "Committed; pre-commit format-check hook rejected the first attempt due to a rustfmt diff on the new test's assert! call, re-ran cargo fmt, re-staged, created a fresh commit (not amended)"
+  ],
+  "test_result": "pass",
+  "commit_sha": "d812cac",
+  "criteria_evidence": [
+    {
+      "criterion_id": "AC-03",
+      "test_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs",
+      "test_line": 337,
+      "implementation_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs",
+      "implementation_line": 106
+    }
+  ],
+  "concerns": "Two deviations from the plan's literal prose, both harmless and expected given the critical context already supplied: (1) the plan's failing_test/implementation code blocks use the 1-arg NpmMembership::admits(&amp;rel) signature, but TASK-04f (already committed) changed admits to the 2-arg (rel, is_root) form mirroring CargoMembership — used the 2-arg form as instructed. (2) The first commit attempt was rejected by the repo's pre-commit format-check hook over a single multi-line assert! that cargo fmt had not yet collapsed to one line at the time of the first `git commit` invocation; fixed by re-running cargo fmt and creating a fresh (non-amended) commit, consistent with the established recovery pattern from TASK-05. No spec contradictions found; TASK-05's landed state matched what this task's plan assumed except for the admits() arity noted above, which was already flagged in the supplied critical context.",
+  "reasoning": "Straightforward TDD wiring task following the established Cargo-side precedent from TASK-05 in the same file. No precision tests were supplied for this task. Verified AC-03's exact criterion text from the spec file on disk before writing the test, confirmed genuine red before implementing, and confirmed genuine green after. No mutation-testing precision tests were part of this invocation's inputs."
+}
+```</result>
+<usage><subagent_tokens>94566</subagent_tokens><tool_uses>39</tool_uses><duration_ms>1166762</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a0f6e3e0d9ce537e2</task-id>
+<tool-use-id>toolu_01QBHru6EnshorGHjHxcjESi</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a0f6e3e0d9ce537e2.output</output-file>
+<status>completed</status>
+<summary>Agent "Review TASK-05 and TASK-06 commits" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Review Summary — commits d812cac and 0971005
+
+**Scope confirmed via `git show`/`git diff HEAD`** (not the live working tree, which currently has an uncommitted AC-05 test from another concurrent agent stacked on top of HEAD=d812cac — verified via `git diff HEAD -- ignore_walk.rs` that this addition is purely a new test function with zero production-code changes, so it doesn't affect this review).
+
+**Files reviewed in full**: `crates/callisto-graph/src/locate/ignore_walk.rs` (355 lines at HEAD, full `projects()` body), `crates/callisto-graph/src/locate/membership.rs` (full file, 493 lines, both commits' diffs plus surrounding context).
+
+**Acceptance criteria read from** `.claude/specs/SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json`: AC-01, AC-02 (Cargo exclude/members), AC-03 (npm workspaces glob).
+
+**Tests actually run**: `cargo test -p callisto-graph --lib locate::` — 36 passed, 0 failed, including both new tests `ac01_ac02_excludes_scratch_example_and_includes_kept_example_via_cargo_workspace_exclude` and `ac03_excludes_package_outside_npm_workspaces_glob`.
+
+### Findings
+
+1. **Scope adherence — clean.** 0971005 wires `CargoMembership::admits(&amp;rel, is_root)` into the Cargo push at `ignore_walk.rs:84`, computed once at the top of `projects()` (line 41), exactly matching TASK-05. d812cac does the identical wiring for `NpmMembership::admits` at line 106 (computed line 42), matching TASK-06. Both commits also drop now-unneeded `#[allow(dead_code)]` markers in `membership.rs` — legitimate cleanup since `projects()` is now a real caller, not scope creep.
+
+2. **Non-negotiable violations — none found.** No `unsafe` (workspace's `unsafe_code = "forbid"` is untouched), no new `.unwrap()`/`.expect()`/`panic!` in production code, no `map_err(|_|` error erasure, no silent no-op mutation paths, no discarded parameters. The pre-existing `.unwrap_or_else(|_| PackageId::Bare(...))` fallback at line 86 is untouched by either diff.
+
+3. **Test quality — genuine.** Both new tests use real `tempfile::tempdir()` filesystems with actual `Cargo.toml`/`package.json` content containing real exclude/glob values, and call the real `IgnoreWalkLocator::new(root).projects()` end-to-end — not mocks or unit-level calls to `admits()` alone. They would fail against the pre-fix code (which pushed unconditionally) and pass only with correct gating. Confirmed green via actual test run, not inferred.
+
+4. **Sibling gap — real, flagged per instructions.** `ignore_walk.rs:120-146`, the pyproject.toml/PyPI branch, has the identical "walk finds manifest → unconditionally push to `results`" pattern that the Cargo and Npm branches had *before* these two commits fixed it. It computes no `pypi_membership` and calls no `.admits()` gate at all — any pyproject.toml anywhere in the tree, including one that should be excluded by a Python-side workspace/exclude convention, is discovered and pushed unconditionally. This is plausibly out of scope for TASK-05/TASK-06 specifically (spec's `scope` field only names Cargo/npm/pnpm membership), but it's the same hazard class left live in the same function, so it's worth the exit gate's attention as a known follow-on gap rather than a silent omission.
+
+```json
+{
+  "status": "approved",
+  "issues": [],
+  "sibling_gaps": [
+    "crates/callisto-graph/src/locate/ignore_walk.rs:120-146 — the pyproject.toml/PyPI branch of IgnoreWalkLocator::projects() has zero membership-filter gating; it unconditionally pushes every discovered pyproject.toml with a resolvable name, identical to the pre-fix pattern that both reviewed commits just eliminated for Cargo and Npm. No PypiMembership/read_pypi_membership equivalent exists yet. Plausibly out of scope for TASK-05/TASK-06 (spec scope names only Cargo/npm/pnpm), but same hazard class, same function, left live."
+  ],
+  "reasoning": "Verified both commits against true HEAD state via git show/git diff HEAD (working tree has an unrelated uncommitted AC-05 test from a concurrent agent, confirmed via diff to touch only test code, not production code, so it doesn't taint this review). Read membership.rs and ignore_walk.rs in full. Both commits do exactly what TASK-05/TASK-06 specify: wire the pre-existing, pre-tested admits() helpers into the real caller, add one genuine tempdir-based end-to-end test per task proving the stated ACs, and remove now-stale dead_code allows. No Rust hazard-reference violations (no unsafe, no unwrap/expect/panic added, no error erasure, no silent-Ok mutation). Ran cargo test -p callisto-graph --lib locate:: for real: 36/36 pass including both new tests. The only substantive finding is the pyproject.toml/PyPI branch's total lack of membership gating -- same pattern, same function, not touched by either commit. Since it's outside these two commits' and this spec's stated scope, I report it as a sibling_gap rather than a blocking issue against these commits specifically."
+}
+```
+
+Relevant paths: `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs`, `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs`, `/Users/gabe/Projects/callisto/.claude/specs/SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json`.</result>
+<usage><subagent_tokens>81546</subagent_tokens><tool_uses>25</tool_uses><duration_ms>362352</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a352adb4b623e538d</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a352adb4b623e538d.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement TASK-07 (AC-05 regression test)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Committed successfully as `8c6de26`.
+
+## Summary
+
+**task_id**: TASK-07
+
+**status**: done
+
+**steps_completed**:
+1. Verified baseline: `git log` confirmed TASK-05 (`0971005`) and TASK-06 (`d812cac`) already landed on the branch, tree was clean.
+2. Read AC-05's exact acceptance criterion text from `.claude/specs/SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json` (line 56-58) before writing the test.
+3. Added `ac05_admits_all_cargo_candidates_when_root_has_no_workspace_table` to `crates/callisto-graph/src/locate/ignore_walk.rs` (test module), asserting root package and `crates/child` are both admitted when Cargo.toml has `[package]` but no `[workspace]` table.
+4. Ran the test — it passed immediately with no implementation change (verified by actually running it, not by trusting the plan's "no red step" note). Confirmed this is legitimate: the fallback logic already exists at `crates/callisto-graph/src/locate/membership.rs:93` (`let Some(workspace) = doc.get("workspace") else { ... }`), implemented in already-committed TASK-03d/TASK-05.
+5. Ran `cargo fmt -p callisto-graph` and `cargo clippy -p callisto-graph --all-targets -- -D warnings` — clean.
+6. Committed as `8c6de26`.
+
+**test_result**: pass
+
+**precision_tests_absorbed**: none supplied for this task
+
+**commit_sha**: `8c6de26`
+
+**criteria_evidence**:
+- AC-05: test_file `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs`, test_line 366; implementation_file `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs`, implementation_line 93
+
+**concerns**: None. This task genuinely required no new implementation — the plan's characterization as a "regression-proof" was verified correct by actually running the test before writing any implementation, matching the established pattern of prior tasks in this plan (03c, 03e) where honest non-red steps are explicitly called out rather than fabricated as red.</result>
+<usage><subagent_tokens>83889</subagent_tokens><tool_uses>17</tool_uses><duration_ms>524933</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a2eacd3e6f1c77635</task-id>
+<tool-use-id>toolu_01LCuXRjFFdmBCNzCiS2VmCp</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a2eacd3e6f1c77635.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement TASK-08 (AC-05b regression test)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Task complete.
+
+## Summary
+
+**TASK-08** (AC-05b regression-proof test) is done.
+
+- Read AC-05b from `/Users/gabe/Projects/callisto/.claude/specs/SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json` on disk before writing the test — criterion confirmed: root has no `Cargo.toml` at all, `crates/kept/Cargo.toml` elsewhere must still be admitted as `Ecosystem::Cargo`, treated identically to AC-05 (no filter, not zero admitted, no error).
+- Added `ac05b_admits_cargo_candidates_when_root_has_no_cargo_toml_file_at_all` at `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs:400`.
+- Ran it first: it passed immediately (matching TASK-07's precedent — the fallback logic already exists from TASK-03a/TASK-05, no code path was missing). Rather than trust that characterization, I adversarially broke `read_cargo_membership`'s `Err(_)` branch at `crates/callisto-graph/src/locate/membership.rs:86` (temporarily forcing `members: Some(empty)` instead of `absent_cargo_membership()`), reran, and confirmed the test genuinely fails (`crates/kept must be admitted as Cargo, got: []`) — proving the test isn't vacuous. Reverted the sabotage, reran, confirmed green again.
+- Full suite: `cargo test -p callisto-graph --lib` → 279 passed, 0 failed.
+- `cargo fmt -p callisto-graph` — no changes needed. `cargo clippy -p callisto-graph --all-targets -- -D warnings` — clean.
+- Committed as `498f27c`, pre-commit format-check hook passed.
+- No precision_tests were supplied for this task.
+
+```json
+{
+  "task_id": "TASK-08",
+  "status": "done",
+  "steps_completed": [
+    "read_spec_criterion_AC-05b",
+    "wrote_failing_test",
+    "confirmed_test_passed_immediately",
+    "adversarially_verified_test_is_not_vacuous_by_breaking_and_restoring_fallback",
+    "ran_full_lib_suite_green",
+    "cargo_fmt",
+    "cargo_clippy_clean",
+    "committed"
+  ],
+  "test_result": "pass",
+  "commit_sha": "498f27c",
+  "concerns": "No red-phase existed on the actual task diff, matching the TASK-07 precedent noted in the plan: the Cargo.toml-absent fallback (Err(_) =&gt; absent_cargo_membership()) was already implemented and wired by TASK-03a/TASK-05. Honesty was preserved by adversarially breaking that fallback and confirming the new test fails without it, then restoring it, rather than assuming the plan's 'no red step' note was correct.",
+  "criteria_evidence": [
+    {
+      "criterion_id": "AC-05b",
+      "test_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs",
+      "test_line": 400,
+      "implementation_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs",
+      "implementation_line": 86
+    }
+  ]
+}
+```</result>
+<usage><subagent_tokens>62755</subagent_tokens><tool_uses>34</tool_uses><duration_ms>745809</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>afbfc297b3f2d9763</task-id>
+<tool-use-id>toolu_01Q3c8nVqtD4SrD1VAnaguRU</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/afbfc297b3f2d9763.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement TASK-09 (AC-07 regression test)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Committed successfully as `58ae93d`, tree clean.
+
+## Summary
+
+**TASK-09** — "Regression-proof: AC-07 (hybrid root package exempt from members and exclude)" — completed.
+
+Verified starting state: all four prerequisite commits (0971005, d812cac, 8c6de26, 498f27c) present on `crates/callisto-graph/src/locate/ignore_walk.rs`, tree clean before starting.
+
+Read AC-07's exact acceptance criterion text from `/Users/gabe/Projects/callisto/.claude/specs/SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json` on disk — it matched the plan's fixture.
+
+Added the test `ac07_includes_root_package_as_implicit_member_even_when_exclude_would_match_it` to `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs` (test body at line 426). It passed immediately with no red step, as the plan predicted (the hybrid-root exemption already exists in `CargoMembership::admits` at `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs:43-46`).
+
+Since there was no red step, adversarially verified the test isn't vacuous: temporarily removed the `if is_root &amp;&amp; self.hybrid_root { return true; }` exemption (membership.rs:44-46), reran the test — it failed with `root package must never be silently dropped, got: [ProjectRoot { id: Bare("child"), path: "crates/child", ecosystem: Cargo }]`, confirming the root entry disappeared exactly as expected. Restored the original code (git diff on membership.rs confirmed clean afterward).
+
+Ran full suite (`cargo test -p callisto-graph --lib`): 280 passed, 0 failed. `cargo fmt -p callisto-graph` made no changes beyond the test addition. `cargo clippy -p callisto-graph --all-targets -- -D warnings` clean.
+
+No lambda-mutator precision_tests were supplied for this invocation, so none were absorbed.
+
+Committed as `58ae93d` with message `test(graph): pin AC-07 hybrid-root implicit-member behavior`.
+
+```json
+{
+  "task_id": "TASK-09",
+  "status": "done",
+  "steps_completed": [
+    "verified prerequisite commits and clean tree",
+    "read AC-07 criterion text from spec file on disk",
+    "wrote test (matched no-red prediction)",
+    "ran test — passed immediately, no red step observed",
+    "adversarially broke hybrid_root exemption in membership.rs, reran test, confirmed failure",
+    "restored membership.rs, confirmed diff clean",
+    "ran full test suite: 280 passed",
+    "cargo fmt + clippy clean",
+    "committed"
+  ],
+  "test_result": "pass",
+  "commit_sha": "58ae93d",
+  "criteria_evidence": [
+    {
+      "criterion_id": "AC-07",
+      "test_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs",
+      "test_line": 426,
+      "implementation_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs",
+      "implementation_line": 44
+    }
+  ],
+  "concerns": null,
+  "reasoning": "No implementation change needed; exemption logic already existed from TASK-03c/05. Adversarial mutation of membership.rs:44-46 confirmed the test genuinely exercises the exemption path rather than being vacuous."
+}
+```</result>
+<usage><subagent_tokens>52219</subagent_tokens><tool_uses>19</tool_uses><duration_ms>323366</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>aed76070892e6bdf0</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/aed76070892e6bdf0.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement TASK-10 (AC-10c regression test)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Committed cleanly (pre-commit hooks passed). Final report:
+
+## Summary
+
+**TASK-10** — "Regression-proof: AC-10c (empty Cargo members array excludes everything)" — completed.
+
+- Pre-flight confirmed: all 5 prior commits (0971005, d812cac, 8c6de26, 498f27c, 58ae93d) present on `crates/callisto-graph/src/locate/ignore_walk.rs`, tree clean.
+- Read AC-10c directly from `/Users/gabe/Projects/callisto/.claude/specs/SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json`, confirmed it matches the plan's test intent (empty `members = []` must exclude every Cargo candidate).
+- Wrote the test `ac10c_empty_members_array_admits_zero_cargo_entries` in `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs` (lines 462–478).
+- Ran it: passed immediately, no red step — matching the plan's "regression-proof" prediction (same pattern as TASK-07/08/09).
+- Per instructions, adversarially verified non-vacuity: temporarily mutated `CargoMembership::admits` in `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs:50-53` (forced `Some(members) =&gt; members.is_match(rel) || true`), reran — test failed with a clear assertion message showing the leaked `crates/other` Cargo entry. Restored the original code (verified via `git diff` — zero diff on membership.rs).
+- Full `cargo test -p callisto-graph --lib`: 281 passed, 0 failed.
+- `cargo fmt -p callisto-graph` and `cargo clippy -p callisto-graph --all-targets -- -D warnings`: clean.
+- Committed as `d5d659b`.
+
+No implementation change was needed — behavior was already correctly wired by TASK-05 (`CargoMembership::admits`, membership.rs:43).
+
+```json
+{
+  "task_id": "TASK-10",
+  "status": "done",
+  "steps_completed": [
+    "confirmed prior commits present and tree clean",
+    "read AC-10c from spec file on disk",
+    "wrote test ac10c_empty_members_array_admits_zero_cargo_entries",
+    "ran test - passed immediately (no red step)",
+    "adversarially verified non-vacuity by mutating CargoMembership::admits and confirming the test then failed",
+    "restored membership.rs to original (zero diff confirmed)",
+    "ran full callisto-graph lib test suite - 281 passed",
+    "ran cargo fmt and clippy -D warnings - clean",
+    "committed"
+  ],
+  "test_result": "pass",
+  "commit_sha": "d5d659b",
+  "criteria_evidence": [
+    {
+      "criterion_id": "AC-10c",
+      "test_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs",
+      "test_line": 462,
+      "implementation_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs",
+      "implementation_line": 43
+    }
+  ],
+  "concerns": "No red step occurred (test passed on first run), consistent with TASK-07/08/09 pattern where behavior was already wired by an earlier task (TASK-05, commit 0971005). Non-vacuity was verified adversarially per instructions by mutating membership.rs:admits to always-admit and confirming the test failed, then restoring the original code (confirmed via git diff showing zero changes to membership.rs)."
+}
+```</result>
+<usage><subagent_tokens>59893</subagent_tokens><tool_uses>28</tool_uses><duration_ms>449337</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a78d5edb76f31aa6c</task-id>
+<tool-use-id>toolu_01DXweetYae32vrmQS2ybj73</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a78d5edb76f31aa6c.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement TASK-11 (AC-15 regression test)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Summary
+
+TASK-11 (AC-15: `[workspace]` with exclude only, no members key) executed and committed.
+
+**Verification steps taken:**
+1. Confirmed all 6 prior commits (TASK-05 through TASK-10) present on `ignore_walk.rs` and tree was clean before starting.
+2. Read AC-15's exact acceptance criterion text from `/Users/gabe/Projects/callisto/.claude/specs/SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json` (line 171-174) — it matched the plan's paraphrase and fixture exactly.
+3. Confirmed via code inspection that `crates/callisto-graph/src/locate/membership.rs:83-113` (`read_cargo_membership`) already handles members-key-absence correctly: `workspace.get("members")` returns `None` naturally, which flows through `.and_then(parse_toml_string_array)` to `None`, meaning `CargoMembership.admits()` falls to `None =&gt; true` — admitting all non-excluded candidates, per AC-15.
+4. Added the integration test `ac15_workspace_table_with_exclude_only_and_no_members_key_admits_non_excluded` to `crates/callisto-graph/src/locate/ignore_walk.rs` (line 486). Ran it — it passed immediately (no red step), matching the plan's honest characterization.
+5. **Adversarially verified non-vacuity** (since no red step occurred): temporarily mutated `membership.rs` so members-absent fell back to an empty (excludes-everything) list instead of `None`, reran the test, confirmed it failed (`non-excluded crate must appear, got: []`), then restored the correct code and reconfirmed green.
+6. Ran `cargo fmt -p callisto-graph`, `cargo clippy -p callisto-graph --all-targets -- -D warnings` (clean), and the full `cargo test -p callisto-graph --lib` (282 passed, 0 failed).
+7. Committed as `1e0dc69` — commit hook's format-check passed on first try, no amend needed.
+
+No implementation code changed — only the test file.
+
+```json
+{
+  "task_id": "TASK-11",
+  "status": "done",
+  "steps_completed": [
+    "verified TASK-05..TASK-10 present and tree clean",
+    "read AC-15 exact text from spec file on disk",
+    "inspected read_cargo_membership implementation to confirm members-absent already falls back to admit-all via None",
+    "wrote integration test ac15_workspace_table_with_exclude_only_and_no_members_key_admits_non_excluded in ignore_walk.rs",
+    "ran test, confirmed green immediately (honest non-red step)",
+    "adversarially mutated members-absent fallback to excludes-everything, confirmed test then failed, restored correct code",
+    "ran cargo fmt, cargo clippy -D warnings (clean), full cargo test -p callisto-graph --lib (282 passed)",
+    "committed 1e0dc69"
+  ],
+  "test_result": "pass",
+  "commit_sha": "1e0dc69",
+  "concerns": null,
+  "criteria_evidence": [
+    {
+      "criterion_id": "AC-15",
+      "test_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs",
+      "test_line": 486,
+      "implementation_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs",
+      "implementation_line": 83
+    }
+  ],
+  "reasoning": "Plan and TASK-03e's note both correctly predicted no red step: workspace.get(\"members\") on an absent key naturally yields None via toml_edit's API, and .and_then(parse_toml_string_array) on None is None without panicking (this was already true since TASK-03d). Unit-level test for this exact fallback (read_cargo_membership_honors_exclude_when_no_members_key_present, membership.rs:201) predates this task via TASK-03e; TASK-05 wired cargo_membership.admits() into IgnoreWalkLocator::projects(). This task's job was purely to add the integration-level regression-proof at the ignore_walk.rs/IgnoreWalkLocator level, which I did, verified green, and adversarially confirmed non-vacuous by breaking then restoring the underlying fallback."
+}
+```</result>
+<usage><subagent_tokens>83977</subagent_tokens><tool_uses>22</tool_uses><duration_ms>403786</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ad3a6e302d644d82d</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/ad3a6e302d644d82d.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement TASK-12 (AC-12 regression test)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>The consolidated regression test proves AC-12 by exercising the implementation at `crates/callisto-graph/src/locate/ignore_walk.rs:39` (`ProjectLocator::projects()`, which calls `membership::read_cargo_membership` at line 41 and `CargoMembership::admits` in `crates/callisto-graph/src/locate/membership.rs:43`).
+
+```json
+{
+  "task_id": "TASK-12",
+  "status": "done",
+  "steps_completed": [
+    "Confirmed all 7 prerequisite commits (0971005, d812cac, 8c6de26, 498f27c, 58ae93d, d5d659b, 1e0dc69) present and git tree clean",
+    "Read AC-12 exact spec text from .claude/specs/SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json",
+    "Discovered spec text requires an additional 7th fixture block (AC-07 exclude=[\".\"] exemption case) not present in the plan's failing_test code, and added it",
+    "Wrote consolidated regression test ac12_cargo_workspace_membership_regression_group with all 7 fixture blocks",
+    "Ran test: passed immediately (no red step), consistent with TASK-07..11 precedent",
+    "Adversarially verified non-vacuousness: broke CargoMembership::admits to always return true, confirmed test failed at the crates/scratch-example exclusion assertion, then restored original code and confirmed green again",
+    "Ran cargo fmt -p callisto-graph (no changes needed)",
+    "Ran cargo clippy -p callisto-graph --all-targets -- -D warnings (clean)",
+    "Ran full cargo test -p callisto-graph --lib suite: 283 passed, 0 failed",
+    "Committed as 37fcada"
+  ],
+  "test_result": "pass",
+  "commit_sha": "37fcada",
+  "concerns": "The plan's failing_test code for TASK-12 only had 6 fixture blocks; it omitted the 7th fixture the spec text explicitly describes ('a further separate workspace root Cargo.toml with ... exclude = [\".\"]' asserting AC-07's exclude-exemption claim). I added this 7th block since the spec is the authority per instructions, not the plan's paraphrase. No implementation change was needed — the behavior was already covered by the pre-existing ac07_includes_root_package_as_implicit_member_even_when_exclude_would_match_it test and CargoMembership::admits's hybrid_root exemption logic.",
+  "criteria_evidence": [
+    {
+      "criterion_id": "AC-12",
+      "test_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs",
+      "test_line": 526,
+      "implementation_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs",
+      "implementation_line": 43
+    }
+  ],
+  "reasoning": "Task was a regression-proof consolidation task requiring no new implementation logic, only assembly of already-proven fixtures into one test function. The one deviation from the plan's literal code was adding the missing 7th fixture (AC-07 exclude=['.'] case) because the spec's AC-12 text explicitly names it as part of the consolidated group, and the plan under-delivered relative to the spec. Adversarial mutation of CargoMembership::admits confirmed the test is not vacuous — it fails when the exclude logic is broken."
+}
+```
+
+Files touched:
+- `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs` (test added, lines 519–657, function starts at line 526)
+- No implementation files modified — `crates/callisto-graph/src/locate/membership.rs` was temporarily mutated for adversarial verification and restored to its original committed state (confirmed via `git status` showing only `ignore_walk.rs` changed).</result>
+<usage><subagent_tokens>67068</subagent_tokens><tool_uses>21</tool_uses><duration_ms>397998</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a7a7fc331bfeafd71</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a7a7fc331bfeafd71.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement TASK-13 (AC-04 regression test)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Commit succeeded: `d465ede`.
+
+## Summary
+
+**TASK-13** completed: "Regression-proof: AC-04 (pnpm-workspace.yaml drives npm filtering when no workspaces field)"
+
+- Confirmed all 8 prior commits (0971005..37fcada) present on `ignore_walk.rs` and tree was clean before starting.
+- Read AC-04's exact text from `/Users/gabe/Projects/callisto/.claude/specs/SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json` on disk (not the plan's paraphrase) — matched the plan's fixture (pnpm-workspace.yaml with `packages/*`, `packages/kept` matching, `tools/outside` not matching, no root workspaces field).
+- Added `ac04_pnpm_workspace_yaml_governs_npm_membership_when_no_workspaces_field` at `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs:367`, following the file's established `Path::new(...)` comparison style to avoid `clippy::cmp_owned`.
+- Ran the test first: it passed immediately (no red step), matching the plan's prediction that this is a genuine regression-proof already implemented by TASK-04b/TASK-06.
+- Adversarially verified non-vacuousness: temporarily forced `read_pnpm_packages` in `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs:273` to always return `None`, reran the test, confirmed it failed with a clear assertion message (`tools/outside` was wrongly discovered), then restored the original implementation.
+- Full suite: `cargo test -p callisto-graph --lib` → 284 passed, 0 failed. `cargo clippy -p callisto-graph --all-targets -- -D warnings` clean.
+- Committed only `ignore_walk.rs` (no implementation change needed) as `d465ede`.
+
+```json
+{
+  "task_id": "TASK-13",
+  "status": "done",
+  "steps_completed": [
+    "verified 8 prior commits present and tree clean",
+    "read AC-04 exact criterion text from spec file on disk",
+    "wrote test ac04_pnpm_workspace_yaml_governs_npm_membership_when_no_workspaces_field",
+    "ran test: passed immediately (no red step, consistent with regression-proof pattern)",
+    "adversarial vacuity check: broke read_pnpm_packages to return None, confirmed test fails, restored",
+    "ran full cargo test -p callisto-graph --lib: 284 passed",
+    "ran cargo fmt -p callisto-graph and cargo clippy -p callisto-graph --all-targets -- -D warnings: clean",
+    "committed"
+  ],
+  "test_result": "pass",
+  "commit_sha": "d465ede",
+  "criteria_evidence": [
+    {
+      "criterion_id": "AC-04",
+      "test_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs",
+      "test_line": 367,
+      "implementation_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs",
+      "implementation_line": 255
+    }
+  ],
+  "concerns": null,
+  "reasoning": "No implementation change was needed since TASK-04b/TASK-06 already implemented the pnpm-workspace.yaml precedence path and wired it into IgnoreWalkLocator. Verified this honestly via an adversarial break-then-restore of read_pnpm_packages rather than assuming the plan's non-red claim was correct."
+}
+```</result>
+<usage><subagent_tokens>83525</subagent_tokens><tool_uses>23</tool_uses><duration_ms>346742</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a71f86b566de9a737</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a71f86b566de9a737.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement TASK-14 (AC-06 regression test)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>The implementation logic proving AC-06 is `NpmMembership::admits` at `crates/callisto-graph/src/locate/membership.rs:230-238` (specifically the `None =&gt; true` arm at line 235), invoked from `ignore_walk.rs:106`.
+
+## Summary
+
+**task_id**: TASK-14
+**status**: done
+**commit_sha**: 1cf07b4
+
+**Steps completed**:
+1. Verified prerequisite state: `git log` confirmed all 9 prior commits (0971005 through d465ede) present on `crates/callisto-graph/src/locate/ignore_walk.rs`; `git status` confirmed clean tree.
+2. Read TASK-14 from the plan file — plan's fixture only asserted `packages/child` was admitted, not the root package.json.
+3. Read AC-06's exact text from `.claude/specs/SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json`: "every Npm candidate directory discovered by the walk is included" — this is broader than the plan's single-assertion fixture. Compared against AC-05's Cargo analog test (`ac05_admits_all_cargo_candidates_when_root_has_no_workspace_table`), which asserts both root `.` and `crates/child` are admitted. Corrected the plan's under-delivered fixture by adding an assertion that the root package (`.`) is also admitted as Npm, matching the spec's "every candidate" wording.
+4. Wrote the test at `crates/callisto-graph/src/locate/ignore_walk.rs:570`.
+5. Ran the test — it passed immediately with no implementation change (consistent with the TASK-07..13 "regression-proof" pattern; behavior already existed from TASK-06's wiring).
+6. Adversarially verified non-vacuousness: temporarily changed `NpmMembership::admits`'s `None =&gt; true` arm to `None =&gt; false` in `membership.rs`, reran the test, confirmed it failed exactly as expected (root admitted, child rejected), then restored the original code.
+7. Ran `cargo fmt -p callisto-graph`, `cargo clippy -p callisto-graph --all-targets -- -D warnings` (clean), and the full `cargo test -p callisto-graph --lib` suite (285 passed, 0 failed).
+8. Committed with message `test(graph): pin AC-06 no-npm-markers admits-all behavior`.
+
+**test_result**: pass
+**concerns**: None. No implementation change was needed — behavior already correct from TASK-06's membership wiring — consistent with the established regression-proof pattern for this stretch of the plan.
+
+**criteria_evidence**:
+```json
+[
+  {
+    "criterion_id": "AC-06",
+    "test_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs",
+    "test_line": 570,
+    "implementation_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs",
+    "implementation_line": 230
+  }
+]
+```</result>
+<usage><subagent_tokens>57694</subagent_tokens><tool_uses>19</tool_uses><duration_ms>323772</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a95ba6a077e1e4504</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a95ba6a077e1e4504.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement TASK-15 (AC-06b regression test)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Committed successfully at `134465b`.
+
+## Summary
+
+**TASK-15** — "Regression-proof: AC-06b (package.json file entirely absent → npm no-filter)"
+
+- Verified baseline: all 10 prior commits (0971005..1cf07b4) present on the branch, `git status` clean before starting.
+- Read AC-06b's exact criterion text from `/Users/gabe/Projects/callisto/.claude/specs/SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json` (line 72) — it matched the plan's fixture exactly (root has no package.json at all, no pnpm-workspace.yaml anywhere, `packages/kept/package.json` with a `"name"` field must be admitted as `Ecosystem::Npm`). No gap between plan fixture and spec text this time.
+- Added test `ac06b_admits_npm_candidates_when_root_has_no_package_json_file_at_all` in `crates/callisto-graph/src/locate/ignore_walk.rs` (lines 607–624 after `cargo fmt`).
+- Ran it: passed immediately, no red step — consistent with the TASK-07..14 "regression-proof" pattern (the absent-file fallback path was already implemented in TASK-04a/wired in TASK-06).
+- Adversarially verified the test is not vacuous: temporarily mutated `NpmMembership::admits` in `crates/callisto-graph/src/locate/membership.rs` (`None =&gt; true` → `None =&gt; false`), reran — test failed as expected (`AC-06b: packages/kept must be admitted as Npm, got: []`), then restored the original code.
+- Full `cargo test -p callisto-graph --lib`: 286 passed, 0 failed.
+- `cargo fmt -p callisto-graph` and `cargo clippy -p callisto-graph --all-targets -- -D warnings`: clean.
+- Committed as `134465b`.
+
+```json
+{
+  "task_id": "TASK-15",
+  "status": "done",
+  "steps_completed": [
+    "verified_baseline_commits_and_clean_tree",
+    "read_spec_criterion_AC-06b_from_disk",
+    "wrote_test",
+    "confirmed_test_passes_without_red_step",
+    "adversarially_verified_non_vacuous_via_temporary_mutation",
+    "restored_mutation",
+    "ran_full_lib_test_suite",
+    "ran_fmt_and_clippy",
+    "committed"
+  ],
+  "test_result": "pass",
+  "commit_sha": "134465b",
+  "criteria_evidence": [
+    {
+      "criterion_id": "AC-06b",
+      "test_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs",
+      "test_line": 607,
+      "implementation_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs",
+      "implementation_line": 230
+    }
+  ],
+  "concerns": null,
+  "reasoning": "No red step occurred, matching plan expectation and TASK-07..14 precedent; adversarial mutation of NpmMembership::admits confirmed the test genuinely exercises the None-globs fallback path (admits() at membership.rs:230, read_npm_membership at membership.rs:255). Spec text for AC-06b matched plan's fixture exactly, no additional assertions needed."
+}
+```</result>
+<usage><subagent_tokens>80952</subagent_tokens><tool_uses>21</tool_uses><duration_ms>386217</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a8c8d3e09e5153e02</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a8c8d3e09e5153e02.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement TASK-16 (AC-08 regression test)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Commit succeeded, pre-commit hook passed. Task complete.
+
+## Summary
+
+TASK-16 executed and committed as `c98ae29`.
+
+**Findings:** As predicted by the plan (matching the TASK-07 through TASK-15 pattern), this was a genuine no-red-step regression-proof — the pnpm-over-npm-workspaces precedence logic was already fully implemented in `read_npm_membership` (membership.rs, wired via TASK-04b/TASK-06). I did not take that on faith: I temporarily neutered the precedence branch in `crates/callisto-graph/src/locate/membership.rs` (replacing `if let Some(packages) = read_pnpm_packages(root)` with a dead branch), reran the new test, confirmed it failed with `tools/x` missing from discovered projects, then restored the original code (verified via `git diff` showing zero net change to membership.rs).
+
+Spec AC-08 text was read directly from `.claude/specs/SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json` and matches the plan's fixture and assertions essentially verbatim — no gaps found this time (unlike TASK-12/TASK-14).
+
+One deviation from the plan's draft: the plan's `failing_test.code` used `p.path == PathBuf::from("tools/x")`, which would trip the `clippy::cmp_owned` lint flagged in the task notes. I used `Path::new("tools/x")` instead, consistent with every other test in this file (e.g. `ac04`, `ac06b`).
+
+```json
+{
+  "task_id": "TASK-16",
+  "status": "done",
+  "steps_completed": [
+    "read TASK-16 from plan-track3a-v2.json",
+    "read AC-08 acceptance criterion text from SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json",
+    "wrote ac08_pnpm_workspace_yaml_takes_precedence_over_package_json_workspaces_field test in ignore_walk.rs",
+    "ran test: passed immediately with no implementation change",
+    "adversarially disabled pnpm-precedence branch in membership.rs, reran test, confirmed it failed",
+    "restored membership.rs to original (verified via git diff showing no changes)",
+    "ran full callisto-graph test suite (287 passed)",
+    "ran cargo fmt -p callisto-graph",
+    "ran cargo clippy -p callisto-graph --all-targets -- -D warnings (clean)",
+    "committed"
+  ],
+  "test_result": "pass",
+  "commit_sha": "c98ae29",
+  "criteria_evidence": [
+    {
+      "criterion_id": "AC-08",
+      "test_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs",
+      "test_line": 638,
+      "implementation_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs",
+      "implementation_line": 257
+    }
+  ],
+  "concerns": null
+}
+```</result>
+<usage><subagent_tokens>80213</subagent_tokens><tool_uses>24</tool_uses><duration_ms>385638</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ae132688a124c912f</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/ae132688a124c912f.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement TASK-17 (AC-10b regression test)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Committed successfully as `98cb1e2`. Task complete.
+
+## Summary
+
+**TASK-17: Regression-proof AC-10b (pnpm empty packages list excludes everything)**
+
+- Confirmed pre-state: all 12 prior commits (0971005…c98ae29) present on `crates/callisto-graph/src/locate/ignore_walk.rs`, tree clean before starting.
+- Read AC-10b's exact text from `.claude/specs/SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json` on disk. The spec text includes an explicit hybrid-root exemption clause the plan's single fixture did not cover, so I added a second test to fully prove the criterion as written, per the established pattern from TASK-12/14.
+- Wrote two tests in `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs`:
+  - `ac10b_pnpm_empty_packages_list_admits_zero_npm_entries` (line 817) — matches the plan's fixture exactly.
+  - `ac10b_pnpm_empty_packages_list_still_admits_hybrid_root` (line 842) — new, covers the spec's hybrid-root carve-out that the plan's fixture omitted.
+- Both passed immediately (no red step) against the existing implementation — same pattern as TASK-07 through TASK-16.
+- Adversarially verified non-vacuousness by temporarily mutating `NpmMembership::admits` in `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs`:
+  - Removed the `hybrid_root` short-circuit → the hybrid-root test failed as expected.
+  - Made the empty-globset case fall through to admit-all → both tests failed as expected.
+  - Restored the original code (verified `git diff` on membership.rs was empty afterward).
+- Full `callisto-graph` lib suite: 289 passed, 0 failed. `cargo fmt` and `cargo clippy -p callisto-graph --all-targets -- -D warnings` both clean.
+- Committed as `98cb1e2`.
+
+```json
+{
+  "task_id": "TASK-17",
+  "status": "done",
+  "steps_completed": [
+    "confirmed prior 12 commits present and tree clean",
+    "read AC-10b acceptance criterion text directly from spec file on disk",
+    "identified plan fixture omitted spec's hybrid-root exemption clause and added a second test to cover it",
+    "wrote both tests (red-step check: passed immediately, consistent with prior regression-proof tasks in this range)",
+    "adversarially verified non-vacuousness by breaking hybrid_root short-circuit and empty-globset behavior in membership.rs, confirming each test failed appropriately, then restored original code",
+    "ran full callisto-graph lib test suite (289 passed)",
+    "ran cargo fmt -p callisto-graph and cargo clippy -p callisto-graph --all-targets -- -D warnings (clean)",
+    "committed"
+  ],
+  "test_result": "pass",
+  "commit_sha": "98cb1e2",
+  "criteria_evidence": [
+    {
+      "criterion_id": "AC-10b",
+      "test_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs",
+      "test_line": 817,
+      "implementation_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs",
+      "implementation_line": 230
+    }
+  ],
+  "concerns": "No genuine red step occurred (consistent with TASK-07 through TASK-16 in this plan); non-vacuousness was verified via adversarial mutation instead, per the task's own instructions. The plan's original fixture only covered the zero-npm-entries half of AC-10b; I added a second test (ac10b_pnpm_empty_packages_list_still_admits_hybrid_root, line 842) to cover the hybrid-root exemption clause explicitly named in the spec's criterion text, which the plan's fixture omitted.",
+  "reasoning": "Spec AC-10b text explicitly carves out an AC-17-style hybrid-root exemption from its zero-entries claim. The plan's single fixture (no root package.json) never exercises that carve-out, so a literal reading of the plan alone would under-prove the criterion. Added a second fixture with a root package.json declaring 'name' to prove the exemption holds. Verified both tests are meaningful via targeted mutation of NpmMembership::admits before committing."
+}
+```</result>
+<usage><subagent_tokens>85136</subagent_tokens><tool_uses>23</tool_uses><duration_ms>505568</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a791529011607936b</task-id>
+<tool-use-id>toolu_013o82NoEc53KvoSzg9nRwbH</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a791529011607936b.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement TASK-18 (AC-11c regression test)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Committed successfully as `1590c3b`.
+
+## Summary
+
+**TASK-18** — Regression-proof: AC-11c (malformed pnpm-workspace.yaml does not count as present for AC-08 precedence)
+
+Read the exact AC-11c criterion text from `/Users/gabe/Projects/callisto/.claude/specs/SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json` before writing the test — it matched the plan's fixture (package.json with `workspaces` + sibling malformed `pnpm-workspace.yaml` → `packages/y` must still be discovered via the package.json fallback). No fixture gaps found this time; the plan's test faithfully covers the spec text (including the AC-11b sibling note about wrong-shape `packages:` key, which is separately covered by other tasks).
+
+Confirmed the baseline: `git log --oneline -14` showed all 14 commits (0971005..98cb1e2) present, tree clean.
+
+Ran the test against current code: it passed immediately (no red step) — matching the plan's honest "REGRESSION-PROOF" note, since `read_pnpm_packages` already used `.ok()?` on `YamlLoader::load_from_str` (hardened in the prior TASK-04c/TASK-06 work).
+
+Per the established pattern, adversarially verified the test isn't vacuous: temporarily mutated `read_pnpm_packages` in `crates/callisto-graph/src/locate/membership.rs` to treat YAML parse failure as "present but empty" instead of "absent" — confirmed the new test then failed with a clear assertion message — then reverted the mutation exactly (verified `git status` showed membership.rs clean, no diff).
+
+Ran full suite (`cargo test -p callisto-graph --lib`): 290 passed, 0 failed. Ran `cargo fmt -p callisto-graph` and `cargo clippy -p callisto-graph --all-targets -- -D warnings`: clean.
+
+Committed only `crates/callisto-graph/src/locate/ignore_walk.rs` (the file this task is scoped to modify).
+
+```json
+{
+  "task_id": "TASK-18",
+  "status": "done",
+  "steps_completed": [
+    "verified prior 14 commits present and tree clean",
+    "read AC-11c criterion text from spec file on disk",
+    "wrote test ac11c_malformed_pnpm_yaml_does_not_count_as_present_for_precedence",
+    "ran test: passed immediately (honest non-red, matches plan note)",
+    "adversarial verification: mutated read_pnpm_packages to treat malformed YAML as present-but-empty, confirmed test failed",
+    "reverted mutation, confirmed membership.rs clean",
+    "ran full callisto-graph test suite: 290 passed",
+    "ran cargo fmt and cargo clippy -D warnings: clean",
+    "committed ignore_walk.rs"
+  ],
+  "test_result": "pass",
+  "commit_sha": "1590c3b",
+  "criteria_evidence": [
+    {
+      "criterion_id": "AC-11c",
+      "test_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs",
+      "test_line": 875,
+      "implementation_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs",
+      "implementation_line": 273
+    }
+  ],
+  "concerns": null,
+  "reasoning": "Regression-proof task as predicted by the plan; no implementation change needed since TASK-04c/TASK-06 already hardened read_pnpm_packages's YAML-parse-error fallback with .ok()?. Adversarial mutation confirmed the test genuinely exercises that fallback path rather than being vacuous."
+}
+```</result>
+<usage><subagent_tokens>84669</subagent_tokens><tool_uses>24</tool_uses><duration_ms>339995</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a77587afd6786a5dd</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a77587afd6786a5dd.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement TASK-19 (AC-13 consolidated regression test)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Committed successfully at `dd90a76`, hooks passed cleanly.
+
+## Summary
+
+**task_id:** TASK-19
+**status:** done
+**test_result:** pass
+**commit_sha:** dd90a76
+
+**Steps completed:**
+1. Verified all 14 prior commits (0971005–1590c3b) present on `crates/callisto-graph/src/locate/ignore_walk.rs`, tree clean.
+2. Read AC-13's exact text (and its constituent AC-03/04/06/06b/08/10/10b/10d/11c/16/16b/17) from `/Users/gabe/Projects/callisto/.claude/specs/SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json` on disk.
+3. Cross-checked the plan's `failing_test` code against AC-13's spec text — confirmed all 12 required blocks are present (unlike TASK-12, no fixture was missing here; the note field's claim that AC-10 was already added by the amendment checked out).
+4. Added the test `ac13_npm_pnpm_workspace_membership_regression_group` at `crates/callisto-graph/src/locate/ignore_walk.rs:905`.
+5. Ran the test — passed immediately (regression-proof pattern, no red step, consistent with TASK-07–18).
+6. Adversarially verified it isn't vacuous: temporarily broke the hybrid-root exemption in `NpmMembership::admits` (`crates/callisto-graph/src/locate/membership.rs:230-232`, appended `&amp;&amp; false`), reran — test correctly failed on the AC-16 assertion (`ignore_walk.rs:1039`). Restored the code, reran — green again.
+7. Fixed `clippy::cmp_owned` violations (`PathBuf::from(...)` → `Path::new(...)` on RHS of `==`) per the known gotcha for this plan.
+8. Ran `cargo fmt -p callisto-graph`, `cargo clippy -p callisto-graph --all-targets -- -D warnings` (clean), and the full `cargo test -p callisto-graph --lib` (291 passed, 0 failed).
+9. Committed with message matching the plan's `commit_message`.
+
+**criteria_evidence:**
+- AC-13: test_file `crates/callisto-graph/src/locate/ignore_walk.rs`, test_line 905; implementation_file `crates/callisto-graph/src/locate/ignore_walk.rs`, implementation_line 39 (`IgnoreWalkLocator::projects`, which wires `NpmMembership::admits` at `crates/callisto-graph/src/locate/membership.rs:230`).
+
+**concerns:** None. This task required no implementation change (behavior already landed in prior tasks); the adversarial mutation test confirms the regression group is a genuine, non-vacuous safety net.</result>
+<usage><subagent_tokens>69880</subagent_tokens><tool_uses>22</tool_uses><duration_ms>485426</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>af76bbaee0c7274b7</task-id>
+<tool-use-id>toolu_017R4cGn4syfvc9ts1oJyMDB</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/af76bbaee0c7274b7.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement TASK-20 (AC-09, AC-09d regression tests)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Clean tree, all 294 tests pass.
+
+## Summary
+
+**task_id:** TASK-20
+**status:** done
+**test_result:** pass
+**commit_sha:** ac02058
+
+**steps_completed:**
+- Confirmed baseline: 15 prior commits (0971005..dd90a76) present on `crates/callisto-graph/src/locate/ignore_walk.rs`, tree clean, 291 tests passing at start
+- Read AC-09 and AC-09d exact criterion text directly from `.claude/specs/SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json`
+- Discovered AC-09's text has two clauses — bare-string members AND a members array with a non-string entry (`members = ["crates/*", 42]`) — but the plan's TASK-20 fixture only covered the bare-string clause. Added the missing non-string-entry integration fixture to close that gap.
+- Wrote 3 tests in `crates/callisto-graph/src/locate/ignore_walk.rs`: `ac09_malformed_cargo_members_bare_string_falls_back_to_absent_filter`, `ac09_malformed_cargo_members_non_string_entry_falls_back_to_absent_filter` (new, not in plan), `ac09d_malformed_root_cargo_toml_syntax_falls_back_to_absent_cargo_filter`
+- Ran the new tests: all passed immediately, no red step (matches TASK-07..19 "regression-proof" pattern — behavior already implemented in TASK-03b/03d, wired in TASK-05)
+- Adversarially verified non-vacuousness: temporarily forced panics in `membership.rs`'s TOML-parse-Err fallback (line 90) and in the members-extraction safe chain (lines 100-103), reran the specific tests, confirmed all 3 failed with the expected panics, then restored the original code
+- Ran full suite (294 passed), `cargo fmt`, `cargo clippy --all-targets -- -D warnings` (clean)
+- Committed as `ac02058`; pre-commit format-check hook passed
+
+**criteria_evidence:**
+```json
+[
+  {
+    "criterion_id": "AC-09",
+    "test_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs",
+    "test_line": 1155,
+    "implementation_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs",
+    "implementation_line": 100
+  },
+  {
+    "criterion_id": "AC-09d",
+    "test_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs",
+    "test_line": 1201,
+    "implementation_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs",
+    "implementation_line": 88
+  }
+]
+```
+(AC-09's second clause — non-string array entry — is additionally proven by `ac09_malformed_cargo_members_non_string_entry_falls_back_to_absent_filter` at ignore_walk.rs:1178, hitting the same `parse_toml_string_array` call at membership.rs:100-102.)
+
+**concerns:** None. No precision_tests were supplied for this task. No spec contradiction found — both AC-09 and AC-09d's claimed fallback behavior matched actual observed system behavior exactly.</result>
+<usage><subagent_tokens>86871</subagent_tokens><tool_uses>27</tool_uses><duration_ms>445013</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a237b0df021288e55</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a237b0df021288e55.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement TASK-21 (AC-09b regression test)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>```json
+{
+  "task_id": "TASK-21",
+  "status": "done",
+  "steps_completed": [
+    "Verified 16 prior commits present on ignore_walk.rs, tree clean",
+    "Read AC-09b exact text from SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json",
+    "Noted plan fixture only covered bare-string exclude case; spec also requires non-string-entry exclude array case, so added a second test for that",
+    "Added both tests to ignore_walk.rs test module",
+    "Ran cargo test -p callisto-graph --lib ac09b: both passed immediately (no red step, consistent with prior regression-proof tasks)",
+    "Adversarially broke the exclude fallback in membership.rs (fell back to a non-empty globset instead of GlobSet::empty), confirmed both new tests failed",
+    "Restored membership.rs to original, confirmed full suite green (296 passed)",
+    "Ran cargo fmt -p callisto-graph and cargo clippy -p callisto-graph --all-targets -- -D warnings, both clean",
+    "Committed"
+  ],
+  "test_result": "pass",
+  "commit_sha": "686ab58",
+  "criteria_evidence": [
+    {
+      "criterion_id": "AC-09b",
+      "test_file": "crates/callisto-graph/src/locate/ignore_walk.rs",
+      "test_line": 1218,
+      "implementation_file": "crates/callisto-graph/src/locate/membership.rs",
+      "implementation_line": 104
+    }
+  ],
+  "concerns": "This task's plan fixture only tested the bare-string exclude case. AC-09b's exact spec text (last sentence) also requires 'an exclude array containing one or more non-string entries' to be treated identically. Added ac09b_malformed_cargo_exclude_non_string_entry_falls_back_to_excluding_nothing to close that gap in the ignore_walk.rs-level integration coverage (the membership.rs unit-level tests already only covered the bare-string variant too, at both layers). Underlying implementation required no changes — the fallback logic in membership.rs's read_cargo_membership (lines 104-108) already handled both malformed shapes correctly via parse_toml_string_array returning None and unwrap_or_else(GlobSet::empty).",
+  "reasoning": "Confirmed via git log that exactly 16 commits (d812cac..ac02058) touch ignore_walk.rs as part of TASK-05..TASK-20, plus one unrelated pre-existing commit (ad019ea). Tree was clean, ahead of origin only. Read AC-09b from the spec file directly rather than trusting plan prose. The plan's failing_test only exercised the bare-string exclude shape; per the recurring pattern noted for TASK-12/14/17/20, added the missing non-string-entries exclude array variant explicitly required by the spec's final sentence. Both tests passed with zero implementation changes needed, consistent with the established regression-proof pattern for TASK-07 through TASK-20. Verified non-vacuousness by temporarily breaking the exclude-fallback unwrap_or_else in membership.rs and confirming both tests failed with assertion panics, then restored it exactly to its original state (git diff shows zero net change to membership.rs)."
+}
+```
+
+Summary: TASK-21 is done. Added two tests to `crates/callisto-graph/src/locate/ignore_walk.rs` — `ac09b_malformed_cargo_exclude_bare_string_falls_back_to_excluding_nothing` (line 1218, matching the plan) and `ac09b_malformed_cargo_exclude_non_string_entry_falls_back_to_excluding_nothing` (line 1259, added because the spec's AC-09b text requires it but the plan's fixture omitted it). No implementation change was needed — `read_cargo_membership` in `crates/callisto-graph/src/locate/membership.rs` (line 104) already falls back correctly for both malformed shapes. Verified non-vacuous by temporarily breaking the fallback and confirming both tests failed, then restored. Full suite (296 tests), fmt, and clippy all clean. Committed as `686ab58`.</result>
+<usage><subagent_tokens>57460</subagent_tokens><tool_uses>19</tool_uses><duration_ms>346404</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a6a7d54c63f47f43c</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a6a7d54c63f47f43c.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement TASK-22 (AC-09f, AC-09i regression tests)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>```json
+{
+  "task_id": "TASK-22",
+  "status": "done",
+  "steps_completed": [
+    "verified 17 prior commits present on ignore_walk.rs and tree clean",
+    "read AC-09f and AC-09i exact criterion text from SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json on disk",
+    "wrote ac09f_invalid_glob_in_cargo_members_is_skipped_without_disabling_sibling_entries and ac09i_invalid_glob_in_cargo_exclude_is_skipped_without_disabling_sibling_entries in crates/callisto-graph/src/locate/ignore_walk.rs",
+    "ran both tests: passed immediately, no red step (consistent with prior regression-proof tasks)",
+    "adversarially verified non-vacuity: temporarily mutated build_globset in membership.rs to disable the whole globset on any invalid entry, reran the two tests, confirmed both failed with the expected assertion panics",
+    "restored membership.rs to original state, confirmed git diff clean, reran ac09 tests green",
+    "ran cargo fmt -p callisto-graph and cargo clippy -p callisto-graph --all-targets -- -D warnings: clean",
+    "ran full cargo test -p callisto-graph --lib: 298 passed, 0 failed",
+    "committed"
+  ],
+  "test_result": "pass",
+  "commit_sha": "68af77fb4eab5edbe61669800e1f6c78a6b9e59d",
+  "criteria_evidence": [
+    {
+      "criterion_id": "AC-09f",
+      "test_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs",
+      "test_line": 1300,
+      "implementation_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs",
+      "implementation_line": 12
+    },
+    {
+      "criterion_id": "AC-09i",
+      "test_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs",
+      "test_line": 1323,
+      "implementation_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs",
+      "implementation_line": 12
+    }
+  ],
+  "concerns": null,
+  "reasoning": "Plan's fixture matched the spec's exact criterion text for both AC-09f and AC-09i (same fixture shapes: 'crates/kept-example' + 'crates/[unterminated' for members; 'crates/*' members with exclude=['crates/scratch-example','crates/[unterminated'] for exclude). No missing clauses found in the plan's version this time, unlike some prior tasks. Adapted PathBuf::from(...) in the plan's test code to Path::new(...) per this plan's established clippy::cmp_owned avoidance pattern. No implementation change was needed — build_globset's existing per-entry skip-on-compile-failure logic (crates/callisto-graph/src/locate/membership.rs:12-19) already satisfies both criteria, proven via mutation-based adversarial check rather than assumed."
+}
+```
+
+Summary: Task TASK-22 executed as a regression-proof task (no implementation change needed). Added two tests to `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs` (lines 1300 and 1323) proving AC-09f and AC-09i — both pass against the existing `build_globset` implementation in `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs` (line 12). Since there was no red step, I adversarially verified non-vacuity by temporarily breaking the per-entry skip logic in `build_globset` (making one invalid glob disable the whole globset instead of being skipped) — both new tests failed as expected, confirming they actually exercise the behavior — then restored the original code (verified via `git diff` showing no changes to membership.rs). Full test suite (298 tests), fmt, and clippy all clean. Committed as `68af77fb4eab5edbe61669800e1f6c78a6b9e59d`.</result>
+<usage><subagent_tokens>55372</subagent_tokens><tool_uses>21</tool_uses><duration_ms>342726</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a2fc05a5b6fba58d2</task-id>
+<tool-use-id>toolu_01DJLQbo1sqmMGHoDyb8QJtA</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a2fc05a5b6fba58d2.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement TASK-23 (AC-09c, AC-09e regression tests)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Tree is clean, commit `aef88d5` on `main`.
+
+## Summary
+
+**task_id**: TASK-23
+**status**: done
+**test_result**: pass (301/301 in `callisto-graph --lib`, clippy clean, fmt clean)
+**commit_sha**: aef88d5
+
+**steps_completed**:
+1. Confirmed baseline: 18 prior commits (0971005..68af77f) present on `ignore_walk.rs`, tree clean.
+2. Read AC-09c and AC-09e exact criterion text from `.claude/specs/SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json` (also AC-09/AC-09b/AC-09d for pattern comparison).
+3. Discovered the plan's fixture for AC-09c only covered the bare-string clause, omitting the non-string-array-entry clause the spec text explicitly requires ("The same treatment applies to a 'workspaces' array containing one or more non-string entries") — the same gap pattern flagged in prior tasks (TASK-12/14/17/20/21). Added the missing `ac09c_malformed_npm_workspaces_non_string_entry_falls_back_to_absent_filter` test alongside the plan's two supplied tests.
+4. Ran all three new tests — all passed immediately with no implementation change needed (matches the TASK-07..22 "regression-proof" pattern; underlying `read_npm_membership`/`read_package_json_workspaces` in `membership.rs` already `?`-chain-safely handles bare-string, non-string-entry, and JSON-syntax-invalid shapes, wired into `IgnoreWalkLocator::projects()` since TASK-06).
+5. Adversarially verified non-vacuousness: temporarily broke `read_package_json_workspaces` in `membership.rs` (defaulting malformed shapes to a matching-nothing globset instead of `None`/absent), confirmed all three tests failed, then restored the original file (verified zero `git diff` against HEAD afterward).
+6. Ran `cargo fmt -p callisto-graph` and `cargo clippy -p callisto-graph --all-targets -- -D warnings` (clean).
+7. Ran full `cargo test -p callisto-graph --lib` (301 passed, 0 failed).
+8. Committed as `aef88d5`.
+
+**criteria_evidence**:
+```json
+[
+  {
+    "criterion_id": "AC-09c",
+    "test_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs",
+    "test_line": 1355,
+    "implementation_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs",
+    "implementation_line": 288
+  },
+  {
+    "criterion_id": "AC-09e",
+    "test_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs",
+    "test_line": 1397,
+    "implementation_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs",
+    "implementation_line": 289
+  }
+]
+```
+(AC-09c's second clause — non-string-entry — is additionally proven by the test at ignore_walk.rs:1374, pointing to the same `membership.rs:288` implementation.)
+
+No implementation changes were required; no concerns or contradictions found. The only deviation from the plan was adding the missing non-string-entry integration test for AC-09c's second clause.</result>
+<usage><subagent_tokens>72933</subagent_tokens><tool_uses>28</tool_uses><duration_ms>445280</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ad87c0e7ad4067d0b</task-id>
+<tool-use-id>toolu_01Wv8WjcdzpNpc1Tpux7Pi9K</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/ad87c0e7ad4067d0b.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement TASK-24 (AC-09g regression test)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>The implementation for this criterion is the pre-existing `build_globset` function at membership.rs:12 (no new code was needed — verified adversarially to genuinely exercise this exact function).
+
+```json
+{
+  "task_id": "TASK-24",
+  "status": "done",
+  "steps_completed": [
+    "confirmed 19 prior commits present on ignore_walk.rs and tree clean before starting",
+    "read AC-09g exact acceptance criterion text from SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json on disk",
+    "confirmed plan's fixture matches spec text exactly (no missing clauses)",
+    "wrote failing_test code from plan into crates/callisto-graph/src/locate/ignore_walk.rs",
+    "ran the test: passed immediately with no implementation change (regression-proof pattern, consistent with TASK-07..TASK-23 precedent)",
+    "adversarially verified non-vacuousness: temporarily broke build_globset's per-entry skip logic in membership.rs (replaced if-let-Ok skip with .expect() that panics on compile failure), reran test, confirmed it failed with a panic pointing at the invalid glob entry",
+    "restored build_globset to original code",
+    "reran full test suite (302 tests) and cargo clippy -p callisto-graph --all-targets -- -D warnings: both clean",
+    "committed test-only change"
+  ],
+  "test_result": "pass",
+  "commit_sha": "2400039",
+  "criteria_evidence": [
+    {
+      "criterion_id": "AC-09g",
+      "test_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs",
+      "test_line": 1323,
+      "implementation_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs",
+      "implementation_line": 12
+    }
+  ],
+  "concerns": null,
+  "reasoning": "Task matched the established regression-proof pattern from TASK-07 through TASK-23: the plan's failing_test passed immediately with zero implementation change because build_globset's per-entry-skip-on-compile-failure behavior (membership.rs line 12-20) was already proven in isolation by an earlier task and wired through the npm branch by earlier tasks (0971005/d812cac wiring commits, both already on branch). Per the task instructions, I adversarially verified this wasn't a vacuous pass by breaking the skip logic (forcing .expect() instead of if-let-Ok) and confirming the test failed with a panic at the exact invalid-glob entry, then restored the original code exactly (git diff on membership.rs was empty after restore). No implementation changes were committed -- only the new test in ignore_walk.rs. Full suite (302 tests) and clippy -D warnings both clean before commit."
+}
+```</result>
+<usage><subagent_tokens>51064</subagent_tokens><tool_uses>17</tool_uses><duration_ms>319653</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ae944bf55249793fd</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/ae944bf55249793fd.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement TASK-25 (AC-09h regression test)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>```json
+{
+  "task_id": "TASK-25",
+  "status": "done",
+  "steps_completed": [
+    "verified 20 prior commits present on ignore_walk.rs and clean working tree",
+    "read AC-09h exact criterion text from .claude/specs/SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json (matches plan's fixture verbatim)",
+    "wrote ac09h_invalid_glob_in_pnpm_packages_is_skipped_without_disabling_sibling_entries test in ignore_walk.rs",
+    "ran test: passed immediately with no implementation change (as predicted, mirroring TASK-22/24 pattern)",
+    "adversarially verified non-vacuity: temporarily broke build_globset's per-entry skip in membership.rs (Ok(...) -&gt; expect(...) panic), reran test, confirmed it FAILED with a panic pointing at the invalid glob entry",
+    "restored membership.rs to original state, verified git diff clean on that file",
+    "ran cargo fmt -p callisto-graph, cargo test (green), cargo clippy --all-targets -D warnings (clean)",
+    "committed as 83fb272"
+  ],
+  "test_result": "pass",
+  "commit_sha": "83fb272",
+  "criteria_evidence": [
+    {
+      "criterion_id": "AC-09h",
+      "test_file": "crates/callisto-graph/src/locate/ignore_walk.rs",
+      "test_line": 1378,
+      "implementation_file": "crates/callisto-graph/src/locate/membership.rs",
+      "implementation_line": 12
+    }
+  ],
+  "concerns": null,
+  "reasoning": "No new implementation was needed since build_globset's per-entry skip-on-compile-failure logic (already proven in isolation and wired through the pnpm branch by earlier tasks in this plan) already covers this case identically to the npm/Cargo analogs. Confirmed the test is not vacuous by breaking the exact code path (build_globset in membership.rs) and observing the test fail with a panic, then restoring it cleanly."
+}
+```
+
+Summary: Added regression test `ac09h_invalid_glob_in_pnpm_packages_is_skipped_without_disabling_sibling_entries` at `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs:1378`, proving AC-09h against the existing `build_globset` implementation at `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs:12`. No implementation changes were needed — same regression-proof pattern as TASK-07 through TASK-24. Verified non-vacuity by temporarily breaking the per-entry skip logic (confirmed the test fails), then restored it before committing. Test passes, clippy and fmt clean, committed as `83fb272`.</result>
+<usage><subagent_tokens>55632</subagent_tokens><tool_uses>21</tool_uses><duration_ms>326940</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>aafb3eb617774e034</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/aafb3eb617774e034.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement TASK-26 (AC-10 regression test)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Committed cleanly as `24740e2`.
+
+## Summary
+
+**task_id:** TASK-26
+**status:** done
+**test_result:** pass
+**commit_sha:** 24740e2
+
+**steps_completed:**
+1. Verified all 21 prior commits present on `ignore_walk.rs`, tree clean.
+2. Read TASK-26 from the plan and AC-10 (plus AC-10b/AC-10c/AC-06/AC-16 for context) directly from `/Users/gabe/Projects/callisto/.claude/specs/SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json`.
+3. Found AC-10's exact text has two distinct halves the plan's single provided test didn't fully cover: (a) empty `workspaces: []` excludes everything except a hybrid root (AC-16 exemption), and (b) explicitly distinguished from an absent `workspaces` field (AC-06), not conflated with it.
+4. Wrote three standalone tests in `crates/callisto-graph/src/locate/ignore_walk.rs`, mirroring the established pnpm-analog split (`ac10b_...`):
+   - `ac10_empty_npm_workspaces_array_admits_zero_npm_entries` (line 633)
+   - `ac10_empty_npm_workspaces_array_still_admits_hybrid_root` (line 658)
+   - `ac10_empty_workspaces_array_distinguished_from_absent_workspaces_field` (line 695)
+5. Ran the tests — all passed immediately (no red step), matching the TASK-07 through TASK-25 regression-proof pattern (behavior already wired via `NpmMembership::admits`).
+6. Adversarially verified non-vacuousness: temporarily changed `NpmMembership::admits` in `crates/callisto-graph/src/locate/membership.rs` (line 230) to always return `true`; all three new tests failed as expected; reverted.
+7. Confirmed `membership.rs` returned to a clean diff (`git status` showed only `ignore_walk.rs` modified).
+8. Ran full suite: `cargo test -p callisto-graph --lib` → 306 passed, 0 failed.
+9. `cargo fmt -p callisto-graph` — no changes needed after formatting.
+10. `cargo clippy -p callisto-graph --all-targets -- -D warnings` — clean.
+11. Committed as `24740e2`.
+
+**criteria_evidence:**
+```json
+[
+  {
+    "criterion_id": "AC-10",
+    "test_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs",
+    "test_line": 633,
+    "implementation_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs",
+    "implementation_line": 230
+  }
+]
+```
+(Additional corroborating test lines: 658 for the hybrid-root exemption half, 695 for the distinguished-from-absent half; wiring call site is `ignore_walk.rs:106`.)
+
+**concerns:** None. No precision_tests were supplied for this task.</result>
+<usage><subagent_tokens>68722</subagent_tokens><tool_uses>25</tool_uses><duration_ms>409764</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a21d31ea63cdb4b30</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a21d31ea63cdb4b30.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement TASK-27 (AC-11 regression test)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Summary
+
+**TASK-27** (AC-11: malformed pnpm YAML, no package.json workspaces field present) — completed.
+
+Confirmed all 22 prior commits (0971005..24740e2) present and tree clean before starting.
+
+**Spec vs plan discrepancy found and corrected**: The plan's fixture omitted a root `package.json` entirely, but AC-11's exact spec text (read from `.claude/specs/SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json`) specifies "a root package.json with no 'workspaces' field" — i.e., the file must exist but lack the field. I verified in `membership.rs` that file-absent and field-absent are behaviorally equivalent (both fall through to `None` via `?`-chains), but wrote the test to match the spec's literal scenario rather than the plan's looser one, adding `std::fs::write(root.join("package.json"), r#"{"name":"root"}"#)`.
+
+As predicted by the "regression-proof" pattern (matching TASK-07 through TASK-26), the test passed immediately with no implementation change needed — behavior already existed. Per the established adversarial-verification precedent, I temporarily broke `read_pnpm_packages` in `crates/callisto-graph/src/locate/membership.rs` (made malformed YAML return `Some(Vec::new())` instead of falling through to `None`), confirmed the test failed with a clear assertion panic, then restored the original code (verified via `git diff --stat` showing zero diff on membership.rs).
+
+Ran `cargo fmt -p callisto-graph`, full `cargo test -p callisto-graph --lib` (307 passed), and `cargo clippy -p callisto-graph --all-targets -- -D warnings` (clean) before committing.
+
+```json
+{
+  "task_id": "TASK-27",
+  "status": "done",
+  "steps_completed": [
+    "verified 22 prior commits present and tree clean",
+    "read AC-11 exact criterion text from spec file on disk",
+    "found and fixed plan fixture gap (missing root package.json without workspaces field)",
+    "wrote test, ran it, confirmed pass (no red step, as expected for regression-proof)",
+    "adversarially broke membership.rs read_pnpm_packages, confirmed test fails",
+    "restored membership.rs to original (zero diff)",
+    "confirmed test green again",
+    "ran cargo fmt, full test suite (307 passed), clippy -D warnings (clean)",
+    "committed"
+  ],
+  "test_result": "pass",
+  "commit_sha": "f93e5aa",
+  "criteria_evidence": [
+    {
+      "criterion_id": "AC-11",
+      "test_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs",
+      "test_line": 1013,
+      "implementation_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs",
+      "implementation_line": 255
+    }
+  ],
+  "concerns": "Plan's failing_test fixture for TASK-27 omitted the root package.json file that AC-11's spec text explicitly requires (file present, workspaces field absent, as distinct from file entirely absent). Corrected in the committed test; no functional bug found (file-absent and field-absent are both handled by the same ?-chain fallback in read_package_json_workspaces), but the fixture now matches the spec's literal scenario rather than a behaviorally-equivalent-but-textually-different one.",
+  "reasoning": "No implementation change required; existing fallback logic in read_npm_membership/read_pnpm_packages already implements AC-11 correctly, confirmed via mutation-style break/restore rather than assumption."
+}
+```</result>
+<usage><subagent_tokens>60039</subagent_tokens><tool_uses>22</tool_uses><duration_ms>414564</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a95c408507bbf19c4</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a95c408507bbf19c4.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement TASK-28 (AC-11b regression test)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Committed successfully at `9fffca3`.
+
+```json
+{
+  "task_id": "TASK-28",
+  "status": "done",
+  "steps_completed": [
+    "Confirmed 23 prior commits (0971005..f93e5aa) present on ignore_walk.rs and clean tree",
+    "Read AC-11b exact text from SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json",
+    "Identified spec's AC-11b covers FOUR malformed shapes, not the plan's three: missing key, wrong scalar type, mapping value ({foo: bar}), and non-string sequence element",
+    "Wrote test ac11b_pnpm_packages_wrong_shape_falls_back_to_absent_filter in ignore_walk.rs, adding the mapping-value case the plan's fixture omitted",
+    "Ran test: passed immediately (no red step, consistent with TASK-07..27 pattern)",
+    "Adversarially verified non-vacuousness: mutated read_pnpm_packages in membership.rs to fall through to admit-nothing instead of None/admit-all fallback, confirmed test failed with clear assertion message, then reverted mutation exactly",
+    "Ran full callisto-graph --lib suite: 308 passed, 0 failed",
+    "Ran cargo fmt -p callisto-graph and cargo clippy -p callisto-graph --all-targets -- -D warnings: clean",
+    "Committed test-only change"
+  ],
+  "test_result": "pass",
+  "commit_sha": "9fffca3",
+  "criteria_evidence": [
+    {
+      "criterion_id": "AC-11b",
+      "test_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs",
+      "test_line": 1614,
+      "implementation_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs",
+      "implementation_line": 273
+    }
+  ],
+  "concerns": "The plan's failing_test fixture for TASK-28 covered only 3 of the 4 malformed shapes named in the spec's AC-11b text (missing key, wrong scalar type, non-string sequence element) but omitted the mapping-value example (packages: {foo: bar}) that the spec explicitly lists. I added that fourth case to the test so the criterion's exact text is fully proven — this matches the pattern noted in TASK-12/14/17/20/21/23/27 where the plan under-delivered relative to the spec.",
+  "reasoning": "Verified via git log that all 23 prior commits were present. Read spec text directly rather than trusting plan paraphrase, found the mapping-value shape missing from the plan's fixture, and added it. The implementation function read_pnpm_packages() at membership.rs:273-282 already handles all four shapes via the single `doc[\"packages\"].as_vec()?` early-return (covers missing/scalar/mapping) plus `item.as_str()?` (covers non-string sequence elements) -- no implementation change was needed, consistent with the TASK-07 regression-proofing pattern. Adversarial mutation test confirmed the test is not vacuous: breaking the fallback caused a real, specific assertion failure."
+}
+```</result>
+<usage><subagent_tokens>58958</subagent_tokens><tool_uses>20</tool_uses><duration_ms>361372</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a08f4b0d318eae3d4</task-id>
+<tool-use-id>toolu_01L3oQ83audb9VwyaY15h8WH</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a08f4b0d318eae3d4.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement TASK-29 (AC-11d regression test)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Committed successfully as `d4dd8cc`.
+
+## Summary
+
+**TASK-29** — Regression-proof AC-11d (comments-only pnpm-workspace.yaml → zero YAML documents, no panic)
+
+Read the exact spec text from `.claude/specs/SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json`, which was broader than the plan's paraphrase: AC-11d covers three input shapes that all yield zero YAML documents — **empty (zero bytes)**, **whitespace-only**, and **comments-only** — not just the comments-only case the plan's `failing_test` stub included. I wrote a single test covering all three sub-cases per the "add anything missing" guidance.
+
+Test passed immediately (no red step, consistent with the plan's note that this is regression-proofing of already-existing behavior). Since a same-run false green is the exact failure mode this task type risks, I adversarially verified non-vacuousness: temporarily changed `crates/callisto-graph/src/locate/membership.rs:276` from `docs.first()?` to `&amp;docs[0]`, reran the test, confirmed it genuinely panics (`index out of bounds: the len is 0 but the index is 0`), then restored the original safe code. Full `cargo test -p callisto-graph --lib` (309 tests) passes clean, `cargo fmt` and `cargo clippy -p callisto-graph --all-targets -- -D warnings` are clean.
+
+```json
+{
+  "task_id": "TASK-29",
+  "status": "done",
+  "steps_completed": [
+    "confirmed 24 prior commits present on ignore_walk.rs and clean tree",
+    "read AC-11d exact criterion text from spec file on disk",
+    "wrote test covering all three zero-document input shapes (empty/whitespace/comments)",
+    "ran test — passed immediately (no red step, as expected for regression-proof task)",
+    "adversarially broke docs.first()? -&gt; docs[0] in membership.rs, confirmed test panics",
+    "restored membership.rs to original safe form, confirmed diff clean",
+    "ran full callisto-graph lib test suite (309 passed)",
+    "ran cargo fmt and cargo clippy -D warnings (clean)",
+    "committed"
+  ],
+  "test_result": "pass",
+  "commit_sha": "d4dd8cc",
+  "criteria_evidence": [
+    {
+      "criterion_id": "AC-11d",
+      "test_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs",
+      "test_line": 1709,
+      "implementation_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs",
+      "implementation_line": 276
+    }
+  ],
+  "concerns": "Plan's failing_test stub only covered the comments-only variant; test was expanded to cover all three zero-document shapes named in AC-11d's exact spec text (empty, whitespace-only, comments-only) per the task instruction to reconcile plan vs spec.",
+  "reasoning": "No implementation change needed; docs.first()? in membership.rs:276 already guards this case correctly, confirmed via mutation-style adversarial check."
+}
+```</result>
+<usage><subagent_tokens>53518</subagent_tokens><tool_uses>19</tool_uses><duration_ms>345078</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a2cd1557158606297</task-id>
+<tool-use-id>toolu_018eqEc7KtqUcMRzXZ8EekSw</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a2cd1557158606297.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement TASK-30 (AC-14 Cargo malformed-input slice)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Tree is clean.
+
+## Summary
+
+**task_id:** TASK-30
+**status:** done
+**steps_completed:**
+1. Verified all 25 prior commits (0971005..d4dd8cc) present on `crates/callisto-graph/src/locate/ignore_walk.rs` and tree was clean before starting.
+2. Read AC-09, AC-09b, AC-09d, AC-09f, AC-09i, and AC-14 exact text from `.claude/specs/SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json` on disk (not the plan's paraphrase). Cross-checked the plan's five fixtures against AC-14's exact fixture text — all five match verbatim (no under-delivery found this time, unlike TASK-20/21/23/28).
+3. Wrote `ac14_cargo_malformed_edge_case_regression_slice` in `crates/callisto-graph/src/locate/ignore_walk.rs` (lines 1777–1919), reassembling the five Cargo-slice fixtures, using `Path::new(...)` on the RHS of `==` (not `PathBuf::from`) to match repo convention and avoid `clippy::cmp_owned`.
+4. Ran the test — it passed immediately with zero implementation changes, matching the TASK-07-established "regression-proof, no red step" pattern.
+5. Adversarially verified non-vacuity: temporarily changed `read_cargo_membership` in `crates/callisto-graph/src/locate/membership.rs:88` from a `match ... Err(_) =&gt; return absent_cargo_membership()` fallback to `.unwrap()`. Reran the test — it failed with a real panic (`TomlError` unwrap on the AC-09d malformed-TOML fixture), confirming the test is load-bearing. Restored the original guard; `git diff` on membership.rs came back empty, confirming full restoration.
+6. `cargo fmt -p callisto-graph`, full `cargo test -p callisto-graph --lib` (310 passed), and `cargo clippy -p callisto-graph --all-targets -- -D warnings` (clean) before committing.
+7. Committed as `a62b291` with corrected, accurate commit message.
+
+**test_result:** pass
+**commit_sha:** a62b291
+
+**criteria_evidence:**
+| criterion | test_file | test_line | implementation_file | implementation_line |
+|---|---|---|---|---|
+| AC-09 | crates/callisto-graph/src/locate/ignore_walk.rs | 1778 (block starts 1779) | crates/callisto-graph/src/locate/membership.rs | 100–103 |
+| AC-09b | crates/callisto-graph/src/locate/ignore_walk.rs | 1778 (block starts 1803) | crates/callisto-graph/src/locate/membership.rs | 104–108 |
+| AC-09d | crates/callisto-graph/src/locate/ignore_walk.rs | 1778 (block starts 1852) | crates/callisto-graph/src/locate/membership.rs | 88–91 |
+| AC-09f | crates/callisto-graph/src/locate/ignore_walk.rs | 1778 (block starts 1870) | crates/callisto-graph/src/locate/membership.rs | 12–19 (`build_globset`) |
+| AC-09i | crates/callisto-graph/src/locate/ignore_walk.rs | 1778 (block starts 1895) | crates/callisto-graph/src/locate/membership.rs | 12–19 (`build_globset`) |
+
+Note: the task's `covers_criteria` field only lists `AC-14`, but I've mapped underlying sub-criteria evidence since that's what the test actually proves per-block; AC-14 itself is the umbrella consolidated criterion satisfied by this whole test function (test_line 1778, implementation spans membership.rs 12–114).
+
+**precision_tests_absorbed:** none supplied for this task.
+**concerns:** none — no red step occurred because this is a pure regression-consolidation task (no implementation change), consistent with the TASK-07 through TASK-29 precedent, and I independently confirmed the test is not vacuous via fault injection.</result>
+<usage><subagent_tokens>63467</subagent_tokens><tool_uses>21</tool_uses><duration_ms>366726</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ac0dff47fd92e2791</task-id>
+<tool-use-id>toolu_01VV6Rk1GU1bRvoAFC68oYrc</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/ac0dff47fd92e2791.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement TASK-31 (AC-14 npm malformed-input slice)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>The task's only covers_criteria is AC-14, whose evidence is the whole consolidated test starting at line 1944, with implementation evidence pointing to the existing `read_package_json_workspaces` fallback logic at `membership.rs:288-298` (no new implementation was needed — this was a pure regression-proofing task).
+
+```json
+{
+  "task_id": "TASK-31",
+  "status": "done",
+  "steps_completed": [
+    "confirmed 26 prior commits present on ignore_walk.rs and clean tree",
+    "read AC-09c, AC-09e, AC-09g, AC-10, AC-14 exact text from spec file on disk",
+    "cross-checked plan fixture against AC-14 spec text for all four sub-criteria — no gap found",
+    "wrote ac14_npm_malformed_edge_case_regression_slice in crates/callisto-graph/src/locate/ignore_walk.rs",
+    "ran test: passed immediately with no implementation change (expected, matches TASK-07..30 pattern)",
+    "adversarially verified non-vacuousness: injected a temporary bug into read_package_json_workspaces in membership.rs (treating an empty workspaces array as None instead of Some(vec![])), confirmed the AC-14 npm test failed with the AC-10 assertion message, then reverted the bug and confirmed clean re-run",
+    "ran cargo fmt -p callisto-graph (no formatting changes needed beyond the new test)",
+    "ran cargo clippy -p callisto-graph --all-targets -- -D warnings (clean)",
+    "ran full cargo test -p callisto-graph --lib (311 passed, 0 failed)",
+    "committed as 13cd23f"
+  ],
+  "test_result": "pass",
+  "commit_sha": "13cd23f",
+  "criteria_evidence": [
+    {
+      "criterion_id": "AC-14",
+      "test_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs",
+      "test_line": 1944,
+      "implementation_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs",
+      "implementation_line": 288
+    }
+  ],
+  "concerns": null,
+  "reasoning": "Plan fixture matched AC-14's exact spec text for all four sub-criteria (AC-09c, AC-09e, AC-09g, AC-10) with no gap, same as TASK-30's Cargo slice. No red step occurred because the underlying fallback behaviors were already implemented and individually tested in TASK-23/24/26/28-era commits; this task only adds the consolidated regression test. Verified the test is not vacuous by breaking the AC-10 empty-array fallback path in membership.rs and confirming the consolidated test caught it, then restored the file (confirmed clean via git diff before committing)."
+}
+```
+
+Relevant files:
+- `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs` (test added, lines 1932-2035, new function `ac14_npm_malformed_edge_case_regression_slice` at line 1944)
+- `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs` (existing implementation exercised, `read_package_json_workspaces` at line 288 — unchanged, used only as adversarial-verification target then reverted)</result>
+<usage><subagent_tokens>61572</subagent_tokens><tool_uses>21</tool_uses><duration_ms>425745</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a45aded0180cc9e34</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a45aded0180cc9e34.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement TASK-32 (AC-14 pnpm malformed-input slice)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Summary
+
+TASK-32 executed exactly as planned, with one correction: the plan's AC-11 fixture block omitted the root `package.json` file, which would have made that sub-block test AC-06b (file-absent) instead of AC-11's actual criterion (root `package.json` present with no `"workspaces"` field, alongside malformed pnpm YAML). I fixed the fixture to match AC-11's exact spec text and the fixture already proven by TASK-27 (commit f93e5aa), so the block genuinely proves AC-11 rather than a different, weaker criterion.
+
+**Verification steps taken:**
+1. Confirmed all 27 prior commits present on `ignore_walk.rs`, tree clean, before starting.
+2. Read AC-14, AC-09h, AC-11, AC-11b, AC-11d directly from `.claude/specs/SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json`.
+3. Cross-checked TASK-32's fixture against prior committed test fixtures (TASK-25/27/28/29) — found and fixed the AC-11 gap described above; AC-09h, AC-11b, AC-11d blocks matched exactly, no other gaps.
+4. Ran the new test — it passed immediately with no implementation change (predicted "regression-proof" pattern confirmed).
+5. Adversarially verified non-vacuousness: temporarily changed `membership.rs:275` from `.ok()?` to `.unwrap()` on the YAML parse, confirmed the test panics, then restored the safe form and confirmed green again.
+6. Ran `cargo fmt -p callisto-graph` (no diff), `cargo clippy -p callisto-graph --all-targets -- -D warnings` (clean), and the full `cargo test -p callisto-graph --lib` suite (312/312 pass).
+7. Committed — pre-commit format-check hook passed.
+
+**Files touched:** `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs` (test only, no implementation change).
+
+```json
+{
+  "task_id": "TASK-32",
+  "status": "done",
+  "steps_completed": [
+    "verified 27 prior commits present and tree clean",
+    "read AC-14/AC-09h/AC-11/AC-11b/AC-11d from spec file on disk",
+    "cross-checked plan fixture against spec text and prior proven fixtures; found and corrected AC-11 block (added required root package.json)",
+    "wrote consolidated regression test in ignore_walk.rs",
+    "ran test: passed immediately, no red step (regression-proof, as predicted)",
+    "adversarially broke read_pnpm_packages's YAML-parse fallback (.ok()? -&gt; .unwrap()), confirmed test panics",
+    "restored safe implementation, confirmed test green again",
+    "ran cargo fmt (no diff), cargo clippy -D warnings (clean)",
+    "ran full callisto-graph lib test suite: 312 passed, 0 failed",
+    "committed"
+  ],
+  "test_result": "pass",
+  "commit_sha": "c763bc8",
+  "criteria_evidence": [
+    {
+      "criterion_id": "AC-14",
+      "test_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs",
+      "test_line": 2048,
+      "implementation_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs",
+      "implementation_line": 273
+    }
+  ],
+  "concerns": "TASK-32's plan fixture for the AC-11 sub-block omitted the root package.json write, which would have made that sub-block indistinguishable from AC-06b (file-absent admits-all) rather than genuinely proving AC-11 (file present, workspaces field absent, malformed sibling pnpm YAML). Corrected to match AC-11's exact spec text and the already-proven TASK-27 fixture before committing. No other gaps found in the AC-09h/AC-11b/AC-11d blocks, which matched the plan and spec exactly.",
+  "reasoning": "Regression-proof task per the established pattern (TASK-07 through TASK-31); no implementation change expected or needed. The only deviation from the plan's literal fixture code was the AC-11 root package.json fix, justified by spec text and prior committed evidence."
+}
+```</result>
+<usage><subagent_tokens>97528</subagent_tokens><tool_uses>30</tool_uses><duration_ms>464494</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a99904fb0d966e69e</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a99904fb0d966e69e.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement TASK-33 (AC-16 regression test)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Waiting for the cargo test build to complete before proceeding with the TDD verification for TASK-33 (AC-16 npm hybrid-root admission). I'll report back once the test run finishes.</result>
+<usage><subagent_tokens>85684</subagent_tokens><tool_uses>27</tool_uses><duration_ms>341489</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a99904fb0d966e69e</task-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a99904fb0d966e69e.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement TASK-33 (AC-16 regression test)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Waiting for the restore-and-reverify test run to complete.</result>
+<usage><subagent_tokens>89763</subagent_tokens><tool_uses>37</tool_uses><duration_ms>500652</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a99904fb0d966e69e</task-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a99904fb0d966e69e.output</output-file>
+<status>failed</status>
+<summary>Agent "Implement TASK-33 (AC-16 regression test)" failed: Agent terminated early due to an API error: You've hit your weekly limit · resets Aug 17 at 2pm (Europe/Paris)</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+</task-notification>
+
+---
+
+/insights
+
+---
+
+/insights
+
+---
+
+/insights
+
+---
+
+While we were out of tokens I had agy undertake some of the work we were doing. Can you check the current state vs the plan?
+
+We’ve updated the plugins to improve performance and token usage too
+
+---
+
+<task-notification>
+<task-id>a1fda04f2eaa74e7f</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/bb531e8d-c394-4e47-a8ae-e4a9ceeca6d2/tasks/a1fda04f2eaa74e7f.output</output-file>
+<status>failed</status>
+<summary>Agent "Audit Track 2 platform_writes dispatch for collision/data-loss bugs" failed: Agent stalled: no progress for 600s (stream watchdog did not recover)</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+</task-notification>

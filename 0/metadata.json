@@ -1,0 +1,302 @@
+{
+  "cli_version": "0.10.1-nightly.202608121908.a47cf0c70",
+  "checkpoint_id": "01M080Y1TPJDS91VCFWQPRA35F",
+  "session_id": "ae412d01-e061-4047-918b-0d1df3d4d118",
+  "strategy": "manual-commit",
+  "created_at": "2026-08-17T14:10:29.957929Z",
+  "branch": "main",
+  "checkpoints_count": 2,
+  "save_step_count": 3,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5",
+  "turn_id": "58ee1a415404",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 7502,
+    "cache_creation_tokens": 13349195,
+    "cache_read_tokens": 1865684273,
+    "output_tokens": 2502299,
+    "api_call_count": 3759,
+    "subagent_tokens": {
+      "input_tokens": 1236,
+      "cache_creation_tokens": 1574938,
+      "cache_read_tokens": 35828371,
+      "output_tokens": 197877,
+      "api_call_count": 619
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-insights-2026-08-16T18:03:16.604316Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "insights"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "cb36e3cb9435",
+      "timestamp": "2026-08-16T18:03:16.604316Z",
+      "native": {
+        "command": "/insights"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/insights",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "prompt-skill-claude-code-insights-2026-08-16T18:03:32.907738Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "insights"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "84ee0740e97a",
+      "timestamp": "2026-08-16T18:03:32.907738Z",
+      "native": {
+        "command": "/insights"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/insights",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "prompt-skill-claude-code-insights-2026-08-17T07:08:02.2077Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "insights"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "0d616cb77dcc",
+      "timestamp": "2026-08-17T07:08:02.2077Z",
+      "native": {
+        "command": "/insights"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/insights",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_012rCYNRAZsYmqiF8NNi747S",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "canon:canon"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "58ee1a415404",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 1796,
+        "end": 1797,
+        "entry_ids": [
+          "8d95a7ab-50fc-4a4f-a5f0-51fa16450006"
+        ],
+        "tool_use_id": "toolu_012rCYNRAZsYmqiF8NNi747S"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_012rCYNRAZsYmqiF8NNi747S"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: canon:canon",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01WGvnnCKVW2vdoqEUK7994m",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "artifact-design"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "58ee1a415404",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 9258,
+        "end": 9259,
+        "entry_ids": [
+          "40e03207-5312-4c67-91d1-e543f61cc47c"
+        ],
+        "tool_use_id": "toolu_01WGvnnCKVW2vdoqEUK7994m"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01WGvnnCKVW2vdoqEUK7994m"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: artifact-design",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01A41qYmUMU5kNmDE3TvWo3M",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "artifact-design"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "58ee1a415404",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 11917,
+        "end": 11918,
+        "entry_ids": [
+          "8459f76c-3b2c-4714-909d-739d68f48fe6"
+        ],
+        "tool_use_id": "toolu_01A41qYmUMU5kNmDE3TvWo3M"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01A41qYmUMU5kNmDE3TvWo3M"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: artifact-design",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01FXNTNGnarQ62L85EpAw8f9",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "artifact-design"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "58ee1a415404",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 23162,
+        "end": 23163,
+        "entry_ids": [
+          "965063be-7e26-4441-87fb-d468496ae76e"
+        ],
+        "tool_use_id": "toolu_01FXNTNGnarQ62L85EpAw8f9"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01FXNTNGnarQ62L85EpAw8f9"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: artifact-design",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_015pLdgs34ZfmQg8bARSMRbQ",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "canon:canon"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "58ee1a415404",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 23995,
+        "end": 23996,
+        "entry_ids": [
+          "eba08368-f94a-41f1-8f3b-e4006e4ffb58"
+        ],
+        "tool_use_id": "toolu_015pLdgs34ZfmQg8bARSMRbQ"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_015pLdgs34ZfmQg8bARSMRbQ"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: canon:canon",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 354
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 11,
+      "user_lines_removed": 9,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 5,
+        ".claude/specs/track-f-resolution-extraction.json": 1,
+        "crates/callisto-graph/tests/ecosystem_bugs_test.rs": 5
+      },
+      "user_removed_per_file": {
+        ".claude/specs/track-f-resolution-extraction.json": 1,
+        "crates/callisto-graph/tests/ecosystem_bugs_test.rs": 8
+      }
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 6,
+      "user_lines_removed": 1,
+      "agent_lines_added": 5,
+      "agent_lines_removed": 8,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 5,
+        ".claude/specs/track-f-resolution-extraction.json": 1
+      },
+      "user_removed_per_file": {
+        ".claude/specs/track-f-resolution-extraction.json": 1
+      }
+    },
+    {
+      "checkpoint_number": 4,
+      "user_lines_added": 6,
+      "user_lines_removed": 1,
+      "agent_lines_added": 5,
+      "agent_lines_removed": 8,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 5,
+        ".claude/specs/track-f-resolution-extraction.json": 1
+      },
+      "user_removed_per_file": {
+        ".claude/specs/track-f-resolution-extraction.json": 1
+      }
+    }
+  ]
+}
