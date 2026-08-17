@@ -498,4 +498,62 @@ mod tests {
             "plan_version must propagate malformed napi package.json as Err(ManifestError::Parse); got: {result:?}"
         );
     }
+
+    /// AC-008: GroupCheckOutcome.diagnostics returned by pre_mutation_checks
+    /// must be merged into VersionPlan.diagnostics, not discarded.
+    #[test]
+    fn version_merges_group_check_diagnostics_into_plan() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        git_init_with_commit(root);
+
+        std::fs::create_dir_all(root.join("my-lib")).unwrap();
+        std::fs::write(
+            root.join("my-lib/Cargo.toml"),
+            "[package]\nname = \"my-lib\"\nversion = \"1.0.0\"\n",
+        )
+        .unwrap();
+        // Declares a napi target not present among the fixed group's own
+        // members -- napi_drift reports NapiTargetAddedNotInMembers for this.
+        std::fs::write(
+            root.join("my-lib/package.json"),
+            "{\"name\":\"my-lib\",\"napi\":{\"targets\":[\"aarch64-apple-darwin\"]}}",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("callisto.toml"),
+            "[[fixed-group]]\nname = \"solo\"\nmembers = [\"my-lib\"]\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join(".changeset")).unwrap();
+        std::fs::write(
+            root.join(".changeset/bump.md"),
+            "---\n\"my-lib\": patch\n---\n\nfix.\n",
+        )
+        .unwrap();
+        commit_all(root, "add package");
+
+        let locator = IgnoreWalkLocator::new(root);
+        let runner = NoopRunner;
+        let ws =
+            Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
+
+        let inference = NoInference;
+        let opts = VersionOptions {
+            strict: false,
+            strict_graph: false,
+            allow_empty_changesets: true,
+        };
+
+        let plan = plan_version(&ws, &inference, &opts).expect("plan_version must succeed");
+
+        assert!(
+            plan.diagnostics.iter().any(|d| matches!(
+                d.code,
+                callisto_model::DiagnosticCode::NapiTargetAddedNotInMembers
+            )),
+            "VersionPlan.diagnostics must include the napi-drift diagnostic produced by pre_mutation_checks; got: {:?}",
+            plan.diagnostics
+        );
+    }
 }
