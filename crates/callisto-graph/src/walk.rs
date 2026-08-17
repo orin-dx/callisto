@@ -1535,4 +1535,40 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn maturin_pyo3_layout_promotes_cargo_and_pypi_siblings() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        write_pkg(root, "bindings/rust", Ecosystem::Cargo, "mylib");
+        write_pkg(root, "bindings/python", Ecosystem::Pypi, "mylib");
+        let locator = crate::locate::IgnoreWalkLocator::new(root);
+        let runner = NoopRunner;
+        let ws = crate::Workspace::load(root.to_path_buf(), &locator, &runner)
+            .expect("Cargo/Pypi promotion must succeed");
+        let cargo_pkg = ws
+            .graph
+            .get(&PackageId::Prefixed {
+                ecosystem: Ecosystem::Cargo,
+                name: "mylib".to_string(),
+            })
+            .expect("Cargo entry must exist");
+        let pypi_pkg = ws
+            .graph
+            .get(&PackageId::Prefixed {
+                ecosystem: Ecosystem::Pypi,
+                name: "mylib".to_string(),
+            })
+            .expect("Pypi entry must exist");
+        assert_eq!(cargo_pkg.manifests.len(), 1);
+        assert_eq!(
+            cargo_pkg.manifests[0].path,
+            PathBuf::from("bindings/rust/Cargo.toml")
+        );
+        assert_eq!(pypi_pkg.manifests.len(), 1);
+        assert_eq!(
+            pypi_pkg.manifests[0].path,
+            PathBuf::from("bindings/python/pyproject.toml")
+        );
+    }
 }
