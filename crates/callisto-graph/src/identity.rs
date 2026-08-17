@@ -265,6 +265,74 @@ mod tests {
             "expected UnknownPackage, got {err:?}"
         );
     }
+
+    #[test]
+    fn resolve_native_with_fallback_returns_none_on_single_cross_ecosystem_candidate() {
+        let mut index = IdentityIndex::default();
+        let cargo_serde = PackageId::Bare("serde".to_string());
+        index
+            .native
+            .insert((Ecosystem::Cargo, "serde".to_string()), cargo_serde);
+        let mut diagnostics = Vec::new();
+        let result = index.resolve_native_with_fallback(Ecosystem::Npm, "serde", &mut diagnostics);
+        assert!(
+            result.is_none(),
+            "a same-ecosystem miss must never silently fall back to a cross-ecosystem match"
+        );
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(
+            diagnostics[0].code,
+            callisto_model::DiagnosticCode::UnknownPackage
+        );
+        assert_eq!(
+            diagnostics[0].severity,
+            callisto_model::DiagnosticSeverity::Warning
+        );
+    }
+
+    #[test]
+    fn resolve_native_with_fallback_returns_none_and_one_diagnostic_for_two_candidates() {
+        let mut index = IdentityIndex::default();
+        index.native.insert(
+            (Ecosystem::Cargo, "ambiguous-lib".to_string()),
+            PackageId::Bare("ambiguous-lib".to_string()),
+        );
+        index.native.insert(
+            (Ecosystem::Pypi, "ambiguous-lib".to_string()),
+            PackageId::Prefixed {
+                ecosystem: Ecosystem::Pypi,
+                name: "ambiguous-lib".to_string(),
+            },
+        );
+        let mut diagnostics = Vec::new();
+        let result =
+            index.resolve_native_with_fallback(Ecosystem::Npm, "ambiguous-lib", &mut diagnostics);
+        assert!(result.is_none());
+        assert_eq!(
+            diagnostics.len(),
+            1,
+            "exactly one diagnostic, not zero and not two"
+        );
+        assert!(
+            diagnostics[0].message.contains("cargo:ambiguous-lib")
+                && diagnostics[0].message.contains("pypi:ambiguous-lib")
+        );
+    }
+
+    #[test]
+    fn resolve_native_unchanged_still_returns_cross_ecosystem_match() {
+        let mut index = IdentityIndex::default();
+        let cargo_serde = PackageId::Bare("serde".to_string());
+        index
+            .native
+            .insert((Ecosystem::Cargo, "serde".to_string()), cargo_serde.clone());
+        let result = index.resolve_native(Ecosystem::Npm, "serde");
+        assert_eq!(
+            result,
+            Some(&cargo_serde),
+            "resolve_native's own permissive contract is unchanged by this spec"
+        );
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -397,11 +465,7 @@ impl IdentityIndex {
 
         match candidates.len() {
             0 => None,
-            1 => Some(candidates[0].1),
             _ => {
-                // True ambiguity: two packages with different ecosystems share
-                // the same bare name.  Emit a diagnostic and return None to
-                // avoid silent misresolution.
                 let candidate_names: Vec<String> = candidates
                     .iter()
                     .map(|(e, id)| format!("{}:{}", e.prefix(), id.name()))

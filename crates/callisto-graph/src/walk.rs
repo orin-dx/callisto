@@ -55,6 +55,7 @@ fn claiming_sets_disjoint(a: &BTreeSet<Ecosystem>, b: &BTreeSet<Ecosystem>) -> b
 ///
 /// Overlapping claiming sets indicate a true duplicate package error (handled
 /// separately during graph construction), NOT a valid multi-ecosystem promotion.
+#[cfg(test)]
 fn is_promoted_bare_name(
     paths: &[PathBuf],
     claiming_ecosystems: &BTreeMap<PathBuf, BTreeSet<Ecosystem>>,
