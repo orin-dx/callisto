@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -38,6 +38,7 @@ pub struct ResolvedConfig {
     /// `Workspace::load` can call `GroupTable::resolve` once the
     /// `IdentityIndex` is available after `ManifestWalkResolver::build`.
     pub(crate) raw_groups: RawGroupTable,
+    pub promoted_siblings: BTreeMap<String, Vec<(PackageId, BTreeSet<Ecosystem>)>>,
     provenance: BTreeMap<ConfigKey, ConfigProvenance>,
 }
 
@@ -48,6 +49,15 @@ pub enum ConfigProvenance {
 }
 
 impl ResolvedConfig {
+    pub(crate) fn with_promoted_siblings(
+        &self,
+        promoted_siblings: BTreeMap<String, Vec<(PackageId, BTreeSet<Ecosystem>)>>,
+    ) -> ResolvedConfig {
+        let mut overlay = self.clone();
+        overlay.promoted_siblings = promoted_siblings;
+        overlay
+    }
+
     pub fn provenance(&self, key: &ConfigKey) -> ConfigProvenance {
         self.provenance
             .get(key)
@@ -503,6 +513,7 @@ pub fn load(root: &Path) -> Result<ResolvedConfig, ConfigError> {
         package_sets,
         groups: GroupTable::default(),
         raw_groups,
+        promoted_siblings: BTreeMap::new(),
         provenance,
     })
 }
@@ -511,6 +522,49 @@ pub fn load(root: &Path) -> Result<ResolvedConfig, ConfigError> {
 mod tests {
     use super::*;
     use std::fs;
+
+    #[test]
+    fn with_promoted_siblings_overlays_without_mutating_original() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path();
+        fs::write(root.join("callisto.toml"), "").expect("write callisto.toml");
+        let cfg = load(root).expect("load should succeed");
+        assert!(
+            cfg.promoted_siblings.is_empty(),
+            "promoted_siblings must default to empty at config-load time"
+        );
+
+        let mut local: BTreeMap<String, Vec<(PackageId, std::collections::BTreeSet<Ecosystem>)>> =
+            BTreeMap::new();
+        let mut ecos = std::collections::BTreeSet::new();
+        ecos.insert(Ecosystem::Cargo);
+        local.insert(
+            "native-core".to_string(),
+            vec![(
+                PackageId::Prefixed {
+                    ecosystem: Ecosystem::Cargo,
+                    name: "native-core".to_string(),
+                },
+                ecos,
+            )],
+        );
+        let overlay = cfg.with_promoted_siblings(local);
+        assert_eq!(overlay.promoted_siblings.len(), 1);
+        assert!(
+            cfg.promoted_siblings.is_empty(),
+            "original cfg must remain untouched by with_promoted_siblings"
+        );
+    }
+
+    #[test]
+    fn promoted_siblings_field_is_pub_not_pub_crate() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path();
+        fs::write(root.join("callisto.toml"), "").expect("write callisto.toml");
+        let cfg = load(root).expect("load should succeed");
+        let _: &BTreeMap<String, Vec<(PackageId, std::collections::BTreeSet<Ecosystem>)>> =
+            &cfg.promoted_siblings;
+    }
 
     #[test]
     fn test_config_resolve_rejects_traversal_in_changesets_dir() {
