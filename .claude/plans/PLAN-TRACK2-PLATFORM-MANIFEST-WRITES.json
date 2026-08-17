@@ -10,7 +10,10 @@
       "id": "TASK-1",
       "title": "Add `from: Version` field to PlatformWrite",
       "depends_on": [],
-      "files": ["crates/callisto-graph/src/plan.rs", "crates/callisto-graph/src/apply.rs"],
+      "files": [
+        "crates/callisto-graph/src/plan.rs",
+        "crates/callisto-graph/src/apply.rs"
+      ],
       "reasoning": "PlatformWrite is currently a 2-field struct (manifest, version) at plan.rs:45-49. This is a breaking type change that every other task in this plan (Task 2's producer, Task 8's precondition check) depends on. The one existing call site that constructs PlatformWrite directly is the test at apply.rs:2260 (apply_version_plan_executes_platform_writes_and_optional_dep_updates) -- it will fail to compile once the field is added, so it must be fixed in this same task to keep the crate compiling.",
       "test": {
         "description": "New unit test in plan.rs asserting PlatformWrite has a `from` field. This test does not compile against the current 2-field struct, which is the required RED state for a struct-field addition.",
@@ -34,8 +37,12 @@
     {
       "id": "TASK-2",
       "title": "plan_version: OpenContext derivation + core platform_writes producer (single platform member, happy path)",
-      "depends_on": ["TASK-1"],
-      "files": ["crates/callisto-graph/src/commands/version.rs"],
+      "depends_on": [
+        "TASK-1"
+      ],
+      "files": [
+        "crates/callisto-graph/src/commands/version.rs"
+      ],
       "reasoning": "This is the core producer logic: for each Fixed group's GroupMember::PlatformManifest whose owner received a real PlannedBump this run, open the platform manifest (ManifestRole::Canonical unconditionally, OpenContext derived exactly as apply.rs:118-130 does) and emit a PlatformWrite with from=on-disk current_version, version=owner's bump target. Also covers the two 'no write should happen' regressions (AC-005: no platform members anywhere; AC-006: owner not bumped) since they exercise the same new code path with zero/no-match inputs and share the test fixture helpers already in this file's `#[cfg(test)] mod tests` (git_init_with_commit, tag, commit_all).",
       "test": {
         "description": "Three tests added to commands/version.rs's existing test module, reusing its git_init_with_commit/tag/commit_all helpers. Platform manifest fixtures use a Cargo owner package plus a sibling npm package.json with non-empty os/cpu arrays (the only mechanism, per walk.rs:590-630, that causes IdentityIndex to register a GroupMember::PlatformManifest), referenced in [[fixed-group]] members by its own npm package name.",
@@ -47,6 +54,7 @@
         "description": "Replace the hardcoded `platform_writes: Vec::new()` with real producer logic, driven by Fixed-group PlatformManifest members whose owner has an entry in the `bumps` vector already computed earlier in this function.",
         "steps": [
           "Add `use crate::config::groups::{GroupMember, GroupMemberKind};` to the top of crates/callisto-graph/src/commands/version.rs.",
+          "Before the platform-manifest loop, build `let bump_by_pkg: std::collections::BTreeMap<callisto_model::PackageId, &PlannedBump> = bumps.iter().map(|b| (b.package.clone(), b)).collect();` from the `bumps` Vec already computed earlier in plan_version. Reference `bump_by_pkg.get(owner)` in the loop, not `pkg_map` (which maps PackageId to Package, not to PlannedBump).",
           "Immediately before the `Ok(VersionPlan { ... })` return at the end of plan_version, derive cargo_workspace/npm_workspace_kind/OpenContext exactly as apply.rs:118-130 does, then loop over ws.config.groups.fixed.values() -> group.members(GroupMemberKind::PlatformManifest), and for each owner with an entry in bump_by_pkg, open the manifest via ManifestFormat::from_path + ManifestDecl::new(path, ManifestRole::Canonical, fmt) + callisto_manifests::open(&decl, &open_ctx), read current_version(), and push a PlatformWrite { manifest: path.clone(), version: bump.to.clone(), from: current }.",
           "Change the VersionPlan struct literal's `platform_writes: Vec::new(),` to `platform_writes,` (the newly computed variable). Leave `optional_dep_updates: Vec::new(),` untouched for this task -- Task 5 replaces it."
         ]
@@ -54,13 +62,22 @@
       "verify_command": "cargo test -p callisto-graph --lib",
       "expected_pass": "all tests pass, including the three new tests",
       "commit_message": "feat(graph): produce real PlatformWrite entries in plan_version\n\nplan_version now walks Fixed-group PlatformManifest members whose owner has a real PlannedBump this run, reads each platform manifest's current on-disk version via the same OpenContext derivation apply_version_plan already uses, and emits a PlatformWrite carrying both from and target version -- closing the previously hardcoded Vec::new() gap.",
-      "covers_criteria": ["AC-001", "AC-002", "AC-005", "AC-006"]
+      "covers_criteria": [
+        "AC-001",
+        "AC-002",
+        "AC-005",
+        "AC-006"
+      ]
     },
     {
       "id": "TASK-3",
       "title": "plan_version platform_writes: workspace-inherited Cargo version + multiple platform siblings",
-      "depends_on": ["TASK-2"],
-      "files": ["crates/callisto-graph/src/commands/version.rs"],
+      "depends_on": [
+        "TASK-2"
+      ],
+      "files": [
+        "crates/callisto-graph/src/commands/version.rs"
+      ],
       "reasoning": "Task 2's implementation already derives cargo_workspace inheritance into OpenContext and opens manifests via ManifestRole::Canonical regardless of format, so a `version.workspace = true` Cargo platform manifest and multiple platform siblings under one owner both flow through the same code path with zero additional implementation. This task adds tests only, pinning that these two scenarios genuinely work end-to-end through plan_version's real return value (not a direct current_version() call in isolation, per AC-002b's wording).",
       "test": {
         "description": "Two tests: AC-002b (maturin-style Cargo platform manifest inheriting version.workspace = true from the root [workspace.package] version) and AC-007 (owner with two platform siblings, both must appear).",
@@ -77,18 +94,25 @@
       "verify_command": "cargo test -p callisto-graph --lib",
       "expected_pass": "all tests pass",
       "commit_message": "test(graph): pin AC-002b workspace-inherited Cargo platform version and AC-007 multi-sibling platform writes",
-      "covers_criteria": ["AC-002b", "AC-007"]
+      "covers_criteria": [
+        "AC-002b",
+        "AC-007"
+      ]
     },
     {
       "id": "TASK-4",
       "title": "plan_version platform_writes: AC-008 error propagation on unreadable platform manifest",
-      "depends_on": ["TASK-2"],
-      "files": ["crates/callisto-graph/src/commands/version.rs"],
+      "depends_on": [
+        "TASK-2"
+      ],
+      "files": [
+        "crates/callisto-graph/src/commands/version.rs"
+      ],
       "reasoning": "Task 2's implementation already uses `?` on ManifestFormat::from_path, ManifestDecl::new, callisto_manifests::open, and current_version() -- all of which already propagate as GraphError. This test proves that end-to-end: a platform manifest that validated during the walk (so it is a real GroupMember::PlatformManifest) but is deleted from disk before plan_version runs must surface as Err, not panic and not a partial VersionPlan.",
       "test": {
-        "description": "Build a valid workspace with a platform member (walk succeeds, group resolves), load the Workspace, then delete the platform manifest file from disk before calling plan_version -- simulating the file having gone missing between workspace load and plan execution.",
+        "description": "Build a valid workspace with a platform member (walk succeeds, group resolves), load the Workspace, then delete the platform manifest file from disk before calling plan_version -- simulating the file having gone missing between workspace load and plan execution. ALSO add a fourth test covering AC-008's second disjunct (malformed content, distinct from missing file): write syntactically invalid JSON (e.g. a truncated, unbalanced object) into the platform manifest file on disk instead of deleting it, then call plan_version and assert Err(GraphError) is returned with no partial VersionPlan produced -- name this test plan_version_returns_err_when_platform_manifest_content_is_malformed.",
         "file": "crates/callisto-graph/src/commands/version.rs",
-        "run_command": "cargo test -p callisto-graph --lib commands::version::tests::plan_version_returns_err_when_platform_manifest_missing_from_disk_at_plan_time",
+        "run_command": "cargo test -p callisto-graph --lib commands::version::tests::plan_version_returns_err_when_platform_manifest_missing_from_disk_at_plan_time commands::version::tests::plan_version_returns_err_when_platform_manifest_content_is_malformed",
         "expected_failure": "Before Task 2's implementation exists, this test fails because plan_version succeeds with an empty platform_writes (the hardcoded Vec::new() never reads the manifest at all, so nothing errors). Since this task depends on Task 2, in practice this test is written and should pass immediately once Task 2 is merged -- if it does not, Task 2's `?` propagation has a gap and must be fixed there."
       },
       "implementation": {
@@ -100,13 +124,19 @@
       "verify_command": "cargo test -p callisto-graph --lib",
       "expected_pass": "all tests pass",
       "commit_message": "test(graph): pin AC-008 error propagation for platform manifest missing at plan_version read time",
-      "covers_criteria": ["AC-008"]
+      "covers_criteria": [
+        "AC-008"
+      ]
     },
     {
       "id": "TASK-5",
       "title": "plan_version: optional_dep_updates producer (single platform member)",
-      "depends_on": ["TASK-2"],
-      "files": ["crates/callisto-graph/src/commands/version.rs"],
+      "depends_on": [
+        "TASK-2"
+      ],
+      "files": [
+        "crates/callisto-graph/src/commands/version.rs"
+      ],
       "reasoning": "Extends the same group/member loop from Task 2: for each platform member whose owner was bumped, additionally open the owner's own canonical manifest and check via iter_dependencies() whether an existing DepKind::Optional entry matches the platform member's name. Only when a match exists is an OptionalDepUpdate produced -- never speculatively created (AC-004).",
       "test": {
         "description": "AC-003 (owner has a matching optionalDependencies entry -> update produced) and AC-004 (owner has no matching entry -> nothing produced) as two tests.",
@@ -119,20 +149,27 @@
         "steps": [
           "In the same loop from Task 2, also bind `name` from the GroupMember::PlatformManifest destructure.",
           "Before the loop, add a `BTreeMap<PathBuf, Vec<(String, Version)>>` accumulator for optional dep updates.",
-          "Inside the loop, after computing `bump`, open the owner's canonical manifest and check via iter_dependencies() whether a DepKind::Optional entry matches `name`; if so, push (name, bump.to) into the accumulator keyed by the owner's manifest path.",
+          "Resolve `owner: PackageId` to its Package via the existing `pkg_map: HashMap<&PackageId, &Package>` (commands/version.rs, built earlier in plan_version). Call `.canonical_manifests()` on that Package (crates/callisto-model/src/package.rs:24-28, an iterator since dual-published packages like npm+Cargo can have more than one). Rule: if it yields more than one canonical manifest, use only the FIRST one returned -- Fixed-group owners with platform-manifest siblings are expected to be single-ecosystem in practice, and this track does not add multi-manifest optional-dependency-update logic (out of scope per the spec's non_goals on new planning-logic paths). Then open that manifest and check via iter_dependencies() whether an existing DepKind::Optional entry matches the platform member's name.",
           "After the loop, convert the accumulator into Vec<OptionalDepUpdate> and assign it to the VersionPlan struct literal's `optional_dep_updates` field, replacing `Vec::new()`."
         ]
       },
       "verify_command": "cargo test -p callisto-graph --lib",
       "expected_pass": "all tests pass",
       "commit_message": "feat(graph): produce real OptionalDepUpdate entries in plan_version\n\nWhen a Fixed group's owner package declares an existing optionalDependencies entry matching a bumped platform-manifest sibling's name, plan_version now emits an OptionalDepUpdate targeting that entry -- never speculatively creating one that didn't already exist.",
-      "covers_criteria": ["AC-003", "AC-004"]
+      "covers_criteria": [
+        "AC-003",
+        "AC-004"
+      ]
     },
     {
       "id": "TASK-6",
       "title": "plan_version optional_dep_updates: AC-007b merge behavior for two platform siblings",
-      "depends_on": ["TASK-5"],
-      "files": ["crates/callisto-graph/src/commands/version.rs"],
+      "depends_on": [
+        "TASK-5"
+      ],
+      "files": [
+        "crates/callisto-graph/src/commands/version.rs"
+      ],
       "reasoning": "Task 5's implementation already keys optional_dep_map by owner manifest path and pushes into the same Vec on repeated inserts (BTreeMap::entry(...).or_default().push(...)), so two platform siblings under one owner naturally merge into a single OptionalDepUpdate rather than producing two entries pointing at the same manifest. This task pins that behavior with a dedicated test; no new implementation is needed.",
       "test": {
         "description": "Owner with two platform siblings, both with matching optionalDependencies entries on the owner's manifest -- exactly one OptionalDepUpdate for the owner's path, containing both (name, version) pairs.",
@@ -149,13 +186,17 @@
       "verify_command": "cargo test -p callisto-graph --lib",
       "expected_pass": "all tests pass",
       "commit_message": "test(graph): pin AC-007b merged optional_dep_updates for two platform siblings under one owner",
-      "covers_criteria": ["AC-007b"]
+      "covers_criteria": [
+        "AC-007b"
+      ]
     },
     {
       "id": "TASK-7",
       "title": "apply.rs Fix 1: extend active_ecosystems to platform_writes and optional_dep_updates manifest paths",
       "depends_on": [],
-      "files": ["crates/callisto-graph/src/apply.rs"],
+      "files": [
+        "crates/callisto-graph/src/apply.rs"
+      ],
       "reasoning": "active_ecosystems (apply.rs:325-349) currently only derives from plan.bumps, so a plan with only platform_writes/optional_dep_updates populated (bumps empty) never stages the npm lockfile even though an npm manifest was touched. This task extends the same active_ecosystems HashSet-building expression to also fold in plan.platform_writes and plan.optional_dep_updates manifest paths via ManifestFormat::from_path(...).ecosystem(). This task is independent of Tasks 1-6 (different file, does not touch PlatformWrite's fields) and independent of Task 8 (no precondition logic involved) -- it can be built and merged in any order relative to them.",
       "test": {
         "description": "AC-009 (platform_writes-only plan stages the npm lockfile, no refresh), AC-010 (same for optional_dep_updates-only plan), AC-011 (bumps-only plan behavior is a byte-for-byte regression -- already covered by every pre-existing apply.rs test in this file, which all currently pass and must continue to pass unmodified).",
@@ -173,13 +214,21 @@
       "verify_command": "cargo test -p callisto-graph --lib",
       "expected_pass": "all tests pass, including all pre-existing apply.rs tests (proving AC-011's byte-for-byte regression requirement)",
       "commit_message": "fix(graph): stage npm lockfile when a plan touches only platform_writes or optional_dep_updates\n\nactive_ecosystems previously derived exclusively from plan.bumps, so a plan containing only platform-manifest or optional-dependency writes never staged the npm lockfile. Extends the derivation to also consult those two fields' manifest paths.",
-      "covers_criteria": ["AC-009", "AC-010", "AC-011"]
+      "covers_criteria": [
+        "AC-009",
+        "AC-010",
+        "AC-011"
+      ]
     },
     {
       "id": "TASK-8",
       "title": "apply.rs Fix 2: platform_writes dispatch loop precondition check",
-      "depends_on": ["TASK-1"],
-      "files": ["crates/callisto-graph/src/apply.rs"],
+      "depends_on": [
+        "TASK-1"
+      ],
+      "files": [
+        "crates/callisto-graph/src/apply.rs"
+      ],
       "reasoning": "The platform_writes dispatch loop (apply.rs:244-252) currently writes unconditionally with no precondition check, unlike the sibling bump loops which already check current==from/current==target/else. This task adds the same three-way branch using PlatformWrite.from (added in Task 1), returning GraphError::UnexpectedManifestVersion on drift, treating current==target as idempotent-retry success.",
       "test": {
         "description": "Three tests: AC-012 (drift -- current is neither from nor target -> Err(UnexpectedManifestVersion) with correct fields, manifest not written), AC-012b (current already equals target -> Ok, no re-write, but path still pushed to staged), AC-013 (current equals from, the ordinary case -> succeeds, on-disk version becomes target -- this is the pre-existing test from apply.rs:2240, already updated with a matching `from` in Task 1, and must continue to pass unmodified as the regression proof).",
@@ -196,15 +245,61 @@
       "verify_command": "cargo test -p callisto-graph --lib",
       "expected_pass": "all tests pass, including the pre-existing apply_version_plan_executes_platform_writes_and_optional_dep_updates test (proving AC-013's non-drifted regression path)",
       "commit_message": "fix(graph): add current-version precondition check to platform_writes dispatch loop\n\napply_version_plan previously wrote platform manifests unconditionally, unlike the sibling bump loops. Adds the same current==from/current==to/else precondition, returning UnexpectedManifestVersion on drift and treating current==to as a safe idempotent-retry success.",
-      "covers_criteria": ["AC-012", "AC-012b", "AC-013"]
+      "covers_criteria": [
+        "AC-012",
+        "AC-012b",
+        "AC-013"
+      ]
     }
   ],
   "criteria_coverage_check": {
-    "AC-001": ["TASK-2"], "AC-002": ["TASK-2"], "AC-002b": ["TASK-3"],
-    "AC-003": ["TASK-5"], "AC-004": ["TASK-5"], "AC-005": ["TASK-2"],
-    "AC-006": ["TASK-2"], "AC-007": ["TASK-3"], "AC-007b": ["TASK-6"],
-    "AC-008": ["TASK-4"], "AC-009": ["TASK-7"], "AC-010": ["TASK-7"],
-    "AC-011": ["TASK-7"], "AC-012": ["TASK-8"], "AC-012b": ["TASK-8"],
-    "AC-013": ["TASK-8"]
+    "AC-001": [
+      "TASK-2"
+    ],
+    "AC-002": [
+      "TASK-2"
+    ],
+    "AC-002b": [
+      "TASK-3"
+    ],
+    "AC-003": [
+      "TASK-5"
+    ],
+    "AC-004": [
+      "TASK-5"
+    ],
+    "AC-005": [
+      "TASK-2"
+    ],
+    "AC-006": [
+      "TASK-2"
+    ],
+    "AC-007": [
+      "TASK-3"
+    ],
+    "AC-007b": [
+      "TASK-6"
+    ],
+    "AC-008": [
+      "TASK-4"
+    ],
+    "AC-009": [
+      "TASK-7"
+    ],
+    "AC-010": [
+      "TASK-7"
+    ],
+    "AC-011": [
+      "TASK-7"
+    ],
+    "AC-012": [
+      "TASK-8"
+    ],
+    "AC-012b": [
+      "TASK-8"
+    ],
+    "AC-013": [
+      "TASK-8"
+    ]
   }
 }
