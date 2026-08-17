@@ -121,6 +121,11 @@ impl ManifestWalkResolver {
                 index
                     .native
                     .insert((*eco, id.name().to_string()), primary_id.clone());
+                if id.name() == primary_id.name() {
+                    index
+                        .prefixed
+                        .insert((*eco, id.name().to_string()), primary_id.clone());
+                }
             }
 
             if let Some((existing_path, _)) =
@@ -504,6 +509,92 @@ fn ecosystem_primary_priority(e: Ecosystem) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn write_pkg(root: &std::path::Path, rel: &str, eco: Ecosystem, name: &str) {
+        std::fs::create_dir_all(root.join(rel)).unwrap();
+        match eco {
+            Ecosystem::Cargo => std::fs::write(
+                root.join(rel).join("Cargo.toml"),
+                format!("[package]\nname = \"{name}\"\nversion = \"0.1.0\"\nedition = \"2021\"\n"),
+            )
+            .unwrap(),
+            Ecosystem::Npm => std::fs::write(
+                root.join(rel).join("package.json"),
+                format!(r#"{{"name":"{name}","version":"0.1.0"}}"#),
+            )
+            .unwrap(),
+            Ecosystem::Pypi => std::fs::write(
+                root.join(rel).join("pyproject.toml"),
+                format!("[project]\nname = \"{name}\"\nversion = \"0.1.0\"\n"),
+            )
+            .unwrap(),
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn ac16a_fixed_group_member_resolves_via_prefixed_unpromoted_cargo_package() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        write_pkg(root, "crates/foo", Ecosystem::Cargo, "foo");
+        std::fs::write(
+            root.join("callisto.toml"),
+            "[[fixed-group]]\nname = \"g\"\nmembers = [\"cargo:foo\"]\n",
+        )
+        .unwrap();
+        let locator = crate::locate::IgnoreWalkLocator::new(root);
+        let runner = NoopRunner;
+        let ws = crate::Workspace::load(root.to_path_buf(), &locator, &runner).expect(
+            "Workspace::load must succeed for an unpromoted Cargo package referenced via cargo:foo",
+        );
+        let native = ws
+            .graph
+            .identity()
+            .native
+            .get(&(Ecosystem::Cargo, "foo".to_string()))
+            .expect("native entry must exist");
+        let prefixed = ws
+            .graph
+            .identity()
+            .prefixed
+            .get(&(Ecosystem::Cargo, "foo".to_string()))
+            .expect("prefixed entry must exist for AC-02");
+        assert_eq!(
+            prefixed, native,
+            "prefixed and native must resolve to the identical PackageId for an unpromoted single-ecosystem package"
+        );
+        let group = ws
+            .config
+            .groups
+            .fixed
+            .get(&callisto_model::GroupName("g".to_string()))
+            .expect("group must exist");
+        assert_eq!(group.members.len(), 1);
+    }
+
+    #[test]
+    fn ac03_fixed_group_member_naming_absent_ecosystem_is_missing_group_member() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        write_pkg(root, "crates/foo", Ecosystem::Cargo, "foo");
+        std::fs::write(
+            root.join("callisto.toml"),
+            "[[fixed-group]]\nname = \"g\"\nmembers = [\"npm:foo\"]\n",
+        )
+        .unwrap();
+        let locator = crate::locate::IgnoreWalkLocator::new(root);
+        let runner = NoopRunner;
+        let err = match crate::Workspace::load(root.to_path_buf(), &locator, &runner) {
+            Err(e) => e,
+            Ok(_) => panic!("expected MissingGroupMember error, got Ok"),
+        };
+        match err {
+            GraphError::MissingGroupMember { member, .. } => {
+                assert_eq!(member, "npm:foo");
+            }
+            other => panic!("expected MissingGroupMember, got {other:?}"),
+        }
+    }
 
     struct NoopRunner;
     impl CommandRunner for NoopRunner {
