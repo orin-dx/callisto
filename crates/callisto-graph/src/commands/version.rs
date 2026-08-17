@@ -826,6 +826,266 @@ mod tests {
         );
     }
 
+    /// AC-002b [REWRITTEN per corrected spec]: plan_version's
+    /// OpenContext/workspace-inheritance resolution logic verified directly
+    /// against a FIXTURE-CONSTRUCTED GroupMember::PlatformManifest (bypassing
+    /// walk.rs discovery entirely, since walk.rs:199 only registers npm
+    /// manifests into IdentityIndex.platform today -- no Cargo.toml can
+    /// become a GroupMember::PlatformManifest through the real,
+    /// disk-discovered call path). Confirms plan_version hardcodes
+    /// ManifestRole::Canonical unconditionally (ignoring the fixture's
+    /// Platform role) and correctly resolves a Cargo `version.workspace =
+    /// true` manifest's inherited version from `[workspace.package]`.
+    #[test]
+    fn plan_version_platform_write_from_resolves_cargo_workspace_inherited_version() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        git_init_with_commit(root);
+
+        // Workspace root Cargo.toml supplying the [workspace.package] version
+        // that a `version.workspace = true` platform manifest inherits from.
+        std::fs::write(
+            root.join("Cargo.toml"),
+            "[workspace]\n\n[workspace.package]\nversion = \"3.2.1\"\n",
+        )
+        .unwrap();
+
+        // The real owner package -- receives a real PlannedBump this run.
+        std::fs::create_dir_all(root.join("crates/owner")).unwrap();
+        std::fs::write(
+            root.join("crates/owner/Cargo.toml"),
+            "[package]\nname = \"cargo-owner\"\nversion = \"1.0.0\"\n",
+        )
+        .unwrap();
+
+        // The fixture's on-disk platform manifest target -- a maturin-style
+        // Cargo.toml inheriting its version from [workspace.package]. This is
+        // an ordinary, real, on-disk Cargo.toml; it is NOT registered as a
+        // GroupMember::PlatformManifest by walk.rs (per AC-002b, that
+        // classification is npm-only today) -- it is wired into the group
+        // fixture manually below.
+        std::fs::create_dir_all(root.join("platform/plat")).unwrap();
+        std::fs::write(
+            root.join("platform/plat/Cargo.toml"),
+            "[package]\nname = \"cargo-owner-linux-x64-gnu\"\nversion.workspace = true\n",
+        )
+        .unwrap();
+
+        std::fs::write(
+            root.join("callisto.toml"),
+            "[[fixed-group]]\nname = \"cargo-owner-group\"\nmembers = [\"cargo-owner\"]\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join(".changeset")).unwrap();
+        std::fs::write(
+            root.join(".changeset/bump.md"),
+            "---\n\"cargo-owner\": patch\n---\n\nfix.\n",
+        )
+        .unwrap();
+        commit_all(root, "add owner and fixture platform crate");
+
+        let locator = IgnoreWalkLocator::new(root);
+        let runner = NoopRunner;
+        let mut ws =
+            Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
+
+        // Fixture-construct the GroupMember::PlatformManifest, bypassing
+        // walk.rs discovery entirely (per corrected AC-002b).
+        let owner = callisto_model::PackageId::Bare("cargo-owner".to_string());
+        let group_name = callisto_model::GroupName("cargo-owner-group".to_string());
+        let group = ws
+            .config
+            .groups
+            .fixed
+            .get_mut(&group_name)
+            .expect("cargo-owner-group must exist as a real Fixed group after Workspace::load");
+        group
+            .members
+            .push(crate::config::groups::GroupMember::PlatformManifest {
+                owner: owner.clone(),
+                role: callisto_model::ManifestRole::Platform {
+                    platform: "linux".to_string(),
+                    arch: "x64".to_string(),
+                    abi: Some("gnu".to_string()),
+                },
+                path: std::path::PathBuf::from("platform/plat/Cargo.toml"),
+                name: "cargo-owner-linux-x64-gnu".to_string(),
+            });
+
+        let inference = NoInference;
+        let opts = VersionOptions {
+            strict: false,
+            strict_graph: false,
+            allow_empty_changesets: true,
+        };
+
+        let plan = plan_version(&ws, &inference, &opts).expect("plan_version must succeed");
+
+        let owner_bump = plan
+            .bumps
+            .iter()
+            .find(|b| b.package == owner)
+            .expect("owner must receive a real PlannedBump this run, not a vacuous pass");
+
+        assert_eq!(
+            plan.platform_writes.len(),
+            1,
+            "expected exactly one PlatformWrite for the fixture-constructed Cargo platform member, got: {:?}",
+            plan.platform_writes
+        );
+        let pw = &plan.platform_writes[0];
+        assert_eq!(
+            pw.manifest,
+            Path::new("platform/plat/Cargo.toml"),
+            "PlatformWrite.manifest must be the fixture platform manifest's path"
+        );
+        assert_eq!(
+            pw.from.to_string(),
+            "3.2.1",
+            "PlatformWrite.from must resolve the Cargo workspace-inherited version.workspace = true \
+             value from [workspace.package] version, not fail or silently default"
+        );
+        assert_eq!(
+            pw.version, owner_bump.to,
+            "PlatformWrite.version must equal the owner's real bump target"
+        );
+    }
+
+    /// AC-007 [UNCHANGED per spec revision_note -- the spec's own criterion
+    /// text names no discovery mechanism, only "a Fixed group whose owner
+    /// has two GroupMember::PlatformManifest siblings"]: an owner with two
+    /// platform siblings (e.g. linux-x64-gnu and darwin-arm64 targets), both
+    /// bumped, must produce one PlatformWrite entry per platform member --
+    /// multiple platform manifests under one owner are all covered, not just
+    /// the first.
+    ///
+    /// The linux sibling is a real, disk-discovered Case D member (a
+    /// `Cargo.toml`/`package.json` pair sharing one directory, exactly as
+    /// `walk.rs`'s `real_platform_manifest_resolves_via_fixed_group_and_feeds_napi_drift`
+    /// test exercises). The darwin sibling is fixture-injected the same way
+    /// TASK-3's AC-002b test injects its member: walk.rs's platform
+    /// registration (walk.rs:131-227) groups discovered manifests strictly
+    /// by directory and sets `owner` to that directory's own primary
+    /// package, so a second platform manifest for the SAME owner can only
+    /// ever be disk-discovered if it lives in the SAME directory as the
+    /// owner's Cargo.toml -- and a directory holds at most one
+    /// `package.json`. Real disk discovery of two siblings under one owner
+    /// is therefore not representable through `walk.rs` today (the same
+    /// npm-only/single-file constraint AC-002b's correction already
+    /// documents for Cargo); this test instead proves plan_version's own
+    /// loop -- which is agnostic to how a member entered
+    /// `ws.config.groups.fixed` -- correctly iterates every
+    /// `GroupMember::PlatformManifest` under a group, not just the first.
+    #[test]
+    fn plan_version_emits_platform_write_for_each_of_two_platform_siblings() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        git_init_with_commit(root);
+
+        // Real, disk-discovered Case D linux sibling: Cargo.toml and
+        // package.json sharing one directory, so `owner` resolves to the
+        // Cargo primary_id via walk.rs's Case D promotion.
+        std::fs::create_dir_all(root.join("crates/hybrid")).unwrap();
+        std::fs::write(
+            root.join("crates/hybrid/Cargo.toml"),
+            "[package]\nname = \"hybrid\"\nversion = \"1.0.0\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("crates/hybrid/package.json"),
+            r#"{"name":"@myorg/hybrid-linux-x64-gnu","version":"0.9.0","os":["linux"],"cpu":["x64"]}"#,
+        )
+        .unwrap();
+
+        // Second sibling's on-disk manifest target -- real content, read by
+        // plan_version exactly as the first sibling's is, but fixture-wired
+        // into the group below since walk.rs cannot discover a second
+        // Case D member under the same owner.
+        std::fs::create_dir_all(root.join("crates/hybrid-darwin")).unwrap();
+        std::fs::write(
+            root.join("crates/hybrid-darwin/package.json"),
+            r#"{"name":"@myorg/hybrid-darwin-arm64","version":"0.5.0","os":["darwin"],"cpu":["arm64"]}"#,
+        )
+        .unwrap();
+
+        std::fs::write(
+            root.join("callisto.toml"),
+            "[[fixed-group]]\nname = \"hybrid-group\"\nmembers = [\"hybrid\", \"@myorg/hybrid-linux-x64-gnu\"]\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join(".changeset")).unwrap();
+        std::fs::write(
+            root.join(".changeset/bump.md"),
+            "---\n\"hybrid\": patch\n---\n\nfix.\n",
+        )
+        .unwrap();
+        commit_all(root, "add hybrid package with linux platform sibling");
+
+        let locator = IgnoreWalkLocator::new(root);
+        let runner = NoopRunner;
+        let mut ws =
+            Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
+
+        let owner = callisto_model::PackageId::Bare("hybrid".to_string());
+        let group_name = callisto_model::GroupName("hybrid-group".to_string());
+        let group = ws
+            .config
+            .groups
+            .fixed
+            .get_mut(&group_name)
+            .expect("hybrid-group must exist as a real Fixed group after Workspace::load");
+        group
+            .members
+            .push(crate::config::groups::GroupMember::PlatformManifest {
+                owner: owner.clone(),
+                role: callisto_model::ManifestRole::Platform {
+                    platform: "darwin".to_string(),
+                    arch: "arm64".to_string(),
+                    abi: None,
+                },
+                path: std::path::PathBuf::from("crates/hybrid-darwin/package.json"),
+                name: "@myorg/hybrid-darwin-arm64".to_string(),
+            });
+
+        let inference = NoInference;
+        let opts = VersionOptions {
+            strict: false,
+            strict_graph: false,
+            allow_empty_changesets: true,
+        };
+
+        let plan = plan_version(&ws, &inference, &opts).expect("plan_version must succeed");
+
+        let owner_bump = plan
+            .bumps
+            .iter()
+            .find(|b| b.package == owner)
+            .expect("hybrid must have a planned bump");
+
+        assert_eq!(
+            plan.platform_writes.len(),
+            2,
+            "expected one PlatformWrite per platform sibling (two total), got: {:?}",
+            plan.platform_writes
+        );
+
+        let linux_pw = plan
+            .platform_writes
+            .iter()
+            .find(|pw| pw.manifest == Path::new("crates/hybrid/package.json"))
+            .expect("linux sibling must have its own PlatformWrite entry");
+        assert_eq!(linux_pw.from.to_string(), "0.9.0");
+        assert_eq!(linux_pw.version, owner_bump.to);
+
+        let darwin_pw = plan
+            .platform_writes
+            .iter()
+            .find(|pw| pw.manifest == Path::new("crates/hybrid-darwin/package.json"))
+            .expect("darwin sibling must have its own PlatformWrite entry");
+        assert_eq!(darwin_pw.from.to_string(), "0.5.0");
+        assert_eq!(darwin_pw.version, owner_bump.to);
+    }
+
     /// AC-008 (disjunct 1: missing file): a Fixed group's platform manifest
     /// that validated during the walk (so it is a real
     /// GroupMember::PlatformManifest) but has been deleted from disk before
