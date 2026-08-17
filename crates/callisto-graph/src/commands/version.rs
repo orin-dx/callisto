@@ -1086,6 +1086,146 @@ mod tests {
         assert_eq!(darwin_pw.version, owner_bump.to);
     }
 
+    /// AC-007b: given the AC-007 scenario (owner with two
+    /// `GroupMember::PlatformManifest` siblings, both bumped) where the
+    /// owner's canonical manifest has matching `optionalDependencies`
+    /// entries for both platform names, `plan_version`'s
+    /// `VersionPlan.optional_dep_updates` must contain exactly one
+    /// `OptionalDepUpdate` entry for the owner's canonical manifest path,
+    /// whose `updates` field contains both (name, version) pairs -- entries
+    /// are merged per target manifest path, never duplicated as separate
+    /// `OptionalDepUpdate` entries pointing at the same path.
+    ///
+    /// Fixture construction mirrors
+    /// `plan_version_emits_platform_write_for_each_of_two_platform_siblings`:
+    /// the linux sibling is a real, disk-discovered Case D member; the
+    /// darwin sibling is fixture-injected into `ws.config.groups.fixed`
+    /// after `Workspace::load` because `walk.rs`'s directory-scoped
+    /// discovery cannot represent two platform siblings under one owner on
+    /// disk (see that test's doc comment and AC-002b's correction for the
+    /// full explanation).
+    #[test]
+    fn plan_version_merges_two_platform_siblings_optional_dep_updates_into_one_entry() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        git_init_with_commit(root);
+
+        // Real, disk-discovered Case D linux sibling: Cargo.toml and
+        // package.json sharing one directory. The owner's Cargo.toml
+        // declares matching `optional = true` dependencies on BOTH platform
+        // members' npm names, so both siblings should produce a merged
+        // OptionalDepUpdate entry rather than two separate ones.
+        std::fs::create_dir_all(root.join("crates/hybrid")).unwrap();
+        std::fs::write(
+            root.join("crates/hybrid/Cargo.toml"),
+            "[package]\nname = \"hybrid\"\nversion = \"1.0.0\"\n\n[dependencies]\n\"@myorg/hybrid-linux-x64-gnu\" = { version = \"0.9.0\", optional = true }\n\"@myorg/hybrid-darwin-arm64\" = { version = \"0.5.0\", optional = true }\n",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("crates/hybrid/package.json"),
+            r#"{"name":"@myorg/hybrid-linux-x64-gnu","version":"0.9.0","os":["linux"],"cpu":["x64"]}"#,
+        )
+        .unwrap();
+
+        // Second sibling's on-disk manifest target -- real content, read by
+        // plan_version exactly as the first sibling's is, but fixture-wired
+        // into the group below since walk.rs cannot discover a second
+        // Case D member under the same owner.
+        std::fs::create_dir_all(root.join("crates/hybrid-darwin")).unwrap();
+        std::fs::write(
+            root.join("crates/hybrid-darwin/package.json"),
+            r#"{"name":"@myorg/hybrid-darwin-arm64","version":"0.5.0","os":["darwin"],"cpu":["arm64"]}"#,
+        )
+        .unwrap();
+
+        std::fs::write(
+            root.join("callisto.toml"),
+            "[[fixed-group]]\nname = \"hybrid-group\"\nmembers = [\"hybrid\", \"@myorg/hybrid-linux-x64-gnu\"]\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join(".changeset")).unwrap();
+        std::fs::write(
+            root.join(".changeset/bump.md"),
+            "---\n\"hybrid\": patch\n---\n\nfix.\n",
+        )
+        .unwrap();
+        commit_all(root, "add hybrid package with linux platform sibling");
+
+        let locator = IgnoreWalkLocator::new(root);
+        let runner = NoopRunner;
+        let mut ws =
+            Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
+
+        let owner = callisto_model::PackageId::Bare("hybrid".to_string());
+        let group_name = callisto_model::GroupName("hybrid-group".to_string());
+        let group = ws
+            .config
+            .groups
+            .fixed
+            .get_mut(&group_name)
+            .expect("hybrid-group must exist as a real Fixed group after Workspace::load");
+        group
+            .members
+            .push(crate::config::groups::GroupMember::PlatformManifest {
+                owner: owner.clone(),
+                role: callisto_model::ManifestRole::Platform {
+                    platform: "darwin".to_string(),
+                    arch: "arm64".to_string(),
+                    abi: None,
+                },
+                path: std::path::PathBuf::from("crates/hybrid-darwin/package.json"),
+                name: "@myorg/hybrid-darwin-arm64".to_string(),
+            });
+
+        let inference = NoInference;
+        let opts = VersionOptions {
+            strict: false,
+            strict_graph: false,
+            allow_empty_changesets: true,
+        };
+
+        let plan = plan_version(&ws, &inference, &opts).expect("plan_version must succeed");
+
+        let owner_bump = plan
+            .bumps
+            .iter()
+            .find(|b| b.package == owner)
+            .expect("hybrid must have a planned bump");
+
+        assert_eq!(
+            plan.optional_dep_updates.len(),
+            1,
+            "expected exactly one merged OptionalDepUpdate for the owner's canonical manifest, \
+             not one per platform sibling; got: {:?}",
+            plan.optional_dep_updates
+        );
+        let update = &plan.optional_dep_updates[0];
+        assert_eq!(
+            update.manifest,
+            Path::new("crates/hybrid/Cargo.toml"),
+            "OptionalDepUpdate.manifest must be the owner's canonical manifest path"
+        );
+
+        let mut updates = update.updates.clone();
+        updates.sort_by(|a, b| a.0.cmp(&b.0));
+        let mut expected = vec![
+            (
+                "@myorg/hybrid-linux-x64-gnu".to_string(),
+                owner_bump.to.clone(),
+            ),
+            (
+                "@myorg/hybrid-darwin-arm64".to_string(),
+                owner_bump.to.clone(),
+            ),
+        ];
+        expected.sort_by(|a, b| a.0.cmp(&b.0));
+        assert_eq!(
+            updates, expected,
+            "OptionalDepUpdate.updates must contain both (name, version) pairs merged into the \
+             single entry for the owner's manifest path"
+        );
+    }
+
     /// AC-008 (disjunct 1: missing file): a Fixed group's platform manifest
     /// that validated during the walk (so it is a real
     /// GroupMember::PlatformManifest) but has been deleted from disk before
