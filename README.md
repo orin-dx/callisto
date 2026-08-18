@@ -29,8 +29,9 @@
 > **Topological Directed Graph Solver**  
 > Models workspace package dependencies using `petgraph`'s Kahn topological solver and Tarjan's SCC algorithm to compute cascading version bumps and catch circular dependency cycles.
 
-> **Zero-Config Native Matrix Auto-Discovery**
-> `callisto matrix` auto-discovers napi-rs and maturin native build targets (`napi.targets`, `[tool.maturin].targets`) plus npm/PyPI runtime-version constraints (`engines.node`, `requires-python`) directly from manifests as the single source of truth, eliminating duplicate CI YAML configuration drift. Java (`java.version`) and .NET native-AOT target discovery are planned for a future release.
+> **Zero-Config Native Matrix Auto-Discovery**  
+> `callisto matrix` auto-discovers napi-rs and maturin build targets (`napi.targets`, `[tool.maturin].targets`) plus npm/PyPI runtime constraints (`engines.node`, `requires-python`) straight from manifests — no duplicate CI YAML to keep in sync.  
+> Java (`java.version`) and .NET native-AOT discovery are planned for a future release.
 
 > **Hermetic & Build-System Agnostic**  
 > Pure Rust CLI engine runs seamlessly in Bazel sandboxes (`rules_callisto`), Buck2, Nix flakes, Moon WASM (`callisto-moon`), GitHub Actions, GitLab CI, and local VCS hooks (`just hooks`).
@@ -96,7 +97,7 @@ callisto version
 
 ## Release Workflow & Branch Configuration
 
-Callisto integrates natively with GitHub Actions, GitLab CI, and custom release pipelines. 
+Callisto integrates natively with GitHub Actions, GitLab CI, and custom release pipelines.
 
 ### 1. Release PR Branch Naming & Configuration
 
@@ -172,27 +173,15 @@ on:
 
 ## Why Callisto?
 
-Callisto brings together the best ideas from `@changesets/cli`, Google's `release-please`, and `nx release` into a single, lightning-fast native Rust engine designed for modern polyglot monorepos.
+Callisto combines ideas from `@changesets/cli`, `release-please`, and `nx release` into one native Rust engine built for polyglot monorepos:
 
-### Sub-10ms Native Performance
-- **Callisto**: Native Rust binary executes workspace discovery and dependency graph solving in under 10ms (30x-50x faster than JS tools).
-- **Alternatives**: `@changesets/cli`, `release-please`, and `nx release` require heavy Node.js runtimes (300ms-500ms startup times).
-
-### Safe, Format-Preserving Manifest Edits
-- **Callisto**: Edits `Cargo.toml` and `package.json` using Concrete Syntax Tree (CST) AST editors (`toml_edit` and `serde_json` indentation fingerprinting), keeping comments, key order, and whitespace intact. File updates use POSIX crash-safe atomic tempfile swaps (`NamedTempFile` + `fs::rename`).
-- **Alternatives**: `release-please` relies on fragile regular expressions. `@changesets/cli` re-serializes JSON with destructive default formatting.
-
-### Topological Graph Solver & Cycle Diagnostics
-- **Callisto**: Uses `petgraph`'s Kahn topological solver and Tarjan's SCC algorithm to calculate exact version bump cascades and catch circular dependency cycles with rich diagnostic cards (`miette`).
-- **Alternatives**: `release-please` focuses on single-repo releases. `nx release` is coupled to Nx JavaScript trees.
-
-### Zero-Config Native Matrix Auto-Discovery (`callisto matrix`)
-- **Callisto**: Auto-discovers napi-rs and maturin native build targets plus npm/PyPI runtime-version constraints directly from manifests as the single source of truth, eliminating duplicate CI YAML configuration drift. Java and .NET native-AOT target discovery are planned for a future release.
-- **Alternatives**: Requires manually maintaining 50-line matrix arrays in GitHub Actions YAML.
-
-### Hermetic & Build-System Agnostic
-- **Callisto**: Pure Rust CLI engine runs seamlessly in Bazel sandboxes (`rules_callisto`), Buck2, Nix flakes, Moon WASM (`callisto-moon`), GitHub Actions, GitLab CI, and local Git hooks (`just hooks`).
-- **Alternatives**: Locked to GitHub REST APIs (`release-please`) or JavaScript workspace tools.
+| | Callisto | Alternatives |
+| :--- | :--- | :--- |
+| **Speed** | Workspace discovery + graph solving in <10ms | `@changesets/cli`, `release-please`, `nx release` pay a 300-500ms Node.js startup cost |
+| **Manifest edits** | CST-based (`toml_edit`, `serde_json`), preserves comments/order/whitespace | `release-please` uses regex; `@changesets/cli` re-serializes JSON with default formatting |
+| **Cycle detection** | Kahn + Tarjan SCC with `miette` diagnostic cards | `release-please` is single-repo only; `nx release` is tied to Nx JS trees |
+| **Matrix discovery** | Auto-discovers napi-rs/maturin targets and npm/PyPI runtime constraints from manifests (Java/.NET planned) | Manual 50-line matrix arrays in CI YAML |
+| **Portability** | Runs in Bazel, Buck2, Nix, Moon WASM, GitHub Actions, GitLab CI, and local Git hooks | Locked to GitHub REST APIs or JS workspace tooling |
 
 ---
 

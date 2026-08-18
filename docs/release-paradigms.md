@@ -1,6 +1,6 @@
 # Callisto Monorepo Release Paradigms & CI/CD Safety
 
-Callisto supports 3 distinct release management paradigms. Each paradigm enforces zero-risk package publishing across monorepos while catering to different team workflows and branching strategies.
+Callisto supports three release paradigms. Each gates publishing behind CI verification, but they differ in branching model and how much manual coordination they require.
 
 ---
 
