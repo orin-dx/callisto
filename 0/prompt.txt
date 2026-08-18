@@ -4374,3 +4374,18 @@ What's next? Do it
 **Bottom line**: this is NOT "narrow, single-function" as the master plan's tier assignment claimed. The actual code-level fix (one line, `native_name` lookup with fallback) is trivial, but making it *compilable* requires either a new cross-layer trait bound (touching 3+ generic function signatures) or a `Workspace` struct field addition plus `Workspace::load` changes — both are architecture-level changes on par with Track 1's `CascadeInput.tags` work, touching ~16 call sites. Recommend re-scoping to at least the same rigor as Track 1 (full canon pipeline or a carefully-planned multi-task lighter loop), not a single quick patch.</result>
 <usage><subagent_tokens>866128</subagent_tokens><tool_uses>4</tool_uses><duration_ms>76088</duration_ms></usage>
 </task-notification>
+
+---
+
+<task-notification>
+<task-id>a9ea16adccde28549</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/bb531e8d-c394-4e47-a8ae-e4a9ceeca6d2/tasks/a9ea16adccde28549.output</output-file>
+<status>completed</status>
+<summary>Agent "Draft Track 9 spec (cascade correctness)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I don't need to poll — I'll get a task notification when the drafter finishes. I'll just note status now and wait.
+
+Drafting agent is running in the background. Standing by for its completion notification before running verification (canon:verifier), audit (canon:auditor), and the exit-gate.</result>
+<usage><subagent_tokens>74167</subagent_tokens><tool_uses>16</tool_uses><duration_ms>143282</duration_ms></usage>
+</task-notification>
