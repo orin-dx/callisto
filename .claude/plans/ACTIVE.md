@@ -112,7 +112,12 @@ Plan: `.claude/plans/PLAN-TRACK3B1-IDENTITY-PROMOTION-CORE.json` (22 tasks, T01a
 Implementation: `crates/callisto-graph/src/locate/{membership,ignore_walk}.rs` (Cargo/npm/pnpm workspace membership filtering, 45 tasks), `crates/callisto-graph/src/{identity,walk}.rs` (ecosystem-prefixed identity resolution, disjoint cross-ecosystem promotion, `resolve_native_with_fallback` silent-fallback removal).
 This is the master remediation plan's "Track 3b–e" (identity/ecosystem resolution hardening) — all four originally-confirmed live bugs fixed: `IgnoreWalkLocator::projects()` now filters by Cargo/npm/pnpm membership globs; `IdentityIndex.prefixed` populated; `package_manifest_decls` disambiguates same-named cross-ecosystem packages via promotion instead of erroring; `resolve_native_with_fallback`'s silent cross-ecosystem match removed.
 Exit-gate: PASS. `just ci` green throughout.
-Note: Track 3a (name-vs-path `[[package]]`/`[[package-set]] match` semantics — a *different* item, still gated on an unresolved open decision) is NOT part of this entry — do not conflate the two "Track 3a" labels from two different planning documents.
+Note: Track 3a (name-vs-path `[[package]]`/`[[package-set]] match` semantics — a *different* item from the same-numbered plan above) is NOT part of this entry — see its own entry below.
+
+### Track 3a: `match` Semantics Decision + Doc Correction — DONE
+
+Decision resolved: docs/00-design.md and docs/01-spec.md deliberately specified path-based `match` patterns (`match = "crates/*"`; the spec's §14 algorithm defined the match target as a workspace-relative path) — a genuine, deliberate doc/code mismatch, not a typo. Confirmed via investigation: no real config anywhere in the repo uses path-style patterns, and the shipped implementation (`PackagePattern`, `crates/callisto-graph/src/config/pattern.rs`) already has a deliberate, tested name+ecosystem-prefix glob mechanism (`"cargo:pkg-*"` vs `"npm:pkg-*"`, with its own dedicated `BareRuleMatchesMultipleEcosystems` ambiguity error). User confirmed this is the intended direction. Resolved as a doc-only fix (no pipeline needed, same category as Track 6-doc/8-doc): corrected the worked example and formal algorithm in both docs to describe name+ecosystem matching, plus fixed an unrelated small inaccuracy found while sweeping (`BareRuleMatchesMultipleEcosystems`'s own doc comment used `cargo/name`, a slash, instead of the real `cargo:name` colon syntax).
+Commit: `b190626`.
 
 ### Track 6-doc / 8-doc: Stale Spec Claims (I/O boundary, Python ecosystem status) — DONE
 
