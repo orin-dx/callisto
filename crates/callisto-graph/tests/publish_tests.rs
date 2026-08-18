@@ -172,6 +172,7 @@ fn test_publish_plan_uses_correct_topological_order() {
         git: OnceCell::from(git),
         runner: &runner,
         manifest_cache: Default::default(),
+        identity: callisto_graph::IdentityIndex::default(),
     };
 
     let plan = plan_publish(&ws, &PublishOptions::default()).expect("plan_publish should succeed");
@@ -684,6 +685,7 @@ fn publish_options_only_filter_excludes_unlisted_packages() {
         git: OnceCell::from(git),
         runner: &runner,
         manifest_cache: Default::default(),
+        identity: callisto_graph::IdentityIndex::default(),
     };
 
     // Only publish pkg-a; pkg-b must be excluded.
@@ -747,6 +749,7 @@ fn publish_options_only_unknown_package_returns_error() {
         git: OnceCell::from(git),
         runner: &runner,
         manifest_cache: Default::default(),
+        identity: callisto_graph::IdentityIndex::default(),
     };
 
     let opts = PublishOptions {
@@ -979,6 +982,7 @@ fn plan_publish_release_entry_block_does_not_hard_fail_when_tag_index_is_none() 
         git: OnceCell::new(),
         runner: &runner,
         manifest_cache: Default::default(),
+        identity: callisto_graph::IdentityIndex::default(),
     };
 
     let plan = plan_publish(&ws, &PublishOptions::default()).expect(
@@ -1347,6 +1351,7 @@ fn package_with_only_undispatchable_target_gets_no_release_entry_and_a_diagnosti
         git: OnceCell::new(),
         runner: &runner,
         manifest_cache: Default::default(),
+        identity: callisto_graph::IdentityIndex::default(),
     };
 
     let plan = plan_publish(&ws, &PublishOptions::default())

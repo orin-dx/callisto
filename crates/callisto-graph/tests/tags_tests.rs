@@ -67,6 +67,7 @@ fn test_tag_dry_run_does_not_create_git_tags() {
         git: OnceCell::from(git),
         runner: &runner,
         manifest_cache: Default::default(),
+        identity: callisto_graph::IdentityIndex::default(),
     };
 
     let opts = TagOptions {
@@ -177,6 +178,7 @@ fn test_create_tags_without_gix_falls_back_to_command_runner() {
         git: OnceCell::from(git),
         runner: &runner,
         manifest_cache: Default::default(),
+        identity: callisto_graph::IdentityIndex::default(),
     };
 
     let opts = TagOptions {
@@ -338,6 +340,7 @@ fn test_create_tags_without_gix_skips_creation_for_existing_tag() {
         git: OnceCell::from(git),
         runner: &runner,
         manifest_cache: Default::default(),
+        identity: callisto_graph::IdentityIndex::default(),
     };
 
     let opts = TagOptions {
@@ -499,6 +502,7 @@ fn test_create_tags_checks_existence_against_cached_tag_index_not_per_release() 
         git: OnceCell::from(git),
         runner: &runner,
         manifest_cache: Default::default(),
+        identity: callisto_graph::IdentityIndex::default(),
     };
 
     let opts = TagOptions {

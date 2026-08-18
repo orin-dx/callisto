@@ -40,6 +40,7 @@ fn test_compose_pr_body_custom_branch_flag() {
         git: OnceCell::from(git),
         runner: &runner,
         manifest_cache: Default::default(),
+        identity: callisto_graph::IdentityIndex::default(),
     };
 
     let inference = NoInference;

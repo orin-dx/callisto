@@ -326,3 +326,30 @@ fn resolve_native_deduplicates_same_bare_name_across_ecosystems() {
         "two ecosystem entries with equal PackageIds should deduplicate to one result"
     );
 }
+
+#[test]
+fn workspace_load_populates_identity_field_from_graph_identity() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    git_init(root);
+
+    fs::write(
+        root.join("Cargo.toml"),
+        "[package]\nname = \"solo-crate\"\nversion = \"0.1.0\"\n",
+    )
+    .unwrap();
+
+    let locator = IgnoreWalkLocator::new(root);
+    let runner = NoopRunner;
+
+    let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace should load");
+
+    use callisto_model::Ecosystem;
+    assert_eq!(
+        ws.identity
+            .native
+            .get(&(Ecosystem::Cargo, "solo-crate".to_string())),
+        Some(&PackageId::parse("solo-crate").unwrap()),
+        "Workspace.identity must be populated from graph.identity() at load time"
+    );
+}

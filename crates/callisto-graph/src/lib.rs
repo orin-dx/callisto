@@ -93,6 +93,7 @@ pub struct Workspace<'a, R: CommandRunner, D: DependencyResolver = ManifestWalkR
     /// manifest-open-for-write path in `apply.rs`, which always needs a
     /// fresh, exclusively-owned `&mut` handle.
     pub manifest_cache: RefCell<BTreeMap<PathBuf, Arc<dyn Manifest>>>,
+    pub identity: IdentityIndex,
 }
 
 impl<'a, R: CommandRunner> Workspace<'a, R, ManifestWalkResolver> {
@@ -128,6 +129,8 @@ impl<'a, R: CommandRunner> Workspace<'a, R, ManifestWalkResolver> {
                 .collect();
         }
 
+        let identity = graph.identity().clone();
+
         Ok(Workspace {
             root,
             config,
@@ -136,6 +139,7 @@ impl<'a, R: CommandRunner> Workspace<'a, R, ManifestWalkResolver> {
             git: OnceCell::new(),
             runner,
             manifest_cache,
+            identity,
         })
     }
 }

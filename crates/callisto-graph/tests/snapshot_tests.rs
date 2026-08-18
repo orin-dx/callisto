@@ -75,6 +75,7 @@ fn test_snapshot_version_template_placeholders() {
         git: OnceCell::from(git),
         runner: &runner,
         manifest_cache: Default::default(),
+        identity: callisto_graph::IdentityIndex::default(),
     };
 
     let (_plan, report) = plan_snapshot(&ws, "canary").unwrap();
@@ -137,6 +138,7 @@ fn test_snapshot_version_format_matches_spec() {
         git: OnceCell::from(git),
         runner: &runner,
         manifest_cache: Default::default(),
+        identity: callisto_graph::IdentityIndex::default(),
     };
 
     let (plan, report) =
@@ -188,6 +190,7 @@ fn test_snapshot_sha_resolution_failure_is_surfaced_error() {
         git: OnceCell::from(git),
         runner: &runner,
         manifest_cache: Default::default(),
+        identity: callisto_graph::IdentityIndex::default(),
     };
 
     let result = plan_snapshot(&ws, "canary");
@@ -260,6 +263,7 @@ fn test_snapshot_resolves_head_sha_via_command_runner_fallback_when_gix_unavaila
         git: OnceCell::from(git),
         runner: &runner,
         manifest_cache: Default::default(),
+        identity: callisto_graph::IdentityIndex::default(),
     };
 
     let (_, report) = plan_snapshot(&ws, "canary").expect(

@@ -117,6 +117,7 @@ fn test_validate_since_git_diff_argument_ordering() {
         git: OnceCell::from(git),
         runner: &runner,
         manifest_cache: Default::default(),
+        identity: callisto_graph::IdentityIndex::default(),
     };
 
     let opts = ValidateOptions {
@@ -185,6 +186,7 @@ fn test_validate_detects_malformed_package_name_in_changeset() {
         git: OnceCell::from(git),
         runner: &runner,
         manifest_cache: Default::default(),
+        identity: callisto_graph::IdentityIndex::default(),
     };
 
     let opts = ValidateOptions {

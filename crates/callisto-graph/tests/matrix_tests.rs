@@ -68,6 +68,7 @@ fn matrix_package_filter_restricts_to_one_package() {
         git: OnceCell::new(),
         runner: &runner,
         manifest_cache: Default::default(),
+        identity: callisto_graph::IdentityIndex::default(),
     };
 
     let opts = MatrixOptions {
@@ -106,6 +107,7 @@ fn matrix_unknown_package_errors() {
         git: OnceCell::new(),
         runner: &runner,
         manifest_cache: Default::default(),
+        identity: callisto_graph::IdentityIndex::default(),
     };
 
     let opts = MatrixOptions {
