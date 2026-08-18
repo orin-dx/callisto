@@ -24,7 +24,7 @@ pub struct CascadeDecision {
 pub fn cascade_action(
     kind: DepKind,
     coverage: Coverage,
-    _source: Severity,
+    source: Severity,
     cfg: &CascadeConfig,
 ) -> CascadeDecision {
     use Coverage::*;
@@ -47,11 +47,17 @@ pub fn cascade_action(
             false,
         ),
         (Peer, Covers) => (Severity::None, None, false),
-        (Peer, DoesNotCover) if cfg.peer_escalation && matches!(coverage, DoesNotCover) => (
-            Severity::Major,
-            Some(ConfigKey::CASCADE_PEER_ESCALATION),
-            true,
-        ),
+        (Peer, DoesNotCover)
+            if cfg.peer_escalation
+                && matches!(coverage, DoesNotCover)
+                && matches!(source, Severity::Minor | Severity::Major) =>
+        {
+            (
+                Severity::Major,
+                Some(ConfigKey::CASCADE_PEER_ESCALATION),
+                true,
+            )
+        }
         (Peer, DoesNotCover) => (
             cfg.bump_severity.as_severity(),
             Some(ConfigKey::CASCADE_BUMP_SEVERITY),
@@ -599,6 +605,73 @@ mod tests {
     use callisto_model::{GroupKind, GroupName, Package, ReleaseTrigger, VersionGrammar};
 
     use crate::config::{CascadeBumpSeverity, GroupDef, GroupMember};
+
+    /// §13 invariant 9 / §7.4 row 5 vs row 4: peer-dependency escalation to
+    /// `Severity::Major` must only fire when the upstream (source) severity
+    /// is non-patch (Minor or Major). A patch-severity source that leaves a
+    /// peer spec out of range falls through to row 4 (`cfg.bump_severity`),
+    /// not a manufactured Major bump -- `cascade_action`'s `source` parameter
+    /// must actually gate the escalation, not just be accepted and ignored.
+    #[test]
+    fn cascade_action_peer_escalation_only_fires_for_non_patch_source() {
+        let cfg = CascadeConfig {
+            mode: CascadeMode::OutOfRange,
+            bump_severity: CascadeBumpSeverity::Patch,
+            peer_escalation: true,
+            preserve_npm_ranges: false,
+        };
+
+        // Patch-severity source: must NOT escalate to Major (row 4).
+        let patch_decision =
+            cascade_action(DepKind::Peer, Coverage::DoesNotCover, Severity::Patch, &cfg);
+        assert_eq!(
+            patch_decision.severity,
+            Severity::Patch,
+            "a patch-severity upstream source must not escalate a peer dependent to Major"
+        );
+        assert!(
+            !patch_decision.escalated,
+            "a patch-severity source must not set `escalated`"
+        );
+        assert_eq!(
+            patch_decision.governed_by,
+            Some(ConfigKey::CASCADE_BUMP_SEVERITY),
+            "a patch-severity source falls through to the ordinary bump_severity row"
+        );
+
+        // Minor-severity source: MUST escalate to Major (row 5).
+        let minor_decision =
+            cascade_action(DepKind::Peer, Coverage::DoesNotCover, Severity::Minor, &cfg);
+        assert_eq!(
+            minor_decision.severity,
+            Severity::Major,
+            "a non-patch (Minor) upstream source must escalate a peer dependent to Major"
+        );
+        assert!(
+            minor_decision.escalated,
+            "a non-patch source must set `escalated`"
+        );
+        assert_eq!(
+            minor_decision.governed_by,
+            Some(ConfigKey::CASCADE_PEER_ESCALATION)
+        );
+
+        // Major-severity source: MUST also escalate to Major (row 5).
+        let major_decision =
+            cascade_action(DepKind::Peer, Coverage::DoesNotCover, Severity::Major, &cfg);
+        assert_eq!(major_decision.severity, Severity::Major);
+        assert!(major_decision.escalated);
+
+        // None-severity source: provably unreachable through run_cascade (every
+        // write site into the severities map gates on `sev > Severity::None`
+        // before inserting), but the match arm falls through to row 4 exactly
+        // like Patch if it ever were reached -- exhaustive over the enum
+        // rather than relying on that untested cross-function invariant.
+        let none_decision =
+            cascade_action(DepKind::Peer, Coverage::DoesNotCover, Severity::None, &cfg);
+        assert_eq!(none_decision.severity, Severity::Patch);
+        assert!(!none_decision.escalated);
+    }
 
     // -------------------------------------------------------------------------
     // T06: caret range must not cover pre-release versions
