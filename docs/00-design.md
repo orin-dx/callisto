@@ -1364,7 +1364,7 @@ allow-empty-changesets = false   # §6.3 — misfiled under [cascade] in earlier
                                   # a validation setting, not a cascade one
 
 [[package-set]]
-match = "crates/*"
+match = "cargo:*"
 release-trigger = "auto"
 publish-to = ["cratesIo"]
 pre-major-inference = "conservative"   # §7.1 — opt-in remap of inferred (not explicit)
@@ -1376,12 +1376,12 @@ pre-major-inference = "conservative"   # §7.1 — opt-in remap of inferred (not
                                         # §4 scope note and this key exist for
 
 [[package-set]]
-match = "packages/*"
+match = "npm:*"
 release-trigger = "changeset"
 publish-to = ["npm"]
 
 [[package]]
-match = "packages/special-case"
+match = "special-case"
 release-trigger = "changeset"   # explicit [[package]] entries always win over set matches
 publish-to = ["npm"]
 
@@ -1426,7 +1426,20 @@ Discovery walks the workspace (moon's project graph when available for authorita
 project roots, `ignore`-crate walk otherwise — `ProjectLocator`, §0.1/§15); `package-set`
 matches expand to concrete packages; explicit `[[package]]` entries always win over set
 matches. A set matching nothing, or two sets claiming the same package, is a hard config
-error. **Group membership validation, at parse time (P5), not at mutation time**: a package
+error.
+
+**`match` is a glob against the package's name, not its workspace path.** A bare pattern
+(`"pkg-*"`) matches that name in any ecosystem; an `ecosystem:` prefix (`"cargo:pkg-*"`,
+`"npm:pkg-*"`) scopes it to one ecosystem — this is how `match = "cargo:*"` above claims
+every Cargo package and `match = "npm:*"` claims every npm package, mirroring the worked
+example's earlier path-based phrasing, which described intent, not the shipped mechanism.
+A bare pattern that matches the same name across two ecosystems (a same-named Cargo crate
+and npm package with no `ecosystem:` prefix to disambiguate) is a hard config error
+(`BareRuleMatchesMultipleEcosystems`) — add the prefix. This is deliberately a different
+axis from `[[fixed-group]]`/`[[linked-group]]` `members`, which lists exact package names,
+not a glob.
+
+**Group membership validation, at parse time (P5), not at mutation time**: a package
 must belong to at most one `[[fixed-group]]` and at most one `[[linked-group]]`, and the
 fixed and linked member sets must be disjoint — reject with a clear error listing the
 conflicting groups, rather than letting an ambiguous membership surface as a confusing

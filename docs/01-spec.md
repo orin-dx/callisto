@@ -1571,7 +1571,7 @@ pub enum DiagnosticCode {
     ChangelogSectionNotFound,
     /// §G.4 walk — a bare [[package]] rule matches packages whose canonical
     /// manifests span two or more ecosystems; use an ecosystem-prefixed
-    /// pattern such as `cargo/name` to target only one.
+    /// pattern such as `cargo:name` to target only one.
     BareRuleMatchesMultipleEcosystems,
     /// A napi/maturin platform triple was not recognised by triple_to_role.
     UnrecognisedPlatformTriple,
@@ -6325,15 +6325,18 @@ pub fn load(root: &Path) -> Result<ResolvedConfig, ConfigError>;
 known:
 
 ```
-for each discovered package P (by project root path, workspace-relative):
+for each discovered package P (project root path used for discovery only; `match` below
+                                compares against P's NAME, not this path — see the note
+                                after this algorithm):
     layers ← []
-    if moon.yml block exists at P's root              → layers.push(MoonYml, block)
-    if an explicit [[package]] whose `match` == P     → layers.push(CallistoToml, entry)
-    if P's [[fixed-group]] sets any per-package key   → layers.push(CallistoToml, group)
-    if P's [[linked-group]] sets any per-package key  → layers.push(CallistoToml, group)
-    for each [[package-set]] whose `match` glob ⊇ P   → collect
-        if more than one matches P                    → ConfigError::OverlappingPackageSets
-        else                                          → layers.push(CallistoToml, set)
+    if moon.yml block exists at P's root                        → layers.push(MoonYml, block)
+    if an explicit [[package]] whose `match` name-glob-matches
+        P (ecosystem-prefix-scoped if `match` has one)          → layers.push(CallistoToml, entry)
+    if P's [[fixed-group]] sets any per-package key             → layers.push(CallistoToml, group)
+    if P's [[linked-group]] sets any per-package key            → layers.push(CallistoToml, group)
+    for each [[package-set]] whose `match` name-glob-matches P  → collect
+        if more than one matches P                              → ConfigError::OverlappingPackageSets
+        else                                                    → layers.push(CallistoToml, set)
     layers.push(Default, derive_from_manifests(P))    # §18 Q5.2's derivation rules
     resolve field-by-field, first layer that specifies the field wins;
     record ConfigProvenance from the winning layer.
@@ -6342,6 +6345,15 @@ after all packages:
     for each [[package-set]] that matched nothing     → ConfigError::PackageSetMatchedNothing
     for each [[package]] that matched nothing         → ConfigError::PackageMatchedNothing
 ```
+
+**`match` glob-matches P's name, not P's discovery path.** This algorithm previously read
+"whose `match` == P" / "`match` glob ⊇ P" with P defined as a workspace-relative path,
+implying `match` is a path pattern (`"crates/*"`). The shipped implementation
+(`PackagePattern`, `crates/callisto-graph/src/config/pattern.rs`) matches P's *name* instead,
+with an optional `ecosystem:` prefix to disambiguate a bare name-glob that would otherwise
+match the same name in more than one ecosystem (`BareRuleMatchesMultipleEcosystems`, below).
+P's path is still how discovery finds the package in the first place — it just isn't what
+`match` compares against.
 
 §14's "two sets claiming the same package is a hard config error" is `OverlappingPackageSets`;
 an explicit `[[package]]` overlapping a set is **not** an error — §14 says explicit entries
