@@ -282,3 +282,142 @@ fn dry_run_mode_fails_fast_when_resolve_commit_errors_for_existing_tag() {
          already-existing tag, not fabricate release.sha; got {result:?}"
     );
 }
+
+// ---- T5: regression proofs (real git repo, no stubbing) ----
+
+struct PanicRunner;
+impl CommandRunner for PanicRunner {
+    fn run(
+        &self,
+        program: &str,
+        args: &[&str],
+        _cwd: &Path,
+    ) -> Result<CommandOutput, CommandError> {
+        panic!("unexpected CommandRunner invocation ({program} {args:?}) -- a real .git repo is present, so GitAccess must use native gix, never the shell fallback");
+    }
+}
+
+fn init_git_repo(dir: &Path) {
+    let run = |args: &[&str]| {
+        let status = std::process::Command::new("git")
+            .args(args)
+            .current_dir(dir)
+            .status()
+            .expect("git should run");
+        assert!(status.success(), "git {args:?} failed");
+    };
+    run(&["init", "-q"]);
+    run(&["config", "user.email", "test@example.com"]);
+    run(&["config", "user.name", "Test"]);
+    // Force local, unsigned lightweight tags/commits regardless of the
+    // developer's global git config (e.g. tag.gpgsign=true), so the
+    // fixture's plain `git tag <name> <sha>` never blocks on a missing
+    // annotation message or signing key.
+    run(&["config", "commit.gpgsign", "false"]);
+    run(&["config", "tag.gpgsign", "false"]);
+    run(&["add", "."]);
+    run(&["commit", "-q", "-m", "init"]);
+}
+
+fn git_head_sha(dir: &Path) -> String {
+    let out = std::process::Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .current_dir(dir)
+        .output()
+        .unwrap();
+    String::from_utf8(out.stdout).unwrap().trim().to_string()
+}
+
+fn git_tag_exists_at(dir: &Path, tag: &str, expected_sha: &str) -> bool {
+    let out = std::process::Command::new("git")
+        .args([
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            &format!("{tag}^{{commit}}"),
+        ])
+        .current_dir(dir)
+        .output()
+        .unwrap();
+    out.status.success() && String::from_utf8_lossy(&out.stdout).trim() == expected_sha
+}
+
+#[test]
+fn tag_not_existing_reports_release_sha_in_both_modes_and_apply_creates_it() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write_minimal_workspace(root);
+    init_git_repo(root);
+    let head = git_head_sha(root);
+
+    let runner = PanicRunner;
+    let locator = IgnoreWalkLocator::new(root);
+    let ws = Workspace::load(root.to_path_buf(), &locator, &runner).unwrap();
+    let plan = plan_with_release(release_entry("pkg@1.0.0", &head));
+
+    // Dry-run first, while the tag genuinely does not exist yet.
+    let dry_report = create_tags_with_options(&ws, &plan, &TagOptions::default(), None)
+        .expect("dry-run must succeed");
+    assert_eq!(
+        dry_report.created_tags[0].sha.as_str(),
+        head,
+        "AC-07 dry-run"
+    );
+    assert!(
+        !git_tag_exists_at(root, "pkg@1.0.0", &head),
+        "dry-run must not create the tag"
+    );
+
+    // Apply: tag still does not exist -> gets created at release.sha.
+    let permit = ApplyPermit::force_for_tests();
+    let apply_report = create_tags_with_options(&ws, &plan, &TagOptions::default(), Some(&permit))
+        .expect("apply must succeed");
+    assert_eq!(
+        apply_report.created_tags[0].sha.as_str(),
+        head,
+        "AC-07 apply"
+    );
+    assert!(
+        git_tag_exists_at(root, "pkg@1.0.0", &head),
+        "apply must create the tag at release.sha"
+    );
+}
+
+#[test]
+fn tag_existing_at_release_sha_reports_release_sha_with_no_error_in_both_modes() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write_minimal_workspace(root);
+    init_git_repo(root);
+    let head = git_head_sha(root);
+
+    // Pre-create the tag directly via git, at exactly the sha the plan will request.
+    let status = std::process::Command::new("git")
+        .args(["tag", "pkg@1.0.0", &head])
+        .current_dir(root)
+        .status()
+        .unwrap();
+    assert!(status.success());
+
+    let runner = PanicRunner;
+    let locator = IgnoreWalkLocator::new(root);
+    let ws = Workspace::load(root.to_path_buf(), &locator, &runner).unwrap();
+    let plan = plan_with_release(release_entry("pkg@1.0.0", &head));
+
+    let permit = ApplyPermit::force_for_tests();
+    let apply_report = create_tags_with_options(&ws, &plan, &TagOptions::default(), Some(&permit))
+        .expect("idempotent apply rerun must succeed with no error");
+    assert_eq!(
+        apply_report.created_tags[0].sha.as_str(),
+        head,
+        "AC-08 apply"
+    );
+
+    let dry_report = create_tags_with_options(&ws, &plan, &TagOptions::default(), None)
+        .expect("dry-run against already-tagged state must succeed with no error");
+    assert_eq!(
+        dry_report.created_tags[0].sha.as_str(),
+        head,
+        "AC-08 dry-run"
+    );
+}
