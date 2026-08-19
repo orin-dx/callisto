@@ -903,6 +903,124 @@ mod tests {
         );
     }
 
+    /// AC-003: when IdentityIndex::native_name(&target, dependent_eco) returns
+    /// None (the common, non-dual-identity case), RewriteKey.name must equal
+    /// PackageId::name() exactly as it did before this fix, for a Prefixed
+    /// target with no registration.
+    #[test]
+    fn test_none_registration_fallback_uses_package_id_name_ac003() {
+        let dep_target = PackageId::parse("pkg-core").unwrap();
+        let dependent = PackageId::parse("pkg-app").unwrap();
+        let edge = make_dep_edge(&dependent, &dep_target, "^1.0.0", Ecosystem::Cargo);
+
+        let graph = TestGraph {
+            packages: vec![bare_package(&dep_target), bare_package(&dependent)],
+            edges: vec![edge],
+        };
+
+        let mut base = BTreeMap::new();
+        base.insert(dep_target.clone(), Version::semver(1, 0, 0));
+        base.insert(dependent.clone(), Version::semver(1, 0, 0));
+
+        let mut seed = BTreeMap::new();
+        seed.insert(dep_target.clone(), Severity::Major);
+
+        let groups = GroupTable::default();
+        let cfg = CascadeConfig {
+            mode: CascadeMode::OutOfRange,
+            bump_severity: CascadeBumpSeverity::Patch,
+            peer_escalation: true,
+            preserve_npm_ranges: false,
+        };
+        let reasons = BTreeMap::new();
+        let named_by = BTreeMap::new();
+        let identity = IdentityIndex::default();
+
+        let input = CascadeInput {
+            graph: &graph,
+            groups: &groups,
+            cfg: &cfg,
+            seed: &seed,
+            reasons: &reasons,
+            named_by: &named_by,
+            base: &base,
+            pre: None,
+            tags: &TagIndex::empty(),
+            identity: &identity,
+        };
+
+        let outcome = run_cascade(input).unwrap();
+        let rewrite = outcome
+            .rewrites
+            .values()
+            .find(|r| r.dependency == dep_target)
+            .expect("rewrite for dep_target must be produced");
+
+        assert_eq!(
+            rewrite.key.name,
+            dep_target.name(),
+            "with no IdentityIndex.native registration, RewriteKey.name must fall back to PackageId::name()"
+        );
+    }
+
+    /// AC-007: same fallback, exercised for a PackageId::Bare target with no
+    /// registration, confirming the Bare variant is handled identically to the
+    /// Prefixed None-registration case in AC-003.
+    #[test]
+    fn test_bare_target_with_no_registration_falls_back_to_name_ac007() {
+        let dep_target = PackageId::Bare("foo".to_string());
+        let dependent = PackageId::parse("pkg-app").unwrap();
+        let edge = make_dep_edge(&dependent, &dep_target, "^1.0.0", Ecosystem::Cargo);
+
+        let graph = TestGraph {
+            packages: vec![bare_package(&dep_target), bare_package(&dependent)],
+            edges: vec![edge],
+        };
+
+        let mut base = BTreeMap::new();
+        base.insert(dep_target.clone(), Version::semver(1, 0, 0));
+        base.insert(dependent.clone(), Version::semver(1, 0, 0));
+
+        let mut seed = BTreeMap::new();
+        seed.insert(dep_target.clone(), Severity::Major);
+
+        let groups = GroupTable::default();
+        let cfg = CascadeConfig {
+            mode: CascadeMode::OutOfRange,
+            bump_severity: CascadeBumpSeverity::Patch,
+            peer_escalation: true,
+            preserve_npm_ranges: false,
+        };
+        let reasons = BTreeMap::new();
+        let named_by = BTreeMap::new();
+        let identity = IdentityIndex::default();
+
+        let input = CascadeInput {
+            graph: &graph,
+            groups: &groups,
+            cfg: &cfg,
+            seed: &seed,
+            reasons: &reasons,
+            named_by: &named_by,
+            base: &base,
+            pre: None,
+            tags: &TagIndex::empty(),
+            identity: &identity,
+        };
+
+        let outcome = run_cascade(input).unwrap();
+        let rewrite = outcome
+            .rewrites
+            .values()
+            .find(|r| r.dependency == dep_target)
+            .expect("rewrite for dep_target must be produced");
+
+        assert_eq!(
+            rewrite.key.name, "foo",
+            "Bare target with no IdentityIndex.native registration must fall back to edge.to.name()"
+        );
+    }
+
     /// Spec §G.6.7: a severity bump landing on a single member of a linked
     /// group (e.g. via a changeset naming only that package) must propagate
     /// to every other member of the group, and every member must converge
