@@ -276,7 +276,11 @@ pub fn solve_cascade<D: DependencyResolver>(
                                 } else {
                                     DepWriteTarget::Manifest(edge.from_manifest.clone())
                                 },
-                                name: edge.to.name().to_string(),
+                                name: input
+                                    .identity
+                                    .native_name(&edge.to, eco)
+                                    .map(str::to_string)
+                                    .unwrap_or_else(|| edge.to.name().to_string()),
                                 kind: if edge.inherited {
                                     None
                                 } else {
@@ -811,6 +815,92 @@ mod tests {
             publish_to: Vec::new(),
             tag_template: None,
         }
+    }
+
+    /// AC-001/AC-002: a dual-identity rewrite target registered under two
+    /// different native names per ecosystem must produce a RewriteKey whose
+    /// `name` is the name registered for the DEPENDENT's own ecosystem, not
+    /// PackageId::name() (the target's own native-ecosystem registration).
+    /// Exercised through the real run_cascade -> solve_cascade call path, not a
+    /// direct, isolated call to IdentityIndex::native_name.
+    #[test]
+    fn test_dual_identity_rewrite_key_uses_dependents_ecosystem_native_name() {
+        let dep_target = PackageId::Bare("my-native-lib".to_string());
+        let dependent = PackageId::Prefixed {
+            ecosystem: Ecosystem::Npm,
+            name: "dep-app".to_string(),
+        };
+
+        let edge = DepEdge {
+            from: dependent.clone(),
+            to: dep_target.clone(),
+            kind: DepKind::Runtime,
+            spec: DepSpec::Range(
+                callisto_model::VersionReq::parse("^1.0.0", Ecosystem::Npm).unwrap(),
+                "^1.0.0".to_string(),
+            ),
+            from_manifest: std::path::PathBuf::from("dep-app/package.json"),
+            inherited: false,
+        };
+
+        let graph = TestGraph {
+            packages: vec![bare_package(&dep_target), bare_package(&dependent)],
+            edges: vec![edge],
+        };
+
+        let mut base = BTreeMap::new();
+        base.insert(dep_target.clone(), Version::semver(1, 0, 0));
+        base.insert(dependent.clone(), Version::semver(1, 0, 0));
+
+        let mut seed = BTreeMap::new();
+        seed.insert(dep_target.clone(), Severity::Major);
+
+        let groups = GroupTable::default();
+        let cfg = CascadeConfig {
+            mode: CascadeMode::OutOfRange,
+            bump_severity: CascadeBumpSeverity::Patch,
+            peer_escalation: true,
+            preserve_npm_ranges: false,
+        };
+        let reasons = BTreeMap::new();
+        let named_by = BTreeMap::new();
+
+        let mut identity = IdentityIndex::default();
+        identity.native.insert(
+            (Ecosystem::Cargo, "my-native-lib".to_string()),
+            dep_target.clone(),
+        );
+        identity.native.insert(
+            (Ecosystem::Npm, "@scope/my-native-lib".to_string()),
+            dep_target.clone(),
+        );
+
+        let input = CascadeInput {
+            graph: &graph,
+            groups: &groups,
+            cfg: &cfg,
+            seed: &seed,
+            reasons: &reasons,
+            named_by: &named_by,
+            base: &base,
+            pre: None,
+            tags: &TagIndex::empty(),
+            identity: &identity,
+        };
+
+        let outcome = run_cascade(input).unwrap();
+
+        let rewrite = outcome
+            .rewrites
+            .values()
+            .find(|r| r.dependency == dep_target)
+            .expect("a rewrite for dep_target must be produced");
+
+        assert_eq!(
+            rewrite.key.name, "@scope/my-native-lib",
+            "RewriteKey.name must use the Npm-native name registered for the \
+             dependent's own ecosystem, not PackageId::name() (\"my-native-lib\")"
+        );
     }
 
     /// Spec §G.6.7: a severity bump landing on a single member of a linked
