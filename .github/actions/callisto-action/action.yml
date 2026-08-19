@@ -87,13 +87,13 @@ runs:
         callisto status --check
         STATUS_EXIT=$?
         set -e
-        if [[ $STATUS_EXIT -eq 0 ]]; then
+        if [[ $STATUS_EXIT -eq 1 ]]; then
           HAS_CHANGESETS=true
         elif [[ $STATUS_EXIT -eq 2 ]]; then
           HAS_CHANGESETS=false
         else
-          echo "::error::callisto status --check failed with exit code $STATUS_EXIT"
-          exit $STATUS_EXIT
+          echo "::error::callisto status --check exited with unexpected code $STATUS_EXIT (expected 1 for pending changesets or 2 for none pending)"
+          exit 1
         fi
         echo "::endgroup::"
 
