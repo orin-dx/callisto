@@ -61,6 +61,7 @@ pub fn plan_snapshot<R: CommandRunner, D: DependencyResolver>(
         base: &base_versions,
         pre: None,
         tags,
+        identity: &ws.identity,
     };
 
     let cascade_out = crate::cascade::run_cascade(cascade_input)?;

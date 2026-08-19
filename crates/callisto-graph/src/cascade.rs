@@ -9,6 +9,7 @@ use callisto_model::{
 use crate::config::GroupTable;
 use crate::config::{CascadeConfig, CascadeMode};
 use crate::error::GraphError;
+use crate::identity::IdentityIndex;
 use crate::resolver::DependencyResolver;
 use crate::tags::TagIndex;
 
@@ -148,6 +149,7 @@ pub struct CascadeInput<'a, D: DependencyResolver> {
     pub base: &'a BTreeMap<PackageId, Version>,
     pub pre: Option<&'a callisto_format::PreState>,
     pub tags: &'a TagIndex,
+    pub identity: &'a IdentityIndex,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -708,6 +710,38 @@ mod tests {
         );
     }
 
+    #[test]
+    fn cascade_input_accepts_identity_field() {
+        let graph = TwoPackageGraph { packages: vec![] };
+        let groups = GroupTable::default();
+        let cfg = CascadeConfig {
+            mode: CascadeMode::OutOfRange,
+            bump_severity: CascadeBumpSeverity::Patch,
+            peer_escalation: true,
+            preserve_npm_ranges: false,
+        };
+        let seed = BTreeMap::new();
+        let reasons = BTreeMap::new();
+        let named_by = BTreeMap::new();
+        let base = BTreeMap::new();
+        let identity = IdentityIndex::default();
+
+        let input = CascadeInput {
+            graph: &graph,
+            groups: &groups,
+            cfg: &cfg,
+            seed: &seed,
+            reasons: &reasons,
+            named_by: &named_by,
+            base: &base,
+            pre: None,
+            tags: &TagIndex::empty(),
+            identity: &identity,
+        };
+
+        assert!(input.identity.native.is_empty());
+    }
+
     struct TwoPackageGraph {
         packages: Vec<Package>,
     }
@@ -832,6 +866,7 @@ mod tests {
             base: &base,
             pre: None,
             tags: &TagIndex::empty(),
+            identity: &IdentityIndex::default(),
         };
 
         let outcome = run_cascade(input).unwrap();
@@ -914,6 +949,7 @@ mod tests {
             base: &base,
             pre: None,
             tags: &TagIndex::empty(),
+            identity: &IdentityIndex::default(),
         };
 
         let outcome = run_cascade(input).unwrap();
@@ -986,6 +1022,7 @@ mod tests {
             base: &base,
             pre: Some(&pre),
             tags: &TagIndex::empty(),
+            identity: &IdentityIndex::default(),
         };
 
         let target = bump_target(&pkg_a, Severity::Minor, &input).unwrap();
@@ -1084,6 +1121,7 @@ mod tests {
             base: &base,
             pre: None,
             tags: &TagIndex::empty(),
+            identity: &IdentityIndex::default(),
         };
 
         let outcome = run_cascade(input).unwrap();
@@ -1212,6 +1250,7 @@ mod tests {
             base: &base,
             pre: Some(&pre),
             tags: &TagIndex::empty(),
+            identity: &IdentityIndex::default(),
         };
 
         let outcome = run_cascade(input).unwrap();
@@ -1296,6 +1335,7 @@ mod tests {
             base: &base,
             pre: Some(&pre),
             tags: &TagIndex::empty(),
+            identity: &IdentityIndex::default(),
         };
 
         let target = bump_target(&pkg_a, Severity::Minor, &input).unwrap();
@@ -1377,6 +1417,7 @@ mod tests {
             base: &base,
             pre: None,
             tags: &TagIndex::empty(),
+            identity: &IdentityIndex::default(),
         };
 
         let outcome = run_cascade(input).unwrap();
@@ -1540,6 +1581,7 @@ mod tests {
             base: &base,
             pre: None,
             tags: &tags,
+            identity: &IdentityIndex::default(),
         };
 
         let outcome = run_cascade(input).unwrap();

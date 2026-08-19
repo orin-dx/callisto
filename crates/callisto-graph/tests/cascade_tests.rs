@@ -3,6 +3,7 @@ use callisto_graph::cascade::{run_cascade, CascadeInput};
 use callisto_graph::config::groups::GroupTable;
 use callisto_graph::config::{CascadeBumpSeverity, CascadeConfig, CascadeMode};
 use callisto_graph::toposort_impl;
+use callisto_graph::IdentityIndex;
 use callisto_graph::TagIndex;
 use callisto_model::{DepKind, DepSpec, PackageId, Severity, Version, VersionGrammar, VersionReq};
 use fixtures::GraphBuilder;
@@ -56,6 +57,7 @@ fn test_blackbox_cascade_propagation() {
         base: &base,
         pre: None,
         tags: &TagIndex::empty(),
+        identity: &IdentityIndex::default(),
     };
 
     let outcome = run_cascade(input).unwrap();
@@ -150,6 +152,7 @@ fn test_diamond_cascade_convergence() {
         base: &base,
         pre: None,
         tags: &TagIndex::empty(),
+        identity: &IdentityIndex::default(),
     };
 
     let outcome = run_cascade(input).unwrap();
@@ -206,6 +209,7 @@ fn test_peer_dependency_escalation() {
         base: &base,
         pre: None,
         tags: &TagIndex::empty(),
+        identity: &IdentityIndex::default(),
     };
 
     let outcome = run_cascade(input).unwrap();
@@ -269,6 +273,7 @@ fn test_linked_group_converges_shared_version() {
         base: &base,
         pre: None,
         tags: &TagIndex::empty(),
+        identity: &IdentityIndex::default(),
     };
 
     let outcome = run_cascade(input).unwrap();
@@ -336,6 +341,7 @@ fn test_linked_group_version_convergence() {
         base: &base,
         pre: None,
         tags: &TagIndex::empty(),
+        identity: &IdentityIndex::default(),
     };
 
     let outcome = run_cascade(input).unwrap();
@@ -424,6 +430,7 @@ fn test_pep440_package_bump_succeeds() {
         base: &base,
         pre: None,
         tags: &TagIndex::empty(),
+        identity: &IdentityIndex::default(),
     };
 
     // Before the fix this returns Err because SemVerVersioning rejects PEP 440 versions.

@@ -80,6 +80,7 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
         base: &base_versions,
         pre: pre_state.as_ref(),
         tags,
+        identity: &ws.identity,
     };
 
     let napi = crate::napi::NapiTargetsIndex::load(&ws.config.groups, &ws.root)?;
