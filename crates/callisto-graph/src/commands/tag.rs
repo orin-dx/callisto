@@ -71,10 +71,25 @@ pub fn create_tags_with_options<R: CommandRunner, D: DependencyResolver>(
                     }
                 }
             }
+
+            let already_existed = ws.tags()?.contains_tag(tag_str);
+            let sha = if already_existed {
+                match git.resolve_commit(tag_str)? {
+                    Some(actual) => actual,
+                    None => {
+                        return Err(GraphError::Vcs(VcsError::RefNotFound {
+                            ref_name: tag_str.to_string(),
+                        }))
+                    }
+                }
+            } else {
+                release.sha.clone()
+            };
+
             tags.push(CreatedTag {
                 package: release.package.clone(),
                 tag_name: release.tag_name.clone(),
-                sha: release.sha.clone(),
+                sha,
             });
             continue;
         };

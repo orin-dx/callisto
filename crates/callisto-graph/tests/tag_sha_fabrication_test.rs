@@ -198,3 +198,87 @@ fn apply_mode_fails_fast_when_resolve_commit_errors_for_existing_tag() {
          already-existing tag, not fabricate release.sha; got {result:?}"
     );
 }
+
+// ---- T4: dry-run path (permit None) ----
+
+#[test]
+fn dry_run_mode_reports_real_target_when_tag_exists_and_differs_from_release_sha() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write_minimal_workspace(root);
+    assert_non_repo(root);
+
+    let real_sha = "a".repeat(40);
+    let requested_sha = "b".repeat(40);
+    let runner = StubTagRunner {
+        tag_exists: true,
+        tag_name: "pkg@1.0.0".to_string(),
+        rev_parse: RevParse::Sha(real_sha.clone()),
+    };
+    let locator = IgnoreWalkLocator::new(root);
+    let ws = Workspace::load(root.to_path_buf(), &locator, &runner).unwrap();
+    let plan = plan_with_release(release_entry("pkg@1.0.0", &requested_sha));
+
+    let report = create_tags_with_options(&ws, &plan, &TagOptions::default(), None)
+        .expect("create_tags_with_options (dry-run) must succeed");
+
+    assert_eq!(
+        report.created_tags[0].sha.as_str(),
+        real_sha,
+        "dry-run mode must preview the tag's real current target, not release.sha, when the \
+         tag already exists at a different commit"
+    );
+    // StubTagRunner panics on any git invocation other than `tag --list` and
+    // `rev-parse --verify --quiet ...` -- reaching this point without a panic
+    // proves no write op (e.g. `git tag -a`) was ever attempted.
+}
+
+#[test]
+fn dry_run_mode_fails_fast_when_resolve_commit_returns_ok_none_for_existing_tag() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write_minimal_workspace(root);
+    assert_non_repo(root);
+
+    let runner = StubTagRunner {
+        tag_exists: true,
+        tag_name: "pkg@1.0.0".to_string(),
+        rev_parse: RevParse::NotFound,
+    };
+    let locator = IgnoreWalkLocator::new(root);
+    let ws = Workspace::load(root.to_path_buf(), &locator, &runner).unwrap();
+    let plan = plan_with_release(release_entry("pkg@1.0.0", &"b".repeat(40)));
+
+    let result = create_tags_with_options(&ws, &plan, &TagOptions::default(), None);
+
+    assert!(
+        matches!(result, Err(GraphError::Vcs(_))),
+        "dry-run must return Err(GraphError::Vcs) when resolve_commit returns Ok(None) for an \
+         already-existing tag, not fabricate release.sha; got {result:?}"
+    );
+}
+
+#[test]
+fn dry_run_mode_fails_fast_when_resolve_commit_errors_for_existing_tag() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write_minimal_workspace(root);
+    assert_non_repo(root);
+
+    let runner = StubTagRunner {
+        tag_exists: true,
+        tag_name: "pkg@1.0.0".to_string(),
+        rev_parse: RevParse::CommandErr,
+    };
+    let locator = IgnoreWalkLocator::new(root);
+    let ws = Workspace::load(root.to_path_buf(), &locator, &runner).unwrap();
+    let plan = plan_with_release(release_entry("pkg@1.0.0", &"b".repeat(40)));
+
+    let result = create_tags_with_options(&ws, &plan, &TagOptions::default(), None);
+
+    assert!(
+        matches!(result, Err(GraphError::Vcs(_))),
+        "dry-run must return Err(GraphError::Vcs) when resolve_commit itself errors for an \
+         already-existing tag, not fabricate release.sha; got {result:?}"
+    );
+}
