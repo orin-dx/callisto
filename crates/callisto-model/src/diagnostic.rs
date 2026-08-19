@@ -168,11 +168,33 @@ pub enum DiagnosticCode {
     /// package's own `napi.targets`/`[tool.maturin].targets` — the duplicate is dropped
     /// (first occurrence wins) rather than treated as a hard error.
     DuplicatePlatformTriple,
+    /// A changelog file exists at the package's resolved `pkg.changelog` path but could not
+    /// be read -- invalid UTF-8, permission denied, or any I/O failure other than "file does
+    /// not exist" (that case is `ChangelogSectionNotFound` instead). `changelog_section` is
+    /// left `None` for the package; `plan_publish` is not aborted.
+    ChangelogReadError,
 }
 
 #[cfg(test)]
 mod tests {
     use super::DiagnosticCode;
+
+    /// AC-12c: DiagnosticCode::ChangelogReadError must serialize to the kebab-case string
+    /// "changelog-read-error" and deserialize back to the same variant.
+    #[test]
+    fn changelog_read_error_serializes_to_kebab_case() {
+        let code = DiagnosticCode::ChangelogReadError;
+        let json = serde_json::to_string(&code).unwrap();
+        assert_eq!(
+            json, r#""changelog-read-error""#,
+            "DiagnosticCode::ChangelogReadError must serialize to \"changelog-read-error\"",
+        );
+        let roundtrip: DiagnosticCode = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            roundtrip, code,
+            "deserialized value must equal the original variant",
+        );
+    }
 
     /// AC-10: DiagnosticCode::BareRuleMatchesMultipleEcosystems must serialize
     /// to the kebab-case string "bare-rule-matches-multiple-ecosystems" and
