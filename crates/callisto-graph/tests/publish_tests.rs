@@ -1451,3 +1451,75 @@ fn plan_publish_leaves_changelog_section_none_when_file_does_not_exist() {
         plan.diagnostics
     );
 }
+
+// ---- regression: AC-10b (empty section), AC-12 (no matching heading) ----
+
+#[test]
+fn plan_publish_leaves_changelog_section_none_when_matched_heading_section_is_empty() {
+    use callisto_graph::commands::{plan_publish, PublishOptions};
+
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write_release_candidate_pkg(root, "1.2.3");
+    std::fs::write(
+        root.join("CHANGELOG.md"),
+        "# Changelog\n\n## 1.2.3\n\n\n\n## 1.2.2\n\nOlder notes.\n",
+    )
+    .unwrap();
+    init_git_repo(root);
+
+    let runner = DummyRunner;
+    let locator = IgnoreWalkLocator::new(root);
+    let ws = callisto_graph::Workspace::load(root.to_path_buf(), &locator, &runner).unwrap();
+
+    let plan = plan_publish(&ws, &PublishOptions::default()).expect("plan_publish must succeed");
+    let pkg_id = PackageId::parse("pkg").unwrap();
+    let release = plan.releases.iter().find(|r| r.package == pkg_id).unwrap();
+
+    assert_eq!(
+        release.changelog_section, None,
+        "AC-10b: matched heading has empty content"
+    );
+    assert!(
+        plan.diagnostics.iter().any(|d| d.code
+            == callisto_model::DiagnosticCode::ChangelogSectionNotFound
+            && d.package.as_ref() == Some(&pkg_id)),
+        "expected a ChangelogSectionNotFound diagnostic naming pkg; got {:?}",
+        plan.diagnostics
+    );
+}
+
+#[test]
+fn plan_publish_leaves_changelog_section_none_when_no_matching_heading() {
+    use callisto_graph::commands::{plan_publish, PublishOptions};
+
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write_release_candidate_pkg(root, "1.2.3");
+    std::fs::write(
+        root.join("CHANGELOG.md"),
+        "# Changelog\n\n## 1.2.2\n\nOlder notes only, no 1.2.3 section.\n",
+    )
+    .unwrap();
+    init_git_repo(root);
+
+    let runner = DummyRunner;
+    let locator = IgnoreWalkLocator::new(root);
+    let ws = callisto_graph::Workspace::load(root.to_path_buf(), &locator, &runner).unwrap();
+
+    let plan = plan_publish(&ws, &PublishOptions::default()).expect("plan_publish must succeed");
+    let pkg_id = PackageId::parse("pkg").unwrap();
+    let release = plan.releases.iter().find(|r| r.package == pkg_id).unwrap();
+
+    assert_eq!(
+        release.changelog_section, None,
+        "AC-12: no `## 1.2.3` heading in the file"
+    );
+    assert!(
+        plan.diagnostics.iter().any(|d| d.code
+            == callisto_model::DiagnosticCode::ChangelogSectionNotFound
+            && d.package.as_ref() == Some(&pkg_id)),
+        "expected a ChangelogSectionNotFound diagnostic naming pkg; got {:?}",
+        plan.diagnostics
+    );
+}
