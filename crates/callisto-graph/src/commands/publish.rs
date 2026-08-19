@@ -61,6 +61,79 @@ fn validate_npm_registry_url(
     }
 }
 
+/// Resolves a package's `changelog_section` for `plan_publish`: reads the file at
+/// `ws_root.join(changelog_rel_path)` and extracts the `## {ver}` section via
+/// `callisto_changelog::extract_section`. Every non-fatal outcome (file not found, no
+/// matching heading, empty matched section, or an unreadable file) leaves the return value
+/// `None` and pushes exactly one Warning diagnostic into `diagnostics` rather than aborting
+/// the plan -- `ChangelogSectionNotFound` for the first three (AC-10b, AC-11, AC-12),
+/// `ChangelogReadError` for a read failure that is not "file does not exist" (AC-12c).
+fn resolve_changelog_section(
+    ws_root: &std::path::Path,
+    changelog_rel_path: &std::path::Path,
+    pkg_id: &callisto_model::PackageId,
+    ver: &callisto_model::Version,
+    diagnostics: &mut Vec<callisto_model::Diagnostic>,
+) -> Option<String> {
+    let full_path = ws_root.join(changelog_rel_path);
+    let content = match std::fs::read_to_string(&full_path) {
+        Ok(c) => c,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            diagnostics.push(callisto_model::Diagnostic {
+                code: callisto_model::DiagnosticCode::ChangelogSectionNotFound,
+                severity: callisto_model::DiagnosticSeverity::Warning,
+                message: format!(
+                    "no changelog file found at `{}` for package `{}`",
+                    changelog_rel_path.display(),
+                    pkg_id.display_name()
+                ),
+                package: Some(pkg_id.clone()),
+                path: Some(changelog_rel_path.to_path_buf()),
+                escalated_by: None,
+                governed_by: None,
+            });
+            return None;
+        }
+        Err(e) => {
+            diagnostics.push(callisto_model::Diagnostic {
+                code: callisto_model::DiagnosticCode::ChangelogReadError,
+                severity: callisto_model::DiagnosticSeverity::Warning,
+                message: format!(
+                    "could not read changelog at `{}` for package `{}`: {e}",
+                    changelog_rel_path.display(),
+                    pkg_id.display_name()
+                ),
+                package: Some(pkg_id.clone()),
+                path: Some(changelog_rel_path.to_path_buf()),
+                escalated_by: None,
+                governed_by: None,
+            });
+            return None;
+        }
+    };
+
+    match callisto_changelog::extract_section(&content, ver) {
+        Some(section) => Some(section.to_string()),
+        None => {
+            diagnostics.push(callisto_model::Diagnostic {
+                code: callisto_model::DiagnosticCode::ChangelogSectionNotFound,
+                severity: callisto_model::DiagnosticSeverity::Warning,
+                message: format!(
+                    "no `## {}` section found in `{}` for package `{}`",
+                    ver.render(),
+                    changelog_rel_path.display(),
+                    pkg_id.display_name()
+                ),
+                package: Some(pkg_id.clone()),
+                path: Some(changelog_rel_path.to_path_buf()),
+                escalated_by: None,
+                governed_by: None,
+            });
+            None
+        }
+    }
+}
+
 pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
     ws: &Workspace<'_, R, D>,
     opts: &PublishOptions,
@@ -420,11 +493,20 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
                 // soft-handled above), release entries are omitted — consistent
                 // with the GitDiscoveryFailed diagnostic already pushed.
                 if let (Some(ref sha), Some(idx)) = (&head_sha, tag_index) {
+                    let changelog_section = pkg.changelog.as_ref().and_then(|ch_path| {
+                        resolve_changelog_section(
+                            &ws.root,
+                            ch_path,
+                            &pkg.id,
+                            &ver,
+                            &mut diagnostics,
+                        )
+                    });
                     releases.push(ReleaseEntry {
                         package: pkg.id.clone(),
                         tag_name: idx.template(&pkg.id).render(&ver),
                         sha: sha.clone(),
-                        changelog_section: None,
+                        changelog_section,
                     });
                 }
             }

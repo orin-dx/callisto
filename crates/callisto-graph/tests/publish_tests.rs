@@ -1373,3 +1373,81 @@ fn package_with_only_undispatchable_target_gets_no_release_entry_and_a_diagnosti
         plan.diagnostics
     );
 }
+
+// ---- changelog_section population (AC-10, AC-11) ----
+
+fn write_release_candidate_pkg(root: &std::path::Path, version: &str) {
+    std::fs::write(
+        root.join("Cargo.toml"),
+        format!("[package]\nname = \"pkg\"\nversion = \"{version}\"\nedition = \"2021\"\n"),
+    )
+    .unwrap();
+}
+
+#[test]
+fn plan_publish_populates_changelog_section_when_heading_has_content() {
+    use callisto_graph::commands::{plan_publish, PublishOptions};
+
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write_release_candidate_pkg(root, "1.2.3");
+    std::fs::write(
+        root.join("CHANGELOG.md"),
+        "# Changelog\n\n## 1.2.3\n\nSome release notes here.\n\n## 1.2.2\n\nOlder notes.\n",
+    )
+    .unwrap();
+    init_git_repo(root);
+
+    let runner = DummyRunner;
+    let locator = IgnoreWalkLocator::new(root);
+    let ws = callisto_graph::Workspace::load(root.to_path_buf(), &locator, &runner).unwrap();
+
+    let plan = plan_publish(&ws, &PublishOptions::default()).expect("plan_publish must succeed");
+    let pkg_id = PackageId::parse("pkg").unwrap();
+    let release = plan
+        .releases
+        .iter()
+        .find(|r| r.package == pkg_id)
+        .unwrap_or_else(|| panic!("expected a ReleaseEntry for pkg, got: {:?}", plan.releases));
+
+    assert_eq!(
+        release.changelog_section.as_deref(),
+        Some("Some release notes here."),
+        "changelog_section must equal extract_section's trimmed output for the matching heading"
+    );
+}
+
+#[test]
+fn plan_publish_leaves_changelog_section_none_when_file_does_not_exist() {
+    use callisto_graph::commands::{plan_publish, PublishOptions};
+
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write_release_candidate_pkg(root, "1.2.3");
+    // Deliberately no CHANGELOG.md written.
+    init_git_repo(root);
+
+    let runner = DummyRunner;
+    let locator = IgnoreWalkLocator::new(root);
+    let ws = callisto_graph::Workspace::load(root.to_path_buf(), &locator, &runner).unwrap();
+
+    let plan = plan_publish(&ws, &PublishOptions::default()).expect("plan_publish must succeed");
+    let pkg_id = PackageId::parse("pkg").unwrap();
+    let release = plan
+        .releases
+        .iter()
+        .find(|r| r.package == pkg_id)
+        .unwrap_or_else(|| panic!("expected a ReleaseEntry for pkg, got: {:?}", plan.releases));
+
+    assert_eq!(
+        release.changelog_section, None,
+        "AC-11: no changelog file on disk"
+    );
+    assert!(
+        plan.diagnostics.iter().any(|d| d.code
+            == callisto_model::DiagnosticCode::ChangelogSectionNotFound
+            && d.package.as_ref() == Some(&pkg_id)),
+        "expected a ChangelogSectionNotFound diagnostic naming pkg; got {:?}",
+        plan.diagnostics
+    );
+}
