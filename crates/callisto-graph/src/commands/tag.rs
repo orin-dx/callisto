@@ -1,7 +1,7 @@
 use callisto_model::{
     ApplyPermit, CommandRunner, CreatedTag, PublishPlan, TagReport, SCHEMA_VERSION,
 };
-use callisto_vcs::GitDataSource;
+use callisto_vcs::{GitDataSource, VcsError};
 
 use crate::error::GraphError;
 use crate::resolver::DependencyResolver;
@@ -81,10 +81,20 @@ pub fn create_tags_with_options<R: CommandRunner, D: DependencyResolver>(
 
         let already_existed = ws.tags()?.contains_tag(tag_str);
 
-        if !already_existed {
+        let sha = if already_existed {
+            match git.resolve_commit(tag_str)? {
+                Some(actual) => actual,
+                None => {
+                    return Err(GraphError::Vcs(VcsError::RefNotFound {
+                        ref_name: tag_str.to_string(),
+                    }))
+                }
+            }
+        } else {
             let msg = format!("Release {}", tag_str);
             git.create_tag(tag_str, &release.sha, Some(&msg), permit)?;
-        }
+            release.sha.clone()
+        };
 
         if opts.floating_major {
             let tmpl = ws.tags()?.template(&release.package);
@@ -113,7 +123,7 @@ pub fn create_tags_with_options<R: CommandRunner, D: DependencyResolver>(
         tags.push(CreatedTag {
             package: release.package.clone(),
             tag_name: release.tag_name.clone(),
-            sha: release.sha.clone(),
+            sha,
         });
     }
 

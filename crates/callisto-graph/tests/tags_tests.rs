@@ -304,6 +304,12 @@ fn test_create_tags_without_gix_skips_creation_for_existing_tag() {
                 .push(args.iter().map(|s| s.to_string()).collect());
             let stdout = if args.first() == Some(&"tag") && args.get(1) == Some(&"--list") {
                 "callisto-cli@1.0.0".to_string()
+            } else if args.first() == Some(&"rev-parse") {
+                // Already-existing-tag path now resolves the tag's real
+                // current target via `resolve_commit` before deciding
+                // whether to (re-)create it -- simulate the tag already
+                // pointing at `sha` so that lookup succeeds.
+                "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0".to_string()
             } else {
                 String::new()
             };
@@ -466,6 +472,18 @@ fn test_create_tags_checks_existence_against_cached_tag_index_not_per_release() 
                         stderr: format!("fatal: tag '{tag_name}' already exists"),
                     });
                 }
+            }
+            if args.first() == Some(&"rev-parse") {
+                // Already-existing-tag path now resolves the tag's real
+                // current target via `resolve_commit` before deciding
+                // whether to (re-)create it -- simulate pkg-a@1.0.0
+                // already pointing at `sha`, matching the pre-existing
+                // `tag --list` response above.
+                return Ok(CommandOutput {
+                    exit_code: Some(0),
+                    stdout: "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0".to_string(),
+                    stderr: String::new(),
+                });
             }
             Ok(CommandOutput {
                 exit_code: Some(0),
