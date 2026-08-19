@@ -2,7 +2,10 @@ use callisto_graph::commands::{plan_version, VersionOptions};
 use callisto_graph::infer::NoInference;
 use callisto_graph::locate::IgnoreWalkLocator;
 use callisto_graph::Workspace;
-use callisto_model::{CommandError, CommandOutput, CommandRunner, PackageId, Severity};
+use callisto_graph::{apply_version_plan, ApplyOptions};
+use callisto_model::{
+    ApplyPermit, CommandError, CommandOutput, CommandRunner, PackageId, Severity,
+};
 use std::fs;
 use std::path::Path;
 
@@ -155,4 +158,81 @@ fn duplicate_package_name_is_rejected_with_an_error() {
             "expected GraphError::DuplicatePackage, got: {e:?}"
         ),
     }
+}
+
+/// AC-006: the real, on-disk Cargo+npm co-located dual-identity scenario
+/// from the originating bug report -- a Cargo crate that is also its own
+/// napi-rs npm package (Case D: same directory, two manifests, one owning
+/// Bare PackageId since there is no naming collision elsewhere) -- must
+/// proceed through apply_version_plan to a successful completion for a
+/// cross-ecosystem npm dependent whose spec needs rewriting, with the
+/// dependent's package.json mutated to keep the correct, already-in-use
+/// dependency key. Before the fix, this aborts with
+/// Err(ManifestError::DependencyNotFound) because solve_cascade constructs
+/// the wrong key ("my-native-lib", the Cargo-native name) against a
+/// manifest that only has an "@scope/my-native-lib" entry.
+#[test]
+fn apply_version_plan_succeeds_for_dual_identity_cross_ecosystem_rewrite_ac006() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    git_init_with_commit(root);
+
+    fs::create_dir_all(root.join("crates/my-native-lib")).unwrap();
+    fs::write(
+        root.join("crates/my-native-lib/Cargo.toml"),
+        "[package]\nname = \"my-native-lib\"\nversion = \"1.0.0\"\nedition = \"2021\"\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("crates/my-native-lib/package.json"),
+        r#"{"name":"@scope/my-native-lib","version":"1.0.0"}"#,
+    )
+    .unwrap();
+
+    fs::create_dir_all(root.join("packages/dep-app")).unwrap();
+    fs::write(
+        root.join("packages/dep-app/package.json"),
+        r#"{"name":"dep-app","version":"1.0.0","dependencies":{"@scope/my-native-lib":"^1.0.0"}}"#,
+    )
+    .unwrap();
+
+    fs::create_dir_all(root.join(".changeset")).unwrap();
+    fs::write(
+        root.join(".changeset/breaking-native-api.md"),
+        "---\n\"my-native-lib\": major\n---\n\nBreaking native API change.\n",
+    )
+    .unwrap();
+
+    let locator = IgnoreWalkLocator::new(root);
+    let runner = NoopRunner;
+    let ws = Workspace::load(root.to_path_buf(), &locator, &runner)
+        .expect("workspace with Case D dual-identity package should load");
+
+    let inference = NoInference;
+    let opts = VersionOptions {
+        strict: false,
+        strict_graph: false,
+        allow_empty_changesets: true,
+    };
+    let plan = plan_version(&ws, &inference, &opts).expect("plan_version should succeed");
+
+    let permit = ApplyPermit::force_for_tests();
+    let apply_opts = ApplyOptions::default();
+    let outcome = apply_version_plan(root, &plan, &runner, &apply_opts, &permit);
+
+    assert!(
+        outcome.is_ok(),
+        "apply_version_plan must succeed for the dual-identity cross-ecosystem rewrite (AC-006); got: {:?}",
+        outcome.err()
+    );
+
+    let dep_app_manifest = fs::read_to_string(root.join("packages/dep-app/package.json")).unwrap();
+    assert!(
+        dep_app_manifest.contains("\"@scope/my-native-lib\""),
+        "dep-app's package.json must retain the ecosystem-native dependency key \"@scope/my-native-lib\"; got:\n{dep_app_manifest}"
+    );
+    assert!(
+        !dep_app_manifest.contains("\"^1.0.0\""),
+        "dep-app's dependency spec on my-native-lib must have been rewritten away from the now out-of-range \"^1.0.0\"; got:\n{dep_app_manifest}"
+    );
 }
