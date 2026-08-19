@@ -152,6 +152,20 @@ Commits: `5eb5937` (T1) through `ef1c633` (T6), spec/plan/correction commits int
 
 **Known follow-up**: `walk.rs`'s platform-manifest discovery being npm-only (no Cargo/maturin support, and directory-scoped even for npm) is a real, confirmed limitation surfaced twice by this track — worth its own future track if maturin/multi-platform-per-owner support is ever needed for real.
 
+### Track 9: Cascade Correctness — Peer-Escalation & Cross-Ecosystem Rewrite Keys — DONE
+
+Two independent, single-function bugs in `cascade.rs`, sequenced adjacent to Track 1 (shared file) rather than concurrently.
+
+**Bug 1 — peer-escalation ignored true cascading severity.** `cascade_action`'s peer-dependency escalation branch matched on `coverage` alone, ignoring `source: Severity` — every out-of-range peer edge escalated to Major even when the real upstream change was only Patch, with `peer_escalation = true` the documented default. Fixed via a lighter TDD loop (no spec/plan): gated the escalation branch on `matches!(source, Severity::Minor | Severity::Major)`. Test: `cascade_action_peer_escalation_only_fires_for_non_patch_source` (Patch/Minor/Major/None cases). Commit: `a7007d9`.
+
+**Bug 2 — cross-ecosystem rewrite keys built from the wrong identity.** Dependency-spec rewrite keys in `solve_cascade` were built from `PackageId::name()` instead of the dependent's ecosystem-native identity, so a cross-ecosystem rewrite onto a dual-identity (napi-style) package targeted the wrong manifest key — confirmed live, crashed `callisto version` outright on an ordinary Cargo+npm co-located package with `ManifestError::DependencyNotFound`. Initially mis-tiered in the master plan as a narrow single-function fix; direct investigation found it genuinely required `CascadeInput`/`Workspace` field-threading comparable to Track 1's `tags` field (Layer 1/Layer 2 isolation blocks a naive fix using `ws.graph.identity()` directly, since `identity()` is an inherent method not on the `DependencyResolver` trait bound — both functions needing it are generic over `D`). Escalated to full canon pipeline per user decision.
+
+Spec: `.claude/specs/SPEC-TRACK9-CASCADE-REWRITE-KEY-CORRECTNESS.json` (7 AC — AC-001–007). Passed canon-exit-gate on the 3rd attempt — round 1 caught the `ws.graph.identity()` compile-error design flaw described above (reverted to a genuine new owned `Workspace.identity: IdentityIndex` field); round 2 found two more gaps from that same fix (18 unaccounted-for `Workspace` struct-literal test sites across 6 files; a now-contradictory AC-004 exception clause).
+Plan: `.claude/plans/PLAN-TRACK9-CASCADE-REWRITE-KEY-CORRECTNESS.json` (6 tasks). Passed vector-challenger on the 2nd round — round 1 found a drifted file:line citation (T2's 8th `CascadeInput` test literal) and a process-contract conflict (T4's revert-probe wording would have falsely tripped `lambda:implementer`'s stop-on-unexpected-green rule); both fixed directly in the plan JSON before implementation.
+Implementation: `identity: &'a IdentityIndex` threaded through `CascadeInput`, owned `identity: IdentityIndex` added to `Workspace` (populated in `Workspace::load` via `graph.identity().clone()`), `solve_cascade`'s `RewriteKey.name` now resolves via `input.identity.native_name(&edge.to, eco)` with a `PackageId::name()` fallback when no cross-ecosystem registration exists.
+Exit-gate (implementation): full `callisto-graph` suite 471 passed / 0 failed; `cargo fmt --check` and `cargo clippy --workspace --all-targets -- -D warnings` clean across the whole workspace.
+Commits: `f265ff0d` (T1, Workspace.identity + 18 test sites) through `ca2aa550` (T6, end-to-end AC-006 proof); T5 (AC-004, full-suite regression confirmation) required no code changes, verified directly with no separate commit.
+
 ---
 
 ## Pipeline Protocol (follow for every track, in order)
