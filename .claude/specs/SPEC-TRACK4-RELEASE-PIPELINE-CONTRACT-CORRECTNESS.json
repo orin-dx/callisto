@@ -1,0 +1,115 @@
+{
+  "id": "SPEC-TRACK4-RELEASE-PIPELINE-CONTRACT-CORRECTNESS",
+  "purpose": "Correct four confirmed-live correctness bugs in the release pipeline's CLI-to-Action contract so the shipped GitHub Action reliably reaches release-PR-creation and publish on real runs, instead of erroring out on the normal 'pending changesets' case or silently reporting fabricated state (a stale tag sha, a missing changelog excerpt) -- in both apply mode and `--dry-run` preview mode.",
+  "scope": "Four fixes, all within the callisto CLI/graph crates and the composite Action script: (1) .github/actions/callisto-action/action.yml's `callisto status --check` exit-code branching in the 'Inspecting Workspace Status' step, including the unrecognised-exit-code path (0 included); (2) crates/callisto-cli/src/main.rs's top-of-file exit-code-contract doc comment for the `status` subcommand; (3) crates/callisto-graph/src/commands/tag.rs's `create_tags_with_options`, specifically the `sha` field written into the `CreatedTag` pushed for the per-release tag, in both the apply path (permit granted, tag.rs:82-117) and the `--dry-run` preview path (permit is None, tag.rs:53-80); (4) crates/callisto-graph/src/commands/publish.rs's `plan_publish`, specifically the `changelog_section` field on `ReleaseEntry` (currently hardcoded `None`), which must be populated via `callisto_changelog::extract_section` (crates/callisto-changelog/src/write.rs:102) reading the package's already-resolved changelog file at `pkg.changelog` (`Package.changelog: Option<PathBuf>`, always `Some`, workspace-root-relative -- the same field `callisto version`'s changelog-rendering step already uses at commands/version.rs:148, honoring any `[[package]] changelog = \"...\"` override), plus the two new `DiagnosticCode` cases that surface non-fatal changelog conditions.",
+  "non_goals": [
+    "Track 6-mechanical's JSON report field-shape mismatches (StatusReport, StatusPackageRecord, SnapshotReport, ComposePrBodyReport, CreatedTag's other fields, InitReport, ValidateReport) -- separate track, not touched here.",
+    "Any change to callisto-model's SCHEMA_VERSION constant or any report type's struct fields -- all four fixes reuse existing fields (CreatedTag.sha, ReleaseEntry.changelog_section) or correct logic/prose; the one addition (a new DiagnosticCode variant for AC-12c) extends an already-`#[non_exhaustive]` enum additively and does not require a version bump under this project's current pre-first-publish posture (no real external consumer of this wire format exists yet).",
+    "The `callisto publish` command's actual registry-publishing logic (cargo/npm/pypi clients) -- untouched.",
+    "Any change to how the Action script parses `plan-publish`'s or `matrix`'s JSON output via `jq`, beyond the status-check exit-code branching fix -- those jq parse sites are already confirmed working and out of scope.",
+    "Adding a dedicated CLI flag or new exit code to distinguish clap usage errors (exit 2) from 'no changesets pending' (exit 2) at the `callisto` binary level -- clap's own exit-code convention is not renegotiated by this track; the fix for the collision lives entirely in the Action script's ability to tell the two apart, not by changing what the CLI emits.",
+    "Any change to `callisto status`'s non-`--check` (plain) exit-code behavior -- confirmed correct already (0 on success regardless of pending changesets, 1 on error); only the `--check` branch and its doc comment are in scope.",
+    "Resolving what `changelog_section` should contain when a package has a CHANGELOG.md with malformed markdown (e.g. no `##` headings at all) -- that is the documented 'heading not found' case already covered by AC-12.",
+    "The floating-major alias tag's CreatedTag.sha (tag.rs:99-107 apply path, tag.rs:64-69 dry-run path) -- this is NOT the same bug class as the per-release tag. `create_floating_major` is called unconditionally on every apply run regardless of the alias's prior existence or target (tag.rs:102, no `already_existed`-style gate), so `release.sha` is deterministically what the alias becomes after any real apply run -- there is no 'different real answer' being hidden, unlike the per-release tag which is genuinely left unmoved when it already exists. Reporting `release.sha` for the floating-major alias in BOTH apply mode (where it is now true by construction) and `--dry-run` mode (where it accurately previews what the unconditional apply step will produce) is therefore correct as-is and out of scope for this fix."
+  ],
+  "api_surface": [
+    {
+      "name": "check_exit_code_raw",
+      "signature": "fn check_exit_code_raw(report: &StatusReport) -> u8 (crates/callisto-cli/src/commands/status.rs:18)",
+      "description": "Already-correct, unchanged by this spec: returns 1 when any package has a non-empty pending_changesets list, 2 otherwise. `handle` (status.rs:53-54) returns ExitCode::from(this value) when --check is set and there are no diagnostic errors. This is the ground truth the Action script and the main.rs doc comment must both agree with."
+    },
+    {
+      "name": "create_tags_with_options",
+      "signature": "fn create_tags_with_options<R: CommandRunner, D: DependencyResolver>(ws: &Workspace<'_, R, D>, plan: &PublishPlan, opts: &TagOptions, permit: Option<&ApplyPermit>) -> Result<TagReport, GraphError> (crates/callisto-graph/src/commands/tag.rs:30)",
+      "description": "Two structurally parallel paths must both use the same already-existing-tag detection and sha resolution for the PER-RELEASE tag only (not the floating-major alias, see non_goals): the apply path (permit is Some, tag.rs:82-117) currently checks `ws.tags()?.contains_tag(tag_str)` (tag.rs:82) to decide whether to call `git.create_tag`, but unconditionally pushes `CreatedTag { sha: release.sha.clone(), .. }` (tag.rs:113-117) regardless of that check's outcome; the dry-run path (permit is None, tag.rs:53-80) currently performs NO existence check at all and unconditionally pushes `release.sha` (tag.rs:74-78). Both paths must be fixed identically: when the per-release tag already exists at a commit different from `release.sha`, the reported `sha` must be the tag's real current target via `GitDataSource::resolve_commit(&self, refname: &str) -> Result<Option<CommitSha>, VcsError>` (crates/callisto-vcs/src/access.rs:79, reachable via `ws.git_access()`, tag.rs:48) -- not `release.sha` -- in BOTH modes; the dry-run path must perform this check and lookup without mutating any git state (no `git.create_tag` call, matching its existing preview-only contract). When `resolve_commit` returns `Ok(None)` or `Err(VcsError)` for an already-existing tag, in either mode, `create_tags_with_options` must return `Err(GraphError)` immediately (fail-fast, e.g. via `GraphError::Vcs` for the `Err` case and an explicit error construction for the `Ok(None)` case) rather than falling back to `release.sha` -- consistent with this function's existing git-access-failure handling and with this spec's purpose of never fabricating reported state, in a preview or otherwise."
+    },
+    {
+      "name": "extract_section",
+      "signature": "fn extract_section<'a>(changelog: &'a str, version: &Version) -> Option<&'a str> (crates/callisto-changelog/src/write.rs:102)",
+      "description": "Already-implemented and already-unit-tested. Finds the `## {version}` heading in `changelog` and returns the slice of content between that heading and the next `## ` heading (or end of file), trimmed, or `None` if the heading is not found OR the matched section's trimmed content is empty (write.rs:131-136: `if raw_section.is_empty() { None } else { Some(raw_section) }`). `plan_publish` must call this with the content of the package's resolved changelog file at `pkg.changelog` (crates/callisto-model/src/package.rs:17, `Option<PathBuf>` but always `Some` by construction -- populated in walk.rs:387-392 as either a `[[package]] changelog = \"...\"` override path or the default co-located `CHANGELOG.md`, workspace-root-relative) and `ver` (the release version) -- the identical field `plan_version` already reads at commands/version.rs:148 to decide where to render changelog entries, so the read and write sides always agree on which file is 'the' changelog for a package. Three distinct non-fatal outcomes, each leaving `changelog_section` as `None` and never erroring or panicking the whole plan: (a) no file exists yet at the `pkg.changelog` path (AC-11) -- the common case before a package's first release, since `callisto version` creates the file on first write, (b) file exists but `extract_section` returns `None` -- no matching heading, or a matching heading with empty content (AC-12) -- both add a `DiagnosticCode::ChangelogSectionNotFound` (crates/callisto-model/src/diagnostic.rs, already exists, currently reserved/unemitted) diagnostic at Warning severity naming the package, (c) file exists but fails to read as valid UTF-8 or fails for a reason other than not-found (AC-12c) -- adds a NEW `DiagnosticCode::ChangelogReadError` variant (Warning severity) naming the package and the read failure."
+    }
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "AC-01",
+      "criterion": "In .github/actions/callisto-action/action.yml's 'Inspecting Workspace Status' step, when `callisto status --check` exits with code 1 (the documented 'pending changesets' contract), the script sets HAS_CHANGESETS=true and proceeds into the release-PR-creation branch (the `if [[ \"$HAS_CHANGESETS\" == \"true\" ]]` block), rather than falling through to the unexpected-exit-code branch. Verifiable by reading the script's if/elif/else chain against this exit-code table, or by replacing the `callisto status --check` invocation with a stub that exits 1 and observing which branch's echo output appears.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-02",
+      "criterion": "In the same step, when `callisto status --check` exits with code 2 (the documented 'no changesets pending' contract), the script sets HAS_CHANGESETS=false and proceeds into the publish branch (the `else` arm of `if [[ \"$HAS_CHANGESETS\" == \"true\" ]]`). Verifiable the same way as AC-01, substituting an exit-2 stub.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-04",
+      "criterion": "In the same step, when `callisto status --check` exits with ANY code other than 1 or 2 -- including 0 (which the real CLI never returns for `--check`), a clap usage-error exit, or any other unrelated failure -- the script does not silently treat it as either 'has changesets' or 'no changesets' and does not fall into a bare `exit $STATUS_EXIT` that could itself be 0 (success). It emits an `::error::` annotation identifying the unexpected exit code and terminates the composite action step with a guaranteed non-zero exit (e.g. `exit 1`, not a passthrough of `$STATUS_EXIT`), rather than proceeding into either the release-PR or publish branch. Verifiable by stubbing the invocation to exit with each of 0 and 127 in turn and confirming, for both, that the workflow step fails with a non-zero exit code and an error annotation, and never reaches the `if [[ \"$HAS_CHANGESETS\" == \"true\" ]]` branch at all (HAS_CHANGESETS must never be read as a truthy or falsy string while unset).",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-05",
+      "criterion": "crates/callisto-cli/src/main.rs's exit-code-contract doc comment for the `status` command states the `--check` contract as: 1 when at least one package has pending changesets, 2 when no changesets are pending, and does not claim 0 is returned under `--check` for any pending-changeset state. Verifiable by reading the doc comment text at main.rs (currently lines 19-21) and comparing it word-for-word against `check_exit_code_raw`'s actual behavior (status.rs:18-28: 1 for pending, 2 for none-pending, called only when `args.check` is true and there are no diagnostic errors).",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-06",
+      "criterion": "When `callisto tag` (create_tags_with_options), invoked WITHOUT `--dry-run` (permit granted, apply mode), processes a release whose per-release tag already exists in the repository (`contains_tag` returns true) and that tag's actual current git target commit differs from `release.sha`, the `CreatedTag` entry pushed for that release reports a `sha` value equal to the tag's real, current target commit (via `resolve_commit`) -- not `release.sha` -- such that a caller comparing the reported sha against the release plan's requested sha can detect the mismatch using only the JSON report. Verifiable by running `callisto tag` (no --dry-run) against a repository fixture where a tag `pkg@1.0.0` already points at commit A, the release plan requests sha B (A != B), and inspecting the `sha` field of the corresponding entry: it must equal A, not B.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-06b",
+      "criterion": "When `callisto tag`, invoked WITHOUT `--dry-run`, processes a release whose per-release tag already exists and `resolve_commit` against that tag's ref returns `Ok(None)` or an `Err(VcsError)`, the command does not fabricate a `sha` value by falling back to `release.sha` -- it returns `Err(GraphError)` immediately and no `TagReport` is produced. Verifiable at the `callisto-graph` level (not via the CLI, since a real repository's `list_tags`/`resolve_commit` pair cannot naturally diverge) by constructing a `Workspace` over a stub `CommandRunner` whose tag-listing invocation reports the tag `pkg@1.0.0` (so `contains_tag` returns true) while its `git rev-parse --verify --quiet pkg@1.0.0^{commit}` invocation exits non-zero (so `resolve_commit` returns `Ok(None)`) -- and separately a variant whose runner returns a `VcsError` -- then calling `create_tags_with_options` with `permit: Some(..)` and asserting each case returns `Err(GraphError)` with no `TagReport` produced.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-06c",
+      "criterion": "When `callisto tag --dry-run` previews a release whose per-release tag already exists at a commit different from `release.sha`, the previewed `CreatedTag` entry's `sha` equals the tag's real current target (via `resolve_commit`), not `release.sha` -- identical to AC-06's assertion -- and no git ref is created or moved by the preview. Verifiable by running `callisto tag --dry-run` against the same fixture as AC-06 (tag already at commit A, plan requests B, A != B) and confirming the previewed `sha` equals A, then confirming via `git rev-parse pkg@1.0.0` that the tag ref is still A after the dry-run (unchanged).",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-06d",
+      "criterion": "When `callisto tag --dry-run` processes a release whose per-release tag already exists and `resolve_commit` against that tag's ref returns `Ok(None)` or an `Err(VcsError)`, the preview does not fabricate a `sha` value by falling back to `release.sha` -- it returns `Err(GraphError)` immediately, identical to AC-06b's behavior. Verifiable using the same stub-`CommandRunner` fixture construction as AC-06b, calling `create_tags_with_options` with `permit: None`, and asserting each case (`Ok(None)` and `Err(VcsError)`) returns `Err(GraphError)` with no `TagReport` produced.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-07",
+      "criterion": "When `callisto tag` processes a release whose per-release tag does not yet exist (`contains_tag` returns false), the `CreatedTag` entry's `sha` field equals `release.sha` -- identically in apply mode (where the tag is also created at `release.sha`) and in `--dry-run` mode (where nothing is created but the same value is correctly previewed, since there is no pre-existing tag to conflict with). Verifiable by running `callisto tag` and separately `callisto tag --dry-run` against a repository fixture with no pre-existing tag for the release, confirming both report `sha` equal to the requested `release.sha`, and confirming (apply mode only) the tag is actually created there while (dry-run mode) no tag is created at all.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-08",
+      "criterion": "When `callisto tag` processes a release whose per-release tag already exists and already points at exactly `release.sha` (the idempotent-rerun case), the `CreatedTag` entry's `sha` field equals `release.sha` and no error or warning is surfaced -- identically in apply mode and `--dry-run` mode, since the existing and requested values already agree and there is nothing to fabricate either way. Verifiable by running `callisto tag` twice in succession (second run is the idempotent case) and separately running `callisto tag --dry-run` against the same post-first-run state, confirming all report `sha` equal to `release.sha` with a zero exit code.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-10",
+      "criterion": "`plan_publish` populates each `ReleaseEntry.changelog_section` with `Some(section_text)` when the file at the package's resolved `pkg.changelog` path exists, contains a `## {version}` heading matching the release's version, AND that heading's section has non-empty content after trimming -- where `section_text` is exactly what `extract_section` returns. Verifiable by running `callisto plan-publish --format json` against a workspace fixture where a package's changelog file (at its resolved `pkg.changelog` path, e.g. co-located `CHANGELOG.md`) contains a `## 1.2.3` section with known non-empty body text, releasing version 1.2.3, and confirming the JSON output's `changelogSection` field for that package equals the known body text.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-10b",
+      "criterion": "`plan_publish` leaves `ReleaseEntry.changelog_section` as `None` (not an error, not an empty string) when the file at the package's resolved `pkg.changelog` path exists and has a matching `## {version}` heading, but that section's content is empty or whitespace-only after trimming -- and adds a `DiagnosticCode::ChangelogSectionNotFound` Warning-severity diagnostic as AC-12 for that package. Verifiable by running `callisto plan-publish --format json` against a workspace fixture where the package's changelog file has a `## 1.2.3` heading immediately followed by only blank lines before the next heading (or end of file), and confirming the `changelogSection` key is absent from that release entry (per plan.rs:116's `skip_serializing_if`, not present as `null`) and a `ChangelogSectionNotFound` diagnostic naming the package appears in the JSON output's diagnostics.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-11",
+      "criterion": "`plan_publish` leaves `ReleaseEntry.changelog_section` as `None` (not an error, not a panic) when no file exists yet at the package's resolved `pkg.changelog` path (the common case before a package's first release), and adds a `DiagnosticCode::ChangelogSectionNotFound` diagnostic at Warning severity naming the package to the plan's diagnostics. Verifiable by running `callisto plan-publish --format json` against a workspace fixture with a publishable package whose resolved changelog file does not exist on disk, and confirming the command exits 0, the `changelogSection` key is absent from that release entry (per plan.rs:116's `skip_serializing_if`, not present as `null`), and a `ChangelogSectionNotFound` diagnostic naming that package appears in the JSON output's diagnostics.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-12",
+      "criterion": "`plan_publish` leaves `ReleaseEntry.changelog_section` as `None` (not an error, not a panic) when the file at the package's resolved `pkg.changelog` path exists but contains no `## {version}` heading matching the release's version, and adds a `DiagnosticCode::ChangelogSectionNotFound` diagnostic at Warning severity naming the package. Verifiable by running `callisto plan-publish --format json` against a workspace fixture where the package's changelog file exists but has no `## {target-version}` heading, and confirming the command exits 0, the `changelogSection` key is absent from that release entry (per plan.rs:116's `skip_serializing_if`, not present as `null`), and a `ChangelogSectionNotFound` diagnostic naming that package appears in the JSON output's diagnostics.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-12c",
+      "criterion": "When the file at the package's resolved `pkg.changelog` path exists but cannot be read as valid UTF-8, or fails to read for a reason other than not-found, `plan_publish` treats `changelog_section` as `None` for that package, adds a new `DiagnosticCode::ChangelogReadError` (Warning severity) diagnostic naming the package and the read failure to the plan's diagnostics, and does not error the whole plan or panic. Verifiable by running `callisto plan-publish --format json` against a fixture where a package's changelog file contains invalid UTF-8 bytes, and confirming the command exits 0, the `changelogSection` key is absent from that release entry (per plan.rs:116's `skip_serializing_if`, not present as `null`), and a `ChangelogReadError` diagnostic referencing the package appears in the JSON output's diagnostics.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-13",
+      "criterion": "None of the fixes in this spec change the field names, field types, or presence/absence of any struct field in StatusReport, CreatedTag, TagReport, ReleaseEntry, or PublishPlan as serialized to JSON -- only the values written into the already-existing `sha` field (CreatedTag) and `changelog_section` field (ReleaseEntry) change, plus script/doc-comment logic and error handling elsewhere. The sole schema-domain addition is one new `DiagnosticCode` enum variant (`ChangelogReadError`, for AC-12c) on the already-`#[non_exhaustive]` `code` field of `Diagnostic` -- an additive enum-variant expansion, not a struct field change, and is explicitly permitted by this criterion. Verifiable by running `callisto schema` (or diffing the JSON Schema output) before and after the fix and confirming no report struct gains, loses, renames, or retypes a field, and that the only diff in the `DiagnosticCode` enum's schema is the new `ChangelogReadError` variant appearing.",
+      "is_error_case": false
+    }
+  ],
+  "linked_requirement": "REQ-TRACK4-RELEASE-PIPELINE-CONTRACT-CORRECTNESS"
+}
