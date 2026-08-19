@@ -1523,3 +1523,42 @@ fn plan_publish_leaves_changelog_section_none_when_no_matching_heading() {
         plan.diagnostics
     );
 }
+
+// ---- regression: AC-12c (unreadable / invalid UTF-8 changelog file) ----
+
+#[test]
+fn plan_publish_leaves_changelog_section_none_and_emits_read_error_for_invalid_utf8() {
+    use callisto_graph::commands::{plan_publish, PublishOptions};
+
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write_release_candidate_pkg(root, "1.2.3");
+    std::fs::write(root.join("CHANGELOG.md"), [0x23, 0x20, 0xFF, 0xFE, 0x0A]).unwrap();
+    init_git_repo(root);
+
+    let runner = DummyRunner;
+    let locator = IgnoreWalkLocator::new(root);
+    let ws = callisto_graph::Workspace::load(root.to_path_buf(), &locator, &runner).unwrap();
+
+    let plan = plan_publish(&ws, &PublishOptions::default()).expect("plan_publish must succeed");
+    let pkg_id = PackageId::parse("pkg").unwrap();
+    let release = plan.releases.iter().find(|r| r.package == pkg_id).unwrap();
+
+    assert_eq!(
+        release.changelog_section, None,
+        "AC-12c: file exists but is not valid UTF-8"
+    );
+    assert!(
+        plan.diagnostics.iter().any(|d| d.code
+            == callisto_model::DiagnosticCode::ChangelogReadError
+            && d.package.as_ref() == Some(&pkg_id)),
+        "expected a ChangelogReadError diagnostic naming pkg; got {:?}",
+        plan.diagnostics
+    );
+    assert!(
+        !plan.diagnostics.iter().any(|d| d.code
+            == callisto_model::DiagnosticCode::ChangelogSectionNotFound
+            && d.package.as_ref() == Some(&pkg_id)),
+        "an unreadable file must not also be reported as ChangelogSectionNotFound"
+    );
+}
