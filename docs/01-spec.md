@@ -1938,28 +1938,23 @@ impl Report for StatusReport { const COMMAND: &'static str = "status"; /* … */
 ```rust
 /// `callisto snapshot --format json`. §8, §12.5.
 ///
-/// Carries the computed version and the affected packages — **not** a
-/// `published`/`publishedPackages` pair. `snapshot` computes and writes a transient version
-/// to manifests, uncommitted and untagged; it does not publish (§8, §9).
+/// Carries the applied transient bumps — **not** a `published`/`publishedPackages` pair.
+/// `snapshot` computes and writes a transient version to manifests, uncommitted and
+/// untagged; it does not publish (§8, §9).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SnapshotReport {
     pub schema_version: u32,
-    /// Mandatory. The transient version, exactly `0.0.0-{tag}-{sha7}` — one value for the
-    /// whole workspace, composition rule pinned in §G.11's `plan_snapshot`. §8's example
-    /// `0.0.0-snapshot-<sha>` is what `--tag snapshot` produces.
-    pub version: Version,
-    /// Mandatory, possibly empty. `name` is the ecosystem-native package name, paired with
-    /// its `ecosystem` — which is what makes this shape usable by a publish script that must
-    /// route Rust and npm packages to different commands.
-    pub packages: Vec<SnapshotPackage>,
+    /// The `--tag` value used to compose this run's transient version (e.g. `"snapshot"`).
+    pub snapshot_tag: String,
+    /// Mandatory, possibly empty. One `BumpRecord` per affected package. Every entry's `to`
+    /// is the same transient version, exactly `0.0.0-{snapshot_tag}-{sha7}` — composition
+    /// rule pinned in §G.11's `plan_snapshot`; §8's example `0.0.0-snapshot-<sha>` is what
+    /// `--tag snapshot` produces. `severity` is unconditionally `Patch` for a snapshot run.
+    pub bumps: Vec<BumpRecord>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub diagnostics: Vec<Diagnostic>,
 }
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SnapshotPackage { pub name: String, pub ecosystem: Ecosystem }
 
 impl Report for SnapshotReport { const COMMAND: &'static str = "snapshot"; /* … */ }
 
@@ -2025,9 +2020,10 @@ impl Report for ComposePrBodyReport { const COMMAND: &'static str = "compose-pr-
 > `callisto tag`, and §18 Q5.5 states that `init` supports `--format json` and that its output
 > is the moon-side payload for `initialize_extension` (§10/§11). §13 invariant 14 requires a
 > schema version on *every* `--format json` output, so these three cannot be left shapeless.]`
-> The shapes below are deliberately minimal — each is the smallest thing that lets a wrapper
-> gate on the command's outcome — and each is a candidate for expansion when its milestone
-> lands.
+> `ValidateReport` and `TagReport` below are deliberately minimal — each is the smallest thing
+> that lets a wrapper gate on the command's outcome — and each is a candidate for expansion
+> when its milestone lands. `InitReport` is not a placeholder: its shape is the reconcile-flow
+> design from `docs/00-design.md` §18 Q5.4 mechanism 1, already fully implemented and tested.
 
 ```rust
 /// `callisto validate --format json` (v0.2, §17, §18 Q3). Used by the Action's
@@ -2067,32 +2063,45 @@ pub struct CreatedTag {
 }
 
 /// `callisto init --format json` (v0.1, §18 Q5.5). Also the moon-side payload for
-/// `initialize_extension` (§10, §11, §MO.2.4).
+/// `initialize_extension` (§10, §11, §MO.2.4). The real shape is the reconcile-flow design
+/// from `docs/00-design.md` §18 Q5.4 mechanism 1: re-running `init` re-detects the workspace,
+/// reports a diff against the already-recorded `callisto.toml`, and applies only with
+/// confirmation — this report exists to make that outcome (first-write vs. reconciled vs.
+/// nothing-to-do) observable to a caller, not to re-enumerate the discovered packages (that's
+/// `status`'s/`validate`'s job).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InitReport {
     pub schema_version: u32,
-    /// `"moon"` or `"ignore-walk"` — §18 Q5.5's "project locator" line.
-    pub locator: String,
-    pub packages: Vec<InitPackage>,
-    /// Files written, workspace-root-relative.
-    pub written: Vec<PathBuf>,
-    /// The proposed `callisto.toml` content when `init` is running as a reconcile/migration
-    /// flow and is showing a diff for review rather than writing (§5.3, §18 Q4, §13 inv. 21).
-    /// `null` when `init` wrote directly or had nothing to propose.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub proposed_config: Option<String>,
+    /// `true` only on a first run, when `callisto.toml` did not exist yet and was written
+    /// directly. `false` on every re-run, including one that applies detected drift — that
+    /// case is reported through `diff`, not this flag.
+    pub initialized: bool,
+    /// Workspace-root-relative path to the `callisto.toml` this run wrote or reconciled.
+    pub config_path: PathBuf,
+    /// Drift between the currently-discovered workspace state and what is already recorded
+    /// in `callisto.toml`, and whether that drift was applied this run. Empty/`applied: false`
+    /// when there is nothing to reconcile, including on a first run.
+    #[serde(default)]
+    pub diff: InitDiff,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub diagnostics: Vec<Diagnostic>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct InitPackage {
-    pub package: PackageId,
-    pub manifests: Vec<ManifestDecl>,
-    pub publish_to: Vec<PublishTarget>,
-    pub release_trigger: ReleaseTrigger,
+pub struct InitDiff {
+    /// Ecosystems present in the discovered workspace but not yet recorded against the
+    /// existing `callisto.toml` (e.g. a `package.json` added to a previously Cargo-only
+    /// workspace, or `napi.targets` appearing). Sorted for determinism. Empty when there is
+    /// no drift to reconcile.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub new_ecosystems: Vec<Ecosystem>,
+    /// `true` when `new_ecosystems` was non-empty and was written to `callisto.toml` this run
+    /// (`InitOptions::yes`). `false` when the diff was only reported (dry-preview) or when
+    /// there was no diff to apply.
+    #[serde(default)]
+    pub applied: bool,
 }
 
 impl Report for ValidateReport { const COMMAND: &'static str = "validate"; /* … */ }
@@ -8522,8 +8531,9 @@ callisto needs no arbitration mechanism.
 >   cross-registry `optionalDependencies` pinning (§7.6 step 5) resolve against versions that
 >   do not exist yet at the moment the plan is composed.
 >
-> `SnapshotReport.version` (§M.12.5) carries this one value; `packages[]` carries the affected
-> names and ecosystems, no per-package version, for the same reason.
+> `SnapshotReport.bumps[]` (§M.12.5) carries this one value redundantly, once per affected
+> package: every `BumpRecord.to` in the list is the identical transient version, for the same
+> reason.
 
 **`matrix` (§19, §M.12.7, §CLI.6.13).** Read-only and on-demand: unlike the four functions above, it
 does not participate in the release cycle, consumes no changesets, and touches no `TagIndex`.
