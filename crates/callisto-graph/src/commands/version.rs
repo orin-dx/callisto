@@ -21,6 +21,59 @@ pub struct VersionOptions {
     pub allow_empty_changesets: bool,
 }
 
+fn map_reason_to_change_source(
+    reason: &BumpReason,
+    id: &callisto_model::PackageId,
+    to: &callisto_model::Version,
+    outcome: &crate::cascade::CascadeOutcome,
+    agg: &crate::aggregate::Aggregation,
+) -> Option<ChangeSource> {
+    match reason {
+        BumpReason::FixedGroupUnion { group } => Some(ChangeSource::GroupUnion {
+            group: group.clone(),
+            kind: GroupKind::Fixed,
+        }),
+        BumpReason::LinkedGroupUnion { group } => Some(ChangeSource::GroupUnion {
+            group: group.clone(),
+            kind: GroupKind::Linked,
+        }),
+        BumpReason::Cascade {
+            via,
+            dep_kind,
+            dependency_to,
+            ..
+        } => Some(ChangeSource::DependencyUpdate {
+            dependency: via.clone(),
+            dep_kind: *dep_kind,
+            to: dependency_to.clone(),
+        }),
+        BumpReason::PeerEscalation { via, .. } => {
+            let dep_to = outcome
+                .targets
+                .get(via)
+                .cloned()
+                .unwrap_or_else(|| to.clone());
+            Some(ChangeSource::PeerEscalation {
+                dependency: via.clone(),
+                to: dep_to,
+            })
+        }
+        BumpReason::Inference { commits, .. } => {
+            match agg.inference_commits.get(id).and_then(|c| c.first()) {
+                Some((sha, subject)) => Some(ChangeSource::Commit {
+                    sha: sha.clone(),
+                    subject: subject.clone(),
+                }),
+                None => Some(ChangeSource::Changeset {
+                    filename: String::new(),
+                    summary: format!("Inferred version bump ({commits} commit(s))"),
+                }),
+            }
+        }
+        _ => None,
+    }
+}
+
 pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInference>(
     ws: &Workspace<'_, R, D>,
     inference: &I,
@@ -150,54 +203,26 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
                 // Real changeset data: use it, but set the resolved target version.
                 agg_input.from = from.clone();
                 agg_input.to = Some(to.clone());
+                if let Some(reason) = outcome.reasons.get(id) {
+                    if let Some(source) =
+                        map_reason_to_change_source(reason, id, &to, &outcome, &agg)
+                    {
+                        agg_input.entries.push(ChangelogEntry {
+                            severity: sev,
+                            source,
+                        });
+                    }
+                }
                 agg_input
             } else {
                 // No changeset drove this bump (cascade, group, inference, pre-release).
                 // Synthesize a single entry describing the reason so that render_section()
                 // never receives an empty entries list (which returns EmptyInput).
-                let source = match outcome.reasons.get(id) {
-                    Some(BumpReason::FixedGroupUnion { group }) => ChangeSource::GroupUnion {
-                        group: group.clone(),
-                        kind: GroupKind::Fixed,
-                    },
-                    Some(BumpReason::LinkedGroupUnion { group }) => ChangeSource::GroupUnion {
-                        group: group.clone(),
-                        kind: GroupKind::Linked,
-                    },
-                    Some(BumpReason::Cascade {
-                        via,
-                        dep_kind,
-                        dependency_to,
-                        ..
-                    }) => ChangeSource::DependencyUpdate {
-                        dependency: via.clone(),
-                        dep_kind: *dep_kind,
-                        to: dependency_to.clone(),
-                    },
-                    Some(BumpReason::PeerEscalation { via, .. }) => {
-                        let dep_to = outcome
-                            .targets
-                            .get(via)
-                            .cloned()
-                            .unwrap_or_else(|| to.clone());
-                        ChangeSource::PeerEscalation {
-                            dependency: via.clone(),
-                            to: dep_to,
-                        }
-                    }
-                    Some(BumpReason::Inference { commits, .. }) => {
-                        match agg.inference_commits.get(id).and_then(|c| c.first()) {
-                            Some((sha, subject)) => ChangeSource::Commit {
-                                sha: sha.clone(),
-                                subject: subject.clone(),
-                            },
-                            None => ChangeSource::Changeset {
-                                filename: String::new(),
-                                summary: format!("Inferred version bump ({commits} commit(s))"),
-                            },
-                        }
-                    }
-                    _ => ChangeSource::Changeset {
+                let source = outcome
+                    .reasons
+                    .get(id)
+                    .and_then(|r| map_reason_to_change_source(r, id, &to, &outcome, &agg))
+                    .unwrap_or_else(|| ChangeSource::Changeset {
                         filename: String::new(),
                         summary: format!(
                             "Version bump ({})",
@@ -208,8 +233,7 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
                                 Severity::None => "none",
                             }
                         ),
-                    },
-                };
+                    });
                 ChangelogInput {
                     package: id.clone(),
                     from: from.clone(),
@@ -1701,6 +1725,159 @@ mod tests {
                 assert_eq!(summary, "Inferred version bump (2 commit(s))");
             }
             other => panic!("expected ChangeSource::Changeset fallback, got {other:?}"),
+        }
+    }
+
+    /// AC-005 (Cascade sub-case): a package with a pending changeset AND a
+    /// genuine Cascade reason this run must get its changeset entries
+    /// followed by exactly one additional DependencyUpdate entry.
+    #[test]
+    fn plan_version_unions_changeset_with_cascade_reason() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        git_init_with_commit(root);
+
+        std::fs::create_dir_all(root.join("pkg-core")).unwrap();
+        std::fs::write(
+            root.join("pkg-core/Cargo.toml"),
+            "[package]\nname = \"pkg-core\"\nversion = \"1.0.0\"\n",
+        )
+        .unwrap();
+
+        std::fs::create_dir_all(root.join("pkg-app")).unwrap();
+        std::fs::write(
+            root.join("pkg-app/Cargo.toml"),
+            "[package]\nname = \"pkg-app\"\nversion = \"1.0.0\"\n\n[dependencies]\npkg-core = \"1.0.0\"\n",
+        )
+        .unwrap();
+
+        std::fs::write(
+            root.join("callisto.toml"),
+            "[cascade]\nbump-severity = \"minor\"\n",
+        )
+        .unwrap();
+
+        std::fs::create_dir_all(root.join(".changeset")).unwrap();
+        std::fs::write(
+            root.join(".changeset/core-break.md"),
+            "---\n\"pkg-core\": major\n---\n\nBreaking API change.\n",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join(".changeset/app-patch.md"),
+            "---\n\"pkg-app\": patch\n---\n\nUnrelated small fix.\n",
+        )
+        .unwrap();
+        commit_all(root, "add packages and changesets");
+
+        let locator = IgnoreWalkLocator::new(root);
+        let runner = NoopRunner;
+        let ws =
+            Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
+        let inference = crate::infer::NoInference;
+        let opts = VersionOptions {
+            strict: false,
+            strict_graph: false,
+            allow_empty_changesets: true,
+        };
+
+        let plan = plan_version(&ws, &inference, &opts).expect("plan_version must succeed");
+
+        let pkg_app = callisto_model::PackageId::parse("pkg-app").unwrap();
+        let write = plan
+            .changelog_writes
+            .iter()
+            .find(|w| w.input.package == pkg_app)
+            .expect("pkg-app must have a ChangelogWrite");
+
+        assert_eq!(
+            write.input.entries.len(),
+            2,
+            "got: {:?}",
+            write.input.entries
+        );
+        assert!(matches!(
+            write.input.entries[0].source,
+            callisto_changelog::ChangeSource::Changeset { .. }
+        ));
+        assert!(matches!(
+            write.input.entries[1].source,
+            callisto_changelog::ChangeSource::DependencyUpdate { .. }
+        ));
+    }
+
+    /// AC-005 (Inference sub-case, reusing T3's mapping): a package with
+    /// both a pending changeset and outcome.reasons == Some(Inference{..})
+    /// must get its changeset entries followed by one Inference-mapped
+    /// entry (AC-003's Commit-or-fallback logic).
+    #[test]
+    fn plan_version_unions_changeset_with_inference_reason() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        git_init_with_commit(root);
+
+        std::fs::create_dir_all(root.join("pkg-a")).unwrap();
+        std::fs::write(
+            root.join("pkg-a/Cargo.toml"),
+            "[package]\nname = \"pkg-a\"\nversion = \"1.0.0\"\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join(".changeset")).unwrap();
+        std::fs::write(
+            root.join(".changeset/pkg-a-patch.md"),
+            "---\n\"pkg-a\": patch\n---\n\nSmall fix.\n",
+        )
+        .unwrap();
+        commit_all(root, "add package and changeset");
+
+        let sha = callisto_model::CommitSha::parse(&"c".repeat(40)).unwrap();
+        let inference = FixedInference {
+            outcome: crate::infer::InferenceOutcome {
+                severity: callisto_model::Severity::Minor,
+                commit_count: 1,
+                remapped: false,
+                commits: vec![(sha.clone(), "feat: bigger change".to_string())],
+            },
+        };
+
+        let locator = IgnoreWalkLocator::new(root);
+        let runner = NoopRunner;
+        let ws =
+            Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
+        let opts = VersionOptions {
+            strict: false,
+            strict_graph: false,
+            allow_empty_changesets: true,
+        };
+
+        let plan = plan_version(&ws, &inference, &opts).expect("plan_version must succeed");
+
+        let pkg_a = callisto_model::PackageId::parse("pkg-a").unwrap();
+        let write = plan
+            .changelog_writes
+            .iter()
+            .find(|w| w.input.package == pkg_a)
+            .expect("pkg-a must have a ChangelogWrite");
+
+        assert_eq!(
+            write.input.entries.len(),
+            2,
+            "got: {:?}",
+            write.input.entries
+        );
+        assert!(matches!(
+            write.input.entries[0].source,
+            callisto_changelog::ChangeSource::Changeset { .. }
+        ));
+        match &write.input.entries[1].source {
+            callisto_changelog::ChangeSource::Commit {
+                sha: got_sha,
+                subject,
+            } => {
+                assert_eq!(got_sha, &sha);
+                assert_eq!(subject, "feat: bigger change");
+            }
+            other => panic!("expected ChangeSource::Commit, got {other:?}"),
         }
     }
 }
