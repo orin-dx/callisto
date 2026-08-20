@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     CommitSha, ConfigKey, DepKind, Diagnostic, Ecosystem, GroupName, PackageId, PublishPlan,
-    Severity, TagName, Version,
+    ReleaseTrigger, Severity, TagName, Version,
 };
 
 pub const SCHEMA_VERSION: u32 = 1;
@@ -299,6 +299,9 @@ pub struct LockfileRefreshResult {
 #[serde(rename_all = "camelCase")]
 pub struct StatusReport {
     pub schema_version: u32,
+    /// Mandatory (§12.5) — the field the Action's mode dispatch reads.
+    /// Always serialized, never omitted, even when `false`.
+    pub has_changesets: bool,
     pub packages: Vec<StatusPackageRecord>,
 
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -326,13 +329,99 @@ pub struct StatusPackageRecord {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_tag: Option<TagName>,
 
+    pub last_released_version: Option<Version>,
+
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pending_severity: Option<Severity>,
 
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    /// Mandatory, always serialized — §6.3's empty-changeset validation and
+    /// §G.9.3's `changed_since_last_tag` depend on this being present even
+    /// when `false`.
     pub changed_since_last_tag: bool,
 
+    pub release_trigger: ReleaseTrigger,
+
     pub pending_changesets: Vec<String>,
+}
+
+#[cfg(test)]
+mod status_report_tests {
+    use super::*;
+    use crate::{PackageId, ReleaseTrigger, Version, VersionGrammar};
+
+    fn pkg() -> PackageId {
+        PackageId::parse("test-pkg").unwrap()
+    }
+
+    fn ver() -> Version {
+        Version::parse("1.0.0", VersionGrammar::SemVer).unwrap()
+    }
+
+    fn record() -> StatusPackageRecord {
+        StatusPackageRecord {
+            package: pkg(),
+            current_version: ver(),
+            last_tag: None,
+            last_released_version: None,
+            pending_severity: None,
+            changed_since_last_tag: false,
+            release_trigger: ReleaseTrigger::Changeset,
+            pending_changesets: vec![],
+        }
+    }
+
+    /// docs/01-spec.md §M.12.4: `StatusReport.hasChangesets` is mandatory —
+    /// §12.5 mandates it and §12.2 branch 3 gates the Action's mode dispatch
+    /// on it — so it must always be present in the serialized JSON, never
+    /// omitted regardless of its value.
+    #[test]
+    fn status_report_json_always_contains_has_changesets() {
+        let report = StatusReport {
+            schema_version: SCHEMA_VERSION,
+            has_changesets: false,
+            packages: vec![],
+            diagnostics: vec![],
+        };
+        let json = serde_json::to_string(&report).unwrap();
+        assert!(
+            json.contains("\"hasChangesets\":false"),
+            "StatusReport JSON must always contain hasChangesets, even when false; got: {json}"
+        );
+    }
+
+    /// docs/01-spec.md §M.12.4: `StatusEntry.changedSinceLastTag` is
+    /// mandatory and computed from v0.1 — it must always be serialized,
+    /// including when `false`, not omitted via skip_serializing_if.
+    #[test]
+    fn status_package_record_json_always_contains_changed_since_last_tag() {
+        let rec = record();
+        let json = serde_json::to_string(&rec).unwrap();
+        assert!(
+            json.contains("\"changedSinceLastTag\":false"),
+            "StatusPackageRecord JSON must always contain changedSinceLastTag, even when \
+             false; got: {json}"
+        );
+    }
+
+    /// docs/01-spec.md §M.12.4: `StatusEntry` carries `lastReleasedVersion`
+    /// and `releaseTrigger` fields alongside the other five.
+    #[test]
+    fn status_package_record_carries_last_released_version_and_release_trigger() {
+        let rec = StatusPackageRecord {
+            last_released_version: Some(ver()),
+            release_trigger: ReleaseTrigger::Auto,
+            ..record()
+        };
+        let json = serde_json::to_string(&rec).unwrap();
+        assert!(
+            json.contains("\"lastReleasedVersion\":\"1.0.0\""),
+            "StatusPackageRecord JSON must carry lastReleasedVersion; got: {json}"
+        );
+        assert!(
+            json.contains("\"releaseTrigger\":\"auto\""),
+            "StatusPackageRecord JSON must carry releaseTrigger; got: {json}"
+        );
+    }
 }
 
 /// Snapshot report output from `callisto snapshot --format json`.

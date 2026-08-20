@@ -54,8 +54,11 @@ fn ac13_report_struct_field_shapes_are_unchanged() {
 
     let status_schema = run_schema("status");
     let (req, props) = required_and_props(&status_schema);
-    assert_eq!(req, set(&["packages", "schemaVersion"]));
-    assert_eq!(props, set(&["diagnostics", "packages", "schemaVersion"]));
+    assert_eq!(req, set(&["hasChangesets", "packages", "schemaVersion"]));
+    assert_eq!(
+        props,
+        set(&["diagnostics", "hasChangesets", "packages", "schemaVersion"])
+    );
 
     let plan_schema = run_schema("plan-publish");
     let (req, props) = required_and_props(&plan_schema);

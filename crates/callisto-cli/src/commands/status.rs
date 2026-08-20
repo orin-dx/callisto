@@ -61,7 +61,8 @@ pub fn handle(args: StatusArgs, global: &GlobalArgs) -> Result<ExitCode, CliErro
 mod tests {
     use super::*;
     use callisto_model::{
-        Ecosystem, PackageId, Severity, StatusPackageRecord, Version, VersionGrammar,
+        Ecosystem, PackageId, ReleaseTrigger, Severity, StatusPackageRecord, Version,
+        VersionGrammar,
     };
 
     fn v1() -> Version {
@@ -76,8 +77,10 @@ mod tests {
     }
 
     fn make_report(changesets: Vec<Vec<&str>>) -> StatusReport {
+        let has_changesets = changesets.iter().any(|cs| !cs.is_empty());
         StatusReport {
             schema_version: callisto_model::SCHEMA_VERSION,
+            has_changesets,
             packages: changesets
                 .into_iter()
                 .enumerate()
@@ -85,12 +88,14 @@ mod tests {
                     package: pkg(&format!("crate-{i}")),
                     current_version: v1(),
                     last_tag: None,
+                    last_released_version: None,
                     pending_severity: if cs.is_empty() {
                         None
                     } else {
                         Some(Severity::Patch)
                     },
                     changed_since_last_tag: !cs.is_empty(),
+                    release_trigger: ReleaseTrigger::Changeset,
                     pending_changesets: cs.into_iter().map(|s| s.to_string()).collect(),
                 })
                 .collect(),

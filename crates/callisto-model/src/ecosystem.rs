@@ -149,7 +149,7 @@ pub fn normalize_pypi_package_name(name: &str) -> String {
 }
 
 /// Trigger mechanism for generating releases.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum ReleaseTrigger {
     #[default]

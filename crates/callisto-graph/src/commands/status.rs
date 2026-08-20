@@ -84,7 +84,9 @@ pub fn status<R: CommandRunner, D: DependencyResolver>(
                 field: "version",
             })
         })?;
-        let last_tag = tags.last_tag(&pkg.id).map(|t| t.name.clone());
+        let last = tags.last_tag(&pkg.id);
+        let last_tag = last.map(|t| t.name.clone());
+        let last_released_version = last.map(|t| t.version.clone());
         let changed = changed_since_last_tag(ws.runner, &ws.root, pkg, tags, git)?;
 
         let (pkg_changesets, max_sev) = pending.get(&pkg.id).cloned().unwrap_or_default();
@@ -93,8 +95,10 @@ pub fn status<R: CommandRunner, D: DependencyResolver>(
             package: pkg.id.clone(),
             current_version,
             last_tag,
+            last_released_version,
             pending_severity: max_sev,
             changed_since_last_tag: changed,
+            release_trigger: pkg.release_trigger,
             pending_changesets: pkg_changesets,
         });
     }
@@ -102,8 +106,11 @@ pub fn status<R: CommandRunner, D: DependencyResolver>(
     let mut diagnostics = ws.graph.diagnostics().to_vec();
     escalate(&mut diagnostics, opts.strict, opts.strict_graph);
 
+    let has_changesets = packages.iter().any(|p| !p.pending_changesets.is_empty());
+
     Ok(StatusReport {
         schema_version: SCHEMA_VERSION,
+        has_changesets,
         packages,
         diagnostics,
     })
@@ -124,8 +131,10 @@ mod tests {
             package: callisto_model::PackageId::parse("test-pkg").unwrap(),
             current_version: callisto_model::Version::semver(1, 0, 0),
             last_tag: None,
+            last_released_version: None,
             pending_severity: Some(callisto_model::Severity::Minor),
             changed_since_last_tag: false,
+            release_trigger: ReleaseTrigger::Changeset,
             pending_changesets: vec!["my-changeset".to_string()],
         };
         assert_eq!(rec.pending_changesets.len(), 1);

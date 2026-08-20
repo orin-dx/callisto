@@ -248,8 +248,8 @@ pub fn render_matrix<W: io::Write>(
 mod tests {
     use super::*;
     use callisto_model::{
-        Ecosystem, PackageId, PublishAttempt, Severity, StatusPackageRecord, Version,
-        VersionGrammar,
+        Ecosystem, PackageId, PublishAttempt, ReleaseTrigger, Severity, StatusPackageRecord,
+        Version, VersionGrammar,
     };
 
     fn v1() -> Version {
@@ -299,8 +299,10 @@ mod tests {
             package: pkg(name),
             current_version: v1(),
             last_tag: None,
+            last_released_version: None,
             pending_severity: severity,
             changed_since_last_tag: false,
+            release_trigger: ReleaseTrigger::Changeset,
             pending_changesets: changesets.into_iter().map(|s| s.to_string()).collect(),
         }
     }
@@ -310,6 +312,7 @@ mod tests {
     fn render_status_no_some_wrapper_in_output() {
         let report = StatusReport {
             schema_version: callisto_model::SCHEMA_VERSION,
+            has_changesets: true,
             packages: vec![status_pkg("crate-a", Some(Severity::Minor), vec!["cs-001"])],
             diagnostics: vec![],
         };
