@@ -134,11 +134,11 @@ fn test_validate_since_git_diff_argument_ordering() {
     );
 }
 
-/// Spec: `validate` must return `valid: false` and emit an Error-severity diagnostic when a
+/// Spec: `validate` must return `ok: false` and emit an Error-severity diagnostic when a
 /// changeset entry has a package name that passes the frontmatter parser (raw string storage)
 /// but is rejected by `PackageId::parse` — for example, a name starting with `-`. Previously
 /// the `if let Ok(id)` guard silently dropped the malformed entry, so the report came back
-/// `valid: true` with no diagnostics at all.
+/// `ok: true` with no diagnostics at all.
 #[test]
 fn test_validate_detects_malformed_package_name_in_changeset() {
     use callisto_graph::commands::{validate, ValidateOptions};
@@ -200,9 +200,9 @@ fn test_validate_detects_malformed_package_name_in_changeset() {
         validate(&ws, &opts).expect("validate must not error for a parseable changeset file");
 
     assert!(
-        !report.valid,
-        "validate must return valid: false for a changeset containing the malformed package name \
-         `-invalid-pkg`; got valid: true with diagnostics: {:?}",
+        !report.ok,
+        "validate must return ok: false for a changeset containing the malformed package name \
+         `-invalid-pkg`; got ok: true with diagnostics: {:?}",
         report.diagnostics
     );
     assert!(

@@ -476,9 +476,13 @@ impl Report for ComposePrBodyReport {
 #[serde(rename_all = "camelCase")]
 pub struct ValidateReport {
     pub schema_version: u32,
-    pub valid: bool,
+    /// `false` iff any diagnostic has `severity == Error` (after
+    /// `--strict`/`--strict-graph` escalation has been applied).
+    pub ok: bool,
 
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    /// Mandatory here, unlike every other report -- `validate`'s entire
+    /// payload *is* its diagnostics, so an absent key would leave the
+    /// command with nothing to say.
     pub diagnostics: Vec<Diagnostic>,
 }
 
@@ -491,6 +495,50 @@ impl Report for ValidateReport {
 
     fn diagnostics(&self) -> &[Diagnostic] {
         &self.diagnostics
+    }
+}
+
+#[cfg(test)]
+mod validate_report_tests {
+    use super::*;
+
+    /// docs/01-spec.md §M.12.6: `ValidateReport`'s boolean field is documented
+    /// as `ok`, serialized camelCase as `"ok"` -- not `"valid"`.
+    #[test]
+    fn validate_report_json_uses_ok_key_not_valid() {
+        let report = ValidateReport {
+            schema_version: SCHEMA_VERSION,
+            ok: true,
+            diagnostics: vec![],
+        };
+        let json = serde_json::to_string(&report).unwrap();
+        assert!(
+            json.contains("\"ok\":true"),
+            "ValidateReport JSON must contain the \"ok\" key; got: {json}"
+        );
+        assert!(
+            !json.contains("\"valid\""),
+            "ValidateReport JSON must not contain a \"valid\" key; got: {json}"
+        );
+    }
+
+    /// docs/01-spec.md §M.12.6: "Mandatory here, unlike every other report --
+    /// validate's entire payload *is* its diagnostics, so an absent key would
+    /// leave the command with nothing to say." `diagnostics` must always be
+    /// serialized, even when empty, unlike every other report's diagnostics
+    /// field.
+    #[test]
+    fn validate_report_json_always_contains_diagnostics_even_when_empty() {
+        let report = ValidateReport {
+            schema_version: SCHEMA_VERSION,
+            ok: true,
+            diagnostics: vec![],
+        };
+        let json = serde_json::to_string(&report).unwrap();
+        assert!(
+            json.contains("\"diagnostics\":[]"),
+            "ValidateReport JSON must always contain diagnostics, even when empty; got: {json}"
+        );
     }
 }
 

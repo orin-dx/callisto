@@ -27,7 +27,7 @@ pub fn handle(args: ValidateArgs, global: &GlobalArgs) -> Result<ExitCode, CliEr
         OutputFormat::Text => render::render_validate(&report, &mut std::io::stdout())?,
     }
 
-    if report.valid {
+    if report.ok {
         Ok(ExitCode::SUCCESS)
     } else {
         Ok(ExitCode::FAILURE)

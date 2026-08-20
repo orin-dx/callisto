@@ -142,7 +142,7 @@ pub fn validate<R: CommandRunner, D: DependencyResolver>(
         .all(|d| d.severity != callisto_model::DiagnosticSeverity::Error);
     Ok(ValidateReport {
         schema_version: SCHEMA_VERSION,
-        valid: is_valid,
+        ok: is_valid,
         diagnostics,
     })
 }

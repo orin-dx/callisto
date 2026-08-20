@@ -137,7 +137,7 @@ pub fn render_snapshot<W: io::Write>(report: &SnapshotReport, w: &mut W) -> io::
 }
 
 pub fn render_validate<W: io::Write>(report: &ValidateReport, w: &mut W) -> io::Result<()> {
-    if report.valid {
+    if report.ok {
         writeln!(w, "Validation passed.")?;
     } else {
         writeln!(w, "Validation failed with diagnostics:")?;

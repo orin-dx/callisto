@@ -200,7 +200,7 @@ pub fn execute_extension(input: ExecuteExtensionInput) -> ExecuteExtensionOutput
             use callisto_graph::commands::validate::{validate, ValidateOptions};
             match validate(&ws, &ValidateOptions::default()) {
                 Ok(report) => {
-                    let exit_code = if report.valid { 0 } else { 1 };
+                    let exit_code = if report.ok { 0 } else { 1 };
                     build_extension_output(serde_json::to_value(&report), exit_code)
                 }
                 Err(e) => {
