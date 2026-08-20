@@ -77,11 +77,8 @@ fn test_tag_dry_run_does_not_create_git_tags() {
     // created, and no git ref is touched.
     let report =
         callisto_graph::commands::create_tags_with_options(&ws, &plan, &opts, None).unwrap();
-    assert_eq!(report.created_tags.len(), 1);
-    assert_eq!(
-        report.created_tags[0].tag_name.as_str(),
-        "callisto-cli@0.2.0"
-    );
+    assert_eq!(report.tags.len(), 1);
+    assert_eq!(report.tags[0].tag_name.as_str(), "callisto-cli@0.2.0");
 }
 
 /// Spec: `create_tags_with_options` must not hard-crash via
@@ -197,11 +194,7 @@ fn test_create_tags_without_gix_falls_back_to_command_runner() {
              tags.rs's fetch_all_tags",
     );
 
-    let created: Vec<&str> = report
-        .created_tags
-        .iter()
-        .map(|t| t.tag_name.as_str())
-        .collect();
+    let created: Vec<&str> = report.tags.iter().map(|t| t.tag_name.as_str()).collect();
     assert!(created.contains(&"callisto-cli@1.0.0"));
     assert!(created.contains(&"callisto-cli@1"));
 
@@ -360,7 +353,7 @@ fn test_create_tags_without_gix_skips_creation_for_existing_tag() {
         Some(&ApplyPermit::force_for_tests()),
     )
     .expect("create_tags_with_options must succeed via the CommandRunner fallback");
-    assert_eq!(report.created_tags.len(), 1);
+    assert_eq!(report.tags.len(), 1);
 
     let calls = runner.calls.lock().unwrap();
     assert!(
@@ -385,8 +378,9 @@ fn test_create_tags_without_gix_skips_creation_for_existing_tag() {
 /// for a ref that already exists, so this test fails loudly (not
 /// vacuously) if the existence check is ever disabled or inverted -- a
 /// pure call-count assertion alone would still pass even if
-/// `already_existed` were hardcoded to `false`, since `created_tags` is
-/// pushed unconditionally regardless of that check's outcome.
+/// `already_existed` were hardcoded to `false`, since `report.tags` is
+/// pushed unconditionally regardless of that check's outcome. (The
+/// `already_existed` value itself is asserted directly below.)
 #[test]
 fn test_create_tags_checks_existence_against_cached_tag_index_not_per_release() {
     use callisto_graph::commands::TagOptions;
@@ -537,7 +531,25 @@ fn test_create_tags_checks_existence_against_cached_tag_index_not_per_release() 
         "create_tags_with_options must succeed -- it must skip pkg-a@1.0.0 (already exists) \
          rather than attempt to re-create it and hit the runner's simulated failure",
     );
-    assert_eq!(report.created_tags.len(), 2);
+    assert_eq!(report.tags.len(), 2);
+
+    let already_existed_by_name: std::collections::BTreeMap<&str, bool> = report
+        .tags
+        .iter()
+        .map(|t| (t.tag_name.as_str(), t.already_existed))
+        .collect();
+    assert_eq!(
+        already_existed_by_name.get("pkg-a@1.0.0"),
+        Some(&true),
+        "CreatedTag::already_existed must be true for the tag the cached TagIndex reported as \
+         pre-existing (docs/01-spec.md §M.12.6), not hardcoded false; got: {already_existed_by_name:?}"
+    );
+    assert_eq!(
+        already_existed_by_name.get("pkg-b@2.0.0"),
+        Some(&false),
+        "CreatedTag::already_existed must be false for a genuinely newly-created tag; \
+         got: {already_existed_by_name:?}"
+    );
 
     assert_eq!(
         *runner.create_calls.lock().unwrap(),

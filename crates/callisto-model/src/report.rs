@@ -589,7 +589,7 @@ mod validate_report_tests {
 #[serde(rename_all = "camelCase")]
 pub struct TagReport {
     pub schema_version: u32,
-    pub created_tags: Vec<CreatedTag>,
+    pub tags: Vec<CreatedTag>,
 
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub diagnostics: Vec<Diagnostic>,
@@ -613,6 +613,73 @@ pub struct CreatedTag {
     pub package: PackageId,
     pub tag_name: TagName,
     pub sha: CommitSha,
+    /// `true` when the tag already existed at this sha and was left alone --
+    /// P3's idempotence made observable rather than assumed. An existing tag
+    /// at a *different* sha is an error diagnostic, not a silent overwrite
+    /// (docs/01-spec.md §M.12.6).
+    pub already_existed: bool,
+}
+
+#[cfg(test)]
+mod tag_report_tests {
+    use super::*;
+
+    fn tag_name() -> TagName {
+        TagName("pkg-a@1.0.0".to_string())
+    }
+
+    fn sha() -> CommitSha {
+        CommitSha::parse("a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0").unwrap()
+    }
+
+    fn pkg() -> PackageId {
+        PackageId::parse("pkg-a").unwrap()
+    }
+
+    /// docs/01-spec.md §M.12.6: `TagReport`'s array field is documented as
+    /// `tags: Vec<CreatedTag>`, serialized camelCase as `"tags"` -- not
+    /// `"createdTags"`.
+    #[test]
+    fn tag_report_json_uses_tags_key_not_created_tags() {
+        let report = TagReport {
+            schema_version: SCHEMA_VERSION,
+            tags: vec![CreatedTag {
+                package: pkg(),
+                tag_name: tag_name(),
+                sha: sha(),
+                already_existed: false,
+            }],
+            diagnostics: vec![],
+        };
+        let json = serde_json::to_string(&report).unwrap();
+        assert!(
+            json.contains("\"tags\":["),
+            "TagReport JSON must contain the \"tags\" key; got: {json}"
+        );
+        assert!(
+            !json.contains("\"createdTags\""),
+            "TagReport JSON must not contain a \"createdTags\" key; got: {json}"
+        );
+    }
+
+    /// docs/01-spec.md §M.12.6: `CreatedTag::already_existed` is `true` when
+    /// the tag already existed at this sha and was left alone (P3's
+    /// idempotence made observable). Serialized camelCase as
+    /// `"alreadyExisted"`.
+    #[test]
+    fn created_tag_json_includes_already_existed_key() {
+        let tag = CreatedTag {
+            package: pkg(),
+            tag_name: tag_name(),
+            sha: sha(),
+            already_existed: true,
+        };
+        let json = serde_json::to_string(&tag).unwrap();
+        assert!(
+            json.contains("\"alreadyExisted\":true"),
+            "CreatedTag JSON must contain the \"alreadyExisted\" key; got: {json}"
+        );
+    }
 }
 
 /// Init report output from `callisto init --format json`.

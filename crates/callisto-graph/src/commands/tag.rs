@@ -62,10 +62,12 @@ pub fn create_tags_with_options<R: CommandRunner, D: DependencyResolver>(
                         .unwrap_or(callisto_model::VersionGrammar::SemVer);
                     if let Ok(ver) = callisto_model::Version::parse(v_str, grammar) {
                         if let Some(major_tag) = tmpl.render_floating_major(&ver) {
+                            let major_already_existed = ws.tags()?.contains_tag(major_tag.as_str());
                             tags.push(CreatedTag {
                                 package: release.package.clone(),
                                 tag_name: major_tag,
                                 sha: release.sha.clone(),
+                                already_existed: major_already_existed,
                             });
                         }
                     }
@@ -90,6 +92,7 @@ pub fn create_tags_with_options<R: CommandRunner, D: DependencyResolver>(
                 package: release.package.clone(),
                 tag_name: release.tag_name.clone(),
                 sha,
+                already_existed,
             });
             continue;
         };
@@ -124,11 +127,13 @@ pub fn create_tags_with_options<R: CommandRunner, D: DependencyResolver>(
             if let Some(v_str) = ver_str {
                 if let Ok(ver) = callisto_model::Version::parse(v_str, grammar) {
                     if let Some(major_tag) = tmpl.render_floating_major(&ver) {
+                        let major_already_existed = ws.tags()?.contains_tag(major_tag.as_str());
                         git.create_floating_major(major_tag.as_str(), &release.sha, permit)?;
                         tags.push(CreatedTag {
                             package: release.package.clone(),
                             tag_name: major_tag,
                             sha: release.sha.clone(),
+                            already_existed: major_already_existed,
                         });
                     }
                 }
@@ -139,12 +144,13 @@ pub fn create_tags_with_options<R: CommandRunner, D: DependencyResolver>(
             package: release.package.clone(),
             tag_name: release.tag_name.clone(),
             sha,
+            already_existed,
         });
     }
 
     Ok(TagReport {
         schema_version: SCHEMA_VERSION,
-        created_tags: tags,
+        tags,
         diagnostics: Vec::new(),
     })
 }

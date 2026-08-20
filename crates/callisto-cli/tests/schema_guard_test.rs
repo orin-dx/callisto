@@ -1,7 +1,9 @@
-//! AC-13 guard: none of this track's fixes may change any report struct's field shape.
-//! The only permitted schema delta is the additive DiagnosticCode::ChangelogReadError
-//! variant. Expected sets below were captured from `callisto schema` against the live,
-//! unmodified repository before this track's fixes were implemented.
+//! AC-13 guard: none of this track's fixes may change any report struct's field shape,
+//! except where a task's explicit scope is the shape change itself. Permitted schema
+//! deltas: the additive DiagnosticCode::ChangelogReadError variant, and TagReport/
+//! CreatedTag's field-shape fix (docs/01-spec.md §M.12.6: `tags` not `createdTags`,
+//! plus `CreatedTag::already_existed`). Expected sets below were captured from
+//! `callisto schema` against the live repository after those two intentional changes.
 
 use std::collections::BTreeSet;
 use std::process::Command;
@@ -44,12 +46,12 @@ fn set(items: &[&str]) -> BTreeSet<String> {
 fn ac13_report_struct_field_shapes_are_unchanged() {
     let tag_schema = run_schema("tag");
     let (req, props) = required_and_props(&tag_schema);
-    assert_eq!(req, set(&["createdTags", "schemaVersion"]));
-    assert_eq!(props, set(&["createdTags", "diagnostics", "schemaVersion"]));
+    assert_eq!(req, set(&["tags", "schemaVersion"]));
+    assert_eq!(props, set(&["tags", "diagnostics", "schemaVersion"]));
 
     let created_tag = &tag_schema["definitions"]["CreatedTag"];
     let (req, props) = required_and_props(created_tag);
-    assert_eq!(req, set(&["package", "sha", "tagName"]));
+    assert_eq!(req, set(&["alreadyExisted", "package", "sha", "tagName"]));
     assert_eq!(props, req);
 
     let status_schema = run_schema("status");

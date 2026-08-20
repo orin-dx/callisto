@@ -140,7 +140,7 @@ fn apply_mode_reports_real_target_when_tag_exists_and_differs_from_release_sha()
         .expect("create_tags_with_options must succeed");
 
     assert_eq!(
-        report.created_tags[0].sha.as_str(),
+        report.tags[0].sha.as_str(),
         real_sha,
         "apply mode must report the tag's real current target, not release.sha, when the tag \
          already exists at a different commit"
@@ -223,7 +223,7 @@ fn dry_run_mode_reports_real_target_when_tag_exists_and_differs_from_release_sha
         .expect("create_tags_with_options (dry-run) must succeed");
 
     assert_eq!(
-        report.created_tags[0].sha.as_str(),
+        report.tags[0].sha.as_str(),
         real_sha,
         "dry-run mode must preview the tag's real current target, not release.sha, when the \
          tag already exists at a different commit"
@@ -358,11 +358,7 @@ fn tag_not_existing_reports_release_sha_in_both_modes_and_apply_creates_it() {
     // Dry-run first, while the tag genuinely does not exist yet.
     let dry_report = create_tags_with_options(&ws, &plan, &TagOptions::default(), None)
         .expect("dry-run must succeed");
-    assert_eq!(
-        dry_report.created_tags[0].sha.as_str(),
-        head,
-        "AC-07 dry-run"
-    );
+    assert_eq!(dry_report.tags[0].sha.as_str(), head, "AC-07 dry-run");
     assert!(
         !git_tag_exists_at(root, "pkg@1.0.0", &head),
         "dry-run must not create the tag"
@@ -372,11 +368,7 @@ fn tag_not_existing_reports_release_sha_in_both_modes_and_apply_creates_it() {
     let permit = ApplyPermit::force_for_tests();
     let apply_report = create_tags_with_options(&ws, &plan, &TagOptions::default(), Some(&permit))
         .expect("apply must succeed");
-    assert_eq!(
-        apply_report.created_tags[0].sha.as_str(),
-        head,
-        "AC-07 apply"
-    );
+    assert_eq!(apply_report.tags[0].sha.as_str(), head, "AC-07 apply");
     assert!(
         git_tag_exists_at(root, "pkg@1.0.0", &head),
         "apply must create the tag at release.sha"
@@ -407,17 +399,9 @@ fn tag_existing_at_release_sha_reports_release_sha_with_no_error_in_both_modes()
     let permit = ApplyPermit::force_for_tests();
     let apply_report = create_tags_with_options(&ws, &plan, &TagOptions::default(), Some(&permit))
         .expect("idempotent apply rerun must succeed with no error");
-    assert_eq!(
-        apply_report.created_tags[0].sha.as_str(),
-        head,
-        "AC-08 apply"
-    );
+    assert_eq!(apply_report.tags[0].sha.as_str(), head, "AC-08 apply");
 
     let dry_report = create_tags_with_options(&ws, &plan, &TagOptions::default(), None)
         .expect("dry-run against already-tagged state must succeed with no error");
-    assert_eq!(
-        dry_report.created_tags[0].sha.as_str(),
-        head,
-        "AC-08 dry-run"
-    );
+    assert_eq!(dry_report.tags[0].sha.as_str(), head, "AC-08 dry-run");
 }

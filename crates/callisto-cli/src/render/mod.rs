@@ -154,7 +154,7 @@ pub fn render_tag<W: io::Write>(report: &TagReport, dry_run: bool, w: &mut W) ->
     } else {
         writeln!(w, "Created Tags:")?;
     }
-    for tag in &report.created_tags {
+    for tag in &report.tags {
         writeln!(w, "  {} ({})", tag.tag_name, tag.sha.as_str())?;
     }
     Ok(())
