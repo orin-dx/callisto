@@ -29,6 +29,7 @@ pub struct Aggregation {
     pub named_by: BTreeMap<PackageId, NamedBy>,
     pub consumed: Vec<PathBuf>,
     pub changelog_inputs: BTreeMap<PackageId, ChangelogInput>,
+    pub inference_commits: BTreeMap<PackageId, Vec<(CommitSha, String)>>,
     pub diagnostics: Vec<Diagnostic>,
 }
 
@@ -232,6 +233,8 @@ where
                         },
                     );
                     agg.named_by.insert(pkg.id.clone(), NamedBy::Inference);
+                    agg.inference_commits
+                        .insert(pkg.id.clone(), outcome.commits.clone());
                 }
             }
             Ok(None) => {}
@@ -888,6 +891,77 @@ mod tests {
             Some(expected_sha),
             "aggregate() must scope inference to last_tag..HEAD instead of hardcoding `since: None` \
              (full history)"
+        );
+    }
+
+    struct FixedCommitsInference {
+        commits: Vec<(CommitSha, String)>,
+    }
+
+    impl SeverityInference for FixedCommitsInference {
+        fn infer(
+            &self,
+            _pkg: &Package,
+            _git: &GitAccess<'_>,
+            _window: InferenceWindowSpec<'_>,
+        ) -> Result<Option<InferenceOutcome>, GraphError> {
+            Ok(Some(InferenceOutcome {
+                severity: Severity::Minor,
+                commit_count: self.commits.len(),
+                remapped: false,
+                commits: self.commits.clone(),
+            }))
+        }
+    }
+
+    /// AC-003 scaffold: aggregate() must retain InferenceOutcome.commits
+    /// on Aggregation.inference_commits keyed by package, not discard it
+    /// after constructing BumpReason::Inference (which only carries a count).
+    #[test]
+    fn test_aggregate_retains_inference_commits_on_aggregation() {
+        let ws_dir = tempfile::tempdir().unwrap();
+        let root = ws_dir.path();
+        init_repo(root);
+        std::fs::write(root.join("README.md"), "hello\n").unwrap();
+        run_git(root, &["add", "."]);
+        run_git(root, &["commit", "-q", "-m", "initial commit"]);
+
+        let pkg_id = PackageId::parse("pkg-a").unwrap();
+        let manifest = ManifestDecl::new(
+            "Cargo.toml",
+            ManifestRole::Canonical,
+            ManifestFormat::CargoToml,
+        )
+        .unwrap();
+        let graph = SinglePackageGraph {
+            pkg: Package {
+                id: pkg_id.clone(),
+                manifests: vec![manifest],
+                changelog: None,
+                release_trigger: callisto_model::ReleaseTrigger::Changeset,
+                publish_to: Vec::new(),
+                tag_template: None,
+            },
+        };
+        let runner = RealGitRunner;
+        let git = GitAccess::discover(root, &runner);
+        let cfg = crate::config::load(root).unwrap();
+        let tags = TagIndex::build(&git, &graph, &cfg).unwrap();
+
+        let mut base_versions = BTreeMap::new();
+        base_versions.insert(pkg_id.clone(), callisto_model::Version::semver(1, 0, 0));
+
+        let sha_recent = CommitSha::parse(&"a".repeat(40)).unwrap();
+        let inference = FixedCommitsInference {
+            commits: vec![(sha_recent.clone(), "feat: recent".to_string())],
+        };
+
+        let agg = aggregate(&graph, &cfg, &git, &tags, &base_versions, None, &inference).unwrap();
+
+        assert_eq!(
+            agg.inference_commits.get(&pkg_id),
+            Some(&vec![(sha_recent, "feat: recent".to_string())]),
+            "Aggregation.inference_commits must retain InferenceOutcome.commits for the package"
         );
     }
 
