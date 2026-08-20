@@ -185,6 +185,18 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
                             to: dep_to,
                         }
                     }
+                    Some(BumpReason::Inference { commits, .. }) => {
+                        match agg.inference_commits.get(id).and_then(|c| c.first()) {
+                            Some((sha, subject)) => ChangeSource::Commit {
+                                sha: sha.clone(),
+                                subject: subject.clone(),
+                            },
+                            None => ChangeSource::Changeset {
+                                filename: String::new(),
+                                summary: format!("Inferred version bump ({commits} commit(s))"),
+                            },
+                        }
+                    }
                     _ => ChangeSource::Changeset {
                         filename: String::new(),
                         summary: format!(
@@ -1554,5 +1566,141 @@ mod tests {
              matching dependency entry for the platform member's name; got: {:?}",
             plan.optional_dep_updates
         );
+    }
+
+    struct FixedInference {
+        outcome: crate::infer::InferenceOutcome,
+    }
+
+    impl crate::infer::SeverityInference for FixedInference {
+        fn infer(
+            &self,
+            _pkg: &callisto_model::Package,
+            _git: &callisto_vcs::GitAccess<'_>,
+            _window: crate::infer::InferenceWindowSpec<'_>,
+        ) -> Result<Option<crate::infer::InferenceOutcome>, GraphError> {
+            Ok(Some(self.outcome.clone()))
+        }
+    }
+
+    /// AC-003 (non-empty commits): Inference-driven bump with a real,
+    /// non-empty InferenceOutcome.commits must produce exactly one
+    /// ChangelogEntry with ChangeSource::Commit from commits[0] (newest,
+    /// since callisto-vcs shells `git log --no-merges` with no reversing
+    /// flag -- git's default newest-first order).
+    #[test]
+    fn plan_version_inference_reason_maps_to_most_recent_commit() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        git_init_with_commit(root);
+
+        std::fs::create_dir_all(root.join("pkg-a")).unwrap();
+        std::fs::write(
+            root.join("pkg-a/Cargo.toml"),
+            "[package]\nname = \"pkg-a\"\nversion = \"1.0.0\"\n",
+        )
+        .unwrap();
+        commit_all(root, "add package");
+
+        let sha_recent = callisto_model::CommitSha::parse(&"a".repeat(40)).unwrap();
+        let sha_older = callisto_model::CommitSha::parse(&"b".repeat(40)).unwrap();
+        let inference = FixedInference {
+            outcome: crate::infer::InferenceOutcome {
+                severity: callisto_model::Severity::Minor,
+                commit_count: 2,
+                remapped: false,
+                commits: vec![
+                    (sha_recent.clone(), "feat: recent".to_string()),
+                    (sha_older, "fix: older".to_string()),
+                ],
+            },
+        };
+
+        let locator = IgnoreWalkLocator::new(root);
+        let runner = NoopRunner;
+        let ws =
+            Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
+        let opts = VersionOptions {
+            strict: false,
+            strict_graph: false,
+            allow_empty_changesets: true,
+        };
+
+        let plan = plan_version(&ws, &inference, &opts).expect("plan_version must succeed");
+
+        let pkg_a = callisto_model::PackageId::parse("pkg-a").unwrap();
+        let write = plan
+            .changelog_writes
+            .iter()
+            .find(|w| w.input.package == pkg_a)
+            .expect("pkg-a must have a ChangelogWrite");
+
+        assert_eq!(write.input.entries.len(), 1);
+        assert_eq!(
+            write.input.entries[0].severity,
+            callisto_model::Severity::Minor
+        );
+        match &write.input.entries[0].source {
+            callisto_changelog::ChangeSource::Commit { sha, subject } => {
+                assert_eq!(sha, &sha_recent);
+                assert_eq!(subject, "feat: recent");
+            }
+            other => panic!("expected ChangeSource::Commit, got {other:?}"),
+        }
+    }
+
+    /// AC-003 (empty commits): an InferenceOutcome with empty `commits` but
+    /// nonzero `commit_count` must fall back to a ChangeSource::Changeset
+    /// entry summarizing the count, mirroring AC-006's fallback pattern.
+    #[test]
+    fn plan_version_inference_reason_falls_back_when_commits_empty() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        git_init_with_commit(root);
+
+        std::fs::create_dir_all(root.join("pkg-a")).unwrap();
+        std::fs::write(
+            root.join("pkg-a/Cargo.toml"),
+            "[package]\nname = \"pkg-a\"\nversion = \"1.0.0\"\n",
+        )
+        .unwrap();
+        commit_all(root, "add package");
+
+        let inference = FixedInference {
+            outcome: crate::infer::InferenceOutcome {
+                severity: callisto_model::Severity::Minor,
+                commit_count: 2,
+                remapped: false,
+                commits: vec![],
+            },
+        };
+
+        let locator = IgnoreWalkLocator::new(root);
+        let runner = NoopRunner;
+        let ws =
+            Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
+        let opts = VersionOptions {
+            strict: false,
+            strict_graph: false,
+            allow_empty_changesets: true,
+        };
+
+        let plan = plan_version(&ws, &inference, &opts).expect("plan_version must succeed");
+
+        let pkg_a = callisto_model::PackageId::parse("pkg-a").unwrap();
+        let write = plan
+            .changelog_writes
+            .iter()
+            .find(|w| w.input.package == pkg_a)
+            .expect("pkg-a must have a ChangelogWrite");
+
+        assert_eq!(write.input.entries.len(), 1);
+        match &write.input.entries[0].source {
+            callisto_changelog::ChangeSource::Changeset { filename, summary } => {
+                assert_eq!(filename, "");
+                assert_eq!(summary, "Inferred version bump (2 commit(s))");
+            }
+            other => panic!("expected ChangeSource::Changeset fallback, got {other:?}"),
+        }
     }
 }
