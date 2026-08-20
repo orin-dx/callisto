@@ -164,7 +164,7 @@ pub fn render_compose_pr_body<W: io::Write>(
     report: &ComposePrBodyReport,
     w: &mut W,
 ) -> io::Result<()> {
-    write!(w, "{}", report.pr_body)?;
+    write!(w, "{}", report.body)?;
     Ok(())
 }
 

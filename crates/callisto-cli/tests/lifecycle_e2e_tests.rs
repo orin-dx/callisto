@@ -167,18 +167,18 @@ fn test_compose_pr_body_before_version_and_subpkg_changelog() {
         };
         let report = callisto_graph::commands::compose_pr_body(&ws, &NoInference, &opts).unwrap();
         assert!(
-            !report.pr_body.is_empty(),
+            !report.body.is_empty(),
             "PR body must not be empty before versioning"
         );
         assert!(
-            report.pr_body.contains("core-crate"),
+            report.body.contains("core-crate"),
             "PR body must mention the changed package 'core-crate', got:\n{}",
-            report.pr_body
+            report.body
         );
         assert!(
-            report.pr_body.contains("minor"),
+            report.body.contains("minor"),
             "PR body must show the bump severity, got:\n{}",
-            report.pr_body
+            report.body
         );
     }
     let compose_res = commands::compose_pr_body::handle(

@@ -51,7 +51,7 @@ fn test_compose_pr_body_custom_branch_flag() {
     };
 
     let report = compose_pr_body(&ws, &inference, &opts).unwrap();
-    assert!(report.pr_body.contains("release/v1.0"));
+    assert!(report.body.contains("release/v1.0"));
 }
 
 /// Verifies that `apply_version_plan` surfaces a `git add` failure instead

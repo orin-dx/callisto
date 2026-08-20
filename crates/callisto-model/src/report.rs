@@ -453,7 +453,14 @@ impl Report for SnapshotReport {
 #[serde(rename_all = "camelCase")]
 pub struct ComposePrBodyReport {
     pub schema_version: u32,
-    pub pr_body: String,
+    /// docs/01-spec.md §M.12.5: the composed PR body. Wire key is `body`
+    /// (not `prBody`).
+    ///
+    /// NOTE: docs/01-spec.md §M.12.5 also documents a `metadata:
+    /// PrBodyMetadata` field. It is intentionally not present on this
+    /// struct yet -- see the `compose_pr_body_report_json_uses_body_key_not_pr_body`
+    /// test doc comment for why.
+    pub body: String,
 
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub diagnostics: Vec<Diagnostic>,
@@ -468,6 +475,41 @@ impl Report for ComposePrBodyReport {
 
     fn diagnostics(&self) -> &[Diagnostic] {
         &self.diagnostics
+    }
+}
+
+#[cfg(test)]
+mod compose_pr_body_report_tests {
+    use super::*;
+
+    /// docs/01-spec.md §M.12.5: `ComposePrBodyReport`'s composed-body field is
+    /// documented as `body`, serialized camelCase as `"body"` -- not `"prBody"`.
+    ///
+    /// NOTE: this test intentionally does not assert on a `metadata` key.
+    /// docs/01-spec.md §M.12.5 also documents a `metadata: PrBodyMetadata`
+    /// field (labels / managedLabels / overflow), but the data needed to
+    /// populate `managedLabels` (round-tripping the previous run's applied
+    /// labels from the existing PR body) and `overflow` (notes-branch
+    /// overflow detection) is not computed anywhere in
+    /// `callisto-graph::commands::pr_body` today. Adding that field here
+    /// would require fabricating placeholder data, so it is explicitly out
+    /// of scope for this fix and left for separate work.
+    #[test]
+    fn compose_pr_body_report_json_uses_body_key_not_pr_body() {
+        let report = ComposePrBodyReport {
+            schema_version: SCHEMA_VERSION,
+            body: "## Release Preview".to_string(),
+            diagnostics: vec![],
+        };
+        let json = serde_json::to_string(&report).unwrap();
+        assert!(
+            json.contains("\"body\":\"## Release Preview\""),
+            "ComposePrBodyReport JSON must contain the \"body\" key; got: {json}"
+        );
+        assert!(
+            !json.contains("\"prBody\""),
+            "ComposePrBodyReport JSON must not contain a \"prBody\" key; got: {json}"
+        );
     }
 }
 

@@ -73,7 +73,7 @@ pub fn render_pr_body_from_plan(
         body.push_str("</details>\n");
         return Ok(ComposePrBodyReport {
             schema_version: SCHEMA_VERSION,
-            pr_body: body,
+            body,
             diagnostics: Vec::new(),
         });
     }
@@ -236,7 +236,7 @@ pub fn render_pr_body_from_plan(
 
     Ok(ComposePrBodyReport {
         schema_version: SCHEMA_VERSION,
-        pr_body: body,
+        body,
         diagnostics: Vec::new(),
     })
 }
@@ -292,7 +292,7 @@ mod tests {
 
         let opts = PrBodyOptions::default();
         let report = render_pr_body_from_plan(&plan, &opts).unwrap();
-        insta::assert_snapshot!(report.pr_body);
+        insta::assert_snapshot!(report.body);
     }
 
     #[test]
@@ -317,6 +317,6 @@ mod tests {
             branch: Some("custom-release-branch".to_string()),
         };
         let report = render_pr_body_from_plan(&plan, &opts).unwrap();
-        assert!(report.pr_body.contains("## Release Preview"));
+        assert!(report.body.contains("## Release Preview"));
     }
 }
