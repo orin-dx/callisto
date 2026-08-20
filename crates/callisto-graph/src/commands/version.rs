@@ -635,6 +635,67 @@ mod tests {
         );
     }
 
+    /// AC-006: a package with a bump this run, `pkg.changelog` set, no pending
+    /// changeset, and a BumpReason with no direct ChangeSource mapping
+    /// (PreRelease) must still produce exactly one ChangelogWrite entry via
+    /// the generic 'Version bump ({severity})' fallback -- plan_version must
+    /// not panic or error.
+    #[test]
+    fn version_prerelease_exit_falls_back_to_generic_changeset_summary() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        git_init_with_commit(root);
+
+        std::fs::create_dir_all(root.join("pkg-a")).unwrap();
+        std::fs::write(
+            root.join("pkg-a/Cargo.toml"),
+            "[package]\nname = \"pkg-a\"\nversion = \"1.1.0-alpha.1\"\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join(".changeset")).unwrap();
+        std::fs::write(
+            root.join(".changeset/pre.json"),
+            r#"{"mode":"exit","tag":"alpha","initialVersions":{},"changesets":[]}"#,
+        )
+        .unwrap();
+        commit_all(root, "add package");
+
+        let locator = IgnoreWalkLocator::new(root);
+        let runner = NoopRunner;
+        let ws =
+            Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
+
+        let inference = NoInference;
+        let opts = VersionOptions {
+            strict: false,
+            strict_graph: false,
+            allow_empty_changesets: true,
+        };
+
+        let plan = plan_version(&ws, &inference, &opts).expect("plan_version must succeed");
+
+        let pkg_a = callisto_model::PackageId::parse("pkg-a").unwrap();
+        let write = plan
+            .changelog_writes
+            .iter()
+            .find(|w| w.input.package == pkg_a)
+            .expect("pkg-a must have a ChangelogWrite");
+
+        assert_eq!(
+            write.input.entries.len(),
+            1,
+            "expected exactly 1 entry, got {:?}",
+            write.input.entries
+        );
+        match &write.input.entries[0].source {
+            callisto_changelog::ChangeSource::Changeset { filename, summary } => {
+                assert_eq!(filename, "");
+                assert_eq!(summary, "Version bump (patch)");
+            }
+            other => panic!("expected ChangeSource::Changeset fallback, got {other:?}"),
+        }
+    }
+
     /// AC-001 + AC-002: a Fixed group with an owner Package member that
     /// receives a real PlannedBump this run, plus a sibling
     /// GroupMember::PlatformManifest member (a Case D hybrid-root npm
