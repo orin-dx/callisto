@@ -199,7 +199,7 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
         });
 
         if let Some(ch_path) = &pkg.changelog {
-            let input = if let Some(mut agg_input) = agg.changelog_inputs.get(id).cloned() {
+            let mut input = if let Some(mut agg_input) = agg.changelog_inputs.get(id).cloned() {
                 // Real changeset data: use it, but set the resolved target version.
                 agg_input.from = from.clone();
                 agg_input.to = Some(to.clone());
@@ -244,6 +244,19 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
                     }],
                 }
             };
+
+            if let Some(group_name) = group_check
+                .new_members
+                .iter()
+                .find(|(_, members)| members.contains(id))
+                .map(|(name, _)| name.clone())
+            {
+                input.entries.push(ChangelogEntry {
+                    severity: sev,
+                    source: ChangeSource::NewGroupMember { group: group_name },
+                });
+            }
+
             changelog_writes.push(crate::plan::ChangelogWrite {
                 changelog_path: ch_path.clone(),
                 input,
@@ -1879,5 +1892,161 @@ mod tests {
             }
             other => panic!("expected ChangeSource::Commit, got {other:?}"),
         }
+    }
+
+    /// AC-004 (changeset-only sub-case): a fixed group with one released
+    /// member and one fresh (never-tagged) member at the identical base
+    /// version; the fresh member gets a changeset-driven bump with no other
+    /// reason. Entries must be [Changeset, NewGroupMember] in that order.
+    #[test]
+    fn plan_version_appends_new_group_member_entry_after_changeset() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        git_init_with_commit(root);
+
+        for name in ["pkg-released", "pkg-fresh"] {
+            std::fs::create_dir_all(root.join(name)).unwrap();
+            std::fs::write(
+                root.join(name).join("Cargo.toml"),
+                format!("[package]\nname = \"{name}\"\nversion = \"1.0.0\"\n"),
+            )
+            .unwrap();
+        }
+        std::fs::write(
+            root.join("callisto.toml"),
+            "[[fixed-group]]\nname = \"grp\"\nmembers = [\"pkg-released\", \"pkg-fresh\"]\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join(".changeset")).unwrap();
+        std::fs::write(
+            root.join(".changeset/fresh-patch.md"),
+            "---\n\"pkg-fresh\": patch\n---\n\nfix.\n",
+        )
+        .unwrap();
+        commit_all(root, "add packages");
+        tag(root, "pkg-released@1.0.0");
+
+        let locator = IgnoreWalkLocator::new(root);
+        let runner = NoopRunner;
+        let ws =
+            Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
+        let inference = crate::infer::NoInference;
+        let opts = VersionOptions {
+            strict: false,
+            strict_graph: false,
+            allow_empty_changesets: true,
+        };
+
+        let plan = plan_version(&ws, &inference, &opts).expect("plan_version must succeed");
+
+        let pkg_fresh = callisto_model::PackageId::parse("pkg-fresh").unwrap();
+        let write = plan
+            .changelog_writes
+            .iter()
+            .find(|w| w.input.package == pkg_fresh)
+            .expect("pkg-fresh must have a ChangelogWrite");
+
+        assert_eq!(
+            write.input.entries.len(),
+            2,
+            "got: {:?}",
+            write.input.entries
+        );
+        assert!(matches!(
+            write.input.entries[0].source,
+            callisto_changelog::ChangeSource::Changeset { .. }
+        ));
+        assert!(matches!(
+            write.input.entries[1].source,
+            callisto_changelog::ChangeSource::NewGroupMember { .. }
+        ));
+    }
+
+    /// AC-004 (additive-on-top-of-AC-005 sub-case): same fixed-group
+    /// fixture, but pkg-fresh is ALSO a cascade target this run (via a
+    /// third driver package), so it has both a changeset entry and a
+    /// cascade-mapped entry (T4) before the NewGroupMember append.
+    #[test]
+    fn plan_version_new_group_member_entry_is_additive_after_cascade_union() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        git_init_with_commit(root);
+
+        for name in ["pkg-released", "pkg-fresh"] {
+            std::fs::create_dir_all(root.join(name)).unwrap();
+            std::fs::write(
+                root.join(name).join("Cargo.toml"),
+                format!("[package]\nname = \"{name}\"\nversion = \"1.0.0\"\n"),
+            )
+            .unwrap();
+        }
+        std::fs::create_dir_all(root.join("pkg-driver")).unwrap();
+        std::fs::write(
+            root.join("pkg-driver/Cargo.toml"),
+            "[package]\nname = \"pkg-driver\"\nversion = \"1.0.0\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("pkg-fresh/Cargo.toml"),
+            "[package]\nname = \"pkg-fresh\"\nversion = \"1.0.0\"\n\n[dependencies]\npkg-driver = \"1.0.0\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("callisto.toml"),
+            "[[fixed-group]]\nname = \"grp\"\nmembers = [\"pkg-released\", \"pkg-fresh\"]\n\n[cascade]\nbump-severity = \"minor\"\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join(".changeset")).unwrap();
+        std::fs::write(
+            root.join(".changeset/fresh-patch.md"),
+            "---\n\"pkg-fresh\": patch\n---\n\nfix.\n",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join(".changeset/driver-major.md"),
+            "---\n\"pkg-driver\": major\n---\n\nBreaking.\n",
+        )
+        .unwrap();
+        commit_all(root, "add packages");
+        tag(root, "pkg-released@1.0.0");
+
+        let locator = IgnoreWalkLocator::new(root);
+        let runner = NoopRunner;
+        let ws =
+            Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
+        let inference = crate::infer::NoInference;
+        let opts = VersionOptions {
+            strict: false,
+            strict_graph: false,
+            allow_empty_changesets: true,
+        };
+
+        let plan = plan_version(&ws, &inference, &opts).expect("plan_version must succeed");
+
+        let pkg_fresh = callisto_model::PackageId::parse("pkg-fresh").unwrap();
+        let write = plan
+            .changelog_writes
+            .iter()
+            .find(|w| w.input.package == pkg_fresh)
+            .expect("pkg-fresh must have a ChangelogWrite");
+
+        assert_eq!(
+            write.input.entries.len(),
+            3,
+            "got: {:?}",
+            write.input.entries
+        );
+        assert!(matches!(
+            write.input.entries[0].source,
+            callisto_changelog::ChangeSource::Changeset { .. }
+        ));
+        assert!(matches!(
+            write.input.entries[1].source,
+            callisto_changelog::ChangeSource::DependencyUpdate { .. }
+        ));
+        assert!(matches!(
+            write.input.entries[2].source,
+            callisto_changelog::ChangeSource::NewGroupMember { .. }
+        ));
     }
 }
