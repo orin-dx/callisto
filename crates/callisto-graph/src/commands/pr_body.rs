@@ -213,6 +213,17 @@ pub fn render_pr_body_from_plan(
                         group.as_str()
                     ));
                 }
+                callisto_model::BumpReason::Inference { commits, .. } => {
+                    body.push_str(&format!(
+                        "- Inferred from {commits} commit(s) since the last release.\n\n"
+                    ));
+                }
+                callisto_model::BumpReason::PreRelease { tag } => {
+                    body.push_str(&format!("- Pre-release finalization (tag `{tag}`).\n\n"));
+                }
+                callisto_model::BumpReason::NewGroupMember { group } => {
+                    body.push_str(&format!("- New member of group `{}`.\n\n", group.as_str()));
+                }
                 _ => {}
             }
         }
@@ -318,5 +329,72 @@ mod tests {
         };
         let report = render_pr_body_from_plan(&plan, &opts).unwrap();
         assert!(report.body.contains("## Release Preview"));
+    }
+
+    fn plan_with_single_bump(reason: BumpReason) -> VersionPlan {
+        VersionPlan {
+            bumps: vec![PlannedBump {
+                package: PackageId::parse("pkg-a").unwrap(),
+                from: Version::semver(1, 0, 0),
+                to: Version::semver(1, 1, 0),
+                severity: Severity::Minor,
+                governed_by: None,
+                reason: Some(reason),
+                writes: vec![],
+            }],
+            rewrites: vec![],
+            platform_writes: vec![],
+            optional_dep_updates: vec![],
+            changelog_writes: vec![],
+            consumed_changesets: vec![],
+            pre_state_update: None,
+            delete_pre_json: None,
+            pre_cursor_updates: vec![],
+            observed_versions: std::collections::BTreeMap::new(),
+            diagnostics: vec![],
+        }
+    }
+
+    fn assert_release_reason_has_content(body: &str) {
+        let start = body
+            .find("#### Release Reason")
+            .expect("must contain '#### Release Reason'");
+        let after_heading = &body[start + "#### Release Reason".len()..];
+        let end = after_heading
+            .find("</details>")
+            .unwrap_or(after_heading.len());
+        let section = after_heading[..end].trim();
+        assert!(
+            !section.is_empty(),
+            "'#### Release Reason' section must have non-whitespace content, got body: {body}"
+        );
+    }
+
+    #[test]
+    fn ac002_inference_fallback_is_non_empty() {
+        let plan = plan_with_single_bump(BumpReason::Inference {
+            commits: 3,
+            remapped: false,
+        });
+        let report = render_pr_body_from_plan(&plan, &PrBodyOptions::default()).unwrap();
+        assert_release_reason_has_content(&report.body);
+    }
+
+    #[test]
+    fn ac002_prerelease_fallback_is_non_empty() {
+        let plan = plan_with_single_bump(BumpReason::PreRelease {
+            tag: "alpha".to_string(),
+        });
+        let report = render_pr_body_from_plan(&plan, &PrBodyOptions::default()).unwrap();
+        assert_release_reason_has_content(&report.body);
+    }
+
+    #[test]
+    fn ac002_new_group_member_fallback_is_non_empty() {
+        let plan = plan_with_single_bump(BumpReason::NewGroupMember {
+            group: callisto_model::GroupName("grp".to_string()),
+        });
+        let report = render_pr_body_from_plan(&plan, &PrBodyOptions::default()).unwrap();
+        assert_release_reason_has_content(&report.body);
     }
 }
