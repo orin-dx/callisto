@@ -1589,3 +1589,189 @@ fn plan_publish_release_entry_is_prerelease_matches_version() {
         "SemVer 1.0.0-1 must be reported as a pre-release via Version::is_prerelease()"
     );
 }
+
+#[test]
+fn plan_publish_semver_non_prerelease_has_is_prerelease_false_in_json() {
+    use callisto_graph::commands::{plan_publish, PublishOptions};
+
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write_release_candidate_pkg(root, "1.2.3");
+    init_git_repo(root);
+
+    let runner = DummyRunner;
+    let locator = IgnoreWalkLocator::new(root);
+    let ws = callisto_graph::Workspace::load(root.to_path_buf(), &locator, &runner).unwrap();
+
+    let plan = plan_publish(&ws, &PublishOptions::default()).expect("plan_publish must succeed");
+    let pkg_id = PackageId::parse("pkg").unwrap();
+    let release = plan
+        .releases
+        .iter()
+        .find(|r| r.package == pkg_id)
+        .unwrap_or_else(|| panic!("expected a ReleaseEntry for pkg, got: {:?}", plan.releases));
+    assert!(
+        !release.is_prerelease,
+        "SemVer 1.2.3 must not be a prerelease"
+    );
+
+    let json = serde_json::to_value(&plan).unwrap();
+    let entries = json["releases"].as_array().unwrap();
+    assert_eq!(entries.len(), 1, "expected exactly one release entry");
+    assert_eq!(
+        entries[0]["isPrerelease"],
+        serde_json::json!(false),
+        "isPrerelease key must be present in serialized JSON and equal false"
+    );
+}
+
+#[test]
+fn plan_publish_semver_regression_fixture_has_is_prerelease_true() {
+    use callisto_graph::commands::{plan_publish, PublishOptions};
+
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write_release_candidate_pkg(root, "1.0.0-1");
+    init_git_repo(root);
+
+    let runner = DummyRunner;
+    let locator = IgnoreWalkLocator::new(root);
+    let ws = callisto_graph::Workspace::load(root.to_path_buf(), &locator, &runner).unwrap();
+
+    let plan = plan_publish(&ws, &PublishOptions::default()).expect("plan_publish must succeed");
+    let pkg_id = PackageId::parse("pkg").unwrap();
+    let release = plan
+        .releases
+        .iter()
+        .find(|r| r.package == pkg_id)
+        .unwrap_or_else(|| panic!("expected a ReleaseEntry for pkg, got: {:?}", plan.releases));
+    assert!(
+        release.is_prerelease,
+        "SemVer 1.0.0-1 (numeric pre-release identifier, no alpha/beta/rc/pre/next substring) must be a prerelease"
+    );
+
+    let json = serde_json::to_value(&plan).unwrap();
+    let entries = json["releases"].as_array().unwrap();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0]["isPrerelease"], serde_json::json!(true));
+}
+
+#[test]
+fn plan_publish_pep440_dev_release_has_is_prerelease_true() {
+    use callisto_graph::commands::{plan_publish, PublishOptions};
+    use callisto_model::{ManifestDecl, ManifestFormat, ManifestRole, PublishTarget};
+
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    std::fs::write(
+        root.join("pyproject.toml"),
+        "[project]\nname = \"pkg\"\nversion = \"1.0.0.dev1\"\n",
+    )
+    .unwrap();
+    init_git_repo(root);
+
+    let runner = DummyRunner;
+    let pkg_id = PackageId::parse("pkg").unwrap();
+    let pyproject_decl = ManifestDecl::new(
+        PathBuf::from("pyproject.toml"),
+        ManifestRole::Canonical,
+        ManifestFormat::PyprojectToml,
+    )
+    .unwrap();
+
+    let graph = GraphBuilder::new()
+        .package(pkg_id.clone(), |p: PackageBuilder| {
+            p.manifests(vec![pyproject_decl])
+                .publish_to(vec![PublishTarget::Pypi { index: None }])
+        })
+        .build()
+        .unwrap();
+
+    let cfg = callisto_graph::config::load(&root.join("callisto.toml")).unwrap();
+    let ws = callisto_graph::Workspace {
+        root: root.to_path_buf(),
+        config: cfg,
+        graph,
+        tags: OnceCell::new(),
+        git: OnceCell::new(),
+        runner: &runner,
+        manifest_cache: Default::default(),
+        identity: callisto_graph::IdentityIndex::default(),
+    };
+
+    let plan = plan_publish(&ws, &PublishOptions::default()).expect("plan_publish must succeed");
+    let release = plan
+        .releases
+        .iter()
+        .find(|r| r.package == pkg_id)
+        .unwrap_or_else(|| panic!("expected a ReleaseEntry for pkg, got: {:?}", plan.releases));
+    assert!(
+        release.is_prerelease,
+        "PEP 440 1.0.0.dev1 (dev-release) must be a prerelease per pep440_dev_release_is_prerelease"
+    );
+
+    let json = serde_json::to_value(&plan).unwrap();
+    let entries = json["releases"].as_array().unwrap();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0]["isPrerelease"], serde_json::json!(true));
+}
+
+#[test]
+fn plan_publish_pep440_regression_fixture_has_is_prerelease_true() {
+    use callisto_graph::commands::{plan_publish, PublishOptions};
+    use callisto_model::{ManifestDecl, ManifestFormat, ManifestRole, PublishTarget};
+
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    std::fs::write(
+        root.join("pyproject.toml"),
+        "[project]\nname = \"pkg\"\nversion = \"1.2.3a1\"\n",
+    )
+    .unwrap();
+    init_git_repo(root);
+
+    let runner = DummyRunner;
+    let pkg_id = PackageId::parse("pkg").unwrap();
+    let pyproject_decl = ManifestDecl::new(
+        PathBuf::from("pyproject.toml"),
+        ManifestRole::Canonical,
+        ManifestFormat::PyprojectToml,
+    )
+    .unwrap();
+
+    let graph = GraphBuilder::new()
+        .package(pkg_id.clone(), |p: PackageBuilder| {
+            p.manifests(vec![pyproject_decl])
+                .publish_to(vec![PublishTarget::Pypi { index: None }])
+        })
+        .build()
+        .unwrap();
+
+    let cfg = callisto_graph::config::load(&root.join("callisto.toml")).unwrap();
+    let ws = callisto_graph::Workspace {
+        root: root.to_path_buf(),
+        config: cfg,
+        graph,
+        tags: OnceCell::new(),
+        git: OnceCell::new(),
+        runner: &runner,
+        manifest_cache: Default::default(),
+        identity: callisto_graph::IdentityIndex::default(),
+    };
+
+    let plan = plan_publish(&ws, &PublishOptions::default()).expect("plan_publish must succeed");
+    let release = plan
+        .releases
+        .iter()
+        .find(|r| r.package == pkg_id)
+        .unwrap_or_else(|| panic!("expected a ReleaseEntry for pkg, got: {:?}", plan.releases));
+    assert!(
+        release.is_prerelease,
+        "PEP 440 1.2.3a1 (no dash, no alpha/beta/rc/pre/next substring) must be a prerelease -- the original bug"
+    );
+
+    let json = serde_json::to_value(&plan).unwrap();
+    let entries = json["releases"].as_array().unwrap();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0]["isPrerelease"], serde_json::json!(true));
+}
