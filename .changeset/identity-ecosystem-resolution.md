@@ -2,9 +2,9 @@
 callisto-graph: minor
 ---
 
-# Better cross-ecosystem package discovery
+**Better cross-ecosystem package discovery**
 
-- Cargo/npm/pnpm workspace membership is now honored during project discovery — fuzz targets and scratch examples excluded from a workspace stop showing up as release-managed packages.
-- Same-named packages in different ecosystems (a Rust crate and its Python binding, say) resolve correctly instead of erroring with a duplicate-package conflict.
-- `cargo:foo`/`npm:foo` ecosystem-prefixed group-member names now work.
-- A silent cross-ecosystem fallback in native-identity resolution (matching a same-named package in the wrong ecosystem when the intended lookup missed) has been removed.
+- Packages excluded from your Cargo/npm/pnpm workspace (fuzz targets, scratch examples) no longer show up as release-managed.
+- A Rust crate and its same-named Python binding in one workspace no longer trigger a duplicate-package error.
+- `cargo:name`/`npm:name` prefixes in group config now work as documented.
+- A package name is no longer silently matched to the wrong ecosystem when the intended match is missing.
