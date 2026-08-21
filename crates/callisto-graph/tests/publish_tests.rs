@@ -1562,3 +1562,30 @@ fn plan_publish_leaves_changelog_section_none_and_emits_read_error_for_invalid_u
         "an unreadable file must not also be reported as ChangelogSectionNotFound"
     );
 }
+
+#[test]
+fn plan_publish_release_entry_is_prerelease_matches_version() {
+    use callisto_graph::commands::{plan_publish, PublishOptions};
+
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write_release_candidate_pkg(root, "1.0.0-1");
+    init_git_repo(root);
+
+    let runner = DummyRunner;
+    let locator = IgnoreWalkLocator::new(root);
+    let ws = callisto_graph::Workspace::load(root.to_path_buf(), &locator, &runner).unwrap();
+
+    let plan = plan_publish(&ws, &PublishOptions::default()).expect("plan_publish must succeed");
+    let pkg_id = PackageId::parse("pkg").unwrap();
+    let release = plan
+        .releases
+        .iter()
+        .find(|r| r.package == pkg_id)
+        .unwrap_or_else(|| panic!("expected a ReleaseEntry for pkg, got: {:?}", plan.releases));
+
+    assert!(
+        release.is_prerelease,
+        "SemVer 1.0.0-1 must be reported as a pre-release via Version::is_prerelease()"
+    );
+}

@@ -115,6 +115,8 @@ pub struct ReleaseEntry {
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub changelog_section: Option<String>,
+
+    pub is_prerelease: bool,
 }
 
 /// A single package scheduled for publication to PyPI (or a compatible index).

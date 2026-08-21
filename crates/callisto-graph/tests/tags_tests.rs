@@ -25,6 +25,7 @@ fn test_tag_dry_run_does_not_create_git_tags() {
             tag_name: tag_name.clone(),
             sha,
             changelog_section: Some("Initial release".to_string()),
+            is_prerelease: false,
         }],
         diagnostics: Vec::new(),
     };
@@ -113,6 +114,7 @@ fn test_create_tags_without_gix_falls_back_to_command_runner() {
             tag_name: tag_name.clone(),
             sha: sha.clone(),
             changelog_section: Some("Initial release".to_string()),
+            is_prerelease: false,
         }],
         diagnostics: Vec::new(),
     };
@@ -275,6 +277,7 @@ fn test_create_tags_without_gix_skips_creation_for_existing_tag() {
             tag_name: tag_name.clone(),
             sha: sha.clone(),
             changelog_section: None,
+            is_prerelease: false,
         }],
         diagnostics: Vec::new(),
     };
@@ -406,12 +409,14 @@ fn test_create_tags_checks_existence_against_cached_tag_index_not_per_release() 
                 tag_name: TagName("pkg-a@1.0.0".to_string()),
                 sha: sha.clone(),
                 changelog_section: None,
+                is_prerelease: false,
             },
             ReleaseEntry {
                 package: pkg_b.clone(),
                 tag_name: TagName("pkg-b@2.0.0".to_string()),
                 sha,
                 changelog_section: None,
+                is_prerelease: false,
             },
         ],
         diagnostics: Vec::new(),

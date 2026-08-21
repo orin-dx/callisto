@@ -100,6 +100,7 @@ fn release_entry(tag_name: &str, sha: &str) -> ReleaseEntry {
         tag_name: TagName(tag_name.to_string()),
         sha: CommitSha::parse(sha).unwrap(),
         changelog_section: None,
+        is_prerelease: false,
     }
 }
 

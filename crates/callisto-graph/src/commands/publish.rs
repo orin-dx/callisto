@@ -507,6 +507,7 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
                         tag_name: idx.template(&pkg.id).render(&ver),
                         sha: sha.clone(),
                         changelog_section,
+                        is_prerelease: ver.is_prerelease(),
                     });
                 }
             }

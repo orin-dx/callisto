@@ -359,6 +359,7 @@ mod tests {
                 tag_name: TagName("my-lib@1.0.0".to_string()),
                 sha,
                 changelog_section: None,
+                is_prerelease: false,
             }],
             diagnostics: vec![],
         };
