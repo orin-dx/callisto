@@ -96,6 +96,13 @@ impl GitDataSource for ShellGit<'_> {
     /// regardless of which one a caller ends up using.
     fn list_tags(&self, glob: Option<&str>) -> Result<Vec<TagName>, VcsError> {
         let output = self.runner.run("git", &["tag", "--list"], &self.root)?;
+        if !output.success() {
+            return Err(VcsError::Git(format!(
+                "`git tag --list` failed in `{}`: {}",
+                self.root.display(),
+                redact_git_stderr(&output.stderr)
+            )));
+        }
         let all = output.stdout_lines().map(|s| s.to_string());
 
         let matcher = glob.map(compile_glob).transpose()?;
@@ -348,6 +355,32 @@ mod tests {
         let result = git.list_tags(Some("pkg-a@{malformed"));
 
         assert!(matches!(result, Err(VcsError::InvalidGlob { .. })));
+    }
+
+    /// A failing `git tag --list` (e.g. a corrupted or locked repository)
+    /// must surface as `Err`, not be silently treated as "zero tags" --
+    /// every sibling method on this impl (`head_sha`, `resolve_commit`,
+    /// ...) already checks `output.success()` before trusting stdout.
+    #[test]
+    fn test_list_tags_errors_on_failed_git_invocation() {
+        let runner = FakeRunner {
+            calls: Mutex::new(Vec::new()),
+            response: Box::new(|_args| {
+                Ok(CommandOutput {
+                    exit_code: Some(128),
+                    stdout: String::new(),
+                    stderr: "fatal: not a git repository".to_string(),
+                })
+            }),
+        };
+        let git = ShellGit::new(&runner, PathBuf::from("."));
+
+        let result = git.list_tags(None);
+
+        assert!(
+            matches!(result, Err(VcsError::Git(ref msg)) if msg.contains("not a git repository")),
+            "expected Err(VcsError::Git(..)) mentioning the failure, got: {result:?}"
+        );
     }
 
     #[test]
