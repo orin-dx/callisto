@@ -43,13 +43,13 @@
 ```text
 $ callisto status
 Status (schema v1):
-  callisto-cli        0.1.0  ->  0.2.0  (minor)  [.changeset/swift-foxes-leap.md]
-  callisto-graph      0.1.0  ->  0.1.1  (patch)  [cascade: callisto-cli]
+  callisto-cli 0.1.0 (pending: minor)
+  callisto-graph 0.1.0 (pending: patch)
 
 $ callisto version
-  + Updated 2 package manifests (CST preserved)
-  + Appended changelog entries to CHANGELOG.md
-  + Consumed 1 changeset (.changeset/swift-foxes-leap.md)
+Version Plan (schema v1):
+  callisto-cli 0.1.0 → 0.2.0
+  callisto-graph 0.1.0 → 0.1.1
 ```
 
 ### Step 1: Initialize Callisto in Your Workspace
@@ -227,7 +227,7 @@ Callisto is structured into 10 workspace crates divided across permissive (`MIT 
 | | [`callisto-conventional`](crates/callisto-conventional) | AGPL-3.0 | Conventional commit parsing and bump severity classification |
 | | [`callisto-changelog`](crates/callisto-changelog) | AGPL-3.0 | Markdown changelog renderer |
 | **Layer 2** | [`callisto-manifests`](crates/callisto-manifests) | AGPL-3.0 | Format-preserving manifest AST editors and atomic file writes |
-| | [`callisto-vcs`](crates/callisto-vcs) | AGPL-3.0 | Native in-process Git operations powered by `gix` (gitoxide) |
+| | [`callisto-vcs`](crates/callisto-vcs) | MIT/Apache-2.0 | Native in-process Git operations powered by `gix` (gitoxide) |
 | **Layer 3** | [`callisto-graph`](crates/callisto-graph) | AGPL-3.0 | Dependency DAG solver and Tarjan SCC cycle diagnostics |
 | **Layer 4** | [`callisto-cli`](crates/callisto-cli) | AGPL-3.0 | Standalone CLI binary, colored diff previews, `miette` diagnostic cards |
 | | [`callisto-moon`](crates/callisto-moon) | AGPL-3.0 | Moon extension protocol implementation (`extism-pdk`) |
