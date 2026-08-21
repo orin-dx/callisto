@@ -199,19 +199,24 @@ runs:
 
             if [[ "$INPUT_CREATE_GITHUB_RELEASE" == "true" ]]; then
               echo "::group::5. Creating GitHub Release Entries"
-              for TAG in $(echo "$PLAN_JSON" | jq -r '.releases[]?.tagName // empty'); do
-                if [[ -n "$TAG" ]]; then
-                  echo "Creating GitHub Release for tag: $TAG"
-                  
-                  # Detect if tag is a SemVer prerelease (contains alpha/beta/rc/pre)
-                  EXTRA_FLAGS=""
-                  if [[ "$TAG" =~ -(alpha|beta|rc|pre|next) ]]; then
-                    EXTRA_FLAGS="--prerelease"
-                  fi
+              while IFS= read -r ENTRY; do
+                [[ -z "$ENTRY" ]] && continue
+                TAG=$(echo "$ENTRY" | jq -r '.tagName')
 
-                  gh release create "$TAG" --title "$TAG" --generate-notes $EXTRA_FLAGS || true
+                if ! echo "$ENTRY" | jq -e 'has("isPrerelease") and (.isPrerelease|type=="boolean")' > /dev/null; then
+                  echo "::error::release entry for tag $TAG has a missing or non-boolean isPrerelease field"
+                  exit 1
                 fi
-              done
+
+                echo "Creating GitHub Release for tag: $TAG"
+
+                EXTRA_FLAGS=""
+                if [[ "$(echo "$ENTRY" | jq -r '.isPrerelease')" == "true" ]]; then
+                  EXTRA_FLAGS="--prerelease"
+                fi
+
+                gh release create "$TAG" --title "$TAG" --generate-notes $EXTRA_FLAGS || true
+              done < <(echo "$PLAN_JSON" | jq -c '.releases[]?')
               echo "::endgroup::"
             fi
 
