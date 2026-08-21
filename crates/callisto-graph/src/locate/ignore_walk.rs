@@ -40,6 +40,7 @@ impl ProjectLocator for IgnoreWalkLocator {
         let mut results = Vec::new();
         let cargo_membership = membership::read_cargo_membership(&self.root);
         let npm_membership = membership::read_npm_membership(&self.root);
+        let python_membership = membership::read_python_membership(&self.root);
         let walker = WalkBuilder::new(&self.root)
             .hidden(true)
             .git_ignore(true)
@@ -137,13 +138,16 @@ impl ProjectLocator for IgnoreWalkLocator {
                             });
                         if let Some(n) = name {
                             let rel = to_workspace_relative(path, &self.root)?;
-                            let id = PackageId::parse(n)
-                                .unwrap_or_else(|_| PackageId::Bare(n.to_string()));
-                            results.push(ProjectRoot {
-                                id,
-                                path: rel,
-                                ecosystem: Ecosystem::Pypi,
-                            });
+                            let is_root = rel == Path::new(".");
+                            if python_membership.admits(&rel, is_root) {
+                                let id = PackageId::parse(n)
+                                    .unwrap_or_else(|_| PackageId::Bare(n.to_string()));
+                                results.push(ProjectRoot {
+                                    id,
+                                    path: rel,
+                                    ecosystem: Ecosystem::Pypi,
+                                });
+                            }
                         }
                     }
                 }
@@ -239,6 +243,49 @@ mod tests {
                 .iter()
                 .any(|p| p.id == PackageId::Bare("linked-nested-pkg".to_string())),
             "expected linked-nested-pkg discovered through the symlinked directory, got: {projects:?}"
+        );
+    }
+
+    /// Spec: a `pyproject.toml` workspace's `[tool.uv.workspace] exclude`
+    /// entry must be honored by discovery, matching the Cargo/npm branches'
+    /// own membership filtering -- a Python package under an excluded path
+    /// must not be admitted as a release-managed package.
+    #[test]
+    fn ignore_walk_locator_honors_python_workspace_exclude() {
+        let tmp = tempdir().unwrap();
+        let root = tmp.path();
+        fs::write(
+            root.join("pyproject.toml"),
+            "[project]\nname = \"root-pkg\"\nversion = \"0.1.0\"\n\n[tool.uv.workspace]\nmembers = [\"packages/*\"]\nexclude = [\"packages/examples/demo\"]\n",
+        )
+        .unwrap();
+        fs::create_dir_all(root.join("packages/examples/demo")).unwrap();
+        fs::write(
+            root.join("packages/examples/demo/pyproject.toml"),
+            "[project]\nname = \"demo\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+        fs::create_dir_all(root.join("packages/kept")).unwrap();
+        fs::write(
+            root.join("packages/kept/pyproject.toml"),
+            "[project]\nname = \"kept\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+
+        let locator = IgnoreWalkLocator::new(root);
+        let projects = locator.projects().unwrap();
+
+        assert!(
+            !projects
+                .iter()
+                .any(|p| p.path == Path::new("packages/examples/demo")),
+            "excluded Python package must not be discovered, got: {projects:?}"
+        );
+        assert!(
+            projects
+                .iter()
+                .any(|p| p.path == Path::new("packages/kept")),
+            "non-excluded Python package must still be discovered, got: {projects:?}"
         );
     }
 
