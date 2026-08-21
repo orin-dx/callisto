@@ -182,7 +182,7 @@ fn run_with_timeout_impl(
                                 eprintln!("{}", String::from_utf8_lossy(&pending_line));
                             }
                             pending_line.clear();
-                        } else {
+                        } else if pending_line.len() < MAX_CAPTURED_OUTPUT_BYTES {
                             pending_line.push(b);
                         }
                     }

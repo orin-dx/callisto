@@ -1,0 +1,232 @@
+{
+  "goal": "Replace .github/actions/callisto-action/action.yml's tag-string regex guess for GitHub Release pre-release status with a real ReleaseEntry.is_prerelease boolean computed from Version::is_prerelease() at plan time.",
+  "architecture": "Add a required `is_prerelease: bool` field to `ReleaseEntry` in crates/callisto-model/src/plan.rs, populate it at plan_publish's one construction site (crates/callisto-graph/src/commands/publish.rs) via the already-parsed `ver.is_prerelease()`, and fix every other struct literal the new required field forces (crates/callisto-cli/src/commands/publish.rs and crates/callisto-graph/tests/{tag_sha_fabrication_test.rs,tags_tests.rs}) in the same task so no commit leaves the workspace non-compiling. Add fixture-value regression tests proving the field is correct for SemVer and PEP 440 pre-release and non-pre-release versions. Update crates/callisto-cli/tests/schema_guard_test.rs's expected schema sets and allowlist. Add a grep/cargo-metadata based verification task for the two structural acceptance criteria (no fallback branch at the construction site; no new AGPL dependency edge) and confirm the full Rust suite is green. Switch action.yml's GitHub Release loop from a tag-string regex to iterating `.releases[]` entries and reading `isPrerelease` directly off each entry, hard-failing on a missing/null/non-boolean value, with a new extraction-and-stub bash test proving that behavior against action.yml's live text. Finally document the new field in docs/01-spec.md's ReleaseEntry doc block and decision table.",
+  "tech_stack": [
+    "Rust",
+    "serde",
+    "schemars",
+    "cargo nextest",
+    "bash",
+    "jq",
+    "GitHub Actions"
+  ],
+  "spec_file_path": ".claude/specs/SPEC-005-release-entry-is-prerelease.json",
+  "spec_hash": "sha256:5217011e7d8615e8a49f8b7cb2aed232369e97e19f32d52fd0d5edf5eef6361b",
+  "linked_requirement": "REQ-008",
+  "linked_spec": "SPEC-005",
+  "reasoning": "Ordering constraint: adding a required field to ReleaseEntry (AC-001) makes the whole cargo workspace fail to compile until every construction site is fixed, because callisto-graph and callisto-cli both construct ReleaseEntry (production site + 7 sibling struct literals across 3 files). Rust's whole-crate/workspace compilation model means any commit that lands the field addition alone, without ALSO fixing the production site (AC-007) and all 7 sibling literals (AC-012b), leaves a non-compiling commit in git history. I therefore combined AC-001 + AC-007 + AC-012b into a single task (T1) rather than three separate commits -- the edits are individually trivial (one new field, one computed assignment, seven `is_prerelease: false,` insertions in test fixtures) so the combined task is still well under 15 minutes and is the only way to keep every commit green. The schema_guard_test.rs update (AC-012a) does NOT block compilation -- schema_guard_test.rs never constructs a ReleaseEntry struct literal, it only introspects `callisto schema --type plan-publish`'s JSON output at runtime -- so it is safe to fix in its own task (T3) immediately after T1, as a normal red (assertion failure, not compile failure) -> green step. Fixture-value tests for AC-002..AC-006 (T2) are split from T1 because they test *correctness of the computed value* across SemVer/PEP 440 grammars, a different concern from *does it compile and is the field wired up at all*; keeping them separate keeps each task's failing-test-to-passing-test story focused on one thing. AC-013 and AC-014 are structural/grep assertions about the diff shape itself (no new conditional branch; no new Cargo dependency), not new runtime behavior, so they get their own grep/cargo-metadata verification task (T4) run after T1-T3 are all green, alongside AC-012c's full-suite-green check. The GitHub Action script change (AC-008/AC-009/AC-015) and its test (AC-010) are combined into one task (T5): writing the new extraction-and-stub test FIRST against the *current* (unedited) action.yml is genuine red, not a placeholder -- the old regex-based loop still calls `gh release create` for a missing/null/non-boolean isPrerelease key (AC-015 requires it must NOT), and misses the AC-005 PEP 440 regression fixture (tag `v1.2.3a1` contains no alpha/beta/rc/pre/next substring, so the old regex never sets --prerelease even though isPrerelease is true) -- so the test fails for exactly the right reasons before action.yml is touched, then passes after the loop is rewritten. Docs (T6) land last since they describe already-implemented, already-tested behavior.",
+  "batches": [
+    {
+      "batch_id": "batch-1",
+      "title": "ReleaseEntry.is_prerelease field + every construction site (compile-safety boundary)",
+      "target_crate": "callisto-model + callisto-graph + callisto-cli (workspace)",
+      "task_ids": [
+        "T1"
+      ]
+    },
+    {
+      "batch_id": "batch-2",
+      "title": "Fixture-value regression tests across SemVer/PEP 440 grammars",
+      "target_crate": "callisto-graph",
+      "task_ids": [
+        "T2"
+      ]
+    },
+    {
+      "batch_id": "batch-3",
+      "title": "Schema guard update",
+      "target_crate": "callisto-cli",
+      "task_ids": [
+        "T3"
+      ]
+    },
+    {
+      "batch_id": "batch-4",
+      "title": "Structural verification (no fallback branch, no new AGPL dependency, full suite green)",
+      "target_crate": "workspace",
+      "task_ids": [
+        "T4"
+      ]
+    },
+    {
+      "batch_id": "batch-5",
+      "title": "GitHub Action release loop + its regression test",
+      "target_crate": ".github/actions/callisto-action",
+      "task_ids": [
+        "T5"
+      ]
+    },
+    {
+      "batch_id": "batch-6",
+      "title": "Docs",
+      "target_crate": "docs",
+      "task_ids": [
+        "T6"
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Add ReleaseEntry.is_prerelease field, populate it at the production construction site, and fix every sibling struct literal",
+      "depends_on": [],
+      "covers_criteria": [
+        "AC-001",
+        "AC-007",
+        "AC-012b"
+      ],
+      "files": {
+        "modify": [
+          "crates/callisto-model/src/plan.rs",
+          "crates/callisto-graph/src/commands/publish.rs",
+          "crates/callisto-cli/src/commands/publish.rs",
+          "crates/callisto-graph/tests/tag_sha_fabrication_test.rs",
+          "crates/callisto-graph/tests/tags_tests.rs"
+        ],
+        "test": [
+          "crates/callisto-graph/tests/publish_tests.rs"
+        ]
+      },
+      "steps": [
+        "RED: Append this new test to the end of crates/callisto-graph/tests/publish_tests.rs (it uses `write_release_candidate_pkg`, `init_git_repo`, and `DummyRunner`, all already defined earlier in this same file):\n```rust\n#[test]\nfn plan_publish_release_entry_is_prerelease_matches_version() {\n    use callisto_graph::commands::{plan_publish, PublishOptions};\n\n    let tmp = tempfile::tempdir().unwrap();\n    let root = tmp.path();\n    write_release_candidate_pkg(root, \"1.0.0-1\");\n    init_git_repo(root);\n\n    let runner = DummyRunner;\n    let locator = IgnoreWalkLocator::new(root);\n    let ws = callisto_graph::Workspace::load(root.to_path_buf(), &locator, &runner).unwrap();\n\n    let plan = plan_publish(&ws, &PublishOptions::default()).expect(\"plan_publish must succeed\");\n    let pkg_id = PackageId::parse(\"pkg\").unwrap();\n    let release = plan\n        .releases\n        .iter()\n        .find(|r| r.package == pkg_id)\n        .unwrap_or_else(|| panic!(\"expected a ReleaseEntry for pkg, got: {:?}\", plan.releases));\n\n    assert!(\n        release.is_prerelease,\n        \"SemVer 1.0.0-1 must be reported as a pre-release via Version::is_prerelease()\"\n    );\n}\n```",
+        "RUN (expect failure): `cargo test -p callisto-graph --test publish_tests plan_publish_release_entry_is_prerelease_matches_version`. Expected output: a compile error, e.g. `error[E0609]: no field \\`is_prerelease\\` on type \\`&ReleaseEntry\\`` (exact rustc wording may vary by toolchain version; the required signal is a compile failure naming the missing `is_prerelease` field, not a runtime assertion failure -- the field does not exist yet).",
+        "IMPLEMENT (1/4 -- the field): In crates/callisto-model/src/plan.rs, find:\n```rust\npub struct ReleaseEntry {\n    pub package: PackageId,\n    pub tag_name: TagName,\n    pub sha: CommitSha,\n\n    #[serde(default, skip_serializing_if = \"Option::is_none\")]\n    pub changelog_section: Option<String>,\n}\n```\nReplace with:\n```rust\npub struct ReleaseEntry {\n    pub package: PackageId,\n    pub tag_name: TagName,\n    pub sha: CommitSha,\n\n    #[serde(default, skip_serializing_if = \"Option::is_none\")]\n    pub changelog_section: Option<String>,\n\n    pub is_prerelease: bool,\n}\n```",
+        "IMPLEMENT (2/4 -- the production construction site, AC-007): In crates/callisto-graph/src/commands/publish.rs, find:\n```rust\n                    releases.push(ReleaseEntry {\n                        package: pkg.id.clone(),\n                        tag_name: idx.template(&pkg.id).render(&ver),\n                        sha: sha.clone(),\n                        changelog_section,\n                    });\n```\nReplace with:\n```rust\n                    releases.push(ReleaseEntry {\n                        package: pkg.id.clone(),\n                        tag_name: idx.template(&pkg.id).render(&ver),\n                        sha: sha.clone(),\n                        changelog_section,\n                        is_prerelease: ver.is_prerelease(),\n                    });\n```\nThis is the only edit at this call site: `ver` is the owned `Version` already bound earlier in the same function (from `bump.to.clone()` or `cur_ver`), and `Version::is_prerelease()` is called directly with no wrapping `if`/`match`/`unwrap_or`.",
+        "IMPLEMENT (3/4 -- the CLI's sibling literal, 1 of 7): In crates/callisto-cli/src/commands/publish.rs, find:\n```rust\n            releases: vec![ReleaseEntry {\n                package: PackageId::Bare(\"my-lib\".to_string()),\n                tag_name: TagName(\"my-lib@1.0.0\".to_string()),\n                sha,\n                changelog_section: None,\n            }],\n```\nReplace with:\n```rust\n            releases: vec![ReleaseEntry {\n                package: PackageId::Bare(\"my-lib\".to_string()),\n                tag_name: TagName(\"my-lib@1.0.0\".to_string()),\n                sha,\n                changelog_section: None,\n                is_prerelease: false,\n            }],\n```",
+        "IMPLEMENT (4/4 -- the remaining 6 sibling literals in tests): In crates/callisto-graph/tests/tag_sha_fabrication_test.rs, find:\n```rust\nfn release_entry(tag_name: &str, sha: &str) -> ReleaseEntry {\n    ReleaseEntry {\n        package: PackageId::parse(\"pkg\").unwrap(),\n        tag_name: TagName(tag_name.to_string()),\n        sha: CommitSha::parse(sha).unwrap(),\n        changelog_section: None,\n    }\n}\n```\nReplace with:\n```rust\nfn release_entry(tag_name: &str, sha: &str) -> ReleaseEntry {\n    ReleaseEntry {\n        package: PackageId::parse(\"pkg\").unwrap(),\n        tag_name: TagName(tag_name.to_string()),\n        sha: CommitSha::parse(sha).unwrap(),\n        changelog_section: None,\n        is_prerelease: false,\n    }\n}\n```\nIn crates/callisto-graph/tests/tags_tests.rs, there are 5 remaining `ReleaseEntry { ... }` literals (at approximately lines 23, 111, 273, 404, 410 as of this plan's writing -- locate each with `grep -n \"ReleaseEntry {\" crates/callisto-graph/tests/tags_tests.rs`). Each one ends with a `changelog_section: <expr>,` field immediately before the literal's closing `}`. For every one of the 5, insert `is_prerelease: false,` as a new line immediately after that literal's `changelog_section: ...,` line and before the literal's closing `}`. Concretely, each of these 5 blocks:\n```rust\n            ReleaseEntry {\n                ...\n                changelog_section: <expr>,\n            }\n```\nbecomes:\n```rust\n            ReleaseEntry {\n                ...\n                changelog_section: <expr>,\n                is_prerelease: false,\n            }\n```\nwith `<expr>` and every other field left byte-for-byte unchanged. Do this for all 5 remaining sites so no `ReleaseEntry` literal anywhere in the workspace omits `is_prerelease`.",
+        "GREEN (compile check across the whole workspace): `cargo build --workspace`. Expected output: exit code 0, ending in `Finished` with no errors (warnings, if any, are pre-existing and unrelated to this change).",
+        "GREEN (the new test): `cargo test -p callisto-graph --test publish_tests plan_publish_release_entry_is_prerelease_matches_version`. Expected output: `test plan_publish_release_entry_is_prerelease_matches_version ... ok` and a final `test result: ok. 1 passed; 0 failed`.",
+        "COMMIT: `git add crates/callisto-model/src/plan.rs crates/callisto-graph/src/commands/publish.rs crates/callisto-cli/src/commands/publish.rs crates/callisto-graph/tests/tag_sha_fabrication_test.rs crates/callisto-graph/tests/tags_tests.rs crates/callisto-graph/tests/publish_tests.rs`"
+      ],
+      "commit_message": "feat(model): add required ReleaseEntry.is_prerelease computed from Version::is_prerelease()\n\nReleaseEntry gains a new required `is_prerelease: bool` field (JSON key\n`isPrerelease`), populated at its one construction site in plan_publish\nfrom the already-parsed `ver.is_prerelease()` -- never re-derived from\nthe rendered tag string. Every other ReleaseEntry struct literal in the\nworkspace is updated in the same commit so the crate keeps compiling."
+    },
+    {
+      "id": "T2",
+      "title": "Prove is_prerelease is computed correctly for SemVer and PEP 440 pre-release and non-pre-release fixtures, and appears in JSON output",
+      "depends_on": [
+        "T1"
+      ],
+      "covers_criteria": [
+        "AC-002",
+        "AC-003",
+        "AC-004",
+        "AC-005",
+        "AC-006"
+      ],
+      "files": {
+        "test": [
+          "crates/callisto-graph/tests/publish_tests.rs"
+        ]
+      },
+      "steps": [
+        "RED: Append these 3 tests to the end of crates/callisto-graph/tests/publish_tests.rs (after the T1 test). They must fail before this task's fixtures exist to prove the assertions are meaningful -- since T1 already landed the field, these will fail on their `assert!`/`assert_eq!` calls (wrong boolean value or missing find), not on a compile error:\n```rust\n#[test]\nfn plan_publish_semver_non_prerelease_has_is_prerelease_false_in_json() {\n    use callisto_graph::commands::{plan_publish, PublishOptions};\n\n    let tmp = tempfile::tempdir().unwrap();\n    let root = tmp.path();\n    write_release_candidate_pkg(root, \"1.2.3\");\n    init_git_repo(root);\n\n    let runner = DummyRunner;\n    let locator = IgnoreWalkLocator::new(root);\n    let ws = callisto_graph::Workspace::load(root.to_path_buf(), &locator, &runner).unwrap();\n\n    let plan = plan_publish(&ws, &PublishOptions::default()).expect(\"plan_publish must succeed\");\n    let pkg_id = PackageId::parse(\"pkg\").unwrap();\n    let release = plan\n        .releases\n        .iter()\n        .find(|r| r.package == pkg_id)\n        .unwrap_or_else(|| panic!(\"expected a ReleaseEntry for pkg, got: {:?}\", plan.releases));\n    assert!(!release.is_prerelease, \"SemVer 1.2.3 must not be a prerelease\");\n\n    let json = serde_json::to_value(&plan).unwrap();\n    let entries = json[\"releases\"].as_array().unwrap();\n    assert_eq!(entries.len(), 1, \"expected exactly one release entry\");\n    assert_eq!(\n        entries[0][\"isPrerelease\"],\n        serde_json::json!(false),\n        \"isPrerelease key must be present in serialized JSON and equal false\"\n    );\n}\n\n#[test]\nfn plan_publish_semver_regression_fixture_has_is_prerelease_true() {\n    use callisto_graph::commands::{plan_publish, PublishOptions};\n\n    let tmp = tempfile::tempdir().unwrap();\n    let root = tmp.path();\n    write_release_candidate_pkg(root, \"1.0.0-1\");\n    init_git_repo(root);\n\n    let runner = DummyRunner;\n    let locator = IgnoreWalkLocator::new(root);\n    let ws = callisto_graph::Workspace::load(root.to_path_buf(), &locator, &runner).unwrap();\n\n    let plan = plan_publish(&ws, &PublishOptions::default()).expect(\"plan_publish must succeed\");\n    let pkg_id = PackageId::parse(\"pkg\").unwrap();\n    let release = plan\n        .releases\n        .iter()\n        .find(|r| r.package == pkg_id)\n        .unwrap_or_else(|| panic!(\"expected a ReleaseEntry for pkg, got: {:?}\", plan.releases));\n    assert!(\n        release.is_prerelease,\n        \"SemVer 1.0.0-1 (numeric pre-release identifier, no alpha/beta/rc/pre/next substring) must be a prerelease\"\n    );\n\n    let json = serde_json::to_value(&plan).unwrap();\n    let entries = json[\"releases\"].as_array().unwrap();\n    assert_eq!(entries.len(), 1);\n    assert_eq!(entries[0][\"isPrerelease\"], serde_json::json!(true));\n}\n\n#[test]\nfn plan_publish_pep440_dev_release_has_is_prerelease_true() {\n    use callisto_graph::commands::{plan_publish, PublishOptions};\n    use callisto_model::{ManifestDecl, ManifestFormat, ManifestRole, PublishTarget};\n\n    let tmp = tempfile::tempdir().unwrap();\n    let root = tmp.path();\n    std::fs::write(\n        root.join(\"pyproject.toml\"),\n        \"[project]\\nname = \\\"pkg\\\"\\nversion = \\\"1.0.0.dev1\\\"\\n\",\n    )\n    .unwrap();\n    init_git_repo(root);\n\n    let runner = DummyRunner;\n    let pkg_id = PackageId::parse(\"pkg\").unwrap();\n    let pyproject_decl = ManifestDecl::new(\n        PathBuf::from(\"pyproject.toml\"),\n        ManifestRole::Canonical,\n        ManifestFormat::PyprojectToml,\n    )\n    .unwrap();\n\n    let graph = GraphBuilder::new()\n        .package(pkg_id.clone(), |p: PackageBuilder| {\n            p.manifests(vec![pyproject_decl])\n                .publish_to(vec![PublishTarget::Pypi { index: None }])\n        })\n        .build()\n        .unwrap();\n\n    let cfg = callisto_graph::config::load(&root.join(\"callisto.toml\")).unwrap();\n    let ws = callisto_graph::Workspace {\n        root: root.to_path_buf(),\n        config: cfg,\n        graph,\n        tags: OnceCell::new(),\n        git: OnceCell::new(),\n        runner: &runner,\n        manifest_cache: Default::default(),\n        identity: callisto_graph::IdentityIndex::default(),\n    };\n\n    let plan = plan_publish(&ws, &PublishOptions::default()).expect(\"plan_publish must succeed\");\n    let release = plan\n        .releases\n        .iter()\n        .find(|r| r.package == pkg_id)\n        .unwrap_or_else(|| panic!(\"expected a ReleaseEntry for pkg, got: {:?}\", plan.releases));\n    assert!(\n        release.is_prerelease,\n        \"PEP 440 1.0.0.dev1 (dev-release) must be a prerelease per pep440_dev_release_is_prerelease\"\n    );\n\n    let json = serde_json::to_value(&plan).unwrap();\n    let entries = json[\"releases\"].as_array().unwrap();\n    assert_eq!(entries.len(), 1);\n    assert_eq!(entries[0][\"isPrerelease\"], serde_json::json!(true));\n}\n```\nAlso append this 4th test, the AC-005 PEP 440 regression fixture (identical structure to the dev-release test above, different version and function name):\n```rust\n#[test]\nfn plan_publish_pep440_regression_fixture_has_is_prerelease_true() {\n    use callisto_graph::commands::{plan_publish, PublishOptions};\n    use callisto_model::{ManifestDecl, ManifestFormat, ManifestRole, PublishTarget};\n\n    let tmp = tempfile::tempdir().unwrap();\n    let root = tmp.path();\n    std::fs::write(\n        root.join(\"pyproject.toml\"),\n        \"[project]\\nname = \\\"pkg\\\"\\nversion = \\\"1.2.3a1\\\"\\n\",\n    )\n    .unwrap();\n    init_git_repo(root);\n\n    let runner = DummyRunner;\n    let pkg_id = PackageId::parse(\"pkg\").unwrap();\n    let pyproject_decl = ManifestDecl::new(\n        PathBuf::from(\"pyproject.toml\"),\n        ManifestRole::Canonical,\n        ManifestFormat::PyprojectToml,\n    )\n    .unwrap();\n\n    let graph = GraphBuilder::new()\n        .package(pkg_id.clone(), |p: PackageBuilder| {\n            p.manifests(vec![pyproject_decl])\n                .publish_to(vec![PublishTarget::Pypi { index: None }])\n        })\n        .build()\n        .unwrap();\n\n    let cfg = callisto_graph::config::load(&root.join(\"callisto.toml\")).unwrap();\n    let ws = callisto_graph::Workspace {\n        root: root.to_path_buf(),\n        config: cfg,\n        graph,\n        tags: OnceCell::new(),\n        git: OnceCell::new(),\n        runner: &runner,\n        manifest_cache: Default::default(),\n        identity: callisto_graph::IdentityIndex::default(),\n    };\n\n    let plan = plan_publish(&ws, &PublishOptions::default()).expect(\"plan_publish must succeed\");\n    let release = plan\n        .releases\n        .iter()\n        .find(|r| r.package == pkg_id)\n        .unwrap_or_else(|| panic!(\"expected a ReleaseEntry for pkg, got: {:?}\", plan.releases));\n    assert!(\n        release.is_prerelease,\n        \"PEP 440 1.2.3a1 (no dash, no alpha/beta/rc/pre/next substring) must be a prerelease -- the original bug\"\n    );\n\n    let json = serde_json::to_value(&plan).unwrap();\n    let entries = json[\"releases\"].as_array().unwrap();\n    assert_eq!(entries.len(), 1);\n    assert_eq!(entries[0][\"isPrerelease\"], serde_json::json!(true));\n}\n```",
+        "RUN (expect failure, confirming these are meaningful tests, not tautologies): `cargo test -p callisto-graph --test publish_tests plan_publish_semver_non_prerelease_has_is_prerelease_false_in_json plan_publish_semver_regression_fixture_has_is_prerelease_true plan_publish_pep440_dev_release_has_is_prerelease_true plan_publish_pep440_regression_fixture_has_is_prerelease_true`. Because T1's production-site code already exists, run this BEFORE writing it by temporarily reverting the `is_prerelease: ver.is_prerelease(),` line to `is_prerelease: false,` in crates/callisto-graph/src/commands/publish.rs to observe genuine red: expected output is 3 of the 4 tests failing (`plan_publish_semver_regression_fixture_has_is_prerelease_true`, `plan_publish_pep440_dev_release_has_is_prerelease_true`, `plan_publish_pep440_regression_fixture_has_is_prerelease_true` each report `assertion failed` on their `assert!(release.is_prerelease, ...)` line), with only `plan_publish_semver_non_prerelease_has_is_prerelease_false_in_json` passing. Then revert the temporary change back to `is_prerelease: ver.is_prerelease(),` before proceeding. After reverting publish.rs back to its T1-committed form, run `git diff --stat crates/callisto-graph/src/commands/publish.rs` and confirm it shows NO output before proceeding to GREEN -- this mechanically catches a forgotten or incomplete revert rather than relying on memory.",
+        "IMPLEMENT: No production code changes in this task -- T1 already wired the correct computation. This task only adds the fixture tests above, which exercise T1's implementation.",
+        "GREEN: `cargo test -p callisto-graph --test publish_tests plan_publish_semver_non_prerelease_has_is_prerelease_false_in_json plan_publish_semver_regression_fixture_has_is_prerelease_true plan_publish_pep440_dev_release_has_is_prerelease_true plan_publish_pep440_regression_fixture_has_is_prerelease_true`. Expected output: all 4 tests report `... ok` and the summary line reads `test result: ok. 4 passed; 0 failed`.",
+        "COMMIT: `git add crates/callisto-graph/tests/publish_tests.rs`"
+      ],
+      "commit_message": "test(graph): pin ReleaseEntry.is_prerelease across SemVer and PEP 440 fixtures\n\nRegression-pins the AC-004 SemVer numeric-prerelease fixture (1.0.0-1)\nand the AC-005 PEP 440 fixture (1.2.3a1, the original bug this field\nexists to fix) alongside a non-prerelease SemVer control and the\nexisting PEP 440 dev-release contract, proving is_prerelease is read\nfrom the serialized JSON's isPrerelease key end-to-end."
+    },
+    {
+      "id": "T3",
+      "title": "Update schema_guard_test.rs's ReleaseEntry expectations and permitted-delta allowlist",
+      "depends_on": [
+        "T1"
+      ],
+      "covers_criteria": [
+        "AC-012a"
+      ],
+      "files": {
+        "modify": [
+          "crates/callisto-cli/tests/schema_guard_test.rs"
+        ]
+      },
+      "steps": [
+        "RED: Run `cargo test -p callisto-cli --test schema_guard_test ac13_report_struct_field_shapes_are_unchanged` now (after T1 has landed, before this task's edits). Expected output: a failing assertion, e.g. `assertion \\`left == right\\` failed` on the line `assert_eq!(req, set(&[\"package\", \"sha\", \"tagName\"]));`, with `left` containing the extra `\"isPrerelease\"` entry that the live schema now produces.",
+        "IMPLEMENT (1/2 -- the assertions): In crates/callisto-cli/tests/schema_guard_test.rs, find:\n```rust\n    let release_entry = &plan_schema[\"definitions\"][\"ReleaseEntry\"];\n    let (req, props) = required_and_props(release_entry);\n    assert_eq!(req, set(&[\"package\", \"sha\", \"tagName\"]));\n    assert_eq!(\n        props,\n        set(&[\"changelogSection\", \"package\", \"sha\", \"tagName\"])\n    );\n}\n```\nReplace with:\n```rust\n    let release_entry = &plan_schema[\"definitions\"][\"ReleaseEntry\"];\n    let (req, props) = required_and_props(release_entry);\n    assert_eq!(\n        req,\n        set(&[\"isPrerelease\", \"package\", \"sha\", \"tagName\"])\n    );\n    assert_eq!(\n        props,\n        set(&[\"changelogSection\", \"isPrerelease\", \"package\", \"sha\", \"tagName\"])\n    );\n}\n```",
+        "IMPLEMENT (2/2 -- the module-doc allowlist): In crates/callisto-cli/tests/schema_guard_test.rs, find the module doc comment at the top of the file:\n```rust\n//! AC-13 guard: none of this track's fixes may change any report struct's field shape,\n//! except where a task's explicit scope is the shape change itself. Permitted schema\n//! deltas: the additive DiagnosticCode::ChangelogReadError variant, and TagReport/\n//! CreatedTag's field-shape fix (docs/01-spec.md \u00a7M.12.6: `tags` not `createdTags`,\n//! plus `CreatedTag::already_existed`). Expected sets below were captured from\n//! `callisto schema` against the live repository after those two intentional changes.\n```\nReplace with:\n```rust\n//! AC-13 guard: none of this track's fixes may change any report struct's field shape,\n//! except where a task's explicit scope is the shape change itself. Permitted schema\n//! deltas: the additive DiagnosticCode::ChangelogReadError variant, TagReport/\n//! CreatedTag's field-shape fix (docs/01-spec.md \u00a7M.12.6: `tags` not `createdTags`,\n//! plus `CreatedTag::already_existed`), and the additive required field\n//! `ReleaseEntry.isPrerelease` (SPEC-005: computed from `Version::is_prerelease()`,\n//! never re-derived from the tag string). Expected sets below were captured from\n//! `callisto schema` against the live repository after those intentional changes.\n```",
+        "GREEN: `cargo test -p callisto-cli --test schema_guard_test ac13_report_struct_field_shapes_are_unchanged`. Expected output: `test ac13_report_struct_field_shapes_are_unchanged ... ok` and `test result: ok. 1 passed; 0 failed`.",
+        "COMMIT: `git add crates/callisto-cli/tests/schema_guard_test.rs`"
+      ],
+      "commit_message": "test(cli): allowlist ReleaseEntry.isPrerelease as an intentional additive schema delta\n\nUpdates schema_guard_test.rs's ReleaseEntry required/property sets and\nits permitted-schema-delta allowlist to reflect the new required\nisPrerelease field, consistent with this session's no-schemaVersion-bump\nprecedent for additive fields."
+    },
+    {
+      "id": "T4",
+      "title": "Structural verification: no fallback branch at the construction site, no new AGPL dependency edge, full Rust suite green",
+      "depends_on": [
+        "T1",
+        "T2",
+        "T3"
+      ],
+      "covers_criteria": [
+        "AC-013",
+        "AC-014",
+        "AC-012c"
+      ],
+      "files": {},
+      "steps": [
+        "This task adds no new code and no new test file -- its \"test\" is a set of structural/grep/metadata checks run directly against the repository, per the spec's own framing of AC-013 and AC-014 as structural assertions rather than new behavior.",
+        "CHECK (AC-013 -- no fallback/branch around the new call): run `grep -n \"is_prerelease\" crates/callisto-graph/src/commands/publish.rs`. Expected output: exactly two matching lines -- one showing the pre-existing, unrelated npm dist-tag branch `let tag = if ver.is_prerelease() {` (unchanged, predates this spec), and one showing the new field assignment `is_prerelease: ver.is_prerelease(),` inside the `releases.push(ReleaseEntry { ... })` block. Then run `sed -n '495,515p' crates/callisto-graph/src/commands/publish.rs` and visually confirm the `is_prerelease: ver.is_prerelease(),` line is a bare field assignment inside the struct literal -- not wrapped in any `if`, `match`, `.unwrap_or(...)`, `?`, or `Result`/`Option` construct. If either check fails (a third match appears, or the assignment is conditional), this criterion fails and the construction site in T1 must be corrected back to the plain form before proceeding.",
+        "CHECK (AC-014, part 1 -- no new dependency declared): run `git diff --stat crates/callisto-model/Cargo.toml`. Expected output: empty (no output at all) -- this file must be untouched by this spec's changes, proving no new `[dependencies]` entry was added to callisto-model.",
+        "CHECK (AC-014, part 2 -- Version::is_prerelease() itself unmodified): run `git diff -- crates/callisto-model/src/version.rs`. Expected output: empty (no output at all) -- version.rs is reused as-is per this spec's non_goals; this task's earlier tasks never touch it.",
+        "CHECK (AC-014, part 3 -- resolve graph has no AGPL edge): run `cargo metadata --format-version 1 | jq -r --arg pkg callisto-model '.packages[] | select(.name == $pkg) | .dependencies[].name' | sort -u`. Expected output: exactly callisto-model's direct [dependencies] list per its Cargo.toml -- `camino`, `miette`, `path-slash`, `pep440_rs`, `proptest`, `schemars`, `semver`, `serde`, `serde_json`, `tempfile`, `thiserror` (the last of these, `proptest`, is a pre-existing `[dev-dependencies]` entry, not a `[dependencies]` one -- `cargo metadata`'s `.packages[].dependencies` array does not distinguish dependency kind) -- with no other names; confirm by inspection that none of these is AGPL-licensed. (The older `.resolve.nodes[] | select(.id | startswith($pkg + \" \"))` form does not work on modern cargo, whose resolve-node id format is `path+file://.../crates/callisto-model#0.3.3`, not `callisto-model 0.3.3 (...)` -- use the `.packages[]` form above instead.)",
+        "CHECK (AC-012c -- full suite green): run `cargo nextest run --workspace` (equivalently `just test` / `moon run :test`). Expected output: the run completes with exit code 0 and a summary line of the form `Summary [ ... ] <N> tests run: <N> passed, 0 skipped` with zero failures -- including every test touched by T1, T2, and T3, and no remaining test anywhere in the workspace asserting a ReleaseEntry JSON shape or struct literal that omits `is_prerelease`/`isPrerelease`.",
+        "No commit is required for this task if all checks pass as expected -- it verifies work already committed in T1-T3. If any check fails, fix the offending file in the task that introduced it (T1, T2, or T3) and re-run that task's own GREEN command before re-running this task's checks."
+      ],
+      "commit_message": "chore(verify): confirm no fallback branch, no new AGPL dependency edge, and full suite green for ReleaseEntry.is_prerelease"
+    },
+    {
+      "id": "T5",
+      "title": "Rewrite action.yml's GitHub Release loop to read isPrerelease off each entry, with a regression test proving it",
+      "depends_on": [
+        "T1"
+      ],
+      "covers_criteria": [
+        "AC-008",
+        "AC-009",
+        "AC-010",
+        "AC-015"
+      ],
+      "files": {
+        "modify": [
+          ".github/actions/callisto-action/action.yml"
+        ],
+        "create": [
+          ".github/actions/callisto-action/tests/test_github_release_prerelease_flag.sh"
+        ]
+      },
+      "steps": [
+        "RED (write the test FIRST, against the current, unedited action.yml): create .github/actions/callisto-action/tests/test_github_release_prerelease_flag.sh with exactly this content:\n```bash\n#!/usr/bin/env bash\n# Regression test for AC-008/AC-009/AC-015: the GitHub Release creation\n# loop's --prerelease flag must be derived from each release entry's\n# isPrerelease boolean, never from a regex against the tag string, and\n# must hard-fail on a missing/null/non-boolean isPrerelease rather than\n# silently defaulting to false. Extracts the exact current run-body text\n# between the step's ::group::5. Creating GitHub Release Entries marker\n# and its matching ::endgroup:: marker directly out of action.yml, so\n# this test always exercises the file's current real logic -- it cannot\n# drift from it.\nset -u\nACTION_YML=\"$(cd \"$(dirname \"${BASH_SOURCE[0]}\")/..\" && pwd)/action.yml\"\n\nextract_snippet() {\n  sed -n '/::group::5\\. Creating GitHub Release Entries/,/::endgroup::/p' \"$ACTION_YML\" | sed '1d;$d'\n}\n\nrun_case() {\n  local plan_json=\"$1\"\n  local gh_log tmp_script code out\n  gh_log=\"$(mktemp)\"\n  tmp_script=\"$(mktemp)\"\n  {\n    echo \"gh() { echo \\\"gh \\$*\\\" >> '${gh_log}'; return 0; }\"\n    echo \"PLAN_JSON='${plan_json}'\"\n    extract_snippet\n  } > \"$tmp_script\"\n  bash \"$tmp_script\"\n  code=$?\n  out=$(cat \"$gh_log\")\n  rm -f \"$tmp_script\" \"$gh_log\"\n  printf '%s\\n__EXIT=%d__\\n' \"$out\" \"$code\"\n}\n\nfail=0\n\n# AC-005 regression fixture: PEP 440 pre-release with no alpha/beta/rc/pre/next\n# substring in the tag -- isPrerelease:true must still pass --prerelease.\nout=$(run_case '{\"releases\":[{\"tagName\":\"v1.2.3a1\",\"isPrerelease\":true}]}')\nif [[ \"$out\" != *\"gh release create v1.2.3a1 --title v1.2.3a1 --generate-notes --prerelease\"* ]] || [[ \"$out\" != *\"__EXIT=0__\"* ]]; then\n  echo \"FAIL isPrerelease:true case: $out\"; fail=1\nelse\n  echo \"PASS isPrerelease:true case\"\nfi\n\n# isPrerelease:false must run with no --prerelease flag.\nout=$(run_case '{\"releases\":[{\"tagName\":\"v1.0.0\",\"isPrerelease\":false}]}')\nif [[ \"$out\" != *\"gh release create v1.0.0 --title v1.0.0 --generate-notes\"* ]] || [[ \"$out\" == *\"--prerelease\"* ]] || [[ \"$out\" != *\"__EXIT=0__\"* ]]; then\n  echo \"FAIL isPrerelease:false case: $out\"; fail=1\nelse\n  echo \"PASS isPrerelease:false case\"\nfi\n\n# AC-015: missing isPrerelease key must hard-fail before any gh call.\nout=$(run_case '{\"releases\":[{\"tagName\":\"v1.0.0\"}]}')\nif [[ \"$out\" == *\"gh release create\"* ]] || [[ \"$out\" == *\"__EXIT=0__\"* ]]; then\n  echo \"FAIL missing-key case: $out\"; fail=1\nelse\n  echo \"PASS missing-key case\"\nfi\n\n# AC-015: null isPrerelease must hard-fail before any gh call.\nout=$(run_case '{\"releases\":[{\"tagName\":\"v1.0.0\",\"isPrerelease\":null}]}')\nif [[ \"$out\" == *\"gh release create\"* ]] || [[ \"$out\" == *\"__EXIT=0__\"* ]]; then\n  echo \"FAIL null-value case: $out\"; fail=1\nelse\n  echo \"PASS null-value case\"\nfi\n\n# AC-015: non-boolean isPrerelease (a JSON string \"true\") must hard-fail before any gh call.\nout=$(run_case '{\"releases\":[{\"tagName\":\"v1.0.0\",\"isPrerelease\":\"true\"}]}')\nif [[ \"$out\" == *\"gh release create\"* ]] || [[ \"$out\" == *\"__EXIT=0__\"* ]]; then\n  echo \"FAIL non-boolean-value case: $out\"; fail=1\nelse\n  echo \"PASS non-boolean-value case\"\nfi\n\nexit $fail\n```\nThen `chmod +x .github/actions/callisto-action/tests/test_github_release_prerelease_flag.sh`.",
+        "RUN (expect failure, against the CURRENT unedited action.yml): `bash .github/actions/callisto-action/tests/test_github_release_prerelease_flag.sh; echo \"exit=$?\"`. Expected output: `FAIL isPrerelease:true case: ...` (the old regex never matches `v1.2.3a1`, so no `--prerelease` is passed even though isPrerelease is true), `PASS isPrerelease:false case` (the old regex also doesn't match `v1.0.0`, so this one incidentally passes), `FAIL missing-key case: ...`, `FAIL null-value case: ...`, and `FAIL non-boolean-value case: ...` (the old loop never inspects isPrerelease at all, so it always calls `gh release create` regardless of that key's presence/type), ending in `exit=1`.",
+        "IMPLEMENT: In .github/actions/callisto-action/action.yml, find:\n```yaml\n              echo \"::group::5. Creating GitHub Release Entries\"\n              for TAG in $(echo \"$PLAN_JSON\" | jq -r '.releases[]?.tagName // empty'); do\n                if [[ -n \"$TAG\" ]]; then\n                  echo \"Creating GitHub Release for tag: $TAG\"\n                  \n                  # Detect if tag is a SemVer prerelease (contains alpha/beta/rc/pre)\n                  EXTRA_FLAGS=\"\"\n                  if [[ \"$TAG\" =~ -(alpha|beta|rc|pre|next) ]]; then\n                    EXTRA_FLAGS=\"--prerelease\"\n                  fi\n\n                  gh release create \"$TAG\" --title \"$TAG\" --generate-notes $EXTRA_FLAGS || true\n                fi\n              done\n              echo \"::endgroup::\"\n```\nReplace with:\n```yaml\n              echo \"::group::5. Creating GitHub Release Entries\"\n              while IFS= read -r ENTRY; do\n                TAG=$(echo \"$ENTRY\" | jq -r '.tagName // empty')\n                if [[ -z \"$TAG\" ]]; then\n                  continue\n                fi\n\n                if ! echo \"$ENTRY\" | jq -e 'has(\"isPrerelease\") and (.isPrerelease | type == \"boolean\")' > /dev/null; then\n                  echo \"::error::release entry for tag $TAG has a missing, null, or non-boolean isPrerelease value\"\n                  exit 1\n                fi\n\n                IS_PRERELEASE=$(echo \"$ENTRY\" | jq -r '.isPrerelease')\n\n                echo \"Creating GitHub Release for tag: $TAG\"\n\n                EXTRA_FLAGS=\"\"\n                if [[ \"$IS_PRERELEASE\" == \"true\" ]]; then\n                  EXTRA_FLAGS=\"--prerelease\"\n                fi\n\n                gh release create \"$TAG\" --title \"$TAG\" --generate-notes $EXTRA_FLAGS || true\n              done < <(echo \"$PLAN_JSON\" | jq -c '.releases[]?')\n              echo \"::endgroup::\"\n```\nThis removes the `=~ -(alpha|beta|rc|pre|next)` regex entirely (AC-008), iterates entries via `jq -c '.releases[]?'` reading `tagName`/`isPrerelease` off the same entry object with no cross-entry lookup (AC-009), and hard-fails via `jq -e 'has(...) and (...|type==\"boolean\")'` (not the `//` operator) before any `gh release create` call for that entry when the key is absent, null, or non-boolean (AC-015).",
+        "GREEN: `bash .github/actions/callisto-action/tests/test_github_release_prerelease_flag.sh; echo \"exit=$?\"`. Expected output: `PASS isPrerelease:true case`, `PASS isPrerelease:false case`, `PASS missing-key case`, `PASS null-value case`, `PASS non-boolean-value case`, ending in `exit=0`.",
+        "COMMIT: `git add .github/actions/callisto-action/action.yml .github/actions/callisto-action/tests/test_github_release_prerelease_flag.sh`"
+      ],
+      "commit_message": "fix(action): derive --prerelease from ReleaseEntry.isPrerelease, not a tag-string regex\n\nThe GitHub Release creation loop now iterates PublishPlan.releases[]\nentries directly and reads isPrerelease off each one, hard-failing on\na missing/null/non-boolean value instead of silently treating it as\nfalse. Removes the =~ -(alpha|beta|rc|pre|next) regex entirely, which\nmissed PEP 440 pre-releases like 1.2.3a1 with no matching substring."
+    },
+    {
+      "id": "T6",
+      "title": "Document is_prerelease in docs/01-spec.md's ReleaseEntry doc block and decision table",
+      "depends_on": [
+        "T1"
+      ],
+      "covers_criteria": [
+        "AC-011"
+      ],
+      "files": {
+        "modify": [
+          "docs/01-spec.md"
+        ]
+      },
+      "steps": [
+        "This is a documentation-only task; there is no code test. The \"failing test\" step is a grep confirming the documentation is currently absent, and the \"passing test\" step is the same grep confirming it now exists.",
+        "RED: run `grep -n \"is_prerelease\\|isPrerelease\" docs/01-spec.md`. Expected output: no output (the field is not yet documented anywhere in this file).",
+        "IMPLEMENT (1/2 -- the struct doc block): In docs/01-spec.md, find:\n```\n    /// **Optional.** Produced by reading it back out of the `CHANGELOG.md` that `version`\n    /// already wrote, via `callisto_changelog::extract_section` (\u00a7CL.6, \u00a7CL.7.1) \u2014 never\n    /// re-rendered, which `plan-publish` structurally cannot do anyway, since it is a\n    /// separate invocation running after `version` deleted the changesets its input was built\n    /// from. Absent for a package with `changelog: None` (\u00a7CL.6's opt-out \u2014 no file was ever\n    /// written) and for a changelog whose section cannot be located, which also emits\n    /// `DiagnosticCode::ChangelogSectionNotFound`.\n    #[serde(default, skip_serializing_if = \"Option::is_none\")]\n    pub changelog_section: Option<String>,\n}\n```\nReplace with:\n```\n    /// **Optional.** Produced by reading it back out of the `CHANGELOG.md` that `version`\n    /// already wrote, via `callisto_changelog::extract_section` (\u00a7CL.6, \u00a7CL.7.1) \u2014 never\n    /// re-rendered, which `plan-publish` structurally cannot do anyway, since it is a\n    /// separate invocation running after `version` deleted the changesets its input was built\n    /// from. Absent for a package with `changelog: None` (\u00a7CL.6's opt-out \u2014 no file was ever\n    /// written) and for a changelog whose section cannot be located, which also emits\n    /// `DiagnosticCode::ChangelogSectionNotFound`.\n    #[serde(default, skip_serializing_if = \"Option::is_none\")]\n    pub changelog_section: Option<String>,\n\n    /// Whether this release's resolved `Version` is a pre-release, per\n    /// `Version::is_prerelease()` (\u00a77.7) \u2014 true for a SemVer value with a non-empty\n    /// pre-release component, and for a PEP 440 pre-release or dev-release. Computed once\n    /// at plan time from the resolved version and never re-derived from `tag_name`.\n    ///\n    /// **Required.** Always present in every serialized `ReleaseEntry`, never `Option`-\n    /// wrapped and never omitted.\n    pub is_prerelease: bool,\n}\n```",
+        "IMPLEMENT (2/2 -- the decision table row): In docs/01-spec.md, find the exact row:\n```\n| 23 | \u00a7M.12.2 | `ReleaseEntry.changelog_section` is `Option<String>`, produced by reading the written `CHANGELOG.md` back (\u00a7CL.7.1). |\n```\nAppend, on the line immediately after it (row 23 itself is left byte-for-byte unmodified), this new row:\n```\n| 24 | \u00a7M.12.2 | `ReleaseEntry.is_prerelease` is a required `bool`, computed at plan time from the resolved `Version::is_prerelease()`, never re-derived from the rendered tag string. |\n```\nNote: docs/01-spec.md has two decision tables that both contain a row numbered 23 (one at \u00a7M.12.2's table, one at a later \u00a7G.10.2 table) \u2014 edit only the first one, the one whose row 23 text is `ReleaseEntry.changelog_section` as shown above, not the `\u00a7G.10.2` one.",
+        "GREEN: run `grep -n \"is_prerelease\\|isPrerelease\" docs/01-spec.md`. Expected output: two matches -- the new doc comment line mentioning `Version::is_prerelease()` / `is_prerelease: bool` in the struct block, and the new row-24 line containing `ReleaseEntry.is_prerelease`.",
+        "COMMIT: `git add docs/01-spec.md`"
+      ],
+      "commit_message": "docs(spec): document ReleaseEntry.is_prerelease field and decision-table entry"
+    }
+  ]
+}

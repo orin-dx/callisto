@@ -110,6 +110,7 @@ impl ManifestWalkResolver {
         let mut diagnostics = Vec::new();
         let mut claiming_ecosystems: BTreeMap<PathBuf, BTreeSet<Ecosystem>> = BTreeMap::new();
         let mut path_native_keys: BTreeMap<PathBuf, Vec<(Ecosystem, String)>> = BTreeMap::new();
+        let mut path_platform_keys: BTreeMap<PathBuf, Vec<String>> = BTreeMap::new();
         let mut primary_ecosystems: BTreeMap<PathBuf, Ecosystem> = BTreeMap::new();
         let mut promoted_siblings: BTreeMap<String, Vec<(PackageId, BTreeSet<Ecosystem>)>> =
             BTreeMap::new();
@@ -214,6 +215,10 @@ impl ManifestWalkResolver {
                             id.name().to_string(),
                             (primary_id.clone(), manifest_rel, role),
                         );
+                        path_platform_keys
+                            .entry(rel_path.clone())
+                            .or_default()
+                            .push(id.name().to_string());
                     }
                 }
                 index
@@ -301,6 +306,29 @@ impl ManifestWalkResolver {
                     index
                         .prefixed
                         .insert((eco, name.clone()), current_id.clone());
+                }
+                // STALE-KEY REWRITE location (6): update index.platform's owner-id
+                // component for every platform manifest declared under either path,
+                // so a platform sibling co-located with a promoted owner keeps
+                // pointing at that owner's newly-promoted Prefixed id rather than
+                // the stale pre-promotion primary_id.
+                if let Some(keys) = path_platform_keys.get(&existing_path) {
+                    for key in keys {
+                        if let Some((_, manifest_rel, role)) = index.platform.get(key).cloned() {
+                            index
+                                .platform
+                                .insert(key.clone(), (existing_id.clone(), manifest_rel, role));
+                        }
+                    }
+                }
+                if let Some(keys) = path_platform_keys.get(&rel_path) {
+                    for key in keys {
+                        if let Some((_, manifest_rel, role)) = index.platform.get(key).cloned() {
+                            index
+                                .platform
+                                .insert(key.clone(), (current_id.clone(), manifest_rel, role));
+                        }
+                    }
                 }
                 promoted_siblings
                     .entry(name.clone())
@@ -1321,6 +1349,47 @@ mod tests {
                 name: "native-core".to_string(),
             },
             "index.prefixed value must point to the promoted Npm-prefixed ID"
+        );
+    }
+
+    /// A platform npm manifest co-located with a Cargo owner (Case D) whose
+    /// owner later gets promoted via a disjoint cross-ecosystem bare-name
+    /// collision elsewhere in the workspace: `index.platform`'s stored
+    /// owner id must be rewritten to the promoted Prefixed id, matching the
+    /// same rewrite already applied to `index.bare`/`index.native`/
+    /// `index.prefixed` for this exact scenario.
+    #[test]
+    fn promoted_platform_index_value_points_to_prefixed_owner_id() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        write_pkg(root, "crates/native-core", Ecosystem::Cargo, "native-core");
+        std::fs::write(
+            root.join("crates/native-core/package.json"),
+            r#"{"name":"@myorg/native-core-linux-x64-gnu","version":"0.1.0","os":["linux"],"cpu":["x64"]}"#,
+        )
+        .unwrap();
+        write_pkg(root, "packages/native-core", Ecosystem::Npm, "native-core");
+
+        let locator = crate::locate::IgnoreWalkLocator::new(root);
+        let runner = NoopRunner;
+        let ws = crate::Workspace::load(root.to_path_buf(), &locator, &runner)
+            .expect("promotion must succeed");
+
+        let platform_entry = ws
+            .graph
+            .identity()
+            .platform
+            .get("@myorg/native-core-linux-x64-gnu")
+            .expect("platform entry must exist");
+
+        assert_eq!(
+            platform_entry.0,
+            PackageId::Prefixed {
+                ecosystem: Ecosystem::Cargo,
+                name: "native-core".to_string(),
+            },
+            "index.platform's owner id must point to the promoted Cargo-prefixed id, \
+             not the stale pre-promotion bare id"
         );
     }
 

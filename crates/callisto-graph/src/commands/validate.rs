@@ -99,8 +99,8 @@ pub fn validate<R: CommandRunner, D: DependencyResolver>(
 
         for entry in &cs.changeset.entries {
             match callisto_model::PackageId::parse(&entry.name) {
-                Ok(id) => {
-                    if !ws.graph.packages().any(|p| p.id.matches(&id)) {
+                Ok(id) => match id.resolve_unique(ws.graph.packages(), |p| &p.id) {
+                    Ok(None) => {
                         diagnostics.push(callisto_model::Diagnostic {
                             code: callisto_model::DiagnosticCode::UnknownPackage,
                             severity: callisto_model::DiagnosticSeverity::Error,
@@ -115,7 +115,28 @@ pub fn validate<R: CommandRunner, D: DependencyResolver>(
                             escalated_by: None,
                         });
                     }
-                }
+                    Ok(Some(_)) => {}
+                    Err(candidates) => {
+                        let names: Vec<String> = candidates
+                            .iter()
+                            .map(|p| p.id.display_name().to_string())
+                            .collect();
+                        diagnostics.push(callisto_model::Diagnostic {
+                            code: callisto_model::DiagnosticCode::AmbiguousPackageName,
+                            severity: callisto_model::DiagnosticSeverity::Error,
+                            message: format!(
+                                "Changeset `{}` references ambiguous package `{}` (matches: {})",
+                                cs.path.display(),
+                                entry.name,
+                                names.join(", ")
+                            ),
+                            package: Some(id),
+                            path: Some(cs.path.clone()),
+                            governed_by: None,
+                            escalated_by: None,
+                        });
+                    }
+                },
                 Err(_) => {
                     diagnostics.push(callisto_model::Diagnostic {
                         code: callisto_model::DiagnosticCode::InvalidPackageName,
@@ -208,5 +229,59 @@ mod tests {
             "credential must not survive redaction, got: {rendered}"
         );
         assert!(rendered.contains("[REDACTED]"), "got: {rendered}");
+    }
+
+    /// A changeset naming a bare package name that resolves to two or more
+    /// packages across different ecosystems (e.g. `cargo/foo` and `npm/foo`)
+    /// must be reported as `DiagnosticCode::AmbiguousPackageName`, not
+    /// silently pass as if the name were valid. `aggregate()`/`plan_version`
+    /// hard-error on this exact input (`GraphError::AmbiguousName`) -- validate
+    /// must catch it too, since it's the pre-flight check users run before
+    /// `version`.
+    #[test]
+    fn ambiguous_bare_package_name_is_reported_not_silently_passed() {
+        let dir = tempfile::tempdir().expect("create tempdir");
+        let root = dir.path();
+
+        std::fs::create_dir_all(root.join("crates/foo")).unwrap();
+        std::fs::write(
+            root.join("crates/foo/Cargo.toml"),
+            "[package]\nname = \"foo\"\nversion = \"1.0.0\"\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join("packages/foo")).unwrap();
+        std::fs::write(
+            root.join("packages/foo/package.json"),
+            r#"{"name":"foo","version":"1.0.0"}"#,
+        )
+        .unwrap();
+        std::fs::write(root.join("callisto.toml"), "").unwrap();
+
+        std::fs::create_dir_all(root.join(".changeset")).unwrap();
+        std::fs::write(
+            root.join(".changeset/ambiguous.md"),
+            "---\n\"foo\": patch\n---\n\nSome change.\n",
+        )
+        .unwrap();
+
+        let runner = LeakyGitRunner;
+        let locator = IgnoreWalkLocator::new(root);
+        let ws =
+            Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
+
+        let report = validate(&ws, &ValidateOptions::default()).expect("validate must succeed");
+
+        assert!(
+            report
+                .diagnostics
+                .iter()
+                .any(|d| d.code == callisto_model::DiagnosticCode::AmbiguousPackageName),
+            "expected an AmbiguousPackageName diagnostic, got: {:?}",
+            report.diagnostics
+        );
+        assert!(
+            !report.ok,
+            "validate report must not be ok when an ambiguous package name is present"
+        );
     }
 }

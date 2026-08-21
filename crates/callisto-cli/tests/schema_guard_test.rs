@@ -1,9 +1,11 @@
 //! AC-13 guard: none of this track's fixes may change any report struct's field shape,
 //! except where a task's explicit scope is the shape change itself. Permitted schema
-//! deltas: the additive DiagnosticCode::ChangelogReadError variant, and TagReport/
+//! deltas: the additive DiagnosticCode::ChangelogReadError variant, TagReport/
 //! CreatedTag's field-shape fix (docs/01-spec.md §M.12.6: `tags` not `createdTags`,
-//! plus `CreatedTag::already_existed`). Expected sets below were captured from
-//! `callisto schema` against the live repository after those two intentional changes.
+//! plus `CreatedTag::already_existed`), and the additive required field
+//! `ReleaseEntry.isPrerelease` (SPEC-005: computed from `Version::is_prerelease()`,
+//! never re-derived from the tag string). Expected sets below were captured from
+//! `callisto schema` against the live repository after those intentional changes.
 
 use std::collections::BTreeSet;
 use std::process::Command;
@@ -89,10 +91,16 @@ fn ac13_report_struct_field_shapes_are_unchanged() {
 
     let release_entry = &plan_schema["definitions"]["ReleaseEntry"];
     let (req, props) = required_and_props(release_entry);
-    assert_eq!(req, set(&["package", "sha", "tagName"]));
+    assert_eq!(req, set(&["isPrerelease", "package", "sha", "tagName"]));
     assert_eq!(
         props,
-        set(&["changelogSection", "package", "sha", "tagName"])
+        set(&[
+            "changelogSection",
+            "isPrerelease",
+            "package",
+            "sha",
+            "tagName"
+        ])
     );
 }
 
@@ -129,10 +137,11 @@ fn ac13_diagnostic_code_enum_gains_only_changelog_read_error() {
         "package-set-matched-nothing",
         "duplicate-platform-triple",
         "changelog-read-error",
+        "ambiguous-package-name",
     ]);
 
     assert_eq!(
         variants, expected,
-        "DiagnosticCode schema must gain exactly one new variant: changelog-read-error"
+        "DiagnosticCode schema must gain exactly one new variant: ambiguous-package-name"
     );
 }

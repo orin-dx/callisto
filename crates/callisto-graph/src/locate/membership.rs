@@ -570,3 +570,146 @@ mod ac09e_probe {
         assert!(m.admits(std::path::Path::new("packages/anything"), false));
     }
 }
+
+/// `uv` `[tool.uv.workspace]` members/exclude membership filter, computed
+/// once per `IgnoreWalkLocator::projects()` call from the workspace root's
+/// `pyproject.toml`. Mirrors `CargoMembership` exactly -- `uv` workspaces
+/// use the identical members/exclude glob-array shape as Cargo's
+/// `[workspace]` table, including a root `pyproject.toml` that is itself
+/// both a `[project]` and a `[tool.uv.workspace]` (hybrid root).
+pub(crate) struct PythonMembership {
+    members: Option<GlobSet>,
+    exclude: GlobSet,
+    hybrid_root: bool,
+}
+
+impl PythonMembership {
+    /// `rel` must be a workspace-relative, forward-slash-normalized path.
+    /// `is_root` is true exactly when `rel == Path::new(".")`.
+    pub(crate) fn admits(&self, rel: &Path, is_root: bool) -> bool {
+        if is_root && self.hybrid_root {
+            return true;
+        }
+        if self.exclude.is_match(rel) {
+            return false;
+        }
+        match &self.members {
+            None => true,
+            Some(members) => members.is_match(rel),
+        }
+    }
+}
+
+fn absent_python_membership() -> PythonMembership {
+    PythonMembership {
+        members: None,
+        exclude: GlobSet::empty(),
+        hybrid_root: false,
+    }
+}
+
+pub(crate) fn read_python_membership(root: &Path) -> PythonMembership {
+    let content = match std::fs::read_to_string(root.join("pyproject.toml")) {
+        Ok(c) => c,
+        Err(_) => return absent_python_membership(),
+    };
+    let doc = match content.parse::<toml_edit::DocumentMut>() {
+        Ok(d) => d,
+        Err(_) => return absent_python_membership(),
+    };
+    let hybrid_root = doc.get("project").is_some()
+        && doc
+            .get("tool")
+            .and_then(|t| t.get("uv"))
+            .and_then(|u| u.get("workspace"))
+            .is_some();
+    let Some(workspace) = doc
+        .get("tool")
+        .and_then(|t| t.get("uv"))
+        .and_then(|u| u.get("workspace"))
+    else {
+        return PythonMembership {
+            members: None,
+            exclude: GlobSet::empty(),
+            hybrid_root,
+        };
+    };
+    let members = workspace
+        .get("members")
+        .and_then(parse_toml_string_array)
+        .map(|v| build_globset(&v));
+    let exclude = workspace
+        .get("exclude")
+        .and_then(parse_toml_string_array)
+        .map(|v| build_globset(&v))
+        .unwrap_or_else(GlobSet::empty);
+    PythonMembership {
+        members,
+        exclude,
+        hybrid_root,
+    }
+}
+
+#[cfg(test)]
+mod python_membership_tests {
+    use super::*;
+    use std::path::Path;
+    use tempfile::tempdir;
+
+    #[test]
+    fn read_python_membership_admits_all_when_no_pyproject_toml_file_exists() {
+        let dir = tempdir().unwrap();
+        let m = read_python_membership(dir.path());
+        assert!(m.admits(Path::new("packages/anything"), false));
+    }
+
+    #[test]
+    fn read_python_membership_honors_well_formed_members_and_exclude() {
+        let dir = tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("pyproject.toml"),
+            "[tool.uv.workspace]\nmembers = [\"packages/*\"]\nexclude = [\"packages/examples/demo\"]\n",
+        )
+        .unwrap();
+        let m = read_python_membership(dir.path());
+        assert!(m.admits(Path::new("packages/kept-example"), false));
+        assert!(!m.admits(Path::new("packages/examples/demo"), false));
+        assert!(!m.admits(Path::new("tools/outside"), false));
+    }
+
+    #[test]
+    fn read_python_membership_admits_all_when_workspace_table_absent_but_file_exists() {
+        let dir = tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("pyproject.toml"),
+            "[project]\nname = \"solo\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+        let m = read_python_membership(dir.path());
+        assert!(m.admits(Path::new("packages/anything"), false));
+    }
+
+    #[test]
+    fn read_python_membership_falls_back_to_absent_when_root_toml_is_unparseable() {
+        let dir = tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("pyproject.toml"),
+            "[tool.uv.workspace\nmembers = [\n",
+        )
+        .unwrap();
+        let m = read_python_membership(dir.path());
+        assert!(m.admits(Path::new("packages/anything"), false));
+    }
+
+    #[test]
+    fn read_python_membership_detects_hybrid_root_and_exempts_it_from_exclude() {
+        let dir = tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("pyproject.toml"),
+            "[project]\nname = \"root-pkg\"\nversion = \"0.1.0\"\n\n[tool.uv.workspace]\nmembers = [\"packages/*\"]\nexclude = [\".\"]\n",
+        )
+        .unwrap();
+        let m = read_python_membership(dir.path());
+        assert!(m.admits(Path::new("."), true));
+    }
+}

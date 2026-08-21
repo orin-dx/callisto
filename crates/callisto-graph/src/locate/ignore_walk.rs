@@ -40,11 +40,16 @@ impl ProjectLocator for IgnoreWalkLocator {
         let mut results = Vec::new();
         let cargo_membership = membership::read_cargo_membership(&self.root);
         let npm_membership = membership::read_npm_membership(&self.root);
+        let python_membership = membership::read_python_membership(&self.root);
         let walker = WalkBuilder::new(&self.root)
             .hidden(true)
             .git_ignore(true)
             .parents(false)
             .max_depth(Some(32))
+            // Symlinked package directories (e.g. vendor-link style monorepos) are a
+            // supported workspace pattern -- discovery follows them deliberately. The
+            // existing max_depth(32) cap already bounds a symlink cycle from hanging.
+            .follow_links(true)
             .filter_entry({
                 let skip = self.skip.clone();
                 move |entry| {
@@ -133,13 +138,16 @@ impl ProjectLocator for IgnoreWalkLocator {
                             });
                         if let Some(n) = name {
                             let rel = to_workspace_relative(path, &self.root)?;
-                            let id = PackageId::parse(n)
-                                .unwrap_or_else(|_| PackageId::Bare(n.to_string()));
-                            results.push(ProjectRoot {
-                                id,
-                                path: rel,
-                                ecosystem: Ecosystem::Pypi,
-                            });
+                            let is_root = rel == Path::new(".");
+                            if python_membership.admits(&rel, is_root) {
+                                let id = PackageId::parse(n)
+                                    .unwrap_or_else(|_| PackageId::Bare(n.to_string()));
+                                results.push(ProjectRoot {
+                                    id,
+                                    path: rel,
+                                    ecosystem: Ecosystem::Pypi,
+                                });
+                            }
                         }
                     }
                 }
@@ -202,6 +210,82 @@ mod tests {
         assert!(
             projects.is_empty(),
             "no projects should be found beyond 32 levels deep, found: {projects:?}"
+        );
+    }
+
+    /// Spec: symlinked directories are a deliberately supported workspace
+    /// pattern (vendor-link style monorepos). `IgnoreWalkLocator` must
+    /// traverse *into* a symlinked directory and discover a package nested
+    /// below its top level, not just a manifest sitting directly at the
+    /// symlink's root -- proving `follow_links(true)` is really wired in,
+    /// not just tolerated by an incidental `is_dir()` resolution.
+    #[test]
+    fn ignore_walk_locator_discovers_package_nested_inside_a_symlinked_directory() {
+        let root = tempdir().unwrap();
+        let external = tempdir().unwrap();
+
+        let nested = external.path().join("nested-pkg");
+        fs::create_dir_all(&nested).unwrap();
+        fs::write(
+            nested.join("Cargo.toml"),
+            "[package]\nname = \"linked-nested-pkg\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+
+        std::os::unix::fs::symlink(external.path(), root.path().join("vendor-link"))
+            .expect("failed to create symlink for test fixture");
+
+        let locator = IgnoreWalkLocator::new(root.path());
+        let projects = locator.projects().unwrap();
+
+        assert!(
+            projects
+                .iter()
+                .any(|p| p.id == PackageId::Bare("linked-nested-pkg".to_string())),
+            "expected linked-nested-pkg discovered through the symlinked directory, got: {projects:?}"
+        );
+    }
+
+    /// Spec: a `pyproject.toml` workspace's `[tool.uv.workspace] exclude`
+    /// entry must be honored by discovery, matching the Cargo/npm branches'
+    /// own membership filtering -- a Python package under an excluded path
+    /// must not be admitted as a release-managed package.
+    #[test]
+    fn ignore_walk_locator_honors_python_workspace_exclude() {
+        let tmp = tempdir().unwrap();
+        let root = tmp.path();
+        fs::write(
+            root.join("pyproject.toml"),
+            "[project]\nname = \"root-pkg\"\nversion = \"0.1.0\"\n\n[tool.uv.workspace]\nmembers = [\"packages/*\"]\nexclude = [\"packages/examples/demo\"]\n",
+        )
+        .unwrap();
+        fs::create_dir_all(root.join("packages/examples/demo")).unwrap();
+        fs::write(
+            root.join("packages/examples/demo/pyproject.toml"),
+            "[project]\nname = \"demo\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+        fs::create_dir_all(root.join("packages/kept")).unwrap();
+        fs::write(
+            root.join("packages/kept/pyproject.toml"),
+            "[project]\nname = \"kept\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+
+        let locator = IgnoreWalkLocator::new(root);
+        let projects = locator.projects().unwrap();
+
+        assert!(
+            !projects
+                .iter()
+                .any(|p| p.path == Path::new("packages/examples/demo")),
+            "excluded Python package must not be discovered, got: {projects:?}"
+        );
+        assert!(
+            projects
+                .iter()
+                .any(|p| p.path == Path::new("packages/kept")),
+            "non-excluded Python package must still be discovered, got: {projects:?}"
         );
     }
 
