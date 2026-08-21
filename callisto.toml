@@ -1,5 +1,20 @@
 # callisto configuration
 
+[[fixed-group]]
+name = "workspace"
+members = [
+    "callisto-model",
+    "callisto-format",
+    "callisto-conventional",
+    "callisto-changelog",
+    "callisto-manifests",
+    "callisto-vcs",
+    "callisto-graph",
+    "callisto-cli",
+    "callisto-moon",
+    "callisto-fixtures",
+]
+
 [changesets]
 dir = ".changeset"
 

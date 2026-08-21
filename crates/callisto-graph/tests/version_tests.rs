@@ -26,6 +26,27 @@ impl CommandRunner for NoopRunner {
     }
 }
 
+fn tag(root: &Path, name: &str) {
+    std::process::Command::new("git")
+        .args(["-c", "tag.gpgSign=false", "tag", "-m", "release", name])
+        .current_dir(root)
+        .output()
+        .expect("git must be installed");
+}
+
+fn commit_all(root: &Path, message: &str) {
+    std::process::Command::new("git")
+        .args(["add", "."])
+        .current_dir(root)
+        .output()
+        .expect("git add");
+    std::process::Command::new("git")
+        .args(["commit", "-q", "-m", message])
+        .current_dir(root)
+        .output()
+        .expect("git commit");
+}
+
 fn git_init_with_commit(root: &Path) {
     for args in [
         vec!["init", "-q"],
@@ -234,5 +255,90 @@ fn apply_version_plan_succeeds_for_dual_identity_cross_ecosystem_rewrite_ac006()
     assert!(
         !dep_app_manifest.contains("\"^1.0.0\""),
         "dep-app's dependency spec on my-native-lib must have been rewritten away from the now out-of-range \"^1.0.0\"; got:\n{dep_app_manifest}"
+    );
+}
+
+/// A fixed group with two members, each named by its OWN, separate changeset
+/// (pkg-a: minor via one changeset, pkg-b: minor via a different changeset --
+/// mirroring a real multi-package release PR) must converge on exactly ONE
+/// group-aligned bump matching the max severity across the whole group, not
+/// a compounded/sequential bump. Both members start at 1.0.0; the expected
+/// target is 1.1.0 (one minor step) for BOTH -- never 1.2.0 (which would
+/// indicate the two changesets' minor severities were incorrectly applied
+/// as two separate bumps instead of being unioned to one).
+#[test]
+fn test_fixed_group_two_changesets_converge_on_single_bump_not_compounded() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    git_init_with_commit(root);
+
+    fs::create_dir_all(root.join("pkg-a")).unwrap();
+    fs::write(
+        root.join("pkg-a/Cargo.toml"),
+        "[package]\nname = \"pkg-a\"\nversion = \"1.0.0\"\n",
+    )
+    .unwrap();
+    fs::create_dir_all(root.join("pkg-b")).unwrap();
+    fs::write(
+        root.join("pkg-b/Cargo.toml"),
+        "[package]\nname = \"pkg-b\"\nversion = \"1.0.0\"\n",
+    )
+    .unwrap();
+
+    fs::write(
+        root.join("callisto.toml"),
+        "[[fixed-group]]\nname = \"ab-fixed\"\nmembers = [\"pkg-a\", \"pkg-b\"]\n",
+    )
+    .unwrap();
+
+    fs::create_dir_all(root.join(".changeset")).unwrap();
+    fs::write(
+        root.join(".changeset/a-minor.md"),
+        "---\n\"pkg-a\": minor\n---\n\nFeature in pkg-a.\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join(".changeset/b-minor.md"),
+        "---\n\"pkg-b\": minor\n---\n\nFeature in pkg-b.\n",
+    )
+    .unwrap();
+
+    commit_all(root, "add packages");
+    tag(root, "pkg-a@1.0.0");
+    tag(root, "pkg-b@1.0.0");
+
+    let locator = IgnoreWalkLocator::new(root);
+    let runner = NoopRunner;
+    let ws = Workspace::load(root.to_path_buf(), &locator, &runner)
+        .expect("workspace should load from temp dir");
+
+    let inference = NoInference;
+    let opts = VersionOptions {
+        strict: false,
+        strict_graph: false,
+        allow_empty_changesets: true,
+    };
+
+    let plan = plan_version(&ws, &inference, &opts).expect("plan_version should succeed");
+
+    let pkg_a = PackageId::parse("pkg-a").unwrap();
+    let pkg_b = PackageId::parse("pkg-b").unwrap();
+    let bump_for = |id: &PackageId| plan.bumps.iter().find(|b| &b.package == id);
+
+    let a_bump = bump_for(&pkg_a).expect("pkg-a should have a planned bump");
+    let b_bump = bump_for(&pkg_b).expect("pkg-b should have a planned bump");
+
+    assert_eq!(
+        a_bump.to.render(),
+        "1.1.0",
+        "pkg-a must land on a single minor step (1.1.0), not a compounded bump; got: {}",
+        a_bump.to.render()
+    );
+    assert_eq!(
+        b_bump.to.render(),
+        "1.1.0",
+        "pkg-b must converge on the SAME single-step target as pkg-a (1.1.0), not its own \
+         independently-bumped or compounded value; got: {}",
+        b_bump.to.render()
     );
 }
