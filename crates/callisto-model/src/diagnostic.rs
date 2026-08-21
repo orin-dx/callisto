@@ -173,6 +173,10 @@ pub enum DiagnosticCode {
     /// not exist" (that case is `ChangelogSectionNotFound` instead). `changelog_section` is
     /// left `None` for the package; `plan_publish` is not aborted.
     ChangelogReadError,
+    /// A changeset entry names a bare (unprefixed) package name that matches two or more
+    /// packages across different ecosystems (e.g. `cargo/foo` and `npm/foo`) -- the entry
+    /// cannot be resolved to a single target without an ecosystem prefix.
+    AmbiguousPackageName,
 }
 
 #[cfg(test)]
