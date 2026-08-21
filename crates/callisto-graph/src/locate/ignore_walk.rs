@@ -45,6 +45,10 @@ impl ProjectLocator for IgnoreWalkLocator {
             .git_ignore(true)
             .parents(false)
             .max_depth(Some(32))
+            // Symlinked package directories (e.g. vendor-link style monorepos) are a
+            // supported workspace pattern -- discovery follows them deliberately. The
+            // existing max_depth(32) cap already bounds a symlink cycle from hanging.
+            .follow_links(true)
             .filter_entry({
                 let skip = self.skip.clone();
                 move |entry| {
@@ -202,6 +206,39 @@ mod tests {
         assert!(
             projects.is_empty(),
             "no projects should be found beyond 32 levels deep, found: {projects:?}"
+        );
+    }
+
+    /// Spec: symlinked directories are a deliberately supported workspace
+    /// pattern (vendor-link style monorepos). `IgnoreWalkLocator` must
+    /// traverse *into* a symlinked directory and discover a package nested
+    /// below its top level, not just a manifest sitting directly at the
+    /// symlink's root -- proving `follow_links(true)` is really wired in,
+    /// not just tolerated by an incidental `is_dir()` resolution.
+    #[test]
+    fn ignore_walk_locator_discovers_package_nested_inside_a_symlinked_directory() {
+        let root = tempdir().unwrap();
+        let external = tempdir().unwrap();
+
+        let nested = external.path().join("nested-pkg");
+        fs::create_dir_all(&nested).unwrap();
+        fs::write(
+            nested.join("Cargo.toml"),
+            "[package]\nname = \"linked-nested-pkg\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+
+        std::os::unix::fs::symlink(external.path(), root.path().join("vendor-link"))
+            .expect("failed to create symlink for test fixture");
+
+        let locator = IgnoreWalkLocator::new(root.path());
+        let projects = locator.projects().unwrap();
+
+        assert!(
+            projects
+                .iter()
+                .any(|p| p.id == PackageId::Bare("linked-nested-pkg".to_string())),
+            "expected linked-nested-pkg discovered through the symlinked directory, got: {projects:?}"
         );
     }
 
