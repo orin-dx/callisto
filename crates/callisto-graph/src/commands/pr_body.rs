@@ -172,59 +172,76 @@ pub fn render_pr_body_from_plan(
             bump.to.render()
         ));
 
-        if let Some(ref reason) = bump.reason {
-            body.push_str("#### Release Reason\n");
-            match reason {
-                callisto_model::BumpReason::Changeset { changesets } => {
-                    body.push_str(&format!(
-                        "- Associated changesets: `{}`\n\n",
-                        changesets.join("`, `")
-                    ));
-                }
-                callisto_model::BumpReason::Cascade {
-                    via,
-                    spec,
-                    dependency_to,
-                    ..
-                } => {
-                    body.push_str(&format!(
-                        "- Automatic dependency cascade triggered by `{}` (spec `{}` target `{}`).\n\n",
-                        via.display_name(),
+        let matching_write = plan
+            .changelog_writes
+            .iter()
+            .find(|w| w.input.package == bump.package);
+
+        let mut rendered = false;
+        if let Some(w) = matching_write {
+            if let Ok(section) = callisto_changelog::render_section(&w.input) {
+                body.push_str("#### Release Reason\n");
+                body.push_str(&section);
+                body.push('\n');
+                rendered = true;
+            }
+        }
+
+        if !rendered {
+            if let Some(ref reason) = bump.reason {
+                body.push_str("#### Release Reason\n");
+                match reason {
+                    callisto_model::BumpReason::Changeset { changesets } => {
+                        body.push_str(&format!(
+                            "- Associated changesets: `{}`\n\n",
+                            changesets.join("`, `")
+                        ));
+                    }
+                    callisto_model::BumpReason::Cascade {
+                        via,
                         spec,
-                        dependency_to.render()
-                    ));
+                        dependency_to,
+                        ..
+                    } => {
+                        body.push_str(&format!(
+                            "- Automatic dependency cascade triggered by `{}` (spec `{}` target `{}`).\n\n",
+                            via.display_name(),
+                            spec,
+                            dependency_to.render()
+                        ));
+                    }
+                    callisto_model::BumpReason::PeerEscalation { via, spec } => {
+                        body.push_str(&format!(
+                            "- Peer dependency escalation triggered by `{}` (spec `{}`).\n\n",
+                            via.display_name(),
+                            spec
+                        ));
+                    }
+                    callisto_model::BumpReason::FixedGroupUnion { group } => {
+                        body.push_str(&format!(
+                            "- Fixed group synchronization for group `{}`.\n\n",
+                            group.as_str()
+                        ));
+                    }
+                    callisto_model::BumpReason::LinkedGroupUnion { group } => {
+                        body.push_str(&format!(
+                            "- Linked group version alignment for group `{}`.\n\n",
+                            group.as_str()
+                        ));
+                    }
+                    callisto_model::BumpReason::Inference { commits, .. } => {
+                        body.push_str(&format!(
+                            "- Inferred from {commits} commit(s) since the last release.\n\n"
+                        ));
+                    }
+                    callisto_model::BumpReason::PreRelease { tag } => {
+                        body.push_str(&format!("- Pre-release finalization (tag `{tag}`).\n\n"));
+                    }
+                    callisto_model::BumpReason::NewGroupMember { group } => {
+                        body.push_str(&format!("- New member of group `{}`.\n\n", group.as_str()));
+                    }
+                    _ => {}
                 }
-                callisto_model::BumpReason::PeerEscalation { via, spec } => {
-                    body.push_str(&format!(
-                        "- Peer dependency escalation triggered by `{}` (spec `{}`).\n\n",
-                        via.display_name(),
-                        spec
-                    ));
-                }
-                callisto_model::BumpReason::FixedGroupUnion { group } => {
-                    body.push_str(&format!(
-                        "- Fixed group synchronization for group `{}`.\n\n",
-                        group.as_str()
-                    ));
-                }
-                callisto_model::BumpReason::LinkedGroupUnion { group } => {
-                    body.push_str(&format!(
-                        "- Linked group version alignment for group `{}`.\n\n",
-                        group.as_str()
-                    ));
-                }
-                callisto_model::BumpReason::Inference { commits, .. } => {
-                    body.push_str(&format!(
-                        "- Inferred from {commits} commit(s) since the last release.\n\n"
-                    ));
-                }
-                callisto_model::BumpReason::PreRelease { tag } => {
-                    body.push_str(&format!("- Pre-release finalization (tag `{tag}`).\n\n"));
-                }
-                callisto_model::BumpReason::NewGroupMember { group } => {
-                    body.push_str(&format!("- New member of group `{}`.\n\n", group.as_str()));
-                }
-                _ => {}
             }
         }
 
@@ -396,5 +413,68 @@ mod tests {
         });
         let report = render_pr_body_from_plan(&plan, &PrBodyOptions::default()).unwrap();
         assert_release_reason_has_content(&report.body);
+    }
+
+    #[test]
+    fn ac001_render_section_takes_priority_over_fallback_when_both_available() {
+        let pkg_a = PackageId::parse("pkg-a").unwrap();
+        let bump = PlannedBump {
+            package: pkg_a.clone(),
+            from: Version::semver(1, 0, 0),
+            to: Version::semver(1, 1, 0),
+            severity: Severity::Minor,
+            governed_by: None,
+            reason: Some(BumpReason::Cascade {
+                via: PackageId::parse("pkg-core").unwrap(),
+                dep_kind: callisto_model::DepKind::Runtime,
+                spec: "^1.0.0".to_string(),
+                dependency_to: Version::semver(2, 0, 0),
+            }),
+            writes: vec![],
+        };
+
+        let input = callisto_changelog::ChangelogInput {
+            package: pkg_a.clone(),
+            from: Version::semver(1, 0, 0),
+            to: Some(Version::semver(1, 1, 0)),
+            entries: vec![callisto_changelog::ChangelogEntry {
+                severity: Severity::Minor,
+                source: callisto_changelog::ChangeSource::Changeset {
+                    filename: "swift-foxes.md".to_string(),
+                    summary: "A real changeset summary.".to_string(),
+                },
+            }],
+        };
+        let expected_section = callisto_changelog::render_section(&input).unwrap();
+
+        let plan = VersionPlan {
+            bumps: vec![bump],
+            rewrites: vec![],
+            platform_writes: vec![],
+            optional_dep_updates: vec![],
+            changelog_writes: vec![crate::plan::ChangelogWrite {
+                changelog_path: std::path::PathBuf::from("CHANGELOG.md"),
+                input,
+            }],
+            consumed_changesets: vec![],
+            pre_state_update: None,
+            delete_pre_json: None,
+            pre_cursor_updates: vec![],
+            observed_versions: std::collections::BTreeMap::new(),
+            diagnostics: vec![],
+        };
+
+        let report = render_pr_body_from_plan(&plan, &PrBodyOptions::default()).unwrap();
+
+        assert!(
+            report.body.contains(&expected_section),
+            "body must contain render_section's verbatim output; body: {}",
+            report.body
+        );
+        assert!(
+            !report.body.contains("Automatic dependency cascade triggered by"),
+            "body must NOT contain the fallback Cascade text when render_section succeeded; body: {}",
+            report.body
+        );
     }
 }
