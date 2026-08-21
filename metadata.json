@@ -1,0 +1,45 @@
+{
+  "cli_version": "0.10.3-nightly.202608200613.91a7fd7fc",
+  "checkpoint_id": "01M0K7TNGP2CMTMP3RYR9JBCEK",
+  "strategy": "manual-commit",
+  "branch": "release-pipeline-and-matrix-hardening",
+  "checkpoints_count": 10,
+  "files_touched": [
+    ".changeset/callisto-matrix-command.md",
+    ".changeset/cascade-severity-fixes.md",
+    ".changeset/changelog-pr-body-rendering.md",
+    ".changeset/fixed-group-convergence.md",
+    ".changeset/git-layer-and-misc-fixes.md",
+    ".changeset/housekeeping.md",
+    ".changeset/identity-ecosystem-resolution.md",
+    ".changeset/manifest-write-batching.md",
+    ".changeset/platform-manifest-planning.md",
+    ".changeset/publish-target-registry-modeling.md",
+    ".changeset/release-pipeline-and-matrix-hardening.md",
+    ".changeset/release-pipeline-contract.md",
+    ".changeset/security-hardening.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 11040,
+    "cache_creation_tokens": 20519528,
+    "cache_read_tokens": 2740279420,
+    "output_tokens": 3531231,
+    "api_call_count": 5535,
+    "subagent_tokens": {
+      "input_tokens": 34,
+      "cache_creation_tokens": 23054,
+      "cache_read_tokens": 2614557,
+      "output_tokens": 5939,
+      "api_call_count": 17
+    }
+  }
+}
