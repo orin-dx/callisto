@@ -7801,3 +7801,32 @@ If this event is something the user would act on now, send a PushNotification. R
 <summary>Monitor event: "wait for clippy (b2dj9s4h4) to finish"</summary>
 <event>[Monitor timed out — re-arm if needed.]</event>
 </task-notification>
+
+---
+
+<task-notification>
+<task-id>b2dj9s4h4</task-id>
+<tool-use-id>toolu_01L1wi2z7MrSWe2Z1xB7xfzA</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/c0ad64b2-6440-4937-8328-8d9fd9db278c/tasks/b2dj9s4h4.output</output-file>
+<status>completed</status>
+<summary>Background command "cargo clippy -p callisto-graph --all-targets -- -D warnings 2&gt;&amp;1 | tail -40; echo "CLIPPY_EXIT=$?"" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bf9r93xcp</task-id>
+<summary>Monitor event: "wait for clippy compile (pid 48453) to finish"</summary>
+<event>DONE</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bf9r93xcp</task-id>
+<tool-use-id>toolu_01D9vEym9ysqWVppevBUtfvn</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/c0ad64b2-6440-4937-8328-8d9fd9db278c/tasks/bf9r93xcp.output</output-file>
+<status>completed</status>
+<summary>Monitor "wait for clippy compile (pid 48453) to finish" stream ended</summary>
+</task-notification>
