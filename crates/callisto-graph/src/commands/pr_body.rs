@@ -188,9 +188,9 @@ pub fn render_pr_body_from_plan(
         }
 
         if !rendered {
-            if let Some(ref reason) = bump.reason {
-                body.push_str("#### Release Reason\n");
-                match reason {
+            body.push_str("#### Release Reason\n");
+            match &bump.reason {
+                Some(reason) => match reason {
                     callisto_model::BumpReason::Changeset { changesets } => {
                         body.push_str(&format!(
                             "- Associated changesets: `{}`\n\n",
@@ -241,6 +241,9 @@ pub fn render_pr_body_from_plan(
                         body.push_str(&format!("- New member of group `{}`.\n\n", group.as_str()));
                     }
                     _ => {}
+                },
+                None => {
+                    body.push_str("_No changelog entries available._\n\n");
                 }
             }
         }
@@ -474,6 +477,189 @@ mod tests {
         assert!(
             !report.body.contains("Automatic dependency cascade triggered by"),
             "body must NOT contain the fallback Cascade text when render_section succeeded; body: {}",
+            report.body
+        );
+    }
+
+    #[test]
+    fn ac007_empty_entries_falls_back_and_other_package_renders_normally() {
+        let pkg_a = PackageId::parse("pkg-a").unwrap();
+        let pkg_b = PackageId::parse("pkg-b").unwrap();
+
+        let bump_a = PlannedBump {
+            package: pkg_a.clone(),
+            from: Version::semver(1, 0, 0),
+            to: Version::semver(1, 1, 0),
+            severity: Severity::Minor,
+            governed_by: None,
+            reason: Some(BumpReason::Cascade {
+                via: PackageId::parse("pkg-core").unwrap(),
+                dep_kind: callisto_model::DepKind::Runtime,
+                spec: "^1.0.0".to_string(),
+                dependency_to: Version::semver(2, 0, 0),
+            }),
+            writes: vec![],
+        };
+        let bump_b = PlannedBump {
+            package: pkg_b.clone(),
+            from: Version::semver(1, 0, 0),
+            to: Version::semver(1, 0, 1),
+            severity: Severity::Patch,
+            governed_by: None,
+            reason: Some(BumpReason::Changeset {
+                changesets: vec!["fix-1".to_string()],
+            }),
+            writes: vec![],
+        };
+
+        let good_input = callisto_changelog::ChangelogInput {
+            package: pkg_b.clone(),
+            from: Version::semver(1, 0, 0),
+            to: Some(Version::semver(1, 0, 1)),
+            entries: vec![callisto_changelog::ChangelogEntry {
+                severity: Severity::Patch,
+                source: callisto_changelog::ChangeSource::Changeset {
+                    filename: "fix-1.md".to_string(),
+                    summary: "A fix.".to_string(),
+                },
+            }],
+        };
+        let expected_section = callisto_changelog::render_section(&good_input).unwrap();
+
+        let plan = VersionPlan {
+            bumps: vec![bump_a, bump_b],
+            rewrites: vec![],
+            platform_writes: vec![],
+            optional_dep_updates: vec![],
+            changelog_writes: vec![
+                crate::plan::ChangelogWrite {
+                    changelog_path: std::path::PathBuf::from("CHANGELOG.md"),
+                    input: callisto_changelog::ChangelogInput {
+                        package: pkg_a.clone(),
+                        from: Version::semver(1, 0, 0),
+                        to: Some(Version::semver(1, 1, 0)),
+                        entries: vec![],
+                    },
+                },
+                crate::plan::ChangelogWrite {
+                    changelog_path: std::path::PathBuf::from("CHANGELOG.md"),
+                    input: good_input,
+                },
+            ],
+            consumed_changesets: vec![],
+            pre_state_update: None,
+            delete_pre_json: None,
+            pre_cursor_updates: vec![],
+            observed_versions: std::collections::BTreeMap::new(),
+            diagnostics: vec![],
+        };
+
+        let report = render_pr_body_from_plan(&plan, &PrBodyOptions::default()).unwrap();
+        assert!(
+            report.body.contains("Automatic dependency cascade triggered by"),
+            "pkg-a must use the AC-002 fallback text since its ChangelogWrite has empty entries; body: {}",
+            report.body
+        );
+        assert!(
+            report.body.contains(&expected_section),
+            "pkg-b must still render normally via render_section; body: {}",
+            report.body
+        );
+    }
+
+    #[test]
+    fn ac007_severity_none_entry_falls_back() {
+        let pkg_a = PackageId::parse("pkg-a").unwrap();
+        let bump_a = PlannedBump {
+            package: pkg_a.clone(),
+            from: Version::semver(1, 0, 0),
+            to: Version::semver(1, 1, 0),
+            severity: Severity::Minor,
+            governed_by: None,
+            reason: Some(BumpReason::Cascade {
+                via: PackageId::parse("pkg-core").unwrap(),
+                dep_kind: callisto_model::DepKind::Runtime,
+                spec: "^1.0.0".to_string(),
+                dependency_to: Version::semver(2, 0, 0),
+            }),
+            writes: vec![],
+        };
+        let plan = VersionPlan {
+            bumps: vec![bump_a],
+            rewrites: vec![],
+            platform_writes: vec![],
+            optional_dep_updates: vec![],
+            changelog_writes: vec![crate::plan::ChangelogWrite {
+                changelog_path: std::path::PathBuf::from("CHANGELOG.md"),
+                input: callisto_changelog::ChangelogInput {
+                    package: pkg_a.clone(),
+                    from: Version::semver(1, 0, 0),
+                    to: Some(Version::semver(1, 1, 0)),
+                    entries: vec![callisto_changelog::ChangelogEntry {
+                        severity: Severity::None,
+                        source: callisto_changelog::ChangeSource::Changeset {
+                            filename: "x.md".to_string(),
+                            summary: "whatever".to_string(),
+                        },
+                    }],
+                },
+            }],
+            consumed_changesets: vec![],
+            pre_state_update: None,
+            delete_pre_json: None,
+            pre_cursor_updates: vec![],
+            observed_versions: std::collections::BTreeMap::new(),
+            diagnostics: vec![],
+        };
+
+        let report = render_pr_body_from_plan(&plan, &PrBodyOptions::default()).unwrap();
+        assert!(
+            report
+                .body
+                .contains("Automatic dependency cascade triggered by"),
+            "body: {}",
+            report.body
+        );
+    }
+
+    #[test]
+    fn ac007_empty_entries_and_no_reason_uses_no_changelog_entries_literal() {
+        let pkg_a = PackageId::parse("pkg-a").unwrap();
+        let bump_a = PlannedBump {
+            package: pkg_a.clone(),
+            from: Version::semver(1, 0, 0),
+            to: Version::semver(1, 1, 0),
+            severity: Severity::Minor,
+            governed_by: None,
+            reason: None,
+            writes: vec![],
+        };
+        let plan = VersionPlan {
+            bumps: vec![bump_a],
+            rewrites: vec![],
+            platform_writes: vec![],
+            optional_dep_updates: vec![],
+            changelog_writes: vec![crate::plan::ChangelogWrite {
+                changelog_path: std::path::PathBuf::from("CHANGELOG.md"),
+                input: callisto_changelog::ChangelogInput {
+                    package: pkg_a.clone(),
+                    from: Version::semver(1, 0, 0),
+                    to: Some(Version::semver(1, 1, 0)),
+                    entries: vec![],
+                },
+            }],
+            consumed_changesets: vec![],
+            pre_state_update: None,
+            delete_pre_json: None,
+            pre_cursor_updates: vec![],
+            observed_versions: std::collections::BTreeMap::new(),
+            diagnostics: vec![],
+        };
+
+        let report = render_pr_body_from_plan(&plan, &PrBodyOptions::default()).unwrap();
+        assert!(
+            report.body.contains("_No changelog entries available._"),
+            "body: {}",
             report.body
         );
     }
