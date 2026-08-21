@@ -129,10 +129,11 @@ fn ac13_diagnostic_code_enum_gains_only_changelog_read_error() {
         "package-set-matched-nothing",
         "duplicate-platform-triple",
         "changelog-read-error",
+        "ambiguous-package-name",
     ]);
 
     assert_eq!(
         variants, expected,
-        "DiagnosticCode schema must gain exactly one new variant: changelog-read-error"
+        "DiagnosticCode schema must gain exactly one new variant: ambiguous-package-name"
     );
 }
