@@ -1,9 +1,9 @@
 ---
-callisto-model: major
-callisto-graph: major
-callisto-cli: major
-callisto-manifests: major
-callisto-conventional: major
+callisto-model: minor
+callisto-graph: minor
+callisto-cli: minor
+callisto-manifests: minor
+callisto-conventional: minor
 callisto-vcs: minor
 callisto-moon: patch
 callisto-changelog: patch
