@@ -97,11 +97,20 @@ impl GitDataSource for ShellGit<'_> {
     fn list_tags(&self, glob: Option<&str>) -> Result<Vec<TagName>, VcsError> {
         let output = self.runner.run("git", &["tag", "--list"], &self.root)?;
         if !output.success() {
-            return Err(VcsError::Git(format!(
-                "`git tag --list` failed in `{}`: {}",
-                self.root.display(),
-                redact_git_stderr(&output.stderr)
-            )));
+            // A directory with no `.git` anywhere in its ancestry is not a
+            // hard failure -- it's the normal shape of a brand-new/pre-git
+            // package, and callers (e.g. `status`) treat "no tags" as
+            // "unreleased" rather than aborting. Any OTHER failure (a
+            // corrupted or locked repository, a permissions error, ...)
+            // must still surface as a real error rather than silently
+            // becoming "zero tags".
+            if !output.stderr.contains("not a git repository") {
+                return Err(VcsError::Git(format!(
+                    "`git tag --list` failed in `{}`: {}",
+                    self.root.display(),
+                    redact_git_stderr(&output.stderr)
+                )));
+            }
         }
         let all = output.stdout_lines().map(|s| s.to_string());
 
@@ -357,10 +366,11 @@ mod tests {
         assert!(matches!(result, Err(VcsError::InvalidGlob { .. })));
     }
 
-    /// A failing `git tag --list` (e.g. a corrupted or locked repository)
-    /// must surface as `Err`, not be silently treated as "zero tags" --
-    /// every sibling method on this impl (`head_sha`, `resolve_commit`,
-    /// ...) already checks `output.success()` before trusting stdout.
+    /// A failing `git tag --list` for a reason OTHER than "no repository
+    /// here" (e.g. a corrupted or locked repository) must surface as
+    /// `Err`, not be silently treated as "zero tags" -- every sibling
+    /// method on this impl (`head_sha`, `resolve_commit`, ...) already
+    /// checks `output.success()` before trusting stdout.
     #[test]
     fn test_list_tags_errors_on_failed_git_invocation() {
         let runner = FakeRunner {
@@ -369,7 +379,9 @@ mod tests {
                 Ok(CommandOutput {
                     exit_code: Some(128),
                     stdout: String::new(),
-                    stderr: "fatal: not a git repository".to_string(),
+                    stderr:
+                        "fatal: unable to read current working directory: No such file or directory"
+                            .to_string(),
                 })
             }),
         };
@@ -378,8 +390,38 @@ mod tests {
         let result = git.list_tags(None);
 
         assert!(
-            matches!(result, Err(VcsError::Git(ref msg)) if msg.contains("not a git repository")),
+            matches!(result, Err(VcsError::Git(ref msg)) if msg.contains("unable to read current working directory")),
             "expected Err(VcsError::Git(..)) mentioning the failure, got: {result:?}"
+        );
+    }
+
+    /// A directory with no `.git` anywhere in its ancestry is not a hard
+    /// failure -- callers (e.g. `status` on a brand-new/pre-git package)
+    /// treat "no tags" as "unreleased" rather than aborting. This is the
+    /// one specific failure shape `list_tags` deliberately still tolerates
+    /// as `Ok(vec![])`, distinct from `test_list_tags_errors_on_failed_git_invocation`'s
+    /// genuine failure.
+    #[test]
+    fn test_list_tags_tolerates_missing_git_repository_as_empty() {
+        let runner = FakeRunner {
+            calls: Mutex::new(Vec::new()),
+            response: Box::new(|_args| {
+                Ok(CommandOutput {
+                    exit_code: Some(128),
+                    stdout: String::new(),
+                    stderr: "fatal: not a git repository (or any of the parent directories): .git"
+                        .to_string(),
+                })
+            }),
+        };
+        let git = ShellGit::new(&runner, PathBuf::from("."));
+
+        let result = git.list_tags(None);
+
+        assert_eq!(
+            result.unwrap(),
+            Vec::<TagName>::new(),
+            "a missing .git directory must resolve to Ok(vec![]), not Err"
         );
     }
 
