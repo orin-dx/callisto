@@ -9132,3 +9132,7 @@ If this event is something the user would act on now, send a PushNotification. R
 <status>completed</status>
 <summary>Monitor "PR #5 CI checks after changeset-split commit" stream ended</summary>
 </task-notification>
+
+---
+
+Yes please, do reformat
