@@ -1760,6 +1760,13 @@ pub struct ReleaseEntry {
     /// `DiagnosticCode::ChangelogSectionNotFound`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub changelog_section: Option<String>,
+    /// Whether this release's version is a prerelease, per `Version::is_prerelease()` (covers
+    /// both SemVer's `-` prerelease component and PEP 440's dev/pre-release segments). Computed
+    /// from the resolved `Version` at construction — never re-derived from the tag string, since
+    /// a tag template can render a prerelease version without any of the alpha/beta/rc/pre/next
+    /// substrings a naive tag-string regex would look for (§SPEC-005 AC-005). Always present;
+    /// there is no fallback value for a plan produced by a pre-this-field callisto binary.
+    pub is_prerelease: bool,
 }
 
 impl Report for PublishPlan { const COMMAND: &'static str = "plan-publish"; /* … */ }
@@ -2665,6 +2672,7 @@ Notes on three rows worth calling out:
 | 21 | §M.7.3 | Workspace inheritance is signalled by `DependencyEntry::inherited` (and carried onto `DepEdge::inherited`), not by a `DepSpec` variant or method. |
 | 22 | §M.2 | `PackageId::name()` is the identity's name component, explicitly **not** a publish-target name; plan entries source names from `IdentityIndex::native_name` because a Case D package can have two divergent native names. |
 | 23 | §M.12.2 | `ReleaseEntry.changelog_section` is `Option<String>`, produced by reading the written `CHANGELOG.md` back (§CL.7.1). |
+| 24 | §M.12.2 | `ReleaseEntry.is_prerelease` is a required `bool`, computed from `Version::is_prerelease()` at construction, never re-derived from the tag string (§SPEC-005). |
 
 ### M.17 Fixture obligations
 
