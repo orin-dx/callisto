@@ -1,0 +1,36 @@
+{
+  "cli_version": "0.10.3-nightly.202608210613.680d64782",
+  "checkpoint_id": "01M0KSSTSRV3QRM5CAWZNMN4R0",
+  "strategy": "manual-commit",
+  "branch": "flatten-changelog-severity-grouping",
+  "checkpoints_count": 25,
+  "files_touched": [
+    "crates/callisto-changelog/src/group.rs",
+    "crates/callisto-changelog/src/lib.rs",
+    "crates/callisto-changelog/src/render.rs",
+    "docs/01-spec.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 11364,
+    "cache_creation_tokens": 21042702,
+    "cache_read_tokens": 2789849053,
+    "output_tokens": 3605237,
+    "api_call_count": 5697,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  }
+}
