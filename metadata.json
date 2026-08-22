@@ -1,0 +1,34 @@
+{
+  "cli_version": "0.10.3-nightly.202608220610.6bf587d66",
+  "checkpoint_id": "01M0NCTYNW86MKYDXT9T57314J",
+  "strategy": "manual-commit",
+  "branch": "docs-cleanup-agents-readme",
+  "checkpoints_count": 4,
+  "files_touched": [
+    "AGENTS.md",
+    "README.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 11610,
+    "cache_creation_tokens": 21637388,
+    "cache_read_tokens": 2851756478,
+    "output_tokens": 3710005,
+    "api_call_count": 5820,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  }
+}
