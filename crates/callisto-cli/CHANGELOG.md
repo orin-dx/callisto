@@ -1,5 +1,29 @@
 # callisto-cli
 
+## 0.4.0
+
+- **New `callisto matrix` command**
+  
+  - Discovers napi and maturin platform targets from `package.json`/`pyproject.toml`.
+  - Builds a per-triple CI table: host runner, cross-compile flag, artifact name.
+  - Reports `engines.node`/`requires-python` versions.
+- **Release-pipeline / CI Action contract correctness**
+  
+  - **Breaking:** several `--format json` field names changed or were added (`validate`, `compose-pr-body`, `tag`, `status`, `plan-publish`) — update any scripts parsing this output.
+  - Re-tagging a release that already exists no longer reports the wrong commit sha.
+  - The official GitHub Action now actually opens a release PR when changesets are pending — a bug made this step unreachable before.
+  - GitHub Releases are now correctly marked prerelease for PEP 440 versions too (e.g. `1.2.3a1`), not just SemVer's `-` syntax.
+  - Release notes now include the real changelog section instead of nothing.
+- **Security hardening across publish, git, and subprocess handling**
+  
+  - **Breaking:** a package name starting with `-` is now reported as its own error, instead of being misreported as a path-traversal error.
+  - A malicious package name can no longer inject extra flags into the underlying `cargo publish`/`npm publish`/`pypi publish` command.
+  - A malicious `publishConfig.registry` URL can no longer redirect an npm publish to an unapproved registry.
+  - An absolute or `..`-containing `changesets.dir`/changelog path in `callisto.toml` is now rejected instead of allowing writes outside the workspace.
+  - Credentials no longer leak into error messages from failed git or registry-CLI commands.
+  - A runaway subprocess can no longer exhaust memory via unbounded output capture, or hang a command indefinitely.
+  - A tag name starting with `-` is now rejected, closing a git argument-injection hole.
+
 ## 0.3.3
 
 ### Patch Changes
