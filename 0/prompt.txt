@@ -9505,3 +9505,7 @@ Should we change to 120 and turn on wrap comments? Or is that bad best practice?
 ---
 
 Ok, let's do that and run across the entire codebase
+
+---
+
+Is it done building? Can we do a round of eval and cleanup of our docs to match the guidelines we just set?
