@@ -7,25 +7,21 @@ use crate::ModelError;
 
 /// Normalizes a path to be workspace-root-relative and UTF-8.
 ///
-/// Rejects absolute paths and non-UTF-8 paths, and normalizes `.` and `..` components
-/// lexically (without accessing the filesystem).
+/// Rejects absolute and non-UTF-8 paths; normalizes `.`/`..` lexically (no
+/// filesystem access).
 ///
-/// Separator normalization is platform-native, via `path_slash::PathExt::to_slash`: on
-/// Windows, `\` (the native separator) is converted to `/`; on POSIX, `/` is already
-/// native, so a literal `\` in a real filename is preserved as-is rather than being
-/// mistaken for a separator and corrupting the path. The previous unconditional
-/// `.replace('\\', "/")` treated `\` as a separator on every platform, which was
-/// byte-incorrect on POSIX (where `\` is a legal filename character).
+/// Separator normalization is platform-native via `path_slash::PathExt::to_slash`:
+/// `\` -> `/` on Windows; on POSIX, `\` is a legal filename character and is
+/// left as-is, not treated as a separator.
 ///
-/// **Caveat for callers parsing a user-authored config string** (as opposed to a path this
-/// process discovered on its own local filesystem): "platform-native" means the platform
-/// *running this call*, not the platform the string was *written* on. `callisto.toml` is
-/// checked into version control and read on whatever OS a given developer or CI runner
-/// happens to be using, so a `\`-separated value authored on Windows normalizes correctly
-/// there but is read back as one literal, oddly-named path component the moment the same
-/// file is read on POSIX. Callers taking a config value (e.g. `[changesets].dir`,
-/// `[[package]] changelog`) must document that the value should always use `/`, regardless
-/// of authoring platform — this function does not and cannot enforce that on their behalf.
+/// **Caveat for a user-authored config string** (vs. a path this process
+/// discovered locally): "platform-native" means the platform *running this
+/// call*, not the platform the string was *written* on. A `\`-separated
+/// `callisto.toml` value authored on Windows reads back as one literal,
+/// oddly-named path component on POSIX. Callers taking a config value
+/// (`[changesets].dir`, `[[package]] changelog`) must document that the
+/// value should always use `/` regardless of authoring platform -- this
+/// function can't enforce that for them.
 pub fn workspace_relative(path: impl AsRef<Path>) -> Result<PathBuf, ModelError> {
     let p = path.as_ref();
     if p.is_absolute() {

@@ -313,30 +313,19 @@ impl GitRepository {
         }
     }
 
-    /// Like [`Self::commits_since`], but additionally filters the walked
-    /// commits down to those that touched at least one path under one of
-    /// the given `pathspecs`.
+    /// Like [`Self::commits_since`], but filters to commits touching at
+    /// least one path under one of `pathspecs`.
     ///
-    /// `pathspecs` are matched as simple path prefixes against every path
-    /// touched by a commit's tree diff against its (first) parent -- a
-    /// pathspec matches a changed path if the changed path is exactly equal
-    /// to it, or the changed path is nested underneath it as a directory
-    /// prefix. This mirrors the directory/path-prefix scoping `git log --
-    /// <pathspecs>` provides for per-package commit filtering; it does not
-    /// implement full git pathspec magic syntax (`:!`, glob magic, etc).
+    /// `pathspecs` match as directory/path prefixes against a commit's tree
+    /// diff vs. its first parent -- mirrors `git log -- <pathspecs>`'s
+    /// scoping, not full git pathspec magic (`:!`, globs, etc). Empty
+    /// `pathspecs` disables filtering (all commits, like `git log` with no
+    /// trailing `--`).
     ///
-    /// An empty `pathspecs` slice disables filtering entirely and returns
-    /// every commit in the walk, matching `git log` with no trailing `--`
-    /// pathspec.
-    ///
-    /// `since` is an exclusive lower bound, same as `commits_since`'s
-    /// `from_ref`: the commit `since` points at is not itself included in
-    /// the result.
-    ///
-    /// Merge commits (more than one parent) are skipped, matching `git log
-    /// --no-merges` -- this method exists to power per-package commit
-    /// scoping for severity inference, where a merge commit's message
-    /// duplicates work already represented by its non-merge ancestors.
+    /// `since` is exclusive, same as `commits_since`. Merge commits are
+    /// skipped (`--no-merges`), since a merge's message duplicates work its
+    /// non-merge ancestors already represent -- this powers per-package
+    /// commit scoping for severity inference.
     pub fn commits_since_with_pathspec(
         &self,
         since: Option<&CommitSha>,
