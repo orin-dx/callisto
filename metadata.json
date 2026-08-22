@@ -1,0 +1,40 @@
+{
+  "cli_version": "0.10.3-nightly.202608220610.6bf587d66",
+  "checkpoint_id": "01M0NRBZAC01VXZ32FQ5R6WGB7",
+  "strategy": "manual-commit",
+  "branch": "docs-cleanup-rust-comments",
+  "checkpoints_count": 10,
+  "files_touched": [
+    "Cargo.lock",
+    "crates/callisto-graph/src/commands/publish.rs",
+    "crates/callisto-graph/src/commands/version.rs",
+    "crates/callisto-model/src/exec.rs",
+    "crates/callisto-model/src/identity.rs",
+    "crates/callisto-model/src/path.rs",
+    "crates/callisto-vcs/src/access.rs",
+    "crates/callisto-vcs/src/lib.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 11694,
+    "cache_creation_tokens": 22310903,
+    "cache_read_tokens": 2876884036,
+    "output_tokens": 3731439,
+    "api_call_count": 5862,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  }
+}
