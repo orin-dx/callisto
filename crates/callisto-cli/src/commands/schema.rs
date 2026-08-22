@@ -2,8 +2,7 @@ use std::process::ExitCode;
 
 use callisto_format::{Changeset, PreState};
 use callisto_model::{
-    InitReport, MatrixReport, PublishPlan, SnapshotReport, StatusReport, TagReport, ValidateReport,
-    VersionReport,
+    InitReport, MatrixReport, PublishPlan, SnapshotReport, StatusReport, TagReport, ValidateReport, VersionReport,
 };
 use schemars::schema_for;
 

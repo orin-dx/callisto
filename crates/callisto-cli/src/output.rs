@@ -12,10 +12,7 @@ pub fn write_json<W: io::Write, S: Serialize + ?Sized>(w: &mut W, val: &S) -> io
 /// Serializes a `Report` value to JSON, injecting a `"command"` discriminator
 /// field so consumers can distinguish report types (e.g. `"plan-publish"` vs
 /// `"publish"`) without inspecting payload structure.
-pub fn write_report_json<W: io::Write, R: callisto_model::Report>(
-    w: &mut W,
-    val: &R,
-) -> io::Result<()> {
+pub fn write_report_json<W: io::Write, R: callisto_model::Report>(w: &mut W, val: &R) -> io::Result<()> {
     #[derive(Serialize)]
     struct WithCommand<'a, T: Serialize> {
         command: &'static str,

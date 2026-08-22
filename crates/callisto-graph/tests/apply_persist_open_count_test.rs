@@ -10,20 +10,15 @@ use callisto_graph::apply::{apply_version_plan, ApplyOptions};
 use callisto_graph::cascade::{DepWriteTarget, RewriteKey, SpecRewrite};
 use callisto_graph::plan::{PlannedBump, VersionPlan, VersionWriteTarget};
 use callisto_model::{
-    ApplyPermit, CommandError, CommandOutput, CommandRunner, DepKind, DepSpec, Ecosystem,
-    PackageId, Severity, Version, VersionGrammar, VersionReq,
+    ApplyPermit, CommandError, CommandOutput, CommandRunner, DepKind, DepSpec, Ecosystem, PackageId, Severity, Version,
+    VersionGrammar, VersionReq,
 };
 use serial_test::serial;
 
 struct NoopRunner;
 
 impl CommandRunner for NoopRunner {
-    fn run(
-        &self,
-        _program: &str,
-        _args: &[&str],
-        _cwd: &std::path::Path,
-    ) -> Result<CommandOutput, CommandError> {
+    fn run(&self, _program: &str, _args: &[&str], _cwd: &std::path::Path) -> Result<CommandOutput, CommandError> {
         Ok(CommandOutput {
             exit_code: Some(0),
             stdout: String::new(),
@@ -88,10 +83,7 @@ fn apply_version_plan_opens_each_distinct_manifest_path_exactly_once() {
 
     callisto_manifests::reset_open_call_count();
     let result = apply_version_plan(root, &plan, &NoopRunner, &opts, &permit);
-    assert!(
-        result.is_ok(),
-        "apply_version_plan should succeed: {result:?}"
-    );
+    assert!(result.is_ok(), "apply_version_plan should succeed: {result:?}");
 
     assert_eq!(
         callisto_manifests::open_call_count(),
@@ -147,8 +139,8 @@ fn apply_version_plan_batches_open_persist_and_dedupes_staged_for_shared_path() 
 
     callisto_manifests::reset_open_call_count();
     callisto_manifests::reset_persist_call_count();
-    let outcome = apply_version_plan(root, &plan, &NoopRunner, &opts, &permit)
-        .expect("apply_version_plan should succeed");
+    let outcome =
+        apply_version_plan(root, &plan, &NoopRunner, &opts, &permit).expect("apply_version_plan should succeed");
 
     assert_eq!(
         callisto_manifests::open_call_count(),
@@ -161,11 +153,7 @@ fn apply_version_plan_batches_open_persist_and_dedupes_staged_for_shared_path() 
         "N=2 Manifest-trait entries sharing one path must persist that path exactly once, not N times"
     );
     assert_eq!(
-        outcome
-            .staged
-            .iter()
-            .filter(|p| **p == manifest_rel)
-            .count(),
+        outcome.staged.iter().filter(|p| **p == manifest_rel).count(),
         1,
         "the shared path must appear in staged exactly once, not N times; staged: {:?}",
         outcome.staged
@@ -244,10 +232,7 @@ fn mixed_routing_root_cargo_toml_excludes_plain_dependencies_from_batching() {
     let opts = ApplyOptions::default();
     callisto_manifests::reset_open_call_count();
     let result = apply_version_plan(root, &plan, &NoopRunner, &opts, &permit);
-    assert!(
-        result.is_ok(),
-        "apply_version_plan should succeed: {result:?}"
-    );
+    assert!(result.is_ok(), "apply_version_plan should succeed: {result:?}");
 
     assert_eq!(
         callisto_manifests::open_call_count(),
@@ -318,10 +303,7 @@ fn batched_group_skipped_bump_still_increments_persist_call_count_by_one() {
     let opts = ApplyOptions::default();
     callisto_manifests::reset_persist_call_count();
     let result = apply_version_plan(root, &plan, &NoopRunner, &opts, &permit);
-    assert!(
-        result.is_ok(),
-        "apply_version_plan should succeed: {result:?}"
-    );
+    assert!(result.is_ok(), "apply_version_plan should succeed: {result:?}");
 
     assert_eq!(
         callisto_manifests::persist_call_count(),

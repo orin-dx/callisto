@@ -20,12 +20,7 @@ use callisto_model::{CommandError, CommandOutput, CommandRunner, DiagnosticCode}
 struct NoopRunner;
 
 impl CommandRunner for NoopRunner {
-    fn run(
-        &self,
-        _program: &str,
-        _args: &[&str],
-        _cwd: &Path,
-    ) -> Result<CommandOutput, CommandError> {
+    fn run(&self, _program: &str, _args: &[&str], _cwd: &Path) -> Result<CommandOutput, CommandError> {
         Ok(CommandOutput {
             exit_code: Some(0),
             stdout: String::new(),
@@ -67,8 +62,7 @@ fn ecosystem_prefixed_package_set_matching_nothing_emits_diagnostic() {
 
     let locator = IgnoreWalkLocator::new(root);
     let runner = NoopRunner;
-    let ws = Workspace::load(root.to_path_buf(), &locator, &runner)
-        .expect("workspace should load without error");
+    let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace should load without error");
 
     let matching: Vec<_> = ws
         .graph
@@ -122,8 +116,7 @@ fn ecosystem_prefixed_package_set_matching_real_package_applies_and_is_silent() 
 
     let locator = IgnoreWalkLocator::new(root);
     let runner = NoopRunner;
-    let ws = Workspace::load(root.to_path_buf(), &locator, &runner)
-        .expect("workspace should load without error");
+    let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace should load without error");
 
     let matching: Vec<_> = ws
         .graph

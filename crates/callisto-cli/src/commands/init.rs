@@ -18,10 +18,7 @@ pub fn handle(args: InitArgs, global: &GlobalArgs) -> Result<ExitCode, CliError>
 
     if !args.yes && tty::is_interactive() {
         let confirm = Confirm::new()
-            .with_prompt(format!(
-                "Initialize Callisto configuration in `{}`?",
-                ws.root.display()
-            ))
+            .with_prompt(format!("Initialize Callisto configuration in `{}`?", ws.root.display()))
             .default(true)
             .interact()
             .map_err(|e| CliError::Other(format!("Interactive prompt failed: {e}")))?;

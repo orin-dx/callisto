@@ -37,11 +37,7 @@ mod tests {
     fn handle_empty_workspace_succeeds() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
-        std::fs::write(
-            root.join("Cargo.toml"),
-            "[workspace]\nmembers = []\nresolver = \"2\"\n",
-        )
-        .unwrap();
+        std::fs::write(root.join("Cargo.toml"), "[workspace]\nmembers = []\nresolver = \"2\"\n").unwrap();
         std::fs::write(root.join("callisto.toml"), "").unwrap();
 
         let global = crate::cli::GlobalArgs {

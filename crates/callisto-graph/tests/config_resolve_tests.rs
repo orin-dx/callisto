@@ -14,12 +14,7 @@ use callisto_model::{CommandError, CommandOutput, CommandRunner};
 struct NoopRunner;
 
 impl CommandRunner for NoopRunner {
-    fn run(
-        &self,
-        _program: &str,
-        _args: &[&str],
-        _cwd: &Path,
-    ) -> Result<CommandOutput, CommandError> {
+    fn run(&self, _program: &str, _args: &[&str], _cwd: &Path) -> Result<CommandOutput, CommandError> {
         Ok(CommandOutput {
             exit_code: Some(0),
             stdout: String::new(),
@@ -149,12 +144,8 @@ members = ["cargo:my-lib"]
             assert!(names.contains(&"group-a".to_string()));
             assert!(names.contains(&"group-b".to_string()));
         }
-        Err(other) => panic!(
-            "expected Err(ConflictingGroupMembership) naming group-a and group-b, got Err({other:?})"
-        ),
-        Ok(_) => panic!(
-            "expected Err(ConflictingGroupMembership) naming group-a and group-b, got Ok(_)"
-        ),
+        Err(other) => panic!("expected Err(ConflictingGroupMembership) naming group-a and group-b, got Err({other:?})"),
+        Ok(_) => panic!("expected Err(ConflictingGroupMembership) naming group-a and group-b, got Ok(_)"),
     }
 }
 
@@ -192,12 +183,10 @@ members = ["cargo:my-lib"]
             assert!(names.contains(&"fixed-a".to_string()));
             assert!(names.contains(&"linked-b".to_string()));
         }
-        Err(other) => panic!(
-            "expected Err(ConflictingGroupMembership) naming fixed-a and linked-b, got Err({other:?})"
-        ),
-        Ok(_) => panic!(
-            "expected Err(ConflictingGroupMembership) naming fixed-a and linked-b, got Ok(_)"
-        ),
+        Err(other) => {
+            panic!("expected Err(ConflictingGroupMembership) naming fixed-a and linked-b, got Err({other:?})")
+        }
+        Ok(_) => panic!("expected Err(ConflictingGroupMembership) naming fixed-a and linked-b, got Ok(_)"),
     }
 }
 
@@ -227,8 +216,8 @@ members = ["beta"]
 
     let runner = NoopRunner;
     let locator = IgnoreWalkLocator::new(root);
-    let ws = Workspace::load(root.to_path_buf(), &locator, &runner)
-        .expect("non-conflicting group config must resolve Ok");
+    let ws =
+        Workspace::load(root.to_path_buf(), &locator, &runner).expect("non-conflicting group config must resolve Ok");
 
     assert!(ws
         .config

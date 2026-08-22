@@ -23,10 +23,7 @@ impl IgnoreWalkLocator {
         skip.insert("dist");
 
         let canonical = dunce::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
-        IgnoreWalkLocator {
-            root: canonical,
-            skip,
-        }
+        IgnoreWalkLocator { root: canonical, skip }
     }
 
     pub fn discover(start: &Path) -> Result<Self, LocateError> {
@@ -79,16 +76,13 @@ impl ProjectLocator for IgnoreWalkLocator {
                 if let Ok(content) = fs::read_to_string(&cargo_toml) {
                     if content.contains("[package]") {
                         if let Ok(doc) = content.parse::<toml_edit::DocumentMut>() {
-                            if let Some(name) = doc
-                                .get("package")
-                                .and_then(|p| p.get("name"))
-                                .and_then(|n| n.as_str())
+                            if let Some(name) = doc.get("package").and_then(|p| p.get("name")).and_then(|n| n.as_str())
                             {
                                 let rel = to_workspace_relative(path, &self.root)?;
                                 let is_root = rel == Path::new(".");
                                 if cargo_membership.admits(&rel, is_root) {
-                                    let id = PackageId::parse(name)
-                                        .unwrap_or_else(|_| PackageId::Bare(name.to_string()));
+                                    let id =
+                                        PackageId::parse(name).unwrap_or_else(|_| PackageId::Bare(name.to_string()));
                                     results.push(ProjectRoot {
                                         id,
                                         path: rel,
@@ -109,8 +103,7 @@ impl ProjectLocator for IgnoreWalkLocator {
                             let rel = to_workspace_relative(path, &self.root)?;
                             let is_root = rel == Path::new(".");
                             if npm_membership.admits(&rel, is_root) {
-                                let id = PackageId::parse(name)
-                                    .unwrap_or_else(|_| PackageId::Bare(name.to_string()));
+                                let id = PackageId::parse(name).unwrap_or_else(|_| PackageId::Bare(name.to_string()));
                                 results.push(ProjectRoot {
                                     id,
                                     path: rel,
@@ -140,8 +133,7 @@ impl ProjectLocator for IgnoreWalkLocator {
                             let rel = to_workspace_relative(path, &self.root)?;
                             let is_root = rel == Path::new(".");
                             if python_membership.admits(&rel, is_root) {
-                                let id = PackageId::parse(n)
-                                    .unwrap_or_else(|_| PackageId::Bare(n.to_string()));
+                                let id = PackageId::parse(n).unwrap_or_else(|_| PackageId::Bare(n.to_string()));
                                 results.push(ProjectRoot {
                                     id,
                                     path: rel,
@@ -276,15 +268,11 @@ mod tests {
         let projects = locator.projects().unwrap();
 
         assert!(
-            !projects
-                .iter()
-                .any(|p| p.path == Path::new("packages/examples/demo")),
+            !projects.iter().any(|p| p.path == Path::new("packages/examples/demo")),
             "excluded Python package must not be discovered, got: {projects:?}"
         );
         assert!(
-            projects
-                .iter()
-                .any(|p| p.path == Path::new("packages/kept")),
+            projects.iter().any(|p| p.path == Path::new("packages/kept")),
             "non-excluded Python package must still be discovered, got: {projects:?}"
         );
     }
@@ -330,18 +318,12 @@ mod tests {
             "[package]\nname = \"my-crate\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
         )
         .unwrap();
-        std::fs::write(
-            root.join("package.json"),
-            r#"{"name":"my-npm-pkg","version":"0.1.0"}"#,
-        )
-        .unwrap();
+        std::fs::write(root.join("package.json"), r#"{"name":"my-npm-pkg","version":"0.1.0"}"#).unwrap();
 
         let locator = IgnoreWalkLocator::new(root);
         let projects = locator.projects().unwrap();
 
-        let cargo_pos = projects
-            .iter()
-            .position(|p| p.ecosystem == Ecosystem::Cargo);
+        let cargo_pos = projects.iter().position(|p| p.ecosystem == Ecosystem::Cargo);
         let npm_pos = projects.iter().position(|p| p.ecosystem == Ecosystem::Npm);
 
         assert!(
@@ -394,9 +376,7 @@ mod tests {
         let projects = IgnoreWalkLocator::new(root).projects().unwrap();
 
         assert!(
-            !projects
-                .iter()
-                .any(|p| p.path == Path::new("crates/scratch-example")),
+            !projects.iter().any(|p| p.path == Path::new("crates/scratch-example")),
             "AC-01: crates/scratch-example must be excluded, got: {projects:?}"
         );
         let kept_count = projects
@@ -421,17 +401,9 @@ mod tests {
     fn ac03_excludes_package_outside_npm_workspaces_glob() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
-        std::fs::write(
-            root.join("package.json"),
-            r#"{"workspaces": ["packages/*"]}"#,
-        )
-        .unwrap();
+        std::fs::write(root.join("package.json"), r#"{"workspaces": ["packages/*"]}"#).unwrap();
         std::fs::create_dir_all(root.join("tools/helper")).unwrap();
-        std::fs::write(
-            root.join("tools/helper/package.json"),
-            r#"{"name":"helper"}"#,
-        )
-        .unwrap();
+        std::fs::write(root.join("tools/helper/package.json"), r#"{"name":"helper"}"#).unwrap();
 
         let projects = IgnoreWalkLocator::new(root).projects().unwrap();
 
@@ -451,23 +423,11 @@ mod tests {
     fn ac04_pnpm_workspace_yaml_governs_npm_membership_when_no_workspaces_field() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
-        std::fs::write(
-            root.join("pnpm-workspace.yaml"),
-            "packages:\n  - \"packages/*\"\n",
-        )
-        .unwrap();
+        std::fs::write(root.join("pnpm-workspace.yaml"), "packages:\n  - \"packages/*\"\n").unwrap();
         std::fs::create_dir_all(root.join("packages/kept")).unwrap();
-        std::fs::write(
-            root.join("packages/kept/package.json"),
-            r#"{"name":"kept"}"#,
-        )
-        .unwrap();
+        std::fs::write(root.join("packages/kept/package.json"), r#"{"name":"kept"}"#).unwrap();
         std::fs::create_dir_all(root.join("tools/outside")).unwrap();
-        std::fs::write(
-            root.join("tools/outside/package.json"),
-            r#"{"name":"outside"}"#,
-        )
-        .unwrap();
+        std::fs::write(root.join("tools/outside/package.json"), r#"{"name":"outside"}"#).unwrap();
 
         let projects = IgnoreWalkLocator::new(root).projects().unwrap();
 
@@ -478,9 +438,7 @@ mod tests {
             "AC-04: packages/kept must be discovered as Npm, got: {projects:?}"
         );
         assert!(
-            !projects
-                .iter()
-                .any(|p| p.path == Path::new("tools/outside")),
+            !projects.iter().any(|p| p.path == Path::new("tools/outside")),
             "AC-04: tools/outside must not be discovered, got: {projects:?}"
         );
     }
@@ -614,11 +572,7 @@ mod tests {
     fn ac15_workspace_table_with_exclude_only_and_no_members_key_admits_non_excluded() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
-        std::fs::write(
-            root.join("Cargo.toml"),
-            "[workspace]\nexclude = [\"crates/foo\"]\n",
-        )
-        .unwrap();
+        std::fs::write(root.join("Cargo.toml"), "[workspace]\nexclude = [\"crates/foo\"]\n").unwrap();
         std::fs::create_dir_all(root.join("crates/foo")).unwrap();
         std::fs::write(
             root.join("crates/foo/Cargo.toml"),
@@ -656,11 +610,7 @@ mod tests {
         let root = tmp.path();
         std::fs::write(root.join("package.json"), r#"{"name":"root"}"#).unwrap();
         std::fs::create_dir_all(root.join("packages/child")).unwrap();
-        std::fs::write(
-            root.join("packages/child/package.json"),
-            r#"{"name":"child"}"#,
-        )
-        .unwrap();
+        std::fs::write(root.join("packages/child/package.json"), r#"{"name":"child"}"#).unwrap();
 
         let projects = IgnoreWalkLocator::new(root).projects().unwrap();
 
@@ -692,11 +642,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
         std::fs::create_dir_all(root.join("packages/kept")).unwrap();
-        std::fs::write(
-            root.join("packages/kept/package.json"),
-            r#"{"name":"kept"}"#,
-        )
-        .unwrap();
+        std::fs::write(root.join("packages/kept/package.json"), r#"{"name":"kept"}"#).unwrap();
 
         let projects = IgnoreWalkLocator::new(root).projects().unwrap();
 
@@ -719,11 +665,7 @@ mod tests {
         let root = tmp.path();
         std::fs::write(root.join("package.json"), r#"{"workspaces": []}"#).unwrap();
         std::fs::create_dir_all(root.join("packages/other")).unwrap();
-        std::fs::write(
-            root.join("packages/other/package.json"),
-            r#"{"name":"other"}"#,
-        )
-        .unwrap();
+        std::fs::write(root.join("packages/other/package.json"), r#"{"name":"other"}"#).unwrap();
 
         let projects = IgnoreWalkLocator::new(root).projects().unwrap();
 
@@ -748,11 +690,7 @@ mod tests {
         )
         .unwrap();
         std::fs::create_dir_all(root.join("packages/other")).unwrap();
-        std::fs::write(
-            root.join("packages/other/package.json"),
-            r#"{"name":"other"}"#,
-        )
-        .unwrap();
+        std::fs::write(root.join("packages/other/package.json"), r#"{"name":"other"}"#).unwrap();
 
         let projects = IgnoreWalkLocator::new(root).projects().unwrap();
 
@@ -781,21 +719,13 @@ mod tests {
         let root_empty = tmp_empty.path();
         std::fs::write(root_empty.join("package.json"), r#"{"workspaces": []}"#).unwrap();
         std::fs::create_dir_all(root_empty.join("packages/other")).unwrap();
-        std::fs::write(
-            root_empty.join("packages/other/package.json"),
-            r#"{"name":"other"}"#,
-        )
-        .unwrap();
+        std::fs::write(root_empty.join("packages/other/package.json"), r#"{"name":"other"}"#).unwrap();
 
         let tmp_absent = tempfile::tempdir().unwrap();
         let root_absent = tmp_absent.path();
         std::fs::write(root_absent.join("package.json"), r#"{"name":"root"}"#).unwrap();
         std::fs::create_dir_all(root_absent.join("packages/other")).unwrap();
-        std::fs::write(
-            root_absent.join("packages/other/package.json"),
-            r#"{"name":"other"}"#,
-        )
-        .unwrap();
+        std::fs::write(root_absent.join("packages/other/package.json"), r#"{"name":"other"}"#).unwrap();
 
         let projects_empty = IgnoreWalkLocator::new(root_empty).projects().unwrap();
         let projects_absent = IgnoreWalkLocator::new(root_absent).projects().unwrap();
@@ -828,16 +758,8 @@ mod tests {
     fn ac08_pnpm_workspace_yaml_takes_precedence_over_package_json_workspaces_field() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
-        std::fs::write(
-            root.join("package.json"),
-            r#"{"workspaces": ["packages/*"]}"#,
-        )
-        .unwrap();
-        std::fs::write(
-            root.join("pnpm-workspace.yaml"),
-            "packages:\n  - \"tools/*\"\n",
-        )
-        .unwrap();
+        std::fs::write(root.join("package.json"), r#"{"workspaces": ["packages/*"]}"#).unwrap();
+        std::fs::write(root.join("pnpm-workspace.yaml"), "packages:\n  - \"tools/*\"\n").unwrap();
         std::fs::create_dir_all(root.join("tools/x")).unwrap();
         std::fs::write(root.join("tools/x/package.json"), r#"{"name":"x"}"#).unwrap();
         std::fs::create_dir_all(root.join("packages/y")).unwrap();
@@ -887,9 +809,7 @@ mod tests {
             )
             .unwrap();
             let projects = IgnoreWalkLocator::new(root).projects().unwrap();
-            assert!(!projects
-                .iter()
-                .any(|p| p.path == Path::new("crates/scratch-example")));
+            assert!(!projects.iter().any(|p| p.path == Path::new("crates/scratch-example")));
             let kept_count = projects
                 .iter()
                 .filter(|p| p.path == Path::new("crates/kept-example"))
@@ -972,11 +892,7 @@ mod tests {
         {
             let tmp = tempfile::tempdir().unwrap();
             let root = tmp.path();
-            std::fs::write(
-                root.join("Cargo.toml"),
-                "[workspace]\nexclude = [\"crates/foo\"]\n",
-            )
-            .unwrap();
+            std::fs::write(root.join("Cargo.toml"), "[workspace]\nexclude = [\"crates/foo\"]\n").unwrap();
             std::fs::create_dir_all(root.join("crates/foo")).unwrap();
             std::fs::write(
                 root.join("crates/foo/Cargo.toml"),
@@ -1009,11 +925,7 @@ mod tests {
         let root = tmp.path();
         std::fs::write(root.join("pnpm-workspace.yaml"), "packages: []\n").unwrap();
         std::fs::create_dir_all(root.join("packages/other")).unwrap();
-        std::fs::write(
-            root.join("packages/other/package.json"),
-            r#"{"name":"other"}"#,
-        )
-        .unwrap();
+        std::fs::write(root.join("packages/other/package.json"), r#"{"name":"other"}"#).unwrap();
 
         let projects = IgnoreWalkLocator::new(root).projects().unwrap();
 
@@ -1035,11 +947,7 @@ mod tests {
         std::fs::write(root.join("pnpm-workspace.yaml"), "packages: []\n").unwrap();
         std::fs::write(root.join("package.json"), r#"{"name":"root-pkg"}"#).unwrap();
         std::fs::create_dir_all(root.join("packages/other")).unwrap();
-        std::fs::write(
-            root.join("packages/other/package.json"),
-            r#"{"name":"other"}"#,
-        )
-        .unwrap();
+        std::fs::write(root.join("packages/other/package.json"), r#"{"name":"other"}"#).unwrap();
 
         let projects = IgnoreWalkLocator::new(root).projects().unwrap();
 
@@ -1065,16 +973,8 @@ mod tests {
     fn ac11c_malformed_pnpm_yaml_does_not_count_as_present_for_precedence() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
-        std::fs::write(
-            root.join("package.json"),
-            r#"{"workspaces": ["packages/*"]}"#,
-        )
-        .unwrap();
-        std::fs::write(
-            root.join("pnpm-workspace.yaml"),
-            "packages: [\"packages/*\"\n",
-        )
-        .unwrap();
+        std::fs::write(root.join("package.json"), r#"{"workspaces": ["packages/*"]}"#).unwrap();
+        std::fs::write(root.join("pnpm-workspace.yaml"), "packages: [\"packages/*\"\n").unwrap();
         std::fs::create_dir_all(root.join("packages/y")).unwrap();
         std::fs::write(root.join("packages/y/package.json"), r#"{"name":"y"}"#).unwrap();
 
@@ -1098,24 +998,14 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
         std::fs::write(root.join("package.json"), r#"{"name":"root"}"#).unwrap();
-        std::fs::write(
-            root.join("pnpm-workspace.yaml"),
-            "packages: [\"packages/*\"\n",
-        )
-        .unwrap();
+        std::fs::write(root.join("pnpm-workspace.yaml"), "packages: [\"packages/*\"\n").unwrap();
         std::fs::create_dir_all(root.join("packages/kept")).unwrap();
-        std::fs::write(
-            root.join("packages/kept/package.json"),
-            r#"{"name":"kept"}"#,
-        )
-        .unwrap();
+        std::fs::write(root.join("packages/kept/package.json"), r#"{"name":"kept"}"#).unwrap();
 
         let projects = IgnoreWalkLocator::new(root).projects().unwrap();
 
         assert!(
-            projects
-                .iter()
-                .any(|p| p.path == Path::new("packages/kept")),
+            projects.iter().any(|p| p.path == Path::new("packages/kept")),
             "AC-11: malformed pnpm-workspace.yaml with no package.json workspaces field \
              must fall back to admit-all npm membership, got: {projects:?}"
         );
@@ -1131,17 +1021,9 @@ mod tests {
         {
             let tmp = tempfile::tempdir().unwrap();
             let root = tmp.path();
-            std::fs::write(
-                root.join("package.json"),
-                r#"{"workspaces": ["packages/*"]}"#,
-            )
-            .unwrap();
+            std::fs::write(root.join("package.json"), r#"{"workspaces": ["packages/*"]}"#).unwrap();
             std::fs::create_dir_all(root.join("tools/helper")).unwrap();
-            std::fs::write(
-                root.join("tools/helper/package.json"),
-                r#"{"name":"helper"}"#,
-            )
-            .unwrap();
+            std::fs::write(root.join("tools/helper/package.json"), r#"{"name":"helper"}"#).unwrap();
             let projects = IgnoreWalkLocator::new(root).projects().unwrap();
             assert!(!projects.iter().any(|p| p.path == Path::new("tools/helper")));
         }
@@ -1149,30 +1031,14 @@ mod tests {
         {
             let tmp = tempfile::tempdir().unwrap();
             let root = tmp.path();
-            std::fs::write(
-                root.join("pnpm-workspace.yaml"),
-                "packages:\n  - \"packages/*\"\n",
-            )
-            .unwrap();
+            std::fs::write(root.join("pnpm-workspace.yaml"), "packages:\n  - \"packages/*\"\n").unwrap();
             std::fs::create_dir_all(root.join("packages/kept")).unwrap();
-            std::fs::write(
-                root.join("packages/kept/package.json"),
-                r#"{"name":"kept"}"#,
-            )
-            .unwrap();
+            std::fs::write(root.join("packages/kept/package.json"), r#"{"name":"kept"}"#).unwrap();
             std::fs::create_dir_all(root.join("tools/outside")).unwrap();
-            std::fs::write(
-                root.join("tools/outside/package.json"),
-                r#"{"name":"outside"}"#,
-            )
-            .unwrap();
+            std::fs::write(root.join("tools/outside/package.json"), r#"{"name":"outside"}"#).unwrap();
             let projects = IgnoreWalkLocator::new(root).projects().unwrap();
-            assert!(projects
-                .iter()
-                .any(|p| p.path == Path::new("packages/kept")));
-            assert!(!projects
-                .iter()
-                .any(|p| p.path == Path::new("tools/outside")));
+            assert!(projects.iter().any(|p| p.path == Path::new("packages/kept")));
+            assert!(!projects.iter().any(|p| p.path == Path::new("tools/outside")));
         }
         // AC-06
         {
@@ -1180,11 +1046,7 @@ mod tests {
             let root = tmp.path();
             std::fs::write(root.join("package.json"), r#"{"name":"root"}"#).unwrap();
             std::fs::create_dir_all(root.join("packages/child")).unwrap();
-            std::fs::write(
-                root.join("packages/child/package.json"),
-                r#"{"name":"child"}"#,
-            )
-            .unwrap();
+            std::fs::write(root.join("packages/child/package.json"), r#"{"name":"child"}"#).unwrap();
             let projects = IgnoreWalkLocator::new(root).projects().unwrap();
             assert!(projects
                 .iter()
@@ -1195,30 +1057,16 @@ mod tests {
             let tmp = tempfile::tempdir().unwrap();
             let root = tmp.path();
             std::fs::create_dir_all(root.join("packages/kept")).unwrap();
-            std::fs::write(
-                root.join("packages/kept/package.json"),
-                r#"{"name":"kept"}"#,
-            )
-            .unwrap();
+            std::fs::write(root.join("packages/kept/package.json"), r#"{"name":"kept"}"#).unwrap();
             let projects = IgnoreWalkLocator::new(root).projects().unwrap();
-            assert!(projects
-                .iter()
-                .any(|p| p.path == Path::new("packages/kept")));
+            assert!(projects.iter().any(|p| p.path == Path::new("packages/kept")));
         }
         // AC-08
         {
             let tmp = tempfile::tempdir().unwrap();
             let root = tmp.path();
-            std::fs::write(
-                root.join("package.json"),
-                r#"{"workspaces": ["packages/*"]}"#,
-            )
-            .unwrap();
-            std::fs::write(
-                root.join("pnpm-workspace.yaml"),
-                "packages:\n  - \"tools/*\"\n",
-            )
-            .unwrap();
+            std::fs::write(root.join("package.json"), r#"{"workspaces": ["packages/*"]}"#).unwrap();
+            std::fs::write(root.join("pnpm-workspace.yaml"), "packages:\n  - \"tools/*\"\n").unwrap();
             std::fs::create_dir_all(root.join("tools/x")).unwrap();
             std::fs::write(root.join("tools/x/package.json"), r#"{"name":"x"}"#).unwrap();
             std::fs::create_dir_all(root.join("packages/y")).unwrap();
@@ -1233,11 +1081,7 @@ mod tests {
             let root = tmp.path();
             std::fs::write(root.join("pnpm-workspace.yaml"), "packages: []\n").unwrap();
             std::fs::create_dir_all(root.join("packages/other")).unwrap();
-            std::fs::write(
-                root.join("packages/other/package.json"),
-                r#"{"name":"other"}"#,
-            )
-            .unwrap();
+            std::fs::write(root.join("packages/other/package.json"), r#"{"name":"other"}"#).unwrap();
             let projects = IgnoreWalkLocator::new(root).projects().unwrap();
             assert!(!projects.iter().any(|p| p.ecosystem == Ecosystem::Npm));
         }
@@ -1245,16 +1089,8 @@ mod tests {
         {
             let tmp = tempfile::tempdir().unwrap();
             let root = tmp.path();
-            std::fs::write(
-                root.join("package.json"),
-                r#"{"workspaces": ["packages/*"]}"#,
-            )
-            .unwrap();
-            std::fs::write(
-                root.join("pnpm-workspace.yaml"),
-                "packages: [\"packages/*\"\n",
-            )
-            .unwrap();
+            std::fs::write(root.join("package.json"), r#"{"workspaces": ["packages/*"]}"#).unwrap();
+            std::fs::write(root.join("pnpm-workspace.yaml"), "packages: [\"packages/*\"\n").unwrap();
             std::fs::create_dir_all(root.join("packages/y")).unwrap();
             std::fs::write(root.join("packages/y/package.json"), r#"{"name":"y"}"#).unwrap();
             let projects = IgnoreWalkLocator::new(root).projects().unwrap();
@@ -1267,11 +1103,7 @@ mod tests {
             let root = tmp.path();
             std::fs::write(root.join("package.json"), r#"{"workspaces": []}"#).unwrap();
             std::fs::create_dir_all(root.join("packages/other")).unwrap();
-            std::fs::write(
-                root.join("packages/other/package.json"),
-                r#"{"name":"other"}"#,
-            )
-            .unwrap();
+            std::fs::write(root.join("packages/other/package.json"), r#"{"name":"other"}"#).unwrap();
             let projects = IgnoreWalkLocator::new(root).projects().unwrap();
             assert!(!projects.iter().any(|p| p.ecosystem == Ecosystem::Npm));
         }
@@ -1285,11 +1117,7 @@ mod tests {
             )
             .unwrap();
             std::fs::create_dir_all(root.join("packages/child")).unwrap();
-            std::fs::write(
-                root.join("packages/child/package.json"),
-                r#"{"name":"child"}"#,
-            )
-            .unwrap();
+            std::fs::write(root.join("packages/child/package.json"), r#"{"name":"child"}"#).unwrap();
             let projects = IgnoreWalkLocator::new(root).projects().unwrap();
             assert!(projects
                 .iter()
@@ -1307,17 +1135,9 @@ mod tests {
                 r#"{"name": "root-package", "workspaces": ["packages/*"]}"#,
             )
             .unwrap();
-            std::fs::write(
-                root.join("pnpm-workspace.yaml"),
-                "packages: [\"packages/*\"\n",
-            )
-            .unwrap();
+            std::fs::write(root.join("pnpm-workspace.yaml"), "packages: [\"packages/*\"\n").unwrap();
             std::fs::create_dir_all(root.join("packages/child")).unwrap();
-            std::fs::write(
-                root.join("packages/child/package.json"),
-                r#"{"name":"child"}"#,
-            )
-            .unwrap();
+            std::fs::write(root.join("packages/child/package.json"), r#"{"name":"child"}"#).unwrap();
             let projects = IgnoreWalkLocator::new(root).projects().unwrap();
             assert!(projects
                 .iter()
@@ -1336,16 +1156,9 @@ mod tests {
             )
             .unwrap();
             std::fs::create_dir_all(root.join("packages/other")).unwrap();
-            std::fs::write(
-                root.join("packages/other/package.json"),
-                r#"{"name":"other"}"#,
-            )
-            .unwrap();
+            std::fs::write(root.join("packages/other/package.json"), r#"{"name":"other"}"#).unwrap();
             let projects = IgnoreWalkLocator::new(root).projects().unwrap();
-            let npm_entries: Vec<_> = projects
-                .iter()
-                .filter(|p| p.ecosystem == Ecosystem::Npm)
-                .collect();
+            let npm_entries: Vec<_> = projects.iter().filter(|p| p.ecosystem == Ecosystem::Npm).collect();
             assert_eq!(npm_entries.len(), 1);
             assert_eq!(npm_entries[0].path, Path::new("."));
         }
@@ -1354,17 +1167,9 @@ mod tests {
             let tmp = tempfile::tempdir().unwrap();
             let root = tmp.path();
             std::fs::write(root.join("package.json"), r#"{"name": "root-package"}"#).unwrap();
-            std::fs::write(
-                root.join("pnpm-workspace.yaml"),
-                "packages:\n  - \"packages/*\"\n",
-            )
-            .unwrap();
+            std::fs::write(root.join("pnpm-workspace.yaml"), "packages:\n  - \"packages/*\"\n").unwrap();
             std::fs::create_dir_all(root.join("packages/child")).unwrap();
-            std::fs::write(
-                root.join("packages/child/package.json"),
-                r#"{"name":"child"}"#,
-            )
-            .unwrap();
+            std::fs::write(root.join("packages/child/package.json"), r#"{"name":"child"}"#).unwrap();
             let projects = IgnoreWalkLocator::new(root).projects().unwrap();
             assert!(projects
                 .iter()
@@ -1393,11 +1198,7 @@ mod tests {
         )
         .unwrap();
         std::fs::create_dir_all(root.join("packages/child")).unwrap();
-        std::fs::write(
-            root.join("packages/child/package.json"),
-            r#"{"name":"child"}"#,
-        )
-        .unwrap();
+        std::fs::write(root.join("packages/child/package.json"), r#"{"name":"child"}"#).unwrap();
 
         let projects = IgnoreWalkLocator::new(root).projects().unwrap();
 
@@ -1434,17 +1235,9 @@ mod tests {
         .unwrap();
         // Deliberately malformed YAML — yaml_rust2::YamlLoader::load_from_str
         // must return Err(..) for this content.
-        std::fs::write(
-            root.join("pnpm-workspace.yaml"),
-            b": {\x00 invalid yaml \xff\xfe",
-        )
-        .unwrap();
+        std::fs::write(root.join("pnpm-workspace.yaml"), b": {\x00 invalid yaml \xff\xfe").unwrap();
         std::fs::create_dir_all(root.join("packages/child")).unwrap();
-        std::fs::write(
-            root.join("packages/child/package.json"),
-            r#"{"name":"child"}"#,
-        )
-        .unwrap();
+        std::fs::write(root.join("packages/child/package.json"), r#"{"name":"child"}"#).unwrap();
 
         let projects = IgnoreWalkLocator::new(root).projects().unwrap();
 
@@ -1475,17 +1268,9 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
         std::fs::write(root.join("package.json"), r#"{"name": "root-package"}"#).unwrap();
-        std::fs::write(
-            root.join("pnpm-workspace.yaml"),
-            "packages:\n  - \"packages/*\"\n",
-        )
-        .unwrap();
+        std::fs::write(root.join("pnpm-workspace.yaml"), "packages:\n  - \"packages/*\"\n").unwrap();
         std::fs::create_dir_all(root.join("packages/child")).unwrap();
-        std::fs::write(
-            root.join("packages/child/package.json"),
-            r#"{"name":"child"}"#,
-        )
-        .unwrap();
+        std::fs::write(root.join("packages/child/package.json"), r#"{"name":"child"}"#).unwrap();
 
         let projects = IgnoreWalkLocator::new(root).projects().unwrap();
 
@@ -1519,18 +1304,11 @@ mod tests {
         )
         .unwrap();
         std::fs::create_dir_all(root.join("packages/child")).unwrap();
-        std::fs::write(
-            root.join("packages/child/package.json"),
-            r#"{"name":"child"}"#,
-        )
-        .unwrap();
+        std::fs::write(root.join("packages/child/package.json"), r#"{"name":"child"}"#).unwrap();
 
         let projects = IgnoreWalkLocator::new(root).projects().unwrap();
 
-        let npm_projects: Vec<_> = projects
-            .iter()
-            .filter(|p| p.ecosystem == Ecosystem::Npm)
-            .collect();
+        let npm_projects: Vec<_> = projects.iter().filter(|p| p.ecosystem == Ecosystem::Npm).collect();
 
         assert_eq!(
             npm_projects.len(),
@@ -1548,11 +1326,7 @@ mod tests {
     fn ac09_malformed_cargo_members_bare_string_falls_back_to_absent_filter() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
-        std::fs::write(
-            root.join("Cargo.toml"),
-            "[workspace]\nmembers = \"crates/*\"\n",
-        )
-        .unwrap();
+        std::fs::write(root.join("Cargo.toml"), "[workspace]\nmembers = \"crates/*\"\n").unwrap();
         std::fs::create_dir_all(root.join("tools/outside")).unwrap();
         std::fs::write(
             root.join("tools/outside/Cargo.toml"),
@@ -1562,20 +1336,14 @@ mod tests {
 
         let projects = IgnoreWalkLocator::new(root).projects().unwrap();
 
-        assert!(projects
-            .iter()
-            .any(|p| p.path == Path::new("tools/outside")));
+        assert!(projects.iter().any(|p| p.path == Path::new("tools/outside")));
     }
 
     #[test]
     fn ac09_malformed_cargo_members_non_string_entry_falls_back_to_absent_filter() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
-        std::fs::write(
-            root.join("Cargo.toml"),
-            "[workspace]\nmembers = [\"crates/*\", 42]\n",
-        )
-        .unwrap();
+        std::fs::write(root.join("Cargo.toml"), "[workspace]\nmembers = [\"crates/*\", 42]\n").unwrap();
         std::fs::create_dir_all(root.join("tools/outside")).unwrap();
         std::fs::write(
             root.join("tools/outside/Cargo.toml"),
@@ -1585,9 +1353,7 @@ mod tests {
 
         let projects = IgnoreWalkLocator::new(root).projects().unwrap();
 
-        assert!(projects
-            .iter()
-            .any(|p| p.path == Path::new("tools/outside")));
+        assert!(projects.iter().any(|p| p.path == Path::new("tools/outside")));
     }
 
     #[test]
@@ -1637,15 +1403,9 @@ mod tests {
 
         let projects = IgnoreWalkLocator::new(root).projects().unwrap();
 
-        assert!(projects
-            .iter()
-            .any(|p| p.path == Path::new("crates/scratch-example")));
-        assert!(projects
-            .iter()
-            .any(|p| p.path == Path::new("crates/kept-example")));
-        assert!(!projects
-            .iter()
-            .any(|p| p.path == Path::new("tools/outside")));
+        assert!(projects.iter().any(|p| p.path == Path::new("crates/scratch-example")));
+        assert!(projects.iter().any(|p| p.path == Path::new("crates/kept-example")));
+        assert!(!projects.iter().any(|p| p.path == Path::new("tools/outside")));
     }
 
     #[test]
@@ -1678,15 +1438,9 @@ mod tests {
 
         let projects = IgnoreWalkLocator::new(root).projects().unwrap();
 
-        assert!(projects
-            .iter()
-            .any(|p| p.path == Path::new("crates/scratch-example")));
-        assert!(projects
-            .iter()
-            .any(|p| p.path == Path::new("crates/kept-example")));
-        assert!(!projects
-            .iter()
-            .any(|p| p.path == Path::new("tools/outside")));
+        assert!(projects.iter().any(|p| p.path == Path::new("crates/scratch-example")));
+        assert!(projects.iter().any(|p| p.path == Path::new("crates/kept-example")));
+        assert!(!projects.iter().any(|p| p.path == Path::new("tools/outside")));
     }
 
     #[test]
@@ -1707,9 +1461,7 @@ mod tests {
 
         let projects = IgnoreWalkLocator::new(root).projects().unwrap();
 
-        assert!(projects
-            .iter()
-            .any(|p| p.path == Path::new("crates/kept-example")));
+        assert!(projects.iter().any(|p| p.path == Path::new("crates/kept-example")));
     }
 
     #[test]
@@ -1730,9 +1482,7 @@ mod tests {
 
         let projects = IgnoreWalkLocator::new(root).projects().unwrap();
 
-        assert!(projects
-            .iter()
-            .any(|p| p.path == Path::new("packages/kept-example")));
+        assert!(projects.iter().any(|p| p.path == Path::new("packages/kept-example")));
     }
 
     #[test]
@@ -1759,12 +1509,8 @@ mod tests {
 
         let projects = IgnoreWalkLocator::new(root).projects().unwrap();
 
-        assert!(!projects
-            .iter()
-            .any(|p| p.path == Path::new("crates/scratch-example")));
-        assert!(projects
-            .iter()
-            .any(|p| p.path == Path::new("crates/kept-example")));
+        assert!(!projects.iter().any(|p| p.path == Path::new("crates/scratch-example")));
+        assert!(projects.iter().any(|p| p.path == Path::new("crates/kept-example")));
     }
 
     #[test]
@@ -1785,9 +1531,7 @@ mod tests {
 
         let projects = IgnoreWalkLocator::new(root).projects().unwrap();
 
-        assert!(projects
-            .iter()
-            .any(|p| p.path == Path::new("packages/kept-example")));
+        assert!(projects.iter().any(|p| p.path == Path::new("packages/kept-example")));
     }
 
     #[test]
@@ -1796,63 +1540,37 @@ mod tests {
         let root = tmp.path();
         std::fs::write(root.join("package.json"), r#"{"workspaces": "packages/*"}"#).unwrap();
         std::fs::create_dir_all(root.join("tools/outside")).unwrap();
-        std::fs::write(
-            root.join("tools/outside/package.json"),
-            r#"{"name":"outside"}"#,
-        )
-        .unwrap();
+        std::fs::write(root.join("tools/outside/package.json"), r#"{"name":"outside"}"#).unwrap();
 
         let projects = IgnoreWalkLocator::new(root).projects().unwrap();
 
-        assert!(projects
-            .iter()
-            .any(|p| p.path == Path::new("tools/outside")));
+        assert!(projects.iter().any(|p| p.path == Path::new("tools/outside")));
     }
 
     #[test]
     fn ac09c_malformed_npm_workspaces_non_string_entry_falls_back_to_absent_filter() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
-        std::fs::write(
-            root.join("package.json"),
-            r#"{"workspaces": ["packages/*", 42]}"#,
-        )
-        .unwrap();
+        std::fs::write(root.join("package.json"), r#"{"workspaces": ["packages/*", 42]}"#).unwrap();
         std::fs::create_dir_all(root.join("tools/outside")).unwrap();
-        std::fs::write(
-            root.join("tools/outside/package.json"),
-            r#"{"name":"outside"}"#,
-        )
-        .unwrap();
+        std::fs::write(root.join("tools/outside/package.json"), r#"{"name":"outside"}"#).unwrap();
 
         let projects = IgnoreWalkLocator::new(root).projects().unwrap();
 
-        assert!(projects
-            .iter()
-            .any(|p| p.path == Path::new("tools/outside")));
+        assert!(projects.iter().any(|p| p.path == Path::new("tools/outside")));
     }
 
     #[test]
     fn ac09e_malformed_root_package_json_syntax_falls_back_to_absent_npm_filter() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
-        std::fs::write(
-            root.join("package.json"),
-            "{\"workspaces\": [\"packages/*\"],}",
-        )
-        .unwrap();
+        std::fs::write(root.join("package.json"), "{\"workspaces\": [\"packages/*\"],}").unwrap();
         std::fs::create_dir_all(root.join("packages/kept")).unwrap();
-        std::fs::write(
-            root.join("packages/kept/package.json"),
-            r#"{"name":"kept"}"#,
-        )
-        .unwrap();
+        std::fs::write(root.join("packages/kept/package.json"), r#"{"name":"kept"}"#).unwrap();
 
         let projects = IgnoreWalkLocator::new(root).projects().unwrap();
 
-        assert!(projects
-            .iter()
-            .any(|p| p.path == Path::new("packages/kept")));
+        assert!(projects.iter().any(|p| p.path == Path::new("packages/kept")));
     }
 
     /// Spec (AC-11b): a pnpm-workspace.yaml that parses successfully but
@@ -1867,64 +1585,34 @@ mod tests {
     fn ac11b_pnpm_packages_wrong_shape_falls_back_to_absent_filter() {
         let dir_missing = tempfile::tempdir().unwrap();
         let root_missing = dir_missing.path();
-        std::fs::write(
-            root_missing.join("pnpm-workspace.yaml"),
-            "other_key: true\n",
-        )
-        .unwrap();
+        std::fs::write(root_missing.join("pnpm-workspace.yaml"), "other_key: true\n").unwrap();
         std::fs::create_dir_all(root_missing.join("packages/kept")).unwrap();
-        std::fs::write(
-            root_missing.join("packages/kept/package.json"),
-            r#"{"name":"kept"}"#,
-        )
-        .unwrap();
+        std::fs::write(root_missing.join("packages/kept/package.json"), r#"{"name":"kept"}"#).unwrap();
         let projects_missing = IgnoreWalkLocator::new(root_missing).projects().unwrap();
         assert!(
-            projects_missing
-                .iter()
-                .any(|p| p.path == Path::new("packages/kept")),
+            projects_missing.iter().any(|p| p.path == Path::new("packages/kept")),
             "AC-11b (missing key): packages/kept must be admitted, got: {projects_missing:?}"
         );
 
         let dir_scalar = tempfile::tempdir().unwrap();
         let root_scalar = dir_scalar.path();
-        std::fs::write(
-            root_scalar.join("pnpm-workspace.yaml"),
-            "packages: \"packages/*\"\n",
-        )
-        .unwrap();
+        std::fs::write(root_scalar.join("pnpm-workspace.yaml"), "packages: \"packages/*\"\n").unwrap();
         std::fs::create_dir_all(root_scalar.join("packages/kept")).unwrap();
-        std::fs::write(
-            root_scalar.join("packages/kept/package.json"),
-            r#"{"name":"kept"}"#,
-        )
-        .unwrap();
+        std::fs::write(root_scalar.join("packages/kept/package.json"), r#"{"name":"kept"}"#).unwrap();
         let projects_scalar = IgnoreWalkLocator::new(root_scalar).projects().unwrap();
         assert!(
-            projects_scalar
-                .iter()
-                .any(|p| p.path == Path::new("packages/kept")),
+            projects_scalar.iter().any(|p| p.path == Path::new("packages/kept")),
             "AC-11b (wrong scalar type): packages/kept must be admitted, got: {projects_scalar:?}"
         );
 
         let dir_mapping = tempfile::tempdir().unwrap();
         let root_mapping = dir_mapping.path();
-        std::fs::write(
-            root_mapping.join("pnpm-workspace.yaml"),
-            "packages:\n  foo: bar\n",
-        )
-        .unwrap();
+        std::fs::write(root_mapping.join("pnpm-workspace.yaml"), "packages:\n  foo: bar\n").unwrap();
         std::fs::create_dir_all(root_mapping.join("packages/kept")).unwrap();
-        std::fs::write(
-            root_mapping.join("packages/kept/package.json"),
-            r#"{"name":"kept"}"#,
-        )
-        .unwrap();
+        std::fs::write(root_mapping.join("packages/kept/package.json"), r#"{"name":"kept"}"#).unwrap();
         let projects_mapping = IgnoreWalkLocator::new(root_mapping).projects().unwrap();
         assert!(
-            projects_mapping
-                .iter()
-                .any(|p| p.path == Path::new("packages/kept")),
+            projects_mapping.iter().any(|p| p.path == Path::new("packages/kept")),
             "AC-11b (mapping value): packages/kept must be admitted, got: {projects_mapping:?}"
         );
 
@@ -1936,16 +1624,10 @@ mod tests {
         )
         .unwrap();
         std::fs::create_dir_all(root_nonstring.join("packages/kept")).unwrap();
-        std::fs::write(
-            root_nonstring.join("packages/kept/package.json"),
-            r#"{"name":"kept"}"#,
-        )
-        .unwrap();
+        std::fs::write(root_nonstring.join("packages/kept/package.json"), r#"{"name":"kept"}"#).unwrap();
         let projects_nonstring = IgnoreWalkLocator::new(root_nonstring).projects().unwrap();
         assert!(
-            projects_nonstring
-                .iter()
-                .any(|p| p.path == Path::new("packages/kept")),
+            projects_nonstring.iter().any(|p| p.path == Path::new("packages/kept")),
             "AC-11b (non-string sequence element): packages/kept must be admitted, got: {projects_nonstring:?}"
         );
     }
@@ -1964,16 +1646,10 @@ mod tests {
         let root_empty = dir_empty.path();
         std::fs::write(root_empty.join("pnpm-workspace.yaml"), "").unwrap();
         std::fs::create_dir_all(root_empty.join("packages/kept")).unwrap();
-        std::fs::write(
-            root_empty.join("packages/kept/package.json"),
-            r#"{"name":"kept"}"#,
-        )
-        .unwrap();
+        std::fs::write(root_empty.join("packages/kept/package.json"), r#"{"name":"kept"}"#).unwrap();
         let projects_empty = IgnoreWalkLocator::new(root_empty).projects().unwrap();
         assert!(
-            projects_empty
-                .iter()
-                .any(|p| p.path == Path::new("packages/kept")),
+            projects_empty.iter().any(|p| p.path == Path::new("packages/kept")),
             "AC-11d (zero bytes): packages/kept must be admitted, got: {projects_empty:?}"
         );
 
@@ -1981,16 +1657,10 @@ mod tests {
         let root_whitespace = dir_whitespace.path();
         std::fs::write(root_whitespace.join("pnpm-workspace.yaml"), "   \n\t\n  \n").unwrap();
         std::fs::create_dir_all(root_whitespace.join("packages/kept")).unwrap();
-        std::fs::write(
-            root_whitespace.join("packages/kept/package.json"),
-            r#"{"name":"kept"}"#,
-        )
-        .unwrap();
+        std::fs::write(root_whitespace.join("packages/kept/package.json"), r#"{"name":"kept"}"#).unwrap();
         let projects_whitespace = IgnoreWalkLocator::new(root_whitespace).projects().unwrap();
         assert!(
-            projects_whitespace
-                .iter()
-                .any(|p| p.path == Path::new("packages/kept")),
+            projects_whitespace.iter().any(|p| p.path == Path::new("packages/kept")),
             "AC-11d (whitespace only): packages/kept must be admitted, got: {projects_whitespace:?}"
         );
 
@@ -2002,16 +1672,10 @@ mod tests {
         )
         .unwrap();
         std::fs::create_dir_all(root_comments.join("packages/kept")).unwrap();
-        std::fs::write(
-            root_comments.join("packages/kept/package.json"),
-            r#"{"name":"kept"}"#,
-        )
-        .unwrap();
+        std::fs::write(root_comments.join("packages/kept/package.json"), r#"{"name":"kept"}"#).unwrap();
         let projects_comments = IgnoreWalkLocator::new(root_comments).projects().unwrap();
         assert!(
-            projects_comments
-                .iter()
-                .any(|p| p.path == Path::new("packages/kept")),
+            projects_comments.iter().any(|p| p.path == Path::new("packages/kept")),
             "AC-11d (comments only): packages/kept must be admitted, got: {projects_comments:?}"
         );
     }
@@ -2033,11 +1697,7 @@ mod tests {
         {
             let tmp = tempdir().unwrap();
             let root = tmp.path();
-            fs::write(
-                root.join("Cargo.toml"),
-                "[workspace]\nmembers = \"crates/*\"\n",
-            )
-            .unwrap();
+            fs::write(root.join("Cargo.toml"), "[workspace]\nmembers = \"crates/*\"\n").unwrap();
             fs::create_dir_all(root.join("tools/outside")).unwrap();
             fs::write(
                 root.join("tools/outside/Cargo.toml"),
@@ -2046,9 +1706,7 @@ mod tests {
             .unwrap();
             let projects = IgnoreWalkLocator::new(root).projects().unwrap();
             assert!(
-                projects
-                    .iter()
-                    .any(|p| p.path == Path::new("tools/outside")),
+                projects.iter().any(|p| p.path == Path::new("tools/outside")),
                 "AC-09: tools/outside must be admitted, got: {projects:?}"
             );
         }
@@ -2083,21 +1741,15 @@ mod tests {
             .unwrap();
             let projects = IgnoreWalkLocator::new(root).projects().unwrap();
             assert!(
-                projects
-                    .iter()
-                    .any(|p| p.path == Path::new("crates/scratch-example")),
+                projects.iter().any(|p| p.path == Path::new("crates/scratch-example")),
                 "AC-09b: crates/scratch-example must be admitted, got: {projects:?}"
             );
             assert!(
-                projects
-                    .iter()
-                    .any(|p| p.path == Path::new("crates/kept-example")),
+                projects.iter().any(|p| p.path == Path::new("crates/kept-example")),
                 "AC-09b: crates/kept-example must be admitted, got: {projects:?}"
             );
             assert!(
-                !projects
-                    .iter()
-                    .any(|p| p.path == Path::new("tools/outside")),
+                !projects.iter().any(|p| p.path == Path::new("tools/outside")),
                 "AC-09b: tools/outside must remain excluded by members, got: {projects:?}"
             );
         }
@@ -2138,9 +1790,7 @@ mod tests {
             .unwrap();
             let projects = IgnoreWalkLocator::new(root).projects().unwrap();
             assert!(
-                projects
-                    .iter()
-                    .any(|p| p.path == Path::new("crates/kept-example")),
+                projects.iter().any(|p| p.path == Path::new("crates/kept-example")),
                 "AC-09f: crates/kept-example must be admitted, got: {projects:?}"
             );
         }
@@ -2169,15 +1819,11 @@ mod tests {
             .unwrap();
             let projects = IgnoreWalkLocator::new(root).projects().unwrap();
             assert!(
-                !projects
-                    .iter()
-                    .any(|p| p.path == Path::new("crates/scratch-example")),
+                !projects.iter().any(|p| p.path == Path::new("crates/scratch-example")),
                 "AC-09i: crates/scratch-example must remain excluded, got: {projects:?}"
             );
             assert!(
-                projects
-                    .iter()
-                    .any(|p| p.path == Path::new("crates/kept-example")),
+                projects.iter().any(|p| p.path == Path::new("crates/kept-example")),
                 "AC-09i: crates/kept-example must be admitted, got: {projects:?}"
             );
         }
@@ -2202,16 +1848,10 @@ mod tests {
             let root = tmp.path();
             fs::write(root.join("package.json"), r#"{"workspaces": "packages/*"}"#).unwrap();
             fs::create_dir_all(root.join("tools/outside")).unwrap();
-            fs::write(
-                root.join("tools/outside/package.json"),
-                r#"{"name":"outside"}"#,
-            )
-            .unwrap();
+            fs::write(root.join("tools/outside/package.json"), r#"{"name":"outside"}"#).unwrap();
             let projects = IgnoreWalkLocator::new(root).projects().unwrap();
             assert!(
-                projects
-                    .iter()
-                    .any(|p| p.path == Path::new("tools/outside")),
+                projects.iter().any(|p| p.path == Path::new("tools/outside")),
                 "AC-09c: tools/outside must be admitted, got: {projects:?}"
             );
         }
@@ -2221,22 +1861,12 @@ mod tests {
         {
             let tmp = tempdir().unwrap();
             let root = tmp.path();
-            fs::write(
-                root.join("package.json"),
-                "{\"workspaces\": [\"packages/*\"],}",
-            )
-            .unwrap();
+            fs::write(root.join("package.json"), "{\"workspaces\": [\"packages/*\"],}").unwrap();
             fs::create_dir_all(root.join("packages/kept")).unwrap();
-            fs::write(
-                root.join("packages/kept/package.json"),
-                r#"{"name":"kept"}"#,
-            )
-            .unwrap();
+            fs::write(root.join("packages/kept/package.json"), r#"{"name":"kept"}"#).unwrap();
             let projects = IgnoreWalkLocator::new(root).projects().unwrap();
             assert!(
-                projects
-                    .iter()
-                    .any(|p| p.path == Path::new("packages/kept")),
+                projects.iter().any(|p| p.path == Path::new("packages/kept")),
                 "AC-09e: packages/kept must be admitted, got: {projects:?}"
             );
         }
@@ -2259,9 +1889,7 @@ mod tests {
             .unwrap();
             let projects = IgnoreWalkLocator::new(root).projects().unwrap();
             assert!(
-                projects
-                    .iter()
-                    .any(|p| p.path == Path::new("packages/kept-example")),
+                projects.iter().any(|p| p.path == Path::new("packages/kept-example")),
                 "AC-09g: packages/kept-example must be admitted, got: {projects:?}"
             );
         }
@@ -2274,11 +1902,7 @@ mod tests {
             let root = tmp.path();
             fs::write(root.join("package.json"), r#"{"workspaces": []}"#).unwrap();
             fs::create_dir_all(root.join("packages/other")).unwrap();
-            fs::write(
-                root.join("packages/other/package.json"),
-                r#"{"name":"other"}"#,
-            )
-            .unwrap();
+            fs::write(root.join("packages/other/package.json"), r#"{"name":"other"}"#).unwrap();
             let projects = IgnoreWalkLocator::new(root).projects().unwrap();
             assert!(
                 !projects.iter().any(|p| p.ecosystem == Ecosystem::Npm),
@@ -2317,9 +1941,7 @@ mod tests {
             .unwrap();
             let projects = IgnoreWalkLocator::new(root).projects().unwrap();
             assert!(
-                projects
-                    .iter()
-                    .any(|p| p.path == Path::new("packages/kept-example")),
+                projects.iter().any(|p| p.path == Path::new("packages/kept-example")),
                 "AC-09h: packages/kept-example must be admitted, got: {projects:?}"
             );
         }
@@ -2332,22 +1954,12 @@ mod tests {
             let tmp = tempdir().unwrap();
             let root = tmp.path();
             fs::write(root.join("package.json"), r#"{"name":"root"}"#).unwrap();
-            fs::write(
-                root.join("pnpm-workspace.yaml"),
-                "packages: [\"packages/*\"\n",
-            )
-            .unwrap();
+            fs::write(root.join("pnpm-workspace.yaml"), "packages: [\"packages/*\"\n").unwrap();
             fs::create_dir_all(root.join("packages/kept")).unwrap();
-            fs::write(
-                root.join("packages/kept/package.json"),
-                r#"{"name":"kept"}"#,
-            )
-            .unwrap();
+            fs::write(root.join("packages/kept/package.json"), r#"{"name":"kept"}"#).unwrap();
             let projects = IgnoreWalkLocator::new(root).projects().unwrap();
             assert!(
-                projects
-                    .iter()
-                    .any(|p| p.path == Path::new("packages/kept")),
+                projects.iter().any(|p| p.path == Path::new("packages/kept")),
                 "AC-11: packages/kept must be admitted, got: {projects:?}"
             );
         }
@@ -2358,22 +1970,12 @@ mod tests {
         {
             let tmp = tempdir().unwrap();
             let root = tmp.path();
-            fs::write(
-                root.join("pnpm-workspace.yaml"),
-                "packages: \"packages/*\"\n",
-            )
-            .unwrap();
+            fs::write(root.join("pnpm-workspace.yaml"), "packages: \"packages/*\"\n").unwrap();
             fs::create_dir_all(root.join("packages/kept")).unwrap();
-            fs::write(
-                root.join("packages/kept/package.json"),
-                r#"{"name":"kept"}"#,
-            )
-            .unwrap();
+            fs::write(root.join("packages/kept/package.json"), r#"{"name":"kept"}"#).unwrap();
             let projects = IgnoreWalkLocator::new(root).projects().unwrap();
             assert!(
-                projects
-                    .iter()
-                    .any(|p| p.path == Path::new("packages/kept")),
+                projects.iter().any(|p| p.path == Path::new("packages/kept")),
                 "AC-11b: packages/kept must be admitted, got: {projects:?}"
             );
         }
@@ -2387,16 +1989,10 @@ mod tests {
             let root = tmp.path();
             fs::write(root.join("pnpm-workspace.yaml"), "# no packages here\n").unwrap();
             fs::create_dir_all(root.join("packages/kept")).unwrap();
-            fs::write(
-                root.join("packages/kept/package.json"),
-                r#"{"name":"kept"}"#,
-            )
-            .unwrap();
+            fs::write(root.join("packages/kept/package.json"), r#"{"name":"kept"}"#).unwrap();
             let projects = IgnoreWalkLocator::new(root).projects().unwrap();
             assert!(
-                projects
-                    .iter()
-                    .any(|p| p.path == Path::new("packages/kept")),
+                projects.iter().any(|p| p.path == Path::new("packages/kept")),
                 "AC-11d: packages/kept must be admitted, got: {projects:?}"
             );
         }

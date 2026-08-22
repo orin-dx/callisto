@@ -182,12 +182,7 @@ fn test_pre_enter_rejects_if_already_in_pre_mode() {
         dry_run: true,
         ..global.clone()
     };
-    let dry = commands::pre::handle(
-        PreArgs::Enter {
-            tag: "rc".to_string(),
-        },
-        &global_dry,
-    );
+    let dry = commands::pre::handle(PreArgs::Enter { tag: "rc".to_string() }, &global_dry);
     assert!(
         dry.is_err(),
         "dry-run pre enter must also fail when pre.json already exists on disk"
@@ -215,10 +210,7 @@ fn test_pre_exit_rejects_double_exit() {
     .expect("pre enter must succeed");
 
     let first_exit = commands::pre::handle(PreArgs::Exit, &global);
-    assert!(
-        first_exit.is_ok(),
-        "first pre exit must succeed: {first_exit:?}"
-    );
+    assert!(first_exit.is_ok(), "first pre exit must succeed: {first_exit:?}");
 
     let second_exit = commands::pre::handle(PreArgs::Exit, &global);
     assert!(
@@ -241,12 +233,7 @@ fn test_pre_enter_rejects_empty_tag() {
         dry_run: false,
     };
 
-    let result = commands::pre::handle(
-        PreArgs::Enter {
-            tag: "".to_string(),
-        },
-        &global,
-    );
+    let result = commands::pre::handle(PreArgs::Enter { tag: "".to_string() }, &global);
     assert!(
         result.is_err(),
         "pre enter with empty tag must return an error, but got Ok"
@@ -291,9 +278,7 @@ fn test_pre_enter_stages_pre_json_via_git_add() {
     let is_staged = stdout
         .lines()
         .any(|line| (line.starts_with('A') || line.starts_with("AM")) && line.contains("pre.json"));
-    let is_untracked = stdout
-        .lines()
-        .any(|l| l.starts_with("??") && l.contains("pre.json"));
+    let is_untracked = stdout.lines().any(|l| l.starts_with("??") && l.contains("pre.json"));
 
     assert!(
         is_staged,

@@ -1,8 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use callisto_model::{
-    DeclaredEdge, DeclaredEdgeKind, DepEdge, Diagnostic, DiagnosticCode, DiagnosticSeverity,
-    Package, PackageId, StrictFlag,
+    DeclaredEdge, DeclaredEdgeKind, DepEdge, Diagnostic, DiagnosticCode, DiagnosticSeverity, Package, PackageId,
+    StrictFlag,
 };
 
 pub fn crosscheck_declared_edges(
@@ -71,9 +71,7 @@ pub fn crosscheck_declared_edges(
 mod tests {
     use std::path::PathBuf;
 
-    use callisto_model::{
-        DepSpec, ManifestDecl, ManifestFormat, ManifestRole, PublishTarget, ReleaseTrigger,
-    };
+    use callisto_model::{DepSpec, ManifestDecl, ManifestFormat, ManifestRole, PublishTarget, ReleaseTrigger};
 
     use super::*;
 
@@ -134,8 +132,6 @@ mod tests {
         // Two disagreements expected: moon's b->a is undeclared by manifests,
         // and the manifest's a->b is undeclared by moon.
         assert_eq!(diags.len(), 2);
-        assert!(diags
-            .iter()
-            .all(|d| d.code == DiagnosticCode::GraphEdgeDisagreement));
+        assert!(diags.iter().all(|d| d.code == DiagnosticCode::GraphEdgeDisagreement));
     }
 }

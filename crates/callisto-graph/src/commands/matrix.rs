@@ -29,12 +29,7 @@ pub fn matrix<R: CommandRunner, D: DependencyResolver>(
 
     let inputs: Vec<MatrixPackageInput> = all_packages
         .iter()
-        .filter(|p| {
-            opts.package
-                .as_deref()
-                .map(|n| p.id.name() == n)
-                .unwrap_or(true)
-        })
+        .filter(|p| opts.package.as_deref().map(|n| p.id.name() == n).unwrap_or(true))
         .map(|p| {
             let dir_rel = p
                 .manifests

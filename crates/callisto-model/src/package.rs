@@ -5,8 +5,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    workspace_relative, Ecosystem, ModelError, PackageId, PublishTarget, ReleaseTrigger,
-    TagTemplate, VersionGrammar,
+    workspace_relative, Ecosystem, ModelError, PackageId, PublishTarget, ReleaseTrigger, TagTemplate, VersionGrammar,
 };
 
 /// A package in the workspace graph.
@@ -22,9 +21,7 @@ pub struct Package {
 
 impl Package {
     pub fn canonical_manifests(&self) -> impl Iterator<Item = &ManifestDecl> {
-        self.manifests
-            .iter()
-            .filter(|m| m.role == ManifestRole::Canonical)
+        self.manifests.iter().filter(|m| m.role == ManifestRole::Canonical)
     }
 
     pub fn platform_manifests(&self) -> impl Iterator<Item = &ManifestDecl> {
@@ -34,9 +31,7 @@ impl Package {
     }
 
     pub fn lockfiles(&self) -> impl Iterator<Item = &ManifestDecl> {
-        self.manifests
-            .iter()
-            .filter(|m| m.role == ManifestRole::Lockfile)
+        self.manifests.iter().filter(|m| m.role == ManifestRole::Lockfile)
     }
 
     pub fn version_grammar(&self) -> Result<VersionGrammar, ModelError> {
@@ -62,16 +57,11 @@ impl Package {
     }
 
     pub fn is_release_point(&self) -> bool {
-        self.publish_to
-            .iter()
-            .any(|t| !matches!(t, PublishTarget::None))
+        self.publish_to.iter().any(|t| !matches!(t, PublishTarget::None))
     }
 
     pub fn is_dual_published(&self) -> bool {
-        let canonical_ecosystems: HashSet<_> = self
-            .canonical_manifests()
-            .map(|m| m.format.ecosystem())
-            .collect();
+        let canonical_ecosystems: HashSet<_> = self.canonical_manifests().map(|m| m.format.ecosystem()).collect();
         canonical_ecosystems.len() >= 2
     }
 }
@@ -86,11 +76,7 @@ pub struct ManifestDecl {
 }
 
 impl ManifestDecl {
-    pub fn new(
-        path: impl AsRef<Path>,
-        role: ManifestRole,
-        format: ManifestFormat,
-    ) -> Result<Self, ModelError> {
+    pub fn new(path: impl AsRef<Path>, role: ManifestRole, format: ManifestFormat) -> Result<Self, ModelError> {
         let rel_path = workspace_relative(path)?;
 
         if format.is_lockfile() && role != ManifestRole::Lockfile {
@@ -118,9 +104,7 @@ impl ManifestDecl {
 }
 
 /// Role of a manifest file in a package.
-#[derive(
-    Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
-)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", tag = "kind")]
 pub enum ManifestRole {
     Canonical,
@@ -214,11 +198,10 @@ impl ManifestFormat {
     }
 
     pub fn from_path(p: &std::path::Path) -> Result<Self, ModelError> {
-        let name = p.file_name().and_then(|n| n.to_str()).ok_or_else(|| {
-            ModelError::UnknownManifestFormat {
-                path: p.to_path_buf(),
-            }
-        })?;
+        let name = p
+            .file_name()
+            .and_then(|n| n.to_str())
+            .ok_or_else(|| ModelError::UnknownManifestFormat { path: p.to_path_buf() })?;
         match name {
             "Cargo.toml" => Ok(ManifestFormat::CargoToml),
             "package.json" => Ok(ManifestFormat::PackageJson),
@@ -227,9 +210,7 @@ impl ManifestFormat {
             "go.mod" => Ok(ManifestFormat::GoMod),
             "pom.xml" => Ok(ManifestFormat::PomXml),
             "deno.json" | "deno.jsonc" => Ok(ManifestFormat::DenoJson),
-            _ => Err(ModelError::UnknownManifestFormat {
-                path: p.to_path_buf(),
-            }),
+            _ => Err(ModelError::UnknownManifestFormat { path: p.to_path_buf() }),
         }
     }
 }
@@ -240,18 +221,10 @@ mod tests {
 
     #[test]
     fn validates_manifest_role_and_format() {
-        let decl = ManifestDecl::new(
-            "Cargo.toml",
-            ManifestRole::Canonical,
-            ManifestFormat::CargoToml,
-        );
+        let decl = ManifestDecl::new("Cargo.toml", ManifestRole::Canonical, ManifestFormat::CargoToml);
         assert!(decl.is_ok());
 
-        let invalid = ManifestDecl::new(
-            "Cargo.toml",
-            ManifestRole::Lockfile,
-            ManifestFormat::CargoToml,
-        );
+        let invalid = ManifestDecl::new("Cargo.toml", ManifestRole::Lockfile, ManifestFormat::CargoToml);
         assert!(invalid.is_err());
     }
 }

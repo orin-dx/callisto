@@ -4,8 +4,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use callisto_model::{
-    workspace_relative, ApplyPermit, DepKind, DepSpec, DependencyEntry, Ecosystem, ManifestDecl,
-    ManifestError, ManifestFormat, ManifestRole, Version, VersionGrammar, VersionReq,
+    workspace_relative, ApplyPermit, DepKind, DepSpec, DependencyEntry, Ecosystem, ManifestDecl, ManifestError,
+    ManifestFormat, ManifestRole, Version, VersionGrammar, VersionReq,
 };
 
 use crate::{Manifest, OpenContext};
@@ -80,9 +80,7 @@ impl CargoToml {
         if uses_inheritance && ctx.cargo_workspace.is_none() {
             return Err(ManifestError::Read {
                 path: rel_path,
-                message:
-                    "declares .workspace = true but no WorkspaceCargoResolver context was supplied"
-                        .to_string(),
+                message: "declares .workspace = true but no WorkspaceCargoResolver context was supplied".to_string(),
             });
         }
 
@@ -109,9 +107,7 @@ impl CargoToml {
 /// lifecycle -- that requires workspace-inheritance context this function
 /// has no need for, since a package's *name* is never workspace-inherited).
 pub fn cargo_package_name(doc: &toml_edit::DocumentMut) -> Option<&str> {
-    doc.get("package")
-        .and_then(|p| p.get("name"))
-        .and_then(|n| n.as_str())
+    doc.get("package").and_then(|p| p.get("name")).and_then(|n| n.as_str())
 }
 
 impl Manifest for CargoToml {
@@ -120,11 +116,9 @@ impl Manifest for CargoToml {
         if self.has_bom {
             text = format!("\u{FEFF}{}", text);
         }
-        crate::atomic::atomic_write(&self.absolute, &text, permit).map_err(|e| {
-            ManifestError::Write {
-                path: self.path.clone(),
-                message: e.to_string(),
-            }
+        crate::atomic::atomic_write(&self.absolute, &text, permit).map_err(|e| ManifestError::Write {
+            path: self.path.clone(),
+            message: e.to_string(),
         })?;
         crate::record_persist_call();
         Ok(())
@@ -167,11 +161,10 @@ impl Manifest for CargoToml {
     }
 
     fn package_name(&self) -> Result<String, ManifestError> {
-        let name =
-            cargo_package_name(&self.document).ok_or_else(|| ManifestError::MissingField {
-                path: self.path.clone(),
-                field: "package.name",
-            })?;
+        let name = cargo_package_name(&self.document).ok_or_else(|| ManifestError::MissingField {
+            path: self.path.clone(),
+            field: "package.name",
+        })?;
         Ok(name.to_string())
     }
 
@@ -198,12 +191,10 @@ impl Manifest for CargoToml {
                 field: "package.version",
             })?;
 
-        Version::parse(raw, VersionGrammar::SemVer).map_err(|source| {
-            ManifestError::InvalidVersion {
-                path: self.path.clone(),
-                raw: raw.to_string(),
-                source,
-            }
+        Version::parse(raw, VersionGrammar::SemVer).map_err(|source| ManifestError::InvalidVersion {
+            path: self.path.clone(),
+            raw: raw.to_string(),
+            source,
         })
     }
 
@@ -259,15 +250,9 @@ impl Manifest for CargoToml {
             ("dev-dependencies", DepKind::Dev),
             ("build-dependencies", DepKind::Build),
         ] {
-            if let Some(table) = self
-                .document
-                .get(section_name)
-                .and_then(|t| t.as_table_like())
-            {
+            if let Some(table) = self.document.get(section_name).and_then(|t| t.as_table_like()) {
                 for (name, item) in table.iter() {
-                    let is_inherited = self
-                        .inherited_deps
-                        .contains(&(section_kind, name.to_string()));
+                    let is_inherited = self.inherited_deps.contains(&(section_kind, name.to_string()));
                     let mut kind = section_kind;
 
                     let spec = if is_inherited {
@@ -344,13 +329,11 @@ impl Manifest for CargoToml {
                 kind,
             })?;
 
-        let item = table
-            .get_mut(name)
-            .ok_or_else(|| ManifestError::DependencyNotFound {
-                path: self.path.clone(),
-                name: name.to_string(),
-                kind,
-            })?;
+        let item = table.get_mut(name).ok_or_else(|| ManifestError::DependencyNotFound {
+            path: self.path.clone(),
+            name: name.to_string(),
+            kind,
+        })?;
 
         let new_str = new.render();
 
@@ -376,10 +359,7 @@ impl Manifest for CargoToml {
                 });
             }
         } else if let Some(tbl) = item.as_table_mut() {
-            let decor = tbl
-                .get("version")
-                .and_then(|i| i.as_value())
-                .map(|v| v.decor().clone());
+            let decor = tbl.get("version").and_then(|i| i.as_value()).map(|v| v.decor().clone());
             tbl.insert("version", toml_edit::value(new_str));
             if let Some(decor) = decor {
                 if let Some(new_item) = tbl.get_mut("version").and_then(|i| i.as_value_mut()) {
@@ -561,14 +541,13 @@ impl WorkspaceCargoResolver {
             message: e.to_string(),
         })?;
 
-        let doc: toml_edit::DocumentMut =
-            content
-                .parse()
-                .map_err(|e: toml_edit::TomlError| ManifestError::Parse {
-                    path: rel_path.clone(),
-                    format: ManifestFormat::CargoToml,
-                    message: e.to_string(),
-                })?;
+        let doc: toml_edit::DocumentMut = content
+            .parse()
+            .map_err(|e: toml_edit::TomlError| ManifestError::Parse {
+                path: rel_path.clone(),
+                format: ManifestFormat::CargoToml,
+                message: e.to_string(),
+            })?;
 
         Ok(WorkspaceCargoResolver {
             root_path: rel_path,
@@ -630,11 +609,7 @@ impl WorkspaceCargoResolver {
             })
     }
 
-    pub fn write_version(
-        &mut self,
-        v: &Version,
-        permit: &ApplyPermit,
-    ) -> Result<(), ManifestError> {
+    pub fn write_version(&mut self, v: &Version, permit: &ApplyPermit) -> Result<(), ManifestError> {
         let ws = self
             .document
             .get_mut("workspace")
@@ -668,12 +643,7 @@ impl WorkspaceCargoResolver {
         self.persist(permit)
     }
 
-    pub fn write_dependency(
-        &mut self,
-        name: &str,
-        new: DepSpec,
-        permit: &ApplyPermit,
-    ) -> Result<(), ManifestError> {
+    pub fn write_dependency(&mut self, name: &str, new: DepSpec, permit: &ApplyPermit) -> Result<(), ManifestError> {
         let ws = self
             .document
             .get_mut("workspace")
@@ -692,13 +662,11 @@ impl WorkspaceCargoResolver {
                 field: "workspace.dependencies",
             })?;
 
-        let item = deps
-            .get_mut(name)
-            .ok_or_else(|| ManifestError::DependencyNotFound {
-                path: self.root_path.clone(),
-                name: name.to_string(),
-                kind: DepKind::Runtime,
-            })?;
+        let item = deps.get_mut(name).ok_or_else(|| ManifestError::DependencyNotFound {
+            path: self.root_path.clone(),
+            name: name.to_string(),
+            kind: DepKind::Runtime,
+        })?;
 
         let new_str = new.render();
         if let Some(value) = item.as_value_mut() {
@@ -722,10 +690,7 @@ impl WorkspaceCargoResolver {
                 });
             }
         } else if let Some(tbl) = item.as_table_mut() {
-            let decor = tbl
-                .get("version")
-                .and_then(|i| i.as_value())
-                .map(|v| v.decor().clone());
+            let decor = tbl.get("version").and_then(|i| i.as_value()).map(|v| v.decor().clone());
             tbl.insert("version", toml_edit::value(new_str));
             if let Some(decor) = decor {
                 if let Some(new_item) = tbl.get_mut("version").and_then(|i| i.as_value_mut()) {
@@ -744,11 +709,9 @@ impl WorkspaceCargoResolver {
 
     fn persist(&mut self, permit: &ApplyPermit) -> Result<(), ManifestError> {
         let text = self.document.to_string();
-        crate::atomic::atomic_write(&self.absolute_path, &text, permit).map_err(|e| {
-            ManifestError::Write {
-                path: self.root_path.clone(),
-                message: e.to_string(),
-            }
+        crate::atomic::atomic_write(&self.absolute_path, &text, permit).map_err(|e| ManifestError::Write {
+            path: self.root_path.clone(),
+            message: e.to_string(),
         })
     }
 }
@@ -769,16 +732,13 @@ mod tests {
 
     #[test]
     fn cargo_package_name_reads_package_name() {
-        let doc: toml_edit::DocumentMut = "[package]\nname = \"my-crate\"\nversion = \"0.1.0\"\n"
-            .parse()
-            .unwrap();
+        let doc: toml_edit::DocumentMut = "[package]\nname = \"my-crate\"\nversion = \"0.1.0\"\n".parse().unwrap();
         assert_eq!(cargo_package_name(&doc), Some("my-crate"));
     }
 
     #[test]
     fn cargo_package_name_returns_none_when_absent() {
-        let doc: toml_edit::DocumentMut =
-            "[workspace]\nmembers = [\"crates/*\"]\n".parse().unwrap();
+        let doc: toml_edit::DocumentMut = "[workspace]\nmembers = [\"crates/*\"]\n".parse().unwrap();
         assert_eq!(cargo_package_name(&doc), None);
     }
 
@@ -830,12 +790,7 @@ mod tests {
         let content = "[package]\nname = \"my-crate\"\nversion = \"0.1.0\"\n";
         fs::write(&manifest_path, content).unwrap();
 
-        let decl = ManifestDecl::new(
-            "Cargo.toml",
-            ManifestRole::Canonical,
-            ManifestFormat::CargoToml,
-        )
-        .unwrap();
+        let decl = ManifestDecl::new("Cargo.toml", ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap();
         let ctx = OpenContext {
             workspace_root: dir.path(),
             cargo_workspace: None,
@@ -866,12 +821,7 @@ serde = "1.0"
 "#;
         fs::write(&manifest_path, content).unwrap();
 
-        let decl = ManifestDecl::new(
-            "Cargo.toml",
-            ManifestRole::Canonical,
-            ManifestFormat::CargoToml,
-        )
-        .unwrap();
+        let decl = ManifestDecl::new("Cargo.toml", ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap();
         let ctx = OpenContext {
             workspace_root: dir.path(),
             cargo_workspace: None,
@@ -897,12 +847,7 @@ serde = "1.0"
         let content = "[package]\nname = \"my-crate\"\nversion = \"0.1.0\"\n";
         fs::write(&manifest_path, content).unwrap();
 
-        let decl = ManifestDecl::new(
-            "Cargo.toml",
-            ManifestRole::Canonical,
-            ManifestFormat::CargoToml,
-        )
-        .unwrap();
+        let decl = ManifestDecl::new("Cargo.toml", ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap();
         let ctx = OpenContext {
             workspace_root: dir.path(),
             cargo_workspace: None,
@@ -914,10 +859,7 @@ serde = "1.0"
         manifest.write_version(&new_ver, &permit()).unwrap();
 
         let unchanged = fs::read_to_string(&manifest_path).unwrap();
-        assert_eq!(
-            unchanged, content,
-            "write_version alone must not write to disk"
-        );
+        assert_eq!(unchanged, content, "write_version alone must not write to disk");
 
         manifest.persist(&permit()).unwrap();
         let updated = fs::read_to_string(&manifest_path).unwrap();
@@ -928,18 +870,9 @@ serde = "1.0"
     fn handles_utf8_bom_cargo_toml() {
         let dir = tempdir().unwrap();
         let manifest_path = dir.path().join("Cargo.toml");
-        fs::write(
-            &manifest_path,
-            callisto_fixtures::corpus::cargo_toml_bom_sample(),
-        )
-        .unwrap();
+        fs::write(&manifest_path, callisto_fixtures::corpus::cargo_toml_bom_sample()).unwrap();
 
-        let decl = ManifestDecl::new(
-            "Cargo.toml",
-            ManifestRole::Canonical,
-            ManifestFormat::CargoToml,
-        )
-        .unwrap();
+        let decl = ManifestDecl::new("Cargo.toml", ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap();
         let ctx = OpenContext {
             workspace_root: dir.path(),
             cargo_workspace: None,
@@ -955,18 +888,9 @@ serde = "1.0"
     fn preserves_bom_on_write_round_trip() {
         let dir = tempdir().unwrap();
         let manifest_path = dir.path().join("Cargo.toml");
-        fs::write(
-            &manifest_path,
-            callisto_fixtures::corpus::cargo_toml_bom_sample(),
-        )
-        .unwrap();
+        fs::write(&manifest_path, callisto_fixtures::corpus::cargo_toml_bom_sample()).unwrap();
 
-        let decl = ManifestDecl::new(
-            "Cargo.toml",
-            ManifestRole::Canonical,
-            ManifestFormat::CargoToml,
-        )
-        .unwrap();
+        let decl = ManifestDecl::new("Cargo.toml", ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap();
         let ctx = OpenContext {
             workspace_root: dir.path(),
             cargo_workspace: None,
@@ -994,12 +918,7 @@ serde = "1.0"
         let manifest_path = dir.path().join("Cargo.toml");
         fs::write(&manifest_path, "").unwrap();
 
-        let decl = ManifestDecl::new(
-            "Cargo.toml",
-            ManifestRole::Canonical,
-            ManifestFormat::CargoToml,
-        )
-        .unwrap();
+        let decl = ManifestDecl::new("Cargo.toml", ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap();
         let ctx = OpenContext {
             workspace_root: dir.path(),
             cargo_workspace: None,
@@ -1017,12 +936,7 @@ serde = "1.0"
         let manifest_path = dir.path().join("Cargo.toml");
         fs::write(&manifest_path, "\u{FEFF}").unwrap();
 
-        let decl = ManifestDecl::new(
-            "Cargo.toml",
-            ManifestRole::Canonical,
-            ManifestFormat::CargoToml,
-        )
-        .unwrap();
+        let decl = ManifestDecl::new("Cargo.toml", ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap();
         let ctx = OpenContext {
             workspace_root: dir.path(),
             cargo_workspace: None,
@@ -1041,12 +955,7 @@ serde = "1.0"
         let manifest_path = dir.path().join("Cargo.toml");
         fs::write(&manifest_path, "\u{FEFF}not valid toml {{{").unwrap();
 
-        let decl = ManifestDecl::new(
-            "Cargo.toml",
-            ManifestRole::Canonical,
-            ManifestFormat::CargoToml,
-        )
-        .unwrap();
+        let decl = ManifestDecl::new("Cargo.toml", ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap();
         let ctx = OpenContext {
             workspace_root: dir.path(),
             cargo_workspace: None,
@@ -1061,8 +970,7 @@ serde = "1.0"
     fn write_dependency_errors_on_unrecognized_value_shape_instead_of_silently_no_opping() {
         let dir = tempdir().unwrap();
         let manifest_path = dir.path().join("Cargo.toml");
-        let content =
-            "[workspace]\nmembers = [\"crates/*\"]\n\n[workspace.dependencies]\nserde = 1\n";
+        let content = "[workspace]\nmembers = [\"crates/*\"]\n\n[workspace.dependencies]\nserde = 1\n";
         fs::write(&manifest_path, content).unwrap();
 
         let mut resolver = WorkspaceCargoResolver::load(&manifest_path).unwrap();
@@ -1073,10 +981,7 @@ serde = "1.0"
         let result = resolver.write_dependency("serde", new_spec, &permit());
 
         assert!(
-            matches!(
-                result,
-                Err(ManifestError::UnrecognizedDependencyValue { .. })
-            ),
+            matches!(result, Err(ManifestError::UnrecognizedDependencyValue { .. })),
             "expected UnrecognizedDependencyValue, got: {result:?}"
         );
 
@@ -1095,7 +1000,8 @@ serde = "1.0"
     fn write_dependency_errors_on_array_of_tables_dependency_shape() {
         let dir = tempdir().unwrap();
         let manifest_path = dir.path().join("Cargo.toml");
-        let content = "[workspace]\nmembers = [\"crates/*\"]\n\n[[workspace.dependencies.serde]]\nversion = \"1.0.0\"\n";
+        let content =
+            "[workspace]\nmembers = [\"crates/*\"]\n\n[[workspace.dependencies.serde]]\nversion = \"1.0.0\"\n";
         fs::write(&manifest_path, content).unwrap();
 
         let mut resolver = WorkspaceCargoResolver::load(&manifest_path).unwrap();
@@ -1106,10 +1012,7 @@ serde = "1.0"
         let result = resolver.write_dependency("serde", new_spec, &permit());
 
         assert!(
-            matches!(
-                result,
-                Err(ManifestError::UnrecognizedDependencyValue { .. })
-            ),
+            matches!(result, Err(ManifestError::UnrecognizedDependencyValue { .. })),
             "expected UnrecognizedDependencyValue, got: {result:?}"
         );
 
@@ -1138,9 +1041,7 @@ path = "../serde"
             VersionReq::parse("^1.1.0", Ecosystem::Cargo).unwrap(),
             "^1.1.0".to_string(),
         );
-        resolver
-            .write_dependency("serde", new_spec, &permit())
-            .unwrap();
+        resolver.write_dependency("serde", new_spec, &permit()).unwrap();
 
         let updated = fs::read_to_string(&manifest_path).unwrap();
         assert!(updated.contains("version = \"^1.1.0\""));
@@ -1167,9 +1068,7 @@ path = "../serde"
             VersionReq::parse("^1.1.0", Ecosystem::Cargo).unwrap(),
             "^1.1.0".to_string(),
         );
-        resolver
-            .write_dependency("serde", new_spec, &permit())
-            .unwrap();
+        resolver.write_dependency("serde", new_spec, &permit()).unwrap();
 
         let updated = fs::read_to_string(&manifest_path).unwrap();
         assert!(updated.contains("^1.1.0"));
@@ -1189,12 +1088,7 @@ path = "../serde"
         )
         .unwrap();
 
-        let decl = ManifestDecl::new(
-            "Cargo.toml",
-            ManifestRole::Canonical,
-            ManifestFormat::CargoToml,
-        )
-        .unwrap();
+        let decl = ManifestDecl::new("Cargo.toml", ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap();
         let ctx = OpenContext {
             workspace_root: dir.path(),
             cargo_workspace: None,
@@ -1223,12 +1117,7 @@ path = "../serde"
         )
         .unwrap();
 
-        let decl = ManifestDecl::new(
-            "Cargo.toml",
-            ManifestRole::Canonical,
-            ManifestFormat::CargoToml,
-        )
-        .unwrap();
+        let decl = ManifestDecl::new("Cargo.toml", ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap();
         let ctx = OpenContext {
             workspace_root: dir.path(),
             cargo_workspace: None,
@@ -1267,12 +1156,7 @@ helper = { version = "1.0.0", path = "../helper" }
 "#;
         fs::write(&manifest_path, content).unwrap();
 
-        let decl = ManifestDecl::new(
-            "Cargo.toml",
-            ManifestRole::Canonical,
-            ManifestFormat::CargoToml,
-        )
-        .unwrap();
+        let decl = ManifestDecl::new("Cargo.toml", ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap();
         let ctx = OpenContext {
             workspace_root: dir.path(),
             cargo_workspace: None,
@@ -1285,12 +1169,7 @@ helper = { version = "1.0.0", path = "../helper" }
             "^1.1.0".to_string(),
         );
         manifest
-            .update_dependency_spec(
-                "helper",
-                callisto_model::DepKind::Runtime,
-                new_spec,
-                &permit(),
-            )
+            .update_dependency_spec("helper", callisto_model::DepKind::Runtime, new_spec, &permit())
             .unwrap();
         manifest.persist(&permit()).unwrap();
 
@@ -1308,16 +1187,10 @@ helper = { version = "1.0.0", path = "../helper" }
     fn update_dependency_spec_errors_on_unrecognized_value_shape_instead_of_silently_no_opping() {
         let dir = tempdir().unwrap();
         let manifest_path = dir.path().join("Cargo.toml");
-        let content =
-            "[package]\nname = \"my-crate\"\nversion = \"0.1.0\"\n\n[dependencies]\nhelper = 1\n";
+        let content = "[package]\nname = \"my-crate\"\nversion = \"0.1.0\"\n\n[dependencies]\nhelper = 1\n";
         fs::write(&manifest_path, content).unwrap();
 
-        let decl = ManifestDecl::new(
-            "Cargo.toml",
-            ManifestRole::Canonical,
-            ManifestFormat::CargoToml,
-        )
-        .unwrap();
+        let decl = ManifestDecl::new("Cargo.toml", ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap();
         let ctx = OpenContext {
             workspace_root: dir.path(),
             cargo_workspace: None,
@@ -1329,18 +1202,10 @@ helper = { version = "1.0.0", path = "../helper" }
             VersionReq::parse("^1.1.0", Ecosystem::Cargo).unwrap(),
             "^1.1.0".to_string(),
         );
-        let result = manifest.update_dependency_spec(
-            "helper",
-            callisto_model::DepKind::Runtime,
-            new_spec,
-            &permit(),
-        );
+        let result = manifest.update_dependency_spec("helper", callisto_model::DepKind::Runtime, new_spec, &permit());
 
         assert!(
-            matches!(
-                result,
-                Err(ManifestError::UnrecognizedDependencyValue { .. })
-            ),
+            matches!(result, Err(ManifestError::UnrecognizedDependencyValue { .. })),
             "expected UnrecognizedDependencyValue, got: {result:?}"
         );
     }
@@ -1355,15 +1220,11 @@ helper = { version = "1.0.0", path = "../helper" }
     fn update_dependency_spec_errors_on_array_of_tables_dependency_shape() {
         let dir = tempdir().unwrap();
         let manifest_path = dir.path().join("Cargo.toml");
-        let content = "[package]\nname = \"my-crate\"\nversion = \"0.1.0\"\n\n[[dependencies.helper]]\nversion = \"1.0.0\"\n";
+        let content =
+            "[package]\nname = \"my-crate\"\nversion = \"0.1.0\"\n\n[[dependencies.helper]]\nversion = \"1.0.0\"\n";
         fs::write(&manifest_path, content).unwrap();
 
-        let decl = ManifestDecl::new(
-            "Cargo.toml",
-            ManifestRole::Canonical,
-            ManifestFormat::CargoToml,
-        )
-        .unwrap();
+        let decl = ManifestDecl::new("Cargo.toml", ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap();
         let ctx = OpenContext {
             workspace_root: dir.path(),
             cargo_workspace: None,
@@ -1375,18 +1236,10 @@ helper = { version = "1.0.0", path = "../helper" }
             VersionReq::parse("^1.1.0", Ecosystem::Cargo).unwrap(),
             "^1.1.0".to_string(),
         );
-        let result = manifest.update_dependency_spec(
-            "helper",
-            callisto_model::DepKind::Runtime,
-            new_spec,
-            &permit(),
-        );
+        let result = manifest.update_dependency_spec("helper", callisto_model::DepKind::Runtime, new_spec, &permit());
 
         assert!(
-            matches!(
-                result,
-                Err(ManifestError::UnrecognizedDependencyValue { .. })
-            ),
+            matches!(result, Err(ManifestError::UnrecognizedDependencyValue { .. })),
             "expected UnrecognizedDependencyValue, got: {result:?}"
         );
     }
@@ -1398,12 +1251,7 @@ helper = { version = "1.0.0", path = "../helper" }
         let content = "[package]\nname = \"my-crate\"\nversion = \"0.1.0\"\n\n[dependencies]\nhelper = \"1.0.0\"\n";
         fs::write(&manifest_path, content).unwrap();
 
-        let decl = ManifestDecl::new(
-            "Cargo.toml",
-            ManifestRole::Canonical,
-            ManifestFormat::CargoToml,
-        )
-        .unwrap();
+        let decl = ManifestDecl::new("Cargo.toml", ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap();
         let ctx = OpenContext {
             workspace_root: dir.path(),
             cargo_workspace: None,
@@ -1416,12 +1264,7 @@ helper = { version = "1.0.0", path = "../helper" }
             "^1.1.0".to_string(),
         );
         manifest
-            .update_dependency_spec(
-                "helper",
-                callisto_model::DepKind::Runtime,
-                new_spec,
-                &permit(),
-            )
+            .update_dependency_spec("helper", callisto_model::DepKind::Runtime, new_spec, &permit())
             .unwrap();
 
         let unchanged = fs::read_to_string(&manifest_path).unwrap();
@@ -1446,12 +1289,7 @@ edition = "2021"
 "#;
         fs::write(&manifest_path, content).unwrap();
 
-        let decl = ManifestDecl::new(
-            "Cargo.toml",
-            ManifestRole::Canonical,
-            ManifestFormat::CargoToml,
-        )
-        .unwrap();
+        let decl = ManifestDecl::new("Cargo.toml", ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap();
         let ctx = OpenContext {
             workspace_root: dir.path(),
             cargo_workspace: None,
@@ -1481,12 +1319,7 @@ path = "../helper"
 "#;
         fs::write(&manifest_path, content).unwrap();
 
-        let decl = ManifestDecl::new(
-            "Cargo.toml",
-            ManifestRole::Canonical,
-            ManifestFormat::CargoToml,
-        )
-        .unwrap();
+        let decl = ManifestDecl::new("Cargo.toml", ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap();
         let ctx = OpenContext {
             workspace_root: dir.path(),
             cargo_workspace: None,
@@ -1499,12 +1332,7 @@ path = "../helper"
             "^1.1.0".to_string(),
         );
         manifest
-            .update_dependency_spec(
-                "helper",
-                callisto_model::DepKind::Runtime,
-                new_spec,
-                &permit(),
-            )
+            .update_dependency_spec("helper", callisto_model::DepKind::Runtime, new_spec, &permit())
             .unwrap();
         manifest.persist(&permit()).unwrap();
 
@@ -1529,12 +1357,7 @@ helper = { version = "1.0.0", path = "../helper" } # dep comment
 "#;
         fs::write(&manifest_path, content).unwrap();
 
-        let decl = ManifestDecl::new(
-            "Cargo.toml",
-            ManifestRole::Canonical,
-            ManifestFormat::CargoToml,
-        )
-        .unwrap();
+        let decl = ManifestDecl::new("Cargo.toml", ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap();
         let ctx = OpenContext {
             workspace_root: dir.path(),
             cargo_workspace: None,
@@ -1547,12 +1370,7 @@ helper = { version = "1.0.0", path = "../helper" } # dep comment
             "^1.1.0".to_string(),
         );
         manifest
-            .update_dependency_spec(
-                "helper",
-                callisto_model::DepKind::Runtime,
-                new_spec,
-                &permit(),
-            )
+            .update_dependency_spec("helper", callisto_model::DepKind::Runtime, new_spec, &permit())
             .unwrap();
         manifest.persist(&permit()).unwrap();
 
@@ -1600,12 +1418,7 @@ edition = "2021"
         let ws_resolver = WorkspaceCargoResolver::load(&root_cargo_path).unwrap();
         let inheritance = Arc::new(ws_resolver.inheritance().unwrap());
 
-        let decl = ManifestDecl::new(
-            "member/Cargo.toml",
-            ManifestRole::Canonical,
-            ManifestFormat::CargoToml,
-        )
-        .unwrap();
+        let decl = ManifestDecl::new("member/Cargo.toml", ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap();
         let ctx = OpenContext {
             workspace_root: dir.path(),
             cargo_workspace: Some(inheritance),
@@ -1626,8 +1439,7 @@ edition = "2021"
         // `version.workspace = true`, not yet pinned.
         let member_before_persist = fs::read_to_string(&member_cargo_path).unwrap();
         assert_eq!(
-            member_before_persist,
-            "[package]\nname = \"member-crate\"\nversion.workspace = true\nedition = \"2021\"\n",
+            member_before_persist, "[package]\nname = \"member-crate\"\nversion.workspace = true\nedition = \"2021\"\n",
             "write_version on the inherited-version branch must not touch disk before persist() is called"
         );
 
@@ -1677,12 +1489,7 @@ serde = { version = "1.0", features = ["derive"] }
 "#;
         fs::write(&manifest_path, content).unwrap();
 
-        let decl = ManifestDecl::new(
-            "Cargo.toml",
-            ManifestRole::Canonical,
-            ManifestFormat::CargoToml,
-        )
-        .unwrap();
+        let decl = ManifestDecl::new("Cargo.toml", ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap();
         let ctx = OpenContext {
             workspace_root: dir.path(),
             cargo_workspace: None,
@@ -1721,12 +1528,7 @@ edition = "2021"
 "#;
         fs::write(&manifest_path, content).unwrap();
 
-        let decl = ManifestDecl::new(
-            "Cargo.toml",
-            ManifestRole::Canonical,
-            ManifestFormat::CargoToml,
-        )
-        .unwrap();
+        let decl = ManifestDecl::new("Cargo.toml", ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap();
 
         // Without a workspace resolver, open must return Err — not panic.
         let ctx_no_ws = OpenContext {
@@ -1810,9 +1612,7 @@ version = "4.5.6"
                     "lower clause must be rewritten to the target while the upper bound clause is preserved unchanged"
                 );
             }
-            other => panic!(
-                "compound range within upper bound must be rewritten to Some(..), got: {other:?}"
-            ),
+            other => panic!("compound range within upper bound must be rewritten to Some(..), got: {other:?}"),
         }
     }
 
@@ -1836,12 +1636,7 @@ version = "4.5.6"
             .inheritance()
             .unwrap();
 
-        let decl = ManifestDecl::new(
-            "Cargo.toml",
-            ManifestRole::Canonical,
-            ManifestFormat::CargoToml,
-        )
-        .unwrap();
+        let decl = ManifestDecl::new("Cargo.toml", ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap();
         let ctx = OpenContext {
             workspace_root: dir.path(),
             cargo_workspace: Some(Arc::new(inheritance)),
@@ -1854,12 +1649,7 @@ version = "4.5.6"
             VersionReq::parse("^1.1.0", Ecosystem::Cargo).unwrap(),
             "^1.1.0".to_string(),
         );
-        let result = manifest.update_dependency_spec(
-            "serde",
-            callisto_model::DepKind::Runtime,
-            new_spec,
-            &permit(),
-        );
+        let result = manifest.update_dependency_spec("serde", callisto_model::DepKind::Runtime, new_spec, &permit());
 
         assert!(
             matches!(result, Err(ManifestError::InvariantViolation { .. })),

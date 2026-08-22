@@ -76,11 +76,7 @@ pub fn status<R: CommandRunner, D: DependencyResolver>(
     for pkg in all_packages.iter().copied() {
         let current_version = base_versions.get(&pkg.id).cloned().ok_or_else(|| {
             GraphError::Manifest(callisto_model::ManifestError::MissingField {
-                path: pkg
-                    .manifests
-                    .first()
-                    .map(|m| m.path.clone())
-                    .unwrap_or_default(),
+                path: pkg.manifests.first().map(|m| m.path.clone()).unwrap_or_default(),
                 field: "version",
             })
         })?;
@@ -205,9 +201,7 @@ mod tests {
 
         let pending = resolve_pending_changesets(packages.into_iter(), &loaded).unwrap();
 
-        let (names, sev) = pending
-            .get(&cargo_foo.id)
-            .expect("package should be present");
+        let (names, sev) = pending.get(&cargo_foo.id).expect("package should be present");
         assert_eq!(names, &vec!["foo-changeset".to_string()]);
         assert_eq!(sev, &Some(Severity::Major));
     }

@@ -71,9 +71,7 @@ pub fn changed_since_last_tag<R: CommandRunner>(
 mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    use callisto_model::{
-        CommandError, CommandOutput, DepEdge, ManifestDecl, ManifestFormat, ManifestRole, PackageId,
-    };
+    use callisto_model::{CommandError, CommandOutput, DepEdge, ManifestDecl, ManifestFormat, ManifestRole, PackageId};
 
     use super::*;
     use crate::resolver::DependencyResolver;
@@ -130,12 +128,7 @@ mod tests {
     fn tag_index_with_tag(dir: &std::path::Path, pkg_name: &str, tag: &str) -> TagIndex {
         struct TagListRunner(String);
         impl CommandRunner for TagListRunner {
-            fn run(
-                &self,
-                program: &str,
-                args: &[&str],
-                _cwd: &Path,
-            ) -> Result<CommandOutput, CommandError> {
+            fn run(&self, program: &str, args: &[&str], _cwd: &Path) -> Result<CommandOutput, CommandError> {
                 assert_eq!(program, "git");
                 assert_eq!(args, ["tag", "--list"]);
                 Ok(CommandOutput {
@@ -169,18 +162,12 @@ mod tests {
     }
 
     impl CommandRunner for RoutingRunner {
-        fn run(
-            &self,
-            program: &str,
-            args: &[&str],
-            _cwd: &Path,
-        ) -> Result<CommandOutput, CommandError> {
+        fn run(&self, program: &str, args: &[&str], _cwd: &Path) -> Result<CommandOutput, CommandError> {
             assert_eq!(program, "git");
             match args.first() {
                 Some(&"log") => {
                     self.log_calls.fetch_add(1, Ordering::SeqCst);
-                    *self.last_log_args.lock().unwrap() =
-                        args.iter().map(|s| s.to_string()).collect();
+                    *self.last_log_args.lock().unwrap() = args.iter().map(|s| s.to_string()).collect();
                     Ok(CommandOutput {
                         exit_code: Some(0),
                         stdout: self.log_stdout.clone(),
@@ -189,8 +176,7 @@ mod tests {
                 }
                 Some(&"diff") => {
                     self.diff_calls.fetch_add(1, Ordering::SeqCst);
-                    *self.last_diff_args.lock().unwrap() =
-                        args.iter().map(|s| s.to_string()).collect();
+                    *self.last_diff_args.lock().unwrap() = args.iter().map(|s| s.to_string()).collect();
                     Ok(CommandOutput {
                         exit_code: Some(self.diff_exit_code),
                         stdout: String::new(),

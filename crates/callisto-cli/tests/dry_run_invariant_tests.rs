@@ -12,19 +12,14 @@ use std::fs;
 use std::process::Command;
 
 use callisto_cli::cli::{
-    AddArgs, GlobalArgs, InitArgs, OutputFormat, PreArgs, PublishArgs, SnapshotArgs, TagArgs,
-    VersionArgs,
+    AddArgs, GlobalArgs, InitArgs, OutputFormat, PreArgs, PublishArgs, SnapshotArgs, TagArgs, VersionArgs,
 };
 use callisto_cli::commands;
 use callisto_fixtures::dry_run::assert_no_disk_mutation;
 use tempfile::tempdir;
 
 fn git(root: &std::path::Path, args: &[&str]) {
-    let status = Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .status()
-        .unwrap();
+    let status = Command::new("git").args(args).current_dir(root).status().unwrap();
     assert!(status.success(), "git {args:?} failed");
 }
 
@@ -93,11 +88,8 @@ fn seed_initialized_workspace(root: &std::path::Path) {
 fn publish_plan_json(root: &std::path::Path) -> String {
     let runner = callisto_cli::CliCommandRunner;
     let ws = callisto_cli::workspace::load_workspace(&global(root, false), &runner).unwrap();
-    let plan = callisto_graph::commands::plan_publish(
-        &ws,
-        &callisto_graph::commands::PublishOptions::default(),
-    )
-    .unwrap();
+    let plan =
+        callisto_graph::commands::plan_publish(&ws, &callisto_graph::commands::PublishOptions::default()).unwrap();
     serde_json::to_string(&plan).unwrap()
 }
 
@@ -366,11 +358,7 @@ fn pre_exit_without_pre_json_returns_io_error() {
     let root = dir.path();
 
     // A minimal workspace root marker satisfies `find_workspace_root`.
-    fs::write(
-        root.join("Cargo.toml"),
-        "[workspace]\nmembers = []\nresolver = \"2\"\n",
-    )
-    .unwrap();
+    fs::write(root.join("Cargo.toml"), "[workspace]\nmembers = []\nresolver = \"2\"\n").unwrap();
 
     let g = GlobalArgs {
         format: OutputFormat::Text,
@@ -419,28 +407,18 @@ fn pre_dry_run_json_output_fields_are_correct() {
     );
 
     let enter_text = String::from_utf8(enter_out.stdout).expect("stdout is UTF-8");
-    let enter_json: serde_json::Value =
-        serde_json::from_str(&enter_text).expect("dry-run output must be valid JSON");
+    let enter_json: serde_json::Value = serde_json::from_str(&enter_text).expect("dry-run output must be valid JSON");
 
     assert_eq!(enter_json["schemaVersion"], 1, "schemaVersion should be 1");
     assert_eq!(enter_json["command"], "pre", "command should be \"pre\"");
     assert_eq!(enter_json["dryRun"], true, "dryRun should be true");
-    assert_eq!(
-        enter_json["mode"], "pre",
-        "mode should be \"pre\" for enter"
-    );
-    assert_eq!(
-        enter_json["tag"], "beta",
-        "tag should echo the supplied tag"
-    );
+    assert_eq!(enter_json["mode"], "pre", "mode should be \"pre\" for enter");
+    assert_eq!(enter_json["tag"], "beta", "tag should echo the supplied tag");
     assert_eq!(
         enter_json["path"], ".changeset/pre.json",
         "path should be the relative pre.json path"
     );
-    assert!(
-        enter_json["content"].is_string(),
-        "content should be a JSON string"
-    );
+    assert!(enter_json["content"].is_string(), "content should be a JSON string");
 
     // Establish real pre mode so `pre exit` has a file to read.
     commands::pre::handle(
@@ -472,26 +450,16 @@ fn pre_dry_run_json_output_fields_are_correct() {
     );
 
     let exit_text = String::from_utf8(exit_out.stdout).expect("stdout is UTF-8");
-    let exit_json: serde_json::Value =
-        serde_json::from_str(&exit_text).expect("dry-run output must be valid JSON");
+    let exit_json: serde_json::Value = serde_json::from_str(&exit_text).expect("dry-run output must be valid JSON");
 
     assert_eq!(exit_json["schemaVersion"], 1, "schemaVersion should be 1");
     assert_eq!(exit_json["command"], "pre", "command should be \"pre\"");
     assert_eq!(exit_json["dryRun"], true, "dryRun should be true");
-    assert_eq!(
-        exit_json["mode"], "exit",
-        "mode should be \"exit\" for exit"
-    );
-    assert_eq!(
-        exit_json["tag"], "beta",
-        "tag should be the tag from pre.json"
-    );
+    assert_eq!(exit_json["mode"], "exit", "mode should be \"exit\" for exit");
+    assert_eq!(exit_json["tag"], "beta", "tag should be the tag from pre.json");
     assert_eq!(
         exit_json["path"], ".changeset/pre.json",
         "path should be the relative pre.json path"
     );
-    assert!(
-        exit_json["content"].is_string(),
-        "content should be a JSON string"
-    );
+    assert!(exit_json["content"].is_string(), "content should be a JSON string");
 }

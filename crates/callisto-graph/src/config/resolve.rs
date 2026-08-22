@@ -3,8 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use callisto_model::{
-    ConfigKey, Ecosystem, PackageId, PublishTarget, RegistryKey, ReleaseTrigger, Severity,
-    TagTemplate,
+    ConfigKey, Ecosystem, PackageId, PublishTarget, RegistryKey, ReleaseTrigger, Severity, TagTemplate,
 };
 
 use crate::config::groups::{GroupTable, RawGroupTable};
@@ -59,10 +58,7 @@ impl ResolvedConfig {
     }
 
     pub fn provenance(&self, key: &ConfigKey) -> ConfigProvenance {
-        self.provenance
-            .get(key)
-            .copied()
-            .unwrap_or(ConfigProvenance::Default)
+        self.provenance.get(key).copied().unwrap_or(ConfigProvenance::Default)
     }
 
     pub fn rendered_value(&self, key: &ConfigKey) -> Option<String> {
@@ -230,9 +226,7 @@ pub fn parse_pre_major_policy(s: &str) -> Result<PreMajorInferencePolicy, Config
         "off" | "false" => Ok(PreMajorInferencePolicy::Off),
         "conservative" => Ok(PreMajorInferencePolicy::Conservative),
         "conservative-feat" => Ok(PreMajorInferencePolicy::ConservativeFeat),
-        _ => Err(ConfigError::InvalidPreMajorInference {
-            found: s.to_string(),
-        }),
+        _ => Err(ConfigError::InvalidPreMajorInference { found: s.to_string() }),
     }
 }
 
@@ -265,10 +259,8 @@ pub fn load(root: &Path) -> Result<ResolvedConfig, ConfigError> {
     // canonicalizing because the directory may not exist yet (e.g. a fresh
     // workspace).
     let changesets_dir =
-        callisto_model::workspace_relative(changesets_dir_str).map_err(|_err| {
-            ConfigError::InvalidChangesetsDir {
-                dir: changesets_dir_str.to_string(),
-            }
+        callisto_model::workspace_relative(changesets_dir_str).map_err(|_err| ConfigError::InvalidChangesetsDir {
+            dir: changesets_dir_str.to_string(),
         })?;
 
     let cascade_raw = raw.cascade.unwrap_or_default();
@@ -301,27 +293,18 @@ pub fn load(root: &Path) -> Result<ResolvedConfig, ConfigError> {
 
     let peer_escalation = cascade_raw.peer_escalation.unwrap_or(true);
     if cascade_raw.peer_escalation.is_some() {
-        provenance.insert(
-            ConfigKey::CASCADE_PEER_ESCALATION,
-            ConfigProvenance::Explicit,
-        );
+        provenance.insert(ConfigKey::CASCADE_PEER_ESCALATION, ConfigProvenance::Explicit);
     }
 
     let preserve_npm_ranges = cascade_raw.preserve_npm_ranges.unwrap_or(true);
     if cascade_raw.preserve_npm_ranges.is_some() {
-        provenance.insert(
-            ConfigKey::CASCADE_PRESERVE_NPM_RANGES,
-            ConfigProvenance::Explicit,
-        );
+        provenance.insert(ConfigKey::CASCADE_PRESERVE_NPM_RANGES, ConfigProvenance::Explicit);
     }
 
     let validation_raw = raw.validation.unwrap_or_default();
     let allow_empty_changesets = validation_raw.allow_empty_changesets.unwrap_or(false);
     if validation_raw.allow_empty_changesets.is_some() {
-        provenance.insert(
-            ConfigKey::VALIDATION_ALLOW_EMPTY_CHANGESETS,
-            ConfigProvenance::Explicit,
-        );
+        provenance.insert(ConfigKey::VALIDATION_ALLOW_EMPTY_CHANGESETS, ConfigProvenance::Explicit);
     }
 
     let mut registries = BTreeMap::new();
@@ -390,11 +373,9 @@ pub fn load(root: &Path) -> Result<ResolvedConfig, ConfigError> {
             .changelog
             .as_deref()
             .map(|s| {
-                callisto_model::workspace_relative(s).map_err(|_err| {
-                    ConfigError::InvalidChangelogPath {
-                        pattern: raw_pkg.pattern.clone(),
-                        value: s.to_string(),
-                    }
+                callisto_model::workspace_relative(s).map_err(|_err| ConfigError::InvalidChangelogPath {
+                    pattern: raw_pkg.pattern.clone(),
+                    value: s.to_string(),
                 })
             })
             .transpose()?;
@@ -440,11 +421,10 @@ pub fn load(root: &Path) -> Result<ResolvedConfig, ConfigError> {
     // A [[package]] rule takes priority; [[package-set]] is the fallback (see walk.rs).
     let mut package_sets: Vec<(PackagePattern, PackageConfig)> = Vec::new();
     for raw_pkg in raw.package_set.unwrap_or_default() {
-        let pattern =
-            PackagePattern::parse(&raw_pkg.pattern).map_err(|e| ConfigError::UnknownKey {
-                path: callisto_toml.clone(),
-                key: format!("[[package-set]] match = {:?}: {e}", raw_pkg.pattern),
-            })?;
+        let pattern = PackagePattern::parse(&raw_pkg.pattern).map_err(|e| ConfigError::UnknownKey {
+            path: callisto_toml.clone(),
+            key: format!("[[package-set]] match = {:?}: {e}", raw_pkg.pattern),
+        })?;
 
         let release_trigger = raw_pkg
             .release_trigger
@@ -463,11 +443,9 @@ pub fn load(root: &Path) -> Result<ResolvedConfig, ConfigError> {
             .changelog
             .as_deref()
             .map(|s| {
-                callisto_model::workspace_relative(s).map_err(|_err| {
-                    ConfigError::InvalidChangelogPath {
-                        pattern: raw_pkg.pattern.clone(),
-                        value: s.to_string(),
-                    }
+                callisto_model::workspace_relative(s).map_err(|_err| ConfigError::InvalidChangelogPath {
+                    pattern: raw_pkg.pattern.clone(),
+                    value: s.to_string(),
                 })
             })
             .transpose()?;
@@ -517,9 +495,7 @@ pub fn load(root: &Path) -> Result<ResolvedConfig, ConfigError> {
             peer_escalation,
             preserve_npm_ranges,
         },
-        validation: ValidationConfig {
-            allow_empty_changesets,
-        },
+        validation: ValidationConfig { allow_empty_changesets },
         registries,
         packages,
         package_sets,
@@ -546,8 +522,7 @@ mod tests {
             "promoted_siblings must default to empty at config-load time"
         );
 
-        let mut local: BTreeMap<String, Vec<(PackageId, std::collections::BTreeSet<Ecosystem>)>> =
-            BTreeMap::new();
+        let mut local: BTreeMap<String, Vec<(PackageId, std::collections::BTreeSet<Ecosystem>)>> = BTreeMap::new();
         let mut ecos = std::collections::BTreeSet::new();
         ecos.insert(Ecosystem::Cargo);
         local.insert(
@@ -574,19 +549,14 @@ mod tests {
         let root = tmp.path();
         fs::write(root.join("callisto.toml"), "").expect("write callisto.toml");
         let cfg = load(root).expect("load should succeed");
-        let _: &BTreeMap<String, Vec<(PackageId, std::collections::BTreeSet<Ecosystem>)>> =
-            &cfg.promoted_siblings;
+        let _: &BTreeMap<String, Vec<(PackageId, std::collections::BTreeSet<Ecosystem>)>> = &cfg.promoted_siblings;
     }
 
     #[test]
     fn test_config_resolve_rejects_traversal_in_changesets_dir() {
         let tmp = tempfile::tempdir().expect("tempdir");
         let root = tmp.path();
-        fs::write(
-            root.join("callisto.toml"),
-            "[changesets]\ndir = \"../../tmp\"\n",
-        )
-        .expect("write callisto.toml");
+        fs::write(root.join("callisto.toml"), "[changesets]\ndir = \"../../tmp\"\n").expect("write callisto.toml");
 
         let result = load(root);
         assert!(
@@ -604,8 +574,7 @@ mod tests {
     fn test_config_resolve_rejects_absolute_changesets_dir() {
         let tmp = tempfile::tempdir().expect("tempdir");
         let root = tmp.path();
-        fs::write(root.join("callisto.toml"), "[changesets]\ndir = \"/etc\"\n")
-            .expect("write callisto.toml");
+        fs::write(root.join("callisto.toml"), "[changesets]\ndir = \"/etc\"\n").expect("write callisto.toml");
 
         let result = load(root);
         assert!(
@@ -649,11 +618,7 @@ mod tests {
     fn test_config_resolve_accepts_normal_changesets_dir() {
         let tmp = tempfile::tempdir().expect("tempdir");
         let root = tmp.path();
-        fs::write(
-            root.join("callisto.toml"),
-            "[changesets]\ndir = \".changeset\"\n",
-        )
-        .expect("write callisto.toml");
+        fs::write(root.join("callisto.toml"), "[changesets]\ndir = \".changeset\"\n").expect("write callisto.toml");
 
         let result = load(root);
         assert!(
@@ -701,11 +666,7 @@ mod tests {
         let tmp = tempfile::tempdir().expect("tempdir");
         let root = tmp.path();
         // "cascade_mode" is a common typo for [cascade] mode = "always"
-        fs::write(
-            root.join("callisto.toml"),
-            "[cascade]\ncascade_mode = \"always\"\n",
-        )
-        .expect("write callisto.toml");
+        fs::write(root.join("callisto.toml"), "[cascade]\ncascade_mode = \"always\"\n").expect("write callisto.toml");
 
         let result = load(root);
         assert!(
@@ -776,10 +737,7 @@ mod tests {
         .expect("write callisto.toml");
 
         let result = load(root);
-        assert!(
-            result.is_err(),
-            "load() should fail for unknown registry kind, got Ok"
-        );
+        assert!(result.is_err(), "load() should fail for unknown registry kind, got Ok");
         assert!(
             matches!(result.unwrap_err(), ConfigError::UnknownKey { .. }),
             "expected UnknownKey error for unknown registry kind"
@@ -956,8 +914,7 @@ mod tests {
     }
 
     #[test]
-    fn resolve_package_config_returns_ambiguous_name_for_unprefixed_rule_matching_two_promoted_siblings(
-    ) {
+    fn resolve_package_config_returns_ambiguous_name_for_unprefixed_rule_matching_two_promoted_siblings() {
         let tmp = tempfile::tempdir().expect("tempdir");
         let root = tmp.path();
         fs::write(
@@ -998,10 +955,7 @@ mod tests {
 
     #[test]
     fn parse_publish_target_parses_all_known_variants() {
-        assert_eq!(
-            parse_publish_target("crates-io").unwrap(),
-            PublishTarget::CratesIo
-        );
+        assert_eq!(parse_publish_target("crates-io").unwrap(), PublishTarget::CratesIo);
         assert_eq!(
             parse_publish_target("npm").unwrap(),
             PublishTarget::Npm {
@@ -1027,10 +981,7 @@ mod tests {
     #[test]
     fn parse_publish_target_rejects_unknown_string() {
         let result = parse_publish_target("bogus-registry");
-        assert!(
-            result.is_err(),
-            "expected Err for unknown publish-to value, got Ok"
-        );
+        assert!(result.is_err(), "expected Err for unknown publish-to value, got Ok");
         assert!(
             matches!(result.unwrap_err(), ConfigError::UnknownKey { .. }),
             "expected UnknownKey error variant"
@@ -1039,10 +990,7 @@ mod tests {
 
     #[test]
     fn parse_release_trigger_parses_both_known_variants() {
-        assert_eq!(
-            parse_release_trigger("changeset").unwrap(),
-            ReleaseTrigger::Changeset
-        );
+        assert_eq!(parse_release_trigger("changeset").unwrap(), ReleaseTrigger::Changeset);
         assert_eq!(parse_release_trigger("auto").unwrap(), ReleaseTrigger::Auto);
     }
 
@@ -1061,14 +1009,8 @@ mod tests {
 
     #[test]
     fn parse_pre_major_policy_parses_all_known_variants() {
-        assert_eq!(
-            parse_pre_major_policy("off").unwrap(),
-            PreMajorInferencePolicy::Off
-        );
-        assert_eq!(
-            parse_pre_major_policy("false").unwrap(),
-            PreMajorInferencePolicy::Off
-        );
+        assert_eq!(parse_pre_major_policy("off").unwrap(), PreMajorInferencePolicy::Off);
+        assert_eq!(parse_pre_major_policy("false").unwrap(), PreMajorInferencePolicy::Off);
         assert_eq!(
             parse_pre_major_policy("conservative").unwrap(),
             PreMajorInferencePolicy::Conservative

@@ -49,18 +49,9 @@ fn test_add_non_interactive_via_pipe() {
     let root = tmp.path();
 
     // git init (callisto needs a git repo for some operations; tolerate failure)
-    drop(
-        Command::new("git")
-            .args(["init", "-q"])
-            .current_dir(root)
-            .output(),
-    );
+    drop(Command::new("git").args(["init", "-q"]).current_dir(root).output());
 
-    std::fs::write(
-        root.join("Cargo.toml"),
-        "[workspace]\nmembers = []\nresolver = \"2\"\n",
-    )
-    .unwrap();
+    std::fs::write(root.join("Cargo.toml"), "[workspace]\nmembers = []\nresolver = \"2\"\n").unwrap();
 
     // callisto.toml must exist for `load_workspace` to succeed.
     std::fs::write(root.join("callisto.toml"), "").unwrap();
@@ -102,11 +93,7 @@ fn matrix_napi_and_maturin_share_triple_derivation() {
 
     let tmp = tempfile::TempDir::new().unwrap();
     let root = tmp.path();
-    std::fs::write(
-        root.join("Cargo.toml"),
-        "[workspace]\nmembers = []\nresolver = \"2\"\n",
-    )
-    .unwrap();
+    std::fs::write(root.join("Cargo.toml"), "[workspace]\nmembers = []\nresolver = \"2\"\n").unwrap();
     std::fs::write(root.join("callisto.toml"), "").unwrap();
 
     let napi_dir = root.join("napi-mod");
@@ -127,13 +114,7 @@ fn matrix_napi_and_maturin_share_triple_derivation() {
 
     let bin = env!("CARGO_BIN_EXE_callisto");
     let output = Command::new(bin)
-        .args([
-            "--cwd",
-            &root.to_string_lossy(),
-            "--format",
-            "json",
-            "matrix",
-        ])
+        .args(["--cwd", &root.to_string_lossy(), "--format", "json", "matrix"])
         .output()
         .expect("failed to spawn callisto binary");
 
@@ -181,11 +162,7 @@ fn matrix_runtime_versions_npm_python_and_dual_manifest() {
 
     let tmp = tempfile::TempDir::new().unwrap();
     let root = tmp.path();
-    std::fs::write(
-        root.join("Cargo.toml"),
-        "[workspace]\nmembers = []\nresolver = \"2\"\n",
-    )
-    .unwrap();
+    std::fs::write(root.join("Cargo.toml"), "[workspace]\nmembers = []\nresolver = \"2\"\n").unwrap();
     std::fs::write(root.join("callisto.toml"), "").unwrap();
 
     let npm_dir = root.join("npm-only");
@@ -219,13 +196,7 @@ fn matrix_runtime_versions_npm_python_and_dual_manifest() {
 
     let bin = env!("CARGO_BIN_EXE_callisto");
     let output = Command::new(bin)
-        .args([
-            "--cwd",
-            &root.to_string_lossy(),
-            "--format",
-            "json",
-            "matrix",
-        ])
+        .args(["--cwd", &root.to_string_lossy(), "--format", "json", "matrix"])
         .output()
         .expect("failed to spawn callisto binary");
     assert!(
@@ -263,11 +234,7 @@ fn matrix_package_filter_and_unknown_package_via_binary() {
 
     let tmp = tempfile::TempDir::new().unwrap();
     let root = tmp.path();
-    std::fs::write(
-        root.join("Cargo.toml"),
-        "[workspace]\nmembers = []\nresolver = \"2\"\n",
-    )
-    .unwrap();
+    std::fs::write(root.join("Cargo.toml"), "[workspace]\nmembers = []\nresolver = \"2\"\n").unwrap();
     std::fs::write(root.join("callisto.toml"), "").unwrap();
 
     for name in ["pkg-a", "pkg-b"] {
@@ -321,18 +288,14 @@ fn matrix_package_filter_and_unknown_package_via_binary() {
         ])
         .output()
         .unwrap();
-    assert!(
-        !unknown.status.success(),
-        "unknown --package must exit non-zero"
-    );
+    assert!(!unknown.status.success(), "unknown --package must exit non-zero");
     let stderr = String::from_utf8_lossy(&unknown.stderr);
     assert!(
         stderr.contains("does-not-exist"),
         "stderr must name the unknown package: {stderr}"
     );
     assert!(
-        serde_json::from_slice::<serde_json::Value>(&unknown.stdout).is_err()
-            || unknown.stdout.is_empty(),
+        serde_json::from_slice::<serde_json::Value>(&unknown.stdout).is_err() || unknown.stdout.is_empty(),
         "no valid MatrixReport JSON must be printed to stdout on error"
     );
 }
@@ -346,11 +309,7 @@ fn matrix_orders_keys_lexicographically_across_three_packages() {
 
     let tmp = tempfile::TempDir::new().unwrap();
     let root = tmp.path();
-    std::fs::write(
-        root.join("Cargo.toml"),
-        "[workspace]\nmembers = []\nresolver = \"2\"\n",
-    )
-    .unwrap();
+    std::fs::write(root.join("Cargo.toml"), "[workspace]\nmembers = []\nresolver = \"2\"\n").unwrap();
     std::fs::write(root.join("callisto.toml"), "").unwrap();
 
     let zeta = root.join("zeta");
@@ -379,13 +338,7 @@ fn matrix_orders_keys_lexicographically_across_three_packages() {
 
     let bin = env!("CARGO_BIN_EXE_callisto");
     let output = Command::new(bin)
-        .args([
-            "--cwd",
-            &root.to_string_lossy(),
-            "--format",
-            "json",
-            "matrix",
-        ])
+        .args(["--cwd", &root.to_string_lossy(), "--format", "json", "matrix"])
         .output()
         .unwrap();
     assert!(
@@ -395,11 +348,7 @@ fn matrix_orders_keys_lexicographically_across_three_packages() {
     );
 
     let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    let keys: Vec<&String> = json["platformTargets"]
-        .as_object()
-        .unwrap()
-        .keys()
-        .collect();
+    let keys: Vec<&String> = json["platformTargets"].as_object().unwrap().keys().collect();
     assert_eq!(
         keys,
         vec!["alpha", "mid", "zeta"],
@@ -407,10 +356,7 @@ fn matrix_orders_keys_lexicographically_across_three_packages() {
     );
 
     // AC-001b: alpha's entry is present-but-empty, not absent.
-    assert_eq!(
-        json["platformTargets"]["alpha"]["targets"],
-        serde_json::json!([])
-    );
+    assert_eq!(json["platformTargets"]["alpha"]["targets"], serde_json::json!([]));
 
     // Within zeta's group, targets[] must be ascending by triple.
     let zeta_triples: Vec<String> = json["platformTargets"]["zeta"]["targets"]
@@ -437,22 +383,12 @@ fn matrix_empty_workspace_produces_exact_empty_report_shape() {
 
     let tmp = tempfile::TempDir::new().unwrap();
     let root = tmp.path();
-    std::fs::write(
-        root.join("Cargo.toml"),
-        "[workspace]\nmembers = []\nresolver = \"2\"\n",
-    )
-    .unwrap();
+    std::fs::write(root.join("Cargo.toml"), "[workspace]\nmembers = []\nresolver = \"2\"\n").unwrap();
     std::fs::write(root.join("callisto.toml"), "").unwrap();
 
     let bin = env!("CARGO_BIN_EXE_callisto");
     let output = Command::new(bin)
-        .args([
-            "--cwd",
-            &root.to_string_lossy(),
-            "--format",
-            "json",
-            "matrix",
-        ])
+        .args(["--cwd", &root.to_string_lossy(), "--format", "json", "matrix"])
         .output()
         .unwrap();
     assert!(output.status.success());
@@ -479,11 +415,7 @@ fn matrix_unrecognised_triple_end_to_end_diagnostic_contract() {
 
     let tmp = tempfile::TempDir::new().unwrap();
     let root = tmp.path();
-    std::fs::write(
-        root.join("Cargo.toml"),
-        "[workspace]\nmembers = []\nresolver = \"2\"\n",
-    )
-    .unwrap();
+    std::fs::write(root.join("Cargo.toml"), "[workspace]\nmembers = []\nresolver = \"2\"\n").unwrap();
     std::fs::write(root.join("callisto.toml"), "").unwrap();
 
     let mixed_dir = root.join("mixed-mod");
@@ -504,13 +436,7 @@ fn matrix_unrecognised_triple_end_to_end_diagnostic_contract() {
 
     let bin = env!("CARGO_BIN_EXE_callisto");
     let output = Command::new(bin)
-        .args([
-            "--cwd",
-            &root.to_string_lossy(),
-            "--format",
-            "json",
-            "matrix",
-        ])
+        .args(["--cwd", &root.to_string_lossy(), "--format", "json", "matrix"])
         .output()
         .expect("failed to spawn callisto binary");
 
@@ -522,14 +448,8 @@ fn matrix_unrecognised_triple_end_to_end_diagnostic_contract() {
 
     let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
 
-    let diagnostics = json["diagnostics"]
-        .as_array()
-        .expect("diagnostics must be an array");
-    assert_eq!(
-        diagnostics.len(),
-        1,
-        "exactly one diagnostic expected: {diagnostics:?}"
-    );
+    let diagnostics = json["diagnostics"].as_array().expect("diagnostics must be an array");
+    assert_eq!(diagnostics.len(), 1, "exactly one diagnostic expected: {diagnostics:?}");
     assert_eq!(diagnostics[0]["code"], "unrecognised-platform-triple");
 
     let all_triples: Vec<String> = json["platformTargets"]
@@ -569,11 +489,7 @@ fn matrix_text_format_and_bare_invocation_match_and_are_non_json() {
 
     let tmp = tempfile::TempDir::new().unwrap();
     let root = tmp.path();
-    std::fs::write(
-        root.join("Cargo.toml"),
-        "[workspace]\nmembers = []\nresolver = \"2\"\n",
-    )
-    .unwrap();
+    std::fs::write(root.join("Cargo.toml"), "[workspace]\nmembers = []\nresolver = \"2\"\n").unwrap();
     std::fs::write(root.join("callisto.toml"), "").unwrap();
 
     let dir = root.join("native-mod");
@@ -587,13 +503,7 @@ fn matrix_text_format_and_bare_invocation_match_and_are_non_json() {
     let bin = env!("CARGO_BIN_EXE_callisto");
 
     let explicit_text = Command::new(bin)
-        .args([
-            "--cwd",
-            &root.to_string_lossy(),
-            "--format",
-            "text",
-            "matrix",
-        ])
+        .args(["--cwd", &root.to_string_lossy(), "--format", "text", "matrix"])
         .output()
         .unwrap();
     assert!(explicit_text.status.success());
@@ -631,13 +541,7 @@ fn base_workspace() -> tempfile::TempDir {
 
 fn run_matrix_json(root: &std::path::Path) -> std::process::Output {
     std::process::Command::new(env!("CARGO_BIN_EXE_callisto"))
-        .args([
-            "--cwd",
-            &root.to_string_lossy(),
-            "--format",
-            "json",
-            "matrix",
-        ])
+        .args(["--cwd", &root.to_string_lossy(), "--format", "json", "matrix"])
         .output()
         .unwrap()
 }
@@ -645,8 +549,7 @@ fn run_matrix_json(root: &std::path::Path) -> std::process::Output {
 fn assert_error_exit_no_report(output: &std::process::Output) {
     assert!(!output.status.success(), "expected non-zero exit");
     assert!(
-        serde_json::from_slice::<serde_json::Value>(&output.stdout).is_err()
-            || output.stdout.is_empty(),
+        serde_json::from_slice::<serde_json::Value>(&output.stdout).is_err() || output.stdout.is_empty(),
         "no MatrixReport JSON must be printed to stdout on error"
     );
 }

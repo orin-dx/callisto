@@ -95,9 +95,7 @@ pub enum CliError {
         path: Option<std::path::PathBuf>,
     },
 
-    #[error(
-        "refusing to prompt interactively: stdin is not a terminal and no non-interactive flags were given"
-    )]
+    #[error("refusing to prompt interactively: stdin is not a terminal and no non-interactive flags were given")]
     #[diagnostic(
         code(callisto::not_a_tty),
         help("specify package names explicitly via `callisto add --package <name>:<severity>` in CI environments")
@@ -171,9 +169,7 @@ mod tests {
             !json["error"]["message"].as_str().unwrap().is_empty(),
             "message must be non-empty"
         );
-        let help = json["error"]["help"]
-            .as_str()
-            .expect("NotATty must have help text");
+        let help = json["error"]["help"].as_str().expect("NotATty must have help text");
         assert!(
             help.contains("callisto add --package"),
             "help should reference the --package flag; got: {help}"
@@ -190,15 +186,10 @@ mod tests {
         assert_envelope_shape(&json);
         assert_eq!(json["error"]["code"], "callisto::io_error");
         assert!(
-            json["error"]["message"]
-                .as_str()
-                .unwrap()
-                .contains("/some/path"),
+            json["error"]["message"].as_str().unwrap().contains("/some/path"),
             "I/O error message should include the path"
         );
-        let help = json["error"]["help"]
-            .as_str()
-            .expect("Io must have help text");
+        let help = json["error"]["help"].as_str().expect("Io must have help text");
         assert!(
             help.contains("path exists"),
             "help should reference path existence check; got: {help}"
@@ -215,21 +206,10 @@ mod tests {
             assert_envelope_shape(json);
         }
         // Both must have the same top-level keys
-        let keys_0: std::collections::BTreeSet<String> = jsons[0]["error"]
-            .as_object()
-            .unwrap()
-            .keys()
-            .cloned()
-            .collect();
-        let keys_1: std::collections::BTreeSet<String> = jsons[1]["error"]
-            .as_object()
-            .unwrap()
-            .keys()
-            .cloned()
-            .collect();
-        assert_eq!(
-            keys_0, keys_1,
-            "All error variants must produce the same JSON key set"
-        );
+        let keys_0: std::collections::BTreeSet<String> =
+            jsons[0]["error"].as_object().unwrap().keys().cloned().collect();
+        let keys_1: std::collections::BTreeSet<String> =
+            jsons[1]["error"].as_object().unwrap().keys().cloned().collect();
+        assert_eq!(keys_0, keys_1, "All error variants must produce the same JSON key set");
     }
 }

@@ -91,11 +91,9 @@ pub fn prepend(
         new_content = new_content.replace('\n', "\r\n");
     }
 
-    callisto_model::atomic::atomic_write(&full_path, &new_content, permit).map_err(|e| {
-        ChangelogError::WriteFailed {
-            path: changelog_path.to_path_buf(),
-            message: e.to_string(),
-        }
+    callisto_model::atomic::atomic_write(&full_path, &new_content, permit).map_err(|e| ChangelogError::WriteFailed {
+        path: changelog_path.to_path_buf(),
+        message: e.to_string(),
     })
 }
 
@@ -204,14 +202,8 @@ mod tests {
         let existing_crlf = "# My Package\r\n\r\n## 1.0.0\r\n\r\nSome content\r\n";
         fs::write(&full_path, existing_crlf).unwrap();
 
-        prepend(
-            root,
-            changelog_path,
-            "My Package",
-            "## 1.1.0\n\nNew stuff\n",
-            &permit(),
-        )
-        .expect("prepend should succeed on a CRLF changelog");
+        prepend(root, changelog_path, "My Package", "## 1.1.0\n\nNew stuff\n", &permit())
+            .expect("prepend should succeed on a CRLF changelog");
 
         let result = fs::read_to_string(&full_path).unwrap();
 
@@ -224,10 +216,7 @@ mod tests {
         // The new section must appear before the old section.
         let pos_new = result.find("1.1.0").expect("new version missing");
         let pos_old = result.find("1.0.0").expect("old version missing");
-        assert!(
-            pos_new < pos_old,
-            "new entry should precede old entry — got:\n{result}"
-        );
+        assert!(pos_new < pos_old, "new entry should precede old entry — got:\n{result}");
     }
 
     #[test]
@@ -263,16 +252,9 @@ mod tests {
             !result.starts_with("## 2.0.0"),
             "result must not start with H2 (no H1 at top), got:\n{result}"
         );
-        let pos_new = result
-            .find("## 2.0.0")
-            .expect("new version heading missing");
-        let pos_old = result
-            .find("## 1.0.0")
-            .expect("old version heading missing");
-        assert!(
-            pos_new < pos_old,
-            "new entry should precede old entry — got:\n{result}"
-        );
+        let pos_new = result.find("## 2.0.0").expect("new version heading missing");
+        let pos_old = result.find("## 1.0.0").expect("old version heading missing");
+        assert!(pos_new < pos_old, "new entry should precede old entry — got:\n{result}");
     }
 
     #[test]
@@ -288,14 +270,8 @@ mod tests {
         let existing = "# my-pkg\n\n## 1.0.0\n\nSome content\n";
         fs::write(&full_path, existing).unwrap();
 
-        prepend(
-            root,
-            changelog_path,
-            "my-pkg",
-            "## 1.0.0\n\nNew content\n",
-            &permit(),
-        )
-        .expect("prepend should succeed");
+        prepend(root, changelog_path, "my-pkg", "## 1.0.0\n\nNew content\n", &permit())
+            .expect("prepend should succeed");
 
         let result = fs::read_to_string(&full_path).unwrap();
 
@@ -376,9 +352,6 @@ mod tests {
             .unwrap()
             .map(|e| e.unwrap().file_name())
             .collect();
-        assert_eq!(
-            parent_entries,
-            vec![std::ffi::OsString::from("CHANGELOG.md")]
-        );
+        assert_eq!(parent_entries, vec![std::ffi::OsString::from("CHANGELOG.md")]);
     }
 }

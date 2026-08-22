@@ -14,9 +14,7 @@ pub mod plugin {
     use extism_pdk::*;
 
     #[plugin_fn]
-    pub fn register_extension(
-        Json(input): Json<RegisterExtensionInput>,
-    ) -> FnResult<Json<RegisterExtensionOutput>> {
+    pub fn register_extension(Json(input): Json<RegisterExtensionInput>) -> FnResult<Json<RegisterExtensionOutput>> {
         let output = extension::register_extension(input);
         Ok(Json(output))
     }
@@ -28,9 +26,7 @@ pub mod plugin {
     }
 
     #[plugin_fn]
-    pub fn execute_extension(
-        Json(input): Json<ExecuteExtensionInput>,
-    ) -> FnResult<Json<ExecuteExtensionOutput>> {
+    pub fn execute_extension(Json(input): Json<ExecuteExtensionInput>) -> FnResult<Json<ExecuteExtensionOutput>> {
         let output = extension::execute_extension(input);
         Ok(Json(output))
     }

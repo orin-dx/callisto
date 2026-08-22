@@ -63,9 +63,7 @@ pub(crate) enum NapiTargetsField {
 /// call this once and pass the resulting `Value` to each field-extraction
 /// function (`read_napi_targets`, `read_engines_node`) rather than letting
 /// each one independently re-read and re-parse the file from disk.
-pub(crate) fn parse_package_json(
-    pkg_json_path: &Path,
-) -> Result<Option<serde_json::Value>, GraphError> {
+pub(crate) fn parse_package_json(pkg_json_path: &Path) -> Result<Option<serde_json::Value>, GraphError> {
     if !pkg_json_path.exists() {
         return Ok(None);
     }
@@ -90,10 +88,7 @@ pub(crate) fn parse_package_json(
 /// is `Absent` (AC-003: no platformTargets entry). A present `napi.targets`
 /// that is not a JSON array of strings is a hard error (AC-010c) -- unlike
 /// `NapiTargetsIndex::load`, which silently drops non-array values.
-pub(crate) fn read_napi_targets(
-    pkg_json_path: &Path,
-    val: &serde_json::Value,
-) -> Result<NapiTargetsField, GraphError> {
+pub(crate) fn read_napi_targets(pkg_json_path: &Path, val: &serde_json::Value) -> Result<NapiTargetsField, GraphError> {
     let Some(napi) = val.get("napi") else {
         return Ok(NapiTargetsField::Absent);
     };
@@ -128,17 +123,8 @@ pub(crate) fn read_napi_targets(
 /// table. Returns `None` when `triple` is not recognised by either --
 /// callers must route that case to an UnrecognisedPlatformTriple diagnostic
 /// (AC-011) rather than treating it as an error.
-pub(crate) fn build_platform_target(
-    triple: &str,
-    package_dir: &str,
-    package_name: &str,
-) -> Option<PlatformTarget> {
-    let ManifestRole::Platform {
-        platform,
-        arch,
-        abi,
-    } = triple_to_role(triple)?
-    else {
+pub(crate) fn build_platform_target(triple: &str, package_dir: &str, package_name: &str) -> Option<PlatformTarget> {
+    let ManifestRole::Platform { platform, arch, abi } = triple_to_role(triple)? else {
         return None;
     };
     let (host_runner, use_cross) = triple_host_runner_use_cross(triple)?;
@@ -164,9 +150,7 @@ pub(crate) fn build_platform_target(
 /// `Value` to each field-extraction function (`read_maturin_targets`,
 /// `read_requires_python`) rather than letting each one independently
 /// re-read and re-parse the file from disk.
-pub(crate) fn parse_pyproject_toml(
-    pyproject_path: &Path,
-) -> Result<Option<toml::Value>, GraphError> {
+pub(crate) fn parse_pyproject_toml(pyproject_path: &Path) -> Result<Option<toml::Value>, GraphError> {
     if !pyproject_path.exists() {
         return Ok(None);
     }
@@ -227,10 +211,7 @@ pub(crate) fn read_maturin_targets(
 /// Extracts `engines.node` as a raw string from an already-parsed
 /// `package.json` value (see `parse_package_json`). `Ok(None)` when absent;
 /// `Err` when present but not a JSON string.
-pub(crate) fn read_engines_node(
-    pkg_json_path: &Path,
-    val: &serde_json::Value,
-) -> Result<Option<String>, GraphError> {
+pub(crate) fn read_engines_node(pkg_json_path: &Path, val: &serde_json::Value) -> Result<Option<String>, GraphError> {
     let Some(node) = val.get("engines").and_then(|e| e.get("node")) else {
         return Ok(None);
     };
@@ -247,10 +228,7 @@ pub(crate) fn read_engines_node(
 /// Extracts `requires-python` as a raw string from an already-parsed
 /// `pyproject.toml` value (see `parse_pyproject_toml`). `Ok(None)` when
 /// absent; `Err` when present but not a TOML string.
-pub(crate) fn read_requires_python(
-    pyproject_path: &Path,
-    val: &toml::Value,
-) -> Result<Option<String>, GraphError> {
+pub(crate) fn read_requires_python(pyproject_path: &Path, val: &toml::Value) -> Result<Option<String>, GraphError> {
     let Some(rp) = val.get("project").and_then(|p| p.get("requires-python")) else {
         return Ok(None);
     };
@@ -298,18 +276,14 @@ pub(crate) fn select_platform_target_source(
     };
 
     match (napi_field, maturin_targets) {
-        (NapiTargetsField::Present(_), Some(_)) => {
-            Err(GraphError::ConflictingPlatformTargetSources {
-                package: package_id.clone(),
-                napi_source: "napi.targets",
-                maturin_source: "[tool.maturin].targets",
-            })
+        (NapiTargetsField::Present(_), Some(_)) => Err(GraphError::ConflictingPlatformTargetSources {
+            package: package_id.clone(),
+            napi_source: "napi.targets",
+            maturin_source: "[tool.maturin].targets",
+        }),
+        (NapiTargetsField::Present(triples), None) => {
+            Ok(Some((PlatformTargetKind::Napi, "napi.targets".to_string(), triples)))
         }
-        (NapiTargetsField::Present(triples), None) => Ok(Some((
-            PlatformTargetKind::Napi,
-            "napi.targets".to_string(),
-            triples,
-        ))),
         (NapiTargetsField::Absent, Some(triples)) => Ok(Some((
             PlatformTargetKind::Maturin,
             "[tool.maturin].targets".to_string(),
@@ -376,14 +350,7 @@ pub(crate) fn assemble_platform_target_group(
     }
     targets.sort_by(|a, b| a.triple.cmp(&b.triple));
 
-    Ok((
-        Some(PlatformTargetGroup {
-            kind,
-            source,
-            targets,
-        }),
-        diagnostics,
-    ))
+    Ok((Some(PlatformTargetGroup { kind, source, targets }), diagnostics))
 }
 
 use std::collections::BTreeMap;
@@ -453,9 +420,7 @@ pub(crate) fn assemble_runtime_versions(
 /// once here and the resulting value shared between the platform-target and
 /// runtime-version extraction paths, instead of each independently
 /// re-reading and re-parsing the same file from disk.
-pub(crate) fn build_matrix_report(
-    packages: &[MatrixPackageInput],
-) -> Result<MatrixReport, GraphError> {
+pub(crate) fn build_matrix_report(packages: &[MatrixPackageInput]) -> Result<MatrixReport, GraphError> {
     let mut platform_targets = BTreeMap::new();
     let mut runtime_versions = BTreeMap::new();
     let mut diagnostics = Vec::new();
@@ -477,8 +442,7 @@ pub(crate) fn build_matrix_report(
         }
         diagnostics.extend(diags);
 
-        let rv =
-            assemble_runtime_versions(&pkg.dir_abs, pkg_json_val.as_ref(), pyproject_val.as_ref())?;
+        let rv = assemble_runtime_versions(&pkg.dir_abs, pkg_json_val.as_ref(), pyproject_val.as_ref())?;
         if !rv.is_empty() {
             runtime_versions.insert(pkg.name.clone(), rv);
         }
@@ -552,16 +516,8 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let dir = tmp.path().join("dual-pkg");
         std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(
-            dir.join("package.json"),
-            r#"{"engines":{"node":">=20.0.0"}}"#,
-        )
-        .unwrap();
-        std::fs::write(
-            dir.join("pyproject.toml"),
-            "[project]\nrequires-python = \">=3.9\"\n",
-        )
-        .unwrap();
+        std::fs::write(dir.join("package.json"), r#"{"engines":{"node":">=20.0.0"}}"#).unwrap();
+        std::fs::write(dir.join("pyproject.toml"), "[project]\nrequires-python = \">=3.9\"\n").unwrap();
 
         let report = build_matrix_report(&[input("dual-pkg", &dir)]).unwrap();
         let entries = report
@@ -655,8 +611,7 @@ mod tests {
     #[test]
     fn select_platform_target_source_no_manifests_returns_none() {
         let tmp = tempfile::tempdir().unwrap();
-        let result =
-            select_platform_target_source(tmp.path(), &pkg_id("plain-pkg"), None, None).unwrap();
+        let result = select_platform_target_source(tmp.path(), &pkg_id("plain-pkg"), None, None).unwrap();
         assert!(result.is_none());
     }
 
@@ -751,20 +706,11 @@ mod tests {
             ("wasm32-wasip1", "ubuntu-latest", false),
             ("wasm32-unknown-unknown", "ubuntu-latest", false),
         ];
-        assert_eq!(
-            expected.len(),
-            18,
-            "sanity check: table must cover exactly 18 triples"
-        );
+        assert_eq!(expected.len(), 18, "sanity check: table must cover exactly 18 triples");
         for &(triple, host_runner, use_cross) in expected {
-            let (got_runner, got_cross) =
-                triple_host_runner_use_cross(triple).unwrap_or_else(|| {
-                    panic!("triple_host_runner_use_cross returned None for known triple `{triple}`")
-                });
-            assert_eq!(
-                got_runner, host_runner,
-                "hostRunner mismatch for `{triple}`"
-            );
+            let (got_runner, got_cross) = triple_host_runner_use_cross(triple)
+                .unwrap_or_else(|| panic!("triple_host_runner_use_cross returned None for known triple `{triple}`"));
+            assert_eq!(got_runner, host_runner, "hostRunner mismatch for `{triple}`");
             assert_eq!(got_cross, use_cross, "useCross mismatch for `{triple}`");
         }
     }
@@ -836,12 +782,9 @@ mod tests {
             ("wasm32-unknown-unknown", "unknown"),
         ];
         for &(triple, expected_platform) in cases {
-            let t = build_platform_target(triple, "dir", "name")
-                .unwrap_or_else(|| panic!("{triple} must be recognised"));
-            assert_eq!(
-                t.platform, expected_platform,
-                "platform mismatch for `{triple}`"
-            );
+            let t =
+                build_platform_target(triple, "dir", "name").unwrap_or_else(|| panic!("{triple} must be recognised"));
+            assert_eq!(t.platform, expected_platform, "platform mismatch for `{triple}`");
             assert_eq!(t.abi, None, "abi must be null for `{triple}`");
         }
     }
@@ -854,10 +797,7 @@ mod tests {
         let absent_path = tmp.path().join("absent.toml");
         std::fs::write(&absent_path, "[project]\nname = \"pkg\"\n").unwrap();
         let absent_val = parse_pyproject_toml(&absent_path).unwrap().unwrap();
-        assert_eq!(
-            read_maturin_targets(&absent_path, &absent_val).unwrap(),
-            None
-        );
+        assert_eq!(read_maturin_targets(&absent_path, &absent_val).unwrap(), None);
 
         let present_path = tmp.path().join("present.toml");
         std::fs::write(
@@ -908,11 +848,7 @@ mod tests {
     fn read_maturin_targets_non_array_value_is_error() {
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp.path().join("wrong_type.toml");
-        std::fs::write(
-            &path,
-            "[tool.maturin]\ntargets = \"x86_64-unknown-linux-gnu\"\n",
-        )
-        .unwrap();
+        std::fs::write(&path, "[tool.maturin]\ntargets = \"x86_64-unknown-linux-gnu\"\n").unwrap();
         let val = parse_pyproject_toml(&path).unwrap().unwrap();
         let err = read_maturin_targets(&path, &val).unwrap_err();
         assert!(
@@ -1003,18 +939,11 @@ mod tests {
         )
         .unwrap();
         let group = group.expect("group must be present");
-        assert_eq!(
-            group.targets.len(),
-            1,
-            "only the recognised triple must remain"
-        );
+        assert_eq!(group.targets.len(), 1, "only the recognised triple must remain");
         assert_eq!(group.targets[0].triple, "aarch64-apple-darwin");
 
         assert_eq!(diagnostics.len(), 1);
-        assert_eq!(
-            diagnostics[0].code,
-            DiagnosticCode::UnrecognisedPlatformTriple
-        );
+        assert_eq!(diagnostics[0].code, DiagnosticCode::UnrecognisedPlatformTriple);
         assert!(diagnostics[0].message.contains("sparc64-unknown-linux-gnu"));
         assert_eq!(diagnostics[0].package, Some(pkg_id("native-mod")));
     }
@@ -1067,11 +996,7 @@ mod tests {
     #[test]
     fn assemble_platform_target_group_empty_array_is_present_not_absent() {
         let tmp = tempfile::tempdir().unwrap();
-        std::fs::write(
-            tmp.path().join("package.json"),
-            r#"{"napi":{"targets":[]}}"#,
-        )
-        .unwrap();
+        std::fs::write(tmp.path().join("package.json"), r#"{"napi":{"targets":[]}}"#).unwrap();
 
         let pkg_json_val = parse_package_json(&tmp.path().join("package.json")).unwrap();
         let pyproject_val = parse_pyproject_toml(&tmp.path().join("pyproject.toml")).unwrap();

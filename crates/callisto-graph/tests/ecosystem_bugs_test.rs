@@ -19,12 +19,7 @@ use callisto_model::{CommandError, CommandOutput, CommandRunner, PackageId};
 struct NoopRunner;
 
 impl CommandRunner for NoopRunner {
-    fn run(
-        &self,
-        _program: &str,
-        _args: &[&str],
-        _cwd: &Path,
-    ) -> Result<CommandOutput, CommandError> {
+    fn run(&self, _program: &str, _args: &[&str], _cwd: &Path) -> Result<CommandOutput, CommandError> {
         Ok(CommandOutput {
             exit_code: Some(0),
             stdout: String::new(),
@@ -153,17 +148,8 @@ fn mixed_cargo_python_workspace_loads_without_crashing() {
     );
 
     let ws = ws.unwrap();
-    let pkg_names: Vec<_> = ws
-        .graph
-        .packages()
-        .map(|p| p.id.name().to_string())
-        .collect();
-    assert_eq!(
-        pkg_names.len(),
-        2,
-        "should discover 2 packages, got: {:?}",
-        pkg_names
-    );
+    let pkg_names: Vec<_> = ws.graph.packages().map(|p| p.id.name().to_string()).collect();
+    assert_eq!(pkg_names.len(), 2, "should discover 2 packages, got: {:?}", pkg_names);
     assert!(pkg_names.contains(&"my-lib".to_string()));
     assert!(pkg_names.contains(&"my-python-pkg".to_string()));
 }
@@ -219,11 +205,7 @@ fn cross_ecosystem_npm_to_cargo_dep_edge_is_discovered() {
     let npm_id = PackageId::parse("my-app").unwrap();
 
     // Both packages must be discovered
-    let pkg_names: Vec<_> = ws
-        .graph
-        .packages()
-        .map(|p| p.id.name().to_string())
-        .collect();
+    let pkg_names: Vec<_> = ws.graph.packages().map(|p| p.id.name().to_string()).collect();
     assert!(
         pkg_names.contains(&"rust-addon".to_string()),
         "cargo crate should be discovered; got: {:?}",
@@ -242,10 +224,7 @@ fn cross_ecosystem_npm_to_cargo_dep_edge_is_discovered() {
         !edges.iter().any(|e| e.to == cargo_id),
         "cross-ecosystem edge my-app -> rust-addon must NOT exist (AC-12/AC-14); \
          found edges from my-app: {:?}",
-        edges
-            .iter()
-            .map(|e| e.to.display_name())
-            .collect::<Vec<_>>()
+        edges.iter().map(|e| e.to.display_name()).collect::<Vec<_>>()
     );
 
     // An UnknownPackage Warning diagnostic naming cargo:rust-addon must be present instead.
@@ -270,10 +249,9 @@ fn resolve_native_falls_back_across_ecosystem_boundary() {
     let cargo_id = PackageId::parse("rust-addon").unwrap();
 
     let mut index = IdentityIndex::default();
-    index.native.insert(
-        (Ecosystem::Cargo, "rust-addon".to_string()),
-        cargo_id.clone(),
-    );
+    index
+        .native
+        .insert((Ecosystem::Cargo, "rust-addon".to_string()), cargo_id.clone());
 
     // Same-ecosystem lookup still works
     assert_eq!(
@@ -308,14 +286,12 @@ fn resolve_native_deduplicates_same_bare_name_across_ecosystems() {
     let shared_id = PackageId::parse("shared-name").unwrap();
 
     let mut index = IdentityIndex::default();
-    index.native.insert(
-        (Ecosystem::Cargo, "shared-name".to_string()),
-        shared_id.clone(),
-    );
-    index.native.insert(
-        (Ecosystem::Pypi, "shared-name".to_string()),
-        shared_id.clone(),
-    );
+    index
+        .native
+        .insert((Ecosystem::Cargo, "shared-name".to_string()), shared_id.clone());
+    index
+        .native
+        .insert((Ecosystem::Pypi, "shared-name".to_string()), shared_id.clone());
 
     // Npm lookup: both Cargo and Pypi entries resolve to the same PackageId,
     // so dedup collapses them and returns that single ID.
@@ -346,9 +322,7 @@ fn workspace_load_populates_identity_field_from_graph_identity() {
 
     use callisto_model::Ecosystem;
     assert_eq!(
-        ws.identity
-            .native
-            .get(&(Ecosystem::Cargo, "solo-crate".to_string())),
+        ws.identity.native.get(&(Ecosystem::Cargo, "solo-crate".to_string())),
         Some(&PackageId::parse("solo-crate").unwrap()),
         "Workspace.identity must be populated from graph.identity() at load time"
     );

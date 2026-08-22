@@ -5,8 +5,8 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    CommitSha, ConfigKey, DepKind, Diagnostic, Ecosystem, GroupName, PackageId, PublishPlan,
-    ReleaseTrigger, Severity, TagName, Version,
+    CommitSha, ConfigKey, DepKind, Diagnostic, Ecosystem, GroupName, PackageId, PublishPlan, ReleaseTrigger, Severity,
+    TagName, Version,
 };
 
 pub const SCHEMA_VERSION: u32 = 1;

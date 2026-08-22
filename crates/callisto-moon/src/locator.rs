@@ -4,9 +4,7 @@ use std::sync::OnceLock;
 
 use callisto_graph::identity::IdentityResolver;
 use callisto_graph::locate::{LocateError, ProjectLocator};
-use callisto_model::{
-    CommandRunner, DeclaredEdge, DeclaredEdgeKind, Ecosystem, PackageId, ProjectRoot,
-};
+use callisto_model::{CommandRunner, DeclaredEdge, DeclaredEdgeKind, Ecosystem, PackageId, ProjectRoot};
 use serde::{Deserialize, Serialize};
 
 pub struct MoonProjectLocator<'a, R: CommandRunner> {
@@ -18,8 +16,7 @@ pub struct MoonProjectLocator<'a, R: CommandRunner> {
 
 impl<'a, R: CommandRunner> MoonProjectLocator<'a, R> {
     pub fn new(runner: &'a R, workspace_root: PathBuf) -> Result<Self, LocateError> {
-        let identity =
-            IdentityResolver::new(&workspace_root).map_err(|e| LocateError::Graph(Box::new(e)))?;
+        let identity = IdentityResolver::new(&workspace_root).map_err(|e| LocateError::Graph(Box::new(e)))?;
         Ok(Self {
             runner,
             workspace_root,
@@ -43,9 +40,7 @@ impl<'a, R: CommandRunner> MoonProjectLocator<'a, R> {
         }
 
         let graph: MoonProjectGraph =
-            serde_json::from_str(&out.stdout).map_err(|e| LocateError::MoonOutputParse {
-                message: e.to_string(),
-            })?;
+            serde_json::from_str(&out.stdout).map_err(|e| LocateError::MoonOutputParse { message: e.to_string() })?;
 
         let _res = self.graph.set(graph);
         Ok(self.graph.get().unwrap())
@@ -164,8 +159,7 @@ impl<'a, R: CommandRunner> ProjectLocator for MoonProjectLocator<'a, R> {
         let graph = self.load_graph().ok()?;
 
         // Build a lookup from moon project ID to project for dependency resolution.
-        let id_to_project: HashMap<&str, &MoonProject> =
-            graph.data.values().map(|p| (p.id.as_str(), p)).collect();
+        let id_to_project: HashMap<&str, &MoonProject> = graph.data.values().map(|p| (p.id.as_str(), p)).collect();
 
         let mut edges = Vec::new();
 
@@ -199,10 +193,7 @@ impl<'a, R: CommandRunner> ProjectLocator for MoonProjectLocator<'a, R> {
                     continue;
                 };
 
-                if let (Ok(from), Ok(to)) = (
-                    self.resolve_id(&abs_from, from_eco),
-                    self.resolve_id(&abs_to, to_eco),
-                ) {
+                if let (Ok(from), Ok(to)) = (self.resolve_id(&abs_from, from_eco), self.resolve_id(&abs_to, to_eco)) {
                     edges.push(DeclaredEdge {
                         from,
                         to,
@@ -231,12 +222,7 @@ mod tests {
     }
 
     impl CommandRunner for MockMoonRunner {
-        fn run(
-            &self,
-            program: &str,
-            args: &[&str],
-            _cwd: &Path,
-        ) -> Result<CommandOutput, CommandError> {
+        fn run(&self, program: &str, args: &[&str], _cwd: &Path) -> Result<CommandOutput, CommandError> {
             if program == "moon" && args.contains(&"project-graph") {
                 Ok(CommandOutput {
                     exit_code: Some(0),
@@ -284,8 +270,8 @@ mod tests {
         .to_string();
 
         let runner = MockMoonRunner { graph_json };
-        let locator = MoonProjectLocator::new(&runner, root.to_path_buf())
-            .expect("MoonProjectLocator::new must succeed");
+        let locator =
+            MoonProjectLocator::new(&runner, root.to_path_buf()).expect("MoonProjectLocator::new must succeed");
 
         use callisto_graph::locate::ProjectLocator;
         let roots = locator.projects().expect("projects() must succeed");
@@ -341,13 +327,11 @@ mod tests {
         .to_string();
 
         let runner = MockMoonRunner { graph_json };
-        let locator = MoonProjectLocator::new(&runner, root.to_path_buf())
-            .expect("MoonProjectLocator::new must succeed");
+        let locator =
+            MoonProjectLocator::new(&runner, root.to_path_buf()).expect("MoonProjectLocator::new must succeed");
 
         use callisto_graph::locate::ProjectLocator;
-        let edges = locator
-            .declared_edges()
-            .expect("declared_edges() must return Some");
+        let edges = locator.declared_edges().expect("declared_edges() must return Some");
 
         assert_eq!(
             edges.len(),
@@ -390,8 +374,8 @@ mod tests {
         .to_string();
 
         let runner = MockMoonRunner { graph_json };
-        let locator = MoonProjectLocator::new(&runner, root.to_path_buf())
-            .expect("MoonProjectLocator::new must succeed");
+        let locator =
+            MoonProjectLocator::new(&runner, root.to_path_buf()).expect("MoonProjectLocator::new must succeed");
 
         use callisto_graph::locate::ProjectLocator;
         let roots = locator.projects().expect("projects() must succeed");
@@ -431,8 +415,8 @@ mod tests {
         .to_string();
 
         let runner = MockMoonRunner { graph_json };
-        let locator = MoonProjectLocator::new(&runner, root.to_path_buf())
-            .expect("MoonProjectLocator::new must succeed");
+        let locator =
+            MoonProjectLocator::new(&runner, root.to_path_buf()).expect("MoonProjectLocator::new must succeed");
 
         use callisto_graph::locate::ProjectLocator;
         let roots = locator.projects().expect("projects() must succeed");

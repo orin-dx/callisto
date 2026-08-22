@@ -23,10 +23,7 @@ const PRE_JSON_REL: &str = ".changeset/pre.json";
 /// `https://x-access-token:TOKEN@github.com/...`) verbatim in its own
 /// error output, and that text flows into `--format json` output downstream.
 fn redact_git_stderr(text: &str) -> String {
-    callisto_model::redact_known_secrets(
-        text,
-        &callisto_model::known_credential_env_values(std::env::vars()),
-    )
+    callisto_model::redact_known_secrets(text, &callisto_model::known_credential_env_values(std::env::vars()))
 }
 
 /// Stages `.changeset/pre.json` via `git add`, called by `pre enter` on a
@@ -90,9 +87,7 @@ pub fn handle(args: PreArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
         PreArgs::Enter { tag } => {
             // Bug 3: reject empty tags before any workspace I/O.
             if tag.trim().is_empty() {
-                return Err(CliError::Other(
-                    "Pre-release tag cannot be empty".to_string(),
-                ));
+                return Err(CliError::Other("Pre-release tag cannot be empty".to_string()));
             }
 
             let ws = load_workspace(global, &runner)?;
@@ -214,12 +209,7 @@ mod tests {
     fn stage_pre_json_failure_redacts_credential_from_error() {
         struct LeakyGitRunner;
         impl CommandRunner for LeakyGitRunner {
-            fn run(
-                &self,
-                _program: &str,
-                _args: &[&str],
-                _cwd: &Path,
-            ) -> Result<CommandOutput, CommandError> {
+            fn run(&self, _program: &str, _args: &[&str], _cwd: &Path) -> Result<CommandOutput, CommandError> {
                 Ok(CommandOutput {
                     exit_code: Some(128),
                     stdout: String::new(),
@@ -228,8 +218,7 @@ mod tests {
             }
         }
 
-        let err = stage_pre_json(&LeakyGitRunner, Path::new("."))
-            .expect_err("git add failure must surface as an Err");
+        let err = stage_pre_json(&LeakyGitRunner, Path::new(".")).expect_err("git add failure must surface as an Err");
         let rendered = format!("{err}");
         assert!(
             !rendered.contains("ghs_leaked_secret"),

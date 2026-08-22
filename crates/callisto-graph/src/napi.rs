@@ -32,20 +32,17 @@ impl NapiTargetsIndex {
                 continue;
             }
 
-            let content = std::fs::read_to_string(&pkg_json_path).map_err(|e| {
-                callisto_model::ManifestError::Read {
-                    path: pkg_json_path.clone(),
-                    message: e.to_string(),
-                }
+            let content = std::fs::read_to_string(&pkg_json_path).map_err(|e| callisto_model::ManifestError::Read {
+                path: pkg_json_path.clone(),
+                message: e.to_string(),
             })?;
 
-            let val: serde_json::Value = serde_json::from_str(&content).map_err(|e| {
-                callisto_model::ManifestError::Parse {
+            let val: serde_json::Value =
+                serde_json::from_str(&content).map_err(|e| callisto_model::ManifestError::Parse {
                     path: pkg_json_path.clone(),
                     format: callisto_model::ManifestFormat::PackageJson,
                     message: e.to_string(),
-                }
-            })?;
+                })?;
 
             // Only insert when the "napi" key is present.
             if let Some(targets) = val
@@ -53,10 +50,7 @@ impl NapiTargetsIndex {
                 .and_then(|n| n.get("targets"))
                 .and_then(|t| t.as_array())
             {
-                let triples: Vec<String> = targets
-                    .iter()
-                    .filter_map(|v| v.as_str().map(str::to_string))
-                    .collect();
+                let triples: Vec<String> = targets.iter().filter_map(|v| v.as_str().map(str::to_string)).collect();
                 declared.insert(g.name.clone(), triples);
             }
         }
@@ -71,8 +65,7 @@ impl NapiTargetsIndex {
 pub fn napi_drift(group: &GroupDef, declared: &[String], root: &Path) -> Vec<Diagnostic> {
     use crate::config::groups::GroupMemberKind;
 
-    let declared_triples: BTreeSet<String> =
-        declared.iter().map(|s| s.trim().to_string()).collect();
+    let declared_triples: BTreeSet<String> = declared.iter().map(|s| s.trim().to_string()).collect();
 
     let member_triples: BTreeSet<String> = group
         .members(GroupMemberKind::PlatformManifest)
@@ -104,19 +97,16 @@ pub fn napi_drift(group: &GroupDef, declared: &[String], root: &Path) -> Vec<Dia
     // the physical manifest file still exists on disk.
     for t in member_triples.difference(&declared_triples) {
         // Find the PlatformManifest whose triple matches t.
-        let manifest_path =
-            group
-                .members(GroupMemberKind::PlatformManifest)
-                .find_map(|m| match m {
-                    GroupMember::PlatformManifest { role, path, .. } => {
-                        if role_to_triple(role).as_deref() == Some(t.as_str()) {
-                            Some(root.join(path))
-                        } else {
-                            None
-                        }
-                    }
-                    _ => None,
-                });
+        let manifest_path = group.members(GroupMemberKind::PlatformManifest).find_map(|m| match m {
+            GroupMember::PlatformManifest { role, path, .. } => {
+                if role_to_triple(role).as_deref() == Some(t.as_str()) {
+                    Some(root.join(path))
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        });
 
         if let Some(abs_path) = manifest_path {
             if abs_path.exists() {
@@ -176,12 +166,7 @@ pub fn triple_to_role(triple: &str) -> Option<ManifestRole> {
 /// canonical napi-rs target triple. Returns `None` for roles not in the table
 /// (including `Canonical` and `Lockfile` roles).
 pub fn role_to_triple(role: &ManifestRole) -> Option<String> {
-    let ManifestRole::Platform {
-        platform,
-        arch,
-        abi,
-    } = role
-    else {
+    let ManifestRole::Platform { platform, arch, abi } = role else {
         return None;
     };
     let triple = match (platform.as_str(), arch.as_str(), abi.as_deref()) {
@@ -241,15 +226,11 @@ mod tests {
     #[test]
     fn triple_to_role_known_triples_round_trip() {
         for &t in KNOWN_TRIPLES {
-            let role = triple_to_role(t)
-                .unwrap_or_else(|| panic!("triple_to_role returned None for known triple `{t}`"));
-            let back = role_to_triple(&role).unwrap_or_else(|| {
-                panic!("role_to_triple returned None for role derived from `{t}`")
-            });
-            assert_eq!(
-                back, t,
-                "round-trip failed for `{t}`: role_to_triple produced `{back}`"
-            );
+            let role =
+                triple_to_role(t).unwrap_or_else(|| panic!("triple_to_role returned None for known triple `{t}`"));
+            let back = role_to_triple(&role)
+                .unwrap_or_else(|| panic!("role_to_triple returned None for role derived from `{t}`"));
+            assert_eq!(back, t, "round-trip failed for `{t}`: role_to_triple produced `{back}`");
         }
     }
 
@@ -269,11 +250,7 @@ mod tests {
         }
     }
 
-    fn make_group(
-        name: &str,
-        main_pkg: &str,
-        platform_members: Vec<(&str, ManifestRole, PathBuf)>,
-    ) -> GroupDef {
+    fn make_group(name: &str, main_pkg: &str, platform_members: Vec<(&str, ManifestRole, PathBuf)>) -> GroupDef {
         let mut members = vec![GroupMember::Package(PackageId::Bare(main_pkg.to_string()))];
         for (pm_name, role, path) in platform_members {
             members.push(GroupMember::PlatformManifest {

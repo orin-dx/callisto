@@ -136,9 +136,7 @@ pub fn fixed_group_target(
 
     let versioning = callisto_format::SemVerVersioning;
 
-    versioning
-        .bump(&aligned_base, max_sev)
-        .map_err(GraphError::Bump)
+    versioning.bump(&aligned_base, max_sev).map_err(GraphError::Bump)
 }
 
 #[cfg(test)]
@@ -158,10 +156,7 @@ mod tests {
         fn packages(&self) -> impl Iterator<Item = &callisto_model::Package> {
             std::iter::empty()
         }
-        fn dependencies_of(
-            &self,
-            _id: &PackageId,
-        ) -> impl Iterator<Item = &callisto_model::DepEdge> {
+        fn dependencies_of(&self, _id: &PackageId) -> impl Iterator<Item = &callisto_model::DepEdge> {
             std::iter::empty()
         }
         fn dependents_of(&self, _id: &PackageId) -> impl Iterator<Item = &callisto_model::DepEdge> {
@@ -220,8 +215,7 @@ mod tests {
         let tags = TagIndex::empty();
         let resolver = EmptyResolver;
 
-        let outcome = pre_mutation_checks(&resolver, &groups, &base, &tags, &napi, root)
-            .expect("pre_mutation_checks");
+        let outcome = pre_mutation_checks(&resolver, &groups, &base, &tags, &napi, root).expect("pre_mutation_checks");
 
         assert!(
             !outcome.diagnostics.is_empty(),

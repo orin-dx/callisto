@@ -10,9 +10,7 @@ pub fn attribution_line(key: &ConfigKey, cfg: &ResolvedConfig) -> String {
     };
 
     let prov = cfg.provenance(key);
-    let val = cfg
-        .rendered_value(key)
-        .unwrap_or_else(|| "auto".to_string());
+    let val = cfg.rendered_value(key).unwrap_or_else(|| "auto".to_string());
 
     match prov {
         ConfigProvenance::Default => format!("governed by {formatted_key} = {val} (default)"),

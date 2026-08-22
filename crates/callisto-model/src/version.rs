@@ -5,9 +5,7 @@ use crate::Ecosystem;
 
 /// §7.7. `SemVer` is the only grammar with an implementation in the committed v0.1–v0.4
 /// scope; the rest are declared so `Ecosystem::version_grammar` is total.
-#[derive(
-    Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
-)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 #[non_exhaustive]
 pub enum VersionGrammar {
@@ -51,13 +49,11 @@ impl Version {
                 })
             }
             VersionGrammar::Pep440 => {
-                let parsed = raw
-                    .parse::<pep440_rs::Version>()
-                    .map_err(|e| VersionParseError {
-                        raw: raw.to_string(),
-                        grammar,
-                        message: e.to_string(),
-                    })?;
+                let parsed = raw.parse::<pep440_rs::Version>().map_err(|e| VersionParseError {
+                    raw: raw.to_string(),
+                    grammar,
+                    message: e.to_string(),
+                })?;
                 // PEP 440 defines multiple equivalent spellings for the same
                 // version (e.g. `1.0.0-alpha1`, `1.0.0_alpha1`, `1.0.0a1`).
                 // Normalize `raw` to pep440_rs's canonical rendering so that
@@ -229,13 +225,13 @@ impl VersionReq {
                 })
             }
             VersionGrammar::Pep440 => {
-                let req =
-                    raw.parse::<pep440_rs::VersionSpecifiers>()
-                        .map_err(|e| VersionParseError {
-                            raw: raw.to_string(),
-                            grammar,
-                            message: e.to_string(),
-                        })?;
+                let req = raw
+                    .parse::<pep440_rs::VersionSpecifiers>()
+                    .map_err(|e| VersionParseError {
+                        raw: raw.to_string(),
+                        grammar,
+                        message: e.to_string(),
+                    })?;
                 // Normalize raw to pep440_rs's canonical rendering so that
                 // logically-equal specifiers (e.g. ">=1.0.0A1" vs ">=1.0.0a1")
                 // produce identical raw values and therefore compare == and hash
@@ -367,16 +363,10 @@ mod tests {
         // precede the final release and must be finalized before shipping.
         // is_prerelease() must return true for them, not just for alpha/beta/rc.
         let v = Version::parse("1.0.0.dev1", VersionGrammar::Pep440).unwrap();
-        assert!(
-            v.is_prerelease(),
-            "1.0.0.dev1 must be considered a pre-release"
-        );
+        assert!(v.is_prerelease(), "1.0.0.dev1 must be considered a pre-release");
 
         let v2 = Version::parse("2.0.0.dev0", VersionGrammar::Pep440).unwrap();
-        assert!(
-            v2.is_prerelease(),
-            "2.0.0.dev0 must be considered a pre-release"
-        );
+        assert!(v2.is_prerelease(), "2.0.0.dev0 must be considered a pre-release");
     }
 
     #[test]

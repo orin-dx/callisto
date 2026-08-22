@@ -16,10 +16,7 @@ pub fn pre_cursor_ref_name(package: &PackageId) -> String {
 /// error output, and that text flows into `--format json` and miette
 /// diagnostic output downstream.
 fn redact_git_stderr(text: String) -> String {
-    callisto_model::redact_known_secrets(
-        &text,
-        &callisto_model::known_credential_env_values(std::env::vars()),
-    )
+    callisto_model::redact_known_secrets(&text, &callisto_model::known_credential_env_values(std::env::vars()))
 }
 
 pub fn resolve_pre_cursor(
@@ -39,12 +36,11 @@ pub fn resolve_pre_cursor(
         return Ok(None);
     }
 
-    let sha =
-        CommitSha::parse(sha_str).map_err(|_err| ConventionalError::MalformedPreCursorRef {
-            cwd: cwd.to_path_buf(),
-            ref_name,
-            stderr: redact_git_stderr(output.stderr),
-        })?;
+    let sha = CommitSha::parse(sha_str).map_err(|_err| ConventionalError::MalformedPreCursorRef {
+        cwd: cwd.to_path_buf(),
+        ref_name,
+        stderr: redact_git_stderr(output.stderr),
+    })?;
 
     Ok(Some(sha))
 }
@@ -86,28 +82,19 @@ mod tests {
     #[test]
     fn ref_name_for_bare_package_id() {
         let id = PackageId::parse("my-crate").unwrap();
-        assert_eq!(
-            pre_cursor_ref_name(&id),
-            "refs/callisto/pre-cursor/my-crate"
-        );
+        assert_eq!(pre_cursor_ref_name(&id), "refs/callisto/pre-cursor/my-crate");
     }
 
     #[test]
     fn ref_name_for_ecosystem_prefixed_package_id() {
         let id = PackageId::parse("npm:my-pkg").unwrap();
-        assert_eq!(
-            pre_cursor_ref_name(&id),
-            "refs/callisto/pre-cursor/npm/my-pkg"
-        );
+        assert_eq!(pre_cursor_ref_name(&id), "refs/callisto/pre-cursor/npm/my-pkg");
     }
 
     #[test]
     fn ref_name_for_scoped_npm_package_id() {
         let id = PackageId::parse("npm:@myorg/cli").unwrap();
-        assert_eq!(
-            pre_cursor_ref_name(&id),
-            "refs/callisto/pre-cursor/npm/@myorg/cli"
-        );
+        assert_eq!(pre_cursor_ref_name(&id), "refs/callisto/pre-cursor/npm/@myorg/cli");
     }
 
     // --- resolve_pre_cursor / advance_pre_cursor --------------------------
@@ -118,12 +105,7 @@ mod tests {
     struct CannedRunner(Result<CommandOutput, CommandError>);
 
     impl CommandRunner for CannedRunner {
-        fn run(
-            &self,
-            program: &str,
-            _args: &[&str],
-            _cwd: &Path,
-        ) -> Result<CommandOutput, CommandError> {
+        fn run(&self, program: &str, _args: &[&str], _cwd: &Path) -> Result<CommandOutput, CommandError> {
             assert_eq!(program, "git");
             self.0.clone()
         }
@@ -141,31 +123,18 @@ mod tests {
     fn resolve_pre_cursor_shells_expected_rev_parse_args() {
         struct AssertingRunner;
         impl CommandRunner for AssertingRunner {
-            fn run(
-                &self,
-                program: &str,
-                args: &[&str],
-                _cwd: &Path,
-            ) -> Result<CommandOutput, CommandError> {
+            fn run(&self, program: &str, args: &[&str], _cwd: &Path) -> Result<CommandOutput, CommandError> {
                 assert_eq!(program, "git");
                 assert_eq!(
                     args,
-                    [
-                        "rev-parse",
-                        "--verify",
-                        "--quiet",
-                        "refs/callisto/pre-cursor/my-crate"
-                    ]
+                    ["rev-parse", "--verify", "--quiet", "refs/callisto/pre-cursor/my-crate"]
                 );
                 Ok(ok(0, &sha40('a')))
             }
         }
         let id = PackageId::parse("my-crate").unwrap();
         let result = resolve_pre_cursor(&AssertingRunner, Path::new("."), &id);
-        assert_eq!(
-            result.unwrap(),
-            Some(CommitSha::parse(&sha40('a')).unwrap())
-        );
+        assert_eq!(result.unwrap(), Some(CommitSha::parse(&sha40('a')).unwrap()));
     }
 
     #[test]
@@ -217,10 +186,7 @@ mod tests {
         let id = PackageId::parse("my-crate").unwrap();
         let result = resolve_pre_cursor(&runner, Path::new("."), &id);
         assert!(
-            matches!(
-                result,
-                Err(ConventionalError::Command(CommandError::NotFound { .. }))
-            ),
+            matches!(result, Err(ConventionalError::Command(CommandError::NotFound { .. }))),
             "expected Err(ConventionalError::Command(NotFound)), got {result:?}"
         );
     }
@@ -229,20 +195,11 @@ mod tests {
     fn advance_pre_cursor_shells_expected_update_ref_args() {
         struct AssertingRunner;
         impl CommandRunner for AssertingRunner {
-            fn run(
-                &self,
-                program: &str,
-                args: &[&str],
-                _cwd: &Path,
-            ) -> Result<CommandOutput, CommandError> {
+            fn run(&self, program: &str, args: &[&str], _cwd: &Path) -> Result<CommandOutput, CommandError> {
                 assert_eq!(program, "git");
                 assert_eq!(
                     args,
-                    [
-                        "update-ref",
-                        "refs/callisto/pre-cursor/my-crate",
-                        sha40('c').as_str()
-                    ]
+                    ["update-ref", "refs/callisto/pre-cursor/my-crate", sha40('c').as_str()]
                 );
                 Ok(ok(0, ""))
             }

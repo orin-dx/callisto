@@ -4,8 +4,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use callisto_model::{
-    ApplyPermit, DepSpec, Ecosystem, ManifestDecl, ManifestError, ManifestFormat, ManifestRole,
-    Version, WorkspaceKind,
+    ApplyPermit, DepSpec, Ecosystem, ManifestDecl, ManifestError, ManifestFormat, ManifestRole, Version, WorkspaceKind,
 };
 
 pub mod atomic;
@@ -16,9 +15,7 @@ mod common;
 pub mod npm;
 pub mod python;
 
-pub use cargo::{
-    cargo_package_name, CargoToml, InheritedDep, WorkspaceCargoResolver, WorkspaceInheritance,
-};
+pub use cargo::{cargo_package_name, CargoToml, InheritedDep, WorkspaceCargoResolver, WorkspaceInheritance};
 pub use npm::{detect_npm_workspace_kind, npm_package_name, PackageJson};
 pub use python::{python_package_name, PyprojectToml};
 
@@ -64,11 +61,7 @@ pub trait Manifest: Send + Sync {
 
 /// Trait for Concrete Syntax Tree (CST) manifest editors that preserve formatting, comments, and key order.
 pub trait ManifestCstEditor {
-    fn update_version_cst(
-        &mut self,
-        new_version: &Version,
-        permit: &ApplyPermit,
-    ) -> Result<(), ManifestError>;
+    fn update_version_cst(&mut self, new_version: &Version, permit: &ApplyPermit) -> Result<(), ManifestError>;
     fn update_dependency_cst(
         &mut self,
         name: &str,
@@ -79,11 +72,7 @@ pub trait ManifestCstEditor {
 }
 
 impl<T: Manifest + ?Sized> ManifestCstEditor for T {
-    fn update_version_cst(
-        &mut self,
-        new_version: &Version,
-        permit: &ApplyPermit,
-    ) -> Result<(), ManifestError> {
+    fn update_version_cst(&mut self, new_version: &Version, permit: &ApplyPermit) -> Result<(), ManifestError> {
         self.write_version(new_version, permit)?;
         self.persist(permit)
     }
@@ -152,10 +141,7 @@ pub(crate) fn record_persist_call() {
 }
 
 /// Opens a manifest file matching `decl.format`.
-pub fn open(
-    decl: &ManifestDecl,
-    ctx: &OpenContext<'_>,
-) -> Result<Box<dyn Manifest>, ManifestError> {
+pub fn open(decl: &ManifestDecl, ctx: &OpenContext<'_>) -> Result<Box<dyn Manifest>, ManifestError> {
     OPEN_CALL_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     if decl.role == ManifestRole::Lockfile {
         return Err(ManifestError::ReadOnlyFormat {
@@ -220,8 +206,7 @@ mod tests {
             npm_workspace_kind: None,
         };
 
-        let manifest =
-            open(&decl, &ctx).expect("open() should dispatch PyprojectToml to PyprojectToml::open");
+        let manifest = open(&decl, &ctx).expect("open() should dispatch PyprojectToml to PyprojectToml::open");
         assert_eq!(manifest.ecosystem(), Ecosystem::Pypi);
         assert_eq!(manifest.role(), ManifestRole::Canonical);
         assert_eq!(manifest.package_name().unwrap(), "demo-pkg");

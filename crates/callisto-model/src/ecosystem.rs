@@ -4,9 +4,7 @@ use serde::{Deserialize, Serialize};
 use crate::{NpmAccess, RegistryKey, VersionGrammar};
 
 /// Ecosystem supported by callisto.
-#[derive(
-    Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
-)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 #[non_exhaustive]
 pub enum Ecosystem {
@@ -51,12 +49,9 @@ impl Ecosystem {
 
     pub fn version_grammar(&self) -> VersionGrammar {
         match self {
-            Ecosystem::Cargo
-            | Ecosystem::Npm
-            | Ecosystem::Deno
-            | Ecosystem::Jsr
-            | Ecosystem::NuGet
-            | Ecosystem::Go => VersionGrammar::SemVer,
+            Ecosystem::Cargo | Ecosystem::Npm | Ecosystem::Deno | Ecosystem::Jsr | Ecosystem::NuGet | Ecosystem::Go => {
+                VersionGrammar::SemVer
+            }
             Ecosystem::Pypi => VersionGrammar::Pep440,
             Ecosystem::Maven => VersionGrammar::Maven,
         }

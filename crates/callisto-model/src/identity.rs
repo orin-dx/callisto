@@ -257,16 +257,12 @@ pub enum PackageIdParseError {
     LeadingSlash { raw: String },
     #[error("package identity `{raw}` contains path traversal `..`")]
     PathTraversal { raw: String },
-    #[error(
-        "package identity `{raw}` starts with `-`, which could be misread as a command-line flag"
-    )]
+    #[error("package identity `{raw}` starts with `-`, which could be misread as a command-line flag")]
     LeadingHyphen { raw: String },
 }
 
 /// A group name for fixed or linked package groups.
-#[derive(
-    Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
-)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema)]
 #[schemars(with = "String")]
 #[serde(transparent)]
 pub struct GroupName(pub String);
@@ -293,9 +289,7 @@ pub enum GroupKind {
 }
 
 /// Registry key string e.g. "cratesIo", "npm".
-#[derive(
-    Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
-)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema)]
 #[schemars(with = "String")]
 #[serde(transparent)]
 pub struct RegistryKey(pub String);
@@ -386,10 +380,7 @@ mod tests {
 
     #[test]
     fn parses_package_ids() {
-        assert_eq!(
-            PackageId::parse("foo").unwrap(),
-            PackageId::Bare("foo".to_string())
-        );
+        assert_eq!(PackageId::parse("foo").unwrap(), PackageId::Bare("foo".to_string()));
         assert_eq!(
             PackageId::parse("@myorg/foo").unwrap(),
             PackageId::Bare("@myorg/foo".to_string())
@@ -495,10 +486,7 @@ mod tests {
 
     #[test]
     fn package_id_rejects_path_traversal() {
-        assert!(
-            PackageId::parse("/etc/passwd").is_err(),
-            "must reject leading slashes"
-        );
+        assert!(PackageId::parse("/etc/passwd").is_err(), "must reject leading slashes");
 
         let dotdot_err = PackageId::parse("../../secret").unwrap_err();
         assert!(
