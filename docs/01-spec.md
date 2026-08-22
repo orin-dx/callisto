@@ -4896,9 +4896,9 @@ per-package `<details>` block (§12.2).
   fetched.)
 - *Byte-compatibility.* P1's guarantee is scoped to `.changeset/*.md` and `pre.json` only
   (§4's scope note) — `CHANGELOG.md` is not part of it. This crate borrows changesets'
-  heading conventions (`## <version>`, `### Major Changes` / `### Minor Changes` /
-  `### Patch Changes`) because they are familiar to every migrating user and there is no
-  reason to invent new vocabulary for the same concept, not because anything requires it.
+  `## <version>` heading because it is familiar to every migrating user, but does **not**
+  reproduce the `### Major Changes` / `### Minor Changes` / `### Patch Changes` sub-heading
+  split underneath it — §CL.4 explains why that distinction was dropped.
 - *Rendering `.bumps[].governedBy` attribution lines.* That is `callisto-cli`'s (§CLI.5.3) —
   a CLI-output concern, not a changelog-content concern. This crate never reads `ConfigKey`
   and has no dependency on it.
@@ -5045,27 +5045,24 @@ pub enum ChangeSource {
 > `render_section` takes the already-resolved `to: Option<Version>` — including a prerelease
 > version string when relevant — so it needs no separate pre-mode branch.
 
-### CL.4 Severity grouping — the rule, made structural
+### CL.4 No severity grouping — a single flat list per version
 
-```rust
-/// Groups a `ChangelogInput`'s entries into the three renderable buckets, in render order.
-/// Buckets with zero entries are simply absent from the result — `render_section` (§CL.5)
-/// never emits an empty `### <X> Changes` heading.
-///
-/// `Severity::None` entries are rejected here, not silently dropped: constructing a
-/// `ChangelogEntry` with `severity: Severity::None` is a caller bug (§CL.3's doc comment says
-/// why one should never exist), and returning an error rather than quietly discarding it means
-/// that bug surfaces as a test failure in `callisto-graph`'s aggregation code, not as a
-/// silently-thinner changelog nobody notices.
-pub fn group_entries(entries: &[ChangelogEntry]) -> Result<GroupedEntries<'_>, ChangelogError>;
+> `[SPEC DECISION, revised: this crate previously grouped a version's entries into
+> `### Major Changes` / `### Minor Changes` / `### Patch Changes` sub-headings, mirroring
+> `@changesets/cli`. Dropped: once `render_section`'s own `## <version>` heading fixes the one
+> real, applied bump for the package (§CL.3 — a fixed group's own convergence, not any single
+> entry's originally-authored severity, decides that number), re-surfacing each entry's
+> individual severity underneath adds a reader-facing distinction with no reader-facing meaning.
+> Worse, a package released solely by fixed-group convergence (no minor/major entry of its own)
+> previously rendered a `### Minor Changes` section containing only a one-line `GroupUnion`
+> explainer, dwarfed by an unrelated `### Patch Changes` list below it — visually implying "this
+> was a patch release" under a heading that had just bumped minor. §CL.3's byte-compatibility
+> note already scoped `CHANGELOG.md` out of P1's guarantee; this was always a borrowed style
+> choice, never a requirement.]`
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct GroupedEntries<'a> {
-    pub major: Vec<&'a ChangelogEntry>,
-    pub minor: Vec<&'a ChangelogEntry>,
-    pub patch: Vec<&'a ChangelogEntry>,
-}
-```
+`ChangelogEntry.severity` still exists and is still validated (`Severity::None` is rejected as a
+caller bug, same as before), but `render_section` (§CL.5) no longer branches on it. All entries
+render in `ChangelogInput.entries`' own order, as one undivided list under the version heading.
 
 ### CL.5 Rendering — `render.rs`
 
@@ -5075,17 +5072,13 @@ pub struct GroupedEntries<'a> {
 /// mutation phase and by `compose-pr-body`'s preview (§CL.2).
 ///
 /// Output shape (heading levels chosen to nest under a package's `# <name>` file header,
-/// §CL.6):
+/// §CL.6) — one flat bullet list, regardless of how many distinct severities contributed to
+/// this version:
 ///
 /// ```markdown
 /// ## 1.3.0
 ///
-/// ### Major Changes
-///
 /// - Widen the public `Foo` trait to accept async closures.
-///
-/// ### Patch Changes
-///
 /// - Fix a panic when `bar()` is called with an empty slice.
 /// - Dependency updates
 ///   - `@myorg/sdk` → `2.0.0`
@@ -5101,13 +5094,14 @@ pub fn render_section(input: &ChangelogInput) -> Result<String, ChangelogError>;
 ```
 
 Bullet text per `ChangeSource` variant (all rendered as `- <text>`, at 2-space nested indent
-for the `DependencyUpdate` sub-list):
+for the `DependencyUpdate` sub-list; all `DependencyUpdate` entries across the whole version,
+not per severity, collapse under one parent bullet):
 
 | Variant | Rendered text |
 |---|---|
 | `Changeset { summary, .. }` | `summary`, verbatim |
 | `Commit { subject, sha }` | `` `subject` (`{sha.short()}`) `` — 7 characters, matching `git`'s own default abbreviation length |
-| `DependencyUpdate { .. }` (≥1 in a section) | one parent bullet `Dependency updates`, followed by one nested `` `{dependency}` → `{to}` `` line per entry, all `DependencyUpdate`s in that section collapsed under the single parent bullet |
+| `DependencyUpdate { .. }` (≥1 in the version) | one parent bullet `Dependency updates`, followed by one nested `` `{dependency}` → `{to}` `` line per entry |
 | `PeerEscalation { dependency, to }` | `` Peer dependency `{dependency}` requires `{to}` `` — rendered standalone, not nested under `DependencyUpdate`'s parent bullet, per §CL.3's rationale for keeping the variant distinct |
 | `GroupUnion { group, kind }` | ``Released together with the `{group}` {fixed \| linked} group.`` |
 | `NewGroupMember { group }` | ``Joined the `{group}` group at this version.`` |
