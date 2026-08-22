@@ -17,8 +17,8 @@
 
 ## Key Capabilities
 
-> **Sub-10ms Native Speed**  
-> Native Rust binary executes workspace discovery and version planning in under 10ms — 30x to 50x faster than `@changesets/cli` or `release-please`.
+> **Native Speed**  
+> A native Rust binary — no Node.js runtime startup cost — for workspace discovery and version planning.
 
 > **Concrete Syntax Tree (CST) Format Preservation**  
 > Edits `Cargo.toml` and `package.json` using `toml_edit` and `serde_json` indentation fingerprinting, preserving user comments, table ordering, and whitespace.
@@ -177,7 +177,7 @@ Callisto combines ideas from `@changesets/cli`, `release-please`, and `nx releas
 
 | | Callisto | Alternatives |
 | :--- | :--- | :--- |
-| **Speed** | Workspace discovery + graph solving in <10ms | `@changesets/cli`, `release-please`, `nx release` pay a 300-500ms Node.js startup cost |
+| **Speed** | Native Rust binary — no runtime startup cost | `@changesets/cli`, `release-please`, `nx release` pay a Node.js startup cost |
 | **Manifest edits** | CST-based (`toml_edit`, `serde_json`), preserves comments/order/whitespace | `release-please` uses regex; `@changesets/cli` re-serializes JSON with default formatting |
 | **Cycle detection** | Kahn + Tarjan SCC with `miette` diagnostic cards | `release-please` is single-repo only; `nx release` is tied to Nx JS trees |
 | **Matrix discovery** | Auto-discovers napi-rs/maturin targets and npm/PyPI runtime constraints from manifests (Java/.NET planned) | Manual 50-line matrix arrays in CI YAML |
@@ -211,7 +211,7 @@ Add Callisto as a WASM plugin in your repository's `.moon/workspace.yml`:
 ```yaml
 extensions:
   callisto:
-    plugin: 'https://github.com/orin-dx/callisto/releases/download/v0.1.0/callisto-moon.wasm'
+    plugin: 'https://github.com/orin-dx/callisto/releases/latest/download/callisto-moon.wasm'
 ```
 
 ---
