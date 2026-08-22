@@ -88,19 +88,18 @@ pub trait GitVcsProvider {
 ///
 /// Two backends implement this trait:
 ///
-/// - [`GitRepository`] -- native, backed by `gix`. Fast and side-effect-free
-///   for reads, but entirely unavailable on `wasm32` (gix is excluded from
-///   that target's dependency set, so [`GitRepository::discover`] always
-///   returns `Err` there).
-/// - [`ShellGit`] -- shells out to the real `git` binary via a
+/// - [`GitRepository`] -- native `gix`. Fast, side-effect-free for reads,
+///   but unavailable on `wasm32` ([`GitRepository::discover`] always
+///   errors there -- gix is excluded from that target's deps).
+/// - [`ShellGit`] -- shells out to real `git` via a
 ///   [`callisto_model::CommandRunner`], so it works everywhere a `git`
 ///   binary is reachable, including through the `wasm32`/Extism host
 ///   bridge.
 ///
-/// Callers should not implement or select between these directly; use
-/// [`GitAccess::discover`], which tries native `gix` first and transparently
-/// falls back to the `CommandRunner` shell-out, applying the correct
-/// per-operation fallback policy (see [`GitAccess`]'s docs).
+/// Callers shouldn't implement or select between these directly; use
+/// [`GitAccess::discover`], which tries native `gix` first and falls back
+/// to the shell-out, applying the correct per-operation fallback policy
+/// (see [`GitAccess`]'s docs).
 pub trait GitDataSource {
     /// Returns the commit SHA that `HEAD` currently resolves to.
     fn head_sha(&self) -> Result<CommitSha, VcsError>;

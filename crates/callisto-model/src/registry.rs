@@ -121,23 +121,21 @@ pub fn redact_known_secrets(text: &str, secrets: &[String]) -> String {
     redact_url_userinfo(&redacted)
 }
 
-/// Filters a full environment-variable snapshot down to the values of
-/// registry-credential variables this codebase's publish flow reads:
-/// the fixed `NPM_TOKEN`/`TWINE_PASSWORD`/`CARGO_REGISTRY_TOKEN`/
-/// `GITHUB_TOKEN`/`GH_TOKEN` names, plus any `CARGO_REGISTRIES_<NAME>_TOKEN`
-/// (the registry name is operator-configured and unbounded, so this matches
-/// the name pattern rather than a fixed list). `GITHUB_TOKEN`/`GH_TOKEN`
-/// cover GitHub Actions' own ambient credential, whose most realistic
-/// subprocess-stderr exposure is an authenticated remote URL
-/// (`https://x-access-token:TOKEN@github.com/...`) that `redact_url_userinfo`
-/// already catches independently of this list -- matching the env var names
-/// directly is cheap insurance for a token that leaks in some other shape.
+/// Filters an env-var snapshot down to registry-credential values this
+/// codebase's publish flow reads: fixed `NPM_TOKEN`/`TWINE_PASSWORD`/
+/// `CARGO_REGISTRY_TOKEN`/`GITHUB_TOKEN`/`GH_TOKEN` names, plus any
+/// `CARGO_REGISTRIES_<NAME>_TOKEN` (operator-configured, unbounded name,
+/// so matched by pattern). `GITHUB_TOKEN`/`GH_TOKEN` cover GitHub Actions'
+/// ambient credential -- `redact_url_userinfo` already catches its most
+/// realistic leak shape (an authenticated remote URL) independently, but
+/// matching the env var names directly is cheap insurance against other
+/// leak shapes.
 ///
 /// Takes the snapshot as a parameter (callers pass `std::env::vars()`)
-/// rather than reading the environment itself, mirroring the
+/// rather than reading the environment directly -- same
 /// `env: impl Fn(&str) -> Result<String, VarError>` pattern
-/// `callisto-cli`'s `check_credentials` already uses for the same
-/// reason: deterministic, no process-env mutation needed in tests.
+/// `callisto-cli`'s `check_credentials` uses, for the same reason:
+/// deterministic, no process-env mutation in tests.
 pub fn known_credential_env_values(vars: impl Iterator<Item = (String, String)>) -> Vec<String> {
     vars.filter(|(key, value)| {
         !value.is_empty()
@@ -154,21 +152,20 @@ pub fn known_credential_env_values(vars: impl Iterator<Item = (String, String)>)
     .collect()
 }
 
-/// Strips a URL's userinfo component (`user:pass@` between `scheme://`
-/// and the host) from every `scheme://...` occurrence in `text`,
-/// replacing it with `[REDACTED]@`. Operates token-by-token: within the
-/// span from `scheme://` to the next whitespace/quote/`<`/`>` character,
-/// everything up to the *last* `@` is treated as userinfo and redacted.
+/// Strips a URL's userinfo (`user:pass@` between `scheme://` and the
+/// host) from every `scheme://...` occurrence in `text`, replacing it
+/// with `[REDACTED]@`. Token-by-token: within the span from `scheme://`
+/// to the next whitespace/quote/`<`/`>`, everything up to the *last* `@`
+/// is treated as userinfo.
 ///
-/// This is deliberately conservative rather than strictly RFC 3986-aware:
-/// userinfo containing a raw `/` or a second `@` (e.g. an unescaped
-/// base64-ish token) is realistic in free-form CLI stderr text, and using
-/// the *first* `@` (or bailing out on any `/` before it) would under-
-/// redact exactly that case -- the one this function exists to catch. The
-/// cost is a rare false positive (an `@` that's actually part of a path,
-/// e.g. an npm scoped package name in `registry.npmjs.org/@myorg/pkg`,
-/// gets redacted too) — acceptable, since over-redaction only costs log
-/// noise while under-redaction leaks a credential.
+/// Deliberately conservative, not strictly RFC 3986-aware: userinfo with
+/// a raw `/` or a second `@` (an unescaped base64-ish token) is realistic
+/// in free-form CLI stderr, and using the *first* `@` would under-redact
+/// exactly that case. Cost: a rare false positive (an `@` that's really
+/// part of a path, e.g. an npm scoped package in
+/// `registry.npmjs.org/@myorg/pkg`, gets redacted too) -- acceptable,
+/// since over-redaction only costs log noise while under-redaction leaks
+/// a credential.
 fn redact_url_userinfo(text: &str) -> String {
     let mut result = String::with_capacity(text.len());
     let mut rest = text;

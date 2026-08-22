@@ -101,22 +101,22 @@ fn set_recorded_ecosystems(
 /// Scaffolds `callisto.toml` and `.changeset/`, or reconciles an existing
 /// config against the workspace's currently-discovered ecosystems.
 ///
-/// `permit` and [`InitOptions::yes`] are independent gates and neither
-/// subsumes the other. `yes` answers "should detected drift be applied?";
-/// `permit` answers "may anything be written at all?". `--yes --dry-run`
-/// therefore takes the apply *branch* while performing no write -- the
-/// returned [`InitReport`] describes what would happen, exactly as
-/// `version --dry-run` reports the plan it did not apply.
+/// `permit` and [`InitOptions::yes`] are independent gates: `yes` answers
+/// "should detected drift be applied?"; `permit` answers "may anything be
+/// written at all?". `--yes --dry-run` takes the apply *branch* while
+/// writing nothing -- the returned [`InitReport`] describes what would
+/// happen, exactly as `version --dry-run` reports its unapplied plan.
 ///
-/// Every computation still runs under a dry run, including the TOML re-render
-/// in `set_recorded_ecosystems`, so a config that would fail to parse on a
-/// real run fails the dry run too rather than reporting a false preview.
+/// Every computation runs under a dry run too, including the TOML
+/// re-render in `set_recorded_ecosystems`, so a config that would fail to
+/// parse on a real run fails the dry run instead of reporting a false
+/// preview.
 ///
 /// # Errors
 ///
-/// Returns `Err(GraphError::Config(...))` if `callisto.toml` cannot be read or parsed,
-/// or if the TOML edit for the reconciled ecosystem list fails.
-/// Returns `Err` wrapping an I/O error on filesystem write failures.
+/// `Err(GraphError::Config(...))` if `callisto.toml` can't be read/parsed,
+/// or the ecosystem-list TOML edit fails. `Err` wrapping an I/O error on
+/// write failures.
 pub fn init<R: CommandRunner, D: DependencyResolver>(
     ws: &Workspace<'_, R, D>,
     opts: &InitOptions,

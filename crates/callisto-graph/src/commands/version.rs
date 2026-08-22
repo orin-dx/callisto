@@ -1192,19 +1192,14 @@ mod tests {
     /// owner's canonical manifest has matching `optionalDependencies`
     /// entries for both platform names, `plan_version`'s
     /// `VersionPlan.optional_dep_updates` must contain exactly one
-    /// `OptionalDepUpdate` entry for the owner's canonical manifest path,
-    /// whose `updates` field contains both (name, version) pairs -- entries
-    /// are merged per target manifest path, never duplicated as separate
-    /// `OptionalDepUpdate` entries pointing at the same path.
+    /// `OptionalDepUpdate` for the owner's canonical path, with both (name,
+    /// version) pairs merged in -- never duplicated as separate entries
+    /// for the same path.
     ///
     /// Fixture construction mirrors
-    /// `plan_version_emits_platform_write_for_each_of_two_platform_siblings`:
-    /// the linux sibling is a real, disk-discovered Case D member; the
-    /// darwin sibling is fixture-injected into `ws.config.groups.fixed`
-    /// after `Workspace::load` because `walk.rs`'s directory-scoped
-    /// discovery cannot represent two platform siblings under one owner on
-    /// disk (see that test's doc comment and AC-002b's correction for the
-    /// full explanation).
+    /// `plan_version_emits_platform_write_for_each_of_two_platform_siblings`
+    /// (see that test's doc comment for why darwin is fixture-injected, not
+    /// disk-discovered).
     #[test]
     fn plan_version_merges_two_platform_siblings_optional_dep_updates_into_one_entry() {
         let tmp = tempfile::tempdir().unwrap();

@@ -1,24 +1,13 @@
-/// Returns `true` when stdin is connected to a terminal (i.e. the process is
-/// running interactively), `false` otherwise (e.g. stdin is a pipe or
-/// redirected file, which is the common case in CI environments).
+/// Returns `true` when stdin is a terminal (interactive), `false` otherwise
+/// (e.g. a pipe or redirected file -- the common CI case).
 ///
-/// This centralises the TTY check so that `add` and `init` both branch on the
-/// same predicate rather than each duplicating the `IsTerminal` import and
-/// call site. The function is a thin wrapper over
-/// [`std::io::IsTerminal::is_terminal`] and carries no additional state; it
-/// can be replaced with a test double by injecting a `bool` at the call site
-/// when unit testing the *callers*.
-///
-/// # Why a dedicated module instead of an inline call?
-///
-/// `std::io::IsTerminal` cannot be meaningfully unit-tested without spawning a
-/// real subprocess with a controlled stdin (the trait's return value is
-/// determined by the OS, not by Rust code). The integration-test coverage for
-/// the non-interactive path lives in
-/// `crates/callisto-cli/tests/cli_tests.rs` — specifically
-/// `test_add_non_interactive_via_pipe` — which pipes stdin and asserts that
-/// `callisto add` selects the non-interactive code path rather than trying to
-/// drive a TTY wizard.
+/// Centralizes the TTY check so `add` and `init` share one predicate
+/// instead of each duplicating `IsTerminal`. Thin wrapper over
+/// [`std::io::IsTerminal::is_terminal`], no state -- callers inject a
+/// `bool` test double rather than testing this directly, since the OS
+/// determines the trait's return value, not Rust code. Non-interactive-path
+/// coverage lives in `cli_tests.rs`'s `test_add_non_interactive_via_pipe`
+/// (pipes stdin, asserts `callisto add` skips the TTY wizard).
 pub fn is_interactive() -> bool {
     use std::io::IsTerminal as _;
     std::io::stdin().is_terminal()

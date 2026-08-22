@@ -136,21 +136,18 @@ fn resolve_since(git: &impl GitDataSource, tag_name: &str) -> Option<CommitSha> 
 /// Resolves a changeset entry's parsed `PackageId` against the packages in
 /// the graph.
 ///
-/// `PackageId::matches` is a pairwise compatibility check: a bare id and a
-/// prefixed id with the same name are considered compatible because the
-/// bare side simply doesn't specify an ecosystem. That's correct pairwise,
-/// but a polyglot workspace can legitimately contain the same name in two
-/// or more ecosystems (e.g. `cargo/foo` and `npm/foo`), and a bare
-/// changeset entry naming `foo` cannot be resolved to either one without
-/// more context. Iterating with `.find()` over such a graph silently picks
-/// whichever candidate happens to come first, which is exactly the
-/// ambiguity bug this function fixes: it collects *all* matching
-/// candidates and only succeeds when there is exactly one.
+/// `PackageId::matches` is pairwise: a bare id and a prefixed id with the
+/// same name are compatible, since bare doesn't specify an ecosystem. But
+/// a polyglot workspace can legitimately have the same name in two-plus
+/// ecosystems (`cargo/foo`, `npm/foo`), and a bare `foo` can't resolve to
+/// either without more context. `.find()` over such a graph would silently
+/// pick whichever candidate comes first -- the ambiguity bug this function
+/// fixes by collecting *all* matches and only succeeding when there's
+/// exactly one.
 ///
-/// Returns `Ok(None)` when no package matches (an unknown-package
-/// condition, reported separately by `validate`), `Ok(Some(pkg))` when
-/// resolution is unambiguous, and `Err(GraphError::AmbiguousName)` when the
-/// id matches two or more packages.
+/// `Ok(None)`: no match (unknown package, reported separately by
+/// `validate`). `Ok(Some(pkg))`: unambiguous. `Err(AmbiguousName)`: two or
+/// more matches.
 pub(crate) fn resolve_target_package<'a>(
     packages: impl Iterator<Item = &'a Package>,
     id: &PackageId,

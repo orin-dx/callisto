@@ -188,20 +188,18 @@ pub fn parse_release_trigger(s: &str) -> Result<ReleaseTrigger, ConfigError> {
 
 /// Two-pass `[[package]]` rule lookup with Prefixed-over-Bare specificity.
 ///
-/// Pass 1: iterate `cfg.packages` in Vec (TOML declaration) order. Return a reference
-/// to the `PackageConfig` of the first entry `(rule_id, pkg_cfg)` where
-/// `rule_id.ecosystem().is_some()` AND `rule_id.matches(id)`. Prefixed rules
-/// (those with an explicit ecosystem prefix such as `cargo/`, `npm/`, `pypi/`)
-/// always beat Bare rules regardless of declaration order in `callisto.toml`.
+/// Pass 1: iterate `cfg.packages` in TOML-declaration order, return the
+/// first entry where `rule_id.ecosystem().is_some()` AND
+/// `rule_id.matches(id)` -- prefixed rules (`cargo/`, `npm/`, `pypi/`)
+/// always beat bare ones regardless of declaration order.
 ///
-/// Pass 2 (only if Pass 1 found nothing): iterate `cfg.packages` in Vec order.
-/// Return the first entry where `rule_id.matches(id)` (no ecosystem restriction).
+/// Pass 2 (only if Pass 1 found nothing): same order, first entry where
+/// `rule_id.matches(id)` with no ecosystem restriction.
 ///
-/// Returns `None` if neither pass finds a match.
+/// `None` if neither pass matches.
 ///
-/// The function MUST NOT sort, partition-then-sort, or otherwise reorder `cfg.packages`.
-/// Two-pass specificity is achieved solely by two separate linear scans over the
-/// unmodified slice.
+/// MUST NOT sort or partition `cfg.packages` -- specificity comes solely
+/// from two separate linear scans over the unmodified slice.
 pub(crate) fn resolve_package_config<'a>(
     id: &PackageId,
     cfg: &'a ResolvedConfig,

@@ -494,27 +494,22 @@ impl<R: CommandRunner> SubprocessRegistryClient<R> {
 
     // ---- PyPI -------------------------------------------------------------
 
-    /// Uploads a Python distribution to PyPI (or a compatible index) by running
-    /// `twine upload --skip-existing dist/<normalized-name>-<version>*`.
+    /// Uploads a Python distribution to PyPI (or compatible index) via `twine
+    /// upload --skip-existing dist/<normalized-name>-<version>*`.
     ///
-    /// The package name is normalized to its PEP 427 wheel-filename form
-    /// (lowercased, hyphens and dots replaced with underscores) before constructing
-    /// the dist-file glob. `twine` expands the glob internally — no shell
-    /// expansion is involved, so the literal `*` in the argument is safe.
+    /// Package name is normalized to PEP 427 wheel-filename form (lowercased,
+    /// `-`/`.` -> `_`) before building the glob. `twine` expands the glob
+    /// internally -- no shell expansion, so the literal `*` is safe.
     ///
-    /// When `index` is `Some`, `--repository-url <url>` is inserted before the
-    /// glob argument so that a private package index (e.g. a Nexus or Artifactory
-    /// PyPI proxy) is targeted instead of the default public PyPI.
+    /// `index: Some` inserts `--repository-url <url>` before the glob, to
+    /// target a private index (Nexus/Artifactory PyPI proxy) instead of
+    /// public PyPI.
     ///
-    /// Output classification delegates to [`classify_twine_output`]:
-    ///
-    /// - `--skip-existing` causes twine to print `"Skipping … because it
-    ///   appears to already exist"` for files already on the index; any such
-    ///   mention yields [`PublishOutcome::AlreadyPublished`].
-    /// - A clean zero-exit with no skip message yields [`PublishOutcome::Published`].
-    /// - Rate-limit and auth-failure signals in the output map to the
-    ///   corresponding [`RegistryError`] variants; everything else becomes
-    ///   [`RegistryError::Other`].
+    /// Output classification via [`classify_twine_output`]: `--skip-existing`'s
+    /// "already exists" message -> [`PublishOutcome::AlreadyPublished`]; clean
+    /// zero-exit with no skip message -> [`PublishOutcome::Published`];
+    /// rate-limit/auth signals -> matching [`RegistryError`] variants;
+    /// everything else -> [`RegistryError::Other`].
     fn pypi_publish(
         &self,
         package: &PackageId,
@@ -784,13 +779,11 @@ fn classify_npm_publish_output(output: &CommandOutput) -> Result<PublishOutcome,
 /// [`RegistryError`].
 ///
 /// Priority order (highest wins):
-/// 1. `"already exist"` substring (from `--skip-existing`) without any
-///    `"uploading"` line → [`PublishOutcome::AlreadyPublished`] (all artifacts
-///    were skipped; none were freshly uploaded).
-///    When both phrases appear, at least one artifact was newly uploaded
-///    alongside the skipped stale artifact, so the result is `Published`.
-///    This handles the common case where `dist/` accumulates stale pre-release
-///    artifacts: glob `dist/my_pkg-1.0.0*` matches both `my_pkg-1.0.0a0.whl`
+/// 1. `"already exist"` (from `--skip-existing`) without `"uploading"` →
+///    [`PublishOutcome::AlreadyPublished`] (all artifacts skipped). Both
+///    phrases present means at least one artifact was freshly uploaded →
+///    `Published`. Handles `dist/` accumulating stale pre-release
+///    artifacts: `dist/my_pkg-1.0.0*` matches both `my_pkg-1.0.0a0.whl`
 ///    (skipped) and `my_pkg-1.0.0.whl` (uploaded), producing mixed output.
 /// 2. Zero exit code with no skip-only mention → [`PublishOutcome::Published`].
 /// 3. Rate-limit signal (`429`, `too many requests`, `rate limit`) →

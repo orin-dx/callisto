@@ -177,24 +177,24 @@ pub fn run_cascade<D: DependencyResolver>(
     solve_cascade(input)
 }
 
-/// Propagates `input.seed`'s severities outward to dependents until no target version
-/// changes, or `convergence_bound`'s iteration cap is exceeded
-/// ([`GraphError::CascadeNotConverged`]) — the safety bound that turns a would-be infinite
-/// loop into a reportable bug rather than a hang, derived from the package count rather than
-/// hand-tuned.
+/// Propagates `input.seed`'s severities outward to dependents until no
+/// target version changes, or `convergence_bound`'s iteration cap is
+/// exceeded ([`GraphError::CascadeNotConverged`]) -- turns a would-be
+/// infinite loop into a reportable bug, bound derived from package count.
 ///
-/// One pass: pop a package off the worklist, compute its bumped target version, then walk
-/// every dependent edge and apply [`cascade_action`] to decide whether that dependent's own
-/// severity/target needs to change and gets re-queued. A genuine cross-grammar coverage
-/// failure (`coverage`'s `Err`, e.g. comparing a SemVer target against a PEP440 spec) does
-/// abort the whole cascade with `Err(GraphError::GrammarMismatch)` — this function does not
-/// swallow that. What *is* soft: a `DepSpec::Catalog`/`DepSpec::Opaque` entry never has its
-/// coverage tested at all (`coverage` returns `Coverage::Unknown` unconditionally for both),
-/// so it can't block anything either way — a `Catalog` entry is reported as
-/// [`DiagnosticCode::CatalogSpecNotRewritten`], an `Opaque` one gets no diagnostic at all.
-/// [`DiagnosticCode::RangeNotRoundTrippable`]'s own dominant real-world trigger is a
-/// different step entirely — [`rewrite_spec`], below, when a mechanical range rewrite (not a
-/// coverage test) fails on an otherwise-known-coverage spec.
+/// One pass: pop a package, compute its bumped target, walk every
+/// dependent edge, apply [`cascade_action`] to decide if that dependent's
+/// severity/target changes and gets re-queued.
+///
+/// A genuine cross-grammar coverage failure (`coverage`'s `Err`, e.g.
+/// SemVer target vs. PEP440 spec) aborts the whole cascade with
+/// `Err(GraphError::GrammarMismatch)`. Soft instead: `Catalog`/`Opaque`
+/// specs never have coverage tested (`coverage` returns `Unknown`
+/// unconditionally), so they can't block anything -- `Catalog` gets
+/// [`DiagnosticCode::CatalogSpecNotRewritten`], `Opaque` gets no
+/// diagnostic. [`DiagnosticCode::RangeNotRoundTrippable`]'s real trigger
+/// is a different step: [`rewrite_spec`], when a mechanical range rewrite
+/// (not a coverage test) fails on an otherwise-known-coverage spec.
 pub fn solve_cascade<D: DependencyResolver>(
     input: CascadeInput<'_, D>,
 ) -> Result<CascadeOutcome, GraphError> {
@@ -1247,22 +1247,16 @@ mod tests {
         );
     }
 
-    /// A pre-release cycle must bump from the PINNED baseline captured in
-    /// `PreState.initial_versions` at `pre enter` time, not from whatever the
-    /// latest on-disk prerelease happens to be. Otherwise the release segment
-    /// re-derives from a moving target instead of the pinned one.
-    /// Diamond dependency: A→B, A→C, B→D, C→D.
+    /// Diamond dependency: A -> B, A -> C, B -> D, C -> D.
     ///
-    /// Bumping D (seeded with a Major severity) causes both B and C to
-    /// cascade. A depends on BOTH B and C, so the cascade solver visits A
-    /// from two different paths. The worklist algorithm must process A only
-    /// ONCE -- it must not be duplicated in the outcome's severity map or
-    /// target map even though two separate edges arrive at A.
+    /// Bumping D (seeded Major) cascades both B and C; A depends on both,
+    /// so the solver visits A from two paths. The worklist must process A
+    /// only ONCE -- not duplicated in the outcome's severity/target maps
+    /// despite two edges arriving at A.
     ///
-    /// Without proper deduplication (e.g. if `raise` were called twice for A
-    /// at the same severity) the idempotency check `sev <= cur_sev` in `raise`
-    /// prevents double-insertion into the maps, but this test makes the
-    /// constraint explicit and guards against regressions where dedup breaks.
+    /// The idempotency check `sev <= cur_sev` in `raise` already prevents
+    /// double-insertion without explicit dedup, but this test makes the
+    /// constraint explicit and guards against regressions if dedup breaks.
     #[test]
     fn test_diamond_dependency_a_appears_exactly_once_in_cascade_result() {
         let pkg_a = PackageId::parse("pkg-a").unwrap();
@@ -1489,6 +1483,11 @@ mod tests {
         );
     }
 
+    /// A pre-release cycle must bump from the pinned baseline in
+    /// `PreState.initial_versions` (captured at `pre enter`), not from
+    /// whatever the current on-disk prerelease happens to be -- otherwise
+    /// the release segment re-derives from a moving target instead of the
+    /// pinned one.
     #[test]
     fn test_bump_target_uses_pinned_pre_baseline_not_current_prerelease() {
         let pkg_a = PackageId::parse("pkg-a").unwrap();
