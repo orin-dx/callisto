@@ -1,8 +1,8 @@
 use std::collections::HashSet;
 
 use callisto_model::{
-    CommandRunner, CratePublish, DepKind, NpmMainPublish, PackageId, PublishPlan, PublishTarget,
-    PypiPublish, RegistryKey, ReleaseEntry, SCHEMA_VERSION,
+    CommandRunner, CratePublish, DepKind, NpmMainPublish, PackageId, PublishPlan, PublishTarget, PypiPublish,
+    RegistryKey, ReleaseEntry, SCHEMA_VERSION,
 };
 use callisto_vcs::GitDataSource;
 
@@ -23,12 +23,7 @@ const CASCADE_ORDERING_KINDS: &[DepKind] = &[DepKind::Runtime, DepKind::Build, D
 /// dev-dependency on a workspace sibling published in the same batch
 /// therefore still needs that sibling to publish first, even though the
 /// two crates have no cascade-relevant ordering constraint between them.
-const PUBLISH_ORDERING_KINDS: &[DepKind] = &[
-    DepKind::Runtime,
-    DepKind::Build,
-    DepKind::Optional,
-    DepKind::Dev,
-];
+const PUBLISH_ORDERING_KINDS: &[DepKind] = &[DepKind::Runtime, DepKind::Build, DepKind::Optional, DepKind::Dev];
 
 /// Computes the order packages must be published in.
 ///
@@ -57,17 +52,12 @@ fn publish_order<D: DependencyResolver + ?Sized>(
 ) -> Result<Vec<PackageId>, GraphError> {
     let all_pkg_ids: Vec<PackageId> = resolver.packages().map(|p| p.id.clone()).collect();
     let edges_of = |id: &PackageId| -> Vec<(PackageId, DepKind)> {
-        resolver
-            .dependencies_of(id)
-            .map(|e| (e.to.clone(), e.kind))
-            .collect()
+        resolver.dependencies_of(id).map(|e| (e.to.clone(), e.kind)).collect()
     };
 
     match toposort_impl(subset, &all_pkg_ids, PUBLISH_ORDERING_KINDS, edges_of) {
         Ok(order) => Ok(order),
-        Err(GraphError::Cycle { .. }) => {
-            toposort_impl(subset, &all_pkg_ids, CASCADE_ORDERING_KINDS, edges_of)
-        }
+        Err(GraphError::Cycle { .. }) => toposort_impl(subset, &all_pkg_ids, CASCADE_ORDERING_KINDS, edges_of),
         Err(e) => Err(e),
     }
 }
@@ -591,8 +581,8 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
 }
 
 use callisto_model::{
-    ApplyPermit, Ecosystem, PublishAttempt, PublishAttemptResult, PublishOutcome, PublishReport,
-    RateLimitPolicy, RegistryClient, RegistryError, TimeProvider, Version,
+    ApplyPermit, Ecosystem, PublishAttempt, PublishAttemptResult, PublishOutcome, PublishReport, RateLimitPolicy,
+    RegistryClient, RegistryError, TimeProvider, Version,
 };
 use std::time::Duration;
 
@@ -805,6 +795,122 @@ mod tests {
     use super::*;
     use std::sync::Mutex;
     use std::time::SystemTime;
+
+    /// Minimal `DependencyResolver` test double for [`publish_order`]:
+    /// packages with no manifests/publish targets, plus a fixed edge list.
+    struct TestGraph {
+        packages: Vec<callisto_model::Package>,
+        edges: Vec<callisto_model::DepEdge>,
+    }
+
+    fn test_package(name: &str) -> callisto_model::Package {
+        callisto_model::Package {
+            id: PackageId::parse(name).unwrap(),
+            manifests: vec![],
+            changelog: None,
+            release_trigger: callisto_model::ReleaseTrigger::Changeset,
+            publish_to: vec![],
+            tag_template: None,
+        }
+    }
+
+    fn test_edge(from: &str, to: &str, kind: callisto_model::DepKind) -> callisto_model::DepEdge {
+        callisto_model::DepEdge {
+            from: PackageId::parse(from).unwrap(),
+            to: PackageId::parse(to).unwrap(),
+            kind,
+            spec: callisto_model::DepSpec::Opaque("*".to_string()),
+            from_manifest: std::path::PathBuf::from(format!("{from}/Cargo.toml")),
+            inherited: false,
+        }
+    }
+
+    impl DependencyResolver for TestGraph {
+        fn packages(&self) -> impl Iterator<Item = &callisto_model::Package> {
+            self.packages.iter()
+        }
+
+        fn dependencies_of(&self, id: &PackageId) -> impl Iterator<Item = &callisto_model::DepEdge> {
+            self.edges.iter().filter(move |e| &e.from == id)
+        }
+
+        fn dependents_of(&self, id: &PackageId) -> impl Iterator<Item = &callisto_model::DepEdge> {
+            self.edges.iter().filter(move |e| &e.to == id)
+        }
+    }
+
+    fn all_ids(graph: &TestGraph) -> HashSet<PackageId> {
+        graph.packages.iter().map(|p| p.id.clone()).collect()
+    }
+
+    #[test]
+    fn publish_order_sequences_a_dev_only_dependency_before_its_dependent() {
+        // conventional dev-depends on vcs (test-only), with no Runtime edge
+        // between them -- the exact shape of the real bug: publish_order
+        // must still put vcs before conventional so cargo publish's own
+        // verification build (which needs dev-deps resolvable) succeeds.
+        let graph = TestGraph {
+            packages: vec![test_package("conventional"), test_package("vcs")],
+            edges: vec![test_edge("conventional", "vcs", callisto_model::DepKind::Dev)],
+        };
+
+        let order = publish_order(&graph, &all_ids(&graph)).unwrap();
+        let vcs_pos = order
+            .iter()
+            .position(|id| id.name() == "vcs")
+            .expect("vcs must be in the order");
+        let conventional_pos = order
+            .iter()
+            .position(|id| id.name() == "conventional")
+            .expect("conventional must be in the order");
+        assert!(
+            vcs_pos < conventional_pos,
+            "vcs (dev-dependency) must publish before conventional; got order: {order:?}"
+        );
+    }
+
+    #[test]
+    fn publish_order_tolerates_a_dev_only_cycle_without_hard_failing() {
+        // Two packages mutually dev-depending on each other for
+        // cross-integration tests -- a legitimate pattern with no Runtime
+        // edge between them. Including Dev edges unconditionally would
+        // make this a hard Cycle error; publish_order must instead fall
+        // back to the cascade-scoped kinds (empty here) and still succeed.
+        let graph = TestGraph {
+            packages: vec![test_package("pkg-a"), test_package("pkg-b")],
+            edges: vec![
+                test_edge("pkg-a", "pkg-b", callisto_model::DepKind::Dev),
+                test_edge("pkg-b", "pkg-a", callisto_model::DepKind::Dev),
+            ],
+        };
+
+        let order = publish_order(&graph, &all_ids(&graph));
+        assert!(
+            order.is_ok(),
+            "a dev-only cycle must not hard-fail publish_order; got {order:?}"
+        );
+        assert_eq!(order.unwrap().len(), 2);
+    }
+
+    #[test]
+    fn publish_order_still_errors_on_a_real_runtime_cycle() {
+        // A genuine Runtime cycle must still be a hard error -- the
+        // cascade-scoped fallback is not a general "never fail" escape
+        // hatch, only a tolerance for Dev-only cycles.
+        let graph = TestGraph {
+            packages: vec![test_package("pkg-a"), test_package("pkg-b")],
+            edges: vec![
+                test_edge("pkg-a", "pkg-b", callisto_model::DepKind::Runtime),
+                test_edge("pkg-b", "pkg-a", callisto_model::DepKind::Runtime),
+            ],
+        };
+
+        let order = publish_order(&graph, &all_ids(&graph));
+        assert!(
+            matches!(order, Err(GraphError::Cycle { .. })),
+            "a real Runtime cycle must still error; got {order:?}"
+        );
+    }
 
     struct MockRegistryClient {
         published: Mutex<std::collections::HashSet<(PackageId, Version)>>,
