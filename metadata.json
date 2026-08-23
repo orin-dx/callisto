@@ -3,7 +3,7 @@
   "checkpoint_id": "01M0PDSNSQFT16CFVRV71B5NTZ",
   "strategy": "manual-commit",
   "branch": "fix-publish-order-dev-deps",
-  "checkpoints_count": 2,
+  "checkpoints_count": 4,
   "files_touched": [
     "crates/callisto-graph/src/commands/publish.rs"
   ],
@@ -17,11 +17,11 @@
     }
   ],
   "token_usage": {
-    "input_tokens": 12126,
-    "cache_creation_tokens": 24021912,
-    "cache_read_tokens": 3036882025,
-    "output_tokens": 3821640,
-    "api_call_count": 6078,
+    "input_tokens": 12684,
+    "cache_creation_tokens": 25627531,
+    "cache_read_tokens": 3165608386,
+    "output_tokens": 3969687,
+    "api_call_count": 6357,
     "subagent_tokens": {
       "input_tokens": 0,
       "cache_creation_tokens": 0,
