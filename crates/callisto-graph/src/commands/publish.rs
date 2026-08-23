@@ -1,12 +1,76 @@
+use std::collections::HashSet;
+
 use callisto_model::{
-    CommandRunner, CratePublish, NpmMainPublish, PublishPlan, PublishTarget, PypiPublish, RegistryKey, ReleaseEntry,
-    SCHEMA_VERSION,
+    CommandRunner, CratePublish, DepKind, NpmMainPublish, PackageId, PublishPlan, PublishTarget,
+    PypiPublish, RegistryKey, ReleaseEntry, SCHEMA_VERSION,
 };
 use callisto_vcs::GitDataSource;
 
 use crate::error::GraphError;
-use crate::resolver::{DependencyResolver, DependencyResolverExt};
+use crate::resolver::DependencyResolver;
+use crate::toposort::toposort_impl;
 use crate::Workspace;
+
+/// Edge kinds cascade/version-bump propagation cares about: a `Dev`-only
+/// dependency change correctly never forces a consumer's version to bump.
+const CASCADE_ORDERING_KINDS: &[DepKind] = &[DepKind::Runtime, DepKind::Build, DepKind::Optional];
+
+/// Edge kinds publish ordering cares about: cascade's kinds, plus `Dev`.
+/// `cargo publish` (run without `--no-verify`, see `publish_client.rs`)
+/// re-extracts the packaged tarball and does a real local build to verify
+/// it, which needs *every* dependency in the crate's `Cargo.toml` —
+/// `[dev-dependencies]` included — resolvable from the registry. A
+/// dev-dependency on a workspace sibling published in the same batch
+/// therefore still needs that sibling to publish first, even though the
+/// two crates have no cascade-relevant ordering constraint between them.
+const PUBLISH_ORDERING_KINDS: &[DepKind] = &[
+    DepKind::Runtime,
+    DepKind::Build,
+    DepKind::Optional,
+    DepKind::Dev,
+];
+
+/// Computes the order packages must be published in.
+///
+/// This is a thin, purpose-named wrapper around [`toposort_impl`] (the
+/// generic algorithm, reused as-is) rather than a generic
+/// `DependencyResolverExt::toposort()` on a shared trait — it exists
+/// specifically for `plan_publish` below, its only caller, and its
+/// semantics are publish-specific, not "the one true topological sort."
+///
+/// Tries [`PUBLISH_ORDERING_KINDS`] first (including `Dev`, unlike cascade's
+/// own [`CASCADE_ORDERING_KINDS`]) so a dev-dependency on a same-batch
+/// sibling publishes in the right order. `Dev` edges are best-effort, not a
+/// hard requirement, precisely because mutual dev-only dependencies between
+/// two otherwise-unrelated packages are a legitimate pattern (e.g. two
+/// crates each dev-depending on the other for cross-integration tests) —
+/// unlike `Runtime`/`Build`/`Optional`, which must never cycle, a `Dev`
+/// cycle must not hard-fail the whole publish plan. If including `Dev`
+/// edges would produce a cycle, this falls back to
+/// [`CASCADE_ORDERING_KINDS`] alone, which is guaranteed not to introduce a
+/// *new* cycle here since it is a strict subset of the edges just proven
+/// cyclic — accepting the original race this function exists to close for
+/// that one pair, rather than failing the entire plan over it.
+fn publish_order<D: DependencyResolver + ?Sized>(
+    resolver: &D,
+    subset: &HashSet<PackageId>,
+) -> Result<Vec<PackageId>, GraphError> {
+    let all_pkg_ids: Vec<PackageId> = resolver.packages().map(|p| p.id.clone()).collect();
+    let edges_of = |id: &PackageId| -> Vec<(PackageId, DepKind)> {
+        resolver
+            .dependencies_of(id)
+            .map(|e| (e.to.clone(), e.kind))
+            .collect()
+    };
+
+    match toposort_impl(subset, &all_pkg_ids, PUBLISH_ORDERING_KINDS, edges_of) {
+        Ok(order) => Ok(order),
+        Err(GraphError::Cycle { .. }) => {
+            toposort_impl(subset, &all_pkg_ids, CASCADE_ORDERING_KINDS, edges_of)
+        }
+        Err(e) => Err(e),
+    }
+}
 
 #[derive(Clone, Debug, Default)]
 pub struct PublishOptions {
@@ -165,7 +229,7 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
     let pkg_map: std::collections::HashMap<&callisto_model::PackageId, &callisto_model::Package> =
         ws.graph.packages().map(|p| (&p.id, p)).collect();
     let all_ids: std::collections::HashSet<_> = pkg_map.keys().map(|&id| id.clone()).collect();
-    let topo_ids = ws.graph.toposort(&all_ids)?;
+    let topo_ids = publish_order(&ws.graph, &all_ids)?;
 
     // `Workspace::git_access` (native gix, falling back to the
     // `CommandRunner` shell path when unavailable -- always true on
@@ -527,7 +591,7 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
 }
 
 use callisto_model::{
-    ApplyPermit, Ecosystem, PackageId, PublishAttempt, PublishAttemptResult, PublishOutcome, PublishReport,
+    ApplyPermit, Ecosystem, PublishAttempt, PublishAttemptResult, PublishOutcome, PublishReport,
     RateLimitPolicy, RegistryClient, RegistryError, TimeProvider, Version,
 };
 use std::time::Duration;
