@@ -4,9 +4,18 @@ use callisto_model::{DepKind, PackageId};
 
 use crate::error::GraphError;
 
+/// Topologically sorts `subset` by the edges `outgoing_edges` reports, counting only edges
+/// whose [`DepKind`] appears in `ordering_kinds` as ordering constraints. Different callers
+/// need different kinds to count: cascade/version-bump propagation only cares about
+/// `Runtime`/`Build`/`Optional` (a `Dev`-only change correctly shouldn't force a consumer's
+/// version to bump), while publish ordering (`commands::publish::publish_order`) also needs
+/// `Dev`, since `cargo publish`'s own local verification build needs every declared
+/// dependency — dev included — resolvable. This function has no opinion on which kinds
+/// matter; the caller states it explicitly via `ordering_kinds`.
 pub fn toposort_impl<F>(
     subset: &HashSet<PackageId>,
     all_packages: &[PackageId],
+    ordering_kinds: &[DepKind],
     outgoing_edges: F,
 ) -> Result<Vec<PackageId>, GraphError>
 where
@@ -31,7 +40,7 @@ where
 
     for u in &members {
         for (v, kind) in outgoing_edges(u) {
-            if members.contains(&v) && matches!(kind, DepKind::Runtime | DepKind::Build | DepKind::Optional) {
+            if members.contains(&v) && ordering_kinds.contains(&kind) {
                 adj.get_mut(&v).unwrap().push(u.clone());
                 *in_degree.get_mut(u).unwrap() += 1;
             }
@@ -144,7 +153,7 @@ mod tests {
         let subset: HashSet<_> = vec![pkg_a.clone(), pkg_b.clone()].into_iter().collect();
         let all = vec![pkg_a.clone(), pkg_b.clone()];
 
-        let res = toposort_impl(&subset, &all, |id| {
+        let res = toposort_impl(&subset, &all, &[DepKind::Runtime], |id| {
             if id == &pkg_a {
                 vec![(pkg_b.clone(), DepKind::Runtime)]
             } else {
@@ -168,7 +177,7 @@ mod tests {
         let subset: HashSet<PackageId> = ids.iter().cloned().collect();
         let all: Vec<PackageId> = ids.clone();
 
-        let result = toposort_impl(&subset, &all, |id| {
+        let result = toposort_impl(&subset, &all, &[DepKind::Runtime], |id| {
             // Find the index of this package; if it's not the last, it depends on the next.
             if let Some(pos) = ids.iter().position(|x| x == id) {
                 if pos + 1 < ids.len() {
@@ -190,7 +199,7 @@ mod tests {
         let subset: HashSet<_> = vec![pkg_a.clone()].into_iter().collect();
         let all = vec![pkg_a.clone()];
 
-        let err = toposort_impl(&subset, &all, |id| {
+        let err = toposort_impl(&subset, &all, &[DepKind::Runtime], |id| {
             if id == &pkg_a {
                 vec![(pkg_a.clone(), DepKind::Runtime)]
             } else {

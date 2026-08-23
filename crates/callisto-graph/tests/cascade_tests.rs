@@ -364,7 +364,7 @@ fn test_tarjan_scc_detects_cycles() {
     let all = vec![pkg_a.clone(), pkg_b.clone(), pkg_c.clone()];
 
     // A -> B -> C -> A
-    let res = toposort_impl(&subset, &all, |id| {
+    let res = toposort_impl(&subset, &all, &[DepKind::Runtime], |id| {
         if id == &pkg_a {
             vec![(pkg_b.clone(), DepKind::Runtime)]
         } else if id == &pkg_b {
