@@ -1,8 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use callisto_model::{
-    ApplyPermit, CommandError, CommitRecord, CommitSha, CommitWalkError, CommitWalker, TagName,
-};
+use callisto_model::{ApplyPermit, CommandError, CommitRecord, CommitSha, CommitWalkError, CommitWalker, TagName};
 use thiserror::Error;
 
 pub mod access;
@@ -15,10 +13,7 @@ pub use shell::ShellGit;
 #[non_exhaustive]
 pub enum VcsError {
     #[error("failed to discover Git repository at `{path}`: {message}")]
-    #[diagnostic(
-        code(E050),
-        help("Ensure target directory is inside a valid Git repository.")
-    )]
+    #[diagnostic(code(E050), help("Ensure target directory is inside a valid Git repository."))]
     RepoNotFound { path: PathBuf, message: String },
 
     #[error("git error: {0}")]
@@ -26,18 +21,13 @@ pub enum VcsError {
     Git(String),
 
     #[error("reference `{ref_name}` was not found")]
-    #[diagnostic(
-        code(E052),
-        help("Check if reference or tag exists in local or remote Git refs.")
-    )]
+    #[diagnostic(code(E052), help("Check if reference or tag exists in local or remote Git refs."))]
     RefNotFound { ref_name: String },
 
     #[error("tag glob pattern `{pattern}` is not a valid glob: {message}")]
     #[diagnostic(
         code(E053),
-        help(
-            "Fix the glob syntax (e.g. balance `{{`/`}}` and `[`/`]`) or use a literal tag name."
-        )
+        help("Fix the glob syntax (e.g. balance `{{`/`}}` and `[`/`]`) or use a literal tag name.")
     )]
     InvalidGlob { pattern: String, message: String },
 
@@ -130,11 +120,7 @@ pub trait GitDataSource {
     /// commits into changelog/severity inference). `since_ref: None` is not
     /// this case -- it's a deliberate request for the full history and
     /// always succeeds.
-    fn commits_since(
-        &self,
-        since_ref: Option<&str>,
-        pathspecs: &[PathBuf],
-    ) -> Result<Vec<GitCommit>, VcsError>;
+    fn commits_since(&self, since_ref: Option<&str>, pathspecs: &[PathBuf]) -> Result<Vec<GitCommit>, VcsError>;
 
     /// Creates the tag `name` at `target_sha`: annotated with `message`
     /// when `Some`, lightweight when `None`. Fails if a ref of that name
@@ -220,8 +206,7 @@ impl GitRepository {
                 .repo
                 .head_commit()
                 .map_err(|e| VcsError::Git(format!("Failed to get HEAD commit: {e}")))?;
-            CommitSha::parse(&head.id.to_hex().to_string())
-                .map_err(|e| VcsError::Git(format!("Invalid HEAD SHA: {e}")))
+            CommitSha::parse(&head.id.to_hex().to_string()).map_err(|e| VcsError::Git(format!("Invalid HEAD SHA: {e}")))
         }
         #[cfg(target_arch = "wasm32")]
         {
@@ -302,8 +287,7 @@ impl GitRepository {
             };
 
             let hex = commit.id.to_hex().to_string();
-            let sha = CommitSha::parse(&hex)
-                .map_err(|e| VcsError::Git(format!("Invalid commit SHA: {e}")))?;
+            let sha = CommitSha::parse(&hex).map_err(|e| VcsError::Git(format!("Invalid commit SHA: {e}")))?;
             Ok(Some(sha))
         }
         #[cfg(target_arch = "wasm32")]
@@ -398,25 +382,16 @@ impl GitRepository {
                     .map_err(|e| VcsError::Git(format!("Failed to load commit object: {e}")))?;
 
                 if !pathspecs.is_empty() {
-                    let touched =
-                        commit_touches_pathspecs(&self.repo, &info, &commit_obj, pathspecs)?;
+                    let touched = commit_touches_pathspecs(&self.repo, &info, &commit_obj, pathspecs)?;
                     if !touched {
                         continue;
                     }
                 }
 
-                let sha = CommitSha::parse(&hex)
-                    .map_err(|e| VcsError::Git(format!("Invalid commit SHA: {e}")))?;
+                let sha = CommitSha::parse(&hex).map_err(|e| VcsError::Git(format!("Invalid commit SHA: {e}")))?;
 
-                let message = commit_obj
-                    .message()
-                    .map_err(|e| VcsError::Git(e.to_string()))?;
-                let summary = message
-                    .title
-                    .to_string()
-                    .replace("\r\n", "\n")
-                    .trim_end()
-                    .to_string();
+                let message = commit_obj.message().map_err(|e| VcsError::Git(e.to_string()))?;
+                let summary = message.title.to_string().replace("\r\n", "\n").trim_end().to_string();
                 let body = message.body.map(|b| b.to_string().replace("\r\n", "\n"));
 
                 commits.push(GitCommit { sha, summary, body });
@@ -562,10 +537,7 @@ fn commit_touches_pathspecs(
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn change_matches_pathspecs(
-    change: &gix::object::tree::diff::Change<'_, '_, '_>,
-    pathspecs: &[PathBuf],
-) -> bool {
+fn change_matches_pathspecs(change: &gix::object::tree::diff::Change<'_, '_, '_>, pathspecs: &[PathBuf]) -> bool {
     use gix::object::tree::diff::Change;
     match change {
         Change::Addition { location, .. }
@@ -628,17 +600,12 @@ impl GitDataSource for GitRepository {
         self.resolve_commit(refname)
     }
 
-    fn commits_since(
-        &self,
-        since_ref: Option<&str>,
-        pathspecs: &[PathBuf],
-    ) -> Result<Vec<GitCommit>, VcsError> {
+    fn commits_since(&self, since_ref: Option<&str>, pathspecs: &[PathBuf]) -> Result<Vec<GitCommit>, VcsError> {
         let since_sha = since_ref
             .map(|r| {
-                self.resolve_commit(r)?
-                    .ok_or_else(|| VcsError::RefNotFound {
-                        ref_name: r.to_string(),
-                    })
+                self.resolve_commit(r)?.ok_or_else(|| VcsError::RefNotFound {
+                    ref_name: r.to_string(),
+                })
             })
             .transpose()?;
         self.commits_since_with_pathspec(since_sha.as_ref(), pathspecs)
@@ -687,25 +654,11 @@ mod tests {
         run_git(root, &["commit", "-q", "-m", "initial commit"]);
         run_git(
             root,
-            &[
-                "-c",
-                "tag.gpgSign=false",
-                "tag",
-                "-m",
-                "release",
-                "pkg-a@1.0.0",
-            ],
+            &["-c", "tag.gpgSign=false", "tag", "-m", "release", "pkg-a@1.0.0"],
         );
         run_git(
             root,
-            &[
-                "-c",
-                "tag.gpgSign=false",
-                "tag",
-                "-m",
-                "release",
-                "unrelated-tag",
-            ],
+            &["-c", "tag.gpgSign=false", "tag", "-m", "release", "unrelated-tag"],
         );
 
         let repo = GitRepository::discover(root).unwrap();
@@ -757,10 +710,7 @@ mod tests {
         std::fs::write(root.join("f.txt"), "hello\n").unwrap();
         run_git(root, &["add", "."]);
         run_git(root, &["commit", "-q", "-m", "initial commit"]);
-        run_git(
-            root,
-            &["-c", "tag.gpgSign=false", "tag", "-m", "release", "v1.0.0"],
-        );
+        run_git(root, &["-c", "tag.gpgSign=false", "tag", "-m", "release", "v1.0.0"]);
 
         let expected_output = std::process::Command::new("git")
             .args(["rev-parse", "--verify", "--quiet", "v1.0.0^{commit}"])
@@ -768,8 +718,7 @@ mod tests {
             .output()
             .unwrap();
         assert!(expected_output.status.success());
-        let expected_sha =
-            CommitSha::parse(String::from_utf8_lossy(&expected_output.stdout).trim()).unwrap();
+        let expected_sha = CommitSha::parse(String::from_utf8_lossy(&expected_output.stdout).trim()).unwrap();
 
         let repo = GitRepository::discover(root).unwrap();
         let resolved = repo.resolve_commit("v1.0.0").unwrap();
@@ -890,9 +839,7 @@ mod tests {
 
         let repo = GitRepository::discover(root).unwrap();
         let pathspecs = vec![PathBuf::from("a.txt")];
-        let commits = repo
-            .commits_since_with_pathspec(Some(&since_sha), &pathspecs)
-            .unwrap();
+        let commits = repo.commits_since_with_pathspec(Some(&since_sha), &pathspecs).unwrap();
 
         let summaries: Vec<&str> = commits.iter().map(|c| c.summary.as_str()).collect();
         assert_eq!(summaries, vec!["feat: c3", "feat: c2"]);
@@ -933,14 +880,7 @@ mod tests {
         // this history could otherwise fast-forward-free merge cleanly.
         run_git(
             root,
-            &[
-                "merge",
-                "--no-ff",
-                "-q",
-                "-m",
-                "merge: feature into main",
-                "feature",
-            ],
+            &["merge", "--no-ff", "-q", "-m", "merge: feature into main", "feature"],
         );
 
         let repo = GitRepository::discover(root).unwrap();
@@ -975,15 +915,11 @@ mod tests {
         // Arbitrary non-UTF8 bytes, including NUL and invalid UTF-8
         // sequences, to force git/gix to treat this blob as binary.
         let binary_bytes: Vec<u8> = vec![
-            0x00, 0xFF, 0xFE, 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x01, 0x02,
-            0xC0, 0xC1, 0xF5, 0xFF,
+            0x00, 0xFF, 0xFE, 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x01, 0x02, 0xC0, 0xC1, 0xF5, 0xFF,
         ];
         std::fs::write(root.join("crates/pkg-a/blob.bin"), &binary_bytes).unwrap();
         run_git(root, &["add", "."]);
-        run_git(
-            root,
-            &["commit", "-q", "-m", "feat: add binary blob to pkg-a"],
-        );
+        run_git(root, &["commit", "-q", "-m", "feat: add binary blob to pkg-a"]);
 
         let repo = GitRepository::discover(root).unwrap();
         let pathspecs = vec![PathBuf::from("crates/pkg-a")];
@@ -1017,14 +953,8 @@ mod tests {
         run_git(root, &["commit", "-q", "-m", "feat: add pkg-a"]);
 
         std::fs::create_dir_all(root.join("crates/pkg-b")).unwrap();
-        run_git(
-            root,
-            &["mv", "crates/pkg-a/file.txt", "crates/pkg-b/file.txt"],
-        );
-        run_git(
-            root,
-            &["commit", "-q", "-m", "refactor: move file out of pkg-a"],
-        );
+        run_git(root, &["mv", "crates/pkg-a/file.txt", "crates/pkg-b/file.txt"]);
+        run_git(root, &["commit", "-q", "-m", "refactor: move file out of pkg-a"]);
 
         let repo = GitRepository::discover(root).unwrap();
         let pathspecs = vec![PathBuf::from("crates/pkg-a")];
@@ -1193,10 +1123,7 @@ mod tests {
         std::fs::write(root.join("s.txt"), "s\n").unwrap();
         run_git(root, &["add", "."]);
         run_git(root, &["commit", "-q", "-m", "chore: S release"]);
-        run_git(
-            root,
-            &["-c", "tag.gpgSign=false", "tag", "-a", "-m", "v1", "v1"],
-        );
+        run_git(root, &["-c", "tag.gpgSign=false", "tag", "-a", "-m", "v1", "v1"]);
 
         let v1_sha_str = String::from_utf8_lossy(
             &std::process::Command::new("git")
@@ -1224,23 +1151,11 @@ mod tests {
         std::fs::write(root.join("c.txt"), "c\n").unwrap();
         run_git(root, &["add", "."]);
         run_git(root, &["commit", "-q", "-m", "feat: C after release"]);
-        run_git(
-            root,
-            &[
-                "merge",
-                "--no-ff",
-                "-q",
-                "feat",
-                "-m",
-                "merge: feat into main",
-            ],
-        );
+        run_git(root, &["merge", "--no-ff", "-q", "feat", "-m", "merge: feat into main"]);
 
         let since_sha = CommitSha::parse(&v1_sha_str).unwrap();
         let repo = GitRepository::discover(root).unwrap();
-        let commits = repo
-            .commits_since_with_pathspec(Some(&since_sha), &[])
-            .unwrap();
+        let commits = repo.commits_since_with_pathspec(Some(&since_sha), &[]).unwrap();
 
         let summaries: Vec<&str> = commits.iter().map(|c| c.summary.as_str()).collect();
         assert!(

@@ -143,11 +143,7 @@ mod cargo_membership_tests {
     #[test]
     fn read_cargo_membership_falls_back_to_absent_when_members_is_bare_string() {
         let dir = tempdir().unwrap();
-        std::fs::write(
-            dir.path().join("Cargo.toml"),
-            "[workspace]\nmembers = \"crates/*\"\n",
-        )
-        .unwrap();
+        std::fs::write(dir.path().join("Cargo.toml"), "[workspace]\nmembers = \"crates/*\"\n").unwrap();
         let m = read_cargo_membership(dir.path());
         assert!(m.admits(Path::new("tools/outside"), false));
     }
@@ -321,11 +317,7 @@ mod npm_membership_tests {
     #[test]
     fn read_npm_membership_honors_well_formed_package_json_workspaces() {
         let dir = tempdir().unwrap();
-        std::fs::write(
-            dir.path().join("package.json"),
-            r#"{"workspaces": ["packages/*"]}"#,
-        )
-        .unwrap();
+        std::fs::write(dir.path().join("package.json"), r#"{"workspaces": ["packages/*"]}"#).unwrap();
         let m = read_npm_membership(dir.path());
         assert!(m.admits(Path::new("packages/kept"), false));
         assert!(!m.admits(Path::new("tools/outside"), false));
@@ -342,16 +334,8 @@ mod npm_membership_tests {
     #[test]
     fn read_npm_membership_prefers_pnpm_packages_over_package_json_workspaces() {
         let dir = tempdir().unwrap();
-        std::fs::write(
-            dir.path().join("package.json"),
-            r#"{"workspaces": ["packages/*"]}"#,
-        )
-        .unwrap();
-        std::fs::write(
-            dir.path().join("pnpm-workspace.yaml"),
-            "packages:\n  - \"tools/*\"\n",
-        )
-        .unwrap();
+        std::fs::write(dir.path().join("package.json"), r#"{"workspaces": ["packages/*"]}"#).unwrap();
+        std::fs::write(dir.path().join("pnpm-workspace.yaml"), "packages:\n  - \"tools/*\"\n").unwrap();
         let m = read_npm_membership(dir.path());
         assert!(m.admits(Path::new("tools/x"), false));
         assert!(!m.admits(Path::new("packages/y"), false));
@@ -366,32 +350,19 @@ mod npm_membership_tests {
     }
 
     #[test]
-    fn read_npm_membership_falls_back_to_absent_when_pnpm_yaml_is_malformed_and_no_package_json_workspaces(
-    ) {
+    fn read_npm_membership_falls_back_to_absent_when_pnpm_yaml_is_malformed_and_no_package_json_workspaces() {
         let dir = tempdir().unwrap();
-        std::fs::write(
-            dir.path().join("pnpm-workspace.yaml"),
-            "packages: [\"packages/*\"\n",
-        )
-        .unwrap();
+        std::fs::write(dir.path().join("pnpm-workspace.yaml"), "packages: [\"packages/*\"\n").unwrap();
         let m = read_npm_membership(dir.path());
         assert!(m.admits(Path::new("packages/anything"), false));
     }
 
     #[test]
-    fn read_npm_membership_falls_back_to_package_json_when_pnpm_yaml_is_malformed_and_package_json_workspaces_present(
-    ) {
+    fn read_npm_membership_falls_back_to_package_json_when_pnpm_yaml_is_malformed_and_package_json_workspaces_present()
+    {
         let dir = tempdir().unwrap();
-        std::fs::write(
-            dir.path().join("package.json"),
-            r#"{"workspaces": ["packages/*"]}"#,
-        )
-        .unwrap();
-        std::fs::write(
-            dir.path().join("pnpm-workspace.yaml"),
-            "packages: [\"packages/*\"\n",
-        )
-        .unwrap();
+        std::fs::write(dir.path().join("package.json"), r#"{"workspaces": ["packages/*"]}"#).unwrap();
+        std::fs::write(dir.path().join("pnpm-workspace.yaml"), "packages: [\"packages/*\"\n").unwrap();
         let m = read_npm_membership(dir.path());
         assert!(m.admits(Path::new("packages/y"), false));
     }
@@ -399,24 +370,15 @@ mod npm_membership_tests {
     #[test]
     fn read_npm_membership_falls_back_to_absent_when_pnpm_yaml_has_zero_documents() {
         let dir = tempdir().unwrap();
-        std::fs::write(
-            dir.path().join("pnpm-workspace.yaml"),
-            "# no packages here\n",
-        )
-        .unwrap();
+        std::fs::write(dir.path().join("pnpm-workspace.yaml"), "# no packages here\n").unwrap();
         let m = read_npm_membership(dir.path());
         assert!(m.admits(Path::new("packages/anything"), false));
     }
 
     #[test]
-    fn read_npm_membership_falls_back_to_absent_when_pnpm_packages_key_missing_or_wrong_scalar_type(
-    ) {
+    fn read_npm_membership_falls_back_to_absent_when_pnpm_packages_key_missing_or_wrong_scalar_type() {
         let dir_missing = tempdir().unwrap();
-        std::fs::write(
-            dir_missing.path().join("pnpm-workspace.yaml"),
-            "other_key: true\n",
-        )
-        .unwrap();
+        std::fs::write(dir_missing.path().join("pnpm-workspace.yaml"), "other_key: true\n").unwrap();
         let m_missing = read_npm_membership(dir_missing.path());
         assert!(m_missing.admits(Path::new("packages/anything"), false));
 
@@ -433,11 +395,7 @@ mod npm_membership_tests {
     #[test]
     fn read_npm_membership_falls_back_to_absent_when_workspaces_is_bare_string() {
         let dir = tempdir().unwrap();
-        std::fs::write(
-            dir.path().join("package.json"),
-            r#"{"workspaces": "packages/*"}"#,
-        )
-        .unwrap();
+        std::fs::write(dir.path().join("package.json"), r#"{"workspaces": "packages/*"}"#).unwrap();
         let m = read_npm_membership(dir.path());
         assert!(m.admits(Path::new("tools/outside"), false));
     }
@@ -445,24 +403,15 @@ mod npm_membership_tests {
     #[test]
     fn read_npm_membership_falls_back_to_absent_when_workspaces_array_has_non_string_entry() {
         let dir = tempdir().unwrap();
-        std::fs::write(
-            dir.path().join("package.json"),
-            r#"{"workspaces": ["packages/*", 42]}"#,
-        )
-        .unwrap();
+        std::fs::write(dir.path().join("package.json"), r#"{"workspaces": ["packages/*", 42]}"#).unwrap();
         let m = read_npm_membership(dir.path());
         assert!(m.admits(Path::new("tools/outside"), false));
     }
 
     #[test]
-    fn read_npm_membership_falls_back_to_absent_when_pnpm_packages_sequence_has_non_string_element()
-    {
+    fn read_npm_membership_falls_back_to_absent_when_pnpm_packages_sequence_has_non_string_element() {
         let dir = tempdir().unwrap();
-        std::fs::write(
-            dir.path().join("pnpm-workspace.yaml"),
-            "packages:\n  - \"a\"\n  - 42\n",
-        )
-        .unwrap();
+        std::fs::write(dir.path().join("pnpm-workspace.yaml"), "packages:\n  - \"a\"\n  - 42\n").unwrap();
         let m = read_npm_membership(dir.path());
         assert!(m.admits(Path::new("packages/anything"), false));
     }
@@ -470,11 +419,7 @@ mod npm_membership_tests {
     #[test]
     fn read_npm_membership_falls_back_to_absent_when_root_package_json_syntax_is_invalid() {
         let dir = tempdir().unwrap();
-        std::fs::write(
-            dir.path().join("package.json"),
-            "{\"workspaces\": [\"packages/*\"],}",
-        )
-        .unwrap();
+        std::fs::write(dir.path().join("package.json"), "{\"workspaces\": [\"packages/*\"],}").unwrap();
         let m = read_npm_membership(dir.path());
         assert!(m.admits(Path::new("packages/anything"), false));
     }
@@ -499,10 +444,7 @@ mod glob_tests {
 
     #[test]
     fn build_globset_skips_invalid_entry_and_matches_valid_entry() {
-        let entries = vec![
-            "crates/kept-example".to_string(),
-            "crates/[unterminated".to_string(),
-        ];
+        let entries = vec!["crates/kept-example".to_string(), "crates/[unterminated".to_string()];
         let set = build_globset(&entries);
         assert!(
             set.is_match(Path::new("crates/kept-example")),
@@ -524,10 +466,7 @@ mod glob_tests {
     #[test]
     fn build_globset_literal_separator_true_means_star_does_not_cross_slash_but_double_star_does() {
         let single_star = build_globset(&["crates/*".to_string()]);
-        assert!(
-            single_star.is_match(Path::new("crates/a")),
-            "* must match one segment"
-        );
+        assert!(single_star.is_match(Path::new("crates/a")), "* must match one segment");
         assert!(
             !single_star.is_match(Path::new("crates/a/b")),
             "* must NOT cross a path separator -- this is what literal_separator(true) guarantees"
@@ -549,11 +488,7 @@ mod ac09e_probe {
     #[test]
     fn probe_unparseable_package_json_before_04e() {
         let dir = tempdir().unwrap();
-        std::fs::write(
-            dir.path().join("package.json"),
-            "{\"workspaces\": [\"packages/*\"],}",
-        )
-        .unwrap();
+        std::fs::write(dir.path().join("package.json"), "{\"workspaces\": [\"packages/*\"],}").unwrap();
         let m = read_npm_membership(dir.path());
         assert!(m.admits(std::path::Path::new("packages/anything"), false));
     }
@@ -561,11 +496,7 @@ mod ac09e_probe {
     #[test]
     fn probe_pnpm_non_string_seq_before_04e() {
         let dir = tempdir().unwrap();
-        std::fs::write(
-            dir.path().join("pnpm-workspace.yaml"),
-            "packages:\n  - \"a\"\n  - 42\n",
-        )
-        .unwrap();
+        std::fs::write(dir.path().join("pnpm-workspace.yaml"), "packages:\n  - \"a\"\n  - 42\n").unwrap();
         let m = read_npm_membership(dir.path());
         assert!(m.admits(std::path::Path::new("packages/anything"), false));
     }
@@ -692,11 +623,7 @@ mod python_membership_tests {
     #[test]
     fn read_python_membership_falls_back_to_absent_when_root_toml_is_unparseable() {
         let dir = tempdir().unwrap();
-        std::fs::write(
-            dir.path().join("pyproject.toml"),
-            "[tool.uv.workspace\nmembers = [\n",
-        )
-        .unwrap();
+        std::fs::write(dir.path().join("pyproject.toml"), "[tool.uv.workspace\nmembers = [\n").unwrap();
         let m = read_python_membership(dir.path());
         assert!(m.admits(Path::new("packages/anything"), false));
     }

@@ -31,24 +31,18 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
             })?;
 
             let severity: Severity = sev_str.parse().map_err(|_err| {
-                CliError::Other(format!(
-                    "Invalid severity `{sev_str}`. Must be patch, minor, or major."
-                ))
+                CliError::Other(format!("Invalid severity `{sev_str}`. Must be patch, minor, or major."))
             })?;
 
-            let id = PackageId::parse(name)
-                .map_err(|e| CliError::Other(format!("Invalid package name `{name}`: {e}")))?;
+            let id =
+                PackageId::parse(name).map_err(|e| CliError::Other(format!("Invalid package name `{name}`: {e}")))?;
 
             // Validate that the package exists in the workspace. A changeset for a
             // non-existent package would fail silently during `callisto version` once
             // the changeset is consumed — better to catch it here.
-            let known = ws
-                .graph
-                .packages()
-                .any(|p| p.id.matches(&id) || id.matches(&p.id));
+            let known = ws.graph.packages().any(|p| p.id.matches(&id) || id.matches(&p.id));
             if !known {
-                let known_names: Vec<String> =
-                    ws.graph.packages().map(|p| p.id.display_name()).collect();
+                let known_names: Vec<String> = ws.graph.packages().map(|p| p.id.display_name()).collect();
                 return Err(CliError::Other(format!(
                     "Unknown package `{name}`. Known packages: {}",
                     known_names.join(", ")
@@ -67,9 +61,7 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
         let all_packages: Vec<String> = collect_package_names(ws.graph.packages());
 
         if all_packages.is_empty() {
-            return Err(CliError::Other(
-                "No packages found in workspace.".to_string(),
-            ));
+            return Err(CliError::Other("No packages found in workspace.".to_string()));
         }
 
         // Step 1: Package Selection
@@ -80,15 +72,10 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
             .map_err(|e| CliError::Other(format!("Interactive selection failed: {e}")))?;
 
         if selected_indices.is_empty() {
-            return Err(CliError::Other(
-                "No packages selected for changeset.".to_string(),
-            ));
+            return Err(CliError::Other("No packages selected for changeset.".to_string()));
         }
 
-        let selected_packages: Vec<String> = selected_indices
-            .into_iter()
-            .map(|i| all_packages[i].clone())
-            .collect();
+        let selected_packages: Vec<String> = selected_indices.into_iter().map(|i| all_packages[i].clone()).collect();
 
         // Step 2: Major Bump Selection
         println!("\nWhich of these packages should be a MAJOR bump?");
@@ -182,8 +169,7 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
 
     let raw_summary = summary.ok_or_else(|| {
         CliError::Other(
-            "--summary is required when specifying packages via CLI flags in non-interactive mode"
-                .to_string(),
+            "--summary is required when specifying packages via CLI flags in non-interactive mode".to_string(),
         )
     })?;
     let summary_text = validate_summary(&raw_summary)?;
@@ -257,9 +243,7 @@ fn validate_summary(summary: &str) -> Result<String, CliError> {
 /// Uses `.display_name()` so that packages sharing a bare name across different
 /// ecosystems (e.g. `cargo/foo` and `npm/foo`) appear as distinct, qualified
 /// entries in the list rather than two identical `"foo"` rows.
-fn collect_package_names<'a>(
-    packages: impl Iterator<Item = &'a callisto_model::Package>,
-) -> Vec<String> {
+fn collect_package_names<'a>(packages: impl Iterator<Item = &'a callisto_model::Package>) -> Vec<String> {
     packages.map(|p| p.id.display_name()).collect()
 }
 
@@ -269,18 +253,16 @@ fn generate_human_slug() -> String {
     static COUNTER: AtomicU64 = AtomicU64::new(0);
 
     let adjectives = [
-        "swift", "clever", "bright", "silent", "brave", "calm", "eager", "gentle", "happy",
-        "jolly", "keen", "lively", "mighty", "noble", "proud", "quick", "radiant", "sharp",
-        "tough", "vivid",
+        "swift", "clever", "bright", "silent", "brave", "calm", "eager", "gentle", "happy", "jolly", "keen", "lively",
+        "mighty", "noble", "proud", "quick", "radiant", "sharp", "tough", "vivid",
     ];
     let nouns = [
-        "foxes", "hawks", "wolves", "eagles", "bears", "lions", "otters", "pandas", "falcons",
-        "tigers", "dolphins", "panthers", "cheetahs", "leopards", "ravens", "badgers", "lynxes",
-        "cobras", "owls", "stags",
+        "foxes", "hawks", "wolves", "eagles", "bears", "lions", "otters", "pandas", "falcons", "tigers", "dolphins",
+        "panthers", "cheetahs", "leopards", "ravens", "badgers", "lynxes", "cobras", "owls", "stags",
     ];
     let verbs = [
-        "run", "fly", "leap", "soar", "dash", "hunt", "glide", "climb", "swim", "roar", "pounce",
-        "sprint", "chase", "race", "bound", "drift", "jump", "strut", "spin", "surge",
+        "run", "fly", "leap", "soar", "dash", "hunt", "glide", "climb", "swim", "roar", "pounce", "sprint", "chase",
+        "race", "bound", "drift", "jump", "strut", "spin", "surge",
     ];
 
     // Each word list has 20 entries; total combination space is 20^3 = 8,000.
@@ -345,10 +327,7 @@ mod tests {
     #[test]
     fn non_interactive_whitespace_summary_is_rejected() {
         let result = validate_summary("   \t\n  ");
-        assert!(
-            result.is_err(),
-            "whitespace-only summary should be rejected"
-        );
+        assert!(result.is_err(), "whitespace-only summary should be rejected");
     }
 
     #[test]

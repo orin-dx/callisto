@@ -72,27 +72,19 @@ impl GroupTable {
 
         for g in &raw.fixed {
             if !seen_names.insert(&g.name) {
-                return Err(ConfigError::DuplicateGroupName {
-                    group: g.name.clone(),
-                });
+                return Err(ConfigError::DuplicateGroupName { group: g.name.clone() });
             }
             if g.members.is_empty() {
-                return Err(ConfigError::EmptyGroup {
-                    group: g.name.clone(),
-                });
+                return Err(ConfigError::EmptyGroup { group: g.name.clone() });
             }
         }
 
         for g in &raw.linked {
             if !seen_names.insert(&g.name) {
-                return Err(ConfigError::DuplicateGroupName {
-                    group: g.name.clone(),
-                });
+                return Err(ConfigError::DuplicateGroupName { group: g.name.clone() });
             }
             if g.members.is_empty() {
-                return Err(ConfigError::EmptyGroup {
-                    group: g.name.clone(),
-                });
+                return Err(ConfigError::EmptyGroup { group: g.name.clone() });
             }
         }
 
@@ -132,10 +124,7 @@ impl GroupTable {
         Ok(())
     }
 
-    pub(crate) fn resolve(
-        raw: &RawGroupTable,
-        index: &IdentityIndex,
-    ) -> Result<GroupTable, GraphError> {
+    pub(crate) fn resolve(raw: &RawGroupTable, index: &IdentityIndex) -> Result<GroupTable, GraphError> {
         let mut fixed = BTreeMap::new();
         let mut linked = BTreeMap::new();
         let mut fixed_of = BTreeMap::new();

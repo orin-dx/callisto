@@ -8,9 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::PackageId;
 
 /// A configuration key in callisto.toml.
-#[derive(
-    Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
-)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema)]
 #[schemars(with = "String")]
 #[serde(transparent)]
 pub struct ConfigKey(Cow<'static, str>);
@@ -19,10 +17,8 @@ impl ConfigKey {
     pub const CASCADE_MODE: Self = Self(Cow::Borrowed("cascade.mode"));
     pub const CASCADE_BUMP_SEVERITY: Self = Self(Cow::Borrowed("cascade.bump-severity"));
     pub const CASCADE_PEER_ESCALATION: Self = Self(Cow::Borrowed("cascade.peer-escalation"));
-    pub const CASCADE_PRESERVE_NPM_RANGES: Self =
-        Self(Cow::Borrowed("cascade.preserve-npm-ranges"));
-    pub const VALIDATION_ALLOW_EMPTY_CHANGESETS: Self =
-        Self(Cow::Borrowed("validation.allow-empty-changesets"));
+    pub const CASCADE_PRESERVE_NPM_RANGES: Self = Self(Cow::Borrowed("cascade.preserve-npm-ranges"));
+    pub const VALIDATION_ALLOW_EMPTY_CHANGESETS: Self = Self(Cow::Borrowed("validation.allow-empty-changesets"));
     pub const RELEASE_TRIGGER: Self = Self(Cow::Borrowed("release-trigger"));
     pub const PRE_MAJOR_INFERENCE: Self = Self(Cow::Borrowed("pre-major-inference"));
     pub const TAG_TEMPLATE: Self = Self(Cow::Borrowed("tag-template"));
@@ -194,10 +190,7 @@ mod tests {
             "DiagnosticCode::ChangelogReadError must serialize to \"changelog-read-error\"",
         );
         let roundtrip: DiagnosticCode = serde_json::from_str(&json).unwrap();
-        assert_eq!(
-            roundtrip, code,
-            "deserialized value must equal the original variant",
-        );
+        assert_eq!(roundtrip, code, "deserialized value must equal the original variant",);
     }
 
     /// AC-10: DiagnosticCode::BareRuleMatchesMultipleEcosystems must serialize
@@ -215,10 +208,7 @@ mod tests {
             "DiagnosticCode::BareRuleMatchesMultipleEcosystems must serialize to \"bare-rule-matches-multiple-ecosystems\"",
         );
         let roundtrip: DiagnosticCode = serde_json::from_str(&json).unwrap();
-        assert_eq!(
-            roundtrip, code,
-            "deserialized value must equal the original variant",
-        );
+        assert_eq!(roundtrip, code, "deserialized value must equal the original variant",);
     }
 
     /// AC-018: DiagnosticCode::UnrecognisedPlatformTriple must serialize to
@@ -229,14 +219,10 @@ mod tests {
         let code = DiagnosticCode::UnrecognisedPlatformTriple;
         let json = serde_json::to_string(&code).unwrap();
         assert_eq!(
-            json,
-            r#""unrecognised-platform-triple""#,
+            json, r#""unrecognised-platform-triple""#,
             "DiagnosticCode::UnrecognisedPlatformTriple must serialize to \"unrecognised-platform-triple\"",
         );
         let roundtrip: DiagnosticCode = serde_json::from_str(&json).unwrap();
-        assert_eq!(
-            roundtrip, code,
-            "deserialized value must equal the original variant",
-        );
+        assert_eq!(roundtrip, code, "deserialized value must equal the original variant",);
     }
 }

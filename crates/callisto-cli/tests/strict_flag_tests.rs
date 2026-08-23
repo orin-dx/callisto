@@ -267,8 +267,5 @@ fn test_tag_no_strict_clean_graph_succeeds() {
     };
 
     let result = commands::tag::handle(args, &global);
-    assert!(
-        result.is_ok(),
-        "tag without --strict should succeed; got: {result:?}"
-    );
+    assert!(result.is_ok(), "tag without --strict should succeed; got: {result:?}");
 }

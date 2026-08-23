@@ -17,9 +17,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Once;
 
-use moon_pdk_test_utils::{
-    create_empty_moon_sandbox, ExecuteExtensionInput, RegisterExtensionInput,
-};
+use moon_pdk_test_utils::{create_empty_moon_sandbox, ExecuteExtensionInput, RegisterExtensionInput};
 
 static BUILD_WASM: Once = Once::new();
 
@@ -236,10 +234,7 @@ async fn prepend_to_path(dir: &Path) -> PathGuard {
     unsafe {
         std::env::set_var("PATH", &new_path);
     }
-    PathGuard {
-        previous,
-        _lock: lock,
-    }
+    PathGuard { previous, _lock: lock }
 }
 
 /// Replaces `PATH` entirely with exactly `dirs` (no inheriting the previous
@@ -251,17 +246,13 @@ async fn prepend_to_path(dir: &Path) -> PathGuard {
 async fn set_path_to(dirs: &[&Path]) -> PathGuard {
     let lock = PATH_MUTEX.lock().await;
     let previous = std::env::var_os("PATH");
-    let joined =
-        std::env::join_paths(dirs.iter().map(|d| d.as_os_str())).expect("failed to join PATH");
+    let joined = std::env::join_paths(dirs.iter().map(|d| d.as_os_str())).expect("failed to join PATH");
     // SAFETY: see `PathGuard::drop` -- serialized via `PATH_MUTEX`, held
     // from here until the returned guard is dropped.
     unsafe {
         std::env::set_var("PATH", &joined);
     }
-    PathGuard {
-        previous,
-        _lock: lock,
-    }
+    PathGuard { previous, _lock: lock }
 }
 
 /// Locates the real `which` binary on the ambient (unrestricted) test-runner
@@ -278,9 +269,10 @@ async fn set_path_to(dirs: &[&Path]) -> PathGuard {
 /// leave a working `which` on `PATH`, or they'd instead be proving `which`
 /// is absent -- a different, uninteresting case.
 fn locate_which_binary() -> PathBuf {
-    let output = Command::new("which").arg("which").output().expect(
-        "failed to invoke `which` to locate itself; `which` must be installed to run this test",
-    );
+    let output = Command::new("which")
+        .arg("which")
+        .output()
+        .expect("failed to invoke `which` to locate itself; `which` must be installed to run this test");
     assert!(
         output.status.success(),
         "`which which` must succeed for this test to isolate a `which`-only PATH entry"
@@ -412,14 +404,7 @@ async fn execute_extension_status_succeeds_against_real_repo_fixture() {
     run_git(&root, &["commit", "-q", "-m", "initial commit"]).await;
     run_git(
         &root,
-        &[
-            "-c",
-            "tag.gpgSign=false",
-            "tag",
-            "-m",
-            "release",
-            "pkg-a@1.0.0",
-        ],
+        &["-c", "tag.gpgSign=false", "tag", "-m", "release", "pkg-a@1.0.0"],
     )
     .await;
 
@@ -586,9 +571,7 @@ async fn execute_extension_malformed_moon_project_graph_json_fails_cleanly() {
         .plugin
         .call_func_with("execute_extension", input)
         .await
-        .expect(
-            "execute_extension wire call must survive malformed `moon project-graph` JSON, not trap",
-        );
+        .expect("execute_extension wire call must survive malformed `moon project-graph` JSON, not trap");
 
     assert_ne!(
         output.exit_code, 0,
@@ -693,14 +676,7 @@ async fn execute_extension_unrecognized_subcommand_falls_back_to_status_not_erro
     run_git(&root, &["commit", "-q", "-m", "initial commit"]).await;
     run_git(
         &root,
-        &[
-            "-c",
-            "tag.gpgSign=false",
-            "tag",
-            "-m",
-            "release",
-            "pkg-a@1.0.0",
-        ],
+        &["-c", "tag.gpgSign=false", "tag", "-m", "release", "pkg-a@1.0.0"],
     )
     .await;
 
@@ -944,10 +920,8 @@ async fn initialize_extension_moon_unavailable_reports_clean_error_not_panic() {
         context: ext.create_context(),
     };
 
-    let result: Result<moon_pdk_test_utils::InitializeExtensionOutput, _> = ext
-        .plugin
-        .call_func_with("initialize_extension", input)
-        .await;
+    let result: Result<moon_pdk_test_utils::InitializeExtensionOutput, _> =
+        ext.plugin.call_func_with("initialize_extension", input).await;
 
     let err = result.expect_err(
         "expected initialize_extension to fail cleanly (Err) when moon is \

@@ -15,9 +15,7 @@ pub trait DependencyResolverExt: DependencyResolver {
         // toposort_impl; it cannot be eliminated without changing the function signature.
         let all_pkg_ids: Vec<PackageId> = self.packages().map(|p| p.id.clone()).collect();
         toposort_impl(subset, &all_pkg_ids, |id| {
-            self.dependencies_of(id)
-                .map(|e| (e.to.clone(), e.kind))
-                .collect()
+            self.dependencies_of(id).map(|e| (e.to.clone(), e.kind)).collect()
         })
     }
 }

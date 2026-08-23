@@ -35,8 +35,8 @@ pub mod walk;
 pub use aggregate::{aggregate, load_changesets, Aggregation, LoadedChangeset, NamedBy};
 pub use apply::{apply_version_plan, ApplyOptions, ApplyOutcome};
 pub use cascade::{
-    cascade_action, coverage, rewrite_spec, run_cascade, CascadeDecision, CascadeInput,
-    CascadeOutcome, DepWriteTarget, RewriteKey, RewriteOutcome, SpecRewrite,
+    cascade_action, coverage, rewrite_spec, run_cascade, CascadeDecision, CascadeInput, CascadeOutcome, DepWriteTarget,
+    RewriteKey, RewriteOutcome, SpecRewrite,
 };
 pub use config::{load as load_config, GroupDef, GroupTable, ResolvedConfig};
 pub use error::{ConfigError, GraphError};
@@ -97,23 +97,16 @@ pub struct Workspace<'a, R: CommandRunner, D: DependencyResolver = ManifestWalkR
 }
 
 impl<'a, R: CommandRunner> Workspace<'a, R, ManifestWalkResolver> {
-    pub fn load<L: ProjectLocator>(
-        root: PathBuf,
-        locator: &L,
-        runner: &'a R,
-    ) -> Result<Self, GraphError> {
+    pub fn load<L: ProjectLocator>(root: PathBuf, locator: &L, runner: &'a R) -> Result<Self, GraphError> {
         let mut config = config::load(&root)?;
-        let manifest_cache: RefCell<BTreeMap<PathBuf, Arc<dyn Manifest>>> =
-            RefCell::new(BTreeMap::new());
+        let manifest_cache: RefCell<BTreeMap<PathBuf, Arc<dyn Manifest>>> = RefCell::new(BTreeMap::new());
         let graph = ManifestWalkResolver::build(&root, locator, runner, &config, &manifest_cache)?;
 
         config.groups = GroupTable::resolve(&config.raw_groups, graph.identity())?;
 
         {
-            let mut by_name: BTreeMap<String, Vec<(PackageId, BTreeSet<Ecosystem>)>> =
-                BTreeMap::new();
-            let mut ecosystems_by_id: BTreeMap<(String, PackageId), BTreeSet<Ecosystem>> =
-                BTreeMap::new();
+            let mut by_name: BTreeMap<String, Vec<(PackageId, BTreeSet<Ecosystem>)>> = BTreeMap::new();
+            let mut ecosystems_by_id: BTreeMap<(String, PackageId), BTreeSet<Ecosystem>> = BTreeMap::new();
             for ((eco, name), id) in &graph.identity().prefixed {
                 ecosystems_by_id
                     .entry((name.clone(), id.clone()))
@@ -123,10 +116,7 @@ impl<'a, R: CommandRunner> Workspace<'a, R, ManifestWalkResolver> {
             for ((name, id), ecos) in ecosystems_by_id {
                 by_name.entry(name).or_default().push((id, ecos));
             }
-            config.promoted_siblings = by_name
-                .into_iter()
-                .filter(|(_, ids)| ids.len() >= 2)
-                .collect();
+            config.promoted_siblings = by_name.into_iter().filter(|(_, ids)| ids.len() >= 2).collect();
         }
 
         let identity = graph.identity().clone();
@@ -176,15 +166,12 @@ impl<'a, R: CommandRunner, D: DependencyResolver> Workspace<'a, R, D> {
     /// (native gix repository-open, or a `CommandRunner` shell round-trip
     /// when gix is unavailable) regardless of how many of those it needs.
     pub fn git_access(&self) -> &GitAccess<'a> {
-        self.git
-            .get_or_init(|| GitAccess::discover(&self.root, self.runner))
+        self.git.get_or_init(|| GitAccess::discover(&self.root, self.runner))
     }
 
     pub fn base_versions(&self) -> Result<BTreeMap<PackageId, Version>, GraphError> {
         let cargo_workspace = if self.root.join("Cargo.toml").exists() {
-            if let Ok(resolver) =
-                callisto_manifests::WorkspaceCargoResolver::load(&self.root.join("Cargo.toml"))
-            {
+            if let Ok(resolver) = callisto_manifests::WorkspaceCargoResolver::load(&self.root.join("Cargo.toml")) {
                 resolver.inheritance().ok().map(std::sync::Arc::new)
             } else {
                 None
@@ -192,9 +179,7 @@ impl<'a, R: CommandRunner, D: DependencyResolver> Workspace<'a, R, D> {
         } else {
             None
         };
-        let npm_workspace_kind = callisto_manifests::detect_npm_workspace_kind(&self.root)
-            .ok()
-            .flatten();
+        let npm_workspace_kind = callisto_manifests::detect_npm_workspace_kind(&self.root).ok().flatten();
         let ctx = callisto_manifests::OpenContext {
             workspace_root: &self.root,
             cargo_workspace,
@@ -215,16 +200,10 @@ impl<'a, R: CommandRunner, D: DependencyResolver> Workspace<'a, R, D> {
             if let Some(version) = found_version {
                 versions.insert(pkg.id.clone(), version);
             } else {
-                return Err(GraphError::Manifest(
-                    callisto_model::ManifestError::MissingField {
-                        path: pkg
-                            .manifests
-                            .first()
-                            .map(|m| m.path.clone())
-                            .unwrap_or_default(),
-                        field: "version",
-                    },
-                ));
+                return Err(GraphError::Manifest(callisto_model::ManifestError::MissingField {
+                    path: pkg.manifests.first().map(|m| m.path.clone()).unwrap_or_default(),
+                    field: "version",
+                }));
             }
         }
         Ok(versions)
@@ -236,9 +215,6 @@ impl<'a, R: CommandRunner, D: DependencyResolver> Workspace<'a, R, D> {
 
     pub fn initial_versions(&self) -> Result<Vec<(String, Version)>, GraphError> {
         let base = self.base_versions()?;
-        Ok(base
-            .into_iter()
-            .map(|(id, v)| (id.name().to_string(), v))
-            .collect())
+        Ok(base.into_iter().map(|(id, v)| (id.name().to_string(), v)).collect())
     }
 }

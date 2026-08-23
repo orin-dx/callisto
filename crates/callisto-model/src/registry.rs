@@ -143,11 +143,7 @@ pub fn known_credential_env_values(vars: impl Iterator<Item = (String, String)>)
         !value.is_empty()
             && (matches!(
                 key.as_str(),
-                "NPM_TOKEN"
-                    | "TWINE_PASSWORD"
-                    | "CARGO_REGISTRY_TOKEN"
-                    | "GITHUB_TOKEN"
-                    | "GH_TOKEN"
+                "NPM_TOKEN" | "TWINE_PASSWORD" | "CARGO_REGISTRY_TOKEN" | "GITHUB_TOKEN" | "GH_TOKEN"
             ) || (key.starts_with("CARGO_REGISTRIES_") && key.ends_with("_TOKEN")))
     })
     .map(|(_, value)| value)
@@ -298,19 +294,13 @@ mod tests {
         let snapshot = vec![
             ("NPM_TOKEN".to_string(), "npm-secret".to_string()),
             ("TWINE_PASSWORD".to_string(), "twine-secret".to_string()),
-            (
-                "CARGO_REGISTRY_TOKEN".to_string(),
-                "cargo-secret".to_string(),
-            ),
+            ("CARGO_REGISTRY_TOKEN".to_string(), "cargo-secret".to_string()),
             (
                 "CARGO_REGISTRIES_MY_REGISTRY_TOKEN".to_string(),
                 "dynamic-secret".to_string(),
             ),
             ("PATH".to_string(), "/usr/bin".to_string()),
-            (
-                "NPM_TOKEN_BUT_NOT_QUITE".to_string(),
-                "not-a-match".to_string(),
-            ),
+            ("NPM_TOKEN_BUT_NOT_QUITE".to_string(), "not-a-match".to_string()),
         ];
         let values = known_credential_env_values(snapshot.into_iter());
         assert_eq!(values.len(), 4);

@@ -237,10 +237,7 @@ fn test_linked_group_converges_shared_version() {
         GroupDef {
             name: group_name.clone(),
             kind: GroupKind::Linked,
-            members: vec![
-                GroupMember::Package(pkg_a.clone()),
-                GroupMember::Package(pkg_b.clone()),
-            ],
+            members: vec![GroupMember::Package(pkg_a.clone()), GroupMember::Package(pkg_b.clone())],
         },
     );
     groups.linked_of.insert(pkg_a.clone(), group_name.clone());
@@ -363,9 +360,7 @@ fn test_tarjan_scc_detects_cycles() {
     let pkg_b = PackageId::parse("pkg-b").unwrap();
     let pkg_c = PackageId::parse("pkg-c").unwrap();
 
-    let subset: HashSet<_> = vec![pkg_a.clone(), pkg_b.clone(), pkg_c.clone()]
-        .into_iter()
-        .collect();
+    let subset: HashSet<_> = vec![pkg_a.clone(), pkg_b.clone(), pkg_c.clone()].into_iter().collect();
     let all = vec![pkg_a.clone(), pkg_b.clone(), pkg_c.clone()];
 
     // A -> B -> C -> A
@@ -395,10 +390,7 @@ fn test_pep440_package_bump_succeeds() {
     // dispatches to Pep440Versioning and produces Ok.
     let pkg_py = PackageId::parse("my-python-lib").unwrap();
 
-    let graph = GraphBuilder::new()
-        .package(pkg_py.clone(), |p| p)
-        .build()
-        .unwrap();
+    let graph = GraphBuilder::new().package(pkg_py.clone(), |p| p).build().unwrap();
 
     let groups = GroupTable::default();
     let cfg = CascadeConfig {
@@ -412,10 +404,7 @@ fn test_pep440_package_bump_succeeds() {
     seed.insert(pkg_py.clone(), Severity::Patch);
 
     let mut base = BTreeMap::new();
-    base.insert(
-        pkg_py.clone(),
-        Version::parse("1.0.0", VersionGrammar::Pep440).unwrap(),
-    );
+    base.insert(pkg_py.clone(), Version::parse("1.0.0", VersionGrammar::Pep440).unwrap());
 
     let reasons = BTreeMap::new();
     let named_by = BTreeMap::new();
@@ -435,10 +424,7 @@ fn test_pep440_package_bump_succeeds() {
 
     // Before the fix this returns Err because SemVerVersioning rejects PEP 440 versions.
     let outcome = run_cascade(input).expect("cascade must succeed for a PEP 440 package");
-    let target = outcome
-        .targets
-        .get(&pkg_py)
-        .expect("target version must be present");
+    let target = outcome.targets.get(&pkg_py).expect("target version must be present");
     assert_eq!(
         target.render(),
         "1.0.1",

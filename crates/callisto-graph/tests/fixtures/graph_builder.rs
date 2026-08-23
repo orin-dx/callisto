@@ -4,8 +4,8 @@ use std::path::PathBuf;
 use callisto_graph::resolver::DependencyResolver;
 use callisto_graph::GraphError;
 use callisto_model::{
-    DepEdge, DepKind, DepSpec, ManifestDecl, ManifestFormat, ManifestRole, Package, PackageId,
-    PublishTarget, ReleaseTrigger, TagTemplate,
+    DepEdge, DepKind, DepSpec, ManifestDecl, ManifestFormat, ManifestRole, Package, PackageId, PublishTarget,
+    ReleaseTrigger, TagTemplate,
 };
 
 #[derive(Default)]
@@ -20,11 +20,7 @@ impl GraphBuilder {
     }
 
     #[allow(dead_code)]
-    pub fn package(
-        mut self,
-        id: impl Into<PackageId>,
-        f: impl FnOnce(PackageBuilder) -> PackageBuilder,
-    ) -> Self {
+    pub fn package(mut self, id: impl Into<PackageId>, f: impl FnOnce(PackageBuilder) -> PackageBuilder) -> Self {
         let pkg_id = id.into();
         let builder = PackageBuilder::new(pkg_id.clone());
         self.packages.insert(pkg_id, f(builder));
@@ -32,13 +28,7 @@ impl GraphBuilder {
     }
 
     #[allow(dead_code)]
-    pub fn edge(
-        mut self,
-        from: impl Into<PackageId>,
-        to: impl Into<PackageId>,
-        kind: DepKind,
-        spec: DepSpec,
-    ) -> Self {
+    pub fn edge(mut self, from: impl Into<PackageId>, to: impl Into<PackageId>, kind: DepKind, spec: DepSpec) -> Self {
         let from_id = from.into();
         let to_id = to.into();
         let from_manifest = PathBuf::from(format!("{}/Cargo.toml", from_id.name()));
@@ -90,12 +80,7 @@ pub struct PackageBuilder {
 impl PackageBuilder {
     pub fn new(id: PackageId) -> Self {
         let manifest_path = PathBuf::from(format!("{}/Cargo.toml", id.name()));
-        let decl = ManifestDecl::new(
-            manifest_path,
-            ManifestRole::Canonical,
-            ManifestFormat::CargoToml,
-        )
-        .unwrap();
+        let decl = ManifestDecl::new(manifest_path, ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap();
         PackageBuilder {
             id,
             release_trigger: ReleaseTrigger::Changeset,

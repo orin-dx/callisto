@@ -14,10 +14,7 @@ pub struct PreState {
 }
 
 impl PreState {
-    pub fn entering(
-        tag: impl Into<String>,
-        initial_versions: impl IntoIterator<Item = (String, Version)>,
-    ) -> Self {
+    pub fn entering(tag: impl Into<String>, initial_versions: impl IntoIterator<Item = (String, Version)>) -> Self {
         let mut map = IndexMap::new();
         for (pkg, ver) in initial_versions {
             map.entry(pkg).or_insert(ver);
@@ -46,17 +43,13 @@ pub enum PreMode {
 pub fn parse_pre_json(input: &str) -> Result<PreState, PreJsonError> {
     let clean_input = input.strip_prefix('\u{FEFF}').unwrap_or(input);
     let val: serde_json::Value =
-        serde_json::from_str(clean_input).map_err(|e| PreJsonError::Malformed {
-            message: e.to_string(),
-        })?;
+        serde_json::from_str(clean_input).map_err(|e| PreJsonError::Malformed { message: e.to_string() })?;
 
     let obj = val.as_object().ok_or_else(|| PreJsonError::Malformed {
         message: "expected a JSON object".to_string(),
     })?;
 
-    let mode_val = obj
-        .get("mode")
-        .ok_or(PreJsonError::MissingField { field: "mode" })?;
+    let mode_val = obj.get("mode").ok_or(PreJsonError::MissingField { field: "mode" })?;
     let mode_str = mode_val
         .as_str()
         .ok_or(PreJsonError::WrongFieldType { field: "mode" })?;
@@ -70,19 +63,15 @@ pub fn parse_pre_json(input: &str) -> Result<PreState, PreJsonError> {
         }
     };
 
-    let tag_val = obj
-        .get("tag")
-        .ok_or(PreJsonError::MissingField { field: "tag" })?;
+    let tag_val = obj.get("tag").ok_or(PreJsonError::MissingField { field: "tag" })?;
     let tag = tag_val
         .as_str()
         .ok_or(PreJsonError::WrongFieldType { field: "tag" })?
         .to_string();
 
-    let init_val = obj
-        .get("initialVersions")
-        .ok_or(PreJsonError::MissingField {
-            field: "initialVersions",
-        })?;
+    let init_val = obj.get("initialVersions").ok_or(PreJsonError::MissingField {
+        field: "initialVersions",
+    })?;
     let init_obj = init_val.as_object().ok_or(PreJsonError::WrongFieldType {
         field: "initialVersions",
     })?;
@@ -102,18 +91,16 @@ pub fn parse_pre_json(input: &str) -> Result<PreState, PreJsonError> {
         initial_versions.insert(pkg.clone(), ver);
     }
 
-    let cs_val = obj.get("changesets").ok_or(PreJsonError::MissingField {
-        field: "changesets",
-    })?;
-    let cs_arr = cs_val.as_array().ok_or(PreJsonError::WrongFieldType {
-        field: "changesets",
-    })?;
+    let cs_val = obj
+        .get("changesets")
+        .ok_or(PreJsonError::MissingField { field: "changesets" })?;
+    let cs_arr = cs_val
+        .as_array()
+        .ok_or(PreJsonError::WrongFieldType { field: "changesets" })?;
 
     let mut changesets = Vec::new();
     for (index, c_val) in cs_arr.iter().enumerate() {
-        let c_str = c_val
-            .as_str()
-            .ok_or(PreJsonError::InvalidChangesetId { index })?;
+        let c_str = c_val.as_str().ok_or(PreJsonError::InvalidChangesetId { index })?;
         changesets.push(c_str.to_string());
     }
 
@@ -127,20 +114,14 @@ pub fn parse_pre_json(input: &str) -> Result<PreState, PreJsonError> {
 
 pub fn write_pre_json(state: &PreState) -> String {
     let mut map = IndexMap::new();
-    map.insert(
-        "mode".to_string(),
-        serde_json::to_value(state.mode).unwrap(),
-    );
+    map.insert("mode".to_string(), serde_json::to_value(state.mode).unwrap());
     map.insert("tag".to_string(), serde_json::to_value(&state.tag).unwrap());
 
     let mut init_map = IndexMap::new();
     for (pkg, ver) in &state.initial_versions {
         init_map.insert(pkg.clone(), serde_json::to_value(ver).unwrap());
     }
-    map.insert(
-        "initialVersions".to_string(),
-        serde_json::to_value(init_map).unwrap(),
-    );
+    map.insert("initialVersions".to_string(), serde_json::to_value(init_map).unwrap());
     map.insert(
         "changesets".to_string(),
         serde_json::to_value(&state.changesets).unwrap(),
@@ -227,8 +208,7 @@ mod tests {
         let state = PreState::entering(
             "beta",
             [("pkg".to_string(), {
-                callisto_model::Version::parse("1.0.0a1", callisto_model::VersionGrammar::Pep440)
-                    .unwrap()
+                callisto_model::Version::parse("1.0.0a1", callisto_model::VersionGrammar::Pep440).unwrap()
             })],
         );
         let written = write_pre_json(&state);

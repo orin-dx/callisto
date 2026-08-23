@@ -4,8 +4,8 @@ use std::path::PathBuf;
 use callisto_changelog::ChangelogInput;
 use callisto_format::PreState;
 use callisto_model::{
-    BumpReason, BumpRecord, CommitSha, ConfigKey, Diagnostic, LockfileRefreshResult, PackageId,
-    Severity, Version, VersionReport, SCHEMA_VERSION,
+    BumpReason, BumpRecord, CommitSha, ConfigKey, Diagnostic, LockfileRefreshResult, PackageId, Severity, Version,
+    VersionReport, SCHEMA_VERSION,
 };
 
 use crate::cascade::SpecRewrite;

@@ -19,9 +19,7 @@ pub fn handle(args: SnapshotArgs, global: &GlobalArgs) -> Result<ExitCode, CliEr
     if args.strict {
         let mut diags = ws.graph.diagnostics().to_vec();
         callisto_graph::commands::escalate(&mut diags, true, true);
-        let has_errors = diags
-            .iter()
-            .any(|d| d.severity == DiagnosticSeverity::Error);
+        let has_errors = diags.iter().any(|d| d.severity == DiagnosticSeverity::Error);
         if has_errors {
             let messages: Vec<String> = diags
                 .iter()

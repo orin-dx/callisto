@@ -16,10 +16,7 @@ use crate::workspace::load_workspace;
 /// - `1` when there are packages with pending changesets (maps to `ExitCode::FAILURE`).
 /// - `2` when no changesets are pending (sentinel for CI scripts).
 pub(crate) fn check_exit_code_raw(report: &StatusReport) -> u8 {
-    let has_pending = report
-        .packages
-        .iter()
-        .any(|p| !p.pending_changesets.is_empty());
+    let has_pending = report.packages.iter().any(|p| !p.pending_changesets.is_empty());
     if has_pending {
         1
     } else {
@@ -43,10 +40,10 @@ pub fn handle(args: StatusArgs, global: &GlobalArgs) -> Result<ExitCode, CliErro
         OutputFormat::Text => render::render_status(&report, &mut std::io::stdout())?,
     }
 
-    let has_errors = report.diagnostics.iter().any(|d| {
-        d.severity == DiagnosticSeverity::Error
-            || (args.strict && d.severity == DiagnosticSeverity::Warning)
-    });
+    let has_errors = report
+        .diagnostics
+        .iter()
+        .any(|d| d.severity == DiagnosticSeverity::Error || (args.strict && d.severity == DiagnosticSeverity::Warning));
 
     if has_errors {
         Ok(ExitCode::FAILURE)
@@ -61,8 +58,7 @@ pub fn handle(args: StatusArgs, global: &GlobalArgs) -> Result<ExitCode, CliErro
 mod tests {
     use super::*;
     use callisto_model::{
-        Ecosystem, PackageId, ReleaseTrigger, Severity, StatusPackageRecord, Version,
-        VersionGrammar,
+        Ecosystem, PackageId, ReleaseTrigger, Severity, StatusPackageRecord, Version, VersionGrammar,
     };
 
     fn v1() -> Version {
@@ -89,11 +85,7 @@ mod tests {
                     current_version: v1(),
                     last_tag: None,
                     last_released_version: None,
-                    pending_severity: if cs.is_empty() {
-                        None
-                    } else {
-                        Some(Severity::Patch)
-                    },
+                    pending_severity: if cs.is_empty() { None } else { Some(Severity::Patch) },
                     changed_since_last_tag: !cs.is_empty(),
                     release_trigger: ReleaseTrigger::Changeset,
                     pending_changesets: cs.into_iter().map(|s| s.to_string()).collect(),

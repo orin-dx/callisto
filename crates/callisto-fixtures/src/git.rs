@@ -13,12 +13,7 @@ use callisto_model::{CommandError, CommandOutput, CommandRunner};
 pub struct PoisonedRunner;
 
 impl CommandRunner for PoisonedRunner {
-    fn run(
-        &self,
-        program: &str,
-        _args: &[&str],
-        _cwd: &Path,
-    ) -> Result<CommandOutput, CommandError> {
+    fn run(&self, program: &str, _args: &[&str], _cwd: &Path) -> Result<CommandOutput, CommandError> {
         Err(CommandError::Io {
             program: program.to_string(),
             message: "poisoned runner: this code path must not shell out to git".to_string(),

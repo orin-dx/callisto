@@ -46,10 +46,7 @@ fn test_changelog_content_uses_real_changeset_summary() {
     .unwrap();
 
     let changelog_path = root.join("crates/core/CHANGELOG.md");
-    assert!(
-        changelog_path.exists(),
-        "crates/core/CHANGELOG.md must exist"
-    );
+    assert!(changelog_path.exists(), "crates/core/CHANGELOG.md must exist");
     let changelog_content = fs::read_to_string(&changelog_path).unwrap();
 
     assert!(
@@ -112,10 +109,7 @@ fn test_changelog_content_includes_all_changeset_summaries() {
     .unwrap();
 
     let changelog_path = root.join("crates/core/CHANGELOG.md");
-    assert!(
-        changelog_path.exists(),
-        "crates/core/CHANGELOG.md must exist"
-    );
+    assert!(changelog_path.exists(), "crates/core/CHANGELOG.md must exist");
     let changelog_content = fs::read_to_string(&changelog_path).unwrap();
 
     assert!(

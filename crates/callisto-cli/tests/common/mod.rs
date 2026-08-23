@@ -12,11 +12,7 @@ pub fn setup_polyglot_git_repo() -> tempfile::TempDir {
     let dir = tempdir().unwrap();
     let root = dir.path();
 
-    let status = Command::new("git")
-        .args(["init"])
-        .current_dir(root)
-        .status()
-        .unwrap();
+    let status = Command::new("git").args(["init"]).current_dir(root).status().unwrap();
     assert!(status.success());
 
     Command::new("git")

@@ -9,10 +9,7 @@ fn test_e2e_workspace_init_add_and_status() {
     let root = tmp.path();
 
     // Initialize git repository
-    let _res = std::process::Command::new("git")
-        .arg("init")
-        .current_dir(root)
-        .output();
+    let _res = std::process::Command::new("git").arg("init").current_dir(root).output();
 
     // Create a Cargo workspace manifest
     let cargo_toml = r#"[workspace]
@@ -87,12 +84,7 @@ fn test_status_matches_ecosystem_qualified_changeset_entry() {
     let tmp = TempDir::new().unwrap();
     let root = tmp.path();
 
-    drop(
-        std::process::Command::new("git")
-            .arg("init")
-            .current_dir(root)
-            .output(),
-    );
+    drop(std::process::Command::new("git").arg("init").current_dir(root).output());
 
     fs::write(
         root.join("Cargo.toml"),
@@ -154,12 +146,7 @@ fn test_status_check_exit_codes() {
     let tmp = TempDir::new().unwrap();
     let root = tmp.path();
 
-    drop(
-        std::process::Command::new("git")
-            .arg("init")
-            .current_dir(root)
-            .output(),
-    );
+    drop(std::process::Command::new("git").arg("init").current_dir(root).output());
 
     fs::write(
         root.join("Cargo.toml"),
@@ -235,12 +222,7 @@ fn test_status_default_exit_code_clean_workspace() {
     let tmp = TempDir::new().unwrap();
     let root = tmp.path();
 
-    drop(
-        std::process::Command::new("git")
-            .arg("init")
-            .current_dir(root)
-            .output(),
-    );
+    drop(std::process::Command::new("git").arg("init").current_dir(root).output());
 
     fs::write(
         root.join("Cargo.toml"),

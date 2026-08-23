@@ -6,9 +6,7 @@ use std::cell::OnceCell;
 #[test]
 fn test_tag_dry_run_does_not_create_git_tags() {
     use callisto_graph::commands::TagOptions;
-    use callisto_model::{
-        CommandOutput, CommitSha, PackageId, PublishPlan, ReleaseEntry, TagName, SCHEMA_VERSION,
-    };
+    use callisto_model::{CommandOutput, CommitSha, PackageId, PublishPlan, ReleaseEntry, TagName, SCHEMA_VERSION};
 
     let pkg_id = PackageId::parse("callisto-cli").unwrap();
     let tag_name = TagName("callisto-cli@0.2.0".to_string());
@@ -71,13 +69,10 @@ fn test_tag_dry_run_does_not_create_git_tags() {
         identity: callisto_graph::IdentityIndex::default(),
     };
 
-    let opts = TagOptions {
-        floating_major: false,
-    };
+    let opts = TagOptions { floating_major: false };
     // `None` is the dry run: the report still lists the tag that would be
     // created, and no git ref is touched.
-    let report =
-        callisto_graph::commands::create_tags_with_options(&ws, &plan, &opts, None).unwrap();
+    let report = callisto_graph::commands::create_tags_with_options(&ws, &plan, &opts, None).unwrap();
     assert_eq!(report.tags.len(), 1);
     assert_eq!(report.tags[0].tag_name.as_str(), "callisto-cli@0.2.0");
 }
@@ -94,9 +89,7 @@ fn test_tag_dry_run_does_not_create_git_tags() {
 #[test]
 fn test_create_tags_without_gix_falls_back_to_command_runner() {
     use callisto_graph::commands::TagOptions;
-    use callisto_model::{
-        CommandOutput, CommitSha, PackageId, PublishPlan, ReleaseEntry, TagName, SCHEMA_VERSION,
-    };
+    use callisto_model::{CommandOutput, CommitSha, PackageId, PublishPlan, ReleaseEntry, TagName, SCHEMA_VERSION};
     use std::sync::Mutex;
 
     let pkg_id = PackageId::parse("callisto-cli").unwrap();
@@ -163,10 +156,7 @@ fn test_create_tags_without_gix_falls_back_to_command_runner() {
     );
 
     let cfg = callisto_graph::config::load(ws_dir.path()).unwrap();
-    let graph = GraphBuilder::new()
-        .package(pkg_id.clone(), |p| p)
-        .build()
-        .unwrap();
+    let graph = GraphBuilder::new().package(pkg_id.clone(), |p| p).build().unwrap();
     let git = callisto_vcs::GitAccess::discover(ws_dir.path(), &runner);
     let tags = callisto_graph::tags::TagIndex::build(&git, &graph, &cfg).unwrap();
     let ws = callisto_graph::Workspace {
@@ -180,21 +170,15 @@ fn test_create_tags_without_gix_falls_back_to_command_runner() {
         identity: callisto_graph::IdentityIndex::default(),
     };
 
-    let opts = TagOptions {
-        floating_major: true,
-    };
+    let opts = TagOptions { floating_major: true };
 
-    let report = callisto_graph::commands::create_tags_with_options(
-        &ws,
-        &plan,
-        &opts,
-        Some(&ApplyPermit::force_for_tests()),
-    )
-    .expect(
-        "create_tags_with_options must not hard-crash via GitRepository::discover's `?` \
+    let report =
+        callisto_graph::commands::create_tags_with_options(&ws, &plan, &opts, Some(&ApplyPermit::force_for_tests()))
+            .expect(
+                "create_tags_with_options must not hard-crash via GitRepository::discover's `?` \
              when gix is unavailable -- it must fall back to the CommandRunner, mirroring \
              tags.rs's fetch_all_tags",
-    );
+            );
 
     let created: Vec<&str> = report.tags.iter().map(|t| t.tag_name.as_str()).collect();
     assert!(created.contains(&"callisto-cli@1.0.0"));
@@ -257,9 +241,7 @@ fn test_create_tags_without_gix_falls_back_to_command_runner() {
 #[test]
 fn test_create_tags_without_gix_skips_creation_for_existing_tag() {
     use callisto_graph::commands::TagOptions;
-    use callisto_model::{
-        CommandOutput, CommitSha, PackageId, PublishPlan, ReleaseEntry, TagName, SCHEMA_VERSION,
-    };
+    use callisto_model::{CommandOutput, CommitSha, PackageId, PublishPlan, ReleaseEntry, TagName, SCHEMA_VERSION};
     use std::sync::Mutex;
 
     let pkg_id = PackageId::parse("callisto-cli").unwrap();
@@ -328,10 +310,7 @@ fn test_create_tags_without_gix_skips_creation_for_existing_tag() {
     );
 
     let cfg = callisto_graph::config::load(ws_dir.path()).unwrap();
-    let graph = GraphBuilder::new()
-        .package(pkg_id.clone(), |p| p)
-        .build()
-        .unwrap();
+    let graph = GraphBuilder::new().package(pkg_id.clone(), |p| p).build().unwrap();
     let git = callisto_vcs::GitAccess::discover(ws_dir.path(), &runner);
     let tags = callisto_graph::tags::TagIndex::build(&git, &graph, &cfg).unwrap();
     let ws = callisto_graph::Workspace {
@@ -345,25 +324,18 @@ fn test_create_tags_without_gix_skips_creation_for_existing_tag() {
         identity: callisto_graph::IdentityIndex::default(),
     };
 
-    let opts = TagOptions {
-        floating_major: false,
-    };
+    let opts = TagOptions { floating_major: false };
 
-    let report = callisto_graph::commands::create_tags_with_options(
-        &ws,
-        &plan,
-        &opts,
-        Some(&ApplyPermit::force_for_tests()),
-    )
-    .expect("create_tags_with_options must succeed via the CommandRunner fallback");
+    let report =
+        callisto_graph::commands::create_tags_with_options(&ws, &plan, &opts, Some(&ApplyPermit::force_for_tests()))
+            .expect("create_tags_with_options must succeed via the CommandRunner fallback");
     assert_eq!(report.tags.len(), 1);
 
     let calls = runner.calls.lock().unwrap();
     assert!(
         !calls
             .iter()
-            .any(|c| c.first().map(String::as_str) == Some("tag")
-                && c.get(1).map(String::as_str) == Some("-a")),
+            .any(|c| c.first().map(String::as_str) == Some("tag") && c.get(1).map(String::as_str) == Some("-a")),
         "must not attempt to re-create a tag the fallback reported as already existing, got: {calls:?}"
     );
 }
@@ -388,8 +360,7 @@ fn test_create_tags_without_gix_skips_creation_for_existing_tag() {
 fn test_create_tags_checks_existence_against_cached_tag_index_not_per_release() {
     use callisto_graph::commands::TagOptions;
     use callisto_model::{
-        CommandError, CommandOutput, CommitSha, PackageId, PublishPlan, ReleaseEntry, TagName,
-        SCHEMA_VERSION,
+        CommandError, CommandOutput, CommitSha, PackageId, PublishPlan, ReleaseEntry, TagName, SCHEMA_VERSION,
     };
     use std::sync::Mutex;
 
@@ -434,12 +405,7 @@ fn test_create_tags_checks_existence_against_cached_tag_index_not_per_release() 
     }
 
     impl callisto_model::CommandRunner for CountingTagListRunner {
-        fn run(
-            &self,
-            program: &str,
-            args: &[&str],
-            _cwd: &std::path::Path,
-        ) -> Result<CommandOutput, CommandError> {
+        fn run(&self, program: &str, args: &[&str], _cwd: &std::path::Path) -> Result<CommandOutput, CommandError> {
             assert_eq!(program, "git");
             if args == ["tag", "--list"] {
                 *self.tag_list_calls.lock().unwrap() += 1;
@@ -522,20 +488,14 @@ fn test_create_tags_checks_existence_against_cached_tag_index_not_per_release() 
         identity: callisto_graph::IdentityIndex::default(),
     };
 
-    let opts = TagOptions {
-        floating_major: false,
-    };
+    let opts = TagOptions { floating_major: false };
 
-    let report = callisto_graph::commands::create_tags_with_options(
-        &ws,
-        &plan,
-        &opts,
-        Some(&ApplyPermit::force_for_tests()),
-    )
-    .expect(
-        "create_tags_with_options must succeed -- it must skip pkg-a@1.0.0 (already exists) \
+    let report =
+        callisto_graph::commands::create_tags_with_options(&ws, &plan, &opts, Some(&ApplyPermit::force_for_tests()))
+            .expect(
+                "create_tags_with_options must succeed -- it must skip pkg-a@1.0.0 (already exists) \
          rather than attempt to re-create it and hit the runner's simulated failure",
-    );
+            );
     assert_eq!(report.tags.len(), 2);
 
     let already_existed_by_name: std::collections::BTreeMap<&str, bool> = report

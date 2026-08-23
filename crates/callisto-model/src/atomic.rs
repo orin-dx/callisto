@@ -92,23 +92,13 @@ mod tests {
         let target = dir.path().join("Cargo.toml");
         let permit = ApplyPermit::force_for_tests();
 
-        atomic_write(
-            &target,
-            "[package]\nname = \"foo\"\nversion = \"1.0.0\"\n",
-            &permit,
-        )
-        .unwrap();
+        atomic_write(&target, "[package]\nname = \"foo\"\nversion = \"1.0.0\"\n", &permit).unwrap();
         assert_eq!(
             std::fs::read_to_string(&target).unwrap(),
             "[package]\nname = \"foo\"\nversion = \"1.0.0\"\n"
         );
 
-        atomic_write(
-            &target,
-            "[package]\nname = \"foo\"\nversion = \"1.0.1\"\n",
-            &permit,
-        )
-        .unwrap();
+        atomic_write(&target, "[package]\nname = \"foo\"\nversion = \"1.0.1\"\n", &permit).unwrap();
         assert_eq!(
             std::fs::read_to_string(&target).unwrap(),
             "[package]\nname = \"foo\"\nversion = \"1.0.1\"\n"

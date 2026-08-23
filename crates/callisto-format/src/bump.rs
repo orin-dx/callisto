@@ -96,12 +96,8 @@ impl Versioning for SemVerVersioning {
 
         let bumped = match severity {
             Severity::Major => Version::semver(major.checked_add(1).ok_or_else(overflow)?, 0, 0),
-            Severity::Minor => {
-                Version::semver(major, minor.checked_add(1).ok_or_else(overflow)?, 0)
-            }
-            Severity::Patch => {
-                Version::semver(major, minor, patch.checked_add(1).ok_or_else(overflow)?)
-            }
+            Severity::Minor => Version::semver(major, minor.checked_add(1).ok_or_else(overflow)?, 0),
+            Severity::Patch => Version::semver(major, minor, patch.checked_add(1).ok_or_else(overflow)?),
             Severity::None => current.clone(),
         };
 
@@ -148,11 +144,9 @@ impl Versioning for SemVerVersioning {
 
         let prerelease_str = format!("{}-{tag}.{counter}", release.render());
         let final_version =
-            Version::parse(&prerelease_str, VersionGrammar::SemVer).map_err(|_err| {
-                BumpError::NotSemVer {
-                    raw: prerelease_str,
-                    grammar: VersionGrammar::SemVer,
-                }
+            Version::parse(&prerelease_str, VersionGrammar::SemVer).map_err(|_err| BumpError::NotSemVer {
+                raw: prerelease_str,
+                grammar: VersionGrammar::SemVer,
             })?;
 
         Ok(final_version)
@@ -265,11 +259,9 @@ impl Versioning for Pep440Versioning {
             None => format!("{release_str}.dev{counter}"),
         };
 
-        Version::parse(&prerelease_str, VersionGrammar::Pep440).map_err(|e| {
-            BumpError::ComputedVersionInvalid {
-                raw: prerelease_str,
-                message: e.message,
-            }
+        Version::parse(&prerelease_str, VersionGrammar::Pep440).map_err(|e| BumpError::ComputedVersionInvalid {
+            raw: prerelease_str,
+            message: e.message,
         })
     }
 }
@@ -305,11 +297,9 @@ fn release_triple(v: &pep440_rs::Version) -> (u64, u64, u64) {
 
 fn render_pep440(v: pep440_rs::Version) -> Result<Version, BumpError> {
     let rendered = v.to_string();
-    Version::parse(&rendered, VersionGrammar::Pep440).map_err(|e| {
-        BumpError::ComputedVersionInvalid {
-            raw: rendered,
-            message: e.message,
-        }
+    Version::parse(&rendered, VersionGrammar::Pep440).map_err(|e| BumpError::ComputedVersionInvalid {
+        raw: rendered,
+        message: e.message,
     })
 }
 
@@ -322,19 +312,13 @@ pub fn bump_version(current: &Version, severity: Severity) -> Result<Version, Bu
 pub enum BumpError {
     #[error("bump_version requires a SemVer version; `{raw}` was parsed as {grammar:?}")]
     #[diagnostic(code(E035))]
-    NotSemVer {
-        raw: String,
-        grammar: VersionGrammar,
-    },
+    NotSemVer { raw: String, grammar: VersionGrammar },
     #[error("no versioning implementation exists for {grammar:?}")]
     #[diagnostic(code(E036))]
     UnsupportedGrammar { grammar: VersionGrammar },
     #[error("bump requires a PEP 440 version; `{raw}` was parsed as {grammar:?}")]
     #[diagnostic(code(E037))]
-    NotPep440 {
-        raw: String,
-        grammar: VersionGrammar,
-    },
+    NotPep440 { raw: String, grammar: VersionGrammar },
     #[error("internal error computing bumped version `{raw}`: {message}")]
     #[diagnostic(code(E038))]
     ComputedVersionInvalid { raw: String, message: String },
@@ -422,8 +406,7 @@ mod tests {
     #[case("1!2.0.0", Severity::Patch, "1!2.0.1")]
     fn test_pep440_bump_matrix(#[case] input: &str, #[case] sev: Severity, #[case] expected: &str) {
         let v = Version::parse(input, VersionGrammar::Pep440).unwrap();
-        let versioning =
-            versioning_for(VersionGrammar::Pep440).expect("pep440 versioning should be registered");
+        let versioning = versioning_for(VersionGrammar::Pep440).expect("pep440 versioning should be registered");
         assert_eq!(versioning.bump(&v, sev).unwrap().render(), expected);
     }
 
@@ -441,14 +424,10 @@ mod tests {
         let base = Version::parse("1.1.0", VersionGrammar::Pep440).unwrap();
         let cur = Version::parse("1.1.0", VersionGrammar::Pep440).unwrap();
 
-        let pre0 = versioning
-            .bump_prerelease(&base, Severity::Patch, "rc", &cur)
-            .unwrap();
+        let pre0 = versioning.bump_prerelease(&base, Severity::Patch, "rc", &cur).unwrap();
         assert_eq!(pre0.render(), "1.1.1rc0");
 
-        let pre1 = versioning
-            .bump_prerelease(&base, Severity::Patch, "rc", &pre0)
-            .unwrap();
+        let pre1 = versioning.bump_prerelease(&base, Severity::Patch, "rc", &pre0).unwrap();
         assert_eq!(pre1.render(), "1.1.1rc1");
     }
 
@@ -479,11 +458,7 @@ mod tests {
     #[case("1!2.3.post1.dev1", Severity::Patch, "1!2.3.1")]
     #[case("1!2.3.post1.dev1", Severity::Minor, "1!2.4.0")]
     #[case("1!2.3.post1.dev1", Severity::Major, "1!3.0.0")]
-    fn test_pep440_bump_epoch_post_dev_combined(
-        #[case] input: &str,
-        #[case] sev: Severity,
-        #[case] expected: &str,
-    ) {
+    fn test_pep440_bump_epoch_post_dev_combined(#[case] input: &str, #[case] sev: Severity, #[case] expected: &str) {
         let v = Version::parse(input, VersionGrammar::Pep440).unwrap();
         let versioning = versioning_for(VersionGrammar::Pep440).unwrap();
         assert_eq!(versioning.bump(&v, sev).unwrap().render(), expected);
@@ -498,11 +473,7 @@ mod tests {
     #[case("1.2.3+build.5", Severity::Patch, "1.2.4")]
     #[case("1.2.3+build.5", Severity::Minor, "1.3.0")]
     #[case("1.2.3+build.5", Severity::Major, "2.0.0")]
-    fn test_pep440_bump_drops_local_version_label(
-        #[case] input: &str,
-        #[case] sev: Severity,
-        #[case] expected: &str,
-    ) {
+    fn test_pep440_bump_drops_local_version_label(#[case] input: &str, #[case] sev: Severity, #[case] expected: &str) {
         let v = Version::parse(input, VersionGrammar::Pep440).unwrap();
         let versioning = versioning_for(VersionGrammar::Pep440).unwrap();
         assert_eq!(versioning.bump(&v, sev).unwrap().render(), expected);
@@ -536,30 +507,18 @@ mod tests {
     fn pep440_zero_base_plain_bump() {
         let versioning = versioning_for(VersionGrammar::Pep440).unwrap();
         let v = Version::parse("0.0.0", VersionGrammar::Pep440).unwrap();
-        assert_eq!(
-            versioning.bump(&v, Severity::Minor).unwrap().render(),
-            "0.1.0"
-        );
+        assert_eq!(versioning.bump(&v, Severity::Minor).unwrap().render(), "0.1.0");
         let v = Version::parse("0.0.0", VersionGrammar::Pep440).unwrap();
-        assert_eq!(
-            versioning.bump(&v, Severity::Major).unwrap().render(),
-            "1.0.0"
-        );
+        assert_eq!(versioning.bump(&v, Severity::Major).unwrap().render(), "1.0.0");
     }
 
     #[test]
     fn pep440_zero_base_prerelease_bump_hits_zero_guards() {
         let versioning = versioning_for(VersionGrammar::Pep440).unwrap();
         let v = Version::parse("0.0.0a1", VersionGrammar::Pep440).unwrap();
-        assert_eq!(
-            versioning.bump(&v, Severity::Minor).unwrap().render(),
-            "0.0.0"
-        );
+        assert_eq!(versioning.bump(&v, Severity::Minor).unwrap().render(), "0.0.0");
         let v = Version::parse("0.0.0a1", VersionGrammar::Pep440).unwrap();
-        assert_eq!(
-            versioning.bump(&v, Severity::Major).unwrap().render(),
-            "0.0.0"
-        );
+        assert_eq!(versioning.bump(&v, Severity::Major).unwrap().render(), "0.0.0");
     }
 
     /// Gap 4: a genuinely malformed PEP 440 string passed to the public parse
@@ -628,10 +587,7 @@ mod tests {
     fn pep440_severity_none_leaves_post_and_dev_tagged_input_unchanged(#[case] input: &str) {
         let v = Version::parse(input, VersionGrammar::Pep440).unwrap();
         let versioning = versioning_for(VersionGrammar::Pep440).unwrap();
-        assert_eq!(
-            versioning.bump(&v, Severity::None).unwrap().render(),
-            v.render()
-        );
+        assert_eq!(versioning.bump(&v, Severity::None).unwrap().render(), v.render());
     }
 
     #[test]

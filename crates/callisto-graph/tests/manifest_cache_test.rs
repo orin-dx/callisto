@@ -23,12 +23,7 @@ use serial_test::serial;
 struct NoopRunner;
 
 impl CommandRunner for NoopRunner {
-    fn run(
-        &self,
-        _program: &str,
-        _args: &[&str],
-        _cwd: &Path,
-    ) -> Result<CommandOutput, CommandError> {
+    fn run(&self, _program: &str, _args: &[&str], _cwd: &Path) -> Result<CommandOutput, CommandError> {
         Ok(CommandOutput {
             exit_code: Some(0),
             stdout: String::new(),

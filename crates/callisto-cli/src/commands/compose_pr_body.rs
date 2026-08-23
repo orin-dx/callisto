@@ -18,10 +18,7 @@ pub fn handle(args: ComposePrBodyArgs, global: &GlobalArgs) -> Result<ExitCode, 
         Some(ref s) if s == "-" => {
             let mut stdin_buf = String::new();
             std::io::stdin().read_to_string(&mut stdin_buf)?;
-            let clean_stdin = stdin_buf
-                .strip_prefix('\u{FEFF}')
-                .unwrap_or(&stdin_buf)
-                .to_string();
+            let clean_stdin = stdin_buf.strip_prefix('\u{FEFF}').unwrap_or(&stdin_buf).to_string();
             Some(clean_stdin)
         }
         other => other,

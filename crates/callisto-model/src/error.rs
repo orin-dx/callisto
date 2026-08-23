@@ -6,17 +6,11 @@ use crate::{DepKind, ManifestFormat, ManifestRole, PackageId, VersionGrammar, Ve
 #[non_exhaustive]
 pub enum ModelError {
     #[error("path `{path}` is absolute; callisto-model paths are workspace-root-relative")]
-    #[diagnostic(
-        code(E001),
-        help("Use a relative path relative to the workspace root.")
-    )]
+    #[diagnostic(code(E001), help("Use a relative path relative to the workspace root."))]
     AbsolutePath { path: PathBuf },
 
     #[error("path `{path}` is not valid UTF-8; callisto serializes paths into its JSON contract")]
-    #[diagnostic(
-        code(E002),
-        help("Ensure all workspace file paths contain valid UTF-8 characters.")
-    )]
+    #[diagnostic(code(E002), help("Ensure all workspace file paths contain valid UTF-8 characters."))]
     NonUtf8Path { path: PathBuf },
 
     #[error("path `{path}` attempts to traverse outside the workspace root")]
@@ -103,10 +97,7 @@ pub enum ManifestError {
     MissingField { path: PathBuf, field: &'static str },
 
     #[error("`{path}` declares `{raw}` as its version, which is invalid: {source}")]
-    #[diagnostic(
-        code(E014),
-        help("Fix version string to follow valid semver or ecosystem grammar.")
-    )]
+    #[diagnostic(code(E014), help("Fix version string to follow valid semver or ecosystem grammar."))]
     InvalidVersion {
         path: PathBuf,
         raw: String,
@@ -128,11 +119,7 @@ pub enum ManifestError {
 
     #[error("`{path}` has no `{kind:?}` dependency named `{name}`")]
     #[diagnostic(code(E017))]
-    DependencyNotFound {
-        path: PathBuf,
-        name: String,
-        kind: DepKind,
-    },
+    DependencyNotFound { path: PathBuf, name: String, kind: DepKind },
 
     #[error("operation `{operation}` is not supported for `{path}` ({format:?})")]
     #[diagnostic(code(E018))]

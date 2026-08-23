@@ -72,12 +72,7 @@ mod tests {
     struct NoopRunner;
 
     impl CommandRunner for NoopRunner {
-        fn run(
-            &self,
-            _program: &str,
-            _args: &[&str],
-            _cwd: &Path,
-        ) -> Result<CommandOutput, CommandError> {
+        fn run(&self, _program: &str, _args: &[&str], _cwd: &Path) -> Result<CommandOutput, CommandError> {
             Ok(CommandOutput {
                 exit_code: Some(0),
                 stdout: String::new(),
@@ -148,8 +143,7 @@ mod tests {
 
         let locator = IgnoreWalkLocator::new(root);
         let runner = NoopRunner;
-        let ws =
-            Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
+        let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
 
         let inference = NoInference;
         let opts = VersionOptions {
@@ -169,11 +163,7 @@ mod tests {
             .find(|b| b.package == pkg_alpha)
             .expect("pkg-alpha must have a planned bump");
 
-        assert_eq!(
-            bump.from.render(),
-            "1.0.0",
-            "from version must be the current version"
-        );
+        assert_eq!(bump.from.render(), "1.0.0", "from version must be the current version");
         assert_eq!(
             bump.to.render(),
             "1.1.0",
@@ -212,8 +202,7 @@ mod tests {
 
         let locator = IgnoreWalkLocator::new(root);
         let runner = NoopRunner;
-        let ws =
-            Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
+        let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
 
         let inference = NoInference;
         let opts = VersionOptions {
@@ -231,8 +220,7 @@ mod tests {
         let json_str = String::from_utf8(json_out).unwrap();
 
         // Must be parseable as valid JSON.
-        let parsed: serde_json::Value =
-            serde_json::from_str(&json_str).expect("output must be valid JSON");
+        let parsed: serde_json::Value = serde_json::from_str(&json_str).expect("output must be valid JSON");
 
         // Top-level structure checks: schemaVersion and bumps are always present.
         assert!(
@@ -254,10 +242,7 @@ mod tests {
 
         // Each bump must have the required fields.
         let bumps = parsed["bumps"].as_array().expect("bumps must be an array");
-        assert!(
-            !bumps.is_empty(),
-            "bumps array must be non-empty for the test fixture"
-        );
+        assert!(!bumps.is_empty(), "bumps array must be non-empty for the test fixture");
 
         for bump in bumps {
             assert!(
@@ -268,10 +253,7 @@ mod tests {
                 bump.get("from").is_some(),
                 "each bump must have a from field; bump: {bump}"
             );
-            assert!(
-                bump.get("to").is_some(),
-                "each bump must have a to field; bump: {bump}"
-            );
+            assert!(bump.get("to").is_some(), "each bump must have a to field; bump: {bump}");
             assert!(
                 bump.get("severity").is_some(),
                 "each bump must have a severity field; bump: {bump}"
@@ -308,14 +290,7 @@ mod tests {
         run_git(root, &["commit", "-q", "-m", "chore: add package"]);
         run_git(
             root,
-            &[
-                "-c",
-                "tag.gpgSign=false",
-                "tag",
-                "-m",
-                "release",
-                "pkg-alpha@1.0.0",
-            ],
+            &["-c", "tag.gpgSign=false", "tag", "-m", "release", "pkg-alpha@1.0.0"],
         );
 
         // A feat commit after the tag, with no changeset -- the only way this can produce a
@@ -333,8 +308,7 @@ mod tests {
 
         let locator = IgnoreWalkLocator::new(root);
         let runner = CliCommandRunner;
-        let ws = callisto_graph::Workspace::load(root.to_path_buf(), &locator, &runner)
-            .expect("workspace must load");
+        let ws = callisto_graph::Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
 
         let inference = crate::workspace::select_inference();
         let opts = VersionOptions {
@@ -352,11 +326,7 @@ mod tests {
              inference feature being enabled",
         );
 
-        assert_eq!(
-            bump.to.render(),
-            "1.1.0",
-            "a `feat:` commit must infer a minor bump"
-        );
+        assert_eq!(bump.to.render(), "1.1.0", "a `feat:` commit must infer a minor bump");
         assert!(
             matches!(bump.reason, Some(BumpReason::Inference { .. })),
             "the bump must be attributed to inference, not a changeset (there is none); got: \

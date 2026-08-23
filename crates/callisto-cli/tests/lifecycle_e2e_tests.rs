@@ -3,8 +3,7 @@ mod common;
 use std::fs;
 
 use callisto_cli::cli::{
-    AddArgs, GlobalArgs, InitArgs, OutputFormat, PlanPublishArgs, PublishArgs, StatusArgs,
-    VersionArgs,
+    AddArgs, GlobalArgs, InitArgs, OutputFormat, PlanPublishArgs, PublishArgs, StatusArgs, VersionArgs,
 };
 use callisto_cli::commands;
 
@@ -28,10 +27,7 @@ fn test_full_polyglot_workspace_release_lifecycle() {
     // 2. callisto add
     let add_res = commands::add::handle(
         AddArgs {
-            packages: vec![
-                "core-crate:minor".to_string(),
-                "@myorg/web-app:patch".to_string(),
-            ],
+            packages: vec!["core-crate:minor".to_string(), "@myorg/web-app:patch".to_string()],
             summary: Some("Improve the core API and the web UI".to_string()),
         },
         &global,
@@ -166,10 +162,7 @@ fn test_compose_pr_body_before_version_and_subpkg_changelog() {
             branch: None,
         };
         let report = callisto_graph::commands::compose_pr_body(&ws, &NoInference, &opts).unwrap();
-        assert!(
-            !report.body.is_empty(),
-            "PR body must not be empty before versioning"
-        );
+        assert!(!report.body.is_empty(), "PR body must not be empty before versioning");
         assert!(
             report.body.contains("core-crate"),
             "PR body must mention the changed package 'core-crate', got:\n{}",
@@ -205,10 +198,7 @@ fn test_compose_pr_body_before_version_and_subpkg_changelog() {
 
     // 3. Verify subpackage changelog was created in crates/core/CHANGELOG.md
     let changelog_path = root.join("crates/core/CHANGELOG.md");
-    assert!(
-        changelog_path.exists(),
-        "crates/core/CHANGELOG.md must exist!"
-    );
+    assert!(changelog_path.exists(), "crates/core/CHANGELOG.md must exist!");
     let changelog_content = fs::read_to_string(&changelog_path).unwrap();
     assert!(changelog_content.contains("0.2.0"));
     assert!(

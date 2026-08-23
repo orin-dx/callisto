@@ -2,8 +2,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use callisto_model::{
-    BumpReason, ConfigKey, Coverage, DepEdge, DepKind, DepSpec, Diagnostic, DiagnosticCode,
-    DiagnosticSeverity, Ecosystem, GrammarMismatch, PackageId, Severity, Version,
+    BumpReason, ConfigKey, Coverage, DepEdge, DepKind, DepSpec, Diagnostic, DiagnosticCode, DiagnosticSeverity,
+    Ecosystem, GrammarMismatch, PackageId, Severity, Version,
 };
 
 use crate::config::GroupTable;
@@ -22,12 +22,7 @@ pub struct CascadeDecision {
     pub unknown_coverage: bool,
 }
 
-pub fn cascade_action(
-    kind: DepKind,
-    coverage: Coverage,
-    source: Severity,
-    cfg: &CascadeConfig,
-) -> CascadeDecision {
+pub fn cascade_action(kind: DepKind, coverage: Coverage, source: Severity, cfg: &CascadeConfig) -> CascadeDecision {
     use Coverage::*;
     use DepKind::*;
 
@@ -53,11 +48,7 @@ pub fn cascade_action(
                 && matches!(coverage, DoesNotCover)
                 && matches!(source, Severity::Minor | Severity::Major) =>
         {
-            (
-                Severity::Major,
-                Some(ConfigKey::CASCADE_PEER_ESCALATION),
-                true,
-            )
+            (Severity::Major, Some(ConfigKey::CASCADE_PEER_ESCALATION), true)
         }
         (Peer, DoesNotCover) => (
             cfg.bump_severity.as_severity(),
@@ -69,9 +60,7 @@ pub fn cascade_action(
     };
 
     let governed_by = match (cfg.mode, coverage, severity) {
-        (CascadeMode::Always, Covers | Unknown, s) if s != Severity::None => {
-            Some(ConfigKey::CASCADE_MODE)
-        }
+        (CascadeMode::Always, Covers | Unknown, s) if s != Severity::None => Some(ConfigKey::CASCADE_MODE),
         _ => governed_by,
     };
 
@@ -171,9 +160,7 @@ pub trait CascadeSolver<D: DependencyResolver> {
     fn solve_cascade(&self, input: CascadeInput<'_, D>) -> Result<CascadeOutcome, GraphError>;
 }
 
-pub fn run_cascade<D: DependencyResolver>(
-    input: CascadeInput<'_, D>,
-) -> Result<CascadeOutcome, GraphError> {
+pub fn run_cascade<D: DependencyResolver>(input: CascadeInput<'_, D>) -> Result<CascadeOutcome, GraphError> {
     solve_cascade(input)
 }
 
@@ -195,9 +182,7 @@ pub fn run_cascade<D: DependencyResolver>(
 /// [`DiagnosticCode::RangeNotRoundTrippable`]'s own dominant real-world trigger is a
 /// different step entirely — [`rewrite_spec`], below, when a mechanical range rewrite (not a
 /// coverage test) fails on an otherwise-known-coverage spec.
-pub fn solve_cascade<D: DependencyResolver>(
-    input: CascadeInput<'_, D>,
-) -> Result<CascadeOutcome, GraphError> {
+pub fn solve_cascade<D: DependencyResolver>(input: CascadeInput<'_, D>) -> Result<CascadeOutcome, GraphError> {
     let mut out = CascadeOutcome {
         severities: input.seed.clone(),
         reasons: input.reasons.clone(),
@@ -228,12 +213,10 @@ pub fn solve_cascade<D: DependencyResolver>(
 
             let dependents: Vec<DepEdge> = input.graph.dependents_of(&pkg).cloned().collect();
             for edge in dependents {
-                let cov = coverage(&edge.spec, &new_version).map_err(|source| {
-                    GraphError::GrammarMismatch {
-                        from: edge.from.clone(),
-                        to: edge.to.clone(),
-                        source,
-                    }
+                let cov = coverage(&edge.spec, &new_version).map_err(|source| GraphError::GrammarMismatch {
+                    from: edge.from.clone(),
+                    to: edge.to.clone(),
+                    source,
                 })?;
 
                 let d = cascade_action(edge.kind, cov, src_sev, input.cfg);
@@ -281,11 +264,7 @@ pub fn solve_cascade<D: DependencyResolver>(
                                     .native_name(&edge.to, eco)
                                     .map(str::to_string)
                                     .unwrap_or_else(|| edge.to.name().to_string()),
-                                kind: if edge.inherited {
-                                    None
-                                } else {
-                                    Some(edge.kind)
-                                },
+                                kind: if edge.inherited { None } else { Some(edge.kind) },
                             };
                             out.rewrites.insert(
                                 key.clone(),
@@ -303,11 +282,7 @@ pub fn solve_cascade<D: DependencyResolver>(
                     }
                 }
 
-                let cur_sev = out
-                    .severities
-                    .get(&edge.from)
-                    .copied()
-                    .unwrap_or(Severity::None);
+                let cur_sev = out.severities.get(&edge.from).copied().unwrap_or(Severity::None);
                 if d.severity > cur_sev {
                     raise(
                         &edge.from,
@@ -356,17 +331,15 @@ pub fn solve_cascade<D: DependencyResolver>(
                     winner = Some(match winner {
                         None => candidate,
                         Some(best) => {
-                            let cmp = Version::compare(&candidate, &best).map_err(
-                                |_grammar_mismatch| GraphError::GroupGrammarMismatch {
+                            let cmp = Version::compare(&candidate, &best).map_err(|_grammar_mismatch| {
+                                GraphError::GroupGrammarMismatch {
                                     group: g.name.clone(),
                                     members: member_ids
                                         .iter()
-                                        .filter_map(|m| {
-                                            out.targets.get(m).map(|v| (m.clone(), v.clone()))
-                                        })
+                                        .filter_map(|m| out.targets.get(m).map(|v| (m.clone(), v.clone())))
                                         .collect(),
-                                },
-                            )?;
+                                }
+                            })?;
                             if cmp.is_gt() {
                                 candidate
                             } else {
@@ -380,12 +353,8 @@ pub fn solve_cascade<D: DependencyResolver>(
                 for id in member_ids {
                     if out.targets.get(&id) != Some(&winner) {
                         out.targets.insert(id.clone(), winner.clone());
-                        out.reasons.insert(
-                            id.clone(),
-                            BumpReason::LinkedGroupUnion {
-                                group: g.name.clone(),
-                            },
-                        );
+                        out.reasons
+                            .insert(id.clone(), BumpReason::LinkedGroupUnion { group: g.name.clone() });
                         worklist.insert(id.clone());
                         changed = true;
                     }
@@ -421,23 +390,13 @@ pub fn solve_cascade<D: DependencyResolver>(
                     }
                 }
 
-                let winner = crate::groups::fixed_group_target(
-                    g,
-                    input.base,
-                    &out.severities,
-                    input.tags,
-                    input.pre,
-                )?;
+                let winner = crate::groups::fixed_group_target(g, input.base, &out.severities, input.tags, input.pre)?;
 
                 for id in member_ids {
                     if out.targets.get(&id) != Some(&winner) {
                         out.targets.insert(id.clone(), winner.clone());
-                        out.reasons.insert(
-                            id.clone(),
-                            BumpReason::FixedGroupUnion {
-                                group: g.name.clone(),
-                            },
-                        );
+                        out.reasons
+                            .insert(id.clone(), BumpReason::FixedGroupUnion { group: g.name.clone() });
                         worklist.insert(id.clone());
                         changed = true;
                     }
@@ -576,12 +535,7 @@ pub enum RewriteOutcome {
     LeftAlone(Diagnostic),
 }
 
-pub fn rewrite_spec(
-    original: &DepSpec,
-    new: &Version,
-    eco: Ecosystem,
-    cfg: &CascadeConfig,
-) -> RewriteOutcome {
+pub fn rewrite_spec(original: &DepSpec, new: &Version, eco: Ecosystem, cfg: &CascadeConfig) -> RewriteOutcome {
     if !cfg.preserve_npm_ranges && eco == Ecosystem::Npm {
         return RewriteOutcome::Rewritten(DepSpec::Exact(new.clone()));
     }
@@ -628,8 +582,7 @@ mod tests {
         };
 
         // Patch-severity source: must NOT escalate to Major (row 4).
-        let patch_decision =
-            cascade_action(DepKind::Peer, Coverage::DoesNotCover, Severity::Patch, &cfg);
+        let patch_decision = cascade_action(DepKind::Peer, Coverage::DoesNotCover, Severity::Patch, &cfg);
         assert_eq!(
             patch_decision.severity,
             Severity::Patch,
@@ -646,25 +599,17 @@ mod tests {
         );
 
         // Minor-severity source: MUST escalate to Major (row 5).
-        let minor_decision =
-            cascade_action(DepKind::Peer, Coverage::DoesNotCover, Severity::Minor, &cfg);
+        let minor_decision = cascade_action(DepKind::Peer, Coverage::DoesNotCover, Severity::Minor, &cfg);
         assert_eq!(
             minor_decision.severity,
             Severity::Major,
             "a non-patch (Minor) upstream source must escalate a peer dependent to Major"
         );
-        assert!(
-            minor_decision.escalated,
-            "a non-patch source must set `escalated`"
-        );
-        assert_eq!(
-            minor_decision.governed_by,
-            Some(ConfigKey::CASCADE_PEER_ESCALATION)
-        );
+        assert!(minor_decision.escalated, "a non-patch source must set `escalated`");
+        assert_eq!(minor_decision.governed_by, Some(ConfigKey::CASCADE_PEER_ESCALATION));
 
         // Major-severity source: MUST also escalate to Major (row 5).
-        let major_decision =
-            cascade_action(DepKind::Peer, Coverage::DoesNotCover, Severity::Major, &cfg);
+        let major_decision = cascade_action(DepKind::Peer, Coverage::DoesNotCover, Severity::Major, &cfg);
         assert_eq!(major_decision.severity, Severity::Major);
         assert!(major_decision.escalated);
 
@@ -673,8 +618,7 @@ mod tests {
         // before inserting), but the match arm falls through to row 4 exactly
         // like Patch if it ever were reached -- exhaustive over the enum
         // rather than relying on that untested cross-function invariant.
-        let none_decision =
-            cascade_action(DepKind::Peer, Coverage::DoesNotCover, Severity::None, &cfg);
+        let none_decision = cascade_action(DepKind::Peer, Coverage::DoesNotCover, Severity::None, &cfg);
         assert_eq!(none_decision.severity, Severity::Patch);
         assert!(!none_decision.escalated);
     }
@@ -866,14 +810,12 @@ mod tests {
         let named_by = BTreeMap::new();
 
         let mut identity = IdentityIndex::default();
-        identity.native.insert(
-            (Ecosystem::Cargo, "my-native-lib".to_string()),
-            dep_target.clone(),
-        );
-        identity.native.insert(
-            (Ecosystem::Npm, "@scope/my-native-lib".to_string()),
-            dep_target.clone(),
-        );
+        identity
+            .native
+            .insert((Ecosystem::Cargo, "my-native-lib".to_string()), dep_target.clone());
+        identity
+            .native
+            .insert((Ecosystem::Npm, "@scope/my-native-lib".to_string()), dep_target.clone());
 
         let input = CascadeInput {
             graph: &graph,
@@ -1047,10 +989,7 @@ mod tests {
         let group_def = GroupDef {
             name: GroupName("linked-pair".to_string()),
             kind: GroupKind::Linked,
-            members: vec![
-                GroupMember::Package(pkg_a.clone()),
-                GroupMember::Package(pkg_b.clone()),
-            ],
+            members: vec![GroupMember::Package(pkg_a.clone()), GroupMember::Package(pkg_b.clone())],
         };
         groups.linked.insert(group_def.name.clone(), group_def);
 
@@ -1130,10 +1069,7 @@ mod tests {
         let group_def = GroupDef {
             name: GroupName("linked-pair".to_string()),
             kind: GroupKind::Linked,
-            members: vec![
-                GroupMember::Package(pkg_a.clone()),
-                GroupMember::Package(pkg_b.clone()),
-            ],
+            members: vec![GroupMember::Package(pkg_a.clone()), GroupMember::Package(pkg_b.clone())],
         };
         groups.linked.insert(group_def.name.clone(), group_def);
 
@@ -1335,18 +1271,9 @@ mod tests {
         let outcome = run_cascade(input).unwrap();
 
         // D is seeded, B and C cascade from D, A cascades from both B and C.
-        assert!(
-            outcome.severities.contains_key(&pkg_d),
-            "D must be in outcome"
-        );
-        assert!(
-            outcome.severities.contains_key(&pkg_b),
-            "B must cascade from D"
-        );
-        assert!(
-            outcome.severities.contains_key(&pkg_c),
-            "C must cascade from D"
-        );
+        assert!(outcome.severities.contains_key(&pkg_d), "D must be in outcome");
+        assert!(outcome.severities.contains_key(&pkg_b), "B must cascade from D");
+        assert!(outcome.severities.contains_key(&pkg_c), "C must cascade from D");
         assert!(
             outcome.severities.contains_key(&pkg_a),
             "A must cascade from B and C (both bumped to 2.0.0, out of ^1.0.0)"
@@ -1568,8 +1495,7 @@ mod tests {
             to: pkg_dep.clone(),
             kind: DepKind::Runtime,
             spec: DepSpec::Range(
-                callisto_model::VersionReq::parse("^1.0.0", callisto_model::Ecosystem::Cargo)
-                    .unwrap(),
+                callisto_model::VersionReq::parse("^1.0.0", callisto_model::Ecosystem::Cargo).unwrap(),
                 "^1.0.0".to_string(),
             ),
             from_manifest: std::path::PathBuf::from("Cargo.toml"),
@@ -1580,8 +1506,7 @@ mod tests {
             to: pkg_dep.clone(),
             kind: DepKind::Runtime,
             spec: DepSpec::Range(
-                callisto_model::VersionReq::parse("^1.0.0", callisto_model::Ecosystem::Cargo)
-                    .unwrap(),
+                callisto_model::VersionReq::parse("^1.0.0", callisto_model::Ecosystem::Cargo).unwrap(),
                 "^1.0.0".to_string(),
             ),
             from_manifest: std::path::PathBuf::from("member/Cargo.toml"),
@@ -1653,9 +1578,10 @@ mod tests {
             outcome.rewrites
         );
 
-        let has_manifest_target_for_non_inherited = outcome.rewrites.values().any(|r| {
-            matches!(&r.key.target, DepWriteTarget::Manifest(p) if p == &PathBuf::from("member/Cargo.toml"))
-        });
+        let has_manifest_target_for_non_inherited = outcome
+            .rewrites
+            .values()
+            .any(|r| matches!(&r.key.target, DepWriteTarget::Manifest(p) if p == &PathBuf::from("member/Cargo.toml")));
         assert!(
             has_manifest_target_for_non_inherited,
             "non-inherited edge must produce a DepWriteTarget::Manifest rewrite; rewrites: {:?}",
@@ -1743,14 +1669,8 @@ mod tests {
         let cfg_resolved = crate::config::load(dir).unwrap();
         let tags = crate::tags::TagIndex::build(&git, &graph, &cfg_resolved).unwrap();
 
-        assert!(
-            tags.last_tag(&pkg_a).is_some(),
-            "A must have a prior release tag"
-        );
-        assert!(
-            tags.last_tag(&pkg_b).is_none(),
-            "B must never have been released"
-        );
+        assert!(tags.last_tag(&pkg_a).is_some(), "A must have a prior release tag");
+        assert!(tags.last_tag(&pkg_b).is_none(), "B must never have been released");
 
         let mut base = BTreeMap::new();
         base.insert(pkg_a.clone(), Version::semver(2, 0, 0));
@@ -1763,10 +1683,7 @@ mod tests {
         let group_def = GroupDef {
             name: GroupName("ab-fixed".to_string()),
             kind: GroupKind::Fixed,
-            members: vec![
-                GroupMember::Package(pkg_a.clone()),
-                GroupMember::Package(pkg_b.clone()),
-            ],
+            members: vec![GroupMember::Package(pkg_a.clone()), GroupMember::Package(pkg_b.clone())],
         };
         let groups = GroupTable::from_groups(vec![group_def], vec![]);
 

@@ -23,12 +23,7 @@ fn permit() -> callisto_model::ApplyPermit {
 struct NoopRunner;
 
 impl CommandRunner for NoopRunner {
-    fn run(
-        &self,
-        _program: &str,
-        _args: &[&str],
-        _cwd: &Path,
-    ) -> Result<CommandOutput, CommandError> {
+    fn run(&self, _program: &str, _args: &[&str], _cwd: &Path) -> Result<CommandOutput, CommandError> {
         Ok(CommandOutput {
             exit_code: Some(0),
             stdout: String::new(),
@@ -88,13 +83,9 @@ fn first_run_on_fresh_workspace_writes_config_with_no_drift() {
     let runner = NoopRunner;
     let ws = load_workspace(root, &runner);
 
-    let report =
-        init(&ws, &InitOptions { yes: false }, Some(&permit())).expect("init should succeed");
+    let report = init(&ws, &InitOptions { yes: false }, Some(&permit())).expect("init should succeed");
 
-    assert!(
-        report.initialized,
-        "first run must report initialized = true"
-    );
+    assert!(report.initialized, "first run must report initialized = true");
     assert!(root.join("callisto.toml").exists());
     assert!(root.join(".changeset").is_dir());
     assert!(
@@ -122,8 +113,7 @@ fn rerun_with_yes_false_reports_new_ecosystem_without_mutating_files() {
 
     // First run: establishes the recorded baseline (cargo only).
     let first_ws = load_workspace(root, &runner);
-    let first_report = init(&first_ws, &InitOptions { yes: true }, Some(&permit()))
-        .expect("first init should succeed");
+    let first_report = init(&first_ws, &InitOptions { yes: true }, Some(&permit())).expect("first init should succeed");
     assert!(first_report.initialized);
 
     let config_before = fs::read_to_string(root.join("callisto.toml")).unwrap();
@@ -133,8 +123,7 @@ fn rerun_with_yes_false_reports_new_ecosystem_without_mutating_files() {
     add_npm_package(root);
 
     let second_ws = load_workspace(root, &runner);
-    let report = init(&second_ws, &InitOptions { yes: false }, Some(&permit()))
-        .expect("reconcile init should succeed");
+    let report = init(&second_ws, &InitOptions { yes: false }, Some(&permit())).expect("reconcile init should succeed");
 
     assert_eq!(
         report.diff.new_ecosystems,
@@ -142,10 +131,7 @@ fn rerun_with_yes_false_reports_new_ecosystem_without_mutating_files() {
         "npm's appearance must be detected as drift: {:?}",
         report.diff.new_ecosystems
     );
-    assert!(
-        !report.diff.applied,
-        "yes:false must not apply the detected diff"
-    );
+    assert!(!report.diff.applied, "yes:false must not apply the detected diff");
 
     let config_after = fs::read_to_string(root.join("callisto.toml")).unwrap();
     assert_eq!(
@@ -170,14 +156,12 @@ fn rerun_with_yes_true_applies_new_ecosystem_to_config() {
     let runner = NoopRunner;
 
     let first_ws = load_workspace(root, &runner);
-    init(&first_ws, &InitOptions { yes: true }, Some(&permit()))
-        .expect("first init should succeed");
+    init(&first_ws, &InitOptions { yes: true }, Some(&permit())).expect("first init should succeed");
 
     add_npm_package(root);
 
     let second_ws = load_workspace(root, &runner);
-    let report = init(&second_ws, &InitOptions { yes: true }, Some(&permit()))
-        .expect("reconcile init should succeed");
+    let report = init(&second_ws, &InitOptions { yes: true }, Some(&permit())).expect("reconcile init should succeed");
 
     assert_eq!(report.diff.new_ecosystems, vec![Ecosystem::Npm]);
     assert!(report.diff.applied, "yes:true must apply the detected diff");
@@ -185,8 +169,8 @@ fn rerun_with_yes_true_applies_new_ecosystem_to_config() {
     // A third run, with no further drift, must now see nothing to reconcile —
     // proof that the apply was actually persisted to callisto.toml.
     let third_ws = load_workspace(root, &runner);
-    let idempotent_report = init(&third_ws, &InitOptions { yes: false }, Some(&permit()))
-        .expect("idempotent init should succeed");
+    let idempotent_report =
+        init(&third_ws, &InitOptions { yes: false }, Some(&permit())).expect("idempotent init should succeed");
     assert!(
         idempotent_report.diff.new_ecosystems.is_empty(),
         "after an applied reconcile, re-running init must be a no-op: {:?}",

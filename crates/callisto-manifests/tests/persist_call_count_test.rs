@@ -23,12 +23,7 @@ fn cargo_persist_increments_persist_call_count_on_success() {
     let content = "[package]\nname = \"my-crate\"\nversion = \"0.1.0\"\n";
     fs::write(&manifest_path, content).unwrap();
 
-    let decl = ManifestDecl::new(
-        "Cargo.toml",
-        ManifestRole::Canonical,
-        ManifestFormat::CargoToml,
-    )
-    .unwrap();
+    let decl = ManifestDecl::new("Cargo.toml", ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap();
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: None,
@@ -59,12 +54,7 @@ fn npm_persist_increments_persist_call_count_on_success() {
     let content = "{\n  \"name\": \"@myorg/pkg\",\n  \"version\": \"1.0.0\"\n}\n";
     fs::write(&manifest_path, content).unwrap();
 
-    let decl = ManifestDecl::new(
-        "package.json",
-        ManifestRole::Canonical,
-        ManifestFormat::PackageJson,
-    )
-    .unwrap();
+    let decl = ManifestDecl::new("package.json", ManifestRole::Canonical, ManifestFormat::PackageJson).unwrap();
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: None,
@@ -90,12 +80,7 @@ fn python_persist_increments_persist_call_count_on_success() {
     let content = "[project]\nname = \"my-python-lib\"\nversion = \"0.3.1\"\n";
     fs::write(&manifest_path, content).unwrap();
 
-    let decl = ManifestDecl::new(
-        "pyproject.toml",
-        ManifestRole::Canonical,
-        ManifestFormat::PyprojectToml,
-    )
-    .unwrap();
+    let decl = ManifestDecl::new("pyproject.toml", ManifestRole::Canonical, ManifestFormat::PyprojectToml).unwrap();
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: None,

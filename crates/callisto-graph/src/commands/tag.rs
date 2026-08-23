@@ -1,6 +1,4 @@
-use callisto_model::{
-    ApplyPermit, CommandRunner, CreatedTag, PublishPlan, TagReport, SCHEMA_VERSION,
-};
+use callisto_model::{ApplyPermit, CommandRunner, CreatedTag, PublishPlan, TagReport, SCHEMA_VERSION};
 use callisto_vcs::{GitDataSource, VcsError};
 
 use crate::error::GraphError;
