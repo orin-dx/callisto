@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.3-nightly.202608220610.6bf587d66",
+  "checkpoint_id": "01M0RGBNXAWAH65QZJEW7WR5KE",
+  "strategy": "manual-commit",
+  "branch": "track-7-revwalk-bounding",
+  "checkpoints_count": 5,
+  "files_touched": [
+    "crates/callisto-graph/src/tags.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 12738,
+    "cache_creation_tokens": 26008574,
+    "cache_read_tokens": 3174008976,
+    "output_tokens": 3984935,
+    "api_call_count": 6384
+  }
+}
