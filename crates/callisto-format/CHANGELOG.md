@@ -1,5 +1,9 @@
 # callisto-format
 
+## 0.4.1
+
+- Released together with the `workspace` fixed group.
+
 ## 0.4.0
 
 - **Git-access layer decoupling, performance, and small correctness fixes**
