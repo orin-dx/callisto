@@ -141,8 +141,7 @@ fn test_snapshot_version_format_matches_spec() {
         identity: callisto_graph::IdentityIndex::default(),
     };
 
-    let (plan, report) =
-        plan_snapshot(&ws, "canary").expect("plan_snapshot should succeed against a real repo");
+    let (plan, report) = plan_snapshot(&ws, "canary").expect("plan_snapshot should succeed against a real repo");
 
     assert_eq!(
         report.snapshot_tag, expected_version,
@@ -266,9 +265,8 @@ fn test_snapshot_resolves_head_sha_via_command_runner_fallback_when_gix_unavaila
         identity: callisto_graph::IdentityIndex::default(),
     };
 
-    let (_, report) = plan_snapshot(&ws, "canary").expect(
-        "plan_snapshot must succeed via the CommandRunner fallback when gix cannot discover a repo",
-    );
+    let (_, report) = plan_snapshot(&ws, "canary")
+        .expect("plan_snapshot must succeed via the CommandRunner fallback when gix cannot discover a repo");
 
     let expected_version = format!("0.0.0-canary-{}", &head_sha[..7]);
     assert_eq!(report.snapshot_tag, expected_version);

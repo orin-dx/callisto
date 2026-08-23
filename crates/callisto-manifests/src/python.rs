@@ -2,9 +2,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use callisto_model::{
-    normalize_pypi_package_name, ApplyPermit, DepKind, DepSpec, DependencyEntry, Ecosystem,
-    ManifestDecl, ManifestError, ManifestFormat, ManifestRole, PublishTarget, Version,
-    VersionGrammar, VersionReq,
+    normalize_pypi_package_name, ApplyPermit, DepKind, DepSpec, DependencyEntry, Ecosystem, ManifestDecl,
+    ManifestError, ManifestFormat, ManifestRole, PublishTarget, Version, VersionGrammar, VersionReq,
 };
 use toml_edit::value;
 
@@ -186,21 +185,13 @@ impl Manifest for PyprojectToml {
             }
         };
 
-        let has_project_version = self
-            .document
-            .get("project")
-            .and_then(|p| p.get("version"))
-            .is_some();
+        let has_project_version = self.document.get("project").and_then(|p| p.get("version")).is_some();
 
         if has_project_version {
             if let Some(proj) = self.document.get_mut("project") {
                 set_with_decor(proj, "version");
             }
-        } else if let Some(poetry) = self
-            .document
-            .get_mut("tool")
-            .and_then(|t| t.get_mut("poetry"))
-        {
+        } else if let Some(poetry) = self.document.get_mut("tool").and_then(|t| t.get_mut("poetry")) {
             set_with_decor(poetry, "version");
         } else if let Some(flit) = self
             .document
@@ -228,11 +219,7 @@ impl Manifest for PyprojectToml {
         {
             for item in deps {
                 if let Some(full_req_str) = item.as_str() {
-                    let spec_part = full_req_str
-                        .split(';')
-                        .next()
-                        .unwrap_or(full_req_str)
-                        .trim();
+                    let spec_part = full_req_str.split(';').next().unwrap_or(full_req_str).trim();
                     let op_idx = spec_part.find(&['<', '>', '=', '!', '~'][..]);
                     let (pkg_part, req_str) = match op_idx {
                         Some(idx) => (&spec_part[..idx], &spec_part[idx..]),
@@ -333,8 +320,7 @@ impl Manifest for PyprojectToml {
                         } else {
                             String::new()
                         };
-                        let formatted_spec = if new_spec_str.starts_with(['<', '>', '=', '!', '~'])
-                        {
+                        let formatted_spec = if new_spec_str.starts_with(['<', '>', '=', '!', '~']) {
                             new_spec_str.clone()
                         } else {
                             format!(">={new_spec_str}")
@@ -584,26 +570,21 @@ mod tests {
 
     #[test]
     fn python_package_name_reads_pep621_name() {
-        let doc: toml_edit::DocumentMut = "[project]\nname = \"my-lib\"\nversion = \"1.0.0\"\n"
-            .parse()
-            .unwrap();
+        let doc: toml_edit::DocumentMut = "[project]\nname = \"my-lib\"\nversion = \"1.0.0\"\n".parse().unwrap();
         assert_eq!(python_package_name(&doc), Some("my-lib"));
     }
 
     #[test]
     fn python_package_name_falls_back_to_poetry_name() {
-        let doc: toml_edit::DocumentMut =
-            "[tool.poetry]\nname = \"my-poetry-lib\"\nversion = \"1.0.0\"\n"
-                .parse()
-                .unwrap();
+        let doc: toml_edit::DocumentMut = "[tool.poetry]\nname = \"my-poetry-lib\"\nversion = \"1.0.0\"\n"
+            .parse()
+            .unwrap();
         assert_eq!(python_package_name(&doc), Some("my-poetry-lib"));
     }
 
     #[test]
     fn python_package_name_falls_back_to_flit_module() {
-        let doc: toml_edit::DocumentMut = "[tool.flit.metadata]\nmodule = \"my_flit_lib\"\n"
-            .parse()
-            .unwrap();
+        let doc: toml_edit::DocumentMut = "[tool.flit.metadata]\nmodule = \"my_flit_lib\"\n".parse().unwrap();
         assert_eq!(python_package_name(&doc), Some("my_flit_lib"));
     }
 
@@ -693,10 +674,7 @@ dependencies = [
         manifest.write_version(&new_v, &permit()).unwrap();
 
         let unchanged = fs::read_to_string(&pyproject_path).unwrap();
-        assert_eq!(
-            unchanged, content,
-            "write_version alone must not write to disk"
-        );
+        assert_eq!(unchanged, content, "write_version alone must not write to disk");
 
         manifest.persist(&permit()).unwrap();
         let updated = fs::read_to_string(&pyproject_path).unwrap();
@@ -1053,7 +1031,8 @@ dependencies = [
     fn update_dependency_spec_does_not_touch_disk_until_persist_called() {
         let dir = tempdir().unwrap();
         let pyproject_path = dir.path().join("pyproject.toml");
-        let content = "[project]\nname = \"my-app\"\nversion = \"0.1.0\"\ndependencies = [\n    \"my-lib>=0.3.0\",\n]\n";
+        let content =
+            "[project]\nname = \"my-app\"\nversion = \"0.1.0\"\ndependencies = [\n    \"my-lib>=0.3.0\",\n]\n";
         fs::write(&pyproject_path, content).unwrap();
 
         let decl = ManifestDecl {
@@ -1093,7 +1072,8 @@ dependencies = [
     fn update_dependency_spec_non_range_variant_is_ok_and_persist_is_a_no_op() {
         let dir = tempdir().unwrap();
         let pyproject_path = dir.path().join("pyproject.toml");
-        let content = "[project]\nname = \"my-app\"\nversion = \"0.1.0\"\ndependencies = [\n    \"my-lib>=0.3.0\",\n]\n";
+        let content =
+            "[project]\nname = \"my-app\"\nversion = \"0.1.0\"\ndependencies = [\n    \"my-lib>=0.3.0\",\n]\n";
         fs::write(&pyproject_path, content).unwrap();
 
         let decl = ManifestDecl {
@@ -1149,50 +1129,35 @@ dependencies = [
     fn round_trip_exact_pin_rewrites_to_new_version() {
         let spec = make_pypi_spec("==1.2.3");
         let target = make_pep440_version("2.0.0");
-        assert_eq!(
-            raw_of(round_trip(&spec, &target)).as_deref(),
-            Some("==2.0.0")
-        );
+        assert_eq!(raw_of(round_trip(&spec, &target)).as_deref(), Some("==2.0.0"));
     }
 
     #[test]
     fn round_trip_compatible_release_rewrites_to_new_version() {
         let spec = make_pypi_spec("~=1.4.2");
         let target = make_pep440_version("2.1.3");
-        assert_eq!(
-            raw_of(round_trip(&spec, &target)).as_deref(),
-            Some("~=2.1.3")
-        );
+        assert_eq!(raw_of(round_trip(&spec, &target)).as_deref(), Some("~=2.1.3"));
     }
 
     #[test]
     fn round_trip_lower_bound_only_rewrites_to_new_version() {
         let spec = make_pypi_spec(">=1.0.0");
         let target = make_pep440_version("2.5.1");
-        assert_eq!(
-            raw_of(round_trip(&spec, &target)).as_deref(),
-            Some(">=2.5.1")
-        );
+        assert_eq!(raw_of(round_trip(&spec, &target)).as_deref(), Some(">=2.5.1"));
     }
 
     #[test]
     fn round_trip_range_rewrites_lower_and_computes_next_major_upper() {
         let spec = make_pypi_spec(">=1.0.0,<2");
         let target = make_pep440_version("2.5.1");
-        assert_eq!(
-            raw_of(round_trip(&spec, &target)).as_deref(),
-            Some(">=2.5.1,<3")
-        );
+        assert_eq!(raw_of(round_trip(&spec, &target)).as_deref(), Some(">=2.5.1,<3"));
     }
 
     #[test]
     fn round_trip_range_with_minor_upper_bound_computes_next_major() {
         let spec = make_pypi_spec(">=1.2.0,<2.0");
         let target = make_pep440_version("3.0.0");
-        assert_eq!(
-            raw_of(round_trip(&spec, &target)).as_deref(),
-            Some(">=3.0.0,<4")
-        );
+        assert_eq!(raw_of(round_trip(&spec, &target)).as_deref(), Some(">=3.0.0,<4"));
     }
 
     #[test]
@@ -1276,7 +1241,8 @@ dependencies = [
     fn update_dependency_spec_matches_pep503_equivalent_separator_spelling() {
         let dir = tempdir().unwrap();
         let pyproject_path = dir.path().join("pyproject.toml");
-        let content = "[project]\nname = \"my-app\"\nversion = \"0.1.0\"\ndependencies = [\n    \"my_lib>=0.3.0\",\n]\n";
+        let content =
+            "[project]\nname = \"my-app\"\nversion = \"0.1.0\"\ndependencies = [\n    \"my_lib>=0.3.0\",\n]\n";
         fs::write(&pyproject_path, content).unwrap();
 
         let decl = ManifestDecl {
@@ -1583,18 +1549,12 @@ exclude = ["tests/"]
     #[test]
     fn pyproject_with_pep621_name_is_publishable() {
         let dir = tempdir().unwrap();
-        let manifest = open_pyproject(
-            dir.path(),
-            "[project]\nname = \"my-pkg\"\nversion = \"1.0.0\"\n",
-        );
+        let manifest = open_pyproject(dir.path(), "[project]\nname = \"my-pkg\"\nversion = \"1.0.0\"\n");
         assert!(
             manifest.is_publishable(),
             "pyproject.toml with [project].name must be publishable"
         );
-        assert_eq!(
-            manifest.publish_targets(),
-            vec![PublishTarget::Pypi { index: None }],
-        );
+        assert_eq!(manifest.publish_targets(), vec![PublishTarget::Pypi { index: None }],);
     }
 
     /// A `pyproject.toml` with `[tool.poetry].name` IS publishable (Poetry schema).

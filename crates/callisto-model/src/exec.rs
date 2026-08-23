@@ -67,10 +67,7 @@ impl CommandOutput {
     }
 
     pub fn stdout_lines(&self) -> impl Iterator<Item = &str> {
-        self.stdout
-            .lines()
-            .map(|l| l.trim())
-            .filter(|l| !l.is_empty())
+        self.stdout.lines().map(|l| l.trim()).filter(|l| !l.is_empty())
     }
 }
 
@@ -79,10 +76,7 @@ impl CommandOutput {
 #[non_exhaustive]
 pub enum CommandError {
     #[error("`{program}` was not found; callisto requires it to be available")]
-    #[diagnostic(
-        code(E020),
-        help("Ensure program is installed and available on system PATH.")
-    )]
+    #[diagnostic(code(E020), help("Ensure program is installed and available on system PATH."))]
     NotFound { program: String },
 
     #[error("`{program}` reports version `{found}`, but callisto requires {required}")]

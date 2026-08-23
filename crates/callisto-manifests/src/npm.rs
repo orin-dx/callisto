@@ -2,8 +2,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use callisto_model::{
-    ApplyPermit, DepKind, DepSpec, DependencyEntry, Ecosystem, ManifestDecl, ManifestError,
-    ManifestFormat, ManifestRole, Version, VersionGrammar, VersionReq, WorkspaceKind,
+    ApplyPermit, DepKind, DepSpec, DependencyEntry, Ecosystem, ManifestDecl, ManifestError, ManifestFormat,
+    ManifestRole, Version, VersionGrammar, VersionReq, WorkspaceKind,
 };
 use indexmap::IndexMap;
 use serde_json::{Map, Value};
@@ -55,12 +55,11 @@ impl PackageJson {
         let mut fingerprint = detect_fingerprint(clean_content);
         fingerprint.has_bom = has_bom;
 
-        let doc: Map<String, Value> =
-            serde_json::from_str(clean_content).map_err(|e| ManifestError::Parse {
-                path: rel_path.clone(),
-                format: ManifestFormat::PackageJson,
-                message: e.to_string(),
-            })?;
+        let doc: Map<String, Value> = serde_json::from_str(clean_content).map_err(|e| ManifestError::Parse {
+            path: rel_path.clone(),
+            format: ManifestFormat::PackageJson,
+            message: e.to_string(),
+        })?;
 
         Ok(PackageJson {
             path: rel_path,
@@ -105,10 +104,7 @@ fn detect_fingerprint(content: &str) -> FormatFingerprint {
     }
 }
 
-fn format_json_pretty(
-    map: &IndexMap<&String, &Value>,
-    indent_str: &str,
-) -> Result<String, ManifestError> {
+fn format_json_pretty(map: &IndexMap<&String, &Value>, indent_str: &str) -> Result<String, ManifestError> {
     use serde::Serialize;
     let buf = Vec::new();
     let formatter = serde_json::ser::PrettyFormatter::with_indent(indent_str.as_bytes());
@@ -165,11 +161,9 @@ impl Manifest for PackageJson {
             out = format!("\u{FEFF}{}", out);
         }
 
-        crate::atomic::atomic_write(&self.absolute, &out, permit).map_err(|e| {
-            ManifestError::Write {
-                path: self.path.clone(),
-                message: e.to_string(),
-            }
+        crate::atomic::atomic_write(&self.absolute, &out, permit).map_err(|e| ManifestError::Write {
+            path: self.path.clone(),
+            message: e.to_string(),
         })?;
         crate::record_persist_call();
         Ok(())
@@ -248,12 +242,10 @@ impl Manifest for PackageJson {
                 field: "version",
             })?;
 
-        Version::parse(raw, VersionGrammar::SemVer).map_err(|source| {
-            ManifestError::InvalidVersion {
-                path: self.path.clone(),
-                raw: raw.to_string(),
-                source,
-            }
+        Version::parse(raw, VersionGrammar::SemVer).map_err(|source| ManifestError::InvalidVersion {
+            path: self.path.clone(),
+            raw: raw.to_string(),
+            source,
         })
     }
 
@@ -331,11 +323,7 @@ impl Manifest for PackageJson {
             });
         }
 
-        if let Some(section) = self
-            .doc
-            .get_mut(section_name)
-            .and_then(|v| v.as_object_mut())
-        {
+        if let Some(section) = self.doc.get_mut(section_name).and_then(|v| v.as_object_mut()) {
             section.insert(name.to_string(), Value::String(new.render()));
         }
 
@@ -381,11 +369,7 @@ fn parse_npm_spec_str(s: &str, ws_kind: Option<WorkspaceKind>) -> DepSpec {
         return DepSpec::Opaque(format!("workspace:{rest}"));
     }
     if let Some(rest) = s.strip_prefix("catalog:") {
-        let name = if rest.is_empty() {
-            None
-        } else {
-            Some(rest.to_string())
-        };
+        let name = if rest.is_empty() { None } else { Some(rest.to_string()) };
         return DepSpec::Catalog(name);
     }
 
@@ -407,11 +391,7 @@ pub fn round_trip(spec: &DepSpec, target: &Version) -> Option<DepSpec> {
         DepSpec::Exact(_) => Some(DepSpec::Exact(target.clone())),
         DepSpec::Range(_, original) => {
             let (prefix, rest) = crate::common::split_single_operator_prefix(original)?;
-            if rest.contains(' ')
-                || rest.contains('-')
-                || rest.contains('|')
-                || rest.contains(['x', 'X', '*'])
-            {
+            if rest.contains(' ') || rest.contains('-') || rest.contains('|') || rest.contains(['x', 'X', '*']) {
                 return None;
             }
             let rendered = format!("{prefix}{}", render_at_precision(target, rest));
@@ -438,9 +418,7 @@ fn render_at_precision(target: &Version, original_clause: &str) -> String {
     }
 }
 
-pub fn detect_npm_workspace_kind(
-    workspace_root: &Path,
-) -> Result<Option<WorkspaceKind>, ManifestError> {
+pub fn detect_npm_workspace_kind(workspace_root: &Path) -> Result<Option<WorkspaceKind>, ManifestError> {
     if workspace_root.join("pnpm-lock.yaml").exists() {
         return Ok(Some(WorkspaceKind::Pnpm));
     }
@@ -486,8 +464,7 @@ mod tests {
 
     #[test]
     fn npm_package_name_returns_none_when_absent() {
-        let doc: serde_json::Map<String, serde_json::Value> =
-            serde_json::from_str(r#"{"version":"1.0.0"}"#).unwrap();
+        let doc: serde_json::Map<String, serde_json::Value> = serde_json::from_str(r#"{"version":"1.0.0"}"#).unwrap();
         assert_eq!(npm_package_name(&doc), None);
     }
 
@@ -518,12 +495,7 @@ mod tests {
     fn open_manifest(dir: &tempfile::TempDir, content: &str) -> PackageJson {
         let manifest_path = dir.path().join("package.json");
         fs::write(&manifest_path, content).unwrap();
-        let decl = ManifestDecl::new(
-            "package.json",
-            ManifestRole::Canonical,
-            ManifestFormat::PackageJson,
-        )
-        .unwrap();
+        let decl = ManifestDecl::new("package.json", ManifestRole::Canonical, ManifestFormat::PackageJson).unwrap();
         let ctx = OpenContext {
             workspace_root: dir.path(),
             cargo_workspace: None,
@@ -543,10 +515,7 @@ mod tests {
         manifest.write_version(&new_ver, &permit()).unwrap();
 
         let unchanged = fs::read_to_string(&manifest_path).unwrap();
-        assert_eq!(
-            unchanged, content,
-            "write_version alone must not write to disk"
-        );
+        assert_eq!(unchanged, content, "write_version alone must not write to disk");
 
         manifest.persist(&permit()).unwrap();
         let updated = fs::read_to_string(&manifest_path).unwrap();
@@ -617,12 +586,7 @@ mod tests {
 "#;
         fs::write(&manifest_path, content).unwrap();
 
-        let decl = ManifestDecl::new(
-            "package.json",
-            ManifestRole::Canonical,
-            ManifestFormat::PackageJson,
-        )
-        .unwrap();
+        let decl = ManifestDecl::new("package.json", ManifestRole::Canonical, ManifestFormat::PackageJson).unwrap();
         let ctx = OpenContext {
             workspace_root: dir.path(),
             cargo_workspace: None,
@@ -658,12 +622,7 @@ mod tests {
         let content = "\u{FEFF}{\n  \"name\": \"bom-pkg\",\n  \"version\": \"1.0.0\"\n}\n";
         fs::write(&manifest_path, content).unwrap();
 
-        let decl = ManifestDecl::new(
-            "package.json",
-            ManifestRole::Canonical,
-            ManifestFormat::PackageJson,
-        )
-        .unwrap();
+        let decl = ManifestDecl::new("package.json", ManifestRole::Canonical, ManifestFormat::PackageJson).unwrap();
         let ctx = OpenContext {
             workspace_root: dir.path(),
             cargo_workspace: None,
@@ -692,12 +651,7 @@ mod tests {
 "#;
         fs::write(&manifest_path, content).unwrap();
 
-        let decl = ManifestDecl::new(
-            "package.json",
-            ManifestRole::Canonical,
-            ManifestFormat::PackageJson,
-        )
-        .unwrap();
+        let decl = ManifestDecl::new("package.json", ManifestRole::Canonical, ManifestFormat::PackageJson).unwrap();
         let ctx = OpenContext {
             workspace_root: dir.path(),
             cargo_workspace: None,
@@ -757,22 +711,14 @@ mod tests {
             )
             .unwrap();
 
-        let deps = manifest
-            .doc
-            .get("dependencies")
-            .and_then(|v| v.as_object())
-            .unwrap();
+        let deps = manifest.doc.get("dependencies").and_then(|v| v.as_object()).unwrap();
         assert_eq!(
             deps.get("lodash").and_then(|v| v.as_str()),
             Some("^5.0.0"),
             "dependencies must reflect the new version"
         );
 
-        let overrides = manifest
-            .doc
-            .get("overrides")
-            .and_then(|v| v.as_object())
-            .unwrap();
+        let overrides = manifest.doc.get("overrides").and_then(|v| v.as_object()).unwrap();
         assert_eq!(
             overrides.get("lodash").and_then(|v| v.as_str()),
             Some("^5.0.0"),
@@ -805,22 +751,14 @@ mod tests {
             )
             .unwrap();
 
-        let deps = manifest
-            .doc
-            .get("dependencies")
-            .and_then(|v| v.as_object())
-            .unwrap();
+        let deps = manifest.doc.get("dependencies").and_then(|v| v.as_object()).unwrap();
         assert_eq!(
             deps.get("lodash").and_then(|v| v.as_str()),
             Some("^5.0.0"),
             "dependencies must reflect the new version"
         );
 
-        let resolutions = manifest
-            .doc
-            .get("resolutions")
-            .and_then(|v| v.as_object())
-            .unwrap();
+        let resolutions = manifest.doc.get("resolutions").and_then(|v| v.as_object()).unwrap();
         assert_eq!(
             resolutions.get("lodash").and_then(|v| v.as_str()),
             Some("^5.0.0"),
@@ -856,33 +794,21 @@ mod tests {
             )
             .unwrap();
 
-        let deps = manifest
-            .doc
-            .get("dependencies")
-            .and_then(|v| v.as_object())
-            .unwrap();
+        let deps = manifest.doc.get("dependencies").and_then(|v| v.as_object()).unwrap();
         assert_eq!(
             deps.get("lodash").and_then(|v| v.as_str()),
             Some("^5.0.0"),
             "dependencies must reflect the new version"
         );
 
-        let overrides = manifest
-            .doc
-            .get("overrides")
-            .and_then(|v| v.as_object())
-            .unwrap();
+        let overrides = manifest.doc.get("overrides").and_then(|v| v.as_object()).unwrap();
         assert_eq!(
             overrides.get("lodash").and_then(|v| v.as_str()),
             Some("^5.0.0"),
             "overrides must be co-mutated"
         );
 
-        let resolutions = manifest
-            .doc
-            .get("resolutions")
-            .and_then(|v| v.as_object())
-            .unwrap();
+        let resolutions = manifest.doc.get("resolutions").and_then(|v| v.as_object()).unwrap();
         assert_eq!(
             resolutions.get("lodash").and_then(|v| v.as_str()),
             Some("^5.0.0"),
@@ -917,22 +843,14 @@ mod tests {
             )
             .unwrap();
 
-        let deps = manifest
-            .doc
-            .get("dependencies")
-            .and_then(|v| v.as_object())
-            .unwrap();
+        let deps = manifest.doc.get("dependencies").and_then(|v| v.as_object()).unwrap();
         assert_eq!(
             deps.get("express").and_then(|v| v.as_str()),
             Some("^5.0.0"),
             "express in dependencies must be updated"
         );
 
-        let overrides = manifest
-            .doc
-            .get("overrides")
-            .and_then(|v| v.as_object())
-            .unwrap();
+        let overrides = manifest.doc.get("overrides").and_then(|v| v.as_object()).unwrap();
         assert_eq!(
             overrides.get("lodash").and_then(|v| v.as_str()),
             Some("^4.17.0"),
@@ -982,8 +900,7 @@ mod tests {
     /// Combined case: package in both overrides AND resolutions but not in
     /// the primary section. Both tables must be untouched on failure.
     #[test]
-    fn update_dependency_spec_does_not_mutate_overrides_or_resolutions_when_primary_section_missing(
-    ) {
+    fn update_dependency_spec_does_not_mutate_overrides_or_resolutions_when_primary_section_missing() {
         let dir = tempdir().unwrap();
         let content = r#"{
   "name": "@myorg/pkg",
@@ -1095,12 +1012,8 @@ mod tests {
 
         let before = manifest.doc.get("overrides").cloned();
 
-        let result = manifest.update_dependency_spec(
-            "lodash",
-            DepKind::Dev,
-            DepSpec::Opaque("^5.0.0".to_string()),
-            &permit(),
-        );
+        let result =
+            manifest.update_dependency_spec("lodash", DepKind::Dev, DepSpec::Opaque("^5.0.0".to_string()), &permit());
 
         assert!(
             result.is_err(),
@@ -1175,13 +1088,7 @@ mod tests {
         let manifest = open_manifest(&dir, content);
         let result = manifest.current_version();
         assert!(
-            matches!(
-                result,
-                Err(ManifestError::MissingField {
-                    field: "version",
-                    ..
-                })
-            ),
+            matches!(result, Err(ManifestError::MissingField { field: "version", .. })),
             "missing version field must return MissingField error, got: {result:?}"
         );
     }
@@ -1197,12 +1104,7 @@ mod tests {
         let content = "{\n\t\"name\": \"tab-app\",\n\t\"version\": \"1.0.0\"\n}\n";
         fs::write(&path, content).unwrap();
 
-        let decl = ManifestDecl::new(
-            "package.json",
-            ManifestRole::Canonical,
-            ManifestFormat::PackageJson,
-        )
-        .unwrap();
+        let decl = ManifestDecl::new("package.json", ManifestRole::Canonical, ManifestFormat::PackageJson).unwrap();
         let ctx = OpenContext {
             workspace_root: dir.path(),
             cargo_workspace: None,
@@ -1211,8 +1113,7 @@ mod tests {
 
         let mut pj = PackageJson::open(&decl, &ctx).unwrap();
         pj.write_version(
-            &callisto_model::Version::parse("1.1.0", callisto_model::VersionGrammar::SemVer)
-                .unwrap(),
+            &callisto_model::Version::parse("1.1.0", callisto_model::VersionGrammar::SemVer).unwrap(),
             &permit(),
         )
         .unwrap();
@@ -1258,40 +1159,28 @@ mod tests {
     fn round_trip_caret_range_rewrites_to_target_version() {
         let spec = make_npm_spec("^1.0.0");
         let target = npm_version("1.5.2");
-        assert_eq!(
-            raw_of(round_trip(&spec, &target)).as_deref(),
-            Some("^1.5.2")
-        );
+        assert_eq!(raw_of(round_trip(&spec, &target)).as_deref(), Some("^1.5.2"));
     }
 
     #[test]
     fn round_trip_tilde_range_rewrites_to_target_version() {
         let spec = make_npm_spec("~1.0.0");
         let target = npm_version("1.0.9");
-        assert_eq!(
-            raw_of(round_trip(&spec, &target)).as_deref(),
-            Some("~1.0.9")
-        );
+        assert_eq!(raw_of(round_trip(&spec, &target)).as_deref(), Some("~1.0.9"));
     }
 
     #[test]
     fn round_trip_gte_range_rewrites_to_target_version() {
         let spec = make_npm_spec(">=1.0.0");
         let target = npm_version("2.5.1");
-        assert_eq!(
-            raw_of(round_trip(&spec, &target)).as_deref(),
-            Some(">=2.5.1")
-        );
+        assert_eq!(raw_of(round_trip(&spec, &target)).as_deref(), Some(">=2.5.1"));
     }
 
     #[test]
     fn round_trip_exact_operator_range_rewrites_to_target_version() {
         let spec = make_npm_spec("=1.0.0");
         let target = npm_version("1.2.3");
-        assert_eq!(
-            raw_of(round_trip(&spec, &target)).as_deref(),
-            Some("=1.2.3")
-        );
+        assert_eq!(raw_of(round_trip(&spec, &target)).as_deref(), Some("=1.2.3"));
     }
 
     #[test]
@@ -1317,10 +1206,7 @@ mod tests {
     fn round_trip_prerelease_target_is_rendered_in_full() {
         let spec = make_npm_spec("^1.0.0");
         let target = npm_version("2.0.0-beta.1");
-        assert_eq!(
-            raw_of(round_trip(&spec, &target)).as_deref(),
-            Some("^2.0.0-beta.1")
-        );
+        assert_eq!(raw_of(round_trip(&spec, &target)).as_deref(), Some("^2.0.0-beta.1"));
     }
 
     #[test]

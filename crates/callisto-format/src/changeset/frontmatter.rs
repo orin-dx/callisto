@@ -52,16 +52,12 @@ pub(crate) fn split_name_and_rest(line: &str) -> Result<(NameToken<'_>, &str), L
         let rest = after_quote[end + 1..].trim_start();
         let rest = rest
             .strip_prefix(':')
-            .ok_or_else(|| LineError::AmbiguousNameQuoting {
-                raw: line.to_string(),
-            })?;
+            .ok_or_else(|| LineError::AmbiguousNameQuoting { raw: line.to_string() })?;
         Ok((NameToken::Quoted(name.to_string()), rest))
     } else {
         let (name, rest) = trimmed
             .rsplit_once(':')
-            .ok_or_else(|| LineError::MissingSeparator {
-                raw: line.to_string(),
-            })?;
+            .ok_or_else(|| LineError::MissingSeparator { raw: line.to_string() })?;
         Ok((NameToken::Bare(name.trim_end()), rest))
     }
 }
@@ -76,13 +72,13 @@ pub(crate) fn parse_entry_line(line: &str) -> Result<Entry, LineError> {
     if name.is_empty() {
         return Err(LineError::EmptyName);
     }
-    let severity =
-        rest.trim()
-            .parse::<Severity>()
-            .map_err(|source| LineError::InvalidSeverity {
-                name: name.clone(),
-                source,
-            })?;
+    let severity = rest
+        .trim()
+        .parse::<Severity>()
+        .map_err(|source| LineError::InvalidSeverity {
+            name: name.clone(),
+            source,
+        })?;
     Ok(Entry { name, severity })
 }
 
@@ -142,10 +138,7 @@ mod tests {
         // The reference `knope-dev/changesets` crate colon-splits before unquoting, which
         // mis-parses exactly this Maven-style identity (§13 invariant 1).
         let (token, rest) = split_name_and_rest("\"maven/org.example:foo-core\": major").unwrap();
-        assert_eq!(
-            token,
-            NameToken::Quoted("maven/org.example:foo-core".to_string())
-        );
+        assert_eq!(token, NameToken::Quoted("maven/org.example:foo-core".to_string()));
         assert_eq!(rest, " major");
     }
 

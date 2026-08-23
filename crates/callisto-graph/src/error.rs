@@ -1,8 +1,6 @@
 use std::path::PathBuf;
 
-use callisto_model::{
-    Ecosystem, GroupName, ManifestError, PackageId, TagTemplateError, VersionParseError,
-};
+use callisto_model::{Ecosystem, GroupName, ManifestError, PackageId, TagTemplateError, VersionParseError};
 
 pub use crate::locate::LocateError;
 
@@ -62,10 +60,7 @@ pub enum GraphError {
     Command(#[from] callisto_model::CommandError),
 
     #[error("package `{id}` is defined at multiple paths: {}", .paths.iter().map(|p| p.display().to_string()).collect::<Vec<_>>().join(", "))]
-    #[diagnostic(
-        code(E100),
-        help("Ensure package IDs are unique across workspace manifest paths.")
-    )]
+    #[diagnostic(code(E100), help("Ensure package IDs are unique across workspace manifest paths."))]
     DuplicatePackage { id: PackageId, paths: Vec<PathBuf> },
 
     #[error("package at `{path}` declares conflicting identities: {}", .ids.iter().map(|i| i.display_name()).collect::<Vec<_>>().join(", "))]
@@ -84,10 +79,7 @@ pub enum GraphError {
         code(E103),
         help("Use fully-qualified package ID with ecosystem prefix (e.g. cargo:pkg).")
     )]
-    AmbiguousName {
-        name: String,
-        candidates: Vec<PackageId>,
-    },
+    AmbiguousName { name: String, candidates: Vec<PackageId> },
 
     #[error("dependency cycle detected: {}", .cycle.iter().map(|i| i.display_name()).collect::<Vec<_>>().join(" -> "))]
     #[diagnostic(
@@ -97,17 +89,11 @@ pub enum GraphError {
     Cycle { cycle: Vec<PackageId> },
 
     #[error("cascade failed to converge after {iterations} iterations")]
-    #[diagnostic(
-        code(E105),
-        help("Check for oscillating peer or linked group dependencies.")
-    )]
+    #[diagnostic(code(E105), help("Check for oscillating peer or linked group dependencies."))]
     CascadeNotConverged { iterations: usize },
 
     #[error("fixed group `{group}` members have divergent on-disk versions: {}", .members.iter().map(|(id, v)| format!("{}={}", id.display_name(), v.render())).collect::<Vec<_>>().join(", "))]
-    #[diagnostic(
-        code(E106),
-        help("Align on-disk versions for all members of the fixed group.")
-    )]
+    #[diagnostic(code(E106), help("Align on-disk versions for all members of the fixed group."))]
     FixedGroupDivergent {
         group: GroupName,
         members: Vec<(PackageId, callisto_model::Version)>,
@@ -126,14 +112,9 @@ pub enum GraphError {
 
     #[error("package `{package}` is listed in multiple conflicting groups: {}", .groups.iter().map(|g| g.as_str()).collect::<Vec<_>>().join(", "))]
     #[diagnostic(code(E109))]
-    ConflictingGroupMembership {
-        package: PackageId,
-        groups: Vec<GroupName>,
-    },
+    ConflictingGroupMembership { package: PackageId, groups: Vec<GroupName> },
 
-    #[error(
-        "version dependency edge from `{from}` to `{to}` involves incompatible grammars: {source}"
-    )]
+    #[error("version dependency edge from `{from}` to `{to}` involves incompatible grammars: {source}")]
     GrammarMismatch {
         from: PackageId,
         to: PackageId,
@@ -151,8 +132,10 @@ pub enum GraphError {
     #[error("cannot apply version plan: manifest `{}` is at version {}, expected {} (pre-apply) or {} (already applied — safe to retry)", .path.display(), .found.render(), .expected_from.render(), .expected_to.render())]
     #[diagnostic(
         code(E117),
-        help("The manifest version does not match the plan's from or to version. \
-              This may indicate the manifest was modified outside of callisto after the plan was generated.")
+        help(
+            "The manifest version does not match the plan's from or to version. \
+              This may indicate the manifest was modified outside of callisto after the plan was generated."
+        )
     )]
     UnexpectedManifestVersion {
         path: PathBuf,
@@ -162,10 +145,7 @@ pub enum GraphError {
     },
 
     #[error("workspace root `{root_manifest}` has conflicting version updates: {details}")]
-    WorkspaceVersionConflict {
-        root_manifest: PathBuf,
-        details: String,
-    },
+    WorkspaceVersionConflict { root_manifest: PathBuf, details: String },
 
     #[error("failed to parse .changeset/pre.json: {0}")]
     #[diagnostic(
@@ -177,7 +157,9 @@ pub enum GraphError {
     #[error("failed to read .changeset/pre.json: {message}")]
     #[diagnostic(
         code(E115),
-        help("Check that .changeset/pre.json is readable. Delete the file and re-run `callisto pre enter` to recover.")
+        help(
+            "Check that .changeset/pre.json is readable. Delete the file and re-run `callisto pre enter` to recover."
+        )
     )]
     PreJsonRead { message: String },
 
@@ -258,14 +240,8 @@ mod tests {
             maturin_source: "[tool.maturin].targets",
         };
         let msg = format!("{err}");
-        assert!(
-            msg.contains("native-mod"),
-            "message must name the package: {msg}"
-        );
-        assert!(
-            msg.contains("napi.targets"),
-            "message must name napi_source: {msg}"
-        );
+        assert!(msg.contains("native-mod"), "message must name the package: {msg}");
+        assert!(msg.contains("napi.targets"), "message must name napi_source: {msg}");
         assert!(
             msg.contains("[tool.maturin].targets"),
             "message must name maturin_source: {msg}"
@@ -291,10 +267,7 @@ pub enum ConfigError {
     PackageMatchedNothing { pattern: String },
 
     #[error("package `{package}` is claimed by more than one [[package-set]]: {}", .patterns.join(", "))]
-    OverlappingPackageSets {
-        package: String,
-        patterns: Vec<String>,
-    },
+    OverlappingPackageSets { package: String, patterns: Vec<String> },
 
     #[error("group `{group}` and group `{other}` both list `{member}`")]
     ConflictingGroupNames {

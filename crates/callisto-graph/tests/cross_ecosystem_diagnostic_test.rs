@@ -16,19 +16,12 @@ use std::path::Path;
 
 use callisto_graph::locate::IgnoreWalkLocator;
 use callisto_graph::Workspace;
-use callisto_model::{
-    CommandError, CommandOutput, CommandRunner, DiagnosticCode, DiagnosticSeverity,
-};
+use callisto_model::{CommandError, CommandOutput, CommandRunner, DiagnosticCode, DiagnosticSeverity};
 
 struct NoopRunner;
 
 impl CommandRunner for NoopRunner {
-    fn run(
-        &self,
-        _program: &str,
-        _args: &[&str],
-        _cwd: &Path,
-    ) -> Result<CommandOutput, CommandError> {
+    fn run(&self, _program: &str, _args: &[&str], _cwd: &Path) -> Result<CommandOutput, CommandError> {
         Ok(CommandOutput {
             exit_code: Some(0),
             stdout: String::new(),
@@ -61,24 +54,15 @@ fn bare_rule_matching_napi_package_emits_one_cross_ecosystem_diagnostic() {
     .unwrap();
     // Plain package.json without `os`/`cpu` arrays so detect_npm_role returns
     // ManifestRole::Canonical (not Platform), giving two canonical ManifestDecls.
-    fs::write(
-        pkg_dir.join("package.json"),
-        r#"{"name":"my-pkg","version":"0.1.0"}"#,
-    )
-    .unwrap();
+    fs::write(pkg_dir.join("package.json"), r#"{"name":"my-pkg","version":"0.1.0"}"#).unwrap();
 
     // Bare [[package]] rule — matches the single packages-map entry whose
     // canonical manifests span {Cargo, Npm}.
-    fs::write(
-        root.join("callisto.toml"),
-        "[[package]]\nmatch = \"my-pkg\"\n",
-    )
-    .unwrap();
+    fs::write(root.join("callisto.toml"), "[[package]]\nmatch = \"my-pkg\"\n").unwrap();
 
     let locator = IgnoreWalkLocator::new(root);
     let runner = NoopRunner;
-    let ws = Workspace::load(root.to_path_buf(), &locator, &runner)
-        .expect("workspace should load without error");
+    let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace should load without error");
 
     let matching: Vec<_> = ws
         .graph
@@ -125,11 +109,7 @@ fn bare_rule_matching_napi_package_emits_one_cross_ecosystem_diagnostic() {
         "package must be None (AC-5); got: {:?}",
         diag.package,
     );
-    assert!(
-        diag.path.is_none(),
-        "path must be None (AC-5); got: {:?}",
-        diag.path,
-    );
+    assert!(diag.path.is_none(), "path must be None (AC-5); got: {:?}", diag.path,);
     assert!(
         diag.escalated_by.is_none(),
         "escalated_by must be None (AC-8b); got: {:?}",
@@ -202,18 +182,10 @@ fn prefixed_rule_never_triggers_cross_ecosystem_diagnostic() {
         "[package]\nname = \"baz\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
     )
     .unwrap();
-    fs::write(
-        pkg_dir.join("package.json"),
-        r#"{"name":"baz","version":"0.1.0"}"#,
-    )
-    .unwrap();
+    fs::write(pkg_dir.join("package.json"), r#"{"name":"baz","version":"0.1.0"}"#).unwrap();
     // PREFIXED rule — pattern.ecosystem() returns Some, so the diagnostic pass
     // skips it unconditionally (AC-7).
-    fs::write(
-        root.join("callisto.toml"),
-        "[[package]]\nmatch = \"cargo/baz\"\n",
-    )
-    .unwrap();
+    fs::write(root.join("callisto.toml"), "[[package]]\nmatch = \"cargo/baz\"\n").unwrap();
 
     let locator = IgnoreWalkLocator::new(root);
     let runner = NoopRunner;
@@ -251,18 +223,10 @@ fn package_set_rule_never_triggers_cross_ecosystem_diagnostic() {
         "[package]\nname = \"qux\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
     )
     .unwrap();
-    fs::write(
-        pkg_dir.join("package.json"),
-        r#"{"name":"qux","version":"0.1.0"}"#,
-    )
-    .unwrap();
+    fs::write(pkg_dir.join("package.json"), r#"{"name":"qux","version":"0.1.0"}"#).unwrap();
     // [[package-set]] rule (not [[package]]) — must never trigger (AC-8).
     // cfg.packages is empty; cfg.package_sets has one entry.
-    fs::write(
-        root.join("callisto.toml"),
-        "[[package-set]]\nmatch = \"*\"\n",
-    )
-    .unwrap();
+    fs::write(root.join("callisto.toml"), "[[package-set]]\nmatch = \"*\"\n").unwrap();
 
     let locator = IgnoreWalkLocator::new(root);
     let runner = NoopRunner;
@@ -301,11 +265,7 @@ fn empty_packages_config_emits_no_cross_ecosystem_diagnostic() {
         "[package]\nname = \"zap\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
     )
     .unwrap();
-    fs::write(
-        pkg_dir.join("package.json"),
-        r#"{"name":"zap","version":"0.1.0"}"#,
-    )
-    .unwrap();
+    fs::write(pkg_dir.join("package.json"), r#"{"name":"zap","version":"0.1.0"}"#).unwrap();
     // callisto.toml with NO [[package]] rules — cfg.packages is empty (AC-9a).
     fs::write(root.join("callisto.toml"), "").unwrap();
 
@@ -347,8 +307,7 @@ match = "ghost"
     .unwrap();
     let locator = IgnoreWalkLocator::new(root);
     let runner = NoopRunner;
-    let ws = Workspace::load(root.to_path_buf(), &locator, &runner)
-        .expect("workspace should load with zero packages");
+    let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace should load with zero packages");
     let count = ws
         .graph
         .diagnostics()

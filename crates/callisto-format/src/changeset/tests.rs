@@ -19,10 +19,7 @@ fn parses_a_single_entry_changeset() {
     let changeset = parse_changeset(source).unwrap();
     assert_eq!(
         changeset,
-        cs(
-            vec![("@myorg/foo", Severity::Minor)],
-            "Bumps the widget API."
-        )
+        cs(vec![("@myorg/foo", Severity::Minor)], "Bumps the widget API.")
     );
 }
 
@@ -33,10 +30,7 @@ fn parses_multiple_entries_mixed_quoted_and_bare() {
     assert_eq!(
         changeset,
         cs(
-            vec![
-                ("cargo/foo", Severity::Patch),
-                ("@myorg/bar", Severity::Major)
-            ],
+            vec![("cargo/foo", Severity::Patch), ("@myorg/bar", Severity::Major)],
             "Summary text."
         )
     );
@@ -46,10 +40,7 @@ fn parses_multiple_entries_mixed_quoted_and_bare() {
 fn skips_comment_and_blank_lines_in_frontmatter() {
     let source = "---\n# a comment\n\ncargo/foo: patch\n---\n\nSummary.\n";
     let changeset = parse_changeset(source).unwrap();
-    assert_eq!(
-        changeset,
-        cs(vec![("cargo/foo", Severity::Patch)], "Summary.")
-    );
+    assert_eq!(changeset, cs(vec![("cargo/foo", Severity::Patch)], "Summary."));
 }
 
 #[test]
@@ -98,9 +89,7 @@ fn line_numbers_in_errors_are_absolute_not_frontmatter_relative() {
     // Line 1 is `---`, line 2 is the first entry, line 3 is the duplicate.
     let err = parse_changeset(source).unwrap_err();
     match err {
-        ParseError::DuplicateEntry {
-            line, first_line, ..
-        } => {
+        ParseError::DuplicateEntry { line, first_line, .. } => {
             assert_eq!(first_line, 2);
             assert_eq!(line, 3);
         }
@@ -118,10 +107,7 @@ fn crlf_input_parses_the_same_as_its_lf_twin() {
 #[test]
 fn round_trip_write_then_parse_reproduces_the_changeset() {
     let original = cs(
-        vec![
-            ("cargo/foo", Severity::Patch),
-            ("@myorg/bar", Severity::Major),
-        ],
+        vec![("cargo/foo", Severity::Patch), ("@myorg/bar", Severity::Major)],
         "Summary text.",
     );
     let written = write_changeset(&original).unwrap();
@@ -132,10 +118,7 @@ fn round_trip_write_then_parse_reproduces_the_changeset() {
 #[test]
 fn write_quotes_names_only_when_necessary() {
     let changeset = cs(
-        vec![
-            ("cargo/foo", Severity::Patch),
-            ("@myorg/bar", Severity::Major),
-        ],
+        vec![("cargo/foo", Severity::Patch), ("@myorg/bar", Severity::Major)],
         "Summary.",
     );
     let written = write_changeset(&changeset).unwrap();

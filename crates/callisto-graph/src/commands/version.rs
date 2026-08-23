@@ -48,28 +48,22 @@ fn map_reason_to_change_source(
             to: dependency_to.clone(),
         }),
         BumpReason::PeerEscalation { via, .. } => {
-            let dep_to = outcome
-                .targets
-                .get(via)
-                .cloned()
-                .unwrap_or_else(|| to.clone());
+            let dep_to = outcome.targets.get(via).cloned().unwrap_or_else(|| to.clone());
             Some(ChangeSource::PeerEscalation {
                 dependency: via.clone(),
                 to: dep_to,
             })
         }
-        BumpReason::Inference { commits, .. } => {
-            match agg.inference_commits.get(id).and_then(|c| c.first()) {
-                Some((sha, subject)) => Some(ChangeSource::Commit {
-                    sha: sha.clone(),
-                    subject: subject.clone(),
-                }),
-                None => Some(ChangeSource::Changeset {
-                    filename: String::new(),
-                    summary: format!("Inferred version bump ({commits} commit(s))"),
-                }),
-            }
-        }
+        BumpReason::Inference { commits, .. } => match agg.inference_commits.get(id).and_then(|c| c.first()) {
+            Some((sha, subject)) => Some(ChangeSource::Commit {
+                sha: sha.clone(),
+                subject: subject.clone(),
+            }),
+            None => Some(ChangeSource::Changeset {
+                filename: String::new(),
+                summary: format!("Inferred version bump ({commits} commit(s))"),
+            }),
+        },
         _ => None,
     }
 }
@@ -84,9 +78,8 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
 
     let pre_path = ws.root.join(".changeset/pre.json");
     let pre_state = if pre_path.exists() {
-        let text = std::fs::read_to_string(&pre_path).map_err(|e| GraphError::PreJsonRead {
-            message: e.to_string(),
-        })?;
+        let text =
+            std::fs::read_to_string(&pre_path).map_err(|e| GraphError::PreJsonRead { message: e.to_string() })?;
         Some(callisto_format::parse_pre_json(&text).map_err(GraphError::PreJson)?)
     } else {
         None
@@ -115,9 +108,7 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
                     agg.severities.entry(id.clone()).or_insert(Severity::Patch);
                     agg.reasons
                         .entry(id.clone())
-                        .or_insert(BumpReason::PreRelease {
-                            tag: pre.tag.clone(),
-                        });
+                        .or_insert(BumpReason::PreRelease { tag: pre.tag.clone() });
                 }
             }
         }
@@ -137,14 +128,8 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
     };
 
     let napi = crate::napi::NapiTargetsIndex::load(&ws.config.groups, &ws.root)?;
-    let group_check = crate::groups::pre_mutation_checks(
-        &ws.graph,
-        &ws.config.groups,
-        &base_versions,
-        tags,
-        &napi,
-        &ws.root,
-    )?;
+    let group_check =
+        crate::groups::pre_mutation_checks(&ws.graph, &ws.config.groups, &base_versions, tags, &napi, &ws.root)?;
 
     let outcome = run_cascade(input)?;
 
@@ -162,21 +147,13 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
         let pkg = pkg_map.get(id).copied().unwrap();
         let from = base_versions.get(id).cloned().ok_or_else(|| {
             GraphError::Manifest(callisto_model::ManifestError::MissingField {
-                path: pkg
-                    .manifests
-                    .first()
-                    .map(|m| m.path.clone())
-                    .unwrap_or_default(),
+                path: pkg.manifests.first().map(|m| m.path.clone()).unwrap_or_default(),
                 field: "version",
             })
         })?;
         let to = outcome.targets.get(id).cloned().ok_or_else(|| {
             GraphError::Manifest(callisto_model::ManifestError::MissingField {
-                path: pkg
-                    .manifests
-                    .first()
-                    .map(|m| m.path.clone())
-                    .unwrap_or_default(),
+                path: pkg.manifests.first().map(|m| m.path.clone()).unwrap_or_default(),
                 field: "version",
             })
         })?;
@@ -204,13 +181,8 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
                 agg_input.from = from.clone();
                 agg_input.to = Some(to.clone());
                 if let Some(reason) = outcome.reasons.get(id) {
-                    if let Some(source) =
-                        map_reason_to_change_source(reason, id, &to, &outcome, &agg)
-                    {
-                        agg_input.entries.push(ChangelogEntry {
-                            severity: sev,
-                            source,
-                        });
+                    if let Some(source) = map_reason_to_change_source(reason, id, &to, &outcome, &agg) {
+                        agg_input.entries.push(ChangelogEntry { severity: sev, source });
                     }
                 }
                 agg_input
@@ -238,10 +210,7 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
                     package: id.clone(),
                     from: from.clone(),
                     to: Some(to.clone()),
-                    entries: vec![ChangelogEntry {
-                        severity: sev,
-                        source,
-                    }],
+                    entries: vec![ChangelogEntry { severity: sev, source }],
                 }
             };
 
@@ -266,10 +235,7 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
 
     let mut diagnostics = outcome.diagnostics;
     diagnostics.extend(group_check.diagnostics);
-    if agg.consumed.is_empty()
-        && !opts.allow_empty_changesets
-        && !ws.config.validation.allow_empty_changesets
-    {
+    if agg.consumed.is_empty() && !opts.allow_empty_changesets && !ws.config.validation.allow_empty_changesets {
         diagnostics.push(callisto_model::Diagnostic {
             code: callisto_model::DiagnosticCode::EmptyChangeset,
             severity: callisto_model::DiagnosticSeverity::Warning,
@@ -320,9 +286,7 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
     } else {
         None
     };
-    let npm_workspace_kind = callisto_manifests::detect_npm_workspace_kind(&ws.root)
-        .ok()
-        .flatten();
+    let npm_workspace_kind = callisto_manifests::detect_npm_workspace_kind(&ws.root).ok().flatten();
     let open_ctx = OpenContext {
         workspace_root: &ws.root,
         cargo_workspace,
@@ -330,24 +294,18 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
     };
 
     let mut platform_writes = Vec::new();
-    let mut optional_dep_map: std::collections::BTreeMap<
-        std::path::PathBuf,
-        Vec<(String, callisto_model::Version)>,
-    > = std::collections::BTreeMap::new();
+    let mut optional_dep_map: std::collections::BTreeMap<std::path::PathBuf, Vec<(String, callisto_model::Version)>> =
+        std::collections::BTreeMap::new();
     for group in ws.config.groups.fixed.values() {
         for member in group.members(GroupMemberKind::PlatformManifest) {
-            let GroupMember::PlatformManifest {
-                owner, path, name, ..
-            } = member
-            else {
+            let GroupMember::PlatformManifest { owner, path, name, .. } = member else {
                 continue;
             };
             let Some(bump) = bump_by_pkg.get(owner) else {
                 continue;
             };
             let fmt = callisto_model::ManifestFormat::from_path(path)?;
-            let decl =
-                callisto_model::ManifestDecl::new(path.clone(), ManifestRole::Canonical, fmt)?;
+            let decl = callisto_model::ManifestDecl::new(path.clone(), ManifestRole::Canonical, fmt)?;
             let handle = open(&decl, &open_ctx)?;
             let current = handle.current_version()?;
             platform_writes.push(PlatformWrite {
@@ -359,15 +317,12 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
             if let Some(owner_pkg) = pkg_map.get(owner) {
                 if let Some(owner_decl) = owner_pkg.canonical_manifests().next() {
                     let owner_fmt = callisto_model::ManifestFormat::from_path(&owner_decl.path)?;
-                    let owner_manifest_decl = callisto_model::ManifestDecl::new(
-                        owner_decl.path.clone(),
-                        ManifestRole::Canonical,
-                        owner_fmt,
-                    )?;
+                    let owner_manifest_decl =
+                        callisto_model::ManifestDecl::new(owner_decl.path.clone(), ManifestRole::Canonical, owner_fmt)?;
                     let owner_handle = open(&owner_manifest_decl, &open_ctx)?;
-                    let has_matching_optional_dep = owner_handle.iter_dependencies().any(|dep| {
-                        dep.kind == callisto_model::DepKind::Optional && &dep.name == name
-                    });
+                    let has_matching_optional_dep = owner_handle
+                        .iter_dependencies()
+                        .any(|dep| dep.kind == callisto_model::DepKind::Optional && &dep.name == name);
                     if has_matching_optional_dep {
                         optional_dep_map
                             .entry(owner_decl.path.clone())
@@ -412,12 +367,7 @@ mod tests {
     struct NoopRunner;
 
     impl CommandRunner for NoopRunner {
-        fn run(
-            &self,
-            _program: &str,
-            _args: &[&str],
-            _cwd: &Path,
-        ) -> Result<CommandOutput, CommandError> {
+        fn run(&self, _program: &str, _args: &[&str], _cwd: &Path) -> Result<CommandOutput, CommandError> {
             Ok(CommandOutput {
                 exit_code: Some(0),
                 stdout: String::new(),
@@ -500,8 +450,7 @@ mod tests {
 
         let locator = IgnoreWalkLocator::new(root);
         let runner = NoopRunner;
-        let ws =
-            Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
+        let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
 
         let inference = NoInference;
         let opts = VersionOptions {
@@ -553,8 +502,7 @@ mod tests {
 
         let locator = IgnoreWalkLocator::new(root);
         let runner = NoopRunner;
-        let ws =
-            Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
+        let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
 
         let inference = NoInference;
         let opts = VersionOptions {
@@ -602,8 +550,7 @@ mod tests {
 
         let locator = IgnoreWalkLocator::new(root);
         let runner = NoopRunner;
-        let ws =
-            Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
+        let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
 
         let inference = NoInference;
         let opts = VersionOptions {
@@ -653,17 +600,12 @@ mod tests {
         )
         .unwrap();
         std::fs::create_dir_all(root.join(".changeset")).unwrap();
-        std::fs::write(
-            root.join(".changeset/bump.md"),
-            "---\n\"my-lib\": patch\n---\n\nfix.\n",
-        )
-        .unwrap();
+        std::fs::write(root.join(".changeset/bump.md"), "---\n\"my-lib\": patch\n---\n\nfix.\n").unwrap();
         commit_all(root, "add package");
 
         let locator = IgnoreWalkLocator::new(root);
         let runner = NoopRunner;
-        let ws =
-            Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
+        let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
 
         let inference = NoInference;
         let opts = VersionOptions {
@@ -675,10 +617,9 @@ mod tests {
         let plan = plan_version(&ws, &inference, &opts).expect("plan_version must succeed");
 
         assert!(
-            plan.diagnostics.iter().any(|d| matches!(
-                d.code,
-                callisto_model::DiagnosticCode::NapiTargetAddedNotInMembers
-            )),
+            plan.diagnostics
+                .iter()
+                .any(|d| matches!(d.code, callisto_model::DiagnosticCode::NapiTargetAddedNotInMembers)),
             "VersionPlan.diagnostics must include the napi-drift diagnostic produced by pre_mutation_checks; got: {:?}",
             plan.diagnostics
         );
@@ -711,8 +652,7 @@ mod tests {
 
         let locator = IgnoreWalkLocator::new(root);
         let runner = NoopRunner;
-        let ws =
-            Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
+        let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
 
         let inference = NoInference;
         let opts = VersionOptions {
@@ -776,17 +716,12 @@ mod tests {
         )
         .unwrap();
         std::fs::create_dir_all(root.join(".changeset")).unwrap();
-        std::fs::write(
-            root.join(".changeset/bump.md"),
-            "---\n\"hybrid\": patch\n---\n\nfix.\n",
-        )
-        .unwrap();
+        std::fs::write(root.join(".changeset/bump.md"), "---\n\"hybrid\": patch\n---\n\nfix.\n").unwrap();
         commit_all(root, "add hybrid package");
 
         let locator = IgnoreWalkLocator::new(root);
         let runner = NoopRunner;
-        let ws =
-            Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
+        let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
 
         let inference = NoInference;
         let opts = VersionOptions {
@@ -847,17 +782,12 @@ mod tests {
         )
         .unwrap();
         std::fs::create_dir_all(root.join(".changeset")).unwrap();
-        std::fs::write(
-            root.join(".changeset/bump.md"),
-            "---\n\"my-lib\": patch\n---\n\nfix.\n",
-        )
-        .unwrap();
+        std::fs::write(root.join(".changeset/bump.md"), "---\n\"my-lib\": patch\n---\n\nfix.\n").unwrap();
         commit_all(root, "add package");
 
         let locator = IgnoreWalkLocator::new(root);
         let runner = NoopRunner;
-        let ws =
-            Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
+        let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
 
         let inference = NoInference;
         let opts = VersionOptions {
@@ -913,8 +843,7 @@ mod tests {
 
         let locator = IgnoreWalkLocator::new(root);
         let runner = NoopRunner;
-        let ws =
-            Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
+        let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
 
         let inference = NoInference;
         let opts = VersionOptions {
@@ -997,8 +926,7 @@ mod tests {
 
         let locator = IgnoreWalkLocator::new(root);
         let runner = NoopRunner;
-        let mut ws =
-            Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
+        let mut ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
 
         // Fixture-construct the GroupMember::PlatformManifest, bypassing
         // walk.rs discovery entirely (per corrected AC-002b).
@@ -1115,17 +1043,12 @@ mod tests {
         )
         .unwrap();
         std::fs::create_dir_all(root.join(".changeset")).unwrap();
-        std::fs::write(
-            root.join(".changeset/bump.md"),
-            "---\n\"hybrid\": patch\n---\n\nfix.\n",
-        )
-        .unwrap();
+        std::fs::write(root.join(".changeset/bump.md"), "---\n\"hybrid\": patch\n---\n\nfix.\n").unwrap();
         commit_all(root, "add hybrid package with linux platform sibling");
 
         let locator = IgnoreWalkLocator::new(root);
         let runner = NoopRunner;
-        let mut ws =
-            Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
+        let mut ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
 
         let owner = callisto_model::PackageId::Bare("hybrid".to_string());
         let group_name = callisto_model::GroupName("hybrid-group".to_string());
@@ -1240,17 +1163,12 @@ mod tests {
         )
         .unwrap();
         std::fs::create_dir_all(root.join(".changeset")).unwrap();
-        std::fs::write(
-            root.join(".changeset/bump.md"),
-            "---\n\"hybrid\": patch\n---\n\nfix.\n",
-        )
-        .unwrap();
+        std::fs::write(root.join(".changeset/bump.md"), "---\n\"hybrid\": patch\n---\n\nfix.\n").unwrap();
         commit_all(root, "add hybrid package with linux platform sibling");
 
         let locator = IgnoreWalkLocator::new(root);
         let runner = NoopRunner;
-        let mut ws =
-            Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
+        let mut ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
 
         let owner = callisto_model::PackageId::Bare("hybrid".to_string());
         let group_name = callisto_model::GroupName("hybrid-group".to_string());
@@ -1305,14 +1223,8 @@ mod tests {
         let mut updates = update.updates.clone();
         updates.sort_by(|a, b| a.0.cmp(&b.0));
         let mut expected = vec![
-            (
-                "@myorg/hybrid-linux-x64-gnu".to_string(),
-                owner_bump.to.clone(),
-            ),
-            (
-                "@myorg/hybrid-darwin-arm64".to_string(),
-                owner_bump.to.clone(),
-            ),
+            ("@myorg/hybrid-linux-x64-gnu".to_string(), owner_bump.to.clone()),
+            ("@myorg/hybrid-darwin-arm64".to_string(), owner_bump.to.clone()),
         ];
         expected.sort_by(|a, b| a.0.cmp(&b.0));
         assert_eq!(
@@ -1352,17 +1264,12 @@ mod tests {
         )
         .unwrap();
         std::fs::create_dir_all(root.join(".changeset")).unwrap();
-        std::fs::write(
-            root.join(".changeset/bump.md"),
-            "---\n\"hybrid\": patch\n---\n\nfix.\n",
-        )
-        .unwrap();
+        std::fs::write(root.join(".changeset/bump.md"), "---\n\"hybrid\": patch\n---\n\nfix.\n").unwrap();
         commit_all(root, "add hybrid package");
 
         let locator = IgnoreWalkLocator::new(root);
         let runner = NoopRunner;
-        let ws =
-            Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
+        let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
 
         // Simulate the platform manifest going missing between workspace
         // load and plan_version execution.
@@ -1412,17 +1319,12 @@ mod tests {
         )
         .unwrap();
         std::fs::create_dir_all(root.join(".changeset")).unwrap();
-        std::fs::write(
-            root.join(".changeset/bump.md"),
-            "---\n\"hybrid\": patch\n---\n\nfix.\n",
-        )
-        .unwrap();
+        std::fs::write(root.join(".changeset/bump.md"), "---\n\"hybrid\": patch\n---\n\nfix.\n").unwrap();
         commit_all(root, "add hybrid package");
 
         let locator = IgnoreWalkLocator::new(root);
         let runner = NoopRunner;
-        let ws =
-            Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
+        let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
 
         // Simulate the platform manifest's content becoming malformed
         // (truncated, unbalanced JSON) between workspace load and
@@ -1482,17 +1384,12 @@ mod tests {
         )
         .unwrap();
         std::fs::create_dir_all(root.join(".changeset")).unwrap();
-        std::fs::write(
-            root.join(".changeset/bump.md"),
-            "---\n\"hybrid\": patch\n---\n\nfix.\n",
-        )
-        .unwrap();
+        std::fs::write(root.join(".changeset/bump.md"), "---\n\"hybrid\": patch\n---\n\nfix.\n").unwrap();
         commit_all(root, "add hybrid package");
 
         let locator = IgnoreWalkLocator::new(root);
         let runner = NoopRunner;
-        let ws =
-            Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
+        let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
 
         let inference = NoInference;
         let opts = VersionOptions {
@@ -1523,10 +1420,7 @@ mod tests {
         );
         assert_eq!(
             update.updates,
-            vec![(
-                "@myorg/hybrid-darwin-arm64".to_string(),
-                owner_bump.to.clone()
-            )],
+            vec![("@myorg/hybrid-darwin-arm64".to_string(), owner_bump.to.clone())],
             "OptionalDepUpdate.updates must contain (N, Y) for the matching optional dependency"
         );
     }
@@ -1561,17 +1455,12 @@ mod tests {
         )
         .unwrap();
         std::fs::create_dir_all(root.join(".changeset")).unwrap();
-        std::fs::write(
-            root.join(".changeset/bump.md"),
-            "---\n\"hybrid\": patch\n---\n\nfix.\n",
-        )
-        .unwrap();
+        std::fs::write(root.join(".changeset/bump.md"), "---\n\"hybrid\": patch\n---\n\nfix.\n").unwrap();
         commit_all(root, "add hybrid package");
 
         let locator = IgnoreWalkLocator::new(root);
         let runner = NoopRunner;
-        let ws =
-            Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
+        let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
 
         let inference = NoInference;
         let opts = VersionOptions {
@@ -1640,8 +1529,7 @@ mod tests {
 
         let locator = IgnoreWalkLocator::new(root);
         let runner = NoopRunner;
-        let ws =
-            Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
+        let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
         let opts = VersionOptions {
             strict: false,
             strict_graph: false,
@@ -1658,10 +1546,7 @@ mod tests {
             .expect("pkg-a must have a ChangelogWrite");
 
         assert_eq!(write.input.entries.len(), 1);
-        assert_eq!(
-            write.input.entries[0].severity,
-            callisto_model::Severity::Minor
-        );
+        assert_eq!(write.input.entries[0].severity, callisto_model::Severity::Minor);
         match &write.input.entries[0].source {
             callisto_changelog::ChangeSource::Commit { sha, subject } => {
                 assert_eq!(sha, &sha_recent);
@@ -1699,8 +1584,7 @@ mod tests {
 
         let locator = IgnoreWalkLocator::new(root);
         let runner = NoopRunner;
-        let ws =
-            Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
+        let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
         let opts = VersionOptions {
             strict: false,
             strict_graph: false,
@@ -1749,11 +1633,7 @@ mod tests {
         )
         .unwrap();
 
-        std::fs::write(
-            root.join("callisto.toml"),
-            "[cascade]\nbump-severity = \"minor\"\n",
-        )
-        .unwrap();
+        std::fs::write(root.join("callisto.toml"), "[cascade]\nbump-severity = \"minor\"\n").unwrap();
 
         std::fs::create_dir_all(root.join(".changeset")).unwrap();
         std::fs::write(
@@ -1770,8 +1650,7 @@ mod tests {
 
         let locator = IgnoreWalkLocator::new(root);
         let runner = NoopRunner;
-        let ws =
-            Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
+        let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
         let inference = crate::infer::NoInference;
         let opts = VersionOptions {
             strict: false,
@@ -1788,12 +1667,7 @@ mod tests {
             .find(|w| w.input.package == pkg_app)
             .expect("pkg-app must have a ChangelogWrite");
 
-        assert_eq!(
-            write.input.entries.len(),
-            2,
-            "got: {:?}",
-            write.input.entries
-        );
+        assert_eq!(write.input.entries.len(), 2, "got: {:?}", write.input.entries);
         assert!(matches!(
             write.input.entries[0].source,
             callisto_changelog::ChangeSource::Changeset { .. }
@@ -1840,8 +1714,7 @@ mod tests {
 
         let locator = IgnoreWalkLocator::new(root);
         let runner = NoopRunner;
-        let ws =
-            Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
+        let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
         let opts = VersionOptions {
             strict: false,
             strict_graph: false,
@@ -1857,21 +1730,13 @@ mod tests {
             .find(|w| w.input.package == pkg_a)
             .expect("pkg-a must have a ChangelogWrite");
 
-        assert_eq!(
-            write.input.entries.len(),
-            2,
-            "got: {:?}",
-            write.input.entries
-        );
+        assert_eq!(write.input.entries.len(), 2, "got: {:?}", write.input.entries);
         assert!(matches!(
             write.input.entries[0].source,
             callisto_changelog::ChangeSource::Changeset { .. }
         ));
         match &write.input.entries[1].source {
-            callisto_changelog::ChangeSource::Commit {
-                sha: got_sha,
-                subject,
-            } => {
+            callisto_changelog::ChangeSource::Commit { sha: got_sha, subject } => {
                 assert_eq!(got_sha, &sha);
                 assert_eq!(subject, "feat: bigger change");
             }
@@ -1913,8 +1778,7 @@ mod tests {
 
         let locator = IgnoreWalkLocator::new(root);
         let runner = NoopRunner;
-        let ws =
-            Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
+        let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
         let inference = crate::infer::NoInference;
         let opts = VersionOptions {
             strict: false,
@@ -1931,12 +1795,7 @@ mod tests {
             .find(|w| w.input.package == pkg_fresh)
             .expect("pkg-fresh must have a ChangelogWrite");
 
-        assert_eq!(
-            write.input.entries.len(),
-            2,
-            "got: {:?}",
-            write.input.entries
-        );
+        assert_eq!(write.input.entries.len(), 2, "got: {:?}", write.input.entries);
         assert!(matches!(
             write.input.entries[0].source,
             callisto_changelog::ChangeSource::Changeset { .. }
@@ -1997,8 +1856,7 @@ mod tests {
 
         let locator = IgnoreWalkLocator::new(root);
         let runner = NoopRunner;
-        let ws =
-            Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
+        let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
         let inference = crate::infer::NoInference;
         let opts = VersionOptions {
             strict: false,
@@ -2015,12 +1873,7 @@ mod tests {
             .find(|w| w.input.package == pkg_fresh)
             .expect("pkg-fresh must have a ChangelogWrite");
 
-        assert_eq!(
-            write.input.entries.len(),
-            3,
-            "got: {:?}",
-            write.input.entries
-        );
+        assert_eq!(write.input.entries.len(), 3, "got: {:?}", write.input.entries);
         assert!(matches!(
             write.input.entries[0].source,
             callisto_changelog::ChangeSource::Changeset { .. }

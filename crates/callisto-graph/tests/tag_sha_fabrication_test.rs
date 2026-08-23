@@ -9,8 +9,8 @@ use callisto_graph::commands::{create_tags_with_options, TagOptions};
 use callisto_graph::locate::IgnoreWalkLocator;
 use callisto_graph::{GraphError, Workspace};
 use callisto_model::{
-    ApplyPermit, CommandError, CommandOutput, CommandRunner, CommitSha, PackageId, PublishPlan,
-    ReleaseEntry, TagName, SCHEMA_VERSION,
+    ApplyPermit, CommandError, CommandOutput, CommandRunner, CommitSha, PackageId, PublishPlan, ReleaseEntry, TagName,
+    SCHEMA_VERSION,
 };
 
 fn write_minimal_workspace(root: &Path) {
@@ -46,12 +46,7 @@ struct StubTagRunner {
 }
 
 impl CommandRunner for StubTagRunner {
-    fn run(
-        &self,
-        program: &str,
-        args: &[&str],
-        _cwd: &Path,
-    ) -> Result<CommandOutput, CommandError> {
+    fn run(&self, program: &str, args: &[&str], _cwd: &Path) -> Result<CommandOutput, CommandError> {
         assert_eq!(program, "git", "only `git` should be shelled out to here");
         match args {
             ["tag", "--list"] => Ok(CommandOutput {
@@ -288,12 +283,7 @@ fn dry_run_mode_fails_fast_when_resolve_commit_errors_for_existing_tag() {
 
 struct PanicRunner;
 impl CommandRunner for PanicRunner {
-    fn run(
-        &self,
-        program: &str,
-        args: &[&str],
-        _cwd: &Path,
-    ) -> Result<CommandOutput, CommandError> {
+    fn run(&self, program: &str, args: &[&str], _cwd: &Path) -> Result<CommandOutput, CommandError> {
         panic!("unexpected CommandRunner invocation ({program} {args:?}) -- a real .git repo is present, so GitAccess must use native gix, never the shell fallback");
     }
 }
@@ -331,12 +321,7 @@ fn git_head_sha(dir: &Path) -> String {
 
 fn git_tag_exists_at(dir: &Path, tag: &str, expected_sha: &str) -> bool {
     let out = std::process::Command::new("git")
-        .args([
-            "rev-parse",
-            "--verify",
-            "--quiet",
-            &format!("{tag}^{{commit}}"),
-        ])
+        .args(["rev-parse", "--verify", "--quiet", &format!("{tag}^{{commit}}")])
         .current_dir(dir)
         .output()
         .unwrap();
@@ -357,8 +342,7 @@ fn tag_not_existing_reports_release_sha_in_both_modes_and_apply_creates_it() {
     let plan = plan_with_release(release_entry("pkg@1.0.0", &head));
 
     // Dry-run first, while the tag genuinely does not exist yet.
-    let dry_report = create_tags_with_options(&ws, &plan, &TagOptions::default(), None)
-        .expect("dry-run must succeed");
+    let dry_report = create_tags_with_options(&ws, &plan, &TagOptions::default(), None).expect("dry-run must succeed");
     assert_eq!(dry_report.tags[0].sha.as_str(), head, "AC-07 dry-run");
     assert!(
         !git_tag_exists_at(root, "pkg@1.0.0", &head),
@@ -367,8 +351,8 @@ fn tag_not_existing_reports_release_sha_in_both_modes_and_apply_creates_it() {
 
     // Apply: tag still does not exist -> gets created at release.sha.
     let permit = ApplyPermit::force_for_tests();
-    let apply_report = create_tags_with_options(&ws, &plan, &TagOptions::default(), Some(&permit))
-        .expect("apply must succeed");
+    let apply_report =
+        create_tags_with_options(&ws, &plan, &TagOptions::default(), Some(&permit)).expect("apply must succeed");
     assert_eq!(apply_report.tags[0].sha.as_str(), head, "AC-07 apply");
     assert!(
         git_tag_exists_at(root, "pkg@1.0.0", &head),

@@ -39,10 +39,7 @@ pub enum NamedBy {
     Inference,
 }
 
-pub fn load_changesets(
-    root: &Path,
-    cfg: &ResolvedConfig,
-) -> Result<Vec<LoadedChangeset>, GraphError> {
+pub fn load_changesets(root: &Path, cfg: &ResolvedConfig) -> Result<Vec<LoadedChangeset>, GraphError> {
     let dir = root.join(&cfg.changesets_dir);
     if !dir.exists() {
         return Ok(Vec::new());
@@ -58,8 +55,7 @@ pub fn load_changesets(
         let path = entry.path();
         if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("md") {
             if let Some(file_name) = path.file_name().and_then(|s| s.to_str()) {
-                if file_name != "README.md" && file_name != "config.json" && file_name != "pre.json"
-                {
+                if file_name != "README.md" && file_name != "config.json" && file_name != "pre.json" {
                     files.push(path);
                 }
             }
@@ -70,20 +66,15 @@ pub fn load_changesets(
 
     let mut loaded = Vec::new();
     for path in files {
-        let content =
-            fs::read_to_string(&path).map_err(|e| callisto_model::ManifestError::Read {
-                path: path.clone(),
-                message: e.to_string(),
-            })?;
+        let content = fs::read_to_string(&path).map_err(|e| callisto_model::ManifestError::Read {
+            path: path.clone(),
+            message: e.to_string(),
+        })?;
         let changeset = parse_changeset(&content).map_err(|e| GraphError::ParseChangeset {
             path: path.clone(),
             source: e,
         })?;
-        let stem = path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("")
-            .to_string();
+        let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string();
         let rel_path = path.strip_prefix(root).unwrap_or(&path).to_path_buf();
         loaded.push(LoadedChangeset {
             path: rel_path,
@@ -109,10 +100,9 @@ pub fn apply_pre_major(
     }
 
     match (policy, inferred) {
-        (
-            PreMajorInferencePolicy::Conservative | PreMajorInferencePolicy::ConservativeFeat,
-            Severity::Major,
-        ) => (Severity::Minor, true),
+        (PreMajorInferencePolicy::Conservative | PreMajorInferencePolicy::ConservativeFeat, Severity::Major) => {
+            (Severity::Minor, true)
+        }
         (PreMajorInferencePolicy::ConservativeFeat, Severity::Minor) => (Severity::Patch, true),
         (_, s) => (s, false),
     }
@@ -183,11 +173,7 @@ where
     // `resolve_since`'s own per-tag failure handling.
 
     for pkg in graph.packages() {
-        let cur_sev = agg
-            .severities
-            .get(&pkg.id)
-            .copied()
-            .unwrap_or(Severity::None);
+        let cur_sev = agg.severities.get(&pkg.id).copied().unwrap_or(Severity::None);
         let pathspecs: Vec<PathBuf> = pkg.manifests.iter().map(|m| m.path.clone()).collect();
         let last_tag = tags.last_tag(&pkg.id);
         let cur_ver = last_tag
@@ -195,11 +181,7 @@ where
             .or_else(|| base_versions.get(&pkg.id).cloned())
             .ok_or_else(|| {
                 GraphError::Manifest(callisto_model::ManifestError::MissingField {
-                    path: pkg
-                        .manifests
-                        .first()
-                        .map(|m| m.path.clone())
-                        .unwrap_or_default(),
+                    path: pkg.manifests.first().map(|m| m.path.clone()).unwrap_or_default(),
                     field: "version",
                 })
             })?;
@@ -230,8 +212,7 @@ where
                         },
                     );
                     agg.named_by.insert(pkg.id.clone(), NamedBy::Inference);
-                    agg.inference_commits
-                        .insert(pkg.id.clone(), outcome.commits.clone());
+                    agg.inference_commits.insert(pkg.id.clone(), outcome.commits.clone());
                 }
             }
             Ok(None) => {}
@@ -239,10 +220,7 @@ where
                 agg.diagnostics.push(Diagnostic {
                     code: callisto_model::DiagnosticCode::PreMajorInferenceInert,
                     severity: callisto_model::DiagnosticSeverity::Warning,
-                    message: format!(
-                        "Commit inference failed for package `{}`: {e}",
-                        pkg.id.display_name()
-                    ),
+                    message: format!("Commit inference failed for package `{}`: {e}", pkg.id.display_name()),
                     package: Some(pkg.id.clone()),
                     path: None,
                     governed_by: None,
@@ -254,9 +232,7 @@ where
 
     // During a pre-release cycle (PreMode::Pre) changesets must NOT be consumed:
     // they remain on disk so they can be re-applied when the cycle exits.
-    let is_pre_mode = pre
-        .map(|s| s.mode == callisto_format::PreMode::Pre)
-        .unwrap_or(false);
+    let is_pre_mode = pre.map(|s| s.mode == callisto_format::PreMode::Pre).unwrap_or(false);
 
     for cs in loaded {
         // Defer adding to `consumed` until after we confirm at least one entry
@@ -289,11 +265,7 @@ where
                 Some(target_pkg) => {
                     matched_any = true;
                     let canonical_id = target_pkg.id.clone();
-                    let cur_sev = agg
-                        .severities
-                        .get(&canonical_id)
-                        .copied()
-                        .unwrap_or(Severity::None);
+                    let cur_sev = agg.severities.get(&canonical_id).copied().unwrap_or(Severity::None);
                     if entry.severity > cur_sev {
                         agg.severities.insert(canonical_id.clone(), entry.severity);
                         agg.reasons.insert(
@@ -302,8 +274,7 @@ where
                                 changesets: vec![cs.id.clone()],
                             },
                         );
-                        agg.named_by
-                            .insert(canonical_id.clone(), NamedBy::Changeset);
+                        agg.named_by.insert(canonical_id.clone(), NamedBy::Changeset);
                     }
 
                     if entry.severity != Severity::None {
@@ -321,15 +292,15 @@ where
                                 .or_else(|| base_versions.get(&canonical_id).cloned())
                                 .unwrap_or_else(|| Version::semver(0, 0, 0))
                         };
-                        let cl_input = agg
-                            .changelog_inputs
-                            .entry(canonical_id.clone())
-                            .or_insert_with(|| ChangelogInput {
-                                package: canonical_id.clone(),
-                                from: pkg_ver,
-                                to: None,
-                                entries: Vec::new(),
-                            });
+                        let cl_input =
+                            agg.changelog_inputs
+                                .entry(canonical_id.clone())
+                                .or_insert_with(|| ChangelogInput {
+                                    package: canonical_id.clone(),
+                                    from: pkg_ver,
+                                    to: None,
+                                    entries: Vec::new(),
+                                });
                         cl_input.entries.push(ChangelogEntry {
                             severity: entry.severity,
                             source: ChangeSource::Changeset {
@@ -445,12 +416,8 @@ pub(crate) fn union_fixed(
                     continue;
                 }
                 agg.severities.insert(m.clone(), target);
-                agg.reasons.insert(
-                    m.clone(),
-                    BumpReason::FixedGroupUnion {
-                        group: g.name.clone(),
-                    },
-                );
+                agg.reasons
+                    .insert(m.clone(), BumpReason::FixedGroupUnion { group: g.name.clone() });
                 changed = true;
             }
         }
@@ -525,12 +492,8 @@ pub(crate) fn union_linked(
                     continue;
                 }
                 agg.severities.insert(m.clone(), target_sev);
-                agg.reasons.insert(
-                    m.clone(),
-                    BumpReason::LinkedGroupUnion {
-                        group: g.name.clone(),
-                    },
-                );
+                agg.reasons
+                    .insert(m.clone(), BumpReason::LinkedGroupUnion { group: g.name.clone() });
                 changed = true;
             }
         }
@@ -545,8 +508,8 @@ mod tests {
     use std::sync::Mutex;
 
     use callisto_model::{
-        CommandError, CommandOutput, CommandRunner, DepEdge, GroupKind, GroupName, ManifestDecl,
-        ManifestFormat, ManifestRole, Package,
+        CommandError, CommandOutput, CommandRunner, DepEdge, GroupKind, GroupName, ManifestDecl, ManifestFormat,
+        ManifestRole, Package,
     };
 
     use crate::config::{GroupDef, GroupMember};
@@ -575,21 +538,11 @@ mod tests {
     fn apply_pre_major_conservative_downgrades_major_to_minor_only() {
         let v = Version::semver(0, 1, 0);
         assert_eq!(
-            apply_pre_major(
-                Severity::Major,
-                PreMajorInferencePolicy::Conservative,
-                &v,
-                true
-            ),
+            apply_pre_major(Severity::Major, PreMajorInferencePolicy::Conservative, &v, true),
             (Severity::Minor, true)
         );
         assert_eq!(
-            apply_pre_major(
-                Severity::Minor,
-                PreMajorInferencePolicy::Conservative,
-                &v,
-                true
-            ),
+            apply_pre_major(Severity::Minor, PreMajorInferencePolicy::Conservative, &v, true),
             (Severity::Minor, false),
             "Conservative must not also downgrade Minor->Patch"
         );
@@ -599,21 +552,11 @@ mod tests {
     fn apply_pre_major_conservative_feat_downgrades_both_levels() {
         let v = Version::semver(0, 1, 0);
         assert_eq!(
-            apply_pre_major(
-                Severity::Major,
-                PreMajorInferencePolicy::ConservativeFeat,
-                &v,
-                true
-            ),
+            apply_pre_major(Severity::Major, PreMajorInferencePolicy::ConservativeFeat, &v, true),
             (Severity::Minor, true)
         );
         assert_eq!(
-            apply_pre_major(
-                Severity::Minor,
-                PreMajorInferencePolicy::ConservativeFeat,
-                &v,
-                true
-            ),
+            apply_pre_major(Severity::Minor, PreMajorInferencePolicy::ConservativeFeat, &v, true),
             (Severity::Patch, true)
         );
     }
@@ -629,12 +572,7 @@ mod tests {
     struct RealGitRunner;
 
     impl CommandRunner for RealGitRunner {
-        fn run(
-            &self,
-            program: &str,
-            args: &[&str],
-            cwd: &Path,
-        ) -> Result<CommandOutput, CommandError> {
+        fn run(&self, program: &str, args: &[&str], cwd: &Path) -> Result<CommandOutput, CommandError> {
             let output = std::process::Command::new(program)
                 .args(args)
                 .current_dir(cwd)
@@ -678,12 +616,7 @@ mod tests {
     }
 
     impl CommandRunner for FakeRevParseRunner {
-        fn run(
-            &self,
-            program: &str,
-            args: &[&str],
-            _cwd: &Path,
-        ) -> Result<CommandOutput, CommandError> {
+        fn run(&self, program: &str, args: &[&str], _cwd: &Path) -> Result<CommandOutput, CommandError> {
             assert_eq!(program, "git");
             assert_eq!(
                 args,
@@ -717,17 +650,12 @@ mod tests {
         // Missing `---` frontmatter delimiter — parse_changeset returns
         // ParseError::MissingFrontmatterStart. The error must carry the filename so the
         // developer can find the broken file.
-        std::fs::write(
-            cs_dir.join("malformed-changeset.md"),
-            "cargo/foo: patch\n\nSummary.\n",
-        )
-        .unwrap();
+        std::fs::write(cs_dir.join("malformed-changeset.md"), "cargo/foo: patch\n\nSummary.\n").unwrap();
 
         let cfg = crate::config::load(root).unwrap();
         let result = load_changesets(root, &cfg);
 
-        let err =
-            result.expect_err("load_changesets must return Err for a malformed changeset file");
+        let err = result.expect_err("load_changesets must return Err for a malformed changeset file");
         let err_display = format!("{err}");
         assert!(
             err_display.contains("malformed-changeset"),
@@ -822,10 +750,7 @@ mod tests {
         // Explicit message + disabled gpg signing so this is robust
         // regardless of the developer machine's global git config (e.g.
         // `tag.forceSignAnnotated` / `tag.gpgSign`).
-        run_git(
-            root,
-            &["-c", "tag.gpgSign=false", "tag", "-m", "release", &tag_name],
-        );
+        run_git(root, &["-c", "tag.gpgSign=false", "tag", "-m", "release", &tag_name]);
 
         // A commit landing after the tag; a correctly-scoped inference
         // window must never need to look past `tag_name` to find it, but a
@@ -836,26 +761,15 @@ mod tests {
         run_git(root, &["commit", "-q", "-m", "feat: add changes file"]);
 
         let expected_sha_output = std::process::Command::new("git")
-            .args([
-                "rev-parse",
-                "--verify",
-                "--quiet",
-                &format!("{tag_name}^{{commit}}"),
-            ])
+            .args(["rev-parse", "--verify", "--quiet", &format!("{tag_name}^{{commit}}")])
             .current_dir(root)
             .output()
             .unwrap();
         assert!(expected_sha_output.status.success());
-        let expected_sha =
-            CommitSha::parse(String::from_utf8_lossy(&expected_sha_output.stdout).trim()).unwrap();
+        let expected_sha = CommitSha::parse(String::from_utf8_lossy(&expected_sha_output.stdout).trim()).unwrap();
 
         let runner = RealGitRunner;
-        let manifest = ManifestDecl::new(
-            "Cargo.toml",
-            ManifestRole::Canonical,
-            ManifestFormat::CargoToml,
-        )
-        .unwrap();
+        let manifest = ManifestDecl::new("Cargo.toml", ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap();
         let graph = SinglePackageGraph {
             pkg: Package {
                 id: pkg_id.clone(),
@@ -872,8 +786,7 @@ mod tests {
 
         // Sanity: the tag we just created was actually picked up.
         assert_eq!(
-            tags.last_tag(&pkg_id)
-                .map(|t| t.version.render().to_string()),
+            tags.last_tag(&pkg_id).map(|t| t.version.render().to_string()),
             Some("1.0.0".to_string())
         );
 
@@ -924,12 +837,7 @@ mod tests {
         run_git(root, &["commit", "-q", "-m", "initial commit"]);
 
         let pkg_id = PackageId::parse("pkg-a").unwrap();
-        let manifest = ManifestDecl::new(
-            "Cargo.toml",
-            ManifestRole::Canonical,
-            ManifestFormat::CargoToml,
-        )
-        .unwrap();
+        let manifest = ManifestDecl::new("Cargo.toml", ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap();
         let graph = SinglePackageGraph {
             pkg: Package {
                 id: pkg_id.clone(),
@@ -977,36 +885,22 @@ mod tests {
 
         let pkg_id = PackageId::parse("pkg-a").unwrap();
         let tag_name = format!("{}@1.0.0", pkg_id.display_name());
-        run_git(
-            root,
-            &["-c", "tag.gpgSign=false", "tag", "-m", "release", &tag_name],
-        );
+        run_git(root, &["-c", "tag.gpgSign=false", "tag", "-m", "release", &tag_name]);
 
         std::fs::write(root.join("CHANGES.md"), "more\n").unwrap();
         run_git(root, &["add", "."]);
         run_git(root, &["commit", "-q", "-m", "feat: add changes file"]);
 
         let expected_sha_output = std::process::Command::new("git")
-            .args([
-                "rev-parse",
-                "--verify",
-                "--quiet",
-                &format!("{tag_name}^{{commit}}"),
-            ])
+            .args(["rev-parse", "--verify", "--quiet", &format!("{tag_name}^{{commit}}")])
             .current_dir(root)
             .output()
             .unwrap();
         assert!(expected_sha_output.status.success());
-        let expected_sha =
-            CommitSha::parse(String::from_utf8_lossy(&expected_sha_output.stdout).trim()).unwrap();
+        let expected_sha = CommitSha::parse(String::from_utf8_lossy(&expected_sha_output.stdout).trim()).unwrap();
 
         let poisoned = PoisonedRunner;
-        let manifest = ManifestDecl::new(
-            "Cargo.toml",
-            ManifestRole::Canonical,
-            ManifestFormat::CargoToml,
-        )
-        .unwrap();
+        let manifest = ManifestDecl::new("Cargo.toml", ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap();
         let graph = SinglePackageGraph {
             pkg: Package {
                 id: pkg_id.clone(),
@@ -1022,8 +916,7 @@ mod tests {
         let tags = TagIndex::build(&git, &graph, &cfg).unwrap();
 
         assert_eq!(
-            tags.last_tag(&pkg_id)
-                .map(|t| t.version.render().to_string()),
+            tags.last_tag(&pkg_id).map(|t| t.version.render().to_string()),
             Some("1.0.0".to_string())
         );
 
@@ -1042,12 +935,7 @@ mod tests {
     }
 
     fn make_pkg(id: PackageId) -> Package {
-        let manifest = ManifestDecl::new(
-            "Cargo.toml",
-            ManifestRole::Canonical,
-            ManifestFormat::CargoToml,
-        )
-        .unwrap();
+        let manifest = ManifestDecl::new("Cargo.toml", ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap();
         Package {
             id,
             manifests: vec![manifest],
@@ -1420,16 +1308,7 @@ mod tests {
             }
         }
 
-        let agg = aggregate(
-            &graph,
-            &cfg,
-            &git,
-            &tags,
-            &base_versions,
-            None,
-            &AlwaysErrorInference,
-        )
-        .unwrap();
+        let agg = aggregate(&graph, &cfg, &git, &tags, &base_versions, None, &AlwaysErrorInference).unwrap();
 
         assert!(
             !agg.diagnostics.is_empty(),
@@ -1536,22 +1415,10 @@ mod tests {
         let mut base_versions = BTreeMap::new();
         base_versions.insert(pkg_id.clone(), Version::semver(1, 0, 0));
 
-        let pre_state = callisto_format::PreState::entering(
-            "next",
-            [("pkg-a".to_string(), Version::semver(1, 0, 0))],
-        );
+        let pre_state = callisto_format::PreState::entering("next", [("pkg-a".to_string(), Version::semver(1, 0, 0))]);
 
         let inference = RecordingInference::default();
-        let agg = aggregate(
-            &graph,
-            &cfg,
-            &git,
-            &tags,
-            &base_versions,
-            Some(&pre_state),
-            &inference,
-        )
-        .unwrap();
+        let agg = aggregate(&graph, &cfg, &git, &tags, &base_versions, Some(&pre_state), &inference).unwrap();
 
         assert!(
             agg.consumed.is_empty(),

@@ -76,11 +76,7 @@ impl GitDataSource for GitAccess<'_> {
         self.shell.resolve_commit(refname)
     }
 
-    fn commits_since(
-        &self,
-        since_ref: Option<&str>,
-        pathspecs: &[PathBuf],
-    ) -> Result<Vec<GitCommit>, VcsError> {
+    fn commits_since(&self, since_ref: Option<&str>, pathspecs: &[PathBuf]) -> Result<Vec<GitCommit>, VcsError> {
         if let Some(repo) = &self.native {
             if let Ok(commits) = repo.commits_since(since_ref, pathspecs) {
                 return Ok(commits);
@@ -113,8 +109,7 @@ impl GitDataSource for GitAccess<'_> {
         if let Some(repo) = &self.native {
             return repo.create_floating_major(major_name, target_sha, permit);
         }
-        self.shell
-            .create_floating_major(major_name, target_sha, permit)
+        self.shell.create_floating_major(major_name, target_sha, permit)
     }
 }
 
@@ -139,12 +134,7 @@ mod tests {
     struct PoisonedRunner;
 
     impl CommandRunner for PoisonedRunner {
-        fn run(
-            &self,
-            program: &str,
-            _args: &[&str],
-            _cwd: &Path,
-        ) -> Result<CommandOutput, CommandError> {
+        fn run(&self, program: &str, _args: &[&str], _cwd: &Path) -> Result<CommandOutput, CommandError> {
             Err(CommandError::Io {
                 program: program.to_string(),
                 message: "poisoned runner: must not shell out to git".to_string(),
@@ -160,12 +150,7 @@ mod tests {
     }
 
     impl CommandRunner for CountingTagRunner {
-        fn run(
-            &self,
-            program: &str,
-            args: &[&str],
-            _cwd: &Path,
-        ) -> Result<CommandOutput, CommandError> {
+        fn run(&self, program: &str, args: &[&str], _cwd: &Path) -> Result<CommandOutput, CommandError> {
             assert_eq!(program, "git");
             assert_eq!(args, ["tag", "--list"]);
             self.calls.fetch_add(1, Ordering::SeqCst);
@@ -200,10 +185,7 @@ mod tests {
         std::fs::write(root.join("f.txt"), "hi\n").unwrap();
         run_git(root, &["add", "."]);
         run_git(root, &["commit", "-q", "-m", "initial"]);
-        run_git(
-            root,
-            &["-c", "tag.gpgSign=false", "tag", "-m", "release", "v1.0.0"],
-        );
+        run_git(root, &["-c", "tag.gpgSign=false", "tag", "-m", "release", "v1.0.0"]);
 
         let runner = PoisonedRunner;
         let git = GitAccess::discover(root, &runner);
@@ -261,10 +243,7 @@ mod tests {
                 .unwrap();
             CommitSha::parse(String::from_utf8_lossy(&output.stdout).trim()).unwrap()
         };
-        run_git(
-            root,
-            &["-c", "tag.gpgSign=false", "tag", "-m", "release", "dup"],
-        );
+        run_git(root, &["-c", "tag.gpgSign=false", "tag", "-m", "release", "dup"]);
 
         let runner = PoisonedRunner;
         let git = GitAccess::discover(root, &runner);
@@ -273,10 +252,7 @@ mod tests {
         // create_tag call must fail -- and that failure must propagate
         // as-is (proven by PoisonedRunner not being invoked/panicking).
         let result = git.create_tag("dup", &head_sha, Some("dup release"), &permit());
-        assert!(
-            result.is_err(),
-            "creating an already-existing tag must fail"
-        );
+        assert!(result.is_err(), "creating an already-existing tag must fail");
     }
 
     #[test]
@@ -289,12 +265,7 @@ mod tests {
             calls: std::sync::Mutex<Vec<Vec<String>>>,
         }
         impl CommandRunner for RecordingRunner {
-            fn run(
-                &self,
-                program: &str,
-                args: &[&str],
-                _cwd: &Path,
-            ) -> Result<CommandOutput, CommandError> {
+            fn run(&self, program: &str, args: &[&str], _cwd: &Path) -> Result<CommandOutput, CommandError> {
                 assert_eq!(program, "git");
                 self.calls
                     .lock()
@@ -314,8 +285,7 @@ mod tests {
         let git = GitAccess::discover(root, &runner);
         let sha = CommitSha::parse(&"a".repeat(40)).unwrap();
 
-        git.create_floating_major("pkg-a@1", &sha, &permit())
-            .unwrap();
+        git.create_floating_major("pkg-a@1", &sha, &permit()).unwrap();
 
         assert_eq!(
             *runner.calls.lock().unwrap(),
@@ -359,12 +329,7 @@ mod tests {
 
         struct FailingRefRunner;
         impl CommandRunner for FailingRefRunner {
-            fn run(
-                &self,
-                program: &str,
-                _args: &[&str],
-                _cwd: &Path,
-            ) -> Result<CommandOutput, CommandError> {
+            fn run(&self, program: &str, _args: &[&str], _cwd: &Path) -> Result<CommandOutput, CommandError> {
                 assert_eq!(program, "git");
                 Ok(CommandOutput {
                     exit_code: Some(128),

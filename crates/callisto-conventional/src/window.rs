@@ -50,9 +50,7 @@ mod tests {
 
     use super::*;
     use callisto_fixtures::git::{init_repo, run_git, PoisonedRunner};
-    use callisto_model::{
-        CommandError, CommandOutput, CommandRunner, CommitRecord, CommitWalkError,
-    };
+    use callisto_model::{CommandError, CommandOutput, CommandRunner, CommitRecord, CommitWalkError};
     use callisto_vcs::GitAccess;
 
     /// A [`CommitWalker`] double built from `callisto-model` types alone --
@@ -165,9 +163,7 @@ mod tests {
         assert!(
             matches!(
                 result,
-                Err(ConventionalError::CommitWalk(
-                    CommitWalkError::RefNotFound { .. }
-                ))
+                Err(ConventionalError::CommitWalk(CommitWalkError::RefNotFound { .. }))
             ),
             "expected ConventionalError::CommitWalk(RefNotFound), got {result:?}"
         );
@@ -280,12 +276,7 @@ mod tests {
     }
 
     impl CommandRunner for FakeGitLogRunner {
-        fn run(
-            &self,
-            program: &str,
-            _args: &[&str],
-            _cwd: &Path,
-        ) -> Result<CommandOutput, CommandError> {
+        fn run(&self, program: &str, _args: &[&str], _cwd: &Path) -> Result<CommandOutput, CommandError> {
             assert_eq!(program, "git");
             Ok(CommandOutput {
                 exit_code: Some(0),
@@ -307,9 +298,8 @@ mod tests {
         let dir = non_repo_dir();
         let sha_a = "a".repeat(40);
         let sha_b = "b".repeat(40);
-        let stdout = format!(
-            "\u{1e}{sha_a}\u{1f}feat(core): add thing\n\nSome body text\n\u{1e}{sha_b}\u{1f}fix: bug\n"
-        );
+        let stdout =
+            format!("\u{1e}{sha_a}\u{1f}feat(core): add thing\n\nSome body text\n\u{1e}{sha_b}\u{1f}fix: bug\n");
         let runner = FakeGitLogRunner { stdout };
         let git = GitAccess::discover(dir.path(), &runner);
 
@@ -332,12 +322,7 @@ mod tests {
     fn test_backend_command_error_narrows_to_commit_walk_command() {
         struct FailingRunner;
         impl CommandRunner for FailingRunner {
-            fn run(
-                &self,
-                _program: &str,
-                _args: &[&str],
-                _cwd: &Path,
-            ) -> Result<CommandOutput, CommandError> {
+            fn run(&self, _program: &str, _args: &[&str], _cwd: &Path) -> Result<CommandOutput, CommandError> {
                 Err(CommandError::NotFound {
                     program: "git".to_string(),
                 })
@@ -349,10 +334,7 @@ mod tests {
         let result = fetch_commits(&git, &InferenceWindow::FullHistory, &[]);
 
         assert!(
-            matches!(
-                result,
-                Err(ConventionalError::CommitWalk(CommitWalkError::Command(_)))
-            ),
+            matches!(result, Err(ConventionalError::CommitWalk(CommitWalkError::Command(_)))),
             "expected ConventionalError::CommitWalk(Command(_)), got {result:?}"
         );
     }

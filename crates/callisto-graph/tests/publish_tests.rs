@@ -78,26 +78,20 @@ fn napi_platform_package_is_classified_as_npm_platform_packages() {
     let ws = callisto_graph::Workspace::load(root.to_path_buf(), &locator, &runner)
         .expect("workspace load should succeed for platform npm package");
 
-    let plan = plan_publish(&ws, &PublishOptions::default())
-        .expect("plan_publish should succeed for platform npm package");
+    let plan =
+        plan_publish(&ws, &PublishOptions::default()).expect("plan_publish should succeed for platform npm package");
 
     assert_eq!(
         plan.npm_main_packages.len(),
         0,
         "platform package must NOT be in npm_main_packages; got: {:?}",
-        plan.npm_main_packages
-            .iter()
-            .map(|p| &p.name)
-            .collect::<Vec<_>>()
+        plan.npm_main_packages.iter().map(|p| &p.name).collect::<Vec<_>>()
     );
     assert_eq!(
         plan.npm_platform_packages.len(),
         1,
         "platform package must be in npm_platform_packages; got main_packages: {:?}",
-        plan.npm_main_packages
-            .iter()
-            .map(|p| &p.name)
-            .collect::<Vec<_>>()
+        plan.npm_main_packages.iter().map(|p| &p.name).collect::<Vec<_>>()
     );
 }
 
@@ -256,8 +250,7 @@ fn pub_001_load_plan_required_for_private_registry_routing() {
         AlwaysRetryPolicy, PublishOrchestrator, SubprocessRegistryClient, SystemTimeProvider,
     };
     use callisto_model::{
-        ApplyPermit, CratePublish, PublishPlan, RegistryKey, Version, VersionGrammar,
-        SCHEMA_VERSION,
+        ApplyPermit, CratePublish, PublishPlan, RegistryKey, Version, VersionGrammar, SCHEMA_VERSION,
     };
 
     let v = Version::parse("1.0.0", VersionGrammar::SemVer).unwrap();
@@ -290,9 +283,7 @@ fn pub_001_load_plan_required_for_private_registry_routing() {
     let orch = PublishOrchestrator::new(client, AlwaysRetryPolicy, SystemTimeProvider);
     drop(orch.execute(&plan, &permit));
     let recorded = captured.lock().unwrap().clone();
-    let registry_present = recorded
-        .iter()
-        .any(|args| args.contains(&"--registry".to_string()));
+    let registry_present = recorded.iter().any(|args| args.contains(&"--registry".to_string()));
     assert!(
         registry_present,
         "with load_plan: --registry must appear in cargo args for private-registry crate; captured: {recorded:?}"
@@ -309,9 +300,7 @@ fn pub_001_load_plan_required_for_private_registry_routing() {
     let orch2 = PublishOrchestrator::new(client2, AlwaysRetryPolicy, SystemTimeProvider);
     drop(orch2.execute(&plan, &permit));
     let recorded2 = captured2.lock().unwrap().clone();
-    let registry_absent = !recorded2
-        .iter()
-        .any(|args| args.contains(&"--registry".to_string()));
+    let registry_absent = !recorded2.iter().any(|args| args.contains(&"--registry".to_string()));
     assert!(
         registry_absent,
         "without load_plan: --registry must be absent (crates.io fallback — this is the PUB-001 regression); captured: {recorded2:?}"
@@ -356,15 +345,10 @@ fn npm_registry_from_publish_target_is_propagated_to_plan() {
 
     let runner = DummyRunner;
     let locator = IgnoreWalkLocator::new(root);
-    let ws = callisto_graph::Workspace::load(root.to_path_buf(), &locator, &runner)
-        .expect("workspace load");
+    let ws = callisto_graph::Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace load");
     let plan = plan_publish(&ws, &PublishOptions::default()).expect("plan_publish");
 
-    assert_eq!(
-        plan.npm_main_packages.len(),
-        1,
-        "expected one npm_main_packages entry"
-    );
+    assert_eq!(plan.npm_main_packages.len(), 1, "expected one npm_main_packages entry");
     assert_eq!(
         plan.npm_main_packages[0].registry.as_deref(),
         Some("https://npm.my-org.example.com"),
@@ -400,8 +384,7 @@ fn unapproved_publish_config_registry_is_rejected() {
 
     let runner = DummyRunner;
     let locator = IgnoreWalkLocator::new(root);
-    let ws = callisto_graph::Workspace::load(root.to_path_buf(), &locator, &runner)
-        .expect("workspace load");
+    let ws = callisto_graph::Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace load");
 
     let result = plan_publish(&ws, &PublishOptions::default());
 
@@ -441,8 +424,7 @@ fn non_https_publish_config_registry_is_rejected() {
 
     let runner = DummyRunner;
     let locator = IgnoreWalkLocator::new(root);
-    let ws = callisto_graph::Workspace::load(root.to_path_buf(), &locator, &runner)
-        .expect("workspace load");
+    let ws = callisto_graph::Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace load");
 
     let result = plan_publish(&ws, &PublishOptions::default());
 
@@ -478,8 +460,7 @@ fn scoped_npm_package_gets_public_access_in_plan() {
 
         let runner = DummyRunner;
         let locator = callisto_graph::locate::IgnoreWalkLocator::new(root);
-        let ws = callisto_graph::Workspace::load(root.to_path_buf(), &locator, &runner)
-            .expect("workspace load");
+        let ws = callisto_graph::Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace load");
         let plan = plan_publish(&ws, &PublishOptions::default()).expect("plan_publish");
 
         assert_eq!(plan.npm_main_packages.len(), 1);
@@ -497,17 +478,12 @@ fn scoped_npm_package_gets_public_access_in_plan() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
 
-        std::fs::write(
-            root.join("package.json"),
-            r#"{"name":"my-lib","version":"1.0.0"}"#,
-        )
-        .unwrap();
+        std::fs::write(root.join("package.json"), r#"{"name":"my-lib","version":"1.0.0"}"#).unwrap();
         init_git_repo(root);
 
         let runner = DummyRunner;
         let locator = callisto_graph::locate::IgnoreWalkLocator::new(root);
-        let ws = callisto_graph::Workspace::load(root.to_path_buf(), &locator, &runner)
-            .expect("workspace load");
+        let ws = callisto_graph::Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace load");
         let plan = plan_publish(&ws, &PublishOptions::default()).expect("plan_publish");
 
         assert_eq!(plan.npm_main_packages.len(), 1);
@@ -539,19 +515,14 @@ fn non_git_workspace_emits_git_diagnostic() {
 
     // An npm package so the plan has something to work with — but deliberately
     // NO git init, so git discovery fails.
-    std::fs::write(
-        root.join("package.json"),
-        r#"{"name":"my-pkg","version":"1.0.0"}"#,
-    )
-    .unwrap();
+    std::fs::write(root.join("package.json"), r#"{"name":"my-pkg","version":"1.0.0"}"#).unwrap();
 
     let runner = DummyRunner;
     let locator = callisto_graph::locate::IgnoreWalkLocator::new(root);
-    let ws = callisto_graph::Workspace::load(root.to_path_buf(), &locator, &runner)
-        .expect("workspace load");
+    let ws = callisto_graph::Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace load");
 
-    let plan = plan_publish(&ws, &PublishOptions::default())
-        .expect("plan_publish must succeed even without a git repo");
+    let plan =
+        plan_publish(&ws, &PublishOptions::default()).expect("plan_publish must succeed even without a git repo");
 
     // No releases can be recorded without a HEAD SHA.
     assert!(
@@ -591,11 +562,7 @@ fn malformed_changeset_surfaces_as_diagnostic_not_silent_drop() {
     let root = tmp.path();
 
     // A simple npm package so plan_publish has something to work with.
-    std::fs::write(
-        root.join("package.json"),
-        r#"{"name":"my-pkg","version":"1.0.0"}"#,
-    )
-    .unwrap();
+    std::fs::write(root.join("package.json"), r#"{"name":"my-pkg","version":"1.0.0"}"#).unwrap();
 
     // Write a malformed pre.json that will cause plan_version to fail.
     let cs_dir = root.join(".changeset");
@@ -606,11 +573,10 @@ fn malformed_changeset_surfaces_as_diagnostic_not_silent_drop() {
 
     let runner = DummyRunner;
     let locator = callisto_graph::locate::IgnoreWalkLocator::new(root);
-    let ws = callisto_graph::Workspace::load(root.to_path_buf(), &locator, &runner)
-        .expect("workspace load");
+    let ws = callisto_graph::Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace load");
 
-    let plan = plan_publish(&ws, &PublishOptions::default())
-        .expect("plan_publish must succeed even with malformed changeset");
+    let plan =
+        plan_publish(&ws, &PublishOptions::default()).expect("plan_publish must succeed even with malformed changeset");
 
     let has_changeset_diagnostic = plan
         .diagnostics
@@ -700,10 +666,7 @@ fn publish_options_only_filter_excludes_unlisted_packages() {
         "only pkg-a should be in the plan; got: {:?}",
         plan.rust_crates.iter().map(|c| &c.name).collect::<Vec<_>>()
     );
-    assert_eq!(
-        plan.rust_crates[0].name, "pkg-a",
-        "the single plan entry must be pkg-a"
-    );
+    assert_eq!(plan.rust_crates[0].name, "pkg-a", "the single plan entry must be pkg-a");
 }
 
 /// When `--package` is passed with a name that does not exist in the workspace,
@@ -755,8 +718,7 @@ fn publish_options_only_unknown_package_returns_error() {
     let opts = PublishOptions {
         only: vec!["typo-crate".to_string()],
     };
-    let err = plan_publish(&ws, &opts)
-        .expect_err("plan_publish with an unknown --package name must return an error");
+    let err = plan_publish(&ws, &opts).expect_err("plan_publish with an unknown --package name must return an error");
     assert!(
         matches!(err, GraphError::UnknownPackage { .. }),
         "unknown --package name must produce GraphError::UnknownPackage; got: {err:?}"
@@ -876,9 +838,8 @@ fn plan_publish_populates_release_entry_via_command_runner_fallback_when_gix_una
     let ws = callisto_graph::Workspace::load(root.to_path_buf(), &locator, &runner)
         .expect("workspace load must not require git");
 
-    let plan = plan_publish(&ws, &PublishOptions::default()).expect(
-        "plan_publish must succeed via the CommandRunner fallback when gix cannot discover a repo",
-    );
+    let plan = plan_publish(&ws, &PublishOptions::default())
+        .expect("plan_publish must succeed via the CommandRunner fallback when gix cannot discover a repo");
 
     assert!(
         !plan
@@ -891,16 +852,12 @@ fn plan_publish_populates_release_entry_via_command_runner_fallback_when_gix_una
     );
 
     let pkg_id = PackageId::parse("my-crate").unwrap();
-    let release = plan
-        .releases
-        .iter()
-        .find(|r| r.package == pkg_id)
-        .unwrap_or_else(|| {
-            panic!(
-                "expected a ReleaseEntry for my-crate via the CommandRunner fallback, got: {:?}",
-                plan.releases
-            )
-        });
+    let release = plan.releases.iter().find(|r| r.package == pkg_id).unwrap_or_else(|| {
+        panic!(
+            "expected a ReleaseEntry for my-crate via the CommandRunner fallback, got: {:?}",
+            plan.releases
+        )
+    });
 
     assert_eq!(
         release.sha.as_str(),
@@ -1052,8 +1009,8 @@ fn package_override_publish_to_none_excludes_package_from_plan() {
 
     let runner = DummyRunner;
     let locator = callisto_graph::locate::IgnoreWalkLocator::new(root);
-    let ws = callisto_graph::Workspace::load(root.to_path_buf(), &locator, &runner)
-        .expect("workspace load should succeed");
+    let ws =
+        callisto_graph::Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace load should succeed");
 
     let plan = plan_publish(&ws, &PublishOptions::default()).expect("plan_publish should succeed");
 
@@ -1103,16 +1060,11 @@ fn scoped_npm_package_with_restricted_access_produces_restricted_access_in_plan(
 
     let runner = DummyRunner;
     let locator = callisto_graph::locate::IgnoreWalkLocator::new(root);
-    let ws = callisto_graph::Workspace::load(root.to_path_buf(), &locator, &runner)
-        .expect("workspace load");
+    let ws = callisto_graph::Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace load");
 
     let plan = plan_publish(&ws, &PublishOptions::default()).expect("plan_publish");
 
-    assert_eq!(
-        plan.npm_main_packages.len(),
-        1,
-        "expected one npm_main_packages entry"
-    );
+    assert_eq!(plan.npm_main_packages.len(), 1, "expected one npm_main_packages entry");
     assert_eq!(
         plan.npm_main_packages[0].access,
         Some(NpmAccess::Restricted),
@@ -1147,8 +1099,7 @@ fn unscoped_npm_package_with_explicit_public_access_produces_public_access_in_pl
 
     let runner = DummyRunner;
     let locator = callisto_graph::locate::IgnoreWalkLocator::new(root);
-    let ws = callisto_graph::Workspace::load(root.to_path_buf(), &locator, &runner)
-        .expect("workspace load");
+    let ws = callisto_graph::Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace load");
 
     let plan = plan_publish(&ws, &PublishOptions::default()).expect("plan_publish");
 
@@ -1211,8 +1162,8 @@ fn package_set_override_applies_to_all_matching_packages() {
 
     let runner = DummyRunner;
     let locator = callisto_graph::locate::IgnoreWalkLocator::new(root);
-    let ws = callisto_graph::Workspace::load(root.to_path_buf(), &locator, &runner)
-        .expect("workspace load should succeed");
+    let ws =
+        callisto_graph::Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace load should succeed");
 
     let plan = plan_publish(&ws, &PublishOptions::default()).expect("plan_publish should succeed");
 
@@ -1270,8 +1221,8 @@ fn package_rule_takes_priority_over_package_set_rule() {
 
     let runner = DummyRunner;
     let locator = callisto_graph::locate::IgnoreWalkLocator::new(root);
-    let ws = callisto_graph::Workspace::load(root.to_path_buf(), &locator, &runner)
-        .expect("workspace load should succeed");
+    let ws =
+        callisto_graph::Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace load should succeed");
 
     let plan = plan_publish(&ws, &PublishOptions::default()).expect("plan_publish should succeed");
 
@@ -1364,9 +1315,10 @@ fn package_with_only_undispatchable_target_gets_no_release_entry_and_a_diagnosti
         plan.releases
     );
 
-    let has_not_implemented_diagnostic = plan.diagnostics.iter().any(|d| {
-        d.code == DiagnosticCode::PublishTargetNotImplemented && d.package.as_ref() == Some(&pkg_id)
-    });
+    let has_not_implemented_diagnostic = plan
+        .diagnostics
+        .iter()
+        .any(|d| d.code == DiagnosticCode::PublishTargetNotImplemented && d.package.as_ref() == Some(&pkg_id));
     assert!(
         has_not_implemented_diagnostic,
         "expected a PublishTargetNotImplemented diagnostic for my-crate; got: {:?}",
@@ -1439,14 +1391,12 @@ fn plan_publish_leaves_changelog_section_none_when_file_does_not_exist() {
         .find(|r| r.package == pkg_id)
         .unwrap_or_else(|| panic!("expected a ReleaseEntry for pkg, got: {:?}", plan.releases));
 
-    assert_eq!(
-        release.changelog_section, None,
-        "AC-11: no changelog file on disk"
-    );
+    assert_eq!(release.changelog_section, None, "AC-11: no changelog file on disk");
     assert!(
-        plan.diagnostics.iter().any(|d| d.code
-            == callisto_model::DiagnosticCode::ChangelogSectionNotFound
-            && d.package.as_ref() == Some(&pkg_id)),
+        plan.diagnostics
+            .iter()
+            .any(|d| d.code == callisto_model::DiagnosticCode::ChangelogSectionNotFound
+                && d.package.as_ref() == Some(&pkg_id)),
         "expected a ChangelogSectionNotFound diagnostic naming pkg; got {:?}",
         plan.diagnostics
     );
@@ -1481,9 +1431,10 @@ fn plan_publish_leaves_changelog_section_none_when_matched_heading_section_is_em
         "AC-10b: matched heading has empty content"
     );
     assert!(
-        plan.diagnostics.iter().any(|d| d.code
-            == callisto_model::DiagnosticCode::ChangelogSectionNotFound
-            && d.package.as_ref() == Some(&pkg_id)),
+        plan.diagnostics
+            .iter()
+            .any(|d| d.code == callisto_model::DiagnosticCode::ChangelogSectionNotFound
+                && d.package.as_ref() == Some(&pkg_id)),
         "expected a ChangelogSectionNotFound diagnostic naming pkg; got {:?}",
         plan.diagnostics
     );
@@ -1516,9 +1467,10 @@ fn plan_publish_leaves_changelog_section_none_when_no_matching_heading() {
         "AC-12: no `## 1.2.3` heading in the file"
     );
     assert!(
-        plan.diagnostics.iter().any(|d| d.code
-            == callisto_model::DiagnosticCode::ChangelogSectionNotFound
-            && d.package.as_ref() == Some(&pkg_id)),
+        plan.diagnostics
+            .iter()
+            .any(|d| d.code == callisto_model::DiagnosticCode::ChangelogSectionNotFound
+                && d.package.as_ref() == Some(&pkg_id)),
         "expected a ChangelogSectionNotFound diagnostic naming pkg; got {:?}",
         plan.diagnostics
     );
@@ -1549,16 +1501,18 @@ fn plan_publish_leaves_changelog_section_none_and_emits_read_error_for_invalid_u
         "AC-12c: file exists but is not valid UTF-8"
     );
     assert!(
-        plan.diagnostics.iter().any(|d| d.code
-            == callisto_model::DiagnosticCode::ChangelogReadError
-            && d.package.as_ref() == Some(&pkg_id)),
+        plan.diagnostics.iter().any(
+            |d| d.code == callisto_model::DiagnosticCode::ChangelogReadError && d.package.as_ref() == Some(&pkg_id)
+        ),
         "expected a ChangelogReadError diagnostic naming pkg; got {:?}",
         plan.diagnostics
     );
     assert!(
-        !plan.diagnostics.iter().any(|d| d.code
-            == callisto_model::DiagnosticCode::ChangelogSectionNotFound
-            && d.package.as_ref() == Some(&pkg_id)),
+        !plan
+            .diagnostics
+            .iter()
+            .any(|d| d.code == callisto_model::DiagnosticCode::ChangelogSectionNotFound
+                && d.package.as_ref() == Some(&pkg_id)),
         "an unreadable file must not also be reported as ChangelogSectionNotFound"
     );
 }
@@ -1610,10 +1564,7 @@ fn plan_publish_semver_non_prerelease_has_is_prerelease_false_in_json() {
         .iter()
         .find(|r| r.package == pkg_id)
         .unwrap_or_else(|| panic!("expected a ReleaseEntry for pkg, got: {:?}", plan.releases));
-    assert!(
-        !release.is_prerelease,
-        "SemVer 1.2.3 must not be a prerelease"
-    );
+    assert!(!release.is_prerelease, "SemVer 1.2.3 must not be a prerelease");
 
     let json = serde_json::to_value(&plan).unwrap();
     let entries = json["releases"].as_array().unwrap();

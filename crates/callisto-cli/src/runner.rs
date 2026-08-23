@@ -283,12 +283,7 @@ mod tests {
         let runner = CliCommandRunner;
         // sleep for 1 second with a 100ms timeout — process must be killed.
         let err = runner
-            .run_with_timeout(
-                "sleep",
-                &["1"],
-                std::path::Path::new("."),
-                Duration::from_millis(100),
-            )
+            .run_with_timeout("sleep", &["1"], std::path::Path::new("."), Duration::from_millis(100))
             .unwrap_err();
         assert!(
             matches!(err, CommandError::TimedOut { .. }),
@@ -300,12 +295,7 @@ mod tests {
     fn run_with_timeout_returns_output_for_fast_process() {
         let runner = CliCommandRunner;
         let out = runner
-            .run_with_timeout(
-                "true",
-                &[],
-                std::path::Path::new("."),
-                Duration::from_secs(5),
-            )
+            .run_with_timeout("true", &[], std::path::Path::new("."), Duration::from_secs(5))
             .unwrap();
         assert!(out.success());
     }
@@ -430,9 +420,7 @@ mod tests {
 
         let stderr = String::from_utf8_lossy(&output.stderr);
         assert!(
-            stderr.contains(
-                "timed out and a descendant process appears to still hold its output pipes open"
-            ),
+            stderr.contains("timed out and a descendant process appears to still hold its output pipes open"),
             "expected the timeout branch's specific warning text in child stderr, got: {stderr}"
         );
     }

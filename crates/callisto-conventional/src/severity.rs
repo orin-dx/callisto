@@ -29,10 +29,7 @@ mod tests {
     #[test]
     fn classifies_severities() {
         let sha = CommitSha::parse("a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0").unwrap();
-        assert_eq!(
-            raw_severity_of(&parse_commit(sha.clone(), "fix: bug")),
-            Severity::Patch
-        );
+        assert_eq!(raw_severity_of(&parse_commit(sha.clone(), "fix: bug")), Severity::Patch);
         assert_eq!(
             raw_severity_of(&parse_commit(sha.clone(), "feat: feature")),
             Severity::Minor

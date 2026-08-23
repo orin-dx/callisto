@@ -31,16 +31,8 @@ struct CountingTagListRunner {
 }
 
 impl CommandRunner for CountingTagListRunner {
-    fn run(
-        &self,
-        program: &str,
-        args: &[&str],
-        _cwd: &Path,
-    ) -> Result<CommandOutput, CommandError> {
-        assert_eq!(
-            program, "git",
-            "only `git` should ever be shelled out to here"
-        );
+    fn run(&self, program: &str, args: &[&str], _cwd: &Path) -> Result<CommandOutput, CommandError> {
+        assert_eq!(program, "git", "only `git` should ever be shelled out to here");
         if args == ["tag", "--list"] {
             self.tag_list_calls.fetch_add(1, Ordering::SeqCst);
         }
@@ -87,8 +79,7 @@ fn workspace_load_does_not_build_tag_index_until_tags_is_called() {
         tag_list_calls: AtomicUsize::new(0),
     };
 
-    let ws = Workspace::load(root.to_path_buf(), &locator, &runner)
-        .expect("Workspace::load should succeed");
+    let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("Workspace::load should succeed");
 
     assert_eq!(
         runner.tag_list_calls.load(Ordering::SeqCst),
@@ -104,9 +95,7 @@ fn workspace_load_does_not_build_tag_index_until_tags_is_called() {
         "the first Workspace::tags() call should build the tag index exactly once"
     );
 
-    let _tags_again = ws
-        .tags()
-        .expect("second call should reuse the cached index");
+    let _tags_again = ws.tags().expect("second call should reuse the cached index");
     assert_eq!(
         runner.tag_list_calls.load(Ordering::SeqCst),
         1,

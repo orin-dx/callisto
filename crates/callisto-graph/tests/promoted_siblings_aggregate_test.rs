@@ -47,17 +47,13 @@ fn workspace_load_populates_promoted_siblings_and_aggregate_propagates_ambiguity
         .promoted_siblings
         .get("native-core")
         .expect("promoted_siblings must contain the promoted name");
-    assert_eq!(
-        siblings.len(),
-        2,
-        "exactly 2 distinct promoted ids for native-core"
-    );
+    assert_eq!(siblings.len(), 2, "exactly 2 distinct promoted ids for native-core");
 
     let cargo_entry = siblings
         .iter()
-        .find(|(id, _)| {
-            matches!(id, PackageId::Prefixed { ecosystem: Ecosystem::Cargo, name } if name == "native-core")
-        })
+        .find(
+            |(id, _)| matches!(id, PackageId::Prefixed { ecosystem: Ecosystem::Cargo, name } if name == "native-core"),
+        )
         .expect("Cargo Prefixed entry must exist");
     let mut expected_cargo_set = BTreeSet::new();
     expected_cargo_set.insert(Ecosystem::Cargo);
@@ -68,9 +64,7 @@ fn workspace_load_populates_promoted_siblings_and_aggregate_propagates_ambiguity
 
     let npm_entry = siblings
         .iter()
-        .find(|(id, _)| {
-            matches!(id, PackageId::Prefixed { ecosystem: Ecosystem::Npm, name } if name == "native-core")
-        })
+        .find(|(id, _)| matches!(id, PackageId::Prefixed { ecosystem: Ecosystem::Npm, name } if name == "native-core"))
         .expect("Npm Prefixed entry must exist");
     let mut expected_npm_set = BTreeSet::new();
     expected_npm_set.insert(Ecosystem::Npm);

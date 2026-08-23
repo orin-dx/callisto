@@ -72,15 +72,9 @@ mod tests {
     fn split_single_operator_prefix_recognizes_all_operators() {
         assert_eq!(split_single_operator_prefix("^1.2.3"), Some(("^", "1.2.3")));
         assert_eq!(split_single_operator_prefix("~1.2.3"), Some(("~", "1.2.3")));
-        assert_eq!(
-            split_single_operator_prefix(">=1.2.3"),
-            Some((">=", "1.2.3"))
-        );
+        assert_eq!(split_single_operator_prefix(">=1.2.3"), Some((">=", "1.2.3")));
         assert_eq!(split_single_operator_prefix(">1.2.3"), Some((">", "1.2.3")));
-        assert_eq!(
-            split_single_operator_prefix("<=1.2.3"),
-            Some(("<=", "1.2.3"))
-        );
+        assert_eq!(split_single_operator_prefix("<=1.2.3"), Some(("<=", "1.2.3")));
         assert_eq!(split_single_operator_prefix("<1.2.3"), Some(("<", "1.2.3")));
         assert_eq!(split_single_operator_prefix("=1.2.3"), Some(("=", "1.2.3")));
     }
@@ -92,13 +86,7 @@ mod tests {
 
     #[test]
     fn split_single_operator_prefix_trims_whitespace() {
-        assert_eq!(
-            split_single_operator_prefix("  ^1.2.3  "),
-            Some(("^", "1.2.3"))
-        );
-        assert_eq!(
-            split_single_operator_prefix(">=  1.2.3"),
-            Some((">=", "1.2.3"))
-        );
+        assert_eq!(split_single_operator_prefix("  ^1.2.3  "), Some(("^", "1.2.3")));
+        assert_eq!(split_single_operator_prefix(">=  1.2.3"), Some((">=", "1.2.3")));
     }
 }

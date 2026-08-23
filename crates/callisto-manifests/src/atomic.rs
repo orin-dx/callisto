@@ -31,23 +31,13 @@ mod tests {
         let target = dir.path().join("Cargo.toml");
         let permit = ApplyPermit::force_for_tests();
 
-        atomic_write(
-            &target,
-            "[package]\nname = \"foo\"\nversion = \"1.0.0\"\n",
-            &permit,
-        )
-        .unwrap();
+        atomic_write(&target, "[package]\nname = \"foo\"\nversion = \"1.0.0\"\n", &permit).unwrap();
         assert_eq!(
             std::fs::read_to_string(&target).unwrap(),
             "[package]\nname = \"foo\"\nversion = \"1.0.0\"\n"
         );
 
-        atomic_write(
-            &target,
-            "[package]\nname = \"foo\"\nversion = \"1.0.1\"\n",
-            &permit,
-        )
-        .unwrap();
+        atomic_write(&target, "[package]\nname = \"foo\"\nversion = \"1.0.1\"\n", &permit).unwrap();
         assert_eq!(
             std::fs::read_to_string(&target).unwrap(),
             "[package]\nname = \"foo\"\nversion = \"1.0.1\"\n"
@@ -119,8 +109,7 @@ mod tests {
     /// above are exercising the moved implementation.
     #[test]
     fn re_export_resolves_to_the_model_implementation() {
-        let via_alias: fn(&std::path::Path, &str, &ApplyPermit) -> std::io::Result<()> =
-            atomic_write;
+        let via_alias: fn(&std::path::Path, &str, &ApplyPermit) -> std::io::Result<()> = atomic_write;
         let via_model: fn(&std::path::Path, &str, &ApplyPermit) -> std::io::Result<()> =
             callisto_model::atomic::atomic_write;
         assert!(std::ptr::fn_addr_eq(via_alias, via_model));

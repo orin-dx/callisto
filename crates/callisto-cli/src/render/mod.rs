@@ -1,17 +1,14 @@
 use std::io;
 
 use callisto_model::{
-    ComposePrBodyReport, InitReport, PublishAttemptResult, PublishPlan, PublishReport,
-    SnapshotReport, StatusReport, TagReport, ValidateReport, VersionReport,
+    ComposePrBodyReport, InitReport, PublishAttemptResult, PublishPlan, PublishReport, SnapshotReport, StatusReport,
+    TagReport, ValidateReport, VersionReport,
 };
 
 pub mod attribution;
 pub mod diff;
 
-pub fn render_diagnostics<W: io::Write>(
-    diagnostics: &[callisto_model::Diagnostic],
-    w: &mut W,
-) -> io::Result<()> {
+pub fn render_diagnostics<W: io::Write>(diagnostics: &[callisto_model::Diagnostic], w: &mut W) -> io::Result<()> {
     if !diagnostics.is_empty() {
         writeln!(w, "\nDiagnostics:")?;
         for d in diagnostics {
@@ -84,11 +81,7 @@ pub fn render_publish<W: io::Write>(report: &PublishPlan, w: &mut W) -> io::Resu
         }
     }
     if !report.npm_platform_packages.is_empty() {
-        writeln!(
-            w,
-            "  npm platform packages ({}):",
-            report.npm_platform_packages.len()
-        )?;
+        writeln!(w, "  npm platform packages ({}):", report.npm_platform_packages.len())?;
         for pkg in &report.npm_platform_packages {
             writeln!(w, "    {} {}", pkg.name, pkg.version.raw())?;
         }
@@ -160,10 +153,7 @@ pub fn render_tag<W: io::Write>(report: &TagReport, dry_run: bool, w: &mut W) ->
     Ok(())
 }
 
-pub fn render_compose_pr_body<W: io::Write>(
-    report: &ComposePrBodyReport,
-    w: &mut W,
-) -> io::Result<()> {
+pub fn render_compose_pr_body<W: io::Write>(report: &ComposePrBodyReport, w: &mut W) -> io::Result<()> {
     write!(w, "{}", report.body)?;
     Ok(())
 }
@@ -182,12 +172,7 @@ pub fn render_init<W: io::Write>(report: &InitReport, w: &mut W) -> io::Result<(
             report.config_path.display()
         )?;
     } else {
-        let names: Vec<&str> = report
-            .diff
-            .new_ecosystems
-            .iter()
-            .map(|e| e.prefix())
-            .collect();
+        let names: Vec<&str> = report.diff.new_ecosystems.iter().map(|e| e.prefix()).collect();
         if report.diff.applied {
             writeln!(
                 w,
@@ -207,17 +192,11 @@ pub fn render_init<W: io::Write>(report: &InitReport, w: &mut W) -> io::Result<(
     Ok(())
 }
 
-pub fn render_matrix<W: io::Write>(
-    report: &callisto_model::MatrixReport,
-    w: &mut W,
-) -> io::Result<()> {
+pub fn render_matrix<W: io::Write>(report: &callisto_model::MatrixReport, w: &mut W) -> io::Result<()> {
     writeln!(w, "Matrix (schema v{}):", report.schema_version)?;
 
     if report.platform_targets.is_empty() && report.runtime_versions.is_empty() {
-        writeln!(
-            w,
-            "  (no platform targets or runtime-version constraints declared)"
-        )?;
+        writeln!(w, "  (no platform targets or runtime-version constraints declared)")?;
     }
 
     for (pkg, group) in &report.platform_targets {
@@ -248,8 +227,7 @@ pub fn render_matrix<W: io::Write>(
 mod tests {
     use super::*;
     use callisto_model::{
-        Ecosystem, PackageId, PublishAttempt, ReleaseTrigger, Severity, StatusPackageRecord,
-        Version, VersionGrammar,
+        Ecosystem, PackageId, PublishAttempt, ReleaseTrigger, Severity, StatusPackageRecord, Version, VersionGrammar,
     };
 
     fn v1() -> Version {
@@ -290,11 +268,7 @@ mod tests {
         }
     }
 
-    fn status_pkg(
-        name: &str,
-        severity: Option<Severity>,
-        changesets: Vec<&str>,
-    ) -> StatusPackageRecord {
+    fn status_pkg(name: &str, severity: Option<Severity>, changesets: Vec<&str>) -> StatusPackageRecord {
         StatusPackageRecord {
             package: pkg(name),
             current_version: v1(),
@@ -331,8 +305,7 @@ mod tests {
 
     fn full_plan() -> PublishPlan {
         use callisto_model::{
-            CratePublish, NpmMainPublish, NpmPublish, PypiPublish, RegistryKey, Version,
-            SCHEMA_VERSION,
+            CratePublish, NpmMainPublish, NpmPublish, PypiPublish, RegistryKey, Version, SCHEMA_VERSION,
         };
         let v = Version::parse("1.0.0", callisto_model::VersionGrammar::SemVer).unwrap();
         PublishPlan {
@@ -483,10 +456,7 @@ mod tests {
 
         assert!(text.contains("crate-a") && text.contains("published"));
         assert!(text.contains("crate-b") && text.contains("already published"));
-        assert!(
-            text.contains("crate-c")
-                && text.contains("FAILED [authFailed]: auth failed: bad token")
-        );
+        assert!(text.contains("crate-c") && text.contains("FAILED [authFailed]: auth failed: bad token"));
     }
 
     /// The text renderer must surface the `kind` discriminator so operators can
@@ -550,8 +520,8 @@ mod tests {
     #[test]
     fn render_matrix_produces_non_json_non_empty_output() {
         use callisto_model::{
-            MatrixReport, PlatformTarget, PlatformTargetGroup, PlatformTargetKind,
-            RuntimeEcosystem, RuntimeVersionEntry,
+            MatrixReport, PlatformTarget, PlatformTargetGroup, PlatformTargetKind, RuntimeEcosystem,
+            RuntimeVersionEntry,
         };
         use std::collections::BTreeMap;
 
@@ -613,9 +583,7 @@ mod tests {
     /// the human-readable table output, not just its presence.
     #[test]
     fn render_matrix_renders_diagnostics_for_unrecognised_triple() {
-        use callisto_model::{
-            Diagnostic, DiagnosticCode, DiagnosticSeverity, MatrixReport, PackageId,
-        };
+        use callisto_model::{Diagnostic, DiagnosticCode, DiagnosticSeverity, MatrixReport, PackageId};
         use std::collections::BTreeMap;
 
         let report = MatrixReport {

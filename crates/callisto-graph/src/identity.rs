@@ -16,29 +16,24 @@ impl IdentityResolver {
         })
     }
 
-    pub fn resolve(
-        &self,
-        project_root: &Path,
-        ecosystem: Ecosystem,
-    ) -> Result<PackageId, GraphError> {
+    pub fn resolve(&self, project_root: &Path, ecosystem: Ecosystem) -> Result<PackageId, GraphError> {
         let abs = self.workspace_root.join(project_root);
         let name = match ecosystem {
             Ecosystem::Cargo => {
                 let cargo_toml = abs.join("Cargo.toml");
-                let content = std::fs::read_to_string(&cargo_toml).map_err(|e| {
-                    callisto_model::ManifestError::Read {
+                let content =
+                    std::fs::read_to_string(&cargo_toml).map_err(|e| callisto_model::ManifestError::Read {
                         path: project_root.join("Cargo.toml"),
                         message: e.to_string(),
-                    }
-                })?;
+                    })?;
                 let doc: toml_edit::DocumentMut =
-                    content.parse().map_err(|e: toml_edit::TomlError| {
-                        callisto_model::ManifestError::Parse {
+                    content
+                        .parse()
+                        .map_err(|e: toml_edit::TomlError| callisto_model::ManifestError::Parse {
                             path: project_root.join("Cargo.toml"),
                             format: ManifestFormat::CargoToml,
                             message: e.to_string(),
-                        }
-                    })?;
+                        })?;
                 callisto_manifests::cargo_package_name(&doc)
                     .ok_or_else(|| callisto_model::ManifestError::MissingField {
                         path: project_root.join("Cargo.toml"),
@@ -48,19 +43,15 @@ impl IdentityResolver {
             }
             Ecosystem::Npm => {
                 let pkg_json = abs.join("package.json");
-                let content = std::fs::read_to_string(&pkg_json).map_err(|e| {
-                    callisto_model::ManifestError::Read {
-                        path: project_root.join("package.json"),
-                        message: e.to_string(),
-                    }
+                let content = std::fs::read_to_string(&pkg_json).map_err(|e| callisto_model::ManifestError::Read {
+                    path: project_root.join("package.json"),
+                    message: e.to_string(),
                 })?;
                 let doc: serde_json::Map<String, serde_json::Value> =
-                    serde_json::from_str(&content).map_err(|e| {
-                        callisto_model::ManifestError::Parse {
-                            path: project_root.join("package.json"),
-                            format: ManifestFormat::PackageJson,
-                            message: e.to_string(),
-                        }
+                    serde_json::from_str(&content).map_err(|e| callisto_model::ManifestError::Parse {
+                        path: project_root.join("package.json"),
+                        format: ManifestFormat::PackageJson,
+                        message: e.to_string(),
                     })?;
                 callisto_manifests::npm_package_name(&doc)
                     .ok_or_else(|| callisto_model::ManifestError::MissingField {
@@ -71,20 +62,19 @@ impl IdentityResolver {
             }
             Ecosystem::Pypi => {
                 let pyproject_toml = abs.join("pyproject.toml");
-                let content = std::fs::read_to_string(&pyproject_toml).map_err(|e| {
-                    callisto_model::ManifestError::Read {
+                let content =
+                    std::fs::read_to_string(&pyproject_toml).map_err(|e| callisto_model::ManifestError::Read {
                         path: project_root.join("pyproject.toml"),
                         message: e.to_string(),
-                    }
-                })?;
+                    })?;
                 let doc: toml_edit::DocumentMut =
-                    content.parse().map_err(|e: toml_edit::TomlError| {
-                        callisto_model::ManifestError::Parse {
+                    content
+                        .parse()
+                        .map_err(|e: toml_edit::TomlError| callisto_model::ManifestError::Parse {
                             path: project_root.join("pyproject.toml"),
                             format: ManifestFormat::PyprojectToml,
                             message: e.to_string(),
-                        }
-                    })?;
+                        })?;
                 callisto_manifests::python_package_name(&doc)
                     .ok_or_else(|| callisto_model::ManifestError::MissingField {
                         path: project_root.join("pyproject.toml"),
@@ -120,9 +110,7 @@ mod tests {
         )
         .unwrap();
         let resolver = IdentityResolver::new(dir.path()).unwrap();
-        let id = resolver
-            .resolve(std::path::Path::new("."), Ecosystem::Cargo)
-            .unwrap();
+        let id = resolver.resolve(std::path::Path::new("."), Ecosystem::Cargo).unwrap();
         assert_eq!(id.name(), "my-crate");
     }
 
@@ -141,9 +129,7 @@ mod tests {
         )
         .unwrap();
         let resolver = IdentityResolver::new(dir.path()).unwrap();
-        let id = resolver
-            .resolve(std::path::Path::new("."), Ecosystem::Cargo)
-            .unwrap();
+        let id = resolver.resolve(std::path::Path::new("."), Ecosystem::Cargo).unwrap();
         assert_eq!(id.name(), "inheriting-crate");
     }
 
@@ -156,9 +142,7 @@ mod tests {
         )
         .unwrap();
         let resolver = IdentityResolver::new(dir.path()).unwrap();
-        let id = resolver
-            .resolve(std::path::Path::new("."), Ecosystem::Npm)
-            .unwrap();
+        let id = resolver.resolve(std::path::Path::new("."), Ecosystem::Npm).unwrap();
         assert_eq!(id.name(), "my-pkg");
     }
 
@@ -171,9 +155,7 @@ mod tests {
         )
         .unwrap();
         let resolver = IdentityResolver::new(dir.path()).unwrap();
-        let id = resolver
-            .resolve(std::path::Path::new("."), Ecosystem::Pypi)
-            .unwrap();
+        let id = resolver.resolve(std::path::Path::new("."), Ecosystem::Pypi).unwrap();
         assert_eq!(id.name(), "my-lib");
     }
 
@@ -186,9 +168,7 @@ mod tests {
         )
         .unwrap();
         let resolver = IdentityResolver::new(dir.path()).unwrap();
-        let id = resolver
-            .resolve(std::path::Path::new("."), Ecosystem::Pypi)
-            .unwrap();
+        let id = resolver.resolve(std::path::Path::new("."), Ecosystem::Pypi).unwrap();
         assert_eq!(id.name(), "my-poetry-lib");
     }
 
@@ -208,9 +188,7 @@ mod tests {
         )
         .unwrap();
         let resolver = IdentityResolver::new(dir.path()).unwrap();
-        let id = resolver
-            .resolve(std::path::Path::new("."), Ecosystem::Pypi)
-            .unwrap();
+        let id = resolver.resolve(std::path::Path::new("."), Ecosystem::Pypi).unwrap();
         assert_eq!(id.name(), "my_flit_lib");
     }
 
@@ -236,12 +214,8 @@ mod tests {
         let mut index = IdentityIndex::default();
         let id = PackageId::Bare("foo".to_string());
         index.bare.insert("foo".to_string(), id.clone());
-        index
-            .native
-            .insert((Ecosystem::Cargo, "foo".to_string()), id.clone());
-        index
-            .prefixed
-            .insert((Ecosystem::Cargo, "foo".to_string()), id.clone());
+        index.native.insert((Ecosystem::Cargo, "foo".to_string()), id.clone());
+        index.prefixed.insert((Ecosystem::Cargo, "foo".to_string()), id.clone());
         let resolved = index
             .resolve_human("cargo:foo", &[])
             .expect("cargo:foo must resolve via prefixed map");
@@ -253,12 +227,8 @@ mod tests {
         let mut index = IdentityIndex::default();
         let id = PackageId::Bare("foo".to_string());
         index.bare.insert("foo".to_string(), id.clone());
-        index
-            .native
-            .insert((Ecosystem::Cargo, "foo".to_string()), id.clone());
-        index
-            .prefixed
-            .insert((Ecosystem::Cargo, "foo".to_string()), id);
+        index.native.insert((Ecosystem::Cargo, "foo".to_string()), id.clone());
+        index.prefixed.insert((Ecosystem::Cargo, "foo".to_string()), id);
         let err = index.resolve_human("npm:foo", &[]).unwrap_err();
         assert!(
             matches!(err, GraphError::UnknownPackage { .. }),
@@ -280,14 +250,8 @@ mod tests {
             "a same-ecosystem miss must never silently fall back to a cross-ecosystem match"
         );
         assert_eq!(diagnostics.len(), 1);
-        assert_eq!(
-            diagnostics[0].code,
-            callisto_model::DiagnosticCode::UnknownPackage
-        );
-        assert_eq!(
-            diagnostics[0].severity,
-            callisto_model::DiagnosticSeverity::Warning
-        );
+        assert_eq!(diagnostics[0].code, callisto_model::DiagnosticCode::UnknownPackage);
+        assert_eq!(diagnostics[0].severity, callisto_model::DiagnosticSeverity::Warning);
     }
 
     #[test]
@@ -305,14 +269,9 @@ mod tests {
             },
         );
         let mut diagnostics = Vec::new();
-        let result =
-            index.resolve_native_with_fallback(Ecosystem::Npm, "ambiguous-lib", &mut diagnostics);
+        let result = index.resolve_native_with_fallback(Ecosystem::Npm, "ambiguous-lib", &mut diagnostics);
         assert!(result.is_none());
-        assert_eq!(
-            diagnostics.len(),
-            1,
-            "exactly one diagnostic, not zero and not two"
-        );
+        assert_eq!(diagnostics.len(), 1, "exactly one diagnostic, not zero and not two");
         assert!(
             diagnostics[0].message.contains("cargo:ambiguous-lib")
                 && diagnostics[0].message.contains("pypi:ambiguous-lib")
@@ -352,11 +311,7 @@ pub struct IdentityIndex {
 }
 
 impl IdentityIndex {
-    pub fn resolve_human(
-        &self,
-        name: &str,
-        siblings: &[PackageId],
-    ) -> Result<PackageId, GraphError> {
+    pub fn resolve_human(&self, name: &str, siblings: &[PackageId]) -> Result<PackageId, GraphError> {
         if let Ok(PackageId::Prefixed { ecosystem, name: n }) = PackageId::parse(name) {
             if let Some(id) = self.prefixed.get(&(ecosystem, n)) {
                 return Ok(id.clone());

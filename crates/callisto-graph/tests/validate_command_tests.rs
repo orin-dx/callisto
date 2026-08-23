@@ -50,11 +50,7 @@ fn test_validate_rejects_entries_with_whitespace_only_summary() {
     let temp_dir = tempfile::tempdir().unwrap();
     let cs_dir = temp_dir.path().join(".changeset");
     std::fs::create_dir_all(&cs_dir).unwrap();
-    std::fs::write(
-        cs_dir.join("bad.md"),
-        "---\ncargo/foo: minor\n---\n\n  \t  \n\n",
-    )
-    .unwrap();
+    std::fs::write(cs_dir.join("bad.md"), "---\ncargo/foo: minor\n---\n\n  \t  \n\n").unwrap();
 
     let cfg = callisto_graph::config::load(&temp_dir.path().join("callisto.toml")).unwrap();
     let loaded = callisto_graph::load_changesets(temp_dir.path(), &cfg);
@@ -196,8 +192,7 @@ fn test_validate_detects_malformed_package_name_in_changeset() {
         strict_graph: false,
     };
 
-    let report =
-        validate(&ws, &opts).expect("validate must not error for a parseable changeset file");
+    let report = validate(&ws, &opts).expect("validate must not error for a parseable changeset file");
 
     assert!(
         !report.ok,

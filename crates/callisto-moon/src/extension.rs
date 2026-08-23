@@ -8,8 +8,8 @@ use callisto_graph::locate::LocateError;
 // behind the `pdk` feature.
 #[cfg(feature = "pdk")]
 pub use moon_pdk_api::{
-    DefineExtensionConfigOutput, ExecuteExtensionInput, InitializeExtensionInput,
-    InitializeExtensionOutput, RegisterExtensionInput, RegisterExtensionOutput,
+    DefineExtensionConfigOutput, ExecuteExtensionInput, InitializeExtensionInput, InitializeExtensionOutput,
+    RegisterExtensionInput, RegisterExtensionOutput,
 };
 
 /// Validates a moon version string against the range of moon versions this
@@ -39,9 +39,7 @@ pub fn check_moon_version(version_str: &str) -> Result<(), LocateError> {
 pub fn register_extension(_input: RegisterExtensionInput) -> RegisterExtensionOutput {
     RegisterExtensionOutput {
         name: "callisto".to_string(),
-        description: Some(
-            "Unified multi-ecosystem release manager for moon workspaces".to_string(),
-        ),
+        description: Some("Unified multi-ecosystem release manager for moon workspaces".to_string()),
         plugin_version: env!("CARGO_PKG_VERSION").to_string(),
     }
 }
@@ -239,9 +237,7 @@ pub fn execute_extension(input: ExecuteExtensionInput) -> ExecuteExtensionOutput
 }
 
 #[cfg(feature = "pdk")]
-pub fn initialize_extension(
-    input: InitializeExtensionInput,
-) -> Result<InitializeExtensionOutput, LocateError> {
+pub fn initialize_extension(input: InitializeExtensionInput) -> Result<InitializeExtensionOutput, LocateError> {
     use callisto_graph::commands::init::{init, InitOptions};
 
     // moon's real `InitializeExtensionInput` (= `InitializePluginInput`) only
@@ -258,8 +254,7 @@ pub fn initialize_extension(
     let root = input.context.workspace_root.to_path_buf();
     let runner = crate::runner::MoonCommandRunner;
     let locator = crate::locator::MoonProjectLocator::new(&runner, root.clone())?;
-    let ws = callisto_graph::Workspace::load(root, &locator, &runner)
-        .map_err(|e| LocateError::Graph(Box::new(e)))?;
+    let ws = callisto_graph::Workspace::load(root, &locator, &runner).map_err(|e| LocateError::Graph(Box::new(e)))?;
     let opts = InitOptions { yes: true };
 
     // Run callisto's existing init-detection/scaffolding logic. moon's real
@@ -396,10 +391,7 @@ mod tests {
 
         let json = format_graph_error_json(&err);
 
-        assert_eq!(
-            json["schemaVersion"],
-            serde_json::json!(callisto_model::SCHEMA_VERSION)
-        );
+        assert_eq!(json["schemaVersion"], serde_json::json!(callisto_model::SCHEMA_VERSION));
         assert_eq!(json["error"]["code"], "E_GRAPH");
         assert_eq!(json["error"]["message"], err.to_string());
         assert!(!json["error"]["message"].as_str().unwrap().trim().is_empty());
@@ -412,8 +404,7 @@ mod tests {
     #[test]
     fn build_extension_output_returns_error_response_on_serialize_failure() {
         // Manufacture a serde_json::Error by deserializing invalid JSON.
-        let serialize_err: serde_json::Error =
-            serde_json::from_str::<serde_json::Value>("not valid json").unwrap_err();
+        let serialize_err: serde_json::Error = serde_json::from_str::<serde_json::Value>("not valid json").unwrap_err();
 
         let output = build_extension_output(Err(serialize_err), 0);
 
@@ -430,10 +421,7 @@ mod tests {
             serde_json::json!(callisto_model::SCHEMA_VERSION)
         );
         assert!(
-            !output.report["error"]["message"]
-                .as_str()
-                .unwrap()
-                .is_empty(),
+            !output.report["error"]["message"].as_str().unwrap().is_empty(),
             "error message must be non-empty"
         );
         assert!(

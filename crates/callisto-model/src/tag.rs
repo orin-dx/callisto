@@ -2,10 +2,7 @@ use std::fmt;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::{
-    Diagnostic, DiagnosticCode, DiagnosticSeverity, PackageId, Version, VersionGrammar,
-    VersionParseError,
-};
+use crate::{Diagnostic, DiagnosticCode, DiagnosticSeverity, PackageId, Version, VersionGrammar, VersionParseError};
 
 /// A validated tag template containing prefix, suffix, and exact `{version}` placement.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -80,12 +77,7 @@ impl TagTemplate {
     }
 
     pub fn render(&self, version: &Version) -> TagName {
-        TagName(format!(
-            "{}{}{}",
-            self.prefix,
-            version.render(),
-            self.suffix
-        ))
+        TagName(format!("{}{}{}", self.prefix, version.render(), self.suffix))
     }
 
     pub fn render_floating_major(&self, version: &Version) -> Option<TagName> {
@@ -158,10 +150,7 @@ fn is_valid_git_ref_name(s: &str) -> bool {
         }
     }
     for ch in s.chars() {
-        if ch.is_ascii_control()
-            || ch == ' '
-            || matches!(ch, '~' | '^' | ':' | '?' | '*' | '[' | '\\')
-        {
+        if ch.is_ascii_control() || ch == ' ' || matches!(ch, '~' | '^' | ':' | '?' | '*' | '[' | '\\') {
             return false;
         }
     }
@@ -171,9 +160,7 @@ fn is_valid_git_ref_name(s: &str) -> bool {
 use schemars::JsonSchema;
 
 /// Rendered Git tag name.
-#[derive(
-    Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
-)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema)]
 #[schemars(with = "String")]
 #[serde(transparent)]
 pub struct TagName(pub String);
@@ -227,12 +214,10 @@ pub fn select_last_tag<'a>(
                 match &chosen {
                     None => chosen = Some(tag),
                     Some(prev) => {
-                        let ord = tag.version.compare(&prev.version).map_err(|_err| {
-                            VersionParseError {
-                                raw: extracted.to_string(),
-                                grammar,
-                                message: "grammar mismatch during candidate selection".to_string(),
-                            }
+                        let ord = tag.version.compare(&prev.version).map_err(|_err| VersionParseError {
+                            raw: extracted.to_string(),
+                            grammar,
+                            message: "grammar mismatch during candidate selection".to_string(),
                         })?;
                         match ord {
                             std::cmp::Ordering::Greater => chosen = Some(tag),
@@ -271,16 +256,11 @@ pub enum TagTemplateError {
     #[error("tag template `{template}` contains no `{{version}}` placeholder")]
     MissingVersionPlaceholder { template: String },
 
-    #[error(
-        "tag template `{template}` contains `{{version}}` {count} times; exactly one is required"
-    )]
+    #[error("tag template `{template}` contains `{{version}}` {count} times; exactly one is required")]
     MultipleVersionPlaceholders { template: String, count: usize },
 
     #[error("tag template `{template}` contains unknown placeholder `{{{placeholder}}}`; the only placeholder is `{{version}}`")]
-    UnknownPlaceholder {
-        template: String,
-        placeholder: String,
-    },
+    UnknownPlaceholder { template: String, placeholder: String },
 
     #[error("tag template `{template}` contains glob metacharacter `{ch}` outside the `{{version}}` placeholder")]
     GlobMetacharacterInLiteral { template: String, ch: char },
@@ -312,10 +292,7 @@ mod tests {
         let tmpl = TagTemplate::parse("@scope/pkg@{version}").unwrap();
         let ver = Version::parse("2.4.0", VersionGrammar::SemVer).unwrap();
         assert_eq!(tmpl.render(&ver).as_str(), "@scope/pkg@2.4.0");
-        assert_eq!(
-            tmpl.render_floating_major(&ver).unwrap().as_str(),
-            "@scope/pkg@2"
-        );
+        assert_eq!(tmpl.render_floating_major(&ver).unwrap().as_str(), "@scope/pkg@2");
     }
 
     #[test]

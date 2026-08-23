@@ -6,9 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::{PackageId, Version, VersionReq};
 
 /// Dependency kind (section in manifest).
-#[derive(
-    Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
-)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub enum DepKind {
     Runtime,
@@ -36,9 +34,7 @@ impl DepSpec {
             DepSpec::Exact(v) => v.render().to_string(),
             DepSpec::Range(_, raw) => raw.clone(),
             DepSpec::Workspace(kind) => match kind {
-                WorkspaceKind::Pnpm | WorkspaceKind::Yarn | WorkspaceKind::Npm => {
-                    "workspace:*".to_string()
-                }
+                WorkspaceKind::Pnpm | WorkspaceKind::Yarn | WorkspaceKind::Npm => "workspace:*".to_string(),
             },
             DepSpec::Catalog(opt) => match opt {
                 Some(name) => format!("catalog:{name}"),

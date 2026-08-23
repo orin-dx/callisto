@@ -20,9 +20,7 @@ pub fn handle(args: TagArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
     if args.strict {
         let mut diags = ws.graph.diagnostics().to_vec();
         callisto_graph::commands::escalate(&mut diags, true, true);
-        let has_errors = diags
-            .iter()
-            .any(|d| d.severity == DiagnosticSeverity::Error);
+        let has_errors = diags.iter().any(|d| d.severity == DiagnosticSeverity::Error);
         if has_errors {
             let messages: Vec<String> = diags
                 .iter()
@@ -49,15 +47,14 @@ pub fn handle(args: TagArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
         })?
     };
 
-    let plan: PublishPlan = serde_json::from_str(&plan_text)
-        .map_err(|e| CliError::Other(format!("Failed to parse publish plan: {e}")))?;
+    let plan: PublishPlan =
+        serde_json::from_str(&plan_text).map_err(|e| CliError::Other(format!("Failed to parse publish plan: {e}")))?;
 
     let opts = callisto_graph::commands::TagOptions {
         floating_major: args.floating_major,
     };
     let permit = ApplyPermit::granted_unless_dry_run(global.dry_run);
-    let report =
-        callisto_graph::commands::create_tags_with_options(&ws, &plan, &opts, permit.as_ref())?;
+    let report = callisto_graph::commands::create_tags_with_options(&ws, &plan, &opts, permit.as_ref())?;
 
     match global.format {
         OutputFormat::Json => write_json(&mut std::io::stdout(), &report)?,

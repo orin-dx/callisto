@@ -48,8 +48,6 @@ pub(crate) fn open_cached(
     }
 
     let opened: Arc<dyn Manifest> = Arc::from(open(decl, ctx)?);
-    cache
-        .borrow_mut()
-        .insert(decl.path.clone(), Arc::clone(&opened));
+    cache.borrow_mut().insert(decl.path.clone(), Arc::clone(&opened));
     Ok(opened)
 }

@@ -7,9 +7,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// **Variant order is deliberate, not alphabetical.** The derived `Ord` is the
 /// aggregation-by-max lattice §7.1 relies on: `None < Patch < Minor < Major`.
-#[derive(
-    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
-)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum Severity {
     None,
@@ -21,12 +19,7 @@ pub enum Severity {
 impl Severity {
     /// All four variants in ascending order — for exhaustive fixture tables and CLI help
     /// text, so no second hand-maintained list can drift from the enum.
-    pub const ALL: [Severity; 4] = [
-        Severity::None,
-        Severity::Patch,
-        Severity::Minor,
-        Severity::Major,
-    ];
+    pub const ALL: [Severity; 4] = [Severity::None, Severity::Patch, Severity::Minor, Severity::Major];
 }
 
 /// §6.1: "case-insensitive read, lowercase write." `FromStr` is the read half, `Display` the
@@ -39,9 +32,7 @@ impl std::str::FromStr for Severity {
             "minor" => Ok(Severity::Minor),
             "patch" => Ok(Severity::Patch),
             "none" => Ok(Severity::None),
-            _ => Err(SeverityParseError {
-                found: s.to_string(),
-            }),
+            _ => Err(SeverityParseError { found: s.to_string() }),
         }
     }
 }
@@ -104,12 +95,7 @@ mod tests {
 
     #[test]
     fn max_of_mixed_severities_picks_highest() {
-        let severities = [
-            Severity::Patch,
-            Severity::None,
-            Severity::Major,
-            Severity::Minor,
-        ];
+        let severities = [Severity::Patch, Severity::None, Severity::Major, Severity::Minor];
         assert_eq!(severities.iter().copied().max().unwrap(), Severity::Major);
     }
 }

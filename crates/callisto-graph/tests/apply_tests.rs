@@ -7,12 +7,7 @@ use callisto_model::{ApplyPermit, CommandError, CommandOutput, CommandRunner};
 struct NoopRunner;
 
 impl CommandRunner for NoopRunner {
-    fn run(
-        &self,
-        _program: &str,
-        _args: &[&str],
-        _cwd: &Path,
-    ) -> Result<CommandOutput, CommandError> {
+    fn run(&self, _program: &str, _args: &[&str], _cwd: &Path) -> Result<CommandOutput, CommandError> {
         Ok(CommandOutput {
             exit_code: Some(0),
             stdout: String::new(),
@@ -35,11 +30,7 @@ fn pre_exit_deletes_pre_json_in_custom_changeset_dir() {
     let custom_dir = root.join("releases");
     std::fs::create_dir_all(&custom_dir).unwrap();
     let pre_json_path = custom_dir.join("pre.json");
-    std::fs::write(
-        &pre_json_path,
-        r#"{"mode":"exit","tag":"beta","changesets":[]}"#,
-    )
-    .unwrap();
+    std::fs::write(&pre_json_path, r#"{"mode":"exit","tag":"beta","changesets":[]}"#).unwrap();
 
     // Ensure the default dir does NOT have a pre.json so we can confirm it
     // isn't the one being deleted.
@@ -53,8 +44,7 @@ fn pre_exit_deletes_pre_json_in_custom_changeset_dir() {
 
     let permit = ApplyPermit::force_for_tests();
     let opts = ApplyOptions::default();
-    apply_version_plan(root, &plan, &NoopRunner, &opts, &permit)
-        .expect("apply_version_plan should succeed");
+    apply_version_plan(root, &plan, &NoopRunner, &opts, &permit).expect("apply_version_plan should succeed");
 
     assert!(
         !pre_json_path.exists(),

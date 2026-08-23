@@ -21,9 +21,7 @@ pub fn validate<R: CommandRunner, D: DependencyResolver>(
     let loaded = crate::load_changesets(&ws.root, &ws.config)?;
 
     let target_changesets: Vec<_> = if opts.staged {
-        let out = ws
-            .runner
-            .run("git", &["diff", "--cached", "--name-only"], &ws.root)?;
+        let out = ws.runner.run("git", &["diff", "--cached", "--name-only"], &ws.root)?;
         if !out.success() {
             return Err(GraphError::Command(callisto_model::CommandError::Io {
                 program: "git".to_string(),
@@ -47,9 +45,7 @@ pub fn validate<R: CommandRunner, D: DependencyResolver>(
             }));
         }
         let range = format!("{since}..HEAD");
-        let out = ws
-            .runner
-            .run("git", &["diff", "--name-only", &range, "--"], &ws.root)?;
+        let out = ws.runner.run("git", &["diff", "--name-only", &range, "--"], &ws.root)?;
         if !out.success() {
             return Err(GraphError::Command(callisto_model::CommandError::Io {
                 program: "git".to_string(),
@@ -86,10 +82,7 @@ pub fn validate<R: CommandRunner, D: DependencyResolver>(
             diagnostics.push(callisto_model::Diagnostic {
                 code: callisto_model::DiagnosticCode::EmptySummary,
                 severity: callisto_model::DiagnosticSeverity::Error,
-                message: format!(
-                    "Changeset `{}` has entries but an empty summary",
-                    cs.path.display()
-                ),
+                message: format!("Changeset `{}` has entries but an empty summary", cs.path.display()),
                 package: None,
                 path: Some(cs.path.clone()),
                 governed_by: None,
@@ -117,10 +110,7 @@ pub fn validate<R: CommandRunner, D: DependencyResolver>(
                     }
                     Ok(Some(_)) => {}
                     Err(candidates) => {
-                        let names: Vec<String> = candidates
-                            .iter()
-                            .map(|p| p.id.display_name().to_string())
-                            .collect();
+                        let names: Vec<String> = candidates.iter().map(|p| p.id.display_name().to_string()).collect();
                         diagnostics.push(callisto_model::Diagnostic {
                             code: callisto_model::DiagnosticCode::AmbiguousPackageName,
                             severity: callisto_model::DiagnosticSeverity::Error,
@@ -185,12 +175,7 @@ mod tests {
     struct LeakyGitRunner;
 
     impl CommandRunner for LeakyGitRunner {
-        fn run(
-            &self,
-            _program: &str,
-            _args: &[&str],
-            _cwd: &Path,
-        ) -> Result<CommandOutput, CommandError> {
+        fn run(&self, _program: &str, _args: &[&str], _cwd: &Path) -> Result<CommandOutput, CommandError> {
             Ok(CommandOutput {
                 exit_code: Some(128),
                 stdout: String::new(),
@@ -205,17 +190,12 @@ mod tests {
     fn staged_diff_failure_redacts_credential_from_error() {
         let dir = tempfile::tempdir().expect("create tempdir");
         let root = dir.path();
-        std::fs::write(
-            root.join("Cargo.toml"),
-            "[workspace]\nmembers = []\nresolver = \"2\"\n",
-        )
-        .unwrap();
+        std::fs::write(root.join("Cargo.toml"), "[workspace]\nmembers = []\nresolver = \"2\"\n").unwrap();
         std::fs::write(root.join("callisto.toml"), "").unwrap();
 
         let runner = LeakyGitRunner;
         let locator = IgnoreWalkLocator::new(root);
-        let ws = Workspace::load(root.to_path_buf(), &locator, &runner)
-            .expect("empty workspace should load");
+        let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("empty workspace should load");
 
         let opts = ValidateOptions {
             staged: true,
@@ -266,8 +246,7 @@ mod tests {
 
         let runner = LeakyGitRunner;
         let locator = IgnoreWalkLocator::new(root);
-        let ws =
-            Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
+        let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
 
         let report = validate(&ws, &ValidateOptions::default()).expect("validate must succeed");
 

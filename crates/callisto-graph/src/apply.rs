@@ -3,9 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use callisto_manifests::{open, OpenContext, WorkspaceCargoResolver};
-use callisto_model::{
-    ApplyPermit, CommandError, CommandOutput, CommandRunner, LockfileRefreshResult, ManifestRole,
-};
+use callisto_model::{ApplyPermit, CommandError, CommandOutput, CommandRunner, LockfileRefreshResult, ManifestRole};
 
 use crate::cascade::DepWriteTarget;
 use crate::error::GraphError;
@@ -69,11 +67,7 @@ pub(crate) fn classify_manifest_writes(plan: &VersionPlan) -> ManifestWriteClass
     }
     for (idx, rewrite) in plan.rewrites.iter().enumerate() {
         if let DepWriteTarget::Manifest(p) = &rewrite.key.target {
-            by_path
-                .entry(p.clone())
-                .or_default()
-                .rewrite_indices
-                .push(idx);
+            by_path.entry(p.clone()).or_default().rewrite_indices.push(idx);
         }
     }
 
@@ -123,9 +117,7 @@ pub fn apply_version_plan<R: CommandRunner>(
         None
     };
 
-    let npm_workspace_kind = callisto_manifests::detect_npm_workspace_kind(root)
-        .ok()
-        .flatten();
+    let npm_workspace_kind = callisto_manifests::detect_npm_workspace_kind(root).ok().flatten();
 
     let ctx = OpenContext {
         workspace_root: root,
@@ -184,8 +176,7 @@ pub fn apply_version_plan<R: CommandRunner>(
                         continue;
                     }
                     let fmt = callisto_model::ManifestFormat::from_path(p)?;
-                    let decl =
-                        callisto_model::ManifestDecl::new(p.clone(), ManifestRole::Canonical, fmt)?;
+                    let decl = callisto_model::ManifestDecl::new(p.clone(), ManifestRole::Canonical, fmt)?;
                     let mut handle = open(&decl, &ctx)?;
                     let current = handle.current_version()?;
                     if current == bump.to {
@@ -219,8 +210,7 @@ pub fn apply_version_plan<R: CommandRunner>(
                     continue;
                 }
                 let fmt = callisto_model::ManifestFormat::from_path(p)?;
-                let decl =
-                    callisto_model::ManifestDecl::new(p.clone(), ManifestRole::Canonical, fmt)?;
+                let decl = callisto_model::ManifestDecl::new(p.clone(), ManifestRole::Canonical, fmt)?;
                 let mut handle = open(&decl, &ctx)?;
                 handle.update_dependency_spec(
                     &rewrite.key.name,
@@ -241,8 +231,7 @@ pub fn apply_version_plan<R: CommandRunner>(
 
     for pw in &plan.platform_writes {
         let fmt = callisto_model::ManifestFormat::from_path(&pw.manifest)?;
-        let decl =
-            callisto_model::ManifestDecl::new(pw.manifest.clone(), ManifestRole::Canonical, fmt)?;
+        let decl = callisto_model::ManifestDecl::new(pw.manifest.clone(), ManifestRole::Canonical, fmt)?;
         let mut handle = open(&decl, &ctx)?;
         let current = handle.current_version()?;
         if current == pw.version {
@@ -263,8 +252,7 @@ pub fn apply_version_plan<R: CommandRunner>(
 
     for opt in &plan.optional_dep_updates {
         let fmt = callisto_model::ManifestFormat::from_path(&opt.manifest)?;
-        let decl =
-            callisto_model::ManifestDecl::new(opt.manifest.clone(), ManifestRole::Canonical, fmt)?;
+        let decl = callisto_model::ManifestDecl::new(opt.manifest.clone(), ManifestRole::Canonical, fmt)?;
         let mut handle = open(&decl, &ctx)?;
         handle.update_optional_dependencies(&opt.updates, permit)?;
         handle.persist(permit)?;
@@ -345,12 +333,10 @@ pub fn apply_version_plan<R: CommandRunner>(
             for write in &b.writes {
                 let eco = match write {
                     VersionWriteTarget::CargoWorkspacePackage { .. } => Ecosystem::Cargo,
-                    VersionWriteTarget::Manifest(p) => {
-                        match callisto_model::ManifestFormat::from_path(p) {
-                            Ok(fmt) => fmt.ecosystem(),
-                            Err(_) => continue,
-                        }
-                    }
+                    VersionWriteTarget::Manifest(p) => match callisto_model::ManifestFormat::from_path(p) {
+                        Ok(fmt) => fmt.ecosystem(),
+                        Err(_) => continue,
+                    },
                 };
                 return Some(eco);
             }
@@ -394,13 +380,11 @@ pub fn apply_version_plan<R: CommandRunner>(
 
         if active_ecosystems.contains(&Ecosystem::Pypi) {
             if root.join("uv.lock").exists() {
-                let out = runner
-                    .run("uv", &["lock"], root)
-                    .unwrap_or_else(|e| CommandOutput {
-                        exit_code: None,
-                        stdout: String::new(),
-                        stderr: e.to_string(),
-                    });
+                let out = runner.run("uv", &["lock"], root).unwrap_or_else(|e| CommandOutput {
+                    exit_code: None,
+                    stdout: String::new(),
+                    stderr: e.to_string(),
+                });
                 refresh_results.push(LockfileRefreshResult {
                     filename: PathBuf::from("uv.lock"),
                     refresh_command: "uv lock".to_string(),
@@ -453,8 +437,7 @@ pub fn apply_version_plan<R: CommandRunner>(
     }
 
     if !opts.transient && !modified_paths.is_empty() {
-        let (existing, deleted): (Vec<_>, Vec<_>) =
-            modified_paths.iter().partition(|p| root.join(p).exists());
+        let (existing, deleted): (Vec<_>, Vec<_>) = modified_paths.iter().partition(|p| root.join(p).exists());
 
         if !existing.is_empty() {
             let mut args = vec!["add", "--"];
@@ -505,10 +488,7 @@ pub fn apply_version_plan<R: CommandRunner>(
 /// duplicated per call site, matching a single definition of "how do we
 /// redact git stderr in this crate."
 pub(crate) fn redact_git_stderr(text: &str) -> String {
-    callisto_model::redact_known_secrets(
-        text,
-        &callisto_model::known_credential_env_values(std::env::vars()),
-    )
+    callisto_model::redact_known_secrets(text, &callisto_model::known_credential_env_values(std::env::vars()))
 }
 
 /// A `git` stderr containing a GitHub Actions authenticated remote URL must
@@ -536,8 +516,8 @@ mod tests {
     use std::path::Path;
 
     use callisto_model::{
-        ApplyPermit, CommandError, CommandOutput, CommandRunner, ManifestDecl, ManifestFormat,
-        PackageId, Severity, Version, VersionGrammar,
+        ApplyPermit, CommandError, CommandOutput, CommandRunner, ManifestDecl, ManifestFormat, PackageId, Severity,
+        Version, VersionGrammar,
     };
 
     use super::*;
@@ -547,12 +527,7 @@ mod tests {
     struct NoopRunner;
 
     impl CommandRunner for NoopRunner {
-        fn run(
-            &self,
-            _program: &str,
-            _args: &[&str],
-            _cwd: &Path,
-        ) -> Result<CommandOutput, CommandError> {
+        fn run(&self, _program: &str, _args: &[&str], _cwd: &Path) -> Result<CommandOutput, CommandError> {
             Ok(CommandOutput {
                 exit_code: Some(0),
                 stdout: String::new(),
@@ -570,16 +545,11 @@ mod tests {
     }
 
     impl CommandRunner for RecordingRunner {
-        fn run(
-            &self,
-            program: &str,
-            args: &[&str],
-            _cwd: &Path,
-        ) -> Result<CommandOutput, CommandError> {
-            self.calls.lock().unwrap().push((
-                program.to_string(),
-                args.iter().map(|s| s.to_string()).collect(),
-            ));
+        fn run(&self, program: &str, args: &[&str], _cwd: &Path) -> Result<CommandOutput, CommandError> {
+            self.calls
+                .lock()
+                .unwrap()
+                .push((program.to_string(), args.iter().map(|s| s.to_string()).collect()));
             Ok(CommandOutput {
                 exit_code: Some(0),
                 stdout: String::new(),
@@ -623,19 +593,11 @@ mod tests {
                     },
                     dependency: PackageId::parse("cargo:helper").unwrap(),
                     from: callisto_model::DepSpec::Range(
-                        callisto_model::VersionReq::parse(
-                            "^1.0.0",
-                            callisto_model::Ecosystem::Cargo,
-                        )
-                        .unwrap(),
+                        callisto_model::VersionReq::parse("^1.0.0", callisto_model::Ecosystem::Cargo).unwrap(),
                         "^1.0.0".to_string(),
                     ),
                     to: callisto_model::DepSpec::Range(
-                        callisto_model::VersionReq::parse(
-                            "^1.1.0",
-                            callisto_model::Ecosystem::Cargo,
-                        )
-                        .unwrap(),
+                        callisto_model::VersionReq::parse("^1.1.0", callisto_model::Ecosystem::Cargo).unwrap(),
                         "^1.1.0".to_string(),
                     ),
                 },
@@ -647,19 +609,11 @@ mod tests {
                     },
                     dependency: PackageId::parse("cargo:other").unwrap(),
                     from: callisto_model::DepSpec::Range(
-                        callisto_model::VersionReq::parse(
-                            "^1.0.0",
-                            callisto_model::Ecosystem::Cargo,
-                        )
-                        .unwrap(),
+                        callisto_model::VersionReq::parse("^1.0.0", callisto_model::Ecosystem::Cargo).unwrap(),
                         "^1.0.0".to_string(),
                     ),
                     to: callisto_model::DepSpec::Range(
-                        callisto_model::VersionReq::parse(
-                            "^1.1.0",
-                            callisto_model::Ecosystem::Cargo,
-                        )
-                        .unwrap(),
+                        callisto_model::VersionReq::parse("^1.1.0", callisto_model::Ecosystem::Cargo).unwrap(),
                         "^1.1.0".to_string(),
                     ),
                 },
@@ -713,13 +667,11 @@ mod tests {
                 },
                 dependency: PackageId::parse("cargo:helper").unwrap(),
                 from: callisto_model::DepSpec::Range(
-                    callisto_model::VersionReq::parse("^1.0.0", callisto_model::Ecosystem::Cargo)
-                        .unwrap(),
+                    callisto_model::VersionReq::parse("^1.0.0", callisto_model::Ecosystem::Cargo).unwrap(),
                     "^1.0.0".to_string(),
                 ),
                 to: callisto_model::DepSpec::Range(
-                    callisto_model::VersionReq::parse("^1.2.0", callisto_model::Ecosystem::Cargo)
-                        .unwrap(),
+                    callisto_model::VersionReq::parse("^1.2.0", callisto_model::Ecosystem::Cargo).unwrap(),
                     "^1.2.0".to_string(),
                 ),
             }],
@@ -729,10 +681,7 @@ mod tests {
         let permit = ApplyPermit::force_for_tests();
         let opts = ApplyOptions::default();
         let result = apply_version_plan(root, &plan, &NoopRunner, &opts, &permit);
-        assert!(
-            result.is_ok(),
-            "apply_version_plan should succeed: {result:?}"
-        );
+        assert!(result.is_ok(), "apply_version_plan should succeed: {result:?}");
 
         let on_disk = std::fs::read_to_string(&cargo_toml_path).unwrap();
         assert!(
@@ -772,8 +721,8 @@ mod tests {
 
         let permit = ApplyPermit::force_for_tests();
         let opts = ApplyOptions::default();
-        let outcome = apply_version_plan(root, &plan, &NoopRunner, &opts, &permit)
-            .expect("apply_version_plan should succeed");
+        let outcome =
+            apply_version_plan(root, &plan, &NoopRunner, &opts, &permit).expect("apply_version_plan should succeed");
 
         let staged_names: Vec<&str> = outcome.staged.iter().filter_map(|p| p.to_str()).collect();
 
@@ -793,12 +742,7 @@ mod tests {
     struct LeakyGitRunner;
 
     impl CommandRunner for LeakyGitRunner {
-        fn run(
-            &self,
-            _program: &str,
-            _args: &[&str],
-            _cwd: &Path,
-        ) -> Result<CommandOutput, CommandError> {
+        fn run(&self, _program: &str, _args: &[&str], _cwd: &Path) -> Result<CommandOutput, CommandError> {
             Ok(CommandOutput {
                 exit_code: Some(128),
                 stdout: String::new(),
@@ -876,8 +820,8 @@ mod tests {
             refresh_lockfiles: true,
             transient: false,
         };
-        let outcome = apply_version_plan(root, &plan, &runner, &opts, &permit)
-            .expect("apply_version_plan should succeed");
+        let outcome =
+            apply_version_plan(root, &plan, &runner, &opts, &permit).expect("apply_version_plan should succeed");
 
         let recorded = calls.lock().unwrap().clone();
         let cargo_update_called = recorded
@@ -892,9 +836,7 @@ mod tests {
             .lockfile_refresh_results
             .expect("lockfile_refresh_results must be Some when refresh ran");
         assert!(
-            refresh_results
-                .iter()
-                .any(|r| r.filename.as_os_str() == "Cargo.lock"),
+            refresh_results.iter().any(|r| r.filename.as_os_str() == "Cargo.lock"),
             "Cargo.lock must appear in lockfile_refresh_results; got: {refresh_results:?}"
         );
     }
@@ -928,8 +870,8 @@ mod tests {
 
         let permit = ApplyPermit::force_for_tests();
         let opts = ApplyOptions::default(); // refresh_lockfiles: false
-        let outcome = apply_version_plan(root, &plan, &runner, &opts, &permit)
-            .expect("apply_version_plan should succeed");
+        let outcome =
+            apply_version_plan(root, &plan, &runner, &opts, &permit).expect("apply_version_plan should succeed");
 
         let recorded = calls.lock().unwrap().clone();
         let cargo_update_called = recorded
@@ -968,11 +910,7 @@ mod tests {
         // Changeset file that would be consumed.
         let changeset_dir = root.join(".changeset");
         std::fs::create_dir_all(&changeset_dir).unwrap();
-        std::fs::write(
-            changeset_dir.join("my-change.md"),
-            "---\nmy-crate: minor\n---\n",
-        )
-        .unwrap();
+        std::fs::write(changeset_dir.join("my-change.md"), "---\nmy-crate: minor\n---\n").unwrap();
 
         let manifest_rel = PathBuf::from("Cargo.toml");
         let cs_rel = PathBuf::from(".changeset/my-change.md");
@@ -1113,8 +1051,8 @@ mod tests {
 
         let permit = ApplyPermit::force_for_tests();
         let opts = ApplyOptions::default();
-        let outcome = apply_version_plan(root, &plan, &NoopRunner, &opts, &permit)
-            .expect("apply_version_plan must succeed");
+        let outcome =
+            apply_version_plan(root, &plan, &NoopRunner, &opts, &permit).expect("apply_version_plan must succeed");
 
         // Changeset path must be in staged regardless of whether the file existed.
         assert!(
@@ -1152,10 +1090,7 @@ mod tests {
         let permit = ApplyPermit::force_for_tests();
         let opts = ApplyOptions::default();
         let result = apply_version_plan(root, &plan, &NoopRunner, &opts, &permit);
-        assert!(
-            result.is_ok(),
-            "apply_version_plan should succeed: {result:?}"
-        );
+        assert!(result.is_ok(), "apply_version_plan should succeed: {result:?}");
 
         let on_disk = std::fs::read_to_string(&cargo_toml_path).unwrap();
         assert!(
@@ -1186,13 +1121,11 @@ mod tests {
                 key: key.clone(),
                 dependency: PackageId::parse("cargo:helper").expect("valid id"),
                 from: callisto_model::DepSpec::Range(
-                    callisto_model::VersionReq::parse("^1.0.0", callisto_model::Ecosystem::Cargo)
-                        .unwrap(),
+                    callisto_model::VersionReq::parse("^1.0.0", callisto_model::Ecosystem::Cargo).unwrap(),
                     "^1.0.0".to_string(),
                 ),
                 to: callisto_model::DepSpec::Range(
-                    callisto_model::VersionReq::parse("^1.1.0", callisto_model::Ecosystem::Cargo)
-                        .unwrap(),
+                    callisto_model::VersionReq::parse("^1.1.0", callisto_model::Ecosystem::Cargo).unwrap(),
                     "^1.1.0".to_string(),
                 ),
             }],
@@ -1202,10 +1135,7 @@ mod tests {
         let permit = ApplyPermit::force_for_tests();
         let opts = ApplyOptions::default();
         let result = apply_version_plan(root, &plan, &NoopRunner, &opts, &permit);
-        assert!(
-            result.is_ok(),
-            "apply_version_plan should succeed: {result:?}"
-        );
+        assert!(result.is_ok(), "apply_version_plan should succeed: {result:?}");
 
         let on_disk = std::fs::read_to_string(&cargo_toml_path).unwrap();
         assert!(
@@ -1233,13 +1163,11 @@ mod tests {
                 key: key.clone(),
                 dependency: PackageId::parse("cargo:nonexistent-dep").expect("valid id"),
                 from: callisto_model::DepSpec::Range(
-                    callisto_model::VersionReq::parse("^1.0.0", callisto_model::Ecosystem::Cargo)
-                        .unwrap(),
+                    callisto_model::VersionReq::parse("^1.0.0", callisto_model::Ecosystem::Cargo).unwrap(),
                     "^1.0.0".to_string(),
                 ),
                 to: callisto_model::DepSpec::Range(
-                    callisto_model::VersionReq::parse("^1.1.0", callisto_model::Ecosystem::Cargo)
-                        .unwrap(),
+                    callisto_model::VersionReq::parse("^1.1.0", callisto_model::Ecosystem::Cargo).unwrap(),
                     "^1.1.0".to_string(),
                 ),
             }],
@@ -1272,8 +1200,7 @@ mod tests {
     /// `open()` -> `write_version()` -> `persist()` sequence over the same
     /// starting fixture — not merely a substring match.
     #[test]
-    fn apply_version_plan_cargo_bump_produces_byte_identical_output_to_direct_mutate_then_persist()
-    {
+    fn apply_version_plan_cargo_bump_produces_byte_identical_output_to_direct_mutate_then_persist() {
         let fixture = "[package]\nname = \"my-crate\"\nversion = \"1.0.0\"\nedition = \"2021\"\n";
         let manifest_rel = PathBuf::from("Cargo.toml");
         let permit = ApplyPermit::force_for_tests();
@@ -1294,29 +1221,19 @@ mod tests {
         };
         let opts = ApplyOptions::default();
         let result = apply_version_plan(dir_a.path(), &plan, &NoopRunner, &opts, &permit);
-        assert!(
-            result.is_ok(),
-            "apply_version_plan should succeed: {result:?}"
-        );
+        assert!(result.is_ok(), "apply_version_plan should succeed: {result:?}");
         let via_apply = std::fs::read_to_string(dir_a.path().join("Cargo.toml")).unwrap();
 
         let dir_b = tempfile::tempdir().expect("create tempdir");
         std::fs::write(dir_b.path().join("Cargo.toml"), fixture).unwrap();
-        let decl = ManifestDecl::new(
-            manifest_rel.clone(),
-            ManifestRole::Canonical,
-            ManifestFormat::CargoToml,
-        )
-        .unwrap();
+        let decl = ManifestDecl::new(manifest_rel.clone(), ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap();
         let ctx = OpenContext {
             workspace_root: dir_b.path(),
             cargo_workspace: None,
             npm_workspace_kind: None,
         };
         let mut handle = open(&decl, &ctx).unwrap();
-        handle
-            .write_version(&cargo_version("1.1.0"), &permit)
-            .unwrap();
+        handle.write_version(&cargo_version("1.1.0"), &permit).unwrap();
         handle.persist(&permit).unwrap();
         let via_direct = std::fs::read_to_string(dir_b.path().join("Cargo.toml")).unwrap();
 
@@ -1350,10 +1267,7 @@ mod tests {
         };
         let opts = ApplyOptions::default();
         let result = apply_version_plan(dir_a.path(), &plan, &NoopRunner, &opts, &permit);
-        assert!(
-            result.is_ok(),
-            "apply_version_plan should succeed: {result:?}"
-        );
+        assert!(result.is_ok(), "apply_version_plan should succeed: {result:?}");
         let via_apply = std::fs::read_to_string(dir_a.path().join("package.json")).unwrap();
 
         let dir_b = tempfile::tempdir().expect("create tempdir");
@@ -1370,9 +1284,7 @@ mod tests {
             npm_workspace_kind: None,
         };
         let mut handle = open(&decl, &ctx).unwrap();
-        handle
-            .write_version(&cargo_version("1.1.0"), &permit)
-            .unwrap();
+        handle.write_version(&cargo_version("1.1.0"), &permit).unwrap();
         handle.persist(&permit).unwrap();
         let via_direct = std::fs::read_to_string(dir_b.path().join("package.json")).unwrap();
 
@@ -1387,8 +1299,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("create tempdir");
         let root = dir.path();
         let cargo_toml_path = root.join("Cargo.toml");
-        let original =
-            "package = { name = \"my-crate\", version = \"1.0.0\", edition = \"2021\" }\n";
+        let original = "package = { name = \"my-crate\", version = \"1.0.0\", edition = \"2021\" }\n";
         std::fs::write(&cargo_toml_path, original).unwrap();
 
         // Positive precondition: confirm this fixture opens successfully and
@@ -1396,12 +1307,7 @@ mod tests {
         // proving that any later failure is write_version's own
         // as_table_mut() step failing, not open()/current_version() failing
         // upstream of it.
-        let decl = ManifestDecl::new(
-            "Cargo.toml",
-            ManifestRole::Canonical,
-            ManifestFormat::CargoToml,
-        )
-        .unwrap();
+        let decl = ManifestDecl::new("Cargo.toml", ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap();
         let ctx = OpenContext {
             workspace_root: root,
             cargo_workspace: None,
@@ -1449,23 +1355,20 @@ mod tests {
 
     #[test]
     #[cfg(unix)]
-    fn bumps_loop_persist_failure_leaves_earlier_successful_write_intact_and_later_manifest_unchanged(
-    ) {
+    fn bumps_loop_persist_failure_leaves_earlier_successful_write_intact_and_later_manifest_unchanged() {
         use std::os::unix::fs::PermissionsExt;
 
         let dir = tempfile::tempdir().expect("create tempdir");
         let root = dir.path();
 
         let crate_a_path = root.join("Cargo.toml");
-        let crate_a_original =
-            "[package]\nname = \"crate-a\"\nversion = \"1.0.0\"\nedition = \"2021\"\n";
+        let crate_a_original = "[package]\nname = \"crate-a\"\nversion = \"1.0.0\"\nedition = \"2021\"\n";
         std::fs::write(&crate_a_path, crate_a_original).unwrap();
 
         let pkg_b_dir = root.join("pkg-b");
         std::fs::create_dir_all(&pkg_b_dir).unwrap();
         let crate_b_path = pkg_b_dir.join("Cargo.toml");
-        let crate_b_original =
-            "[package]\nname = \"crate-b\"\nversion = \"1.0.0\"\nedition = \"2021\"\n";
+        let crate_b_original = "[package]\nname = \"crate-b\"\nversion = \"1.0.0\"\nedition = \"2021\"\n";
         std::fs::write(&crate_b_path, crate_b_original).unwrap();
 
         let crate_a_rel = PathBuf::from("Cargo.toml");
@@ -1510,8 +1413,7 @@ mod tests {
         let probe_write_succeeded = std::fs::write(&probe_path, b"probe").is_ok();
         if probe_write_succeeded {
             std::fs::remove_file(&probe_path).ok();
-            std::fs::set_permissions(&pkg_b_dir, std::fs::Permissions::from_mode(original_mode))
-                .unwrap();
+            std::fs::set_permissions(&pkg_b_dir, std::fs::Permissions::from_mode(original_mode)).unwrap();
             eprintln!(
                 "skipping bumps_loop_persist_failure_leaves_earlier_successful_write_intact_and_later_manifest_unchanged: \
                  process can write into a 0o555 directory (likely running as root); chmod-based failure injection is a no-op here"
@@ -1521,8 +1423,7 @@ mod tests {
 
         let result = apply_version_plan(root, &plan, &NoopRunner, &opts, &permit);
 
-        std::fs::set_permissions(&pkg_b_dir, std::fs::Permissions::from_mode(original_mode))
-            .unwrap();
+        std::fs::set_permissions(&pkg_b_dir, std::fs::Permissions::from_mode(original_mode)).unwrap();
 
         assert!(
             matches!(
@@ -1547,8 +1448,7 @@ mod tests {
 
     #[test]
     #[cfg(unix)]
-    fn rewrites_loop_persist_failure_leaves_earlier_successful_write_intact_and_later_manifest_unchanged(
-    ) {
+    fn rewrites_loop_persist_failure_leaves_earlier_successful_write_intact_and_later_manifest_unchanged() {
         use std::os::unix::fs::PermissionsExt;
 
         let dir = tempfile::tempdir().expect("create tempdir");
@@ -1577,19 +1477,11 @@ mod tests {
                     },
                     dependency: PackageId::parse("cargo:helper").expect("valid id"),
                     from: callisto_model::DepSpec::Range(
-                        callisto_model::VersionReq::parse(
-                            "^1.0.0",
-                            callisto_model::Ecosystem::Cargo,
-                        )
-                        .unwrap(),
+                        callisto_model::VersionReq::parse("^1.0.0", callisto_model::Ecosystem::Cargo).unwrap(),
                         "^1.0.0".to_string(),
                     ),
                     to: callisto_model::DepSpec::Range(
-                        callisto_model::VersionReq::parse(
-                            "^1.1.0",
-                            callisto_model::Ecosystem::Cargo,
-                        )
-                        .unwrap(),
+                        callisto_model::VersionReq::parse("^1.1.0", callisto_model::Ecosystem::Cargo).unwrap(),
                         "^1.1.0".to_string(),
                     ),
                 },
@@ -1601,19 +1493,11 @@ mod tests {
                     },
                     dependency: PackageId::parse("cargo:helper").expect("valid id"),
                     from: callisto_model::DepSpec::Range(
-                        callisto_model::VersionReq::parse(
-                            "^1.0.0",
-                            callisto_model::Ecosystem::Cargo,
-                        )
-                        .unwrap(),
+                        callisto_model::VersionReq::parse("^1.0.0", callisto_model::Ecosystem::Cargo).unwrap(),
                         "^1.0.0".to_string(),
                     ),
                     to: callisto_model::DepSpec::Range(
-                        callisto_model::VersionReq::parse(
-                            "^1.1.0",
-                            callisto_model::Ecosystem::Cargo,
-                        )
-                        .unwrap(),
+                        callisto_model::VersionReq::parse("^1.1.0", callisto_model::Ecosystem::Cargo).unwrap(),
                         "^1.1.0".to_string(),
                     ),
                 },
@@ -1633,8 +1517,7 @@ mod tests {
         let probe_write_succeeded = std::fs::write(&probe_path, b"probe").is_ok();
         if probe_write_succeeded {
             std::fs::remove_file(&probe_path).ok();
-            std::fs::set_permissions(&pkg_b_dir, std::fs::Permissions::from_mode(original_mode))
-                .unwrap();
+            std::fs::set_permissions(&pkg_b_dir, std::fs::Permissions::from_mode(original_mode)).unwrap();
             eprintln!(
                 "skipping rewrites_loop_persist_failure_leaves_earlier_successful_write_intact_and_later_manifest_unchanged: \
                  process can write into a 0o555 directory (likely running as root); chmod-based failure injection is a no-op here"
@@ -1644,8 +1527,7 @@ mod tests {
 
         let result = apply_version_plan(root, &plan, &NoopRunner, &opts, &permit);
 
-        std::fs::set_permissions(&pkg_b_dir, std::fs::Permissions::from_mode(original_mode))
-            .unwrap();
+        std::fs::set_permissions(&pkg_b_dir, std::fs::Permissions::from_mode(original_mode)).unwrap();
 
         assert!(
             matches!(
@@ -1768,13 +1650,11 @@ mod tests {
                 },
                 dependency: PackageId::parse("cargo:helper").unwrap(),
                 from: callisto_model::DepSpec::Range(
-                    callisto_model::VersionReq::parse("^1.0.0", callisto_model::Ecosystem::Cargo)
-                        .unwrap(),
+                    callisto_model::VersionReq::parse("^1.0.0", callisto_model::Ecosystem::Cargo).unwrap(),
                     "^1.0.0".to_string(),
                 ),
                 to: callisto_model::DepSpec::Range(
-                    callisto_model::VersionReq::parse("^1.1.0", callisto_model::Ecosystem::Cargo)
-                        .unwrap(),
+                    callisto_model::VersionReq::parse("^1.1.0", callisto_model::Ecosystem::Cargo).unwrap(),
                     "^1.1.0".to_string(),
                 ),
             }],
@@ -1825,19 +1705,11 @@ mod tests {
                     },
                     dependency: PackageId::parse("cargo:helper").unwrap(),
                     from: callisto_model::DepSpec::Range(
-                        callisto_model::VersionReq::parse(
-                            "^1.0.0",
-                            callisto_model::Ecosystem::Cargo,
-                        )
-                        .unwrap(),
+                        callisto_model::VersionReq::parse("^1.0.0", callisto_model::Ecosystem::Cargo).unwrap(),
                         "^1.0.0".to_string(),
                     ),
                     to: callisto_model::DepSpec::Range(
-                        callisto_model::VersionReq::parse(
-                            "^1.1.0",
-                            callisto_model::Ecosystem::Cargo,
-                        )
-                        .unwrap(),
+                        callisto_model::VersionReq::parse("^1.1.0", callisto_model::Ecosystem::Cargo).unwrap(),
                         "^1.1.0".to_string(),
                     ),
                 },
@@ -1849,19 +1721,11 @@ mod tests {
                     },
                     dependency: PackageId::parse("cargo:nonexistent-dep").unwrap(),
                     from: callisto_model::DepSpec::Range(
-                        callisto_model::VersionReq::parse(
-                            "^1.0.0",
-                            callisto_model::Ecosystem::Cargo,
-                        )
-                        .unwrap(),
+                        callisto_model::VersionReq::parse("^1.0.0", callisto_model::Ecosystem::Cargo).unwrap(),
                         "^1.0.0".to_string(),
                     ),
                     to: callisto_model::DepSpec::Range(
-                        callisto_model::VersionReq::parse(
-                            "^1.1.0",
-                            callisto_model::Ecosystem::Cargo,
-                        )
-                        .unwrap(),
+                        callisto_model::VersionReq::parse("^1.1.0", callisto_model::Ecosystem::Cargo).unwrap(),
                         "^1.1.0".to_string(),
                     ),
                 },
@@ -1956,8 +1820,7 @@ mod tests {
         let probe_write_succeeded = std::fs::write(&probe_path, b"probe").is_ok();
         if probe_write_succeeded {
             std::fs::remove_file(&probe_path).ok();
-            std::fs::set_permissions(&b_dir, std::fs::Permissions::from_mode(original_mode))
-                .unwrap();
+            std::fs::set_permissions(&b_dir, std::fs::Permissions::from_mode(original_mode)).unwrap();
             eprintln!(
                 "skipping batched_groups_process_strictly_sequentially_in_btreemap_path_order: \
                  process can write into a 0o555 directory (likely running as root); chmod-based failure injection is a no-op here"
@@ -1972,9 +1835,7 @@ mod tests {
         assert!(
             matches!(
                 result,
-                Err(GraphError::Manifest(
-                    callisto_model::ManifestError::Write { .. }
-                ))
+                Err(GraphError::Manifest(callisto_model::ManifestError::Write { .. }))
             ),
             "P2's persist failure must propagate; got: {result:?}"
         );
@@ -2020,19 +1881,11 @@ mod tests {
                     },
                     dependency: PackageId::parse("cargo:helper").unwrap(),
                     from: callisto_model::DepSpec::Range(
-                        callisto_model::VersionReq::parse(
-                            "^1.0.0",
-                            callisto_model::Ecosystem::Cargo,
-                        )
-                        .unwrap(),
+                        callisto_model::VersionReq::parse("^1.0.0", callisto_model::Ecosystem::Cargo).unwrap(),
                         "^1.0.0".to_string(),
                     ),
                     to: callisto_model::DepSpec::Range(
-                        callisto_model::VersionReq::parse(
-                            "^1.1.0",
-                            callisto_model::Ecosystem::Cargo,
-                        )
-                        .unwrap(),
+                        callisto_model::VersionReq::parse("^1.1.0", callisto_model::Ecosystem::Cargo).unwrap(),
                         "^1.1.0".to_string(),
                     ),
                 },
@@ -2044,19 +1897,11 @@ mod tests {
                     },
                     dependency: PackageId::parse("cargo:other").unwrap(),
                     from: callisto_model::DepSpec::Range(
-                        callisto_model::VersionReq::parse(
-                            "^2.0.0",
-                            callisto_model::Ecosystem::Cargo,
-                        )
-                        .unwrap(),
+                        callisto_model::VersionReq::parse("^2.0.0", callisto_model::Ecosystem::Cargo).unwrap(),
                         "^2.0.0".to_string(),
                     ),
                     to: callisto_model::DepSpec::Range(
-                        callisto_model::VersionReq::parse(
-                            "^2.1.0",
-                            callisto_model::Ecosystem::Cargo,
-                        )
-                        .unwrap(),
+                        callisto_model::VersionReq::parse("^2.1.0", callisto_model::Ecosystem::Cargo).unwrap(),
                         "^2.1.0".to_string(),
                     ),
                 },
@@ -2067,10 +1912,7 @@ mod tests {
         let permit = ApplyPermit::force_for_tests();
         let opts = ApplyOptions::default();
         let result = apply_version_plan(root, &plan, &NoopRunner, &opts, &permit);
-        assert!(
-            result.is_ok(),
-            "apply_version_plan should succeed: {result:?}"
-        );
+        assert!(result.is_ok(), "apply_version_plan should succeed: {result:?}");
 
         let on_disk = std::fs::read_to_string(&cargo_toml_path).unwrap();
         assert!(on_disk.contains("version = \"1.1.0\""));
@@ -2099,19 +1941,11 @@ mod tests {
                     key: key.clone(),
                     dependency: PackageId::parse("cargo:helper").unwrap(),
                     from: callisto_model::DepSpec::Range(
-                        callisto_model::VersionReq::parse(
-                            "^1.0.0",
-                            callisto_model::Ecosystem::Cargo,
-                        )
-                        .unwrap(),
+                        callisto_model::VersionReq::parse("^1.0.0", callisto_model::Ecosystem::Cargo).unwrap(),
                         "^1.0.0".to_string(),
                     ),
                     to: callisto_model::DepSpec::Range(
-                        callisto_model::VersionReq::parse(
-                            "^1.1.0",
-                            callisto_model::Ecosystem::Cargo,
-                        )
-                        .unwrap(),
+                        callisto_model::VersionReq::parse("^1.1.0", callisto_model::Ecosystem::Cargo).unwrap(),
                         "^1.1.0".to_string(),
                     ),
                 },
@@ -2119,19 +1953,11 @@ mod tests {
                     key: key.clone(),
                     dependency: PackageId::parse("cargo:helper").unwrap(),
                     from: callisto_model::DepSpec::Range(
-                        callisto_model::VersionReq::parse(
-                            "^1.1.0",
-                            callisto_model::Ecosystem::Cargo,
-                        )
-                        .unwrap(),
+                        callisto_model::VersionReq::parse("^1.1.0", callisto_model::Ecosystem::Cargo).unwrap(),
                         "^1.1.0".to_string(),
                     ),
                     to: callisto_model::DepSpec::Range(
-                        callisto_model::VersionReq::parse(
-                            "^1.2.0",
-                            callisto_model::Ecosystem::Cargo,
-                        )
-                        .unwrap(),
+                        callisto_model::VersionReq::parse("^1.2.0", callisto_model::Ecosystem::Cargo).unwrap(),
                         "^1.2.0".to_string(),
                     ),
                 },
@@ -2142,10 +1968,7 @@ mod tests {
         let permit = ApplyPermit::force_for_tests();
         let opts = ApplyOptions::default();
         let result = apply_version_plan(root, &plan, &NoopRunner, &opts, &permit);
-        assert!(
-            result.is_ok(),
-            "apply_version_plan should succeed: {result:?}"
-        );
+        assert!(result.is_ok(), "apply_version_plan should succeed: {result:?}");
 
         let on_disk = std::fs::read_to_string(&cargo_toml_path).unwrap();
         assert!(
@@ -2155,8 +1978,7 @@ mod tests {
     }
 
     #[test]
-    fn snapshot_transient_mode_mutates_manifests_but_suppresses_changelogs_changesets_and_git_staging(
-    ) {
+    fn snapshot_transient_mode_mutates_manifests_but_suppresses_changelogs_changesets_and_git_staging() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         let cargo_toml_path = root.join("Cargo.toml");
@@ -2215,8 +2037,7 @@ mod tests {
             transient: true,
         };
 
-        let result =
-            apply_version_plan(root, &plan, &runner, &opts, &permit).expect("apply succeeded");
+        let result = apply_version_plan(root, &plan, &runner, &opts, &permit).expect("apply succeeded");
 
         // 1. Manifests ARE mutated to the snapshot version
         let manifest_content = std::fs::read_to_string(&cargo_toml_path).unwrap();
@@ -2248,10 +2069,7 @@ mod tests {
         );
 
         // 5. Outcome staged list is empty
-        assert!(
-            result.staged.is_empty(),
-            "transient mode outcome staged must be empty"
-        );
+        assert!(result.staged.is_empty(), "transient mode outcome staged must be empty");
     }
 
     #[test]
@@ -2282,10 +2100,7 @@ mod tests {
             }],
             optional_dep_updates: vec![crate::plan::OptionalDepUpdate {
                 manifest: PathBuf::from("package.json"),
-                updates: vec![(
-                    "@my-scope/platform-linux".to_string(),
-                    cargo_version("1.1.0"),
-                )],
+                updates: vec![("@my-scope/platform-linux".to_string(), cargo_version("1.1.0"))],
             }],
             ..Default::default()
         };
@@ -2293,13 +2108,11 @@ mod tests {
         let permit = ApplyPermit::force_for_tests();
         let opts = ApplyOptions::default();
 
-        let result =
-            apply_version_plan(root, &plan, &NoopRunner, &opts, &permit).expect("apply succeeded");
+        let result = apply_version_plan(root, &plan, &NoopRunner, &opts, &permit).expect("apply succeeded");
 
         let platform_content = std::fs::read_to_string(&platform_pkg_path).unwrap();
         assert!(
-            platform_content.contains("\"version\": \"1.1.0\"")
-                || platform_content.contains("\"version\":\"1.1.0\""),
+            platform_content.contains("\"version\": \"1.1.0\"") || platform_content.contains("\"version\":\"1.1.0\""),
             "platform manifest version must be updated to 1.1.0: {platform_content}"
         );
 
@@ -2310,9 +2123,7 @@ mod tests {
             "parent optionalDependencies must be updated: {parent_content}"
         );
 
-        assert!(result
-            .staged
-            .contains(&PathBuf::from("platform/package.json")));
+        assert!(result.staged.contains(&PathBuf::from("platform/package.json")));
         assert!(result.staged.contains(&PathBuf::from("package.json")));
     }
 
@@ -2329,8 +2140,7 @@ mod tests {
 
         std::fs::create_dir_all(root.join("platform")).unwrap();
         let platform_pkg_path = root.join("platform/package.json");
-        let original_content =
-            r#"{"name": "@my-scope/platform-linux", "version": "9.9.9"}"#.to_string();
+        let original_content = r#"{"name": "@my-scope/platform-linux", "version": "9.9.9"}"#.to_string();
         std::fs::write(&platform_pkg_path, &original_content).unwrap();
 
         let plan = VersionPlan {
@@ -2404,15 +2214,12 @@ mod tests {
 
         let platform_content = std::fs::read_to_string(&platform_pkg_path).unwrap();
         assert!(
-            platform_content.contains("\"version\": \"1.1.0\"")
-                || platform_content.contains("\"version\":\"1.1.0\""),
+            platform_content.contains("\"version\": \"1.1.0\"") || platform_content.contains("\"version\":\"1.1.0\""),
             "manifest already at target must remain at target: {platform_content}"
         );
 
         assert!(
-            result
-                .staged
-                .contains(&PathBuf::from("platform/package.json")),
+            result.staged.contains(&PathBuf::from("platform/package.json")),
             "idempotent-retry path must still be staged: {:?}",
             result.staged
         );
@@ -2454,8 +2261,8 @@ mod tests {
             transient: false,
         };
 
-        let outcome = apply_version_plan(root, &plan, &NoopRunner, &opts, &permit)
-            .expect("apply_version_plan should succeed");
+        let outcome =
+            apply_version_plan(root, &plan, &NoopRunner, &opts, &permit).expect("apply_version_plan should succeed");
 
         assert!(
             outcome.staged.contains(&PathBuf::from("package-lock.json")),
@@ -2465,11 +2272,7 @@ mod tests {
         let has_npm_refresh = outcome
             .lockfile_refresh_results
             .as_ref()
-            .is_some_and(|results| {
-                results
-                    .iter()
-                    .any(|r| r.filename.as_os_str() == "package-lock.json")
-            });
+            .is_some_and(|results| results.iter().any(|r| r.filename.as_os_str() == "package-lock.json"));
         assert!(
             !has_npm_refresh,
             "no npm entry may appear in lockfile_refresh_results; apply_version_plan has no npm refresh subprocess: {:?}",
@@ -2495,10 +2298,7 @@ mod tests {
         let plan = VersionPlan {
             optional_dep_updates: vec![crate::plan::OptionalDepUpdate {
                 manifest: PathBuf::from("package.json"),
-                updates: vec![(
-                    "@my-scope/platform-linux".to_string(),
-                    cargo_version("1.1.0"),
-                )],
+                updates: vec![("@my-scope/platform-linux".to_string(), cargo_version("1.1.0"))],
             }],
             ..Default::default()
         };
@@ -2509,8 +2309,8 @@ mod tests {
             transient: false,
         };
 
-        let outcome = apply_version_plan(root, &plan, &NoopRunner, &opts, &permit)
-            .expect("apply_version_plan should succeed");
+        let outcome =
+            apply_version_plan(root, &plan, &NoopRunner, &opts, &permit).expect("apply_version_plan should succeed");
 
         assert!(
             outcome.staged.contains(&PathBuf::from("package-lock.json")),
@@ -2520,11 +2320,7 @@ mod tests {
         let has_npm_refresh = outcome
             .lockfile_refresh_results
             .as_ref()
-            .is_some_and(|results| {
-                results
-                    .iter()
-                    .any(|r| r.filename.as_os_str() == "package-lock.json")
-            });
+            .is_some_and(|results| results.iter().any(|r| r.filename.as_os_str() == "package-lock.json"));
         assert!(
             !has_npm_refresh,
             "no npm entry may appear in lockfile_refresh_results; apply_version_plan has no npm refresh subprocess: {:?}",

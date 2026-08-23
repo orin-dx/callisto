@@ -3,21 +3,14 @@ use callisto_graph::infer::NoInference;
 use callisto_graph::locate::IgnoreWalkLocator;
 use callisto_graph::Workspace;
 use callisto_graph::{apply_version_plan, ApplyOptions};
-use callisto_model::{
-    ApplyPermit, CommandError, CommandOutput, CommandRunner, PackageId, Severity,
-};
+use callisto_model::{ApplyPermit, CommandError, CommandOutput, CommandRunner, PackageId, Severity};
 use std::fs;
 use std::path::Path;
 
 struct NoopRunner;
 
 impl CommandRunner for NoopRunner {
-    fn run(
-        &self,
-        _program: &str,
-        _args: &[&str],
-        _cwd: &Path,
-    ) -> Result<CommandOutput, CommandError> {
+    fn run(&self, _program: &str, _args: &[&str], _cwd: &Path) -> Result<CommandOutput, CommandError> {
         Ok(CommandOutput {
             exit_code: Some(0),
             stdout: String::new(),
@@ -109,8 +102,7 @@ fn test_plan_version_produces_correct_bumps_in_cascade() {
 
     let locator = IgnoreWalkLocator::new(root);
     let runner = NoopRunner;
-    let ws = Workspace::load(root.to_path_buf(), &locator, &runner)
-        .expect("workspace should load from temp dir");
+    let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace should load from temp dir");
 
     let inference = NoInference;
     let opts = VersionOptions {
@@ -133,8 +125,7 @@ fn test_plan_version_produces_correct_bumps_in_cascade() {
         "pkg-core should receive a Major bump from the changeset"
     );
 
-    let app_bump =
-        bump_for(&pkg_app).expect("pkg-app should receive a cascade bump from pkg-core's major");
+    let app_bump = bump_for(&pkg_app).expect("pkg-app should receive a cascade bump from pkg-core's major");
     assert!(
         app_bump.severity != Severity::None,
         "pkg-app cascade bump should be non-None, got {:?}",
@@ -171,9 +162,7 @@ fn duplicate_package_name_is_rejected_with_an_error() {
     let result = Workspace::load(root.to_path_buf(), &locator, &runner);
 
     match result {
-        Ok(_) => panic!(
-            "Workspace::load must return Err when two packages share the same name, but got Ok"
-        ),
+        Ok(_) => panic!("Workspace::load must return Err when two packages share the same name, but got Ok"),
         Err(e) => assert!(
             matches!(e, callisto_graph::GraphError::DuplicatePackage { .. }),
             "expected GraphError::DuplicatePackage, got: {e:?}"
@@ -309,8 +298,7 @@ fn test_fixed_group_two_changesets_converge_on_single_bump_not_compounded() {
 
     let locator = IgnoreWalkLocator::new(root);
     let runner = NoopRunner;
-    let ws = Workspace::load(root.to_path_buf(), &locator, &runner)
-        .expect("workspace should load from temp dir");
+    let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace should load from temp dir");
 
     let inference = NoInference;
     let opts = VersionOptions {

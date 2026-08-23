@@ -111,10 +111,7 @@ mod tests {
             "callisto-format/src/changeset/mod.rs",
             include_str!("../../callisto-format/src/changeset/mod.rs"),
         ),
-        (
-            "callisto-vcs/src/lib.rs",
-            include_str!("../../callisto-vcs/src/lib.rs"),
-        ),
+        ("callisto-vcs/src/lib.rs", include_str!("../../callisto-vcs/src/lib.rs")),
         (
             "callisto-changelog/src/error.rs",
             include_str!("../../callisto-changelog/src/error.rs"),
@@ -156,9 +153,7 @@ mod tests {
         for (file, text) in DIAGNOSTIC_CODE_SOURCE_FILES {
             for code in extract_diagnostic_codes(text) {
                 if let Some(first_file) = seen.insert(code.clone(), file) {
-                    panic!(
-                        "Duplicate diagnostic code {code}: declared in both {first_file} and {file}"
-                    );
+                    panic!("Duplicate diagnostic code {code}: declared in both {first_file} and {file}");
                 }
             }
         }

@@ -52,9 +52,7 @@ pub fn render_section(input: &ChangelogInput) -> Result<String, ChangelogError> 
                     GroupKind::Fixed => "fixed",
                     GroupKind::Linked => "linked",
                 };
-                out.push_str(&format!(
-                    "- Released together with the `{group}` {k_str} group.\n"
-                ));
+                out.push_str(&format!("- Released together with the `{group}` {k_str} group.\n"));
             }
             ChangeSource::NewGroupMember { group } => {
                 out.push_str(&format!("- Joined the `{group}` group at this version.\n"));
@@ -65,11 +63,7 @@ pub fn render_section(input: &ChangelogInput) -> Result<String, ChangelogError> 
     if !dep_updates.is_empty() {
         out.push_str("- Dependency updates\n");
         for (dep, to_ver) in dep_updates {
-            out.push_str(&format!(
-                "  - `{}` → `{}`\n",
-                dep.display_name(),
-                to_ver.render()
-            ));
+            out.push_str(&format!("  - `{}` → `{}`\n", dep.display_name(), to_ver.render()));
         }
     }
 
@@ -198,10 +192,7 @@ mod tests {
             }],
         };
 
-        assert!(matches!(
-            render_section(&input),
-            Err(ChangelogError::SeverityNoneEntry)
-        ));
+        assert!(matches!(render_section(&input), Err(ChangelogError::SeverityNoneEntry)));
     }
 
     #[test]

@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use callisto_model::{
-    select_last_tag, CommandRunner, CommitSha, Diagnostic, LastTag, LastTagSelection, PackageId,
-    TagTemplate, VersionGrammar,
+    select_last_tag, CommandRunner, CommitSha, Diagnostic, LastTag, LastTagSelection, PackageId, TagTemplate,
+    VersionGrammar,
 };
 use callisto_vcs::{GitAccess, GitDataSource};
 
@@ -38,19 +38,14 @@ fn fetch_all_tags(git: &GitAccess<'_>) -> Result<Vec<String>, GraphError> {
 /// `Err(GraphError::Vcs(VcsError::InvalidGlob))` -- matching every tag is
 /// the unsafe alternative, since a malformed template must never silently
 /// make "last tag" resolution pick an unrelated package's tag.
-fn matching_tags<'a>(
-    all_tags: &'a [String],
-    template: &TagTemplate,
-) -> Result<Vec<&'a str>, GraphError> {
+fn matching_tags<'a>(all_tags: &'a [String], template: &TagTemplate) -> Result<Vec<&'a str>, GraphError> {
     let glob = template.glob();
-    let matcher = globset::Glob::new(&glob)
-        .map(|g| g.compile_matcher())
-        .map_err(|e| {
-            GraphError::Vcs(callisto_vcs::VcsError::InvalidGlob {
-                pattern: glob.clone(),
-                message: e.to_string(),
-            })
-        })?;
+    let matcher = globset::Glob::new(&glob).map(|g| g.compile_matcher()).map_err(|e| {
+        GraphError::Vcs(callisto_vcs::VcsError::InvalidGlob {
+            pattern: glob.clone(),
+            message: e.to_string(),
+        })
+    })?;
 
     Ok(all_tags
         .iter()
@@ -124,8 +119,7 @@ impl TagIndex {
         let all_tags_set: std::collections::BTreeSet<String> = all_tags.iter().cloned().collect();
 
         for pkg in graph.packages() {
-            let default_tmpl =
-                TagTemplate::parse(&format!("{}@{{version}}", pkg.id.display_name()))?;
+            let default_tmpl = TagTemplate::parse(&format!("{}@{{version}}", pkg.id.display_name()))?;
             let tmpl = pkg.tag_template.clone().unwrap_or(default_tmpl);
             let sel = select_from_tags(&all_tags, &tmpl, pkg.version_grammar()?)?;
             last.insert(pkg.id.clone(), sel.chosen);
@@ -181,17 +175,10 @@ mod tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    use callisto_model::{
-        CommandError, CommandOutput, DepEdge, ManifestDecl, ManifestFormat, ManifestRole, Package,
-    };
+    use callisto_model::{CommandError, CommandOutput, DepEdge, ManifestDecl, ManifestFormat, ManifestRole, Package};
 
     fn make_pkg(name: &str) -> Package {
-        let manifest = ManifestDecl::new(
-            "Cargo.toml",
-            ManifestRole::Canonical,
-            ManifestFormat::CargoToml,
-        )
-        .unwrap();
+        let manifest = ManifestDecl::new("Cargo.toml", ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap();
         Package {
             id: PackageId::parse(name).unwrap(),
             manifests: vec![manifest],
@@ -241,12 +228,7 @@ mod tests {
     }
 
     impl CommandRunner for FakeGitTagRunner {
-        fn run(
-            &self,
-            program: &str,
-            args: &[&str],
-            _cwd: &Path,
-        ) -> Result<CommandOutput, CommandError> {
+        fn run(&self, program: &str, args: &[&str], _cwd: &Path) -> Result<CommandOutput, CommandError> {
             assert_eq!(program, "git");
             assert_eq!(args, ["tag", "--list"]);
             self.calls.fetch_add(1, Ordering::SeqCst);
@@ -313,8 +295,7 @@ mod tests {
 
         let pkg_id = PackageId::parse("pkg-a").unwrap();
         assert_eq!(
-            tags.last_tag(&pkg_id)
-                .map(|t| t.version.render().to_string()),
+            tags.last_tag(&pkg_id).map(|t| t.version.render().to_string()),
             Some("2.0.0".to_string())
         );
     }
@@ -392,10 +373,7 @@ mod tests {
         let result = matching_tags(&all, &tmpl);
 
         assert!(
-            matches!(
-                result,
-                Err(GraphError::Vcs(callisto_vcs::VcsError::InvalidGlob { .. }))
-            ),
+            matches!(result, Err(GraphError::Vcs(callisto_vcs::VcsError::InvalidGlob { .. }))),
             "malformed glob must be surfaced as Err, not silently match every tag; got {result:?}"
         );
     }
@@ -412,10 +390,7 @@ mod tests {
         let result = last_tag_for(&runner, dir.path(), &tmpl, VersionGrammar::SemVer);
 
         assert!(
-            matches!(
-                result,
-                Err(GraphError::Vcs(callisto_vcs::VcsError::InvalidGlob { .. }))
-            ),
+            matches!(result, Err(GraphError::Vcs(callisto_vcs::VcsError::InvalidGlob { .. }))),
             "last_tag_for must propagate the malformed-glob error, got {result:?}"
         );
     }
@@ -480,13 +455,11 @@ mod tests {
         let pkg_a = PackageId::parse("pkg-a").unwrap();
         let pkg_ab = PackageId::parse("pkg-ab").unwrap();
         assert_eq!(
-            tags.last_tag(&pkg_a)
-                .map(|t| t.version.render().to_string()),
+            tags.last_tag(&pkg_a).map(|t| t.version.render().to_string()),
             Some("1.5.0".to_string())
         );
         assert_eq!(
-            tags.last_tag(&pkg_ab)
-                .map(|t| t.version.render().to_string()),
+            tags.last_tag(&pkg_ab).map(|t| t.version.render().to_string()),
             Some("9.1.0".to_string())
         );
     }
@@ -497,12 +470,7 @@ mod tests {
     struct FailingRunner;
 
     impl CommandRunner for FailingRunner {
-        fn run(
-            &self,
-            _program: &str,
-            _args: &[&str],
-            _cwd: &Path,
-        ) -> Result<CommandOutput, CommandError> {
+        fn run(&self, _program: &str, _args: &[&str], _cwd: &Path) -> Result<CommandOutput, CommandError> {
             Err(CommandError::NotFound {
                 program: "git".to_string(),
             })
@@ -526,10 +494,7 @@ mod tests {
         let result = last_tag_for(&runner, dir.path(), &tmpl, VersionGrammar::SemVer);
 
         assert!(
-            matches!(
-                result,
-                Err(GraphError::Vcs(callisto_vcs::VcsError::Command(_)))
-            ),
+            matches!(result, Err(GraphError::Vcs(callisto_vcs::VcsError::Command(_)))),
             "last_tag_for must propagate the CommandRunner error, got {result:?}"
         );
     }
@@ -542,15 +507,9 @@ mod tests {
     #[test]
     fn tag_index_uses_custom_tag_template_when_set() {
         let dir = non_repo_dir();
-        let runner =
-            FakeGitTagRunner::new(vec!["v1.2.3".to_string(), "pkg-default@4.5.6".to_string()]);
+        let runner = FakeGitTagRunner::new(vec!["v1.2.3".to_string(), "pkg-default@4.5.6".to_string()]);
 
-        let manifest = ManifestDecl::new(
-            "Cargo.toml",
-            ManifestRole::Canonical,
-            ManifestFormat::CargoToml,
-        )
-        .unwrap();
+        let manifest = ManifestDecl::new("Cargo.toml", ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap();
 
         let custom_pkg = Package {
             id: PackageId::parse("custom-pkg").unwrap(),
@@ -581,14 +540,12 @@ mod tests {
         let default_id = PackageId::parse("pkg-default").unwrap();
 
         assert_eq!(
-            tags.last_tag(&custom_id)
-                .map(|t| t.version.render().to_string()),
+            tags.last_tag(&custom_id).map(|t| t.version.render().to_string()),
             Some("1.2.3".to_string()),
             "package with custom tag_template 'v{{version}}' must resolve 'v1.2.3'"
         );
         assert_eq!(
-            tags.last_tag(&default_id)
-                .map(|t| t.version.render().to_string()),
+            tags.last_tag(&default_id).map(|t| t.version.render().to_string()),
             Some("4.5.6".to_string()),
             "package with no tag_template must fall back to 'pkg-default@{{version}}'"
         );

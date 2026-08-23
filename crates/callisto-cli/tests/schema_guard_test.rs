@@ -31,12 +31,7 @@ fn required_and_props(schema: &serde_json::Value) -> (BTreeSet<String>, BTreeSet
         .iter()
         .map(|v| v.as_str().unwrap().to_string())
         .collect();
-    let props: BTreeSet<String> = schema["properties"]
-        .as_object()
-        .unwrap()
-        .keys()
-        .cloned()
-        .collect();
+    let props: BTreeSet<String> = schema["properties"].as_object().unwrap().keys().cloned().collect();
     (required, props)
 }
 
@@ -94,13 +89,7 @@ fn ac13_report_struct_field_shapes_are_unchanged() {
     assert_eq!(req, set(&["isPrerelease", "package", "sha", "tagName"]));
     assert_eq!(
         props,
-        set(&[
-            "changelogSection",
-            "isPrerelease",
-            "package",
-            "sha",
-            "tagName"
-        ])
+        set(&["changelogSection", "isPrerelease", "package", "sha", "tagName"])
     );
 }
 

@@ -1,8 +1,7 @@
 use std::process::ExitCode;
 
 use callisto_graph::commands::{
-    plan_publish, AlwaysRetryPolicy, PublishOptions, PublishOrchestrator, SubprocessRegistryClient,
-    SystemTimeProvider,
+    plan_publish, AlwaysRetryPolicy, PublishOptions, PublishOrchestrator, SubprocessRegistryClient, SystemTimeProvider,
 };
 
 use callisto_model::ApplyPermit;
@@ -63,10 +62,7 @@ fn check_credentials(
     for pkg in &plan.rust_crates {
         let var = match &pkg.registry {
             None => "CARGO_REGISTRY_TOKEN".to_string(),
-            Some(name) => format!(
-                "CARGO_REGISTRIES_{}_TOKEN",
-                name.to_uppercase().replace('-', "_")
-            ),
+            Some(name) => format!("CARGO_REGISTRIES_{}_TOKEN", name.to_uppercase().replace('-', "_")),
         };
         if cargo_vars_checked.insert(var.clone()) && env(&var).is_err() {
             warnings.push(format!(
@@ -75,17 +71,12 @@ fn check_credentials(
         }
     }
 
-    if (!plan.npm_main_packages.is_empty() || !plan.npm_platform_packages.is_empty())
-        && env("NPM_TOKEN").is_err()
-    {
-        warnings
-            .push("warning: NPM_TOKEN is not set; npm publish may fail authentication".to_string());
+    if (!plan.npm_main_packages.is_empty() || !plan.npm_platform_packages.is_empty()) && env("NPM_TOKEN").is_err() {
+        warnings.push("warning: NPM_TOKEN is not set; npm publish may fail authentication".to_string());
     }
 
     if !plan.pypi_packages.is_empty() && env("TWINE_PASSWORD").is_err() {
-        warnings.push(
-            "warning: TWINE_PASSWORD is not set; twine upload may fail authentication".to_string(),
-        );
+        warnings.push("warning: TWINE_PASSWORD is not set; twine upload may fail authentication".to_string());
     }
 
     warnings
@@ -124,8 +115,8 @@ pub fn handle(args: PublishArgs, global: &GlobalArgs) -> Result<ExitCode, CliErr
     let mut client = SubprocessRegistryClient::new(CliCommandRunner, ws.root.clone());
     client.load_plan(&plan);
     let format = global.format;
-    let orchestrator = PublishOrchestrator::new(client, AlwaysRetryPolicy, SystemTimeProvider)
-        .with_progress(move |msg| {
+    let orchestrator =
+        PublishOrchestrator::new(client, AlwaysRetryPolicy, SystemTimeProvider).with_progress(move |msg| {
             crate::output::log_line(format, &msg);
         });
     let report = orchestrator.execute(&plan, &permit);
@@ -264,14 +255,14 @@ mod tests {
         // not CARGO_REGISTRY_TOKEN (which is for crates.io only).
         let warnings = check_credentials(&plan, missing_env);
         assert!(
-            warnings
-                .iter()
-                .any(|w| w.contains("CARGO_REGISTRIES_CLOUDSMITH_TOKEN")),
+            warnings.iter().any(|w| w.contains("CARGO_REGISTRIES_CLOUDSMITH_TOKEN")),
             "expected warning about CARGO_REGISTRIES_CLOUDSMITH_TOKEN, got: {:?}",
             warnings
         );
         assert!(
-            !warnings.iter().any(|w| w.contains("CARGO_REGISTRY_TOKEN") && !w.contains("REGISTRIES")),
+            !warnings
+                .iter()
+                .any(|w| w.contains("CARGO_REGISTRY_TOKEN") && !w.contains("REGISTRIES")),
             "should NOT warn about bare CARGO_REGISTRY_TOKEN for private-registry crates, got: {:?}",
             warnings
         );

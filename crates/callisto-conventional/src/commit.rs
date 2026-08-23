@@ -169,11 +169,7 @@ pub fn parse_commit(sha: CommitSha, message: &str) -> ParsedCommit {
     }
 
     let body_str = body_lines.join("\n").trim().to_string();
-    let body = if body_str.is_empty() {
-        None
-    } else {
-        Some(body_str)
-    };
+    let body = if body_str.is_empty() { None } else { Some(body_str) };
 
     ParsedCommit::Conventional(ConventionalCommit {
         sha,
@@ -192,8 +188,7 @@ fn is_footer_line(line: &str) -> bool {
 
 fn parse_footer_line(line: &str) -> Option<(&str, &str)> {
     if let Some((token, val)) = line.split_once(": ") {
-        if token == "BREAKING CHANGE" || token == "BREAKING-CHANGE" || is_valid_footer_token(token)
-        {
+        if token == "BREAKING CHANGE" || token == "BREAKING-CHANGE" || is_valid_footer_token(token) {
             return Some((token, val.trim()));
         }
     }
@@ -247,10 +242,7 @@ mod tests {
         let parsed = parse_commit(sha, msg);
         match parsed {
             ParsedCommit::Conventional(c) => {
-                assert_eq!(
-                    c.body, None,
-                    "all trailing token-value blocks are footers, not body"
-                );
+                assert_eq!(c.body, None, "all trailing token-value blocks are footers, not body");
                 assert_eq!(c.footers.len(), 2);
                 assert_eq!(c.footers[0].token, "Note");
                 assert_eq!(c.footers[0].value, "this is a body paragraph.");
@@ -267,12 +259,14 @@ mod tests {
         // Only "Reviewed-by: someone" is in the final block; the bug causes
         // BREAKING CHANGE to be treated as body text and the commit to be
         // classified as non-breaking.
-        let msg =
-            "feat: something\n\nBody text.\n\nBREAKING CHANGE: api removed\n\nReviewed-by: someone";
+        let msg = "feat: something\n\nBody text.\n\nBREAKING CHANGE: api removed\n\nReviewed-by: someone";
         let parsed = parse_commit(sha, msg);
         match parsed {
             ParsedCommit::Conventional(c) => {
-                assert!(c.breaking, "commit should be breaking because BREAKING CHANGE is in a trailing footer block");
+                assert!(
+                    c.breaking,
+                    "commit should be breaking because BREAKING CHANGE is in a trailing footer block"
+                );
                 assert_eq!(
                     c.body,
                     Some("Body text.".to_string()),
@@ -350,10 +344,7 @@ mod tests {
         let parsed = parse_commit(sha, msg);
         match parsed {
             ParsedCommit::Conventional(c) => {
-                assert!(
-                    c.breaking,
-                    "commit with BREAKING CHANGE footer must be breaking"
-                );
+                assert!(c.breaking, "commit with BREAKING CHANGE footer must be breaking");
                 assert_eq!(c.commit_type, "feat");
             }
             _ => panic!("expected conventional"),
@@ -368,14 +359,8 @@ mod tests {
         match parsed {
             ParsedCommit::Conventional(c) => {
                 let body = c.body.expect("body should be present");
-                assert!(
-                    body.contains("body line 1"),
-                    "body must contain first line: {body:?}"
-                );
-                assert!(
-                    body.contains("body line 2"),
-                    "body must contain second line: {body:?}"
-                );
+                assert!(body.contains("body line 1"), "body must contain first line: {body:?}");
+                assert!(body.contains("body line 2"), "body must contain second line: {body:?}");
             }
             _ => panic!("expected conventional"),
         }

@@ -27,13 +27,12 @@ pub fn plan_snapshot<R: CommandRunner, D: DependencyResolver>(
     // a per-package, dot-joined prerelease of that package's real version.
     let snapshot_tag = format!("0.0.0-{tag}-{sha_short}");
     let snapshot_ver =
-        callisto_model::Version::parse(&snapshot_tag, callisto_model::VersionGrammar::SemVer)
-            .map_err(|_err| {
-                GraphError::Bump(callisto_format::BumpError::NotSemVer {
-                    raw: snapshot_tag.clone(),
-                    grammar: callisto_model::VersionGrammar::SemVer,
-                })
-            })?;
+        callisto_model::Version::parse(&snapshot_tag, callisto_model::VersionGrammar::SemVer).map_err(|_err| {
+            GraphError::Bump(callisto_format::BumpError::NotSemVer {
+                raw: snapshot_tag.clone(),
+                grammar: callisto_model::VersionGrammar::SemVer,
+            })
+        })?;
     let base_versions = ws.base_versions()?;
     let tags = ws.tags()?;
     let mut initial_severities = std::collections::BTreeMap::new();
@@ -44,9 +43,7 @@ pub fn plan_snapshot<R: CommandRunner, D: DependencyResolver>(
         initial_severities.insert(pkg.id.clone(), callisto_model::Severity::Patch);
         initial_reasons.insert(
             pkg.id.clone(),
-            callisto_model::BumpReason::PreRelease {
-                tag: tag.to_string(),
-            },
+            callisto_model::BumpReason::PreRelease { tag: tag.to_string() },
         );
         initial_named_by.insert(pkg.id.clone(), crate::aggregate::NamedBy::Changeset);
     }
@@ -74,11 +71,7 @@ pub fn plan_snapshot<R: CommandRunner, D: DependencyResolver>(
     for pkg in ws.graph.packages() {
         let from = base_versions.get(&pkg.id).cloned().ok_or_else(|| {
             GraphError::Manifest(callisto_model::ManifestError::MissingField {
-                path: pkg
-                    .manifests
-                    .first()
-                    .map(|m| m.path.clone())
-                    .unwrap_or_default(),
+                path: pkg.manifests.first().map(|m| m.path.clone()).unwrap_or_default(),
                 field: "version",
             })
         })?;
@@ -166,12 +159,7 @@ mod tests {
     struct NoopSuccessRunner;
 
     impl CommandRunner for NoopSuccessRunner {
-        fn run(
-            &self,
-            _program: &str,
-            _args: &[&str],
-            _cwd: &Path,
-        ) -> Result<CommandOutput, CommandError> {
+        fn run(&self, _program: &str, _args: &[&str], _cwd: &Path) -> Result<CommandOutput, CommandError> {
             Ok(CommandOutput {
                 exit_code: Some(0),
                 stdout: String::new(),
@@ -183,12 +171,7 @@ mod tests {
     struct FailingTagsRunner;
 
     impl CommandRunner for FailingTagsRunner {
-        fn run(
-            &self,
-            program: &str,
-            args: &[&str],
-            _cwd: &Path,
-        ) -> Result<CommandOutput, CommandError> {
+        fn run(&self, program: &str, args: &[&str], _cwd: &Path) -> Result<CommandOutput, CommandError> {
             if program == "git" && args == ["tag", "--list"] {
                 return Err(CommandError::NotFound {
                     program: "git".to_string(),
@@ -285,8 +268,7 @@ mod tests {
 
         let locator = IgnoreWalkLocator::new(root);
         let runner = NoopSuccessRunner;
-        let ws =
-            Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
+        let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
 
         let (plan, report) = plan_snapshot(&ws, "canary").expect("plan_snapshot must succeed");
 

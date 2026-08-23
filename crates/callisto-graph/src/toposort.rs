@@ -31,9 +31,7 @@ where
 
     for u in &members {
         for (v, kind) in outgoing_edges(u) {
-            if members.contains(&v)
-                && matches!(kind, DepKind::Runtime | DepKind::Build | DepKind::Optional)
-            {
+            if members.contains(&v) && matches!(kind, DepKind::Runtime | DepKind::Build | DepKind::Optional) {
                 adj.get_mut(&v).unwrap().push(u.clone());
                 *in_degree.get_mut(u).unwrap() += 1;
             }
@@ -71,10 +69,7 @@ where
     Ok(sorted)
 }
 
-fn extract_cycle(
-    remaining: &[PackageId],
-    adj: &BTreeMap<PackageId, Vec<PackageId>>,
-) -> Vec<PackageId> {
+fn extract_cycle(remaining: &[PackageId], adj: &BTreeMap<PackageId, Vec<PackageId>>) -> Vec<PackageId> {
     use petgraph::algo::tarjan_scc;
     use petgraph::graph::DiGraph;
 

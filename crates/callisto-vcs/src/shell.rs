@@ -35,10 +35,7 @@ const FIELD_SEP: char = '\u{1f}';
 /// error output, and that text flows into `--format json` and miette
 /// diagnostic output downstream.
 fn redact_git_stderr(text: &str) -> String {
-    callisto_model::redact_known_secrets(
-        text,
-        &callisto_model::known_credential_env_values(std::env::vars()),
-    )
+    callisto_model::redact_known_secrets(text, &callisto_model::known_credential_env_values(std::env::vars()))
 }
 
 /// Shells `git` subcommands via a [`CommandRunner`] to implement
@@ -83,8 +80,7 @@ impl GitDataSource for ShellGit<'_> {
             )));
         }
         let sha_str = output.stdout_trimmed();
-        CommitSha::parse(sha_str)
-            .map_err(|e| VcsError::Git(format!("could not parse HEAD SHA `{sha_str}`: {e}")))
+        CommitSha::parse(sha_str).map_err(|e| VcsError::Git(format!("could not parse HEAD SHA `{sha_str}`: {e}")))
     }
 
     /// Always fetches the *full, unfiltered* tag list via `git tag --list`
@@ -124,11 +120,9 @@ impl GitDataSource for ShellGit<'_> {
 
     fn resolve_commit(&self, refname: &str) -> Result<Option<CommitSha>, VcsError> {
         let rev = format!("{refname}^{{commit}}");
-        let output = self.runner.run(
-            "git",
-            &["rev-parse", "--verify", "--quiet", &rev],
-            &self.root,
-        )?;
+        let output = self
+            .runner
+            .run("git", &["rev-parse", "--verify", "--quiet", &rev], &self.root)?;
 
         if !output.success() {
             return Ok(None);
@@ -153,11 +147,7 @@ impl GitDataSource for ShellGit<'_> {
     /// `rev-parse`: an unresolvable ref already makes `git log
     /// <since_ref>..HEAD` fail (non-zero exit), surfaced below as `Err`
     /// like any other failure -- one shell call either way.
-    fn commits_since(
-        &self,
-        since_ref: Option<&str>,
-        pathspecs: &[PathBuf],
-    ) -> Result<Vec<GitCommit>, VcsError> {
+    fn commits_since(&self, since_ref: Option<&str>, pathspecs: &[PathBuf]) -> Result<Vec<GitCommit>, VcsError> {
         let mut args: Vec<String> = vec![
             "log".to_string(),
             "--no-merges".to_string(),
@@ -204,10 +194,9 @@ impl GitDataSource for ShellGit<'_> {
                 &["tag", "-a", "-m", msg, "--", name, target_sha.as_str()],
                 &self.root,
             )?,
-            None => {
-                self.runner
-                    .run("git", &["tag", "--", name, target_sha.as_str()], &self.root)?
-            }
+            None => self
+                .runner
+                .run("git", &["tag", "--", name, target_sha.as_str()], &self.root)?,
         };
         if !output.success() {
             return Err(VcsError::Git(format!(
@@ -225,11 +214,9 @@ impl GitDataSource for ShellGit<'_> {
         target_sha: &CommitSha,
         _permit: &ApplyPermit,
     ) -> Result<(), VcsError> {
-        let output = self.runner.run(
-            "git",
-            &["tag", "-f", "--", major_name, target_sha.as_str()],
-            &self.root,
-        )?;
+        let output = self
+            .runner
+            .run("git", &["tag", "-f", "--", major_name, target_sha.as_str()], &self.root)?;
         if !output.success() {
             return Err(VcsError::Git(format!(
                 "`git tag -f` failed in `{}`: {}",
@@ -309,12 +296,7 @@ mod tests {
     }
 
     impl CommandRunner for FakeRunner {
-        fn run(
-            &self,
-            program: &str,
-            args: &[&str],
-            _cwd: &Path,
-        ) -> Result<CommandOutput, CommandError> {
+        fn run(&self, program: &str, args: &[&str], _cwd: &Path) -> Result<CommandOutput, CommandError> {
             assert_eq!(program, "git");
             self.calls
                 .lock()
@@ -378,9 +360,7 @@ mod tests {
                 Ok(CommandOutput {
                     exit_code: Some(128),
                     stdout: String::new(),
-                    stderr:
-                        "fatal: unable to read current working directory: No such file or directory"
-                            .to_string(),
+                    stderr: "fatal: unable to read current working directory: No such file or directory".to_string(),
                 })
             }),
         };
@@ -408,8 +388,7 @@ mod tests {
                 Ok(CommandOutput {
                     exit_code: Some(128),
                     stdout: String::new(),
-                    stderr: "fatal: not a git repository (or any of the parent directories): .git"
-                        .to_string(),
+                    stderr: "fatal: not a git repository (or any of the parent directories): .git".to_string(),
                 })
             }),
         };
@@ -489,8 +468,7 @@ mod tests {
         let git = ShellGit::new(&runner, PathBuf::from("."));
 
         let sha = "c".repeat(40);
-        git.commits_since(Some(&sha), &[PathBuf::from("crates/pkg-a")])
-            .unwrap();
+        git.commits_since(Some(&sha), &[PathBuf::from("crates/pkg-a")]).unwrap();
 
         let calls = runner.calls.lock().unwrap();
         let args = &calls[0];
@@ -559,8 +537,7 @@ mod tests {
         let git = ShellGit::new(&runner, PathBuf::from("."));
         let sha = CommitSha::parse(&"e".repeat(40)).unwrap();
 
-        git.create_tag("pkg-a@1.0.0", &sha, None, &permit())
-            .unwrap();
+        git.create_tag("pkg-a@1.0.0", &sha, None, &permit()).unwrap();
 
         let calls = runner.calls.lock().unwrap();
         assert_eq!(calls[0], vec!["tag", "--", "pkg-a@1.0.0", sha.as_str()]);
@@ -575,8 +552,7 @@ mod tests {
         let git = ShellGit::new(&runner, PathBuf::from("."));
         let sha = CommitSha::parse(&"f".repeat(40)).unwrap();
 
-        git.create_floating_major("pkg-a@1", &sha, &permit())
-            .unwrap();
+        git.create_floating_major("pkg-a@1", &sha, &permit()).unwrap();
 
         let calls = runner.calls.lock().unwrap();
         assert_eq!(calls[0], vec!["tag", "-f", "--", "pkg-a@1", sha.as_str()]);
@@ -594,10 +570,7 @@ mod tests {
 
         let result = git.head_sha().unwrap();
         assert_eq!(result.as_str(), sha);
-        assert_eq!(
-            *runner.calls.lock().unwrap(),
-            vec![vec!["rev-parse", "HEAD"]]
-        );
+        assert_eq!(*runner.calls.lock().unwrap(), vec![vec!["rev-parse", "HEAD"]]);
     }
 
     #[test]
@@ -662,9 +635,7 @@ mod tests {
         };
         let git = ShellGit::new(&runner, PathBuf::from("."));
         let sha = CommitSha::parse(&"a".repeat(40)).unwrap();
-        let err = git
-            .create_tag("v1.0.0", &sha, None, &permit())
-            .expect_err("must fail");
+        let err = git.create_tag("v1.0.0", &sha, None, &permit()).expect_err("must fail");
         let rendered = format!("{err}");
         assert!(!rendered.contains("ghs_leaked_secret"), "got: {rendered}");
         assert!(rendered.contains("[REDACTED]"), "got: {rendered}");
@@ -678,9 +649,7 @@ mod tests {
         };
         let git = ShellGit::new(&runner, PathBuf::from("."));
         let sha = CommitSha::parse(&"a".repeat(40)).unwrap();
-        let err = git
-            .create_floating_major("v1", &sha, &permit())
-            .expect_err("must fail");
+        let err = git.create_floating_major("v1", &sha, &permit()).expect_err("must fail");
         let rendered = format!("{err}");
         assert!(!rendered.contains("ghs_leaked_secret"), "got: {rendered}");
         assert!(rendered.contains("[REDACTED]"), "got: {rendered}");

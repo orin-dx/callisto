@@ -130,10 +130,7 @@ mod tests {
             "targets": []
         });
         let result: Result<PlatformTargetGroup, _> = serde_json::from_value(raw);
-        assert!(
-            result.is_err(),
-            "expected deserialization of kind=dotnet-aot to fail"
-        );
+        assert!(result.is_err(), "expected deserialization of kind=dotnet-aot to fail");
     }
 
     /// AC-015: RuntimeEcosystem has exactly two variants (npm, python) --
@@ -146,9 +143,6 @@ mod tests {
             "range": "whatever"
         });
         let result: Result<RuntimeVersionEntry, _> = serde_json::from_value(raw);
-        assert!(
-            result.is_err(),
-            "expected deserialization of ecosystem=dotnet to fail"
-        );
+        assert!(result.is_err(), "expected deserialization of ecosystem=dotnet to fail");
     }
 }

@@ -29,9 +29,8 @@ use std::time::Duration;
 
 use callisto_manifests::WorkspaceCargoResolver;
 use callisto_model::{
-    known_credential_env_values, normalize_pypi_package_name, redact_known_secrets, ApplyPermit,
-    CommandOutput, CommandRunner, Ecosystem, NpmAccess, PackageId, PublishOutcome, RegistryClient,
-    RegistryError, Version,
+    known_credential_env_values, normalize_pypi_package_name, redact_known_secrets, ApplyPermit, CommandOutput,
+    CommandRunner, Ecosystem, NpmAccess, PackageId, PublishOutcome, RegistryClient, RegistryError, Version,
 };
 use toml;
 
@@ -117,8 +116,7 @@ impl<R: CommandRunner> SubprocessRegistryClient<R> {
                     registry: pkg.registry.clone(),
                 },
             );
-            self.npm_pkg_dir
-                .insert(pkg.name.clone(), pkg.package_dir.clone());
+            self.npm_pkg_dir.insert(pkg.name.clone(), pkg.package_dir.clone());
         }
         for pkg in &plan.npm_main_packages {
             self.npm_meta.insert(
@@ -129,22 +127,18 @@ impl<R: CommandRunner> SubprocessRegistryClient<R> {
                     registry: pkg.registry.clone(),
                 },
             );
-            self.npm_pkg_dir
-                .insert(pkg.name.clone(), pkg.package_dir.clone());
+            self.npm_pkg_dir.insert(pkg.name.clone(), pkg.package_dir.clone());
         }
         for pkg in &plan.rust_crates {
-            self.cargo_registry
-                .insert(pkg.name.clone(), pkg.registry.clone());
-            self.cargo_planned_version
-                .insert(pkg.name.clone(), pkg.version.clone());
+            self.cargo_registry.insert(pkg.name.clone(), pkg.registry.clone());
+            self.cargo_planned_version.insert(pkg.name.clone(), pkg.version.clone());
             if let Some(dir) = &pkg.package_dir {
                 self.cargo_pkg_dir.insert(pkg.name.clone(), dir.clone());
             }
         }
         for pkg in &plan.pypi_packages {
             self.pypi_index.insert(pkg.name.clone(), pkg.index.clone());
-            self.pypi_pkg_dir
-                .insert(pkg.name.clone(), pkg.package_dir.clone());
+            self.pypi_pkg_dir.insert(pkg.name.clone(), pkg.package_dir.clone());
         }
     }
 
@@ -152,19 +146,9 @@ impl<R: CommandRunner> SubprocessRegistryClient<R> {
         self.run_in(program, args, &self.cwd)
     }
 
-    fn run_in(
-        &self,
-        program: &str,
-        args: &[&str],
-        cwd: &std::path::Path,
-    ) -> Result<CommandOutput, RegistryError> {
+    fn run_in(&self, program: &str, args: &[&str], cwd: &std::path::Path) -> Result<CommandOutput, RegistryError> {
         self.runner
-            .run_with_timeout(
-                program,
-                args,
-                cwd,
-                Duration::from_secs(PUBLISH_TIMEOUT_SECS),
-            )
+            .run_with_timeout(program, args, cwd, Duration::from_secs(PUBLISH_TIMEOUT_SECS))
             .map_err(|e| RegistryError::Other(e.to_string()))
     }
 
@@ -174,12 +158,7 @@ impl<R: CommandRunner> SubprocessRegistryClient<R> {
     /// against an unpublished package), so it must not stream live.
     fn run_quiet(&self, program: &str, args: &[&str]) -> Result<CommandOutput, RegistryError> {
         self.runner
-            .run_quiet(
-                program,
-                args,
-                &self.cwd,
-                Duration::from_secs(PUBLISH_TIMEOUT_SECS),
-            )
+            .run_quiet(program, args, &self.cwd, Duration::from_secs(PUBLISH_TIMEOUT_SECS))
             .map_err(|e| RegistryError::Other(e.to_string()))
     }
 
@@ -190,11 +169,7 @@ impl<R: CommandRunner> SubprocessRegistryClient<R> {
     /// When `registry` is `Some`, `--registry <name>` is appended so that
     /// private registries (e.g. Cloudsmith, Artifactory) are targeted instead
     /// of crates.io.
-    fn cargo_publish(
-        &self,
-        package: &PackageId,
-        registry: Option<&str>,
-    ) -> Result<PublishOutcome, RegistryError> {
+    fn cargo_publish(&self, package: &PackageId, registry: Option<&str>) -> Result<PublishOutcome, RegistryError> {
         if package.name().starts_with('-') {
             return Err(RegistryError::Other(format!(
                 "invalid package name `{}`: names may not begin with '-' (possible flag injection)",
@@ -236,18 +211,15 @@ impl<R: CommandRunner> SubprocessRegistryClient<R> {
                     manifest_path.display(),
                 ))
             })?;
-            let version_value = parsed
-                .get("package")
-                .and_then(|p| p.get("version"))
-                .ok_or_else(|| {
-                    RegistryError::Other(format!(
-                        "could not find [package].version in `{}` for pre-publish version check. \
+            let version_value = parsed.get("package").and_then(|p| p.get("version")).ok_or_else(|| {
+                RegistryError::Other(format!(
+                    "could not find [package].version in `{}` for pre-publish version check. \
                      The file must contain a [package].version field. \
                      If this is a workspace Cargo.toml, set package_dir to the \
                      individual crate subdirectory instead.",
-                        manifest_path.display(),
-                    ))
-                })?;
+                    manifest_path.display(),
+                ))
+            })?;
             let on_disk = if let Some(s) = version_value.as_str() {
                 s.to_string()
             } else if version_value.get("workspace").and_then(|w| w.as_bool()) == Some(true) {
@@ -302,14 +274,7 @@ impl<R: CommandRunner> SubprocessRegistryClient<R> {
         let output = if let Some(reg) = registry {
             self.run(
                 "cargo",
-                &[
-                    "publish",
-                    "-p",
-                    package.name(),
-                    "--locked",
-                    "--registry",
-                    reg,
-                ],
+                &["publish", "-p", package.name(), "--locked", "--registry", reg],
             )?
         } else {
             self.run("cargo", &["publish", "-p", package.name(), "--locked"])?
@@ -471,8 +436,7 @@ impl<R: CommandRunner> SubprocessRegistryClient<R> {
             NpmAccess::Public => "public",
             NpmAccess::Restricted => "restricted",
         });
-        let (program, args_owned) =
-            self.build_npm_publish_command(package.name(), tag, access_value, registry);
+        let (program, args_owned) = self.build_npm_publish_command(package.name(), tag, access_value, registry);
         let args_refs: Vec<&str> = args_owned.iter().map(|s| s.as_str()).collect();
 
         // bun publish must run from the package directory — it has no
@@ -554,13 +518,7 @@ impl<R: CommandRunner> SubprocessRegistryClient<R> {
         let output = if let Some(idx) = index {
             self.run_in(
                 "twine",
-                &[
-                    "upload",
-                    "--skip-existing",
-                    "--repository-url",
-                    idx,
-                    &pattern,
-                ],
+                &["upload", "--skip-existing", "--repository-url", idx, &pattern],
                 &pkg_cwd,
             )?
         } else {
@@ -578,10 +536,7 @@ impl<R: CommandRunner> RegistryClient for SubprocessRegistryClient<R> {
                 name,
                 ..
             } => {
-                let registry = self
-                    .npm_meta
-                    .get(name.as_str())
-                    .and_then(|m| m.registry.as_deref());
+                let registry = self.npm_meta.get(name.as_str()).and_then(|m| m.registry.as_deref());
                 self.npm_is_published(package, version, registry)
             }
 
@@ -617,10 +572,7 @@ impl<R: CommandRunner> RegistryClient for SubprocessRegistryClient<R> {
                 name,
                 ..
             } => {
-                let registry = self
-                    .cargo_registry
-                    .get(name.as_str())
-                    .and_then(|r| r.as_deref());
+                let registry = self.cargo_registry.get(name.as_str()).and_then(|r| r.as_deref());
                 self.cargo_publish(package, registry)
             }
             PackageId::Prefixed {
@@ -639,10 +591,7 @@ impl<R: CommandRunner> RegistryClient for SubprocessRegistryClient<R> {
                 name,
                 ..
             } => {
-                let index = self
-                    .pypi_index
-                    .get(name.as_str())
-                    .and_then(|i| i.as_deref());
+                let index = self.pypi_index.get(name.as_str()).and_then(|i| i.as_deref());
                 self.pypi_publish(package, version, index)
             }
             other => Err(RegistryError::Other(format!(
@@ -683,9 +632,7 @@ fn detect_rate_limit(text_lower: &str) -> Option<RegistryError> {
         || text_lower.contains("rate limit")
         || text_lower.contains("erate_limit")
         || (text_lower.contains("429")
-            && (text_lower.contains("too many")
-                || text_lower.contains("rate")
-                || text_lower.contains("retry")));
+            && (text_lower.contains("too many") || text_lower.contains("rate") || text_lower.contains("retry")));
     if is_rate_limited {
         let dur = extract_retry_after_duration(text_lower).unwrap_or(Duration::from_secs(
             crate::commands::publish::DEFAULT_RATE_LIMIT_WAIT_SECS,
@@ -713,8 +660,7 @@ fn detect_auth_failure(text_lower: &str, raw_stderr: &str) -> Option<RegistryErr
     // ("403129 bytes", "elapsed 4013ms") would otherwise misclassify an
     // unrelated failure as an auth failure.
     if (text_lower.contains("401") && text_lower.contains("auth"))
-        || (text_lower.contains("403")
-            && (text_lower.contains("auth") || text_lower.contains("forbidden")))
+        || (text_lower.contains("403") && (text_lower.contains("auth") || text_lower.contains("forbidden")))
         || text_lower.contains("authentication")
         || text_lower.contains("not logged in")
         || text_lower.contains("invalid token")
@@ -832,12 +778,7 @@ mod tests {
     struct ScriptedRunner(CommandOutput);
 
     impl CommandRunner for ScriptedRunner {
-        fn run(
-            &self,
-            program: &str,
-            _args: &[&str],
-            _cwd: &std::path::Path,
-        ) -> Result<CommandOutput, CommandError> {
+        fn run(&self, program: &str, _args: &[&str], _cwd: &std::path::Path) -> Result<CommandOutput, CommandError> {
             if program == "python" {
                 return Ok(output(0, "", ""));
             }
@@ -895,11 +836,7 @@ mod tests {
 
     #[test]
     fn cargo_publish_already_exists_is_already_published() {
-        let c = client(output(
-            101,
-            "",
-            "error: crate version `1.2.3` is already uploaded\n",
-        ));
+        let c = client(output(101, "", "error: crate version `1.2.3` is already uploaded\n"));
         assert_eq!(
             c.publish(&cargo_pkg(), &v1(), &permit()).unwrap(),
             PublishOutcome::AlreadyPublished
@@ -908,11 +845,7 @@ mod tests {
 
     #[test]
     fn cargo_publish_already_exists_alt_wording_is_already_published() {
-        let c = client(output(
-            101,
-            "",
-            "crate version already exists on crates.io\n",
-        ));
+        let c = client(output(101, "", "crate version already exists on crates.io\n"));
         assert_eq!(
             c.publish(&cargo_pkg(), &v1(), &permit()).unwrap(),
             PublishOutcome::AlreadyPublished
@@ -1101,11 +1034,7 @@ mod tests {
 
     #[test]
     fn npm_publish_generic_error() {
-        let c = client(output(
-            1,
-            "",
-            "npm ERR! code ENOTDIR\nnpm ERR! not a directory\n",
-        ));
+        let c = client(output(1, "", "npm ERR! code ENOTDIR\nnpm ERR! not a directory\n"));
         let err = c.publish(&npm_pkg(), &v1(), &permit()).unwrap_err();
         assert!(matches!(err, RegistryError::Other(_)));
     }
@@ -1128,14 +1057,8 @@ mod tests {
     }
 
     impl CommandRunner for QuietTrackingRunner {
-        fn run(
-            &self,
-            _program: &str,
-            _args: &[&str],
-            _cwd: &std::path::Path,
-        ) -> Result<CommandOutput, CommandError> {
-            self.live_called
-                .store(true, std::sync::atomic::Ordering::SeqCst);
+        fn run(&self, _program: &str, _args: &[&str], _cwd: &std::path::Path) -> Result<CommandOutput, CommandError> {
+            self.live_called.store(true, std::sync::atomic::Ordering::SeqCst);
             Ok(self.response.clone())
         }
 
@@ -1146,8 +1069,7 @@ mod tests {
             _cwd: &std::path::Path,
             _timeout: Duration,
         ) -> Result<CommandOutput, CommandError> {
-            self.live_called
-                .store(true, std::sync::atomic::Ordering::SeqCst);
+            self.live_called.store(true, std::sync::atomic::Ordering::SeqCst);
             Ok(self.response.clone())
         }
 
@@ -1158,8 +1080,7 @@ mod tests {
             _cwd: &std::path::Path,
             _timeout: Duration,
         ) -> Result<CommandOutput, CommandError> {
-            self.quiet_called
-                .store(true, std::sync::atomic::Ordering::SeqCst);
+            self.quiet_called.store(true, std::sync::atomic::Ordering::SeqCst);
             Ok(self.response.clone())
         }
     }
@@ -1176,15 +1097,11 @@ mod tests {
         c.is_published(&npm_pkg(), &v1()).unwrap();
 
         assert!(
-            c.runner
-                .quiet_called
-                .load(std::sync::atomic::Ordering::SeqCst),
+            c.runner.quiet_called.load(std::sync::atomic::Ordering::SeqCst),
             "npm_is_published must call CommandRunner::run_quiet"
         );
         assert!(
-            !c.runner
-                .live_called
-                .load(std::sync::atomic::Ordering::SeqCst),
+            !c.runner.live_called.load(std::sync::atomic::Ordering::SeqCst),
             "npm_is_published must not call the live-streaming run/run_with_timeout path"
         );
     }
@@ -1222,11 +1139,7 @@ mod tests {
     fn npm_is_published_ambiguous_failure_propagates_as_error() {
         // A network blip or unexpected npm failure must NOT be silently
         // treated as "not published" — that would risk a duplicate publish.
-        let c = client(output(
-            1,
-            "",
-            "npm ERR! code ECONNRESET\nnpm ERR! socket hang up\n",
-        ));
+        let c = client(output(1, "", "npm ERR! code ECONNRESET\nnpm ERR! socket hang up\n"));
         let err = c.is_published(&npm_pkg(), &v1()).unwrap_err();
         assert!(matches!(err, RegistryError::Other(_)));
     }
@@ -1235,11 +1148,7 @@ mod tests {
 
     #[test]
     fn pypi_publish_success_is_published() {
-        let c = client(output(
-            0,
-            "Uploading callisto_py-1.2.3-py3-none-any.whl\n",
-            "",
-        ));
+        let c = client(output(0, "Uploading callisto_py-1.2.3-py3-none-any.whl\n", ""));
         assert_eq!(
             c.publish(&pypi_pkg(), &v1(), &permit()).unwrap(),
             PublishOutcome::Published
@@ -1332,16 +1241,11 @@ mod tests {
     }
 
     impl CommandRunner for OrderedCallCapture {
-        fn run(
-            &self,
-            program: &str,
-            args: &[&str],
-            _cwd: &std::path::Path,
-        ) -> Result<CommandOutput, CommandError> {
-            self.calls.lock().unwrap().push((
-                program.to_string(),
-                args.iter().map(|s| s.to_string()).collect(),
-            ));
+        fn run(&self, program: &str, args: &[&str], _cwd: &std::path::Path) -> Result<CommandOutput, CommandError> {
+            self.calls
+                .lock()
+                .unwrap()
+                .push((program.to_string(), args.iter().map(|s| s.to_string()).collect()));
             Ok(self.response.clone())
         }
     }
@@ -1362,9 +1266,9 @@ mod tests {
         let recorded = calls.lock().unwrap().clone();
         // First call must be python -m build
         assert!(
-            recorded.first().is_some_and(|(prog, args)| {
-                prog == "python" && args.iter().any(|a| a == "build")
-            }),
+            recorded
+                .first()
+                .is_some_and(|(prog, args)| { prog == "python" && args.iter().any(|a| a == "build") }),
             "first call must be `python -m build`; calls: {recorded:?}"
         );
         // Second call must be twine
@@ -1405,12 +1309,7 @@ mod tests {
     }
 
     impl CommandRunner for CapturingRunner {
-        fn run(
-            &self,
-            _program: &str,
-            args: &[&str],
-            _cwd: &std::path::Path,
-        ) -> Result<CommandOutput, CommandError> {
+        fn run(&self, _program: &str, args: &[&str], _cwd: &std::path::Path) -> Result<CommandOutput, CommandError> {
             *self.captured_args.lock().unwrap() = args.iter().map(|s| s.to_string()).collect();
             Ok(self.response.clone())
         }
@@ -1586,11 +1485,7 @@ mod tests {
 
     #[test]
     fn cargo_publish_exit_zero_with_already_exists_text_is_already_published() {
-        let c = client(output(
-            0,
-            "note: crate version already exists, nothing to do\n",
-            "",
-        ));
+        let c = client(output(0, "note: crate version already exists, nothing to do\n", ""));
         assert_eq!(
             c.publish(&cargo_pkg(), &v1(), &permit()).unwrap(),
             PublishOutcome::AlreadyPublished
@@ -1599,11 +1494,7 @@ mod tests {
 
     #[test]
     fn npm_publish_exit_zero_with_already_exists_text_is_already_published() {
-        let c = client(output(
-            0,
-            "notice: previously published, nothing to do\n",
-            "",
-        ));
+        let c = client(output(0, "notice: previously published, nothing to do\n", ""));
         assert_eq!(
             c.publish(&npm_pkg(), &v1(), &permit()).unwrap(),
             PublishOutcome::AlreadyPublished
@@ -1677,9 +1568,7 @@ mod tests {
 
         // cargo
         let c = client(output(0, "", ""));
-        let err = c
-            .publish(&flag_pkg(Ecosystem::Cargo), &v1(), &permit())
-            .unwrap_err();
+        let err = c.publish(&flag_pkg(Ecosystem::Cargo), &v1(), &permit()).unwrap_err();
         assert!(
             matches!(&err, RegistryError::Other(msg) if msg.contains("invalid package name")),
             "cargo: expected invalid-package-name error, got: {err:?}"
@@ -1687,9 +1576,7 @@ mod tests {
 
         // npm
         let c = client(output(0, "", ""));
-        let err = c
-            .publish(&flag_pkg(Ecosystem::Npm), &v1(), &permit())
-            .unwrap_err();
+        let err = c.publish(&flag_pkg(Ecosystem::Npm), &v1(), &permit()).unwrap_err();
         assert!(
             matches!(&err, RegistryError::Other(msg) if msg.contains("invalid package name")),
             "npm: expected invalid-package-name error, got: {err:?}"
@@ -1697,9 +1584,7 @@ mod tests {
 
         // pypi
         let c = client(output(0, "", ""));
-        let err = c
-            .publish(&flag_pkg(Ecosystem::Pypi), &v1(), &permit())
-            .unwrap_err();
+        let err = c.publish(&flag_pkg(Ecosystem::Pypi), &v1(), &permit()).unwrap_err();
         assert!(
             matches!(&err, RegistryError::Other(msg) if msg.contains("invalid package name")),
             "pypi: expected invalid-package-name error, got: {err:?}"
@@ -1733,14 +1618,8 @@ mod tests {
         let c = SubprocessRegistryClient::new(runner, PathBuf::from("/workspace"));
         c.npm_publish(&npm_pkg(), Some("next"), None, None).unwrap();
         let args = captured.lock().unwrap();
-        assert!(
-            args.contains(&"--tag".to_string()),
-            "expected --tag in args: {args:?}"
-        );
-        assert!(
-            args.contains(&"next".to_string()),
-            "expected 'next' in args: {args:?}"
-        );
+        assert!(args.contains(&"--tag".to_string()), "expected --tag in args: {args:?}");
+        assert!(args.contains(&"next".to_string()), "expected 'next' in args: {args:?}");
     }
 
     #[test]
@@ -1771,8 +1650,7 @@ mod tests {
             response: output(0, "+ @callisto/cli@1.2.3\n", ""),
         };
         let c = SubprocessRegistryClient::new(runner, PathBuf::from("/workspace"));
-        c.npm_publish(&npm_pkg(), None, Some(&NpmAccess::Public), None)
-            .unwrap();
+        c.npm_publish(&npm_pkg(), None, Some(&NpmAccess::Public), None).unwrap();
         let args = captured.lock().unwrap();
         assert!(
             args.contains(&"--access".to_string()),
@@ -1794,13 +1672,8 @@ mod tests {
             response: output(0, "+ @callisto/cli@1.2.3\n", ""),
         };
         let c = SubprocessRegistryClient::new(runner, PathBuf::from("/workspace"));
-        c.npm_publish(
-            &npm_pkg(),
-            None,
-            None,
-            Some("https://npm.my-org.example.com"),
-        )
-        .unwrap();
+        c.npm_publish(&npm_pkg(), None, None, Some("https://npm.my-org.example.com"))
+            .unwrap();
         let args = captured.lock().unwrap();
         assert!(
             args.contains(&"--registry".to_string()),
@@ -1838,12 +1711,8 @@ mod tests {
             response: output(0, "Uploading callisto_py-1.2.3-py3-none-any.whl\n", ""),
         };
         let c = SubprocessRegistryClient::new(runner, PathBuf::from("/workspace"));
-        c.pypi_publish(
-            &pypi_pkg(),
-            &v1(),
-            Some("https://private.example.com/simple/"),
-        )
-        .unwrap();
+        c.pypi_publish(&pypi_pkg(), &v1(), Some("https://private.example.com/simple/"))
+            .unwrap();
         let args = captured.lock().unwrap();
         assert!(
             args.contains(&"--repository-url".to_string()),
@@ -1863,8 +1732,7 @@ mod tests {
             response: output(0, "Uploading callisto-model v1.2.3\n", ""),
         };
         let c = SubprocessRegistryClient::new(runner, PathBuf::from("/workspace"));
-        c.cargo_publish(&cargo_pkg(), Some("my-private-registry"))
-            .unwrap();
+        c.cargo_publish(&cargo_pkg(), Some("my-private-registry")).unwrap();
         let args = captured.lock().unwrap();
         assert!(
             args.contains(&"-p".to_string()),
@@ -1918,12 +1786,7 @@ mod tests {
     }
 
     impl CommandRunner for ProgramCapturingRunner {
-        fn run(
-            &self,
-            program: &str,
-            args: &[&str],
-            _cwd: &std::path::Path,
-        ) -> Result<CommandOutput, CommandError> {
+        fn run(&self, program: &str, args: &[&str], _cwd: &std::path::Path) -> Result<CommandOutput, CommandError> {
             *self.captured_program.lock().unwrap() = program.to_string();
             *self.captured_args.lock().unwrap() = args.iter().map(|s| s.to_string()).collect();
             Ok(self.response.clone())
@@ -2114,12 +1977,7 @@ mod tests {
     }
 
     impl CommandRunner for CwdCapturingRunner {
-        fn run(
-            &self,
-            _program: &str,
-            _args: &[&str],
-            cwd: &std::path::Path,
-        ) -> Result<CommandOutput, CommandError> {
+        fn run(&self, _program: &str, _args: &[&str], cwd: &std::path::Path) -> Result<CommandOutput, CommandError> {
             *self.captured_cwd.lock().unwrap() = Some(cwd.to_path_buf());
             Ok(self.response.clone())
         }
@@ -2278,9 +2136,7 @@ mod tests {
             rust_crates: vec![callisto_model::CratePublish {
                 name: "my-crate".to_string(),
                 version: planned_version.clone(),
-                publish_to: callisto_model::RegistryKey(
-                    callisto_model::RegistryKey::CRATES_IO.to_string(),
-                ),
+                publish_to: callisto_model::RegistryKey(callisto_model::RegistryKey::CRATES_IO.to_string()),
                 registry: None,
                 package_dir: Some(std::path::PathBuf::from("crates/my-crate")),
             }],
@@ -2296,10 +2152,7 @@ mod tests {
             name: "my-crate".to_string(),
         };
 
-        let mut c = SubprocessRegistryClient::new(
-            ScriptedRunner(output(0, "", "")),
-            dir.path().to_path_buf(),
-        );
+        let mut c = SubprocessRegistryClient::new(ScriptedRunner(output(0, "", "")), dir.path().to_path_buf());
         c.load_plan(&plan);
 
         let err = c.publish(&pkg, &planned_version, &permit()).unwrap_err();
@@ -2329,9 +2182,7 @@ mod tests {
             rust_crates: vec![callisto_model::CratePublish {
                 name: "my-crate".to_string(),
                 version: planned_version.clone(),
-                publish_to: callisto_model::RegistryKey(
-                    callisto_model::RegistryKey::CRATES_IO.to_string(),
-                ),
+                publish_to: callisto_model::RegistryKey(callisto_model::RegistryKey::CRATES_IO.to_string()),
                 registry: None,
                 package_dir: Some(std::path::PathBuf::from("crates/my-crate")),
             }],
@@ -2373,9 +2224,7 @@ mod tests {
             rust_crates: vec![callisto_model::CratePublish {
                 name: "my-crate".to_string(),
                 version: planned_version.clone(),
-                publish_to: callisto_model::RegistryKey(
-                    callisto_model::RegistryKey::CRATES_IO.to_string(),
-                ),
+                publish_to: callisto_model::RegistryKey(callisto_model::RegistryKey::CRATES_IO.to_string()),
                 registry: None,
                 package_dir: Some(std::path::PathBuf::from("crates/my-crate")),
             }],
@@ -2415,11 +2264,7 @@ mod tests {
         std::fs::create_dir_all(&crate_dir).unwrap();
         // Write TOML that has no [package] table — matches a workspace root or a
         // subtly malformed crate manifest.
-        std::fs::write(
-            crate_dir.join("Cargo.toml"),
-            "[workspace]\nmembers = [\"crates/*\"]\n",
-        )
-        .unwrap();
+        std::fs::write(crate_dir.join("Cargo.toml"), "[workspace]\nmembers = [\"crates/*\"]\n").unwrap();
 
         let planned_version = Version::parse("2.0.0", VersionGrammar::SemVer).unwrap();
         let plan = callisto_model::PublishPlan {
@@ -2427,9 +2272,7 @@ mod tests {
             rust_crates: vec![callisto_model::CratePublish {
                 name: "my-crate".to_string(),
                 version: planned_version.clone(),
-                publish_to: callisto_model::RegistryKey(
-                    callisto_model::RegistryKey::CRATES_IO.to_string(),
-                ),
+                publish_to: callisto_model::RegistryKey(callisto_model::RegistryKey::CRATES_IO.to_string()),
                 registry: None,
                 package_dir: Some(std::path::PathBuf::from("crates/my-crate")),
             }],
@@ -2495,9 +2338,7 @@ mod tests {
             rust_crates: vec![callisto_model::CratePublish {
                 name: "my-crate".to_string(),
                 version: planned_version.clone(),
-                publish_to: callisto_model::RegistryKey(
-                    callisto_model::RegistryKey::CRATES_IO.to_string(),
-                ),
+                publish_to: callisto_model::RegistryKey(callisto_model::RegistryKey::CRATES_IO.to_string()),
                 registry: None,
                 package_dir: Some(std::path::PathBuf::from("crates/my-crate")),
             }],

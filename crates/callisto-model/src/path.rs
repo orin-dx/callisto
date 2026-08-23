@@ -25,41 +25,31 @@ use crate::ModelError;
 pub fn workspace_relative(path: impl AsRef<Path>) -> Result<PathBuf, ModelError> {
     let p = path.as_ref();
     if p.is_absolute() {
-        return Err(ModelError::AbsolutePath {
-            path: p.to_path_buf(),
-        });
+        return Err(ModelError::AbsolutePath { path: p.to_path_buf() });
     }
 
-    let utf8 = Utf8PathBuf::from_path_buf(p.to_path_buf())
-        .map_err(|path| ModelError::NonUtf8Path { path })?;
+    let utf8 = Utf8PathBuf::from_path_buf(p.to_path_buf()).map_err(|path| ModelError::NonUtf8Path { path })?;
 
     // `to_slash()` can only return `None` for non-UTF-8 input, which `utf8` has
     // already ruled out -- unreachable in practice, kept as a typed error path
     // rather than a panic in case that invariant ever changes upstream.
-    let slash_str = utf8
-        .as_std_path()
-        .to_slash()
-        .ok_or_else(|| ModelError::NonUtf8Path {
-            path: utf8.as_std_path().to_path_buf(),
-        })?;
+    let slash_str = utf8.as_std_path().to_slash().ok_or_else(|| ModelError::NonUtf8Path {
+        path: utf8.as_std_path().to_path_buf(),
+    })?;
     let normalized_path = Path::new(slash_str.as_ref());
 
     let mut components = Vec::new();
     for component in normalized_path.components() {
         match component {
             Component::Prefix(_) | Component::RootDir => {
-                return Err(ModelError::AbsolutePath {
-                    path: p.to_path_buf(),
-                });
+                return Err(ModelError::AbsolutePath { path: p.to_path_buf() });
             }
             Component::CurDir => {}
             Component::ParentDir => {
                 if let Some(Component::Normal(_)) = components.last() {
                     components.pop();
                 } else {
-                    return Err(ModelError::PathTraversal {
-                        path: p.to_path_buf(),
-                    });
+                    return Err(ModelError::PathTraversal { path: p.to_path_buf() });
                 }
             }
             Component::Normal(_) => {

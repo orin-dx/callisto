@@ -105,13 +105,7 @@ fn test_apply_version_plan_reports_git_add_failure() {
         transient: false,
     };
 
-    let result = apply_version_plan(
-        ws_dir.path(),
-        &plan,
-        &runner,
-        &opts,
-        &ApplyPermit::force_for_tests(),
-    );
+    let result = apply_version_plan(ws_dir.path(), &plan, &runner, &opts, &ApplyPermit::force_for_tests());
 
     assert!(
         result.is_err(),

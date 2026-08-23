@@ -1,6 +1,6 @@
 use callisto_model::{
-    CommandRunner, CratePublish, NpmMainPublish, PublishPlan, PublishTarget, PypiPublish,
-    RegistryKey, ReleaseEntry, SCHEMA_VERSION,
+    CommandRunner, CratePublish, NpmMainPublish, PublishPlan, PublishTarget, PypiPublish, RegistryKey, ReleaseEntry,
+    SCHEMA_VERSION,
 };
 use callisto_vcs::GitDataSource;
 
@@ -204,9 +204,7 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
             diagnostics.push(callisto_model::Diagnostic {
                 code: callisto_model::DiagnosticCode::GitDiscoveryFailed,
                 severity: callisto_model::DiagnosticSeverity::Warning,
-                message: format!(
-                    "Could not read git tags: {e}; all packages treated as release candidates"
-                ),
+                message: format!("Could not read git tags: {e}; all packages treated as release candidates"),
                 package: None,
                 path: None,
                 escalated_by: None,
@@ -231,11 +229,7 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
         } else {
             let cur_ver = base_versions.get(&pkg.id).cloned().ok_or_else(|| {
                 GraphError::Manifest(callisto_model::ManifestError::MissingField {
-                    path: pkg
-                        .manifests
-                        .first()
-                        .map(|m| m.path.clone())
-                        .unwrap_or_default(),
+                    path: pkg.manifests.first().map(|m| m.path.clone()).unwrap_or_default(),
                     field: "version",
                 })
             })?;
@@ -366,9 +360,7 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
                 rust_crates.push(CratePublish {
                     name: pkg.id.name().to_string(),
                     version: ver.clone(),
-                    publish_to: callisto_model::RegistryKey(
-                        callisto_model::RegistryKey::CRATES_IO.to_string(),
-                    ),
+                    publish_to: callisto_model::RegistryKey(callisto_model::RegistryKey::CRATES_IO.to_string()),
                     registry: None,
                     package_dir: if pkg_dir.as_os_str().is_empty() {
                         None
@@ -407,9 +399,7 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
                     npm_platform_packages.push(callisto_model::NpmPublish {
                         name: pkg.id.name().to_string(),
                         version: ver.clone(),
-                        publish_to: callisto_model::RegistryKey(
-                            callisto_model::RegistryKey::NPM.to_string(),
-                        ),
+                        publish_to: callisto_model::RegistryKey(callisto_model::RegistryKey::NPM.to_string()),
                         package_dir: pkg_dir.clone(),
                         registry: npm_registry_url.clone(),
                         tag: tag.clone(),
@@ -423,12 +413,9 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
                             pkg_map
                                 .get(&edge.to)
                                 .map(|p| {
-                                    p.manifests.iter().any(|m| {
-                                        matches!(
-                                            m.role,
-                                            callisto_model::ManifestRole::Platform { .. }
-                                        )
-                                    })
+                                    p.manifests
+                                        .iter()
+                                        .any(|m| matches!(m.role, callisto_model::ManifestRole::Platform { .. }))
                                 })
                                 .unwrap_or(false)
                         })
@@ -438,9 +425,7 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
                     npm_main_packages.push(NpmMainPublish {
                         name: pkg.id.name().to_string(),
                         version: ver.clone(),
-                        publish_to: callisto_model::RegistryKey(
-                            callisto_model::RegistryKey::NPM.to_string(),
-                        ),
+                        publish_to: callisto_model::RegistryKey(callisto_model::RegistryKey::NPM.to_string()),
                         package_dir: pkg_dir.clone(),
                         registry: npm_registry_url,
                         tag,
@@ -486,13 +471,7 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
                 // with the GitDiscoveryFailed diagnostic already pushed.
                 if let (Some(ref sha), Some(idx)) = (&head_sha, tag_index) {
                     let changelog_section = pkg.changelog.as_ref().and_then(|ch_path| {
-                        resolve_changelog_section(
-                            &ws.root,
-                            ch_path,
-                            &pkg.id,
-                            &ver,
-                            &mut diagnostics,
-                        )
+                        resolve_changelog_section(&ws.root, ch_path, &pkg.id, &ver, &mut diagnostics)
                     });
                     releases.push(ReleaseEntry {
                         package: pkg.id.clone(),
@@ -548,8 +527,8 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
 }
 
 use callisto_model::{
-    ApplyPermit, Ecosystem, PackageId, PublishAttempt, PublishAttemptResult, PublishOutcome,
-    PublishReport, RateLimitPolicy, RegistryClient, RegistryError, TimeProvider, Version,
+    ApplyPermit, Ecosystem, PackageId, PublishAttempt, PublishAttemptResult, PublishOutcome, PublishReport,
+    RateLimitPolicy, RegistryClient, RegistryError, TimeProvider, Version,
 };
 use std::time::Duration;
 
@@ -689,12 +668,7 @@ where
         }
     }
 
-    fn attempt_publish(
-        &self,
-        package: PackageId,
-        version: Version,
-        permit: &ApplyPermit,
-    ) -> PublishAttempt {
+    fn attempt_publish(&self, package: PackageId, version: Version, permit: &ApplyPermit) -> PublishAttempt {
         let result = match self.publish_with_retry(&package, &version, permit) {
             Ok(PublishOutcome::Published) => PublishAttemptResult::Published,
             Ok(PublishOutcome::AlreadyPublished) => PublishAttemptResult::AlreadyPublished,
@@ -733,9 +707,7 @@ where
                 // classification are done-and-not-an-error: neither should
                 // retry, and AlreadyPublished is treated identically to the
                 // is_published short-circuit above.
-                Ok(outcome @ (PublishOutcome::Published | PublishOutcome::AlreadyPublished)) => {
-                    return Ok(outcome)
-                }
+                Ok(outcome @ (PublishOutcome::Published | PublishOutcome::AlreadyPublished)) => return Ok(outcome),
                 Err(RegistryError::RateLimited(retry_after)) => {
                     if retry_after > Duration::from_secs(MAX_RETRY_AFTER_SECS) {
                         return Err(RegistryError::RateLimited(retry_after));
@@ -778,11 +750,7 @@ mod tests {
     }
 
     impl RegistryClient for MockRegistryClient {
-        fn is_published(
-            &self,
-            package: &PackageId,
-            version: &Version,
-        ) -> Result<bool, RegistryError> {
+        fn is_published(&self, package: &PackageId, version: &Version) -> Result<bool, RegistryError> {
             let published = self.published.lock().unwrap();
             Ok(published.contains(&(package.clone(), version.clone())))
         }
@@ -835,9 +803,7 @@ mod tests {
             rust_crates: vec![callisto_model::CratePublish {
                 name: "test-crate".to_string(),
                 version: Version::parse("1.0.0", callisto_model::VersionGrammar::SemVer).unwrap(),
-                publish_to: callisto_model::RegistryKey(
-                    callisto_model::RegistryKey::CRATES_IO.to_string(),
-                ),
+                publish_to: callisto_model::RegistryKey(callisto_model::RegistryKey::CRATES_IO.to_string()),
                 registry: None,
                 package_dir: None,
             }],
@@ -873,10 +839,7 @@ mod tests {
 
         let report = orchestrator.execute(&create_test_plan(), &permit());
         assert_eq!(report.attempts.len(), 1);
-        assert!(matches!(
-            report.attempts[0].result,
-            PublishAttemptResult::Published
-        ));
+        assert!(matches!(report.attempts[0].result, PublishAttemptResult::Published));
         assert_eq!(orchestrator.time.now(), SystemTime::UNIX_EPOCH);
     }
 
@@ -908,9 +871,7 @@ mod tests {
     fn test_publish_rate_limit_retry() {
         let client = MockRegistryClient {
             published: Mutex::new(std::collections::HashSet::new()),
-            responses: Mutex::new(vec![Err(RegistryError::RateLimited(Duration::from_secs(
-                60,
-            )))]),
+            responses: Mutex::new(vec![Err(RegistryError::RateLimited(Duration::from_secs(60)))]),
         };
         let policy = MockRateLimitPolicy;
         let time = MockTimeProvider {
@@ -920,10 +881,7 @@ mod tests {
 
         let report = orchestrator.execute(&create_test_plan(), &permit());
         assert_eq!(report.attempts.len(), 1);
-        assert!(matches!(
-            report.attempts[0].result,
-            PublishAttemptResult::Published
-        ));
+        assert!(matches!(report.attempts[0].result, PublishAttemptResult::Published));
         assert_eq!(
             orchestrator.time.now(),
             SystemTime::UNIX_EPOCH + Duration::from_secs(60)
@@ -983,10 +941,7 @@ mod tests {
         let report = orchestrator.execute(&create_test_plan(), &permit());
         assert_eq!(report.attempts.len(), 1);
         assert!(
-            matches!(
-                report.attempts[0].result,
-                PublishAttemptResult::Failed { .. }
-            ),
+            matches!(report.attempts[0].result, PublishAttemptResult::Failed { .. }),
             "cap must fire after exactly MAX_RATE_LIMIT_RETRIES ({MAX_RATE_LIMIT_RETRIES}) \
              responses; got: {:?}",
             report.attempts[0].result
@@ -1026,9 +981,7 @@ mod tests {
     fn test_publish_auth_fail_fast() {
         let client = MockRegistryClient {
             published: Mutex::new(std::collections::HashSet::new()),
-            responses: Mutex::new(vec![Err(RegistryError::AuthFailed(
-                "Invalid token".to_string(),
-            ))]),
+            responses: Mutex::new(vec![Err(RegistryError::AuthFailed("Invalid token".to_string()))]),
         };
         let policy = MockRateLimitPolicy;
         let time = MockTimeProvider {
@@ -1054,9 +1007,7 @@ mod tests {
         callisto_model::CratePublish {
             name: name.to_string(),
             version: v100(),
-            publish_to: callisto_model::RegistryKey(
-                callisto_model::RegistryKey::CRATES_IO.to_string(),
-            ),
+            publish_to: callisto_model::RegistryKey(callisto_model::RegistryKey::CRATES_IO.to_string()),
             registry: None,
             package_dir: None,
         }
@@ -1119,8 +1070,16 @@ mod tests {
 
     #[test]
     fn test_parse_ttl() {
-        assert_eq!(PublishOrchestrator::<MockRegistryClient, MockRateLimitPolicy, MockTimeProvider>::parse_http_429_ttl("120"), Some(Duration::from_secs(120)));
-        assert_eq!(PublishOrchestrator::<MockRegistryClient, MockRateLimitPolicy, MockTimeProvider>::parse_http_429_ttl("invalid"), None);
+        assert_eq!(
+            PublishOrchestrator::<MockRegistryClient, MockRateLimitPolicy, MockTimeProvider>::parse_http_429_ttl("120"),
+            Some(Duration::from_secs(120))
+        );
+        assert_eq!(
+            PublishOrchestrator::<MockRegistryClient, MockRateLimitPolicy, MockTimeProvider>::parse_http_429_ttl(
+                "invalid"
+            ),
+            None
+        );
     }
 
     // ---------------------------------------------------------------- pypi
@@ -1155,11 +1114,7 @@ mod tests {
 
         let report = orchestrator.execute(&plan, &permit());
 
-        assert_eq!(
-            report.attempts.len(),
-            2,
-            "expected one attempt per pypi package"
-        );
+        assert_eq!(report.attempts.len(), 2, "expected one attempt per pypi package");
         assert_eq!(report.attempts[0].package.name(), "pypi-a");
         assert!(
             matches!(report.attempts[0].result, PublishAttemptResult::Published),
@@ -1167,10 +1122,7 @@ mod tests {
         );
         assert_eq!(report.attempts[1].package.name(), "pypi-b");
         assert!(
-            matches!(
-                report.attempts[1].result,
-                PublishAttemptResult::AlreadyPublished
-            ),
+            matches!(report.attempts[1].result, PublishAttemptResult::AlreadyPublished),
             "pypi-b should be AlreadyPublished"
         );
     }
@@ -1185,11 +1137,7 @@ mod tests {
         }
 
         impl RegistryClient for RecordingClient {
-            fn is_published(
-                &self,
-                _pkg: &PackageId,
-                _ver: &Version,
-            ) -> Result<bool, RegistryError> {
+            fn is_published(&self, _pkg: &PackageId, _ver: &Version) -> Result<bool, RegistryError> {
                 Ok(false)
             }
 
@@ -1220,9 +1168,7 @@ mod tests {
             npm_platform_packages: vec![callisto_model::NpmPublish {
                 name: "platform-linux".to_string(),
                 version: npm_version.clone(),
-                publish_to: callisto_model::RegistryKey(
-                    callisto_model::RegistryKey::NPM.to_string(),
-                ),
+                publish_to: callisto_model::RegistryKey(callisto_model::RegistryKey::NPM.to_string()),
                 package_dir: std::path::PathBuf::new(),
                 registry: None,
                 tag: None,
@@ -1231,9 +1177,7 @@ mod tests {
             npm_main_packages: vec![callisto_model::NpmMainPublish {
                 name: "main-package".to_string(),
                 version: npm_version.clone(),
-                publish_to: callisto_model::RegistryKey(
-                    callisto_model::RegistryKey::NPM.to_string(),
-                ),
+                publish_to: callisto_model::RegistryKey(callisto_model::RegistryKey::NPM.to_string()),
                 package_dir: std::path::PathBuf::new(),
                 registry: None,
                 tag: None,
@@ -1268,9 +1212,7 @@ mod tests {
     fn test_execute_pypi_auth_failure_is_recorded_not_propagated() {
         let client = MockRegistryClient {
             published: Mutex::new(std::collections::HashSet::new()),
-            responses: Mutex::new(vec![Err(RegistryError::AuthFailed(
-                "invalid PyPI token".to_string(),
-            ))]),
+            responses: Mutex::new(vec![Err(RegistryError::AuthFailed("invalid PyPI token".to_string()))]),
         };
         let policy = MockRateLimitPolicy;
         let time = MockTimeProvider {
@@ -1312,10 +1254,7 @@ mod tests {
 
         let client = MockRegistryClient {
             published: Mutex::new(std::collections::HashSet::new()),
-            responses: Mutex::new(vec![
-                Ok(PublishOutcome::Published),
-                Ok(PublishOutcome::Published),
-            ]),
+            responses: Mutex::new(vec![Ok(PublishOutcome::Published), Ok(PublishOutcome::Published)]),
         };
         let policy = MockRateLimitPolicy;
         let time = MockTimeProvider {
@@ -1332,10 +1271,9 @@ mod tests {
             diagnostics: vec![],
         };
 
-        let orchestrator =
-            PublishOrchestrator::new(client, policy, time).with_progress(move |msg: String| {
-                messages_clone.lock().unwrap().push(msg);
-            });
+        let orchestrator = PublishOrchestrator::new(client, policy, time).with_progress(move |msg: String| {
+            messages_clone.lock().unwrap().push(msg);
+        });
 
         let _report = orchestrator.execute(&plan, &permit());
 
@@ -1370,11 +1308,7 @@ mod tests {
         }
 
         impl RegistryClient for FlakyPreCheckClient {
-            fn is_published(
-                &self,
-                _pkg: &PackageId,
-                _ver: &Version,
-            ) -> Result<bool, RegistryError> {
+            fn is_published(&self, _pkg: &PackageId, _ver: &Version) -> Result<bool, RegistryError> {
                 Err(RegistryError::RateLimited(Duration::from_secs(5)))
             }
 
@@ -1404,11 +1338,7 @@ mod tests {
             *orchestrator.client.publish_called.lock().unwrap(),
             "publish() must be called even when is_published() returns an error"
         );
-        assert_eq!(
-            report.attempts.len(),
-            1,
-            "one attempt must be recorded for the package"
-        );
+        assert_eq!(report.attempts.len(), 1, "one attempt must be recorded for the package");
         assert!(
             matches!(report.attempts[0].result, PublishAttemptResult::Published),
             "result must be Published when is_published() errs and publish() succeeds; \

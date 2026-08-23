@@ -106,10 +106,7 @@ pub enum ParseError {
 
     /// A changeset with one or more entries must have a non-empty summary.
     #[error("changeset has entries but an empty or whitespace-only summary")]
-    #[diagnostic(
-        code(E055),
-        help("Add a non-empty summary after the closing `---` delimiter.")
-    )]
+    #[diagnostic(code(E055), help("Add a non-empty summary after the closing `---` delimiter."))]
     EmptySummary,
 }
 
@@ -158,10 +155,7 @@ pub fn parse_changeset(source: &str) -> Result<Changeset, ParseError> {
     // frontmatter was never closed at all" — the first non-entry-shaped line after a missing
     // closing delimiter would otherwise surface as a misleading parse error on that line
     // instead of `UnclosedFrontmatter`.
-    let closing_index = lines[1..]
-        .iter()
-        .position(|&l| l.trim_end() == "---")
-        .map(|i| i + 1);
+    let closing_index = lines[1..].iter().position(|&l| l.trim_end() == "---").map(|i| i + 1);
     let Some(closing_index) = closing_index else {
         return Err(ParseError::UnclosedFrontmatter);
     };
@@ -204,9 +198,7 @@ fn promote_line_error(err: LineError, line: usize) -> ParseError {
         LineError::AmbiguousNameQuoting { raw } => ParseError::AmbiguousNameQuoting { line, raw },
         LineError::MissingSeparator { raw } => ParseError::MissingSeparator { line, raw },
         LineError::EmptyName => ParseError::EmptyName { line },
-        LineError::InvalidSeverity { name, source } => {
-            ParseError::InvalidSeverity { line, name, source }
-        }
+        LineError::InvalidSeverity { name, source } => ParseError::InvalidSeverity { line, name, source },
     }
 }
 

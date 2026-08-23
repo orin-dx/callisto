@@ -112,11 +112,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     // objects because gix-odb attempts to mmap the loose object file and WASI
     // returns ENOSYS (Unsupported) for mmap.
     let header = odb.header(head_id.as_ref())?;
-    println!(
-        "HEAD object: kind={:?} size={}",
-        header.kind(),
-        header.size()
-    );
+    println!("HEAD object: kind={:?} size={}", header.kind(), header.size());
 
     println!("SPIKE SUCCESS");
     Ok(())

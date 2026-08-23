@@ -5,12 +5,10 @@ use std::sync::Arc;
 
 use serde_json::Value;
 
-use callisto_manifests::{
-    detect_npm_workspace_kind, Manifest, OpenContext, WorkspaceCargoResolver,
-};
+use callisto_manifests::{detect_npm_workspace_kind, Manifest, OpenContext, WorkspaceCargoResolver};
 use callisto_model::{
-    CommandRunner, DepEdge, Diagnostic, DiagnosticCode, DiagnosticSeverity, Ecosystem,
-    ManifestDecl, ManifestFormat, ManifestRole, Package, PackageId, PublishTarget, ReleaseTrigger,
+    CommandRunner, DepEdge, Diagnostic, DiagnosticCode, DiagnosticSeverity, Ecosystem, ManifestDecl, ManifestFormat,
+    ManifestRole, Package, PackageId, PublishTarget, ReleaseTrigger,
 };
 
 use crate::config::resolve::resolve_package_config;
@@ -35,10 +33,7 @@ fn compute_claiming_ecosystems_and_native_keys(
         .filter(|(_, id)| id.name() == primary_id.name())
         .map(|(eco, _)| *eco)
         .collect();
-    let native_keys = list
-        .iter()
-        .map(|(eco, id)| (*eco, id.name().to_string()))
-        .collect();
+    let native_keys = list.iter().map(|(eco, id)| (*eco, id.name().to_string())).collect();
     (claiming, native_keys)
 }
 
@@ -56,10 +51,7 @@ fn claiming_sets_disjoint(a: &BTreeSet<Ecosystem>, b: &BTreeSet<Ecosystem>) -> b
 /// Overlapping claiming sets indicate a true duplicate package error (handled
 /// separately during graph construction), NOT a valid multi-ecosystem promotion.
 #[cfg(test)]
-fn is_promoted_bare_name(
-    paths: &[PathBuf],
-    claiming_ecosystems: &BTreeMap<PathBuf, BTreeSet<Ecosystem>>,
-) -> bool {
+fn is_promoted_bare_name(paths: &[PathBuf], claiming_ecosystems: &BTreeMap<PathBuf, BTreeSet<Ecosystem>>) -> bool {
     if paths.len() <= 1 {
         return false;
     }
@@ -104,16 +96,14 @@ impl ManifestWalkResolver {
             npm_workspace_kind,
         };
 
-        let mut package_manifest_decls: BTreeMap<PackageId, (PathBuf, Vec<ManifestDecl>)> =
-            BTreeMap::new();
+        let mut package_manifest_decls: BTreeMap<PackageId, (PathBuf, Vec<ManifestDecl>)> = BTreeMap::new();
         let mut index = IdentityIndex::default();
         let mut diagnostics = Vec::new();
         let mut claiming_ecosystems: BTreeMap<PathBuf, BTreeSet<Ecosystem>> = BTreeMap::new();
         let mut path_native_keys: BTreeMap<PathBuf, Vec<(Ecosystem, String)>> = BTreeMap::new();
         let mut path_platform_keys: BTreeMap<PathBuf, Vec<String>> = BTreeMap::new();
         let mut primary_ecosystems: BTreeMap<PathBuf, Ecosystem> = BTreeMap::new();
-        let mut promoted_siblings: BTreeMap<String, Vec<(PackageId, BTreeSet<Ecosystem>)>> =
-            BTreeMap::new();
+        let mut promoted_siblings: BTreeMap<String, Vec<(PackageId, BTreeSet<Ecosystem>)>> = BTreeMap::new();
 
         // Use the identity already resolved by the locator (`proj.id`) rather
         // than re-reading manifests through `IdentityResolver::resolve`.
@@ -136,18 +126,14 @@ impl ManifestWalkResolver {
             // additions to `Ecosystem`.
             list.sort_by_key(|a| ecosystem_primary_priority(a.0));
             let mut primary_id = list[0].1.clone();
-            let (this_claiming, this_native_keys) =
-                compute_claiming_ecosystems_and_native_keys(&list, &primary_id);
+            let (this_claiming, this_native_keys) = compute_claiming_ecosystems_and_native_keys(&list, &primary_id);
             claiming_ecosystems.insert(rel_path.clone(), this_claiming.clone());
             path_native_keys.insert(rel_path.clone(), this_native_keys);
             primary_ecosystems.insert(rel_path.clone(), list[0].0);
 
             let mut branch_ii_promoted = false;
             if let Some(existing_members) = promoted_siblings.get(primary_id.name()) {
-                let this_set = claiming_ecosystems
-                    .get(&rel_path)
-                    .cloned()
-                    .unwrap_or_default();
+                let this_set = claiming_ecosystems.get(&rel_path).cloned().unwrap_or_default();
                 let conflict = existing_members
                     .iter()
                     .find(|(_, member_set)| !claiming_sets_disjoint(&this_set, member_set));
@@ -175,9 +161,7 @@ impl ManifestWalkResolver {
             }
 
             if !branch_ii_promoted {
-                index
-                    .bare
-                    .insert(primary_id.name().to_string(), primary_id.clone());
+                index.bare.insert(primary_id.name().to_string(), primary_id.clone());
             }
 
             let mut decls = Vec::new();
@@ -189,9 +173,7 @@ impl ManifestWalkResolver {
                     _ => (ManifestFormat::PackageJson, "package.json"),
                 };
                 let manifest_rel = rel_path.join(filename);
-                if let Ok(decl) =
-                    ManifestDecl::new(manifest_rel.clone(), ManifestRole::Canonical, fmt)
-                {
+                if let Ok(decl) = ManifestDecl::new(manifest_rel.clone(), ManifestRole::Canonical, fmt) {
                     decls.push(decl);
                 }
                 // For napi platform packages (os + cpu constraints in package.json),
@@ -200,9 +182,7 @@ impl ManifestWalkResolver {
                 if *eco == Ecosystem::Npm {
                     let role = detect_npm_role(&root.join(&manifest_rel));
                     if let ManifestRole::Platform { .. } = role {
-                        if let Ok(platform_decl) =
-                            ManifestDecl::new(manifest_rel.clone(), role.clone(), fmt)
-                        {
+                        if let Ok(platform_decl) = ManifestDecl::new(manifest_rel.clone(), role.clone(), fmt) {
                             decls.push(platform_decl);
                         }
                         // `id` is this manifest's own npm identity, resolved from its
@@ -211,23 +191,18 @@ impl ManifestWalkResolver {
                         // (Case D). Config authors reference the platform package by
                         // its own name in `[[fixed-group]] members`, so that must be
                         // the index key; `primary_id` is who it belongs to.
-                        index.platform.insert(
-                            id.name().to_string(),
-                            (primary_id.clone(), manifest_rel, role),
-                        );
+                        index
+                            .platform
+                            .insert(id.name().to_string(), (primary_id.clone(), manifest_rel, role));
                         path_platform_keys
                             .entry(rel_path.clone())
                             .or_default()
                             .push(id.name().to_string());
                     }
                 }
-                index
-                    .native
-                    .insert((*eco, id.name().to_string()), primary_id.clone());
+                index.native.insert((*eco, id.name().to_string()), primary_id.clone());
                 if id.name() == primary_id.name() {
-                    index
-                        .prefixed
-                        .insert((*eco, id.name().to_string()), primary_id.clone());
+                    index.prefixed.insert((*eco, id.name().to_string()), primary_id.clone());
                 }
             }
 
@@ -236,14 +211,8 @@ impl ManifestWalkResolver {
                 package_manifest_decls.insert(primary_id.clone(), (rel_path.clone(), decls))
             {
                 let name = primary_id.name().to_string();
-                let existing_set = claiming_ecosystems
-                    .get(&existing_path)
-                    .cloned()
-                    .unwrap_or_default();
-                let current_set = claiming_ecosystems
-                    .get(&rel_path)
-                    .cloned()
-                    .unwrap_or_default();
+                let existing_set = claiming_ecosystems.get(&existing_path).cloned().unwrap_or_default();
+                let current_set = claiming_ecosystems.get(&rel_path).cloned().unwrap_or_default();
                 if !claiming_sets_disjoint(&existing_set, &current_set) {
                     return Err(GraphError::DuplicatePackage {
                         id: primary_id,
@@ -265,10 +234,8 @@ impl ManifestWalkResolver {
                     ecosystem: primary_ecosystems[&rel_path],
                     name: name.clone(),
                 };
-                package_manifest_decls
-                    .insert(existing_id.clone(), (existing_path.clone(), existing_decls));
-                package_manifest_decls
-                    .insert(current_id.clone(), (rel_path.clone(), current_decls));
+                package_manifest_decls.insert(existing_id.clone(), (existing_path.clone(), existing_decls));
+                package_manifest_decls.insert(current_id.clone(), (rel_path.clone(), current_decls));
                 package_manifest_decls.remove(&primary_id);
                 // STALE-KEY REWRITE location (1): once a bare name is promoted,
                 // it MUST NOT remain in index.bare.
@@ -289,23 +256,11 @@ impl ManifestWalkResolver {
                 // STALE-KEY REWRITE location (3)/(5): update index.prefixed values
                 // for the primary identities so they point to the newly-promoted
                 // Prefixed id rather than the pre-promotion primary_id.
-                for eco in claiming_ecosystems
-                    .get(&existing_path)
-                    .cloned()
-                    .unwrap_or_default()
-                {
-                    index
-                        .prefixed
-                        .insert((eco, name.clone()), existing_id.clone());
+                for eco in claiming_ecosystems.get(&existing_path).cloned().unwrap_or_default() {
+                    index.prefixed.insert((eco, name.clone()), existing_id.clone());
                 }
-                for eco in claiming_ecosystems
-                    .get(&rel_path)
-                    .cloned()
-                    .unwrap_or_default()
-                {
-                    index
-                        .prefixed
-                        .insert((eco, name.clone()), current_id.clone());
+                for eco in claiming_ecosystems.get(&rel_path).cloned().unwrap_or_default() {
+                    index.prefixed.insert((eco, name.clone()), current_id.clone());
                 }
                 // STALE-KEY REWRITE location (6): update index.platform's owner-id
                 // component for every platform manifest declared under either path,
@@ -396,9 +351,7 @@ impl ManifestWalkResolver {
             let set_override = if pkg_override.is_none() {
                 cfg.package_sets
                     .iter()
-                    .find(|(pattern, _)| {
-                        pattern.matches_in_ecosystems(id.name(), &package_ecosystems)
-                    })
+                    .find(|(pattern, _)| pattern.matches_in_ecosystems(id.name(), &package_ecosystems))
                     .map(|(_, cfg)| cfg)
             } else {
                 None
@@ -412,12 +365,11 @@ impl ManifestWalkResolver {
 
             let tag_template = active_override.and_then(|o| o.tag_template.clone());
 
-            let changelog =
-                if let Some(override_path) = active_override.and_then(|o| o.changelog.as_ref()) {
-                    Some(rel_path.join(override_path))
-                } else {
-                    Some(ch_path)
-                };
+            let changelog = if let Some(override_path) = active_override.and_then(|o| o.changelog.as_ref()) {
+                Some(rel_path.join(override_path))
+            } else {
+                Some(ch_path)
+            };
 
             // Apply the resolved override's publish-to if the operator explicitly set it.
             //
@@ -522,11 +474,7 @@ impl ManifestWalkResolver {
                          use an ecosystem-prefixed pattern like `{}/{}` to target only one",
                         pattern.name(),
                         eco_list.join(", "),
-                        ecosystems
-                            .iter()
-                            .next()
-                            .map(|e| e.prefix())
-                            .unwrap_or("cargo"),
+                        ecosystems.iter().next().map(|e| e.prefix()).unwrap_or("cargo"),
                         pattern.name(),
                     ),
                     package: None,
@@ -551,10 +499,7 @@ impl ManifestWalkResolver {
                         let (spec, declaring_path) = if entry.inherited {
                             if let Some(ref inh) = ctx.cargo_workspace {
                                 if let Some(inherited_dep) = inh.inherited(&entry.name) {
-                                    (
-                                        inherited_dep.spec.clone(),
-                                        inherited_dep.declared_in.to_path_buf(),
-                                    )
+                                    (inherited_dep.spec.clone(), inherited_dep.declared_in.to_path_buf())
                                 } else {
                                     (entry.spec.clone(), decl.path.clone())
                                 }
@@ -565,11 +510,9 @@ impl ManifestWalkResolver {
                             (entry.spec.clone(), decl.path.clone())
                         };
 
-                        if let Some(to) = index.resolve_native_with_fallback(
-                            decl.ecosystem(),
-                            &entry.name,
-                            &mut diagnostics,
-                        ) {
+                        if let Some(to) =
+                            index.resolve_native_with_fallback(decl.ecosystem(), &entry.name, &mut diagnostics)
+                        {
                             let idx = edges.len();
                             let edge = DepEdge {
                                 from: pkg.id.clone(),
@@ -623,14 +566,8 @@ fn detect_npm_role(abs_path: &Path) -> ManifestRole {
         return ManifestRole::Canonical;
     };
 
-    let has_os = map
-        .get("os")
-        .and_then(|v| v.as_array())
-        .is_some_and(|a| !a.is_empty());
-    let has_cpu = map
-        .get("cpu")
-        .and_then(|v| v.as_array())
-        .is_some_and(|a| !a.is_empty());
+    let has_os = map.get("os").and_then(|v| v.as_array()).is_some_and(|a| !a.is_empty());
+    let has_cpu = map.get("cpu").and_then(|v| v.as_array()).is_some_and(|a| !a.is_empty());
 
     if !has_os || !has_cpu {
         return ManifestRole::Canonical;
@@ -672,11 +609,7 @@ fn detect_npm_role(abs_path: &Path) -> ManifestRole {
         None
     };
 
-    ManifestRole::Platform {
-        platform,
-        arch,
-        abi,
-    }
+    ManifestRole::Platform { platform, arch, abi }
 }
 
 /// Infers a Linux napi-rs platform package's libc ABI from its package
@@ -747,9 +680,8 @@ mod tests {
         .unwrap();
         let locator = crate::locate::IgnoreWalkLocator::new(root);
         let runner = NoopRunner;
-        let ws = crate::Workspace::load(root.to_path_buf(), &locator, &runner).expect(
-            "Workspace::load must succeed for an unpromoted Cargo package referenced via cargo:foo",
-        );
+        let ws = crate::Workspace::load(root.to_path_buf(), &locator, &runner)
+            .expect("Workspace::load must succeed for an unpromoted Cargo package referenced via cargo:foo");
         let native = ws
             .graph
             .identity()
@@ -856,17 +788,10 @@ mod tests {
         let platform_member = group
             .members
             .iter()
-            .find(|m| {
-                matches!(
-                    m,
-                    crate::config::groups::GroupMember::PlatformManifest { .. }
-                )
-            })
+            .find(|m| matches!(m, crate::config::groups::GroupMember::PlatformManifest { .. }))
             .expect("platform member must resolve, not be silently dropped or errored");
 
-        let crate::config::groups::GroupMember::PlatformManifest { role, name, .. } =
-            platform_member
-        else {
+        let crate::config::groups::GroupMember::PlatformManifest { role, name, .. } = platform_member else {
             unreachable!()
         };
         assert_eq!(name, "@myorg/my-crate-linux-x64-gnu");
@@ -923,8 +848,7 @@ mod tests {
 
         let locator = crate::locate::IgnoreWalkLocator::new(root);
         let runner = NoopRunner;
-        let ws = crate::Workspace::load(root.to_path_buf(), &locator, &runner)
-            .expect("workspace load must succeed");
+        let ws = crate::Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace load must succeed");
 
         let owning_crate = callisto_model::PackageId::Bare("my-crate".to_string());
         let consumer = callisto_model::PackageId::Bare("@myorg/consumer".to_string());
@@ -1066,8 +990,7 @@ mod tests {
             ),
         ];
         let primary_id = PackageId::Bare("native-core".to_string());
-        let (claiming, native_keys) =
-            compute_claiming_ecosystems_and_native_keys(&list, &primary_id);
+        let (claiming, native_keys) = compute_claiming_ecosystems_and_native_keys(&list, &primary_id);
         let mut expected = std::collections::BTreeSet::new();
         expected.insert(Ecosystem::Cargo);
         assert_eq!(
@@ -1078,10 +1001,7 @@ mod tests {
             native_keys,
             vec![
                 (Ecosystem::Cargo, "native-core".to_string()),
-                (
-                    Ecosystem::Npm,
-                    "@myorg/native-core-linux-x64-gnu".to_string()
-                ),
+                (Ecosystem::Npm, "@myorg/native-core-linux-x64-gnu".to_string()),
             ],
             "path_native_keys must retain the COMPLETE unfiltered key set, unlike claiming_ecosystems"
         );
@@ -1099,8 +1019,7 @@ mod tests {
         .unwrap();
         let locator = crate::locate::IgnoreWalkLocator::new(root);
         let runner = NoopRunner;
-        let ws = crate::Workspace::load(root.to_path_buf(), &locator, &runner)
-            .expect("Case D load must succeed");
+        let ws = crate::Workspace::load(root.to_path_buf(), &locator, &runner).expect("Case D load must succeed");
         assert!(ws.graph.get(&PackageId::Bare("foo".to_string())).is_some());
     }
 
@@ -1227,14 +1146,8 @@ mod tests {
             name: "native-core".to_string(),
         };
         assert_eq!(ws.graph.packages().count(), 2);
-        let cargo_pkg = ws
-            .graph
-            .get(&cargo_id)
-            .expect("Cargo-prefixed entry must exist");
-        let npm_pkg = ws
-            .graph
-            .get(&npm_id)
-            .expect("Npm-prefixed entry must exist");
+        let cargo_pkg = ws.graph.get(&cargo_id).expect("Cargo-prefixed entry must exist");
+        let npm_pkg = ws.graph.get(&npm_id).expect("Npm-prefixed entry must exist");
         assert_eq!(cargo_pkg.manifests.len(), 1);
         assert_eq!(
             cargo_pkg.manifests[0].path,
@@ -1255,17 +1168,13 @@ mod tests {
         write_pkg(root, "packages/native-core", Ecosystem::Npm, "native-core");
         let locator = crate::locate::IgnoreWalkLocator::new(root);
         let runner = NoopRunner;
-        let ws = crate::Workspace::load(root.to_path_buf(), &locator, &runner)
-            .expect("promotion must succeed");
+        let ws = crate::Workspace::load(root.to_path_buf(), &locator, &runner).expect("promotion must succeed");
         assert!(
             !ws.graph.identity().bare.contains_key("native-core"),
             "index.bare must not retain the stale pre-promotion key once both occurrences promote"
         );
         let unprefixed_lookup = ws.graph.identity().resolve_human("native-core", &[]);
-        assert!(matches!(
-            unprefixed_lookup,
-            Err(GraphError::AmbiguousName { .. })
-        ));
+        assert!(matches!(unprefixed_lookup, Err(GraphError::AmbiguousName { .. })));
     }
 
     #[test]
@@ -1276,8 +1185,7 @@ mod tests {
         write_pkg(root, "packages/native-core", Ecosystem::Npm, "native-core");
         let locator = crate::locate::IgnoreWalkLocator::new(root);
         let runner = NoopRunner;
-        let ws = crate::Workspace::load(root.to_path_buf(), &locator, &runner)
-            .expect("promotion must succeed");
+        let ws = crate::Workspace::load(root.to_path_buf(), &locator, &runner).expect("promotion must succeed");
 
         let cargo_native = ws
             .graph
@@ -1318,8 +1226,7 @@ mod tests {
         write_pkg(root, "packages/native-core", Ecosystem::Npm, "native-core");
         let locator = crate::locate::IgnoreWalkLocator::new(root);
         let runner = NoopRunner;
-        let ws = crate::Workspace::load(root.to_path_buf(), &locator, &runner)
-            .expect("promotion must succeed");
+        let ws = crate::Workspace::load(root.to_path_buf(), &locator, &runner).expect("promotion must succeed");
 
         let cargo_prefixed = ws
             .graph
@@ -1372,8 +1279,7 @@ mod tests {
 
         let locator = crate::locate::IgnoreWalkLocator::new(root);
         let runner = NoopRunner;
-        let ws = crate::Workspace::load(root.to_path_buf(), &locator, &runner)
-            .expect("promotion must succeed");
+        let ws = crate::Workspace::load(root.to_path_buf(), &locator, &runner).expect("promotion must succeed");
 
         let platform_entry = ws
             .graph
@@ -1444,8 +1350,7 @@ mod tests {
 
         let locator = crate::locate::IgnoreWalkLocator::new(root);
         let runner = NoopRunner;
-        let ws = crate::Workspace::load(root.to_path_buf(), &locator, &runner)
-            .expect("Case D load must succeed");
+        let ws = crate::Workspace::load(root.to_path_buf(), &locator, &runner).expect("Case D load must succeed");
 
         let bare_id = PackageId::Bare("hybrid".to_string());
         assert!(
@@ -1458,14 +1363,8 @@ mod tests {
             .platform
             .get("@myorg/hybrid-darwin-arm64")
             .expect("platform entry must exist in IdentityIndex.platform");
-        assert_eq!(
-            platform_entry.0, bare_id,
-            "platform entry owner must be the Bare ID"
-        );
-        assert_eq!(
-            platform_entry.1,
-            PathBuf::from("crates/hybrid/package.json")
-        );
+        assert_eq!(platform_entry.0, bare_id, "platform entry owner must be the Bare ID");
+        assert_eq!(platform_entry.1, PathBuf::from("crates/hybrid/package.json"));
     }
 
     #[test]
@@ -1476,8 +1375,7 @@ mod tests {
         write_pkg(root, "packages/native-core", Ecosystem::Npm, "native-core");
         let locator = crate::locate::IgnoreWalkLocator::new(root);
         let runner = NoopRunner;
-        let ws = crate::Workspace::load(root.to_path_buf(), &locator, &runner)
-            .expect("promotion must succeed");
+        let ws = crate::Workspace::load(root.to_path_buf(), &locator, &runner).expect("promotion must succeed");
         let cargo_id = ws
             .graph
             .identity()
@@ -1515,11 +1413,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let root = dir.path();
         write_pkg(root, "aaa/tri", Ecosystem::Cargo, "tri");
-        std::fs::write(
-            root.join("aaa/tri/package.json"),
-            r#"{"name":"tri","version":"0.1.0"}"#,
-        )
-        .unwrap();
+        std::fs::write(root.join("aaa/tri/package.json"), r#"{"name":"tri","version":"0.1.0"}"#).unwrap();
         write_pkg(root, "bbb/tri", Ecosystem::Pypi, "tri");
         write_pkg(root, "ccc/tri", Ecosystem::Npm, "tri");
         let locator = crate::locate::IgnoreWalkLocator::new(root);
@@ -1551,18 +1445,14 @@ mod tests {
         write_pkg(root, "ccc", Ecosystem::Pypi, "multi");
         let locator = crate::locate::IgnoreWalkLocator::new(root);
         let runner = NoopRunner;
-        let ws = crate::Workspace::load(root.to_path_buf(), &locator, &runner)
-            .expect("N=3 promotion must succeed");
+        let ws = crate::Workspace::load(root.to_path_buf(), &locator, &runner).expect("N=3 promotion must succeed");
         assert_eq!(ws.graph.packages().count(), 3);
         for eco in [Ecosystem::Cargo, Ecosystem::Npm, Ecosystem::Pypi] {
             let id = PackageId::Prefixed {
                 ecosystem: eco,
                 name: "multi".to_string(),
             };
-            let pkg = ws
-                .graph
-                .get(&id)
-                .unwrap_or_else(|| panic!("{eco:?} entry must exist"));
+            let pkg = ws.graph.get(&id).unwrap_or_else(|| panic!("{eco:?} entry must exist"));
             assert_eq!(
                 pkg.manifests.len(),
                 1,
@@ -1596,10 +1486,7 @@ mod tests {
                 ecosystem: eco,
                 name: name.to_string(),
             };
-            let pkg = ws
-                .graph
-                .get(&id)
-                .unwrap_or_else(|| panic!("{eco:?} entry must exist"));
+            let pkg = ws.graph.get(&id).unwrap_or_else(|| panic!("{eco:?} entry must exist"));
             assert_eq!(
                 pkg.manifests.len(),
                 1,
@@ -1616,8 +1503,8 @@ mod tests {
         write_pkg(root, "bindings/python", Ecosystem::Pypi, "mylib");
         let locator = crate::locate::IgnoreWalkLocator::new(root);
         let runner = NoopRunner;
-        let ws = crate::Workspace::load(root.to_path_buf(), &locator, &runner)
-            .expect("Cargo/Pypi promotion must succeed");
+        let ws =
+            crate::Workspace::load(root.to_path_buf(), &locator, &runner).expect("Cargo/Pypi promotion must succeed");
         let cargo_pkg = ws
             .graph
             .get(&PackageId::Prefixed {
@@ -1633,10 +1520,7 @@ mod tests {
             })
             .expect("Pypi entry must exist");
         assert_eq!(cargo_pkg.manifests.len(), 1);
-        assert_eq!(
-            cargo_pkg.manifests[0].path,
-            PathBuf::from("bindings/rust/Cargo.toml")
-        );
+        assert_eq!(cargo_pkg.manifests[0].path, PathBuf::from("bindings/rust/Cargo.toml"));
         assert_eq!(pypi_pkg.manifests.len(), 1);
         assert_eq!(
             pypi_pkg.manifests[0].path,
@@ -1656,8 +1540,7 @@ mod tests {
         .unwrap();
         let locator = crate::locate::IgnoreWalkLocator::new(root);
         let runner = NoopRunner;
-        let ws = crate::Workspace::load(root.to_path_buf(), &locator, &runner)
-            .expect("Case D load must succeed");
+        let ws = crate::Workspace::load(root.to_path_buf(), &locator, &runner).expect("Case D load must succeed");
         assert_eq!(ws.graph.packages().count(), 1);
         let pkg = ws
             .graph
@@ -1704,8 +1587,7 @@ mod tests {
     }
 
     #[test]
-    fn ac14_ac18_npm_consumer_depending_on_serde_with_cargo_serde_present_gets_no_edge_and_diagnostic(
-    ) {
+    fn ac14_ac18_npm_consumer_depending_on_serde_with_cargo_serde_present_gets_no_edge_and_diagnostic() {
         let dir = tempfile::tempdir().expect("tempdir");
         let root = dir.path();
         write_pkg(root, "crates/serde", Ecosystem::Cargo, "serde");
@@ -1717,8 +1599,7 @@ mod tests {
         .unwrap();
         let locator = crate::locate::IgnoreWalkLocator::new(root);
         let runner = NoopRunner;
-        let ws = crate::Workspace::load(root.to_path_buf(), &locator, &runner)
-            .expect("load must succeed");
+        let ws = crate::Workspace::load(root.to_path_buf(), &locator, &runner).expect("load must succeed");
         let cargo_serde = PackageId::Bare("serde".to_string());
         assert!(!ws.graph.edges().iter().any(|e| e.to == cargo_serde));
         let diag = ws
@@ -1735,16 +1616,10 @@ mod tests {
     }
 
     #[test]
-    fn ac15_ac18_npm_consumer_depending_on_ambiguous_lib_with_cargo_and_pypi_present_gets_exactly_one_diagnostic(
-    ) {
+    fn ac15_ac18_npm_consumer_depending_on_ambiguous_lib_with_cargo_and_pypi_present_gets_exactly_one_diagnostic() {
         let dir = tempfile::tempdir().expect("tempdir");
         let root = dir.path();
-        write_pkg(
-            root,
-            "crates/ambiguous-lib",
-            Ecosystem::Cargo,
-            "ambiguous-lib",
-        );
+        write_pkg(root, "crates/ambiguous-lib", Ecosystem::Cargo, "ambiguous-lib");
         write_pkg(root, "py/ambiguous-lib", Ecosystem::Pypi, "ambiguous-lib");
         std::fs::create_dir_all(root.join("packages/consumer")).unwrap();
         std::fs::write(
@@ -1754,16 +1629,12 @@ mod tests {
         .unwrap();
         let locator = crate::locate::IgnoreWalkLocator::new(root);
         let runner = NoopRunner;
-        let ws = crate::Workspace::load(root.to_path_buf(), &locator, &runner)
-            .expect("load must succeed");
+        let ws = crate::Workspace::load(root.to_path_buf(), &locator, &runner).expect("load must succeed");
         let diags: Vec<_> = ws
             .graph
             .diagnostics()
             .iter()
-            .filter(|d| {
-                d.code == callisto_model::DiagnosticCode::UnknownPackage
-                    && d.message.contains("ambiguous-lib")
-            })
+            .filter(|d| d.code == callisto_model::DiagnosticCode::UnknownPackage && d.message.contains("ambiguous-lib"))
             .collect();
         assert_eq!(
             diags.len(),

@@ -53,8 +53,7 @@ impl CommandRunner for MoonCommandRunner {
     fn run(&self, program: &str, args: &[&str], cwd: &Path) -> Result<CommandOutput, CommandError> {
         use warpgate_pdk::{get_host_environment, into_virtual_path, ExecCommandInput};
 
-        let host_env =
-            get_host_environment().map_err(|e| classify_host_failure(program, &e.to_string()))?;
+        let host_env = get_host_environment().map_err(|e| classify_host_failure(program, &e.to_string()))?;
 
         if !warpgate_pdk::command_exists(&host_env, program) {
             return Err(CommandError::NotFound {
@@ -131,10 +130,7 @@ mod tests {
 
     #[test]
     fn classifies_not_found_failures() {
-        let err = classify_host_failure(
-            "ghost-cmd",
-            "exec: \"ghost-cmd\": executable file not found in $PATH",
-        );
+        let err = classify_host_failure("ghost-cmd", "exec: \"ghost-cmd\": executable file not found in $PATH");
         assert_eq!(
             err,
             CommandError::NotFound {
