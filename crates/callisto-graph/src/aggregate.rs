@@ -126,21 +126,18 @@ fn resolve_since(git: &impl GitDataSource, tag_name: &str) -> Option<CommitSha> 
 /// Resolves a changeset entry's parsed `PackageId` against the packages in
 /// the graph.
 ///
-/// `PackageId::matches` is a pairwise compatibility check: a bare id and a
-/// prefixed id with the same name are considered compatible because the
-/// bare side simply doesn't specify an ecosystem. That's correct pairwise,
-/// but a polyglot workspace can legitimately contain the same name in two
-/// or more ecosystems (e.g. `cargo/foo` and `npm/foo`), and a bare
-/// changeset entry naming `foo` cannot be resolved to either one without
-/// more context. Iterating with `.find()` over such a graph silently picks
-/// whichever candidate happens to come first, which is exactly the
-/// ambiguity bug this function fixes: it collects *all* matching
-/// candidates and only succeeds when there is exactly one.
+/// `PackageId::matches` is pairwise: a bare id and a prefixed id with the
+/// same name are compatible, since bare doesn't specify an ecosystem. But
+/// a polyglot workspace can legitimately have the same name in two-plus
+/// ecosystems (`cargo/foo`, `npm/foo`), and a bare `foo` can't resolve to
+/// either without more context. `.find()` over such a graph would silently
+/// pick whichever candidate comes first -- the ambiguity bug this function
+/// fixes by collecting *all* matches and only succeeding when there's
+/// exactly one.
 ///
-/// Returns `Ok(None)` when no package matches (an unknown-package
-/// condition, reported separately by `validate`), `Ok(Some(pkg))` when
-/// resolution is unambiguous, and `Err(GraphError::AmbiguousName)` when the
-/// id matches two or more packages.
+/// `Ok(None)`: no match (unknown package, reported separately by
+/// `validate`). `Ok(Some(pkg))`: unambiguous. `Err(AmbiguousName)`: two or
+/// more matches.
 pub(crate) fn resolve_target_package<'a>(
     packages: impl Iterator<Item = &'a Package>,
     id: &PackageId,
@@ -1118,18 +1115,19 @@ mod tests {
         );
     }
 
-    /// Spec: when a fixed group in callisto.toml references a package that no
-    /// longer exists in the workspace, `union_fixed` must NOT insert the stale
-    /// member into `agg.severities`.  Doing so causes `bump_target` in
-    /// `solve_cascade` to call `input.base.get(stale_id)` -> `None` ->
-    /// `Err(GraphError::Manifest(MissingField))`, crashing `callisto version`
-    /// with a misleading error.  After the fix the stale member must be
-    /// skipped and an `UnknownPackage` warning must be emitted.
+    /// Spec: when a fixed group in callisto.toml references a package that
+    /// no longer exists in the workspace, `union_fixed` must NOT insert
+    /// the stale member into `agg.severities`. Doing so causes
+    /// `bump_target` in `solve_cascade` to call
+    /// `input.base.get(stale_id)` -> `None` ->
+    /// `Err(GraphError::Manifest(MissingField))`, crashing `callisto
+    /// version` with a misleading error. The stale member must be skipped
+    /// and an `UnknownPackage` warning emitted.
     ///
     /// Setup: `pkg_bar` has `Severity::Minor` (from a changeset), `pkg_baz`
-    /// has no severity yet.  Fixed group contains all three: `pkg_foo`
-    /// (stale), `pkg_bar`, `pkg_baz`.  `union_fixed` should propagate `Minor`
-    /// to `pkg_baz` (real member), skip `pkg_foo` with a diagnostic, and
+    /// has none yet. Fixed group has all three: `pkg_foo` (stale),
+    /// `pkg_bar`, `pkg_baz`. `union_fixed` should propagate `Minor` to
+    /// `pkg_baz`, skip `pkg_foo` with a diagnostic, and
     /// return `true` because `pkg_baz` changed.
     #[test]
     fn test_union_fixed_stale_member_emits_diagnostic_and_is_skipped() {

@@ -12,17 +12,15 @@ use crate::Workspace;
 pub struct InitOptions {
     /// Non-interactive confirmation. On a first run this has no effect
     /// (scaffolding an absent `callisto.toml` is always a direct write; the
-    /// CLI's own interactive confirm-or-abort prompt gates *that* decision
-    /// before this function is ever called). On a re-run where drift is
-    /// detected against the already-recorded workspace state, `yes` is what
-    /// gates applying it: `false` reports the diff without touching any
-    /// file (dry-preview), `true` writes it (docs/00-design.md §18 Q5.4
-    /// mechanism 1 — "re-detects, prints a diff, and applies only with
-    /// confirmation").
+    /// CLI's own interactive confirm-or-abort prompt gates that decision
+    /// before this function is ever called). On a re-run with drift
+    /// detected against the recorded workspace state, `yes` gates applying
+    /// it: `false` reports the diff without touching any file, `true`
+    /// writes it (docs/00-design.md §18 Q5.4 mechanism 1).
     ///
     /// Orthogonal to the `ApplyPermit` [`init`] takes: `yes: true` with no
-    /// permit means "the user consented to applying the drift, but this is a
-    /// dry run" -- the apply outcome is reported and nothing is written.
+    /// permit means "consented to applying the drift, but this is a dry
+    /// run" -- the outcome is reported and nothing is written.
     pub yes: bool,
 }
 
@@ -95,22 +93,22 @@ fn set_recorded_ecosystems(content: &str, ecosystems: &BTreeSet<Ecosystem>) -> R
 /// Scaffolds `callisto.toml` and `.changeset/`, or reconciles an existing
 /// config against the workspace's currently-discovered ecosystems.
 ///
-/// `permit` and [`InitOptions::yes`] are independent gates and neither
-/// subsumes the other. `yes` answers "should detected drift be applied?";
-/// `permit` answers "may anything be written at all?". `--yes --dry-run`
-/// therefore takes the apply *branch* while performing no write -- the
-/// returned [`InitReport`] describes what would happen, exactly as
-/// `version --dry-run` reports the plan it did not apply.
+/// `permit` and [`InitOptions::yes`] are independent gates: `yes` answers
+/// "should detected drift be applied?"; `permit` answers "may anything be
+/// written at all?". `--yes --dry-run` takes the apply *branch* while
+/// writing nothing -- the returned [`InitReport`] describes what would
+/// happen, exactly as `version --dry-run` reports its unapplied plan.
 ///
-/// Every computation still runs under a dry run, including the TOML re-render
-/// in `set_recorded_ecosystems`, so a config that would fail to parse on a
-/// real run fails the dry run too rather than reporting a false preview.
+/// Every computation runs under a dry run too, including the TOML
+/// re-render in `set_recorded_ecosystems`, so a config that would fail to
+/// parse on a real run fails the dry run instead of reporting a false
+/// preview.
 ///
 /// # Errors
 ///
-/// Returns `Err(GraphError::Config(...))` if `callisto.toml` cannot be read or parsed,
-/// or if the TOML edit for the reconciled ecosystem list fails.
-/// Returns `Err` wrapping an I/O error on filesystem write failures.
+/// `Err(GraphError::Config(...))` if `callisto.toml` can't be read/parsed,
+/// or the ecosystem-list TOML edit fails. `Err` wrapping an I/O error on
+/// write failures.
 pub fn init<R: CommandRunner, D: DependencyResolver>(
     ws: &Workspace<'_, R, D>,
     opts: &InitOptions,

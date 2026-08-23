@@ -1,28 +1,24 @@
 //! The capability token that gates every side-effecting operation in callisto.
 //!
-//! Before this existed, "respect `--dry-run`" was a convention: each command
-//! handler was expected to remember to consult a bool before writing. Four
-//! separate commands forgot -- `version` and `add` (fixed earlier), then
-//! `pre enter`/`pre exit` and `init`, neither of which read the flag at all.
-//! The bug class is not specific to this codebase; cargo's own `--dry-run`
-//! tracker carries the same shape of defect. A convention that must be
-//! remembered at every new write site will eventually be forgotten at one.
+//! Before this existed, "respect `--dry-run`" was a convention: commands
+//! were expected to check a bool before writing. Several forgot (`pre
+//! enter`/`pre exit`, `init`) -- the same defect shape cargo's own
+//! `--dry-run` tracker has. A convention every new write site must
+//! remember will eventually be forgotten at one.
 //!
 //! [`ApplyPermit`] converts that convention into a type obligation. Write
 //! primitives (`atomic_write`, manifest persistence, tag creation, registry
-//! publishing, git staging) take `&ApplyPermit`, and the only way to obtain
-//! one outside of tests is [`ApplyPermit::granted_unless_dry_run`], which
-//! returns `None` for a dry run. A command handler that forgets the check now
-//! has nothing to pass, and fails to compile.
+//! publishing, git staging) take `&ApplyPermit`; the only way to obtain one
+//! outside tests is [`ApplyPermit::granted_unless_dry_run`], which returns
+//! `None` for a dry run. A handler that forgets the check has nothing to
+//! pass, and fails to compile.
 
 /// Proof that the caller is authorized to perform real side effects.
 ///
-/// Hold one of these and you may write to disk, create git refs, or publish to
-/// a registry. The private unit field means no other module -- inside this
-/// crate or outside it -- can construct one via a struct literal; the
-/// constructors below are the entire surface.
-///
-/// # Examples
+/// Hold one to write to disk, create git refs, or publish to a registry.
+/// The private unit field means no module -- inside this crate or outside
+/// it -- can construct one via a struct literal; the constructors below
+/// are the entire surface.
 ///
 /// ```
 /// use callisto_model::ApplyPermit;

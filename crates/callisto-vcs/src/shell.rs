@@ -135,19 +135,18 @@ impl GitDataSource for ShellGit<'_> {
     }
 
     /// Shells `git log --no-merges --format=<RECORD_SEP>%H<FIELD_SEP>%B
-    /// <range> [-- <pathspecs>]`, matching the native path's shape
-    /// field-for-field: `--no-merges` excludes merge commits exactly like
+    /// <range> [-- <pathspecs>]`, matching the native path field-for-field:
+    /// `--no-merges` excludes merges like
     /// `GitRepository::commits_since_with_pathspec`'s parent-count skip;
-    /// `<since>..HEAD` (or bare `HEAD` for no bound) gives the same
-    /// exclusive-lower-bound revision range as the revwalk's stop-at-
-    /// `since` logic; and the trailing `-- <pathspecs>` reproduces `git
-    /// log`'s own pathspec-prefix filtering.
+    /// `<since>..HEAD` (or bare `HEAD`) gives the same
+    /// exclusive-lower-bound range as the revwalk's stop-at-`since` logic;
+    /// `-- <pathspecs>` reproduces `git log`'s own pathspec-prefix
+    /// filtering.
     ///
-    /// Deliberately does *not* pre-resolve `since_ref` via a separate
-    /// `rev-parse` round-trip: an unresolvable `since_ref` already makes
-    /// `git log <since_ref>..HEAD` itself fail (non-zero exit), which is
-    /// surfaced below as `Err` exactly like any other `git log` failure --
-    /// one shell call either way.
+    /// Deliberately doesn't pre-resolve `since_ref` via a separate
+    /// `rev-parse`: an unresolvable ref already makes `git log
+    /// <since_ref>..HEAD` fail (non-zero exit), surfaced below as `Err`
+    /// like any other failure -- one shell call either way.
     fn commits_since(&self, since_ref: Option<&str>, pathspecs: &[PathBuf]) -> Result<Vec<GitCommit>, VcsError> {
         let mut args: Vec<String> = vec![
             "log".to_string(),

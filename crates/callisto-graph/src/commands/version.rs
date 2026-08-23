@@ -990,31 +990,21 @@ mod tests {
         );
     }
 
-    /// AC-007 [UNCHANGED per spec revision_note -- the spec's own criterion
-    /// text names no discovery mechanism, only "a Fixed group whose owner
-    /// has two GroupMember::PlatformManifest siblings"]: an owner with two
-    /// platform siblings (e.g. linux-x64-gnu and darwin-arm64 targets), both
-    /// bumped, must produce one PlatformWrite entry per platform member --
-    /// multiple platform manifests under one owner are all covered, not just
-    /// the first.
+    /// AC-007 (spec text names no discovery mechanism): an owner with two
+    /// platform siblings (linux-x64-gnu, darwin-arm64), both bumped, must
+    /// produce one `PlatformWrite` per sibling, not just the first.
     ///
-    /// The linux sibling is a real, disk-discovered Case D member (a
-    /// `Cargo.toml`/`package.json` pair sharing one directory, exactly as
-    /// `walk.rs`'s `real_platform_manifest_resolves_via_fixed_group_and_feeds_napi_drift`
-    /// test exercises). The darwin sibling is fixture-injected the same way
-    /// TASK-3's AC-002b test injects its member: walk.rs's platform
-    /// registration (walk.rs:131-227) groups discovered manifests strictly
-    /// by directory and sets `owner` to that directory's own primary
-    /// package, so a second platform manifest for the SAME owner can only
-    /// ever be disk-discovered if it lives in the SAME directory as the
-    /// owner's Cargo.toml -- and a directory holds at most one
-    /// `package.json`. Real disk discovery of two siblings under one owner
-    /// is therefore not representable through `walk.rs` today (the same
-    /// npm-only/single-file constraint AC-002b's correction already
-    /// documents for Cargo); this test instead proves plan_version's own
-    /// loop -- which is agnostic to how a member entered
-    /// `ws.config.groups.fixed` -- correctly iterates every
-    /// `GroupMember::PlatformManifest` under a group, not just the first.
+    /// Linux is real/disk-discovered (Case D: `Cargo.toml`+`package.json`
+    /// sharing a directory). Darwin is fixture-injected, because walk.rs's
+    /// platform registration (walk.rs:131-227) groups strictly by directory
+    /// -- a second platform manifest for the same owner can only be
+    /// disk-discovered from that same directory, and a directory holds at
+    /// most one `package.json`. So two real disk-discovered siblings under
+    /// one owner isn't representable via `walk.rs` today (same constraint
+    /// as AC-002b's Cargo correction). This test instead proves
+    /// `plan_version`'s own loop -- agnostic to how a member entered
+    /// `ws.config.groups.fixed` -- iterates every `PlatformManifest` member,
+    /// not just the first.
     #[test]
     fn plan_version_emits_platform_write_for_each_of_two_platform_siblings() {
         let tmp = tempfile::tempdir().unwrap();
@@ -1125,19 +1115,14 @@ mod tests {
     /// owner's canonical manifest has matching `optionalDependencies`
     /// entries for both platform names, `plan_version`'s
     /// `VersionPlan.optional_dep_updates` must contain exactly one
-    /// `OptionalDepUpdate` entry for the owner's canonical manifest path,
-    /// whose `updates` field contains both (name, version) pairs -- entries
-    /// are merged per target manifest path, never duplicated as separate
-    /// `OptionalDepUpdate` entries pointing at the same path.
+    /// `OptionalDepUpdate` for the owner's canonical path, with both (name,
+    /// version) pairs merged in -- never duplicated as separate entries
+    /// for the same path.
     ///
     /// Fixture construction mirrors
-    /// `plan_version_emits_platform_write_for_each_of_two_platform_siblings`:
-    /// the linux sibling is a real, disk-discovered Case D member; the
-    /// darwin sibling is fixture-injected into `ws.config.groups.fixed`
-    /// after `Workspace::load` because `walk.rs`'s directory-scoped
-    /// discovery cannot represent two platform siblings under one owner on
-    /// disk (see that test's doc comment and AC-002b's correction for the
-    /// full explanation).
+    /// `plan_version_emits_platform_write_for_each_of_two_platform_siblings`
+    /// (see that test's doc comment for why darwin is fixture-injected, not
+    /// disk-discovered).
     #[test]
     fn plan_version_merges_two_platform_siblings_optional_dep_updates_into_one_entry() {
         let tmp = tempfile::tempdir().unwrap();

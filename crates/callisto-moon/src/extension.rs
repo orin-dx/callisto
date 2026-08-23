@@ -118,22 +118,19 @@ fn build_extension_output(
     }
 }
 
-/// Resolves the subcommand `execute_extension` should dispatch to from the
-/// raw `args` moon passes on the command line: the first argument if
-/// present, otherwise `"status"`.
+/// Resolves the subcommand `execute_extension` should dispatch to: the
+/// first `args` element if present, otherwise `"status"`.
 ///
-/// Pulled out as its own pure function (no `CommandRunner`/workspace I/O) so
-/// this fallback can be unit-tested directly, natively, without requiring a
-/// real Extism guest -- unlike `execute_extension` itself, which unavoidably
-/// references `crate::runner::MoonCommandRunner` and therefore only links
-/// against a real wasm32 Extism host (see `runner.rs`'s `pdk`-feature impl).
+/// Pulled out as its own pure function (no `CommandRunner`/workspace I/O)
+/// so this fallback can be unit-tested natively, without a real Extism
+/// guest -- unlike `execute_extension` itself, which only links against a
+/// real wasm32 Extism host (see `runner.rs`'s `pdk`-feature impl).
 ///
-/// NOTE: this only resolves *which* subcommand name to dispatch on; it does
-/// not validate that name. The `match` in `execute_extension` treats any
-/// name it doesn't specifically recognize (`"plan-publish"`/`"plan_publish"`,
-/// `"validate"`) the same as no subcommand at all -- i.e. it silently falls
-/// back to running `status`, exactly like an empty `args` list. There is
-/// currently no distinct "unrecognized subcommand" error path.
+/// NOTE: resolves *which* name to dispatch on, doesn't validate it.
+/// `execute_extension`'s `match` treats any unrecognized name
+/// (`"plan-publish"`/`"plan_publish"`, `"validate"`) the same as no
+/// subcommand -- silently falls back to `status`, same as empty `args`.
+/// No distinct "unrecognized subcommand" error path exists yet.
 #[cfg(feature = "pdk")]
 fn resolve_subcommand(args: &[String]) -> &str {
     args.first().map(|s| s.as_str()).unwrap_or("status")

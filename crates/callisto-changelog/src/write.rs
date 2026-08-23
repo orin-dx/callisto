@@ -5,17 +5,16 @@ use callisto_model::{ApplyPermit, Version};
 
 use crate::ChangelogError;
 
-/// Prepend a rendered changelog entry for `display_name` to the changelog file
-/// at `changelog_path` (relative to `root`).
+/// Prepend a rendered changelog entry for `display_name` to the
+/// changelog file at `changelog_path` (relative to `root`).
 ///
 /// # Concurrency
 ///
-/// This function is **not safe for concurrent calls on the same `path`**. It
-/// reads the existing file contents and then writes atomically, but a second
-/// concurrent call for the same changelog file would read stale content between
-/// those two points. Callers must ensure sequential access per changelog file.
-/// If the codebase ever moves to parallel `apply`, add a per-path lock or
-/// channel before removing this note.
+/// **Not safe for concurrent calls on the same `path`.** Reads existing
+/// content then writes atomically, but a second concurrent call could
+/// read stale content between those two points. Callers must ensure
+/// sequential access per changelog file -- if this ever moves to
+/// parallel `apply`, add a per-path lock before removing this note.
 pub fn prepend(
     root: &Path,
     changelog_path: &Path,

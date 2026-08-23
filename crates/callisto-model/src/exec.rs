@@ -29,17 +29,15 @@ pub trait CommandRunner: Send + Sync {
     }
 
     /// Like [`Self::run_with_timeout`], but for an internal existence/probe
-    /// check whose stderr is expected to look like a failure on the common
-    /// path (e.g. `npm view` against an unpublished package prints a
-    /// 404-shaped error to stderr as its normal "not found" signal) --
-    /// unlike a real, user-facing mutating command, this must not stream
-    /// that noise live to the terminal, only capture it into the returned
-    /// [`CommandOutput`] for the caller to classify.
+    /// check whose stderr looks like a failure on the common path (e.g.
+    /// `npm view` against an unpublished package prints a 404-shaped "not
+    /// found" to stderr normally) -- unlike a real, user-facing mutating
+    /// command, this must not stream that noise live to the terminal, only
+    /// capture it into [`CommandOutput`] for the caller to classify.
     ///
-    /// The default implementation just delegates to [`Self::run_with_timeout`]
-    /// (streams live, same as any other command); implementors backed by a
-    /// real subprocess and doing their own live-streaming should override
-    /// this to suppress it for probe calls specifically.
+    /// Default implementation just delegates to [`Self::run_with_timeout`]
+    /// (streams live); implementors doing their own live-streaming should
+    /// override this to suppress it for probe calls.
     fn run_quiet(
         &self,
         program: &str,
@@ -123,27 +121,20 @@ fn leading_digits(s: &str) -> &str {
 
 /// Validates git version against the [`REQUIRED_GIT`] floor.
 ///
-/// `reported` is the raw `git --version` output (e.g. `"git version 2.39.5"`,
-/// `"git version 2.39.5.windows.1"` on Git for Windows, which appends a
-/// non-semver `.windows.N` suffix onto the real version, or
-/// `"git version 2.39.5-rc1"` for a pre-release build). Only the leading
-/// `major.minor.patch` triple is parsed, each component truncated to its own
-/// leading digit run (discarding anything past the first non-digit
-/// character, e.g. `5-rc1` -> `5`) before being handed to `semver`: passing
-/// a hyphenated suffix through unstripped would make `semver::VersionReq`
-/// exclude it from the `>=2.20` floor entirely, since semver requirements
-/// never match a pre-release version unless the requirement's own comparator
-/// carries a matching pre-release tag -- a real git build tag has nothing to
-/// do with that semantics and must not affect whether the floor is met. Any
-/// dot-separated components after the third (like `.windows.1`) are ignored,
-/// and a missing `minor`/`patch` is treated as `0`, matching how git itself
-/// never omits them in practice but keeping this tolerant of a truncated
-/// report.
+/// `reported` is raw `git --version` output (e.g. `"git version 2.39.5"`,
+/// `"...2.39.5.windows.1"` on Windows, `"...2.39.5-rc1"` for a pre-release).
+/// Only the leading `major.minor.patch` triple is parsed, each component
+/// truncated at its first non-digit char (`5-rc1` -> `5`) before reaching
+/// `semver`: an unstripped hyphenated suffix would make `semver::VersionReq`
+/// exclude it from the `>=2.20` floor entirely, since semver reqs never
+/// match a pre-release unless the requirement itself carries a matching
+/// tag -- irrelevant to a real git build tag. Extra dot-separated
+/// components (`.windows.1`) are ignored; a missing minor/patch defaults
+/// to `0`.
 ///
-/// The actual comparison is delegated to [`semver::VersionReq`] parsing
-/// [`REQUIRED_GIT`], so the floor is defined in exactly one place instead of
-/// a separately hand-maintained numeric comparison that could silently drift
-/// from the constant used in the error message.
+/// Comparison itself is delegated to [`semver::VersionReq`] parsing
+/// [`REQUIRED_GIT`], so the floor lives in one place, not a hand-maintained
+/// duplicate that could drift from the error message's constant.
 pub fn check_git_version(reported: &str) -> Result<(), CommandError> {
     let incompatible = || CommandError::IncompatibleVersion {
         program: "git".to_string(),

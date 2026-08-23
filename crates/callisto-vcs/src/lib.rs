@@ -78,19 +78,18 @@ pub trait GitVcsProvider {
 ///
 /// Two backends implement this trait:
 ///
-/// - [`GitRepository`] -- native, backed by `gix`. Fast and side-effect-free
-///   for reads, but entirely unavailable on `wasm32` (gix is excluded from
-///   that target's dependency set, so [`GitRepository::discover`] always
-///   returns `Err` there).
-/// - [`ShellGit`] -- shells out to the real `git` binary via a
+/// - [`GitRepository`] -- native `gix`. Fast, side-effect-free for reads,
+///   but unavailable on `wasm32` ([`GitRepository::discover`] always
+///   errors there -- gix is excluded from that target's deps).
+/// - [`ShellGit`] -- shells out to real `git` via a
 ///   [`callisto_model::CommandRunner`], so it works everywhere a `git`
 ///   binary is reachable, including through the `wasm32`/Extism host
 ///   bridge.
 ///
-/// Callers should not implement or select between these directly; use
-/// [`GitAccess::discover`], which tries native `gix` first and transparently
-/// falls back to the `CommandRunner` shell-out, applying the correct
-/// per-operation fallback policy (see [`GitAccess`]'s docs).
+/// Callers shouldn't implement or select between these directly; use
+/// [`GitAccess::discover`], which tries native `gix` first and falls back
+/// to the shell-out, applying the correct per-operation fallback policy
+/// (see [`GitAccess`]'s docs).
 pub trait GitDataSource {
     /// Returns the commit SHA that `HEAD` currently resolves to.
     fn head_sha(&self) -> Result<CommitSha, VcsError>;
@@ -297,30 +296,19 @@ impl GitRepository {
         }
     }
 
-    /// Like [`Self::commits_since`], but additionally filters the walked
-    /// commits down to those that touched at least one path under one of
-    /// the given `pathspecs`.
+    /// Like [`Self::commits_since`], but filters to commits touching at
+    /// least one path under one of `pathspecs`.
     ///
-    /// `pathspecs` are matched as simple path prefixes against every path
-    /// touched by a commit's tree diff against its (first) parent -- a
-    /// pathspec matches a changed path if the changed path is exactly equal
-    /// to it, or the changed path is nested underneath it as a directory
-    /// prefix. This mirrors the directory/path-prefix scoping `git log --
-    /// <pathspecs>` provides for per-package commit filtering; it does not
-    /// implement full git pathspec magic syntax (`:!`, glob magic, etc).
+    /// `pathspecs` match as directory/path prefixes against a commit's tree
+    /// diff vs. its first parent -- mirrors `git log -- <pathspecs>`'s
+    /// scoping, not full git pathspec magic (`:!`, globs, etc). Empty
+    /// `pathspecs` disables filtering (all commits, like `git log` with no
+    /// trailing `--`).
     ///
-    /// An empty `pathspecs` slice disables filtering entirely and returns
-    /// every commit in the walk, matching `git log` with no trailing `--`
-    /// pathspec.
-    ///
-    /// `since` is an exclusive lower bound, same as `commits_since`'s
-    /// `from_ref`: the commit `since` points at is not itself included in
-    /// the result.
-    ///
-    /// Merge commits (more than one parent) are skipped, matching `git log
-    /// --no-merges` -- this method exists to power per-package commit
-    /// scoping for severity inference, where a merge commit's message
-    /// duplicates work already represented by its non-merge ancestors.
+    /// `since` is exclusive, same as `commits_since`. Merge commits are
+    /// skipped (`--no-merges`), since a merge's message duplicates work its
+    /// non-merge ancestors already represent -- this powers per-package
+    /// commit scoping for severity inference.
     pub fn commits_since_with_pathspec(
         &self,
         since: Option<&CommitSha>,

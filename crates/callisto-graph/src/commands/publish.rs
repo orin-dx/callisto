@@ -16,31 +16,23 @@ pub struct PublishOptions {
     pub only: Vec<String>,
 }
 
-/// Validates a `publishConfig.registry` URL read from a package's own
-/// `package.json` before it is threaded into the publish plan (and
-/// eventually into `npm publish --registry <url>` / `npm view --registry
-/// <url>`, both run with `NPM_TOKEN` live in the process environment in CI).
+/// Validates a `publishConfig.registry` URL from a package's own
+/// `package.json` before it's used as an `npm publish --registry`/`npm
+/// view --registry` target (both run with `NPM_TOKEN` live in CI).
 ///
-/// `publishConfig.registry` is manifest-controlled data -- something a PR
-/// author can set in their own package.json -- not operator-controlled
-/// config, so it must never be trusted verbatim as a publish destination.
-/// Two checks are enforced, mirroring the leading-`-` flag-injection guard
-/// already applied to package names before they reach these same CLI
-/// invocations (see `SubprocessRegistryClient::npm_publish`):
+/// `publishConfig.registry` is attacker-controllable (a PR author sets
+/// their own `package.json`) and must never be trusted verbatim. Two
+/// checks, mirroring the leading-`-` flag-injection guard on package names
+/// (see `SubprocessRegistryClient::npm_publish`):
 ///
-/// 1. The URL must use the `https` scheme. A scheme downgrade (e.g. `http`)
-///    is rejected even if the host would otherwise be approved, since scheme
-///    downgrade is itself part of the attack this guard defends against.
-/// 2. The URL must exactly match a `url` configured on an `npm`-kind entry
-///    in the operator's `[registries]` table in `callisto.toml`.
+/// 1. Must use `https` -- a scheme downgrade is rejected even if the host
+///    would otherwise be approved.
+/// 2. Must exactly match a `url` on an `npm`-kind entry in
+///    `callisto.toml`'s `[registries]` table.
 ///
-/// If the operator has configured no custom npm registries at all (no
-/// `[registries.*]` block with `kind = "npm"` and a `url`), any override is
-/// rejected. This is the conservative choice: `callisto.toml`, not an
-/// attacker-influenced `package.json`, must always be the source of truth
-/// for where credentials-bearing publish requests are allowed to go, so
-/// operators who need a private npm registry must opt in explicitly by
-/// declaring it in `[registries]`.
+/// No configured npm registries means no override is ever approved --
+/// `callisto.toml`, not `package.json`, is the source of truth for where
+/// credentialed publish requests can go.
 fn validate_npm_registry_url(
     url: &str,
     package: &PackageId,

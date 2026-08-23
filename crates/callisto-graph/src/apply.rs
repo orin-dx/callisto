@@ -86,18 +86,16 @@ pub(crate) fn classify_manifest_writes(plan: &VersionPlan) -> ManifestWriteClass
 
 /// Writes `plan` to disk and stages the touched paths in git.
 ///
-/// Every side effect this performs is unconditional -- the decision of whether
-/// to apply at all belongs to the caller, which is why an [`ApplyPermit`] is
-/// required rather than a `dry_run` flag being passed in. The previous
-/// `ApplyOptions::transient` field was that flag, and being a plain bool it
-/// carried no guarantee that any caller consulted it before constructing the
-/// options. A dry-run caller now cannot obtain a permit and simply does not
-/// call this function; it reports `plan` instead.
+/// Every side effect here is unconditional -- whether to apply at all is
+/// the caller's decision, which is why an [`ApplyPermit`] is required
+/// rather than a `dry_run` bool: a bool carries no guarantee any caller
+/// actually consulted it. A dry-run caller can't obtain a permit and
+/// simply doesn't call this function; it reports `plan` instead.
 ///
 /// # Errors
 ///
-/// - Manifest parse or write failures (malformed TOML/JSON, unsupported format).
-/// - Git subprocess failures (`git add` or `git rm --cached` returns a non-zero exit code).
+/// - Manifest parse/write failures (malformed TOML/JSON, unsupported format).
+/// - Git subprocess failures (`git add`/`git rm --cached` non-zero exit).
 /// - I/O errors writing changelog sections or `pre.json`.
 pub fn apply_version_plan<R: CommandRunner>(
     root: &Path,
@@ -1669,20 +1667,16 @@ mod tests {
     }
 
     /// AC-004: a batched group's bump succeeds, but the second of two
-    /// rewrites destined for the same path fails. Neither the bump nor the
-    /// first rewrite may land on disk, because persist() for the group is
-    /// never reached -- proven by the on-disk bytes being unchanged (if
-    /// persist() had run, it would have written the mutated in-memory
-    /// document, so identical bytes are only possible if persist() never
-    /// executed). A `persist_call_count()` assertion is deliberately not
-    /// used here: `PERSIST_CALL_COUNT` is a process-global counter shared
-    /// with several non-#[serial] sibling tests in this same module that
-    /// also call `persist()`, so asserting an exact count in this file
-    /// would be racy under a plain multi-threaded `cargo test` run (see
-    /// `crates/callisto-manifests/tests/persist_call_count_test.rs` and
-    /// `crates/callisto-graph/tests/apply_persist_open_count_test.rs` for
-    /// the dedicated, isolated integration binaries where such counter
-    /// assertions belong).
+    /// rewrites for the same path fails. Neither the bump nor the first
+    /// rewrite may land on disk, since persist() for the group is never
+    /// reached -- proven by unchanged on-disk bytes (if persist() had
+    /// run, it would have written the mutated document). Deliberately not
+    /// asserting `persist_call_count()` here: `PERSIST_CALL_COUNT` is a
+    /// process-global counter shared with several non-`#[serial]` sibling
+    /// tests in this module, so an exact count would be racy under plain
+    /// multi-threaded `cargo test` (see
+    /// `persist_call_count_test.rs`/`apply_persist_open_count_test.rs` for
+    /// the isolated integration binaries where such assertions belong).
     #[test]
     fn batched_group_rewrite_failure_leaves_bump_and_first_rewrite_unpersisted() {
         let dir = tempfile::tempdir().unwrap();

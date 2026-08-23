@@ -485,15 +485,14 @@ mod compose_pr_body_report_tests {
     /// docs/01-spec.md §M.12.5: `ComposePrBodyReport`'s composed-body field is
     /// documented as `body`, serialized camelCase as `"body"` -- not `"prBody"`.
     ///
-    /// NOTE: this test intentionally does not assert on a `metadata` key.
-    /// docs/01-spec.md §M.12.5 also documents a `metadata: PrBodyMetadata`
-    /// field (labels / managedLabels / overflow), but the data needed to
-    /// populate `managedLabels` (round-tripping the previous run's applied
-    /// labels from the existing PR body) and `overflow` (notes-branch
-    /// overflow detection) is not computed anywhere in
-    /// `callisto-graph::commands::pr_body` today. Adding that field here
-    /// would require fabricating placeholder data, so it is explicitly out
-    /// of scope for this fix and left for separate work.
+    /// NOTE: intentionally doesn't assert a `metadata` key. §M.12.5 also
+    /// documents `metadata: PrBodyMetadata` (labels/managedLabels/overflow),
+    /// but the data to populate `managedLabels` (round-tripping the
+    /// previous run's labels) and `overflow` (notes-branch overflow
+    /// detection) isn't computed anywhere in
+    /// `callisto-graph::commands::pr_body` today. Adding it here would
+    /// mean fabricating placeholder data -- out of scope, left for
+    /// separate work.
     #[test]
     fn compose_pr_body_report_json_uses_body_key_not_pr_body() {
         let report = ComposePrBodyReport {

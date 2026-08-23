@@ -20,20 +20,20 @@ static SEMVER_VERSIONING: SemVerVersioning = SemVerVersioning;
 
 /// PEP 440 versioning arithmetic implementation.
 ///
-/// Bump semantics (deliberately chosen, see the test matrix below):
-/// - The release segment is treated as `major.minor.patch`, matching the SemVer
-///   implementation's shape; any 4th+ release segment is dropped by a bump.
-/// - The epoch (`N!`) has no SemVer analogue. It carries through a bump unchanged.
-/// - Pre-releases (`aN`/`bN`/`rcN`) and dev-releases (`.devN`) both sort *before*
-///   the final release they're attached to (PEP 440: `devN < aN < bN < rcN < final`),
-///   so a bump finalizes them in place exactly like the SemVer prerelease branch:
-///   `Severity::Patch` just drops the tag, `Minor`/`Major` only advance the next
-///   component up when the lower one is already zero.
-/// - Post-releases (`.postN`) sort *after* the final release they're attached to
-///   (PEP 440: `final < .postN`), so the base release is already "shipped": a bump
-///   increments normally (as if there were no pre/dev/post suffix at all) and drops
-///   the post segment, rather than continuing the post sequence.
-/// - Local version labels (`+localsuffix`) are always dropped by a bump.
+/// Bump semantics (deliberate, see the test matrix below):
+/// - Release segment is `major.minor.patch`, matching SemVer's shape; any
+///   4th+ segment is dropped by a bump.
+/// - Epoch (`N!`) has no SemVer analogue -- carries through unchanged.
+/// - Pre-releases (`aN`/`bN`/`rcN`) and dev-releases (`.devN`) sort
+///   *before* the final release (PEP 440: `devN < aN < bN < rcN < final`),
+///   so a bump finalizes them in place like the SemVer prerelease branch:
+///   `Patch` drops the tag; `Minor`/`Major` advance the next component up
+///   only when the lower one is already zero.
+/// - Post-releases (`.postN`) sort *after* the final release (`final <
+///   .postN`), so the base release is already shipped: a bump increments
+///   normally (as if no pre/dev/post suffix existed) and drops the post
+///   segment, rather than continuing the post sequence.
+/// - Local version labels (`+localsuffix`) are always dropped.
 pub struct Pep440Versioning;
 
 static PEP440_VERSIONING: Pep440Versioning = Pep440Versioning;

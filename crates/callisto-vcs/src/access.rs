@@ -1,8 +1,5 @@
 //! Central native-`gix`-first, `CommandRunner`-shell-fallback selection
-//! logic for [`GitDataSource`], replacing the `if let Ok(repo) = ... { if
-//! let Ok(x) = repo.op(...) { return x } } /* fall through */` boilerplate
-//! that used to be hand-rolled independently at five call sites across
-//! `callisto-graph` and `callisto-conventional`.
+//! logic for [`GitDataSource`].
 
 use std::path::{Path, PathBuf};
 
@@ -11,28 +8,22 @@ use callisto_model::{ApplyPermit, CommandRunner, CommitSha, TagName};
 use crate::{GitCommit, GitDataSource, GitRepository, ShellGit, VcsError};
 
 /// Selects between native `gix` ([`GitRepository`]) and a `CommandRunner`
-/// shell-out ([`ShellGit`]) per operation, so callers never have to.
+/// shell-out ([`ShellGit`]) per operation, so callers never branch on it.
 ///
 /// Construct via [`GitAccess::discover`], then call [`GitDataSource`]
-/// methods directly -- there is no branching visible at the call site.
+/// methods directly.
 ///
 /// **Fallback policy differs by operation category, deliberately:**
 ///
-/// - **Read operations** ([`GitDataSource::list_tags`],
-///   [`GitDataSource::resolve_commit`], [`GitDataSource::commits_since`]):
-///   fall back to the shell backend whenever native `gix` errors for *any*
-///   reason -- failed discovery (`wasm32`, or the root simply isn't a repo)
-///   as well as a discovered repo's operation itself failing. Retrying a
-///   read through the shell can only help: at worst it fails too and the
-///   error propagates from there instead.
-/// - **Write operations** ([`GitDataSource::create_tag`],
-///   [`GitDataSource::create_floating_major`]): fall back to the shell
-///   *only* when native `gix` was never available to begin with (discovery
-///   failed). If a repo *was* discovered, its result -- success or failure
-///   -- is authoritative and returned as-is. Retrying a failed mutation
-///   through a second, different code path risks masking a genuine
-///   failure (or double-applying a mutation the first attempt partially
-///   completed), which read-only retries don't risk.
+/// - **Reads** ([`GitDataSource::list_tags`], [`GitDataSource::resolve_commit`],
+///   [`GitDataSource::commits_since`]): fall back to shell on *any* `gix`
+///   error (failed discovery, or a discovered repo's op failing) --
+///   retrying a read can only help.
+/// - **Writes** ([`GitDataSource::create_tag`], [`GitDataSource::create_floating_major`]):
+///   fall back *only* if `gix` was never discovered. A discovered repo's
+///   result is authoritative -- retrying a failed mutation through a
+///   different path risks masking a real failure, or double-applying a
+///   partial mutation.
 pub struct GitAccess<'r> {
     native: Option<GitRepository>,
     shell: ShellGit<'r>,

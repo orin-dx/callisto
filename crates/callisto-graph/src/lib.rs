@@ -57,32 +57,26 @@ pub struct Workspace<'a, R: CommandRunner, D: DependencyResolver = ManifestWalkR
     /// Deferred [`TagIndex`]: built at most once, the first time
     /// [`Workspace::tags`] is called, not eagerly by [`Workspace::load`].
     ///
-    /// `TagIndex::build` fetches the repository's full tag list -- via
-    /// native gix discovery, or (when gix is unavailable, permanently the
-    /// case on `wasm32`) a `CommandRunner`-shelled `git tag --list` call, a
-    /// full Extism guest<->host round-trip there. Several command paths
-    /// never consult tags at all (e.g. `add`'s non-interactive path only
-    /// needs [`Workspace::root`] to write a changeset file; `add`'s
-    /// interactive package-selection step and `init` only need package
-    /// names/root), so building the index unconditionally inside
-    /// `Workspace::load` charged every caller for work only some of them
-    /// need. All of `TagIndex::build`'s inputs (`runner`, `root`, `graph`,
-    /// `config`) are already fields on `Workspace` itself, so deferring
-    /// construction behind a `OnceCell` needs no extra state and is
-    /// transparent to every existing caller -- go through [`Workspace::tags`]
-    /// rather than this field directly.
+    /// `TagIndex::build` fetches the repo's full tag list -- native gix, or
+    /// (unavailable on `wasm32`) a shelled `git tag --list` Extism
+    /// round-trip. Several command paths never consult tags at all (`add`'s
+    /// non-interactive path only needs [`Workspace::root`]; `init` only
+    /// needs package names/root), so building unconditionally in
+    /// `Workspace::load` charged every caller for work only some need. All
+    /// of `TagIndex::build`'s inputs are already `Workspace` fields, so a
+    /// `OnceCell` needs no extra state -- go through [`Workspace::tags`],
+    /// not this field directly.
     pub tags: OnceCell<TagIndex>,
     /// Deferred [`GitAccess`]: built at most once, the first time
-    /// [`Workspace::git_access`] is called, mirroring the `tags` field
-    /// above. `GitAccess::discover` never fails (native gix, falling back
-    /// to a `CommandRunner` shell round-trip when unavailable), so this is
-    /// simpler than `tags` -- no `Result` to thread through callers.
-    /// Consolidates what were previously multiple independent
-    /// `GitAccess::discover` calls within a single command invocation
-    /// (e.g. `plan_publish`'s own head_sha resolution, and `TagIndex::build`
-    /// via [`Workspace::tags`]) into one shared discovery. `pub` (like
-    /// `tags` above) so tests can hand-construct a `Workspace` via struct
-    /// literal with a pre-seeded value, bypassing discovery entirely.
+    /// [`Workspace::git_access`] is called, mirroring `tags` above.
+    /// `GitAccess::discover` never fails (native gix, falling back to a
+    /// `CommandRunner` shell round-trip when unavailable), so simpler
+    /// than `tags` -- no `Result` to thread through. Consolidates what
+    /// were multiple independent `GitAccess::discover` calls within one
+    /// command invocation (`plan_publish`'s head_sha resolution,
+    /// `TagIndex::build` via [`Workspace::tags`]) into one shared
+    /// discovery. `pub` so tests can hand-construct a `Workspace` with a
+    /// pre-seeded value, bypassing discovery.
     pub git: OnceCell<GitAccess<'a>>,
     pub runner: &'a R,
     /// Path-keyed cache of manifest handles opened read-only during this

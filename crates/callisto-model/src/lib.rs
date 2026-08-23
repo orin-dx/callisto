@@ -76,21 +76,20 @@ mod tests {
         assert_send_sync_static::<StatusReport>();
     }
 
-    /// Every source file across the workspace that declares at least one `#[diagnostic(code(E..))]`,
-    /// embedded at compile time via `include_str!` (paths relative to this file). This list is
-    /// the actual audit surface — a file added here needs no further wiring, since the scan below
-    /// extracts every code occurrence directly from the text.
+    /// Every source file across the workspace declaring at least one
+    /// `#[diagnostic(code(E..))]`, embedded at compile time via
+    /// `include_str!` (paths relative to this file). This list is the
+    /// actual audit surface -- a file added here needs no further wiring,
+    /// since the scan below extracts every code occurrence directly from
+    /// the text.
     ///
-    /// A prior version of this test used a hand-maintained `&[&str]` list of expected codes,
-    /// which (a) had to be updated by hand every time a code was added anywhere in the workspace,
-    /// and (b) was missing two entire files (`commit.rs`, `version.rs`) and roughly a third of
-    /// `callisto-graph/src/error.rs`'s own codes, entirely undetected until an actual duplicate
-    /// (`E117` on two unrelated `callisto-graph` variants) was found by unrelated code review —
-    /// a hand-maintained completeness list is exactly the kind of check that silently stops
-    /// checking anything the moment someone forgets to update it. Scanning the real source text
-    /// at compile time removes the maintenance step entirely: a new file with diagnostic codes
-    /// simply needs adding to this array, and every code that file ever gains is covered from
-    /// then on with no further edits here.
+    /// A prior version hand-maintained a `&[&str]` list of expected codes
+    /// instead -- missed two entire files and a third of
+    /// `callisto-graph/src/error.rs`'s codes, undetected until a duplicate
+    /// (`E117` on two unrelated variants) surfaced by unrelated code
+    /// review. Scanning real source text at compile time removes that
+    /// maintenance step: a new file just needs adding here, and every
+    /// code it ever gains is covered from then on.
     const DIAGNOSTIC_CODE_SOURCE_FILES: &[(&str, &str)] = &[
         ("callisto-model/src/error.rs", include_str!("error.rs")),
         ("callisto-model/src/exec.rs", include_str!("exec.rs")),

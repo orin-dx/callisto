@@ -16,14 +16,13 @@ use crate::resolver::DependencyResolver;
 /// shelled `git tag --list` when gix is unavailable -- most notably on
 /// `wasm32`).
 ///
-/// Deliberately fetches with no glob pattern (the full tag list): callers
-/// apply their own glob filtering afterwards via [`matching_tags`], using
-/// the exact same `globset` matcher both `GitDataSource` backends use
-/// internally. This guarantees identical tag-selection semantics
-/// regardless of which backend sourced the raw list, and lets the fetch be
-/// batched once across every package (see [`TagIndex::build`]) instead of
-/// once per package -- important on `wasm32`, where each `CommandRunner`
-/// call is a full Extism guest<->host round-trip.
+/// Deliberately fetches with no glob pattern: callers filter afterwards
+/// via [`matching_tags`], using the same `globset` matcher both
+/// `GitDataSource` backends use internally -- identical tag-selection
+/// semantics regardless of backend, and lets the fetch batch once across
+/// every package (see [`TagIndex::build`]) instead of once per package,
+/// important on `wasm32` where each `CommandRunner` call is a full Extism
+/// round-trip.
 fn fetch_all_tags(git: &GitAccess<'_>) -> Result<Vec<String>, GraphError> {
     let tags = git.list_tags(None)?;
     Ok(tags.into_iter().map(|t| t.0).collect())
@@ -31,15 +30,14 @@ fn fetch_all_tags(git: &GitAccess<'_>) -> Result<Vec<String>, GraphError> {
 
 /// Filters `all_tags` down to those matching `template`'s glob.
 ///
-/// Uses the same `globset::Glob`-based matching
+/// Uses the same `globset::Glob` matching
 /// `callisto_vcs::GitRepository::list_tags` applies internally, kept in
-/// sync deliberately so tag selection is byte-identical whether `all_tags`
-/// was sourced via gix or the `CommandRunner` fallback in
-/// [`fetch_all_tags`]. This includes error behavior: a `template.glob()`
-/// that fails to compile is surfaced as `Err(GraphError::Vcs(VcsError::
-/// InvalidGlob))`, matching every tag being the unsafe alternative -- a
-/// malformed tag template must never silently make "last tag" resolution
-/// pick an unrelated package's tag.
+/// sync so tag selection is byte-identical whether `all_tags` came from
+/// gix or the `CommandRunner` fallback in [`fetch_all_tags`]. Includes
+/// error behavior: a `template.glob()` that fails to compile surfaces as
+/// `Err(GraphError::Vcs(VcsError::InvalidGlob))` -- matching every tag is
+/// the unsafe alternative, since a malformed template must never silently
+/// make "last tag" resolution pick an unrelated package's tag.
 fn matching_tags<'a>(all_tags: &'a [String], template: &TagTemplate) -> Result<Vec<&'a str>, GraphError> {
     let glob = template.glob();
     let matcher = globset::Glob::new(&glob).map(|g| g.compile_matcher()).map_err(|e| {

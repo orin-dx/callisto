@@ -161,24 +161,20 @@ impl Serialize for Version {
 }
 
 impl<'de> Deserialize<'de> for Version {
-    /// Generic (grammar-unaware) deserialization. The serialized form of a
-    /// `Version` is just its raw string (see `Serialize`), which does not
-    /// carry the grammar it was parsed under, so this impl cannot *know*
-    /// which grammar to use — it can only guess by trying grammars in turn,
-    /// exactly as `VersionReq::deserialize` already does for Cargo/Npm/Pypi.
+    /// Generic (grammar-unaware) deserialization. `Version`'s serialized
+    /// form is just its raw string, carrying no grammar info, so this can
+    /// only guess by trying grammars in turn -- same as
+    /// `VersionReq::deserialize` does for Cargo/Npm/Pypi.
     ///
-    /// SemVer is tried first because it is the strictest, most unambiguous
-    /// grammar; PEP 440 is tried only if SemVer parsing fails. This means a
-    /// string that happens to be valid under *both* grammars (e.g. plain
-    /// `1.2.3`) always resolves to `VersionGrammar::SemVer`, never
-    /// `VersionGrammar::Pep440` — the same residual-ambiguity tradeoff
-    /// `VersionReq::deserialize` accepts for its Cargo/Npm/Pypi chain.
+    /// SemVer is tried first (strictest, most unambiguous); PEP 440 only
+    /// if that fails. A string valid under both (e.g. `1.2.3`) always
+    /// resolves to `VersionGrammar::SemVer`, never `Pep440` -- same
+    /// residual-ambiguity tradeoff `VersionReq::deserialize` accepts.
     ///
-    /// Callers that know the intended ecosystem/grammar ahead of time (e.g.
-    /// because a sibling field names it, or the value came from a
-    /// known-SemVer-only source such as a git tag) should prefer
-    /// [`Version::parse`] with an explicit [`VersionGrammar`] instead of
-    /// going through this generic `serde` impl.
+    /// Callers who know the intended grammar ahead of time (a sibling
+    /// field names it, or the value's from a known-SemVer-only source
+    /// like a git tag) should use [`Version::parse`] with an explicit
+    /// [`VersionGrammar`] instead.
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,

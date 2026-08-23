@@ -106,45 +106,19 @@ impl PackageId {
         }
     }
 
-    /// Returns true when two package IDs *could* refer to the same logical
-    /// package — a weaker "could be the same" check, not a strict equality
-    /// test.
+    /// Weak "could be the same package" check, not strict equality.
     ///
-    /// ## Semantics
+    /// `Bare(x)` matches any `Prefixed(_, x)` (bare is an ecosystem wildcard);
+    /// `Prefixed(e1, x)` matches `Prefixed(e2, x)` only if `e1 == e2`; exact
+    /// equality always matches.
     ///
-    /// A [`PackageId::Bare`] carries no ecosystem claim: it represents a name
-    /// the caller could not (or did not) qualify with an ecosystem prefix.
-    /// This arises naturally from user input — a developer typing `foo` in a
-    /// changeset or CLI flag means "the package named foo," not "the package
-    /// named foo in a specific ecosystem."
-    ///
-    /// The matching rules follow from that intent:
-    ///
-    /// - `Bare(x)` matches any `Prefixed(_, x)` with the same name, and vice
-    ///   versa. The bare side is a wildcard over ecosystems.
-    /// - `Prefixed(e1, x)` matches `Prefixed(e2, x)` only when `e1 == e2`.
-    /// - Exact structural equality (`self == other`) is always a match.
-    ///
-    /// ## Caller contract in polyglot workspaces
-    ///
-    /// Because `Bare("foo")` matches *both* `Prefixed(Cargo, "foo")` and
-    /// `Prefixed(Npm, "foo")`, a bare lookup in a graph that contains the
-    /// same name in two or more ecosystems will produce multiple matches.
-    /// Callers **must** collect all matches and surface an error when there
-    /// are two or more — silently taking the first match is the ambiguity
-    /// bug this function is designed to let callers detect.
-    ///
-    /// The canonical example is `resolve_target_package` in
-    /// `callisto-graph/src/aggregate.rs`: it calls
-    /// `packages.filter(|p| p.id.matches(id)).collect()`, then returns
-    /// `Err(GraphError::AmbiguousName)` when the result has two or more
-    /// entries.  That pattern is the correct way to use `matches()` in any
-    /// context that may encounter a polyglot workspace.
-    ///
-    /// Callers that only need a simple existence check (e.g. "is there at
-    /// least one package with this name?") may use `.any()` safely — they
-    /// rely on the aggregation layer to catch and reject ambiguous references
-    /// before acting on them.
+    /// **Caller contract**: in a polyglot workspace, a bare lookup can match
+    /// packages in two or more ecosystems (e.g. `foo` in both Cargo and npm).
+    /// Callers must collect *all* matches and error on 2+ — see
+    /// `aggregate::resolve_target_package`'s `AmbiguousName` pattern — never
+    /// take the first match silently. A plain existence check (`.any()`) is
+    /// safe only because the aggregation layer already rejects ambiguous
+    /// references upstream.
     pub fn matches(&self, other: &Self) -> bool {
         if self == other {
             return true;

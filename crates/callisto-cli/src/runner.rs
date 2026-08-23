@@ -360,23 +360,20 @@ mod tests {
         );
     }
 
-    /// Regression test for the timeout-KILL branch's own grace-period logic
-    /// (runner.rs:124-146), which is structurally similar to but
-    /// independently written from the normal-exit branch's grace-period
-    /// logic (runner.rs:153-163) covered by
-    /// `run_with_timeout_bounds_reader_join_when_descendant_holds_pipe_open`.
-    /// That existing test's direct child (`sh`) exits almost immediately, so
-    /// it only ever exercises the exit branch. Here the direct child itself
-    /// (`sh -c "sleep 30 >&2 & sleep 10"`) outlives the configured timeout,
-    /// so `run_with_timeout` must actually kill it, while a backgrounded
-    /// grandchild (`sleep 30 >&2`) keeps stderr open independently of the
-    /// kill.
+    /// Regression test for the timeout-KILL branch's grace-period logic
+    /// (runner.rs:124-146), structurally similar to but independently
+    /// written from the normal-exit branch's (runner.rs:153-163, covered
+    /// by `run_with_timeout_bounds_reader_join_when_descendant_holds_pipe_open`).
+    /// That test's child (`sh`) exits almost immediately, only exercising
+    /// the exit branch. Here the child (`sh -c "sleep 30 >&2 & sleep 10"`)
+    /// outlives the timeout, so `run_with_timeout` must actually kill it,
+    /// while a backgrounded grandchild (`sleep 30 >&2`) keeps stderr open
+    /// independently of the kill.
     ///
-    /// Because the warning text is emitted via `eprintln!` from inside
-    /// `run_with_timeout` itself (not captured in `CommandOutput`), this
-    /// test re-execs the current test binary as a child process with
-    /// `--nocapture` so the real OS-level stderr can be captured and
-    /// asserted on, rather than being swallowed by the outer test harness.
+    /// The warning is emitted via `eprintln!` inside `run_with_timeout`
+    /// (not captured in `CommandOutput`), so this test re-execs the binary
+    /// as a child with `--nocapture` to capture real OS-level stderr
+    /// instead of having it swallowed by the outer harness.
     #[test]
     fn run_with_timeout_warns_on_timeout_branch_when_descendant_holds_pipe_open() {
         const CHILD_ENV: &str = "CALLISTO_RUN_TIMEOUT_KILL_CHILD";
