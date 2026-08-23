@@ -10010,3 +10010,7 @@ Once it completes, report the FULL consolidated status to the user (this is a ch
   - Stale-wasm test bug: (a) immediate fix already applied (deleted the stale artifact, forcing a rebuild); (b) durable fix not yet implemented — `resolve_wasm_file()` in crates/callisto-moon/tests/moon_wasm_sandbox.rs (~lines 35-44) only checks `exists() && len() > 100`, never checks version/content freshness, so this exact failure will recur on every future crate version bump whenever a dev's local target/ dir still has an old .wasm artifact. Ask whether to implement a durable fix now (e.g. compare artifact's baked-in version against CARGO_PKG_VERSION and rebuild on mismatch, or always rebuild in CI, or check mtime) via this project's normal TDD rigor, or track it separately as a follow-up.
   - Uncommitted files right now: justfile, .moon/workspace.yml, moon.yml (new file) — confirm exact current git status. Ask whether/how to commit (e.g., lint fix as one commit; Option B moon.yml as a separate commit only if kept, or discarded via git checkout/rm if the user decides to drop it).
 This is a genuine decision checkpoint for the user — do not take further unilateral action (no more implementation, no commits) until they respond.
+
+---
+
+Just take the current fix, I think
