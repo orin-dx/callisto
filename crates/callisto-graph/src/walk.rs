@@ -889,15 +889,15 @@ mod tests {
     }
 
     /// A real `optionalDependencies` edge onto a Case D platform package (a
-    /// `Cargo.toml` and a differently-named `package.json` sharing one
-    /// directory, per the test above) must resolve through `IdentityIndex.native`,
-    /// keyed by the platform manifest's own npm name -- not the owning
-    /// crate's `primary_id` name, which is what a sibling package's
-    /// dependency entry never names. Before this fix, `index.native` was
-    /// keyed by `primary_id.name()` for every ecosystem in a Case D
-    /// directory, so a dependency naming the platform package by its real
-    /// npm name silently failed to resolve and the edge was dropped with no
-    /// diagnostic.
+    /// `Cargo.toml` and differently-named `package.json` sharing one
+    /// directory, per the test above) must resolve through
+    /// `IdentityIndex.native`, keyed by the platform manifest's own npm
+    /// name -- not the owning crate's `primary_id` name, which a
+    /// sibling's dependency entry never names. Before this fix,
+    /// `index.native` was keyed by `primary_id.name()` for every
+    /// ecosystem in a Case D directory, so a dependency naming the
+    /// platform package by its real npm name silently failed to resolve,
+    /// dropping the edge with no diagnostic.
     #[test]
     fn optional_dependency_on_case_d_platform_package_resolves_via_native_index() {
         let dir = tempfile::tempdir().expect("tempdir");

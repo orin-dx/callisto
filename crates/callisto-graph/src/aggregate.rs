@@ -1227,18 +1227,19 @@ mod tests {
         );
     }
 
-    /// Spec: when a fixed group in callisto.toml references a package that no
-    /// longer exists in the workspace, `union_fixed` must NOT insert the stale
-    /// member into `agg.severities`.  Doing so causes `bump_target` in
-    /// `solve_cascade` to call `input.base.get(stale_id)` -> `None` ->
-    /// `Err(GraphError::Manifest(MissingField))`, crashing `callisto version`
-    /// with a misleading error.  After the fix the stale member must be
-    /// skipped and an `UnknownPackage` warning must be emitted.
+    /// Spec: when a fixed group in callisto.toml references a package that
+    /// no longer exists in the workspace, `union_fixed` must NOT insert
+    /// the stale member into `agg.severities`. Doing so causes
+    /// `bump_target` in `solve_cascade` to call
+    /// `input.base.get(stale_id)` -> `None` ->
+    /// `Err(GraphError::Manifest(MissingField))`, crashing `callisto
+    /// version` with a misleading error. The stale member must be skipped
+    /// and an `UnknownPackage` warning emitted.
     ///
     /// Setup: `pkg_bar` has `Severity::Minor` (from a changeset), `pkg_baz`
-    /// has no severity yet.  Fixed group contains all three: `pkg_foo`
-    /// (stale), `pkg_bar`, `pkg_baz`.  `union_fixed` should propagate `Minor`
-    /// to `pkg_baz` (real member), skip `pkg_foo` with a diagnostic, and
+    /// has none yet. Fixed group has all three: `pkg_foo` (stale),
+    /// `pkg_bar`, `pkg_baz`. `union_fixed` should propagate `Minor` to
+    /// `pkg_baz`, skip `pkg_foo` with a diagnostic, and
     /// return `true` because `pkg_baz` changed.
     #[test]
     fn test_union_fixed_stale_member_emits_diagnostic_and_is_skipped() {

@@ -31,18 +31,19 @@ pub(crate) enum LineError {
     },
 }
 
-/// Splits one frontmatter line into its name token and the unparsed remainder (starting at
-/// the separator `:`). This is the function §13 invariant 1 names: "unquotes before
-/// splitting on `:`, not after."
+/// Splits one frontmatter line into its name token and the unparsed
+/// remainder (starting at `:`). This is the function §13 invariant 1
+/// names: "unquotes before splitting on `:`, not after."
 ///
-/// For a **quoted** name, the closing `"` is located by scanning forward for the matching
-/// delimiter — never by searching for `:` — before anything about the remainder of the line
-/// is inspected. A name that itself contains a `:` (Maven's `groupId:artifactId` form) is
-/// never mis-split, because the colon search for the *separator* only ever runs on the
-/// remainder *after* the name's own boundary has already been resolved by quote-matching.
+/// **Quoted** name: the closing `"` is located by scanning for the
+/// matching delimiter -- never by searching for `:` -- before the
+/// remainder is inspected. A name containing `:` itself (Maven's
+/// `groupId:artifactId`) is never mis-split, since the separator search
+/// only runs on the remainder *after* the name's boundary is resolved by
+/// quote-matching.
 ///
-/// For a **bare** (unquoted) name, there is nothing to unquote, so `rsplit_once(':')` over
-/// the whole line is applied directly.
+/// **Bare** name: nothing to unquote, so `rsplit_once(':')` applies
+/// directly to the whole line.
 pub(crate) fn split_name_and_rest(line: &str) -> Result<(NameToken<'_>, &str), LineError> {
     let trimmed = line.trim_start();
     if let Some(after_quote) = trimmed.strip_prefix('"') {

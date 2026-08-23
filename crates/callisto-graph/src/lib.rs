@@ -68,16 +68,15 @@ pub struct Workspace<'a, R: CommandRunner, D: DependencyResolver = ManifestWalkR
     /// not this field directly.
     pub tags: OnceCell<TagIndex>,
     /// Deferred [`GitAccess`]: built at most once, the first time
-    /// [`Workspace::git_access`] is called, mirroring the `tags` field
-    /// above. `GitAccess::discover` never fails (native gix, falling back
-    /// to a `CommandRunner` shell round-trip when unavailable), so this is
-    /// simpler than `tags` -- no `Result` to thread through callers.
-    /// Consolidates what were previously multiple independent
-    /// `GitAccess::discover` calls within a single command invocation
-    /// (e.g. `plan_publish`'s own head_sha resolution, and `TagIndex::build`
-    /// via [`Workspace::tags`]) into one shared discovery. `pub` (like
-    /// `tags` above) so tests can hand-construct a `Workspace` via struct
-    /// literal with a pre-seeded value, bypassing discovery entirely.
+    /// [`Workspace::git_access`] is called, mirroring `tags` above.
+    /// `GitAccess::discover` never fails (native gix, falling back to a
+    /// `CommandRunner` shell round-trip when unavailable), so simpler
+    /// than `tags` -- no `Result` to thread through. Consolidates what
+    /// were multiple independent `GitAccess::discover` calls within one
+    /// command invocation (`plan_publish`'s head_sha resolution,
+    /// `TagIndex::build` via [`Workspace::tags`]) into one shared
+    /// discovery. `pub` so tests can hand-construct a `Workspace` with a
+    /// pre-seeded value, bypassing discovery.
     pub git: OnceCell<GitAccess<'a>>,
     pub runner: &'a R,
     /// Path-keyed cache of manifest handles opened read-only during this

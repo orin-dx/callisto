@@ -29,17 +29,15 @@ pub trait CommandRunner: Send + Sync {
     }
 
     /// Like [`Self::run_with_timeout`], but for an internal existence/probe
-    /// check whose stderr is expected to look like a failure on the common
-    /// path (e.g. `npm view` against an unpublished package prints a
-    /// 404-shaped error to stderr as its normal "not found" signal) --
-    /// unlike a real, user-facing mutating command, this must not stream
-    /// that noise live to the terminal, only capture it into the returned
-    /// [`CommandOutput`] for the caller to classify.
+    /// check whose stderr looks like a failure on the common path (e.g.
+    /// `npm view` against an unpublished package prints a 404-shaped "not
+    /// found" to stderr normally) -- unlike a real, user-facing mutating
+    /// command, this must not stream that noise live to the terminal, only
+    /// capture it into [`CommandOutput`] for the caller to classify.
     ///
-    /// The default implementation just delegates to [`Self::run_with_timeout`]
-    /// (streams live, same as any other command); implementors backed by a
-    /// real subprocess and doing their own live-streaming should override
-    /// this to suppress it for probe calls specifically.
+    /// Default implementation just delegates to [`Self::run_with_timeout`]
+    /// (streams live); implementors doing their own live-streaming should
+    /// override this to suppress it for probe calls.
     fn run_quiet(
         &self,
         program: &str,

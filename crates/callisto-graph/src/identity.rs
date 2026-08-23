@@ -402,18 +402,16 @@ impl IdentityIndex {
 
     /// Look up a package by its native (manifest-declared) name.
     ///
-    /// First tries the exact `(eco, name)` key (same-ecosystem lookup).  If
-    /// that misses — which happens when a package in one ecosystem depends on a
-    /// package in a *different* ecosystem by bare name (e.g. an npm package
-    /// listing a cargo crate as a dependency) — it falls back to scanning all
-    /// ecosystems for `name`.
+    /// First tries the exact `(eco, name)` key. If that misses -- a
+    /// package in one ecosystem depending on a different ecosystem's
+    /// package by bare name (e.g. an npm package listing a cargo crate)
+    /// -- falls back to scanning all ecosystems for `name`.
     ///
-    /// If the fallback finds **exactly one** match the cross-ecosystem package
-    /// is returned.  If it finds **more than one** (i.e. two different
-    /// ecosystems both have a package called `name`), `None` is returned to
-    /// prevent silent misresolution; callers that hold a `&mut Vec<Diagnostic>`
-    /// should use [`Self::resolve_native_with_fallback`] instead to get a diagnostic
-    /// in that case.
+    /// Fallback finds exactly one match: returns it. Finds more than one
+    /// (two ecosystems both have `name`): returns `None` to prevent
+    /// silent misresolution -- callers holding a `&mut Vec<Diagnostic>`
+    /// should use [`Self::resolve_native_with_fallback`] instead, to get
+    /// a diagnostic.
     pub fn resolve_native(&self, eco: Ecosystem, name: &str) -> Option<&PackageId> {
         // Fast path: exact ecosystem match.
         if let Some(id) = self.native.get(&(eco, name.to_string())) {

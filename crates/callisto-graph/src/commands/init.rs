@@ -12,17 +12,15 @@ use crate::Workspace;
 pub struct InitOptions {
     /// Non-interactive confirmation. On a first run this has no effect
     /// (scaffolding an absent `callisto.toml` is always a direct write; the
-    /// CLI's own interactive confirm-or-abort prompt gates *that* decision
-    /// before this function is ever called). On a re-run where drift is
-    /// detected against the already-recorded workspace state, `yes` is what
-    /// gates applying it: `false` reports the diff without touching any
-    /// file (dry-preview), `true` writes it (docs/00-design.md §18 Q5.4
-    /// mechanism 1 — "re-detects, prints a diff, and applies only with
-    /// confirmation").
+    /// CLI's own interactive confirm-or-abort prompt gates that decision
+    /// before this function is ever called). On a re-run with drift
+    /// detected against the recorded workspace state, `yes` gates applying
+    /// it: `false` reports the diff without touching any file, `true`
+    /// writes it (docs/00-design.md §18 Q5.4 mechanism 1).
     ///
     /// Orthogonal to the `ApplyPermit` [`init`] takes: `yes: true` with no
-    /// permit means "the user consented to applying the drift, but this is a
-    /// dry run" -- the apply outcome is reported and nothing is written.
+    /// permit means "consented to applying the drift, but this is a dry
+    /// run" -- the outcome is reported and nothing is written.
     pub yes: bool,
 }
 

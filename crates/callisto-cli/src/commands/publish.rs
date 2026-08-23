@@ -38,20 +38,17 @@ pub(crate) fn write_dry_run_text<W: std::io::Write>(
     Ok(())
 }
 
-/// Checks whether the environment contains credentials for each ecosystem
-/// represented in the plan. Returns a [`Vec`] of human-readable warning
-/// messages for any missing credentials so the operator can identify auth
-/// problems before any packages are published. Returns an empty [`Vec`] when
+/// Checks whether the environment has credentials for each ecosystem in
+/// the plan. Returns human-readable warnings for any missing credentials
+/// so the operator can spot auth problems before publishing; empty when
 /// all required credentials are present.
 ///
-/// `env` is an injectable lookup function (pass [`std::env::var`] in
-/// production; pass a closure in tests to avoid mutating the process
-/// environment).
+/// `env` is injectable (pass [`std::env::var`] in production; a closure
+/// in tests to avoid mutating the process environment).
 ///
-/// This is a soft pre-flight check only — it does not fail hard. Missing
-/// credentials may still allow publish to succeed when an alternative auth
-/// mechanism is in place (e.g. a pre-configured `.npmrc` or
-/// `~/.cargo/credentials`).
+/// Soft pre-flight check only -- doesn't fail hard. Missing credentials
+/// may still let publish succeed via an alternative auth mechanism (a
+/// pre-configured `.npmrc` or `~/.cargo/credentials`).
 fn check_credentials(
     plan: &callisto_model::PublishPlan,
     env: impl Fn(&str) -> Result<String, std::env::VarError>,

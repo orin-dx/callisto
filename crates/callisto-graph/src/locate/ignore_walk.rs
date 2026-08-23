@@ -2017,16 +2017,13 @@ mod tests {
     }
 
     /// AC-14 (Cargo slice): regression-proof consolidation of the Cargo
-    /// malformed-input criteria already proven individually as
-    /// ac09_malformed_cargo_members_bare_string_falls_back_to_absent_filter,
-    /// ac09b_malformed_cargo_exclude_bare_string_falls_back_to_excluding_nothing,
-    /// ac09d_malformed_root_cargo_toml_syntax_falls_back_to_absent_cargo_filter,
-    /// ac09f_invalid_glob_in_cargo_members_is_skipped_without_disabling_sibling_entries,
-    /// and ac09i_invalid_glob_in_cargo_exclude_is_skipped_without_disabling_sibling_entries.
-    /// Reassembles the exact fixtures from AC-14's spec text for the Cargo
-    /// sub-slice (AC-09, AC-09b, AC-09d, AC-09f, AC-09i) into a single
-    /// regression group so future changes to Cargo membership handling that
-    /// break any one of these no-panic/fallback behaviors are caught here.
+    /// malformed-input criteria already proven individually (AC-09,
+    /// AC-09b, AC-09d, AC-09f, AC-09i -- bare-string members/exclude
+    /// fallback, malformed root `Cargo.toml` fallback, invalid glob
+    /// skip-without-disabling for both members and exclude). Reassembles
+    /// AC-14's exact fixtures into one regression group so future changes
+    /// to Cargo membership handling that break any of these
+    /// no-panic/fallback behaviors are caught here.
     #[test]
     fn ac14_cargo_malformed_edge_case_regression_slice() {
         // AC-09: bare-string `members` falls back to absent filter (admits everything).
@@ -2184,15 +2181,12 @@ mod tests {
     }
 
     /// AC-14 (npm slice): consolidated regression group reassembling the
-    /// fixtures already proven individually by
-    /// ac09c_malformed_workspaces_field_falls_back_to_absent_npm_filter,
-    /// ac09e_malformed_root_package_json_syntax_falls_back_to_absent_npm_filter,
-    /// ac09g_invalid_glob_in_npm_workspaces_is_skipped_without_disabling_sibling_entries,
-    /// and ac10_empty_npm_workspaces_array_excludes_everything. Reassembles
-    /// the exact fixtures from AC-14's spec text for the npm sub-slice
-    /// (AC-09c, AC-09e, AC-09g, AC-10) into a single regression group so
-    /// future changes to npm membership handling that break any one of
-    /// these no-panic/fallback behaviors are caught here.
+    /// fixtures already proven individually (AC-09c malformed-workspaces
+    /// fallback, AC-09e malformed-root-json fallback, AC-09g invalid-glob
+    /// skip, AC-10 empty-workspaces-array excludes everything).
+    /// Reassembles AC-14's exact fixtures into one regression group so
+    /// future changes to npm membership handling that break any of these
+    /// no-panic/fallback behaviors are caught here.
     #[test]
     fn ac14_npm_malformed_edge_case_regression_slice() {
         // AC-09c: bare-string `workspaces` falls back to absent npm filter
@@ -2288,15 +2282,13 @@ mod tests {
     }
 
     /// AC-14 (pnpm slice): consolidated regression group reassembling the
-    /// fixtures already proven individually by
-    /// ac09h_invalid_glob_in_pnpm_packages_is_skipped_without_disabling_sibling_entries
-    /// (see TASK-25), ac11_malformed_pnpm_yaml_with_no_package_json_workspaces_falls_back_to_absent_filter
-    /// (TASK-27), ac11b_pnpm_packages_wrong_shape_falls_back_to_absent_filter
-    /// (TASK-28), and ac11d_zero_yaml_documents_falls_back_to_absent_filter_without_panic
-    /// (TASK-29). Reassembles the exact fixtures from AC-14's spec text for
-    /// the pnpm sub-slice (AC-09h, AC-11, AC-11b, AC-11d) into a single
-    /// regression group so future changes to pnpm membership handling that
-    /// break any one of these no-panic/fallback behaviors are caught here.
+    /// fixtures already proven individually (AC-09h invalid-glob skip
+    /// TASK-25, AC-11 malformed-yaml-no-workspaces fallback TASK-27,
+    /// AC-11b wrong-shape fallback TASK-28, AC-11d zero-yaml-documents
+    /// fallback TASK-29). Reassembles AC-14's exact fixtures into one
+    /// regression group so future changes to pnpm membership handling
+    /// that break any of these no-panic/fallback behaviors are caught
+    /// here.
     #[test]
     fn ac14_pnpm_malformed_edge_case_regression_slice() {
         // AC-09h: an invalid glob entry in pnpm `packages` is skipped
