@@ -14,9 +14,29 @@ test:
     cargo nextest run --workspace || moon run :test
     cargo test --doc
 
-# Run Clippy lints (warnings treated as errors) via moon
+# Run Clippy lints (warnings treated as errors) as a single workspace invocation.
+# Moon's per-project `cargo clippy -p $project` tasks all lock the same shared
+# target/ dir, so running them one-per-project serializes on Cargo's own build
+# lock instead of parallelizing — a single --workspace invocation lets Cargo's
+# internal job scheduler parallelize across crates instead.
 lint:
-    moon run :lint
+    cargo clippy --workspace --all-targets -- -D warnings
+
+# Lint only projects affected by changes since the base branch. Uses moon's
+# project graph to find affected crates, then lints them in one cargo
+# invocation (not moon's per-project fan-out) to avoid Cargo's build-lock
+# serialization while still skipping unaffected crates entirely.
+lint-affected:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    projects=$(moon query projects --affected 2>/dev/null | jq -r '.projects[].id')
+    if [ -z "$projects" ]; then
+        echo "No projects affected — skipping lint."
+        exit 0
+    fi
+    args=()
+    for p in $projects; do args+=(-p "$p"); done
+    cargo clippy "${args[@]}" --all-targets -- -D warnings
 
 # Check code formatting compliance via moon
 fmt-check:
@@ -71,8 +91,8 @@ clean:
 # Fast pre-commit hook validation (<500ms formatting check)
 pre-commit: fmt-check
 
-# Fast pre-push hook validation (<2s formatting and clippy lints check)
-pre-push: fmt-check lint
+# Pre-push hook validation: formatting check plus clippy on affected projects only
+pre-push: fmt-check lint-affected
 
 # Install native Git pre-commit and pre-push hooks
 hooks:
