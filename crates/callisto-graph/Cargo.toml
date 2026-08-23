@@ -1,6 +1,6 @@
 [package]
 name = "callisto-graph"
-version = "0.4.0"
+version = "0.4.1"
 edition.workspace = true
 license = "AGPL-3.0-only"
 description = "Callisto Release Engine — Dependency DAG solver and topological cascade release planner."
