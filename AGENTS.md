@@ -1,6 +1,6 @@
 # Callisto AI Agent Guidelines (`AGENTS.md`)
 
-This guide provides instructions, architectural rules, engineering invariants, and task runner workflows for AI coding agents (Antigravity, Claude, Cursor, Copilot, Codex) working on the Callisto codebase.
+Architecture, engineering invariants, and task-runner workflows for AI agents (Antigravity, Claude, Cursor, Copilot, Codex) working in this repo.
 
 ---
 
@@ -35,7 +35,7 @@ Callisto is a fast, polyglot monorepo versioning and release management engine w
 └───────────────────────────────────┴────────────────────────────────────┘
 ```
 
-> **CRITICAL RULE (Layer Licensing Boundaries)**: Layer 1 crates (`callisto-model`, `callisto-format`) and Layer 1.5 (`callisto-vcs`) MUST NOT depend on Layer 2, 3, or 4 crates (`callisto-manifests`, `callisto-conventional`, `callisto-changelog`, `callisto-graph`, `callisto-cli`, `callisto-moon`). Layer 1/1.5 crates must remain permissive (`MIT OR Apache-2.0`) and standalone. This table reflects each crate's actual `Cargo.toml` `license` field — verify with `grep -H "^license" crates/*/Cargo.toml` before trusting it if crates are added/moved.
+> **CRITICAL RULE (Layer Licensing Boundaries)**: Layer 1 (`callisto-model`, `callisto-format`) and Layer 1.5 (`callisto-vcs`) MUST NOT depend on Layer 2-4 crates (`callisto-manifests`, `callisto-conventional`, `callisto-changelog`, `callisto-graph`, `callisto-cli`, `callisto-moon`). This table reflects each crate's actual `Cargo.toml` `license` field — reverify with `grep -H "^license" crates/*/Cargo.toml` if crates are added or moved.
 
 ---
 
@@ -62,7 +62,6 @@ Agents modifying Callisto code MUST enforce the following 5 engineering invarian
 
 ### 1. Safe Rust Only (`unsafe_code = "forbid"`)
 - `unsafe` code blocks are strictly forbidden across all 10 workspace crates.
-- Memory and thread safety must be guaranteed by safe Rust abstractions.
 
 ### 2. Concrete Syntax Tree (CST) Format Preservation
 - NEVER use regular expressions or line-based string replace for manifest editing (`Cargo.toml`, `package.json`, `pyproject.toml`).
