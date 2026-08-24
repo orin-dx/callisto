@@ -42,9 +42,11 @@ fn commit_all(root: &Path, message: &str) {
 
 fn git_init_with_commit(root: &Path) {
     for args in [
-        vec!["init", "-q"],
+        vec!["init", "-q", "-b", "main"],
         vec!["config", "user.email", "test@example.com"],
         vec!["config", "user.name", "Test"],
+        vec!["config", "commit.gpgsign", "false"],
+        vec!["config", "tag.gpgsign", "false"],
     ] {
         std::process::Command::new("git")
             .args(&args)

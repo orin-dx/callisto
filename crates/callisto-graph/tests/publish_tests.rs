@@ -45,9 +45,11 @@ fn init_git_repo(dir: &std::path::Path) {
             .expect("git should run");
         assert!(status.success(), "git {args:?} failed");
     };
-    run(&["init", "-q"]);
+    run(&["init", "-q", "-b", "main"]);
     run(&["config", "user.email", "test@example.com"]);
     run(&["config", "user.name", "Test"]);
+    run(&["config", "commit.gpgsign", "false"]);
+    run(&["config", "tag.gpgsign", "false"]);
     run(&["add", "."]);
     run(&["commit", "-q", "-m", "init"]);
 }
