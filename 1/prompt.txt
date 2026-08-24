@@ -1,0 +1,278 @@
+Continue the callisto release-engineering remediation plan at `.claude/plans/ACTIVE.md` — read it
+first for full history and conventions. Every track through Phase 3 is done (Track 3a/3b1, 1, 2, 9,
+4, 6-mechanical, 5). This session picks up **Track 7 — git revwalk bounding & redundant I/O**, the
+next item in Phase 4 of the plan file loaded at session start (`.claude/plans/shimmying-giggling-hickey.md`
+if still present, or ask the user for it — otherwise the scope below is self-contained).
+
+Tier: **lighter TDD loop, one finding per commit** (red test confirmed failing → minimal fix → green
+→ independent read-only review agent, explicitly told not to run destructive git commands → full
+`just ci` → commit). Do not batch unrelated findings into one commit. This matches how Track 9 and
+Track 6-mechanical were done — see ACTIVE.md for the exact precedent.
+
+## Findings, verified live in code as of 2026-08-23 (re-verify before trusting further — code may
+have moved)
+
+**1. Unbounded double revwalk — `crates/callisto-vcs/src/lib.rs:312`,
+`commits_since_with_pathspec`.** Confirmed still doing two full, unbounded `rev_walk(...).all()`
+calls: one from HEAD, one from `since`, then building a `HashSet` of the `since`-reachable side and
+filtering by exclusion. This walks the *entire* repo history every time regardless of how close
+`since` is to HEAD. Original audit measured ~2.05s vs ~13ms (100 packages/50k commits) — over 99%
+wasted work. `gix` exposes a real bounded-walk API (stop the HEAD walk once every commit reachable
+from `since` has been excluded, rather than walking to the repo's first commit) — use it instead of
+the two-full-walks-then-exclude approach.
+
+Important: a separate correctness bug in this exact function (a `break` vs `continue` bug losing
+commits from branchy history — see the comment already in the function and commit `7e3391bc`) is
+**already fixed**. Don't re-litigate it — but the bounded-walk rewrite must preserve that fix's
+invariant (topological walk can visit `since` before emitting all in-queue commits on branches that
+diverged before it), which is exactly why the original audit flagged this as needing an independent
+review + before/after re-measurement pass rather than a naive bound. Get a second pair of eyes
+(review agent) specifically on this invariant before merging.
+
+**2. Per-package glob-matcher recompile — `crates/callisto-graph/src/tags.rs`, `matching_tags`
+(called from `select_from_tags`, called once per package in `TagIndex::build`'s loop).** The tag
+*list fetch* itself was already deduplicated in a prior session (`fetch_all_tags` is called once for
+the whole build, not per package — see the comment at `tags.rs:111-118`). What's still live: every
+call to `matching_tags` compiles a fresh `globset::Glob::new(...).compile_matcher()` and does a full
+linear scan of the shared tag list, once per package. At 1000 packages / 41k tags the original audit
+measured ~640ms wasted here. Fix: compile each package's glob matcher once (or cache by template
+string, since multiple packages may share a template) rather than per package per build.
+
+**3. Commit-inference pathspec bug — `crates/callisto-graph/src/aggregate.rs:177`.** Confirmed:
+pathspecs passed to inference are built from `pkg.manifests.iter().map(|m| m.path.clone())` — the
+manifest *file* path (e.g. `crates/foo/Cargo.toml`), not the package's source *directory*. This means
+commit-based inference only ever matches commits that touch the manifest file itself, never real
+source changes under the package directory — making the `inference` feature a near-total no-op for
+its actual purpose. Fix the pathspec to cover the package's directory (mirroring how
+`commits_since_with_pathspec`'s other callers scope pathspecs), regardless of whether `inference`
+becomes default-on (that's a separate, deliberately-unresolved product decision — don't touch feature
+defaults as part of this fix).
+
+## Not yet re-verified this session — check before acting, may be stale
+
+- Workspace-root `Cargo.toml` read up to 3× per command; npm/cargo manifests re-read 2-3× per graph
+  build (redundant I/O, smaller than findings 1-2
+- Explicitly out of scope regardless: Cargo workspace-inherited dependency rewrites bypassing
+  write-batching is a known, deliberately-deferrede Spec A/Spec B in
+  ACTIVE.md) — don't re-plan it, just don't touch it.
+
+## Process
+
+1. Re-verify each finding against current code before starting (line numbers drift).
+2. One finding, one red test, one fix, one commit e (1 and 2 are
+   independent of each other; 3 is independent of both).
+3. For finding 1 specifically: get an independent -history invariant
+   before considering it done, and re-measure before/after (packages/commits/tags counts matching
+   the original audit's methodology if possible, sl number, not a guess).
+4. `just ci` must pass clean before any commit.
+5. Update `.claude/plans/ACTIVE.md` with Track 7'sng the existing
+   Track 9 / Track 6-mechanical entry format (what was found, what was fixed, commits, measured
+   before/after where applicable).
+
+Let's make sure we have a clear branch from latest main
+
+---
+
+Continue Track 7 remediation: check the background cargo test output for test_aggregate_scopes_inference_pathspecs_to_package_directory, confirm it fails as expected (red), then proceed with the minimal fix in aggregate.rs, get it green, review, then move to findings 1 and 2 per the plan.
+
+---
+
+Continue Track 7: check the finding-1 (bounded revwalk) independent review result. If PASS, run just ci on the full working tree, commit the revwalk fix, then update .claude/plans/ACTIVE.md with a Track 7 entry (findings, fixes, commits, measured before/after: 105.2ms vs 0.397ms avg at 3000 commits, 33 vs 3 revwalk visits). If the review found issues, address them per finding before re-reviewing.
+
+---
+
+<task-notification>
+<task-id>a19e958a21728439d</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/f21fbbf3-d9f7-4109-9c36-8de0a6e308fd/tasks/a19e958a21728439d.output</output-file>
+<status>completed</status>
+<summary>Agent "Review finding-1 bounded revwalk fix" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Verdict: PASS
+
+**Diff scope.** `crates/callisto-vcs/src/lib.rs` replaces the two-walk-then-exclude pattern with `self.repo.rev_walk(vec![head.id]).with_hidden(Some(since_oid)).all()`, adds a process-global `REVWALK_VISIT_COUNT` counter, and leaves merge-exclusion (`parent_ids().count() &gt; 1`) and pathspec filtering (`commit_touches_pathspecs`) byte-for-byte untouched below the walk-construction block — confirmed via diff, this is a pure bounding change.
+
+**2. Branchy-history correctness (the critical item).** Read `gix-traverse-0.60.0/src/commit/simple.rs`'s `compute_hidden_frontier`: it runs a generation-number-prioritized flag-propagation over a temporary graph, marking commits `VISIBLE` if reachable from a visible tip and `HIDDEN` if reachable from a hidden tip; the returned frontier is exactly the set with **both** flags. The actual walk (`next_by_topology`/`next_by_commit_date`) then refuses to enqueue any parent in that frontier (`insert_into_seen_and_next` returns early on `hidden.contains_key`).
+
+This gives a rigorous, topology-independent correctness argument, not just an empirical one: given the contract that `since` is an ancestor of HEAD (the only sensible calling contract for a "since" bound), every ancestor of `since` is transitively an ancestor of HEAD, so `ancestors(since) == ancestors(since) ∩ ancestors(HEAD)` — precisely the both-flags intersection the frontier computes. This holds for **any** DAG shape: multiple independent branches diverging at different points before `since`, or a branch merging back in after `since` (exactly what `test_commits_since_with_pathspec_includes_pre_tag_branch_commits` exercises — commit B is a shared ancestor of both hidden tip S and visible-only commits D/E; B correctly lands in the frontier while D/E, never reachable from S, do not). I traced this by hand against the test's actual commit graph and it holds. Ran `cargo test -p callisto-vcs --lib`: this test and `test_commits_since_with_pathspec_respects_since_bound` both pass.
+
+**One genuine caveat (not a correctness bug, a performance-generalization caveat):** `compute_hidden_frontier`'s termination condition is "no non-`STALE` item remains in the priority queue" — a `VISIBLE`-only branch that never intersects hidden ancestry (e.g., a very old, deep side-branch merged in long after diverging near the repo root, with `since` only a few commits before HEAD) must be walked to convergence before the loop can terminate, same as `git rev-list`'s own boundary algorithm. So the "always ~O(since..HEAD)" framing is not universally true for pathological topologies — it's inherent to the merge-base-style algorithm itself (not a regression this fix introduces), but the 265x benchmark (linear 3000-commit history) doesn't exercise this. Worth knowing, not blocking.
+
+**3. Exclusivity.** `with_hidden` hides the tip itself plus ancestors; `test_commits_since_with_pathspec_respects_since_bound` builds c1→c2→c3, sets `since=c1`, and asserts the result is exactly `[c3, c2]` — confirmed passing.
+
+**4. Merge/pathspec filtering unchanged** — confirmed by diff inspection, untouched code paths.
+
+**5. Counter placement.** `REVWALK_VISIT_COUNT.fetch_add(1, ...)` sits inside `for info in revwalk`, immediately after `info.map_err(...)?`, one increment per loop iteration, before any `continue`. No double-counting, no under-counting — it faithfully measures "how many `Info`s did the primary walk yield."
+
+**6. Integration test.** `crates/callisto-vcs/tests/revwalk_bound_count_test.rs` builds exactly 30 linear commits, captures `since` there, adds 3 more, uses `#[serial]` (mirrors the `apply_persist_open_count_test.rs` precedent for process-global-counter isolation). Traced gix internals: hidden commits are never enqueued (blocked at `insert_into_seen_and_next`), so the boundary is crisp — `assert_eq!(..., 3, ...)` reflects the walk's actual mechanics, not an incidental artifact; low flake risk across gix versions since it follows directly from the documented `since..HEAD` contract.
+
+**7. Sibling gaps.** Only one `rev_walk` call site exists in `crates/callisto-vcs/src` and `crates/callisto-graph/src` combined (grep confirmed) — no other two-walk-then-exclude pattern to fix.
+
+**8. Verification run myself:** `cargo test -p callisto-vcs` — 38/38 lib tests pass, 1/1 integration test passes, 0 doc-tests. `cargo clippy -p callisto-vcs --all-targets --tests -- -D warnings` — clean, zero warnings.
+
+No blocking issues found.</result>
+<usage><subagent_tokens>101827</subagent_tokens><tool_uses>25</tool_uses><duration_ms>531557</duration_ms></usage>
+</task-notification>
+
+---
+
+Continue Track 7: check whether just ci (task bnp85dhrj) has finished. If green, commit the revwalk fix (crates/callisto-vcs/src/lib.rs, Cargo.toml, Cargo.lock, tests/revwalk_bound_count_test.rs), then update .claude/plans/ACTIVE.md with a Track 7 entry covering all three findings, their fixes, commits, and measured before/after numbers (105.2ms vs 0.397ms avg at 3000 commits/since=5-back; 33 vs 3 revwalk visits). If just ci failed, diagnose and fix before committing.
+
+---
+
+<task-notification>
+<task-id>bnp85dhrj</task-id>
+<tool-use-id>toolu_01Nf6MGfqXKojnKfLJxJ4n3q</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/f21fbbf3-d9f7-4109-9c36-8de0a6e308fd/tasks/bnp85dhrj.output</output-file>
+<status>killed</status>
+<summary>Background command "just ci 2&gt;&amp;1 | tail -150" was stopped</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bilk9lxhg</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<status>stopped</status>
+<summary>No completion record was found for this background shell command from the previous session. It may have been stopped (via the UI, Monitor timeout, or agent teardown — these leave no transcript marker), or it may have been running when the previous Claude Code process exited. Check the output file for partial results before assuming it completed.</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bl5kgoqa7</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<status>stopped</status>
+<summary>No completion record was found for this background shell command from the previous session. It may have been stopped (via the UI, Monitor timeout, or agent teardown — these leave no transcript marker), or it may have been running when the previous Claude Code process exited. Check the output file for partial results before assuming it completed.</summary>
+</task-notification>
+
+---
+
+Are you stuck again???
+
+---
+
+You need to figure out what's going on. There is no way that our build should be this slow. you're just guessing and pushing it off
+
+---
+
+This means our test should be running with a very simple git config because we don;t know what is setup in any machine this might be running. you need to think our setup through here please. Any other such issues we'll run into?
+
+---
+
+Anything that we do that shells out needs a clean setup
+
+---
+
+<task-notification>
+<task-id>a9cbf1d2eebe77623</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/0c4c4622-1ed8-4f2c-80e6-f0890a2dad72/tasks/a9cbf1d2eebe77623.output</output-file>
+<status>completed</status>
+<summary>Agent "Audit git test fixtures for hermetic isolation gaps" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Good — exit code 1 means no matches, confirming callisto-changelog, callisto-format, callisto-manifests, and callisto-model have no real-git-repo test fixtures. That completes the inventory sweep.
+
+Now compiling the final report.
+
+## Report: Git-Repo Test Fixture Hermeticity Audit
+
+### Centralized fixture status
+
+`crates/callisto-fixtures/src/git.rs` **does** have a shared `init_repo` helper, but it does **not** guard gpgsign:
+
+```rust
+// crates/callisto-fixtures/src/git.rs:24-42
+pub fn run_git(dir: &amp;Path, args: &amp;[&amp;str]) {
+    let status = std::process::Command::new("git")
+        .args(args).current_dir(dir).status()
+        .expect("git must be installed to run this test");
+    assert!(status.success(), "git {args:?} failed in {dir:?}");
+}
+
+pub fn init_repo(root: &amp;Path) {
+    run_git(root, &amp;["init", "-q"]);
+    run_git(root, &amp;["config", "user.email", "test@example.com"]);
+    run_git(root, &amp;["config", "user.name", "Test"]);
+}
+```
+
+It sets `user.email`/`user.name` correctly (good — hermetic against missing global identity), but sets nothing for `commit.gpgsign`/`tag.gpgsign`, and doesn't pin `-b main` on init. It is used by only two callers: `crates/callisto-conventional/src/window.rs:52` and `crates/callisto-graph/src/aggregate.rs:517`. Every other crate independently duplicates its own version of this same helper.
+
+### Full inventory of independent git-repo-creating helpers
+
+| File | Function | Commits? | Tags? | gpgsign guarded? | user.name/email set locally? |
+|---|---|---|---|---|---|
+| `crates/callisto-fixtures/src/git.rs:38` | `init_repo` (canonical, shared) | via callers | via callers | **No** | Yes |
+| `crates/callisto-vcs/src/lib.rs:703` | `init_repo` (local dup) | Yes (many call sites) | Yes | Only tag calls (`-c tag.gpgSign=false`); commits unguarded except one test (`:1104`, ad hoc `commit.gpgsign=false`, inlined not via helper) | Yes |
+| `crates/callisto-vcs/src/access.rs:174` | `init_repo` (local dup) | Yes | Yes | Tag calls guarded (`:188`, `:246`); commits unguarded | Yes |
+| `crates/callisto-vcs/tests/revwalk_bound_count_test.rs:23` | `init_repo` (local dup) | Yes | No | **No guard at all** | Yes |
+| `crates/callisto-moon/tests/moon_wasm_sandbox.rs:300` | `run_git` (async, local dup) | Yes (`:404`,`:676`) | Yes, guarded (`:407`,`:679`) | Commits unguarded | Yes |
+| `crates/callisto-cli/tests/common/mod.rs:11` | `setup_polyglot_git_repo` | Yes (`:58`) | No | **No** | Yes |
+| `crates/callisto-cli/tests/strict_flag_tests.rs:26` | `make_git_workspace` (local, independent of common/mod.rs) | Yes (`:83`, `--allow-empty`) | No | **No** | Yes |
+| `crates/callisto-cli/tests/dry_run_invariant_tests.rs:21` | `git` (local dup) | Yes (`:56`,`:83`) | No (only string field named "tag", not a git-tag call) | **No** | Yes |
+| `crates/callisto-cli/src/commands/version.rs:107` | `run_git` (local dup, `#[cfg(feature="inference")]`) | Yes (`:290`,`:307`) | Yes, guarded (`:293`) | Commits unguarded | Yes |
+| `crates/callisto-graph/src/commands/snapshot.rs:188` | `git_init_with_commit` (local dup) | Yes (`:201`) | No | **No** | Yes |
+| `crates/callisto-graph/src/commands/version.rs` (inline, no named init helper) | ad hoc `Command::new("git")` sequence | Yes (`:392`,`:416`) | Yes, guarded (`:403`) | Commits unguarded | Yes |
+| `crates/callisto-graph/src/aggregate.rs` | imports `callisto_fixtures::git::{init_repo, run_git}` | Yes (many) | Yes, guarded (`:753`,`:959`) | Commits unguarded (inherits fixtures' gap) | Yes (inherits) |
+| `crates/callisto-graph/tests/version_tests.rs` (inline helper, no name) | ad hoc | Yes (`:37`,`:56`) | Yes, guarded (`:24`) | Commits unguarded | Yes (`:46-47`) |
+| `crates/callisto-graph/tests/snapshot_tests.rs:10` | `run_git` (local dup) + inline init sequence | Yes (`:25`) | No real invocation (mocked `tag --list`) | **No** | Yes |
+| `crates/callisto-graph/tests/publish_tests.rs` (inline helper) | ad hoc | Yes (`:52`) | No real invocation (mocked) | **No** | Yes |
+| `crates/callisto-graph/tests/tag_sha_fabrication_test.rs:291` | `init_git_repo` | Yes (`:310`) | Yes (`:373`, real; also mocked elsewhere) | **Yes — the only fully hermetic helper found**, `:307-308` | Yes |
+| `crates/callisto-conventional/src/window.rs` | uses `callisto_fixtures::git::{init_repo, run_git}` | Yes (many) | No | Inherits fixtures' gap | Inherits |
+| `crates/callisto-cli/tests/e2e_tests.rs`, `crates/callisto-cli/tests/cli_tests.rs` | inline `git init` only | **No commit** | No | N/A (no commit/tag risk) | N/A |
+| `crates/callisto-graph/tests/config_resolve_tests.rs`, `init_reconcile_test.rs`, `graph_tests.rs` | inline `git init` (+ `git add` in one case) only | **No commit** | No | N/A | N/A |
+| `crates/callisto-cli/tests/pre_mode_tests.rs` | calls `common::setup_polyglot_git_repo` | via common/mod.rs | No | inherits common/mod.rs gap | inherits |
+
+The single fully-correct exception is `crates/callisto-graph/tests/tag_sha_fabrication_test.rs:291-311` (`init_git_repo`) — it has an explicit code comment already naming this exact bug ("Force local, unsigned lightweight tags/commits regardless of the developer's global git config... never blocks on a missing... signing key") and sets both `commit.gpgsign=false` and `tag.gpgsign=false`. This fix was clearly discovered once and never propagated to the shared `callisto-fixtures` crate or any of the other ~15 duplicated helpers.
+
+### Blast radius summary
+
+- **66** real `git commit` call sites across **16** files.
+- Of those 16 files, only **2** apply any gpgsign guard, and in both cases it's local to one specific test (`callisto-vcs/src/lib.rs:1104`, ad hoc, not via the shared `init_repo`) or one file's dedicated helper (`tag_sha_fabrication_test.rs`). The remaining **14 files / ~60+ commit call sites** are fully exposed to the hang/failure under `cargo nextest` with global `commit.gpgsign=true`.
+- **7 independently duplicated** `init_repo`/`run_git`/equivalent helper functions exist outside the canonical `callisto-fixtures` one (in `callisto-vcs/src/lib.rs`, `callisto-vcs/src/access.rs`, `callisto-vcs/tests/revwalk_bound_count_test.rs`, `callisto-moon/tests/moon_wasm_sandbox.rs`, `callisto-cli/tests/common/mod.rs`, `callisto-cli/tests/strict_flag_tests.rs`, `callisto-cli/tests/dry_run_invariant_tests.rs`, `callisto-cli/src/commands/version.rs`, `callisto-graph/src/commands/snapshot.rs`, `callisto-graph/tests/tag_sha_fabrication_test.rs`) — roughly 10 duplicate implementations total, only 2 crates (`callisto-conventional`, `callisto-graph::aggregate`) actually reuse the shared one.
+- User identity (`user.name`/`user.email`) is set locally per-repo in **every single one** of these helpers — that gap is already closed everywhere. The remaining risk is purely gpgsign.
+
+### Other hermeticity risks (item 5)
+
+- **`init.defaultBranch`**: confirmed as a known, already-hit issue — `callisto-vcs/src/lib.rs:862-866` has an explicit comment stating the ambient default branch may not be `main`/could be `master`, and pins `-b main` on `git init`. This fix is local to that one test only; every other `git init -q` call site (the vast majority) does **not** pin a branch name. Currently this appears benign because most fixtures never `checkout` a named branch, but it's a latent risk for any future test that does (as this one comment demonstrates it already bit someone once).
+- **`credential.helper`**: no matches found; none of these tests perform network operations (clone/fetch/push) against real remotes, so this is low-risk currently but worth a defensive default if that ever changes.
+- **`core.hooksPath` / commit hooks**: no matches found, and none of the fixtures configure `core.hooksPath=/dev/null` or `--no-verify`. If a developer machine has a global `core.hooksPath` (e.g., a global husky/pre-commit setup) pointed at hooks that reject commits without a signed-off-by, ticket reference, etc., these fixture commits could fail non-deterministically. Not confirmed broken, but plausible and cheap to close (`-c core.hooksPath=/dev/null` or unset via the same local config approach used for gpgsign).
+- **`core.autocrlf`**: no matches found. Plausible on Windows machines with global `autocrlf=true`, since none of the fixture files control line endings; likely low priority unless Windows CI is in scope.
+- **Locale-dependent git output / `advice.*` messages**: no test greps raw git stdout for English-locale advice text or porcelain-unstable output in a way that would break under `LANG`/`LC_ALL` variation — checked via the same grep sweep; only `--porcelain`-style or explicit `rev-parse`/`log --format` calls were found, which are locale-stable. No finding here.
+
+### Recommended fix shape
+
+Centralize a single hermetic `init_repo(root: &amp;Path)` in `crates/callisto-fixtures/src/git.rs` that locally (not globally) configures, in order:
+
+```rust
+pub fn init_repo(root: &amp;Path) {
+    run_git(root, &amp;["init", "-q", "-b", "main"]);
+    run_git(root, &amp;["config", "user.email", "test@example.com"]);
+    run_git(root, &amp;["config", "user.name", "Test"]);
+    run_git(root, &amp;["config", "commit.gpgsign", "false"]);
+    run_git(root, &amp;["config", "tag.gpgsign", "false"]);
+    run_git(root, &amp;["config", "core.hooksPath", "/dev/null"]); // optional but cheap
+}
+```
+
+This closes the commit-signing gap at the source for every caller and also fixes the `init.defaultBranch` ambient-config risk by pinning `-b main` (matching the precedent already set in `callisto-vcs/src/lib.rs:862-866`). Any remaining ad hoc `-c tag.gpgSign=false` on individual `git tag` invocations becomes redundant but harmless once the repo-local config is set — could be cleaned up opportunistically, not required for correctness.
+
+**Files that would need touching to adopt it** (either delete their local duplicate and `use callisto_fixtures::git::init_repo`, or hand-patch their inline sequence to match):
+- `crates/callisto-vcs/src/lib.rs` (`init_repo` at `:703`, plus the one-off inline sequence at `:1101-1104` and `:862-868`)
+- `crates/callisto-vcs/src/access.rs` (`init_repo` at `:174`)
+- `crates/callisto-vcs/tests/revwalk_bound_count_test.rs` (`init_repo` at `:23`)
+- `crates/callisto-moon/tests/moon_wasm_sandbox.rs` (`run_git`/inline init at `:393-395`, `:665-667`) — note this one is `async`, so it can't call the sync fixtures helper directly without a wrapper, or the inline sequence needs the two extra `config` lines added by hand
+- `crates/callisto-cli/tests/common/mod.rs` (`setup_polyglot_git_repo`, `:11-27`)
+- `crates/callisto-cli/tests/strict_flag_tests.rs` (`make_git_workspace`, `:26-48`)
+- `crates/callisto-cli/tests/dry_run_invariant_tests.rs` (`git` helper + inline config, `:21-33`)
+- `crates/callisto-cli/src/commands/version.rs` (`run_git`, inline init sequence near `:87-88`)
+- `crates/callisto-graph/src/commands/snapshot.rs` (`git_init_with_commit`, `:188-193`)
+- `crates/callisto-graph/src/commands/version.rs` (inline init sequence near `:382-383`)
+- `crates/callisto-graph/tests/version_tests.rs`, `snapshot_tests.rs`, `publish_tests.rs` (inline init sequences)
+- `crates/callisto-graph/tests/tag_sha_fabrication_test.rs` — already correct; could be simplified to call the shared helper once it exists, but no urgency
+- `crates/callisto-graph/src/aggregate.rs` and `crates/callisto-conventional/src/window.rs` — already import the shared helper, so fixing `callisto-fixtures/src/git.rs` alone fixes these two for free, no per-call-site edit needed
+
+Given `callisto-vcs` and `callisto-cli` (binary crates, likely Layer-2/3 per the workspace's layering doc) are almost certainly allowed to dev-depend on `callisto-fixtures` already (it's a test-only fixture crate), the minimal-risk sequencing is: (1) fix `callisto-fixtures::git::init_repo` once, (2) migrate the 2 existing importers implicitly for free, (3) go crate-by-crate converting each duplicated helper to call the shared one (or, where a dev-dependency edge to `callisto-fixtures` doesn't yet exist for that crate, hand-patch the inline sequence to add the two `gpgsign` config lines — cheapest, lowest-risk patch, doesn't require introducing a new dev-dependency edge under time pressure).</result>
+<usage><subagent_tokens>82924</subagent_tokens><tool_uses>27</tool_uses><duration_ms>213342</duration_ms></usage>
+</task-notification>

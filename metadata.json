@@ -3,10 +3,12 @@
   "checkpoint_id": "01M0S4W8TJFA74QB5AV0G52CTQ",
   "strategy": "manual-commit",
   "branch": "track-7-revwalk-bounding",
-  "checkpoints_count": 5,
+  "checkpoints_count": 15,
   "files_touched": [
     "Cargo.lock",
-    "crates/callisto-vcs/src/lib.rs"
+    "crates/callisto-vcs/Cargo.toml",
+    "crates/callisto-vcs/src/lib.rs",
+    "crates/callisto-vcs/tests/revwalk_bound_count_test.rs"
   ],
   "sessions": [
     {
@@ -15,13 +17,27 @@
       "compact_transcript": "/0/transcript.jsonl",
       "content_hash": "/0/content_hash.txt",
       "prompt": "/0/prompt.txt"
+    },
+    {
+      "metadata": "/1/metadata.json",
+      "transcript": "/1/full.jsonl",
+      "compact_transcript": "/1/transcript.jsonl",
+      "content_hash": "/1/content_hash.txt",
+      "prompt": "/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 12738,
-    "cache_creation_tokens": 26008574,
-    "cache_read_tokens": 3174008976,
-    "output_tokens": 3984935,
-    "api_call_count": 6384
+    "input_tokens": 13244,
+    "cache_creation_tokens": 26995446,
+    "cache_read_tokens": 3234413236,
+    "output_tokens": 4099165,
+    "api_call_count": 6638,
+    "subagent_tokens": {
+      "input_tokens": 144,
+      "cache_creation_tokens": 423859,
+      "cache_read_tokens": 4679930,
+      "output_tokens": 46297,
+      "api_call_count": 72
+    }
   }
 }
