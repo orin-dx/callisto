@@ -350,11 +350,13 @@ introduced):
   cached artifact available); the change is mechanically identical to the four already-fully-verified
   fixes above. Recommend confirming with a real `just wasm-check`/full test run in CI.
 
-**Skipped, not yet present on this branch**: `crates/callisto-vcs/tests/revwalk_bound_count_test.rs`
-(added by Track 7, which hadn't merged to `main` when this branch was cut) — needs the same fix once
-Track 7 lands; check for it specifically in any future sweep.
+**Gap closed after rebase**: Track 7 (#13) merged to `main`; this branch was rebased onto it, which
+brought in `crates/callisto-vcs/tests/revwalk_bound_count_test.rs` (added by Track 7, absent when
+this track was originally cut) for the first time. Applied the identical fix to its own local
+`init_repo` fn. Verified: `cargo test -p callisto-vcs` (39 lib + 1 integration test) green, clippy
+clean. Commit: `ae26a8c`.
 
-Canonical fix commit: `a4eb5f0`. Crate migration commits: `6fbdcad7`, `f4a55cd7`, `9fb0384e`, `26d14b1b`.
+Canonical fix commit: `2beaff6b`. Crate migration commits: `d07a57e7`, `ed64fe44`, `6e366cfb`, `8a9f018e`.
 Full detail and diagnosis process in memory: `project_git_fixture_hermeticity_gap.md`.
 
 ---
