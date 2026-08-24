@@ -247,6 +247,23 @@ purpose. New regression test asserts `aggregate()` hands a recording `SeverityIn
 directory (`crates/pkg-a`), not the manifest file path — confirmed failing against the pre-fix code.
 Independent review PASS. Commit: `d3a5c434`.
 
+**Post-PR fix — finding 3 exposed a latent bug in `location_matches`.** Real CI on PR #13
+(`cargo test --all-features`, enabling the `inference` feature) caught what the scoped local
+verification above missed: `changed::package_paths` emits `"."` as the pathspec for a manifest at
+the workspace/package root (a single-package repo's `Cargo.toml`) — the same sentinel real git's own
+pathspec engine understands as "match everything," correct for that helper's original consumer
+(`changed_since_last_tag`, which shells out to real `git`). Finding 3 newly routes that `"."`
+pathspec into this codebase's own hand-rolled Rust matcher instead
+(`callisto-vcs`'s `commits_since_with_pathspec` → `location_matches`, using `Path::starts_with`) —
+and `Path::new("Cargo.toml").starts_with(".")` is `false` in Rust, so a `"."` pathspec silently
+matched **zero** commits instead of every commit: a more severe regression than finding 3 itself
+fixed, specifically for single-package repos. Fixed in `crates/callisto-vcs/src/lib.rs`'s
+`location_matches` by short-circuiting to a match whenever the pathspec itself is exactly `"."`,
+mirroring real git's semantics; `ShellGit`'s shelled-out backend was never affected (delegates
+matching to the real `git` binary). Regression test on a real repo confirmed failing (empty result)
+before the fix. Independent review PASS (confirmed no overreach on non-`.` pathspecs, traced `"."`'s
+only producer, confirmed the sibling `ShellGit` path is immune by construction). Commit: `8140b3d`.
+
 Every fix's `just ci`-equivalent verification: `cargo nextest run -p callisto-vcs -p callisto-graph`
 (the real test runner `just ci`'s `test` recipe invokes, scoped to the two touched crates) — 559/559
 passed, 0 failed, clean. `cargo fmt --check` and `cargo clippy --workspace --all-targets -- -D
