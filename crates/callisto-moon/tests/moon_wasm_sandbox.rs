@@ -390,9 +390,11 @@ async fn execute_extension_status_succeeds_against_real_repo_fixture() {
     let sandbox = create_empty_moon_sandbox();
     let root = sandbox.root.clone();
 
-    run_git(&root, &["init", "-q"]).await;
+    run_git(&root, &["init", "-q", "-b", "main"]).await;
     run_git(&root, &["config", "user.email", "test@example.com"]).await;
     run_git(&root, &["config", "user.name", "Test"]).await;
+    run_git(&root, &["config", "commit.gpgsign", "false"]).await;
+    run_git(&root, &["config", "tag.gpgsign", "false"]).await;
 
     fs::write(
         root.join("Cargo.toml"),
@@ -662,9 +664,11 @@ async fn execute_extension_unrecognized_subcommand_falls_back_to_status_not_erro
     let sandbox = create_empty_moon_sandbox();
     let root = sandbox.root.clone();
 
-    run_git(&root, &["init", "-q"]).await;
+    run_git(&root, &["init", "-q", "-b", "main"]).await;
     run_git(&root, &["config", "user.email", "test@example.com"]).await;
     run_git(&root, &["config", "user.name", "Test"]).await;
+    run_git(&root, &["config", "commit.gpgsign", "false"]).await;
+    run_git(&root, &["config", "tag.gpgsign", "false"]).await;
 
     fs::write(
         root.join("Cargo.toml"),
