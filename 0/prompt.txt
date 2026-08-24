@@ -1,0 +1,1 @@
+Check PR #13's CI status (gh pr view 13 --json statusCheckRollup). Confirm the "Code Coverage & Test Report" job that previously failed now passes. Also update .claude/plans/ACTIVE.md's Track 7 entry with a note about this bug found via CI and the fix commit (8140b3d), then push that doc update too. Once both PRs (#13, #14) are fully green, give the user a final status summary.
