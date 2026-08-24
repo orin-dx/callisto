@@ -23,3 +23,4 @@ gix = "0.86"
 [dev-dependencies]
 callisto-model = { path = "../callisto-model", features = ["test-util"] }
 tempfile = { workspace = true }
+serial_test = { workspace = true }

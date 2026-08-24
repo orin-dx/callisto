@@ -196,6 +196,103 @@ Implementation: `Aggregation.inference_commits: BTreeMap<PackageId, Vec<(CommitS
 Exit-gate (implementation): `callisto-graph` full suite green throughout every task (0 failed), fmt/clippy clean on every commit; `callisto-cli`/`callisto-model` build clean against the changed public surface.
 Commits: `10a165f4` (T1, AC-006 regression pin) through `482cd5aa` (T8, AC-007 fallback restructuring, final task).
 
+### Track 7: Git Revwalk Bounding & Redundant I/O — DONE
+
+Lighter TDD loop tier (no formal spec/plan, one finding per commit, matching Track 9 / Track
+6-mechanical's precedent). Three independent findings, all re-verified live in code before fixing.
+
+**Finding 1 — unbounded double revwalk.** `crates/callisto-vcs/src/lib.rs`'s
+`commits_since_with_pathspec` did two full, unbounded `gix` revwalks every call regardless of how
+close `since` was to HEAD: one from HEAD, one from `since` collected into a `HashSet` exclusion set
+— walking the entire repository history on every call. Fixed by replacing both walks with gix's own
+bounded-walk primitive: `rev_walk(head).with_hidden(since).all()`, which computes a
+generation-number frontier between the visible (HEAD) and hidden (`since`) tips in one combined walk
+and never enqueues a parent once it's known to lie only in hidden-only ancestry — the same "boundary
+commit" algorithm `git rev-list branch ^tag` uses internally, so it structurally preserves the
+branchy-history correctness the old two-walk approach needed a manual `continue`-not-`break`
+exclusion set for (verified: the existing `test_commits_since_with_pathspec_includes_pre_tag_branch_commits`
+regression test, which encodes exactly that scenario, still passes). Measured before/after on a
+3000-commit linear history with `since=HEAD~5`: old implementation avg 105.2ms/call, new avg
+0.397ms/call (~265x). A dedicated regression test (`crates/callisto-vcs/tests/revwalk_bound_count_test.rs`,
+`#[serial]`, process-global visit counter isolated in its own integration binary the same way
+`tests/apply_persist_open_count_test.rs` isolates `callisto-manifests`' counters) proves the walk
+visits exactly the 3 commits between `since` and HEAD on a 33-commit fixture (30 before, 3 after),
+not the full history — confirmed failing (33 visits) against the old two-walk logic before the fix.
+Independent review (general-purpose agent, explicitly read-only) additionally hand-traced gix's
+`compute_hidden_frontier` algorithm in `gix-traverse-0.60.0` against adversarial branch topologies
+(multiple divergent branches, a branch merging back in after `since`) and confirmed the correctness
+argument generalizes structurally, not just on the one existing test's specific commit graph. PASS.
+Commit: `f0a0b8de`.
+
+**Finding 2 — per-package glob-matcher recompile.** `crates/callisto-graph/src/tags.rs`'s
+`matching_tags` compiled a fresh `globset::Glob` and rescanned the full tag list on every call, once
+per package via `TagIndex::build`'s loop — even when a `[[package-set]]` rule's fixed (non-`{name}`)
+`tag-template` string applies the identical template to many packages at once (measured ~640ms
+wasted at 1000 packages / 41k tags in the original audit). Fixed via `select_from_tags_cached`, which
+caches compile+scan results in `TagIndex::build`'s loop keyed by the template's rendered glob string.
+Regression tests (`crates/callisto-graph/tests/tag_glob_cache_count_test.rs`, `#[serial]`, isolated
+the same way as finding 1's counter for the same process-global-counter reason) prove 3 packages
+sharing one template compile the glob exactly once (not 3 times), and 2 packages with distinct
+default templates still compile separately (proving the cache keys correctly, doesn't over-collapse).
+Independent review PASS. Commit: `1700f1f9`.
+
+**Finding 3 — commit-inference pathspec bug.** `crates/callisto-graph/src/aggregate.rs`'s pathspecs
+for commit-based severity inference were built from `pkg.manifests.iter().map(|m| m.path.clone())` —
+the manifest *file* path (e.g. `crates/foo/Cargo.toml`) — instead of the package's source
+*directory*, so commit-based inference only ever matched commits touching the manifest file itself,
+never real source changes, making the `inference` feature (behind a Cargo feature flag) a near-total
+no-op for its purpose. Fixed by reusing `crate::changed::package_paths(pkg)` — an existing,
+already-tested directory-scoping helper `changed_since_last_tag` already relied on for the identical
+purpose. New regression test asserts `aggregate()` hands a recording `SeverityInference` the package
+directory (`crates/pkg-a`), not the manifest file path — confirmed failing against the pre-fix code.
+Independent review PASS. Commit: `d3a5c434`.
+
+**Post-PR fix — finding 3 exposed a latent bug in `location_matches`.** Real CI on PR #13
+(`cargo test --all-features`, enabling the `inference` feature) caught what the scoped local
+verification above missed: `changed::package_paths` emits `"."` as the pathspec for a manifest at
+the workspace/package root (a single-package repo's `Cargo.toml`) — the same sentinel real git's own
+pathspec engine understands as "match everything," correct for that helper's original consumer
+(`changed_since_last_tag`, which shells out to real `git`). Finding 3 newly routes that `"."`
+pathspec into this codebase's own hand-rolled Rust matcher instead
+(`callisto-vcs`'s `commits_since_with_pathspec` → `location_matches`, using `Path::starts_with`) —
+and `Path::new("Cargo.toml").starts_with(".")` is `false` in Rust, so a `"."` pathspec silently
+matched **zero** commits instead of every commit: a more severe regression than finding 3 itself
+fixed, specifically for single-package repos. Fixed in `crates/callisto-vcs/src/lib.rs`'s
+`location_matches` by short-circuiting to a match whenever the pathspec itself is exactly `"."`,
+mirroring real git's semantics; `ShellGit`'s shelled-out backend was never affected (delegates
+matching to the real `git` binary). Regression test on a real repo confirmed failing (empty result)
+before the fix. Independent review PASS (confirmed no overreach on non-`.` pathspecs, traced `"."`'s
+only producer, confirmed the sibling `ShellGit` path is immune by construction). Commit: `8140b3d`.
+
+Every fix's `just ci`-equivalent verification: `cargo nextest run -p callisto-vcs -p callisto-graph`
+(the real test runner `just ci`'s `test` recipe invokes, scoped to the two touched crates) — 559/559
+passed, 0 failed, clean. `cargo fmt --check` and `cargo clippy --workspace --all-targets -- -D
+warnings` clean throughout. A full-workspace `cargo nextest run --workspace` was not completed this
+session — see the environment note below; the scoped run above is the load-bearing verification for
+these three findings' own correctness.
+
+**Environment finding surfaced this session, deferred to a new track (not fixed here, user
+decision):** diagnosed (not guessed — verified via isolated reproduction) that `cargo nextest`
+spawns each test binary with no controlling TTY, while the operator's machine has
+`commit.gpgsign=true`/`tag.gpgsign=true` set globally. ~66 real `git commit` call sites across 16
+files create real on-disk git fixture repos without locally disabling gpg signing (only 2 files guard
+against it, one via a shared-but-underused `callisto-fixtures::git::init_repo` helper, one via a
+per-file ad hoc fix that was never propagated) — under nextest's no-TTY child processes, `pinentry`
+can't prompt, so every such test hangs ~120-140s waiting on a gpg-agent/pinentry timeout (or fails
+outright with "No pinentry") instead of running in milliseconds. Confirmed pre-existing and unrelated
+to Track 7's changes (reproduces identically on a clean stashed checkout); confirmed NOT a
+gpg-agent-lock-contention issue (8 fully concurrent `git commit`s outside nextest completed in ~1s).
+A parallel audit of every other subprocess shell-out in the workspace (npm/pip/cargo/twine/maturin)
+found no equivalent gap — all real ecosystem-CLI invocations already go through the mockable
+`CommandRunner` trait in both production and test code; the only other instance of the same git-signing
+gap is `crates/callisto-moon/tests/moon_wasm_sandbox.rs` (guards `tag.gpgSign` but not
+`commit.gpgsign`, same root cause). User decision: fix as its own new track (harden the one canonical
+`callisto-fixtures::git::init_repo` to set `commit.gpgsign=false`/`tag.gpgsign=false`/`-b main`
+locally per-repo, then migrate ~13 duplicated/ad-hoc helpers to call it), not folded into Track 7.
+Also noted in passing: unnamed `#[serial]` (from `serial_test`) shares one global lock across every
+test using it in a binary, compounding queueing delays for unrelated fast tests during the slow run —
+minor, same deferred track can address if convenient.
+
 ---
 
 ## Pipeline Protocol (follow for every track, in order)

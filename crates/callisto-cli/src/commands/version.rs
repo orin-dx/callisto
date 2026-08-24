@@ -294,9 +294,9 @@ mod tests {
         );
 
         // A feat commit after the tag, with no changeset -- the only way this can produce a
-        // bump is via real commit inference. Inference's pathspecs are the package's own
-        // manifest paths (aggregate.rs), not the whole package directory, so the commit must
-        // touch Cargo.toml itself to be counted.
+        // bump is via real commit inference. Inference's pathspecs are scoped to the package's
+        // source directory (aggregate.rs, via changed::package_paths); for this single-package
+        // repo that's the workspace root, so touching Cargo.toml itself is enough to be counted.
         std::fs::write(
             root.join("Cargo.toml"),
             "[package]\nname = \"pkg-alpha\"\nversion = \"1.0.0\"\nedition = \"2021\"\n\

@@ -610,6 +610,7 @@ dependencies = [
  "gix",
  "globset",
  "miette 7.6.0",
+ "serial_test",
  "tempfile",
  "thiserror 1.0.69",
 ]

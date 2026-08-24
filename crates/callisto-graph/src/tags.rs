@@ -40,6 +40,7 @@ fn fetch_all_tags(git: &GitAccess<'_>) -> Result<Vec<String>, GraphError> {
 /// make "last tag" resolution pick an unrelated package's tag.
 fn matching_tags<'a>(all_tags: &'a [String], template: &TagTemplate) -> Result<Vec<&'a str>, GraphError> {
     let glob = template.glob();
+    GLOB_COMPILE_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     let matcher = globset::Glob::new(&glob).map(|g| g.compile_matcher()).map_err(|e| {
         GraphError::Vcs(callisto_vcs::VcsError::InvalidGlob {
             pattern: glob.clone(),
@@ -54,6 +55,30 @@ fn matching_tags<'a>(all_tags: &'a [String], template: &TagTemplate) -> Result<V
         .collect())
 }
 
+/// Test-observability counter: total number of times [`matching_tags`] has
+/// compiled a fresh `globset::Glob`. Production code never reads this; it
+/// exists so tests can assert `TagIndex::build` compiles/scans at most once
+/// per *distinct* tag-template glob, not once per package -- a
+/// `[[package-set]]` rule with a fixed (non-`{name}`) `tag-template` can
+/// apply the identical template string to many packages at once.
+static GLOB_COMPILE_COUNT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// Resets the internal glob-compile call counter to zero. Intended for use in test setup.
+///
+/// Process-global, like `callisto_manifests::reset_open_call_count` -- exact
+/// counts must be asserted from an isolated integration-test binary under
+/// `#[serial]`, not an inline unit test sharing this crate's `--lib`
+/// process with other, non-serial tests (see
+/// `tests/tag_glob_cache_count_test.rs`).
+pub fn reset_glob_compile_count() {
+    GLOB_COMPILE_COUNT.store(0, std::sync::atomic::Ordering::SeqCst);
+}
+
+/// Reads the current value of the internal glob-compile call counter.
+pub fn glob_compile_count() -> usize {
+    GLOB_COMPILE_COUNT.load(std::sync::atomic::Ordering::SeqCst)
+}
+
 /// Selects the highest-versioned tag matching `template` out of a full tag
 /// list previously obtained via [`fetch_all_tags`].
 fn select_from_tags(
@@ -62,6 +87,31 @@ fn select_from_tags(
     grammar: VersionGrammar,
 ) -> Result<LastTagSelection, GraphError> {
     let candidates = matching_tags(all_tags, template)?;
+    select_last_tag(template, grammar, candidates).map_err(GraphError::from)
+}
+
+/// Like [`select_from_tags`], but reuses a `cache` of already-compiled/
+/// already-scanned candidates keyed by `template.glob()` -- a
+/// `[[package-set]]` rule with a fixed (non-`{name}`) `tag-template` string
+/// applies the identical template to every matching package, so without
+/// this cache `TagIndex::build`'s per-package loop would recompile the same
+/// `globset::Glob` and rescan the full tag list once per package sharing
+/// that template, instead of once per distinct template.
+fn select_from_tags_cached<'a>(
+    all_tags: &'a [String],
+    template: &TagTemplate,
+    grammar: VersionGrammar,
+    cache: &mut std::collections::HashMap<String, Vec<&'a str>>,
+) -> Result<LastTagSelection, GraphError> {
+    let glob = template.glob();
+    let candidates = match cache.get(&glob) {
+        Some(cached) => cached.clone(),
+        None => {
+            let matched = matching_tags(all_tags, template)?;
+            cache.insert(glob, matched.clone());
+            matched
+        }
+    };
     select_last_tag(template, grammar, candidates).map_err(GraphError::from)
 }
 
@@ -117,11 +167,12 @@ impl TagIndex {
         // second discovery.
         let all_tags = fetch_all_tags(git)?;
         let all_tags_set: std::collections::BTreeSet<String> = all_tags.iter().cloned().collect();
+        let mut glob_cache: std::collections::HashMap<String, Vec<&str>> = std::collections::HashMap::new();
 
         for pkg in graph.packages() {
             let default_tmpl = TagTemplate::parse(&format!("{}@{{version}}", pkg.id.display_name()))?;
             let tmpl = pkg.tag_template.clone().unwrap_or(default_tmpl);
-            let sel = select_from_tags(&all_tags, &tmpl, pkg.version_grammar()?)?;
+            let sel = select_from_tags_cached(&all_tags, &tmpl, pkg.version_grammar()?, &mut glob_cache)?;
             last.insert(pkg.id.clone(), sel.chosen);
             templates.insert(pkg.id.clone(), tmpl);
             pre_cursor.insert(pkg.id.clone(), None);
@@ -550,6 +601,14 @@ mod tests {
             "package with no tag_template must fall back to 'pkg-default@{{version}}'"
         );
     }
+
+    // A `glob_compile_count()`-based regression test for this behavior lives
+    // in `tests/tag_glob_cache_count_test.rs`, not here: `GLOB_COMPILE_COUNT`
+    // is a process-global counter, and this module's `--lib` test binary
+    // runs many other, non-`#[serial]` `TagIndex::build`/`matching_tags`
+    // tests concurrently that would race an exact-count assertion (same
+    // hazard `OPEN_CALL_COUNT`/`PERSIST_CALL_COUNT` are isolated from --
+    // see `tests/apply_persist_open_count_test.rs`).
 
     /// Spec: same as above, but for `TagIndex::build` -- a `CommandRunner`
     /// failure on the fallback path must propagate up through the whole

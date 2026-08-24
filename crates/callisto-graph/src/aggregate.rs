@@ -174,7 +174,7 @@ where
 
     for pkg in graph.packages() {
         let cur_sev = agg.severities.get(&pkg.id).copied().unwrap_or(Severity::None);
-        let pathspecs: Vec<PathBuf> = pkg.manifests.iter().map(|m| m.path.clone()).collect();
+        let pathspecs: Vec<PathBuf> = crate::changed::package_paths(pkg);
         let last_tag = tags.last_tag(&pkg.id);
         let cur_ver = last_tag
             .map(|t| t.version.clone())
@@ -801,6 +801,77 @@ mod tests {
             Some(expected_sha),
             "aggregate() must scope inference to last_tag..HEAD instead of hardcoding `since: None` \
              (full history)"
+        );
+    }
+
+    /// Records the `pathspecs` value passed into `InferenceWindowSpec`
+    /// without doing any real inference work.
+    #[derive(Default)]
+    struct RecordingPathspecsInference {
+        captured_pathspecs: Mutex<Vec<PathBuf>>,
+    }
+
+    impl SeverityInference for RecordingPathspecsInference {
+        fn infer(
+            &self,
+            _pkg: &Package,
+            _git: &GitAccess<'_>,
+            window: InferenceWindowSpec<'_>,
+        ) -> Result<Option<InferenceOutcome>, GraphError> {
+            *self.captured_pathspecs.lock().unwrap() = window.pathspecs.to_vec();
+            Ok(None)
+        }
+    }
+
+    /// Spec: `aggregate()` must scope commit inference to the package's
+    /// source *directory*, not the manifest *file* path -- otherwise
+    /// inference only ever matches commits touching the manifest itself,
+    /// never real source changes, making it a near-total no-op. Reproduces
+    /// the bug directly: a package whose canonical manifest lives at
+    /// `crates/pkg-a/Cargo.toml` must produce a pathspec of `crates/pkg-a`
+    /// (mirroring `changed::package_paths`'s directory-scoping convention),
+    /// not `crates/pkg-a/Cargo.toml`.
+    #[test]
+    fn test_aggregate_scopes_inference_pathspecs_to_package_directory() {
+        let ws_dir = tempfile::tempdir().unwrap();
+        let root = ws_dir.path();
+        init_repo(root);
+
+        let pkg_id = PackageId::parse("pkg-a").unwrap();
+        let manifest = ManifestDecl::new(
+            "crates/pkg-a/Cargo.toml",
+            ManifestRole::Canonical,
+            ManifestFormat::CargoToml,
+        )
+        .unwrap();
+        let graph = SinglePackageGraph {
+            pkg: Package {
+                id: pkg_id.clone(),
+                manifests: vec![manifest],
+                changelog: None,
+                release_trigger: callisto_model::ReleaseTrigger::Changeset,
+                publish_to: Vec::new(),
+                tag_template: None,
+            },
+        };
+
+        let runner = RealGitRunner;
+        let git = GitAccess::discover(root, &runner);
+        let cfg = crate::config::load(root).unwrap();
+        let tags = TagIndex::build(&git, &graph, &cfg).unwrap();
+
+        let inference = RecordingPathspecsInference::default();
+        let mut base_versions = BTreeMap::new();
+        base_versions.insert(pkg_id, Version::semver(0, 1, 0));
+
+        aggregate(&graph, &cfg, &git, &tags, &base_versions, None, &inference).unwrap();
+
+        let captured = inference.captured_pathspecs.lock().unwrap().clone();
+        assert_eq!(
+            captured,
+            vec![PathBuf::from("crates/pkg-a")],
+            "aggregate() must scope inference pathspecs to the package's source directory, not the \
+             manifest file path"
         );
     }
 
