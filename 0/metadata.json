@@ -1,0 +1,38 @@
+{
+  "cli_version": "0.10.3-nightly.202608220610.6bf587d66",
+  "checkpoint_id": "01M0T91S3D9BXWZ16CNQQPVVNK",
+  "session_id": "f21fbbf3-d9f7-4109-9c36-8de0a6e308fd",
+  "strategy": "manual-commit",
+  "created_at": "2026-08-24T16:18:27.208711Z",
+  "branch": "track-8-git-fixture-hermeticity",
+  "checkpoints_count": 5,
+  "save_step_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5",
+  "turn_id": "a07eefd0dc5e",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 814,
+    "cache_creation_tokens": 1637763,
+    "cache_read_tokens": 135681462,
+    "output_tokens": 177908,
+    "api_call_count": 408
+  },
+  "session_metrics": {
+    "turn_count": 28
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 12,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/scheduled_tasks.lock": 1,
+        ".claude/settings.local.json": 11
+      }
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.10.3-nightly.202608220610.6bf587d66",
+  "checkpoint_id": "01M0T91S3D9BXWZ16CNQQPVVNK",
+  "strategy": "manual-commit",
+  "branch": "track-8-git-fixture-hermeticity",
+  "checkpoints_count": 5,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 814,
+    "cache_creation_tokens": 1637763,
+    "cache_read_tokens": 135681462,
+    "output_tokens": 177908,
+    "api_call_count": 408
+  }
+}
