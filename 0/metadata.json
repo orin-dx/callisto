@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.10.3-nightly.202608220610.6bf587d66",
+  "checkpoint_id": "01M0T92EWGAXESGXK9RHKE3PX6",
+  "session_id": "f21fbbf3-d9f7-4109-9c36-8de0a6e308fd",
+  "strategy": "manual-commit",
+  "created_at": "2026-08-24T16:18:49.497253Z",
+  "branch": "track-8-git-fixture-hermeticity",
+  "checkpoints_count": 5,
+  "save_step_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5",
+  "turn_id": "a07eefd0dc5e",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 822,
+    "cache_creation_tokens": 1641498,
+    "cache_read_tokens": 137997975,
+    "output_tokens": 179278,
+    "api_call_count": 412
+  },
+  "session_metrics": {
+    "turn_count": 28
+  }
+}
