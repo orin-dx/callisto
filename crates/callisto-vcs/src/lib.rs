@@ -173,6 +173,26 @@ impl_commit_walker!(GitAccess<'_>);
 impl_commit_walker!(GitRepository);
 impl_commit_walker!(ShellGit<'_>);
 
+/// Test-observability counter: total number of commits
+/// [`GitRepository::commits_since_with_pathspec`]'s primary revwalk has
+/// yielded (before merge/pathspec filtering). Production code never reads
+/// this; it exists so tests can assert the walk is bounded to
+/// `since..HEAD` rather than the whole repository history -- see
+/// `crates/callisto-vcs/tests/revwalk_bound_count_test.rs`, isolated in its
+/// own integration-test binary since this is a process-global counter (same
+/// precedent as `callisto_manifests::open_call_count`).
+static REVWALK_VISIT_COUNT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// Resets the internal revwalk-visit counter to zero. Intended for use in test setup.
+pub fn reset_revwalk_visit_count() {
+    REVWALK_VISIT_COUNT.store(0, std::sync::atomic::Ordering::SeqCst);
+}
+
+/// Reads the current value of the internal revwalk-visit counter.
+pub fn revwalk_visit_count() -> usize {
+    REVWALK_VISIT_COUNT.load(std::sync::atomic::Ordering::SeqCst)
+}
+
 pub struct GitRepository {
     #[cfg(not(target_arch = "wasm32"))]
     repo: gix::Repository,
@@ -321,45 +341,42 @@ impl GitRepository {
                 .head_commit()
                 .map_err(|e| VcsError::Git(format!("Failed to get HEAD commit: {e}")))?;
 
-            let revwalk = self
-                .repo
-                .rev_walk(vec![head.id])
-                .all()
-                .map_err(|e| VcsError::Git(format!("Failed to create revwalk: {e}")))?;
+            let mut platform = self.repo.rev_walk(vec![head.id]);
 
-            // Build the excluded set: all SHAs reachable from `since`
-            // (inclusive). Using `continue` rather than `break` is critical
-            // for branchy history: a topological walk can visit the `since`
-            // commit before it has emitted all commits on merged branches
-            // that diverged *before* the tag. A `break` would silently drop
-            // those in-queue commits; `continue` skips only the already-seen
-            // ancestors.
-            let excluded: std::collections::HashSet<String> = if let Some(s) = since {
+            // Bound the walk with gix's own hidden-tip frontier algorithm
+            // (`git log since..HEAD` semantics) instead of a second,
+            // unbounded full-history walk from `since` collected into an
+            // exclusion set. `with_hidden` paints the overlap between the
+            // visible (HEAD) and hidden (`since`) tips using generation
+            // numbers and refuses to enqueue parents once a commit is known
+            // to be hidden-only ancestry, so the walk stops once every
+            // in-flight branch has been resolved instead of continuing to
+            // the repository's first commit. This preserves the same
+            // branchy-history correctness the old two-walk-then-exclude
+            // approach needed a manual `continue`-not-`break` exclusion set
+            // for (a topological walk can visit `since` before it has
+            // emitted all commits on branches that diverged before it) --
+            // gix's frontier computation is exactly the same "boundary
+            // commit" algorithm `git rev-list branch ^tag` itself uses, so
+            // it handles that case internally rather than needing it
+            // reimplemented here. `since` remains exclusive, matching the
+            // prior behavior: `with_hidden` excludes both the hidden tip
+            // itself and everything reachable from it.
+            if let Some(s) = since {
                 let since_oid = gix::ObjectId::from_hex(s.as_ref().as_bytes())
                     .map_err(|e| VcsError::Git(format!("Invalid since SHA: {e}")))?;
-                let since_walk = self
-                    .repo
-                    .rev_walk(vec![since_oid])
-                    .all()
-                    .map_err(|e| VcsError::Git(format!("Failed to walk from since: {e}")))?;
-                let mut set = std::collections::HashSet::new();
-                for info in since_walk {
-                    let info = info.map_err(|e| VcsError::Git(e.to_string()))?;
-                    set.insert(info.id.to_hex().to_string());
-                }
-                set
-            } else {
-                std::collections::HashSet::new()
-            };
+                platform = platform.with_hidden(Some(since_oid));
+            }
+
+            let revwalk = platform
+                .all()
+                .map_err(|e| VcsError::Git(format!("Failed to create revwalk: {e}")))?;
 
             let mut commits = Vec::new();
             for info in revwalk {
                 let info = info.map_err(|e| VcsError::Git(e.to_string()))?;
+                REVWALK_VISIT_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 let hex = info.id.to_hex().to_string();
-
-                if excluded.contains(&hex) {
-                    continue;
-                }
 
                 if info.parent_ids().count() > 1 {
                     continue;
