@@ -711,9 +711,11 @@ mod tests {
     }
 
     fn init_repo(root: &Path) {
-        run_git(root, &["init", "-q"]);
+        run_git(root, &["init", "-q", "-b", "main"]);
         run_git(root, &["config", "user.email", "test@example.com"]);
         run_git(root, &["config", "user.name", "Test"]);
+        run_git(root, &["config", "commit.gpgsign", "false"]);
+        run_git(root, &["config", "tag.gpgsign", "false"]);
     }
 
     #[test]
@@ -916,6 +918,8 @@ mod tests {
         run_git(root, &["init", "-q", "-b", "main"]);
         run_git(root, &["config", "user.email", "test@example.com"]);
         run_git(root, &["config", "user.name", "Test"]);
+        run_git(root, &["config", "commit.gpgsign", "false"]);
+        run_git(root, &["config", "tag.gpgsign", "false"]);
 
         std::fs::write(root.join("a.txt"), "a1\n").unwrap();
         run_git(root, &["add", "."]);
