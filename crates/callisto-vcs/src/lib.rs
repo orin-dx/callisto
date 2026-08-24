@@ -559,13 +559,23 @@ fn change_matches_pathspecs(change: &gix::object::tree::diff::Change<'_, '_, '_>
 /// Simple directory/path-prefix pathspec match: a changed path matches a
 /// pathspec if it's exactly equal to it, or nested underneath it as a
 /// directory prefix. Does not implement full git pathspec magic syntax.
+///
+/// `"."` is a special case, not a literal prefix: it's the sentinel
+/// `changed::package_paths` emits for a manifest living at the workspace/
+/// package root (e.g. a single-package repo's `Cargo.toml`), matching real
+/// `git log -- .`'s own semantics for the current-directory pathspec. Rust's
+/// `Path::starts_with` does not treat `.` as a universal prefix
+/// (`Path::new("Cargo.toml").starts_with(".")` is `false`), so without this
+/// case a root-level pathspec would silently match zero commits instead of
+/// every commit -- making commit-based inference a total no-op for exactly
+/// the single-package repos most likely to rely on it.
 #[cfg(not(target_arch = "wasm32"))]
 fn location_matches(location: &gix::bstr::BStr, pathspecs: &[PathBuf]) -> bool {
     let path_str = String::from_utf8_lossy(location);
     let changed_path = Path::new(path_str.as_ref());
-    pathspecs
-        .iter()
-        .any(|spec| changed_path == spec.as_path() || changed_path.starts_with(spec))
+    pathspecs.iter().any(|spec| {
+        spec.as_path() == Path::new(".") || changed_path == spec.as_path() || changed_path.starts_with(spec)
+    })
 }
 
 impl GitVcsProvider for GitRepository {
@@ -777,6 +787,46 @@ mod tests {
 
         let summaries: Vec<&str> = commits.iter().map(|c| c.summary.as_str()).collect();
         assert_eq!(summaries, vec!["fix: tweak pkg-a", "feat: add pkg-a"]);
+    }
+
+    /// Spec: a pathspec of `"."` (the sentinel `changed::package_paths` emits
+    /// for a manifest that lives at the workspace/package root -- e.g. a
+    /// single-package repo's `Cargo.toml`) must match every changed path,
+    /// mirroring real `git log -- .`'s own semantics for the current-
+    /// directory pathspec. Rust's `Path::starts_with` does NOT treat `.` as
+    /// a universal prefix (`Path::new("Cargo.toml").starts_with(".")` is
+    /// `false`), so a naive prefix-match implementation silently matches
+    /// zero commits for any root-level package -- worse than matching too
+    /// broadly, since it makes commit-based inference a total no-op for
+    /// exactly the packages most likely to use it (single-package repos).
+    #[test]
+    fn test_commits_since_with_pathspec_root_sentinel_matches_root_level_files() {
+        let ws_dir = tempfile::tempdir().unwrap();
+        let root = ws_dir.path();
+        init_repo(root);
+
+        std::fs::write(root.join("Cargo.toml"), "[package]\nname = \"pkg\"\n").unwrap();
+        run_git(root, &["add", "."]);
+        run_git(root, &["commit", "-q", "-m", "chore: add package"]);
+
+        std::fs::write(
+            root.join("Cargo.toml"),
+            "[package]\nname = \"pkg\"\ndescription = \"x\"\n",
+        )
+        .unwrap();
+        run_git(root, &["add", "."]);
+        run_git(root, &["commit", "-q", "-m", "feat: add a new feature"]);
+
+        let repo = GitRepository::discover(root).unwrap();
+        let pathspecs = vec![PathBuf::from(".")];
+        let commits = repo.commits_since_with_pathspec(None, &pathspecs).unwrap();
+
+        let summaries: Vec<&str> = commits.iter().map(|c| c.summary.as_str()).collect();
+        assert_eq!(
+            summaries,
+            vec!["feat: add a new feature", "chore: add package"],
+            "a \".\" pathspec must match root-level file changes, not zero commits"
+        );
     }
 
     #[test]
