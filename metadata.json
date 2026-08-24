@@ -1,0 +1,36 @@
+{
+  "cli_version": "0.10.3-nightly.202608220610.6bf587d66",
+  "checkpoint_id": "01M0SC1ECCQKD3D0XDY813WDFW",
+  "strategy": "manual-commit",
+  "branch": "track-8-git-fixture-hermeticity",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "crates/callisto-cli/src/commands/version.rs",
+    "crates/callisto-cli/tests/common/mod.rs",
+    "crates/callisto-cli/tests/dry_run_invariant_tests.rs",
+    "crates/callisto-cli/tests/strict_flag_tests.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 14,
+    "cache_creation_tokens": 6501,
+    "cache_read_tokens": 3224380,
+    "output_tokens": 4528,
+    "api_call_count": 7,
+    "subagent_tokens": {
+      "input_tokens": 66,
+      "cache_creation_tokens": 32125,
+      "cache_read_tokens": 14446994,
+      "output_tokens": 14156,
+      "api_call_count": 33
+    }
+  }
+}
