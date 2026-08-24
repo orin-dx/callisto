@@ -28,7 +28,7 @@ fn make_git_workspace(tmp: &TempDir) -> GlobalArgs {
 
     drop(
         std::process::Command::new("git")
-            .args(["init", "-q"])
+            .args(["init", "-q", "-b", "main"])
             .current_dir(root)
             .output(),
     );
@@ -43,6 +43,21 @@ fn make_git_workspace(tmp: &TempDir) -> GlobalArgs {
     drop(
         std::process::Command::new("git")
             .args(["config", "user.email", "test@test.dev"])
+            .current_dir(root)
+            .output(),
+    );
+    // Hermetic against the ambient machine's global git config: a real
+    // signing attempt would hang under a test runner (like cargo nextest)
+    // that gives child processes no controlling TTY for pinentry to use.
+    drop(
+        std::process::Command::new("git")
+            .args(["config", "commit.gpgsign", "false"])
+            .current_dir(root)
+            .output(),
+    );
+    drop(
+        std::process::Command::new("git")
+            .args(["config", "tag.gpgsign", "false"])
             .current_dir(root)
             .output(),
     );
