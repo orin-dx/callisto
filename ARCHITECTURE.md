@@ -476,22 +476,40 @@ jobs:
   matrix:
     runs-on: ubuntu-latest
     outputs:
-      matrix: ${{ steps.discover.outputs.matrix }}
+      nativeMatrix: ${{ steps.discover.outputs.nativeMatrix }}
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-callisto
       - id: discover
-        run: echo "matrix=$(callisto matrix --format json)" >> $GITHUB_OUTPUT
+        run: echo "nativeMatrix=$(callisto matrix --format json | jq -c '[.platformTargets[].targets[]] | unique_by(.artifactName)')" >> $GITHUB_OUTPUT
 
   build:
     needs: matrix
+    if: ${{ needs.matrix.outputs.nativeMatrix != '[]' }}
     strategy:
-      matrix: ${{ fromJSON(needs.matrix.outputs.matrix) }}
-    runs-on: ${{ matrix.os }}
+      matrix:
+        target: ${{ fromJson(needs.matrix.outputs.nativeMatrix) }}
+    runs-on: ${{ matrix.target.hostRunner }}
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-callisto
-      - run: callisto publish-target --package ${{ matrix.package }} --target ${{ matrix.target }}
+      - run: napi build --platform --release --target ${{ matrix.target.triple }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target.artifactName }}
+          path: ${{ matrix.target.packageDir }}/*.node
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Placement of each build job's uploaded artifact into its packageDir,
+      # then callisto publish, both happen automatically inside this step
+      # once nativeMatrix is non-empty and publish is enabled.
+      - uses: ./.github/actions/callisto-action
+        with:
+          publish: true
 ```
 
 ---
