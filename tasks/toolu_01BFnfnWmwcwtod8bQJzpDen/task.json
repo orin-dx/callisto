@@ -1,0 +1,12 @@
+{
+  "tool_use_id": "toolu_01BFnfnWmwcwtod8bQJzpDen",
+  "agent_id": "ade9ebff2decffbed",
+  "subagent_type": "canon:exit-gate",
+  "task_description": "Re-gate SPEC-002 after AC-009 fix",
+  "files": [
+    "Cargo.lock",
+    "crates/callisto-cli/src/render/mod.rs"
+  ],
+  "started_at": "2026-08-25T11:09:54.765754-07:00",
+  "completed_at": "2026-08-25T11:09:54.772223-07:00"
+}

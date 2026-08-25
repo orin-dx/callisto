@@ -1,0 +1,12 @@
+{
+  "tool_use_id": "toolu_01UV4fwoDun3x9CFH5ZZujXL",
+  "agent_id": "a0164c96326a12fb9",
+  "subagent_type": "canon:exit-gate",
+  "task_description": "Gate corrected SPEC-002",
+  "files": [
+    "Cargo.lock",
+    "crates/callisto-cli/src/render/mod.rs"
+  ],
+  "started_at": "2026-08-25T11:04:43.341203-07:00",
+  "completed_at": "2026-08-25T11:04:43.348076-07:00"
+}
