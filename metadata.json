@@ -1,0 +1,33 @@
+{
+  "cli_version": "0.10.3-nightly.202608220610.6bf587d66",
+  "checkpoint_id": "01M0X00SQCZBJHHYJTK1FV2JA2",
+  "strategy": "manual-commit",
+  "branch": "track-9-matrix-artifact-placement",
+  "checkpoints_count": 14,
+  "files_touched": [
+    "crates/callisto-graph/src/matrix.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1290,
+    "cache_creation_tokens": 4638010,
+    "cache_read_tokens": 250047351,
+    "output_tokens": 379070,
+    "api_call_count": 647,
+    "subagent_tokens": {
+      "input_tokens": 1795,
+      "cache_creation_tokens": 419751,
+      "cache_read_tokens": 6453460,
+      "output_tokens": 26625,
+      "api_call_count": 108
+    }
+  }
+}
