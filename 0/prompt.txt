@@ -85,3 +85,13 @@ branch: track-9-matrix-artifact-placement
 One flagged follow-up outside this task's scope: `/Users/gabe/Projects/callisto/.claude/specs/track-g-matrix-napi-maturin.json`'s AC-013 still asserts the old pre-fix `artifactName` format (`native-&lt;triple&gt;` without the package-name segment), which SPEC-002 now contradicts. That would need its own `canon:correct-spec` pass if you want it closed — let me know if you'd like me to run that next.</result>
 <usage><subagent_tokens>59346</subagent_tokens><tool_uses>6</tool_uses><duration_ms>990567</duration_ms></usage>
 </task-notification>
+
+---
+
+<task-notification>
+<task-id>b5q6quhx2</task-id>
+<tool-use-id>toolu_01R9KSnn9zrQNv1q57ovwPUa</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8a85b651-0c9a-44fa-9e0a-ac694c4409e1/tasks/b5q6quhx2.output</output-file>
+<status>completed</status>
+<summary>Background command "cd /Users/gabe/Projects/callisto &amp;&amp; cargo nextest run -p callisto-cli --lib render 2&gt;&amp;1 | tail -40" completed (exit code 0)</summary>
+</task-notification>
