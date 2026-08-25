@@ -1,0 +1,75 @@
+{
+  "cli_version": "0.10.3-nightly.202608220610.6bf587d66",
+  "checkpoint_id": "01M0X03KDX93KENWJV6K7KXRYN",
+  "session_id": "f21fbbf3-d9f7-4109-9c36-8de0a6e308fd",
+  "strategy": "manual-commit",
+  "created_at": "2026-08-25T17:39:55.199257Z",
+  "branch": "track-9-matrix-artifact-placement",
+  "checkpoints_count": 14,
+  "files_touched": [
+    ".github/actions/callisto-action/action.yml",
+    ".github/actions/callisto-action/tests/test_native_artifact_placement.sh"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5",
+  "turn_id": "1988798528e0",
+  "checkpoint_transcript_start": 6264,
+  "transcript_lines_at_start": 6264,
+  "compact_transcript_start": 748,
+  "token_usage": {
+    "input_tokens": 32,
+    "cache_creation_tokens": 17353,
+    "cache_read_tokens": 3116749,
+    "output_tokens": 6497,
+    "api_call_count": 16
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_012pqp9ZZhcrRstBhMtfFpK7",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "trace:trace"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "51af44df10de",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 4054,
+        "end": 4055,
+        "entry_ids": [
+          "b7a9c8e2-39fb-480f-a958-2f1020580af0"
+        ],
+        "tool_use_id": "toolu_012pqp9ZZhcrRstBhMtfFpK7"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_012pqp9ZZhcrRstBhMtfFpK7"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: trace:trace",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 79
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-08-25T17:39:54.909436Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 0,
+    "total_lines_changed": 0,
+    "agent_percentage": 0,
+    "metric_version": 2
+  }
+}
