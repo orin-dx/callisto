@@ -538,7 +538,7 @@ mod tests {
                     abi: None,
                     host_runner: "macos-latest".to_string(),
                     use_cross: false,
-                    artifact_name: "native-aarch64-apple-darwin".to_string(),
+                    artifact_name: "native-native-mod-aarch64-apple-darwin".to_string(),
                     package_dir: "native-mod".to_string(),
                     package_name: "native-mod".to_string(),
                 }],
