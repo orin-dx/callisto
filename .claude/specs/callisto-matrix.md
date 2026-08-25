@@ -310,12 +310,21 @@ The placement step is:
 - name: Download native artifacts
   run: |
     MATRIX_JSON='${{ needs.matrix.outputs.nativeMatrix }}'
-    echo "$MATRIX_JSON" | jq -c '.[]' | while read -r target; do
+    while IFS= read -r target; do
       ARTIFACT=$(echo "$target" | jq -r '.artifactName')
-      DIR=$(echo "$target" | jq -r '.packageDir')
-      gh run download --name "$ARTIFACT" --dir "$DIR"
-    done
+      DIR_RAW=$(echo "$target" | jq -r '.packageDir')
+      DIR="."
+      if [[ -n "$DIR_RAW" ]]; then
+        DIR="$DIR_RAW"
+      fi
+      mkdir -p "$DIR"
+      gh run download "$GITHUB_RUN_ID" --name "$ARTIFACT" --dir "$DIR"
+    done < <(echo "$MATRIX_JSON" | jq -c '.[]')
 ```
+
+Consumers using callisto-action for publishing do not need to write this snippet themselves --
+callisto-action performs equivalent placement automatically, in-step, once nativeMatrix is
+non-empty and publish is enabled.
 
 ---
 
