@@ -46,11 +46,11 @@ fail=0
 
 # AC-003 / AC-010: two entries -> gh run download invoked once per entry,
 # pinned to GITHUB_RUN_ID, with each entry's own artifactName/packageDir.
-MATRIX='[{"artifactName":"native-pkg-a-aarch64-apple-darwin","packageDir":"packages/pkg-a"},{"artifactName":"native-pkg-b-aarch64-apple-darwin","packageDir":"packages/pkg-b"}]'
+MATRIX='[{"artifactName":"pkg-a-darwin-arm64","packageDir":"packages/pkg-a"},{"artifactName":"pkg-b-darwin-arm64","packageDir":"packages/pkg-b"}]'
 out=$(run_case "$MATRIX" "999"); code=$?
 if [[ $code -ne 0 ]] \
-  || [[ "$out" != *"run download 999 --name native-pkg-a-aarch64-apple-darwin --dir packages/pkg-a"* ]] \
-  || [[ "$out" != *"run download 999 --name native-pkg-b-aarch64-apple-darwin --dir packages/pkg-b"* ]]; then
+  || [[ "$out" != *"run download 999 --name pkg-a-darwin-arm64 --dir packages/pkg-a"* ]] \
+  || [[ "$out" != *"run download 999 --name pkg-b-darwin-arm64 --dir packages/pkg-b"* ]]; then
   echo "FAIL AC-003/AC-010 (two entries placed): code=$code out=$out"; fail=1
 else
   echo "PASS AC-003/AC-010"
@@ -67,10 +67,10 @@ fi
 
 # AC-005: empty packageDir -> DIR normalized to "." for both mkdir -p and
 # gh run download --dir.
-MATRIX='[{"artifactName":"native-root-pkg-x86_64-unknown-linux-gnu","packageDir":""}]'
+MATRIX='[{"artifactName":"root-pkg-linux-x64-gnu","packageDir":""}]'
 out=$(run_case "$MATRIX" "42"); code=$?
 if [[ $code -ne 0 ]] \
-  || [[ "$out" != *"run download 42 --name native-root-pkg-x86_64-unknown-linux-gnu --dir ."* ]] \
+  || [[ "$out" != *"run download 42 --name root-pkg-linux-x64-gnu --dir ."* ]] \
   || [[ "$out" != *"-p ."* ]]; then
   echo "FAIL AC-005 (empty packageDir normalizes to .): code=$code out=$out"; fail=1
 else
@@ -79,12 +79,12 @@ fi
 
 # AC-006: gh run download fails -> step exits non-zero, error names the
 # artifact and DIR, and no further entries are attempted (loop stops).
-MATRIX='[{"artifactName":"native-missing-x86_64-unknown-linux-gnu","packageDir":"packages/missing"},{"artifactName":"native-never-reached-x86_64-unknown-linux-gnu","packageDir":"packages/never"}]'
+MATRIX='[{"artifactName":"missing-pkg-linux-x64-gnu","packageDir":"packages/missing"},{"artifactName":"never-reached-pkg-linux-x64-gnu","packageDir":"packages/never"}]'
 out=$(run_case "$MATRIX" "7" "1"); code=$?
 if [[ $code -eq 0 ]] \
-  || [[ "$out" != *"::error::"*"native-missing-x86_64-unknown-linux-gnu"* ]] \
+  || [[ "$out" != *"::error::"*"missing-pkg-linux-x64-gnu"* ]] \
   || [[ "$out" != *"packages/missing"* ]] \
-  || [[ "$out" == *"native-never-reached-x86_64-unknown-linux-gnu"* ]]; then
+  || [[ "$out" == *"never-reached-pkg-linux-x64-gnu"* ]]; then
   echo "FAIL AC-006 (download failure halts step with named error): code=$code out=$out"; fail=1
 else
   echo "PASS AC-006"

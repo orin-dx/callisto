@@ -25,7 +25,7 @@ fail=0
 
 # Fixture mirrors callisto matrix --format json's shape post-AC-001: two
 # packages declaring the same triple now have distinct artifactName values.
-FIXTURE='{"platformTargets":{"pkg-a":{"targets":[{"artifactName":"native-pkg-a-x86_64-apple-darwin","packageDir":"pkg-a"}]},"pkg-b":{"targets":[{"artifactName":"native-pkg-b-x86_64-apple-darwin","packageDir":"pkg-b"}]}}}'
+FIXTURE='{"platformTargets":{"pkg-a":{"targets":[{"artifactName":"pkg-a-darwin-x64","packageDir":"pkg-a"}]},"pkg-b":{"targets":[{"artifactName":"pkg-b-darwin-x64","packageDir":"pkg-b"}]}}}'
 OUT=$(echo "$FIXTURE" | jq -c "$FILTER")
 COUNT=$(echo "$OUT" | jq 'length')
 if [[ "$COUNT" -ne 2 ]]; then

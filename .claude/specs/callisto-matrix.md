@@ -97,7 +97,7 @@ path — the manifest path is implicit in the package.
 
   "hostRunner":    "macos-latest" | "macos-13" | "ubuntu-latest" | "windows-latest",
   "useCross":      true | false,
-  "artifactName":  "native-<triple>" | "native-<rid>",
+  "artifactName":  "<packageName>-<platform>-<arch>[-<abi>]" | "native-<rid>",
   "packageDir":    "<workspace-root-relative path>",
   "packageName":   "<registered package name>"
 }
@@ -198,8 +198,12 @@ declared in `<RuntimeIdentifiers>` that are not in this table produce an
 ## 4. Artifact naming convention
 
 ```
-napi/maturin:  artifactName = "native-{triple}"
-               example: "native-aarch64-apple-darwin"
+napi/maturin:  artifactName = "{packageName}-{platform}-{arch}[-{abi}]"
+               (matches napi-rs's own published-package/CI-artifact
+               convention, e.g. `@scope/addon-darwin-arm64` -- not the
+               raw Rust target triple)
+               example: "native-mod-darwin-arm64"
+               example (with abi): "other-pkg-linux-x64-musl"
 
 dotnet-aot:    artifactName = "native-{rid}"
                example: "native-linux-arm64"
@@ -215,9 +219,10 @@ This naming is the contract between the build phase and the publish phase:
   and places the binary into `packageDir` before `callisto publish` runs. `callisto publish`
   then finds the binary in the expected location and includes it in the registry upload.
 
-The naming scheme is chosen to be unique within a single workflow run (no two entries in
-`platformTargets` share a `triple` or `rid`) and stable across runs (so artifact caching
-strategies based on the name are safe).
+The naming scheme is chosen to be unique within a single workflow run and stable across runs
+(so artifact caching strategies based on the name are safe). Two different packages may
+declare the same `triple` or `rid` -- `artifactName` embeds `packageName` precisely so this
+case still produces distinct names.
 
 ---
 
