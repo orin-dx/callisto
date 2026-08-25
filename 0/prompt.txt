@@ -1,0 +1,1282 @@
+Check PR #13's CI status (gh pr view 13 --json statusCheckRollup). Confirm the "Code Coverage & Test Report" job that previously failed now passes. Also update .claude/plans/ACTIVE.md's Track 7 entry with a note about this bug found via CI and the fix commit (8140b3d), then push that doc update too. Once both PRs (#13, #14) are fully green, give the user a final status summary.
+
+---
+
+Check PR #13's CI status (gh pr checks 13) and PR #14's CI status (gh pr checks 14). Confirm all checks green on both, especially PR #13's "Code Coverage & Test Report" job. Once both are fully green, give the user a final status summary covering both tracks.
+
+---
+
+Start the git fixture hermeticity track now
+
+---
+
+What's next? Show me the overall plan, what's done, what's left
+
+---
+
+If we stack the PRs we can get it all done right?
+
+---
+
+Let's fix #14's merge conflict: https://github.com/orin-dx/callisto/pull/14
+
+I had as you to stack them but you didn't
+
+---
+
+Ran into an issue with publishing michi that we should look into and think broadly about:
+
+2. Lock staleness — a real callisto design gap, worth filing upstream. callisto version's default behavior never refreshes Cargo.lock, but callisto publish internally always runs cargo publish --locked. Those two of callisto's own commands are inconsistent with each other by default — nothing in status/validate/plan-publish/version warns you before it silently produces an artifact that can never successfully complete callisto publish. The workaround is on our side (pass --refresh-lockfiles via the action's version_command input), but the root cause isn't ours — since you also maintain callisto, worth an upstream issue so the default gets fixed rather than every consumer needing to know this footgun exists.
+
+This came from the michi agent. What is our stance on this? What should it be? What about npm/pnpm, python, etc?
+
+---
+
+We generally relly on leaning to the native tool for publishing so I'm reticent to put too much specific things in there but we do need something that helps guide or address the issue
+
+---
+
+<task-notification>
+<task-id>a9a2b67d050697a51</task-id>
+<tool-use-id>toolu_01SCHpT7FPXVLTaEFYuFKF81</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/0c4c4622-1ed8-4f2c-80e6-f0890a2dad72/tasks/a9a2b67d050697a51.output</output-file>
+<status>completed</status>
+<summary>Agent "Investigate lockfile staleness gap across ecosystems" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Now I have all the evidence needed. Here is the report.
+
+## Report: Lock-Staleness Gap Between `callisto version` and `callisto publish --locked`
+
+### Cargo
+
+**Confirmed mechanism, precisely:**
+
+- `refresh_lockfiles` defaults to `false`. It's a bare boolean CLI flag with no `default_value`, `crates/callisto-cli/src/cli.rs:118-121`:
+  ```rust
+  pub struct VersionArgs {
+      /// Regenerate lockfiles after applying the version bumps.
+      #[arg(long)]
+      pub refresh_lockfiles: bool,
+  ```
+  This maps 1:1 into `ApplyOptions.refresh_lockfiles` at `crates/callisto-cli/src/commands/version.rs:28` and `ApplyOptions` itself derives `Default` with the field defaulting `false` (`crates/callisto-graph/src/apply.rs:14-17`). Note: the doc comment on that field (line 15-16) is stale — it claims the flag is "not yet consulted" — but the actual `apply_version_plan` body does consult it and does run `cargo update --workspace` / `uv lock` / `poetry lock --no-update` when true (`crates/callisto-graph/src/apply.rs:362-414`).
+- The GitHub Action (`.github/actions/callisto-action/action.yml:7-10, 116-117`) defaults `version_command` to the literal string `"callisto version"` — no `--refresh-lockfiles` — and runs it verbatim via `"${_version_cmd[@]}"`. So the shipped default composite Action reproduces the exact default-off behavior.
+- `cargo_publish` (`crates/callisto-graph/src/commands/publish_client.rs:274-281`) unconditionally appends `--locked` — both the registry and no-registry branches include it, with no CLI flag or config knob to disable it:
+  ```rust
+  let output = if let Some(reg) = registry {
+      self.run("cargo", &amp;["publish", "-p", package.name(), "--locked", "--registry", reg])?
+  } else {
+      self.run("cargo", &amp;["publish", "-p", package.name(), "--locked"])?
+  };
+  ```
+
+**Precise failure condition.** `cargo publish --locked` requires that a fresh resolve computed from the current manifests exactly match what's recorded in `Cargo.lock`; if not, it errors ("the lock file needs to be updated but --locked was passed to prevent this") rather than silently updating it. Cargo.lock carries a `[[package]]` entry with the *current resolved version* for every workspace member, including the one being published. Callisto's version bump (`VersionWriteTarget::CargoWorkspacePackage`, staged via `apply.rs`) rewrites the package's own `[package].version` on disk, but — with `refresh_lockfiles: false` — never touches `Cargo.lock`. That alone (own-version mismatch between manifest and lock) is sufficient to trip `--locked`; it does not require the cascade path at all. Separately and additionally, callisto's cascade logic (`crates/callisto-graph/src/cascade.rs`, `cascade_action` → `rewrite: true` when a dependent's range `DoesNotCover` the bump → `DepWriteTarget::CargoWorkspaceDependency`) rewrites sibling workspace-path-dependency version requirements, which can also desync the lock's resolved graph. Both are real, but the *own-version* mismatch is the simpler, always-present trigger for any bumped package.
+
+**No existing diagnostic.** Searched `status.rs`, `validate.rs`, `plan_publish.rs` (both `callisto-cli` and `callisto-graph` variants) and the full `DiagnosticCode` enum (`crates/callisto-model/src/diagnostic.rs`, ~20 variants: `EmptyChangeset`, `UnknownPackage`, `RangeNotRoundTrippable`, `GraphEdgeDisagreement`, `PublishTargetNotImplemented`, etc.) — none mention lockfiles, `Cargo.lock`, or `--locked`. `--locked` appears in the codebase only at the two `cargo publish` call sites in `publish_client.rs`. There is no warning anywhere upstream of the actual `cargo publish --locked` invocation.
+
+### npm / pnpm / yarn
+
+Callisto's npm path (`build_npm_publish_command`, `publish_client.rs:347-410`) builds `npm publish --workspace &lt;name&gt;`, `pnpm publish --filter &lt;name&gt; --no-git-checks`, `yarn workspace &lt;name&gt; npm publish`, or `bun publish` — none pass any lockfile-verification flag (`--frozen-lockfile`, `--locked`, or equivalent). The `--no-git-checks` on pnpm is explicitly there to bypass pnpm's dirty-tree refusal, not a lockfile check.
+
+Confidence: **high** that this class of failure doesn't exist for npm/pnpm/yarn publish, based on general knowledge of these tools: `npm publish`/`pnpm publish`/`yarn npm publish` pack and upload from `package.json` + the `files` field; they don't re-resolve or diff against `package-lock.json`/`pnpm-lock.yaml` as part of publishing (that check exists only for `npm ci` / `pnpm install --frozen-lockfile`, i.e. install-time, not publish-time). So even if callisto never refreshes `package-lock.json` after a version bump, there's no npm-side command in this pipeline that would fail because of it.
+
+Callisto's own lockfile-refresh logic in `apply.rs` (lines 362-414) only handles Cargo (`cargo update --workspace`) and PyPI (`uv lock` / `poetry lock --no-update`) — there is no npm/pnpm branch at all, refresh_lockfiles or not. So even opting in to `--refresh-lockfiles` today does nothing for npm lockfiles (this is itself a separate, smaller gap, but consistent with the fact that npm publish doesn't need it).
+
+### PyPI
+
+`pypi_publish` (`publish_client.rs:477-528`) runs `python -m build --sdist --wheel --outdir dist/` then `twine upload --skip-existing ... dist/&lt;name&gt;-&lt;version&gt;*`. Neither command touches `poetry.lock`/`uv.lock` — `python -m build` reads `pyproject.toml`'s build-system/metadata only, and `twine upload` just uploads already-built artifacts by filename glob. Confidence: **high**, grounded directly in what callisto's own code invokes — there's no lock-consuming step in this path at all, so a stale `poetry.lock`/`uv.lock` cannot make `callisto publish` fail for PyPI packages, structurally, independent of ecosystem tool semantics.
+
+### Root-cause classification
+
+**(b) — a general pattern in principle, but only Cargo's publish path opts into strict lock verification today.** All three ecosystems share the same upstream condition (callisto's default `refresh_lockfiles: false` means lockfiles go stale relative to bumped manifests), but only Cargo's publish step (`--locked`) turns that staleness into a hard failure, because `cargo publish` is the only one of the three that re-resolves the dependency graph against a lockfile as an integrity check before packaging. npm/pnpm/yarn publish and Python's build+twine path are structurally decoupled from lockfile state at publish time — not because callisto treats them more leniently, but because none of those upstream tools consume a lockfile during publish the way Cargo does. So this isn't "Cargo-specific in the sense of an arbitrary flag choice callisto made" (option a) — it's that `--locked` is the one ecosystem-native strictness check in this pipeline, and callisto's version step doesn't account for it.
+
+### Realistic fix shapes (evidence-based, not invented)
+
+1. **Change `refresh_lockfiles`'s default to `true`** — smallest change, directly closes the gap for Cargo (and PyPI, which already has refresh logic wired in `apply.rs`), at the cost of `cargo update --workspace` running by default (flagged in `docs/00-design.md:714` as "can be slow"). This is a one-line flag default change plus updating the Action's default `version_command`, or just changing the CLI default so the Action's unmodified `"callisto version"` default picks it up.
+2. **Add a new diagnostic** (extending the existing `DiagnosticCode` enum pattern already used in `validate.rs`/`status.rs`) that checks, for Cargo packages, whether `Cargo.lock`'s recorded version for a bumped workspace member matches the newly-written `Cargo.toml` version — surfaced in `callisto status`/`callisto validate`/`plan_publish` output before a user hits the failure at actual `cargo publish --locked` time. This is the shape the codebase already uses for other pre-publish gotchas (`RangeNotRoundTrippable`, `GraphEdgeDisagreement`) so it's structurally consistent with existing patterns, but nothing like it exists today — it would be new code.
+3. **Do nothing to defaults, but improve the Action/CLI docs and error surface**: since `--locked`'s failure message from cargo itself is fairly explicit ("lock file needs to be updated but --locked was passed"), a lower-effort option is a targeted `RegistryError` wrapper in `classify_cargo_output` (`publish_client.rs:675-695`) that detects this specific cargo error text and rewrites it into a message pointing at `callisto version --refresh-lockfiles`, rather than preventing the failure. Weakest option — reactive, not preventive — but requires no default-behavior change.
+
+Files referenced: `crates/callisto-cli/src/cli.rs:118-121`, `crates/callisto-cli/src/commands/version.rs:28`, `crates/callisto-graph/src/apply.rs:14-22,362-414`, `crates/callisto-graph/src/commands/publish_client.rs:274-281,347-410,477-528`, `crates/callisto-graph/src/cascade.rs` (cascade_action/rewrite), `crates/callisto-model/src/diagnostic.rs:94-176`, `.github/actions/callisto-action/action.yml:7-10,116-117,180-187`, `ARCHITECTURE.md:395-405`.</result>
+<usage><subagent_tokens>98313</subagent_tokens><tool_uses>24</tool_uses><duration_ms>133788</duration_ms></usage>
+</task-notification>
+
+---
+
+Check the lockfile staleness investigation result. Synthesize a recommendation: the user wants callisto to lean on native publish tools rather than reimplement ecosystem-specific validation logic, but wants something that guides/addresses the issue. Based on the investigation's findings (Cargo's --locked mechanism, whether npm/pnpm/PyPI have an equivalent strict-lock failure mode, and where diagnostics could live), propose a minimal, non-invasive fix: likely a diagnostic that warns when callisto's own version bump changed something the ecosystem's own publish command will check strictly, without callisto reimplementing that check itself — scoped only to ecosystems that actually have this failure mode. Present the recommendation to the user, including whether npm/pnpm/python need anything at all.
+
+---
+
+Some more context on matrix:
+
+On callisto matrix itself — the underlying design is actually solid: once napi.targets is declared, it resolves each triple to hostRunner/useCross/artifactName (verified in callisto-graph/src/matrix.rs) — exactly the three things a GH Actions matrix job needs, covering 18 known triples. So the mechanism itself doesn't need rework. Two real gaps worth raising upstream though:
+
+1. Silent-empty is a bad failure mode. callisto matrix returning {} for a package that clearly looks like a napi package (has @napi-rs/cli as a devDependency, a napi build --platform script) but hasn't declared napi.targets gives zero signal that anything's missing. Worse: callisto validate said "Validation passed" despite this gap — its own readiness check doesn't catch it. This cost real time to trace through source. Callisto-side fix: validate/status should emit a diagnostic when a package looks napi-shaped but has no napi.targets declared.
+2. No reference pattern for the actual multi-job release flow. Checked callisto's own docs and every sibling org repo (lumen, monokl, prism) — none demonstrate the "matrix → per-platform build → collect artifacts → publish" pipeline this feature exists to drive. nativeMatrix as a callisto-action output is also structurally awkward — it's only populated mid-way through the actual publish attempt, too late to define a job-level strategy.matrix from it in the same run. The raw callisto matrix CLI works fine called standalone/early (bypassing callisto-action for that step, which is what I'd do for michi), but that's not documented anywhere as the intended pattern.
+
+---
+
+On the lock file is that something we document or augment the GH action with?
+
+---
+
+<task-notification>
+<task-id>a6573d8e8407a493a</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/0c4c4622-1ed8-4f2c-80e6-f0890a2dad72/tasks/a6573d8e8407a493a.output</output-file>
+<status>completed</status>
+<summary>Agent "Investigate callisto matrix gaps" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Findings
+
+### Claim 1 — silent-empty matrix + validate blind spot: **CONFIRMED**
+
+**Matrix returns nothing, with zero diagnostic, for an undeclared napi-shaped package.**
+
+- `assemble_platform_target_group` (`crates/callisto-graph/src/matrix.rs:304-316`) calls `select_platform_target_source`; when neither `napi.targets` nor `[tool.maturin].targets` is present, it returns `Ok((None, Vec::new()))` — no group, no diagnostics, at all (`matrix.rs:311-316`).
+- `build_matrix_report` (`matrix.rs:423-457`) only inserts a `platformTargets` entry when `group` is `Some`, so the package is simply absent from the report. This is confirmed by the existing test `assemble_platform_target_group_empty_array_is_present_not_absent` (`matrix.rs:996-1018`), which only covers the *explicit* `targets: []` case, not "no `napi` key at all."
+- This is **documented as intentional design**, not a bug, in `docs/00-design.md:2135-2140`: "A package with no `napi.targets`/... simply has no entry in either map — matrix never synthesizes a placeholder." The design rationale is for packages that genuinely aren't native — it does not address a package that *looks* napi-shaped via other signals (devDependency, build script) but forgot to declare targets. That's a real, uncovered gap.
+
+**No existing "napi-shaped" heuristic exists to detect `@napi-rs/cli`/`napi build` scripts.**
+
+- `detect_npm_role` in `crates/callisto-graph/src/walk.rs:561-613` is the only npm "role inference" logic in the codebase, and it detects something different: whether a `package.json` is a *platform stub* package (generated by napi-rs, has `os`+`cpu` arrays), used to classify `ManifestRole::Platform` for drift-checking. It does not read `devDependencies` or `scripts` at all.
+- `grep` across `crates/*/src/*.rs` for `devDependencies`/`@napi-rs/cli`/`"scripts"` turns up only `crates/callisto-manifests/src/npm.rs:263,302` (generic dependency-kind parsing for the dependency graph) — nothing that inspects `devDependencies` values or the `scripts` map for napi-signal detection. So the report's suggestion that this logic "already exists and could be reused" is **not accurate** — it would be genuinely new detection code, though `parse_package_json` (`matrix.rs:66-84`) already gives matrix.rs a parsed `serde_json::Value` it could cheaply extend to check `devDependencies["@napi-rs/cli"]` / `scripts["build"]` matching `napi build`.
+
+**`callisto validate` never touches platform targets at all.**
+
+- `crates/callisto-graph/src/commands/validate.rs:16-159` only builds diagnostics from `.changeset/*.md` files: `EmptyChangeset`, `EmptySummary`, `UnknownPackage`, `InvalidPackageName`, `AmbiguousPackageName` (lines 68-146). It never calls into `matrix.rs`, never reads `package.json`/`pyproject.toml` for napi/maturin shape, and its `is_valid` computation (line 151-153) is purely a function of changeset diagnostics. `crates/callisto-cli/src/commands/validate.rs` is a thin passthrough with no extra logic. So "validation passed despite the gap" isn't a hole in validate's napi check — validate has *no* napi/matrix check whatsoever to have a hole in.
+
+**`DiagnosticCode` has no adjacent variant.** `crates/callisto-model/src/diagnostic.rs:94-176` — the closest entries are `UnrecognisedPlatformTriple` and `DuplicatePlatformTriple`, both fired only once a triple is already declared. Nothing fires when a package looks native-shaped but declares zero triples.
+
+**Maturin/PyPI equivalent gap: CONFIRMED, and detection infrastructure is even thinner.** `select_platform_target_source` (`matrix.rs:260-294`) applies the identical "absent → `None`, no diagnostic" logic symmetrically to `[tool.maturin].targets`. A `grep` for `build-backend`/`requires.*maturin`/`pyo3` across `callisto-graph`/`callisto-manifests` (only hits in `python.rs` test fixtures using `hatchling`/`poetry`, none for `maturin`) confirms there is no "looks maturin-shaped" heuristic anywhere — not even the loose kind `detect_npm_role` provides for napi. The maturin_pyo3_layout test in `walk.rs:1499` is about promoting a *sibling Cargo+PyPI package pair* into the graph (a different feature entirely), not about detecting undeclared maturin targets.
+
+**Fix shapes actually supported by the code:**
+- New `DiagnosticCode` variant (e.g. `NapiShapedPackageMissingTargets` / a shared `PlatformShapedPackageMissingTargets` covering both ecosystems), following the existing kebab-case + doc-comment + roundtrip-test pattern already used for every other variant.
+- Detection logic is new, not reusable: for napi, check parsed `pkg_json_val` (already available in `assemble_platform_target_group`/`build_matrix_report`, no extra I/O) for `devDependencies["@napi-rs/cli"]` and/or a `scripts` entry matching `napi build`; for maturin, check parsed `pyproject_val` for `build-system.requires` containing `"maturin"` or `build-system.build-backend == "maturin"`.
+- Whether `validate` should independently re-derive this, or simply merge `matrix`'s diagnostics into its own report, is an open design question — currently the two commands are fully decoupled (`validate` never invokes `matrix`), so wiring them together is itself a small architectural decision, not just "add a check."
+
+---
+
+### Claim 2 — no reference pipeline pattern / `nativeMatrix` timing: **PARTIALLY CONFIRMED**
+
+**`nativeMatrix` timing, precisely:** `.github/actions/callisto-action/action.yml:154-165`. It is computed inside the `else` branch of `if [[ "$HAS_CHANGESETS" == "true" ]]` (i.e., only on a run with *no* pending changesets) via a direct `callisto matrix --format json | jq ...` call at line 164 — this itself is standalone and doesn't depend on publish state. But it runs as line 164 of a single composite-action shell step (`callisto-orchestrate`, `action.yml:60-228`) that, if `INPUT_PUBLISH` is set, goes straight on to call `callisto publish` at line 186 in the *same* step, with no seam for a caller to inject a separate native-build matrix job in between. So the correction to the raw claim: `nativeMatrix` isn't populated "mid-way through the publish attempt" — it's populated *just before* the publish attempt starts, in the same atomic step, and is never populated at all on a run where changesets are still pending (the version-PR branch never reaches line 164). Either way, the practical problem is the same: this composite action gives no way to pause between "compute nativeMatrix" and "run publish" for a downstream matrix-build job's artifacts to land.
+
+**`callisto matrix` CLI genuinely standalone: CONFIRMED.** `crates/callisto-cli/src/commands/matrix.rs:12-27` — `handle()` just calls `load_workspace` then `callisto_graph::commands::matrix`, with a passing test on a completely empty workspace (`handle_empty_workspace_succeeds`, lines 36-53, exit code 0). `crates/callisto-graph/src/commands/matrix.rs:16-50` confirms the graph-level `matrix()` function reads only manifests off disk via `ws.graph.packages()` — no changeset/version/publish state involved at all. `docs/00-design.md:2168-2177` states this as an explicit design invariant: "`matrix` runs independently, typically once per CI trigger before any version decision exists yet... `matrix` takes no changeset/cascade input at all."
+
+**A reference pattern does partially exist in this repo, but it's broken/incomplete — so "not documented anywhere" is not quite right.** `ARCHITECTURE.md:472-495` shows exactly the two-job `matrix` → `build` pattern the report says is missing, using raw `callisto matrix --format json` in an early standalone job and `needs:`/`fromJSON(...)` to feed a downstream `strategy.matrix` build job — this is the "call `callisto matrix` standalone early" pattern already written down. However:
+  - The build job's step invokes `callisto publish-target --package ... --target ...` (line 494), a subcommand that **does not exist** in the CLI (`grep` for `publish-target`/`PublishTarget` across `crates/callisto-cli/src/*.rs` returns nothing; `crates/callisto-cli/src/commands/` only has `publish.rs` and `plan_publish.rs`). `ARCHITECTURE.md:447` itself flags this: "the `callisto publish-target` subcommand described later in this section remain unimplemented."
+  - The example stops at per-platform build; it never shows collecting artifacts back and calling `callisto publish` (or `callisto-action`) — the "collect artifacts → publish" half of the pipeline the report is asking about is absent even here.
+  - `nativeMatrix` (the callisto-action output) isn't mentioned in this doc pattern at all — the doc example bypasses callisto-action entirely and calls raw `callisto matrix` in its own job, which is in fact the correct workaround, just never connected explicitly to callisto-action's `nativeMatrix` output or reconciled with it.
+
+**No end-to-end example exists anywhere searched:** `grep` for `matrix`/`nativeMatrix` across `README.md`, `ARCHITECTURE.md`, `docs/*.md` turns up only the partial/broken pattern above and prose design rationale — no working matrix→build→collect→publish workflow YAML. `nativeMatrix` itself is referenced only in `action.yml` and internal `.claude/` planning artifacts, never in README/ARCHITECTURE/docs.
+
+**Callisto doesn't dogfood this at all.** The repo has no `package.json`/`pyproject.toml` anywhere (pure Rust workspace), and its own `.github/workflows/callisto-release.yml:69-76` calls `callisto-action` with `publish: "true"` directly in a single job — no matrix/build job, no consumption of `nativeMatrix` output whatsoever. So there's no self-example to point to either.
+
+**Fix shapes:**
+- This is **primarily a docs/example gap**, not a required code change: the underlying pieces (`callisto matrix` standalone, `fromJSON(needs.job.outputs.x)` matrix wiring) already work as shown by `ARCHITECTURE.md`'s own partial example and the CLI's demonstrated independence from publish state. A corrected, complete example workflow — call `callisto matrix` in an early job, fan out a real build job (using `callisto build`/existing napi/maturin build tooling instead of the fictional `publish-target`), upload artifacts, then a final job that downloads artifacts and calls `callisto-action`/`callisto publish` — would close most of the gap without touching Rust code.
+- One real (small) code/action fix is worth flagging: `callisto-action`'s `nativeMatrix` output is documented as defaulting to `"Empty array"` (`action.yml:51`) but is actually left completely **unset** (empty string, not `"[]"`) whenever changesets are pending, since line 164 is never reached in that branch — a caller doing `fromJSON(steps.x.outputs.nativeMatrix)` in that case would hit a JSON parse error, not get `[]`. That's a minor but genuine action-level correctness bug worth fixing alongside any doc update.
+- Whether to also thread `nativeMatrix` computation into a separable, always-populated action step (independent of the changesets/publish branch) is a legitimate design choice for whoever owns the action, but is not required to unblock consumers — "run raw `callisto matrix` standalone, early, in your own job" is already fully supported by the code today and just needs to be written down as the sanctioned pattern, replacing the broken `publish-target`-based example currently in `ARCHITECTURE.md`.
+
+**Out of scope for this repo:** the claim that lumen/monokl/prism sibling repos also lack this pattern cannot be verified from within the callisto repository — no references to those repos exist here.</result>
+<usage><subagent_tokens>115168</subagent_tokens><tool_uses>38</tool_uses><duration_ms>222966</duration_ms></usage>
+</task-notification>
+
+---
+
+Yes, let's address it in the most appropriate way and document what to do mindful of when overriding
+
+---
+
+Is that the comphrenehsive fix for matrix? Does it provide the best UX/DX for matrix? Specially in the NAPI use-case we have right now? What about the future?
+
+---
+
+Check the callisto matrix investigation result (silent-empty diagnostic gap, nativeMatrix timing/docs gap). Present the findings and a recommended fix scope to the user, matching the precision/rigor of the lockfile-staleness recommendation earlier in this conversation.
+
+---
+
+<task-notification>
+<task-id>a0e27c69c3a54f511</task-id>
+<tool-use-id>toolu_01JypsVmtLhrWuh2PsH9xRuA</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/0c4c4622-1ed8-4f2c-80e6-f0890a2dad72/tasks/a0e27c69c3a54f511.output</output-file>
+<status>completed</status>
+<summary>Agent "Assess full napi-rs pipeline DX gap" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Findings: Is the binary-placement step a real gap, or is "fix the docs + 2 bugs" sufficient?
+
+**Bottom line up front: this is a real, load-bearing gap (verdict 4a), and it is not merely undiscovered — the repo's own design spec explicitly designed the fix for it, and that half of the design was never implemented.** Fixing the two known bugs (silent-empty matrix, `nativeMatrix` unset-vs-`[]`, and the nonexistent `callisto publish-target` reference) is necessary but nowhere near sufficient. There is a second, larger hole in the middle of the pipeline that neither of those two fixes touches.
+
+### 1. napi-rs convention and callisto's model of it
+
+General napi-rs knowledge (not repo-verified): a napi-rs project publishes N platform-stub npm packages (`pkg-linux-x64-gnu`, `pkg-darwin-arm64`, …), each just a `.node` binary + a minimal `package.json` carrying `os`/`cpu` fields, plus one main package with `optionalDependencies` on all of them.
+
+Callisto's model of this **is correct**, confirmed in-repo:
+- `detect_npm_role` (`crates/callisto-graph/src/walk.rs:561-613`) classifies a `package.json` with non-empty `os`+`cpu` arrays as `ManifestRole::Platform`, and even infers the Linux libc ABI (`gnu`/`musl`/`gnueabihf`) from the package-name suffix since npm's own `os`/`cpu` fields have no ABI concept (`walk.rs:596-613`).
+- In `crates/callisto-graph/src/commands/publish.rs:395-489`, packages carrying a `Platform` manifest role are routed into a distinct `npm_platform_packages: Vec&lt;NpmPublish&gt;` list, separate from `npm_main_packages: Vec&lt;NpmMainPublish&gt;` (which additionally tracks `depends_on_platforms` for the main package's platform deps).
+- At execution time (`publish_client.rs:679-707`), platform packages are published *before* main packages (`plan.npm_platform_packages` loop precedes `plan.npm_main_packages`), which is the correct ordering for `optionalDependencies` resolution.
+- Critically, the actual publish mechanism is generic and ecosystem-standard: `build_npm_publish_command` (`publish_client.rs:347-410`) runs `npm publish --workspace &lt;name&gt;` (or the pnpm/yarn/bun equivalent) against whatever is currently on disk in that workspace member's directory. There is **no branching on `Platform`-ness** in the command-building layer at all — a platform package is published exactly like any other npm package, which is correct per convention, but it also means correctness depends entirely on the `.node` binary already being physically present in that directory before this command runs.
+
+### 2. The missing link — binary placement
+
+I grepped `matrix.rs`, `publish_client.rs`, `publish.rs`, and all of `callisto-cli/src/` for `artifact`, `stage`, `copy`, `.node`, `fs::copy`, `fs::rename` — **there is zero code anywhere in this repo that copies, moves, or stages a build artifact into a package directory.** `callisto publish` only ever invokes the underlying package manager's `publish` against the directory's current disk contents.
+
+Is this "shallow, everything you need is already there" or "a real gap"? The `PlatformTarget` struct (`crates/callisto-model/src/matrix.rs:56-71`) does give a consumer the two pieces of addressing info needed — `artifact_name` (`"native-" + triple`, from `matrix.rs:36-39`) and `package_dir` (workspace-root-relative). So a consumer *can* write the glue (`gh run download --name &lt;artifactName&gt; --dir &lt;packageDir&gt;`), but callisto supplies zero of the mechanism itself — no subcommand, no library function, nothing that performs the copy.
+
+### 3. What this repo's own consumers/docs actually show
+
+This is the most damning evidence, and it settles the "is this really unaddressed" question: **the repo's own internal design spec already designed this exact step and it was never built.**
+
+`.claude/specs/callisto-matrix.md` (status: "PLANNED, Phase 3/v0.5", dated 2026-08-09) §6.2 "Artifact routing — placement before publish" (lines 295-318) explicitly specifies:
+&gt; "Before `callisto publish` runs, the orchestrating step downloads each artifact by `artifactName` and places it into `packageDir`."
+
+...with a concrete `gh run download --name "$ARTIFACT" --dir "$DIR"` snippet, and §7 designs a full `callisto-build-action` composite action (napi/maturin/dotnet-aot dispatch, `napi build --platform --release`, `actions/upload-artifact@v4`).
+
+**None of this was implemented.** `.github/actions/` contains only `callisto-action`, `callisto-validate`, `setup-callisto`, `setup-callisto-wasm` — no `callisto-build-action` exists. `ARCHITECTURE.md`'s §12 example workflow (lines 476-494) doesn't even attempt this pattern — it shows a `build` job that calls a single nonexistent `callisto publish-target --package X --target Y` command with no upload/download/placement step at all. And in the actually-shipped `.github/actions/callisto-action/action.yml`, the `nativeMatrix` output is computed and then **`callisto publish` runs in the very same linear bash step, immediately after** (lines 164-183) — there's no `needs:`-gated downstream build job in this action's own structure, meaning the action as shipped cannot even support the fan-out-build-then-publish pattern its own `nativeMatrix` output implies exists. `nativeMatrix` is produced but consumed nowhere in this repo's own `callisto-ci.yml` or `callisto-release.yml` either.
+
+So: nothing in the shipped repo addresses binary placement, even informally — but the maintainers had already scoped and designed it once, as required (not optional) work, and it fell out before shipping.
+
+### 4. Severity classification: **(a) — real, load-bearing gap**
+
+This is not (b) a shallow/documentation-only gap, and not (c) napi-rs's own job. On (c): napi-rs's own CLI (`@napi-rs/cli`) does have `napi build --platform` (per the spec's own §7.2 snippet) and — general napi-rs knowledge, not verified in this repo — `napi-rs`'s official template does provide a `napi-rs` `.node` output step, but the "download artifact / place into the correct sibling package directory / run publish" orchestration across N parallel CI jobs is CI-glue that napi-rs's own CLI does not own either; it's genuinely the kind of thing a release-engineering tool like callisto would be expected to close, given callisto already computes exactly the `artifactName`→`packageDir` mapping needed to do it. The repo's own spec agreed with this framing (it scoped the placement step as in-scope, §6.2, not as a non-goal — see §8's five explicit non-goals, none of which mention artifact placement).
+
+Practically: today, a consumer following `ARCHITECTURE.md`'s only example, or using `callisto-action` as shipped, gets a matrix (once the silent-empty bug is fixed) and a `nativeMatrix` action output, but **no path from "N platform jobs each produced a `.node` file" to "those files are sitting in the right platform-stub package directories when `callisto publish` runs."** That has to be hand-built by every consumer from scratch, informed only by field names in the JSON schema, with no example anywhere in the repo of a working end-to-end flow. That's a substantial DX gap in the core pipeline, not a doc nit.
+
+### 5. Extending to Java/JNI and .NET native-AOT
+
+The `PlatformTargetKind` enum (`crates/callisto-model/src/matrix.rs:49-54`) currently has only `Napi` and `Maturin` — its own doc comment says "Deliberately omits a DotnetAot variant; out of scope for this spec," and `PlatformTarget` explicitly has "No `rid` field (napi/maturin only, no dotnet-aot)" (`matrix.rs:56-58`). `RuntimeEcosystem` likewise only has `Npm`/`Python`, with Java's `&lt;java.version&gt;` reader marked Phase 4/unimplemented. So the shipped abstraction already narrowed scope relative to the original spec draft, which had designed a three-way `napi`/`maturin`/`dotnet-aot` kind dispatch (spec §7.2-7.4).
+
+The shape is reasonable for extension: adding a `Kind::Java` or `Kind::DotnetAot` variant plus an optional `rid`-style field is additive, not a rework of the core `PlatformTargetGroup`/`PlatformTarget` types. But the **manifest-reading half will very plausibly reproduce the same "silent-empty, no diagnostic" pattern** each readers already do (`NapiTargetsField::Absent` / maturin's `Option&lt;Vec&lt;String&gt;&gt;` absent case both currently just produce an empty group with no warning — the exact shape of confirmed gap #1). And the **binary-placement half will have to be built from scratch again** for each new ecosystem's build/upload/download/place sequence (per §7's per-kind dispatch design), *unless* callisto first builds one ecosystem-agnostic "download `artifactName` into `packageDir`" primitive now, since that operation is already kind-independent in the data model. Today no such primitive exists in any form, so as it stands, yes — Java and .NET-AOT support would re-derive both halves of this gap-set independently rather than inheriting a fix.
+
+### Key files (all read-only, no edits made)
+- `crates/callisto-graph/src/walk.rs:551-626` — `detect_npm_role`
+- `crates/callisto-graph/src/commands/publish.rs:395-489` — platform vs. main npm publish routing
+- `crates/callisto-graph/src/commands/publish_client.rs:332-410, 679-707` — publish execution, no artifact staging
+- `crates/callisto-model/src/matrix.rs:39-71` — `PlatformTargetGroup`/`PlatformTarget`/`PlatformTargetKind` (no Dotnet variant, no `rid`)
+- `crates/callisto-graph/src/matrix.rs:1-140` — triple table, `artifact_name_for_triple`, `build_platform_target`
+- `.claude/specs/callisto-matrix.md:295-438` — original design's §6.2 (artifact placement) and §7 (`callisto-build-action`), never implemented
+- `.github/actions/callisto-action/action.yml:50-52, 157-183` — `nativeMatrix` output produced and immediately followed by `callisto publish` in the same step, no consumer job anywhere in-repo
+- `ARCHITECTURE.md:445-494` — the sole documented example, referencing the nonexistent `callisto publish-target` and showing no build/upload/download/place sequence at all</result>
+<usage><subagent_tokens>85192</subagent_tokens><tool_uses>33</tool_uses><duration_ms>197312</duration_ms></usage>
+</task-notification>
+
+---
+
+We need to think through our spec for matrix and do a proper evaluation, research, and spec proposal here. What do we need to be able to provide to publish multi-language packages with native dependencies. Say if we're also publishing rust binaries to GH for example too. Or go binaries that will go into a brew setup
+
+---
+
+<task-notification>
+<task-id>a3323eabe0294ecf4</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/0c4c4622-1ed8-4f2c-80e6-f0890a2dad72/tasks/a3323eabe0294ecf4.output</output-file>
+<status>completed</status>
+<summary>Agent "Map research sources for matrix distribution model" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Now I'll map the research agenda. Based on the question and the context you provided, I need to identify which sources address the distribution-model design space.
+
+```json
+{
+  "question": "What should callisto's native-artifact / multi-target distribution model be?",
+  "internal_sources": [
+    "/Users/gabe/Projects/callisto/crates/callisto-model/src/matrix.rs",
+    "/Users/gabe/Projects/callisto/crates/callisto-model/src/ecosystem.rs",
+    "/Users/gabe/Projects/callisto/crates/callisto-graph/src/matrix.rs",
+    "/Users/gabe/Projects/callisto/crates/callisto-graph/src/commands/publish.rs",
+    "/Users/gabe/Projects/callisto/crates/callisto-graph/src/commands/publish_client.rs",
+    "/Users/gabe/Projects/callisto/.claude/specs/callisto-matrix.md",
+    "/Users/gabe/Projects/callisto/.claude/specs/track-g-matrix-napi-maturin.json",
+    "/Users/gabe/Projects/callisto/docs/00-design.md",
+    "/Users/gabe/Projects/callisto/docs/06-publishing.md",
+    "/Users/gabe/Projects/callisto/docs/release-paradigms.md",
+    "/Users/gabe/Projects/callisto/ARCHITECTURE.md",
+    "/Users/gabe/Projects/callisto/.claude/plans/ACTIVE.md"
+  ],
+  "external_keywords": [
+    "goreleaser distribution architecture",
+    "goreleaser Homebrew tap integration",
+    "goreleaser artifact placement and release sink patterns",
+    "cargo-dist binary packaging and versioned asset model",
+    "cargo-dist GitHub Release integration",
+    "cargo-dist platform-specific artifact routing",
+    "napi-rs multi-platform build conventions",
+    "napi-rs platform-stub package ordering",
+    "Homebrew formula syntax and checksummed tarball references",
+    "GitHub Release API asset upload and per-platform binaries",
+    "build-system-agnostic binary distribution patterns"
+  ],
+  "existing_implementations": [
+    "PlatformTargetKind enum (Napi/Maturin variants only — explicitly excludes DotnetAot)",
+    "PublishTarget enum (Cargo/Npm/PyPi/NuGet/GitHubRelease variants)",
+    "Matrix auto-discovery from Cargo.toml/pyproject.toml/package.json manifests",
+    "Publish command platform-before-main ordering for napi/maturin",
+    "ManifestRole::Platform for platform-stub npm package differentiation",
+    "Artifact-placement gap: no mechanism to copy built binaries into platform-stub directories before publish"
+  ],
+  "scope": "both",
+  "reasoning": "Internal sources establish the current state: matrix discovers native targets, PublishTarget models output channels, but artifact placement is missing and PlatformTargetKind is incomplete (Napi/Maturin only). The maintainer now wants to support CLI binaries (cargo-dist pattern) and Homebrew taps (goreleaser pattern) — both outside current scope. External prior art is essential: goreleaser solves Homebrew integration at scale; cargo-dist is the reference Rust CLI distribution model; napi-rs conventions anchor polyglot platform-build correctness. This research must ground the decision in proven patterns from mature tools."
+}
+```</result>
+<usage><subagent_tokens>34192</subagent_tokens><tool_uses>5</tool_uses><duration_ms>84212</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a992e6fefac2f390a</task-id>
+<tool-use-id>toolu_01U63q7E5SQM5W2Ai2q554FM</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/0c4c4622-1ed8-4f2c-80e6-f0890a2dad72/tasks/a992e6fefac2f390a.output</output-file>
+<status>completed</status>
+<summary>Agent "Extract findings for matrix distribution research" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>```json
+{
+  "findings": [
+    {
+      "claim": "PlatformTargetKind enum has exactly two variants, Napi and Maturin; a DotnetAot variant is deliberately omitted and is enforced by a unit test that asserts deserializing kind:\"dotnet-aot\" fails.",
+      "evidence": "pub enum PlatformTargetKind { Napi, Maturin } with doc comment 'Deliberately omits a DotnetAot variant; out of scope for this spec.' plus test platform_target_kind_rejects_unknown_dotnet_aot_variant",
+      "source": "crates/callisto-model/src/matrix.rs:48-54,125-134",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "PlatformTarget carries only a Rust target-triple identity (triple, platform, arch, abi, host_runner, use_cross, artifact_name, package_dir, package_name) — there is no RID field and no generic 'binary kind' field that could represent a non-napi/maturin native artifact (e.g. a bare Rust CLI binary or a Go binary).",
+      "evidence": "pub struct PlatformTarget { pub triple: String, pub platform: String, pub arch: String, pub abi: Option&lt;String&gt;, pub host_runner: String, pub use_cross: bool, pub artifact_name: String, pub package_dir: String, pub package_name: String }",
+      "source": "crates/callisto-model/src/matrix.rs:56-71",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "artifact_name_for_triple is unconditionally \"native-{triple}\" for every recognised triple — the artifact naming convention is hardcoded to the napi/maturin identity shape, not parameterized by ecosystem or package kind.",
+      "evidence": "pub(crate) fn artifact_name_for_triple(triple: &amp;str) -&gt; String { format!(\"native-{triple}\") } plus AC-013 test pinning this literal",
+      "source": "crates/callisto-graph/src/matrix.rs:36-40,718-729",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "The matrix module's per-triple hostRunner/useCross table recognizes exactly 18 Rust target triples, hardcoded as a match statement (not read from any config) — this table has no entries for e.g. Go's GOOS/GOARCH combinations, and no generic 'CLI binary triple' table distinct from the napi/maturin one.",
+      "evidence": "triple_host_runner_use_cross match covers 18 named triples (aarch64-apple-darwin ... wasm32-unknown-unknown), each returning a hardcoded (hostRunner, useCross) pair; table-driven test triple_host_runner_use_cross_matches_all_18_triples pins the count",
+      "source": "crates/callisto-graph/src/matrix.rs:12-34,686-716",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "PublishTarget enum (the type that drives what plan_publish/publish dispatch to) has exactly these variants: CratesIo, Npm{registry,access}, Pypi{index}, NuGet{source}, GitHubRelease, None. It is #[non_exhaustive]. There is no Homebrew, HomebrewTap, or generic 'binary release' variant.",
+      "evidence": "pub enum PublishTarget { CratesIo, Npm {..}, Pypi {..}, NuGet {..}, GitHubRelease, None }",
+      "source": "crates/callisto-model/src/ecosystem.rs:65-90",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "In plan_publish's per-package dispatch, PublishTarget::NuGet and PublishTarget::GitHubRelease both push a Warning-severity Diagnostic with code PublishTargetNotImplemented and message '...this target will not be published' — they do NOT cause a hard failure/non-zero exit and are not silently dropped either; they are a soft warning. This contradicts ACTIVE.md's claim (in the prompt's own supplied context) that these were fixed 'from silent-no-op to loud-fail via E119' — the actual code path is warn-and-skip, not a hard error/loud-fail.",
+      "evidence": "callisto_model::PublishTarget::NuGet { .. } =&gt; { diagnostics.push(Diagnostic { code: PublishTargetNotImplemented, severity: DiagnosticSeverity::Warning, message: \"...NuGet publishing is not yet implemented; this target will not be published\", .. }) } — identical shape for GitHubRelease",
+      "source": "crates/callisto-graph/src/commands/publish.rs:343-374",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "The GitHubRelease PublishTarget variant is explicitly documented as a plan-shape label only, with no execution capability — callisto itself never creates a GitHub Release, by design (§9.5 removed octocrab/reqwest/GitHub-release creation from the dependency tree entirely).",
+      "evidence": "\"GitHubRelease, // orphaned by §9.5's scope cut: creating a GitHub Release is a registry-publish-shaped action, and §9.5 removed octocrab/reqwest/GitHub-release creation from callisto's dependency tree entirely. ... callisto itself never creates one\"",
+      "source": "docs/00-design.md:362-368 (§5.1 PublishTarget definition)",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "docs/00-design.md contains an internal contradiction about whether callisto executes real publishes at all. The document's own top-level summary (§0, revision-3 framing) states callisto 'runs cargo publish, npm publish, and twine upload via callisto publish (shelling out to each ecosystem's own tool)'. But §9's opening states 'Callisto is a versioning coordinator, not a release orchestrator ... it does not run the actual publish' and describes plan-publish/tags as the only outputs. §11.1 then reconciles this by describing 'callisto publish' as a real execution step that does shell out to cargo/npm/twine in dispatch order — matching the top-of-doc summary and the confirmed code in publish_client.rs, not the flat 'does not run the actual publish' framing at the start of §9.",
+      "evidence": "Top: 'Callisto manages both versioning and publishing... runs cargo publish, npm publish, and twine upload via callisto publish' (line 12-15). §9 opening: 'Callisto is a versioning coordinator, not a release orchestrator... it does not run the actual publish' (line 823-826). §11.1: '\"callisto publish\" is the execution step... then delegates to each ecosystem's own CLI'",
+      "source": "docs/00-design.md:12-15, 823-829, 1026-1066",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "§9.5 of docs/00-design.md explicitly states the prior design's GitHub-release-creation orchestration (via octocrab/reqwest/tokio) was removed from scope entirely — callisto deliberately does not build a GitHub Release artifact-upload capability of its own.",
+      "evidence": "\"The prior revision specified a 7-phase orchestration pipeline... an on-failure: aggregate | abort policy, and octocrab/reqwest/tokio in the CLI's core dependency tree for GitHub release creation. All of that is removed.\"",
+      "source": "docs/00-design.md:954-965",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "callisto's own §00-design.md scope table (§2.2) never lists a native-binary/cargo-dist-style CLI distribution case, nor Homebrew, at all — the polyglot cases enumerated (A-F) are all about registry-published Cargo/npm/PyPI packages and napi platform-package coordination, never about distributing callisto's own or any package's prebuilt binary as a GitHub Release asset or via a package manager tap.",
+      "evidence": "Cases A-F table covers Cargo workspace, npm workspace, dual-publish, napi single/composite packages only; Ecosystem priority table lists Cargo/npm/napi/Python/Go/Maven/NuGet/Deno-JSR/Ruby/C — no 'binary distribution', 'GitHub Release asset', or 'Homebrew' row anywhere",
+      "source": "docs/00-design.md:126-190",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "Go ecosystem support is explicitly 'real, tractable... demand-gated' specifically because Go publishing needs no registry backend — Go is versioned via git tags only, and callisto's model for it is version-bump/tag-driven, not binary-build/publish. Go's own doc (05-go-engine-spec.md) covers only tag conventions and go.work/lockfile handling — nothing about building or distributing Go binaries.",
+      "evidence": "\"Go modules | Real, tractable (git-tag-only publish, no registry backend needed), demand-gated.\" and the entire content of 05-go-engine-spec.md is tag conventions + go.work discovery + go.sum staging, no build/binary/distribution content",
+      "source": "docs/00-design.md:158; docs/05-go-engine-spec.md:1-29",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "callisto-matrix.md (the design doc that shipped the napi/maturin matrix feature) explicitly designed but never implemented an artifact-placement step (§6.2, a `gh run download --name X --dir Y` loop keyed by artifactName/packageDir) and a callisto-build-action composite action (§7) that would dispatch napi build/maturin-action/dotnet publish per target kind and upload artifacts. Both are still absent from the codebase per this session's prior investigation.",
+      "evidence": "§6.2's 'Artifact routing — placement before publish' contract and full gh run download loop; §7's per-kind (napi/maturin/dotnet-aot) build dispatch YAML blocks and upload-artifact steps",
+      "source": ".claude/specs/callisto-matrix.md:295-403",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "The same design doc's non-goals section (§8) explicitly rules Go out of the matrix subcommand's scope: 'Go's cross-compilation story (GOOS/GOARCH env vars) does not follow a manifest-declared target list pattern, and Go does not produce language-native binary modules in the napi/maturin/dotnet-aot sense.'",
+      "evidence": "\"5. Matrix subcommand for Go. Go's cross-compilation story (GOOS/GOARCH env vars) does not follow a manifest-declared target list pattern, and Go does not produce language-native binary modules in the napi/maturin/dotnet-aot sense.\"",
+      "source": ".claude/specs/callisto-matrix.md:435-437",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "The shipped spec that actually built `callisto matrix` (SPEC-004 / track-g-matrix-napi-maturin.json) explicitly non-goals out dotnet-aot entirely (no RID table, no .NET/XML parsing, no PlatformTarget.rid field) as deferred follow-up work, and treats the callisto-build-action composite action as optional/not required for spec completion.",
+      "evidence": "non_goals[0]: \"dotnet-aot target kind: no .NET RID table... Deferred to a follow-up track\"; non_goals[3]: \"Creating the callisto-build-action composite action itself is optional for this spec\"",
+      "source": ".claude/specs/track-g-matrix-napi-maturin.json:6-10",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "ARCHITECTURE.md §12 explicitly flags a `callisto publish-target` subcommand (referenced in its example GitHub Actions workflow as the per-target build/publish dispatcher: `callisto publish-target --package ... --target ...`) as unimplemented and 'planned for a future release,' alongside Java (JNI) and .NET native-AOT target discovery.",
+      "evidence": "\"&gt; Status: napi-rs and maturin platform-target discovery... are implemented... Java (JNI) target discovery, .NET native-AOT target discovery, and the `callisto publish-target` subcommand described later in this section remain unimplemented and are planned for a future release.\" followed by the workflow example's `run: callisto publish-target --package ... --target ...` step",
+      "source": "ARCHITECTURE.md:445-447,486-494",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "ARCHITECTURE.md §13 positions callisto as build-system-agnostic and hermetic (Bazel/Buck2/Nix/GitLab CI), emitting only JSON/text to stdout with zero network calls — reinforcing that callisto's architectural identity is a coordination/planning CLI, not an artifact builder or uploader, consistent with docs/00-design.md §9's coordinator framing.",
+      "evidence": "\"Zero Network / API Lock-in: callisto status, callisto plan-publish, and callisto matrix operate entirely on local workspace files and write to stdout/JSON.\"",
+      "source": "ARCHITECTURE.md:540-544",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "docs/06-publishing.md (the full publishing-authentication doc) covers only npm/Cargo/PyPI credential setup patterns. It contains no mention of GitHub Release asset publishing, Homebrew, or prebuilt-binary distribution of any kind.",
+      "evidence": "Full document content: npm auth Patterns A/B, Cargo CARGO_REGISTRY_TOKEN, PyPI TWINE_USERNAME/TWINE_PASSWORD, and one combined workflow example — no other publish target discussed",
+      "source": "docs/06-publishing.md:1-187",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "docs/release-paradigms.md (the three release-paradigm doc) frames every paradigm purely around when/how `callisto-action` with `publish: \"true\"` runs (branching model, trigger). It never discusses per-platform binary builds, artifact matrices, or non-registry distribution channels — all three example workflows are single-job (no build-matrix job) release flows.",
+      "evidence": "All three paradigm workflow YAMLs consist of a verify job and a release job calling callisto-action directly with npm/cargo secrets — no matrix job, no artifact upload/download steps anywhere in the document",
+      "source": "docs/release-paradigms.md:1-190",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "CLAUDE.md (project instructions) states no explicit scope philosophy about native-artifact distribution, Homebrew, or GitHub Release binaries — its 'Key Architectural Invariants' section covers safe-Rust, format-preservation, atomic writes, layer isolation (AGPL/MIT), and no-emoji docs only.",
+      "evidence": "Quick Reference / Key Architectural Invariants list: unsafe_code=forbid, format-preservation CST editors, atomic_write, Layer 1 crate licensing, no-emoji docs — nothing about publish targets or distribution",
+      "source": "CLAUDE.md (project root)",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "The maintainer's own memory/ACTIVE.md notes an unresolved, confirmed-live limitation directly adjacent to this question: walk.rs's platform-manifest discovery (the mechanism that finds/binds a napi platform sibling manifest to its owner package) is strictly npm-only and directory-scoped — no Cargo/maturin equivalent exists, and two platform siblings under one owner can never both be disk-discovered. This is a structural gap in the existing napi coordination model that any new native-binary/multi-target model would need to either reuse-and-extend or bypass.",
+      "evidence": "\"walk.rs's platform-manifest discovery being npm-only (no Cargo/maturin support, and directory-scoped even for npm) is a real, confirmed limitation surfaced twice by this track — worth its own future track if maturin/multi-platform-per-owner support is ever needed for real.\"",
+      "source": ".claude/plans/ACTIVE.md:153 (Track 2 entry)",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "goreleaser's architecture separates build (per-target-triple compilation via GOOS/GOARCH matrix or a build hook), archive (packaging into tar.gz/zip per platform), release (creating the GitHub/GitLab Release and uploading archives + checksums), and a distinct 'announce'/'blob'/downstream-publisher stage that includes a native Homebrew 'brews' config block — which generates a Homebrew formula file and pushes it to a configured separate tap repository (owner/repo, typically named homebrew-&lt;tool&gt;), referencing the release's tagged tarball URL and its computed SHA256 checksum. All stages read/write a shared, versioned dist manifest (artifacts.json) so later stages consume exactly what earlier stages produced, and the entire pipeline is declared in one goreleaser.yaml.",
+      "evidence": "General knowledge of goreleaser's documented pipeline stages (before/build/archive/checksum/sign/release/announce and the `brews:` config block) — not verified against any file in this repo",
+      "source": "general knowledge",
+      "confidence": "likely"
+    },
+    {
+      "claim": "cargo-dist is Rust-specific and follows a broadly similar separation to goreleaser (build-target-matrix as its own CI-job-generation concern, distinct from the 'installer'/distribution-sink concern), generating GitHub Actions workflow YAML itself (unlike callisto matrix, which deliberately only emits JSON and leaves YAML authorship to the caller) that builds each target on its natively-appropriate runner, uploads artifacts, and creates a GitHub Release with per-platform tarballs/zips plus install scripts (shell installer, PowerShell installer, npm wrapper package). cargo-dist has (or had, as of recent versions) a Homebrew tap-publishing installer target that generates and pushes a formula to a configured tap repo, structurally analogous to goreleaser's brews block, though its user base and maturity are smaller than goreleaser's.",
+      "evidence": "General recollection of cargo-dist's documented feature set (dist-workspace.toml config, installers: shell/powershell/npm/homebrew, GitHub Actions workflow generation) — not verified against any file in this repo, and the exact current state of Homebrew support (stability, config surface) is not something I can confirm with certainty from memory alone",
+      "source": "general knowledge",
+      "confidence": "assumed"
+    },
+    {
+      "claim": "napi-rs's own official project template CI convention builds each platform's .node file on a per-triple matrix job (using napi build --platform --release, optionally under a cross-compilation Docker image for musl/ARM/Android targets), uploads each as a named CI artifact, then a separate downstream job downloads all artifacts, moves each into its corresponding platform-stub npm package directory (the exact 'artifact placement' step callisto-matrix.md's abandoned §6.2 was modeling), and finally runs npm publish across the platform packages before the main package. This is the same shape callisto-matrix.md's §6/§7 explicitly designed against, and the confirmed facts state callisto has the publish-side half (ManifestRole::Platform, ordered publish) correct but has never implemented the build-side artifact-placement half that closes this loop.",
+      "evidence": "General recollection of the @napi-rs/cli project template's .github/workflows/CI.yml structure (build matrix job → upload-artifact → a 'Move artifacts' step via @napi-rs/cli's own `napi artifacts` command → publish job) — not verified against any file in this repo",
+      "source": "general knowledge",
+      "confidence": "likely"
+    }
+  ],
+  "sources_read": [
+    "crates/callisto-model/src/matrix.rs",
+    "crates/callisto-model/src/ecosystem.rs",
+    "crates/callisto-graph/src/matrix.rs",
+    "crates/callisto-graph/src/commands/publish.rs",
+    "crates/callisto-graph/src/commands/publish_client.rs (read in full, including test sections through EOF)",
+    ".claude/specs/callisto-matrix.md",
+    "docs/06-publishing.md",
+    "docs/release-paradigms.md",
+    "docs/05-go-engine-spec.md",
+    "docs/00-design.md (read through §14 config-format start, line ~1370; sections beyond §14 not reached but §0-§13 cover all publish/distribution/scope content per the source map's stated focus)",
+    ".claude/plans/ACTIVE.md",
+    ".claude/specs/track-g-matrix-napi-maturin.json",
+    "ARCHITECTURE.md (§12 and §13, targeted via grep for matrix/publish/distribution/artifact/binary/release/native headers)",
+    "CLAUDE.md (project root, provided in system context)"
+  ],
+  "reasoning": "The single most load-bearing discovery is the internal contradiction inside docs/00-design.md itself: its top-of-document revision-3 summary flatly states callisto 'runs cargo publish, npm publish, and twine upload,' while §9's own opening paragraph says the opposite ('it does not run the actual publish'), before §11.1 resolves the tension by describing 'callisto publish' as a real execution step — matching the top summary and the confirmed SubprocessRegistryClient code, not §9's flat coordinator-only framing. A spec writer reading only §9 in isolation would draw a materially wrong conclusion about whether callisto already executes registry publishes at all, let alone whether it could execute artifact builds/placement — worth flagging loudly since it directly bears on how much new 'execution' surface a distribution-model design is allowed to add.\n\nSecond, ACTIVE.md's own supplied context in the prompt claims PublishTarget::NuGet/GitHubRelease were 'fixed from silent-no-op to loud-fail via E119' — reading publish.rs directly shows this is not accurate: both variants push a Warning diagnostic and are skipped, never a hard error/non-zero exit, and no E119 code appears anywhere in the read source. This matters because the maintainer's Homebrew/cargo-dist scenario would presumably want GitHubRelease-shaped publishing to actually work or fail loudly, not silently warn-and-continue as it does today.\n\nThird, everything in-repo (docs/00-design.md §2.2, §5.1's PublishTarget definition, the callisto-matrix.md non-goals, and track-g's spec non-goals) converges on the same posture: callisto has deliberately scoped OUT any generic native-binary/GitHub-Release-asset/Homebrew distribution model. The GitHubRelease variant is explicitly called 'orphaned by §9.5's scope cut' and 'a plan-shape label with no corresponding execution capability.' The matrix/PlatformTarget type system is hardcoded to the napi/maturin triple+artifact-name shape (no rid field, no generic binary-kind field, artifact naming literally hardcoded to 'native-{triple}'), so extending it to a bare-Rust-CLI-binary-per-platform case or a Go binary case is not a config change — it requires new enum variants and likely a new report shape, not merely populating existing fields differently.\n\nNo direct contradiction was found between docs/06-publishing.md / docs/release-paradigms.md and the maintainer's ask — those docs simply never address the topic at all (silence, not a stated boundary), which itself is a relevant negative finding: there is no existing doc anywhere in the repo that states a considered position on cargo-dist-style or Homebrew-tap distribution, positive or negative, apart from the Go/dotnet exclusions already covered under the matrix feature's non-goals.\n\nExternal-knowledge findings (goreleaser/cargo-dist/napi-rs CI conventions) are marked likely/assumed since they rely on my general training knowledge rather than anything fetched in this session — flagged explicitly per the task's instructions rather than presented with false certainty."
+}
+```
+
+Key files/paths for the downstream synthesizer:
+- `/Users/gabe/Projects/callisto/docs/00-design.md` (internal contradiction at lines 12-15 vs 823-829 vs 1026-1066)
+- `/Users/gabe/Projects/callisto/crates/callisto-graph/src/commands/publish.rs:343-374` (NuGet/GitHubRelease actual dispatch behavior)
+- `/Users/gabe/Projects/callisto/crates/callisto-model/src/ecosystem.rs:65-90` (PublishTarget enum, no Homebrew/binary variant)
+- `/Users/gabe/Projects/callisto/crates/callisto-model/src/matrix.rs:48-71` (PlatformTargetKind/PlatformTarget, hardcoded to napi/maturin shape)
+- `/Users/gabe/Projects/callisto/ARCHITECTURE.md:445-494` (unimplemented `callisto publish-target` subcommand)
+- `/Users/gabe/Projects/callisto/.claude/specs/callisto-matrix.md:295-437` (abandoned artifact-placement §6.2 and build-action §7 design, Go explicitly excluded)</result>
+<usage><subagent_tokens>213578</subagent_tokens><tool_uses>15</tool_uses><duration_ms>124963</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a17201a392c423105</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/0c4c4622-1ed8-4f2c-80e6-f0890a2dad72/tasks/a17201a392c423105.output</output-file>
+<status>completed</status>
+<summary>Agent "Synthesize matrix distribution research report" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>```json
+{
+  "question": "What should callisto's native-artifact / multi-target distribution model be?",
+  "findings": [
+    {
+      "claim": "PlatformTargetKind has exactly two variants (Napi, Maturin); DotnetAot deliberately omitted, enforced by a test.",
+      "evidence": "crates/callisto-model/src/matrix.rs:48-54,125-134",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "PlatformTarget carries only Rust-triple identity fields — no RID field, no generic binary-kind field that could represent a bare CLI binary or Go binary.",
+      "evidence": "crates/callisto-model/src/matrix.rs:56-71",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "artifact_name_for_triple is unconditionally \"native-{triple}\" — hardcoded to the napi/maturin shape, not parameterized by ecosystem/package kind.",
+      "evidence": "crates/callisto-graph/src/matrix.rs:36-40,718-729",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "The per-triple hostRunner/useCross table recognizes exactly 18 hardcoded Rust target triples via match statement — no Go GOOS/GOARCH entries, no generic CLI-binary-triple table.",
+      "evidence": "callisto-graph/src/matrix.rs:12-34,686-716",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "PublishTarget enum (drives plan_publish/publish dispatch) has exactly: CratesIo, Npm{registry,access}, Pypi{index}, NuGet{source}, GitHubRelease, None (#[non_exhaustive]). No Homebrew/HomebrewTap/generic-binary-release variant.",
+      "evidence": "crates/callisto-model/src/ecosystem.rs:65-90",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "NuGet and GitHubRelease targets push a Warning-severity diagnostic (PublishTargetNotImplemented) and are skipped — not a hard failure, not silent. This corrects the maintainer-supplied historical claim that these were \"fixed to loud-fail via E119\"; actual behavior is warn-and-skip.",
+      "evidence": "callisto-graph/src/commands/publish.rs:343-374",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "GitHubRelease is explicitly documented as \"orphaned by §9.5's scope cut\" — a plan-shape label with no execution capability by deliberate design; callisto itself never creates a GitHub Release, and §9.5 removed octocrab/reqwest/GitHub-release-creation from the dependency tree entirely.",
+      "evidence": "docs/00-design.md:362-368,954-965",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "docs/00-design.md has an internal self-contradiction: top-of-doc says callisto \"runs cargo publish, npm publish, and twine upload\" (real execution); §9's opening says callisto \"is a versioning coordinator, not a release orchestrator... does not run the actual publish\"; §11.1 resolves this in favor of real execution, matching the top summary and actual code. §9 read in isolation would mislead a spec writer.",
+      "evidence": "docs/00-design.md:12-15,823-829,1026-1066",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "callisto's own scope table (§2.2) never lists native-binary/cargo-dist-style CLI distribution or Homebrew anywhere — enumerated polyglot cases are all registry-published Cargo/npm/PyPI + napi coordination.",
+      "evidence": "docs/00-design.md:126-190",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "Go ecosystem support is explicitly scoped as tag-only (no registry backend, no build/binary distribution).",
+      "evidence": "docs/00-design.md:158; docs/05-go-engine-spec.md:1-29",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "callisto-matrix.md explicitly designed but never implemented: §6.2 artifact-placement (gh run download loop keyed by artifactName/packageDir) and §7 a callisto-build-action composite action dispatching napi/maturin/dotnet-aot builds. Both absent from the codebase.",
+      "evidence": ".claude/specs/callisto-matrix.md:295-403",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "The same design doc's non-goals (§8) explicitly exclude Go from the matrix subcommand: Go's cross-compilation story does not follow a manifest-declared target list pattern and does not produce language-native binary modules in the napi/maturin/dotnet-aot sense.",
+      "evidence": ".claude/specs/callisto-matrix.md:435-437",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "The shipped spec (track-g-matrix-napi-maturin.json) explicitly non-goals dotnet-aot as deferred follow-up, and treats callisto-build-action as optional/not required for spec completion.",
+      "evidence": "track-g-matrix-napi-maturin.json:6-10",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "ARCHITECTURE.md §12 flags `callisto publish-target` as unimplemented/planned-for-future, alongside Java/JNI and .NET native-AOT discovery.",
+      "evidence": "ARCHITECTURE.md:445-447,486-494",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "ARCHITECTURE.md §13 positions callisto as build-system-agnostic, hermetic, zero-network-calls, stdout/JSON-only — reinforcing coordinator-not-builder-not-uploader identity.",
+      "evidence": "ARCHITECTURE.md:540-544",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "docs/06-publishing.md covers only npm/Cargo/PyPI credential setup — no GitHub Release, Homebrew, or binary-distribution content at all.",
+      "evidence": "docs/06-publishing.md:1-187",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "docs/release-paradigms.md frames all three release paradigms purely around when/how callisto-action's publish:\"true\" runs — no per-platform binary builds, artifact matrices, or non-registry channels discussed; all example workflows are single-job.",
+      "evidence": "docs/release-paradigms.md:1-190",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "CLAUDE.md states no scope philosophy about native-artifact distribution, Homebrew, or GitHub Release binaries at all.",
+      "evidence": "CLAUDE.md",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "walk.rs's platform-manifest discovery is npm-only and directory-scoped (no Cargo/maturin equivalent) — a structural gap any new native-binary model would need to reuse-and-extend or bypass.",
+      "evidence": ".claude/plans/ACTIVE.md:153",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "goreleaser separates build (per-triple compile) → archive → release (GH/GL upload) → announce/downstream-publish, including a native `brews:` block that generates and pushes a Homebrew formula to a separate tap repo, referencing the release's tagged tarball URL + SHA256; one goreleaser.yaml declares the whole pipeline via a shared versioned dist manifest.",
+      "evidence": "general knowledge, not verified in-repo",
+      "confidence": "likely"
+    },
+    {
+      "claim": "cargo-dist generates its own GitHub Actions workflow YAML (unlike callisto matrix, which only emits JSON), builds per-target, creates a GitHub Release with tarballs/installer scripts, and has/had a Homebrew tap-publishing target structurally analogous to goreleaser's brews block, at smaller maturity.",
+      "evidence": "general knowledge, not verified in-repo",
+      "confidence": "assumed"
+    },
+    {
+      "claim": "napi-rs's official template CI convention builds a matrix job per platform, uploads artifacts, then a separate downstream job downloads all artifacts and moves each into its platform-stub package directory before npm publish — the exact artifact-placement step callisto never built, matching callisto-matrix.md's abandoned §6/§7 shape.",
+      "evidence": "general knowledge, not verified in-repo",
+      "confidence": "likely"
+    }
+  ],
+  "recommendation": "Do not adopt a single unified 'artifact distribution' abstraction covering napi/maturin/CLI-binaries/Homebrew in one spec. The evidence splits into three tiers that warrant different treatment, and forcing one model now would either over-scope the near-term work or under-scope the later work.\n\nTier 1 — ship now, smallest lift, already designed: close the napi/maturin artifact-placement gap (callisto-matrix.md §6.2, and optionally §7's build-action) as its own scoped spec. It requires no new type-system surface — PlatformTargetKind/PlatformTarget/artifact_name_for_triple already model this case correctly (findings 1-4) — and it is the most validated, most demanded piece (finding 11 shows it was fully designed once; finding 22 shows napi-rs's own ecosystem convention already assumes this step exists). This should land before any generalization work, both because it's independently valuable and because its 'gh run download → move into package dir → publish' shape is the natural reference pattern a later CLI-binary spec would extend.\n\nTier 2 — extend the existing matrix/PublishTarget model, don't replace it: CLI-binary-per-platform GitHub Release distribution (the cargo-dist problem, Rust-only) fits callisto's demonstrated shape and 'lean on native tools' philosophy (findings 9, 15-17) better than it first appears, because (a) it reuses the same triple-identity/hostRunner/useCross machinery already built for napi/maturin (findings 3-4), needing only a new PlatformTargetKind variant plus a generalized artifact_name_for_triple, and (b) uploading to a GitHub Release can be done via `gh release upload`, a native tool call, consistent with how callisto already shells out to cargo/npm/twine for real execution (finding 8's resolved contradiction: callisto does execute real publishes, it does not merely plan them). This also finally gives GitHubRelease's already-reserved PublishTarget enum slot (currently orphaned by design, finding 7) real execution behavior instead of permanent warn-and-skip (finding 6).\n\nTier 3 — treat as a distinct, later, explicitly-scoped non-goal-for-now: Homebrew tap-formula generation should NOT be folded into the same abstraction as Tiers 1-2. Unlike registry publishes or GitHub Release uploads, no native tool performs formula generation and cross-repo push — `brew` itself doesn't publish formulas; goreleaser and cargo-dist reimplement that templating+push logic themselves (findings 20-21). Building it in callisto means reimplementing that logic, which contradicts the 'coordinate what's already there, don't reimplement' philosophy the maintainer has stated. It also requires writing to a second repository with separate credentials — a capability class nothing else in callisto has — and directly conflicts with ARCHITECTURE.md §13's zero-network-calls framing and §2.2's registry-only scope table (findings 9, 15). This is not evidence that Homebrew support is wrong to build, only that it is architecturally and philosophically a different kind of feature than Tiers 1-2, and needs its own explicit spec with the maintainer's sign-off on relaxing the zero-network-calls/coordinator invariant — not an assumed extension of the matrix type system.\n\nGo binary distribution: leave entirely out of scope. This is not a gap, it's an existing, explicit, twice-stated non-goal (findings 10, 12) with no evidence of demand to revisit it.\n\nA supporting structural observation: the current model's inability to represent CLI-binaries/Homebrew is not one unifying gap but two separate clusters — the build/identity side (PlatformTargetKind, PlatformTarget's triple-only fields, artifact_name_for_triple, the 18-triple table) and the distribution/sink side (PublishTarget's closed variant set). This mirrors goreleaser's own build/archive/release/announce separation (finding 20) — evidence that if/when generalization does happen, decoupling build-target identity from distribution-sink is the right shape to extend toward, but that shape should be earned incrementally through Tiers 1 and 2, not designed wholesale before either ships.",
+  "confidence": "medium",
+  "open_questions": [
+    "IF the maintainer wants the napi/maturin artifact-placement gap (callisto-matrix.md §6.2/§7) closed as a prerequisite before any broader distribution work THEN the recommendation is to ship that as its own scoped spec first, with CLI-binary/Homebrew work deferred to later specs. IF instead the maintainer wants one unified build-target/distribution-sink model designed now even though only the napi/maturin slice ships first THEN the PlatformTargetKind/PlatformTarget/PublishTarget generalization must happen in the same spec, producing a materially larger type-system change upfront than Tier 1 alone requires.",
+    "IF the maintainer confirms Homebrew tap-formula generation is in-scope for callisto at all (not merely deferred) THEN it needs its own spec addressing the new capability class it introduces — cross-repo git write, credential model, template ownership — and an explicit, deliberate relaxation of ARCHITECTURE.md §13's zero-network-calls/coordinator framing. IF the maintainer says Homebrew is out of scope entirely THEN §2.2's scope table stays closed and no PublishTarget variant or template-rendering code needs to be built for it at all.",
+    "IF the maintainer wants CLI-binary-per-platform distribution scoped to Rust CLIs only (reusing the existing 18-triple hostRunner/useCross table) THEN the build-side change is additive: one new PlatformTargetKind variant plus a generalized artifact_name_for_triple. IF the maintainer wants it to also cover non-Rust (e.g. Go) binaries THEN PlatformTarget's identity model needs a non-triple-based generic path, a materially larger change that directly conflicts with the existing explicit Go non-goal (finding 12) and would need deliberate reconciliation with that decision, not a silent override.",
+    "IF finding 6's correction (NuGet/GitHubRelease already warn-and-skip today, not the loud-fail the maintainer believed was shipped) changes the maintainer's near-term priority THEN confirm whether implementing real GitHubRelease execution (Tier 2) should be pulled forward as an independent near-term fix, separate from the larger CLI-binary/Homebrew distribution-model question — the current behavior is not broken or silent, but it is also not what the maintainer believed was already true."
+  ],
+  "reasoning": "Assembled from reader's 22-item findings array without dropping or merging any. Core interpretive work: (1) resolved finding #8's doc self-contradiction using §11.1 + actual code as the tiebreaker; (2) used finding #6 to explicitly correct the maintainer's stated historical belief rather than silently accepting it; (3) split the type-system gap into two clusters (build/identity vs. distribution/sink) rather than treating it as one monolithic gap, since the evidence (findings 1-4 vs. 5) supports two distinct closure surfaces; (4) built the tiered recommendation by testing each candidate feature (napi/maturin placement, CLI-binary-to-GHRelease, Homebrew-tap) against the maintainer's stated 'lean on native tools, coordinate don't reimplement' philosophy using findings 9 and 15-17, which produced a clear differentiator: gh CLI exists as a native upload tool but no native tool performs Homebrew formula templating+push, so goreleaser/cargo-dist reimplement it themselves — meaning callisto doing the same would violate its stated identity, not extend it."
+}
+```
+
+This research-report@1 is ready to feed directly into `canon:draft-spec`. No files were written — the report is returned inline above per the schema at `shared/schemas/research-report@1.json`.</result>
+<usage><subagent_tokens>35459</subagent_tokens><tool_uses>0</tool_uses><duration_ms>91077</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a308f31d8dedc629f</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/0c4c4622-1ed8-4f2c-80e6-f0890a2dad72/tasks/a308f31d8dedc629f.output</output-file>
+<status>completed</status>
+<summary>Agent "Assess risks of tiered matrix distribution recommendation" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>```json
+{
+  "risks": [
+    {
+      "description": "Adding real execution behind `PublishTarget::GitHubRelease` changes a currently-safe no-op (Warning diagnostic, publish skipped — confirmed at crates/callisto-graph/src/commands/publish.rs:358-374) into a side-effecting network call, for any consumer who already has `publish-to = [\"github-release\"]` configured expecting the warn-and-skip behavior.",
+      "severity": "critical",
+      "likelihood": "medium",
+      "trigger": "A consumer project (e.g. michi) upgrades callisto after Tier 2 ships, still has `github-release` in `publish-to`, and the next CI run now actually creates/uploads a GitHub Release with real side effects (visible release, notification emails, downstream automation firing) instead of the prior silent skip — with no opt-in flag gating the behavior change.",
+      "mitigation": "Treat this as a semver-major behavior change regardless of `#[non_exhaustive]` protecting Rust match exhaustiveness (which only helps compile-time, not runtime behavior). Require an explicit opt-in (e.g. a config version bump or a `--allow-real-github-release` flag) for at least one minor release, emit a one-time loud migration diagnostic before flipping the default, and document the change prominently in the changelog with a migration note."
+    },
+    {
+      "description": "`gh release upload` requires a pre-existing GitHub Release object; no code path in the repository creates one (no `gh release create` / release-creation logic found anywhere in `crates/`, only git-tag creation via `ReleaseTrigger`/`tags.rs`). Tier 2 as scoped only mentions the upload step, not release creation or its ordering relative to tag creation.",
+      "severity": "high",
+      "likelihood": "high",
+      "trigger": "A Tier 2 implementation wires `gh release upload` directly behind `GitHubRelease` without first calling `gh release create` (or verifying one exists) — first real publish attempt fails outright with a non-zero exit from `gh`, surfaced as an opaque subprocess error rather than a clear diagnostic.",
+      "mitigation": "Explicitly scope Tier 2 to include release-existence handling: either `gh release create` (idempotent, keyed off the tag callisto already produces) before upload, or an explicit dependency on a separate release-creation step/action with a documented ordering contract. Add this as an acceptance criterion before spec drafting, not left implicit."
+    },
+    {
+      "description": "`PlatformTargetKind` (crates-model/src/matrix.rs) is a plain public enum — not `#[non_exhaustive]` — carrying a doc comment stating it 'deliberately omits' variants 'out of scope for this spec,' and derives `JsonSchema`/`Serialize` with `rename_all = \"lowercase\"`. It is exposed via `callisto matrix --format json`, which external consumers (michi) plausibly parse. Tier 2 explicitly proposes adding a new variant to this enum.",
+      "severity": "high",
+      "likelihood": "medium",
+      "trigger": "Tier 2 ships adding e.g. `PlatformTargetKind::CliBinary`; a consumer's Rust code exhaustively matches on the enum (compile break) or a consumer's schema-validating JSON consumer rejects the new lowercase variant string as unrecognized (runtime break), surfacing only when that consumer's CI next runs `callisto matrix` after the callisto upgrade.",
+      "mitigation": "Mark `PlatformTargetKind` `#[non_exhaustive]` now, in Tier 1, before any consumer can plausibly write exhaustive matches against the current two-variant shape — closes the door cheaply while the surface is still small. Document in the matrix JSON schema that the kind set is expected to grow."
+    },
+    {
+      "description": "Sequencing/type-corner risk on `artifact_name_for_triple` and `PlatformTarget`: the report frames this as a straightforward generalization, but if Tier 1 ships with the literal `\"native-{triple}\"` string baked into consumer-facing artifacts — the `callisto-build-action` composite action, generated GitHub Actions workflow YAML, or docs/examples that `michi` copies — rather than exclusively behind the (to-be-generalized) function, then Tier 2's renaming/generalization becomes a consumer-visible artifact-naming migration, not just an internal refactor.",
+      "severity": "medium",
+      "likelihood": "medium",
+      "trigger": "Tier 1 ships composite-action YAML or docs hardcoding `native-${triple}` as the artifact name a consumer's workflow references directly (e.g. in a `gh run download --name` step written by the consumer, not generated by callisto); Tier 2 later needs a different naming scheme to disambiguate CLI-binary artifacts from napi/maturin artifacts, forcing consumers to update pinned workflow files.",
+      "mitigation": "In Tier 1, route every artifact-name reference in generated/example workflow YAML through the single `artifact_name_for_triple` function (already true internally per the report) and avoid publishing consumer-facing docs that assume the literal prefix is permanent. State explicitly in Tier 1 docs that artifact naming is an implementation detail subject to change before Tier 2 ships."
+    },
+    {
+      "description": "Scope-creep erosion of the tiering discipline itself: Tier 1 and Tier 2 share the same files (`callisto-graph/src/matrix.rs`, `PublishTarget`, the `PlatformTargetKind` enum) and the same diagnostic (`PublishTargetNotImplemented`) currently covers both `NuGet` and `GitHubRelease` no-ops, making it easy for a Tier 1 spec/implementation pass to informally absorb Tier 2 pieces (e.g. shipping the `PlatformTargetKind` generalization or touching the `GitHubRelease` match arm) 'while already in the file.'",
+      "severity": "medium",
+      "likelihood": "medium",
+      "trigger": "A spec or implementation session working on Tier 1's `gh run download` step also touches the adjacent `GitHubRelease` diagnostic arm in publish.rs 'since it's right there,' shipping partial Tier 2 behavior without Tier 2's own acceptance criteria (dry-run integration, release-creation ordering, credential requirements) having been specified.",
+      "mitigation": "Scope Tier 1's spec/plan explicitly to exclude any change to `PublishTarget::GitHubRelease` handling or `PlatformTargetKind` variants, and have canon:gate-spec / vector:challenger check for out-of-tier file touches as an explicit gate criterion."
+    },
+    {
+      "description": "Tier 3 exclusion is framed as 'explicit non-goal for now,' but the same consumer pressure that surfaced the original napi/maturin gap (michi) is a plausible source of a near-term Homebrew ask, and no extension point is reserved for it beyond `PublishTarget`'s existing `#[non_exhaustive]` attribute (which already covers this — adding a future `Homebrew` variant is non-breaking for external matchers by construction).",
+      "severity": "low",
+      "likelihood": "low",
+      "trigger": "michi or another consumer requests Homebrew tap support before a dedicated Tier 3 spec exists, and finds that — beyond the enum already being extensible — no credential-handling pattern, cross-repo-write capability, or templating seam exists anywhere in callisto to build on, forcing a from-scratch design under time pressure.",
+      "mitigation": "No code changes needed now given `#[non_exhaustive]` already reserves the enum extension point; the residual risk is purely process (no pre-thought-through cross-repo-credential pattern). Mitigate by noting the shape of that gap in the Tier 3 non-goal write-up so a future spec author isn't starting from zero."
+    },
+    {
+      "description": "`docs/00-design.md`'s unresolved self-contradiction (top summary vs. §9's opening line vs. §11.1's resolution) is a documentation-debt risk to the Tier 1/2 spec-drafting process itself: a spec author who reads only §9's framing ('does not run the actual publish') could scope Tier 2 as not requiring real `gh release upload` execution, contradicting both the actual shipped code (`publish_client.rs` already execs cargo/npm/twine) and Tier 2's own stated goal.",
+      "severity": "medium",
+      "likelihood": "medium",
+      "trigger": "canon:draft-spec or a human spec author greps/reads §9 in isolation (a natural entry point given it's titled around publish semantics) without cross-referencing §11.1, and drafts Tier 2 acceptance criteria around 'plan only, no real upload,' which then contradicts the actual shipped `publish_client.rs` behavior and has to be corrected mid-review.",
+      "mitigation": "Fix the `docs/00-design.md` contradiction directly (align §9's opening line with §11.1's resolution and the top-of-doc summary) before or alongside Tier 1/2 spec drafting — this is a small, low-risk doc edit that removes an entire class of spec-drafting error at negligible cost."
+    },
+    {
+      "description": "Both Tier 1's `gh run download` and Tier 2's `gh release upload` live inside the GitHub-Actions-specific composite action layer, not the core hermetic CLI — consistent with ARCHITECTURE.md §13's 'thin adapter seams' framing, so they don't violate the zero-network-call invariant that applies specifically to `status`/`plan-publish`/`matrix`. However, this does entrench a GitHub-Actions-and-`gh`-CLI-shaped seam for polyglot artifact distribution that a later Bazel/Buck2/Nix/GitLab-CI artifact-distribution effort cannot reuse and must reimplement independently.",
+      "severity": "low",
+      "likelihood": "low",
+      "trigger": "A consumer building on `rules_callisto` (Bazel) or another non-GHA hermetic build system asks for the same napi/maturin-artifact-placement or CLI-binary-release capability Tier 1/2 provide, and discovers the `gh run download`/`gh release upload` logic is baked into a GitHub Actions composite action with no CLI-agnostic equivalent to call directly.",
+      "mitigation": "No change needed for Tier 1/2 given they're explicitly GHA-scoped today and this doesn't contradict §13. If a non-GHA artifact-distribution need arises, treat it as a new spec that factors the artifact-fetch/upload logic into a CLI-invocable primitive rather than composite-action-only, rather than trying to make Tier 1/2 anticipate it now."
+    }
+  ],
+  "overall_risk": "high",
+  "reasoning": "Two risks anchor the overall rating: the GitHubRelease behavior-change risk (critical severity, medium likelihood — a real consumer with publish-to=[\"github-release\"] configured today would get an unannounced switch from safe no-op to real network side effects) and the missing release-creation precondition for gh release upload (high severity, high likelihood — verified by grep that no gh release create or equivalent exists anywhere in crates/, only tag creation, so the very first real Tier 2 publish attempt as scoped would fail). Both are concrete, code-grounded, and would change what the Tier 2 spec must contain (an explicit migration/opt-in mechanism, and explicit release-creation-ordering acceptance criteria) rather than being addressable as an implementation afterthought. The PlatformTargetKind non-exhaustiveness gap and the docs/00-design.md contradiction are medium risks because they're process/API-hygiene issues with cheap, well-understood fixes (mark #[non_exhaustive], fix a doc section) rather than structural blockers. Tier 3's non-goal framing and the gh CLI/GHA-lock-in concern were downgraded to low after checking the code: PublishTarget is already #[non_exhaustive] (extension point already reserved), and ARCHITECTURE.md §13's zero-network-call invariant is scoped to status/plan-publish/matrix, not publish or the composite-action layer, so neither the report's Tier 3 framing nor the gh-CLI choice actually conflicts with stated architecture the way a first read might suggest — I excluded a theoretical 'gh CLI unavailable in some runner' concern since GitHub-hosted runners ship gh by default and self-hosted runner gh-availability is an ops precondition already implicit in using gh anywhere in the pipeline, not a new risk this plan introduces. Overall likelihood-weighted severity lands the plan at high risk primarily due to the two anchoring findings, which would materially change the spec's acceptance criteria if left unaddressed."
+}
+```
+
+Key files consulted for grounding: `/Users/gabe/Projects/callisto/crates/callisto-model/src/ecosystem.rs` (PublishTarget, `#[non_exhaustive]`), `/Users/gabe/Projects/callisto/crates/callisto-graph/src/commands/publish.rs:358-374` (GitHubRelease warn-and-skip), `/Users/gabe/Projects/callisto/crates/callisto-model/src/matrix.rs` (PlatformTargetKind, not non_exhaustive), `/Users/gabe/Projects/callisto/crates/callisto-graph/src/matrix.rs` (artifact_name_for_triple, triple_host_runner_use_cross), `/Users/gabe/Projects/callisto/ARCHITECTURE.md` §13 and §11, `/Users/gabe/Projects/callisto/docs/00-design.md` (lines ~825, §11.1), `/Users/gabe/Projects/callisto/.claude/specs/callisto-matrix.md` (§6.2/§7/§8 references). No `gh release create` or dry-run wiring found anywhere in `crates/callisto-graph/src/commands/publish.rs`, confirming the release-precondition gap.</result>
+<usage><subagent_tokens>65608</subagent_tokens><tool_uses>8</tool_uses><duration_ms>127673</duration_ms></usage>
+</task-notification>
+
+---
+
+I think overall we don't publish, we rely on the appropriate tools (cargo, pnpm, etc) so we should fix the docs, right?
+
+I think homebrew is a separate concern. Maybe we build an assistant tool later but don't worry about it.
+
+---
+
+Let's do deep research to make sure we understand all of the requirements. Read docs for GH publishing, anything we should review for publish to NPM.js via pnpm, cargo publishing, etc
+
+---
+
+<task-notification>
+<task-id>a9a4712f56044756d</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/0c4c4622-1ed8-4f2c-80e6-f0890a2dad72/tasks/a9a4712f56044756d.output</output-file>
+<status>completed</status>
+<summary>Agent "Map sources for publish-tool requirements research" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I'll now create the research agenda. Based on the project structure and your explicit guidance, here's the focused mapping:
+
+```json
+{
+  "question": "What are the actual, current, official requirements/preconditions/gotchas for each native publish tool callisto shells out to (or might shell out to), that a spec for callisto's publish/distribution model needs to be grounded in?",
+  "internal_sources": [
+    "/Users/gabe/Projects/callisto/crates/callisto-graph/src/commands/publish_client.rs",
+    "/Users/gabe/Projects/callisto/crates/callisto-model/src/ecosystem.rs",
+    "/Users/gabe/Projects/callisto/docs/06-publishing.md"
+  ],
+  "external_keywords": [
+    "gh release create",
+    "gh release upload",
+    "GitHub Releases API documentation",
+    "GitHub Releases preconditions and requirements",
+    "pnpm publish",
+    "pnpm publish workspace",
+    "npm registry authentication and 2FA",
+    "npm publish provenance attestation",
+    "cargo publish",
+    "cargo publish --locked semantics",
+    "crates.io publishing requirements",
+    "Cargo Book Publishing on crates.io",
+    "PyPI twine upload",
+    "twine authentication and requirements",
+    "dotnet nuget push",
+    "NuGet publishing requirements",
+    "NuGet API key authentication"
+  ],
+  "existing_implementations": [
+    "cargo publish (fully implemented)",
+    "npm publish via pnpm (fully implemented)",
+    "npm publish via yarn/bun (parser support exists, shell invocation ready)",
+    "python -m build + twine upload (PyPI, fully implemented)",
+    "GitHub Releases / gh CLI (stubbed with warn-and-skip, now prioritized for real implementation)"
+  ],
+  "scope": "external",
+  "reasoning": "The internal sources establish the baseline: what flags/args callisto currently passes to each tool and which targets are stubbed vs. live. This baseline is essential for the reader to assess where official requirements diverge from current practice. However, the actual research target is entirely external—official CLI documentation and publishing guides for each ecosystem. The user explicitly stated external sources are the whole point of this pass. Scope is external because the spec-grounding facts live in official docs (CLI flags, registry requirements, preconditions, 2FA/provenance requirements) that are maintained outside the callisto repo. GitHub Releases and pnpm are the priority focus (recent PR recommendation + workspace-specific semantics); PyPI/NuGet included if scope allows since they're already live or stubbed targets."
+}
+```
+
+**How to execute this agenda:**
+
+1. **Read internal sources first** to understand the current baseline (what flags/args are currently used, which targets are live):
+   - `/Users/gabe/Projects/callisto/crates/callisto-graph/src/commands/publish_client.rs` → trace the actual `Command::new()` invocations for each tool
+   - `/Users/gabe/Projects/callisto/crates/callisto-model/src/ecosystem.rs` → see PublishTarget enum shape and current variants
+   - `/Users/gabe/Projects/callisto/docs/06-publishing.md` → understand what callisto's own docs claim about publishing flow
+
+2. **Search external sources** for official requirements using the keywords (prioritize GitHub Releases and pnpm, include PyPI/twine/NuGet if time permits):
+   - GitHub CLI: https://cli.github.com/manual/gh_release_create, https://cli.github.com/manual/gh_release_upload
+   - GitHub Releases API: https://docs.github.com/en/rest/releases
+   - pnpm: https://pnpm.io/cli/publish
+   - cargo/crates.io: https://doc.rust-lang.org/cargo/commands/cargo-publish.html, https://doc.rust-lang.org/cargo/reference/manifest.html (for --locked semantics)
+   - npm/PyPI/NuGet docs as needed
+
+3. **Compare baselines to official docs** — what flags does callisto use now that official docs don't mention or recommend? What preconditions (e.g., "release must exist before upload", "locked Cargo.lock required", "workspace publish coordination") are missing from callisto's current implementation?</result>
+<usage><subagent_tokens>30911</subagent_tokens><tool_uses>1</tool_uses><duration_ms>27345</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a6b8e338387dd6aa2</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/0c4c4622-1ed8-4f2c-80e6-f0890a2dad72/tasks/a6b8e338387dd6aa2.output</output-file>
+<status>completed</status>
+<summary>Agent "Fetch and extract publish-tool official docs" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Confirmed internally: `PublishTarget::GitHubRelease` is entirely stubbed — `commands/publish.rs:359-374` only emits a `PublishTargetNotImplemented` warning diagnostic; no `Command::new("gh", ...)` invocation exists anywhere in the codebase. Tag creation is local-git-only (`git tag`, via `callisto-vcs`/`callisto-graph::commands::tag.rs`, `version.rs:387-417`, `access.rs`) — no `git push --tags` or `gh` call was found either, so tags may not even reach the remote before any future `gh release create` would run against it.
+
+Enough has been gathered to produce the extraction output.
+
+```json
+{
+  "findings": [
+    {
+      "claim": "callisto's PublishTarget::GitHubRelease is fully stubbed: it only pushes a PublishTargetNotImplemented warning diagnostic and performs no dispatch.",
+      "evidence": "callisto_model::PublishTarget::GitHubRelease =&gt; { diagnostics.push(Diagnostic { code: DiagnosticCode::PublishTargetNotImplemented, ... message: \"...GitHub Release publishing is not yet implemented; this target will not be published\" ... }) }",
+      "source": "crates/callisto-graph/src/commands/publish.rs:359-374",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "A test explicitly documents that GitHubRelease has no real dispatch implementation.",
+      "evidence": "\"target (GitHubRelease) has no real dispatch implementation; got: {:?}\"",
+      "source": "crates/callisto-graph/tests/publish_tests.rs:1247-1316",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "No `gh` CLI invocation of any kind (create or upload) exists anywhere in the callisto codebase; only `git tag` calls exist for release tagging.",
+      "evidence": "grep for 'gh release', 'gh_release', '\"gh\"' across crates/ returns zero Command::new(\"gh\", ...) call sites — only PublishTarget::GitHubRelease enum/match references and test names. Tag creation is via std::process::Command::new(\"git\").args([\"-c\",\"tag.gpgSign=false\",\"tag\",\"-m\",\"release\",name]) in commands/version.rs:387-417, commands/tag.rs, callisto-vcs/src/access.rs and lib.rs.",
+      "source": "crates/callisto-graph/src/commands/version.rs:387-417; crates/callisto-vcs/src/access.rs:88,166-308; crates/callisto-vcs/src/lib.rs:130,414,629-732; crates/callisto-graph/src/commands/tag.rs:13-28",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "No `git push` of the created tag to the remote was found in the grepped call sites either — tag creation appears local-only in what was read.",
+      "evidence": "All 'tag' Command::new(\"git\", ...) call sites found are `tag`, `tag --list`, `tag -f`, `tag -a` subcommands; no `push --tags` or `push origin &lt;tag&gt;` call site appeared in the same grep pass.",
+      "source": "grep across crates/callisto-graph/src, crates/callisto-vcs/src for 'push'/'tag' patterns",
+      "confidence": "likely"
+    },
+    {
+      "claim": "callisto ships real subprocess invocations for cargo publish, npm/pnpm/yarn/bun publish, and python -m build + twine upload — GitHubRelease and NuGet are the two unimplemented PublishTarget variants.",
+      "evidence": "cargo: self.run(\"cargo\", &amp;[\"publish\",\"-p\",name,\"--locked\", ...]) (with optional --registry); npm/pnpm/yarn/bun dispatch in build_npm_publish_command; PyPI: self.run_in(\"python\",&amp;[\"-m\",\"build\",\"--sdist\",\"--wheel\",\"--outdir\",\"dist/\"],...) then self.run_in(\"twine\",&amp;[\"upload\",\"--skip-existing\",pattern],...)",
+      "source": "crates/callisto-graph/src/commands/publish_client.rs:172-283 (cargo), 347-457 (npm family), 477-528 (pypi)",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "cargo publish is always invoked with --locked and -p &lt;name&gt;, optionally --registry &lt;name&gt;. No --dry-run, --allow-dirty, --no-verify, or --frozen flags are used.",
+      "evidence": "self.run(\"cargo\", &amp;[\"publish\", \"-p\", package.name(), \"--locked\", \"--registry\", reg])? / self.run(\"cargo\", &amp;[\"publish\", \"-p\", package.name(), \"--locked\"])?",
+      "source": "crates/callisto-graph/src/commands/publish_client.rs:274-281",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "npm-family publish command construction detects package manager by lockfile presence (pnpm-lock.yaml &gt; yarn.lock &gt; bun.lockb/bun.lock &gt; default npm), and for pnpm always appends --no-git-checks.",
+      "evidence": "pnpm branch: args = [\"publish\",\"--filter\",name,\"--no-git-checks\"] with comment: \"pnpm ≥ 7 refuses to publish from a dirty working tree by default. After callisto version stages manifest bumps, the tree is always dirty until the operator commits, so we must bypass the git-status check here.\"",
+      "source": "crates/callisto-graph/src/commands/publish_client.rs:368-381",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "npm publish access level defaults to omitting --access entirely when unset, relying on npm's own default (restricted for scoped, public for unscoped) rather than callisto forcing a value; when publishConfig.access is explicitly set, callisto passes the corresponding --access flag.",
+      "evidence": "\"when None, omits --access entirely so the package manager applies its ecosystem default (restricted for @scoped/packages, public for unscoped)\"",
+      "source": "crates/callisto-graph/src/commands/publish_client.rs:412-421",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "No --provenance, --otp, or --dry-run flags are used anywhere in callisto's npm/pnpm invocation, and no cargo --dry-run either — callisto does not currently support 2FA/OTP or provenance attestation.",
+      "evidence": "build_npm_publish_command only ever appends --tag, --access, --registry, plus pnpm's --no-git-checks; cargo_publish only ever appends -p, --locked, --registry.",
+      "source": "crates/callisto-graph/src/commands/publish_client.rs:347-410, 274-281",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "twine upload is always called with --skip-existing and optionally --repository-url; TWINE_USERNAME/TWINE_PASSWORD are the documented auth vars, and callisto's own docs explicitly warn against TWINE_API_TOKEN as an unrecognized name.",
+      "evidence": "\"Do not use TWINE_API_TOKEN — twine does not recognise that variable name.\"",
+      "source": "docs/06-publishing.md:112-125; crates/callisto-graph/src/commands/publish_client.rs:518-526",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "callisto's docs document two distinct, mutually-exclusive npm auth patterns in CI (manual `.npmrc` write via NPM_TOKEN vs. actions/setup-node + NODE_AUTH_TOKEN) and warn that setting NODE_AUTH_TOKEN without setup-node's registry-url is silently ignored by npm (fails with an auth error, not a 'var not found' error).",
+      "evidence": "\"NODE_AUTH_TOKEN is silently ignored by npm if no .npmrc contains a ${NODE_AUTH_TOKEN} interpolation... your publish will fail with an authentication error — not a variable-not-found error\"",
+      "source": "docs/06-publishing.md:73-93",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "gh release create does NOT require the tag to already exist — if the tag doesn't exist it is automatically created from the latest state of the default branch (or --target). --verify-tag can be used to force it to require an existing tag instead.",
+      "evidence": "\"If a matching git tag does not yet exist, one will automatically get created from the latest state of the default branch.\" / --verify-tag \"abort the release if the tag doesn't already exist\"",
+      "source": "https://cli.github.com/manual/gh_release_create",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "gh release create flag set includes -d/--draft, -p/--prerelease, --latest, -n/--notes, -F/--notes-file, --notes-from-tag, --generate-notes, --notes-start-tag, --target, --verify-tag, --fail-on-no-commits, --discussion-category, -t/--title, -R/--repo.",
+      "evidence": "full flag list extracted from gh_release_create manual page",
+      "source": "https://cli.github.com/manual/gh_release_create",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "gh release upload's documentation does not describe implicit release creation — it operates against an existing release tag and does not indicate it can create one. Its own flag is --clobber (delete+reupload existing assets of the same name), and if the reupload after clobber fails, the original assets are permanently lost.",
+      "evidence": "\"The documentation does not indicate that releases can be created implicitly—it requires specifying a release tag that presumably already exists.\" / \"When using --clobber, existing assets are deleted before new assets are uploaded. If the upload fails, the original assets will be lost.\"",
+      "source": "https://cli.github.com/manual/gh_release_upload",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "This directly grounds the prior research pass's premise: gh release upload requires a pre-existing release object (the fetched manual text doesn't explicitly state a hard precondition, only the absence of any implicit-creation language) — so callisto adding gh release upload without first calling gh release create (or equivalent) would fail against a nonexistent release.",
+      "evidence": "Synthesis note, not a direct doc quote — see reasoning for caveat on how strong this inference is.",
+      "source": "inference from https://cli.github.com/manual/gh_release_upload combined with internal grep finding no gh release create call site",
+      "confidence": "likely"
+    },
+    {
+      "claim": "GitHub REST API for creating a release requires only tag_name; target_commitish is unused if the tag already exists, meaning the API itself can create the tag (at target_commitish, defaulting to the repo's default branch) when it doesn't yet exist. draft/prerelease/generate_release_notes/make_latest all have documented defaults (false/false/false/true respectively). Creating a release requires push access to the repo, and workflow-file-touching commits need extra token scope; secondary rate limiting can occur on rapid creation.",
+      "evidence": "\"target_commitish ... Unused if the Git tag already exists\" / \"Only tag_name is mandatory\" / \"Users with push access to the repository can create a release.\" / \"Creating content too quickly using this endpoint may result in secondary rate limiting.\"",
+      "source": "https://docs.github.com/en/rest/releases/releases",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "As of pnpm v11, pnpm publish is implemented natively and no longer delegates to the npm CLI (a change from earlier pnpm versions where it shelled out to npm publish under the hood).",
+      "evidence": "\"Since v11, pnpm publish is implemented natively and no longer delegates to the npm CLI.\"",
+      "source": "https://pnpm.io/cli/publish",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "pnpm publish by default validates branch match, working-tree cleanliness, and remote sync before publishing; --no-git-checks (which callisto always passes) disables all of these checks, not just the dirty-tree check.",
+      "evidence": "\"By default, pnpm validates that the current branch matches the publish branch, the repository is clean, and changes are synced with remote. These checks can be disabled via --no-git-checks...\"",
+      "source": "https://pnpm.io/cli/publish",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "pnpm publish supports --provenance, --otp, --force (publish even if version exists in registry), --publish-branch, --dry-run, and --report-summary — none of which callisto currently passes.",
+      "evidence": "flag table from pnpm.io/cli/publish",
+      "source": "https://pnpm.io/cli/publish",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "npm publish's --access default is 'public' for new packages, and existing packages retain their current access level regardless of the flag; unscoped packages cannot be set to restricted at all.",
+      "evidence": "\"Default: 'public' for new packages; existing packages retain current level ... Unscoped packages cannot be set to restricted\"",
+      "source": "https://docs.npmjs.com/cli/v10/commands/npm-publish",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "npm publish fails if the exact name+version combination already exists in the target registry, and once published a name-version pair can never be reused even after unpublishing.",
+      "evidence": "\"The publish will fail if the package name and version combination already exists in the specified registry.\" Once published, a name-version pair cannot be reused, even if unpublished.",
+      "source": "https://docs.npmjs.com/cli/v10/commands/npm-publish",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "npm publish --provenance and --provenance-file are mutually exclusive and --provenance requires a supported CI/CD system (not usable from an arbitrary local/self-hosted shell environment without that support).",
+      "evidence": "\"--provenance ... Links published packages to their build/CI system origin (supported CI/CD only) ... Cannot be used with --provenance-file\"",
+      "source": "https://docs.npmjs.com/cli/v10/commands/npm-publish",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "cargo publish --locked fails only if the lock file is missing or if cargo would need to change the lock file due to different dependency resolution — NOT merely because Cargo.toml's own package version differs from what's recorded elsewhere. This directly answers the research question's specific ask about --locked semantics.",
+      "evidence": "\"--locked: Assert exact dependency/version match to existing Cargo.lock. Semantics: Fails if: Lock file is missing, OR Cargo attempts to change the lock file due to different dependency resolution ... Note: Does NOT fail on Cargo.toml changes alone—only on lock file update *needs*\"",
+      "source": "https://doc.rust-lang.org/cargo/commands/cargo-publish.html",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "cargo publish exits with code 101 on failure, 0 on success — matches the exit-code assumptions in callisto's classify_cargo_output.",
+      "evidence": "\"Exit Status: 0: Success, 101: Failure\"",
+      "source": "https://doc.rust-lang.org/cargo/commands/cargo-publish.html",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "crates.io requires license/license-file, description, homepage, repository, and readme fields in Cargo.toml before publish; the .crate file size limit is 10MB; published versions are permanent and can never be overwritten or deleted (only yanked, which does not delete code) — leaked secrets require token revocation, not deletion.",
+      "evidence": "Required fields list; \"Maximum .crate file size: 10MB\"; \"Publish is permanent — the version can never be overwritten, and code cannot be deleted\"; \"Yanking does NOT delete code; if secrets leak, revoke API tokens immediately\"",
+      "source": "https://doc.rust-lang.org/cargo/reference/publishing.html",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "twine --skip-existing (used by callisto unconditionally) is documented as only valid when uploading to PyPI itself — other repository implementations (private indexes) may not support it, which is a direct risk for callisto's --repository-url / private-index path that also passes --skip-existing.",
+      "evidence": "\"(Only valid when uploading to PyPI. Other implementations may not support this.)\"",
+      "source": "https://twine.readthedocs.io/en/stable/",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "twine does not recognize TWINE_API_TOKEN as an environment variable (matches callisto's own doc warning); keyring-based API token storage is a separate mechanism from the TWINE_USERNAME/TWINE_PASSWORD env vars callisto's docs instruct users to set.",
+      "evidence": "\"The documentation does not mention TWINE_API_TOKEN; however, keyring supports API tokens via keyring set https://upload.pypi.org/legacy/ __token__\"",
+      "source": "https://twine.readthedocs.io/en/stable/",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "NuGet.org package size limit is approximately 250MB, returning a 413 RequestEntityTooLarge on the CLI when exceeded; package names must start with a letter/number/underscore, contain only letters/numbers/dots/dashes, no consecutive dot/dash, and be ≤100 characters. dotnet nuget push requires an API key (or NUGET_API_KEY env var as of NuGet 7.6/.NET SDK 10.0.300+) and a --source URL.",
+      "evidence": "\"Nuget.org has a package size limit of about 250 MB... error: Response status code does not indicate success: 413\"; naming rules list; \"dotnet nuget push &lt;package-file&gt; --api-key &lt;API-key&gt; --source https://api.nuget.org/v3/index.json\"; \"Starting with NuGet 7.6 (.NET SDK 10.0.300), you can set the NUGET_API_KEY environment variable\"",
+      "source": "https://learn.microsoft.com/en-us/nuget/nuget-org/publish-a-package",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "callisto's PublishTarget::NuGet variant is likewise entirely stubbed (warning diagnostic only, no dispatch) — same gap class as GitHubRelease.",
+      "evidence": "PublishTarget::NuGet { .. } =&gt; { diagnostics.push(Diagnostic { code: DiagnosticCode::PublishTargetNotImplemented, message: \"...NuGet publishing is not yet implemented...\" }) }",
+      "source": "crates/callisto-graph/src/commands/publish.rs:343-357",
+      "confidence": "confirmed"
+    }
+  ],
+  "sources_read": [
+    "crates/callisto-graph/src/commands/publish_client.rs",
+    "crates/callisto-model/src/ecosystem.rs",
+    "docs/06-publishing.md",
+    "crates/callisto-graph/src/commands/publish.rs (lines 1-500 region relevant to GitHubRelease/NuGet dispatch)",
+    "crates/callisto-graph/src/config/resolve.rs (grep only, PublishTarget::GitHubRelease parsing/tests)",
+    "crates/callisto-graph/tests/publish_target_ecosystem_mismatch_test.rs (grep only)",
+    "crates/callisto-graph/tests/publish_tests.rs (grep only, GitHubRelease dispatch-gap test)",
+    "crates/callisto-graph/src/commands/version.rs (grep only, git tag creation call sites)",
+    "crates/callisto-graph/src/commands/tag.rs (grep only)",
+    "crates/callisto-vcs/src/access.rs (grep only)",
+    "crates/callisto-vcs/src/lib.rs (grep only)",
+    "crates/callisto-vcs/src/shell.rs (grep only)",
+    "https://cli.github.com/manual/gh_release_create",
+    "https://cli.github.com/manual/gh_release_upload",
+    "https://docs.github.com/en/rest/releases/releases",
+    "https://pnpm.io/cli/publish",
+    "https://docs.npmjs.com/cli/v10/commands/npm-publish",
+    "https://doc.rust-lang.org/cargo/commands/cargo-publish.html",
+    "https://doc.rust-lang.org/cargo/reference/publishing.html",
+    "https://twine.readthedocs.io/en/stable/",
+    "https://learn.microsoft.com/en-us/nuget/nuget-org/publish-a-package"
+  ],
+  "reasoning": "All 8 primary external sources fetched successfully (no 404s encountered — every given URL resolved). All 3 internal baseline sources read fully as instructed, plus targeted greps to verify the research context's specific claim about zero `gh release create` call sites in the codebase — confirmed true via grep: only enum-match/warning-diagnostic references to GitHubRelease exist, no Command::new(\"gh\", ...) anywhere. Also discovered NuGet is stubbed identically to GitHubRelease (same warning-only pattern), which is directly relevant scope the question didn't explicitly ask about but the codebase pattern makes salient. Notable partial contradiction worth flagging to the spec writer: the WebFetch summary for gh_release_upload states its docs 'do not indicate releases can be created implicitly' but this is an inference from absence of stated behavior, not a directly quoted precondition sentence — I marked that specific synthesis finding as 'likely' rather than 'confirmed' to avoid overstating certainty, since the raw manual page text for gh_release_upload was not quoted verbatim beyond the synopsis and flag list. The GitHub REST API doc is unambiguous that tag_name is the only required field and the API can create the tag itself server-side when target_commitish is given — this is a genuine, confirmed, load-bearing fact for the publish/distribution spec: a real GitHubRelease implementation could rely on gh release create's auto-tag-creation instead of requiring callisto's own git-tag-then-push step to have already run, which changes the ordering constraints the spec needs to state. No tag-push (git push --tags / push origin &lt;tag&gt;) call site was found in the grepped files, which is itself a finding worth flagging (tags may only exist locally in the callisto workflow, not on the remote, until some external CI step pushes them) — I marked this 'likely' since I did not exhaustively read every line of every vcs file, only grepped for the pattern. No source came back empty or unreadable. No two external sources materially disagreed with each other; the REST API doc and gh CLI doc are consistent (gh CLI's auto-tag-creation is a client-side convenience wrapping the same API behavior). callisto's own docs (06-publishing.md) were internally consistent and matched the actual code in publish_client.rs for auth env vars used (TWINE_USERNAME/PASSWORD, CARGO_REGISTRY_TOKEN, NPM_TOKEN/NODE_AUTH_TOKEN)."
+}
+```</result>
+<usage><subagent_tokens>96420</subagent_tokens><tool_uses>19</tool_uses><duration_ms>118713</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>abe3b360670073463</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/0c4c4622-1ed8-4f2c-80e6-f0890a2dad72/tasks/abe3b360670073463.output</output-file>
+<status>completed</status>
+<summary>Agent "Synthesize publish-tool requirements research report" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>```json
+{
+  "question": "What are the actual, current, official requirements/preconditions/gotchas for each native publish tool callisto shells out to (or might shell out to), that a spec for callisto's publish/distribution model needs to be grounded in?",
+  "findings": [
+    {"claim": "PublishTarget::GitHubRelease is fully stubbed: only pushes a PublishTargetNotImplemented warning diagnostic, no dispatch.", "evidence": "publish.rs:359-374", "confidence": "confirmed"},
+    {"claim": "A test explicitly documents GitHubRelease has no real dispatch implementation.", "evidence": "publish_tests.rs:1247-1316", "confidence": "confirmed"},
+    {"claim": "No `gh` CLI invocation of any kind exists anywhere in the Rust codebase; only local `git tag` calls exist for release tagging.", "evidence": "version.rs:387-417, access.rs, lib.rs, tag.rs", "confidence": "confirmed"},
+    {"claim": "Tag-push to the remote does happen today, but in the shipped GitHub Action's bash orchestration layer (`.github/actions/callisto-action/action.yml:197`, `git push origin --tags || true`), not in the Rust CLI. The reader's original grep only covered `crates/` and missed this. Scoping implication: a future `gh release create`/`upload` step needs to live in the same bash layer, likely the same step or one immediately after, not inside the Rust binary.", "evidence": ".github/actions/callisto-action/action.yml:197", "confidence": "confirmed"},
+    {"claim": "cargo publish always uses --locked and -p &lt;name&gt;, optionally --registry; no --dry-run/--allow-dirty/--no-verify/--frozen. npm/pnpm/yarn/bun and PyPI (python -m build + twine upload) are all real, working invocations. GitHubRelease and NuGet are the two unimplemented targets — NuGet is stubbed identically to GitHubRelease (same warn-and-skip pattern).", "evidence": "publish_client.rs (various lines), publish.rs:343-357", "confidence": "confirmed"},
+    {"claim": "npm-family package manager detected by lockfile presence (pnpm-lock.yaml &gt; yarn.lock &gt; bun.lockb/bun.lock &gt; npm default); pnpm branch always appends --no-git-checks with a comment justifying it as bypassing the dirty-tree check specifically.", "evidence": "publish_client.rs:368-381", "confidence": "confirmed"},
+    {"claim": "--access is omitted entirely when unset (relies on npm's own default), only passed when publishConfig.access is explicitly set. No --provenance/--otp/--dry-run used anywhere for npm/pnpm, no --dry-run for cargo either.", "evidence": "publish_client.rs:347-421", "confidence": "confirmed"},
+    {"claim": "twine always uses --skip-existing, optional --repository-url; TWINE_USERNAME/TWINE_PASSWORD are the vars, callisto's own docs explicitly warn TWINE_API_TOKEN is not recognized.", "evidence": "docs/06-publishing.md:112-125, publish_client.rs:518-526", "confidence": "confirmed"},
+    {"claim": "callisto's docs document two mutually-exclusive npm CI auth patterns and warn NODE_AUTH_TOKEN silently fails (auth error, not \"var not found\") if set without setup-node's registry-url interpolation.", "evidence": "docs/06-publishing.md:73-93", "confidence": "confirmed"},
+    {"claim": "gh release create does NOT require the tag to already exist — if missing, one is auto-created from the latest state of the default branch (or --target). --verify-tag can force requiring an existing tag instead. Full flag set includes -d/--draft, -p/--prerelease, --latest, -n/--notes, -F/--notes-file, --notes-from-tag, --generate-notes, --notes-start-tag, --target, --verify-tag, --fail-on-no-commits, --discussion-category, -t/--title, -R/--repo.", "evidence": "https://cli.github.com/manual/gh_release_create", "confidence": "confirmed"},
+    {"claim": "gh release upload's docs do not describe implicit release creation — it operates against an existing release and its docs don't indicate it can create one. Its own flag is --clobber (delete+reupload same-named assets; if reupload fails after clobber, originals are permanently lost). The \"requires pre-existing release\" inference is absence-of-statement, not an explicit precondition sentence.", "evidence": "https://cli.github.com/manual/gh_release_upload", "confidence": "likely"},
+    {"claim": "GitHub REST API for release creation requires only tag_name — target_commitish is unused if the tag already exists, meaning the API itself (and gh release create wrapping it) can create the tag server-side when it doesn't yet exist, defaulting to the repo's default branch. draft/prerelease/generate_release_notes/make_latest all have documented defaults (false/false/false/true). Requires push access; workflow-file-touching commits need extra token scope; secondary rate limiting possible on rapid creation. This is the load-bearing new fact: it materially simplifies the earlier risk-assessor's ordering concern — a real Tier 2 implementation doesn't strictly need callisto's own tag-then-push step to complete first, since gh release create &lt;tag&gt; can create the tag itself if needed. In practice callisto already creates+pushes the tag via the Action's existing tag/push step (see finding on the Action's bash layer), so the two would typically already be in the right order regardless.", "evidence": "https://docs.github.com/en/rest/releases/releases", "confidence": "confirmed"},
+    {"claim": "pnpm v11+ is natively implemented, no longer delegates to npm CLI under the hood (an architecture change from earlier pnpm versions).", "evidence": "https://pnpm.io/cli/publish", "confidence": "confirmed"},
+    {"claim": "--no-git-checks (which callisto always passes for pnpm) disables THREE checks, not just the dirty-tree one: branch-match, working-tree cleanliness, AND remote-sync. callisto's own code comment only mentions the dirty-tree justification — accurate but incomplete; the flag also silently permits publishing from the wrong branch or an out-of-sync-with-remote state, undiscussed anywhere in callisto's docs or comments.", "evidence": "https://pnpm.io/cli/publish", "confidence": "confirmed"},
+    {"claim": "pnpm publish supports --provenance, --otp, --force, --publish-branch, --dry-run, --report-summary — none currently used by callisto.", "evidence": "https://pnpm.io/cli/publish", "confidence": "confirmed"},
+    {"claim": "npm publish --access default is 'public' for NEW packages; existing packages retain current access regardless of the flag; unscoped packages can never be set to restricted. Publish fails if the exact name+version already exists in the registry; once published, a name-version pair can never be reused even after unpublishing. --provenance requires a supported CI/CD system and is mutually exclusive with --provenance-file.", "evidence": "https://docs.npmjs.com/cli/v10/commands/npm-publish", "confidence": "confirmed"},
+    {"claim": "cargo publish --locked's official failure semantics: fails if the lock file is missing, OR if cargo would need to change the lock file due to different dependency resolution. The doc text explicitly frames this as NOT failing on Cargo.toml changes alone — only on lock file update needs. This needs reconciling against an earlier claim made this session (to the maintainer) that a bumped package's own-version mismatch between Cargo.toml and Cargo.lock is, by itself, sufficient to trip --locked. Unresolved: does a package's own resolved-version entry in Cargo.lock's [[package]] graph count as part of the \"lock file update need\" check, or does --locked only re-verify the dependency graph, not the currently-being-published package's own version field? Requires empirical verification (bump a workspace member's version, leave Cargo.lock untouched, run cargo publish --locked --dry-run, observe pass/fail) — not resolved by doc text alone.", "evidence": "https://doc.rust-lang.org/cargo/commands/cargo-publish.html", "confidence": "assumed"},
+    {"claim": "cargo publish exits 101 on failure, 0 on success — matches callisto's classify_cargo_output assumptions.", "evidence": "https://doc.rust-lang.org/cargo/commands/cargo-publish.html", "confidence": "confirmed"},
+    {"claim": "crates.io requires license/license-file, description, homepage, repository, readme fields before publish; 10MB .crate size limit; publish is PERMANENT (never overwritable/deletable, only yankable — yanking does not delete code); leaked secrets require token revocation not deletion. callisto does not appear to pre-validate these required fields before attempting a real publish — a possible gap: does callisto fail fast with a clear message, or let cargo's own publish attempt fail after packaging work is already done?", "evidence": "https://doc.rust-lang.org/cargo/reference/publishing.html", "confidence": "confirmed"},
+    {"claim": "twine --skip-existing (which callisto passes unconditionally) is documented as \"only valid when uploading to PyPI itself... other implementations may not support this.\" callisto also unconditionally passes it even when --repository-url points at a private/custom index — a real, confirmed compatibility risk for non-PyPI-official targets.", "evidence": "https://twine.readthedocs.io/en/stable/", "confidence": "confirmed"},
+    {"claim": "twine does not recognize TWINE_API_TOKEN (matches callisto's own doc warning); keyring-based API token storage is a separate mechanism from TWINE_USERNAME/PASSWORD.", "evidence": "https://twine.readthedocs.io/en/stable/", "confidence": "confirmed"},
+    {"claim": "NuGet.org package size limit ~250MB (413 error if exceeded); package naming rules (letter/number/underscore start, no consecutive dot/dash, ≤100 chars); dotnet nuget push requires --api-key/NUGET_API_KEY env var (as of NuGet 7.6/.NET SDK 10.0.300+) and --source URL.", "evidence": "https://learn.microsoft.com/en-us/nuget/nuget-org/publish-a-package", "confidence": "confirmed"},
+    {"claim": "callisto's PublishTarget::NuGet is stubbed identically to GitHubRelease — same warning-only, no-dispatch pattern.", "evidence": "publish.rs:343-357", "confidence": "confirmed"}
+  ],
+  "recommendation": "Proceed with Tier 2 (GitHub Release via gh release create + gh release upload) as previously scoped, but revise the implementation plan and the risk severity in two ways given the new grounding:\n\n1. Ordering risk downgraded from 'high/high' to 'medium/low', not eliminated. The original risk-assessor's concern was that gh release upload has no release to attach to because no gh release create call exists anywhere. That structural gap is still real (finding 1-3: GitHubRelease is fully stubbed, zero gh invocations in the codebase). What changes is the *severity* of getting the ordering wrong: the GitHub REST API (and gh release create wrapping it) only requires tag_name and will auto-create the tag server-side against the default branch if it doesn't exist yet (finding 12). Combined with the fact that tag creation+push already happens today via the Action's bash layer (`.github/actions/callisto-action/action.yml:197`, finding 4-correction) before any hypothetical release step would run, a naive implementation is unlikely to hit a missing-tag failure in practice — the tag is already there by the time gh release create would run. The remaining risk is not 'no release exists' (gh release create will make one), it's the reverse: 'no release exists' for gh release upload specifically, whose docs give no indication it can create one (finding 10 vs 11). This means the sequencing constraint is not 'push tag before creating release' (already handled) but 'call gh release create before gh release upload' — both new calls, in that order, within the same bash step or two adjacent steps in the Action. Recommend implementing this as an explicit two-call sequence (create-then-upload) rather than relying on any implicit creation behavior from upload, since finding 11's 'requires pre-existing release' is only an inference from absence, not a confirmed precondition — treat it as a hard requirement to be safe.\n\n2. Location: build this in the Action's bash orchestration layer (`action.yml`), consistent with where tag-push already lives, not as new Rust dispatch code inside PublishTarget::GitHubRelease — unless the team wants to bring gh invocation into the Rust binary itself as a separate architectural decision (out of scope for this research pass; flag as an open question).\n\n3. NuGet: recommend the maintainer explicitly decide NuGet's fate rather than leaving it silently identical to GitHubRelease's stub. Nothing in this research surfaced NuGet-specific complexity beyond ordinary CLI/API preconditions (finding 22) that would make it harder or easier than Tier 2 — its stub status is a scope gap, not a technical blocker. Two defensible options: (a) leave it warn-and-skip indefinitely as a documented non-goal (same treatment as Tier 3/Homebrew), or (b) fold it into a Tier 2.5 using the same create-then-push pattern once Tier 2 ships and proves the pattern. No evidence favors one over the other; this is a product-scope call, not a technical one.\n\n4. Independent of the Tier 2 decision, fix two small confirmed gaps while touching this code: (a) update the pnpm --no-git-checks code comment to accurately state it disables three checks (branch-match, working-tree cleanliness, remote-sync), not just the dirty-tree check (finding 14) — this is a documentation-accuracy fix with a real behavioral blind spot (callisto could currently publish from the wrong branch or an out-of-sync branch without any warning); (b) make twine's --skip-existing conditional on the target actually being PyPI (i.e., omit or guard it when --repository-url points elsewhere), since the flag is officially PyPI-only and may silently misbehave or error against private/custom indexes (finding 20).\n\nDo not resolve finding 17 (cargo publish --locked's interaction with a package's own version bump vs. dependency-graph changes) in this synthesis — it is a genuine unresolved technical question that contradicts an earlier claim made to the maintainer this session, and needs an empirical repro (not doc-reading) before any spec sets acceptance criteria around lockfile staleness for version bumps.",
+  "confidence": "medium",
+  "open_questions": [
+    "IF an empirical repro shows cargo publish --locked does NOT fail on a workspace member's own version bump when Cargo.lock is otherwise untouched (i.e., --locked only checks the dependency graph, not the being-published package's own version field) THEN any spec acceptance criteria that assume --locked catches a stale self-version must be rewritten to add an explicit pre-publish version-consistency check in callisto itself, since cargo's own flag would not provide that safety net.",
+    "IF the maintainer decides gh invocation should live in Rust (inside PublishTarget::GitHubRelease dispatch) rather than staying in the Action's bash layer THEN the Tier 2 implementation plan changes materially — it becomes a new exec-seam / subprocess-invocation feature in the Rust codebase rather than a bash-step addition to action.yml, with its own error-classification and auth-handling work mirroring what publish_client.rs already does for cargo/npm/twine.",
+    "IF gh release upload is confirmed (via direct testing, not just doc silence) to still fail against a nonexistent release even after gh release create's tag-auto-creation behavior is accounted for THEN the two-call create-then-upload sequence recommended above is validated as mandatory, not just precautionary — worth a quick empirical check before finalizing the spec's error-handling criteria for this path.",
+    "IF the maintainer wants NuGet to receive Tier 2.5 treatment rather than staying permanently stubbed THEN the NuGet requirements gathered here (finding 22: size limits, naming rules, --api-key/--source requirements) become directly reusable as the basis for that spec, since no additional research was found necessary beyond what's already captured.",
+    "IF secondary rate limiting on rapid gh release create calls (finding 12) turns out to matter in practice (e.g., for workspaces publishing many packages in one release cycle) THEN the Tier 2 spec needs explicit retry/backoff acceptance criteria that aren't currently scoped anywhere in this research."
+  ],
+  "linked_requirement": null,
+  "reasoning": "Preserved all 23 reader findings verbatim with their original confidence levels, incorporating the coordinating session's correction to finding 4 as instructed rather than silently editing the reader's claim away. Did not resolve finding 17 — surfaced it as the first open question per explicit instruction. Recommendation directly addresses the four synthesis directives: (1) updates Tier 2 ordering-risk severity using findings 4-correction and 12 together, concluding risk is reduced but not eliminated and reframing the actual remaining gap (create-then-upload sequencing, not tag-timing); (2) surfaces finding 17 as unresolved without taking a side; (3) calls out findings 14 and 20 as small independent fixes; (4) frames NuGet's stub status as an explicit maintainer scope decision with no technical steer either way. Confidence set to medium rather than high because two load-bearing sub-questions (finding 17's empirical status, and whether gh release upload truly cannot implicitly create a release) remain unverified against live tool behavior — the synthesis itself is well-grounded in official docs, but two of its risk conclusions rest on doc-absence inference rather than confirmed behavior."
+}
+```
+
+Report published as the JSON object above (research-report@1). No artifact/file was requested for this synthesis — returning inline per the skill's direct-output contract. Key source pointers for the spec writer: `crates/.../publish.rs:343-374`, `crates/.../publish_client.rs` (cargo/npm/pnpm/twine invocation sites), `crates/.../publish_tests.rs:1247-1316`, `.github/actions/callisto-action/action.yml:197`, `docs/06-publishing.md:73-125`.</result>
+<usage><subagent_tokens>36254</subagent_tokens><tool_uses>0</tool_uses><duration_ms>59702</duration_ms></usage>
+</task-notification>
+
+---
+
+Just to be clear, we're publishing the crate to crates.io but the binary to GH right?
+
+---
+
+Let's make sure that we appropriate read the docs, test, and feel confident about our work. What goes in callisto CLI vs GH actions
+
+---
+
+Check trace:synthesizer's result (agent abe3b360670073463). This completes the deep external-docs research pass. Present the full findings to the user: the updated Tier 2 risk picture (gh release create can auto-create the tag; tag-push already happens in the Action's bash layer), the open --locked empirical-verification question, the small concrete fixes surfaced along the way (--no-git-checks scope, twine --skip-existing PyPI-only compatibility), and the NuGet stub-parity scope question. Then ask how the user wants to proceed — e.g. move Tier 1 (and possibly Tier 2) into an actual canon:draft-spec pass now that the research base is solid.
+
+---
+
+Run Tier 1 through canon:draft-spec now
+
+---
+
+<task-notification>
+<task-id>a8e5018b63e0fd679</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/0c4c4622-1ed8-4f2c-80e6-f0890a2dad72/tasks/a8e5018b63e0fd679.output</output-file>
+<status>completed</status>
+<summary>Agent "Convert Tier 1 need to requirement@1" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>```json
+{
+  "id": "REQ-001",
+  "statement": "Callisto must provide a reference mechanism and pattern for placing CI-built native binary artifacts (napi-rs .node files, maturin equivalents) into their corresponding platform-stub package directories before `callisto publish` runs.",
+  "stakeholder": "The maintainer of callisto (also a consumer via downstream projects like \"michi\"), and by extension any callisto consumer building napi-rs or maturin native packages who needs a working end-to-end release pipeline.",
+  "why": "callisto matrix already resolves each native build target to artifactName/hostRunner/useCross/packageDir, and the publish-side platform-stub modeling and ordering are already correct, but nothing in callisto or the shipped callisto-action actually moves a per-platform build's artifact into the right package directory before publish. Every consumer has to hand-build this glue themselves from just the JSON field names, with no working reference anywhere in callisto's own docs — confirmed by a real downstream project (michi) hitting exactly this gap this session. The mechanism was already designed once (.claude/specs/callisto-matrix.md §6.2) but never built, and ARCHITECTURE.md's only example workflow (§12) is broken (references a nonexistent `callisto publish-target` subcommand) and stops before showing placement or publish at all.",
+  "done_when": [
+    "A documented, working end-to-end example exists showing a matrix-driven per-platform CI build job uploading its artifact, an orchestrating step downloading each named artifact and placing it into its package's packageDir, and callisto publish subsequently succeeding against those populated package directories.",
+    "The placement step is implemented as GitHub-platform-specific orchestration (e.g. using `gh run download` or an equivalent artifact-fetch primitive) living outside callisto's core Rust CLI, consistent with the CLI's hermetic/zero-network-call boundary.",
+    "ARCHITECTURE.md's §12 example workflow no longer references the nonexistent `callisto publish-target` subcommand and is extended to cover artifact placement and the publish step, not just the build step.",
+    "A consumer following the documented pattern can go from N per-platform build jobs producing artifacts to those artifacts sitting in the correct platform-stub package directories, with no custom glue code beyond invoking the documented steps."
+  ],
+  "reasoning": "id: no existing REQ-NNN files found in the repo (searched for requirement/REQ paths), so defaulted to REQ-001. statement/why/done_when inferred directly from the raw need's clearly stated gap, prior design doc (§6.2), and the michi downstream evidence. Left out_of_scope empty per role — the raw need already lists explicit maintainer-confirmed exclusions (Java/JNI, .NET native-AOT target kinds; prebuilt Rust CLI binaries as GitHub Release assets/'Tier 2'; Homebrew tap generation; Go binary distribution) that the clarifier should populate into out_of_scope verbatim. Also flagging for the clarifier: the raw need marks §7's callisto-build-action (dispatching the actual napi/maturin build) as optional/secondary versus §6.2's placement step as load-bearing/must-have — this distinction may need to become an explicit out_of_scope or a done_when caveat. Could not infer a firm priority/urgency level or an exact acceptance mechanism (e.g., whether the reference implementation must ship as a reusable composite action vs. a documented bash snippet) from the text, so done_when criteria are phrased at the level of observable outcome rather than prescribing that implementation choice."
+}
+```</result>
+<usage><subagent_tokens>45817</subagent_tokens><tool_uses>1</tool_uses><duration_ms>35147</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a2ccfbd1797ab1db5</task-id>
+<tool-use-id>toolu_01RBEBmUCtPsTbLfm8BjpAtg</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/0c4c4622-1ed8-4f2c-80e6-f0890a2dad72/tasks/a2ccfbd1797ab1db5.output</output-file>
+<status>completed</status>
+<summary>Agent "Clarify Tier 1 requirement gaps" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>```json
+{
+  "action": "complete",
+  "question": null,
+  "requirement": {
+    "id": "REQ-001",
+    "statement": "Callisto must provide a reference mechanism and pattern for placing CI-built native binary artifacts (napi-rs .node files, maturin equivalents) into their corresponding platform-stub package directories before `callisto publish` runs.",
+    "stakeholder": "The maintainer of callisto (also a consumer via downstream projects like \"michi\"), and by extension any callisto consumer building napi-rs or maturin native packages who needs a working end-to-end release pipeline.",
+    "why": "callisto matrix already resolves each native build target to artifactName/hostRunner/useCross/packageDir, and the publish-side platform-stub modeling and ordering are already correct, but nothing in callisto or the shipped callisto-action actually moves a per-platform build's artifact into the right package directory before publish. Every consumer has to hand-build this glue themselves from just the JSON field names, with no working reference anywhere in callisto's own docs — confirmed by a real downstream project (michi) hitting exactly this gap this session. The mechanism was already designed once (.claude/specs/callisto-matrix.md §6.2) but never built, and ARCHITECTURE.md's only example workflow (§12) is broken (references a nonexistent `callisto publish-target` subcommand) and stops before showing placement or publish at all.",
+    "done_when": [
+      "A documented, working end-to-end example exists showing a matrix-driven per-platform CI build job uploading its artifact, an orchestrating step downloading each named artifact and placing it into its package's packageDir, and callisto publish subsequently succeeding against those populated package directories.",
+      "The placement step is implemented as GitHub-platform-specific orchestration (e.g. using `gh run download` or an equivalent artifact-fetch primitive) living outside callisto's core Rust CLI, consistent with the CLI's hermetic/zero-network-call boundary.",
+      "ARCHITECTURE.md's §12 example workflow no longer references the nonexistent `callisto publish-target` subcommand and is extended to cover artifact placement and the publish step, not just the build step.",
+      "A consumer following the documented pattern can go from N per-platform build jobs producing artifacts to those artifacts sitting in the correct platform-stub package directories, with no custom glue code beyond invoking the documented steps."
+    ],
+    "out_of_scope": [
+      "Extending PlatformTargetKind to Java/JNI or .NET native-AOT targets — a separate, later concern.",
+      "Prebuilt Rust CLI binaries distributed as GitHub Release assets (\"Tier 2\") — a separate, related, deferred future spec; may reuse the existing per-tag `gh release create` loop in callisto-action via an added `gh release upload`, but that work is not part of this requirement.",
+      "Homebrew tap formula generation/distribution — deferred by the maintainer as a possible separate future tool.",
+      "Go binary distribution — already an existing non-goal per .claude/specs/callisto-matrix.md §8, not being revisited here.",
+      "A generic callisto-build-action that dispatches the actual per-platform build (napi build --platform --release, etc.) — this is callisto-matrix.md §7's secondary/optional proposal. This requirement covers only the placement step (getting an already-built, correctly-named artifact into its package directory); a consumer may use any build step of their own, including napi-rs's official CI template, as long as the artifact is uploaded with the expected name."
+    ]
+  },
+  "reasoning": "All four done_when criteria are testable propositions (doc existence with specific structural elements, code-location/boundary check via grep, absence of a specific broken reference plus presence of extended coverage, and an end-to-end no-custom-glue walkthrough) — each admits a concrete pass/fail check without further specification. Stakeholder is concrete: named maintainer role plus a named downstream consumer (michi) plus the general class of napi-rs/maturin package authors, with enough context (already discovered the gap firsthand) to know what they need. The only remaining weakness was out_of_scope being empty, but the conversation context supplies five explicit, specific exclusions (target-kind expansion, Tier 2 release-asset distribution, Homebrew tap, Go binaries, build-dispatch action) each with a stated reason and pointer to where the exclusion is otherwise recorded — none are vague placeholders. No further clarification is needed before a spec writer could act on this."
+}
+```</result>
+<usage><subagent_tokens>33314</subagent_tokens><tool_uses>0</tool_uses><duration_ms>28786</duration_ms></usage>
+</task-notification>
+
+---
+
+Why did the plguins fail??
+
+---
+
+I mean this error:
+
+graph:clarify-requirement(Clarify Tier 1 requirement gaps)
+Initializing…
+Error: Agent type 'graph:clarify-requirement' not found. Available agents: axiom:exit-gate, axiom:recon, axiom:verifier, bug-hunter, canon:architect, canon:auditor, canon:drafter, canon:drift-checker, canon:exit-gate, canon:verifier, claude, claude-code-guide, delta:changeset-analyzer, delta:commit-analyzer, delta:pr-narrator, delta:release-summarizer, delta:review-preprocessor, Explore, general-purpose, graph:auditor, graph:clarifier, graph:intake, graph:prioritizer, lambda:exit-gate, lambda:implementer, lambda:mutator, lambda:recon, lambda:reviewer, Plan, proof:adversary, proof:boundary-tracer, proof:exit-gate, proof:recon, proof:scanner, statusline-setup, trace:reader, trace:recon, trace:risk-assessor, trace:synthesizer, vector:challenger, vector:estimator, vector:planner
+
+---
+
+pickup the work
+
+---
+
+<task-notification>
+<task-id>a20fcf86a8a74b446</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/0c4c4622-1ed8-4f2c-80e6-f0890a2dad72/tasks/a20fcf86a8a74b446.output</output-file>
+<status>completed</status>
+<summary>Agent "Draft Tier 1 spec@1" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Confirmed: `nativeMatrix` is computed and emitted in the same `callisto-orchestrate` composite-action step that later invokes `callisto plan-publish` and (per `INPUT_PUBLISH`) publish — so placement can run inline, between matrix computation and publish, inside this same step, with no cross-job artifact-access problem (`gh run download` works from any job in the run).
+
+Here is the spec@1 draft.
+
+```json
+{
+  "id": "SPEC-002",
+  "purpose": "Give callisto consumers a working, documented mechanism that places CI-built native binary artifacts (napi-rs .node files, maturin wheels) into their platform-stub package directories before `callisto publish` runs, closing the gap between `callisto matrix`'s output and a working end-to-end release.",
+  "scope": "Extends `.github/actions/callisto-action/action.yml`'s existing `callisto-orchestrate` composite-action step: after it computes `nativeMatrix` and before it invokes `callisto plan-publish`/publish (in the branch already gated by `INPUT_PUBLISH`), the step downloads each `nativeMatrix` entry's artifact by `artifactName` via `gh run download` and places its contents into `packageDir`, formalizing `.claude/specs/callisto-matrix.md` §6.2's design. Also corrects `ARCHITECTURE.md` §12's broken example workflow to remove the nonexistent `callisto publish-target` reference and extend it through placement and publish.",
+  "non_goals": [
+    "Extending PlatformTargetKind to Java/JNI or .NET native-AOT targets — a separate, later concern; this spec only routes the two kinds `PlatformTargetKind` already supports (Napi, Maturin).",
+    "Prebuilt Rust CLI binaries distributed as GitHub Release assets (\"Tier 2\") — a separate, related, deferred future spec.",
+    "Homebrew tap formula generation/distribution — deferred by the maintainer as a possible separate future tool.",
+    "Go binary distribution — already an existing non-goal per .claude/specs/callisto-matrix.md §8, not being revisited here.",
+    "A generic callisto-build-action that dispatches the actual per-platform build (napi build --platform --release, etc.) — callisto-matrix.md §7's secondary/optional proposal. This spec covers only placement of an already-built, correctly-named artifact; the build step itself is the consumer's own responsibility.",
+    "Validating the content of a downloaded artifact (e.g. confirming a .node file is well-formed, or that it is actually a valid binary for its target triple). The placement step moves whatever files `gh run download` retrieves into `packageDir`; content correctness is the build job's responsibility and surfaces later, at publish or install time, not at placement.",
+    "Adding a new required input to `callisto-action` to opt into placement. Placement is driven entirely by whether `nativeMatrix` is a non-empty array — consumers with no native platform targets see zero behavior change.",
+    "Implementing the nonexistent `callisto publish-target` Rust CLI subcommand referenced by the current ARCHITECTURE.md §12. That subcommand is not needed for this requirement; publish already works via the existing `callisto publish` command operating on on-disk state once artifacts are placed."
+  ],
+  "api_surface": [
+    {
+      "name": "callisto-action native artifact placement step",
+      "signature": "New step inside `.github/actions/callisto-action/action.yml`'s existing `callisto-orchestrate` composite step, sequenced after `NATIVE_MATRIX=$(callisto matrix --format json | jq ...)` is computed and before `callisto plan-publish`/publish executes, inside the branch guarded by `else` (no pending changesets) and further guarded by `[[ -n \"$INPUT_PUBLISH\" ... ]]`",
+      "description": "For each object in the `nativeMatrix` JSON array, runs `gh run download --name \"$ARTIFACT\" --dir \"$DIR\"` where `ARTIFACT` is the object's `artifactName` field and `DIR` is the object's `packageDir` field (workspace-root-relative, resolved against the action's working directory). Runs once per array element, in array order. Skipped entirely (zero `gh run download` invocations) when `nativeMatrix` is `[]`."
+    }
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "AC-001",
+      "criterion": "Given a workflow run where N per-platform build jobs each upload an artifact via `actions/upload-artifact` using the exact `artifactName` string from that platform's `callisto matrix --format json` entry, and the `callisto-orchestrate` step subsequently runs with `INPUT_PUBLISH` set: after the step completes, each of the N artifacts' downloaded file contents are present under the corresponding `packageDir` path relative to the working directory, and this placement completes before the step's `callisto plan-publish`/publish invocation begins.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-002",
+      "criterion": "Given `nativeMatrix` is `[]` (no native platform-target packages in the workspace), the `callisto-orchestrate` step invokes `gh run download` zero times and proceeds directly to `callisto plan-publish`/publish exactly as it did before this change.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-003",
+      "criterion": "Given a `nativeMatrix` entry whose `artifactName` was never uploaded in the current workflow run, the placement loop's `gh run download` invocation for that entry exits non-zero, the step fails (non-zero exit, workflow run marked failed) before reaching `callisto plan-publish`/publish, and the step's log output names the specific missing `artifactName`.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-004",
+      "criterion": "Given a `nativeMatrix` entry whose `packageDir` path does not exist on disk at placement time, the step fails (non-zero exit) with log output identifying the missing `packageDir` path, and `callisto plan-publish`/publish is not invoked for that run.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-005",
+      "criterion": "Given the `nativeMatrix` GitHub Actions output value is not valid JSON (e.g. truncated or hand-edited by a caller), the placement loop's `jq -c '.[]'` parse fails, the step exits non-zero before any `gh run download` call, and `callisto plan-publish`/publish is not invoked.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-006",
+      "criterion": "Two `nativeMatrix` entries that both name the same `artifactName` (already deduplicated upstream by `unique_by(.artifactName)` in the existing `NATIVE_MATRIX` computation) never both trigger a `gh run download` call for that name within a single step invocation — the existing dedup guarantees at most one download attempt per distinct `artifactName`.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-007",
+      "criterion": "`ARCHITECTURE.md` §12, read in full, contains no occurrence of the string `callisto publish-target` anywhere in its text or code blocks.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-008",
+      "criterion": "`ARCHITECTURE.md` §12's example workflow, read end to end, shows all of: a build job producing and uploading a per-platform artifact, a placement step downloading that artifact into its package directory, and a `callisto publish` (or `callisto-action` with publish enabled) step running afterward against the populated package directories — not just the build step.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-009",
+      "criterion": "A consumer workflow that already uses `callisto-action` for publishing and adds only a matrix-driven build job (per `.claude/specs/callisto-matrix.md` §6.1's `nativeMatrix` consumption pattern) uploading artifacts named per `artifactName`, with no additional bash, composite action, or script written by the consumer to perform placement, ends with artifacts correctly placed and `callisto publish` succeeding.",
+      "is_error_case": false
+    }
+  ],
+  "linked_requirement": "REQ-001",
+  "reasoning": "Implementation-shape decision: extend the existing callisto-action composite step rather than publish a new standalone documented-YAML pattern. Rationale: (1) the orchestrate step already computes nativeMatrix and already conditionally invokes plan-publish/publish in the same step, so placement can be inserted inline with no new job/step-output plumbing; (2) the codebase's confirmed, zero-exception pattern is that all GitHub-specific operations live in callisto-action's bash, not in consumer-owned YAML or the Rust CLI — a new detached workflow pattern would be the first deviation from that pattern; (3) REQ-001's done_when #4 requires 'no custom glue code beyond invoking the documented steps', which a baked-in, auto-triggered (nativeMatrix-driven, no new required input) step satisfies more directly than a copy-pasted YAML snippet a consumer must adapt; (4) matrix.md §6.2 already describes this as happening in 'the orchestrating step', i.e. callisto-orchestrate itself, not a separate action. AC-004's disk-not-found handling assumes packageDir already exists because it is a workspace package directory discovered by manifest scanning (present before CI runs), so a missing packageDir signals a real anomaly (e.g. stale matrix output vs. current disk state) rather than a case needing directory creation. AC-005 and AC-003 give nil/malformed-input and missing-artifact fail-fast behavior consistent with the existing step's set -o pipefail convention for callisto matrix itself."
+}
+```
+
+Grounding notes for downstream review: `PlatformTarget` (`crates/callisto-model/src/matrix.rs:60-71`) confirmed to already carry `artifact_name` and `package_dir` (workspace-root-relative); `artifact_name_for_triple` (`crates/callisto-graph/src/matrix.rs:38-40`) confirmed hardcoded to `native-{triple}` (unchanged by this spec); the existing `nativeMatrix` computation and `INPUT_PUBLISH`-gated publish invocation are both in `.github/actions/callisto-action/action.yml:157-169`; `.claude/specs/callisto-matrix.md:295-318` (§6.2) supplied the reference `gh run download` snippet this spec formalizes; `ARCHITECTURE.md:445-493` (§12) contains the broken `callisto publish-target` reference targeted by AC-007/AC-008, confirmed absent from the codebase via grep.</result>
+<usage><subagent_tokens>63684</subagent_tokens><tool_uses>9</tool_uses><duration_ms>101562</duration_ms></usage>
+</task-notification>
+
+---
+
+Check canon:auditor's result (agent a5bcc7328694a4e84). If it found issues, apply the specific fixes it prescribed to the spec@1 directly (don't re-dispatch drafter for mechanical fixes you can apply yourself from the auditor's exact rewrites). Then dispatch canon:exit-gate on the corrected spec for the definitive pass/fail. Report the final spec and gate verdict to the user.
+
+---
+
+Check canon:exit-gate's result (agent ae30e630933b26122) using TaskOutput with block=true, not ListAgents (a prior session interruption left some completed agents' ListAgents status misleading — always verify via TaskOutput/reading the transcript directly). If PASS, save the final spec@1 to .claude/specs/SPEC-002-native-artifact-placement.json and report it to the user as ready for vector:planner. If FAIL, apply the specific blockers listed and re-gate.
+
+---
+
+Check canon:exit-gate's result (agent ad86c42799f4a5efb) via TaskOutput block=true (not ListAgents — verify the transcript directly if the status looks stale). Confirm it actually read the real spec content at /private/tmp/claude-501/-Users-gabe-Projects-callisto/0c4c4622-1ed8-4f2c-80e6-f0890a2dad72/scratchpad/spec-002-v3.json rather than getting confused by a literal "$(cat ...)" string left in the prompt by mistake — if it clearly didn't read the real file, re-dispatch cleanly with the file content pasted directly inline this time. If PASS, save the final spec@1 to .claude/specs/SPEC-002-native-artifact-placement.json and report it to the user as ready for vector:planner. If FAIL, apply the specific blockers and re-gate (retry 3 — if it fails again, this hits the escalate-to-human threshold per canon:exit-gate's own rule, so surface that to the user rather than looping further).
+
+---
+
+Think of the existing pattern for NPM packages or crates. How are the published binaries named? Should it be over rideable in the config?
+
+---
+
+Yes
+
+---
+
+Go

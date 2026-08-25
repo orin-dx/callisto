@@ -1,0 +1,12 @@
+{
+  "tool_use_id": "toolu_01NE3MuprgfZ7fMEVspHhzGj",
+  "subagent_type": "canon:exit-gate",
+  "task_description": "Gate SPEC-002 retry 3",
+  "files": [
+    "Cargo.lock",
+    "crates/callisto-vcs/tests/zz_bench_revwalk.rs"
+  ],
+  "started_at": "2026-08-24T22:38:50.513498-07:00",
+  "completed_at": "2026-08-24T22:38:50.519083-07:00",
+  "transcript_unavailable_reason": "transcript path unresolvable"
+}

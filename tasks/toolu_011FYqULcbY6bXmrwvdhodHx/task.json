@@ -1,0 +1,12 @@
+{
+  "tool_use_id": "toolu_011FYqULcbY6bXmrwvdhodHx",
+  "agent_id": "ab7360447def54c79",
+  "subagent_type": "canon:exit-gate",
+  "task_description": "Gate spec-002 v3 for planning readiness",
+  "files": [
+    "Cargo.lock",
+    "crates/callisto-vcs/tests/zz_bench_revwalk.rs"
+  ],
+  "started_at": "2026-08-24T18:53:49.336308-07:00",
+  "completed_at": "2026-08-24T18:53:49.341876-07:00"
+}

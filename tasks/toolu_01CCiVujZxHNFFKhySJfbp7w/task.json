@@ -1,0 +1,12 @@
+{
+  "tool_use_id": "toolu_01CCiVujZxHNFFKhySJfbp7w",
+  "agent_id": "ad86c42799f4a5efb",
+  "subagent_type": "canon:exit-gate",
+  "task_description": "Re-gate revised Tier 1 spec",
+  "files": [
+    "Cargo.lock",
+    "crates/callisto-vcs/tests/zz_bench_revwalk.rs"
+  ],
+  "started_at": "2026-08-24T18:53:32.502043-07:00",
+  "completed_at": "2026-08-24T18:53:32.507759-07:00"
+}
