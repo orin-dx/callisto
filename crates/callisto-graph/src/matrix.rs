@@ -33,10 +33,12 @@ pub(crate) fn triple_host_runner_use_cross(triple: &str) -> Option<(&'static str
     })
 }
 
-/// AC-013: artifactName is always the literal "native-" concatenated with
-/// the triple string, for every recognised triple.
-pub(crate) fn artifact_name_for_triple(triple: &str) -> String {
-    format!("native-{triple}")
+/// AC-001: artifactName embeds the package's own (already workspace-unique)
+/// name alongside the triple, so two packages sharing a triple never
+/// collide once fed through `unique_by(.artifactName)` in
+/// `.github/actions/callisto-action/action.yml`.
+pub(crate) fn artifact_name_for_package_triple(package_name: &str, triple: &str) -> String {
+    format!("native-{package_name}-{triple}")
 }
 
 use std::path::Path;
@@ -135,7 +137,7 @@ pub(crate) fn build_platform_target(triple: &str, package_dir: &str, package_nam
         abi,
         host_runner: host_runner.to_string(),
         use_cross,
-        artifact_name: artifact_name_for_triple(triple),
+        artifact_name: artifact_name_for_package_triple(package_name, triple),
         package_dir: package_dir.to_string(),
         package_name: package_name.to_string(),
     })
@@ -508,6 +510,34 @@ mod tests {
         assert_eq!(keys, vec!["alpha", "mid", "zeta"]);
     }
 
+    /// AC-001: two distinct packages declaring the same triple must produce
+    /// distinct artifactName values, each embedding that package's own name.
+    #[test]
+    fn build_matrix_report_same_triple_two_packages_have_distinct_artifact_names() {
+        let tmp = tempfile::tempdir().unwrap();
+        for name in ["pkg-a", "pkg-b"] {
+            let dir = tmp.path().join(name);
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(
+                dir.join("package.json"),
+                r#"{"napi":{"targets":["aarch64-apple-darwin"]}}"#,
+            )
+            .unwrap();
+        }
+        let inputs = vec![
+            input("pkg-a", &tmp.path().join("pkg-a")),
+            input("pkg-b", &tmp.path().join("pkg-b")),
+        ];
+        let report = build_matrix_report(&inputs).unwrap();
+
+        let artifact_name = |pkg: &str| report.platform_targets[pkg].targets[0].artifact_name.clone();
+        let a = artifact_name("pkg-a");
+        let b = artifact_name("pkg-b");
+        assert_eq!(a, "native-pkg-a-aarch64-apple-darwin");
+        assert_eq!(b, "native-pkg-b-aarch64-apple-darwin");
+        assert_ne!(a, b);
+    }
+
     /// AC-005b: a package with both engines.node and requires-python gets a
     /// two-element runtimeVersions array, npm before python, and this is not
     /// an error.
@@ -715,16 +745,17 @@ mod tests {
         }
     }
 
-    /// AC-013: artifactName is always "native-" + triple.
+    /// AC-001: artifactName combines the already-workspace-unique
+    /// package_name with the triple.
     #[test]
-    fn artifact_name_is_native_prefixed_triple() {
+    fn artifact_name_for_package_triple_embeds_package_name_and_triple() {
         assert_eq!(
-            artifact_name_for_triple("aarch64-apple-darwin"),
-            "native-aarch64-apple-darwin"
+            artifact_name_for_package_triple("native-mod", "aarch64-apple-darwin"),
+            "native-native-mod-aarch64-apple-darwin"
         );
         assert_eq!(
-            artifact_name_for_triple("x86_64-unknown-linux-musl"),
-            "native-x86_64-unknown-linux-musl"
+            artifact_name_for_package_triple("other-pkg", "x86_64-unknown-linux-musl"),
+            "native-other-pkg-x86_64-unknown-linux-musl"
         );
     }
 
@@ -748,7 +779,7 @@ mod tests {
         assert_eq!(t.abi, None, "darwin targets must serialize abi as null");
         assert_eq!(t.host_runner, "macos-latest");
         assert!(!t.use_cross);
-        assert_eq!(t.artifact_name, "native-aarch64-apple-darwin");
+        assert_eq!(t.artifact_name, "native-native-mod-aarch64-apple-darwin");
         assert_eq!(t.package_dir, "packages/native-mod");
         assert_eq!(t.package_name, "native-mod");
     }
