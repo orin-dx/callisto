@@ -83,9 +83,15 @@ wasm-check:
     cargo check -p callisto-moon --target wasm32-wasip1 --features pdk
     cargo rustc -p callisto-moon --lib --target wasm32-wasip1 --features pdk --crate-type cdylib
 
-# Generate code coverage report via cargo-llvm-cov
+# Generate code coverage report via cargo-llvm-cov. `_pdk.rs`-suffixed files
+# are excluded: they contain code that only executes inside a real
+# wasm32-wasip1 Extism host (see e.g. crates/callisto-moon/src/runner_pdk.rs's
+# module doc comment) -- black-box tested via tests/moon_wasm_sandbox.rs, but
+# invisible to native coverage instrumentation by construction, not a real
+# testing gap. Any file matching this naming convention is understood to
+# document its own exclusion this way.
 coverage:
-    cargo llvm-cov --all-features --lcov --output-path lcov.info
+    cargo llvm-cov --all-features --lcov --output-path lcov.info --ignore-filename-regex '_pdk\.rs$'
 
 # Check per-crate line coverage against a threshold (default 90%). The
 # workspace-total --fail-under-lines gate can pass while a small crate is
@@ -96,7 +102,7 @@ coverage:
 coverage-per-crate threshold="90":
     #!/usr/bin/env bash
     set -euo pipefail
-    cargo llvm-cov report --json --summary-only > /tmp/callisto-cov-summary.json
+    cargo llvm-cov report --json --summary-only --ignore-filename-regex '_pdk\.rs$' > /tmp/callisto-cov-summary.json
     report=$(jq -r '
         .data[0].files[]
         | select(.filename | test("/crates/"))
