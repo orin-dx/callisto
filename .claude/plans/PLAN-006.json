@@ -1,0 +1,190 @@
+{
+  "id": "PLAN-006",
+  "spec_id": "SPEC-006",
+  "spec_file_path": "/Users/gabe/Projects/callisto/.claude/specs/SPEC-006-native-artifact-placement.json",
+  "spec_hash": "sha256:39b12cfda98b61dc7cc1c2dec4a4e2e48c1739df868367c53b8753de7e2578be",
+  "linked_requirement": "REQ-001",
+  "batches": [
+    {
+      "id": "batch-rust-crate",
+      "description": "callisto-graph crate compilation boundary: artifact_name_for_package_triple and its call site, verified with `cargo test -p callisto-graph`.",
+      "task_ids": [
+        "RUST-1"
+      ]
+    },
+    {
+      "id": "batch-action-composite",
+      "description": "Bash logic inside .github/actions/callisto-action/action.yml's callisto-orchestrate step, verified with the repo's existing extract-and-stub test harness under .github/actions/callisto-action/tests/.",
+      "task_ids": [
+        "ACTION-1",
+        "ACTION-2"
+      ]
+    },
+    {
+      "id": "batch-docs",
+      "description": "Markdown doc corrections in ARCHITECTURE.md and .claude/specs/callisto-matrix.md, verified by direct grep against exact strings (no test runner involved).",
+      "task_ids": [
+        "DOC-1",
+        "DOC-2"
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "RUST-1",
+      "batch_id": "batch-rust-crate",
+      "description": "Replace artifact_name_for_triple(triple) with artifact_name_for_package_triple(package_name, triple) so artifactName embeds the package's own name; update build_platform_target's call site and every existing test that asserts the old single-segment format; add a build_matrix_report-level test proving two same-triple packages get distinct artifactName values.",
+      "covers_criteria": [
+        "AC-001"
+      ],
+      "file_paths": [
+        "crates/callisto-graph/src/matrix.rs"
+      ],
+      "failing_test": {
+        "description": "Add two new #[test] fns to the `tests` module of crates/callisto-graph/src/matrix.rs: one unit-level test calling the not-yet-existing function directly, one integration-level test proving the AC-001 collision fix via build_matrix_report.",
+        "code_to_add": [
+          "Replace the existing test at lines 718-729 (`fn artifact_name_is_native_prefixed_triple`) with:\n\n    /// AC-001: artifactName combines the already-workspace-unique\n    /// package_name with the triple.\n    #[test]\n    fn artifact_name_for_package_triple_embeds_package_name_and_triple() {\n        assert_eq!(\n            artifact_name_for_package_triple(\"native-mod\", \"aarch64-apple-darwin\"),\n            \"native-native-mod-aarch64-apple-darwin\"\n        );\n        assert_eq!(\n            artifact_name_for_package_triple(\"other-pkg\", \"x86_64-unknown-linux-musl\"),\n            \"native-other-pkg-x86_64-unknown-linux-musl\"\n        );\n    }",
+          "Append at the end of the `tests` module (after `assemble_platform_target_group_empty_array_is_present_not_absent`):\n\n    /// AC-001: two distinct packages declaring the same triple must get\n    /// distinct artifactName values, each embedding that package's own\n    /// name, so callisto-action's unique_by(.artifactName) dedup (AC-002)\n    /// does not collapse them.\n    #[test]\n    fn build_matrix_report_same_triple_two_packages_have_distinct_artifact_names() {\n        let tmp = tempfile::tempdir().unwrap();\n        for name in [\"pkg-a\", \"pkg-b\"] {\n            let dir = tmp.path().join(name);\n            std::fs::create_dir_all(&dir).unwrap();\n            std::fs::write(\n                dir.join(\"package.json\"),\n                r#\"{\"napi\":{\"targets\":[\"x86_64-apple-darwin\"]}}\"#,\n            )\n            .unwrap();\n        }\n        let inputs = vec![\n            input(\"pkg-a\", &tmp.path().join(\"pkg-a\")),\n            input(\"pkg-b\", &tmp.path().join(\"pkg-b\")),\n        ];\n        let report = build_matrix_report(&inputs).unwrap();\n\n        let a_name = &report.platform_targets[\"pkg-a\"].targets[0].artifact_name;\n        let b_name = &report.platform_targets[\"pkg-b\"].targets[0].artifact_name;\n\n        assert_eq!(a_name, \"native-pkg-a-x86_64-apple-darwin\");\n        assert_eq!(b_name, \"native-pkg-b-x86_64-apple-darwin\");\n        assert_ne!(a_name, b_name);\n    }"
+        ]
+      },
+      "test_command": "cargo test -p callisto-graph --lib matrix::tests",
+      "expected_failure_output": "error[E0425]: cannot find function `artifact_name_for_package_triple` in this scope (compile error \u2014 the function does not exist yet; both new tests and every existing call site in `build_platform_target`/its fixtures still reference the old `artifact_name_for_triple`).",
+      "implementation": {
+        "description": "Rename the function, update its call site, and update the two pre-existing tests that asserted the old collision-prone format.",
+        "changes": [
+          "Replace lines 36-40 (the `artifact_name_for_triple` fn and its doc comment) with:\n\n/// AC-001: artifactName combines the already-workspace-unique package_name\n/// with the triple, so two packages declaring the same triple no longer\n/// produce colliding artifactName values.\npub(crate) fn artifact_name_for_package_triple(package_name: &str, triple: &str) -> String {\n    format!(\"native-{package_name}-{triple}\")\n}",
+          "In `build_platform_target` (line 138), change `artifact_name: artifact_name_for_triple(triple),` to `artifact_name: artifact_name_for_package_triple(package_name, triple),`.",
+          "In `build_platform_target_combines_role_and_ci_table` (line 751), change `assert_eq!(t.artifact_name, \"native-aarch64-apple-darwin\");` to `assert_eq!(t.artifact_name, \"native-native-mod-aarch64-apple-darwin\");` (the fixture already passes package_name \"native-mod\")."
+        ]
+      },
+      "verify_command": "cargo test -p callisto-graph --lib matrix::tests",
+      "expected_pass_output": "test result: ok. <N> passed; 0 failed; 0 ignored (includes artifact_name_for_package_triple_embeds_package_name_and_triple, build_matrix_report_same_triple_two_packages_have_distinct_artifact_names, and the updated build_platform_target_combines_role_and_ci_table).",
+      "commit_message": "fix(graph): embed package_name in artifactName to prevent same-triple collisions across packages",
+      "notes": [
+        "No config override is added for the naming scheme \u2014 package_name is already the package's own configurable identity, and artifactName is a CI-internal correlation id (spec's own reasoning/non_goals)."
+      ]
+    },
+    {
+      "id": "ACTION-1",
+      "batch_id": "batch-action-composite",
+      "description": "Add the native-artifact placement loop inside callisto-orchestrate's INPUT_PUBLISH guard, immediately after NATIVE_MATRIX is computed and before callisto plan-publish. Uses process substitution (not a pipe) matching the existing releases-loop pattern at action.yml:219, so `exit 1` inside the loop terminates the step itself.",
+      "covers_criteria": [
+        "AC-003",
+        "AC-004",
+        "AC-005",
+        "AC-006",
+        "AC-010"
+      ],
+      "file_paths": [
+        ".github/actions/callisto-action/action.yml",
+        ".github/actions/callisto-action/tests/test_native_artifact_placement.sh"
+      ],
+      "failing_test": {
+        "description": "New harness script, following the exact mechanics of the repo's existing action-test harness (.github/actions/callisto-action/tests/test_github_release_creation.sh and test_status_check_branching.sh): extract the run-body text between a ::group:: marker and its matching ::endgroup:: directly out of action.yml via sed, stub `gh` and `mkdir` as shell functions that record their args, run the extracted snippet in a temp script, assert on recorded calls and exit code. Create the file at `.github/actions/callisto-action/tests/test_native_artifact_placement.sh`, mode 755, with this exact content (extracts the `::group::Placing Native Build Artifacts` marker this task's implementation step introduces):",
+        "code_to_add": "#!/usr/bin/env bash\n# Regression test for the native artifact placement loop in action.yml\n# (SPEC-002 AC-003, AC-004, AC-005, AC-006, AC-010). Extracts the exact\n# run-body text between the step's ::group::Placing Native Build Artifacts\n# marker and its matching ::endgroup:: marker directly out of action.yml, so\n# this test always exercises the file's current real logic -- it cannot\n# drift from it.\nset -u\nACTION_YML=\"$(cd \"$(dirname \"${BASH_SOURCE[0]}\")/..\" && pwd)/action.yml\"\n\nextract_snippet() {\n  sed -n '/::group::Placing Native Build Artifacts/,/::endgroup::/p' \"$ACTION_YML\" | sed '1d;$d'\n}\n\n# Runs the extracted snippet with the given NATIVE_MATRIX and GITHUB_RUN_ID,\n# stubbing gh and mkdir to record invocations into files; jq is real.\nrun_case() {\n  local native_matrix=\"$1\"\n  local run_id=\"$2\"\n  local gh_exit=\"${3:-0}\"\n  local calls_file mkdir_file tmp_script workdir\n  calls_file=\"$(mktemp)\"\n  mkdir_file=\"$(mktemp)\"\n  workdir=\"$(mktemp -d)\"\n  tmp_script=\"$(mktemp)\"\n  {\n    echo \"gh() { echo \\\"\\$*\\\" >> '${calls_file}'; return ${gh_exit}; }\"\n    echo \"mkdir() { echo \\\"\\$*\\\" >> '${mkdir_file}'; command mkdir \\\"\\$@\\\"; }\"\n    echo \"cd '${workdir}'\"\n    echo \"NATIVE_MATRIX=$(printf '%q' \"$native_matrix\")\"\n    echo \"GITHUB_RUN_ID=$(printf '%q' \"$run_id\")\"\n    extract_snippet\n  } > \"$tmp_script\"\n  bash \"$tmp_script\"\n  local code=$?\n  echo \"---GH_CALLS---\"\n  cat \"$calls_file\"\n  echo \"---MKDIR_CALLS---\"\n  cat \"$mkdir_file\"\n  rm -f \"$tmp_script\" \"$calls_file\" \"$mkdir_file\"\n  rm -rf \"$workdir\"\n  return $code\n}\n\nfail=0\n\n# AC-003 / AC-010: two entries -> gh run download invoked once per entry,\n# pinned to GITHUB_RUN_ID, with each entry's own artifactName/packageDir.\nMATRIX='[{\"artifactName\":\"native-pkg-a-aarch64-apple-darwin\",\"packageDir\":\"packages/pkg-a\"},{\"artifactName\":\"native-pkg-b-aarch64-apple-darwin\",\"packageDir\":\"packages/pkg-b\"}]'\nout=$(run_case \"$MATRIX\" \"999\"); code=$?\nif [[ $code -ne 0 ]] \\\n  || [[ \"$out\" != *\"run download 999 --name native-pkg-a-aarch64-apple-darwin --dir packages/pkg-a\"* ]] \\\n  || [[ \"$out\" != *\"run download 999 --name native-pkg-b-aarch64-apple-darwin --dir packages/pkg-b\"* ]]; then\n  echo \"FAIL AC-003/AC-010 (two entries placed): code=$code out=$out\"; fail=1\nelse\n  echo \"PASS AC-003/AC-010\"\nfi\n\n# AC-004: empty array -> zero gh invocations, step still succeeds.\nout=$(run_case \"[]\" \"999\"); code=$?\ngh_calls=$(echo \"$out\" | sed -n '/---GH_CALLS---/,/---MKDIR_CALLS---/p' | sed '1d;$d')\nif [[ $code -ne 0 ]] || [[ -n \"$gh_calls\" ]]; then\n  echo \"FAIL AC-004 (empty nativeMatrix): code=$code out=$out\"; fail=1\nelse\n  echo \"PASS AC-004\"\nfi\n\n# AC-005: empty packageDir -> DIR normalized to \".\" for both mkdir -p and\n# gh run download --dir.\nMATRIX='[{\"artifactName\":\"native-root-pkg-x86_64-unknown-linux-gnu\",\"packageDir\":\"\"}]'\nout=$(run_case \"$MATRIX\" \"42\"); code=$?\nif [[ $code -ne 0 ]] \\\n  || [[ \"$out\" != *\"run download 42 --name native-root-pkg-x86_64-unknown-linux-gnu --dir .\"* ]] \\\n  || [[ \"$out\" != *\"-p .\"* ]]; then\n  echo \"FAIL AC-005 (empty packageDir normalizes to .): code=$code out=$out\"; fail=1\nelse\n  echo \"PASS AC-005\"\nfi\n\n# AC-006: gh run download fails -> step exits non-zero, error names the\n# artifact and DIR, and no further entries are attempted (loop stops).\nMATRIX='[{\"artifactName\":\"native-missing-x86_64-unknown-linux-gnu\",\"packageDir\":\"packages/missing\"},{\"artifactName\":\"native-never-reached-x86_64-unknown-linux-gnu\",\"packageDir\":\"packages/never\"}]'\nout=$(run_case \"$MATRIX\" \"7\" \"1\"); code=$?\nif [[ $code -eq 0 ]] \\\n  || [[ \"$out\" != *\"::error::\"*\"native-missing-x86_64-unknown-linux-gnu\"* ]] \\\n  || [[ \"$out\" != *\"packages/missing\"* ]] \\\n  || [[ \"$out\" == *\"native-never-reached-x86_64-unknown-linux-gnu\"* ]]; then\n  echo \"FAIL AC-006 (download failure halts step with named error): code=$code out=$out\"; fail=1\nelse\n  echo \"PASS AC-006\"\nfi\n\nexit $fail\n"
+      },
+      "test_command": "chmod +x /Users/gabe/Projects/callisto/.github/actions/callisto-action/tests/test_native_artifact_placement.sh && bash /Users/gabe/Projects/callisto/.github/actions/callisto-action/tests/test_native_artifact_placement.sh; echo \"EXIT=$?\"",
+      "expected_failure_output": "PASS AC-004\nFAIL AC-003/AC-010 (two entries placed): ...\nFAIL AC-005 (empty packageDir normalizes to .): ...\nFAIL AC-006 (download failure halts step with named error): ...\nEXIT=1\n(fails because action.yml has no `::group::Placing Native Build Artifacts` marker yet, so extract_snippet returns nothing and no gh/mkdir calls occur)",
+      "implementation": {
+        "description": "Insert the placement loop into .github/actions/callisto-action/action.yml, inside the existing `if [[ -n \"$INPUT_PUBLISH\" && \"$INPUT_PUBLISH\" != \"false\" ]]; then` guard (currently line 167), immediately before the existing `echo \"::group::2. Calculating Topological Publish Plan\"` line (currently line 168). Use a marker name without a numeral (`Placing Native Build Artifacts`) rather than renumbering the four existing numbered groups inside the guard \u2014 renumbering would require editing test_github_release_creation.sh's `::group::5.` sed marker too, which is out of this spec's scope.",
+        "changes": [
+          "Insert this block (12-space indented, matching the surrounding `if` body) immediately after the `if [[ -n \"$INPUT_PUBLISH\" && \"$INPUT_PUBLISH\" != \"false\" ]]; then` line and before the existing `echo \"::group::2. Calculating Topological Publish Plan\"` line:\n\n            echo \"::group::Placing Native Build Artifacts\"\n            while IFS= read -r ENTRY; do\n              ARTIFACT=$(echo \"$ENTRY\" | jq -r '.artifactName')\n              DIR_RAW=$(echo \"$ENTRY\" | jq -r '.packageDir')\n              DIR=\".\"\n              if [[ -n \"$DIR_RAW\" ]]; then\n                DIR=\"$DIR_RAW\"\n              fi\n              mkdir -p \"$DIR\"\n              gh run download \"$GITHUB_RUN_ID\" --name \"$ARTIFACT\" --dir \"$DIR\" || { echo \"::error::failed to download artifact '$ARTIFACT' for placement into '$DIR' within run $GITHUB_RUN_ID\"; exit 1; }\n            done < <(printf '%s' \"$NATIVE_MATRIX\" | jq -c '.[]')\n            echo \"::endgroup::\""
+        ]
+      },
+      "verify_command": "bash /Users/gabe/Projects/callisto/.github/actions/callisto-action/tests/test_native_artifact_placement.sh; echo \"EXIT=$?\"",
+      "expected_pass_output": "PASS AC-003/AC-010\nPASS AC-004\nPASS AC-005\nPASS AC-006\nEXIT=0",
+      "commit_message": "feat(action): place native build artifacts into packageDir before publish",
+      "notes": [
+        "Loop is placed inside the INPUT_PUBLISH guard, not merely after NATIVE_MATRIX computation, per AC-004's second sentence.",
+        "AC-010 needs no separate implementation: it is the same loop exercised with no consumer-authored script, which the AC-003 test case already proves."
+      ]
+    },
+    {
+      "id": "ACTION-2",
+      "batch_id": "batch-action-composite",
+      "description": "Add a permanent regression test locking in AC-002: NATIVE_MATRIX's existing `unique_by(.artifactName)` jq filter (action.yml, unchanged by this spec) retains both packages' entries once artifactName is package-name-qualified (RUST-1's fix). No action.yml code change is required here \u2014 this task only adds coverage that would have caught the pre-RUST-1 collision.",
+      "covers_criteria": [
+        "AC-002"
+      ],
+      "file_paths": [
+        ".github/actions/callisto-action/tests/test_native_matrix_dedup.sh"
+      ],
+      "failing_test": {
+        "description": "Create the test file below. Before it exists, running it fails with 'No such file or directory' \u2014 that is this task's red state (there is no prior green state to regress from; the file itself is what's missing).",
+        "code_to_add": "#!/usr/bin/env bash\n# Regression test for AC-002: the NATIVE_MATRIX computation's\n# unique_by(.artifactName) dedup (action.yml, in the branch after\n# \"hasChangesets=false\") must retain both packages' entries when two\n# packages declare the same triple, now that artifactName embeds\n# package_name (SPEC-002 AC-001) and is therefore distinct per package.\n# Extracts the exact jq filter text out of action.yml so this test cannot\n# drift from the file's current real logic.\nset -u\nACTION_YML=\"$(cd \"$(dirname \"${BASH_SOURCE[0]}\")/..\" && pwd)/action.yml\"\n\nFILTER_LINE=$(grep -F 'unique_by(.artifactName)' \"$ACTION_YML\")\nif [[ -z \"$FILTER_LINE\" ]]; then\n  echo \"FAIL: no unique_by(.artifactName) line found in action.yml\"\n  exit 1\nfi\n\nFILTER=$(echo \"$FILTER_LINE\" | sed -n \"s/.*jq -c '\\\\(.*\\\\)'.*/\\\\1/p\")\nif [[ -z \"$FILTER\" ]]; then\n  echo \"FAIL: could not extract jq filter from: $FILTER_LINE\"\n  exit 1\nfi\n\nfail=0\n\n# Fixture mirrors callisto matrix --format json's shape post-AC-001: two\n# packages declaring the same triple now have distinct artifactName values.\nFIXTURE='{\"platformTargets\":{\"pkg-a\":{\"targets\":[{\"artifactName\":\"native-pkg-a-x86_64-apple-darwin\",\"packageDir\":\"pkg-a\"}]},\"pkg-b\":{\"targets\":[{\"artifactName\":\"native-pkg-b-x86_64-apple-darwin\",\"packageDir\":\"pkg-b\"}]}}}'\nOUT=$(echo \"$FIXTURE\" | jq -c \"$FILTER\")\nCOUNT=$(echo \"$OUT\" | jq 'length')\nif [[ \"$COUNT\" -ne 2 ]]; then\n  echo \"FAIL AC-002 (distinct artifactName retained): expected 2 entries, got $COUNT: $OUT\"; fail=1\nelse\n  echo \"PASS AC-002 (distinct artifactName retained)\"\nfi\n\nexit $fail\n"
+      },
+      "test_command": "bash /Users/gabe/Projects/callisto/.github/actions/callisto-action/tests/test_native_matrix_dedup.sh; echo \"EXIT=$?\"",
+      "expected_failure_output": "bash: /Users/gabe/Projects/callisto/.github/actions/callisto-action/tests/test_native_matrix_dedup.sh: No such file or directory\nEXIT=127",
+      "implementation": {
+        "description": "Create the file with the exact content above and make it executable. No changes to action.yml itself \u2014 line 164's filter is already correct for this criterion.",
+        "changes": [
+          "Write .github/actions/callisto-action/tests/test_native_matrix_dedup.sh as shown; chmod 755."
+        ]
+      },
+      "verify_command": "chmod +x /Users/gabe/Projects/callisto/.github/actions/callisto-action/tests/test_native_matrix_dedup.sh && bash /Users/gabe/Projects/callisto/.github/actions/callisto-action/tests/test_native_matrix_dedup.sh; echo \"EXIT=$?\"",
+      "expected_pass_output": "PASS AC-002 (distinct artifactName retained)\nEXIT=0",
+      "commit_message": "test(action): lock in that artifactName dedup no longer collapses distinct packages sharing a triple",
+      "notes": [
+        "This task must run after RUST-1 in narrative order (it documents RUST-1's effect) but has no file dependency on ACTION-1 and can execute any time after RUST-1."
+      ]
+    },
+    {
+      "id": "DOC-1",
+      "batch_id": "batch-docs",
+      "description": "Fix ARCHITECTURE.md \u00a712's example workflow: remove the nonexistent `callisto publish-target` subcommand and the nonexistent matrix.os/matrix.package/matrix.target fields, and show the full build\u2192place\u2192publish flow.",
+      "covers_criteria": [
+        "AC-007",
+        "AC-008",
+        "AC-009"
+      ],
+      "file_paths": [
+        "ARCHITECTURE.md"
+      ],
+      "failing_test": {
+        "description": "Run these greps against the current file, scoped to the \u00a712 code block only (from the '### Zero-Config GitHub Actions Workflow Pattern' heading to the next '---' separator) so the unrelated, intentionally-unchanged status-note mention of `callisto publish-target` at line 447 is excluded."
+      },
+      "test_command": "sed -n '/^### Zero-Config GitHub Actions Workflow Pattern/,/^---$/p' /Users/gabe/Projects/callisto/ARCHITECTURE.md | grep -c 'callisto publish-target'; sed -n '/^### Zero-Config GitHub Actions Workflow Pattern/,/^---$/p' /Users/gabe/Projects/callisto/ARCHITECTURE.md | grep -cE 'matrix\\.os|matrix\\.package|\\$\\{\\{ *matrix\\.target *\\}\\}'; sed -n '/^### Zero-Config GitHub Actions Workflow Pattern/,/^---$/p' /Users/gabe/Projects/callisto/ARCHITECTURE.md | grep -c 'matrix.target.hostRunner'; sed -n '/^### Zero-Config GitHub Actions Workflow Pattern/,/^---$/p' /Users/gabe/Projects/callisto/ARCHITECTURE.md | grep -c 'upload-artifact'; sed -n '/^### Zero-Config GitHub Actions Workflow Pattern/,/^---$/p' /Users/gabe/Projects/callisto/ARCHITECTURE.md | grep -c 'callisto-action'",
+      "expected_failure_output": "1\n3\n0\n0\n0\n(the block still contains 'callisto publish-target', matrix.os/matrix.package/${{ matrix.target }}, no hostRunner reference, no upload-artifact step, no callisto-action step)",
+      "implementation": {
+        "description": "Replace ARCHITECTURE.md lines 474-495 (the fenced yaml code block under the '### Zero-Config GitHub Actions Workflow Pattern' heading) in full with the block below. The status note at line 447 (mentioning Java/JNI, .NET native-AOT, and `callisto publish-target` as unimplemented) is left completely unchanged, per the spec's non-goal.",
+        "changes": [
+          "```yaml\njobs:\n  matrix:\n    runs-on: ubuntu-latest\n    outputs:\n      nativeMatrix: ${{ steps.discover.outputs.nativeMatrix }}\n    steps:\n      - uses: actions/checkout@v4\n      - uses: ./.github/actions/setup-callisto\n      - id: discover\n        run: echo \"nativeMatrix=$(callisto matrix --format json | jq -c '[.platformTargets[].targets[]] | unique_by(.artifactName)')\" >> $GITHUB_OUTPUT\n\n  build:\n    needs: matrix\n    if: ${{ needs.matrix.outputs.nativeMatrix != '[]' }}\n    strategy:\n      matrix:\n        target: ${{ fromJson(needs.matrix.outputs.nativeMatrix) }}\n    runs-on: ${{ matrix.target.hostRunner }}\n    steps:\n      - uses: actions/checkout@v4\n      - uses: ./.github/actions/setup-callisto\n      - run: napi build --platform --release --target ${{ matrix.target.triple }}\n      - uses: actions/upload-artifact@v4\n        with:\n          name: ${{ matrix.target.artifactName }}\n          path: ${{ matrix.target.packageDir }}/*.node\n\n  release:\n    needs: build\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      # Placement of each build job's uploaded artifact into its packageDir,\n      # then callisto publish, both happen automatically inside this step\n      # once nativeMatrix is non-empty and publish is enabled.\n      - uses: ./.github/actions/callisto-action\n        with:\n          publish: true\n```"
+        ]
+      },
+      "verify_command": "sed -n '/^### Zero-Config GitHub Actions Workflow Pattern/,/^---$/p' /Users/gabe/Projects/callisto/ARCHITECTURE.md | grep -c 'callisto publish-target'; sed -n '/^### Zero-Config GitHub Actions Workflow Pattern/,/^---$/p' /Users/gabe/Projects/callisto/ARCHITECTURE.md | grep -cE 'matrix\\.os|matrix\\.package|\\$\\{\\{ *matrix\\.target *\\}\\}'; sed -n '/^### Zero-Config GitHub Actions Workflow Pattern/,/^---$/p' /Users/gabe/Projects/callisto/ARCHITECTURE.md | grep -c 'matrix.target.hostRunner'; sed -n '/^### Zero-Config GitHub Actions Workflow Pattern/,/^---$/p' /Users/gabe/Projects/callisto/ARCHITECTURE.md | grep -c 'upload-artifact'; sed -n '/^### Zero-Config GitHub Actions Workflow Pattern/,/^---$/p' /Users/gabe/Projects/callisto/ARCHITECTURE.md | grep -c 'callisto-action'; grep -c 'callisto publish-target' /Users/gabe/Projects/callisto/ARCHITECTURE.md",
+      "expected_pass_output": "0\n0\n1\n1\n1\n1\n(the last '1' is the unchanged status-note mention at line 447, outside the code block, confirming it was deliberately left in place)",
+      "commit_message": "docs(architecture): fix \u00a712 example workflow to use real PlatformTarget fields and show the full build-place-publish flow",
+      "notes": [
+        "Chose to keep the example on callisto-action for placement+publish (a single 'release' job/step) rather than hand-authoring a separate placement step, since AC-010/the spec's non_goals establish that is callisto-action's own automatic behavior after ACTION-1 ships; the inline YAML comment makes that explicit to the reader."
+      ]
+    },
+    {
+      "id": "DOC-2",
+      "batch_id": "batch-docs",
+      "description": "Update .claude/specs/callisto-matrix.md \u00a76.2's standalone cross-job reference snippet to pin gh run download to $GITHUB_RUN_ID and mkdir -p \"$DIR\" first, and add a note that callisto-action users don't need to write this themselves.",
+      "covers_criteria": [
+        "AC-011"
+      ],
+      "file_paths": [
+        ".claude/specs/callisto-matrix.md"
+      ],
+      "failing_test": {
+        "description": "Grep the current \u00a76.2 snippet and surrounding prose for the pinned/normalized form and the cross-reference note, none of which exist yet."
+      },
+      "test_command": "grep -c 'gh run download \"\\$GITHUB_RUN_ID\" --name \"\\$ARTIFACT\" --dir \"\\$DIR\"' /Users/gabe/Projects/callisto/.claude/specs/callisto-matrix.md; grep -c 'mkdir -p \"\\$DIR\"' /Users/gabe/Projects/callisto/.claude/specs/callisto-matrix.md; grep -c 'callisto-action performs equivalent placement automatically' /Users/gabe/Projects/callisto/.claude/specs/callisto-matrix.md",
+      "expected_failure_output": "0\n0\n0\n(none of the three strings are present yet; the current snippet at lines 309-318 uses an unpinned `gh run download --name \"$ARTIFACT\" --dir \"$DIR\"` with no mkdir -p and no cross-reference note)",
+      "implementation": {
+        "description": "Replace the fenced yaml block at lines 309-318 (under '### 6.2 Artifact routing -- placement before publish') with the version below, and append one sentence of prose immediately after the closing fence.",
+        "changes": [
+          "Replace:\n```yaml\n- name: Download native artifacts\n  run: |\n    MATRIX_JSON='${{ needs.matrix.outputs.nativeMatrix }}'\n    echo \"$MATRIX_JSON\" | jq -c '.[]' | while read -r target; do\n      ARTIFACT=$(echo \"$target\" | jq -r '.artifactName')\n      DIR=$(echo \"$target\" | jq -r '.packageDir')\n      gh run download --name \"$ARTIFACT\" --dir \"$DIR\"\n    done\n```\nwith:\n```yaml\n- name: Download native artifacts\n  run: |\n    MATRIX_JSON='${{ needs.matrix.outputs.nativeMatrix }}'\n    while IFS= read -r target; do\n      ARTIFACT=$(echo \"$target\" | jq -r '.artifactName')\n      DIR_RAW=$(echo \"$target\" | jq -r '.packageDir')\n      DIR=\".\"\n      if [[ -n \"$DIR_RAW\" ]]; then\n        DIR=\"$DIR_RAW\"\n      fi\n      mkdir -p \"$DIR\"\n      gh run download \"$GITHUB_RUN_ID\" --name \"$ARTIFACT\" --dir \"$DIR\"\n    done < <(echo \"$MATRIX_JSON\" | jq -c '.[]')\n```",
+          "Immediately after the closing ``` fence, add a new paragraph: 'Consumers using callisto-action for publishing do not need to write this snippet themselves -- callisto-action performs equivalent placement automatically, in-step, once nativeMatrix is non-empty and publish is enabled.'"
+        ]
+      },
+      "verify_command": "grep -c 'gh run download \"\\$GITHUB_RUN_ID\" --name \"\\$ARTIFACT\" --dir \"\\$DIR\"' /Users/gabe/Projects/callisto/.claude/specs/callisto-matrix.md; grep -c 'mkdir -p \"\\$DIR\"' /Users/gabe/Projects/callisto/.claude/specs/callisto-matrix.md; grep -c 'callisto-action performs equivalent placement automatically' /Users/gabe/Projects/callisto/.claude/specs/callisto-matrix.md; awk '/mkdir -p \"\\$DIR\"/{m=NR} /gh run download \"\\$GITHUB_RUN_ID\"/{g=NR} END{print (m>0 && g>0 && m<g) ? \"true\" : \"false\"}' /Users/gabe/Projects/callisto/.claude/specs/callisto-matrix.md",
+      "expected_pass_output": "1\n1\n1\ntrue",
+      "commit_message": "docs(matrix): pin \u00a76.2's cross-job placement snippet to the current run and note callisto-action's automatic handling",
+      "notes": []
+    }
+  ],
+  "reasoning": "Third-revision spec (post two exit-gate fails) whose load-bearing change is a two-line Rust rename with a wide blast radius across existing test fixtures, plus a bash addition to an already-battle-tested composite action that has its own extract-and-stub test harness precedent. Sequenced Rust first (RUST-1) since ACTION-2's regression test's fixture values assume the post-fix two-segment artifactName format even though action.yml's own jq line is untouched. ACTION-1 and ACTION-2 are independent of each other (different files) but both depend on RUST-1 only narratively, not by compilation -- action.yml has no build step, so ACTION-2 could technically run before RUST-1 and still pass by construction of its fixture, but doing so would make ACTION-2 a test of nothing meaningful, hence the stated batch order. DOC-1 and DOc-2 are pure text edits, independent of the code batches and of each other, verified by scoped grep rather than a test runner, per the spec's own text-verification nature. Kept ACTION-1's group marker un-numbered ('Placing Native Build Artifacts') rather than renumbering the four pre-existing numbered groups inside the same guard, to avoid an out-of-scope edit to the pre-existing test_github_release_creation.sh harness, which sed-matches '::group::5.' by literal string."
+}
