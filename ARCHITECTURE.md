@@ -395,7 +395,7 @@ sequenceDiagram
 | Input | Default | Purpose |
 | :--- | :--- | :--- |
 | `publish` | `""` | Command to execute when publishing packages (`cargo publish`, `pnpm publish`, `moon run :publish`). |
-| `version_command` | `"callisto version"` | Custom versioning command. |
+| `version_command` | `"callisto version"` | Custom versioning command. Append `--refresh-lockfiles` if your workspace has interdependent Cargo/Python packages -- see below. |
 | `commit_message` | `"chore(release): version packages"` | Commit message for the Version Packages PR. |
 | `title` | `"chore(release): version packages"` | Pull Request title. |
 | `pr_label` | `"callisto: release"` | Label automatically attached to the Version Packages PR. |
@@ -403,6 +403,30 @@ sequenceDiagram
 | `setup_git_user` | `"true"` | Automatically configure `git config user.name` & `user.email` bot credentials. |
 | `branch` | `"main"` | Base branch for Version PRs. |
 | `cwd` | `"."` | Working directory path if workspace root is nested in a subfolder. |
+
+### Lockfile Staleness (`--refresh-lockfiles`)
+
+`callisto version` bumps manifest versions (`Cargo.toml`, `package.json`, `pyproject.toml`) but
+does not regenerate lockfiles by default. `callisto publish` always runs `cargo publish
+--locked`, which fails if `Cargo.lock` is stale relative to the bumped `Cargo.toml` versions --
+this can happen when bumping an interdependent Cargo package changes what a workspace member's
+own `Cargo.lock` entry should say.
+
+`callisto version --refresh-lockfiles` closes this gap for Cargo and Python: it runs `cargo
+update --workspace` (Cargo) and, if present, `uv lock` or `poetry lock --no-update` (Python)
+after bumping, before staging changes for commit (`crates/callisto-graph/src/apply.rs`). It is
+opt-in (default `false`) since most workspaces don't need it -- override the action's
+`version_command` input to `"callisto version --refresh-lockfiles"` if your workspace has
+interdependent Cargo or Python packages whose versions are bumped together.
+
+npm-family lockfiles (`package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`, `bun.lockb`) are not
+refreshed by `--refresh-lockfiles`: unlike `cargo publish --locked`, neither `npm publish` nor
+`pnpm publish` (`crates/callisto-graph/src/commands/publish_client.rs`) pass any lockfile-
+strictness flag, so a stale npm-family lockfile does not fail publish the way a stale
+`Cargo.lock` does. This has not been a reported problem for npm/pnpm; if that changes, add the
+equivalent `npm install --package-lock-only` / `pnpm install --lockfile-only` step to
+`--refresh-lockfiles`'s existing Cargo/PyPI implementation rather than a separate workaround in
+the Action.
 
 ### Diagnostic Problem Matchers & Toolchain Isolation
 
