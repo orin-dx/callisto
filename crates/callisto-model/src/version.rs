@@ -495,4 +495,89 @@ mod tests {
         let v: Version = serde_json::from_str(json).unwrap();
         assert_eq!(v.grammar(), VersionGrammar::SemVer);
     }
+
+    #[test]
+    fn version_parse_rejects_maven_grammar_as_unimplemented() {
+        let err = Version::parse("1.0", VersionGrammar::Maven).unwrap_err();
+        assert_eq!(err.grammar, VersionGrammar::Maven);
+        assert!(
+            err.message.contains("no versioning implementation"),
+            "got: {}",
+            err.message
+        );
+    }
+
+    #[test]
+    fn version_compare_errors_on_grammar_mismatch() {
+        // Version::compare's GrammarMismatch path is reachable directly (not
+        // through select_last_tag, which always compares same-grammar
+        // values -- see tag.rs's tests): two Versions parsed under different
+        // grammars can be compared by any caller holding both.
+        let semver = Version::parse("1.0.0", VersionGrammar::SemVer).unwrap();
+        let pep440 = Version::parse("1.0.0", VersionGrammar::Pep440).unwrap();
+
+        let err = semver.compare(&pep440).unwrap_err();
+        assert_eq!(err.left, VersionGrammar::SemVer);
+        assert_eq!(err.right, VersionGrammar::Pep440);
+        assert_eq!(semver.partial_compare(&pep440), None);
+    }
+
+    #[test]
+    fn version_req_parse_rejects_malformed_semver_and_pep440_requirements() {
+        let err = VersionReq::parse("not a valid range!!!", Ecosystem::Cargo).unwrap_err();
+        assert_eq!(err.grammar, VersionGrammar::SemVer);
+
+        let err = VersionReq::parse("===not-valid===", Ecosystem::Pypi).unwrap_err();
+        assert_eq!(err.grammar, VersionGrammar::Pep440);
+    }
+
+    #[test]
+    fn version_req_parse_rejects_maven_grammar_as_unimplemented() {
+        let err = VersionReq::parse("1.0", Ecosystem::Maven).unwrap_err();
+        assert_eq!(err.grammar, VersionGrammar::Maven);
+        assert!(err.message.contains("not implemented"), "got: {}", err.message);
+    }
+
+    #[test]
+    fn version_req_matches_errors_on_grammar_mismatch() {
+        let semver_req = VersionReq::parse("^1.0", Ecosystem::Cargo).unwrap();
+        let pep440_version = Version::parse("1.0.0", VersionGrammar::Pep440).unwrap();
+
+        let err = semver_req.matches(&pep440_version).unwrap_err();
+        assert_eq!(err.left, VersionGrammar::SemVer);
+        assert_eq!(err.right, VersionGrammar::Pep440);
+    }
+
+    #[test]
+    fn version_req_ecosystem_returns_the_parsing_ecosystem() {
+        let req = VersionReq::parse("^1.0", Ecosystem::Npm).unwrap();
+        assert_eq!(req.ecosystem(), Ecosystem::Npm);
+    }
+
+    #[test]
+    fn version_req_serializes_and_round_trips_through_deserialize() {
+        let req = VersionReq::parse("^1.0", Ecosystem::Cargo).unwrap();
+        let json = serde_json::to_string(&req).unwrap();
+        assert_eq!(json, "\"^1.0\"");
+
+        let reparsed: VersionReq = serde_json::from_str(&json).unwrap();
+        assert_eq!(reparsed.render(), "^1.0");
+    }
+
+    #[test]
+    fn version_req_deserialize_falls_back_through_npm_and_pypi_when_not_valid_cargo_semver() {
+        // A range using PEP 440's compatible-release operator is not valid
+        // Cargo/Npm SemVer syntax, exercising VersionReq::deserialize's
+        // fallback all the way to its final Pypi attempt.
+        let json = "\"~=1.4.2\"";
+        let req: VersionReq = serde_json::from_str(json).unwrap();
+        assert_eq!(req.ecosystem(), Ecosystem::Pypi);
+    }
+
+    #[test]
+    fn version_req_deserialize_rejects_strings_invalid_under_every_ecosystem() {
+        let json = "\"not a version requirement!!!\"";
+        let result: Result<VersionReq, _> = serde_json::from_str(json);
+        assert!(result.is_err());
+    }
 }
