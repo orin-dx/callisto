@@ -1,5 +1,6 @@
-# Default recipe: run full CI pipeline via moon & just
-default: ci
+# Default recipe: fast local CI pipeline (no coverage) via moon & just.
+# Use `just ci` explicitly for full CI parity including coverage.
+default: ci-fast
 
 # Build debug workspace binaries via moon
 build:
