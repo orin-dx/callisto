@@ -441,6 +441,14 @@ tests under `--all-features` together (`just test`/`just wasm-check` cover defau
 unthresholded and is not part of `just ci`/`just ci-fast` -- coverage generation is a CI-only
 gate, run on demand locally, not a routine local check.
 
+The workspace-total gate can pass while a single small crate is far below threshold -- a few
+large crates (`callisto-graph` alone is ~15,000 of the workspace's ~26,000 covered lines) dominate
+the total, so a badly-undertested small crate barely moves it. `just coverage-per-crate [threshold]`
+(default 90) reuses the same profile data to compute and gate on each crate's own line coverage
+independently; `coverage`'s CI job runs it non-blocking (a `::warning::` annotation, not a failed
+check) until the pre-existing per-crate gaps are closed, at which point it should be promoted to a
+required check.
+
 ### Diagnostic Problem Matchers & Toolchain Isolation
 
 - **Inline PR Annotations**: Registered [`.github/callisto-problem-matcher.json`](.github/callisto-problem-matcher.json) in `setup-callisto`. Automatically highlights invalid `.changeset/*.md` syntax or missing package IDs as inline callouts on PR diff lines.

@@ -87,6 +87,36 @@ wasm-check:
 coverage:
     cargo llvm-cov --all-features --lcov --output-path lcov.info
 
+# Check per-crate line coverage against a threshold (default 90%). The
+# workspace-total --fail-under-lines gate can pass while a small crate is
+# far below threshold, since a few large crates dominate the total line
+# count -- this catches that case. Requires profile data from a prior
+# `cargo llvm-cov` run in this session (e.g. `just coverage` just ran, or
+# CI's own coverage step ran first); does not re-run tests itself.
+coverage-per-crate threshold="90":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cargo llvm-cov report --json --summary-only > /tmp/callisto-cov-summary.json
+    report=$(jq -r '
+        .data[0].files[]
+        | select(.filename | test("/crates/"))
+        | {crate: (.filename | capture("/crates/(?<c>[^/]+)/").c), count: .summary.lines.count, covered: .summary.lines.covered}
+        | [.crate, .count, .covered]
+        | @tsv
+      ' /tmp/callisto-cov-summary.json \
+      | awk -F'\t' -v threshold="{{threshold}}" '
+          {sum[$1]+=$2; cov[$1]+=$3}
+          END {
+            for (c in sum) {
+              pct = (cov[c]/sum[c]*100)
+              status = (pct+0 < threshold+0) ? "FAIL" : "pass"
+              printf "%s\t%d\t%d\t%.2f\t%s\n", c, sum[c], cov[c], pct, status
+            }
+          }
+        ' | sort)
+    echo "$report" | awk -F'\t' '{printf "%-25s lines=%-6s covered=%-6s cover=%6s%%  %s\n", $1, $2, $3, $4, $5}'
+    echo "$report" | grep -q FAIL && exit 1 || exit 0
+
 # Clean build targets, Moon task caches, and generated artifacts
 clean:
     moon clean 2>/dev/null || true
