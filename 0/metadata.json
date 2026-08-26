@@ -1,0 +1,78 @@
+{
+  "cli_version": "0.10.3-nightly.202608220610.6bf587d66",
+  "checkpoint_id": "01M0XY0WZ1K38EP1RQ7VZ1RR50",
+  "session_id": "f21fbbf3-d9f7-4109-9c36-8de0a6e308fd",
+  "strategy": "manual-commit",
+  "created_at": "2026-08-26T02:22:43.627783Z",
+  "branch": "track-9-matrix-artifact-placement",
+  "checkpoints_count": 2,
+  "save_step_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5",
+  "turn_id": "b3396a4868b5",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 1696,
+    "cache_creation_tokens": 5703469,
+    "cache_read_tokens": 310629763,
+    "output_tokens": 474071,
+    "api_call_count": 850
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_012pqp9ZZhcrRstBhMtfFpK7",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "trace:trace"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "51af44df10de",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 4054,
+        "end": 4055,
+        "entry_ids": [
+          "b7a9c8e2-39fb-480f-a958-2f1020580af0"
+        ],
+        "tool_use_id": "toolu_012pqp9ZZhcrRstBhMtfFpK7"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_012pqp9ZZhcrRstBhMtfFpK7"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: trace:trace",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 101
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 217,
+      "user_lines_removed": 9,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/plans/PLAN-002.json": 190,
+        ".claude/settings.local.json": 11,
+        ".claude/specs/SPEC-002-native-artifact-placement.json": 12,
+        ".claude/specs/track-g-matrix-napi-maturin.json": 4
+      },
+      "user_removed_per_file": {
+        ".claude/specs/SPEC-002-native-artifact-placement.json": 6,
+        ".claude/specs/track-g-matrix-napi-maturin.json": 3
+      }
+    }
+  ]
+}
