@@ -34,17 +34,25 @@ pub(crate) fn triple_host_runner_use_cross(triple: &str) -> Option<(&'static str
 }
 
 /// AC-001: artifactName embeds the package's own (already workspace-unique)
-/// name alongside platform/arch/abi -- napi-rs's own published-package and
-/// recommended-CI-artifact convention (e.g. `@scope/addon-darwin-arm64`,
-/// `@scope/addon-linux-x64-gnu`), not the raw Rust target triple -- so two
+/// name alongside platform/arch/abi, mirroring napi-rs's own
+/// published-package and recommended-CI-artifact convention
+/// (`<name>-<platform>-<arch>[-<abi>]`, e.g. `addon-darwin-arm64`,
+/// `addon-linux-x64-gnu`) rather than the raw Rust target triple -- so two
 /// packages sharing a triple never collide once fed through
 /// `unique_by(.artifactName)` in `.github/actions/callisto-action/action.yml`.
+/// `package_name` is sanitized first: `/` is one of
+/// `actions/upload-artifact`'s forbidden artifact-name characters, and an
+/// npm scoped package name (e.g. `@scope/addon`) carries one -- napi-rs's
+/// own published *npm registry* package name may legitimately contain `/`
+/// (e.g. `@scope/addon-darwin-arm64`), but this CI-internal artifact name
+/// is a different namespace with its own, stricter constraint.
 pub(crate) fn artifact_name_for_package_platform(
     package_name: &str,
     platform: &str,
     arch: &str,
     abi: Option<&str>,
 ) -> String {
+    let package_name = package_name.replace('/', "-");
     match abi {
         Some(abi) => format!("{package_name}-{platform}-{arch}-{abi}"),
         None => format!("{package_name}-{platform}-{arch}"),
@@ -769,6 +777,17 @@ mod tests {
             artifact_name_for_package_platform("other-pkg", "linux", "x64", Some("musl")),
             "other-pkg-linux-x64-musl"
         );
+    }
+
+    /// `/` is one of `actions/upload-artifact`'s forbidden artifact-name
+    /// characters. An npm scoped package name (e.g. `@scope/addon`) must not
+    /// leak a raw `/` into artifactName, or every `gh run download`/
+    /// `actions/upload-artifact` call for that package fails outright.
+    #[test]
+    fn artifact_name_for_package_platform_sanitizes_scoped_npm_package_name() {
+        let name = artifact_name_for_package_platform("@scope/addon", "darwin", "arm64", None);
+        assert!(!name.contains('/'), "artifactName must not contain '/': {name}");
+        assert_eq!(name, "@scope-addon-darwin-arm64");
     }
 
     /// An unrecognised triple must return None, not panic or fall back to a
