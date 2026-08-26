@@ -314,4 +314,149 @@ mod tests {
             "expected InvalidGitRefName, got {err:?}"
         );
     }
+
+    #[test]
+    fn parse_rejects_unknown_placeholder() {
+        let err = TagTemplate::parse("v{foo}").unwrap_err();
+        assert!(
+            matches!(err, TagTemplateError::UnknownPlaceholder { ref placeholder, .. } if placeholder == "foo"),
+            "expected UnknownPlaceholder{{placeholder: \"foo\"}}, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn parse_rejects_multiple_version_placeholders() {
+        let err = TagTemplate::parse("{version}-{version}").unwrap_err();
+        assert!(
+            matches!(err, TagTemplateError::MultipleVersionPlaceholders { count: 2, .. }),
+            "expected MultipleVersionPlaceholders{{count: 2}}, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn parse_rejects_glob_metacharacter_in_literal_text() {
+        let err = TagTemplate::parse("v*{version}").unwrap_err();
+        assert!(
+            matches!(err, TagTemplateError::GlobMetacharacterInLiteral { ch: '*', .. }),
+            "expected GlobMetacharacterInLiteral{{ch: '*'}}, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn default_for_builds_a_name_at_prefix_template() {
+        let id = PackageId::Bare("my-pkg".to_string());
+        let tmpl = TagTemplate::default_for(&id);
+        assert_eq!(tmpl.as_str(), "my-pkg@{version}");
+
+        let ver = Version::parse("1.0.0", VersionGrammar::SemVer).unwrap();
+        assert_eq!(tmpl.render(&ver).as_str(), "my-pkg@1.0.0");
+    }
+
+    #[test]
+    fn extract_version_str_returns_none_on_prefix_or_suffix_mismatch() {
+        let tmpl = TagTemplate::parse("v{version}-release").unwrap();
+
+        // Wrong prefix.
+        assert_eq!(tmpl.extract_version_str("x1.2.3-release"), None);
+        // Wrong suffix.
+        assert_eq!(tmpl.extract_version_str("v1.2.3-beta"), None);
+        // Matches both prefix and suffix, but with nothing left for the version
+        // (the tag IS exactly "v" + "-release" concatenated with no gap).
+        assert_eq!(tmpl.extract_version_str("v-release"), Some(""));
+    }
+
+    #[test]
+    fn is_valid_git_ref_name_rejects_dotdot_and_at_brace() {
+        assert!(!is_valid_git_ref_name("v1..2"), "'..' must be rejected");
+        assert!(!is_valid_git_ref_name("v1@{2"), "'@{{' must be rejected");
+    }
+
+    #[test]
+    fn is_valid_git_ref_name_rejects_lock_suffixed_and_leading_dot_components() {
+        assert!(
+            !is_valid_git_ref_name("refs/heads/v1.lock"),
+            "a '.lock'-suffixed component must be rejected"
+        );
+        assert!(
+            !is_valid_git_ref_name("refs/.hidden/v1"),
+            "a leading-dot component must be rejected"
+        );
+    }
+
+    #[test]
+    fn is_valid_git_ref_name_rejects_control_and_reserved_characters() {
+        assert!(!is_valid_git_ref_name("v1\t2"), "a control character must be rejected");
+        assert!(!is_valid_git_ref_name("v1 2"), "a space must be rejected");
+        for ch in ['~', '^', ':', '?', '*', '[', '\\'] {
+            let candidate = format!("v1{ch}2");
+            assert!(
+                !is_valid_git_ref_name(&candidate),
+                "'{ch}' must be rejected, got accepted for {candidate:?}"
+            );
+        }
+    }
+
+    // No test targets select_last_tag's grammar-mismatch Err branch
+    // (tag.version.compare(&prev.version)'s error path, lines 217-221):
+    // Version::compare only errors when the two operands' `.grammar` fields
+    // differ (see version.rs), and select_last_tag parses every candidate
+    // with the single `grammar` parameter passed in -- every Version it
+    // produces necessarily shares that same grammar, so this branch is
+    // unreachable through select_last_tag's own public API. Confirmed by
+    // reading Version::compare directly, not assumed.
+
+    #[test]
+    fn select_last_tag_equal_version_prefers_lexicographically_higher_tag_name() {
+        // SemVer build metadata (the `+...` suffix) is excluded from version
+        // precedence/comparison per spec, so these two distinct tag strings
+        // parse to an EQUAL Version -- a real, naturally-occurring way two
+        // different tags can tie (e.g. two CI builds of the same release).
+        let tmpl = TagTemplate::parse("v{version}").unwrap();
+
+        // Lexicographically-lower name arrives first: tie-break must still
+        // pick the higher one, proving this isn't just "first wins".
+        let sel = select_last_tag(&tmpl, VersionGrammar::SemVer, ["v1.0.0+build1", "v1.0.0+build2"]).unwrap();
+        assert_eq!(sel.chosen.unwrap().name.as_str(), "v1.0.0+build2");
+
+        // Lexicographically-higher name arrives first: tie-break must still
+        // pick it, proving this isn't just "last wins" either.
+        let sel = select_last_tag(&tmpl, VersionGrammar::SemVer, ["v1.0.0+build2", "v1.0.0+build1"]).unwrap();
+        assert_eq!(sel.chosen.unwrap().name.as_str(), "v1.0.0+build2");
+    }
+
+    #[test]
+    fn select_last_tag_lower_version_does_not_replace_chosen() {
+        let tmpl = TagTemplate::parse("v{version}").unwrap();
+        let candidates = ["v2.0.0", "v1.0.0"];
+        let sel = select_last_tag(&tmpl, VersionGrammar::SemVer, candidates).unwrap();
+        assert_eq!(
+            sel.chosen.unwrap().name.as_str(),
+            "v2.0.0",
+            "a lower version arriving after a higher one must not replace the chosen tag"
+        );
+    }
+
+    #[test]
+    fn select_last_tag_higher_version_replaces_chosen() {
+        let tmpl = TagTemplate::parse("v{version}").unwrap();
+        let candidates = ["v1.0.0", "v2.0.0"];
+        let sel = select_last_tag(&tmpl, VersionGrammar::SemVer, candidates).unwrap();
+        assert_eq!(sel.chosen.unwrap().name.as_str(), "v2.0.0");
+    }
+
+    #[test]
+    fn select_last_tag_non_version_placeholder_is_skipped_with_diagnostic() {
+        let tmpl = TagTemplate::parse("v{version}").unwrap();
+        let candidates = ["v1.0.0", "vnotaversion"];
+        let sel = select_last_tag(&tmpl, VersionGrammar::SemVer, candidates).unwrap();
+
+        assert_eq!(sel.chosen.unwrap().name.as_str(), "v1.0.0");
+        assert_eq!(
+            sel.skipped.len(),
+            1,
+            "the unparseable candidate must be recorded as skipped, not silently dropped"
+        );
+        assert_eq!(sel.skipped[0].code, DiagnosticCode::TagGlobNonVersionMatch);
+        assert_eq!(sel.skipped[0].severity, DiagnosticSeverity::Warning);
+    }
 }
