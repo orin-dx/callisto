@@ -428,6 +428,16 @@ equivalent `npm install --package-lock-only` / `pnpm install --lockfile-only` st
 `--refresh-lockfiles`'s existing Cargo/PyPI implementation rather than a separate workaround in
 the Action.
 
+### Coverage threshold
+
+`callisto-ci.yml`'s `coverage` job runs `cargo llvm-cov --all-features --fail-under-lines 85` and
+is a required check in `validate`'s `needs` list -- a PR that regresses total line coverage below
+85% fails CI, not just informationally. This is also the only place the workspace compiles and
+tests under `--all-features` together (`just test`/`just wasm-check` cover default features plus
+`callisto-moon`'s `pdk` feature separately, never combined). Locally, `just coverage` runs
+unthresholded and is not part of `just ci`/`just ci-fast` -- coverage generation is a CI-only
+gate, run on demand locally, not a routine local check.
+
 ### Diagnostic Problem Matchers & Toolchain Isolation
 
 - **Inline PR Annotations**: Registered [`.github/callisto-problem-matcher.json`](.github/callisto-problem-matcher.json) in `setup-callisto`. Automatically highlights invalid `.changeset/*.md` syntax or missing package IDs as inline callouts on PR diff lines.
