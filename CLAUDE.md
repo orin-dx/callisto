@@ -7,7 +7,8 @@ This repository follows the centralized AI agent guidelines documented in [`AGEN
 ## Quick Reference
 
 ### Primary Task Runner Commands
-- `just ci`: Run full verification suite (Formatting, Clippy lints, Moon unit/integration tests, WASM target check).
+- `just ci`: Run full verification suite (Formatting, Clippy lints, Moon unit/integration tests, WASM target check, coverage). Matches CI parity; slow (coverage recompiles the whole workspace under instrumentation).
+- `just ci-fast`: Same as `just ci` minus `coverage`. Use this for everyday pre-PR checks.
 - `just test` / `moon run :test`: Run all unit, integration, doctests, and E2E lifecycle test suites.
 - `just lint` / `moon run :lint`: Run Clippy lints with `-D warnings`.
 - `just fmt` / `moon run :format`: Format code automatically.

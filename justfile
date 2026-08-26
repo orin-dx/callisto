@@ -70,13 +70,17 @@ fuzz target="parse_package_id":
 doc-check:
     RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --workspace
 
-# Verify Moon WASM plugin cross-compilation target, build the real cdylib,
-# and black-box test it through a real Extism/wasmtime plugin sandbox
+# Verify Moon WASM plugin cross-compilation target and build the real
+# cdylib. The black-box Extism/wasmtime sandbox test (tests/moon_wasm_sandbox.rs)
+# is NOT re-run here: `just test`'s workspace-wide nextest run already builds
+# and executes it (moon_pdk_test_utils is an unconditional dev-dependency, not
+# gated by the `pdk` feature), so running it again via `cargo test` here would
+# be a third full execution of the same suite once `coverage` runs it a second
+# time under instrumentation -- pure redundant runtime, not extra coverage.
 wasm-check:
     rustup target add wasm32-wasip1 2>/dev/null || true
     cargo check -p callisto-moon --target wasm32-wasip1 --features pdk
     cargo rustc -p callisto-moon --lib --target wasm32-wasip1 --features pdk --crate-type cdylib
-    cargo test -p callisto-moon --test moon_wasm_sandbox
 
 # Generate code coverage report via cargo-llvm-cov
 coverage:
@@ -104,3 +108,11 @@ hooks:
 
 # Run full local CI verification pipeline via moon and just
 ci: fmt-check lint test audit doc-check wasm-check coverage
+
+# Same as `ci`, minus `coverage`. Real CI (callisto-ci.yml) already runs
+# coverage as its own parallel job on a separate runner; locally it's a
+# third full-workspace recompile under llvm-cov instrumentation tacked onto
+# the end of a serial pipeline. Use this for everyday pre-PR checks;
+# coverage numbers are a reporting concern, not something every local run
+# needs to regenerate.
+ci-fast: fmt-check lint test audit doc-check wasm-check
