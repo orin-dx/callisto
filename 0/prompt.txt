@@ -1007,3 +1007,34 @@ Do we have to make changes to our plugins to make sure they get triggered?
 File written: `/Users/gabe/Projects/callisto/.changeset/native-artifact-placement.md` (frontmatter `callisto-graph: minor`, `callisto-cli: minor`; body matches this repo's real bullet-list, no-implementation-detail house style per `callisto-matrix-command.md`/`release-pipeline-contract.md` precedent).</result>
 <usage><subagent_tokens>88470</subagent_tokens><tool_uses>18</tool_uses><duration_ms>481821</duration_ms></usage>
 </task-notification>
+
+---
+
+<task-notification>
+<task-id>bvlrsxtw5</task-id>
+<summary>Monitor event: "final just ci run with dev-exp fixes applied, persistent"</summary>
+<event>[+0s] Tasks: 10 completed (10 cached)</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bvlrsxtw5</task-id>
+<summary>Monitor event: "final just ci run with dev-exp fixes applied, persistent"</summary>
+<event>[+1s]     Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.21s</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bvlrsxtw5</task-id>
+<summary>Monitor event: "final just ci run with dev-exp fixes applied, persistent"</summary>
+<event>[+3s]     Finished `test` profile [unoptimized + debuginfo] target(s) in 0.78s</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
+
+---
+
+Why are we not making ci fast the default??
