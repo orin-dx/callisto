@@ -430,9 +430,12 @@ the Action.
 
 ### Coverage threshold
 
-`callisto-ci.yml`'s `coverage` job runs `cargo llvm-cov --all-features --fail-under-lines 85` and
+`callisto-ci.yml`'s `coverage` job runs `cargo llvm-cov --all-features --fail-under-lines 90` and
 is a required check in `validate`'s `needs` list -- a PR that regresses total line coverage below
-85% fails CI, not just informationally. This is also the only place the workspace compiles and
+90% fails CI, not just informationally. The baseline at the time this gate was added was 90.40%,
+leaving a thin ~0.4-point margin -- a deliberate choice to catch essentially any regression, at
+the cost of the gate being more sensitive to normal coverage fluctuation than a wider margin
+would be. This is also the only place the workspace compiles and
 tests under `--all-features` together (`just test`/`just wasm-check` cover default features plus
 `callisto-moon`'s `pdk` feature separately, never combined). Locally, `just coverage` runs
 unthresholded and is not part of `just ci`/`just ci-fast` -- coverage generation is a CI-only
