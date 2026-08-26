@@ -1,0 +1,39 @@
+{
+  "cli_version": "0.10.3-nightly.202608220610.6bf587d66",
+  "checkpoint_id": "01M0ZTF3FSKH8R9RPXF2KDDBXC",
+  "strategy": "manual-commit",
+  "branch": "track-9-matrix-artifact-placement",
+  "checkpoints_count": 16,
+  "files_touched": [
+    ".github/workflows/callisto-ci.yml",
+    "crates/callisto-moon/src/extension.rs",
+    "crates/callisto-moon/src/extension_pdk.rs",
+    "crates/callisto-moon/src/lib.rs",
+    "crates/callisto-moon/src/runner.rs",
+    "crates/callisto-moon/src/runner_pdk.rs",
+    "justfile"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 2236,
+    "cache_creation_tokens": 6968533,
+    "cache_read_tokens": 464269942,
+    "output_tokens": 638958,
+    "api_call_count": 1120,
+    "subagent_tokens": {
+      "input_tokens": 68,
+      "cache_creation_tokens": 178546,
+      "cache_read_tokens": 18255286,
+      "output_tokens": 15331,
+      "api_call_count": 34
+    }
+  }
+}
