@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.3-nightly.202608220610.6bf587d66",
+  "checkpoint_id": "01M0YAA2Y3GGK8THQKVJ3KWDEJ",
+  "strategy": "manual-commit",
+  "branch": "track-9-matrix-artifact-placement",
+  "checkpoints_count": 22,
+  "files_touched": [
+    "CLAUDE.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1832,
+    "cache_creation_tokens": 6215797,
+    "cache_read_tokens": 341234715,
+    "output_tokens": 505253,
+    "api_call_count": 918
+  }
+}
