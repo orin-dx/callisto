@@ -87,7 +87,7 @@ jobs:
         with:
           tool: cargo-llvm-cov
       - run: just wasm-check
-      - run: cargo llvm-cov --all-features --lcov --output-path lcov.info --fail-under-lines 90 --ignore-filename-regex '_pdk\.rs$'
+      - run: just coverage 90
       # Non-blocking for now: the workspace-total gate above can pass while
       # a small crate is far below threshold (a few large crates dominate
       # the total line count). Visible in logs so regressions get noticed;

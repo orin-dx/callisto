@@ -23,20 +23,20 @@ jobs:
       - name: Install Toolchain & Cache
         uses: ./.github/actions/setup-callisto
 
-      - name: Format Check
-        run: moon run :format-check
-
-      - name: Clippy Lints
-        run: moon run :lint
-
-      - name: Unit & Integration Tests
-        run: moon run :test
-
-      - name: WASM Target Check
-        run: cargo check -p callisto-moon --target wasm32-wasip1 --features pdk
-
       - name: Install just
         uses: extractions/setup-just@v2
+
+      - name: Format Check
+        run: just fmt-check
+
+      - name: Clippy Lints
+        run: just lint
+
+      - name: Unit & Integration Tests
+        run: just test
+
+      - name: WASM Target Check
+        run: just wasm-check
 
       - name: Install cargo-deny
         uses: taiki-e/install-action@v2

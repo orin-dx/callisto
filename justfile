@@ -90,8 +90,20 @@ wasm-check:
 # invisible to native coverage instrumentation by construction, not a real
 # testing gap. Any file matching this naming convention is understood to
 # document its own exclusion this way.
-coverage:
-    cargo llvm-cov --all-features --lcov --output-path lcov.info --ignore-filename-regex '_pdk\.rs$'
+#
+# Optional `threshold`: when set, fails if total line coverage drops below
+# it (--fail-under-lines). Unset locally (informational only, matching
+# ARCHITECTURE.md's "coverage generation is a CI-only gate" note); CI calls
+# `just coverage 90` -- this is the one command both run, so a CI coverage
+# failure always reproduces locally with the exact same invocation.
+coverage threshold="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    args=(--all-features --lcov --output-path lcov.info --ignore-filename-regex '_pdk\.rs$')
+    if [[ -n "{{threshold}}" ]]; then
+      args+=(--fail-under-lines "{{threshold}}")
+    fi
+    cargo llvm-cov "${args[@]}"
 
 # Check per-crate line coverage against a threshold (default 90%). The
 # workspace-total --fail-under-lines gate can pass while a small crate is
