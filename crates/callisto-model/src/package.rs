@@ -268,6 +268,30 @@ mod tests {
     }
 
     #[test]
+    fn version_grammar_returns_the_single_canonical_ecosystems_grammar() {
+        let cargo = ManifestDecl::new("Cargo.toml", ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap();
+        let pkg = test_package(vec![cargo], vec![]);
+        assert_eq!(pkg.version_grammar().unwrap(), VersionGrammar::SemVer);
+    }
+
+    #[test]
+    fn version_grammar_errors_with_no_canonical_manifest() {
+        let pkg = test_package(vec![], vec![]);
+        let err = pkg.version_grammar().unwrap_err();
+        assert!(matches!(err, ModelError::NoCanonicalManifest { .. }), "got {err:?}");
+    }
+
+    #[test]
+    fn version_grammar_errors_on_mixed_grammars_across_canonical_manifests() {
+        let cargo = ManifestDecl::new("Cargo.toml", ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap();
+        let pypi = ManifestDecl::new("pyproject.toml", ManifestRole::Canonical, ManifestFormat::PyprojectToml).unwrap();
+        let pkg = test_package(vec![cargo, pypi], vec![]);
+
+        let err = pkg.version_grammar().unwrap_err();
+        assert!(matches!(err, ModelError::MixedVersionGrammars { .. }), "got {err:?}");
+    }
+
+    #[test]
     fn platform_manifests_filters_to_platform_role_only() {
         let canonical =
             ManifestDecl::new("package.json", ManifestRole::Canonical, ManifestFormat::PackageJson).unwrap();
