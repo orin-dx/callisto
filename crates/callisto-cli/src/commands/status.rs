@@ -116,4 +116,29 @@ mod tests {
             "check_exit_code must return 2 when no changesets are pending"
         );
     }
+
+    #[test]
+    fn handle_text_format_succeeds_on_empty_workspace() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let root = tmp.path();
+        std::fs::write(root.join("Cargo.toml"), "[workspace]\nmembers = []\nresolver = \"2\"\n").unwrap();
+        std::fs::write(root.join("callisto.toml"), "").unwrap();
+
+        let global = GlobalArgs {
+            format: OutputFormat::Text,
+            cwd: root.to_path_buf(),
+            dry_run: false,
+        };
+
+        let result = handle(
+            StatusArgs {
+                strict: false,
+                strict_graph: false,
+                check: false,
+            },
+            &global,
+        );
+        assert!(result.is_ok(), "expected Ok, got: {result:?}");
+        assert_eq!(result.unwrap(), ExitCode::SUCCESS);
+    }
 }

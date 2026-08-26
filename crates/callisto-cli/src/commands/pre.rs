@@ -200,7 +200,57 @@ mod tests {
 
     use callisto_model::{CommandError, CommandOutput, CommandRunner};
 
-    use super::stage_pre_json;
+    use super::{handle, stage_pre_json};
+    use crate::cli::{GlobalArgs, OutputFormat, PreArgs};
+
+    /// `pre enter --dry-run --format text` must not write `.changeset/pre.json`
+    /// and must still succeed, rendering the preview via the Text branch
+    /// (the Json branch is already covered by other callers of `preview`).
+    #[test]
+    fn handle_enter_dry_run_text_format_previews_without_writing() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let root = tmp.path();
+        std::fs::write(root.join("Cargo.toml"), "[workspace]\nmembers = []\nresolver = \"2\"\n").unwrap();
+        std::fs::write(root.join("callisto.toml"), "").unwrap();
+
+        let global = GlobalArgs {
+            format: OutputFormat::Text,
+            cwd: root.to_path_buf(),
+            dry_run: true,
+        };
+
+        let result = handle(
+            PreArgs::Enter {
+                tag: "beta".to_string(),
+            },
+            &global,
+        );
+        assert!(result.is_ok(), "expected Ok, got: {result:?}");
+        assert_eq!(result.unwrap(), std::process::ExitCode::SUCCESS);
+        assert!(
+            !root.join(".changeset/pre.json").exists(),
+            "dry-run must not write pre.json"
+        );
+    }
+
+    /// `pre exit` must surface a `CliError::Io` (not panic) when the workspace
+    /// root cannot even be canonicalized, mirroring `workspace::load_workspace`'s
+    /// nonexistent-cwd contract.
+    #[test]
+    fn handle_exit_reports_io_error_for_a_nonexistent_cwd() {
+        let global = GlobalArgs {
+            format: OutputFormat::Text,
+            cwd: std::path::PathBuf::from("/nonexistent/definitely-not-a-real-path-abc123"),
+            dry_run: false,
+        };
+
+        match handle(PreArgs::Exit, &global) {
+            Err(crate::error::CliError::Io { path, .. }) => {
+                assert_eq!(path, Some(global.cwd.clone()));
+            }
+            other => panic!("expected CliError::Io, got: {other:?}"),
+        }
+    }
 
     /// A `git add` failure echoing an authenticated GitHub remote URL (the
     /// realistic CI shape: `https://x-access-token:TOKEN@github.com/...`)

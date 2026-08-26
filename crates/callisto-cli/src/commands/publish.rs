@@ -231,6 +231,85 @@ mod tests {
     }
 
     #[test]
+    fn credential_check_default_crates_io_registry_warns_on_missing_token() {
+        use callisto_model::{CratePublish, RegistryKey, Version, VersionGrammar};
+
+        let v1 = Version::parse("1.0.0", VersionGrammar::SemVer).unwrap();
+        let plan = callisto_model::PublishPlan {
+            schema_version: SCHEMA_VERSION,
+            rust_crates: vec![CratePublish {
+                name: "my-crate".to_string(),
+                version: v1,
+                publish_to: RegistryKey("crates-io".to_string()),
+                registry: None,
+                package_dir: None,
+            }],
+            npm_main_packages: vec![],
+            npm_platform_packages: vec![],
+            pypi_packages: vec![],
+            releases: vec![],
+            diagnostics: vec![],
+        };
+
+        let warnings = check_credentials(&plan, missing_env);
+        assert!(
+            warnings
+                .iter()
+                .any(|w| w.contains("CARGO_REGISTRY_TOKEN") && !w.contains("REGISTRIES")),
+            "a crate with no named registry (crates.io) must warn about bare CARGO_REGISTRY_TOKEN, got: {:?}",
+            warnings
+        );
+    }
+
+    #[test]
+    fn credential_check_warns_when_pypi_password_missing() {
+        use callisto_model::{PypiPublish, RegistryKey, Version, VersionGrammar};
+        use std::path::PathBuf;
+
+        let v1 = Version::parse("1.0.0", VersionGrammar::SemVer).unwrap();
+        let plan = callisto_model::PublishPlan {
+            schema_version: SCHEMA_VERSION,
+            rust_crates: vec![],
+            npm_main_packages: vec![],
+            npm_platform_packages: vec![],
+            pypi_packages: vec![PypiPublish {
+                name: "my-pkg".to_string(),
+                version: v1,
+                publish_to: RegistryKey("pypi".to_string()),
+                package_dir: PathBuf::from("packages/my-pkg"),
+                index: None,
+            }],
+            releases: vec![],
+            diagnostics: vec![],
+        };
+
+        let warnings = check_credentials(&plan, missing_env);
+        assert!(
+            warnings.iter().any(|w| w.contains("TWINE_PASSWORD")),
+            "expected a warning for missing TWINE_PASSWORD, got: {:?}",
+            warnings
+        );
+    }
+
+    #[test]
+    fn handle_dry_run_text_format_succeeds_on_empty_workspace() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let root = tmp.path();
+        std::fs::write(root.join("Cargo.toml"), "[workspace]\nmembers = []\nresolver = \"2\"\n").unwrap();
+        std::fs::write(root.join("callisto.toml"), "").unwrap();
+
+        let global = GlobalArgs {
+            format: OutputFormat::Text,
+            cwd: root.to_path_buf(),
+            dry_run: true,
+        };
+
+        let result = handle(PublishArgs::default(), &global);
+        assert!(result.is_ok(), "expected Ok, got: {result:?}");
+        assert_eq!(result.unwrap(), ExitCode::SUCCESS);
+    }
+
+    #[test]
     fn credential_check_private_cargo_registry_checks_correct_var() {
         use callisto_model::{CratePublish, RegistryKey, Version, VersionGrammar};
 
