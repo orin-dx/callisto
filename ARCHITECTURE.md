@@ -430,16 +430,28 @@ the Action.
 
 ### Coverage threshold
 
-`callisto-ci.yml`'s `coverage` job runs `cargo llvm-cov --all-features --fail-under-lines 90` and
-is a required check in `validate`'s `needs` list -- a PR that regresses total line coverage below
-90% fails CI, not just informationally. The baseline at the time this gate was added was 90.40%,
-leaving a thin ~0.4-point margin -- a deliberate choice to catch essentially any regression, at
-the cost of the gate being more sensitive to normal coverage fluctuation than a wider margin
-would be. This is also the only place the workspace compiles and
-tests under `--all-features` together (`just test`/`just wasm-check` cover default features plus
-`callisto-moon`'s `pdk` feature separately, never combined). Locally, `just coverage` runs
-unthresholded and is not part of `just ci`/`just ci-fast` -- coverage generation is a CI-only
-gate, run on demand locally, not a routine local check.
+`just coverage [threshold]` is the one command both `callisto-ci.yml` and a local developer run --
+CI calls `just coverage 90` (`callisto-ci.yml`'s `coverage` job, a required check in `validate`'s
+`needs` list), so a coverage-gate failure always reproduces locally with that exact invocation, no
+raw `cargo llvm-cov` flags improvised separately in the workflow YAML. With `threshold` omitted
+(`just coverage`), the run is unthresholded/informational -- `--ignore-filename-regex '_pdk\.rs$'`
+is always applied regardless (see the naming convention note below) -- and not part of `just
+ci`/`just ci-fast` -- coverage generation is a CI-only gate, run on demand locally. A PR that
+regresses total line coverage below 90% fails CI, not just informationally. The
+baseline at the time this gate was added was 90.40%, leaving a thin ~0.4-point margin -- a
+deliberate choice to catch essentially any regression, at the cost of the gate being more sensitive
+to normal coverage fluctuation than a wider margin would be. This is also the only place the
+workspace compiles and tests under `--all-features` together (`just test`/`just wasm-check` cover
+default features plus `callisto-moon`'s `pdk` feature separately, never combined).
+
+`_pdk.rs`-suffixed files (e.g. `crates/callisto-moon/src/runner_pdk.rs`,
+`crates/callisto-moon/src/extension_pdk.rs`) are excluded from every coverage command via that
+naming convention: they contain code that only executes inside a real wasm32-wasip1 Extism host
+(black-box tested via `tests/moon_wasm_sandbox.rs`), invisible to native `cargo-llvm-cov`
+instrumentation by construction, not a real testing gap. `#[coverage(off)]`, the closer Rust-native
+equivalent, remains nightly-only unstable (confirmed against stable `rustc`, and against the still-
+open tracking issue rust-lang/rust#84605) -- worth revisiting if this crate ever adopts a nightly
+toolchain for coverage specifically, but file-level exclusion is what works on stable today.
 
 The workspace-total gate can pass while a single small crate is far below threshold -- a few
 large crates (`callisto-graph` alone is ~15,000 of the workspace's ~26,000 covered lines) dominate
@@ -447,7 +459,8 @@ the total, so a badly-undertested small crate barely moves it. `just coverage-pe
 (default 90) reuses the same profile data to compute and gate on each crate's own line coverage
 independently; `coverage`'s CI job runs it non-blocking (a `::warning::` annotation, not a failed
 check) until the pre-existing per-crate gaps are closed, at which point it should be promoted to a
-required check.
+required check. `callisto-moon` was the worst offender (70.89%) before the `_pdk.rs` split above;
+its true native-testable coverage is 92.0%, already above the 90% bar.
 
 ### Diagnostic Problem Matchers & Toolchain Isolation
 
