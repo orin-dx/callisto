@@ -199,11 +199,17 @@ declared in `<RuntimeIdentifiers>` that are not in this table produce an
 
 ```
 napi/maturin:  artifactName = "{packageName}-{platform}-{arch}[-{abi}]"
-               (matches napi-rs's own published-package/CI-artifact
-               convention, e.g. `@scope/addon-darwin-arm64` -- not the
-               raw Rust target triple)
+               (mirrors napi-rs's own published-package/CI-artifact
+               convention -- <name>-<platform>-<arch>[-<abi>], e.g.
+               "addon-darwin-arm64" -- rather than the raw Rust target
+               triple), with `/` in packageName replaced by `-` first:
+               `actions/upload-artifact` rejects `/` in artifact
+               names, but an npm scoped packageName (e.g.
+               "@scope/addon") is a valid registered package name.
                example: "native-mod-darwin-arm64"
                example (with abi): "other-pkg-linux-x64-musl"
+               example (scoped packageName): "@scope/addon" on
+               darwin/arm64 -> "@scope-addon-darwin-arm64" (no `/`)
 
 dotnet-aot:    artifactName = "native-{rid}"
                example: "native-linux-arm64"
