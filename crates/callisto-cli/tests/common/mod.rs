@@ -12,7 +12,11 @@ pub fn setup_polyglot_git_repo() -> tempfile::TempDir {
     let dir = tempdir().unwrap();
     let root = dir.path();
 
-    let status = Command::new("git").args(["init"]).current_dir(root).status().unwrap();
+    let status = Command::new("git")
+        .args(["init", "-b", "main"])
+        .current_dir(root)
+        .status()
+        .unwrap();
     assert!(status.success());
 
     Command::new("git")
@@ -22,6 +26,16 @@ pub fn setup_polyglot_git_repo() -> tempfile::TempDir {
         .unwrap();
     Command::new("git")
         .args(["config", "user.email", "tester@callisto.dev"])
+        .current_dir(root)
+        .status()
+        .unwrap();
+    Command::new("git")
+        .args(["config", "commit.gpgsign", "false"])
+        .current_dir(root)
+        .status()
+        .unwrap();
+    Command::new("git")
+        .args(["config", "tag.gpgsign", "false"])
         .current_dir(root)
         .status()
         .unwrap();

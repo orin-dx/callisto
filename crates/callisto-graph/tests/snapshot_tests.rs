@@ -18,9 +18,11 @@ fn run_git(dir: &std::path::Path, args: &[&str]) {
 
 /// Initializes a real Git repo at `dir` with one commit and returns the full 40-char HEAD sha.
 fn init_git_repo_with_commit(dir: &std::path::Path) -> String {
-    run_git(dir, &["init", "-q"]);
+    run_git(dir, &["init", "-q", "-b", "main"]);
     run_git(dir, &["config", "user.email", "test@example.com"]);
     run_git(dir, &["config", "user.name", "Test"]);
+    run_git(dir, &["config", "commit.gpgsign", "false"]);
+    run_git(dir, &["config", "tag.gpgsign", "false"]);
     run_git(dir, &["add", "."]);
     run_git(dir, &["commit", "-q", "-m", "init"]);
 

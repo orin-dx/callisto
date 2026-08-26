@@ -293,6 +293,72 @@ Also noted in passing: unnamed `#[serial]` (from `serial_test`) shares one globa
 test using it in a binary, compounding queueing delays for unrelated fast tests during the slow run —
 minor, same deferred track can address if convenient.
 
+### Track 8: Git Fixture Hermeticity — DONE
+
+Lighter TDD loop tier (no formal spec/plan, one crate per commit). Fixes a real bug surfaced during
+Track 7 (`track-7-revwalk-bounding`, PR #13, not yet merged when this track was cut): `cargo nextest`
+spawns each test binary with no controlling TTY, and on a developer machine with
+`commit.gpgsign=true`/`tag.gpgsign=true` set globally, any test that creates a real on-disk git repo
+and calls `git commit`/`git tag` without locally disabling signing triggers a real GPG signing attempt
+that `pinentry` can't service (no TTY to prompt on) — the test hangs ~120-140s waiting on a
+gpg-agent/pinentry timeout, or fails outright with "gpg: signing failed: No pinentry". Diagnosed via
+direct reproduction (confirmed NOT gpg-agent lock contention: 8 fully concurrent `git commit`s outside
+nextest completed in ~1s; confirmed the specific `cargo test` vs `cargo nextest` TTY distinction is the
+actual trigger) — see `feedback_diagnose_dont_guess_environment_issues.md` in the memory index for the
+process this followed. Two audit agents mapped the full scope: ~66 real `git commit` call sites across
+16 files build real git fixture repos without a local `commit.gpgsign=false` guard; a canonical shared
+helper existed (`callisto-fixtures::git::init_repo`) but only 2 of ~14 independently-duplicated
+`init_repo`/`run_git`-style helpers actually used it; a parallel audit confirmed no equivalent gap
+exists for npm/pip/cargo/twine/maturin shell-outs (all go through a mockable `CommandRunner` trait in
+both production and test code).
+
+**Fix**: `callisto-fixtures::git::init_repo` (the canonical helper) now sets `commit.gpgsign=false`/
+`tag.gpgsign=false` via local `git config` calls (never touching the developer's real `~/.gitconfig`,
+which git respects as taking lower precedence than local config) and pins `-b main` on `git init`
+(`init.defaultBranch` is a related ambient-config gap). A regression test
+(`crates/callisto-fixtures/src/git.rs`) proves this hermetically and fast: it writes a throwaway
+`GIT_CONFIG_GLOBAL`-pointed poisoned config file (not the real global config) forcing
+`commit.gpgsign=true` and an unusable `gpg.program`, then asserts a commit still succeeds — confirmed
+failing before the fix, passing after, and independently re-verified by the reviewing agent via its own
+standalone experiment (0.05s run time, no hang, since the poisoned `gpg.program` path doesn't exist so
+a poisoned attempt fails immediately via "cannot exec" rather than actually invoking pinentry).
+
+Every other independently-duplicated helper across the workspace got the identical two-line fix
+(hand-patched in place, not migrated to import the shared helper — `callisto-fixtures` is
+AGPL-3.0-only, and per this project's layer-isolation invariant no new dev-dependency edges on it were
+introduced):
+- **callisto-vcs** (`6fbdcad7`): `src/lib.rs`'s `init_repo` fn plus its `test_commits_since_with_pathspec_excludes_merge_commits`
+  test's own inline init sequence (didn't call `init_repo` at all); `src/access.rs`'s `init_repo` fn.
+  Verified: `cargo nextest run -p callisto-vcs` — entire 38-test suite now completes in 0.345s (some of
+  these tests previously took 57-84s each under nextest).
+- **callisto-cli** (`f4a55cd7`): `tests/common/mod.rs`'s `setup_polyglot_git_repo`,
+  `tests/strict_flag_tests.rs`'s `make_git_workspace`, `tests/dry_run_invariant_tests.rs`'s `setup_repo`,
+  `src/commands/version.rs`'s `git_init_with_commit` (behind the `inference` feature). Verified:
+  `cargo nextest run -p callisto-cli --test strict_flag_tests --test dry_run_invariant_tests` — 20/20
+  pass in 1.003s total; `dry_run_invariant_tests` is the exact file that originally failed outright
+  with "No pinentry" in the session's first observed failure.
+- **callisto-graph** (`9fb0384e`): `src/commands/snapshot.rs`'s `git_init_with_commit`,
+  `src/commands/version.rs`'s `git_init_with_commit`, `tests/version_tests.rs`, `tests/snapshot_tests.rs`'s
+  `init_git_repo_with_commit`, `tests/publish_tests.rs`. `tests/tag_sha_fabrication_test.rs` already had
+  the correct fix (with its own explanatory comment) — left untouched; it's the file this fix pattern
+  was modeled on. Verified: `cargo nextest run -p callisto-graph --test snapshot_tests --test
+  version_tests --test publish_tests` — 38/38 pass in 0.541s total (previously ~60-84s each).
+- **callisto-moon** (`26d14b1b`): `tests/moon_wasm_sandbox.rs`'s async `run_git`-based init sequences
+  (two duplicate blocks). Verified via `cargo check`/`cargo clippy --features pdk` only (clean) — full
+  execution of this file's real wasmtime-backed sandbox test was not run given the prohibitive combined
+  build cost (native wasmtime/aws-lc-sys compile plus a from-scratch `wasm32-wasip1` build with no
+  cached artifact available); the change is mechanically identical to the four already-fully-verified
+  fixes above. Recommend confirming with a real `just wasm-check`/full test run in CI.
+
+**Gap closed after rebase**: Track 7 (#13) merged to `main`; this branch was rebased onto it, which
+brought in `crates/callisto-vcs/tests/revwalk_bound_count_test.rs` (added by Track 7, absent when
+this track was originally cut) for the first time. Applied the identical fix to its own local
+`init_repo` fn. Verified: `cargo test -p callisto-vcs` (39 lib + 1 integration test) green, clippy
+clean. Commit: `ae26a8c`.
+
+Canonical fix commit: `2beaff6b`. Crate migration commits: `d07a57e7`, `ed64fe44`, `6e366cfb`, `8a9f018e`.
+Full detail and diagnosis process in memory: `project_git_fixture_hermeticity_gap.md`.
+
 ---
 
 ## Pipeline Protocol (follow for every track, in order)

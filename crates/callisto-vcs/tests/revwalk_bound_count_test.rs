@@ -21,9 +21,11 @@ fn run_git(dir: &Path, args: &[&str]) {
 }
 
 fn init_repo(root: &Path) {
-    run_git(root, &["init", "-q"]);
+    run_git(root, &["init", "-q", "-b", "main"]);
     run_git(root, &["config", "user.email", "test@example.com"]);
     run_git(root, &["config", "user.name", "Test"]);
+    run_git(root, &["config", "commit.gpgsign", "false"]);
+    run_git(root, &["config", "tag.gpgsign", "false"]);
 }
 
 fn commit(root: &Path, n: usize) {
