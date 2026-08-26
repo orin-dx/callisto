@@ -1,0 +1,42 @@
+{
+  "cli_version": "0.10.3-nightly.202608220610.6bf587d66",
+  "checkpoint_id": "01M100T86X8VNVC69ND97EN4C3",
+  "strategy": "manual-commit",
+  "branch": "track-9-matrix-artifact-placement",
+  "checkpoints_count": 8,
+  "files_touched": [
+    "crates/callisto-cli/src/commands/compose_pr_body.rs",
+    "crates/callisto-cli/src/commands/init.rs",
+    "crates/callisto-cli/src/commands/plan_publish.rs",
+    "crates/callisto-cli/src/commands/schema.rs",
+    "crates/callisto-cli/src/commands/snapshot.rs",
+    "crates/callisto-cli/src/commands/tag.rs",
+    "crates/callisto-cli/src/commands/validate.rs",
+    "crates/callisto-cli/src/output.rs",
+    "crates/callisto-cli/src/workspace.rs",
+    "crates/callisto-cli/tests/subprocess_dispatch_and_stdin_tests.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 2722,
+    "cache_creation_tokens": 7348215,
+    "cache_read_tokens": 603457168,
+    "output_tokens": 748477,
+    "api_call_count": 1363,
+    "subagent_tokens": {
+      "input_tokens": 114,
+      "cache_creation_tokens": 329011,
+      "cache_read_tokens": 10475095,
+      "output_tokens": 24757,
+      "api_call_count": 57
+    }
+  }
+}

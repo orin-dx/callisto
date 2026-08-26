@@ -1,0 +1,205 @@
+{
+  "cli_version": "0.10.3-nightly.202608220610.6bf587d66",
+  "checkpoint_id": "01M100T86X8VNVC69ND97EN4C3",
+  "session_id": "f21fbbf3-d9f7-4109-9c36-8de0a6e308fd",
+  "strategy": "manual-commit",
+  "created_at": "2026-08-26T21:50:00.040628Z",
+  "branch": "track-9-matrix-artifact-placement",
+  "checkpoints_count": 8,
+  "save_step_count": 7,
+  "files_touched": [
+    "crates/callisto-cli/src/commands/compose_pr_body.rs",
+    "crates/callisto-cli/src/commands/init.rs",
+    "crates/callisto-cli/src/commands/plan_publish.rs",
+    "crates/callisto-cli/src/commands/schema.rs",
+    "crates/callisto-cli/src/commands/snapshot.rs",
+    "crates/callisto-cli/src/commands/tag.rs",
+    "crates/callisto-cli/src/commands/validate.rs",
+    "crates/callisto-cli/src/output.rs",
+    "crates/callisto-cli/src/workspace.rs",
+    "crates/callisto-cli/tests/subprocess_dispatch_and_stdin_tests.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5",
+  "turn_id": "fb6c0b196fd9",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 2722,
+    "cache_creation_tokens": 7348215,
+    "cache_read_tokens": 603457168,
+    "output_tokens": 748477,
+    "api_call_count": 1363,
+    "subagent_tokens": {
+      "input_tokens": 114,
+      "cache_creation_tokens": 329011,
+      "cache_read_tokens": 10475095,
+      "output_tokens": 24757,
+      "api_call_count": 57
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_012pqp9ZZhcrRstBhMtfFpK7",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "trace:trace"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "51af44df10de",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 4054,
+        "end": 4055,
+        "entry_ids": [
+          "b7a9c8e2-39fb-480f-a958-2f1020580af0"
+        ],
+        "tool_use_id": "toolu_012pqp9ZZhcrRstBhMtfFpK7"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_012pqp9ZZhcrRstBhMtfFpK7"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: trace:trace",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01WMSwBPyMoymRJbL5rBa9HZ",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "delta:pr"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "942aa1e1faea",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 9827,
+        "end": 9828,
+        "entry_ids": [
+          "d494abb7-7585-41e0-87ae-71187cd54c7f"
+        ],
+        "tool_use_id": "toolu_01WMSwBPyMoymRJbL5rBa9HZ"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01WMSwBPyMoymRJbL5rBa9HZ"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: delta:pr",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 186
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-08-26T21:49:59.424894Z",
+    "agent_lines": 19,
+    "agent_removed": 0,
+    "human_added": 635,
+    "human_modified": 30,
+    "human_removed": 0,
+    "total_committed": 655,
+    "total_lines_changed": 684,
+    "agent_percentage": 2.7777777777777777,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 654,
+      "user_lines_removed": 1,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11,
+        "crates/callisto-cli/src/commands/compose_pr_body.rs": 58,
+        "crates/callisto-cli/src/commands/init.rs": 49,
+        "crates/callisto-cli/src/commands/plan_publish.rs": 27,
+        "crates/callisto-cli/src/commands/schema.rs": 30,
+        "crates/callisto-cli/src/commands/snapshot.rs": 79,
+        "crates/callisto-cli/src/commands/tag.rs": 56,
+        "crates/callisto-cli/src/commands/validate.rs": 67,
+        "crates/callisto-cli/src/output.rs": 23,
+        "crates/callisto-cli/src/workspace.rs": 23,
+        "crates/callisto-cli/tests/subprocess_dispatch_and_stdin_tests.rs": 231
+      },
+      "user_removed_per_file": {
+        "crates/callisto-cli/src/output.rs": 1
+      }
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 11,
+      "user_lines_removed": 0,
+      "agent_lines_added": 650,
+      "agent_lines_removed": 1,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11
+      }
+    },
+    {
+      "checkpoint_number": 4,
+      "user_lines_added": 11,
+      "user_lines_removed": 0,
+      "agent_lines_added": 650,
+      "agent_lines_removed": 1,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11
+      }
+    },
+    {
+      "checkpoint_number": 5,
+      "user_lines_added": 11,
+      "user_lines_removed": 0,
+      "agent_lines_added": 650,
+      "agent_lines_removed": 1,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11
+      }
+    },
+    {
+      "checkpoint_number": 6,
+      "user_lines_added": 11,
+      "user_lines_removed": 0,
+      "agent_lines_added": 650,
+      "agent_lines_removed": 1,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11
+      }
+    },
+    {
+      "checkpoint_number": 7,
+      "user_lines_added": 11,
+      "user_lines_removed": 0,
+      "agent_lines_added": 663,
+      "agent_lines_removed": 1,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11
+      }
+    },
+    {
+      "checkpoint_number": 8,
+      "user_lines_added": 11,
+      "user_lines_removed": 0,
+      "agent_lines_added": 663,
+      "agent_lines_removed": 1,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11
+      }
+    }
+  ]
+}
