@@ -1,0 +1,1148 @@
+<task-notification>
+<task-id>a18859c3b7c671d0f</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8a85b651-0c9a-44fa-9e0a-ac694c4409e1/tasks/a18859c3b7c671d0f.output</output-file>
+<status>completed</status>
+<summary>Agent "lambda:exit-gate for PLAN-002" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## verdict@1
+
+```json
+{
+  "verdict": "fail",
+  "confidence": "high",
+  "artifact_type": "implementation",
+  "retry_count": 1,
+  "blockers": [
+    {
+      "criterion": "AC-008",
+      "finding": "Two of AC-008's three conjuncts are unmet as written. (1) The criterion requires `runs-on:` to use `${{ matrix.hostRunner }}`; the file has `runs-on: ${{ matrix.target.hostRunner }}`. (2) The criterion requires the block to not reference `matrix.target`; the block contains four `matrix.target` references (`matrix.target.hostRunner`, `.triple`, `.artifactName`, `.packageDir`). The third conjunct passes: every dereferenced field name (hostRunner, triple, artifactName, packageDir) is real, and matrix.os / matrix.package are gone. Two mutually exclusive fixes, pick one. FIX A (satisfies AC-008 literally, valid GitHub Actions): change the build job's strategy block from `matrix:\\n        target: ${{ fromJson(needs.matrix.outputs.nativeMatrix) }}` to `matrix:\\n        include: ${{ fromJson(needs.matrix.outputs.nativeMatrix) }}`, then drop the `target.` segment from all four dereferences, giving `runs-on: ${{ matrix.hostRunner }}`, `--target ${{ matrix.triple }}`, `name: ${{ matrix.artifactName }}`, `path: ${{ matrix.packageDir }}/*.node`. `include:` fed a JSON array of objects promotes each object's keys to bare matrix variables, so this renders a working workflow. FIX B (spec correction, route to canon:correct-spec): the current code is a working, idiomatic GHA form and matches the pattern already published in .claude/specs/callisto-matrix.md:287-289, which the spec itself cites as canonical in AC-010 — under FIX A, ARCHITECTURE.md §12 and callisto-matrix.md §6.1 would document two different matrix shapes for the same array. If that consistency is preferred, AC-008's `runs-on` conjunct and its `matrix.target` prohibition need rewording to permit the `matrix.&lt;key&gt;.&lt;field&gt;` namespaced form and to forbid only bare `${{ matrix.target }}`/`${{ matrix.os }}`/`${{ matrix.package }}` used as values.",
+      "location": "/Users/gabe/Projects/callisto/ARCHITECTURE.md:489-500 (strategy/runs-on at 489-492)"
+    }
+  ],
+  "verdict_summary": "10 of 11 criteria verified against code read from scratch; all named tests pass. AC-008 fails: ARCHITECTURE.md:492 uses ${{ matrix.target.hostRunner }}, but the criterion requires ${{ matrix.hostRunner }} and forbids matrix.target. One-line fix in ARCHITECTURE.md, or correct AC-008. No other gaps.",
+  "reasoning": "Spec read from disk at /Users/gabe/Projects/callisto/.claude/specs/SPEC-002-native-artifact-placement.json; sha256 matches PLAN-002.json's spec_hash exactly (39b12cf...), so no spec drift. Commit summary treated as pointers only; every location re-read. Rust: matrix.rs:40-42 and the call site at :140 confirmed; render/mod.rs:541 is the one stale fixture (non-blocking, see notes). Action: action.yml:167-179 confirmed inside the INPUT_PUBLISH guard and before plan-publish at :182. Docs: ARCHITECTURE.md 445-513 and callisto-matrix.md 295-327 read end to end. Mutation: pipeline stage not reported to me, so I ran cargo-mutants 27.1.0 scoped to the changed functions myself — 4 mutants, 3 caught, 1 unviable, 0 survivors."
+}
+```
+
+## What was verified, and how
+
+Every criterion was checked by reading the current file, not the implementer's report. Absolute paths below.
+
+**Pass (10/11)**
+
+- **AC-001** — `/Users/gabe/Projects/callisto/crates/callisto-graph/src/matrix.rs:40-42` returns `format!("native-{package_name}-{triple}")`; call site at `:140` passes `package_name`. Proven end to end at `:516-539`, which builds a real two-package report and asserts `native-pkg-a-…` ≠ `native-pkg-b-…`, not just the helper in isolation.
+- **AC-002** — `test_native_matrix_dedup.sh` greps the live `unique_by(.artifactName)` filter out of `action.yml:164` and runs it against a two-package fixture. It cannot drift from the file.
+- **AC-003 / AC-004 / AC-005 / AC-006 / AC-010** — the loop at `action.yml:169-178` sits inside the `INPUT_PUBLISH` guard opened at `:167`, ahead of `plan-publish` at `:182`. Process substitution (`done &lt; &lt;(…)`), not a pipe, so the `exit 1` at `:177` kills the step rather than a subshell. `test_native_artifact_placement.sh` extracts that exact text via `sed` and stubs only `gh`/`mkdir`.
+- **AC-007** — no `callisto publish-target` anywhere in the fenced block; `git show 50512a2c` confirms the status note at `ARCHITECTURE.md:447` is untouched.
+- **AC-009** — build→upload→callisto-action(place+publish) all present at `ARCHITECTURE.md:486-513`.
+- **AC-011** — `.claude/specs/callisto-matrix.md:321` pins `$GITHUB_RUN_ID`, `:320` does `mkdir -p` first, and the cross-reference note is at `:325-327`.
+
+**Test results — all green, run for real**
+
+- `cargo nextest run -p callisto-graph --lib matrix::` → 28 passed, 0 failed.
+- `test_native_artifact_placement.sh` → 4 pass; `test_native_matrix_dedup.sh` → 1 pass; `test_github_release_creation.sh` → 7 pass; `test_status_check_branching.sh` → 4 pass. No regressions in the two pre-existing harnesses.
+
+## Sibling-gap scan
+
+- No live reference to the old `artifact_name_for_triple` survives anywhere in `crates/`.
+- No live doc still shows the broken example. `.claude/worktrees/*/ARCHITECTURE.md` do, but those are stale detached agent worktrees, not shipped docs.
+- **Non-blocking:** `/Users/gabe/Projects/callisto/crates/callisto-cli/src/render/mod.rs:541` hand-builds a `PlatformTarget` with `artifact_name: "native-aarch64-apple-darwin"` for `package_name: "native-mod"`. That value is now unproducible — real output would be `native-native-mod-aarch64-apple-darwin`. It never calls the helper, so nothing fails, but the render test's corpus no longer mirrors reality. Worth a one-line fixture update alongside the AC-008 fix.
+
+## Coverage gaps recorded
+
+1. **Mutation gate not reported.** No mutator report reached me. I ran `cargo mutants -f crates/callisto-graph/src/matrix.rs -F 'artifact_name_for_package_triple|build_platform_target'` directly: 4 mutants, 3 caught, 1 unviable, **0 survivors**. The contract's purpose is satisfied by direct evidence, so this does not add a second blocker — but the pipeline stage itself is unrecorded.
+2. **No mutation coverage on the action.yml bash.** `cargo-mutants` is Rust-only, so AC-003 through AC-006 and AC-010 rest entirely on the extract-and-stub harness. That harness is well built (it reads the live file), but nothing verifies it would catch a fault injected into the loop.
+3. Full-workspace regression rests on the separate `just ci` run in progress elsewhere; I scoped to the criteria and the named commands as instructed.
+
+The single blocker is a one-line documentation change or a one-clause spec correction — nothing in the Rust or the action logic is wrong.</result>
+<usage><subagent_tokens>109897</subagent_tokens><tool_uses>23</tool_uses><duration_ms>607698</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a1c5e42bbc36f24c3</task-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8a85b651-0c9a-44fa-9e0a-ac694c4409e1/tasks/a1c5e42bbc36f24c3.output</output-file>
+<status>completed</status>
+<summary>Agent "Correct SPEC-002's AC-008" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>The correction is complete and already went through the full re-review cycle.
+
+Summary of what happened on `/Users/gabe/Projects/callisto/.claude/specs/SPEC-002-native-artifact-placement.json`:
+
+- **AC-008** rewritten: previously required a bare `${{ matrix.hostRunner }}` form and forbade any `matrix.target` reference — this contradicted both the actually-committed `ARCHITECTURE.md` example (lines ~488-500) and `callisto-matrix.md` §6.1's own canonical `strategy.matrix.target` / `matrix.target.&lt;field&gt;` pattern (already cited by AC-010). AC-008 now requires the namespaced `matrix.target.&lt;field&gt;` form and forbids only genuinely nonexistent bare `matrix.os`/`matrix.package` or a bare-scalar `matrix.target`.
+- **AC-009** also revised (found during the follow-up `canon:auditor`/`canon:exit-gate` pass, not in the original contradiction report): its old "read end to end, shows a placement step" language was untestable and conflicted with AC-010/AC-011's "consumer writes no placement code — callisto-action handles it automatically" model. Rewritten to check for the exact observed structure in `ARCHITECTURE.md` §12.
+- **AC-010, AC-011**: reviewed, left unchanged — already consistent.
+
+The corrected spec passed `canon:auditor` and `canon:exit-gate` on the second round and was committed:
+
+```
+commit 96d8d72 — fix(spec): correct SPEC-002 AC-008 and AC-009 to match implementation
+branch: track-9-matrix-artifact-placement
+```
+
+One flagged follow-up outside this task's scope: `/Users/gabe/Projects/callisto/.claude/specs/track-g-matrix-napi-maturin.json`'s AC-013 still asserts the old pre-fix `artifactName` format (`native-&lt;triple&gt;` without the package-name segment), which SPEC-002 now contradicts. That would need its own `canon:correct-spec` pass if you want it closed — let me know if you'd like me to run that next.</result>
+<usage><subagent_tokens>59346</subagent_tokens><tool_uses>6</tool_uses><duration_ms>990567</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b5q6quhx2</task-id>
+<tool-use-id>toolu_01R9KSnn9zrQNv1q57ovwPUa</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8a85b651-0c9a-44fa-9e0a-ac694c4409e1/tasks/b5q6quhx2.output</output-file>
+<status>completed</status>
+<summary>Background command "cd /Users/gabe/Projects/callisto &amp;&amp; cargo nextest run -p callisto-cli --lib render 2&gt;&amp;1 | tail -40" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+That arch name is ridiculously long and not consistent what we see in use right?
+
+---
+
+This "native-native-mod-aarch64-apple-darwin" is unecessary too right?
+
+---
+
+Do research because I think you're assuming a lot here and not checking the guidance and real packages
+
+---
+
+Yes, implement that
+
+---
+
+Yes, implement that and make sure the spec is accurate. THe spec is our safeguard
+
+---
+
+<task-notification>
+<task-id>b2cwfff12</task-id>
+<tool-use-id>toolu_01LijRm7ukFuzqBuibvXpiEU</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8a85b651-0c9a-44fa-9e0a-ac694c4409e1/tasks/b2cwfff12.output</output-file>
+<status>completed</status>
+<summary>Background command "cd /Users/gabe/Projects/callisto &amp;&amp; cargo nextest run -p callisto-graph -p callisto-cli --lib 2&gt;&amp;1 | tail -80" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bx9nbggd0</task-id>
+<tool-use-id>toolu_014pnzBBRvVp5RNYCWW6NWsR</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8a85b651-0c9a-44fa-9e0a-ac694c4409e1/tasks/bx9nbggd0.output</output-file>
+<status>completed</status>
+<summary>Background command "cd /Users/gabe/Projects/callisto &amp;&amp; cargo nextest run -p callisto-graph -p callisto-cli --lib 2&gt;&amp;1 | tail -80" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b7ywx4jf5</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8a85b651-0c9a-44fa-9e0a-ac694c4409e1/tasks/b7ywx4jf5.output</output-file>
+<status>completed</status>
+<summary>Background command "cd /Users/gabe/Projects/callisto &amp;&amp; cargo nextest run -p callisto-graph -p callisto-cli --lib 2&gt;&amp;1 | tail -80" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>blr9xq4t9</task-id>
+<tool-use-id>toolu_01By6GH55myz5ubnbQvzLiGo</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8a85b651-0c9a-44fa-9e0a-ac694c4409e1/tasks/blr9xq4t9.output</output-file>
+<status>completed</status>
+<summary>Background command "cd /Users/gabe/Projects/callisto &amp;&amp; cargo nextest run -p callisto-cli --bin callisto render:: 2&gt;&amp;1 | tail -30" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bzplaii8p</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8a85b651-0c9a-44fa-9e0a-ac694c4409e1/tasks/bzplaii8p.output</output-file>
+<status>completed</status>
+<summary>Background command "cd /Users/gabe/Projects/callisto &amp;&amp; cargo nextest run -p callisto-cli --lib render 2&gt;&amp;1 | tail -30" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a3febc5545fa3d8a0</task-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8a85b651-0c9a-44fa-9e0a-ac694c4409e1/tasks/a3febc5545fa3d8a0.output</output-file>
+<status>completed</status>
+<summary>Agent "Correct SPEC-002 for platform-arch-abi naming" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I'll wait for the drafter to respond with the corrected spec object.</result>
+<usage><subagent_tokens>65373</subagent_tokens><tool_uses>8</tool_uses><duration_ms>107489</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a3febc5545fa3d8a0</task-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8a85b651-0c9a-44fa-9e0a-ac694c4409e1/tasks/a3febc5545fa3d8a0.output</output-file>
+<status>completed</status>
+<summary>Agent "Correct SPEC-002 for platform-arch-abi naming" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>The correction is complete and verified end to end.
+
+**Verdict: PASS** — SPEC-002 at `/Users/gabe/Projects/callisto/.claude/specs/SPEC-002-native-artifact-placement.json` is corrected, audited, and exit-gated.
+
+**What changed (AC-001 and its dependents):**
+- `scope` and `api_surface[0]` now describe the real function `artifact_name_for_package_platform(package_name: &amp;str, platform: &amp;str, arch: &amp;str, abi: Option&lt;&amp;str&gt;) -&gt; String` (`crates/callisto-graph/src/matrix.rs:142-152`), returning `{name}-{platform}-{arch}[-{abi}]`, replacing the stale triple-based `artifact_name_for_package_triple` description.
+- `AC-001` now asserts the napi-rs `&lt;packageName&gt;-&lt;platform&gt;-&lt;arch&gt;[-&lt;abi&gt;]` format with a concrete grounded example (`pkg-a-darwin-arm64` / `pkg-b-darwin-arm64` for two packages sharing `aarch64-apple-darwin`), and explicitly forbids raw-triple substrings, vendor components, and the old `native-` prefix.
+- `non_goals[17]` reworded to name both superseded formats (the original `native-{triple}` and the never-shipped intermediate `native-{package_name}-{triple}`) rather than just one.
+- `AC-002`–`AC-011` checked for stale references — none found; they're format-agnostic and untouched.
+- `revision_note` documents this pass's grounding (napi-rs docs, live source, existing unit tests pinning the exact output strings) plus the prior AC-008/AC-009 history.
+
+**Audit finding fixed in-file:** AC-001's example triple was inconsistent between its first sentence (`x86_64-apple-darwin`) and its worked example (`aarch64-apple-darwin`) — corrected to use `aarch64-apple-darwin` throughout.
+
+**Open item, correctly out of scope for this correction:** `.claude/specs/track-g-matrix-napi-maturin.json`'s AC-013 still asserts the old `native-{triple}` format and is now factually contradicted by the shipped code. That's a different spec file and needs its own `canon:correct-spec` pass — flagged for you to queue separately.</result>
+<usage><subagent_tokens>82245</subagent_tokens><tool_uses>17</tool_uses><duration_ms>734481</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a96072cd85d6d6f17</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8a85b651-0c9a-44fa-9e0a-ac694c4409e1/tasks/a96072cd85d6d6f17.output</output-file>
+<status>completed</status>
+<summary>Agent "Final lambda:exit-gate re-verification for SPEC-002" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>**Interim status — verdict withheld pending three running jobs.**
+
+All static verification against the spec on disk is complete. Here is what I have confirmed so far, and the one thing that already changed the shape of this gate pass.
+
+**The stale-string sweep you asked for — my first two passes were invalid.** I ran `rg` without `--hidden`, which silently skipped `.github/` and `.claude/` entirely — the two directories holding most of the touched files. Re-run with `--hidden`, `.github/` is clean: zero triple-shaped artifact strings anywhere in `action.yml` or the four test scripts. Stale references to the superseded `native-{triple}` format survive in five files, none of them touched by this changeset and none named by any of AC-001 through AC-011:
+
+- `/Users/gabe/Projects/callisto/docs/01-spec.md:8557` — prose asserting ``artifactName` is always `"native-" + triple``
+- `/Users/gabe/Projects/callisto/docs/00-design.md:2113` — example `MatrixReport` JSON with `"artifactName": "native-aarch64-apple-darwin"`
+- `/Users/gabe/Projects/callisto/.claude/specs/track-g-matrix-napi-maturin.json:129` — a superseded spec's AC still asserting the old format verbatim
+- `.claude/plans/PLAN-002.json:57` and `.claude/plans/track-g-matrix-napi-maturin.plan.json` — historical plan records
+
+The never-shipped intermediate `{package_name}-{triple}` format appears nowhere outside SPEC-002's own `non_goals[17]`, where it is named deliberately. `native-mod-darwin-arm64` in `render/mod.rs:541` and `matrix.rs:794` is not stale — `native-mod` is the fixture's package name, so the string is correctly shaped under the final format.
+
+**AC-001 through AC-011 all verified as implemented** by reading the code, not the pointers. `artifact_name_for_package_platform` (matrix.rs:42-52) matches the spec signature and both format arms; `build_platform_target` (matrix.rs:143) passes `triple_to_role`-destructured platform/arch/abi, not the raw triple. The action.yml placement loop (lines 168-178) matches the api_surface description exactly — process substitution, `DIR="."` normalization, explicit `mkdir -p`, `$GITHUB_RUN_ID` pin, error message naming both artifact and DIR — and sits inside the `INPUT_PUBLISH` guard, before `plan-publish`. ARCHITECTURE.md §12 and callisto-matrix.md §4/§6.1/§6.2 satisfy AC-007 through AC-011; the §12 diff (50512a2c) touches only the code block, leaving the status note byte-identical as AC-007 requires.
+
+**All four shell scripts pass for real:** `test_native_artifact_placement.sh` (AC-003/010, 004, 005, 006), `test_native_matrix_dedup.sh` (AC-002), `test_github_release_creation.sh`, `test_status_check_branching.sh` — all exit 0.
+
+**Two gaps found that are not AC failures but that I will carry into the verdict:**
+
+1. *The recorded mutation run is stale.* `mutants.out/` is timestamped 25 Aug 10:53-10:55, predating both `d86e6c35` (11:16) and `87682d58` (16:26). Its `caught.txt` names `artifact_name_for_package_triple` — a function that no longer exists. The final code's `match abi { Some/None }` branch has never been mutation-tested. Since cargo-mutants 27.1.0 is installed, "unavailable" does not apply, so I am re-running it scoped to `matrix.rs` rather than recording an unclosable gap.
+
+2. *No test covers the guard placement.* AC-003 explicitly requires the loop be inside the `INPUT_PUBLISH` guard "not merely somewhere after NATIVE_MATRIX computation," and AC-004's second clause depends on it. `test_native_artifact_placement.sh` extracts the loop body between the `::group::`/`::endgroup::` markers and runs it in isolation — so if someone moved the loop outside the guard, every test would still pass. `rg 'INPUT_PUBLISH' .github/actions/callisto-action/tests/` returns nothing. Implementation verified by direct read; the gap is regression protection only.
+
+Unrelated to SPEC-002: `Cargo.lock` is uncommitted with a 0.4.0→0.4.1 bump, and `.claude/plans/PLAN-002.json` is untracked.
+
+Still running: `cargo nextest -p callisto-graph --lib matrix::`, `cargo nextest -p callisto-cli --lib render`, and the scoped cargo-mutants re-run. All three are queued behind the concurrent `just ci` on the cargo build lock. I will issue the binding verdict once they report — a pass is not defensible until I have seen the Rust suites green and the mutation gate re-established against the current code.</result>
+<usage><subagent_tokens>103439</subagent_tokens><tool_uses>53</tool_uses><duration_ms>920032</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a96072cd85d6d6f17</task-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8a85b651-0c9a-44fa-9e0a-ac694c4409e1/tasks/a96072cd85d6d6f17.output</output-file>
+<status>completed</status>
+<summary>Agent "Final lambda:exit-gate re-verification for SPEC-002" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>**Mutation gate now closed on the current code.** The scoped re-run against `crates/callisto-graph/src/matrix.rs` reports 60 mutants tested, 46 caught, 14 unviable, **zero survivors and zero missed** — replacing the stale 25-Aug-10:53 run whose `caught.txt` still named the deleted `artifact_name_for_package_triple`. Both format arms of the current function are now genuinely mutation-covered.
+
+Still outstanding: the two Rust suites. My first attempts sat 22 minutes on the cargo build lock behind the concurrent `just ci` and produced no output, so I killed them (the exit-144s in the notifications are my own kills, not failures) and restarted both against an isolated `CARGO_TARGET_DIR`. That rebuild is in flight.
+
+I am not issuing the verdict until those two report. Everything else is settled:
+
+- **AC-001 through AC-011: all implemented**, each verified by reading the code at the location rather than trusting a pointer.
+- **All four shell scripts pass for real** (exit 0 each).
+- **Mutation gate: passed, zero survivors.**
+- **Stale-format sweep: `.github/` and `.claude/` are clean** — but note my first two sweeps were invalid because I omitted `--hidden`, which silently skipped exactly those two directories. The corrected sweep found the superseded `native-{triple}` format surviving in five untouched files: `docs/01-spec.md:8557`, `docs/00-design.md:2113`, `.claude/specs/track-g-matrix-napi-maturin.json:129`, and two historical plan records. None is named by any of the 11 criteria, so none is an AC failure, but `docs/01-spec.md` and `docs/00-design.md` are live design docs now asserting a format the code cannot emit, and the Track-G spec's criterion directly contradicts SPEC-002 — a future `spec-drift` run against Track G would fire on it.
+- **One test-coverage gap for the verdict:** AC-003's requirement that the loop sit *inside* the `INPUT_PUBLISH` guard, and AC-004's second clause, are implemented but have no automated regression test. `test_native_artifact_placement.sh` extracts the loop body between the `::group::`/`::endgroup::` markers and runs it in isolation, so moving the loop outside the guard would break neither test; `rg 'INPUT_PUBLISH'` across the tests directory returns nothing.
+
+Unrelated to this spec: `Cargo.lock` carries an uncommitted 0.4.0→0.4.1 bump and `.claude/plans/PLAN-002.json` is untracked.
+
+I'll deliver the binding `verdict@1` as soon as the two suites report.</result>
+<usage><subagent_tokens>110574</subagent_tokens><tool_uses>59</tool_uses><duration_ms>1401136</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a96072cd85d6d6f17</task-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8a85b651-0c9a-44fa-9e0a-ac694c4409e1/tasks/a96072cd85d6d6f17.output</output-file>
+<status>completed</status>
+<summary>Agent "Final lambda:exit-gate re-verification for SPEC-002" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## verdict@1
+
+```json
+{
+  "verdict": "pass",
+  "confidence": "high",
+  "artifact_type": "implementation",
+  "retry_count": 0,
+  "verdict_summary": "AC-001..AC-011 all implemented and verified against code read from scratch. 28+9 Rust tests pass, 4/4 action scripts exit 0, mutation re-run clean (60 mutants, 0 survivors). Two non-blocking gaps recorded: no test pins the INPUT_PUBLISH guard placement; stale native-{triple} strings survive in 5 untouched docs.",
+  "blockers": [],
+  "reasoning": "Spec read from disk at .claude/specs/SPEC-002-native-artifact-placement.json, not from context. Each criterion checked by reading the named location rather than trusting a pointer. Mutation evidence on disk was stale (mutants.out/ dated 25 Aug 10:53, naming the deleted artifact_name_for_package_triple) and was re-established by a fresh scoped run."
+}
+```
+
+## What earned the pass
+
+**All 11 criteria implemented.** `artifact_name_for_package_platform` (`/Users/gabe/Projects/callisto/crates/callisto-graph/src/matrix.rs:42-52`) matches the spec signature and both format arms; `build_platform_target:143` passes `triple_to_role`-destructured platform/arch/abi rather than the raw triple. The placement loop (`/Users/gabe/Projects/callisto/.github/actions/callisto-action/action.yml:168-178`) matches the api_surface description exactly — process substitution, `DIR="."` normalization, explicit `mkdir -p`, `$GITHUB_RUN_ID` pin, error naming both artifact and DIR — and sits inside the `INPUT_PUBLISH` guard ahead of `plan-publish`. ARCHITECTURE.md §12 satisfies AC-007/008/009; the §12 diff (`50512a2c`) touches only the code block, leaving the status note byte-identical as AC-007 requires. callisto-matrix.md §4/§6.1/§6.2 satisfy AC-011.
+
+**Everything ran for real.** `callisto-graph --lib matrix::` 28/28 passed; `callisto-cli --lib render` 9/9 passed; all four action scripts exit 0.
+
+**Mutation gate.** The recorded run was stale — timestamped before both `d86e6c35` and `87682d58`, with `caught.txt` naming a function that no longer exists, meaning the current `match abi` branch had never been mutation-tested. cargo-mutants 27.1.0 is installed, so "unavailable" did not apply; I re-ran it scoped to `matrix.rs`: **60 mutants, 46 caught, 14 unviable, zero survivors.** Note that `/Users/gabe/Projects/callisto/mutants.out/` still holds the misleading stale run.
+
+## Two gaps recorded, neither blocking
+
+**Guard placement is untested.** AC-003 explicitly requires the loop be inside the `INPUT_PUBLISH` guard "not merely somewhere after NATIVE_MATRIX computation," and AC-004's second clause depends on it. `test_native_artifact_placement.sh` extracts the loop body between the `::group::`/`::endgroup::` markers and runs it in isolation, so moving the loop outside the guard would break no test; `rg 'INPUT_PUBLISH'` across the tests directory returns nothing. Implementation verified by direct read — the gap is regression protection only.
+
+**Stale-format sweep.** `.github/` is clean: zero triple-shaped artifact strings in `action.yml` or any test script. Worth flagging that my first two sweeps were invalid — I omitted `--hidden`, which silently skipped `.github/` and `.claude/`, the two directories holding most of the touched files; the finding only holds because I re-ran it. The superseded `native-{triple}` format survives in five untouched files, none named by any criterion:
+
+- `/Users/gabe/Projects/callisto/docs/01-spec.md:8557` — prose asserting `artifactName` is always `"native-" + triple`
+- `/Users/gabe/Projects/callisto/docs/00-design.md:2113` — example JSON with `"artifactName": "native-aarch64-apple-darwin"`
+- `/Users/gabe/Projects/callisto/.claude/specs/track-g-matrix-napi-maturin.json:129` — a superseded spec's criterion asserting the old format verbatim
+- `.claude/plans/PLAN-002.json:57` and `.claude/plans/track-g-matrix-napi-maturin.plan.json` — historical records
+
+The never-shipped intermediate `{package_name}-{triple}` appears nowhere outside SPEC-002's own `non_goals[17]`, where it is named deliberately. `native-mod-darwin-arm64` in `render/mod.rs:541` and `matrix.rs:794` is correct, not stale — `native-mod` is the fixture's package name.
+
+The two `docs/` files are live design docs now asserting a format the code cannot emit, and the Track-G criterion directly contradicts SPEC-002 — a future drift check against Track G will fire on it. SPEC-002's `non_goals[17]` disclaims the old format as a contract, so none of these is an AC failure, but all four are worth a follow-up cleanup commit.
+
+Unrelated to this spec: `Cargo.lock` carries an uncommitted 0.4.0→0.4.1 bump and `.claude/plans/PLAN-002.json` is untracked. The whole-workspace `just ci` running elsewhere is still the outstanding regression check — my two nextest runs initially sat 22 minutes on its build lock, so I killed them and re-ran against an isolated `CARGO_TARGET_DIR` (the exit-144s in the notifications were my kills, not failures).</result>
+<usage><subagent_tokens>120436</subagent_tokens><tool_uses>62</tool_uses><duration_ms>1545332</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a96072cd85d6d6f17</task-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8a85b651-0c9a-44fa-9e0a-ac694c4409e1/tasks/a96072cd85d6d6f17.output</output-file>
+<status>completed</status>
+<summary>Agent "Final lambda:exit-gate re-verification for SPEC-002" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Stale watchers cleared. The verdict stands as issued — all evidence is now in.
+
+## verdict@1 — PASS
+
+```json
+{
+  "verdict": "pass",
+  "confidence": "high",
+  "artifact_type": "implementation",
+  "retry_count": 0,
+  "verdict_summary": "AC-001..AC-011 all implemented and verified against code read from scratch. 28+9 Rust tests pass, 4/4 action scripts exit 0, mutation re-run clean (60 mutants, 0 survivors). Two non-blocking gaps: no test pins the INPUT_PUBLISH guard placement; stale native-{triple} strings survive in 5 untouched docs.",
+  "blockers": []
+}
+```
+
+**Final evidence, all run for real on branch `track-9-matrix-artifact-placement` at `17d4212`:**
+
+| Check | Result |
+|---|---|
+| `callisto-graph --lib matrix::` | 28/28 passed |
+| `callisto-cli --lib render` | 9/9 passed |
+| 4 action shell scripts | all exit 0 |
+| cargo-mutants on `matrix.rs` | 60 tested, 46 caught, 14 unviable, **0 survivors** |
+
+The four AC-001 tests all pin the final format explicitly: `artifact_name_for_package_platform_embeds_package_name_and_platform_arch_abi` (both abi arms), `build_platform_target_combines_role_and_ci_table` (call site), and `build_matrix_report_same_triple_two_packages_have_distinct_artifact_names` (the `pkg-a-darwin-arm64`/`pkg-b-darwin-arm64` collision case).
+
+**Two things the parent should carry forward.**
+
+*The mutation evidence on disk was stale and would have been misleading.* `/Users/gabe/Projects/callisto/mutants.out/` is dated 25 Aug 10:53 — before both `d86e6c35` and `87682d58` — and its `caught.txt` names `artifact_name_for_package_triple`, a function that no longer exists. Had I accepted it, the `match abi` branch introduced by the final format change would have passed the gate with zero mutation coverage. The fresh scoped run in `scratchpad/mut` supersedes it; the root `mutants.out/` should be deleted or regenerated so the next reader isn't misled.
+
+*The stale-string answer you asked for.* `.github/` is clean — zero triple-shaped artifact strings in `action.yml` or any test script, and no trace of either superseded format in any touched file. Worth knowing that my first two sweeps were wrong: I ran `rg` without `--hidden`, which silently skips `.github/` and `.claude/` — precisely where the touched files live — so those passes proved nothing. The corrected sweep found the old `native-{triple}` format surviving in five files, none named by any criterion:
+
+- `/Users/gabe/Projects/callisto/docs/01-spec.md:8557` and `/Users/gabe/Projects/callisto/docs/00-design.md:2113` — live design docs asserting a format the code can no longer emit
+- `/Users/gabe/Projects/callisto/.claude/specs/track-g-matrix-napi-maturin.json:129` — a superseded spec criterion that now directly contradicts SPEC-002; a future drift check against Track G will fire on it
+- `.claude/plans/PLAN-002.json:57` and `.claude/plans/track-g-matrix-napi-maturin.plan.json` — historical records, lower priority
+
+SPEC-002's `non_goals[17]` disclaims the old format as a contract, so none of these fails a criterion — but the first three deserve a follow-up cleanup commit.
+
+Also unfixed and untested: AC-003's requirement that the loop sit *inside* the `INPUT_PUBLISH` guard has no regression test, because `test_native_artifact_placement.sh` extracts the loop body between the `::group::` markers and runs it detached from its surroundings. Moving the loop outside the guard would break nothing. Cheapest fix is a fifth assertion grepping `action.yml` for the guard line appearing above the `::group::Placing Native Build Artifacts` marker.
+
+Unrelated to this spec: `Cargo.lock` carries an uncommitted 0.4.0→0.4.1 bump and `.claude/plans/PLAN-002.json` is untracked. Whole-workspace regression coverage still rests on the `just ci` running elsewhere — my scoped runs deliberately used an isolated `CARGO_TARGET_DIR` after the first attempts deadlocked 22 minutes on its build lock.</result>
+<usage><subagent_tokens>124352</subagent_tokens><tool_uses>69</tool_uses><duration_ms>1654955</duration_ms></usage>
+</task-notification>
+
+---
+
+How far are we from done? You've been working on this for 2 days now
+
+---
+
+I just merged PR 14 so that will be good. How long has the CI been building??? Is something wrong again?
+
+---
+
+<task-notification>
+<task-id>bmex1vrif</task-id>
+<tool-use-id>toolu_01Nv3hzBZ3BsNawx9Uu1BHwv</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8a85b651-0c9a-44fa-9e0a-ac694c4409e1/tasks/bmex1vrif.output</output-file>
+<status>completed</status>
+<summary>Background command "just ci 2&gt;&amp;1 | tail -120" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bma5lcrwn</task-id>
+<tool-use-id>toolu_01QWUTtbJB7Q4DJDjLPCZJmU</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8a85b651-0c9a-44fa-9e0a-ac694c4409e1/tasks/bma5lcrwn.output</output-file>
+<status>completed</status>
+<summary>Background command "cargo nextest run -p callisto-graph --lib matrix::tests::artifact_name_for_package_platform_sanitizes_scoped_npm_package_name 2&gt;&amp;1 | tail -30" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>abee5891c13ab3353</task-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8a85b651-0c9a-44fa-9e0a-ac694c4409e1/tasks/abee5891c13ab3353.output</output-file>
+<status>completed</status>
+<summary>Agent "Correct track-g spec's stale AC-013" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>The corrected AC-013 is now internally consistent and confirmed by the re-audit. Still waiting on the exit-gate verdict (task a3895817dd5b23677) before finalizing the spec on disk.</result>
+<usage><subagent_tokens>90484</subagent_tokens><tool_uses>14</tool_uses><duration_ms>351433</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a3cc9f08e42a38490</task-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8a85b651-0c9a-44fa-9e0a-ac694c4409e1/tasks/a3cc9f08e42a38490.output</output-file>
+<status>completed</status>
+<summary>Agent "Correct SPEC-002 for scoped-name sanitization" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>The corrected spec passed exit-gate and is written to disk.
+
+**Summary of this round's correction (SPEC-002, AC-001):**
+
+The contradiction: `artifact_name_for_package_platform` was documented as embedding `package_name` verbatim, but the shipped code (`crates/callisto-graph/src/matrix.rs:36-52`) sanitizes it first — replacing every `/` with `-` — so npm scoped package names (`@scope/addon`) don't produce an invalid, slash-containing `artifactName` that `actions/upload-artifact`/`gh run download` would reject.
+
+Changes written to `/Users/gabe/Projects/callisto/.claude/specs/SPEC-002-native-artifact-placement.json`:
+- **AC-001**: now states the `/`-to-`-` sanitization rule explicitly, with a concrete verified example (`@scope/addon` → `@scope-addon-darwin-arm64`, no `/` in the result), alongside the existing pkg-a/pkg-b example.
+- **`api_surface[0]`** description and **`scope`**'s Rust-change sentence: both updated to state the sanitization step.
+- **New `non_goals` entry**: explicitly declares the narrow theoretical `a/b`-vs-`a-b` post-sanitization collision as out of scope, with rationale (npm/Cargo/PyPI name-character constraints make it vanishingly unlikely; artifactName is documented as an opaque correlation token).
+- **New `AC-012`**: added after the auditor caught that `.claude/specs/callisto-matrix.md` §4 still shows the stale unsanitized example `@scope/addon-darwin-arm64` (line 203) — this is now the one criterion in the spec still requiring an actual edit; `scope` was extended to name this doc fix too.
+- **`revision_note`**: appended as a fifth paragraph documenting this round's correction and the two auditor-driven fixes within it, preserving the full four-prior-round history.
+
+This took two auditor rounds (first caught the stale doc example gap and a self-contradictory AC-001 parenthetical; second caught that my fix for the parenthetical leaked an internal function name (`triple_to_role`) into a criterion, which I removed in favor of the existing black-box-testable negative-substring check) plus one exit-gate pass, which returned **pass**.
+
+**Two items intentionally left untouched, flagged for you separately:**
+- The spec's `id` field (`"SPEC-002"`) collides with `.claude/specs/track-e-specificity.json`, which already owns that id.
+- `AC-001`/`AC-002`/`api_surface[0]` duplicate content already owned by `track-g-matrix-napi-maturin.json`'s `AC-013` (that spec's own revision_note already credits "SPEC-002" for this exact change).
+
+Both are pre-existing conditions of the file, not introduced by this round, and are spec-portfolio housekeeping decisions (renaming an id, deciding which spec is authoritative for the artifactName contract) rather than defects in the AC-001 correction itself — I left them out of scope for a single-criterion correction pass rather than unilaterally restructuring the spec. Worth a separate cleanup pass if you want one.</result>
+<usage><subagent_tokens>139443</subagent_tokens><tool_uses>27</tool_uses><duration_ms>1275310</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bj88og531</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8a85b651-0c9a-44fa-9e0a-ac694c4409e1/tasks/bj88og531.output</output-file>
+<status>completed</status>
+<summary>Background command "rtk grep -rln "SPEC-002-native-artifact-placement\|SPEC-002.*native" /Users/gabe/Projects/callisto/.claude/ /Users/gabe/Projects/callisto/*.md 2&gt;/dev/null" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+How long did it take to run CI?
+
+---
+
+The currently running 2h one is fucking insane
+
+---
+
+I killed it
+
+---
+
+Can you run CI again? It should not take too long. If it does you need to get to the bottom of it. This is insane that you keep breaking it
+
+---
+
+<task-notification>
+<task-id>bcwf1b0f7</task-id>
+<summary>Monitor event: "just ci live progress with step timestamps"</summary>
+<event>[+1s] Tasks: 10 completed (10 cached)</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bcwf1b0f7</task-id>
+<summary>Monitor event: "just ci live progress with step timestamps"</summary>
+<event>[+2s]     Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.34s</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bcwf1b0f7</task-id>
+<summary>Monitor event: "just ci live progress with step timestamps"</summary>
+<event>[+3s]    Compiling callisto-moon v0.4.1 (/Users/gabe/Projects/callisto/crates/callisto-moon)</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
+
+---
+
+Where are we now?
+
+---
+
+What can we setup in the claude.md for this project or anything else to prevent us from this foot gun problem?
+
+---
+
+<task-notification>
+<task-id>bcwf1b0f7</task-id>
+<summary>Monitor event: "just ci live progress with step timestamps"</summary>
+<event>[+354s]     Finished `test` profile [unoptimized + debuginfo] target(s) in 5m 50s</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
+
+---
+
+That is very prescriptive. We want to guide without being wordy or prescriptive right? Guide, output/goal maybe a backstory if needed but no use more words than necessary, no filler words, no AI slop, no AI word salad. Succint and to the point = less tokens used
+
+---
+
+Shouldn't we use just + moon, wtf
+
+---
+
+Let's address all of the fixes needed after the CI runs, I think we should figure out the rust cli binaries for the next PR. commit the claude change and then test again only once it's done.
+
+---
+
+Done?
+
+---
+
+<task-notification>
+<task-id>bcwf1b0f7</task-id>
+<summary>Monitor event: "just ci live progress with step timestamps"</summary>
+<event>[+1367s]         PASS [   0.013s] (  21/1065) callisto-cli commands::pre::tests::stage_pre_json_failure_redacts_credential_from_error
+[+1367s]         PASS [   0.010s] (  33/1065) callisto-cli error::tests::format_error_json_other_has_stable_envelope
+[+1367s]         PASS [   0.011s] (  34/1065) callisto-cli error::tests::format_error_json_not_a_tty_includes_code_and_help
+[+1367s]         PASS [   0.010s] (  36/1065) callisto-cli error::tests::format_error_json_structure_is_consistent_across_variants
+[+1367s]         PASS [   0.021s] (  39/1065) callisto-cli error::tests::format_error_json_io_error_includes_code_and_help
+[+1367s]         PASS [   0.010s] (  42/1065) callisto-cli render::tests::render_publish_report_failed_includes_error_kind</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bcwf1b0f7</task-id>
+<summary>Monitor event: "just ci live progress with step timestamps"</summary>
+<event>[+1368s]         PASS [   0.016s] (  77/1065) callisto-cli::dry_run_invariant_tests pre_exit_without_pre_json_returns_io_error</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bcwf1b0f7</task-id>
+<summary>Monitor event: "just ci live progress with step timestamps"</summary>
+<event>[+1371s]         PASS [   0.020s] ( 101/1065) callisto-cli::schema_guard_test ac13_diagnostic_code_enum_gains_only_changelog_read_error
+[+1371s]         PASS [   0.671s] ( 105/1065) callisto-cli::pre_mode_tests test_malformed_pre_json_returns_error_not_silent_normal_release</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bcwf1b0f7</task-id>
+<summary>Monitor event: "just ci live progress with step timestamps"</summary>
+<event>[+1372s]         PASS [   0.007s] ( 126/1065) callisto-conventional pre_cursor::tests::advance_pre_cursor_redacts_credential_from_advance_failed_error
+[+1372s]         PASS [   0.007s] ( 127/1065) callisto-conventional pre_cursor::tests::advance_pre_cursor_returns_error_when_update_ref_fails
+[+1372s]         PASS [   0.007s] ( 133/1065) callisto-conventional pre_cursor::tests::resolve_pre_cursor_propagates_command_error
+[+1372s]         PASS [   0.007s] ( 134/1065) callisto-conventional pre_cursor::tests::resolve_pre_cursor_redacts_credential_from_malformed_ref_error
+[+1372s]         PASS [   0.007s] ( 136/1065) callisto-conventional pre_cursor::tests::resolve_pre_cursor_returns_malformed_error_for_unparseable_output
+[+1372s]         PASS [   0.017s] ( 142/1065) callisto-conventional window::tests::test_backend_command_error_narrows_to_commit_walk_command
+[+1372s]         PASS [   0.007s] ( 144/1065) callisto-conventional window::tests::test_fetch_commits_propagates_walker_error</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bcwf1b0f7</task-id>
+<summary>Monitor event: "just ci live progress with step timestamps"</summary>
+<event>[+1372s]         PASS [   0.008s] ( 172/1065) callisto-format bump::tests::test_pep440_bump_at_max_returns_error
+[+1372s]         PASS [   0.009s] ( 197/1065) callisto-format bump::tests::test_semver_bump_major_at_max_returns_error
+[+1372s]         PASS [   0.007s] ( 208/1065) callisto-format bump::tests::test_semver_bump_patch_at_max_returns_error
+[+1372s]         PASS [   0.009s] ( 225/1065) callisto-format changeset::frontmatter::tests::unclosed_quote_is_an_error
+[+1372s]         PASS [   0.008s] ( 226/1065) callisto-format changeset::tests::duplicate_raw_name_is_an_error
+[+1372s]         PASS [   0.007s] ( 230/1065) callisto-format changeset::tests::line_numbers_in_errors_are_absolute_not_frontmatter_relative
+[+1372s]         PASS [   0.007s] ( 231/1065) callisto-format changeset::tests::missing_opening_delimiter_is_an_error
+[+1372s]         PASS [   0.007s] ( 238/1065) callisto-format changeset::tests::unclosed_frontmatter_is_an_error</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bcwf1b0f7</task-id>
+<summary>Monitor event: "just ci live progress with step timestamps"</summary>
+<event>[+1373s]         PASS [   1.575s] ( 255/1065) callisto-cli::validate_tests test_add_unknown_package_name_returns_error
+[+1373s]         PASS [   0.009s] ( 257/1065) callisto-graph aggregate::tests::test_load_changesets_error_includes_filename</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bcwf1b0f7</task-id>
+<summary>Monitor event: "just ci live progress with step timestamps"</summary>
+<event>[+1373s]         PASS [   0.869s] ( 258/1065) callisto-graph aggregate::tests::test_aggregate_inference_error_emits_diagnostic
+[+1373s]         PASS [   0.007s] ( 260/1065) callisto-graph aggregate::tests::test_resolve_target_package_ambiguous_bare_name_errors
+[+1373s]         PASS [   0.007s] ( 261/1065) callisto-graph aggregate::tests::test_resolve_target_package_ambiguous_bare_name_three_ecosystems_errors
+[+1373s]         PASS [   0.008s] ( 273/1065) callisto-graph apply::tests::apply_returns_error_when_manifest_has_unexpected_version</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bcwf1b0f7</task-id>
+<summary>Monitor event: "just ci live progress with step timestamps"</summary>
+<event>[+1374s]         PASS [   0.016s] ( 284/1065) callisto-graph apply::tests::bumps_loop_write_version_error_leaves_manifest_untouched_and_skips_persist
+[+1374s]         PASS [   0.017s] ( 294/1065) callisto-graph apply::tests::git_add_staging_failure_redacts_credential_from_error
+[+1374s]         PASS [   0.025s] ( 301/1065) callisto-graph apply::tests::rewrites_loop_update_dependency_spec_error_leaves_manifest_untouched_and_skips_persist</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bcwf1b0f7</task-id>
+<summary>Monitor event: "just ci live progress with step timestamps"</summary>
+<event>[+1374s]         PASS [   0.013s] ( 335/1065) callisto-graph commands::publish::tests::is_published_error_is_ignored_and_publish_proceeds
+[+1374s]         PASS [   0.013s] ( 338/1065) callisto-graph commands::publish::tests::publish_order_still_errors_on_a_real_runtime_cycle
+[+1374s]         PASS [   0.013s] ( 345/1065) callisto-graph commands::publish::tests::test_publish_already_published_is_not_an_error_and_does_not_retry
+[+1374s]         PASS [   0.011s] ( 363/1065) callisto-graph commands::publish_client::tests::cargo_publish_error_redacts_url_userinfo_from_stderr
+[+1374s]         PASS [   0.011s] ( 365/1065) callisto-graph commands::publish_client::tests::cargo_publish_generic_error
+[+1374s]         PASS [   0.011s] ( 374/1065) callisto-graph commands::publish_client::tests::cargo_version_guard_errors_when_manifest_unparseable
+[+1374s]         PASS [   0.012s] ( 376/1065) callisto-graph commands::publish_client::tests::cargo_version_guard_errors_when_manifest_unreadable
+[+1374s]         PASS [   0.013s] ( 377/1065) callisto-graph commands::publish_client::tests::npm_is_published_ambiguous_failure_propagates_as_error
+[+1374s]         PASS [   0.014s] ( 389/1065) callisto-graph commands::publish_client::tests::npm_publish_generic_error</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bcwf1b0f7</task-id>
+<summary>Monitor event: "just ci live progress with step timestamps"</summary>
+<event>[+1374s]         PASS [   0.013s] ( 416/1065) callisto-graph commands::publish_client::tests::pypi_publish_generic_error
+[+1374s]         PASS [   0.012s] ( 425/1065) callisto-graph commands::status::tests::test_resolve_pending_changesets_ambiguous_bare_name_errors
+[+1374s]         PASS [   0.017s] ( 430/1065) callisto-graph commands::validate::tests::staged_diff_failure_redacts_credential_from_error</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bcwf1b0f7</task-id>
+<summary>Monitor event: "just ci live progress with step timestamps"</summary>
+<event>[+1377s]         PASS [   0.008s] ( 473/1065) callisto-graph error::tests::conflicting_platform_target_sources_message_names_package_and_both_sources
+[+1377s]         PASS [   0.008s] ( 474/1065) callisto-graph error::tests::graph_error_vcs_is_transparent_no_prefix
+[+1377s]         PASS [   0.008s] ( 476/1065) callisto-graph identity::tests::resolve_errors_when_manifest_file_missing
+[+1377s]         PASS [   0.008s] ( 477/1065) callisto-graph identity::tests::resolve_errors_when_name_field_missing</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bcwf1b0f7</task-id>
+<summary>Monitor event: "just ci live progress with step timestamps"</summary>
+<event>[+1377s]         PASS [   0.008s] ( 586/1065) callisto-graph matrix::tests::parse_package_json_malformed_json_is_error
+[+1377s]         PASS [   0.008s] ( 587/1065) callisto-graph matrix::tests::parse_pyproject_toml_malformed_toml_is_error
+[+1377s]         PASS [   0.008s] ( 588/1065) callisto-graph matrix::tests::read_engines_node_non_string_value_is_error
+[+1377s]         PASS [   0.007s] ( 589/1065) callisto-graph matrix::tests::read_maturin_targets_non_array_value_is_error
+[+1377s]         PASS [   0.008s] ( 594/1065) callisto-graph matrix::tests::read_napi_targets_non_array_value_is_error
+[+1377s]         PASS [   0.008s] ( 595/1065) callisto-graph matrix::tests::read_requires_python_non_string_value_is_error
+[+1377s]         PASS [   0.008s] ( 599/1065) callisto-graph matrix::tests::select_platform_target_source_conflicting_sources_errors
+[+1377s]         PASS [   0.008s] ( 609/1065) callisto-graph tags::tests::test_last_tag_for_propagates_command_runner_error
+[+1377s]         PASS [   0.008s] ( 610/1065) callisto-graph tags::tests::test_last_tag_for_propagates_malformed_glob_error
+[+1377s]         PASS [   0.008s] ( 615/1065) callisto-graph tags::tests::test_tag_index_build_propagates_command_runner_error
+[+1377s]         PASS [   0.017s] ( 628/1065) callisto-graph walk::tests::case_d_colliding_with_third_disjoint_ecosystem_still_errors</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bcwf1b0f7</task-id>
+<summary>Monitor event: "just ci live progress with step timestamps"</summary>
+<event>[+1377s]         PASS [   0.010s] ( 652/1065) callisto-graph walk::tests::same_ecosystem_collision_still_errors_unchanged</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bcwf1b0f7</task-id>
+<summary>Monitor event: "just ci live progress with step timestamps"</summary>
+<event>[+1378s]         PASS [   0.017s] ( 695/1065) callisto-graph::matrix_tests matrix_unknown_package_errors</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bcwf1b0f7</task-id>
+<summary>Monitor event: "just ci live progress with step timestamps"</summary>
+<event>[+1378s]         PASS [   2.058s] ( 719/1065) callisto-graph commands::version::tests::version_propagates_malformed_napi_package_json_as_manifest_parse_error</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bcwf1b0f7</task-id>
+<summary>Monitor event: "just ci live progress with step timestamps"</summary>
+<event>[+1380s]         PASS [   1.782s] ( 736/1065) callisto-graph::publish_tests plan_publish_leaves_changelog_section_none_and_emits_read_error_for_invalid_utf8
+[+1380s]         PASS [   0.008s] ( 739/1065) callisto-graph::snapshot_tests test_snapshot_sha_resolution_failure_is_surfaced_error</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bcwf1b0f7</task-id>
+<summary>Monitor event: "just ci live progress with step timestamps"</summary>
+<event>[+1380s]         PASS [   0.045s] ( 744/1065) callisto-graph::tag_sha_fabrication_test apply_mode_fails_fast_when_resolve_commit_errors_for_existing_tag
+[+1380s]         PASS [   0.659s] ( 749/1065) callisto-graph::publish_tests publish_options_only_unknown_package_returns_error
+[+1380s]         PASS [   0.016s] ( 753/1065) callisto-graph::tag_sha_fabrication_test dry_run_mode_fails_fast_when_resolve_commit_errors_for_existing_tag
+[+1380s]         PASS [   0.100s] ( 764/1065) callisto-graph::tag_sha_fabrication_test tag_existing_at_release_sha_reports_release_sha_with_no_error_in_both_modes</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bcwf1b0f7</task-id>
+<summary>Monitor event: "just ci live progress with step timestamps"</summary>
+<event>[4 events suppressed — output rate too high. Consider using TaskStop to restart this monitor with a more selective filter.]</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bcwf1b0f7</task-id>
+<summary>Monitor event: "just ci live progress with step timestamps"</summary>
+<event>[+1382s]         PASS [   0.011s] ( 960/1065) callisto-model report::tests::failed_attempt_json_contains_error_kind_discriminator
+[+1382s]         PASS [   0.016s] (1001/1065) callisto-moon extension::tests::build_extension_output_returns_error_response_on_serialize_failure
+[+1382s]         PASS [   0.021s] (1015/1065) callisto-vcs access::tests::test_commits_since_ref_not_found_error_propagates_through_shell_fallback
+[+1382s]         PASS [   0.013s] (1027/1065) callisto-vcs shell::tests::test_list_tags_errors_on_failed_git_invocation</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bcwf1b0f7</task-id>
+<summary>Monitor event: "just ci live progress with step timestamps"</summary>
+<event>[+1430s]         PASS [   5.858s] (1059/1065) callisto-moon::moon_wasm_sandbox execute_extension_unrecognized_subcommand_falls_back_to_status_not_error</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bcwf1b0f7</task-id>
+<summary>Monitor event: "just ci live progress with step timestamps"</summary>
+<event>[+1447s]         PASS [   5.672s] (1062/1065) callisto-moon::moon_wasm_sandbox initialize_extension_moon_unavailable_reports_clean_error_not_panic</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bcwf1b0f7</task-id>
+<summary>Monitor event: "just ci live progress with step timestamps"</summary>
+<event>[+1465s]      Summary [  97.636s] 1065 tests run: 1065 passed, 0 skipped</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bcwf1b0f7</task-id>
+<summary>Monitor event: "just ci live progress with step timestamps"</summary>
+<event>[+1466s]     Finished `test` profile [unoptimized + debuginfo] target(s) in 1.07s</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
+
+---
+
+30 min CI seems slow. Why is it so slow. Is that normal for rust or are we doing something wrong??
+
+---
+
+<task-notification>
+<task-id>bcwf1b0f7</task-id>
+<summary>Monitor event: "just ci live progress with step timestamps"</summary>
+<event>[+2601s]     Finished `dev` profile [unoptimized + debuginfo] target(s) in 11m 28s</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bcwf1b0f7</task-id>
+<summary>Monitor event: "just ci live progress with step timestamps"</summary>
+<event>[Monitor timed out — re-arm if needed.]</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bk3k6at28</task-id>
+<summary>Monitor event: "final just ci run before PR, persistent to avoid premature timeout-kill"</summary>
+<event>[+1s] Tasks: 10 completed (10 cached)</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bk3k6at28</task-id>
+<summary>Monitor event: "final just ci run before PR, persistent to avoid premature timeout-kill"</summary>
+<event>[+2s]     Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.20s</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bk3k6at28</task-id>
+<summary>Monitor event: "final just ci run before PR, persistent to avoid premature timeout-kill"</summary>
+<event>[+3s]     Finished `test` profile [unoptimized + debuginfo] target(s) in 0.58s</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bk3k6at28</task-id>
+<summary>Monitor event: "final just ci run before PR, persistent to avoid premature timeout-kill"</summary>
+<event>[+176s]      Summary [  85.725s] 1065 tests run: 1065 passed, 0 skipped</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bk3k6at28</task-id>
+<summary>Monitor event: "final just ci run before PR, persistent to avoid premature timeout-kill"</summary>
+<event>[+177s]     Finished `test` profile [unoptimized + debuginfo] target(s) in 1.02s</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
+
+---
+
+How can we improve the local dev experience??? Research as munch as neeeded
+
+---
+
+<task-notification>
+<task-id>bk3k6at28</task-id>
+<summary>Monitor event: "final just ci run before PR, persistent to avoid premature timeout-kill"</summary>
+<event>[+464s] Tasks: 10 completed (10 cached)
+[+464s]     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.46s</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ad8a2f4e834b7417e</task-id>
+<tool-use-id>toolu_01DU3fTSgh5D2pZJKtf6BEtp</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8a85b651-0c9a-44fa-9e0a-ac694c4409e1/tasks/ad8a2f4e834b7417e.output</output-file>
+<status>completed</status>
+<summary>Agent "Research local dev build-speed improvements" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Sufficient grounding gathered. Final report:
+
+---
+
+**Task**: Research local Rust dev-experience improvements for `/Users/gabe/Projects/callisto`, grounded in today's actual pain (Cargo.lock churn now fixed; serial `just ci` at ~25-45 min clean).
+
+## Ranked recommendations
+
+**1. Stop running `moon_wasm_sandbox` three times per `just ci`. [safe to just do, highest impact]**
+Confirmed in `.config/nextest.toml` and `Justfile`: this is the single slowest test file (wasmtime sandbox spin-up, serialized to `max-threads=1`). It currently runs three times per `just ci`: once in `test`'s `cargo nextest run --workspace`, again explicitly in `wasm-check`'s `cargo test -p callisto-moon --test moon_wasm_sandbox`, and a third time inside `coverage`'s `cargo llvm-cov --all-features` (which re-runs the whole suite under instrumentation). Fix: have `wasm-check` skip re-running it (the build+check steps before it already prove the wasm artifact compiles; `test` already exercises it) — drop `wasm-check`'s trailing `cargo test -p callisto-moon --test moon_wasm_sandbox` line, or add an nextest exclude filter to `coverage`. Zero tooling change, pure Justfile edit.
+
+**2. Don't run `coverage` on every local `just ci`. [worth discussing — changes what `just ci` means]**
+Real CI (`callisto-ci.yml`) already runs coverage as its own parallel job on a separate runner — locally it's tacked onto the end of a serial pipeline, recompiling the entire workspace a third time under instrumentation. For local pre-PR checks, `just ci` minus `coverage` (i.e. `fmt-check lint test audit doc-check wasm-check`) covers correctness; coverage numbers are a reporting concern, not a merge gate a developer needs on every local run. Suggest a `just ci-fast` (no coverage) as the everyday default, keeping `just ci` as the full parity check.
+
+**3. Upgrade `cargo-llvm-cov` 0.8.7 → 0.9.0+. [safe to just do, moderate impact]**
+0.9.0 changed instrumentation to apply coverage flags only to crates that need them, instead of the whole dependency graph — meaningful here since `wasmtime` (a heavy transitive dev-dependency via `moon_pdk_test_utils`) currently gets instrumented too. One-line `cargo install cargo-llvm-cov --locked` bump, no config change.
+
+**4. `just lint-affected` over `just lint` during iteration. [already exists, just underused]**
+Already implemented correctly (moon's affected-project graph → single scoped `cargo clippy` invocation, avoiding the build-lock serialization the `lint` recipe's own comment warns about). `just ci` correctly uses full `lint`; day-to-day iteration should default to `lint-affected`, not full `lint`.
+
+**5. No linker swap. [don't do this]**
+Verified: `mold` doesn't support macOS at all; on Apple Silicon, Apple's native linker already outperforms `lld`. This is a real difference from Linux advice — skip it, it would make things worse here.
+
+**6. `moon` 2.4.5 → 2.5.3 upgrade: situational, not the fix for today's issue.**
+2.5.3's headline feature is `cache.unstable_sharedWorktreeCache` (shared cache across git worktrees) — only pays off if using `moon`-tracked git worktrees regularly (this session's subagents do create `.claude/worktrees/*` sometimes). Unrelated to the Cargo.lock-churn/serial-pipeline pain diagnosed today. Low-risk to take opportunistically, not urgent.
+
+**7. `sccache`: inconclusive, not recommended to adopt now.**
+Could not confirm clean compatibility with `cargo-llvm-cov`'s instrumentation flags from available sources — real risk of double-caching/invalidation bugs between sccache and llvm-cov's own object-cache. Given #1-#3 already address the concrete measured pain without a new required tool, not worth the adoption/setup cost right now.
+
+**8. `cargo hakari` (workspace-hack): not worth it at this scale.**
+10-crate workspace with `resolver = "2"` and no evidence of feature-unification thrashing in what was measured today (the slowness traced to lockfile churn + redundant test execution, not per-crate feature-set duplication). Skip.
+
+**Try first, in order**: #1 → #4 → #3. Combined, #1+#2 alone should cut a clean `just ci`-equivalent local check from ~25-45 min to roughly the ~5-10 min range (dominated by the wasm build/test path running once instead of three times).</result>
+<usage><subagent_tokens>518651</subagent_tokens><tool_uses>9</tool_uses><duration_ms>96385</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bk3k6at28</task-id>
+<summary>Monitor event: "final just ci run before PR, persistent to avoid premature timeout-kill"</summary>
+<event>[+1536s]     Finished `dev` profile [unoptimized + debuginfo] target(s) in 17m 52s</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bk3k6at28</task-id>
+<summary>Monitor event: "final just ci run before PR, persistent to avoid premature timeout-kill"</summary>
+<event>[+1599s]     Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 02s</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bk3k6at28</task-id>
+<summary>Monitor event: "final just ci run before PR, persistent to avoid premature timeout-kill"</summary>
+<event>[+2034s]     Finished `test` profile [unoptimized + debuginfo] target(s) in 7m 14s</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bk3k6at28</task-id>
+<summary>Monitor event: "final just ci run before PR, persistent to avoid premature timeout-kill"</summary>
+<event>[+2316s]     Finished `test` profile [unoptimized + debuginfo] target(s) in 16.04s</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bk3k6at28</task-id>
+<summary>Monitor event: "final just ci run before PR, persistent to avoid premature timeout-kill"</summary>
+<event>[+2327s] ### 📊 Release Summary</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bk3k6at28</task-id>
+<summary>Monitor event: "final just ci run before PR, persistent to avoid premature timeout-kill"</summary>
+<event>[+2447s]     Finished report saved to lcov.info
+CI_DONE TOTAL_ELAPSED=2447s EXIT=</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bk3k6at28</task-id>
+<tool-use-id>toolu_013trRJVdyE1LvZTkzexxePt</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8a85b651-0c9a-44fa-9e0a-ac694c4409e1/tasks/bk3k6at28.output</output-file>
+<status>completed</status>
+<summary>Monitor "final just ci run before PR, persistent to avoid premature timeout-kill" stream ended</summary>
+</task-notification>
+
+---
+
+Yes please, changesets and or
+
+---
+
+Do we have to make changes to our plugins to make sure they get triggered?
+
+---
+
+<task-notification>
+<task-id>a27d8fc299285f6ae</task-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8a85b651-0c9a-44fa-9e0a-ac694c4409e1/tasks/a27d8fc299285f6ae.output</output-file>
+<status>completed</status>
+<summary>Agent "Draft changesets for track-9 branch" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I created a single changeset for this branch. Here's the reasoning and where things landed.
+
+**Why one changeset, not four**: the diff's judgment rule 1 (shared `linked_spec`) dominates. Every code-touching commit — the `action.yml` placement loop, its three new test scripts, and all three `artifactName` behavior changes in `matrix.rs` (collision fix, napi-rs format, scoped-package sanitization) — traces to SPEC-006, which was scoped from the start as one coherent capability: "artifact names that stay unique... closing the gap between callisto matrix's output and a working end-to-end release." Splitting the naming fix from the placement loop it enables would fragment one spec's delivery for no consumer-facing reason.
+
+**Classification**: `consumer_impact: new-capability`, `semver_impact: minor` (this repo's pre-1.0 lockstep convention: new capability = minor, consistent with `callisto-matrix-command.md` precedent). No `breaking_changes` entry — SPEC-006's own non_goals explicitly document `artifactName` as an opaque CI-internal correlation token with "no config override provided" and "never published or user-facing," and the sanctioned consumption pattern (dynamic `${{ matrix.target.artifactName }}` dereferencing) never hardcodes the string format, so no documented external contract broke.
+
+**Topics excluded, with reasoning** (per the "Skip changesets for" list — pure docs / internal refactors with no behavior change):
+- `CLAUDE.md` workflow-guardrail additions (dev-workflow notes for AI-agent contributors, no crate effect)
+- `Cargo.lock` 0.4.0→0.4.1 sync (pure lockfile hygiene matching already-committed `Cargo.toml` versions, no dependency-graph change)
+- `--refresh-lockfiles` doc addition in `ARCHITECTURE.md` (documents a flag that already shipped before this branch; no code change)
+- The rest of `.claude/specs/*.json`, `.claude/plans/PLAN-006.json`, and the ARCHITECTURE.md/`callisto-matrix.md` example-workflow corrections — internal process artifacts and doc-only fixes to an already-broken example, folded into the single changeset's `files_changed` as supporting evidence rather than a separate topic since they document the same SPEC-006 capability.
+
+File written: `/Users/gabe/Projects/callisto/.changeset/native-artifact-placement.md` (frontmatter `callisto-graph: minor`, `callisto-cli: minor`; body matches this repo's real bullet-list, no-implementation-detail house style per `callisto-matrix-command.md`/`release-pipeline-contract.md` precedent).</result>
+<usage><subagent_tokens>88470</subagent_tokens><tool_uses>18</tool_uses><duration_ms>481821</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bvlrsxtw5</task-id>
+<summary>Monitor event: "final just ci run with dev-exp fixes applied, persistent"</summary>
+<event>[+0s] Tasks: 10 completed (10 cached)</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bvlrsxtw5</task-id>
+<summary>Monitor event: "final just ci run with dev-exp fixes applied, persistent"</summary>
+<event>[+1s]     Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.21s</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bvlrsxtw5</task-id>
+<summary>Monitor event: "final just ci run with dev-exp fixes applied, persistent"</summary>
+<event>[+3s]     Finished `test` profile [unoptimized + debuginfo] target(s) in 0.78s</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
+
+---
+
+Why are we not making ci fast the default??
+
+---
+
+We only need coverage in the GH action. Locally we don’t right?
+
+---
+
+<task-notification>
+<task-id>bvlrsxtw5</task-id>
+<summary>Monitor event: "final just ci run with dev-exp fixes applied, persistent"</summary>
+<event>[+630s]      Summary [  93.309s] 1065 tests run: 1065 passed, 0 skipped</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bvlrsxtw5</task-id>
+<summary>Monitor event: "final just ci run with dev-exp fixes applied, persistent"</summary>
+<event>[+631s]     Finished `test` profile [unoptimized + debuginfo] target(s) in 1.09s</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bvlrsxtw5</task-id>
+<summary>Monitor event: "final just ci run with dev-exp fixes applied, persistent"</summary>
+<event>[+1068s] Tasks: 10 completed (10 cached)
+[+1068s]     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.51s
+[+1068s]     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.39s
+[+1068s]     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.24s</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bvlrsxtw5</task-id>
+<summary>Monitor event: "final just ci run with dev-exp fixes applied, persistent"</summary>
+<event>[+1084s]     Finished `test` profile [unoptimized + debuginfo] target(s) in 15.14s</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bvlrsxtw5</task-id>
+<summary>Monitor event: "final just ci run with dev-exp fixes applied, persistent"</summary>
+<event>[+1095s] ### 📊 Release Summary</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bvlrsxtw5</task-id>
+<summary>Monitor event: "final just ci run with dev-exp fixes applied, persistent"</summary>
+<event>[+1210s]     Finished report saved to lcov.info
+CI_DONE TOTAL_ELAPSED=1210s</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bvlrsxtw5</task-id>
+<tool-use-id>toolu_01XbJPXWigeFUT3LXeueBqN9</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8a85b651-0c9a-44fa-9e0a-ac694c4409e1/tasks/bvlrsxtw5.output</output-file>
+<status>completed</status>
+<summary>Monitor "final just ci run with dev-exp fixes applied, persistent" stream ended</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a619c8d864fff8496</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8a85b651-0c9a-44fa-9e0a-ac694c4409e1/tasks/a619c8d864fff8496.output</output-file>
+<status>completed</status>
+<summary>Agent "Draft PR title and body" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>```json
+{
+  "title": "fix(action): place native CI artifacts before publish, dedup artifactName",
+  "body": "## Summary\n- The shipped GitHub Action (`callisto-action`) now downloads each `callisto matrix`-driven native build's CI artifact and places it into its package directory automatically before `callisto publish` runs, closing the gap between the build matrix and a working end-to-end release for napi-rs/maturin platform packages.\n- Fixes a collision bug: two packages sharing a target triple no longer collapse to one `artifactName` (which silently dropped one package's build from the release); `artifactName` now follows napi-rs's own `&lt;name&gt;-&lt;platform&gt;-&lt;arch&gt;[-&lt;abi&gt;]` convention instead of the raw triple, and scoped npm names like `@scope/addon` are sanitized so `artifactName` never contains `/` (which `actions/upload-artifact` rejects).\n- Also includes local dev-workflow fixes found while validating this change: a stale `Cargo.lock` re-synced to already-committed versions, a `justfile` fix dropping a redundant third run of the slowest suite from `wasm-check`, a new `just ci-fast` (now the default) that skips the coverage pass real CI already runs as its own gate-free parallel job, and two CLAUDE.md guardrails against footguns hit this session.\n\n## Why\nSPEC-006 (linked below) exists because `callisto matrix` could emit a working build matrix but nothing actually moved a built native binary into its package directory before publish -- consumers had to hand-write that step, and one collision bug (`unique_by(.artifactName)` collapsing two packages' entries into one) meant a workspace with two packages on the same triple silently lost a platform build. This PR closes both gaps in one pass, plus a related sanitization bug (`/` in scoped npm names breaking `actions/upload-artifact`) found while implementing it. The dev-workflow fixes are unrelated in mechanism but were found and fixed in the same session while iterating on `just ci`; bundled here rather than left as silent drift.\n\n## Related\nSpec: `.claude/specs/SPEC-006-native-artifact-placement.json`\nRequirement: REQ-001\nChangeset: `.changeset/native-artifact-placement.md`\n\n## Test Plan\n- [x] `just ci` passed clean (20.2 min, 1065/1065 tests)\n- [x] Mutation-tested (cargo-mutants) the changed `matrix.rs` functions -- zero surviving mutants\n- [ ] Reviewer: confirm `crates/callisto-graph/src/matrix.rs`'s `artifact_name_for_package_platform` sanitizes `/` and matches napi-rs's `&lt;name&gt;-&lt;platform&gt;-&lt;arch&gt;[-&lt;abi&gt;]` shape (tests at matrix.rs, see `artifact_name_for_package_platform_sanitizes_scoped_npm_package_name` and `artifact_name_for_package_platform_embeds_package_name_and_platform_arch_abi`)\n- [ ] Reviewer: confirm the placement loop in `.github/actions/callisto-action/action.yml` sits inside the existing `INPUT_PUBLISH` guard (action.yml:167) and is proven by `test(action): prove the placement loop stays inside the INPUT_PUBLISH guard` (commit 76da4caf)\n- [ ] Regression check: `nativeMatrix: []` (no native targets) still produces zero `gh run download` calls and an unchanged publish path (AC-004)",
+  "labels": ["bug", "enhancement"],
+  "reasoning": "Framed the body around two audiences in one summary: the SPEC-006 feature (placement + collision fix + sanitization) gets top billing since it's the branch's primary purpose and has a linked spec/requirement/changeset; the dev-workflow fixes get one bullet since they're real but secondary, avoiding a 4th+ bullet by folding four small items into one sentence. Chose 'fix' as the conventional-commit type over 'feat' because the two headline changes (collision dedup, sanitization) are bug fixes and the placement loop closes a functional gap rather than adding a new surface; 'bug' + 'enhancement' labels reflect that mix. No 'Breaking Changes' heading: the spec's non_goals section explicitly documents that artifactName is an opaque CI-internal correlation token with no versioned-format guarantee, so the string-shape change is not a breaking change under this project's own stated contract, and the changeset frames both crates as semver 'minor' (new capability + bug fix), not major. Test plan mixes completed items (already run, per the task's instruction not to phrase them as TODO) with unchecked reviewer-verification steps, since 'run the tests' alone isn't a real test plan for a reviewer with zero context -- they need to know which specific behaviors to look for and where the proof lives."
+}
+```
+
+Ready to open once you confirm — say the word and I'll run `gh pr create` with this title/body against `main`.</result>
+<usage><subagent_tokens>60701</subagent_tokens><tool_uses>7</tool_uses><duration_ms>90396</duration_ms></usage>
+</task-notification>
+
+---
+
+Test should run against everything that is bonkers that we don't test everything. WTF
+
+---
+
+Can we make sure that the test command in CI tests everything? Do we need to run test + coverage in the GH action for ci?
+
+for local dev CI should not need to run coverage, just tests. We can run coverage separately
+
+---
+
+We should add tresholds for coverage and block merge in the PRs though
