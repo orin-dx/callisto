@@ -45,7 +45,7 @@ pub trait ReportPresenter: Serialize {
 
 #[cfg(test)]
 mod tests {
-    use callisto_model::Diagnostic;
+    use callisto_model::{Diagnostic, Report};
     use serde::Deserialize;
 
     use super::*;
@@ -97,5 +97,27 @@ mod tests {
         FakeReport { value: 1 }.present_json(&mut buf).unwrap();
         let text = String::from_utf8(buf).unwrap();
         assert!(text.contains("\"value\": 1"), "got:\n{text}");
+    }
+
+    #[test]
+    fn present_human_renders_the_report_value() {
+        assert_eq!(FakeReport { value: 9 }.present_human(), "value=9");
+    }
+
+    #[test]
+    fn report_trait_accessors_expose_schema_version_and_diagnostics() {
+        let report = FakeReport { value: 1 };
+        assert_eq!(report.schema_version(), 1);
+        assert!(report.diagnostics().is_empty());
+    }
+
+    /// `log_line` routes purely by `OutputFormat` (Json -> stderr, Text ->
+    /// stdout); it writes directly to the process's real fds rather than a
+    /// caller-supplied writer, so its destination isn't capturable in-process.
+    /// This exercises both branches to prove neither panics.
+    #[test]
+    fn log_line_does_not_panic_for_either_output_format() {
+        log_line(OutputFormat::Json, "to stderr");
+        log_line(OutputFormat::Text, "to stdout");
     }
 }

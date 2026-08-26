@@ -33,3 +33,33 @@ pub fn handle(args: SchemaArgs, _global: &GlobalArgs) -> Result<ExitCode, CliErr
     println!("{json}");
     Ok(ExitCode::SUCCESS)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn global() -> GlobalArgs {
+        GlobalArgs {
+            format: crate::cli::OutputFormat::Text,
+            cwd: std::path::PathBuf::from("."),
+            dry_run: false,
+        }
+    }
+
+    #[test]
+    fn handle_rejects_unknown_target_type() {
+        let result = handle(
+            SchemaArgs {
+                target_type: Some("bogus".to_string()),
+            },
+            &global(),
+        );
+        match result {
+            Err(CliError::Other(msg)) => {
+                assert!(msg.contains("Unknown schema target type `bogus`"), "got: {msg}");
+                assert!(msg.contains("Supported types:"), "got: {msg}");
+            }
+            other => panic!("expected CliError::Other, got: {other:?}"),
+        }
+    }
+}
