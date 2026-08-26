@@ -227,4 +227,148 @@ mod tests {
         let invalid = ManifestDecl::new("Cargo.toml", ManifestRole::Lockfile, ManifestFormat::CargoToml);
         assert!(invalid.is_err());
     }
+
+    #[test]
+    fn manifest_decl_new_rejects_lockfile_format_with_non_lockfile_role() {
+        // The opposite direction of validates_manifest_role_and_format's
+        // check: a genuinely lockfile-shaped format (Cargo.lock) declared
+        // under a non-Lockfile role must also be rejected.
+        let err = ManifestDecl::new("Cargo.lock", ManifestRole::Canonical, ManifestFormat::CargoLock).unwrap_err();
+        assert!(matches!(err, ModelError::InvalidRoleForFormat { .. }));
+    }
+
+    #[test]
+    fn manifest_decl_new_rejects_platform_role_with_cargo_toml_format() {
+        // Platform-role manifests are napi/maturin platform-stub packages
+        // (package.json/pyproject.toml); Cargo.toml is never a Platform
+        // manifest, since Cargo has no equivalent platform-stub-package
+        // convention.
+        let err = ManifestDecl::new(
+            "Cargo.toml",
+            ManifestRole::Platform {
+                platform: "darwin".to_string(),
+                arch: "arm64".to_string(),
+                abi: None,
+            },
+            ManifestFormat::CargoToml,
+        )
+        .unwrap_err();
+        assert!(matches!(err, ModelError::InvalidRoleForFormat { .. }));
+    }
+
+    fn test_package(manifests: Vec<ManifestDecl>, publish_to: Vec<PublishTarget>) -> Package {
+        Package {
+            id: PackageId::Bare("pkg".to_string()),
+            manifests,
+            changelog: None,
+            release_trigger: ReleaseTrigger::Changeset,
+            publish_to,
+            tag_template: None,
+        }
+    }
+
+    #[test]
+    fn platform_manifests_filters_to_platform_role_only() {
+        let canonical =
+            ManifestDecl::new("package.json", ManifestRole::Canonical, ManifestFormat::PackageJson).unwrap();
+        let platform = ManifestDecl::new(
+            "npm/darwin-arm64/package.json",
+            ManifestRole::Platform {
+                platform: "darwin".to_string(),
+                arch: "arm64".to_string(),
+                abi: None,
+            },
+            ManifestFormat::PackageJson,
+        )
+        .unwrap();
+        let pkg = test_package(vec![canonical, platform.clone()], vec![]);
+
+        let found: Vec<_> = pkg.platform_manifests().collect();
+        assert_eq!(found, vec![&platform]);
+    }
+
+    #[test]
+    fn lockfiles_filters_to_lockfile_role_only() {
+        let canonical = ManifestDecl::new("Cargo.toml", ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap();
+        let lockfile = ManifestDecl::new("Cargo.lock", ManifestRole::Lockfile, ManifestFormat::CargoLock).unwrap();
+        let pkg = test_package(vec![canonical, lockfile.clone()], vec![]);
+
+        let found: Vec<_> = pkg.lockfiles().collect();
+        assert_eq!(found, vec![&lockfile]);
+    }
+
+    #[test]
+    fn is_release_point_true_when_any_publish_target_is_not_none() {
+        let pkg = test_package(vec![], vec![PublishTarget::None, PublishTarget::CratesIo]);
+        assert!(pkg.is_release_point());
+    }
+
+    #[test]
+    fn is_release_point_false_when_all_publish_targets_are_none() {
+        let pkg = test_package(vec![], vec![PublishTarget::None]);
+        assert!(!pkg.is_release_point());
+
+        let pkg_empty = test_package(vec![], vec![]);
+        assert!(!pkg_empty.is_release_point());
+    }
+
+    #[test]
+    fn is_dual_published_true_with_two_distinct_canonical_ecosystems() {
+        let cargo = ManifestDecl::new("Cargo.toml", ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap();
+        let npm = ManifestDecl::new("package.json", ManifestRole::Canonical, ManifestFormat::PackageJson).unwrap();
+        let pkg = test_package(vec![cargo, npm], vec![]);
+
+        assert!(pkg.is_dual_published());
+    }
+
+    #[test]
+    fn is_dual_published_false_with_a_single_canonical_ecosystem() {
+        let cargo = ManifestDecl::new("Cargo.toml", ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap();
+        let pkg = test_package(vec![cargo], vec![]);
+
+        assert!(!pkg.is_dual_published());
+    }
+
+    #[test]
+    fn manifest_format_file_name_and_is_writable_cover_every_variant() {
+        let cases: &[(ManifestFormat, &str, bool)] = &[
+            (ManifestFormat::CargoToml, "Cargo.toml", true),
+            (ManifestFormat::PackageJson, "package.json", true),
+            (ManifestFormat::PyprojectToml, "pyproject.toml", true),
+            (ManifestFormat::SetupCfg, "setup.cfg", false),
+            (ManifestFormat::GoMod, "go.mod", true),
+            (ManifestFormat::PomXml, "pom.xml", true),
+            (ManifestFormat::GradleVersionCatalog, "libs.versions.toml", true),
+            (ManifestFormat::SettingsGradle, "settings.gradle", false),
+            (ManifestFormat::VersionSbt, "build.sbt", false),
+            (ManifestFormat::DenoJson, "deno.json", true),
+            (ManifestFormat::CargoLock, "Cargo.lock", false),
+            (ManifestFormat::PackageLockJson, "package-lock.json", false),
+            (ManifestFormat::PnpmLockYaml, "pnpm-lock.yaml", false),
+            (ManifestFormat::YarnLock, "yarn.lock", false),
+        ];
+        for &(format, expected_name, expected_writable) in cases {
+            assert_eq!(format.file_name(), expected_name, "file_name mismatch for {format:?}");
+            assert_eq!(
+                format.is_writable(),
+                expected_writable,
+                "is_writable mismatch for {format:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn manifest_format_from_path_reads_recognized_names_and_rejects_unknown() {
+        assert_eq!(
+            ManifestFormat::from_path(std::path::Path::new("Cargo.toml")).unwrap(),
+            ManifestFormat::CargoToml
+        );
+        assert_eq!(
+            ManifestFormat::from_path(std::path::Path::new("deno.jsonc")).unwrap(),
+            ManifestFormat::DenoJson
+        );
+
+        let err = ManifestFormat::from_path(std::path::Path::new("Makefile")).unwrap_err();
+        assert!(matches!(err, ModelError::UnknownManifestFormat { .. }));
+    }
 }
