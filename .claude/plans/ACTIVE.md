@@ -375,6 +375,10 @@ Confirmed live in PR #16's own release run: `callisto-action`'s tag-push step (`
 
 **Follow-up still needed**: the floating tags are stale RIGHT NOW on the real remote (from PR #16's run) -- needs a manual `git push origin --tags --force` from a real checkout to repair, pending user confirmation (force-push to shared public refs).
 
+### 2026-08-12 workspace audit — CLOSED
+
+All 8 critical/high findings were fixed the same session they were found (see above). The remaining 31 medium/low findings (architecture, modeling, correctness, security, performance, deps, tests, docs) were re-verified against current code via a 31-agent parallel workflow on 2026-08-27: all 31 confirmed FIXED, closed as side effects of the Track 1-9/B/E/F/G/Manifest-Persist work since. 4 spot-checked by hand to confirm the verdicts weren't superficial. Nothing open from this audit. Detail: `project_workspace_audit_2026-08.md` in memory.
+
 ---
 
 ## Pipeline Protocol (follow for every track, in order)
