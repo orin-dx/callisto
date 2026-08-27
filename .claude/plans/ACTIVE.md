@@ -359,6 +359,26 @@ clean. Commit: `ae26a8c`.
 Canonical fix commit: `2beaff6b`. Crate migration commits: `d07a57e7`, `ed64fe44`, `6e366cfb`, `8a9f018e`.
 Full detail and diagnosis process in memory: `project_git_fixture_hermeticity_gap.md`.
 
+### SPEC-006: Native CI Artifact Placement — DONE (PR #15, merged)
+
+`artifact_name_for_package_platform` (`callisto-graph/src/matrix.rs`) replaces triple-based naming
+with napi-rs's `<name>-<platform>-<arch>[-<abi>]` convention, fixes a same-triple artifactName
+collision, and sanitizes `/` in scoped npm names. `callisto-action` gained a placement loop
+(downloads + places each `nativeMatrix` artifact before `publish`), guarded inside `INPUT_PUBLISH`.
+Also: both CI workflows now route every step through `just` (no raw `cargo`/`moon`); added
+`just coverage`/`just coverage-per-crate` gates (90%); closed real coverage gaps across all 10
+crates to clear that gate. Spec: `.claude/specs/SPEC-006-native-artifact-placement.json`.
+Known deferred gaps (documented, not oversights): `add.rs`'s interactive wizard (needs pty harness),
+`snapshot`/`tag`'s `--strict` crosscheck branch (needs real moon-declared-edge infra),
+`render/attribution.rs` (needs a `ResolvedConfig` fixture, no public constructor exists),
+`publish`'s real non-dry-run path (needs `CommandRunner` injection).
+
+### Fix: Wire up `check_git_version` — DONE
+
+`check_git_version` (`callisto-model/src/exec.rs`) had full unit coverage but no caller. Added
+`ensure_git_supported` (`callisto-cli/src/workspace.rs`), called from `load_workspace` before any
+git-dependent op. Commit: `82a3537`.
+
 ---
 
 ## Pipeline Protocol (follow for every track, in order)
