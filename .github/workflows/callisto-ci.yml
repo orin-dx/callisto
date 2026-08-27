@@ -28,7 +28,7 @@ jobs:
           fetch-depth: 0
       - uses: extractions/setup-just@v2
       - uses: moonrepo/setup-toolchain@v0
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: orin-dx/actions/setup-rust@v1.1
         with:
           components: rustfmt
           targets: wasm32-wasip1
@@ -43,11 +43,10 @@ jobs:
           fetch-depth: 0
       - uses: extractions/setup-just@v2
       - uses: moonrepo/setup-toolchain@v0
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: orin-dx/actions/setup-rust@v1.1
         with:
           components: clippy
           targets: wasm32-wasip1
-      - uses: Swatinem/rust-cache@v2
       - run: just lint
 
   test:
@@ -63,10 +62,9 @@ jobs:
           fetch-depth: 0
       - uses: extractions/setup-just@v2
       - uses: moonrepo/setup-toolchain@v0
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: orin-dx/actions/setup-rust@v1.1
         with:
           targets: wasm32-wasip1
-      - uses: Swatinem/rust-cache@v2
       - run: just test
       - run: just wasm-check
 
@@ -78,11 +76,10 @@ jobs:
         with:
           fetch-depth: 0
       - uses: extractions/setup-just@v2
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: orin-dx/actions/setup-rust@v1.1
         with:
           components: llvm-tools-preview
           targets: wasm32-wasip1
-      - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-llvm-cov
@@ -107,7 +104,7 @@ jobs:
           fetch-depth: 0
       - uses: extractions/setup-just@v2
       - uses: moonrepo/setup-toolchain@v0
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: orin-dx/actions/setup-rust@v1.1
         with:
           targets: wasm32-wasip1
       - uses: taiki-e/install-action@v2
