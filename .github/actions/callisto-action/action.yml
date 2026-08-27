@@ -207,7 +207,7 @@ runs:
 
             echo "::group::4. Tagging Release Commits & Updating Major Version Pointer Aliases"
             callisto tag --plan "$PLAN_JSON" --floating-major || true
-            git push origin --tags || true
+            git push origin --tags --force
             echo "::endgroup::"
 
             if [[ "$INPUT_CREATE_GITHUB_RELEASE" == "true" ]]; then

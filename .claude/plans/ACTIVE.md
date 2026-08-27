@@ -369,6 +369,12 @@ Known deferred gaps (documented, not oversights): `add.rs`'s interactive wizard 
 
 `check_git_version` (`callisto-model/src/exec.rs`) had full unit coverage but no caller. Added `ensure_git_supported` (`callisto-cli/src/workspace.rs`), called from `load_workspace` before any git-dependent op. Commit: `82a3537`.
 
+### Fix: floating major-version tags never reached the remote — DONE
+
+Confirmed live in PR #16's own release run: `callisto-action`'s tag-push step (`action.yml`) did `git push origin --tags || true`. A plain (non-force) push can never move an already-existing remote tag, so `callisto tag`'s floating major alias (`pkg@0`, correctly force-moved locally via `git tag -f`) never reached the remote after the first release, and `|| true` hid the failure -- the job reported success while the alias stayed stale. Fixed: `git push origin --tags --force`, error no longer swallowed. Regression test: `.github/actions/callisto-action/tests/test_tag_push_force.sh`.
+
+**Follow-up still needed**: the floating tags are stale RIGHT NOW on the real remote (from PR #16's run) -- needs a manual `git push origin --tags --force` from a real checkout to repair, pending user confirmation (force-push to shared public refs).
+
 ---
 
 ## Pipeline Protocol (follow for every track, in order)
