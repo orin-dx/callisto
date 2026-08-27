@@ -227,7 +227,8 @@ pub fn render_matrix<W: io::Write>(report: &callisto_model::MatrixReport, w: &mu
 mod tests {
     use super::*;
     use callisto_model::{
-        Ecosystem, PackageId, PublishAttempt, ReleaseTrigger, Severity, StatusPackageRecord, Version, VersionGrammar,
+        BumpRecord, CreatedTag, Ecosystem, PackageId, PublishAttempt, ReleaseTrigger, Severity, StatusPackageRecord,
+        Version, VersionGrammar,
     };
 
     fn v1() -> Version {
@@ -538,7 +539,7 @@ mod tests {
                     abi: None,
                     host_runner: "macos-latest".to_string(),
                     use_cross: false,
-                    artifact_name: "native-aarch64-apple-darwin".to_string(),
+                    artifact_name: "native-mod-darwin-arm64".to_string(),
                     package_dir: "native-mod".to_string(),
                     package_name: "native-mod".to_string(),
                 }],
@@ -613,5 +614,148 @@ mod tests {
             text.contains("native-mod"),
             "table output must mention the offending package: {text}"
         );
+    }
+
+    #[test]
+    fn render_snapshot_lists_snapshot_tag_and_bumps() {
+        let report = SnapshotReport {
+            schema_version: callisto_model::SCHEMA_VERSION,
+            snapshot_tag: "0.0.0-canary-abc1234".to_string(),
+            bumps: vec![BumpRecord {
+                package: pkg("crate-a"),
+                from: v1(),
+                to: Version::parse("0.0.0-canary-abc1234", VersionGrammar::SemVer).unwrap(),
+                severity: Severity::Patch,
+                governed_by: None,
+                reason: None,
+            }],
+            diagnostics: vec![],
+        };
+        let mut out = Vec::new();
+        render_snapshot(&report, &mut out).unwrap();
+        let text = String::from_utf8(out).unwrap();
+        assert!(text.contains("0.0.0-canary-abc1234"), "got: {text}");
+        assert!(text.contains("crate-a"), "got: {text}");
+    }
+
+    #[test]
+    fn render_validate_ok_reports_pass() {
+        let report = ValidateReport {
+            schema_version: callisto_model::SCHEMA_VERSION,
+            ok: true,
+            diagnostics: vec![],
+        };
+        let mut out = Vec::new();
+        render_validate(&report, &mut out).unwrap();
+        let text = String::from_utf8(out).unwrap();
+        assert!(text.contains("Validation passed"), "got: {text}");
+    }
+
+    #[test]
+    fn render_validate_failure_lists_diagnostics() {
+        use callisto_model::{Diagnostic, DiagnosticCode, DiagnosticSeverity};
+
+        let report = ValidateReport {
+            schema_version: callisto_model::SCHEMA_VERSION,
+            ok: false,
+            diagnostics: vec![Diagnostic {
+                code: DiagnosticCode::UnrecognisedPlatformTriple,
+                severity: DiagnosticSeverity::Error,
+                message: "something is wrong".to_string(),
+                package: None,
+                path: None,
+                escalated_by: None,
+                governed_by: None,
+            }],
+        };
+        let mut out = Vec::new();
+        render_validate(&report, &mut out).unwrap();
+        let text = String::from_utf8(out).unwrap();
+        assert!(text.contains("Validation failed"), "got: {text}");
+        assert!(text.contains("something is wrong"), "got: {text}");
+    }
+
+    #[test]
+    fn render_tag_dry_run_vs_real_use_distinct_headers() {
+        use callisto_model::{CommitSha, TagName};
+
+        let report = TagReport {
+            schema_version: callisto_model::SCHEMA_VERSION,
+            tags: vec![CreatedTag {
+                package: pkg("crate-a"),
+                tag_name: TagName("crate-a@1.0.0".to_string()),
+                sha: CommitSha::parse(&"a".repeat(40)).unwrap(),
+                already_existed: false,
+            }],
+            diagnostics: vec![],
+        };
+
+        let mut dry_run_out = Vec::new();
+        render_tag(&report, true, &mut dry_run_out).unwrap();
+        let dry_run_text = String::from_utf8(dry_run_out).unwrap();
+        assert!(dry_run_text.contains("Would create tags"), "got: {dry_run_text}");
+        assert!(dry_run_text.contains("crate-a@1.0.0"), "got: {dry_run_text}");
+
+        let mut real_out = Vec::new();
+        render_tag(&report, false, &mut real_out).unwrap();
+        let real_text = String::from_utf8(real_out).unwrap();
+        assert!(real_text.contains("Created Tags"), "got: {real_text}");
+        assert!(!real_text.contains("Would create"), "got: {real_text}");
+    }
+
+    #[test]
+    fn render_init_up_to_date_reports_nothing_to_reconcile() {
+        let report = InitReport {
+            schema_version: callisto_model::SCHEMA_VERSION,
+            initialized: false,
+            config_path: std::path::PathBuf::from("callisto.toml"),
+            diff: callisto_model::InitDiff {
+                new_ecosystems: vec![],
+                applied: false,
+            },
+            diagnostics: vec![],
+        };
+        let mut out = Vec::new();
+        render_init(&report, &mut out).unwrap();
+        let text = String::from_utf8(out).unwrap();
+        assert!(text.contains("up to date"), "got: {text}");
+    }
+
+    #[test]
+    fn render_init_applied_drift_reports_reconciled() {
+        let report = InitReport {
+            schema_version: callisto_model::SCHEMA_VERSION,
+            initialized: false,
+            config_path: std::path::PathBuf::from("callisto.toml"),
+            diff: callisto_model::InitDiff {
+                new_ecosystems: vec![Ecosystem::Npm],
+                applied: true,
+            },
+            diagnostics: vec![],
+        };
+        let mut out = Vec::new();
+        render_init(&report, &mut out).unwrap();
+        let text = String::from_utf8(out).unwrap();
+        assert!(text.contains("Reconciled"), "got: {text}");
+        assert!(text.contains("npm"), "got: {text}");
+    }
+
+    #[test]
+    fn render_init_unapplied_drift_reports_needs_yes_flag() {
+        let report = InitReport {
+            schema_version: callisto_model::SCHEMA_VERSION,
+            initialized: false,
+            config_path: std::path::PathBuf::from("callisto.toml"),
+            diff: callisto_model::InitDiff {
+                new_ecosystems: vec![Ecosystem::Npm],
+                applied: false,
+            },
+            diagnostics: vec![],
+        };
+        let mut out = Vec::new();
+        render_init(&report, &mut out).unwrap();
+        let text = String::from_utf8(out).unwrap();
+        assert!(text.contains("Drift detected"), "got: {text}");
+        assert!(text.contains("--yes"), "got: {text}");
     }
 }

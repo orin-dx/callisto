@@ -87,7 +87,12 @@ jobs:
         with:
           tool: cargo-llvm-cov
       - run: just wasm-check
-      - run: cargo llvm-cov --all-features --lcov --output-path lcov.info
+      - run: just coverage 90
+      # Non-blocking for now: the workspace-total gate above can pass while
+      # a small crate is far below threshold (a few large crates dominate
+      # the total line count). Visible in logs so regressions get noticed;
+      # promote to a required check once existing per-crate gaps are closed.
+      - run: just coverage-per-crate 90 || echo "::warning::one or more crates below 90% line coverage (non-blocking, see job log above)"
       - uses: actions/upload-artifact@v4
         with:
           name: code-coverage-report

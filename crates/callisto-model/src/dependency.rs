@@ -83,3 +83,36 @@ pub struct DepEdge {
     pub from_manifest: PathBuf,
     pub inherited: bool,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Ecosystem, VersionGrammar};
+
+    #[test]
+    fn dep_spec_render_covers_every_variant() {
+        let exact = DepSpec::Exact(Version::parse("1.2.3", VersionGrammar::SemVer).unwrap());
+        assert_eq!(exact.render(), "1.2.3");
+
+        let range = DepSpec::Range(VersionReq::parse("^1.0", Ecosystem::Cargo).unwrap(), "^1.0".to_string());
+        assert_eq!(range.render(), "^1.0");
+
+        for kind in [WorkspaceKind::Pnpm, WorkspaceKind::Yarn, WorkspaceKind::Npm] {
+            assert_eq!(DepSpec::Workspace(kind).render(), "workspace:*", "kind={kind:?}");
+        }
+
+        assert_eq!(
+            DepSpec::Catalog(Some("react18".to_string())).render(),
+            "catalog:react18"
+        );
+        assert_eq!(DepSpec::Catalog(None).render(), "catalog:");
+
+        let cargo_bare = DepSpec::CargoBare(Version::parse("2.0.0", VersionGrammar::SemVer).unwrap());
+        assert_eq!(cargo_bare.render(), "2.0.0");
+
+        assert_eq!(
+            DepSpec::Opaque("git+https://example.com/repo".to_string()).render(),
+            "git+https://example.com/repo"
+        );
+    }
+}

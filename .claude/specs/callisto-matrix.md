@@ -97,7 +97,7 @@ path — the manifest path is implicit in the package.
 
   "hostRunner":    "macos-latest" | "macos-13" | "ubuntu-latest" | "windows-latest",
   "useCross":      true | false,
-  "artifactName":  "native-<triple>" | "native-<rid>",
+  "artifactName":  "<packageName>-<platform>-<arch>[-<abi>]" | "native-<rid>",
   "packageDir":    "<workspace-root-relative path>",
   "packageName":   "<registered package name>"
 }
@@ -198,8 +198,18 @@ declared in `<RuntimeIdentifiers>` that are not in this table produce an
 ## 4. Artifact naming convention
 
 ```
-napi/maturin:  artifactName = "native-{triple}"
-               example: "native-aarch64-apple-darwin"
+napi/maturin:  artifactName = "{packageName}-{platform}-{arch}[-{abi}]"
+               (mirrors napi-rs's own published-package/CI-artifact
+               convention -- <name>-<platform>-<arch>[-<abi>], e.g.
+               "addon-darwin-arm64" -- rather than the raw Rust target
+               triple), with `/` in packageName replaced by `-` first:
+               `actions/upload-artifact` rejects `/` in artifact
+               names, but an npm scoped packageName (e.g.
+               "@scope/addon") is a valid registered package name.
+               example: "native-mod-darwin-arm64"
+               example (with abi): "other-pkg-linux-x64-musl"
+               example (scoped packageName): "@scope/addon" on
+               darwin/arm64 -> "@scope-addon-darwin-arm64" (no `/`)
 
 dotnet-aot:    artifactName = "native-{rid}"
                example: "native-linux-arm64"
@@ -215,9 +225,10 @@ This naming is the contract between the build phase and the publish phase:
   and places the binary into `packageDir` before `callisto publish` runs. `callisto publish`
   then finds the binary in the expected location and includes it in the registry upload.
 
-The naming scheme is chosen to be unique within a single workflow run (no two entries in
-`platformTargets` share a `triple` or `rid`) and stable across runs (so artifact caching
-strategies based on the name are safe).
+The naming scheme is chosen to be unique within a single workflow run and stable across runs
+(so artifact caching strategies based on the name are safe). Two different packages may
+declare the same `triple` or `rid` -- `artifactName` embeds `packageName` precisely so this
+case still produces distinct names.
 
 ---
 
@@ -310,12 +321,21 @@ The placement step is:
 - name: Download native artifacts
   run: |
     MATRIX_JSON='${{ needs.matrix.outputs.nativeMatrix }}'
-    echo "$MATRIX_JSON" | jq -c '.[]' | while read -r target; do
+    while IFS= read -r target; do
       ARTIFACT=$(echo "$target" | jq -r '.artifactName')
-      DIR=$(echo "$target" | jq -r '.packageDir')
-      gh run download --name "$ARTIFACT" --dir "$DIR"
-    done
+      DIR_RAW=$(echo "$target" | jq -r '.packageDir')
+      DIR="."
+      if [[ -n "$DIR_RAW" ]]; then
+        DIR="$DIR_RAW"
+      fi
+      mkdir -p "$DIR"
+      gh run download "$GITHUB_RUN_ID" --name "$ARTIFACT" --dir "$DIR"
+    done < <(echo "$MATRIX_JSON" | jq -c '.[]')
 ```
+
+Consumers using callisto-action for publishing do not need to write this snippet themselves --
+callisto-action performs equivalent placement automatically, in-step, once nativeMatrix is
+non-empty and publish is enabled.
 
 ---
 

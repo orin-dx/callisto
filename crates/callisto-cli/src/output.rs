@@ -42,3 +42,82 @@ pub trait ReportPresenter: Serialize {
 
     fn present_human(&self) -> String;
 }
+
+#[cfg(test)]
+mod tests {
+    use callisto_model::{Diagnostic, Report};
+    use serde::Deserialize;
+
+    use super::*;
+
+    #[derive(Serialize, Deserialize)]
+    struct FakeReport {
+        value: u32,
+    }
+
+    impl callisto_model::Report for FakeReport {
+        const COMMAND: &'static str = "fake-report";
+
+        fn schema_version(&self) -> u32 {
+            1
+        }
+
+        fn diagnostics(&self) -> &[Diagnostic] {
+            &[]
+        }
+    }
+
+    impl ReportPresenter for FakeReport {
+        fn present_human(&self) -> String {
+            format!("value={}", self.value)
+        }
+    }
+
+    #[test]
+    fn write_json_serializes_pretty_with_trailing_newline() {
+        let mut buf = Vec::new();
+        write_json(&mut buf, &FakeReport { value: 42 }).unwrap();
+        let text = String::from_utf8(buf).unwrap();
+        assert!(text.contains("\"value\": 42"), "got:\n{text}");
+        assert!(text.ends_with('\n'));
+    }
+
+    #[test]
+    fn write_report_json_injects_command_discriminator() {
+        let mut buf = Vec::new();
+        write_report_json(&mut buf, &FakeReport { value: 7 }).unwrap();
+        let text = String::from_utf8(buf).unwrap();
+        assert!(text.contains("\"command\": \"fake-report\""), "got:\n{text}");
+        assert!(text.contains("\"value\": 7"), "got:\n{text}");
+    }
+
+    #[test]
+    fn present_json_default_impl_delegates_to_write_json() {
+        let mut buf = Vec::new();
+        FakeReport { value: 1 }.present_json(&mut buf).unwrap();
+        let text = String::from_utf8(buf).unwrap();
+        assert!(text.contains("\"value\": 1"), "got:\n{text}");
+    }
+
+    #[test]
+    fn present_human_renders_the_report_value() {
+        assert_eq!(FakeReport { value: 9 }.present_human(), "value=9");
+    }
+
+    #[test]
+    fn report_trait_accessors_expose_schema_version_and_diagnostics() {
+        let report = FakeReport { value: 1 };
+        assert_eq!(report.schema_version(), 1);
+        assert!(report.diagnostics().is_empty());
+    }
+
+    /// `log_line` routes purely by `OutputFormat` (Json -> stderr, Text ->
+    /// stdout); it writes directly to the process's real fds rather than a
+    /// caller-supplied writer, so its destination isn't capturable in-process.
+    /// This exercises both branches to prove neither panics.
+    #[test]
+    fn log_line_does_not_panic_for_either_output_format() {
+        log_line(OutputFormat::Json, "to stderr");
+        log_line(OutputFormat::Text, "to stdout");
+    }
+}

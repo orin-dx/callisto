@@ -23,3 +23,44 @@ pub fn handle(args: PlanPublishArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
 
     Ok(ExitCode::SUCCESS)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn handle_json_format_succeeds_on_empty_workspace() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let root = tmp.path();
+        std::fs::write(root.join("Cargo.toml"), "[workspace]\nmembers = []\nresolver = \"2\"\n").unwrap();
+        std::fs::write(root.join("callisto.toml"), "").unwrap();
+
+        let global = GlobalArgs {
+            format: OutputFormat::Json,
+            cwd: root.to_path_buf(),
+            dry_run: false,
+        };
+
+        let result = handle(PlanPublishArgs::default(), &global);
+        assert!(result.is_ok(), "expected Ok, got: {result:?}");
+        assert_eq!(result.unwrap(), ExitCode::SUCCESS);
+    }
+
+    #[test]
+    fn handle_text_format_succeeds_on_empty_workspace() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let root = tmp.path();
+        std::fs::write(root.join("Cargo.toml"), "[workspace]\nmembers = []\nresolver = \"2\"\n").unwrap();
+        std::fs::write(root.join("callisto.toml"), "").unwrap();
+
+        let global = GlobalArgs {
+            format: OutputFormat::Text,
+            cwd: root.to_path_buf(),
+            dry_run: false,
+        };
+
+        let result = handle(PlanPublishArgs::default(), &global);
+        assert!(result.is_ok(), "expected Ok, got: {result:?}");
+        assert_eq!(result.unwrap(), ExitCode::SUCCESS);
+    }
+}

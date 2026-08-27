@@ -34,3 +34,26 @@ pub fn select_inference() -> impl SeverityInference {
 pub fn select_inference() -> impl SeverityInference {
     callisto_graph::infer::CommitInference
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn load_workspace_reports_io_error_for_a_nonexistent_cwd() {
+        let global = GlobalArgs {
+            format: crate::cli::OutputFormat::Text,
+            cwd: std::path::PathBuf::from("/nonexistent/definitely-not-a-real-path-abc123"),
+            dry_run: false,
+        };
+        let runner = CliCommandRunner;
+
+        match load_workspace(&global, &runner) {
+            Err(CliError::Io { path, .. }) => {
+                assert_eq!(path, Some(global.cwd.clone()));
+            }
+            Err(other) => panic!("expected CliError::Io, got a different CliError: {other:?}"),
+            Ok(_) => panic!("expected an error for a nonexistent cwd, got Ok"),
+        }
+    }
+}

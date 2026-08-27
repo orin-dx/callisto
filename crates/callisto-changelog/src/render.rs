@@ -229,4 +229,120 @@ mod tests {
             "non-empty entry must still appear; got:\n{rendered}"
         );
     }
+
+    #[test]
+    fn render_section_renders_commit_source() {
+        let input = ChangelogInput {
+            package: PackageId::parse("my-pkg").unwrap(),
+            from: Version::parse("1.0.0", VersionGrammar::SemVer).unwrap(),
+            to: Some(Version::parse("1.1.0", VersionGrammar::SemVer).unwrap()),
+            entries: vec![ChangelogEntry {
+                severity: Severity::Patch,
+                source: ChangeSource::Commit {
+                    sha: callisto_model::CommitSha::parse(&"a".repeat(40)).unwrap(),
+                    subject: "Fix the thing".to_string(),
+                },
+            }],
+        };
+
+        let rendered = render_section(&input).unwrap();
+        assert!(
+            rendered.contains("- Fix the thing ("),
+            "expected commit subject and short sha, got:\n{rendered}"
+        );
+    }
+
+    #[test]
+    fn render_section_renders_peer_escalation_source() {
+        let input = ChangelogInput {
+            package: PackageId::parse("my-pkg").unwrap(),
+            from: Version::parse("1.0.0", VersionGrammar::SemVer).unwrap(),
+            to: Some(Version::parse("1.1.0", VersionGrammar::SemVer).unwrap()),
+            entries: vec![ChangelogEntry {
+                severity: Severity::Patch,
+                source: ChangeSource::PeerEscalation {
+                    dependency: PackageId::parse("peer-pkg").unwrap(),
+                    to: Version::parse("2.0.0", VersionGrammar::SemVer).unwrap(),
+                },
+            }],
+        };
+
+        let rendered = render_section(&input).unwrap();
+        assert!(
+            rendered.contains("Peer dependency `peer-pkg` requires `2.0.0`"),
+            "got:\n{rendered}"
+        );
+    }
+
+    #[test]
+    fn render_section_renders_group_union_source_for_both_kinds() {
+        for (kind, expected_word) in [
+            (callisto_model::GroupKind::Fixed, "fixed"),
+            (callisto_model::GroupKind::Linked, "linked"),
+        ] {
+            let input = ChangelogInput {
+                package: PackageId::parse("my-pkg").unwrap(),
+                from: Version::parse("1.0.0", VersionGrammar::SemVer).unwrap(),
+                to: Some(Version::parse("1.1.0", VersionGrammar::SemVer).unwrap()),
+                entries: vec![ChangelogEntry {
+                    severity: Severity::Patch,
+                    source: ChangeSource::GroupUnion {
+                        group: callisto_model::GroupName("workspace".to_string()),
+                        kind,
+                    },
+                }],
+            };
+
+            let rendered = render_section(&input).unwrap();
+            assert!(
+                rendered.contains(&format!(
+                    "Released together with the `workspace` {expected_word} group."
+                )),
+                "kind={kind:?}, got:\n{rendered}"
+            );
+        }
+    }
+
+    #[test]
+    fn render_section_renders_new_group_member_source() {
+        let input = ChangelogInput {
+            package: PackageId::parse("my-pkg").unwrap(),
+            from: Version::parse("1.0.0", VersionGrammar::SemVer).unwrap(),
+            to: Some(Version::parse("1.1.0", VersionGrammar::SemVer).unwrap()),
+            entries: vec![ChangelogEntry {
+                severity: Severity::Patch,
+                source: ChangeSource::NewGroupMember {
+                    group: callisto_model::GroupName("workspace".to_string()),
+                },
+            }],
+        };
+
+        let rendered = render_section(&input).unwrap();
+        assert!(
+            rendered.contains("Joined the `workspace` group at this version."),
+            "got:\n{rendered}"
+        );
+    }
+
+    #[test]
+    fn render_section_to_none_renders_unreleased_heading() {
+        let input = ChangelogInput {
+            package: PackageId::parse("my-pkg").unwrap(),
+            from: Version::parse("1.0.0", VersionGrammar::SemVer).unwrap(),
+            to: None,
+            entries: vec![ChangelogEntry {
+                severity: Severity::Patch,
+                source: ChangeSource::Changeset {
+                    filename: "fix.md".to_string(),
+                    summary: "A change".to_string(),
+                },
+            }],
+        };
+
+        let rendered = render_section(&input).unwrap();
+        assert!(
+            rendered.starts_with("## Unreleased\n\n"),
+            "to: None must render an \"## Unreleased\" heading, got:\n{rendered}"
+        );
+    }
 }

@@ -1468,6 +1468,313 @@ edition = "2021"
         );
     }
 
+    /// `current_version()`'s error path: a member declares
+    /// `version.workspace = true` but the workspace root has no
+    /// `[workspace.package] version` field to inherit from.
+    #[test]
+    fn current_version_errors_when_inherited_but_workspace_has_no_version() {
+        use std::sync::Arc;
+
+        let dir = tempdir().unwrap();
+
+        let root_cargo_path = dir.path().join("Cargo.toml");
+        fs::write(&root_cargo_path, "[workspace]\nmembers = [\"member\"]\n").unwrap();
+
+        let member_dir = dir.path().join("member");
+        fs::create_dir_all(&member_dir).unwrap();
+        let member_cargo_path = member_dir.join("Cargo.toml");
+        fs::write(
+            &member_cargo_path,
+            "[package]\nname = \"member-crate\"\nversion.workspace = true\nedition = \"2021\"\n",
+        )
+        .unwrap();
+
+        let ws_resolver = WorkspaceCargoResolver::load(&root_cargo_path).unwrap();
+        let inheritance = Arc::new(ws_resolver.inheritance().unwrap());
+
+        let decl = ManifestDecl::new("member/Cargo.toml", ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap();
+        let ctx = OpenContext {
+            workspace_root: dir.path(),
+            cargo_workspace: Some(inheritance),
+            npm_workspace_kind: None,
+        };
+        let manifest = CargoToml::open(&decl, &ctx).unwrap();
+
+        let err = manifest.current_version().unwrap_err();
+        assert!(
+            matches!(err, ManifestError::WorkspaceInherited { ref key, .. } if key == "version"),
+            "expected WorkspaceInherited{{key: \"version\"}}, got {err:?}"
+        );
+    }
+
+    /// `iter_dependencies()`'s inherited-dependency resolution: a member
+    /// declaring `dep.workspace = true` resolves to the workspace root's
+    /// declared spec for that dependency, and an inherited dependency the
+    /// workspace root does NOT declare resolves to `DepSpec::Opaque`
+    /// (unresolved) rather than panicking or silently dropping the entry.
+    #[test]
+    fn iter_dependencies_resolves_inherited_deps_and_flags_unresolved_ones() {
+        use std::sync::Arc;
+
+        let dir = tempdir().unwrap();
+
+        let root_cargo_path = dir.path().join("Cargo.toml");
+        fs::write(
+            &root_cargo_path,
+            "[workspace]\nmembers = [\"member\"]\n\n[workspace.dependencies]\nserde = \"1.0\"\n",
+        )
+        .unwrap();
+
+        let member_dir = dir.path().join("member");
+        fs::create_dir_all(&member_dir).unwrap();
+        let member_cargo_path = member_dir.join("Cargo.toml");
+        fs::write(
+            &member_cargo_path,
+            "[package]\nname = \"member-crate\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[dependencies]\nserde = { workspace = true }\nunresolved-dep = { workspace = true }\n",
+        )
+        .unwrap();
+
+        let ws_resolver = WorkspaceCargoResolver::load(&root_cargo_path).unwrap();
+        let inheritance = Arc::new(ws_resolver.inheritance().unwrap());
+
+        let decl = ManifestDecl::new("member/Cargo.toml", ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap();
+        let ctx = OpenContext {
+            workspace_root: dir.path(),
+            cargo_workspace: Some(inheritance),
+            npm_workspace_kind: None,
+        };
+        let manifest = CargoToml::open(&decl, &ctx).unwrap();
+
+        let entries: Vec<_> = manifest.iter_dependencies().collect();
+
+        let serde_entry = entries.iter().find(|e| e.name == "serde").expect("serde entry present");
+        assert!(serde_entry.inherited, "serde must be marked inherited");
+        assert_eq!(
+            serde_entry.spec,
+            DepSpec::Range(VersionReq::parse("1.0", Ecosystem::Cargo).unwrap(), "1.0".to_string()),
+            "serde's spec must resolve to the workspace root's declared range"
+        );
+
+        let unresolved_entry = entries
+            .iter()
+            .find(|e| e.name == "unresolved-dep")
+            .expect("unresolved-dep entry present");
+        assert!(
+            unresolved_entry.inherited,
+            "unresolved-dep must still be marked inherited"
+        );
+        assert_eq!(
+            unresolved_entry.spec,
+            DepSpec::Opaque("workspace = true (unresolved)".to_string()),
+            "a dependency inherited by a member but not declared in [workspace.dependencies] must resolve to an Opaque unresolved marker, not panic or silently drop"
+        );
+    }
+
+    /// `update_dependency_spec`'s successful delegation path for an
+    /// inherited dependency: the write actually lands in the workspace
+    /// root's `[workspace.dependencies]` table, not the member's own file.
+    #[test]
+    fn update_dependency_spec_delegates_inherited_dependency_write_to_workspace_root() {
+        use std::sync::Arc;
+
+        let dir = tempdir().unwrap();
+
+        let root_cargo_path = dir.path().join("Cargo.toml");
+        fs::write(
+            &root_cargo_path,
+            "[workspace]\nmembers = [\"member\"]\n\n[workspace.dependencies]\nserde = \"1.0\"\n",
+        )
+        .unwrap();
+
+        let member_dir = dir.path().join("member");
+        fs::create_dir_all(&member_dir).unwrap();
+        let member_cargo_path = member_dir.join("Cargo.toml");
+        fs::write(
+            &member_cargo_path,
+            "[package]\nname = \"member-crate\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[dependencies]\nserde = { workspace = true }\n",
+        )
+        .unwrap();
+
+        let ws_resolver = WorkspaceCargoResolver::load(&root_cargo_path).unwrap();
+        let inheritance = Arc::new(ws_resolver.inheritance().unwrap());
+
+        let decl = ManifestDecl::new("member/Cargo.toml", ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap();
+        let ctx = OpenContext {
+            workspace_root: dir.path(),
+            cargo_workspace: Some(inheritance),
+            npm_workspace_kind: None,
+        };
+        let mut manifest = CargoToml::open(&decl, &ctx).unwrap();
+
+        let new_spec = DepSpec::Range(VersionReq::parse("2.0", Ecosystem::Cargo).unwrap(), "2.0".to_string());
+        manifest
+            .update_dependency_spec("serde", DepKind::Runtime, new_spec, &permit())
+            .unwrap();
+
+        let root_updated = fs::read_to_string(&root_cargo_path).unwrap();
+        assert!(
+            root_updated.contains("serde = \"2.0\""),
+            "workspace root's [workspace.dependencies] must be updated, got:\n{root_updated}"
+        );
+
+        let member_unchanged = fs::read_to_string(&member_cargo_path).unwrap();
+        assert!(
+            member_unchanged.contains("workspace = true"),
+            "member's own file must be untouched -- the write goes to the workspace root, got:\n{member_unchanged}"
+        );
+    }
+
+    /// `update_dependency_spec` rejects `DepKind::Peer` outright: Cargo has
+    /// no peer-dependency concept, so this must fail with
+    /// `DependencyNotFound` rather than attempting to write to a
+    /// nonexistent section.
+    #[test]
+    fn update_dependency_spec_rejects_peer_dep_kind() {
+        let dir = tempdir().unwrap();
+        let manifest_path = dir.path().join("Cargo.toml");
+        fs::write(
+            &manifest_path,
+            "[package]\nname = \"pkg\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[dependencies]\nserde = \"1.0\"\n",
+        )
+        .unwrap();
+
+        let decl = ManifestDecl::new("Cargo.toml", ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap();
+        let ctx = OpenContext {
+            workspace_root: dir.path(),
+            cargo_workspace: None,
+            npm_workspace_kind: None,
+        };
+        let mut manifest = CargoToml::open(&decl, &ctx).unwrap();
+
+        let new_spec = DepSpec::Range(VersionReq::parse("2.0", Ecosystem::Cargo).unwrap(), "2.0".to_string());
+        let err = manifest
+            .update_dependency_spec("serde", DepKind::Peer, new_spec, &permit())
+            .unwrap_err();
+
+        assert!(
+            matches!(
+                err,
+                ManifestError::DependencyNotFound {
+                    kind: DepKind::Peer,
+                    ..
+                }
+            ),
+            "expected DependencyNotFound for Peer kind, got {err:?}"
+        );
+    }
+
+    /// `WorkspaceCargoResolver::workspace_version()`'s two branches: `Some`
+    /// when `[workspace.package] version` is declared, `None` when the
+    /// workspace declares no shared version at all.
+    #[test]
+    fn workspace_version_reads_present_and_absent() {
+        let dir = tempdir().unwrap();
+
+        let with_version = dir.path().join("with-version.toml");
+        fs::write(
+            &with_version,
+            "[workspace]\nmembers = []\n\n[workspace.package]\nversion = \"3.2.1\"\n",
+        )
+        .unwrap();
+        let resolver = WorkspaceCargoResolver::load(&with_version).unwrap();
+        assert_eq!(
+            resolver.workspace_version().unwrap().map(|v| v.render().to_string()),
+            Some("3.2.1".to_string())
+        );
+
+        let without_version = dir.path().join("without-version.toml");
+        fs::write(&without_version, "[workspace]\nmembers = []\n").unwrap();
+        let resolver = WorkspaceCargoResolver::load(&without_version).unwrap();
+        assert_eq!(resolver.workspace_version().unwrap(), None);
+    }
+
+    /// `WorkspaceCargoResolver::write_version()` writes and persists a new
+    /// `[workspace.package] version` to disk.
+    #[test]
+    fn workspace_cargo_resolver_write_version_persists_to_disk() {
+        let dir = tempdir().unwrap();
+        let root_cargo_path = dir.path().join("Cargo.toml");
+        fs::write(
+            &root_cargo_path,
+            "[workspace]\nmembers = []\n\n[workspace.package]\nversion = \"1.0.0\"\n",
+        )
+        .unwrap();
+
+        let mut resolver = WorkspaceCargoResolver::load(&root_cargo_path).unwrap();
+        let new_ver = Version::parse("2.0.0", VersionGrammar::SemVer).unwrap();
+        resolver.write_version(&new_ver, &permit()).unwrap();
+
+        let updated = fs::read_to_string(&root_cargo_path).unwrap();
+        assert!(
+            updated.contains("version = \"2.0.0\""),
+            "workspace root must be updated to 2.0.0 on disk, got:\n{updated}"
+        );
+    }
+
+    /// `round_trip`'s `<=` upper-bound clause uses a strictly-greater-than
+    /// comparison (a target exactly AT the bound satisfies `<=`), distinct
+    /// from a bare `<` clause's "not less than" check (already covered by
+    /// `round_trip_compound_range_crossing_upper_bound_returns_none`). Also
+    /// covers `DepSpec::CargoBare`'s passthrough (rewrites to the target
+    /// version directly, no range logic at all).
+    #[test]
+    fn round_trip_le_upper_bound_allows_target_exactly_at_bound() {
+        let req = VersionReq::parse(">=1.0.0, <=2.0.0", Ecosystem::Cargo).unwrap();
+        let spec = DepSpec::Range(req, ">=1.0.0, <=2.0.0".to_string());
+
+        // Target exactly AT the <= bound must still be accepted.
+        let target = Version::parse("2.0.0", VersionGrammar::SemVer).unwrap();
+        let result = round_trip(&spec, &target).expect("target exactly at <= bound must satisfy it");
+        match result {
+            DepSpec::Range(_, rendered) => {
+                assert_eq!(rendered, ">=2.0.0, <=2.0.0");
+            }
+            other => panic!("expected DepSpec::Range, got {other:?}"),
+        }
+
+        // One patch version past the <= bound must be declined.
+        let target = Version::parse("2.0.1", VersionGrammar::SemVer).unwrap();
+        assert_eq!(
+            round_trip(&spec, &target),
+            None,
+            "target past a <= bound must be declined, not silently accepted"
+        );
+    }
+
+    /// `DepSpec::CargoBare` round-trips to the target version directly,
+    /// with no range-rewriting logic involved.
+    #[test]
+    fn round_trip_cargo_bare_passes_through_target_version() {
+        let old = Version::parse("1.0.0", VersionGrammar::SemVer).unwrap();
+        let spec = DepSpec::CargoBare(old);
+        let target = Version::parse("1.5.0", VersionGrammar::SemVer).unwrap();
+
+        assert_eq!(round_trip(&spec, &target), Some(DepSpec::CargoBare(target)));
+    }
+
+    /// `round_trip` declines (`None`) a single-clause range whose remainder
+    /// contains a wildcard (`1.*`) -- rewriting the numeric portion while
+    /// leaving a literal `*` behind would produce a malformed version string.
+    #[test]
+    fn round_trip_single_clause_wildcard_declines_rewrite() {
+        let req = VersionReq::parse("1.*", Ecosystem::Cargo).unwrap();
+        let spec = DepSpec::Range(req, "1.*".to_string());
+        let target = Version::parse("2.0.0", VersionGrammar::SemVer).unwrap();
+
+        assert_eq!(round_trip(&spec, &target), None);
+    }
+
+    /// `round_trip`'s catch-all: an `Opaque` spec (unresolved/unparseable)
+    /// is never round-tripped -- returns `None` rather than fabricating a
+    /// range for a spec it never understood in the first place.
+    #[test]
+    fn round_trip_opaque_spec_declines_rewrite() {
+        let spec = DepSpec::Opaque("workspace = true (unresolved)".to_string());
+        let target = Version::parse("1.0.0", VersionGrammar::SemVer).unwrap();
+
+        assert_eq!(round_trip(&spec, &target), None);
+    }
+
     /// Spec: a "virtual workspace" root `Cargo.toml` (one that defines only
     /// `[workspace]` and has no `[package]` section) must make `package_name()`
     /// return `Err(ManifestError::MissingField)`. Virtual workspaces are common

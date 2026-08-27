@@ -336,4 +336,42 @@ mod tests {
             bump.reason
         );
     }
+
+    /// `callisto version --dry-run --format text` must print the `[DRY-RUN]`
+    /// marker and not modify any manifest on disk.
+    #[test]
+    fn handle_dry_run_text_output_carries_the_dry_run_marker_and_writes_nothing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        make_fixture(root);
+        std::fs::write(
+            root.join("Cargo.toml"),
+            "[workspace]\nmembers = [\"pkg-alpha\"]\nresolver = \"2\"\n",
+        )
+        .unwrap();
+        std::fs::write(root.join("callisto.toml"), "").unwrap();
+
+        let global = crate::cli::GlobalArgs {
+            format: crate::cli::OutputFormat::Text,
+            cwd: root.to_path_buf(),
+            dry_run: true,
+        };
+
+        let manifest_before = std::fs::read_to_string(root.join("pkg-alpha/Cargo.toml")).unwrap();
+
+        let args = crate::cli::VersionArgs {
+            strict: false,
+            strict_graph: false,
+            allow_empty_changesets: true,
+            refresh_lockfiles: false,
+        };
+        let result = super::handle(args, &global);
+        assert!(result.is_ok(), "expected Ok, got: {result:?}");
+
+        let manifest_after = std::fs::read_to_string(root.join("pkg-alpha/Cargo.toml")).unwrap();
+        assert_eq!(
+            manifest_before, manifest_after,
+            "dry-run must not modify pkg-alpha's Cargo.toml"
+        );
+    }
 }

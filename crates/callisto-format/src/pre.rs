@@ -215,4 +215,61 @@ mod tests {
         let reparsed = parse_pre_json(&written).unwrap();
         assert_eq!(reparsed.initial_versions["pkg"].raw(), "1.0.0a1");
     }
+
+    /// `PreState::exiting()` is the only public way out of pre-release mode
+    /// -- previously untested end to end. Proves the mode flips to `Exit`
+    /// and that this survives a real write -> parse round trip, matching
+    /// `pre_json_round_trips`'s style for the "pre" mode above.
+    #[test]
+    fn pre_state_exiting_flips_mode_and_round_trips_as_exit() {
+        let state = PreState::entering(
+            "next",
+            [(
+                "foo".to_string(),
+                Version::parse("1.0.0", VersionGrammar::SemVer).unwrap(),
+            )],
+        );
+        assert_eq!(state.mode, PreMode::Pre);
+
+        let exited = state.exiting();
+        assert_eq!(exited.mode, PreMode::Exit);
+
+        let written = write_pre_json(&exited);
+        assert!(
+            written.contains("\"mode\": \"exit\""),
+            "written pre.json must serialize mode as \"exit\", got:\n{written}"
+        );
+
+        let reparsed = parse_pre_json(&written).unwrap();
+        assert_eq!(reparsed.mode, PreMode::Exit);
+    }
+
+    #[test]
+    fn parse_pre_json_rejects_non_object_json() {
+        let err = parse_pre_json("[1, 2, 3]").unwrap_err();
+        assert!(
+            matches!(err, PreJsonError::Malformed { ref message } if message == "expected a JSON object"),
+            "expected Malformed{{\"expected a JSON object\"}}, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn parse_pre_json_rejects_unrecognized_mode_string() {
+        let json = r#"{"mode": "paused", "tag": "next", "initialVersions": {}, "changesets": []}"#;
+        let err = parse_pre_json(json).unwrap_err();
+        assert!(
+            matches!(err, PreJsonError::InvalidMode { ref found } if found == "paused"),
+            "expected InvalidMode{{\"paused\"}}, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn parse_pre_json_rejects_initial_version_that_is_neither_semver_nor_pep440() {
+        let json = r#"{"mode": "pre", "tag": "next", "initialVersions": {"pkg": "not-a-version"}, "changesets": []}"#;
+        let err = parse_pre_json(json).unwrap_err();
+        assert!(
+            matches!(err, PreJsonError::InvalidInitialVersion { ref package, ref raw, .. } if package == "pkg" && raw == "not-a-version"),
+            "expected InvalidInitialVersion{{package: \"pkg\", raw: \"not-a-version\"}}, got {err:?}"
+        );
+    }
 }

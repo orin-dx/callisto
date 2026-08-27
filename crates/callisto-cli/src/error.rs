@@ -149,6 +149,19 @@ mod tests {
     }
 
     #[test]
+    fn from_io_error_wraps_source_with_no_path() {
+        let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "file not found");
+        let err: CliError = io_err.into();
+        match err {
+            CliError::Io { source, path } => {
+                assert_eq!(source.kind(), std::io::ErrorKind::NotFound);
+                assert!(path.is_none(), "blanket From<io::Error> must not synthesize a path");
+            }
+            other => panic!("expected CliError::Io, got: {other:?}"),
+        }
+    }
+
+    #[test]
     fn format_error_json_other_has_stable_envelope() {
         let err = CliError::Other("something went wrong".to_string());
         let json = format_error_json(&err);

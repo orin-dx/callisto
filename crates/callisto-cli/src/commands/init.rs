@@ -49,3 +49,52 @@ pub fn handle(args: InitArgs, global: &GlobalArgs) -> Result<ExitCode, CliError>
 
     Ok(ExitCode::SUCCESS)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn empty_workspace() -> tempfile::TempDir {
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::write(
+            tmp.path().join("Cargo.toml"),
+            "[workspace]\nmembers = []\nresolver = \"2\"\n",
+        )
+        .unwrap();
+        tmp
+    }
+
+    #[test]
+    fn handle_dry_run_text_output_carries_the_dry_run_marker() {
+        let tmp = empty_workspace();
+        let global = GlobalArgs {
+            format: OutputFormat::Text,
+            cwd: tmp.path().to_path_buf(),
+            dry_run: true,
+        };
+
+        let result = handle(InitArgs { yes: true }, &global);
+        assert_eq!(result.unwrap(), ExitCode::SUCCESS);
+        assert!(
+            !tmp.path().join("callisto.toml").exists(),
+            "dry-run must not write callisto.toml"
+        );
+    }
+
+    #[test]
+    fn handle_json_format_applies_for_real_and_writes_config() {
+        let tmp = empty_workspace();
+        let global = GlobalArgs {
+            format: OutputFormat::Json,
+            cwd: tmp.path().to_path_buf(),
+            dry_run: false,
+        };
+
+        let result = handle(InitArgs { yes: true }, &global);
+        assert_eq!(result.unwrap(), ExitCode::SUCCESS);
+        assert!(
+            tmp.path().join("callisto.toml").exists(),
+            "a real (non-dry-run) init must write callisto.toml"
+        );
+    }
+}

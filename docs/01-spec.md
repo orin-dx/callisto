@@ -8554,7 +8554,13 @@ tables: `napi.rs`'s `triple_to_role` (platform/arch/abi — shared with §G.4.5'
 platform auto-derivation, which this module does not otherwise touch) and a table of exactly 18
 `(hostRunner, useCross)` pairs new to this module (§G.11's justification: `ManifestRole::Platform`
 carries no CI-scheduling information, so it cannot be derived from the shared table alone).
-`artifactName` is always `"native-" + triple`. A triple absent from *either* table is excluded
+`artifactName` is `"{packageName}-{platform}-{arch}" | "{packageName}-{platform}-{arch}-{abi}"`,
+mirroring napi-rs's own published-package/CI-artifact-name convention rather than the raw triple
+(since `platform`/`arch`/`abi` are the values already derived from it), with `/` in `packageName`
+replaced by `-` first -- an npm scoped package name (e.g. `@scope/addon`) is a valid registered
+`packageName` but `/` is one of `actions/upload-artifact`'s forbidden artifact-name characters,
+so `@scope/addon` on `darwin`/`arm64` produces `artifactName: "@scope-addon-darwin-arm64"`. A
+triple absent from *either* table is excluded
 from `targets[]` and reported as an `UnrecognisedPlatformTriple` diagnostic naming the triple and
 the package — never a hard error, since one unrecognised triple in a declaration must not hide
 the ones that were recognised. A triple repeated within one package's own declaration is

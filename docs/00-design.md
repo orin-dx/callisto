@@ -2110,7 +2110,7 @@ CI configuration a caller builds from this data (the calling workflow owns whate
           "abi": null,
           "hostRunner": "macos-latest",
           "useCross": false,
-          "artifactName": "native-aarch64-apple-darwin",
+          "artifactName": "@myorg-foo-darwin-arm64",
           "packageDir": "packages/foo",
           "packageName": "@myorg/foo"
         }
