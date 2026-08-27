@@ -1,0 +1,13 @@
+{
+  "tool_use_id": "toolu_01UurDQ5BevCekGduY6ooASX",
+  "subagent_type": "canon:drafter",
+  "task_description": "Draft SPEC-007 github release assets",
+  "files": [
+    ".changeset/native-artifact-placement.md",
+    "Justfile",
+    "crates/callisto-vcs/tests/zz_bench_revwalk.rs"
+  ],
+  "started_at": "2026-08-27T14:07:23.841896-07:00",
+  "completed_at": "2026-08-27T14:07:23.847383-07:00",
+  "transcript_unavailable_reason": "transcript path unresolvable"
+}

@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.10.3-nightly.202608260614.6561a64b8",
+  "checkpoint_id": "01M12J4N07B4MSJ7YCV3328N7G",
+  "strategy": "manual-commit",
+  "branch": "hotfix-setup-callisto-crates-io-fallback",
+  "checkpoints_count": 13,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 3604,
+    "cache_creation_tokens": 11171462,
+    "cache_read_tokens": 812898525,
+    "output_tokens": 960230,
+    "api_call_count": 1808,
+    "subagent_tokens": {
+      "input_tokens": 108,
+      "cache_creation_tokens": 382059,
+      "cache_read_tokens": 5153707,
+      "output_tokens": 8465,
+      "api_call_count": 54
+    }
+  }
+}
