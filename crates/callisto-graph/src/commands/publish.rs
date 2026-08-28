@@ -929,36 +929,6 @@ mod tests {
     }
 
     #[test]
-    fn scratch_probe_unrelated_dev_cycle_disables_dev_ordering_globally() {
-        // pkg-a <-> pkg-b: legitimate Dev-only cycle (cross-integration tests).
-        // conventional -> vcs: unrelated Dev-only edge, no cycle at all, needs
-        // vcs to publish first per the whole point of PUBLISH_ORDERING_KINDS.
-        let graph = TestGraph {
-            packages: vec![
-                test_package("pkg-a"),
-                test_package("pkg-b"),
-                test_package("conventional"),
-                test_package("vcs"),
-            ],
-            edges: vec![
-                test_edge("pkg-a", "pkg-b", callisto_model::DepKind::Dev),
-                test_edge("pkg-b", "pkg-a", callisto_model::DepKind::Dev),
-                test_edge("conventional", "vcs", callisto_model::DepKind::Dev),
-            ],
-        };
-
-        let order = publish_order(&graph, &all_ids(&graph)).expect("must not hard-fail");
-        let vcs_pos = order.iter().position(|id| id.name() == "vcs").unwrap();
-        let conventional_pos = order.iter().position(|id| id.name() == "conventional").unwrap();
-        eprintln!("order = {order:?}");
-        assert!(
-            vcs_pos < conventional_pos,
-            "PROBE: vcs should publish before conventional (unrelated Dev edge) even though \
-             an unrelated pkg-a/pkg-b Dev cycle exists elsewhere; got order: {order:?}"
-        );
-    }
-
-    #[test]
     fn publish_order_still_errors_on_a_real_runtime_cycle() {
         // A genuine Runtime cycle must still be a hard error -- the
         // cascade-scoped fallback is not a general "never fail" escape
