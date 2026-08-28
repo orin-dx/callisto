@@ -41,11 +41,13 @@ const PUBLISH_ORDERING_KINDS: &[DepKind] = &[DepKind::Runtime, DepKind::Build, D
 /// crates each dev-depending on the other for cross-integration tests) —
 /// unlike `Runtime`/`Build`/`Optional`, which must never cycle, a `Dev`
 /// cycle must not hard-fail the whole publish plan. If including `Dev`
-/// edges would produce a cycle, this falls back to
-/// [`CASCADE_ORDERING_KINDS`] alone, which is guaranteed not to introduce a
-/// *new* cycle here since it is a strict subset of the edges just proven
-/// cyclic — accepting the original race this function exists to close for
-/// that one pair, rather than failing the entire plan over it.
+/// edges would produce a cycle, this excludes `Dev` edges only between the
+/// specific packages that form a Dev-induced cycle — a `Dev` edge anywhere
+/// else in `subset` (an unrelated pair with no cycle at all) still counts as
+/// an ordering constraint, so one legitimate Dev-only cycle can never
+/// silently un-order an unrelated dev-dependency elsewhere in the same
+/// batch. A cycle that survives with every `Dev` edge excluded is a genuine
+/// `Runtime`/`Build`/`Optional` cycle and still hard-fails the whole plan.
 fn publish_order<D: DependencyResolver + ?Sized>(
     resolver: &D,
     subset: &HashSet<PackageId>,
@@ -57,7 +59,26 @@ fn publish_order<D: DependencyResolver + ?Sized>(
 
     match toposort_impl(subset, &all_pkg_ids, PUBLISH_ORDERING_KINDS, edges_of) {
         Ok(order) => Ok(order),
-        Err(GraphError::Cycle { .. }) => toposort_impl(subset, &all_pkg_ids, CASCADE_ORDERING_KINDS, edges_of),
+        Err(GraphError::Cycle { .. }) => {
+            // Confirm the cycle is Dev-induced: a cycle that survives with no
+            // Dev edges at all is a genuine Runtime/Build/Optional cycle,
+            // which must still hard-fail the whole plan.
+            toposort_impl(subset, &all_pkg_ids, CASCADE_ORDERING_KINDS, edges_of)?;
+
+            let cyclic_components = crate::toposort::cyclic_sccs(subset, edges_of, PUBLISH_ORDERING_KINDS);
+            crate::toposort::toposort_with_edge_filter(subset, &all_pkg_ids, edges_of, |from, to, kind| {
+                if !PUBLISH_ORDERING_KINDS.contains(&kind) {
+                    return false;
+                }
+                if kind == DepKind::Dev {
+                    let in_same_cyclic_component = cyclic_components
+                        .iter()
+                        .any(|scc| scc.contains(from) && scc.contains(to));
+                    return !in_same_cyclic_component;
+                }
+                true
+            })
+        }
         Err(e) => Err(e),
     }
 }
@@ -1046,6 +1067,103 @@ mod tests {
         assert!(
             matches!(order, Err(GraphError::Cycle { .. })),
             "a real Runtime cycle must still error; got {order:?}"
+        );
+    }
+
+    #[test]
+    fn publish_order_scopes_dev_cycle_exclusion_to_cyclic_pair_only() {
+        // pkg-a <-> pkg-b: legitimate Dev-only cycle (cross-integration
+        // tests). conventional -Dev-> vcs: a completely unrelated pair, no
+        // cycle at all -- exactly the case PUBLISH_ORDERING_KINDS exists to
+        // order correctly. Before the SCC-scoped fix, the pkg-a/pkg-b cycle
+        // made the global fallback drop Dev edges for the WHOLE subset,
+        // silently un-ordering vcs/conventional too.
+        let graph = TestGraph {
+            packages: vec![
+                test_package("pkg-a"),
+                test_package("pkg-b"),
+                test_package("conventional"),
+                test_package("vcs"),
+            ],
+            edges: vec![
+                test_edge("pkg-a", "pkg-b", callisto_model::DepKind::Dev),
+                test_edge("pkg-b", "pkg-a", callisto_model::DepKind::Dev),
+                test_edge("conventional", "vcs", callisto_model::DepKind::Dev),
+            ],
+        };
+
+        let order = publish_order(&graph, &all_ids(&graph)).expect("a Dev-only cycle must not hard-fail");
+        let vcs_pos = order.iter().position(|id| id.name() == "vcs").unwrap();
+        let conventional_pos = order.iter().position(|id| id.name() == "conventional").unwrap();
+        assert!(
+            vcs_pos < conventional_pos,
+            "vcs must still publish before conventional despite the unrelated pkg-a/pkg-b \
+             Dev cycle elsewhere; got order: {order:?}"
+        );
+    }
+
+    #[test]
+    fn publish_order_dev_cycle_of_three_packages() {
+        // A -Dev-> B -Dev-> C -Dev-> A: a 3-node cyclic component, not just
+        // the 2-node pairs the other tests cover. Alongside an unrelated
+        // legitimate Dev edge that must still be honoured.
+        let graph = TestGraph {
+            packages: vec![
+                test_package("pkg-a"),
+                test_package("pkg-b"),
+                test_package("pkg-c"),
+                test_package("conventional"),
+                test_package("vcs"),
+            ],
+            edges: vec![
+                test_edge("pkg-a", "pkg-b", callisto_model::DepKind::Dev),
+                test_edge("pkg-b", "pkg-c", callisto_model::DepKind::Dev),
+                test_edge("pkg-c", "pkg-a", callisto_model::DepKind::Dev),
+                test_edge("conventional", "vcs", callisto_model::DepKind::Dev),
+            ],
+        };
+
+        let order = publish_order(&graph, &all_ids(&graph)).expect("a 3-node Dev-only cycle must not hard-fail");
+        assert_eq!(order.len(), 5);
+        let vcs_pos = order.iter().position(|id| id.name() == "vcs").unwrap();
+        let conventional_pos = order.iter().position(|id| id.name() == "conventional").unwrap();
+        assert!(
+            vcs_pos < conventional_pos,
+            "the unrelated Dev edge must still be honoured; got order: {order:?}"
+        );
+    }
+
+    #[test]
+    fn publish_order_mixed_runtime_and_dev_cycle_excludes_only_the_dev_edge() {
+        // pkg-a -Runtime-> pkg-b, pkg-b -Dev-> pkg-a: one 2-node cycle built
+        // from two DIFFERENT edge kinds. Distinguishes a correct
+        // implementation (cyclic_sccs computed over the full
+        // PUBLISH_ORDERING_KINDS-inclusive graph) from a subtly wrong one
+        // (cyclic_sccs computed over Dev-only edges): under the wrong
+        // version, this pair never registers as a cyclic component at all
+        // (a lone directed Dev edge isn't a cycle by itself), the Dev edge
+        // survives un-excluded, and the final pass still contains both
+        // directions -- wrongly erroring even though the cascade-only pass
+        // already proved success is achievable.
+        let graph = TestGraph {
+            packages: vec![test_package("pkg-a"), test_package("pkg-b")],
+            edges: vec![
+                test_edge("pkg-a", "pkg-b", callisto_model::DepKind::Runtime),
+                test_edge("pkg-b", "pkg-a", callisto_model::DepKind::Dev),
+            ],
+        };
+
+        let order = publish_order(&graph, &all_ids(&graph))
+            .expect("a Runtime+Dev mixed cycle must resolve via the surviving Runtime edge");
+        let pos_a = order.iter().position(|id| id.name() == "pkg-a").unwrap();
+        let pos_b = order.iter().position(|id| id.name() == "pkg-b").unwrap();
+        // pkg-a -Runtime-> pkg-b means pkg-a *depends on* pkg-b, so the
+        // dependency-first order must publish pkg-b before pkg-a — the
+        // surviving Runtime edge, not the excluded Dev edge, determines this.
+        assert!(
+            pos_b < pos_a,
+            "the surviving Runtime edge (pkg-a depends on pkg-b) must determine order, not \
+             the excluded Dev edge; got order: {order:?}"
         );
     }
 

@@ -21,6 +21,27 @@ pub fn toposort_impl<F>(
 where
     F: Fn(&PackageId) -> Vec<(PackageId, DepKind)>,
 {
+    toposort_with_edge_filter(subset, all_packages, outgoing_edges, |_from, _to, kind| {
+        ordering_kinds.contains(&kind)
+    })
+}
+
+/// Same algorithm as [`toposort_impl`], but the caller decides per-edge
+/// whether it counts as an ordering constraint, rather than a single
+/// `DepKind` list applied uniformly to every pair. This is what lets
+/// `commands::publish::publish_order` exclude a `Dev` edge only between the
+/// specific packages that form a cycle, instead of dropping `Dev` ordering
+/// for every package in `subset` the moment any one Dev cycle exists.
+pub fn toposort_with_edge_filter<F, P>(
+    subset: &HashSet<PackageId>,
+    all_packages: &[PackageId],
+    outgoing_edges: F,
+    edge_allowed: P,
+) -> Result<Vec<PackageId>, GraphError>
+where
+    F: Fn(&PackageId) -> Vec<(PackageId, DepKind)>,
+    P: Fn(&PackageId, &PackageId, DepKind) -> bool,
+{
     let members: BTreeSet<PackageId> = subset.iter().cloned().collect();
     // Build a HashSet once so validation is O(N) rather than O(N²) slice scans.
     let all_set: std::collections::HashSet<&PackageId> = all_packages.iter().collect();
@@ -40,7 +61,7 @@ where
 
     for u in &members {
         for (v, kind) in outgoing_edges(u) {
-            if members.contains(&v) && ordering_kinds.contains(&kind) {
+            if members.contains(&v) && edge_allowed(u, &v, kind) {
                 adj.get_mut(&v).unwrap().push(u.clone());
                 *in_degree.get_mut(u).unwrap() += 1;
             }
@@ -76,6 +97,49 @@ where
     }
 
     Ok(sorted)
+}
+
+/// Returns every non-trivial strongly-connected component (size > 1, or a
+/// single self-looping node) of `subset` under the edges `ordering_kinds`
+/// selects — the full member set, not just what's left after a failed
+/// toposort. Used by `commands::publish::publish_order` to scope a Dev-cycle
+/// exclusion to exactly the packages that participate in a cycle, rather
+/// than excluding Dev edges across the whole subset.
+pub fn cyclic_sccs<F>(
+    subset: &HashSet<PackageId>,
+    outgoing_edges: F,
+    ordering_kinds: &[DepKind],
+) -> Vec<HashSet<PackageId>>
+where
+    F: Fn(&PackageId) -> Vec<(PackageId, DepKind)>,
+{
+    use petgraph::algo::tarjan_scc;
+    use petgraph::graph::DiGraph;
+
+    let members: BTreeSet<PackageId> = subset.iter().cloned().collect();
+    let mut graph = DiGraph::<PackageId, ()>::new();
+    let mut node_map = BTreeMap::new();
+
+    for pkg in &members {
+        let idx = graph.add_node(pkg.clone());
+        node_map.insert(pkg.clone(), idx);
+    }
+
+    for u in &members {
+        for (v, kind) in outgoing_edges(u) {
+            if members.contains(&v) && ordering_kinds.contains(&kind) {
+                if let (Some(&u_idx), Some(&v_idx)) = (node_map.get(u), node_map.get(&v)) {
+                    graph.add_edge(u_idx, v_idx, ());
+                }
+            }
+        }
+    }
+
+    tarjan_scc(&graph)
+        .into_iter()
+        .filter(|scc| scc.len() > 1 || (scc.len() == 1 && graph.contains_edge(scc[0], scc[0])))
+        .map(|scc| scc.into_iter().map(|idx| graph[idx].clone()).collect())
+        .collect()
 }
 
 fn extract_cycle(remaining: &[PackageId], adj: &BTreeMap<PackageId, Vec<PackageId>>) -> Vec<PackageId> {
@@ -213,5 +277,49 @@ mod tests {
         } else {
             panic!("expected Cycle error");
         }
+    }
+
+    #[test]
+    fn cyclic_sccs_finds_only_nontrivial_components() {
+        let pkg_a = PackageId::parse("pkg-a").unwrap();
+        let pkg_b = PackageId::parse("pkg-b").unwrap();
+        let pkg_c = PackageId::parse("pkg-c").unwrap();
+        let pkg_d = PackageId::parse("pkg-d").unwrap();
+
+        // pkg-a <-> pkg-b: a real 2-node cycle. pkg-c -> pkg-d: acyclic, no
+        // cycle at all.
+        let subset: HashSet<_> = vec![pkg_a.clone(), pkg_b.clone(), pkg_c.clone(), pkg_d.clone()]
+            .into_iter()
+            .collect();
+
+        let sccs = cyclic_sccs(
+            &subset,
+            |id| {
+                if id == &pkg_a {
+                    vec![(pkg_b.clone(), DepKind::Dev)]
+                } else if id == &pkg_b {
+                    vec![(pkg_a.clone(), DepKind::Dev)]
+                } else if id == &pkg_c {
+                    vec![(pkg_d.clone(), DepKind::Dev)]
+                } else {
+                    vec![]
+                }
+            },
+            &[DepKind::Dev],
+        );
+
+        assert_eq!(sccs.len(), 1, "expected exactly one cyclic component; got {sccs:?}");
+        assert_eq!(sccs[0], vec![pkg_a, pkg_b].into_iter().collect::<HashSet<_>>());
+    }
+
+    #[test]
+    fn cyclic_sccs_includes_self_loop() {
+        let pkg_a = PackageId::parse("pkg-a").unwrap();
+        let subset: HashSet<_> = vec![pkg_a.clone()].into_iter().collect();
+
+        let sccs = cyclic_sccs(&subset, |id| vec![(id.clone(), DepKind::Dev)], &[DepKind::Dev]);
+
+        assert_eq!(sccs.len(), 1);
+        assert_eq!(sccs[0], vec![pkg_a].into_iter().collect::<HashSet<_>>());
     }
 }
