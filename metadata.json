@@ -1,0 +1,33 @@
+{
+  "cli_version": "0.10.3-nightly.202608260614.6561a64b8",
+  "checkpoint_id": "01M13DTQ576K73E0G7Q54K17T4",
+  "strategy": "manual-commit",
+  "branch": "fix-publish-order-platform-dependency-gating",
+  "checkpoints_count": 31,
+  "files_touched": [
+    "crates/callisto-graph/src/commands/publish.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 3882,
+    "cache_creation_tokens": 12235841,
+    "cache_read_tokens": 937350373,
+    "output_tokens": 1008866,
+    "api_call_count": 1948,
+    "subagent_tokens": {
+      "input_tokens": 20,
+      "cache_creation_tokens": 75008,
+      "cache_read_tokens": 542690,
+      "output_tokens": 4884,
+      "api_call_count": 10
+    }
+  }
+}
