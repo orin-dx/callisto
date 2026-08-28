@@ -697,11 +697,43 @@ where
             attempts.push(self.attempt_publish(pkg_id, npm_pkg.version.clone(), permit));
         }
 
+        // Names of platform packages that did NOT successfully publish above
+        // (Published/AlreadyPublished both count as success). A main package
+        // declaring one of these in `depends_on_platforms` must not be
+        // published: its `optionalDependencies` would reference a version
+        // that was never actually uploaded.
+        let failed_platform_names: std::collections::HashSet<String> = attempts
+            .iter()
+            .filter(|a| a.result.is_failure())
+            .map(|a| a.package.name().to_string())
+            .collect();
+
         for npm_pkg in &plan.npm_main_packages {
             let pkg_id = PackageId::Prefixed {
                 ecosystem: Ecosystem::Npm,
                 name: npm_pkg.name.clone(),
             };
+            let failed_deps: Vec<&str> = npm_pkg
+                .depends_on_platforms
+                .iter()
+                .map(String::as_str)
+                .filter(|dep| failed_platform_names.contains(*dep))
+                .collect();
+            if !failed_deps.is_empty() {
+                attempts.push(PublishAttempt {
+                    package: pkg_id,
+                    version: npm_pkg.version.clone(),
+                    result: PublishAttemptResult::Failed {
+                        kind: "dependencyFailed".to_string(),
+                        error: format!(
+                            "skipped: platform dependenc{} failed to publish: {}",
+                            if failed_deps.len() == 1 { "y" } else { "ies" },
+                            failed_deps.join(", ")
+                        ),
+                    },
+                });
+                continue;
+            }
             self.emit_progress(&npm_pkg.name, &npm_pkg.version);
             attempts.push(self.attempt_publish(pkg_id, npm_pkg.version.clone(), permit));
         }
@@ -1011,6 +1043,90 @@ mod tests {
         assert_eq!(report.attempts.len(), 1);
         assert!(matches!(report.attempts[0].result, PublishAttemptResult::Published));
         assert_eq!(orchestrator.time.now(), SystemTime::UNIX_EPOCH);
+    }
+
+    /// A main npm package must not be published if any platform package it
+    /// depends on (per `depends_on_platforms`, computed from the real
+    /// dependency graph in `plan_publish`) failed to publish in the same
+    /// run -- publishing it anyway would ship an `optionalDependencies`
+    /// reference to a version that was never actually uploaded. The main
+    /// package's own registry client is never even called: the skip must
+    /// happen before any publish attempt, not as a post-hoc failure.
+    #[test]
+    fn npm_main_package_is_skipped_when_its_platform_dependency_fails() {
+        let client = MockRegistryClient {
+            published: Mutex::new(std::collections::HashSet::new()),
+            // Popped LIFO. Only one real `publish` call is expected (the
+            // platform package) -- the main package must be skipped before
+            // ever reaching the client, so it must not need a second entry.
+            responses: Mutex::new(vec![Err(RegistryError::Other("registry rejected upload".to_string()))]),
+        };
+        let policy = MockRateLimitPolicy;
+        let time = MockTimeProvider {
+            time: Mutex::new(SystemTime::UNIX_EPOCH),
+        };
+        let orchestrator = PublishOrchestrator::new(client, policy, time);
+
+        let plan = callisto_model::PublishPlan {
+            schema_version: callisto_model::SCHEMA_VERSION,
+            rust_crates: vec![],
+            npm_platform_packages: vec![callisto_model::NpmPublish {
+                name: "my-cli-linux-x64".to_string(),
+                version: v100(),
+                publish_to: callisto_model::RegistryKey(callisto_model::RegistryKey::NPM.to_string()),
+                package_dir: std::path::PathBuf::new(),
+                registry: None,
+                tag: None,
+                access: None,
+            }],
+            npm_main_packages: vec![callisto_model::NpmMainPublish {
+                name: "my-cli".to_string(),
+                version: v100(),
+                publish_to: callisto_model::RegistryKey(callisto_model::RegistryKey::NPM.to_string()),
+                package_dir: std::path::PathBuf::new(),
+                registry: None,
+                tag: None,
+                access: None,
+                depends_on_platforms: vec!["my-cli-linux-x64".to_string()],
+            }],
+            pypi_packages: vec![],
+            releases: vec![],
+            diagnostics: vec![],
+        };
+
+        let report = orchestrator.execute(&plan, &permit());
+
+        assert_eq!(report.attempts.len(), 2, "both packages must appear in the report");
+
+        let platform_attempt = report
+            .attempts
+            .iter()
+            .find(|a| a.package.name() == "my-cli-linux-x64")
+            .expect("platform package attempt must be present");
+        assert!(
+            platform_attempt.result.is_failure(),
+            "platform package attempt should reflect the real registry failure, got: {:?}",
+            platform_attempt.result
+        );
+
+        let main_attempt = report
+            .attempts
+            .iter()
+            .find(|a| a.package.name() == "my-cli")
+            .expect("main package attempt must be present");
+        assert!(
+            main_attempt.result.is_failure(),
+            "main package must be recorded as failed (skipped), not silently published, got: {:?}",
+            main_attempt.result
+        );
+        if let PublishAttemptResult::Failed { kind, error } = &main_attempt.result {
+            assert_eq!(kind, "dependencyFailed", "got kind: {kind}");
+            assert!(
+                error.contains("my-cli-linux-x64"),
+                "error message must name the failed platform dependency, got: {error}"
+            );
+        }
+        assert!(report.has_failures());
     }
 
     #[test]
