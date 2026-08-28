@@ -59,6 +59,12 @@ runs:
           DOWNLOAD_URL="https://github.com/orin-dx/callisto/releases/download/$TAG_NAME/$ASSET_NAME"
         fi
 
+        # Derive a crates.io version spec from TAG_NAME: "latest" installs
+        # whatever crates.io resolves as latest (no --version flag); an
+        # explicit tag like "callisto-cli@0.5.0" strips the "callisto-cli@"
+        # prefix down to the bare semver cargo install expects.
+        CRATE_VERSION="${TAG_NAME#callisto-cli@}"
+
         # Prioritize local repository build when inside the callisto monorepo
         if [[ -f "$GITHUB_WORKSPACE/Cargo.toml" ]] && grep -q "callisto-cli" "$GITHUB_WORKSPACE/Cargo.toml"; then
           echo "Building local callisto binary from current repository commit..."
@@ -67,8 +73,14 @@ runs:
         elif curl -sL -f "$DOWNLOAD_URL" -o /tmp/callisto.tar.gz 2>/dev/null; then
           tar -xzf /tmp/callisto.tar.gz -C "$CALLISTO_BIN_DIR"
           echo "Callisto downloaded from GitHub Releases ($DOWNLOAD_URL)"
+        elif [[ "$TAG_NAME" == "latest" ]] && cargo install callisto-cli --locked --root "${RUNNER_TEMP}/callisto-cargo-install" --quiet; then
+          echo "Callisto installed from crates.io (latest)"
+          cp "${RUNNER_TEMP}/callisto-cargo-install/bin/callisto" "$CALLISTO_BIN_DIR/callisto"
+        elif [[ "$TAG_NAME" != "latest" ]] && cargo install callisto-cli --version "$CRATE_VERSION" --locked --root "${RUNNER_TEMP}/callisto-cargo-install" --quiet; then
+          echo "Callisto installed from crates.io ($CRATE_VERSION)"
+          cp "${RUNNER_TEMP}/callisto-cargo-install/bin/callisto" "$CALLISTO_BIN_DIR/callisto"
         else
-          echo "Installing via cargo install..."
+          echo "Installing from git source (crates.io install failed or was skipped)..."
           cargo install --git https://github.com/orin-dx/callisto.git callisto-cli --root "${RUNNER_TEMP}/callisto-cargo-install" --quiet
           cp "${RUNNER_TEMP}/callisto-cargo-install/bin/callisto" "$CALLISTO_BIN_DIR/callisto"
         fi
