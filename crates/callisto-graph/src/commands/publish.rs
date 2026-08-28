@@ -697,14 +697,18 @@ where
             attempts.push(self.attempt_publish(pkg_id, npm_pkg.version.clone(), permit));
         }
 
-        // Names of platform packages that did NOT successfully publish above
-        // (Published/AlreadyPublished both count as success). A main package
-        // declaring one of these in `depends_on_platforms` must not be
-        // published: its `optionalDependencies` would reference a version
-        // that was never actually uploaded.
+        // Names of npm platform packages that did NOT successfully publish
+        // above (Published/AlreadyPublished both count as success). A main
+        // package declaring one of these in `depends_on_platforms` must not
+        // be published: its `optionalDependencies` would reference a version
+        // that was never actually uploaded. Scoped to `Ecosystem::Npm`:
+        // `depends_on_platforms` is an npm-only construct, and a bare
+        // `.name()` carries no ecosystem information, so an unscoped
+        // comparison could mistake a same-named failed Cargo crate for a
+        // failed npm platform dependency.
         let failed_platform_names: std::collections::HashSet<String> = attempts
             .iter()
-            .filter(|a| a.result.is_failure())
+            .filter(|a| a.package.ecosystem() == Some(Ecosystem::Npm) && a.result.is_failure())
             .map(|a| a.package.name().to_string())
             .collect();
 
@@ -925,6 +929,36 @@ mod tests {
     }
 
     #[test]
+    fn scratch_probe_unrelated_dev_cycle_disables_dev_ordering_globally() {
+        // pkg-a <-> pkg-b: legitimate Dev-only cycle (cross-integration tests).
+        // conventional -> vcs: unrelated Dev-only edge, no cycle at all, needs
+        // vcs to publish first per the whole point of PUBLISH_ORDERING_KINDS.
+        let graph = TestGraph {
+            packages: vec![
+                test_package("pkg-a"),
+                test_package("pkg-b"),
+                test_package("conventional"),
+                test_package("vcs"),
+            ],
+            edges: vec![
+                test_edge("pkg-a", "pkg-b", callisto_model::DepKind::Dev),
+                test_edge("pkg-b", "pkg-a", callisto_model::DepKind::Dev),
+                test_edge("conventional", "vcs", callisto_model::DepKind::Dev),
+            ],
+        };
+
+        let order = publish_order(&graph, &all_ids(&graph)).expect("must not hard-fail");
+        let vcs_pos = order.iter().position(|id| id.name() == "vcs").unwrap();
+        let conventional_pos = order.iter().position(|id| id.name() == "conventional").unwrap();
+        eprintln!("order = {order:?}");
+        assert!(
+            vcs_pos < conventional_pos,
+            "PROBE: vcs should publish before conventional (unrelated Dev edge) even though \
+             an unrelated pkg-a/pkg-b Dev cycle exists elsewhere; got order: {order:?}"
+        );
+    }
+
+    #[test]
     fn publish_order_still_errors_on_a_real_runtime_cycle() {
         // A genuine Runtime cycle must still be a hard error -- the
         // cascade-scoped fallback is not a general "never fail" escape
@@ -1127,6 +1161,88 @@ mod tests {
             );
         }
         assert!(report.has_failures());
+    }
+
+    /// A failed Cargo crate must never be mistaken for a failed npm platform
+    /// dependency just because they share a bare name -- `depends_on_platforms`
+    /// is an npm-only construct (`optionalDependencies`), and `PackageId`'s
+    /// bare `.name()` carries no ecosystem information on its own. A Cargo
+    /// crate named identically to an npm platform package that actually
+    /// succeeded must not cause the dependent npm main package to be skipped.
+    #[test]
+    fn cargo_crate_failure_does_not_false_positive_match_an_npm_platform_dependency_of_the_same_name() {
+        let client = MockRegistryClient {
+            published: Mutex::new(std::collections::HashSet::new()),
+            // Popped LIFO: publish() is called for rust_crates first, then
+            // npm_platform_packages, then npm_main_packages. Push responses
+            // in reverse: main package publish succeeds (default, no entry
+            // needed), platform package publish succeeds (default), Cargo
+            // crate publish fails.
+            responses: Mutex::new(vec![Err(RegistryError::Other("crates.io rejected upload".to_string()))]),
+        };
+        let policy = MockRateLimitPolicy;
+        let time = MockTimeProvider {
+            time: Mutex::new(SystemTime::UNIX_EPOCH),
+        };
+        let orchestrator = PublishOrchestrator::new(client, policy, time);
+
+        let plan = callisto_model::PublishPlan {
+            schema_version: callisto_model::SCHEMA_VERSION,
+            rust_crates: vec![callisto_model::CratePublish {
+                // Same bare name as the npm platform package below, deliberately.
+                name: "my-cli-linux-x64".to_string(),
+                version: v100(),
+                publish_to: callisto_model::RegistryKey(callisto_model::RegistryKey::CRATES_IO.to_string()),
+                registry: None,
+                package_dir: None,
+            }],
+            npm_platform_packages: vec![callisto_model::NpmPublish {
+                name: "my-cli-linux-x64".to_string(),
+                version: v100(),
+                publish_to: callisto_model::RegistryKey(callisto_model::RegistryKey::NPM.to_string()),
+                package_dir: std::path::PathBuf::new(),
+                registry: None,
+                tag: None,
+                access: None,
+            }],
+            npm_main_packages: vec![callisto_model::NpmMainPublish {
+                name: "my-cli".to_string(),
+                version: v100(),
+                publish_to: callisto_model::RegistryKey(callisto_model::RegistryKey::NPM.to_string()),
+                package_dir: std::path::PathBuf::new(),
+                registry: None,
+                tag: None,
+                access: None,
+                depends_on_platforms: vec!["my-cli-linux-x64".to_string()],
+            }],
+            pypi_packages: vec![],
+            releases: vec![],
+            diagnostics: vec![],
+        };
+
+        let report = orchestrator.execute(&plan, &permit());
+
+        let cargo_attempt = report
+            .attempts
+            .iter()
+            .find(|a| a.package.ecosystem() == Some(callisto_model::Ecosystem::Cargo))
+            .expect("cargo crate attempt must be present");
+        assert!(
+            cargo_attempt.result.is_failure(),
+            "the cargo crate publish must genuinely fail"
+        );
+
+        let main_attempt = report
+            .attempts
+            .iter()
+            .find(|a| a.package.ecosystem() == Some(callisto_model::Ecosystem::Npm) && a.package.name() == "my-cli")
+            .expect("main package attempt must be present");
+        assert!(
+            !main_attempt.result.is_failure(),
+            "the npm main package must publish normally -- its real npm platform dependency succeeded; \
+             a same-named Cargo crate failing in a different ecosystem must not skip it, got: {:?}",
+            main_attempt.result
+        );
     }
 
     #[test]
