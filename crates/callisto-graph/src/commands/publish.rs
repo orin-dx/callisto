@@ -1,8 +1,8 @@
 use std::collections::HashSet;
 
 use callisto_model::{
-    CommandRunner, CratePublish, DepKind, NpmMainPublish, PackageId, PublishPlan, PublishTarget, PypiPublish,
-    RegistryKey, ReleaseEntry, SCHEMA_VERSION,
+    CommandRunner, CratePublish, DepKind, Ecosystem, NpmMainPublish, PackageId, PublishPlan, PublishTarget,
+    PypiPublish, RegistryKey, ReleaseEntry, SCHEMA_VERSION,
 };
 use callisto_vcs::GitDataSource;
 
@@ -268,6 +268,20 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
         }
     };
 
+    // Whether each workspace package is a release candidate this run,
+    // tracked unconditionally (not just for packages that end up in a
+    // publish list) so the depends_on_platforms cross-check below can tell
+    // "this platform sibling isn't in the plan because it's already
+    // published" (is_release == false) apart from "it's misconfigured or
+    // was filtered out" (is_release == true but never dispatched).
+    let mut is_release_by_id: std::collections::HashMap<PackageId, bool> = std::collections::HashMap::new();
+    // Packages that actually landed in at least one of the four publish
+    // lists below. A package can be `is_release == true` and still never
+    // appear here (e.g. `publish_to` is empty, or only names
+    // not-yet-implemented targets) — that distinction is exactly what the
+    // --package precise-error and depends_on_platforms checks need.
+    let mut dispatched_ids: std::collections::HashSet<PackageId> = std::collections::HashSet::new();
+
     for id in &topo_ids {
         let pkg = match pkg_map.get(id) {
             Some(&p) => p,
@@ -293,6 +307,7 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
                 .unwrap_or(false);
             (!tag_match, cur_ver)
         };
+        is_release_by_id.insert(pkg.id.clone(), is_release);
 
         if is_release {
             // Single exhaustive dispatch match over every configured target —
@@ -411,6 +426,7 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
                 .unwrap_or_default();
 
             if publishes_cargo {
+                dispatched_ids.insert(pkg.id.clone());
                 rust_crates.push(CratePublish {
                     name: pkg.id.name().to_string(),
                     version: ver.clone(),
@@ -450,6 +466,7 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
                 });
 
                 if is_platform_pkg {
+                    dispatched_ids.insert(pkg.id.clone());
                     npm_platform_packages.push(callisto_model::NpmPublish {
                         name: pkg.id.name().to_string(),
                         version: ver.clone(),
@@ -476,6 +493,7 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
                         .map(|edge| edge.to.name().to_string())
                         .collect();
 
+                    dispatched_ids.insert(pkg.id.clone());
                     npm_main_packages.push(NpmMainPublish {
                         name: pkg.id.name().to_string(),
                         version: ver.clone(),
@@ -505,6 +523,7 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
                     })
                     .flatten();
 
+                dispatched_ids.insert(pkg.id.clone());
                 pypi_packages.push(PypiPublish {
                     name: pkg.id.name().to_string(),
                     version: ver.clone(),
@@ -542,30 +561,89 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
     // Apply the `only` filter: when the caller specifies a set of package names,
     // drop everything not in that set from every ecosystem list. An empty `only`
     // means "all packages".
+    //
+    // Each requested name is resolved to a single, ecosystem-disambiguated
+    // `PackageId` via `PackageId::resolve_unique` against the full workspace
+    // membership *before* any retaining happens — matching by bare name alone
+    // (the old behaviour) would let `--package core` silently sweep up an
+    // unrelated Cargo crate and an unrelated npm package that merely happen
+    // to share the name `core`. A bare, unqualified request that is genuinely
+    // ambiguous (two workspace packages share the name across ecosystems)
+    // reuses the existing `AmbiguousName` error and tells the caller to
+    // qualify it (`npm:core`).
     if !opts.only.is_empty() {
-        let keep = |name: &str| opts.only.iter().any(|n| n == name);
-        rust_crates.retain(|c| keep(&c.name));
-        npm_main_packages.retain(|c| keep(&c.name));
-        npm_platform_packages.retain(|c| keep(&c.name));
-        pypi_packages.retain(|c| keep(&c.name));
-        releases.retain(|r| keep(r.package.name()));
-
-        // Validate: every requested name must match at least one retained entry.
-        // A typo in --package silently produces an empty plan and exits 0 without
-        // this check, making CI report "nothing to publish" instead of an error.
-        let retained: std::collections::HashSet<&str> = rust_crates
-            .iter()
-            .map(|c| c.name.as_str())
-            .chain(npm_main_packages.iter().map(|c| c.name.as_str()))
-            .chain(npm_platform_packages.iter().map(|c| c.name.as_str()))
-            .chain(pypi_packages.iter().map(|c| c.name.as_str()))
-            .collect();
+        let mut resolved: Vec<PackageId> = Vec::with_capacity(opts.only.len());
         for requested in &opts.only {
-            if !retained.contains(requested.as_str()) {
-                return Err(crate::error::GraphError::UnknownPackage {
-                    id: callisto_model::PackageId::Bare(requested.clone()),
-                });
+            let requested_id = PackageId::parse(requested).map_err(|_parse_err| GraphError::UnknownPackage {
+                id: PackageId::Bare(requested.clone()),
+            })?;
+            match requested_id.resolve_unique(all_ids.iter(), |id| id) {
+                Ok(Some(id)) => resolved.push(id.clone()),
+                Ok(None) => {
+                    return Err(GraphError::UnknownPackage {
+                        id: PackageId::Bare(requested.clone()),
+                    });
+                }
+                Err(candidates) => {
+                    return Err(GraphError::AmbiguousName {
+                        name: requested.clone(),
+                        candidates: candidates.into_iter().cloned().collect(),
+                    });
+                }
             }
+        }
+
+        let keep = |ecosystem: Ecosystem, name: &str| {
+            let entry_id = resolve_entry_id(&pkg_map, ecosystem, name);
+            resolved.contains(&entry_id)
+        };
+        rust_crates.retain(|c| keep(Ecosystem::Cargo, &c.name));
+        npm_main_packages.retain(|c| keep(Ecosystem::Npm, &c.name));
+        npm_platform_packages.retain(|c| keep(Ecosystem::Npm, &c.name));
+        pypi_packages.retain(|c| keep(Ecosystem::Pypi, &c.name));
+        releases.retain(|r| resolved.iter().any(|id| id.matches(&r.package)));
+
+        // Every requested package must actually land in the plan. A name that
+        // resolved above (it exists in the workspace) but never made it into
+        // any list is either not a release candidate right now, or configures
+        // no dispatchable publish target — both distinct, more actionable
+        // causes than a plain typo, so this reports which one applies instead
+        // of the generic "not found in workspace" UnknownPackage message.
+        for id in &resolved {
+            if dispatched_ids.contains(id) {
+                continue;
+            }
+            let reason = if is_release_by_id.get(id) == Some(&false) {
+                crate::error::NotInPlanReason::NotARelease
+            } else {
+                crate::error::NotInPlanReason::NoDispatchableTarget
+            };
+            return Err(GraphError::PackageNotInPublishPlan { id: id.clone(), reason });
+        }
+    }
+
+    // Cross-check every npm main package's declared platform dependencies
+    // against what actually ended up in the final plan. `depends_on_platforms`
+    // is computed from graph edges alone (above) and knows nothing about
+    // whether the named sibling is actually publishable this run — it could
+    // be missing because `--only` filtered it out, because it's misconfigured
+    // (no npm publish target), or legitimately absent because it's already
+    // published (its version already tag-matches, so it was never a release
+    // candidate this run). Only the last case is safe to let through silently.
+    for main in &npm_main_packages {
+        for dep_name in &main.depends_on_platforms {
+            if npm_platform_packages.iter().any(|p| &p.name == dep_name) {
+                continue;
+            }
+            let dep_id = resolve_entry_id(&pkg_map, Ecosystem::Npm, dep_name);
+            if is_release_by_id.get(&dep_id) == Some(&false) {
+                continue;
+            }
+            let main_id = resolve_entry_id(&pkg_map, Ecosystem::Npm, &main.name);
+            return Err(GraphError::MissingPlatformDependency {
+                main: main_id,
+                depends_on: dep_name.clone(),
+            });
         }
     }
 
@@ -580,9 +658,32 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
     })
 }
 
+/// Recovers a plan entry's real workspace `PackageId` from its ecosystem and
+/// bare name. `CratePublish`/`NpmPublish`/`NpmMainPublish`/`PypiPublish`
+/// store only a bare `name: String` (no wire-format change here), so this
+/// reconstructs the id the same way `walk.rs`'s identity-promotion leaves
+/// it: unpromoted packages keep a `Bare` id; a package only gets a
+/// `Prefixed` id when it collided with a same-named package in another
+/// ecosystem. Trying `Bare` first and falling back to `Prefixed` mirrors
+/// that: a package is never registered under both forms at once.
+fn resolve_entry_id(
+    pkg_map: &std::collections::HashMap<&PackageId, &callisto_model::Package>,
+    ecosystem: Ecosystem,
+    name: &str,
+) -> PackageId {
+    let bare = PackageId::Bare(name.to_string());
+    if pkg_map.contains_key(&bare) {
+        return bare;
+    }
+    PackageId::Prefixed {
+        ecosystem,
+        name: name.to_string(),
+    }
+}
+
 use callisto_model::{
-    ApplyPermit, Ecosystem, PublishAttempt, PublishAttemptResult, PublishOutcome, PublishReport, RateLimitPolicy,
-    RegistryClient, RegistryError, TimeProvider, Version,
+    ApplyPermit, PublishAttempt, PublishAttemptResult, PublishOutcome, PublishReport, RateLimitPolicy, RegistryClient,
+    RegistryError, TimeProvider, Version,
 };
 use std::time::Duration;
 

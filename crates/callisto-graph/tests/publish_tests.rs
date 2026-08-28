@@ -727,6 +727,654 @@ fn publish_options_only_unknown_package_returns_error() {
     );
 }
 
+// ---- cluster-1 audit fixes: ecosystem-aware --only + depends_on_platforms ----
+
+/// A bare `--package core` naming a package whose name collides across two
+/// ecosystems (a Cargo crate and an npm package both named `core`) must
+/// error as ambiguous rather than silently sweeping both into the plan.
+#[test]
+fn publish_options_only_bare_name_collision_across_ecosystems_requires_disambiguation() {
+    use callisto_graph::commands::{plan_publish, PublishOptions};
+    use callisto_graph::error::GraphError;
+    use callisto_model::{Ecosystem, ManifestDecl, ManifestFormat, ManifestRole};
+
+    let runner = DummyRunner;
+    let ws_dir = tempfile::tempdir().unwrap();
+    let root = ws_dir.path();
+
+    std::fs::create_dir_all(root.join("core-cargo")).unwrap();
+    std::fs::write(
+        root.join("core-cargo/Cargo.toml"),
+        "[package]\nname = \"core\"\nversion = \"1.0.0\"\nedition = \"2021\"\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(root.join("core-npm")).unwrap();
+    std::fs::write(
+        root.join("core-npm/package.json"),
+        r#"{"name":"core","version":"1.0.0"}"#,
+    )
+    .unwrap();
+    init_git_repo(root);
+
+    let cargo_id = PackageId::Prefixed {
+        ecosystem: Ecosystem::Cargo,
+        name: "core".to_string(),
+    };
+    let npm_id = PackageId::Prefixed {
+        ecosystem: Ecosystem::Npm,
+        name: "core".to_string(),
+    };
+
+    let cargo_decl = ManifestDecl::new(
+        PathBuf::from("core-cargo/Cargo.toml"),
+        ManifestRole::Canonical,
+        ManifestFormat::CargoToml,
+    )
+    .unwrap();
+    let npm_decl = ManifestDecl::new(
+        PathBuf::from("core-npm/package.json"),
+        ManifestRole::Canonical,
+        ManifestFormat::PackageJson,
+    )
+    .unwrap();
+
+    let graph = GraphBuilder::new()
+        .package(cargo_id.clone(), |p: PackageBuilder| {
+            p.manifests(vec![cargo_decl]).publish_to(vec![PublishTarget::CratesIo])
+        })
+        .package(npm_id.clone(), |p: PackageBuilder| {
+            p.manifests(vec![npm_decl]).publish_to(vec![PublishTarget::Npm {
+                registry: None,
+                access: None,
+            }])
+        })
+        .build()
+        .unwrap();
+
+    use std::cell::OnceCell;
+    let cfg = callisto_graph::config::load(&root.join("callisto.toml")).unwrap();
+    let git = callisto_vcs::GitAccess::discover(root, &runner);
+    let tags = callisto_graph::tags::TagIndex::build(&git, &graph, &cfg).unwrap();
+    let ws = callisto_graph::Workspace {
+        root: root.to_path_buf(),
+        config: cfg,
+        graph,
+        tags: OnceCell::from(tags),
+        git: OnceCell::from(git),
+        runner: &runner,
+        manifest_cache: Default::default(),
+        identity: callisto_graph::IdentityIndex::default(),
+    };
+
+    let opts = PublishOptions {
+        only: vec!["core".to_string()],
+    };
+    let err = plan_publish(&ws, &opts).expect_err("a bare cross-ecosystem name collision must be ambiguous");
+    match &err {
+        GraphError::AmbiguousName { name, candidates } => {
+            assert_eq!(name, "core");
+            assert_eq!(
+                candidates.len(),
+                2,
+                "both ecosystems' `core` must be listed as candidates"
+            );
+        }
+        other => panic!("expected AmbiguousName, got: {other:?}"),
+    }
+}
+
+/// An ecosystem-prefixed `--package npm:core` disambiguates the same
+/// collision and retains only the intended entry.
+#[test]
+fn publish_options_only_ecosystem_prefixed_name_disambiguates_collision() {
+    use callisto_graph::commands::{plan_publish, PublishOptions};
+    use callisto_model::{Ecosystem, ManifestDecl, ManifestFormat, ManifestRole};
+
+    let runner = DummyRunner;
+    let ws_dir = tempfile::tempdir().unwrap();
+    let root = ws_dir.path();
+
+    std::fs::create_dir_all(root.join("core-cargo")).unwrap();
+    std::fs::write(
+        root.join("core-cargo/Cargo.toml"),
+        "[package]\nname = \"core\"\nversion = \"1.0.0\"\nedition = \"2021\"\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(root.join("core-npm")).unwrap();
+    std::fs::write(
+        root.join("core-npm/package.json"),
+        r#"{"name":"core","version":"1.0.0"}"#,
+    )
+    .unwrap();
+    init_git_repo(root);
+
+    let cargo_id = PackageId::Prefixed {
+        ecosystem: Ecosystem::Cargo,
+        name: "core".to_string(),
+    };
+    let npm_id = PackageId::Prefixed {
+        ecosystem: Ecosystem::Npm,
+        name: "core".to_string(),
+    };
+
+    let cargo_decl = ManifestDecl::new(
+        PathBuf::from("core-cargo/Cargo.toml"),
+        ManifestRole::Canonical,
+        ManifestFormat::CargoToml,
+    )
+    .unwrap();
+    let npm_decl = ManifestDecl::new(
+        PathBuf::from("core-npm/package.json"),
+        ManifestRole::Canonical,
+        ManifestFormat::PackageJson,
+    )
+    .unwrap();
+
+    let graph = GraphBuilder::new()
+        .package(cargo_id.clone(), |p: PackageBuilder| {
+            p.manifests(vec![cargo_decl]).publish_to(vec![PublishTarget::CratesIo])
+        })
+        .package(npm_id.clone(), |p: PackageBuilder| {
+            p.manifests(vec![npm_decl]).publish_to(vec![PublishTarget::Npm {
+                registry: None,
+                access: None,
+            }])
+        })
+        .build()
+        .unwrap();
+
+    use std::cell::OnceCell;
+    let cfg = callisto_graph::config::load(&root.join("callisto.toml")).unwrap();
+    let git = callisto_vcs::GitAccess::discover(root, &runner);
+    let tags = callisto_graph::tags::TagIndex::build(&git, &graph, &cfg).unwrap();
+    let ws = callisto_graph::Workspace {
+        root: root.to_path_buf(),
+        config: cfg,
+        graph,
+        tags: OnceCell::from(tags),
+        git: OnceCell::from(git),
+        runner: &runner,
+        manifest_cache: Default::default(),
+        identity: callisto_graph::IdentityIndex::default(),
+    };
+
+    let opts = PublishOptions {
+        only: vec!["npm:core".to_string()],
+    };
+    let plan = plan_publish(&ws, &opts).expect("npm:core must resolve unambiguously");
+    assert_eq!(plan.rust_crates.len(), 0, "the cargo core crate must be excluded");
+    assert_eq!(
+        plan.npm_main_packages.len(),
+        1,
+        "only the npm core package must be retained"
+    );
+    assert_eq!(plan.npm_main_packages[0].name, "core");
+}
+
+/// A platform package that never declares a working npm publish target must
+/// fail the plan rather than let its main package publish referencing a
+/// dependency that will never exist on the registry.
+#[test]
+fn plan_publish_errors_when_platform_dependency_never_declares_an_npm_target() {
+    use callisto_graph::commands::{plan_publish, PublishOptions};
+    use callisto_graph::error::GraphError;
+    use callisto_model::{DepKind, DepSpec, ManifestDecl, ManifestFormat, ManifestRole};
+
+    let runner = DummyRunner;
+    let ws_dir = tempfile::tempdir().unwrap();
+    let root = ws_dir.path();
+
+    std::fs::create_dir_all(root.join("wrapper")).unwrap();
+    std::fs::write(
+        root.join("wrapper/package.json"),
+        r#"{"name":"wrapper","version":"1.0.0"}"#,
+    )
+    .unwrap();
+    std::fs::create_dir_all(root.join("wrapper-linux-x64")).unwrap();
+    std::fs::write(
+        root.join("wrapper-linux-x64/package.json"),
+        r#"{"name":"wrapper-linux-x64","version":"1.0.0"}"#,
+    )
+    .unwrap();
+    init_git_repo(root);
+
+    let main_id = PackageId::parse("wrapper").unwrap();
+    let platform_id = PackageId::parse("wrapper-linux-x64").unwrap();
+
+    let main_decl = ManifestDecl::new(
+        PathBuf::from("wrapper/package.json"),
+        ManifestRole::Canonical,
+        ManifestFormat::PackageJson,
+    )
+    .unwrap();
+    // Real platform packages carry both a Canonical decl (so base_versions()
+    // and version_grammar() have a version/grammar source) and a Platform
+    // decl for the same file (so plan_publish routes them into
+    // npm_platform_packages) — see walk.rs's identity walk, which pushes
+    // both for the same manifest path.
+    let platform_canonical_decl = ManifestDecl::new(
+        PathBuf::from("wrapper-linux-x64/package.json"),
+        ManifestRole::Canonical,
+        ManifestFormat::PackageJson,
+    )
+    .unwrap();
+    let platform_decl = ManifestDecl::new(
+        PathBuf::from("wrapper-linux-x64/package.json"),
+        ManifestRole::Platform {
+            platform: "linux".to_string(),
+            arch: "x64".to_string(),
+            abi: None,
+        },
+        ManifestFormat::PackageJson,
+    )
+    .unwrap();
+
+    let graph = GraphBuilder::new()
+        .package(main_id.clone(), |p: PackageBuilder| {
+            p.manifests(vec![main_decl]).publish_to(vec![PublishTarget::Npm {
+                registry: None,
+                access: None,
+            }])
+        })
+        // misconfigured: no publish-to target at all
+        .package(platform_id.clone(), |p: PackageBuilder| {
+            p.manifests(vec![platform_canonical_decl, platform_decl])
+        })
+        .edge(
+            main_id.clone(),
+            platform_id.clone(),
+            DepKind::Optional,
+            DepSpec::Opaque("1.0.0".to_string()),
+        )
+        .build()
+        .unwrap();
+
+    use std::cell::OnceCell;
+    let cfg = callisto_graph::config::load(&root.join("callisto.toml")).unwrap();
+    let git = callisto_vcs::GitAccess::discover(root, &runner);
+    let tags = callisto_graph::tags::TagIndex::build(&git, &graph, &cfg).unwrap();
+    let ws = callisto_graph::Workspace {
+        root: root.to_path_buf(),
+        config: cfg,
+        graph,
+        tags: OnceCell::from(tags),
+        git: OnceCell::from(git),
+        runner: &runner,
+        manifest_cache: Default::default(),
+        identity: callisto_graph::IdentityIndex::default(),
+    };
+
+    let err = plan_publish(&ws, &PublishOptions::default())
+        .expect_err("a misconfigured platform dependency must fail the plan, not ship silently");
+    match &err {
+        GraphError::MissingPlatformDependency { main, depends_on } => {
+            assert_eq!(main, &main_id);
+            assert_eq!(depends_on, "wrapper-linux-x64");
+        }
+        other => panic!("expected MissingPlatformDependency, got: {other:?}"),
+    }
+}
+
+/// `--package wrapper` filtering out `wrapper`'s platform sibling must fail
+/// the plan the same way a misconfigured sibling does — the main package's
+/// declared dependency is unresolved either way.
+#[test]
+fn plan_publish_errors_when_only_filter_excludes_a_still_needed_platform_dependency() {
+    use callisto_graph::commands::{plan_publish, PublishOptions};
+    use callisto_graph::error::GraphError;
+    use callisto_model::{DepKind, DepSpec, ManifestDecl, ManifestFormat, ManifestRole};
+
+    let runner = DummyRunner;
+    let ws_dir = tempfile::tempdir().unwrap();
+    let root = ws_dir.path();
+
+    std::fs::create_dir_all(root.join("wrapper")).unwrap();
+    std::fs::write(
+        root.join("wrapper/package.json"),
+        r#"{"name":"wrapper","version":"1.0.0"}"#,
+    )
+    .unwrap();
+    std::fs::create_dir_all(root.join("wrapper-linux-x64")).unwrap();
+    std::fs::write(
+        root.join("wrapper-linux-x64/package.json"),
+        r#"{"name":"wrapper-linux-x64","version":"1.0.0"}"#,
+    )
+    .unwrap();
+    init_git_repo(root);
+
+    let main_id = PackageId::parse("wrapper").unwrap();
+    let platform_id = PackageId::parse("wrapper-linux-x64").unwrap();
+
+    let main_decl = ManifestDecl::new(
+        PathBuf::from("wrapper/package.json"),
+        ManifestRole::Canonical,
+        ManifestFormat::PackageJson,
+    )
+    .unwrap();
+    // Real platform packages carry both a Canonical decl (so base_versions()
+    // and version_grammar() have a version/grammar source) and a Platform
+    // decl for the same file (so plan_publish routes them into
+    // npm_platform_packages) — see walk.rs's identity walk, which pushes
+    // both for the same manifest path.
+    let platform_canonical_decl = ManifestDecl::new(
+        PathBuf::from("wrapper-linux-x64/package.json"),
+        ManifestRole::Canonical,
+        ManifestFormat::PackageJson,
+    )
+    .unwrap();
+    let platform_decl = ManifestDecl::new(
+        PathBuf::from("wrapper-linux-x64/package.json"),
+        ManifestRole::Platform {
+            platform: "linux".to_string(),
+            arch: "x64".to_string(),
+            abi: None,
+        },
+        ManifestFormat::PackageJson,
+    )
+    .unwrap();
+
+    let graph = GraphBuilder::new()
+        .package(main_id.clone(), |p: PackageBuilder| {
+            p.manifests(vec![main_decl]).publish_to(vec![PublishTarget::Npm {
+                registry: None,
+                access: None,
+            }])
+        })
+        .package(platform_id.clone(), |p: PackageBuilder| {
+            p.manifests(vec![platform_canonical_decl, platform_decl])
+                .publish_to(vec![PublishTarget::Npm {
+                    registry: None,
+                    access: None,
+                }])
+        })
+        .edge(
+            main_id.clone(),
+            platform_id.clone(),
+            DepKind::Optional,
+            DepSpec::Opaque("1.0.0".to_string()),
+        )
+        .build()
+        .unwrap();
+
+    use std::cell::OnceCell;
+    let cfg = callisto_graph::config::load(&root.join("callisto.toml")).unwrap();
+    let git = callisto_vcs::GitAccess::discover(root, &runner);
+    let tags = callisto_graph::tags::TagIndex::build(&git, &graph, &cfg).unwrap();
+    let ws = callisto_graph::Workspace {
+        root: root.to_path_buf(),
+        config: cfg,
+        graph,
+        tags: OnceCell::from(tags),
+        git: OnceCell::from(git),
+        runner: &runner,
+        manifest_cache: Default::default(),
+        identity: callisto_graph::IdentityIndex::default(),
+    };
+
+    let opts = PublishOptions {
+        only: vec!["wrapper".to_string()],
+    };
+    let err = plan_publish(&ws, &opts)
+        .expect_err("--package wrapper must fail: it needs wrapper-linux-x64, which the filter excluded");
+    match &err {
+        GraphError::MissingPlatformDependency { main, depends_on } => {
+            assert_eq!(main, &main_id);
+            assert_eq!(depends_on, "wrapper-linux-x64");
+        }
+        other => panic!("expected MissingPlatformDependency, got: {other:?}"),
+    }
+}
+
+/// A platform sibling that is legitimately absent from this run because it
+/// was already published (its on-disk version already tag-matches) must
+/// NOT trip the missing-dependency check.
+#[test]
+fn plan_publish_succeeds_when_excluded_platform_dependency_already_tag_matches() {
+    use callisto_graph::commands::{plan_publish, PublishOptions};
+    use callisto_model::{DepKind, DepSpec, ManifestDecl, ManifestFormat, ManifestRole};
+
+    let runner = DummyRunner;
+    let ws_dir = tempfile::tempdir().unwrap();
+    let root = ws_dir.path();
+
+    std::fs::create_dir_all(root.join("wrapper")).unwrap();
+    std::fs::write(
+        root.join("wrapper/package.json"),
+        r#"{"name":"wrapper","version":"1.1.0"}"#,
+    )
+    .unwrap();
+    std::fs::create_dir_all(root.join("wrapper-linux-x64")).unwrap();
+    std::fs::write(
+        root.join("wrapper-linux-x64/package.json"),
+        r#"{"name":"wrapper-linux-x64","version":"1.0.0"}"#,
+    )
+    .unwrap();
+    init_git_repo(root);
+
+    // Tag wrapper-linux-x64's current version as already released, using the
+    // same default template `callisto tag` renders: `{name}@{version}`.
+    let tag = |args: &[&str]| {
+        let status = std::process::Command::new("git")
+            .args(args)
+            .current_dir(root)
+            .status()
+            .expect("git should run");
+        assert!(status.success(), "git {args:?} failed");
+    };
+    tag(&["tag", "wrapper-linux-x64@1.0.0"]);
+
+    let main_id = PackageId::parse("wrapper").unwrap();
+    let platform_id = PackageId::parse("wrapper-linux-x64").unwrap();
+
+    let main_decl = ManifestDecl::new(
+        PathBuf::from("wrapper/package.json"),
+        ManifestRole::Canonical,
+        ManifestFormat::PackageJson,
+    )
+    .unwrap();
+    // Real platform packages carry both a Canonical decl (so base_versions()
+    // and version_grammar() have a version/grammar source) and a Platform
+    // decl for the same file (so plan_publish routes them into
+    // npm_platform_packages) — see walk.rs's identity walk, which pushes
+    // both for the same manifest path.
+    let platform_canonical_decl = ManifestDecl::new(
+        PathBuf::from("wrapper-linux-x64/package.json"),
+        ManifestRole::Canonical,
+        ManifestFormat::PackageJson,
+    )
+    .unwrap();
+    let platform_decl = ManifestDecl::new(
+        PathBuf::from("wrapper-linux-x64/package.json"),
+        ManifestRole::Platform {
+            platform: "linux".to_string(),
+            arch: "x64".to_string(),
+            abi: None,
+        },
+        ManifestFormat::PackageJson,
+    )
+    .unwrap();
+
+    let graph = GraphBuilder::new()
+        .package(main_id.clone(), |p: PackageBuilder| {
+            p.manifests(vec![main_decl]).publish_to(vec![PublishTarget::Npm {
+                registry: None,
+                access: None,
+            }])
+        })
+        .package(platform_id.clone(), |p: PackageBuilder| {
+            p.manifests(vec![platform_canonical_decl, platform_decl])
+                .publish_to(vec![PublishTarget::Npm {
+                    registry: None,
+                    access: None,
+                }])
+        })
+        .edge(
+            main_id.clone(),
+            platform_id.clone(),
+            DepKind::Optional,
+            DepSpec::Opaque("1.0.0".to_string()),
+        )
+        .build()
+        .unwrap();
+
+    use std::cell::OnceCell;
+    let cfg = callisto_graph::config::load(&root.join("callisto.toml")).unwrap();
+    let git = callisto_vcs::GitAccess::discover(root, &runner);
+    let tags = callisto_graph::tags::TagIndex::build(&git, &graph, &cfg).unwrap();
+    let ws = callisto_graph::Workspace {
+        root: root.to_path_buf(),
+        config: cfg,
+        graph,
+        tags: OnceCell::from(tags),
+        git: OnceCell::from(git),
+        runner: &runner,
+        manifest_cache: Default::default(),
+        identity: callisto_graph::IdentityIndex::default(),
+    };
+
+    let plan = plan_publish(&ws, &PublishOptions::default())
+        .expect("an already-published platform sibling must not block the plan");
+    assert_eq!(plan.npm_main_packages.len(), 1);
+    assert_eq!(
+        plan.npm_main_packages[0].depends_on_platforms,
+        vec!["wrapper-linux-x64".to_string()]
+    );
+    assert!(
+        plan.npm_platform_packages.is_empty(),
+        "the already-published platform sibling must not be re-published"
+    );
+}
+
+/// `--package` naming a real workspace package that simply has nothing
+/// pending (its on-disk version already matches its last tag) must produce a
+/// distinct error from a genuine typo — the old collapsed UnknownPackage
+/// message sends an operator to check workspace membership, which is
+/// already correct and not the actual problem.
+#[test]
+fn publish_options_only_package_not_a_release_candidate_returns_precise_error() {
+    use callisto_graph::commands::{plan_publish, PublishOptions};
+    use callisto_graph::error::{GraphError, NotInPlanReason};
+
+    let runner = DummyRunner;
+    let ws_dir = tempfile::tempdir().unwrap();
+    let root = ws_dir.path();
+
+    std::fs::create_dir_all(root.join("stable-pkg")).unwrap();
+    std::fs::write(
+        root.join("stable-pkg/Cargo.toml"),
+        "[package]\nname = \"stable-pkg\"\nversion = \"1.0.0\"\nedition = \"2021\"\n",
+    )
+    .unwrap();
+    init_git_repo(root);
+
+    let tag = |args: &[&str]| {
+        let status = std::process::Command::new("git")
+            .args(args)
+            .current_dir(root)
+            .status()
+            .expect("git should run");
+        assert!(status.success(), "git {args:?} failed");
+    };
+    tag(&["tag", "stable-pkg@1.0.0"]);
+
+    let pkg_id = PackageId::parse("stable-pkg").unwrap();
+    let graph = GraphBuilder::new()
+        .package(pkg_id.clone(), |p: PackageBuilder| {
+            p.publish_to(vec![PublishTarget::CratesIo])
+        })
+        .build()
+        .unwrap();
+
+    use std::cell::OnceCell;
+    let cfg = callisto_graph::config::load(&root.join("callisto.toml")).unwrap();
+    let git = callisto_vcs::GitAccess::discover(root, &runner);
+    let tags = callisto_graph::tags::TagIndex::build(&git, &graph, &cfg).unwrap();
+    let ws = callisto_graph::Workspace {
+        root: root.to_path_buf(),
+        config: cfg,
+        graph,
+        tags: OnceCell::from(tags),
+        git: OnceCell::from(git),
+        runner: &runner,
+        manifest_cache: Default::default(),
+        identity: callisto_graph::IdentityIndex::default(),
+    };
+
+    let opts = PublishOptions {
+        only: vec!["stable-pkg".to_string()],
+    };
+    let err = plan_publish(&ws, &opts).expect_err("a package with nothing pending must still error under --package");
+    match &err {
+        GraphError::PackageNotInPublishPlan { id, reason } => {
+            assert_eq!(id, &pkg_id);
+            assert_eq!(*reason, NotInPlanReason::NotARelease);
+        }
+        other => panic!("expected PackageNotInPublishPlan(NotARelease), got: {other:?}"),
+    }
+}
+
+/// `--package` naming a real, pending-release workspace package whose only
+/// configured target has no implemented dispatch (e.g. GitHubRelease) must
+/// also produce a distinct, precise error.
+#[test]
+fn publish_options_only_undispatchable_target_returns_precise_error() {
+    use callisto_graph::commands::{plan_publish, PublishOptions};
+    use callisto_graph::error::{GraphError, NotInPlanReason};
+    use callisto_model::{ManifestDecl, ManifestFormat, ManifestRole};
+
+    let runner = DummyRunner;
+    let ws_dir = tempfile::tempdir().unwrap();
+    let root = ws_dir.path();
+
+    std::fs::write(
+        root.join("Cargo.toml"),
+        "[package]\nname = \"my-crate\"\nversion = \"1.0.0\"\nedition = \"2021\"\n",
+    )
+    .unwrap();
+    init_git_repo(root);
+
+    let pkg_id = PackageId::parse("my-crate").unwrap();
+    let cargo_decl = ManifestDecl::new(
+        PathBuf::from("Cargo.toml"),
+        ManifestRole::Canonical,
+        ManifestFormat::CargoToml,
+    )
+    .unwrap();
+
+    let graph = GraphBuilder::new()
+        .package(pkg_id.clone(), |p: PackageBuilder| {
+            p.manifests(vec![cargo_decl])
+                .publish_to(vec![PublishTarget::GitHubRelease])
+        })
+        .build()
+        .unwrap();
+
+    let cfg = callisto_graph::config::load(root).unwrap();
+    let ws = callisto_graph::Workspace {
+        root: root.to_path_buf(),
+        config: cfg,
+        graph,
+        tags: OnceCell::new(),
+        git: OnceCell::new(),
+        runner: &runner,
+        manifest_cache: Default::default(),
+        identity: callisto_graph::IdentityIndex::default(),
+    };
+
+    let opts = PublishOptions {
+        only: vec!["my-crate".to_string()],
+    };
+    let err = plan_publish(&ws, &opts)
+        .expect_err("a package with only an undispatchable target must still error under --package");
+    match &err {
+        GraphError::PackageNotInPublishPlan { id, reason } => {
+            assert_eq!(id, &pkg_id);
+            assert_eq!(*reason, NotInPlanReason::NoDispatchableTarget);
+        }
+        other => panic!("expected PackageNotInPublishPlan(NoDispatchableTarget), got: {other:?}"),
+    }
+}
+
 // ---- PUB-011: ws.tags() failure must be soft (emit diagnostic, continue) -------
 
 /// When the git binary is completely unavailable (runner returns

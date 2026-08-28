@@ -205,6 +205,36 @@ pub enum GraphError {
         )
     )]
     UntrustedNpmRegistry { package: PackageId, url: String },
+
+    #[error(
+        "npm main package `{main}` depends on platform package `{depends_on}`, which is neither \
+         in this publish plan nor already published"
+    )]
+    #[diagnostic(
+        code(E121),
+        help(
+            "The platform package is either misconfigured (missing a `publish-to = [\"npm\"]` \
+             target) or was excluded from this run by `--package`. Either fix its publish-to \
+             configuration, or include it in this run alongside its dependent main package."
+        )
+    )]
+    MissingPlatformDependency { main: PackageId, depends_on: String },
+
+    #[error("package `{id}` was requested via `--package` but is not part of this publish plan: {reason}")]
+    #[diagnostic(code(E122))]
+    PackageNotInPublishPlan { id: PackageId, reason: NotInPlanReason },
+}
+
+/// Why a workspace package that a `--package` filter named is nonetheless
+/// absent from the computed [`crate::commands::plan_publish`] plan, distinct
+/// from [`GraphError::UnknownPackage`] (which means the name matched no
+/// workspace package at all).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum NotInPlanReason {
+    #[error("its on-disk version already matches its last release tag; there is nothing pending to publish")]
+    NotARelease,
+    #[error("it configures no publish target with an implemented dispatch (e.g. only NuGet or GitHub Release)")]
+    NoDispatchableTarget,
 }
 
 #[cfg(test)]
