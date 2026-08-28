@@ -95,6 +95,7 @@ pub fn handle(args: PublishArgs, global: &GlobalArgs) -> Result<ExitCode, CliErr
     let runner = CliCommandRunner;
     let ws = load_workspace(global, &runner)?;
 
+    let skip_publish_precheck = args.skip_publish_precheck;
     let opts = PublishOptions { only: args.only };
     let plan = plan_publish(&ws, &opts)?;
 
@@ -115,10 +116,11 @@ pub fn handle(args: PublishArgs, global: &GlobalArgs) -> Result<ExitCode, CliErr
     let mut client = SubprocessRegistryClient::new(CliCommandRunner, ws.root.clone());
     client.load_plan(&plan);
     let format = global.format;
-    let orchestrator =
-        PublishOrchestrator::new(client, AlwaysRetryPolicy, SystemTimeProvider).with_progress(move |msg| {
+    let orchestrator = PublishOrchestrator::new(client, AlwaysRetryPolicy, SystemTimeProvider)
+        .with_progress(move |msg| {
             crate::output::log_line(format, &msg);
-        });
+        })
+        .with_skip_precheck(skip_publish_precheck);
     let report = orchestrator.execute(&plan, &permit);
 
     match global.format {
