@@ -373,7 +373,7 @@ Known deferred gaps (documented, not oversights): `add.rs`'s interactive wizard 
 
 Confirmed live in PR #16's own release run: `callisto-action`'s tag-push step (`action.yml`) did `git push origin --tags || true`. A plain (non-force) push can never move an already-existing remote tag, so `callisto tag`'s floating major alias (`pkg@0`, correctly force-moved locally via `git tag -f`) never reached the remote after the first release, and `|| true` hid the failure -- the job reported success while the alias stayed stale. Fixed: `git push origin --tags --force`, error no longer swallowed. Regression test: `.github/actions/callisto-action/tests/test_tag_push_force.sh`.
 
-**Follow-up still needed**: the floating tags are stale RIGHT NOW on the real remote (from PR #16's run) -- needs a manual `git push origin --tags --force` from a real checkout to repair, pending user confirmation (force-push to shared public refs).
+**Follow-up closed** (2026-08-27): all 9 stale `@0` floating tags manually force-moved to their `@0.5.0` commit and force-pushed to the remote, confirmed via `git ls-remote --tags origin`. `callisto-fixtures` correctly has no `@0` tag (`publish = false`, never released). Future releases self-correct via the #18 fix.
 
 ### 2026-08-12 workspace audit — CLOSED
 
