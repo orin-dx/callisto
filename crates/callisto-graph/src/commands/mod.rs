@@ -15,7 +15,8 @@ pub use init::{init, InitOptions};
 pub use matrix::{matrix, MatrixOptions};
 pub use pr_body::{compose_pr_body, PrBodyOptions};
 pub use publish::{
-    parse_retry_after, plan_publish, AlwaysRetryPolicy, PublishOptions, PublishOrchestrator, SystemTimeProvider,
+    filter_plan_by_report, parse_retry_after, plan_publish, AlwaysRetryPolicy, PublishOptions, PublishOrchestrator,
+    SystemTimeProvider,
 };
 pub use publish_client::SubprocessRegistryClient;
 pub use snapshot::plan_snapshot;

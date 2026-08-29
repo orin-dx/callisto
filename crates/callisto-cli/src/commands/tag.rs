@@ -1,5 +1,3 @@
-use std::fs;
-use std::io::Read;
 use std::process::ExitCode;
 
 use callisto_model::{ApplyPermit, DiagnosticSeverity, PublishPlan};
@@ -34,18 +32,7 @@ pub fn handle(args: TagArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
         }
     }
 
-    let plan_text = if args.plan == "-" {
-        let mut buf = String::new();
-        std::io::stdin().read_to_string(&mut buf)?;
-        buf
-    } else if args.plan.trim_start().starts_with('{') {
-        args.plan.clone()
-    } else {
-        fs::read_to_string(&args.plan).map_err(|source| CliError::Io {
-            source,
-            path: Some(std::path::PathBuf::from(&args.plan)),
-        })?
-    };
+    let plan_text = crate::commands::read_json_arg(&args.plan)?;
 
     let plan: PublishPlan =
         serde_json::from_str(&plan_text).map_err(|e| CliError::Other(format!("Failed to parse publish plan: {e}")))?;

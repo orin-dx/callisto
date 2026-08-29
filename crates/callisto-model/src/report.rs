@@ -617,6 +617,14 @@ pub struct CreatedTag {
     /// at a *different* sha is an error diagnostic, not a silent overwrite
     /// (docs/01-spec.md §M.12.6).
     pub already_existed: bool,
+    /// `true` for a floating major-version alias (e.g. `v1`), which is
+    /// intentionally force-moved to point at each new release; `false` for
+    /// an immutable per-version release tag, which must never move once
+    /// created. Callers that push tags to a remote (`callisto-action`) use
+    /// this to scope `git push --force` to only the entries that actually
+    /// need it, instead of force-pushing every tag indiscriminately.
+    #[serde(default)]
+    pub is_floating_major: bool,
 }
 
 #[cfg(test)]
@@ -647,6 +655,7 @@ mod tag_report_tests {
                 tag_name: tag_name(),
                 sha: sha(),
                 already_existed: false,
+                is_floating_major: false,
             }],
             diagnostics: vec![],
         };
@@ -672,11 +681,47 @@ mod tag_report_tests {
             tag_name: tag_name(),
             sha: sha(),
             already_existed: true,
+            is_floating_major: false,
         };
         let json = serde_json::to_string(&tag).unwrap();
         assert!(
             json.contains("\"alreadyExisted\":true"),
             "CreatedTag JSON must contain the \"alreadyExisted\" key; got: {json}"
+        );
+    }
+
+    /// `CreatedTag::is_floating_major` distinguishes a floating major-version
+    /// alias from an immutable per-version release tag, serialized camelCase
+    /// as `"isFloatingMajor"`. `#[serde(default)]` so a pre-existing tag
+    /// report JSON without the field still deserializes (defaults to false).
+    #[test]
+    fn created_tag_json_includes_is_floating_major_key() {
+        let tag = CreatedTag {
+            package: pkg(),
+            tag_name: tag_name(),
+            sha: sha(),
+            already_existed: false,
+            is_floating_major: true,
+        };
+        let json = serde_json::to_string(&tag).unwrap();
+        assert!(
+            json.contains("\"isFloatingMajor\":true"),
+            "CreatedTag JSON must contain the \"isFloatingMajor\" key; got: {json}"
+        );
+    }
+
+    #[test]
+    fn created_tag_deserializes_when_is_floating_major_is_absent() {
+        let json = format!(
+            r#"{{"package":"{}","tagName":"{}","sha":"{}","alreadyExisted":false}}"#,
+            pkg(),
+            tag_name().as_str(),
+            sha().as_str(),
+        );
+        let tag: CreatedTag = serde_json::from_str(&json).expect("must deserialize without isFloatingMajor");
+        assert!(
+            !tag.is_floating_major,
+            "is_floating_major must default to false when absent from JSON"
         );
     }
 }

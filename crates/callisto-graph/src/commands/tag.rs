@@ -66,6 +66,7 @@ pub fn create_tags_with_options<R: CommandRunner, D: DependencyResolver>(
                                 tag_name: major_tag,
                                 sha: release.sha.clone(),
                                 already_existed: major_already_existed,
+                                is_floating_major: true,
                             });
                         }
                     }
@@ -91,6 +92,7 @@ pub fn create_tags_with_options<R: CommandRunner, D: DependencyResolver>(
                 tag_name: release.tag_name.clone(),
                 sha,
                 already_existed,
+                is_floating_major: false,
             });
             continue;
         };
@@ -132,6 +134,7 @@ pub fn create_tags_with_options<R: CommandRunner, D: DependencyResolver>(
                             tag_name: major_tag,
                             sha: release.sha.clone(),
                             already_existed: major_already_existed,
+                            is_floating_major: true,
                         });
                     }
                 }
@@ -142,6 +145,7 @@ pub fn create_tags_with_options<R: CommandRunner, D: DependencyResolver>(
             package: release.package.clone(),
             tag_name: release.tag_name.clone(),
             sha,
+            is_floating_major: false,
             already_existed,
         });
     }

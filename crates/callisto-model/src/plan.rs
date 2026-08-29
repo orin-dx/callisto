@@ -39,6 +39,22 @@ pub struct PublishPlan {
     pub diagnostics: Vec<Diagnostic>,
 }
 
+impl PublishPlan {
+    /// `true` when every publishable list and `releases` is empty — nothing
+    /// in this plan actually needs to run `callisto publish` or `callisto
+    /// tag`. Callers driving a release pipeline (CI orchestration in
+    /// particular) should check this before running either, rather than
+    /// unconditionally reporting `published=true` for a run that shipped
+    /// nothing.
+    pub fn is_empty(&self) -> bool {
+        self.rust_crates.is_empty()
+            && self.npm_platform_packages.is_empty()
+            && self.npm_main_packages.is_empty()
+            && self.pypi_packages.is_empty()
+            && self.releases.is_empty()
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CratePublish {
@@ -136,4 +152,71 @@ pub struct PypiPublish {
     /// targets the default public PyPI index.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub index: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn empty_plan() -> PublishPlan {
+        PublishPlan {
+            schema_version: 1,
+            rust_crates: vec![],
+            npm_platform_packages: vec![],
+            npm_main_packages: vec![],
+            pypi_packages: vec![],
+            releases: vec![],
+            diagnostics: vec![],
+        }
+    }
+
+    #[test]
+    fn is_empty_true_for_fully_empty_plan() {
+        assert!(empty_plan().is_empty());
+    }
+
+    #[test]
+    fn is_empty_false_when_rust_crates_nonempty() {
+        let mut plan = empty_plan();
+        plan.rust_crates.push(CratePublish {
+            name: "pkg".to_string(),
+            version: crate::Version::parse("1.0.0", crate::VersionGrammar::SemVer).unwrap(),
+            publish_to: RegistryKey(RegistryKey::CRATES_IO.to_string()),
+            registry: None,
+            package_dir: None,
+        });
+        assert!(!plan.is_empty());
+    }
+
+    /// Guards against the exact bug the field-list-completeness in `is_empty`
+    /// itself exists to prevent -- a check that forgets one field would
+    /// wrongly report `true` for a plan whose only content is a `pypi_packages`
+    /// entry (before this method existed, the CLI's own inline duplicate of
+    /// this check listed every field explicitly, and the risk is real given
+    /// `pypi_packages` is the newest of the five and easiest to omit).
+    #[test]
+    fn is_empty_false_when_only_pypi_packages_nonempty() {
+        let mut plan = empty_plan();
+        plan.pypi_packages.push(PypiPublish {
+            name: "pkg".to_string(),
+            version: crate::Version::parse("1.0.0", crate::VersionGrammar::SemVer).unwrap(),
+            publish_to: RegistryKey(RegistryKey::PYPI.to_string()),
+            package_dir: PathBuf::from("pkg"),
+            index: None,
+        });
+        assert!(!plan.is_empty());
+    }
+
+    #[test]
+    fn is_empty_false_for_release_only_plan() {
+        let mut plan = empty_plan();
+        plan.releases.push(ReleaseEntry {
+            package: crate::PackageId::Bare("pkg".to_string()),
+            tag_name: crate::TagName("pkg@1.0.0".to_string()),
+            sha: crate::CommitSha::parse("a".repeat(40).as_str()).unwrap(),
+            changelog_section: None,
+            is_prerelease: false,
+        });
+        assert!(!plan.is_empty());
+    }
 }

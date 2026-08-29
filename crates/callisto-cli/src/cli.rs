@@ -66,6 +66,9 @@ pub enum Command {
     ComposePrBody(ComposePrBodyArgs),
     /// Create git tags for packages in a publish plan.
     Tag(TagArgs),
+    /// Filter a publish plan down to what a publish report confirms
+    /// actually succeeded, dropping anything that failed.
+    FilterPlan(FilterPlanArgs),
     /// Generate shell completion scripts.
     Completions(CompletionsArgs),
     /// Print the JSON schema for a report type.
@@ -227,6 +230,17 @@ pub struct TagArgs {
     /// error-severity diagnostics.
     #[arg(long)]
     pub strict: bool,
+}
+
+/// Arguments for the `filter-plan` command.
+#[derive(Args, Clone, Debug)]
+pub struct FilterPlanArgs {
+    /// Path to a publish plan JSON file, inline JSON, or `-` to read it from stdin.
+    #[arg(long, value_name = "FILE|-")]
+    pub plan: String,
+    /// Path to a publish report JSON file, inline JSON, or `-` to read it from stdin.
+    #[arg(long, value_name = "FILE|-")]
+    pub report: String,
 }
 
 /// Arguments for the `completions` command.
