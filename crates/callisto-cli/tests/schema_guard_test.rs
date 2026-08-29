@@ -2,9 +2,12 @@
 //! except where a task's explicit scope is the shape change itself. Permitted schema
 //! deltas: the additive DiagnosticCode::ChangelogReadError variant, TagReport/
 //! CreatedTag's field-shape fix (docs/01-spec.md §M.12.6: `tags` not `createdTags`,
-//! plus `CreatedTag::already_existed`), and the additive required field
+//! plus `CreatedTag::already_existed`), the additive required field
 //! `ReleaseEntry.isPrerelease` (SPEC-005: computed from `Version::is_prerelease()`,
-//! never re-derived from the tag string). Expected sets below were captured from
+//! never re-derived from the tag string), and the additive optional field
+//! `CreatedTag.isFloatingMajor` (distinguishes a floating major-version alias from
+//! an immutable per-version release tag; `#[serde(default)]`, so it appears in
+//! `properties` but not `required`). Expected sets below were captured from
 //! `callisto schema` against the live repository after those intentional changes.
 
 use std::collections::BTreeSet;
@@ -49,7 +52,10 @@ fn ac13_report_struct_field_shapes_are_unchanged() {
     let created_tag = &tag_schema["definitions"]["CreatedTag"];
     let (req, props) = required_and_props(created_tag);
     assert_eq!(req, set(&["alreadyExisted", "package", "sha", "tagName"]));
-    assert_eq!(props, req);
+    assert_eq!(
+        props,
+        set(&["alreadyExisted", "isFloatingMajor", "package", "sha", "tagName"])
+    );
 
     let status_schema = run_schema("status");
     let (req, props) = required_and_props(&status_schema);
