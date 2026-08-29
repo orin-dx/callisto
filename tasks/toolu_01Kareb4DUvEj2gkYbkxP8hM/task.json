@@ -1,0 +1,13 @@
+{
+  "tool_use_id": "toolu_01Kareb4DUvEj2gkYbkxP8hM",
+  "subagent_type": "canon:drafter",
+  "task_description": "Revise SPEC-003 GitHub hardening",
+  "files": [
+    ".changeset/native-artifact-placement.md",
+    "Justfile",
+    "crates/callisto-vcs/tests/zz_bench_revwalk.rs"
+  ],
+  "started_at": "2026-08-29T11:35:04.361568-07:00",
+  "completed_at": "2026-08-29T11:35:04.366929-07:00",
+  "transcript_unavailable_reason": "transcript path unresolvable"
+}

@@ -1,0 +1,13 @@
+{
+  "tool_use_id": "toolu_01CQTeE6BLeHe41L3HAUuviq",
+  "subagent_type": "canon:drafter",
+  "task_description": "Revise SPEC-001 plan durability",
+  "files": [
+    ".changeset/native-artifact-placement.md",
+    "Justfile",
+    "crates/callisto-vcs/tests/zz_bench_revwalk.rs"
+  ],
+  "started_at": "2026-08-29T11:34:21.388297-07:00",
+  "completed_at": "2026-08-29T11:34:21.395237-07:00",
+  "transcript_unavailable_reason": "transcript path unresolvable"
+}

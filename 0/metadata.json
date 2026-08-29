@@ -1,0 +1,1131 @@
+{
+  "cli_version": "0.10.3-nightly.202608260614.6561a64b8",
+  "checkpoint_id": "01M17YYFXHTDMRVG895WV0KAEK",
+  "session_id": "f21fbbf3-d9f7-4109-9c36-8de0a6e308fd",
+  "strategy": "manual-commit",
+  "created_at": "2026-08-29T23:51:18.418428Z",
+  "branch": "codex-release-trust-specs",
+  "checkpoints_count": 55,
+  "save_step_count": 64,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5",
+  "turn_id": "6411d2d9f7e2",
+  "checkpoint_transcript_start": 25773,
+  "transcript_lines_at_start": 25773,
+  "compact_transcript_start": 3110,
+  "token_usage": {
+    "input_tokens": 242,
+    "cache_creation_tokens": 678532,
+    "cache_read_tokens": 34863356,
+    "output_tokens": 168535,
+    "api_call_count": 121,
+    "subagent_tokens": {
+      "input_tokens": 62,
+      "cache_creation_tokens": 83255,
+      "cache_read_tokens": 5270586,
+      "output_tokens": 8842,
+      "api_call_count": 31
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_012pqp9ZZhcrRstBhMtfFpK7",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "trace:trace"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "51af44df10de",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 4054,
+        "end": 4055,
+        "entry_ids": [
+          "b7a9c8e2-39fb-480f-a958-2f1020580af0"
+        ],
+        "tool_use_id": "toolu_012pqp9ZZhcrRstBhMtfFpK7"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_012pqp9ZZhcrRstBhMtfFpK7"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: trace:trace",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01WMSwBPyMoymRJbL5rBa9HZ",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "delta:pr"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "942aa1e1faea",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 9827,
+        "end": 9828,
+        "entry_ids": [
+          "d494abb7-7585-41e0-87ae-71187cd54c7f"
+        ],
+        "tool_use_id": "toolu_01WMSwBPyMoymRJbL5rBa9HZ"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01WMSwBPyMoymRJbL5rBa9HZ"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: delta:pr",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "prompt-skill-claude-code-delta:pr-2026-08-26T22:47:19.223486Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "delta:pr"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "9ee7338cf612",
+      "timestamp": "2026-08-26T22:47:19.223486Z",
+      "native": {
+        "command": "/delta:pr"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/delta:pr",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01U63Fg7tzvDGwwZBCy5vDfD",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "artifact-design"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "081fe95c9448",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 19538,
+        "end": 19539,
+        "entry_ids": [
+          "7cf4c502-d629-41ad-a306-b5e329f3d17a"
+        ],
+        "tool_use_id": "toolu_01U63Fg7tzvDGwwZBCy5vDfD"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01U63Fg7tzvDGwwZBCy5vDfD"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: artifact-design",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01VGEw7w5hcTAnUzVAcu1rgh",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "6411d2d9f7e2",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 26149,
+        "end": 26150,
+        "entry_ids": [
+          "76b2d0bf-8143-47ab-854b-fd5012550821"
+        ],
+        "tool_use_id": "toolu_01VGEw7w5hcTAnUzVAcu1rgh"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01VGEw7w5hcTAnUzVAcu1rgh"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 404
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 91,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1589,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 77
+      }
+    },
+    {
+      "checkpoint_number": 4,
+      "user_lines_added": 91,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1589,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 77
+      }
+    },
+    {
+      "checkpoint_number": 5,
+      "user_lines_added": 91,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1589,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 77
+      }
+    },
+    {
+      "checkpoint_number": 6,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 7,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 8,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 9,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 10,
+      "user_lines_added": 91,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1591,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 77
+      }
+    },
+    {
+      "checkpoint_number": 11,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 12,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 13,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 14,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 15,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 16,
+      "user_lines_added": 158,
+      "user_lines_removed": 34,
+      "agent_lines_added": 1591,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11,
+        ".claude/specs/SPEC-DOCUMENTATION-AUTHORITY-005.json": 9,
+        ".claude/specs/SPEC-GITHUB-RELEASE-HARDENING-003.json": 16,
+        ".claude/specs/SPEC-RELEASE-LANE-POLICY-006.json": 11,
+        ".claude/specs/SPEC-RELEASE-PLAN-DURABILITY-001.json": 8,
+        ".claude/specs/SPEC-RELEASE-SOURCE-PROVENANCE-002.json": 8,
+        ".claude/specs/SPEC-SUPPLY-CHAIN-REPRODUCIBILITY-004.json": 15,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 77
+      },
+      "user_removed_per_file": {
+        ".claude/specs/SPEC-DOCUMENTATION-AUTHORITY-005.json": 4,
+        ".claude/specs/SPEC-GITHUB-RELEASE-HARDENING-003.json": 6,
+        ".claude/specs/SPEC-RELEASE-LANE-POLICY-006.json": 5,
+        ".claude/specs/SPEC-RELEASE-PLAN-DURABILITY-001.json": 7,
+        ".claude/specs/SPEC-RELEASE-SOURCE-PROVENANCE-002.json": 7,
+        ".claude/specs/SPEC-SUPPLY-CHAIN-REPRODUCIBILITY-004.json": 5
+      }
+    },
+    {
+      "checkpoint_number": 17,
+      "user_lines_added": 158,
+      "user_lines_removed": 34,
+      "agent_lines_added": 1591,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11,
+        ".claude/specs/SPEC-DOCUMENTATION-AUTHORITY-005.json": 9,
+        ".claude/specs/SPEC-GITHUB-RELEASE-HARDENING-003.json": 16,
+        ".claude/specs/SPEC-RELEASE-LANE-POLICY-006.json": 11,
+        ".claude/specs/SPEC-RELEASE-PLAN-DURABILITY-001.json": 8,
+        ".claude/specs/SPEC-RELEASE-SOURCE-PROVENANCE-002.json": 8,
+        ".claude/specs/SPEC-SUPPLY-CHAIN-REPRODUCIBILITY-004.json": 15,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 77
+      },
+      "user_removed_per_file": {
+        ".claude/specs/SPEC-DOCUMENTATION-AUTHORITY-005.json": 4,
+        ".claude/specs/SPEC-GITHUB-RELEASE-HARDENING-003.json": 6,
+        ".claude/specs/SPEC-RELEASE-LANE-POLICY-006.json": 5,
+        ".claude/specs/SPEC-RELEASE-PLAN-DURABILITY-001.json": 7,
+        ".claude/specs/SPEC-RELEASE-SOURCE-PROVENANCE-002.json": 7,
+        ".claude/specs/SPEC-SUPPLY-CHAIN-REPRODUCIBILITY-004.json": 5
+      }
+    },
+    {
+      "checkpoint_number": 18,
+      "user_lines_added": 158,
+      "user_lines_removed": 34,
+      "agent_lines_added": 1591,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11,
+        ".claude/specs/SPEC-DOCUMENTATION-AUTHORITY-005.json": 9,
+        ".claude/specs/SPEC-GITHUB-RELEASE-HARDENING-003.json": 16,
+        ".claude/specs/SPEC-RELEASE-LANE-POLICY-006.json": 11,
+        ".claude/specs/SPEC-RELEASE-PLAN-DURABILITY-001.json": 8,
+        ".claude/specs/SPEC-RELEASE-SOURCE-PROVENANCE-002.json": 8,
+        ".claude/specs/SPEC-SUPPLY-CHAIN-REPRODUCIBILITY-004.json": 15,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 77
+      },
+      "user_removed_per_file": {
+        ".claude/specs/SPEC-DOCUMENTATION-AUTHORITY-005.json": 4,
+        ".claude/specs/SPEC-GITHUB-RELEASE-HARDENING-003.json": 6,
+        ".claude/specs/SPEC-RELEASE-LANE-POLICY-006.json": 5,
+        ".claude/specs/SPEC-RELEASE-PLAN-DURABILITY-001.json": 7,
+        ".claude/specs/SPEC-RELEASE-SOURCE-PROVENANCE-002.json": 7,
+        ".claude/specs/SPEC-SUPPLY-CHAIN-REPRODUCIBILITY-004.json": 5
+      }
+    },
+    {
+      "checkpoint_number": 19,
+      "user_lines_added": 158,
+      "user_lines_removed": 34,
+      "agent_lines_added": 1591,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11,
+        ".claude/specs/SPEC-DOCUMENTATION-AUTHORITY-005.json": 9,
+        ".claude/specs/SPEC-GITHUB-RELEASE-HARDENING-003.json": 16,
+        ".claude/specs/SPEC-RELEASE-LANE-POLICY-006.json": 11,
+        ".claude/specs/SPEC-RELEASE-PLAN-DURABILITY-001.json": 8,
+        ".claude/specs/SPEC-RELEASE-SOURCE-PROVENANCE-002.json": 8,
+        ".claude/specs/SPEC-SUPPLY-CHAIN-REPRODUCIBILITY-004.json": 15,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 77
+      },
+      "user_removed_per_file": {
+        ".claude/specs/SPEC-DOCUMENTATION-AUTHORITY-005.json": 4,
+        ".claude/specs/SPEC-GITHUB-RELEASE-HARDENING-003.json": 6,
+        ".claude/specs/SPEC-RELEASE-LANE-POLICY-006.json": 5,
+        ".claude/specs/SPEC-RELEASE-PLAN-DURABILITY-001.json": 7,
+        ".claude/specs/SPEC-RELEASE-SOURCE-PROVENANCE-002.json": 7,
+        ".claude/specs/SPEC-SUPPLY-CHAIN-REPRODUCIBILITY-004.json": 5
+      }
+    },
+    {
+      "checkpoint_number": 20,
+      "user_lines_added": 158,
+      "user_lines_removed": 34,
+      "agent_lines_added": 1591,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11,
+        ".claude/specs/SPEC-DOCUMENTATION-AUTHORITY-005.json": 9,
+        ".claude/specs/SPEC-GITHUB-RELEASE-HARDENING-003.json": 16,
+        ".claude/specs/SPEC-RELEASE-LANE-POLICY-006.json": 11,
+        ".claude/specs/SPEC-RELEASE-PLAN-DURABILITY-001.json": 8,
+        ".claude/specs/SPEC-RELEASE-SOURCE-PROVENANCE-002.json": 8,
+        ".claude/specs/SPEC-SUPPLY-CHAIN-REPRODUCIBILITY-004.json": 15,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 77
+      },
+      "user_removed_per_file": {
+        ".claude/specs/SPEC-DOCUMENTATION-AUTHORITY-005.json": 4,
+        ".claude/specs/SPEC-GITHUB-RELEASE-HARDENING-003.json": 6,
+        ".claude/specs/SPEC-RELEASE-LANE-POLICY-006.json": 5,
+        ".claude/specs/SPEC-RELEASE-PLAN-DURABILITY-001.json": 7,
+        ".claude/specs/SPEC-RELEASE-SOURCE-PROVENANCE-002.json": 7,
+        ".claude/specs/SPEC-SUPPLY-CHAIN-REPRODUCIBILITY-004.json": 5
+      }
+    },
+    {
+      "checkpoint_number": 21,
+      "user_lines_added": 158,
+      "user_lines_removed": 34,
+      "agent_lines_added": 1591,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11,
+        ".claude/specs/SPEC-DOCUMENTATION-AUTHORITY-005.json": 9,
+        ".claude/specs/SPEC-GITHUB-RELEASE-HARDENING-003.json": 16,
+        ".claude/specs/SPEC-RELEASE-LANE-POLICY-006.json": 11,
+        ".claude/specs/SPEC-RELEASE-PLAN-DURABILITY-001.json": 8,
+        ".claude/specs/SPEC-RELEASE-SOURCE-PROVENANCE-002.json": 8,
+        ".claude/specs/SPEC-SUPPLY-CHAIN-REPRODUCIBILITY-004.json": 15,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 77
+      },
+      "user_removed_per_file": {
+        ".claude/specs/SPEC-DOCUMENTATION-AUTHORITY-005.json": 4,
+        ".claude/specs/SPEC-GITHUB-RELEASE-HARDENING-003.json": 6,
+        ".claude/specs/SPEC-RELEASE-LANE-POLICY-006.json": 5,
+        ".claude/specs/SPEC-RELEASE-PLAN-DURABILITY-001.json": 7,
+        ".claude/specs/SPEC-RELEASE-SOURCE-PROVENANCE-002.json": 7,
+        ".claude/specs/SPEC-SUPPLY-CHAIN-REPRODUCIBILITY-004.json": 5
+      }
+    },
+    {
+      "checkpoint_number": 22,
+      "user_lines_added": 158,
+      "user_lines_removed": 34,
+      "agent_lines_added": 1591,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11,
+        ".claude/specs/SPEC-DOCUMENTATION-AUTHORITY-005.json": 9,
+        ".claude/specs/SPEC-GITHUB-RELEASE-HARDENING-003.json": 16,
+        ".claude/specs/SPEC-RELEASE-LANE-POLICY-006.json": 11,
+        ".claude/specs/SPEC-RELEASE-PLAN-DURABILITY-001.json": 8,
+        ".claude/specs/SPEC-RELEASE-SOURCE-PROVENANCE-002.json": 8,
+        ".claude/specs/SPEC-SUPPLY-CHAIN-REPRODUCIBILITY-004.json": 15,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 77
+      },
+      "user_removed_per_file": {
+        ".claude/specs/SPEC-DOCUMENTATION-AUTHORITY-005.json": 4,
+        ".claude/specs/SPEC-GITHUB-RELEASE-HARDENING-003.json": 6,
+        ".claude/specs/SPEC-RELEASE-LANE-POLICY-006.json": 5,
+        ".claude/specs/SPEC-RELEASE-PLAN-DURABILITY-001.json": 7,
+        ".claude/specs/SPEC-RELEASE-SOURCE-PROVENANCE-002.json": 7,
+        ".claude/specs/SPEC-SUPPLY-CHAIN-REPRODUCIBILITY-004.json": 5
+      }
+    },
+    {
+      "checkpoint_number": 23,
+      "user_lines_added": 179,
+      "user_lines_removed": 38,
+      "agent_lines_added": 1591,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11,
+        ".claude/specs/SPEC-DOCUMENTATION-AUTHORITY-005.json": 9,
+        ".claude/specs/SPEC-GITHUB-RELEASE-HARDENING-003.json": 21,
+        ".claude/specs/SPEC-RELEASE-LANE-POLICY-006.json": 11,
+        ".claude/specs/SPEC-RELEASE-PLAN-DURABILITY-001.json": 14,
+        ".claude/specs/SPEC-RELEASE-SOURCE-PROVENANCE-002.json": 14,
+        ".claude/specs/SPEC-SUPPLY-CHAIN-REPRODUCIBILITY-004.json": 19,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 77
+      },
+      "user_removed_per_file": {
+        ".claude/specs/SPEC-DOCUMENTATION-AUTHORITY-005.json": 4,
+        ".claude/specs/SPEC-GITHUB-RELEASE-HARDENING-003.json": 7,
+        ".claude/specs/SPEC-RELEASE-LANE-POLICY-006.json": 5,
+        ".claude/specs/SPEC-RELEASE-PLAN-DURABILITY-001.json": 8,
+        ".claude/specs/SPEC-RELEASE-SOURCE-PROVENANCE-002.json": 8,
+        ".claude/specs/SPEC-SUPPLY-CHAIN-REPRODUCIBILITY-004.json": 6
+      }
+    },
+    {
+      "checkpoint_number": 24,
+      "user_lines_added": 179,
+      "user_lines_removed": 38,
+      "agent_lines_added": 1591,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11,
+        ".claude/specs/SPEC-DOCUMENTATION-AUTHORITY-005.json": 9,
+        ".claude/specs/SPEC-GITHUB-RELEASE-HARDENING-003.json": 21,
+        ".claude/specs/SPEC-RELEASE-LANE-POLICY-006.json": 11,
+        ".claude/specs/SPEC-RELEASE-PLAN-DURABILITY-001.json": 14,
+        ".claude/specs/SPEC-RELEASE-SOURCE-PROVENANCE-002.json": 14,
+        ".claude/specs/SPEC-SUPPLY-CHAIN-REPRODUCIBILITY-004.json": 19,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 77
+      },
+      "user_removed_per_file": {
+        ".claude/specs/SPEC-DOCUMENTATION-AUTHORITY-005.json": 4,
+        ".claude/specs/SPEC-GITHUB-RELEASE-HARDENING-003.json": 7,
+        ".claude/specs/SPEC-RELEASE-LANE-POLICY-006.json": 5,
+        ".claude/specs/SPEC-RELEASE-PLAN-DURABILITY-001.json": 8,
+        ".claude/specs/SPEC-RELEASE-SOURCE-PROVENANCE-002.json": 8,
+        ".claude/specs/SPEC-SUPPLY-CHAIN-REPRODUCIBILITY-004.json": 6
+      }
+    },
+    {
+      "checkpoint_number": 25,
+      "user_lines_added": 179,
+      "user_lines_removed": 38,
+      "agent_lines_added": 1591,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11,
+        ".claude/specs/SPEC-DOCUMENTATION-AUTHORITY-005.json": 9,
+        ".claude/specs/SPEC-GITHUB-RELEASE-HARDENING-003.json": 21,
+        ".claude/specs/SPEC-RELEASE-LANE-POLICY-006.json": 11,
+        ".claude/specs/SPEC-RELEASE-PLAN-DURABILITY-001.json": 14,
+        ".claude/specs/SPEC-RELEASE-SOURCE-PROVENANCE-002.json": 14,
+        ".claude/specs/SPEC-SUPPLY-CHAIN-REPRODUCIBILITY-004.json": 19,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 77
+      },
+      "user_removed_per_file": {
+        ".claude/specs/SPEC-DOCUMENTATION-AUTHORITY-005.json": 4,
+        ".claude/specs/SPEC-GITHUB-RELEASE-HARDENING-003.json": 7,
+        ".claude/specs/SPEC-RELEASE-LANE-POLICY-006.json": 5,
+        ".claude/specs/SPEC-RELEASE-PLAN-DURABILITY-001.json": 8,
+        ".claude/specs/SPEC-RELEASE-SOURCE-PROVENANCE-002.json": 8,
+        ".claude/specs/SPEC-SUPPLY-CHAIN-REPRODUCIBILITY-004.json": 6
+      }
+    },
+    {
+      "checkpoint_number": 26,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 27,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 28,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 29,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 30,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 31,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 32,
+      "user_lines_added": 200,
+      "user_lines_removed": 42,
+      "agent_lines_added": 1591,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11,
+        ".claude/specs/SPEC-DOCUMENTATION-AUTHORITY-005.json": 16,
+        ".claude/specs/SPEC-GITHUB-RELEASE-HARDENING-003.json": 21,
+        ".claude/specs/SPEC-RELEASE-LANE-POLICY-006.json": 14,
+        ".claude/specs/SPEC-RELEASE-PLAN-DURABILITY-001.json": 14,
+        ".claude/specs/SPEC-RELEASE-SOURCE-PROVENANCE-002.json": 14,
+        ".claude/specs/SPEC-SUPPLY-CHAIN-REPRODUCIBILITY-004.json": 30,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 77
+      },
+      "user_removed_per_file": {
+        ".claude/specs/SPEC-DOCUMENTATION-AUTHORITY-005.json": 5,
+        ".claude/specs/SPEC-GITHUB-RELEASE-HARDENING-003.json": 7,
+        ".claude/specs/SPEC-RELEASE-LANE-POLICY-006.json": 6,
+        ".claude/specs/SPEC-RELEASE-PLAN-DURABILITY-001.json": 8,
+        ".claude/specs/SPEC-RELEASE-SOURCE-PROVENANCE-002.json": 8,
+        ".claude/specs/SPEC-SUPPLY-CHAIN-REPRODUCIBILITY-004.json": 8
+      }
+    },
+    {
+      "checkpoint_number": 33,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 34,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 35,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 36,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 37,
+      "user_lines_added": 203,
+      "user_lines_removed": 43,
+      "agent_lines_added": 1591,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11,
+        ".claude/specs/SPEC-DOCUMENTATION-AUTHORITY-005.json": 17,
+        ".claude/specs/SPEC-GITHUB-RELEASE-HARDENING-003.json": 21,
+        ".claude/specs/SPEC-RELEASE-LANE-POLICY-006.json": 16,
+        ".claude/specs/SPEC-RELEASE-PLAN-DURABILITY-001.json": 14,
+        ".claude/specs/SPEC-RELEASE-SOURCE-PROVENANCE-002.json": 14,
+        ".claude/specs/SPEC-SUPPLY-CHAIN-REPRODUCIBILITY-004.json": 30,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 77
+      },
+      "user_removed_per_file": {
+        ".claude/specs/SPEC-DOCUMENTATION-AUTHORITY-005.json": 5,
+        ".claude/specs/SPEC-GITHUB-RELEASE-HARDENING-003.json": 7,
+        ".claude/specs/SPEC-RELEASE-LANE-POLICY-006.json": 7,
+        ".claude/specs/SPEC-RELEASE-PLAN-DURABILITY-001.json": 8,
+        ".claude/specs/SPEC-RELEASE-SOURCE-PROVENANCE-002.json": 8,
+        ".claude/specs/SPEC-SUPPLY-CHAIN-REPRODUCIBILITY-004.json": 8
+      }
+    },
+    {
+      "checkpoint_number": 38,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 39,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 40,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 41,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 42,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 43,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 44,
+      "user_lines_added": 222,
+      "user_lines_removed": 49,
+      "agent_lines_added": 1591,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11,
+        ".claude/specs/SPEC-DOCUMENTATION-AUTHORITY-005.json": 21,
+        ".claude/specs/SPEC-GITHUB-RELEASE-HARDENING-003.json": 21,
+        ".claude/specs/SPEC-RELEASE-LANE-POLICY-006.json": 22,
+        ".claude/specs/SPEC-RELEASE-PLAN-DURABILITY-001.json": 14,
+        ".claude/specs/SPEC-RELEASE-SOURCE-PROVENANCE-002.json": 14,
+        ".claude/specs/SPEC-SUPPLY-CHAIN-REPRODUCIBILITY-004.json": 39,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 77
+      },
+      "user_removed_per_file": {
+        ".claude/specs/SPEC-DOCUMENTATION-AUTHORITY-005.json": 7,
+        ".claude/specs/SPEC-GITHUB-RELEASE-HARDENING-003.json": 7,
+        ".claude/specs/SPEC-RELEASE-LANE-POLICY-006.json": 7,
+        ".claude/specs/SPEC-RELEASE-PLAN-DURABILITY-001.json": 8,
+        ".claude/specs/SPEC-RELEASE-SOURCE-PROVENANCE-002.json": 8,
+        ".claude/specs/SPEC-SUPPLY-CHAIN-REPRODUCIBILITY-004.json": 12
+      }
+    },
+    {
+      "checkpoint_number": 45,
+      "user_lines_added": 222,
+      "user_lines_removed": 49,
+      "agent_lines_added": 1591,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11,
+        ".claude/specs/SPEC-DOCUMENTATION-AUTHORITY-005.json": 21,
+        ".claude/specs/SPEC-GITHUB-RELEASE-HARDENING-003.json": 21,
+        ".claude/specs/SPEC-RELEASE-LANE-POLICY-006.json": 22,
+        ".claude/specs/SPEC-RELEASE-PLAN-DURABILITY-001.json": 14,
+        ".claude/specs/SPEC-RELEASE-SOURCE-PROVENANCE-002.json": 14,
+        ".claude/specs/SPEC-SUPPLY-CHAIN-REPRODUCIBILITY-004.json": 39,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 77
+      },
+      "user_removed_per_file": {
+        ".claude/specs/SPEC-DOCUMENTATION-AUTHORITY-005.json": 7,
+        ".claude/specs/SPEC-GITHUB-RELEASE-HARDENING-003.json": 7,
+        ".claude/specs/SPEC-RELEASE-LANE-POLICY-006.json": 7,
+        ".claude/specs/SPEC-RELEASE-PLAN-DURABILITY-001.json": 8,
+        ".claude/specs/SPEC-RELEASE-SOURCE-PROVENANCE-002.json": 8,
+        ".claude/specs/SPEC-SUPPLY-CHAIN-REPRODUCIBILITY-004.json": 12
+      }
+    },
+    {
+      "checkpoint_number": 46,
+      "user_lines_added": 222,
+      "user_lines_removed": 49,
+      "agent_lines_added": 1591,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11,
+        ".claude/specs/SPEC-DOCUMENTATION-AUTHORITY-005.json": 21,
+        ".claude/specs/SPEC-GITHUB-RELEASE-HARDENING-003.json": 21,
+        ".claude/specs/SPEC-RELEASE-LANE-POLICY-006.json": 22,
+        ".claude/specs/SPEC-RELEASE-PLAN-DURABILITY-001.json": 14,
+        ".claude/specs/SPEC-RELEASE-SOURCE-PROVENANCE-002.json": 14,
+        ".claude/specs/SPEC-SUPPLY-CHAIN-REPRODUCIBILITY-004.json": 39,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 77
+      },
+      "user_removed_per_file": {
+        ".claude/specs/SPEC-DOCUMENTATION-AUTHORITY-005.json": 7,
+        ".claude/specs/SPEC-GITHUB-RELEASE-HARDENING-003.json": 7,
+        ".claude/specs/SPEC-RELEASE-LANE-POLICY-006.json": 7,
+        ".claude/specs/SPEC-RELEASE-PLAN-DURABILITY-001.json": 8,
+        ".claude/specs/SPEC-RELEASE-SOURCE-PROVENANCE-002.json": 8,
+        ".claude/specs/SPEC-SUPPLY-CHAIN-REPRODUCIBILITY-004.json": 12
+      }
+    },
+    {
+      "checkpoint_number": 47,
+      "user_lines_added": 222,
+      "user_lines_removed": 49,
+      "agent_lines_added": 1591,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11,
+        ".claude/specs/SPEC-DOCUMENTATION-AUTHORITY-005.json": 21,
+        ".claude/specs/SPEC-GITHUB-RELEASE-HARDENING-003.json": 21,
+        ".claude/specs/SPEC-RELEASE-LANE-POLICY-006.json": 22,
+        ".claude/specs/SPEC-RELEASE-PLAN-DURABILITY-001.json": 14,
+        ".claude/specs/SPEC-RELEASE-SOURCE-PROVENANCE-002.json": 14,
+        ".claude/specs/SPEC-SUPPLY-CHAIN-REPRODUCIBILITY-004.json": 39,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 77
+      },
+      "user_removed_per_file": {
+        ".claude/specs/SPEC-DOCUMENTATION-AUTHORITY-005.json": 7,
+        ".claude/specs/SPEC-GITHUB-RELEASE-HARDENING-003.json": 7,
+        ".claude/specs/SPEC-RELEASE-LANE-POLICY-006.json": 7,
+        ".claude/specs/SPEC-RELEASE-PLAN-DURABILITY-001.json": 8,
+        ".claude/specs/SPEC-RELEASE-SOURCE-PROVENANCE-002.json": 8,
+        ".claude/specs/SPEC-SUPPLY-CHAIN-REPRODUCIBILITY-004.json": 12
+      }
+    },
+    {
+      "checkpoint_number": 48,
+      "user_lines_added": 222,
+      "user_lines_removed": 49,
+      "agent_lines_added": 1591,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11,
+        ".claude/specs/SPEC-DOCUMENTATION-AUTHORITY-005.json": 21,
+        ".claude/specs/SPEC-GITHUB-RELEASE-HARDENING-003.json": 21,
+        ".claude/specs/SPEC-RELEASE-LANE-POLICY-006.json": 22,
+        ".claude/specs/SPEC-RELEASE-PLAN-DURABILITY-001.json": 14,
+        ".claude/specs/SPEC-RELEASE-SOURCE-PROVENANCE-002.json": 14,
+        ".claude/specs/SPEC-SUPPLY-CHAIN-REPRODUCIBILITY-004.json": 39,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 77
+      },
+      "user_removed_per_file": {
+        ".claude/specs/SPEC-DOCUMENTATION-AUTHORITY-005.json": 7,
+        ".claude/specs/SPEC-GITHUB-RELEASE-HARDENING-003.json": 7,
+        ".claude/specs/SPEC-RELEASE-LANE-POLICY-006.json": 7,
+        ".claude/specs/SPEC-RELEASE-PLAN-DURABILITY-001.json": 8,
+        ".claude/specs/SPEC-RELEASE-SOURCE-PROVENANCE-002.json": 8,
+        ".claude/specs/SPEC-SUPPLY-CHAIN-REPRODUCIBILITY-004.json": 12
+      }
+    },
+    {
+      "checkpoint_number": 49,
+      "user_lines_added": 222,
+      "user_lines_removed": 49,
+      "agent_lines_added": 1591,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11,
+        ".claude/specs/SPEC-DOCUMENTATION-AUTHORITY-005.json": 21,
+        ".claude/specs/SPEC-GITHUB-RELEASE-HARDENING-003.json": 21,
+        ".claude/specs/SPEC-RELEASE-LANE-POLICY-006.json": 22,
+        ".claude/specs/SPEC-RELEASE-PLAN-DURABILITY-001.json": 14,
+        ".claude/specs/SPEC-RELEASE-SOURCE-PROVENANCE-002.json": 14,
+        ".claude/specs/SPEC-SUPPLY-CHAIN-REPRODUCIBILITY-004.json": 39,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 77
+      },
+      "user_removed_per_file": {
+        ".claude/specs/SPEC-DOCUMENTATION-AUTHORITY-005.json": 7,
+        ".claude/specs/SPEC-GITHUB-RELEASE-HARDENING-003.json": 7,
+        ".claude/specs/SPEC-RELEASE-LANE-POLICY-006.json": 7,
+        ".claude/specs/SPEC-RELEASE-PLAN-DURABILITY-001.json": 8,
+        ".claude/specs/SPEC-RELEASE-SOURCE-PROVENANCE-002.json": 8,
+        ".claude/specs/SPEC-SUPPLY-CHAIN-REPRODUCIBILITY-004.json": 12
+      }
+    },
+    {
+      "checkpoint_number": 50,
+      "user_lines_added": 222,
+      "user_lines_removed": 49,
+      "agent_lines_added": 1591,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11,
+        ".claude/specs/SPEC-DOCUMENTATION-AUTHORITY-005.json": 21,
+        ".claude/specs/SPEC-GITHUB-RELEASE-HARDENING-003.json": 21,
+        ".claude/specs/SPEC-RELEASE-LANE-POLICY-006.json": 22,
+        ".claude/specs/SPEC-RELEASE-PLAN-DURABILITY-001.json": 14,
+        ".claude/specs/SPEC-RELEASE-SOURCE-PROVENANCE-002.json": 14,
+        ".claude/specs/SPEC-SUPPLY-CHAIN-REPRODUCIBILITY-004.json": 39,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 77
+      },
+      "user_removed_per_file": {
+        ".claude/specs/SPEC-DOCUMENTATION-AUTHORITY-005.json": 7,
+        ".claude/specs/SPEC-GITHUB-RELEASE-HARDENING-003.json": 7,
+        ".claude/specs/SPEC-RELEASE-LANE-POLICY-006.json": 7,
+        ".claude/specs/SPEC-RELEASE-PLAN-DURABILITY-001.json": 8,
+        ".claude/specs/SPEC-RELEASE-SOURCE-PROVENANCE-002.json": 8,
+        ".claude/specs/SPEC-SUPPLY-CHAIN-REPRODUCIBILITY-004.json": 12
+      }
+    },
+    {
+      "checkpoint_number": 51,
+      "user_lines_added": 222,
+      "user_lines_removed": 49,
+      "agent_lines_added": 1591,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11,
+        ".claude/specs/SPEC-DOCUMENTATION-AUTHORITY-005.json": 21,
+        ".claude/specs/SPEC-GITHUB-RELEASE-HARDENING-003.json": 21,
+        ".claude/specs/SPEC-RELEASE-LANE-POLICY-006.json": 22,
+        ".claude/specs/SPEC-RELEASE-PLAN-DURABILITY-001.json": 14,
+        ".claude/specs/SPEC-RELEASE-SOURCE-PROVENANCE-002.json": 14,
+        ".claude/specs/SPEC-SUPPLY-CHAIN-REPRODUCIBILITY-004.json": 39,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 77
+      },
+      "user_removed_per_file": {
+        ".claude/specs/SPEC-DOCUMENTATION-AUTHORITY-005.json": 7,
+        ".claude/specs/SPEC-GITHUB-RELEASE-HARDENING-003.json": 7,
+        ".claude/specs/SPEC-RELEASE-LANE-POLICY-006.json": 7,
+        ".claude/specs/SPEC-RELEASE-PLAN-DURABILITY-001.json": 8,
+        ".claude/specs/SPEC-RELEASE-SOURCE-PROVENANCE-002.json": 8,
+        ".claude/specs/SPEC-SUPPLY-CHAIN-REPRODUCIBILITY-004.json": 12
+      }
+    },
+    {
+      "checkpoint_number": 52,
+      "user_lines_added": 222,
+      "user_lines_removed": 49,
+      "agent_lines_added": 1591,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11,
+        ".claude/specs/SPEC-DOCUMENTATION-AUTHORITY-005.json": 21,
+        ".claude/specs/SPEC-GITHUB-RELEASE-HARDENING-003.json": 21,
+        ".claude/specs/SPEC-RELEASE-LANE-POLICY-006.json": 22,
+        ".claude/specs/SPEC-RELEASE-PLAN-DURABILITY-001.json": 14,
+        ".claude/specs/SPEC-RELEASE-SOURCE-PROVENANCE-002.json": 14,
+        ".claude/specs/SPEC-SUPPLY-CHAIN-REPRODUCIBILITY-004.json": 39,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 77
+      },
+      "user_removed_per_file": {
+        ".claude/specs/SPEC-DOCUMENTATION-AUTHORITY-005.json": 7,
+        ".claude/specs/SPEC-GITHUB-RELEASE-HARDENING-003.json": 7,
+        ".claude/specs/SPEC-RELEASE-LANE-POLICY-006.json": 7,
+        ".claude/specs/SPEC-RELEASE-PLAN-DURABILITY-001.json": 8,
+        ".claude/specs/SPEC-RELEASE-SOURCE-PROVENANCE-002.json": 8,
+        ".claude/specs/SPEC-SUPPLY-CHAIN-REPRODUCIBILITY-004.json": 12
+      }
+    },
+    {
+      "checkpoint_number": 53,
+      "user_lines_added": 222,
+      "user_lines_removed": 49,
+      "agent_lines_added": 1591,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11,
+        ".claude/specs/SPEC-DOCUMENTATION-AUTHORITY-005.json": 21,
+        ".claude/specs/SPEC-GITHUB-RELEASE-HARDENING-003.json": 21,
+        ".claude/specs/SPEC-RELEASE-LANE-POLICY-006.json": 22,
+        ".claude/specs/SPEC-RELEASE-PLAN-DURABILITY-001.json": 14,
+        ".claude/specs/SPEC-RELEASE-SOURCE-PROVENANCE-002.json": 14,
+        ".claude/specs/SPEC-SUPPLY-CHAIN-REPRODUCIBILITY-004.json": 39,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 77
+      },
+      "user_removed_per_file": {
+        ".claude/specs/SPEC-DOCUMENTATION-AUTHORITY-005.json": 7,
+        ".claude/specs/SPEC-GITHUB-RELEASE-HARDENING-003.json": 7,
+        ".claude/specs/SPEC-RELEASE-LANE-POLICY-006.json": 7,
+        ".claude/specs/SPEC-RELEASE-PLAN-DURABILITY-001.json": 8,
+        ".claude/specs/SPEC-RELEASE-SOURCE-PROVENANCE-002.json": 8,
+        ".claude/specs/SPEC-SUPPLY-CHAIN-REPRODUCIBILITY-004.json": 12
+      }
+    },
+    {
+      "checkpoint_number": 54,
+      "user_lines_added": 222,
+      "user_lines_removed": 49,
+      "agent_lines_added": 1591,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11,
+        ".claude/specs/SPEC-DOCUMENTATION-AUTHORITY-005.json": 21,
+        ".claude/specs/SPEC-GITHUB-RELEASE-HARDENING-003.json": 21,
+        ".claude/specs/SPEC-RELEASE-LANE-POLICY-006.json": 22,
+        ".claude/specs/SPEC-RELEASE-PLAN-DURABILITY-001.json": 14,
+        ".claude/specs/SPEC-RELEASE-SOURCE-PROVENANCE-002.json": 14,
+        ".claude/specs/SPEC-SUPPLY-CHAIN-REPRODUCIBILITY-004.json": 39,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 77
+      },
+      "user_removed_per_file": {
+        ".claude/specs/SPEC-DOCUMENTATION-AUTHORITY-005.json": 7,
+        ".claude/specs/SPEC-GITHUB-RELEASE-HARDENING-003.json": 7,
+        ".claude/specs/SPEC-RELEASE-LANE-POLICY-006.json": 7,
+        ".claude/specs/SPEC-RELEASE-PLAN-DURABILITY-001.json": 8,
+        ".claude/specs/SPEC-RELEASE-SOURCE-PROVENANCE-002.json": 8,
+        ".claude/specs/SPEC-SUPPLY-CHAIN-REPRODUCIBILITY-004.json": 12
+      }
+    },
+    {
+      "checkpoint_number": 55,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 56,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 57,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 58,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 59,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 60,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 61,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 62,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 63,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 64,
+      "user_lines_added": 326,
+      "user_lines_removed": 56,
+      "agent_lines_added": 1591,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/plans/CODEX-RECONCILIATION-REPORT.md": 53,
+        ".claude/settings.local.json": 11,
+        ".claude/specs/SPEC-DOCUMENTATION-AUTHORITY-005.json": 21,
+        ".claude/specs/SPEC-GITHUB-RELEASE-HARDENING-003.json": 30,
+        ".claude/specs/SPEC-RELEASE-LANE-POLICY-006.json": 22,
+        ".claude/specs/SPEC-RELEASE-PLAN-DURABILITY-001.json": 31,
+        ".claude/specs/SPEC-RELEASE-SOURCE-PROVENANCE-002.json": 22,
+        ".claude/specs/SPEC-SUPPLY-CHAIN-REPRODUCIBILITY-004.json": 56,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 77
+      },
+      "user_removed_per_file": {
+        ".claude/specs/SPEC-DOCUMENTATION-AUTHORITY-005.json": 7,
+        ".claude/specs/SPEC-GITHUB-RELEASE-HARDENING-003.json": 8,
+        ".claude/specs/SPEC-RELEASE-LANE-POLICY-006.json": 7,
+        ".claude/specs/SPEC-RELEASE-PLAN-DURABILITY-001.json": 12,
+        ".claude/specs/SPEC-RELEASE-SOURCE-PROVENANCE-002.json": 10,
+        ".claude/specs/SPEC-SUPPLY-CHAIN-REPRODUCIBILITY-004.json": 12
+      }
+    },
+    {
+      "checkpoint_number": 65,
+      "user_lines_added": 354,
+      "user_lines_removed": 58,
+      "agent_lines_added": 1591,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/plans/CODEX-RECONCILIATION-REPORT.md": 53,
+        ".claude/settings.local.json": 11,
+        ".claude/specs/INDEX.md": 24,
+        ".claude/specs/SPEC-DOCUMENTATION-AUTHORITY-005.json": 26,
+        ".claude/specs/SPEC-GITHUB-RELEASE-HARDENING-003.json": 29,
+        ".claude/specs/SPEC-RELEASE-LANE-POLICY-006.json": 25,
+        ".claude/specs/SPEC-RELEASE-PLAN-DURABILITY-001.json": 30,
+        ".claude/specs/SPEC-RELEASE-SOURCE-PROVENANCE-002.json": 21,
+        ".claude/specs/SPEC-SUPPLY-CHAIN-REPRODUCIBILITY-004.json": 55,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 77
+      },
+      "user_removed_per_file": {
+        ".claude/specs/SPEC-DOCUMENTATION-AUTHORITY-005.json": 9,
+        ".claude/specs/SPEC-GITHUB-RELEASE-HARDENING-003.json": 8,
+        ".claude/specs/SPEC-RELEASE-LANE-POLICY-006.json": 7,
+        ".claude/specs/SPEC-RELEASE-PLAN-DURABILITY-001.json": 12,
+        ".claude/specs/SPEC-RELEASE-SOURCE-PROVENANCE-002.json": 10,
+        ".claude/specs/SPEC-SUPPLY-CHAIN-REPRODUCIBILITY-004.json": 12
+      }
+    }
+  ]
+}

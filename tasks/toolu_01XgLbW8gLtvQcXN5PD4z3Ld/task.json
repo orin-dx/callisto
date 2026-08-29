@@ -1,0 +1,13 @@
+{
+  "tool_use_id": "toolu_01XgLbW8gLtvQcXN5PD4z3Ld",
+  "subagent_type": "canon:drafter",
+  "task_description": "Full rewrite SPEC-004 supply chain",
+  "files": [
+    ".changeset/native-artifact-placement.md",
+    "Justfile",
+    "crates/callisto-vcs/tests/zz_bench_revwalk.rs"
+  ],
+  "started_at": "2026-08-29T14:25:30.433509-07:00",
+  "completed_at": "2026-08-29T14:25:30.439253-07:00",
+  "transcript_unavailable_reason": "transcript path unresolvable"
+}

@@ -1,0 +1,13 @@
+{
+  "tool_use_id": "toolu_01G9dENqNMjz7Tk23i7KWYdW",
+  "subagent_type": "canon:drafter",
+  "task_description": "Revise SPEC-006 for exit-gate blockers",
+  "files": [
+    ".changeset/native-artifact-placement.md",
+    "Justfile",
+    "crates/callisto-vcs/tests/zz_bench_revwalk.rs"
+  ],
+  "started_at": "2026-08-29T13:22:25.518135-07:00",
+  "completed_at": "2026-08-29T13:22:25.523535-07:00",
+  "transcript_unavailable_reason": "transcript path unresolvable"
+}
