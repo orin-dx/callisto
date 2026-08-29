@@ -1,6 +1,10 @@
 {
   "id": "SPEC-RELEASE-LANE-POLICY-006",
-  "purpose": "Make release-train, fixed-group, linked-group, prerelease, and stable-release interactions explicit before adding orchestration that could produce competing version authority.",
+  "status": "proposed",
+  "owner_track": "release-security",
+  "last_verified_revision": "931a5b2eb79b1a0fa85cf04c9df62750e59a6bcc",
+  "depends_on": [],
+  "purpose": "Make release-train, fixed-group, linked-group, prerelease, and stable-release interactions explicit before adding orchestration that could produce competing version authority, while preserving the already-shipped fixed/linked-group conflict detection as a baseline invariant.",
   "scope": "A normative release-lane policy and validation contract for the existing version planner. The policy covers supported combinations, precedence, and rejection diagnostics.",
   "non_goals": [
     "Implementing a full release-train scheduler or time-based calendar.",
@@ -15,7 +19,7 @@
     },
     {
       "id": "AC-002",
-      "criterion": "Configuration that assigns one package to conflicting concurrent version authorities is rejected during planning with a diagnostic that names the package, each conflicting authority, and remediation. The planner never silently selects an arbitrary winner based on map or filesystem order.",
+      "criterion": "Existing configuration that assigns one package to incompatible fixed and linked groups remains rejected during planning with a diagnostic naming the package, each group, and remediation. Any new release-lane assignment added by this track is likewise mutually exclusive with another concurrent authority for the same package. The planner never silently selects an arbitrary winner based on map or filesystem order; this criterion extends the existing group-conflict invariant rather than claiming it is missing.",
       "is_error_case": true
     },
     {
@@ -28,6 +32,5 @@
       "criterion": "The policy and tests make ordering deterministic: given identical source, configuration, and inputs, repeated planning produces byte-for-byte equivalent ordered operations and the same diagnostics.",
       "is_error_case": false
     }
-  ],
-  "linked_requirement": "REQ-RELEASE-LANE-POLICY"
+  ]
 }

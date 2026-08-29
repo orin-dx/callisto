@@ -1,5 +1,9 @@
 {
   "id": "SPEC-SUPPLY-CHAIN-REPRODUCIBILITY-004",
+  "status": "proposed",
+  "owner_track": "release-security",
+  "last_verified_revision": "931a5b2eb79b1a0fa85cf04c9df62750e59a6bcc",
+  "depends_on": [],
   "purpose": "Make dependency-security results reproducible, auditable, and actionable, including the current transitive yanked bisync finding and advisory exceptions.",
   "scope": "Cargo audit/deny configuration and lockfile policy, advisory database update behavior, exception records, and remediation tracking. This is a supply-chain control track, not a license-policy redesign.",
   "non_goals": [
@@ -10,24 +14,23 @@
   "acceptance_criteria": [
     {
       "id": "AC-001",
-      "criterion": "Security CI records the advisory database revision and tool version used for each result, and its behavior is deterministic enough that a maintainer can reproduce a pass or failure from the recorded inputs. Network/update failures are reported distinctly from a clean audit.",
+      "criterion": "Security CI records the exact cargo-deny/cargo-audit tool version, Cargo.lock digest, and advisory-database Git revision used for each result. Because the audit tool does not natively emit the database revision, the workflow obtains it explicitly with git rev-parse HEAD in the checked-out advisory database and writes it beside the machine-readable report. A maintainer can reproduce a pass or failure from those recorded inputs; database-update/network failures are reported distinctly from a clean audit.",
       "is_error_case": true
     },
     {
       "id": "AC-002",
-      "criterion": "Every active advisory, yanked-package, or license exception has a structured justification naming the affected dependency path, owner or tracking issue, creation date, expiry/review date, and compensating control. CI fails when an exception expires or its dependency path no longer matches the lockfile.",
+      "criterion": "Every active advisory, yanked-package, or license exception has a structured justification naming the affected dependency path, owner or tracking issue, creation date, expiry/review date, and compensating control. An exception expires within at most 90 days of creation; extension requires a new reviewed record explaining why remediation remains blocked. CI fails when an exception expires or its dependency path no longer matches the lockfile.",
       "is_error_case": true
     },
     {
       "id": "AC-003",
-      "criterion": "The transitive bisync yanked-package finding is resolved by a compatible dependency update or retained only under an explicit bounded exception meeting AC-002. The release documentation identifies the chosen state; an untracked yanked package cannot remain a silent warning.",
+      "criterion": "The current yanked bisync finding on the production dependency path callisto-cli -> callisto-graph is resolved by a compatible dependency update or retained only under an explicit bounded exception meeting AC-002. The release documentation identifies the chosen state; an untracked yanked package cannot remain a silent warning.",
       "is_error_case": true
     },
     {
       "id": "AC-004",
-      "criterion": "The audit command used locally and in CI is documented as one supported task-runner entry point, emits machine-readable results suitable for artifact retention, and keeps secret values out of logs and artifacts.",
+      "criterion": "The audit command used locally and in CI is documented as one supported task-runner entry point, emits a machine-readable report suitable for artifact retention, and records its reproducibility inputs from AC-001. This track makes no claim about secret redaction because the audit pipeline has no credential input; a future credential-bearing audit integration must add a separately testable logging policy.",
       "is_error_case": false
     }
-  ],
-  "linked_requirement": "REQ-SUPPLY-CHAIN-REPRODUCIBILITY"
+  ]
 }
