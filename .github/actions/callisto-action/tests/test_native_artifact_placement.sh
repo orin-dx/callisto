@@ -13,19 +13,22 @@ extract_snippet() {
 }
 
 # Runs the extracted snippet with the given NATIVE_MATRIX and GITHUB_RUN_ID,
-# stubbing gh and mkdir to record invocations into files; jq is real.
+# stubbing gh, mkdir, and jq to record invocations into files; jq delegates
+# to the real `command jq` so the snippet's actual jq logic still executes.
 run_case() {
   local native_matrix="$1"
   local run_id="$2"
   local gh_exit="${3:-0}"
-  local calls_file mkdir_file tmp_script workdir
+  local calls_file mkdir_file jq_file tmp_script workdir
   calls_file="$(mktemp)"
   mkdir_file="$(mktemp)"
+  jq_file="$(mktemp)"
   workdir="$(mktemp -d)"
   tmp_script="$(mktemp)"
   {
     echo "gh() { echo \"\$*\" >> '${calls_file}'; return ${gh_exit}; }"
     echo "mkdir() { echo \"\$*\" >> '${mkdir_file}'; command mkdir \"\$@\"; }"
+    echo "jq() { echo \"\$*\" >> '${jq_file}'; command jq \"\$@\"; }"
     echo "cd '${workdir}'"
     echo "NATIVE_MATRIX=$(printf '%q' "$native_matrix")"
     echo "GITHUB_RUN_ID=$(printf '%q' "$run_id")"
@@ -37,7 +40,9 @@ run_case() {
   cat "$calls_file"
   echo "---MKDIR_CALLS---"
   cat "$mkdir_file"
-  rm -f "$tmp_script" "$calls_file" "$mkdir_file"
+  echo "---JQ_CALLS---"
+  cat "$jq_file"
+  rm -f "$tmp_script" "$calls_file" "$mkdir_file" "$jq_file"
   rm -rf "$workdir"
   return $code
 }
@@ -88,6 +93,43 @@ if [[ $code -eq 0 ]] \
   echo "FAIL AC-006 (download failure halts step with named error): code=$code out=$out"; fail=1
 else
   echo "PASS AC-006"
+fi
+
+# jq-spawn-count: 3-entry matrix -> jq invoked exactly once total (a single
+# upfront extraction call), not once for the array plus twice per entry.
+MATRIX='[{"artifactName":"a","packageDir":"pkgs/a"},{"artifactName":"b","packageDir":"pkgs/b"},{"artifactName":"c","packageDir":"pkgs/c"}]'
+out=$(run_case "$MATRIX" "1"); code=$?
+jq_calls=$(echo "$out" | sed -n '/---JQ_CALLS---/,$p' | sed '1d')
+jq_call_count=$(echo "$jq_calls" | grep -c . || true)
+if [[ $code -ne 0 ]] || [[ "$jq_call_count" -ne 1 ]]; then
+  echo "FAIL jq-spawn-count (expected exactly 1 jq invocation, got $jq_call_count): code=$code out=$out"; fail=1
+else
+  echo "PASS jq-spawn-count"
+fi
+
+# packageDir JSON null: preserved byte-for-byte as the literal string "null"
+# for both mkdir -p and gh run download --dir (pre-existing edge behavior;
+# the @tsv refactor must not silently turn this into DIR=".").
+MATRIX='[{"artifactName":"x","packageDir":null}]'
+out=$(run_case "$MATRIX" "5"); code=$?
+if [[ $code -ne 0 ]] \
+  || [[ "$out" != *"run download 5 --name x --dir null"* ]] \
+  || [[ "$out" != *"-p null"* ]]; then
+  echo "FAIL packageDir-null (JSON null preserved as literal 'null' dir): code=$code out=$out"; fail=1
+else
+  echo "PASS packageDir-null"
+fi
+
+# packageDir key entirely absent: jq's missing-key lookup also yields null,
+# so this must behave identically to the explicit-null case above.
+MATRIX='[{"artifactName":"y"}]'
+out=$(run_case "$MATRIX" "6"); code=$?
+if [[ $code -ne 0 ]] \
+  || [[ "$out" != *"run download 6 --name y --dir null"* ]] \
+  || [[ "$out" != *"-p null"* ]]; then
+  echo "FAIL packageDir-absent (missing key treated same as JSON null): code=$code out=$out"; fail=1
+else
+  echo "PASS packageDir-absent"
 fi
 
 exit $fail
