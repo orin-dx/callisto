@@ -1,0 +1,36 @@
+{
+  "cli_version": "0.10.3-nightly.202608260614.6561a64b8",
+  "checkpoint_id": "01M15ZE0FH5N5SGEN350M5G6C5",
+  "strategy": "manual-commit",
+  "branch": "fix-native-artifact-log-redaction-windows-zip",
+  "checkpoints_count": 8,
+  "files_touched": [
+    ".github/actions/callisto-action/action.yml",
+    ".github/actions/callisto-action/tests/test_native_artifact_placement.sh",
+    ".github/actions/setup-callisto/action.yml",
+    "crates/callisto-cli/src/runner.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 4854,
+    "cache_creation_tokens": 16009069,
+    "cache_read_tokens": 1142391788,
+    "output_tokens": 1246843,
+    "api_call_count": 2434,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  }
+}
