@@ -191,6 +191,13 @@ pub struct PublishArgs {
     /// When omitted, all packages in the plan are published.
     #[arg(long = "package", value_name = "NAME")]
     pub only: Vec<String>,
+    /// Skip the pre-publish "already published?" registry check and publish
+    /// directly, relying on the registry's own already-published response.
+    /// Saves one round-trip per package, at the cost of re-running local
+    /// publish lifecycle scripts (e.g. npm's prepublishOnly) on a retried
+    /// publish of an already-published version.
+    #[arg(long)]
+    pub skip_publish_precheck: bool,
 }
 
 /// Arguments for the `compose-pr-body` command.

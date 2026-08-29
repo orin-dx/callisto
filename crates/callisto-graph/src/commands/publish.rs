@@ -758,6 +758,7 @@ pub struct PublishOrchestrator<R, P, T> {
     policy: P,
     time: T,
     progress: Option<Box<dyn Fn(String) + Send + Sync>>,
+    skip_precheck: bool,
 }
 
 impl<R, P, T> PublishOrchestrator<R, P, T>
@@ -772,6 +773,7 @@ where
             policy,
             time,
             progress: None,
+            skip_precheck: false,
         }
     }
 
@@ -779,6 +781,18 @@ where
     /// attempt. The message includes the package name and version.
     pub fn with_progress<F: Fn(String) + Send + Sync + 'static>(mut self, f: F) -> Self {
         self.progress = Some(Box::new(f));
+        self
+    }
+
+    /// Skips the `is_published` pre-check before every publish attempt,
+    /// relying solely on the registry client's own already-published
+    /// classification from the `publish()` call itself. Defaults to `false`
+    /// (the pre-check runs) since some registries' `publish()` re-runs local
+    /// lifecycle scripts (e.g. npm's `prepublishOnly`/`prepack`) even on an
+    /// already-published version, which the pre-check avoids. Opt in when
+    /// that cost matters more than the pre-check's extra registry round-trip.
+    pub fn with_skip_precheck(mut self, skip: bool) -> Self {
+        self.skip_precheck = skip;
         self
     }
 
@@ -908,7 +922,7 @@ where
         // errors here aborts the publish without ever calling publish(), which
         // records a misleading failure (e.g. "rateLimited") that never reached
         // the actual publish step.
-        if self.client.is_published(pkg_id, version).unwrap_or(false) {
+        if !self.skip_precheck && self.client.is_published(pkg_id, version).unwrap_or(false) {
             return Ok(PublishOutcome::AlreadyPublished);
         }
 
@@ -1936,5 +1950,150 @@ mod tests {
              got: {:?}",
             report.attempts[0].result
         );
+    }
+
+    /// Records how many times each `RegistryClient` method was called, so
+    /// tests can assert the `is_published` pre-check was (or wasn't) skipped
+    /// without depending on `publish()`'s outcome to infer it indirectly.
+    struct PrecheckTrackingClient {
+        is_published_calls: std::sync::atomic::AtomicUsize,
+        publish_calls: std::sync::atomic::AtomicUsize,
+        already_published: bool,
+        publish_outcome: PublishOutcome,
+    }
+
+    impl RegistryClient for PrecheckTrackingClient {
+        fn is_published(&self, _pkg: &PackageId, _ver: &Version) -> Result<bool, RegistryError> {
+            self.is_published_calls
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(self.already_published)
+        }
+
+        fn publish(
+            &self,
+            _pkg: &PackageId,
+            _ver: &Version,
+            _permit: &ApplyPermit,
+        ) -> Result<PublishOutcome, RegistryError> {
+            self.publish_calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(self.publish_outcome)
+        }
+    }
+
+    /// `with_skip_precheck(true)` must skip the `is_published` call entirely
+    /// and publish directly.
+    #[test]
+    fn skip_precheck_true_skips_is_published_and_publishes_directly() {
+        let client = PrecheckTrackingClient {
+            is_published_calls: std::sync::atomic::AtomicUsize::new(0),
+            publish_calls: std::sync::atomic::AtomicUsize::new(0),
+            already_published: false,
+            publish_outcome: PublishOutcome::Published,
+        };
+        let orchestrator = PublishOrchestrator::new(
+            client,
+            MockRateLimitPolicy,
+            MockTimeProvider {
+                time: Mutex::new(SystemTime::UNIX_EPOCH),
+            },
+        )
+        .with_skip_precheck(true);
+
+        let report = orchestrator.execute(&create_test_plan(), &permit());
+
+        assert_eq!(
+            orchestrator
+                .client
+                .is_published_calls
+                .load(std::sync::atomic::Ordering::SeqCst),
+            0,
+            "is_published must not be called when skip_precheck is true"
+        );
+        assert_eq!(
+            orchestrator
+                .client
+                .publish_calls
+                .load(std::sync::atomic::Ordering::SeqCst),
+            1
+        );
+        assert!(matches!(report.attempts[0].result, PublishAttemptResult::Published));
+    }
+
+    /// Even with the pre-check skipped, a registry that classifies the
+    /// publish call itself as "already there" (e.g. npm's own
+    /// EPUBLISHCONFLICT/E409 handling) must still surface as
+    /// AlreadyPublished, not a failure.
+    #[test]
+    fn skip_precheck_true_still_classifies_already_published_via_publish_call() {
+        let client = PrecheckTrackingClient {
+            is_published_calls: std::sync::atomic::AtomicUsize::new(0),
+            publish_calls: std::sync::atomic::AtomicUsize::new(0),
+            already_published: false,
+            publish_outcome: PublishOutcome::AlreadyPublished,
+        };
+        let orchestrator = PublishOrchestrator::new(
+            client,
+            MockRateLimitPolicy,
+            MockTimeProvider {
+                time: Mutex::new(SystemTime::UNIX_EPOCH),
+            },
+        )
+        .with_skip_precheck(true);
+
+        let report = orchestrator.execute(&create_test_plan(), &permit());
+
+        assert_eq!(
+            orchestrator
+                .client
+                .is_published_calls
+                .load(std::sync::atomic::Ordering::SeqCst),
+            0
+        );
+        assert!(matches!(
+            report.attempts[0].result,
+            PublishAttemptResult::AlreadyPublished
+        ));
+    }
+
+    /// The default (`skip_precheck` unset) must preserve today's behaviour
+    /// exactly: `is_published` runs, and a positive result short-circuits
+    /// before `publish()` is ever called.
+    #[test]
+    fn skip_precheck_default_false_preserves_existing_precheck_behavior() {
+        let client = PrecheckTrackingClient {
+            is_published_calls: std::sync::atomic::AtomicUsize::new(0),
+            publish_calls: std::sync::atomic::AtomicUsize::new(0),
+            already_published: true,
+            publish_outcome: PublishOutcome::Published,
+        };
+        let orchestrator = PublishOrchestrator::new(
+            client,
+            MockRateLimitPolicy,
+            MockTimeProvider {
+                time: Mutex::new(SystemTime::UNIX_EPOCH),
+            },
+        );
+
+        let report = orchestrator.execute(&create_test_plan(), &permit());
+
+        assert_eq!(
+            orchestrator
+                .client
+                .is_published_calls
+                .load(std::sync::atomic::Ordering::SeqCst),
+            1
+        );
+        assert_eq!(
+            orchestrator
+                .client
+                .publish_calls
+                .load(std::sync::atomic::Ordering::SeqCst),
+            0,
+            "publish() must not be called when is_published() already returned true"
+        );
+        assert!(matches!(
+            report.attempts[0].result,
+            PublishAttemptResult::AlreadyPublished
+        ));
     }
 }
