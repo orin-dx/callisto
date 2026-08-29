@@ -1,0 +1,13 @@
+{
+  "tool_use_id": "toolu_011dPqWUvfBJUK5CdQgHop1F",
+  "subagent_type": "canon:auditor",
+  "task_description": "Audit SPEC-GITHUB-RELEASE-HARDENING-003",
+  "files": [
+    ".changeset/native-artifact-placement.md",
+    "Justfile",
+    "crates/callisto-vcs/tests/zz_bench_revwalk.rs"
+  ],
+  "started_at": "2026-08-29T11:18:11.518501-07:00",
+  "completed_at": "2026-08-29T11:18:11.523593-07:00",
+  "transcript_unavailable_reason": "transcript path unresolvable"
+}

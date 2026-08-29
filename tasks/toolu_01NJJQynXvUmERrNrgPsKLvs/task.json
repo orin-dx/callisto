@@ -1,0 +1,13 @@
+{
+  "tool_use_id": "toolu_01NJJQynXvUmERrNrgPsKLvs",
+  "subagent_type": "canon:auditor",
+  "task_description": "Audit SPEC-RELEASE-LANE-POLICY-006",
+  "files": [
+    ".changeset/native-artifact-placement.md",
+    "Justfile",
+    "crates/callisto-vcs/tests/zz_bench_revwalk.rs"
+  ],
+  "started_at": "2026-08-29T11:18:26.344372-07:00",
+  "completed_at": "2026-08-29T11:18:26.34973-07:00",
+  "transcript_unavailable_reason": "transcript path unresolvable"
+}

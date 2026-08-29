@@ -1,0 +1,13 @@
+{
+  "tool_use_id": "toolu_01GzCKhcYQ7kAqT2ZbaQiDLu",
+  "subagent_type": "canon:auditor",
+  "task_description": "Audit SPEC-RELEASE-SOURCE-PROVENANCE-002",
+  "files": [
+    ".changeset/native-artifact-placement.md",
+    "Justfile",
+    "crates/callisto-vcs/tests/zz_bench_revwalk.rs"
+  ],
+  "started_at": "2026-08-29T11:17:54.145255-07:00",
+  "completed_at": "2026-08-29T11:17:54.150553-07:00",
+  "transcript_unavailable_reason": "transcript path unresolvable"
+}
