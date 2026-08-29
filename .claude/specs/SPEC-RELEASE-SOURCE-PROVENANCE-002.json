@@ -1,0 +1,38 @@
+{
+  "id": "SPEC-RELEASE-SOURCE-PROVENANCE-002",
+  "purpose": "Bind release intent, release tags, and publish reports to one immutable source commit while keeping the core release engine independent of GitHub or any particular signing service.",
+  "scope": "Source-commit representation in release plans and reports; commit and tag resolution before mutation; provider-neutral provenance policy; clear diagnostics for mismatch. Forge-specific authorization and attestation integration are adapters.",
+  "non_goals": [
+    "Mandating GPG, SSH, Sigstore, GitHub, GitLab, Bazel, or any other forge or signing provider.",
+    "Claiming that a Git SHA is a cryptographic author signature.",
+    "Changing a pre-existing tag to force it onto a requested commit."
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "AC-001",
+      "criterion": "Every generated VersionPlan, PublishPlan, tag report, and publish report includes the full resolved source commit SHA. The SHA is resolved from Git at planning time and is never inferred from a branch name during execution.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-002",
+      "criterion": "Before any apply, tag, or publish mutation, execution resolves HEAD and requires it to equal the plan source_commit. A detached HEAD is permitted when it matches; a branch name, shallow symbolic reference, or changed worktree cannot substitute for equality. Mismatch fails before mutation with both SHAs in the diagnostic.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-003",
+      "criterion": "A newly created release tag is annotated with the source commit SHA and is created at that exact commit. If an expected tag already exists, the command resolves its actual target and reports either an idempotent match or a conflict; it never silently reports the requested SHA for a differently targeted tag.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-004",
+      "criterion": "The documented baseline policy is SHA-anchored provenance: plans, tags, artifacts, and reports identify the same immutable commit. Documentation explicitly says this binds state but does not prove human authorship. Optional signature verification is represented as a policy capability with named trust roots and failure behavior, not hard-wired into the core model.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-005",
+      "criterion": "Provider adapters may add attestations or signature-verification evidence, but their absence cannot cause the core domain crates to depend on a forge SDK. Adapter evidence records issuer, subject, verification time, and the bound source SHA so consumers can audit it.",
+      "is_error_case": false
+    }
+  ],
+  "linked_requirement": "REQ-RELEASE-SOURCE-PROVENANCE"
+}

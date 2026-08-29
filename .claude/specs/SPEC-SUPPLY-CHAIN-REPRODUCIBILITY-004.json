@@ -1,0 +1,33 @@
+{
+  "id": "SPEC-SUPPLY-CHAIN-REPRODUCIBILITY-004",
+  "purpose": "Make dependency-security results reproducible, auditable, and actionable, including the current transitive yanked bisync finding and advisory exceptions.",
+  "scope": "Cargo audit/deny configuration and lockfile policy, advisory database update behavior, exception records, and remediation tracking. This is a supply-chain control track, not a license-policy redesign.",
+  "non_goals": [
+    "Promising an immediate upstream replacement for every transitive dependency.",
+    "Suppressing a finding merely because it is transitive or development-only.",
+    "Adding runtime telemetry or network access to production binaries."
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "AC-001",
+      "criterion": "Security CI records the advisory database revision and tool version used for each result, and its behavior is deterministic enough that a maintainer can reproduce a pass or failure from the recorded inputs. Network/update failures are reported distinctly from a clean audit.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-002",
+      "criterion": "Every active advisory, yanked-package, or license exception has a structured justification naming the affected dependency path, owner or tracking issue, creation date, expiry/review date, and compensating control. CI fails when an exception expires or its dependency path no longer matches the lockfile.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-003",
+      "criterion": "The transitive bisync yanked-package finding is resolved by a compatible dependency update or retained only under an explicit bounded exception meeting AC-002. The release documentation identifies the chosen state; an untracked yanked package cannot remain a silent warning.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-004",
+      "criterion": "The audit command used locally and in CI is documented as one supported task-runner entry point, emits machine-readable results suitable for artifact retention, and keeps secret values out of logs and artifacts.",
+      "is_error_case": false
+    }
+  ],
+  "linked_requirement": "REQ-SUPPLY-CHAIN-REPRODUCIBILITY"
+}

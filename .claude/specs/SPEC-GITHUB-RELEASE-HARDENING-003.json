@@ -1,0 +1,38 @@
+{
+  "id": "SPEC-GITHUB-RELEASE-HARDENING-003",
+  "purpose": "Harden the GitHub Actions release adapter so registry publication and repository mutation occur only through a narrowly authorized, reviewable release boundary.",
+  "scope": ".github/workflows/callisto-release.yml and its referenced actions, GitHub Environment configuration documentation, action pinning, permissions, artifact handoff, and workflow tests.",
+  "non_goals": [
+    "Making GitHub Actions the only supported CI or release platform.",
+    "Moving provider-neutral release rules from callisto core into workflow shell code.",
+    "Requiring Git tag signing in this track; signature policy is covered by SPEC-RELEASE-SOURCE-PROVENANCE-002."
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "AC-001",
+      "criterion": "The workflow separates unprivileged verification and planning from privileged release execution. The job that can receive registry credentials or write tags/releases is bound to a documented GitHub Environment with required reviewers and branch/tag deployment rules; non-release jobs receive neither registry secrets nor write-scoped GITHUB_TOKEN permissions.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-002",
+      "criterion": "Each workflow and job declares the least GitHub token permissions it needs. contents, pull-requests, checks, and statuses are write-scoped only in the job that demonstrably performs that operation; all other jobs default to read or none. A workflow test or policy check rejects an unscoped top-level write grant.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-003",
+      "criterion": "Third-party GitHub Actions are pinned to immutable full commit SHAs. A nearby comment records the upstream tag or release used for human review. CI verifies the pin format and fails if an external action reference is changed to a mutable tag or branch.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-004",
+      "criterion": "The planning job uploads the explicit durable plan from SPEC-RELEASE-PLAN-DURABILITY-001 as an artifact. The protected release job downloads only that artifact, verifies its source_commit against its checkout, and fails before credentials are used if validation fails. Caches may accelerate dependency installation but are never read as release intent.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-005",
+      "criterion": "The release trigger and environment policy are documented together: which events may create a version PR, which may publish, who approves publication, and how an emergency rerun is reconciled. A normal push to main cannot silently gain registry publication authority merely because workflow code changed in that push.",
+      "is_error_case": true
+    }
+  ],
+  "linked_requirement": "REQ-GITHUB-RELEASE-HARDENING"
+}
