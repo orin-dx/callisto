@@ -1,0 +1,33 @@
+{
+  "id": "SPEC-RELEASE-LANE-POLICY-006",
+  "purpose": "Make release-train, fixed-group, linked-group, prerelease, and stable-release interactions explicit before adding orchestration that could produce competing version authority.",
+  "scope": "A normative release-lane policy and validation contract for the existing version planner. The policy covers supported combinations, precedence, and rejection diagnostics.",
+  "non_goals": [
+    "Implementing a full release-train scheduler or time-based calendar.",
+    "Changing existing fixed- or linked-group version semantics without an approved follow-on specification.",
+    "Inferring organization-specific release cadence from package names or branch names."
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "AC-001",
+      "criterion": "The normative documentation defines release lanes and names one authority for the version of every package at a given planning point. It explicitly describes the interaction of independent packages, fixed groups, linked groups, prerelease mode, and stable publication.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-002",
+      "criterion": "Configuration that assigns one package to conflicting concurrent version authorities is rejected during planning with a diagnostic that names the package, each conflicting authority, and remediation. The planner never silently selects an arbitrary winner based on map or filesystem order.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-003",
+      "criterion": "The policy states whether a prerelease lane is promoted, abandoned, or blocked before a stable lane for the same package may publish, and tests cover each supported transition. Any unsupported transition fails before manifest, tag, changelog, or registry mutation.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-004",
+      "criterion": "The policy and tests make ordering deterministic: given identical source, configuration, and inputs, repeated planning produces byte-for-byte equivalent ordered operations and the same diagnostics.",
+      "is_error_case": false
+    }
+  ],
+  "linked_requirement": "REQ-RELEASE-LANE-POLICY"
+}

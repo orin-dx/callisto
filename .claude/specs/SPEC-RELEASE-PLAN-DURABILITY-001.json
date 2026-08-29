@@ -1,0 +1,39 @@
+{
+  "id": "SPEC-RELEASE-PLAN-DURABILITY-001",
+  "purpose": "Define an optional, durable release-plan contract that lets a reviewed versioning decision be handed from planning to execution without treating a CI cache or an untracked workspace file as authoritative state.",
+  "scope": "A versioned JSON VersionPlan and PublishPlan envelope, their CLI serialization and validation boundaries, and GitHub Actions artifact handoff. The core model is forge-neutral; the GitHub workflow is only one adapter.",
+  "non_goals": [
+    "Implementing a distributed transaction across registries, Git, and a forge.",
+    "Committing transient plan files, CI outputs, or caches to the repository.",
+    "Using a GitHub Actions cache as a correctness or recovery mechanism.",
+    "Replacing committed manifests, changelogs, release tags, or registry state as the durable records of a completed release."
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "AC-001",
+      "criterion": "The serialized envelope has an explicit schema_version, source_commit, normalized configuration digest, normalized input digest, generation timestamp, and a payload containing the planned package versions and ordered operations. Unknown future schema versions are rejected before execution with an actionable diagnostic.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-002",
+      "criterion": "Execution accepts an explicit plan path or stdin and validates the envelope before any mutation. It fails before mutation when the checked-out source commit, configuration digest, input digest, or requested operation set differs from the plan; the diagnostic identifies every mismatching field.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-003",
+      "criterion": "Plans are emitted only on an explicit request. Local default commands leave no plan file behind. CI uploads an explicitly generated plan as an immutable workflow artifact with a bounded retention period, and a downstream execution job downloads that exact artifact by workflow/run identity rather than searching caches or a shared workspace path.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-004",
+      "criterion": "A plan is safe to inspect, diff, archive, and regenerate: it contains no registry token, authorization header, private key, or environment-derived secret. A test serializes representative plans with injected secret-like values in unrelated process environment variables and asserts none appears in the output.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-005",
+      "criterion": "The plan/report distinguishes planned, attempted, completed, skipped, and failed operations. After an interrupted execution, a new invocation can produce a reconciliation report from repository, tag, and registry observations without assuming the old artifact is still available or correct.",
+      "is_error_case": false
+    }
+  ],
+  "linked_requirement": "REQ-RELEASE-PLAN-DURABILITY"
+}

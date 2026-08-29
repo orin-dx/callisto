@@ -1,0 +1,33 @@
+{
+  "id": "SPEC-DOCUMENTATION-AUTHORITY-005",
+  "purpose": "Keep product specifications, semantic models, implementation plans, and historical handoffs understandable to future contributors and agents by assigning each a precise authority and correcting confirmed current-state drift.",
+  "scope": "Documentation authority policy, status metadata, link routing, and the confirmed stale claims in design and semantic-model documents. This track establishes maintenance rules without rewriting repository history.",
+  "non_goals": [
+    "Deleting historical handoffs, plans, or Git history.",
+    "Claiming that a plan is normative product behavior after code and specification have changed.",
+    "Creating a second prose copy of every normative requirement."
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "AC-001",
+      "criterion": "A concise authority index states that docs/01-spec.md and accepted .claude/specs requirements are normative; docs/00-design.md explains rationale; semantic models describe verified current implementation; plans describe intended work and status; handoffs are historical context. When sources conflict, the index specifies how to resolve and correct the conflict.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-002",
+      "criterion": "Every new or materially revised specification identifies its status, last verified source commit or revision, owner/track, and links to the relevant implementation plan. Completed or superseded plans visibly link back to the normative requirement rather than presenting themselves as current truth.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-003",
+      "criterion": "Confirmed stale current-state claims are corrected in the authoritative/current-description location: the design document's shipped-language posture, the semantic version-flow changeset staging behavior, and the semantic error-taxonomy PackageSetMatchedNothing emission behavior. Each correction is validated against the referenced implementation and does not erase historical rationale.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-004",
+      "criterion": "A lightweight documentation check rejects newly added 'current behavior' assertions without an authority/status marker where the document class requires one, and reports rather than automatically rewrites existing legacy material. The check is runnable through the project task runner.",
+      "is_error_case": true
+    }
+  ],
+  "linked_requirement": "REQ-DOCUMENTATION-AUTHORITY"
+}
