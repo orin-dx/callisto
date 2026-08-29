@@ -65,13 +65,45 @@ runs:
         # prefix down to the bare semver cargo install expects.
         CRATE_VERSION="${TAG_NAME#callisto-cli@}"
 
+        # Pick a download destination whose extension matches ASSET_NAME
+        # (under $RUNNER_TEMP, never the workspace) so the extraction step
+        # below always has an archive it can actually open -- a hardcoded
+        # ".tar.gz" path here previously masked the fact that Windows assets
+        # are zip files, since tar -xzf can't read a zip regardless of what
+        # the file on disk is really named.
+        case "$ASSET_NAME" in
+          *.zip)
+            DOWNLOAD_DEST="${RUNNER_TEMP}/callisto.zip"
+            ;;
+          *.tar.gz)
+            DOWNLOAD_DEST="${RUNNER_TEMP}/callisto.tar.gz"
+            ;;
+          *)
+            DOWNLOAD_DEST="${RUNNER_TEMP}/callisto.tar.gz"
+            ;;
+        esac
+
         # Prioritize local repository build when inside the callisto monorepo
         if [[ -f "$GITHUB_WORKSPACE/Cargo.toml" ]] && grep -q "callisto-cli" "$GITHUB_WORKSPACE/Cargo.toml"; then
           echo "Building local callisto binary from current repository commit..."
           cargo build -p callisto-cli
           cp "$GITHUB_WORKSPACE/target/debug/callisto" "$CALLISTO_BIN_DIR/callisto"
-        elif curl -sL -f "$DOWNLOAD_URL" -o /tmp/callisto.tar.gz 2>/dev/null; then
-          tar -xzf /tmp/callisto.tar.gz -C "$CALLISTO_BIN_DIR"
+        elif curl -sL -f "$DOWNLOAD_URL" -o "$DOWNLOAD_DEST" 2>/dev/null; then
+          # Match the extraction tool to ASSET_NAME's actual format; any
+          # unrecognized extension defensively falls back to the previous
+          # tar.gz behavior rather than erroring (the crates.io/cargo-install
+          # fallback chain below already exists to absorb total failure).
+          case "$ASSET_NAME" in
+            *.zip)
+              unzip -q "$DOWNLOAD_DEST" -d "$CALLISTO_BIN_DIR"
+              ;;
+            *.tar.gz)
+              tar -xzf "$DOWNLOAD_DEST" -C "$CALLISTO_BIN_DIR"
+              ;;
+            *)
+              tar -xzf "$DOWNLOAD_DEST" -C "$CALLISTO_BIN_DIR"
+              ;;
+          esac
           echo "Callisto downloaded from GitHub Releases ($DOWNLOAD_URL)"
         elif [[ "$TAG_NAME" == "latest" ]] && cargo install callisto-cli --locked --root "${RUNNER_TEMP}/callisto-cargo-install" --quiet; then
           echo "Callisto installed from crates.io (latest)"

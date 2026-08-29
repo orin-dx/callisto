@@ -3,7 +3,7 @@ use std::path::Path;
 use std::process::Stdio;
 use std::time::{Duration, Instant};
 
-use callisto_model::{CommandError, CommandOutput, CommandRunner};
+use callisto_model::{known_credential_env_values, redact_known_secrets, CommandError, CommandOutput, CommandRunner};
 
 /// Caps how much of a subprocess's stdout/stderr this process will retain
 /// in memory. The pipe is still drained in full past this point (bytes
@@ -56,7 +56,19 @@ impl CommandRunner for CliCommandRunner {
         cwd: &Path,
         timeout: Duration,
     ) -> Result<CommandOutput, CommandError> {
-        run_with_timeout_impl(program, args, cwd, timeout, StderrMode::Live)
+        // `known_credential_env_values` is scanned here, at the trait-method
+        // call site, rather than inside `run_with_timeout_impl` itself: this
+        // keeps the impl fn pure and directly unit-testable with a synthetic
+        // secrets list (no process-env mutation, which would race against
+        // other tests running in parallel in this binary).
+        run_with_timeout_impl(
+            program,
+            args,
+            cwd,
+            timeout,
+            StderrMode::Live,
+            known_credential_env_values(std::env::vars()),
+        )
     }
 
     fn run_quiet(
@@ -66,7 +78,10 @@ impl CommandRunner for CliCommandRunner {
         cwd: &Path,
         timeout: Duration,
     ) -> Result<CommandOutput, CommandError> {
-        run_with_timeout_impl(program, args, cwd, timeout, StderrMode::Quiet)
+        // Quiet mode never echoes stderr live (see `StderrMode::Quiet`
+        // below), so there's nothing to redact -- pass an empty secrets
+        // list rather than paying for an env scan that can only go unused.
+        run_with_timeout_impl(program, args, cwd, timeout, StderrMode::Quiet, Vec::new())
     }
 }
 
@@ -80,12 +95,23 @@ enum StderrMode {
     Quiet,
 }
 
+/// `live_secrets`: known-credential values (see
+/// [`callisto_model::known_credential_env_values`]) to redact from each
+/// line *before* it's echoed live to the terminal via `eprintln!`. This is
+/// deliberately separate from -- and does not affect -- the `captured`
+/// buffer that becomes the returned `CommandOutput.stderr`: that copy must
+/// stay byte-for-byte raw so downstream classifiers (e.g.
+/// `extract_retry_after_duration`, `detect_auth_failure`) can still match
+/// exact upstream text. Callers pass the secrets list in rather than this
+/// function reading the environment itself, keeping it pure and testable
+/// with a synthetic list.
 fn run_with_timeout_impl(
     program: &str,
     args: &[&str],
     cwd: &Path,
     timeout: Duration,
     stderr_mode: StderrMode,
+    live_secrets: Vec<String>,
 ) -> Result<CommandOutput, CommandError> {
     let mut child = std::process::Command::new(program)
         .args(args)
@@ -161,7 +187,16 @@ fn run_with_timeout_impl(
     // single line, so a flood with no newlines at all would still
     // buffer unboundedly inside it before ever yielding a line to cap.
     // `stderr_mode` gates only the live eprintln -- captured output is
-    // identical either way.
+    // identical either way (Live vs. Quiet).
+    //
+    // NOTE: captured output is no longer necessarily byte-identical to
+    // what was printed live. Each line handed to `eprintln!` is redacted
+    // via `live_secrets` first (registry CLIs can echo a credential
+    // verbatim in their own stderr diagnostics), while `captured` -- and
+    // therefore the returned `CommandOutput.stderr` -- deliberately stays
+    // raw so error classifiers keep matching exact upstream text. For a
+    // credential-bearing line, the terminal sees `[REDACTED]`; the
+    // returned `CommandOutput.stderr` still has the real value.
     std::thread::spawn(move || {
         let mut reader = stderr_handle;
         let mut captured: Vec<u8> = Vec::new();
@@ -179,7 +214,8 @@ fn run_with_timeout_impl(
                                 pending_line.pop();
                             }
                             if stderr_mode == StderrMode::Live {
-                                eprintln!("{}", String::from_utf8_lossy(&pending_line));
+                                let line = redact_known_secrets(&String::from_utf8_lossy(&pending_line), &live_secrets);
+                                eprintln!("{line}");
                             }
                             pending_line.clear();
                         } else if pending_line.len() < MAX_CAPTURED_OUTPUT_BYTES {
@@ -203,7 +239,8 @@ fn run_with_timeout_impl(
                 pending_line.pop();
             }
             if stderr_mode == StderrMode::Live {
-                eprintln!("{}", String::from_utf8_lossy(&pending_line));
+                let line = redact_known_secrets(&String::from_utf8_lossy(&pending_line), &live_secrets);
+                eprintln!("{line}");
             }
         }
         let mut text = String::from_utf8_lossy(&captured).into_owned();
@@ -638,6 +675,207 @@ mod tests {
         assert!(
             stderr.contains("should-appear-live"),
             "run_with_timeout must still stream stderr live, got: {stderr}"
+        );
+    }
+
+    /// Security regression: the live-streamed stderr copy must be redacted
+    /// the same way the captured/returned copy already is (see
+    /// `publish_client::redact_stderr`), but the *captured* copy handed
+    /// back in `CommandOutput` must remain completely raw -- classifiers
+    /// like `extract_retry_after_duration`/`detect_auth_failure` need to
+    /// match exact upstream text. Calls the private `run_with_timeout_impl`
+    /// directly with a synthetic `live_secrets` list (no re-exec needed:
+    /// this only inspects the returned value, not real OS-level stderr).
+    #[test]
+    fn run_with_timeout_impl_redacts_known_secret_from_live_echo_but_not_captured_output() {
+        let secret = "sekrit-token-value";
+        let out = run_with_timeout_impl(
+            "sh",
+            &["-c", &format!("echo {secret} >&2")],
+            std::path::Path::new("."),
+            Duration::from_secs(5),
+            StderrMode::Live,
+            vec![secret.to_string()],
+        )
+        .unwrap();
+        assert!(
+            out.stderr.contains(secret),
+            "captured CommandOutput.stderr must stay raw/unredacted even when the live \
+             echo is redacted, got: {:?}",
+            out.stderr
+        );
+    }
+
+    /// Same regression, exercised through the real public `run_with_timeout`
+    /// entry point: a known-credential env var (`NPM_TOKEN`) present in the
+    /// process environment must be scrubbed from the *live* terminal echo.
+    /// Uses the re-exec pattern (see `run_with_timeout_still_streams_stderr_live`)
+    /// because the live echo goes via `eprintln!`, not `CommandOutput`.
+    #[test]
+    fn run_with_timeout_redacts_known_credential_env_value_from_live_stderr_echo() {
+        const CHILD_ENV: &str = "CALLISTO_RUN_TIMEOUT_REDACT_CHILD";
+        const TOKEN: &str = "leak-me-1234";
+
+        if std::env::var(CHILD_ENV).is_ok() {
+            let runner = CliCommandRunner;
+            drop(runner.run_with_timeout(
+                "sh",
+                &["-c", "echo leak-me-1234 >&2"],
+                std::path::Path::new("."),
+                Duration::from_secs(5),
+            ));
+            return;
+        }
+
+        let exe = std::env::current_exe().expect("current_exe should be available in tests");
+        let output = std::process::Command::new(exe)
+            .arg("--exact")
+            .arg("runner::tests::run_with_timeout_redacts_known_credential_env_value_from_live_stderr_echo")
+            .arg("--nocapture")
+            .env(CHILD_ENV, "1")
+            .env("NPM_TOKEN", TOKEN)
+            .output()
+            .expect("failed to re-exec test binary");
+
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            !stderr.contains(TOKEN),
+            "live-streamed stderr must not contain the raw known-credential value, got: {stderr}"
+        );
+        assert!(
+            stderr.contains("[REDACTED]"),
+            "live-streamed stderr must contain the redaction marker in place of the \
+             credential, got: {stderr}"
+        );
+    }
+
+    /// Guards against over-redaction breaking downstream error classification:
+    /// even when a known-credential env var is present and appears in the
+    /// child's stderr alongside a rate-limit/auth marker, the *captured*
+    /// `CommandOutput.stderr` returned to the caller must remain raw so
+    /// `extract_retry_after_duration`/`detect_auth_failure`-style matching
+    /// against exact upstream text keeps working. Re-execs so the child
+    /// actually has `NPM_TOKEN` set when it calls `run_with_timeout`.
+    #[test]
+    fn run_with_timeout_still_captures_unredacted_stderr_for_classification_even_with_known_secret_present() {
+        const CHILD_ENV: &str = "CALLISTO_RUN_TIMEOUT_CAPTURE_CHILD";
+        const TOKEN: &str = "tok-abcd-9999";
+
+        if std::env::var(CHILD_ENV).is_ok() {
+            let runner = CliCommandRunner;
+            let out = runner
+                .run_with_timeout(
+                    "sh",
+                    &["-c", &format!("echo '429 too many requests, token={TOKEN}' >&2")],
+                    std::path::Path::new("."),
+                    Duration::from_secs(5),
+                )
+                .expect("run_with_timeout must succeed");
+            assert!(
+                out.stderr.contains(TOKEN),
+                "captured CommandOutput.stderr must retain the raw token for classifiers \
+                 like extract_retry_after_duration/detect_auth_failure, got: {:?}",
+                out.stderr
+            );
+            assert!(
+                out.stderr.contains("429"),
+                "captured stderr must retain the rate-limit marker text, got: {:?}",
+                out.stderr
+            );
+            println!("CHILD_REACHED_AND_VERIFIED_CAPTURE");
+            return;
+        }
+
+        let exe = std::env::current_exe().expect("current_exe should be available in tests");
+        let output = std::process::Command::new(exe)
+            .arg("--exact")
+            .arg(
+                "runner::tests::run_with_timeout_still_captures_unredacted_stderr_for_classification_even_with_known_secret_present",
+            )
+            .arg("--nocapture")
+            .env(CHILD_ENV, "1")
+            .env("NPM_TOKEN", TOKEN)
+            .output()
+            .expect("failed to re-exec test binary");
+
+        assert!(
+            output.status.success(),
+            "child process must exit successfully, got: {:?}, stderr: {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            stdout.contains("CHILD_REACHED_AND_VERIFIED_CAPTURE"),
+            "child must have actually reached and verified capture, not crashed or no-op'd \
+             before it; got stdout: {stdout}"
+        );
+    }
+
+    /// `run_quiet` never streams live at all (see `run_quiet_does_not_stream_stderr_live`),
+    /// which means its call site should be able to skip scanning the
+    /// environment for credentials entirely (`Vec::new()` short-circuit,
+    /// rather than `known_credential_env_values(std::env::vars())`). This
+    /// proves the externally-observable half of that: even with a known
+    /// credential env var set, the live echo stays completely absent --
+    /// neither the raw value nor a `[REDACTED]` marker appears -- which is
+    /// what "simply absent" rather than "present-then-redacted" looks like
+    /// from outside the process.
+    #[test]
+    fn run_quiet_does_not_stream_stderr_live_even_with_known_credential_env_value_present() {
+        const CHILD_ENV: &str = "CALLISTO_RUN_QUIET_SECRET_CHILD";
+        const TOKEN: &str = "quiet-leak-5678";
+
+        if std::env::var(CHILD_ENV).is_ok() {
+            let runner = CliCommandRunner;
+            let out = runner
+                .run_quiet(
+                    "sh",
+                    &["-c", &format!("echo {TOKEN} >&2")],
+                    std::path::Path::new("."),
+                    Duration::from_secs(5),
+                )
+                .expect("run_quiet must succeed");
+            assert!(
+                out.stderr.contains(TOKEN),
+                "run_quiet must still capture the raw text it doesn't stream live"
+            );
+            println!("CHILD_REACHED_AND_VERIFIED_CAPTURE");
+            return;
+        }
+
+        let exe = std::env::current_exe().expect("current_exe should be available in tests");
+        let output = std::process::Command::new(exe)
+            .arg("--exact")
+            .arg("runner::tests::run_quiet_does_not_stream_stderr_live_even_with_known_credential_env_value_present")
+            .arg("--nocapture")
+            .env(CHILD_ENV, "1")
+            .env("NPM_TOKEN", TOKEN)
+            .output()
+            .expect("failed to re-exec test binary");
+
+        assert!(
+            output.status.success(),
+            "child process must exit successfully, got: {:?}, stderr: {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            stdout.contains("CHILD_REACHED_AND_VERIFIED_CAPTURE"),
+            "child must have actually reached and verified capture; got stdout: {stdout}"
+        );
+
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            !stderr.contains(TOKEN),
+            "run_quiet must not stream the credential live, redacted or not, got: {stderr}"
+        );
+        assert!(
+            !stderr.contains("[REDACTED]"),
+            "run_quiet's zero-cost path passes Vec::new() and performs no live echo at all, \
+             so no redaction marker should appear either -- proves the short-circuit is \
+             actually taken rather than redacting-then-suppressing, got: {stderr}"
         );
     }
 }

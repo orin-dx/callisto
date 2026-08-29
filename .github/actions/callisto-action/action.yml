@@ -166,16 +166,14 @@ runs:
 
           if [[ -n "$INPUT_PUBLISH" && "$INPUT_PUBLISH" != "false" ]]; then
             echo "::group::Placing Native Build Artifacts"
-            while IFS= read -r ENTRY; do
-              ARTIFACT=$(echo "$ENTRY" | jq -r '.artifactName')
-              DIR_RAW=$(echo "$ENTRY" | jq -r '.packageDir')
+            while IFS=$'\t' read -r ARTIFACT DIR_RAW; do
               DIR="."
               if [[ -n "$DIR_RAW" ]]; then
                 DIR="$DIR_RAW"
               fi
               mkdir -p "$DIR"
               gh run download "$GITHUB_RUN_ID" --name "$ARTIFACT" --dir "$DIR" || { echo "::error::failed to download artifact '$ARTIFACT' for placement into '$DIR' within run $GITHUB_RUN_ID"; exit 1; }
-            done < <(printf '%s' "$NATIVE_MATRIX" | jq -c '.[]')
+            done < <(printf '%s' "$NATIVE_MATRIX" | jq -r '.[] | [.artifactName, (.packageDir | if . == null then "null" else . end)] | @tsv')
             echo "::endgroup::"
 
             echo "::group::2. Calculating Topological Publish Plan"
