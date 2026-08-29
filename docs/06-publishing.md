@@ -94,6 +94,52 @@ that does not run `setup-node` with `registry-url`.
 
 ---
 
+## npm Platform/Main Package Publishing
+
+A napi-rs (or maturin) native package publishes as **N platform-specific packages** — one
+per target triple, e.g. `my-lib-linux-x64-gnu`, `my-lib-darwin-arm64` — plus **one main
+package** that end users actually install. The main package's `optionalDependencies` pin
+exact versions of every platform sibling; npm resolves whichever one matches the installer's
+OS/arch at install time. See `00-design.md` §5.3 and §7.5 for how platform packages are
+detected from `napi.targets`/`[tool.maturin].targets`.
+
+### Publish order
+
+`callisto publish` publishes in this fixed order: Rust crates → npm platform packages → npm
+main packages → PyPI packages. Platform packages always publish before the main package that
+depends on them.
+
+### What happens when a platform package fails
+
+If a platform package fails to publish in the same run, its dependent main package is
+**skipped, not attempted** — publishing it anyway would ship `optionalDependencies` pointing
+at a version that was never uploaded. The skipped entry appears in the publish report as:
+
+```json
+{
+  "package": "npm/my-lib",
+  "status": "failed",
+  "errorKind": "dependencyFailed",
+  "error": "skipped: platform dependency failed to publish: my-lib-linux-x64-gnu"
+}
+```
+
+`dependencyFailed` means exactly this — the main package was never attempted, because a
+declared platform dependency failed to publish *in this same run*. It is not itself a
+registry error. **Remediation:** fix whatever made the platform package fail, then re-run
+`callisto publish` — it is idempotent and will skip anything already uploaded.
+
+### What happens when a platform dependency is missing entirely
+
+Before any registry call is made, `callisto plan-publish` cross-checks every main package's
+declared platform dependencies against what actually ended up in the plan. A dependency is
+allowed to be absent only if it's already published (its on-disk version already matches its
+last release tag). Otherwise — a misconfigured platform package with no npm publish target,
+or one excluded via `--package` — planning fails outright with a `MissingPlatformDependency`
+error naming the main package and the missing dependency, before anything is published.
+
+---
+
 ## Cargo (crates.io) Authentication
 
 Set `CARGO_REGISTRY_TOKEN` as a repository secret and pass it to the job environment.
