@@ -33,6 +33,9 @@
 > `callisto matrix` auto-discovers napi-rs and maturin build targets (`napi.targets`, `[tool.maturin].targets`) plus npm/PyPI runtime constraints (`engines.node`, `requires-python`) straight from manifests — no duplicate CI YAML to keep in sync.  
 > Java (`java.version`) and .NET native-AOT discovery are planned for a future release.
 
+> **Native napi/maturin Platform-Package Coordination**  
+> One native crate compiling to N architecture-specific npm/PyPI packages plus one wrapper package that depends on all of them is a first-class case, not a workaround: callisto gates the wrapper's publish on every platform sibling actually succeeding, so `optionalDependencies` never point at a version that was never uploaded. No other changesets-family tool models this shape at all.
+
 > **Hermetic & Build-System Agnostic**  
 > Pure Rust CLI engine runs seamlessly in Bazel sandboxes (`rules_callisto`), Buck2, Nix flakes, Moon WASM (`callisto-moon`), GitHub Actions, GitLab CI, and local VCS hooks (`just hooks`).
 
@@ -92,6 +95,43 @@ callisto version
 
 > [!TIP]
 > Run `callisto version --dry-run` locally anytime to inspect calculated version bumps and changelog updates with colored diffs before committing.
+
+---
+
+## Publishing Packages
+
+`callisto version` bumps and commits; publishing to a registry is a separate, explicit step, split into commands that each do one thing and pass JSON to the next:
+
+```bash
+# 1. Compute what's ready to publish (read-only, no network)
+callisto plan-publish --format json > plan.json
+
+# 2. Publish each package to its registry (cargo/npm/twine), independently —
+#    one package's rejection doesn't block the others
+callisto publish --format json
+
+# 3. Tag the commits that shipped, moving any floating major alias (e.g. v1)
+callisto tag --plan plan.json --floating-major
+```
+
+```mermaid
+sequenceDiagram
+  participant CI as CI / callisto-action
+  participant CLI as callisto CLI
+  participant Reg as Registries
+  participant Git as git remote
+
+  CI->>CLI: plan-publish --format json
+  CLI-->>CI: PublishPlan
+  CI->>CLI: publish --format json
+  CLI->>Reg: publish per package (cargo / npm / twine)
+  Reg-->>CLI: per-package outcome
+  CLI-->>CI: PublishReport
+  CI->>CLI: tag --plan --floating-major
+  CLI->>Git: create tags, move floating alias
+```
+
+`callisto-action` (the bundled GitHub Action) runs all three automatically; see [`docs/06-publishing.md`](docs/06-publishing.md) for registry authentication setup.
 
 ---
 
@@ -183,6 +223,19 @@ Callisto combines ideas from `@changesets/cli`, `release-please`, and `nx releas
 | **Matrix discovery** | Auto-discovers napi-rs/maturin targets and npm/PyPI runtime constraints from manifests (Java/.NET planned) | Manual 50-line matrix arrays in CI YAML |
 | **Portability** | Runs in Bazel, Buck2, Nix, Moon WASM, GitHub Actions, GitLab CI, and local Git hooks | Locked to GitHub REST APIs or JS workspace tooling |
 
+### Feature comparison
+
+| Capability | Callisto | `@changesets/cli` | `release-please` | `knope` |
+| :--- | :--- | :--- | :--- | :--- |
+| Intent format | Changesets (byte-compatible) | Changesets | Conventional Commits | Changesets or commits |
+| Cargo workspaces | Native | — | Plugin | Yes |
+| npm workspaces | Yes | Yes | Yes | Yes |
+| Cross-ecosystem cascade | Yes | — | Per-ecosystem | — |
+| napi/maturin platform-package coordination | Native | — | — | — |
+| GitHub Release binary assets | Planned | — | Yes | — |
+
+*Cross-ecosystem cascade*: a version bump propagates along real dependency edges — a Cargo crate bump cascades into the npm packages that depend on it, automatically. *Platform-package coordination* is the sharper case: one native crate compiling to N architecture-specific npm/PyPI packages plus one wrapper package depending on all of them — nothing else in this table treats that shape as a first-class case instead of a hand-rolled CI workaround.
+
 ---
 
 ## Installation
@@ -219,6 +272,38 @@ extensions:
 ## Workspace Crate Architecture
 
 Callisto is structured into 10 workspace crates divided across permissive (`MIT OR Apache-2.0`) and copyleft (`AGPL-3.0-only`) licenses:
+
+```mermaid
+graph TB
+  subgraph L1["Layer 1 — domain types"]
+    direction LR
+    model["callisto-model"]
+    format["callisto-format"]
+    conventional["callisto-conventional"]
+    changelog["callisto-changelog"]
+  end
+  subgraph L2["Layer 2 — I/O"]
+    direction LR
+    manifests["callisto-manifests"]
+    vcs["callisto-vcs"]
+  end
+  subgraph L3["Layer 3 — engine"]
+    graph_["callisto-graph"]
+  end
+  subgraph L4["Layer 4 — surface"]
+    direction LR
+    cli["callisto-cli"]
+    moon["callisto-moon"]
+  end
+  model --> graph_
+  format --> graph_
+  conventional --> graph_
+  changelog --> graph_
+  manifests --> graph_
+  vcs --> graph_
+  graph_ --> cli
+  graph_ --> moon
+```
 
 | Layer | Crate | License | Purpose |
 | :--- | :--- | :--- | :--- |
