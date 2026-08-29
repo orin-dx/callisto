@@ -1,5 +1,9 @@
 {
   "id": "SPEC-DOCUMENTATION-AUTHORITY-005",
+  "status": "proposed",
+  "owner_track": "release-security",
+  "last_verified_revision": "931a5b2eb79b1a0fa85cf04c9df62750e59a6bcc",
+  "depends_on": [],
   "purpose": "Keep product specifications, semantic models, implementation plans, and historical handoffs understandable to future contributors and agents by assigning each a precise authority and correcting confirmed current-state drift.",
   "scope": "Documentation authority policy, status metadata, link routing, and the confirmed stale claims in design and semantic-model documents. This track establishes maintenance rules without rewriting repository history.",
   "non_goals": [
@@ -10,12 +14,12 @@
   "acceptance_criteria": [
     {
       "id": "AC-001",
-      "criterion": "A concise authority index states that docs/01-spec.md and accepted .claude/specs requirements are normative; docs/00-design.md explains rationale; semantic models describe verified current implementation; plans describe intended work and status; handoffs are historical context. When sources conflict, the index specifies how to resolve and correct the conflict.",
+      "criterion": "A concise authority index at .claude/specs/INDEX.md states that accepted .claude/specs artifacts are top-level normative requirements (they do not require a separate REQ-* file); docs/01-spec.md is normative only where it explicitly says so; docs/00-design.md explains rationale; semantic models describe verified current implementation; plans describe intended work and status; handoffs are historical context. It specifies the conflict-resolution and correction path. Existing dangling linked_requirement fields are a repository-wide migration concern and are not created by this track.",
       "is_error_case": false
     },
     {
       "id": "AC-002",
-      "criterion": "Every new or materially revised specification identifies its status, last verified source commit or revision, owner/track, and links to the relevant implementation plan. Completed or superseded plans visibly link back to the normative requirement rather than presenting themselves as current truth.",
+      "criterion": "Every new or materially revised specification identifies status, last_verified_revision, owner_track, explicit dependencies, and its relevant implementation plan once one exists. Completed or superseded plans visibly link back to the normative specification rather than presenting themselves as current truth. This metadata is required in the spec itself, not inferred from filename or Git history.",
       "is_error_case": false
     },
     {
@@ -25,9 +29,8 @@
     },
     {
       "id": "AC-004",
-      "criterion": "A lightweight documentation check rejects newly added 'current behavior' assertions without an authority/status marker where the document class requires one, and reports rather than automatically rewrites existing legacy material. The check is runnable through the project task runner.",
+      "criterion": "A lightweight documentation check, runnable through the project task runner, applies only to documents designated as current-description material: docs/00-design.md and .claude/semantic-model/*.md. It rejects a newly added assertion matching the documented current-behavior marker unless the same section contains verified_revision or an explicit link to an accepted spec/current implementation. It reports rather than rewrites legacy material and explicitly excludes .claude/specs/, .claude/plans/, handoffs, and historical sections from enforcement.",
       "is_error_case": true
     }
-  ],
-  "linked_requirement": "REQ-DOCUMENTATION-AUTHORITY"
+  ]
 }

@@ -1,5 +1,9 @@
 {
   "id": "SPEC-GITHUB-RELEASE-HARDENING-003",
+  "status": "proposed",
+  "owner_track": "release-security",
+  "last_verified_revision": "931a5b2eb79b1a0fa85cf04c9df62750e59a6bcc",
+  "depends_on": ["SPEC-RELEASE-PLAN-DURABILITY-001", "SPEC-RELEASE-SOURCE-PROVENANCE-002"],
   "purpose": "Harden the GitHub Actions release adapter so registry publication and repository mutation occur only through a narrowly authorized, reviewable release boundary.",
   "scope": ".github/workflows/callisto-release.yml and its referenced actions, GitHub Environment configuration documentation, action pinning, permissions, artifact handoff, and workflow tests.",
   "non_goals": [
@@ -10,7 +14,7 @@
   "acceptance_criteria": [
     {
       "id": "AC-001",
-      "criterion": "The workflow separates unprivileged verification and planning from privileged release execution. The job that can receive registry credentials or write tags/releases is bound to a documented GitHub Environment with required reviewers and branch/tag deployment rules; non-release jobs receive neither registry secrets nor write-scoped GITHUB_TOKEN permissions.",
+      "criterion": "The workflow implements the plan-job to execute-job topology defined by SPEC-RELEASE-PLAN-DURABILITY-001: unprivileged verification/planning is a separate job from privileged release execution. Only the execute job can receive registry credentials or write tags/releases, and it is bound to a named GitHub Environment. The repository documents the environment name, required reviewers, and branch/tag deployment rules plus an administrator-verifiable API or console procedure; workflow YAML reference alone is explicitly insufficient evidence that protection rules exist. Non-release jobs receive neither registry secrets nor write-scoped GITHUB_TOKEN permissions.",
       "is_error_case": false
     },
     {
@@ -25,14 +29,13 @@
     },
     {
       "id": "AC-004",
-      "criterion": "The planning job uploads the explicit durable plan from SPEC-RELEASE-PLAN-DURABILITY-001 as an artifact. The protected release job downloads only that artifact, verifies its source_commit against its checkout, and fails before credentials are used if validation fails. Caches may accelerate dependency installation but are never read as release intent.",
+      "criterion": "The planning job uploads the explicit durable plan from SPEC-RELEASE-PLAN-DURABILITY-001 and exposes its artifact identifier and envelope digest. The protected release job downloads only that identifier from its own workflow run, verifies its digest and source_commit against its checkout, then invokes core plan validation before credentials are used. Caches may accelerate dependency installation but are never read as release intent.",
       "is_error_case": true
     },
     {
       "id": "AC-005",
-      "criterion": "The release trigger and environment policy are documented together: which events may create a version PR, which may publish, who approves publication, and how an emergency rerun is reconciled. A normal push to main cannot silently gain registry publication authority merely because workflow code changed in that push.",
+      "criterion": "Changes to .github/workflows/ and .github/actions/ require CODEOWNERS review from the release-security owners. The release trigger and environment policy document exactly which events may create a version PR, which may publish, who approves publication, and how an emergency rerun is reconciled. The privileged execute job is reachable only from an explicit protected-ref release dispatch/reusable-workflow contract, never from a normal push to main; workflow-code changes in that push cannot grant registry publication authority.",
       "is_error_case": true
     }
-  ],
-  "linked_requirement": "REQ-GITHUB-RELEASE-HARDENING"
+  ]
 }
