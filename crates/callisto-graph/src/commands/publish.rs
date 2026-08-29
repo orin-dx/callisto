@@ -702,6 +702,82 @@ fn resolve_entry_id(
     }
 }
 
+/// Filters `plan` down to only the entries `report` confirms actually
+/// succeeded (`Published` or `AlreadyPublished`), dropping anything that
+/// failed. For a CI pipeline that runs `plan-publish` -> `publish` -> `tag`
+/// as separate steps, this lets `tag`/`gh release create` operate on what
+/// actually shipped instead of the pre-publish plan -- so a single
+/// package's failure doesn't cost its already-succeeded siblings a tag or a
+/// GitHub Release in the same run.
+///
+/// Matches `rust_crates`/`npm_platform_packages`/`npm_main_packages`/
+/// `pypi_packages` entries against `report.attempts` by the same
+/// `PackageId::Prefixed { ecosystem, name }` shape [`PublishOrchestrator::execute`]
+/// constructs at publish time (not [`resolve_entry_id`]'s bare-vs-prefixed
+/// resolution, since `report` carries no workspace context to resolve
+/// against). `releases` entries carry the package's real graph-resolved id
+/// instead, which may be `Bare` even when the matching attempt is
+/// `Prefixed` -- matched via `PackageId::matches`'s bare-is-wildcard
+/// semantics, so a release with two publish targets (e.g. Cargo and npm) is
+/// kept only when every target for that package succeeded.
+pub fn filter_plan_by_report(plan: &PublishPlan, report: &callisto_model::PublishReport) -> PublishPlan {
+    let succeeded: std::collections::HashSet<&PackageId> = report
+        .attempts
+        .iter()
+        .filter(|a| !a.result.is_failure())
+        .map(|a| &a.package)
+        .collect();
+    let failed: Vec<&PackageId> = report
+        .attempts
+        .iter()
+        .filter(|a| a.result.is_failure())
+        .map(|a| &a.package)
+        .collect();
+
+    let kept = |ecosystem: Ecosystem, name: &str| {
+        let id = PackageId::Prefixed {
+            ecosystem,
+            name: name.to_string(),
+        };
+        succeeded.contains(&id)
+    };
+
+    PublishPlan {
+        schema_version: plan.schema_version,
+        rust_crates: plan
+            .rust_crates
+            .iter()
+            .filter(|c| kept(Ecosystem::Cargo, &c.name))
+            .cloned()
+            .collect(),
+        npm_platform_packages: plan
+            .npm_platform_packages
+            .iter()
+            .filter(|c| kept(Ecosystem::Npm, &c.name))
+            .cloned()
+            .collect(),
+        npm_main_packages: plan
+            .npm_main_packages
+            .iter()
+            .filter(|c| kept(Ecosystem::Npm, &c.name))
+            .cloned()
+            .collect(),
+        pypi_packages: plan
+            .pypi_packages
+            .iter()
+            .filter(|c| kept(Ecosystem::Pypi, &c.name))
+            .cloned()
+            .collect(),
+        releases: plan
+            .releases
+            .iter()
+            .filter(|r| !failed.iter().any(|f| f.matches(&r.package)))
+            .cloned()
+            .collect(),
+        diagnostics: plan.diagnostics.clone(),
+    }
+}
+
 use callisto_model::{
     ApplyPermit, PublishAttempt, PublishAttemptResult, PublishOutcome, PublishReport, RateLimitPolicy, RegistryClient,
     RegistryError, TimeProvider, Version,
@@ -2095,5 +2171,202 @@ mod tests {
             report.attempts[0].result,
             PublishAttemptResult::AlreadyPublished
         ));
+    }
+
+    fn attempt(ecosystem: Ecosystem, name: &str, result: PublishAttemptResult) -> PublishAttempt {
+        PublishAttempt {
+            package: PackageId::Prefixed {
+                ecosystem,
+                name: name.to_string(),
+            },
+            version: v100(),
+            result,
+        }
+    }
+
+    fn failed_attempt(ecosystem: Ecosystem, name: &str) -> PublishAttempt {
+        attempt(
+            ecosystem,
+            name,
+            PublishAttemptResult::Failed {
+                kind: "other".to_string(),
+                error: "boom".to_string(),
+            },
+        )
+    }
+
+    fn published_attempt(ecosystem: Ecosystem, name: &str) -> PublishAttempt {
+        attempt(ecosystem, name, PublishAttemptResult::Published)
+    }
+
+    #[test]
+    fn filter_plan_by_report_drops_a_failed_rust_crate() {
+        let mut plan = create_test_plan();
+        plan.rust_crates.push(callisto_model::CratePublish {
+            name: "other-crate".to_string(),
+            version: v100(),
+            publish_to: RegistryKey(RegistryKey::CRATES_IO.to_string()),
+            registry: None,
+            package_dir: None,
+        });
+
+        let report = PublishReport {
+            schema_version: SCHEMA_VERSION,
+            attempts: vec![
+                published_attempt(Ecosystem::Cargo, "test-crate"),
+                failed_attempt(Ecosystem::Cargo, "other-crate"),
+            ],
+            diagnostics: vec![],
+        };
+
+        let filtered = filter_plan_by_report(&plan, &report);
+        let names: Vec<&str> = filtered.rust_crates.iter().map(|c| c.name.as_str()).collect();
+        assert_eq!(
+            names,
+            vec!["test-crate"],
+            "the failed crate must be dropped; kept: {names:?}"
+        );
+    }
+
+    #[test]
+    fn filter_plan_by_report_keeps_already_published_entries() {
+        let plan = create_test_plan();
+        let report = PublishReport {
+            schema_version: SCHEMA_VERSION,
+            attempts: vec![attempt(
+                Ecosystem::Cargo,
+                "test-crate",
+                PublishAttemptResult::AlreadyPublished,
+            )],
+            diagnostics: vec![],
+        };
+
+        let filtered = filter_plan_by_report(&plan, &report);
+        assert_eq!(
+            filtered.rust_crates.len(),
+            1,
+            "AlreadyPublished must count as kept, not failed"
+        );
+    }
+
+    #[test]
+    fn filter_plan_by_report_drops_entry_with_no_matching_attempt_at_all() {
+        let plan = create_test_plan();
+        let report = PublishReport {
+            schema_version: SCHEMA_VERSION,
+            attempts: vec![],
+            diagnostics: vec![],
+        };
+
+        let filtered = filter_plan_by_report(&plan, &report);
+        assert!(
+            filtered.rust_crates.is_empty(),
+            "a plan entry the report never attempted at all must not be kept by default"
+        );
+    }
+
+    #[test]
+    fn filter_plan_by_report_drops_release_when_one_of_its_multiple_ecosystem_targets_failed() {
+        let mut plan = create_test_plan();
+        plan.releases.push(callisto_model::ReleaseEntry {
+            package: PackageId::Bare("test-crate".to_string()),
+            tag_name: callisto_model::TagName("test-crate@1.0.0".to_string()),
+            sha: callisto_model::CommitSha::parse(&"a".repeat(40)).unwrap(),
+            changelog_section: None,
+            is_prerelease: false,
+        });
+
+        // test-crate published fine on Cargo, but also (hypothetically)
+        // targets npm under the same bare name and that target failed.
+        let report = PublishReport {
+            schema_version: SCHEMA_VERSION,
+            attempts: vec![
+                published_attempt(Ecosystem::Cargo, "test-crate"),
+                failed_attempt(Ecosystem::Npm, "test-crate"),
+            ],
+            diagnostics: vec![],
+        };
+
+        let filtered = filter_plan_by_report(&plan, &report);
+        assert!(
+            filtered.releases.is_empty(),
+            "a release must be dropped when ANY of its targets failed, even if another target succeeded"
+        );
+    }
+
+    #[test]
+    fn filter_plan_by_report_keeps_release_when_all_its_targets_succeeded() {
+        let mut plan = create_test_plan();
+        plan.releases.push(callisto_model::ReleaseEntry {
+            package: PackageId::Bare("test-crate".to_string()),
+            tag_name: callisto_model::TagName("test-crate@1.0.0".to_string()),
+            sha: callisto_model::CommitSha::parse(&"a".repeat(40)).unwrap(),
+            changelog_section: None,
+            is_prerelease: false,
+        });
+
+        let report = PublishReport {
+            schema_version: SCHEMA_VERSION,
+            attempts: vec![published_attempt(Ecosystem::Cargo, "test-crate")],
+            diagnostics: vec![],
+        };
+
+        let filtered = filter_plan_by_report(&plan, &report);
+        assert_eq!(
+            filtered.releases.len(),
+            1,
+            "a release whose only target succeeded must be kept"
+        );
+    }
+
+    /// A same-named Cargo crate failure must not drop an unrelated npm
+    /// package's release entry -- mirrors the ecosystem-scoping bug already
+    /// fixed once in this file for `depends_on_platforms`.
+    #[test]
+    fn filter_plan_by_report_does_not_false_positive_match_release_by_bare_name_across_unrelated_ecosystem_packages() {
+        let mut plan = create_test_plan(); // rust_crates: ["test-crate"]
+        plan.npm_main_packages.push(NpmMainPublish {
+            name: "test-crate".to_string(),
+            version: v100(),
+            publish_to: RegistryKey(RegistryKey::NPM.to_string()),
+            package_dir: std::path::PathBuf::new(),
+            registry: None,
+            tag: None,
+            access: None,
+            depends_on_platforms: vec![],
+        });
+        plan.releases.push(callisto_model::ReleaseEntry {
+            package: PackageId::Prefixed {
+                ecosystem: Ecosystem::Npm,
+                name: "test-crate".to_string(),
+            },
+            tag_name: callisto_model::TagName("npm-test-crate@1.0.0".to_string()),
+            sha: callisto_model::CommitSha::parse(&"a".repeat(40)).unwrap(),
+            changelog_section: None,
+            is_prerelease: false,
+        });
+
+        // The Cargo crate fails; the unrelated npm package of the same bare
+        // name succeeds.
+        let report = PublishReport {
+            schema_version: SCHEMA_VERSION,
+            attempts: vec![
+                failed_attempt(Ecosystem::Cargo, "test-crate"),
+                published_attempt(Ecosystem::Npm, "test-crate"),
+            ],
+            diagnostics: vec![],
+        };
+
+        let filtered = filter_plan_by_report(&plan, &report);
+        assert_eq!(
+            filtered.releases.len(),
+            1,
+            "the npm release must survive the unrelated Cargo crate's failure"
+        );
+        assert_eq!(filtered.npm_main_packages.len(), 1);
+        assert!(
+            filtered.rust_crates.is_empty(),
+            "the failed Cargo crate itself must still be dropped"
+        );
     }
 }

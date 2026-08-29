@@ -686,6 +686,7 @@ mod tests {
                 tag_name: TagName("crate-a@1.0.0".to_string()),
                 sha: CommitSha::parse(&"a".repeat(40)).unwrap(),
                 already_existed: false,
+                is_floating_major: false,
             }],
             diagnostics: vec![],
         };
