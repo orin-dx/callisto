@@ -108,10 +108,14 @@ callisto plan-publish --format json > plan.json
 
 # 2. Publish each package to its registry (cargo/npm/twine), independently —
 #    one package's rejection doesn't block the others
-callisto publish --format json
+callisto publish --format json > report.json
 
-# 3. Tag the commits that shipped, moving any floating major alias (e.g. v1)
-callisto tag --plan plan.json --floating-major
+# 3. Narrow the plan down to what the report confirms actually succeeded —
+#    so one package's failure doesn't cost its already-shipped siblings a tag
+callisto filter-plan --plan plan.json --report report.json > shipped.json
+
+# 4. Tag the commits that shipped, moving any floating major alias (e.g. v1)
+callisto tag --plan shipped.json --floating-major
 ```
 
 ```mermaid
@@ -127,11 +131,13 @@ sequenceDiagram
   CLI->>Reg: publish per package (cargo / npm / twine)
   Reg-->>CLI: per-package outcome
   CLI-->>CI: PublishReport
+  CI->>CLI: filter-plan --plan --report
+  CLI-->>CI: plan narrowed to confirmed successes
   CI->>CLI: tag --plan --floating-major
   CLI->>Git: create tags, move floating alias
 ```
 
-`callisto-action` (the bundled GitHub Action) runs all three automatically; see [`docs/06-publishing.md`](docs/06-publishing.md) for registry authentication setup.
+`callisto-action` (the bundled GitHub Action) runs all four automatically; see [`docs/06-publishing.md`](docs/06-publishing.md) for registry authentication setup and the npm platform/main package split.
 
 ---
 
