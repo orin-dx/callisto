@@ -57,6 +57,9 @@ pub use matrix::*;
 pub mod registry;
 pub use registry::*;
 
+pub mod release;
+pub use release::*;
+
 #[cfg(test)]
 mod tests {
     use super::*;
