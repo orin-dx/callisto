@@ -4130,3 +4130,11 @@ Yes. I understand the process now, and my earlier proposal needed one important 
   are the evidence that the repository’s process has correctly reached the architecture boundary.
 
 What do you think of it? Did it miss anything? Anythig to add?
+
+---
+
+Everything you've done so far committed?
+
+---
+
+If not do so
