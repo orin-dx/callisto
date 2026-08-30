@@ -1,0 +1,279 @@
+{
+  "id": "PLAN-DOCUMENTATION-AUTHORITY-005",
+  "spec_id": "SPEC-DOCUMENTATION-AUTHORITY-005",
+  "spec_file_path": "/Users/gabe/Projects/callisto/.claude/specs/SPEC-DOCUMENTATION-AUTHORITY-005.json",
+  "spec_hash": "sha256:b99a911a6750ebda345b216c9b87c0ba2aa292a7ca5490b1c2aee5729ef91af2",
+  "batches": [
+    {
+      "id": "batch-authority-docs",
+      "description": "New docs/AUTHORITY.md index and the three confirmed stale-claim corrections. Pure text edits verified by direct grep/diff, no compilation boundary. Must run before batch-frontmatter since STALE-2 and STALE-3 edit .claude/semantic-model files at specific line numbers that a frontmatter insertion would shift.",
+      "task_ids": ["AUTH-1", "STALE-1", "STALE-2", "STALE-3"]
+    },
+    {
+      "id": "batch-spec-metadata",
+      "description": "Enrollment file and this spec's own four spec-metadata fields (AC-002). Independent of the docs batch; must complete before LINT-2's real-repo end-to-end check.",
+      "task_ids": ["ENROLL-1"]
+    },
+    {
+      "id": "batch-frontmatter",
+      "description": "Authority frontmatter added to the 9 pre-existing docs/*.md files and the 5 .claude/semantic-model/*.md files. Must run after STALE-2/STALE-3 (line-number-based edits) and before LINT-2's real-repo check.",
+      "task_ids": ["FM-1", "FM-2"]
+    },
+    {
+      "id": "batch-lint-tool",
+      "description": "scripts/lint_docs.py (both scans) plus its bash test harness, then the `just lint-docs` Justfile recipe and its ci/ci-fast wiring. LINT-1's own tests run against isolated temp fixtures via --root and have no dependency on the other batches; LINT-2's final real-repo invocation depends on every other batch being complete.",
+      "task_ids": ["LINT-1", "LINT-2"]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "AUTH-1",
+      "batch_id": "batch-authority-docs",
+      "description": "Create docs/AUTHORITY.md: the eight-class documentation authority index with the glob each class is checked against, the conflict-resolution rule, and the ACTIVE.md heading prose policy.",
+      "covers_criteria": ["AC-001"],
+      "file_paths": ["docs/AUTHORITY.md"],
+      "failing_test": {
+        "description": "docs/AUTHORITY.md does not exist yet.",
+        "code_to_add": "N/A -- red state is the file's absence, confirmed by `test -f`."
+      },
+      "test_command": "test -f /Users/gabe/Projects/callisto/docs/AUTHORITY.md && echo EXISTS || echo MISSING",
+      "expected_failure_output": "MISSING",
+      "implementation": {
+        "description": "Create docs/AUTHORITY.md with the exact content below. Frontmatter is `authority: guide` per AC-001's own classification of this file (it explains how to classify docs, not product behavior) and per AC-004's inclusion of AUTHORITY.md in the docs/*.md glob from the start.",
+        "changes": [
+          "Write /Users/gabe/Projects/callisto/docs/AUTHORITY.md with exactly:\n\n---\nauthority: guide\n---\n\n# Documentation Authority Index\n\nThis index classifies every document under `docs/` and `.claude/semantic-model/`\ninto an authority class, so a reader (human or agent) knows how much weight to\ngive a claim before acting on it. `just lint-docs` (AC-004) machine-checks the\n`authority` frontmatter field against the closed set of values below for each\nglob it scans.\n\n## Document classes\n\n| Slug | Covers | Glob(s) checked by `lint-docs` |\n|---|---|---|\n| `normative` | `docs/01-spec.md` and accepted `.claude/specs/*` spec@1 acceptance criteria -- authoritative for current required behavior | `docs/*.md` |\n| `rationale` | `docs/00-design.md` -- explains why, not a second source of current requirements | `docs/*.md` |\n| `reference` | `docs/03-polyglot-spec.md`, `docs/04-python-engine-spec.md`, `docs/05-go-engine-spec.md` -- subsystem/engine design references | `docs/*.md` |\n| `guide` | `docs/06-publishing.md`, `docs/release-paradigms.md`, and `docs/AUTHORITY.md` itself -- operational how-to material; `AUTHORITY.md` is classified `guide` because it explains how to classify and maintain documentation rather than asserting product behavior | `docs/*.md` |\n| `historical-context` | `docs/01-research-brief.md`, `docs/02-library-vs-moon-decision.md`, and handoff documents such as `.claude/plans/SESSION_HANDOFF.md` -- a record of past research or decisions, not current truth | `docs/*.md` (handoffs under `.claude/plans/` are not scanned; see `plan-status` below) |\n| `verified-current` | `.claude/semantic-model/*.md` -- describes the implementation as verified against the current codebase | `.claude/semantic-model/*.md` |\n| `plan-status` | `.claude/plans/*.md` -- intended work and per-track status | Not scanned by `lint-docs` (AC-005) |\n| `spec-metadata` | A convention, not a frontmatter slug, applying only to files listed in `.claude/specs/.authority-enrolled` (AC-002) | Not part of the `docs/*.md` or `.claude/semantic-model/*.md` frontmatter check; checked separately by `lint-docs` Scan 2 |\n\n## Conflict resolution\n\nThe normative source (`docs/01-spec.md` or an accepted spec) always wins. When\na non-normative document is found to conflict with it, the non-normative\ndocument receives a dated correction note in place, pointing to the normative\nsource -- never a silent rewrite of its own original claims.\n\n## `.claude/plans/ACTIVE.md` heading convention (prose policy, not enforced)\n\nA `.claude/plans/ACTIVE.md` section heading marking a track `DONE`,\n`SUPERSEDED`, or `CLOSED` should reference the SPEC-id, REQ-id, or file path\nit implements in its body text. This is guidance for authors, not a\ncriterion any check in this repository verifies -- `.claude/plans/` is never\nscanned by `lint-docs` (AC-005)."
+        ]
+      },
+      "verify_command": "test -f /Users/gabe/Projects/callisto/docs/AUTHORITY.md && grep -c '^authority: guide$' /Users/gabe/Projects/callisto/docs/AUTHORITY.md && grep -c 'normative' /Users/gabe/Projects/callisto/docs/AUTHORITY.md && grep -c 'spec-metadata' /Users/gabe/Projects/callisto/docs/AUTHORITY.md && grep -c 'never scanned by' /Users/gabe/Projects/callisto/docs/AUTHORITY.md",
+      "expected_pass_output": "EXISTS\n1\n(at least 1 occurrence of 'normative')\n(at least 1 occurrence of 'spec-metadata')\n(at least 1 occurrence of 'never scanned by')",
+      "commit_message": "docs(authority): add docs/AUTHORITY.md documentation authority index",
+      "notes": [
+        "AUTHORITY.md's own authority: guide frontmatter is what LINT-2's real-repo Scan 1 count depends on -- do not defer adding it to a later task."
+      ]
+    },
+    {
+      "id": "STALE-1",
+      "batch_id": "batch-authority-docs",
+      "description": "Correct docs/00-design.md line 3's unqualified IMPLEMENTED & VERIFIED status line to scope it to v0.1-v0.4, matching \u00a717's authoritative milestone scope.",
+      "covers_criteria": ["AC-003"],
+      "file_paths": ["docs/00-design.md"],
+      "failing_test": {
+        "description": "Grep for the corrected literal string; it does not exist yet, only the old unqualified line does.",
+        "code_to_add": "N/A -- red state is grep returning 0 matches for the corrected string."
+      },
+      "test_command": "grep -c '\\*\\*Status:\\*\\* IMPLEMENTED & VERIFIED for v0.1–v0.4 (Canonical Spec); work beyond v0.4 is demand-gated per §17/§2.2 and not scheduled.' /Users/gabe/Projects/callisto/docs/00-design.md",
+      "expected_failure_output": "0",
+      "implementation": {
+        "description": "Replace line 3 of docs/00-design.md with the exact literal text given by AC-003.",
+        "changes": [
+          "Replace line 3 (currently `**Status:** IMPLEMENTED & VERIFIED (Canonical Spec)`) with exactly:\n**Status:** IMPLEMENTED & VERIFIED for v0.1–v0.4 (Canonical Spec); work beyond v0.4 is demand-gated per §17/§2.2 and not scheduled."
+        ]
+      },
+      "verify_command": "sed -n '3p' /Users/gabe/Projects/callisto/docs/00-design.md",
+      "expected_pass_output": "**Status:** IMPLEMENTED & VERIFIED for v0.1–v0.4 (Canonical Spec); work beyond v0.4 is demand-gated per §17/§2.2 and not scheduled.",
+      "commit_message": "docs(design): scope 00-design.md's status line to v0.1-v0.4 per §17's authoritative milestone scope",
+      "notes": ["Must run before FM-1 (docs frontmatter insertion), which would shift this line number."]
+    },
+    {
+      "id": "STALE-2",
+      "batch_id": "batch-authority-docs",
+      "description": "Correct .claude/semantic-model/version-flow.md lines 84-85: the described bug was already fixed by Track B; apply.rs's consumed_changesets loop already pushes every changeset path to modified_paths unconditionally, gating only fs::remove_file.",
+      "covers_criteria": ["AC-003"],
+      "file_paths": [".claude/semantic-model/version-flow.md"],
+      "failing_test": {
+        "description": "Grep for the corrected literal string; it does not exist yet, only the stale 'current code has a bug here' claim does.",
+        "code_to_add": "N/A -- red state is grep returning 0 matches for the corrected string and 1 match for the stale one."
+      },
+      "test_command": "grep -c 'Track B already shipped this fix' /Users/gabe/Projects/callisto/.claude/semantic-model/version-flow.md; grep -c 'The current code has a bug here' /Users/gabe/Projects/callisto/.claude/semantic-model/version-flow.md",
+      "expected_failure_output": "0\n1",
+      "implementation": {
+        "description": "Replace lines 84-85 of version-flow.md with the exact literal text given by AC-003, grounded against crates/callisto-graph/src/apply.rs:275-285 (consumed_changesets loop) and apply.rs:277-284 (the if full.exists() gate, which covers only fs::remove_file).",
+        "changes": [
+          "Replace lines 84-85 (currently:\nThe current code has a bug here: it gates the push behind `if full.exists()`. Track B removes\nthis gate.\n) with exactly:\nTrack B already shipped this fix: the current code pushes every changeset path to\nmodified_paths unconditionally (crates/callisto-graph/src/apply.rs:285); only the\nfs::remove_file call is gated by `if full.exists()` (apply.rs:277-284), since removing\na nonexistent file would error."
+        ]
+      },
+      "verify_command": "grep -c 'Track B already shipped this fix' /Users/gabe/Projects/callisto/.claude/semantic-model/version-flow.md; grep -c 'The current code has a bug here' /Users/gabe/Projects/callisto/.claude/semantic-model/version-flow.md",
+      "expected_pass_output": "1\n0",
+      "commit_message": "docs(semantic-model): correct version-flow.md's stale Track-B-pending claim -- the fix already shipped",
+      "notes": ["Must run before FM-2 (semantic-model frontmatter insertion), which would shift these line numbers."]
+    },
+    {
+      "id": "STALE-3",
+      "batch_id": "batch-authority-docs",
+      "description": "Correct .claude/semantic-model/error-taxonomy.md line 66's PackageSetMatchedNothing table row: the GraphError variant is indeed dead code, but the equivalent condition IS actively surfaced as a Warning diagnostic via DiagnosticCode::PackageSetMatchedNothing.",
+      "covers_criteria": ["AC-003"],
+      "file_paths": [".claude/semantic-model/error-taxonomy.md"],
+      "failing_test": {
+        "description": "Grep for the corrected literal middle-column text; it does not exist yet, only the stale unqualified 'known gap' text does.",
+        "code_to_add": "N/A -- red state is grep returning 0 matches for the corrected string."
+      },
+      "test_command": "grep -c 'not an unqualified gap' /Users/gabe/Projects/callisto/.claude/semantic-model/error-taxonomy.md",
+      "expected_failure_output": "0",
+      "implementation": {
+        "description": "Replace line 66's middle column in the '### Without E-codes' table, grounded against crates/callisto-graph/src/error.rs:294 (GraphError::PackageSetMatchedNothing, never constructed) and crates/callisto-model/src/diagnostic.rs:162 plus crates/callisto-graph/src/walk.rs:425 (DiagnosticCode::PackageSetMatchedNothing, actively emitted as a Warning).",
+          "changes": [
+          "Replace line 66 (currently: `| `PackageSetMatchedNothing { pattern }` | Defined but NEVER EMITTED — known gap | A [[package-set]] rule matched no packages |`) with exactly:\n| `PackageSetMatchedNothing { pattern }` | GraphError variant never constructed (dead code); the equivalent condition IS actively surfaced via `DiagnosticCode::PackageSetMatchedNothing` as a Warning diagnostic (walk.rs:425) — not an unqualified gap | A [[package-set]] rule matched no packages |"
+        ]
+      },
+      "verify_command": "sed -n '66p' /Users/gabe/Projects/callisto/.claude/semantic-model/error-taxonomy.md | grep -c 'not an unqualified gap'",
+      "expected_pass_output": "1",
+      "commit_message": "docs(semantic-model): correct error-taxonomy.md's PackageSetMatchedNothing row -- the condition IS surfaced via DiagnosticCode",
+      "notes": ["Must run before FM-2 (semantic-model frontmatter insertion), which would shift this line number."]
+    },
+    {
+      "id": "ENROLL-1",
+      "batch_id": "batch-spec-metadata",
+      "description": "Create the .claude/specs/.authority-enrolled enrollment file listing this spec's own filename, and add the implementation_plan field to this spec's own JSON file (status, last_verified_revision, owner_track already exist at the top level).",
+      "covers_criteria": ["AC-002"],
+      "file_paths": [
+        ".claude/specs/.authority-enrolled",
+        ".claude/specs/SPEC-DOCUMENTATION-AUTHORITY-005.json"
+      ],
+      "failing_test": {
+        "description": "Neither the enrollment file nor the implementation_plan field exists yet.",
+        "code_to_add": "N/A -- red state is `test -f` failing for the enrollment file and `jq` returning null for the missing key vs. present-but-different top-level status keys."
+      },
+      "test_command": "test -f /Users/gabe/Projects/callisto/.claude/specs/.authority-enrolled && echo EXISTS || echo MISSING; python3 -c \"import json; d=json.load(open('/Users/gabe/Projects/callisto/.claude/specs/SPEC-DOCUMENTATION-AUTHORITY-005.json')); print('implementation_plan' in d)\"",
+      "expected_failure_output": "MISSING\nFalse",
+      "implementation": {
+        "description": "Create the enrollment file with exactly one line (this spec's own basename, per AC-002's format: basename only, one per line, trailing newline). Add \"implementation_plan\": null to the spec JSON's existing top-level fields (status: proposed, last_verified_revision: 59023bd3286650394af37bc34bd688b51dba3d92, owner_track: release-security already present) -- AC-002's own text fixes this value to null regardless of this plan's own existence, since the criterion establishes the convention at spec-authorship time.",
+        "changes": [
+          "Write /Users/gabe/Projects/callisto/.claude/specs/.authority-enrolled with exactly:\nSPEC-DOCUMENTATION-AUTHORITY-005.json\n(one line, trailing newline, no other content).",
+          "In /Users/gabe/Projects/callisto/.claude/specs/SPEC-DOCUMENTATION-AUTHORITY-005.json, insert a new top-level key immediately after the existing `\"last_verified_revision\": \"59023bd3286650394af37bc34bd688b51dba3d92\",` line:\n  \"implementation_plan\": null,"
+        ]
+      },
+      "verify_command": "cat /Users/gabe/Projects/callisto/.claude/specs/.authority-enrolled; python3 -c \"import json; d=json.load(open('/Users/gabe/Projects/callisto/.claude/specs/SPEC-DOCUMENTATION-AUTHORITY-005.json')); print(d['status'], d['last_verified_revision'], d['owner_track'], d['implementation_plan'])\"",
+      "expected_pass_output": "SPEC-DOCUMENTATION-AUTHORITY-005.json\nproposed 59023bd3286650394af37bc34bd688b51dba3d92 release-security None",
+      "commit_message": "chore(specs): enroll SPEC-DOCUMENTATION-AUTHORITY-005 in the authority spec-metadata check",
+      "notes": [
+        "No other .claude/specs/*.json file is added to the enrollment list, per the spec's own non_goals -- confirmed the enrollment file contains exactly one line."
+      ]
+    },
+    {
+      "id": "FM-1",
+      "batch_id": "batch-frontmatter",
+      "description": "Add authority frontmatter to the 9 pre-existing docs/*.md files (AUTHORITY.md already got its frontmatter in AUTH-1), so lint-docs (LINT-2) finds zero Scan 1 violations under docs/*.md.",
+      "covers_criteria": ["AC-004"],
+      "file_paths": [
+        "docs/00-design.md",
+        "docs/01-research-brief.md",
+        "docs/01-spec.md",
+        "docs/02-library-vs-moon-decision.md",
+        "docs/03-polyglot-spec.md",
+        "docs/04-python-engine-spec.md",
+        "docs/05-go-engine-spec.md",
+        "docs/06-publishing.md",
+        "docs/release-paradigms.md"
+      ],
+      "failing_test": {
+        "description": "None of the 9 files currently open with a YAML frontmatter block (their first line is a Markdown heading or, for 01-research-brief.md/02-library-vs-moon-decision.md, prose -- their internal `---` lines are section separators, not frontmatter, confirmed not to appear as the file's first line).",
+        "code_to_add": "N/A -- red state is grep -c '^authority:' returning 0 for every file when scoped to a first-line frontmatter check."
+      },
+      "test_command": "for f in docs/00-design.md docs/01-research-brief.md docs/01-spec.md docs/02-library-vs-moon-decision.md docs/03-polyglot-spec.md docs/04-python-engine-spec.md docs/05-go-engine-spec.md docs/06-publishing.md docs/release-paradigms.md; do head -1 \"/Users/gabe/Projects/callisto/$f\" | grep -q '^---$' && echo \"$f: HAS_FM\" || echo \"$f: NO_FM\"; done",
+      "expected_failure_output": "docs/00-design.md: NO_FM\ndocs/01-research-brief.md: NO_FM\ndocs/01-spec.md: NO_FM\ndocs/02-library-vs-moon-decision.md: NO_FM\ndocs/03-polyglot-spec.md: NO_FM\ndocs/04-python-engine-spec.md: NO_FM\ndocs/05-go-engine-spec.md: NO_FM\ndocs/06-publishing.md: NO_FM\ndocs/release-paradigms.md: NO_FM",
+      "implementation": {
+        "description": "Prepend a 3-line frontmatter block (`---`, `authority: <slug>`, `---`) plus one blank line to the very top of each file, per AC-001's mapping. No other content in any file changes.",
+        "changes": [
+          "Prepend to docs/00-design.md:\n---\nauthority: rationale\n---\n\n",
+          "Prepend to docs/01-research-brief.md:\n---\nauthority: historical-context\n---\n\n",
+          "Prepend to docs/01-spec.md:\n---\nauthority: normative\n---\n\n",
+          "Prepend to docs/02-library-vs-moon-decision.md:\n---\nauthority: historical-context\n---\n\n",
+          "Prepend to docs/03-polyglot-spec.md:\n---\nauthority: reference\n---\n\n",
+          "Prepend to docs/04-python-engine-spec.md:\n---\nauthority: reference\n---\n\n",
+          "Prepend to docs/05-go-engine-spec.md:\n---\nauthority: reference\n---\n\n",
+          "Prepend to docs/06-publishing.md:\n---\nauthority: guide\n---\n\n",
+          "Prepend to docs/release-paradigms.md:\n---\nauthority: guide\n---\n\n"
+        ]
+      },
+      "verify_command": "for f in docs/00-design.md docs/01-research-brief.md docs/01-spec.md docs/02-library-vs-moon-decision.md docs/03-polyglot-spec.md docs/04-python-engine-spec.md docs/05-go-engine-spec.md docs/06-publishing.md docs/release-paradigms.md; do v=$(sed -n '2p' \"/Users/gabe/Projects/callisto/$f\"); echo \"$f: $v\"; done",
+      "expected_pass_output": "docs/00-design.md: authority: rationale\ndocs/01-research-brief.md: authority: historical-context\ndocs/01-spec.md: authority: normative\ndocs/02-library-vs-moon-decision.md: authority: historical-context\ndocs/03-polyglot-spec.md: authority: reference\ndocs/04-python-engine-spec.md: authority: reference\ndocs/05-go-engine-spec.md: authority: reference\ndocs/06-publishing.md: authority: guide\ndocs/release-paradigms.md: authority: guide",
+      "commit_message": "docs: add authority frontmatter to docs/*.md per docs/AUTHORITY.md's classification",
+      "notes": ["Runs after STALE-1 (00-design.md line-3 edit) so that edit's line number is stable when applied."]
+    },
+    {
+      "id": "FM-2",
+      "batch_id": "batch-frontmatter",
+      "description": "Add authority: verified-current frontmatter to the 5 .claude/semantic-model/*.md files.",
+      "covers_criteria": ["AC-004"],
+      "file_paths": [
+        ".claude/semantic-model/INDEX.md",
+        ".claude/semantic-model/config-resolution.md",
+        ".claude/semantic-model/core-identity.md",
+        ".claude/semantic-model/error-taxonomy.md",
+        ".claude/semantic-model/version-flow.md"
+      ],
+      "failing_test": {
+        "description": "None of the 5 files currently open with a YAML frontmatter block.",
+        "code_to_add": "N/A -- red state is head -1 not matching '---' for any of the 5 files."
+      },
+      "test_command": "for f in .claude/semantic-model/INDEX.md .claude/semantic-model/config-resolution.md .claude/semantic-model/core-identity.md .claude/semantic-model/error-taxonomy.md .claude/semantic-model/version-flow.md; do head -1 \"/Users/gabe/Projects/callisto/$f\" | grep -q '^---$' && echo \"$f: HAS_FM\" || echo \"$f: NO_FM\"; done",
+      "expected_failure_output": ".claude/semantic-model/INDEX.md: NO_FM\n.claude/semantic-model/config-resolution.md: NO_FM\n.claude/semantic-model/core-identity.md: NO_FM\n.claude/semantic-model/error-taxonomy.md: NO_FM\n.claude/semantic-model/version-flow.md: NO_FM",
+      "implementation": {
+        "description": "Prepend the same 3-line frontmatter block plus one blank line to each of the 5 files, all with authority: verified-current (the .claude/semantic-model/*.md glob's only valid value per AC-004).",
+        "changes": [
+          "Prepend to each of INDEX.md, config-resolution.md, core-identity.md, error-taxonomy.md, version-flow.md:\n---\nauthority: verified-current\n---\n\n"
+        ]
+      },
+      "verify_command": "for f in .claude/semantic-model/INDEX.md .claude/semantic-model/config-resolution.md .claude/semantic-model/core-identity.md .claude/semantic-model/error-taxonomy.md .claude/semantic-model/version-flow.md; do v=$(sed -n '2p' \"/Users/gabe/Projects/callisto/$f\"); echo \"$f: $v\"; done",
+      "expected_pass_output": ".claude/semantic-model/INDEX.md: authority: verified-current\n.claude/semantic-model/config-resolution.md: authority: verified-current\n.claude/semantic-model/core-identity.md: authority: verified-current\n.claude/semantic-model/error-taxonomy.md: authority: verified-current\n.claude/semantic-model/version-flow.md: authority: verified-current",
+      "commit_message": "docs(semantic-model): add authority: verified-current frontmatter to .claude/semantic-model/*.md",
+      "notes": ["Runs after STALE-2 and STALE-3 (version-flow.md and error-taxonomy.md line-number-based edits) so those edits' line numbers are stable when applied."]
+    },
+    {
+      "id": "LINT-1",
+      "batch_id": "batch-lint-tool",
+      "description": "Create scripts/lint_docs.py implementing both scans (frontmatter authority, spec metadata) and scripts/test_lint_docs.sh, a bash harness proving every AC-004/AC-005/AC-006 behavior against isolated temp fixtures via --root -- independent of the real repo's current state.",
+      "covers_criteria": ["AC-004", "AC-005", "AC-006"],
+      "file_paths": ["scripts/lint_docs.py", "scripts/test_lint_docs.sh"],
+      "failing_test": {
+        "description": "Neither file exists yet. Create scripts/test_lint_docs.sh first (content below) and run it -- it fails because scripts/lint_docs.py does not exist, so every python3 invocation inside it errors.",
+        "code_to_add": "#!/usr/bin/env bash\n# Regression test for scripts/lint_docs.py (SPEC-DOCUMENTATION-AUTHORITY-005\n# AC-004, AC-005, AC-006). Builds isolated fixture repo trees under a temp\n# directory per case and invokes the real script against them via --root,\n# so this test always exercises the script's current real logic.\nset -u\nSCRIPT_DIR=\"$(cd \"$(dirname \"${BASH_SOURCE[0]}\")\" && pwd)\"\nLINT_DOCS=\"$SCRIPT_DIR/lint_docs.py\"\n\nfail=0\n\nnew_fixture() {\n  local dir\n  dir=\"$(mktemp -d)\"\n  mkdir -p \"$dir/docs\" \"$dir/.claude/semantic-model\" \"$dir/.claude/specs\" \"$dir/.claude/plans\"\n  echo \"$dir\"\n}\n\nwrite_fm() {\n  printf -- '---\\nauthority: %s\\n---\\n\\nbody\\n' \"$2\" > \"$1\"\n}\n\n# Happy path: every Scan 1 file frontmattered, one enrolled spec valid, and\n# an un-frontmattered file under .claude/plans/ present but ignored (AC-005).\nfx=\"$(new_fixture)\"\nwrite_fm \"$fx/docs/00-design.md\" \"rationale\"\nwrite_fm \"$fx/docs/01-spec.md\" \"normative\"\nwrite_fm \"$fx/.claude/semantic-model/version-flow.md\" \"verified-current\"\nprintf 'no frontmatter here, and no authority field\\n' > \"$fx/.claude/plans/ACTIVE.md\"\necho \"SPEC-X.json\" > \"$fx/.claude/specs/.authority-enrolled\"\ncat > \"$fx/.claude/specs/SPEC-X.json\" <<'EOF'\n{\"status\": \"proposed\", \"last_verified_revision\": \"abc123\", \"owner_track\": \"release-security\"}\nEOF\nout=$(python3 \"$LINT_DOCS\" --root \"$fx\"); code=$?\nif [[ $code -ne 0 ]] || [[ \"$out\" != \"lint-docs: 4 files checked, 0 violations\" ]] || [[ \"$out\" == *\"ACTIVE.md\"* ]]; then\n  echo \"FAIL happy-path/AC-005 (plans/ untouched): code=$code out=$out\"; fail=1\nelse\n  echo \"PASS happy-path/AC-005\"\nfi\nrm -rf \"$fx\"\n\n# AC-006 category 1: missing authority field.\nfx=\"$(new_fixture)\"\nprintf 'no frontmatter\\n' > \"$fx/docs/00-design.md\"\nout=$(python3 \"$LINT_DOCS\" --root \"$fx\"); code=$?\nif [[ $code -ne 1 ]] || [[ \"$out\" != *\"docs/00-design.md: missing authority field\"* ]]; then\n  echo \"FAIL AC-006 category 1 (missing authority field): code=$code out=$out\"; fail=1\nelse\n  echo \"PASS AC-006 category 1\"\nfi\nrm -rf \"$fx\"\n\n# AC-006 category 2: malformed frontmatter (unclosed block).\nfx=\"$(new_fixture)\"\nprintf -- '---\\nauthority: rationale\\nno closing delimiter\\n' > \"$fx/docs/00-design.md\"\nout=$(python3 \"$LINT_DOCS\" --root \"$fx\"); code=$?\nif [[ $code -ne 1 ]] || [[ \"$out\" != *\"docs/00-design.md: malformed frontmatter\"* ]]; then\n  echo \"FAIL AC-006 category 2a (unclosed frontmatter): code=$code out=$out\"; fail=1\nelse\n  echo \"PASS AC-006 category 2a\"\nfi\nrm -rf \"$fx\"\n\nfx=\"$(new_fixture)\"\nprintf -- '---\\nauthority: [unbalanced\\n---\\n' > \"$fx/docs/00-design.md\"\nout=$(python3 \"$LINT_DOCS\" --root \"$fx\"); code=$?\nif [[ $code -ne 1 ]] || [[ \"$out\" != *\"docs/00-design.md: malformed frontmatter\"* ]]; then\n  echo \"FAIL AC-006 category 2b (invalid YAML syntax): code=$code out=$out\"; fail=1\nelse\n  echo \"PASS AC-006 category 2b\"\nfi\nrm -rf \"$fx\"\n\n# AC-006 category 3: invalid authority value, including plan-status/\n# spec-metadata explicitly rejected within Scan 1's scope.\nfx=\"$(new_fixture)\"\nwrite_fm \"$fx/docs/00-design.md\" \"plan-status\"\nout=$(python3 \"$LINT_DOCS\" --root \"$fx\"); code=$?\nif [[ $code -ne 1 ]] || [[ \"$out\" != *\"docs/00-design.md: invalid authority value: plan-status\"* ]]; then\n  echo \"FAIL AC-006 category 3a (plan-status rejected in docs glob): code=$code out=$out\"; fail=1\nelse\n  echo \"PASS AC-006 category 3a\"\nfi\nrm -rf \"$fx\"\n\nfx=\"$(new_fixture)\"\nwrite_fm \"$fx/.claude/semantic-model/version-flow.md\" \"guide\"\nout=$(python3 \"$LINT_DOCS\" --root \"$fx\"); code=$?\nif [[ $code -ne 1 ]] || [[ \"$out\" != *\".claude/semantic-model/version-flow.md: invalid authority value: guide\"* ]]; then\n  echo \"FAIL AC-006 category 3b (wrong glob's slug rejected): code=$code out=$out\"; fail=1\nelse\n  echo \"PASS AC-006 category 3b\"\nfi\nrm -rf \"$fx\"\n\n# AC-006 category 4: missing spec-metadata field.\nfx=\"$(new_fixture)\"\necho \"SPEC-X.json\" > \"$fx/.claude/specs/.authority-enrolled\"\ncat > \"$fx/.claude/specs/SPEC-X.json\" <<'EOF'\n{\"status\": \"proposed\", \"owner_track\": \"release-security\"}\nEOF\nout=$(python3 \"$LINT_DOCS\" --root \"$fx\"); code=$?\nif [[ $code -ne 1 ]] || [[ \"$out\" != *\".claude/specs/SPEC-X.json: missing spec-metadata field: last_verified_revision\"* ]]; then\n  echo \"FAIL AC-006 category 4 (missing spec-metadata field): code=$code out=$out\"; fail=1\nelse\n  echo \"PASS AC-006 category 4\"\nfi\nrm -rf \"$fx\"\n\n# AC-006 category 5: invalid spec-metadata status.\nfx=\"$(new_fixture)\"\necho \"SPEC-X.json\" > \"$fx/.claude/specs/.authority-enrolled\"\ncat > \"$fx/.claude/specs/SPEC-X.json\" <<'EOF'\n{\"status\": \"bogus\", \"last_verified_revision\": \"abc123\", \"owner_track\": \"release-security\"}\nEOF\nout=$(python3 \"$LINT_DOCS\" --root \"$fx\"); code=$?\nif [[ $code -ne 1 ]] || [[ \"$out\" != *\".claude/specs/SPEC-X.json: invalid spec-metadata status: bogus\"* ]]; then\n  echo \"FAIL AC-006 category 5 (invalid spec-metadata status): code=$code out=$out\"; fail=1\nelse\n  echo \"PASS AC-006 category 5\"\nfi\nrm -rf \"$fx\"\n\n# Scan 2 error path: enrolled filename with no corresponding spec file on\n# disk still reports a labeled violation rather than crashing.\nfx=\"$(new_fixture)\"\necho \"SPEC-MISSING.json\" > \"$fx/.claude/specs/.authority-enrolled\"\nout=$(python3 \"$LINT_DOCS\" --root \"$fx\"); code=$?\nif [[ $code -ne 1 ]] || [[ \"$out\" != *\".claude/specs/SPEC-MISSING.json: missing spec-metadata field: status\"* ]]; then\n  echo \"FAIL Scan2 error path (enrolled file absent from disk): code=$code out=$out\"; fail=1\nelse\n  echo \"PASS Scan2 error path\"\nfi\nrm -rf \"$fx\"\n\nexit $fail\n"
+      },
+      "test_command": "chmod +x /Users/gabe/Projects/callisto/scripts/test_lint_docs.sh && bash /Users/gabe/Projects/callisto/scripts/test_lint_docs.sh; echo \"EXIT=$?\"",
+      "expected_failure_output": "python3: can't open file '/Users/gabe/Projects/callisto/scripts/lint_docs.py': [Errno 2] No such file or directory\n(repeated for every case; FAIL lines print because $code is 2, not the expected 0/1, and $out never matches)\nEXIT=1",
+      "implementation": {
+        "description": "Create scripts/lint_docs.py implementing extract_frontmatter, scan1 (docs/*.md + .claude/semantic-model/*.md against their closed authority-value sets), scan2 (.authority-enrolled-listed spec files' status/last_verified_revision/owner_track), and a --root-parameterized main() with the exact exit-code and message contract from AC-004/AC-006.",
+        "changes": [
+          "Write /Users/gabe/Projects/callisto/scripts/lint_docs.py with exactly:\n\n#!/usr/bin/env python3\n\"\"\"just lint-docs: documentation authority check (SPEC-DOCUMENTATION-AUTHORITY-005).\n\nScan 1 (frontmatter authority): every docs/*.md and .claude/semantic-model/*.md\nfile must carry a YAML frontmatter block with an `authority` key, valid for\nits glob's closed set (docs/AUTHORITY.md).\n\nScan 2 (spec metadata): every filename listed in\n.claude/specs/.authority-enrolled must name a .claude/specs/<filename> JSON\nfile carrying non-empty status, last_verified_revision, and owner_track\ntop-level fields, with status one of draft, proposed, accepted, superseded.\n\nExits 0 and prints one summary line on success. Exits 1 and prints one\nlabeled violation per line on failure. Never rewrites any file. Does not\nscan .claude/plans/ at all (AC-005).\n\"\"\"\nimport argparse\nimport json\nimport sys\nfrom pathlib import Path\n\nimport yaml\n\nDOCS_VALID = {\"normative\", \"rationale\", \"reference\", \"guide\", \"historical-context\"}\nSEMANTIC_MODEL_VALID = {\"verified-current\"}\nSPEC_STATUS_VALID = {\"draft\", \"proposed\", \"accepted\", \"superseded\"}\n\n\ndef extract_frontmatter(text):\n    \"\"\"Return (frontmatter_dict_or_None, malformed).\n\n    malformed is True only when the file opens with a '---' line (a\n    frontmatter block was attempted) but the block has no closing '---',\n    or its content does not parse as a YAML mapping.\n    \"\"\"\n    lines = text.splitlines()\n    if not lines or lines[0].strip() != \"---\":\n        return None, False\n    try:\n        end = lines.index(\"---\", 1)\n    except ValueError:\n        return None, True\n    block = \"\\n\".join(lines[1:end])\n    try:\n        data = yaml.safe_load(block)\n    except yaml.YAMLError:\n        return None, True\n    if data is not None and not isinstance(data, dict):\n        return None, True\n    return (data or {}), False\n\n\ndef scan1(root: Path):\n    violations = []\n    checked = 0\n    groups = [\n        (root / \"docs\", \"*.md\", DOCS_VALID),\n        (root / \".claude\" / \"semantic-model\", \"*.md\", SEMANTIC_MODEL_VALID),\n    ]\n    for directory, pattern, valid_set in groups:\n        for path in sorted(directory.glob(pattern)):\n            checked += 1\n            rel = path.relative_to(root)\n            text = path.read_text(encoding=\"utf-8\")\n            fm, malformed = extract_frontmatter(text)\n            if malformed:\n                violations.append(f\"{rel}: malformed frontmatter\")\n                continue\n            if fm is None or \"authority\" not in fm:\n                violations.append(f\"{rel}: missing authority field\")\n                continue\n            value = fm[\"authority\"]\n            if value not in valid_set:\n                violations.append(f\"{rel}: invalid authority value: {value}\")\n    return checked, violations\n\n\ndef scan2(root: Path):\n    violations = []\n    checked = 0\n    enrollment_file = root / \".claude\" / \"specs\" / \".authority-enrolled\"\n    if not enrollment_file.exists():\n        return checked, violations\n    for line in enrollment_file.read_text(encoding=\"utf-8\").splitlines():\n        filename = line.strip()\n        if not filename:\n            continue\n        checked += 1\n        spec_path = root / \".claude\" / \"specs\" / filename\n        rel = Path(\".claude/specs\") / filename\n        if not spec_path.exists():\n            violations.append(f\"{rel}: missing spec-metadata field: status\")\n            continue\n        try:\n            data = json.loads(spec_path.read_text(encoding=\"utf-8\"))\n        except json.JSONDecodeError:\n            violations.append(f\"{rel}: missing spec-metadata field: status\")\n            continue\n        for field in (\"status\", \"last_verified_revision\", \"owner_track\"):\n            if not data.get(field):\n                violations.append(f\"{rel}: missing spec-metadata field: {field}\")\n        status = data.get(\"status\")\n        if status and status not in SPEC_STATUS_VALID:\n            violations.append(f\"{rel}: invalid spec-metadata status: {status}\")\n    return checked, violations\n\n\ndef main(argv=None):\n    parser = argparse.ArgumentParser(description=\"Documentation authority check.\")\n    parser.add_argument(\n        \"--root\",\n        default=str(Path(__file__).resolve().parent.parent),\n        help=\"Repository root to scan (default: this script's repo root).\",\n    )\n    args = parser.parse_args(argv)\n    root = Path(args.root).resolve()\n\n    c1, v1 = scan1(root)\n    c2, v2 = scan2(root)\n    violations = v1 + v2\n    total = c1 + c2\n\n    if violations:\n        for v in violations:\n            print(v)\n        return 1\n    print(f\"lint-docs: {total} files checked, 0 violations\")\n    return 0\n\n\nif __name__ == \"__main__\":\n    sys.exit(main())\n",
+          "chmod 755 /Users/gabe/Projects/callisto/scripts/lint_docs.py and /Users/gabe/Projects/callisto/scripts/test_lint_docs.sh"
+        ]
+      },
+      "verify_command": "chmod +x /Users/gabe/Projects/callisto/scripts/test_lint_docs.sh /Users/gabe/Projects/callisto/scripts/lint_docs.py && bash /Users/gabe/Projects/callisto/scripts/test_lint_docs.sh; echo \"EXIT=$?\"",
+      "expected_pass_output": "PASS happy-path/AC-005\nPASS AC-006 category 1\nPASS AC-006 category 2a\nPASS AC-006 category 2b\nPASS AC-006 category 3a\nPASS AC-006 category 3b\nPASS AC-006 category 4\nPASS AC-006 category 5\nPASS Scan2 error path\nEXIT=0",
+      "commit_message": "feat(scripts): add lint_docs.py documentation authority checker with regression harness",
+      "notes": [
+        "PyYAML (import yaml) is confirmed available under the system python3 (verified: python3 -c 'import yaml; print(yaml.__version__)' -> 6.0.3) -- no new dependency declaration file exists in this repo to add it to.",
+        "--root defaults to the script's own repo root but is always passed explicitly by the test harness, so these tests never touch the real repository tree."
+      ]
+    },
+    {
+      "id": "LINT-2",
+      "batch_id": "batch-lint-tool",
+      "description": "Add the `lint-docs` Justfile recipe (invoking scripts/lint_docs.py, following the doc-check pattern) and wire it into `ci` and `ci-fast`. Verify against the real repository, which by this point in the plan has zero violations.",
+      "covers_criteria": ["AC-002", "AC-004"],
+      "file_paths": ["Justfile"],
+      "failing_test": {
+        "description": "The `lint-docs` recipe does not exist in the Justfile yet.",
+        "code_to_add": "N/A -- red state is `just` reporting no such recipe."
+      },
+      "test_command": "cd /Users/gabe/Projects/callisto && just lint-docs; echo \"EXIT=$?\"",
+      "expected_failure_output": "error: Justfile does not contain recipe `lint-docs`.\nEXIT=1",
+      "implementation": {
+        "description": "Insert a new `lint-docs` recipe immediately after the existing `doc-check` recipe (Justfile lines 70-72), following that recipe's one-line-comment-then-command pattern. Add `lint-docs` as a dependency of `ci` (line 159) and `ci-fast` (line 167), immediately after `doc-check` in each dependency list, matching AC-004's own instruction to follow the doc-check pattern rather than merging into `lint`.",
+        "changes": [
+          "After Justfile line 72 (`RUSTDOCFLAGS=\"-D warnings\" cargo doc --no-deps --workspace`), insert a blank line then:\n\n# Documentation authority check: frontmatter classes on docs/*.md and\n# .claude/semantic-model/*.md, plus enrolled spec-metadata fields. See\n# docs/AUTHORITY.md and scripts/lint_docs.py.\nlint-docs:\n    python3 scripts/lint_docs.py",
+          "Change line 159 from `ci: fmt-check lint test audit doc-check wasm-check coverage` to `ci: fmt-check lint test audit doc-check lint-docs wasm-check coverage`.",
+          "Change line 167 from `ci-fast: fmt-check lint test audit doc-check wasm-check` to `ci-fast: fmt-check lint test audit doc-check lint-docs wasm-check`."
+        ]
+      },
+      "verify_command": "cd /Users/gabe/Projects/callisto && just lint-docs; echo \"EXIT=$?\"",
+      "expected_pass_output": "lint-docs: 16 files checked, 0 violations\nEXIT=0",
+      "commit_message": "build(justfile): wire lint-docs into ci and ci-fast alongside doc-check",
+      "notes": [
+        "16 = 10 docs/*.md (9 pre-existing + AUTHORITY.md from AUTH-1) + 5 .claude/semantic-model/*.md (Scan 1) + 1 enrolled spec file, this spec's own (Scan 2).",
+        "Depends on every prior task in this plan: AUTH-1/FM-1 (all 10 docs/*.md frontmatter-valid), FM-2 (all 5 semantic-model files frontmatter-valid), ENROLL-1 (this spec's own metadata fields and enrollment line present) -- this is the first task that exercises the real repository tree rather than isolated fixtures."
+      ]
+    }
+  ],
+  "reasoning": "Pure-documentation/tooling spec with three coupled hazards to sequence around: (1) STALE-2/STALE-3 correct .claude/semantic-model files at literal line numbers taken from the current pre-frontmatter file state, so they must run before FM-2 inserts frontmatter and shifts every line down by 4; STALE-1 has the same relationship to FM-1 for 00-design.md. (2) LINT-1's script and its regression harness are fixture-isolated via --root and have zero dependency on the real repo's current frontmatter/enrollment state, so they can be authored and fully tested in any position -- placed last only for narrative flow (the checker is naturally read after the things it checks). (3) LINT-2 is the one task in the plan that is NOT independently testable in isolation from the rest: its expected 'N files checked, 0 violations' count is a direct arithmetic function of every other task having landed (10 docs + 5 semantic-model + 1 enrolled spec = 16), so it is sequenced last and named explicitly as depending on everything before it. AC-002 is split across ENROLL-1 (the enrollment file's own content and this spec's own four fields -- a data task) and LINT-1/LINT-2 (the mechanism that reads and validates that data), since the criterion describes both a static artifact and the checker that enforces it. AC-004 similarly spans FM-1/FM-2 (making the real repo pass) and LINT-1/LINT-2 (the checker itself), since a checker with nothing valid to check against would leave AC-004's 'on success' behavior unverified against real files. No task touches Rust code or crate compilation boundaries -- batches are grouped by logical concern (authority docs, spec metadata, frontmatter, tooling) rather than a Cargo compilation unit, mirroring PLAN-006's batch-docs precedent for text-only work."
+}
