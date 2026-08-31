@@ -1,0 +1,67 @@
+{
+  "id": "SPEC-RELEASE-CAPABILITY-011",
+  "status": "draft",
+  "owner_track": "release-security",
+  "last_verified_revision": "289001ec",
+  "depends_on": [
+    "SPEC-RELEASE-DECISION-008",
+    "SPEC-RELEASE-INTENT-MODEL-009",
+    "SPEC-RELEASE-TRUST-010"
+  ],
+  "purpose": "Define fresh graph authorization as the only conversion from a durable approved intent into exact, private execution inputs. The resulting capability is deliberately non-transferable and is the authority an effect executor needs in addition to ApplyPermit.",
+  "scope": "Root-bound fresh semantic observation, exact intent comparison, release-DAG construction, prepared-operation ownership, and the public/private API boundary in callisto-graph. This spec does not define provider network protocols, durable state/receipts, artifact download, or CLI/workflow command syntax.",
+  "non_goals": [
+    "Replanning a release from current configuration or silently substituting a current selection for an approved release decision.",
+    "Treating PublishPlan, PublishReport, PLAN_JSON, a registry URL supplied at execution time, a recomputed tag, or a mutable config object as effect authority.",
+    "Serializing, cloning, caching, or transmitting prepared endpoints, filesystem paths, lock handles, parsed provider clients, credentials, or ValidatedReleaseIntent itself.",
+    "Parallel effects or arbitrary operation reordering."
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "AC-001",
+      "criterion": "callisto-graph creates a release observation only from a canonical workspace root while holding the GitCommitTrustEvidence and ReleaseWorkspaceLock required by SPEC-RELEASE-TRUST-010. It re-runs the normal configuration resolution, package discovery, linked-group/cascade/prerelease policy resolution, and dependency analysis from disk; it never trusts a caller-provided workspace, selection, package list, endpoint, source SHA, or previously cached Workspace interior state as fresh evidence.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-002",
+      "criterion": "Validation compares the received ReleaseIntentV1 exactly against the newly observed typed ReleaseDecisionV1 and typed semantic-input snapshot from SPEC-RELEASE-INTENT-MODEL-009. It rejects any difference in source identity, selected/linked-group-expanded roster, target version, prerelease/group/cascade policy, package role/path identity, relevant dependency edges, registry binding identity, tag/forge policy, declared artifact slots, operation identity, prerequisite set, or canonical operation order. It must not compare raw configuration bytes, Display/Debug strings, generic kind/fingerprint pairs, or credential-bearing endpoint text.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-003",
+      "criterion": "The operation graph is constructed from the approved typed operation identities and explicit prerequisites. It is a DAG by validation; its canonical order is a stable Kahn topological order that always selects the lexicographically smallest ready ReleaseOperationId. A cycle, a missing prerequisite, a duplicate identity, or an operation outside the approved roster is a structured authorization failure. Dependency ordering is never inferred from enum declaration order or hash-map iteration.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-004",
+      "criterion": "On an exact match, graph returns ValidatedReleaseIntent. This type is defined in callisto-graph, is non-Clone and non-Serialize/non-Deserialize, has no public constructor, and keeps its fields private. It owns the matching ReleaseIntentV1, GitCommitTrustEvidence, ReleaseWorkspaceLock, canonical root, and a complete BTreeMap keyed by ReleaseOperationId of private PreparedOperation values. It may expose the durable intent for inspection but exposes no raw prepared operation value or authority to alter it.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-005",
+      "criterion": "Each PreparedOperation is created during the same successful fresh observation and contains exactly the effect inputs for its operation: registry operations retain the resolved package directory, exact qualified package/version, parsed and policy-checked endpoint, typed RegistryBindingId, and any source-artifact reference; tag operations retain the exact TagName, approved target CommitSha, and annotation policy/message; forge creation retains the exact tag/target binding; artifact upload retains its exact intent-bound ArtifactSlotId, forge binding, and attestation policy. Endpoint preparation uses a standards-compliant URL parser, rejects userinfo, query, and fragment components, normalizes the approved binding before its digest is compared, and never writes raw endpoint text to any durable type or diagnostic.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-006",
+      "criterion": "Effect-dispatch APIs accept a ValidatedReleaseIntent reference plus ApplyPermit and select prepared operations only by exact ReleaseOperationId. They neither accept PublishPlan nor consult mutable workspace configuration to reconstruct package paths, endpoints, tags, versions, or prerequisites. A capability can be used only while its lock/trust evidence remains valid; the executor invokes the effect-time recheck from SPEC-RELEASE-TRUST-010 before dispatching each operation.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-007",
+      "criterion": "Validation failures are stable GraphError variants with miette diagnostics that identify the safe semantic field or operation identity that changed. They do not include credentials, endpoint text, raw configuration, arbitrary provider output, or a debug rendering of a prepared operation. A mismatch yields no capability and no effect adapter invocation.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-008",
+      "criterion": "Tests use independently constructed workspaces and fake effect dispatchers to prove rejection for changed manifest/config/policy/selection/DAG/source/registry-binding/artifact-slot inputs, endpoint credentials/query/fragments, duplicate or cyclic operations, and source substitution. Tests prove a valid intent retains prepared inputs from the observed workspace and that every rejected validation path makes zero adapter calls; they also prove stable topological order across differently inserted equivalent input collections.",
+      "is_error_case": true
+    }
+  ],
+  "implementation_notes": [
+    "Keep durable semantic types in callisto-model and discovery/preparation in callisto-graph to preserve the license/dependency direction. callisto-model must not depend on callisto-graph.",
+    "Use BTreeMap/BTreeSet and explicit Ord implementations for durable and scheduling order. Do not use PackageId::matches for release-operation identity: it intentionally supports a bare-name wildcard and is not an exact authorization predicate.",
+    "Workspace currently contains interior caches. Fresh authorization should construct or invalidate an observation boundary rather than claiming a pre-existing cached graph is current."
+  ],
+  "reasoning": "The durable intent records what was approved. It is intentionally not sufficient to perform effects: filesystem locations, endpoints, and clients are mutable operational inputs. A graph-private, freshly observed capability bridges that gap without serializing secrets or allowing an old plan path to regain authority."
+}

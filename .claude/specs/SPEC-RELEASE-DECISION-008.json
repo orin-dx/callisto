@@ -1,0 +1,67 @@
+{
+  "id": "SPEC-RELEASE-DECISION-008",
+  "status": "draft",
+  "owner_track": "release-security",
+  "depends_on": ["SPEC-RELEASE-EXECUTION-FOUNDATION-007"],
+  "purpose": "Make the release roster and its version/lane choices an explicit, deterministic graph decision. The decision is the only upstream authority for which packages participate in a durable release; later intent, validation, and execution layers must consume it rather than reconstructing a roster from PublishPlan or mutable configuration.",
+  "scope": "Graph-owned release selection, linked-group closure, group/cascade/prerelease policy evaluation, target-version assignment, deterministic explanations, and the safe serializable decision record consumed by the intent-model spec. This spec is policy output only: it neither authorizes effects nor defines provider endpoints, artifact bytes, workspace locks, or recovery.",
+  "non_goals": [
+    "Changing the meaning of existing user configuration for linked groups, fixed groups, prerelease mode, or dependency cascades without a separately accepted compatibility specification.",
+    "Treating a package's bare name as release-operation identity. All durable decision entries use an ecosystem-qualified package identity.",
+    "Selecting extra unrelated packages merely because they share a version, a registry, or a human-readable name with a selected package.",
+    "Publishing, tagging, building artifacts, or reading credentials."
+  ],
+  "data_model": {
+    "release_decision": "ReleaseDecisionV1 is a versioned, serializable, credential-free graph result. `release plan` is its only producer: it receives either repeated exact qualified package selections or one named, documented configuration selection mode, resolves them from the fresh workspace, and embeds the resulting decision in the intent it writes. Execution never accepts a selection or regenerates a decision.",
+    "roster_entry": "Each roster entry identifies one ReleasePackageId, its resolved current and target versions when known, and a non-empty ordered set of closed inclusion reasons: ExplicitSelection, LinkedGroup { group_id }, FixedGroup { group_id }, Cascade { from, edge_kind }, or PreReleasePolicy { policy_id }. Free-form explanatory text is diagnostic-only and is not a durable authority field.",
+    "policy_snapshot": "The decision records typed semantic policy values that actually affected roster membership or target versions. It does not contain raw callisto.toml bytes, arbitrary configuration fragments, registry URLs, environment values, or path-independent debug strings.",
+    "decision_digest": "DecisionDigest is computed from a versioned, length-prefixed canonical transcript of the typed decision fields. Map/set-like values and roster entries have one specified deterministic order; a decision digest never depends on serde field omission, Debug output, source formatting, or wall-clock time."
+  },
+  "acceptance_criteria": [
+    {
+      "id": "AC-001",
+      "criterion": "`release plan` derives ReleaseDecisionV1 from either repeated exact ecosystem-qualified package selections or one named, documented configuration selection mode, plus freshly resolved workspace configuration and discovered package graph. It embeds that decision in the intent it writes. No executor, provider adapter, CLI handoff, or downstream intent constructor may call plan_publish, inspect PublishPlan, or re-run selection rules to discover additional members. An empty selection is rejected unless the named configuration mode explicitly supplies the complete initial set; it is never silently interpreted as all packages.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-002",
+      "criterion": "Version 1 rejects a configuration with overlapping linked groups before making a decision, with a diagnostic naming every overlapping group and qualified package. In a valid configuration, selecting any member of a linked group includes every member of that one group exactly once. A package outside that closure is included only by an explicit selection or by an already configured fixed-group, dependency-cascade, or prerelease rule that names the causal package/policy in its inclusion reason. The implementation must not use an unsatisfiable rule such as rejecting a package merely because more than one package qualifies.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-003",
+      "criterion": "Prerelease behavior is configuration-driven. The decision applies the existing configured prerelease/lane policy after linked-group closure and records exactly which roster entries it affected and why. A workspace-wide prerelease setting may shape target versions only for packages that are in the approved final roster; it cannot cause an off-roster package to be tagged, published, or treated as a release operation. A test covers a configured prerelease workspace with an otherwise qualifying off-roster package.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-004",
+      "criterion": "Every final roster entry has exactly one resolved target-version outcome before a decision is emitted. Conflicting fixed-group, linked-group, cascade, or prerelease constraints are rejected with a structured diagnostic naming the qualified packages, relevant group or policy identifiers, and incompatible outcomes. Absence of a failure is not treated as a valid version decision.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-005",
+      "criterion": "ReleaseDecisionV1 is deterministic: equivalent fresh workspace state and explicit selection produce byte-identical canonical decision data and the same DecisionDigest across process runs. Ordering is by defined semantic keys, including ecosystem-qualified package identity; Rust declaration order, HashMap iteration, filesystem enumeration order, and DepKind's declaration order are not valid ordering definitions. Dependency/cascade explanations are ordered by their defined exact identity.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-006",
+      "criterion": "The decision exposes an inspectable explanation for every included and rejected requested package without leaking credentials or raw endpoint/configuration text. User-facing errors use miette diagnostics with stable codes and remediation; the durable decision itself retains only closed reason variants and safe typed identifiers, not rendered diagnostics.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-007",
+      "criterion": "The decision is a graph-layer product. callisto-model provides only dependency-free identity/version primitives and canonical digest primitives; it must not depend on callisto-graph for package discovery, configuration resolution, group membership, or dependency solving. The model/graph licensing boundary remains intact.",
+      "is_error_case": true
+    }
+  ],
+  "verification": [
+    "Table-driven tests cover exact CLI selection, named configuration selection, empty selection rejection, linked-group closure, overlapping linked-group configuration rejection, fixed-group interaction, cascade interaction, configured prerelease with an off-roster package, and conflicting target-version outcomes.",
+    "Permutation tests vary package discovery and dependency input order and assert equal decision bytes/digests and stable inclusion-reason order.",
+    "Tests demonstrate that same bare package names in different ecosystems remain distinct decision entries."
+  ],
+  "implementation_notes": [
+    "Reuse the existing group, cascade, prerelease, PackageId, Version, and graph structures where their semantics match; introduce a new typed result rather than extending PublishPlan into authority.",
+    "Use BTreeMap/BTreeSet or explicitly sorted Vec values at durable boundaries. Do not add Rayon or Tokio: deriving one release decision is policy-sensitive and its deterministic evidence matters more than parallel traversal.",
+    "The next spec, SPEC-RELEASE-INTENT-MODEL-009, consumes this result. Git trust, locks, prepared effect inputs, and actual effect dispatch are later dependent specs."
+  ]
+}

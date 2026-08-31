@@ -1,0 +1,76 @@
+{
+  "id": "SPEC-RELEASE-EXECUTION-012",
+  "status": "draft",
+  "owner_track": "release-security",
+  "last_verified_revision": "289001ec",
+  "depends_on": [
+    "SPEC-RELEASE-INTENT-MODEL-009",
+    "SPEC-RELEASE-TRUST-010",
+    "SPEC-RELEASE-CAPABILITY-011"
+  ],
+  "purpose": "Execute one freshly validated release intent safely across registries, Git tags, and forge releases. Execution records durable progress before each effect, recovers by observing exact provider identities, and accepts compiled binaries only through an intent-bound artifact manifest plus a verified GitHub artifact attestation.",
+  "scope": "The provider-neutral execution coordinator, durable state and terminal receipt, state storage, reconciliation, artifact-manifest validation, and provider observation/effect adapter contracts. It consumes the approved decision, typed intent, Git trust evidence, and ValidatedReleaseIntent defined by its dependencies. It does not define the CLI or GitHub Actions invocation surfaces; SPEC-RELEASE-INTERFACES-013 owns those.",
+  "non_goals": [
+    "Distributed transactions, rollback of a completed registry publication, or parallel remote effects.",
+    "Publishing, tagging, or creating a forge release from PublishPlan, PublishReport, inline configuration, a cache entry, mutable workspace configuration, or a caller-computed provider target.",
+    "Persisting credentials, raw registry endpoints, request headers, command lines, provider stderr, arbitrary error text, miette reports, or raw configuration bytes in execution state, receipts, or artifact manifests.",
+    "Supporting non-Git or non-detached source trust in version 1.",
+    "Using Rayon or Tokio to parallelize lock-held, ordered release effects."
+  ],
+  "terms": {
+    "terminal_success": "A role-specific observation proves the exact intended effect exists, or an adapter has just completed that effect and observed it. It is not inferred from the absence of a failure.",
+    "terminal_non_success": "A closed, credential-free failure or operator-required outcome. It prevents dependent operations from dispatching.",
+    "prepared_operation": "Graph-private, operation-specific input retained by ValidatedReleaseIntent during fresh validation. It is the only source from which an adapter may construct an effect request.",
+    "artifact_slot": "A typed output requested by an intent for a compiled binary release, including its package/version/platform/role identity and GitHub attestation policy but never arbitrary user file paths.",
+    "reconcile": "A read-only report over current state and exact provider observations. It never writes state and never changes an operation status. `release execute --resume` owns any permitted state transition after presenting the same evidence."
+  },
+  "acceptance_criteria": [
+    {
+      "id": "AC-001",
+      "criterion": "ReleaseExecutionStateV1 is an intent-bound, credential-free record with exactly one state entry for every operation in ReleaseIntentV1's canonical DAG. New execution initializes every entry as Pending. Before any remote or VCS effect for an operation, the coordinator changes that entry to Attempting and atomically persists a complete parseable state file. Only after the adapter returns and its role-specific postcondition has been observed may the entry become a terminal outcome. State transitions are monotonic: Pending -> Attempting -> terminal, with no terminal-to-pending rewrite and no second attempt of a terminal-success operation. A crash after the Attempting write and before or during the provider call is therefore distinguishable from an operation that was never started.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-002",
+      "criterion": "State storage has an explicit path override and a safe local default. Without an override, Callisto derives a platform application-state location from the canonical repository root and IntentDigest; it never creates release state in the checkout. CI and advanced callers may provide an explicit path. Every write uses callisto_model::atomic::atomic_write and includes the matching schema/version and intent digest. An existing state file whose schema, intent digest, operation roster, or immutable operation identity differs from the supplied intent is rejected before any effect. State may be uploaded/downloaded as a workflow artifact, but a cache is never authority for state or intent.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-003",
+      "criterion": "Reconciliation is observation-driven and never treats `no recorded failure`, `Attempting`, `Pending`, a missing receipt, or an HTTP success from a different identity as success. `release reconcile` is read-only: Pending remains Pending; only an Attempting operation may be reported as proven-success, conflicting, ambiguous, or still-unproven. `release execute --resume` alone may persist the matching legal result after the same observation. Version 1 performs no automatic retry. A terminal non-success prevents dependent operations and requires an operator to create a fresh release attempt under a separately specified retry policy; it is never silently retried. Dependent operations are eligible only when every declared prerequisite is terminal success. Thus an interruption cannot allow tag or forge-release operations to run because unattempted publishes merely lack failures.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-004",
+      "criterion": "The coordinator dispatches effects in the intent's canonical topological order while retaining the workspace release lock from final capability validation through the last state/receipt persistence. Before each dispatch it rechecks the Git trust evidence, intent binding, artifact binding when applicable, and prerequisite terminal-success states while holding that lock. A changed HEAD, non-detached checkout, dirty tree, missing/mismatched prepared operation, stale intent, or failed prerequisite aborts before that effect. The lock coordinates Callisto processes; the rechecks protect against external writers and provider races.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-005",
+      "criterion": "Provider adapters accept only (&ValidatedReleaseIntent, &ApplyPermit, OperationId) or a narrower internal capability derived from those values; they do not accept PublishPlan, free-form package/version/URL/tag arguments, or mutable workspace config. A registry observation/effect is keyed by the exact ReleasePackageId, target version, and RegistryBindingId. A Git tag observation/effect verifies the exact tag name, target commit, annotated-versus-lightweight policy, and required annotation policy. A forge-release observation/effect verifies the exact forge binding and tag/target identity. An identity collision, an already-existing object with different metadata, or an ambiguous provider response is a safe non-success outcome, never an idempotent success.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-006",
+      "criterion": "ArtifactManifestV1 is a typed, credential-free build output bound to exactly one IntentDigest and the intent's exact source commit. It contains one entry for each required artifact slot and, for each entry, the declared slot identity, normalized platform/role, raw-byte SHA-256 ArtifactDigest, byte length, and safe GitHub attestation locator/subject digest. Before any binary forge-upload operation, the executor validates the manifest's schema, intent digest, source commit, complete unique slot roster, and downloaded bytes; it then verifies the exact downloaded bytes with GitHub artifact-attestation verification, pins the intent's configured repository and immutable signer workflow, and checks the verified provenance statement's source commit against the intent. A signature alone, a matching byte digest alone, or an attestation from another repository/workflow/source commit is insufficient. Missing, duplicate, unexpected, wrong-platform, wrong-version, wrong-source, digest-mismatched, unattested, or policy-mismatched assets block the relevant operation. Version 1 rejects binary slots outside this GitHub-attested path; source registry publishing remains a distinct operation and does not consume or imply a compiled-binary artifact.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-007",
+      "criterion": "After every operation reaches a terminal outcome, the coordinator persists state before evaluating the next operation. A ReleaseReceiptV1 is written only after every operation is terminal success and after final source/intent binding rechecks; it records the intent digest, safe terminal evidence, and receipt schema/version. A partially completed or non-successful release has state but no successful terminal receipt. Receipt creation is idempotent only for byte-equivalent receipt identity; a mismatched existing receipt is rejected.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-008",
+      "criterion": "All persisted outcome/error fields are closed enums and fixed safe identifiers. User-facing failures use miette diagnostics with actionable remediation, but diagnostics are transient and never serialized as durable evidence. Tests cover interruption immediately before a provider call, immediately after a provider-side success but before terminal persistence, already-existing exact identity, already-existing conflicting identity, stale state, changed Git evidence, artifact-manifest substitution, and an unattempted prerequisite; each test asserts no unauthorized dependent effect dispatches.",
+      "is_error_case": true
+    }
+  ],
+  "implementation_notes": [
+    "callisto-graph owns the ReleaseCoordinator and provider observation/effect adapter traits. callisto-vcs owns only the Git trust/effect adapter. callisto-cli assembles adapters and maps diagnostics; it does not own release policy or state transitions.",
+    "Keep provider-specific HTTP/Git/GitHub clients behind narrow adapters. Their observation result should be a typed proof or a closed safe non-success result, not a boolean and not a stringly typed response. The GitHub artifact adapter must use the platform's cryptographic verification semantics, not merely download an attestation record or compare an unverified JSON field.",
+    "The durable model may hold RegistryBindingId and ArtifactDigest, while endpoint parsing/canonicalization and provider clients remain in graph/effect-layer crates so Layer 1 does not gain network/config dependencies.",
+    "The whole-state atomic rewrite is intentionally preferred to an append-only log at workspace-release scale: interruption readers always receive a complete parseable file."
+  ],
+  "revision_note": "Split from umbrella SPEC-RELEASE-EXECUTION-FOUNDATION-007 after adversarial review established that prepared authority, recovery evidence, and binary artifacts need explicit contracts before real effects are introduced."
+}
