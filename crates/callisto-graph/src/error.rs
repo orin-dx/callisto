@@ -223,6 +223,31 @@ pub enum GraphError {
     #[error("package `{id}` was requested via `--package` but is not part of this publish plan: {reason}")]
     #[diagnostic(code(E122))]
     PackageNotInPublishPlan { id: PackageId, reason: NotInPlanReason },
+
+    #[error("release intent references package `{package}` which is not an exact selected workspace package")]
+    #[diagnostic(code(E123), help("Rebuild the release intent from the current workspace instead of reusing a selection from another workspace."))]
+    ReleasePackageNotSelected { package: callisto_model::ReleasePackageId },
+
+    #[error("release intent no longer matches the current workspace snapshot")]
+    #[diagnostic(
+        code(E124),
+        help("Regenerate and reapprove the release intent; no release operation was authorized.")
+    )]
+    ReleaseIntentStale,
+
+    #[error("cannot read release input `{}`: {message}", .path.display())]
+    #[diagnostic(
+        code(E125),
+        help("Ensure the release manifest and configuration files remain readable until validation completes.")
+    )]
+    ReleaseInputRead { path: PathBuf, message: String },
+
+    #[error("registry binding `{registry}` is not a credential-free canonical URL: {reason}")]
+    #[diagnostic(
+        code(E126),
+        help("Use a URL without userinfo, query parameters, or fragments in callisto.toml.")
+    )]
+    UnsafeRegistryBinding { registry: String, reason: &'static str },
 }
 
 /// Why a workspace package that a `--package` filter named is nonetheless

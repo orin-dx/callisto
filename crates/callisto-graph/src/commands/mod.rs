@@ -5,6 +5,7 @@ pub mod matrix;
 pub mod pr_body;
 pub mod publish;
 pub mod publish_client;
+pub mod release;
 pub mod snapshot;
 pub mod status;
 pub mod tag;
@@ -19,6 +20,7 @@ pub use publish::{
     SystemTimeProvider,
 };
 pub use publish_client::SubprocessRegistryClient;
+pub use release::{build_release_intent, validate_release_intent, ReleaseSelection, ValidatedReleaseIntent};
 pub use snapshot::plan_snapshot;
 pub use status::{status, StatusOptions};
 pub use tag::{create_tags, create_tags_with_options, TagOptions};
