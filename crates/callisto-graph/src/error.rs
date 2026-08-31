@@ -248,6 +248,34 @@ pub enum GraphError {
         help("Use a URL without userinfo, query parameters, or fragments in callisto.toml.")
     )]
     UnsafeRegistryBinding { registry: String, reason: &'static str },
+
+    #[error("release execution state is invalid: {source}")]
+    #[diagnostic(
+        code(E127),
+        help("Regenerate the release intent or remove the invalid state file; no release operation was authorized.")
+    )]
+    ReleaseExecutionState {
+        #[source]
+        source: callisto_model::ReleaseStateError,
+    },
+
+    #[error("cannot read release execution state `{}`: {message}", .path.display())]
+    #[diagnostic(code(E128), help("Ensure the explicit release state path is readable."))]
+    ReleaseStateRead { path: PathBuf, message: String },
+
+    #[error("release execution state `{}` is not valid JSON: {message}", .path.display())]
+    #[diagnostic(
+        code(E129),
+        help("Restore the state file from a known-good receipt or start a new release intent; it was not treated as success.")
+    )]
+    ReleaseStateDecode { path: PathBuf, message: String },
+
+    #[error("cannot persist release execution state `{}`: {message}", .path.display())]
+    #[diagnostic(
+        code(E130),
+        help("Resolve the local filesystem error before any remote release effect is attempted.")
+    )]
+    ReleaseStateWrite { path: PathBuf, message: String },
 }
 
 /// Why a workspace package that a `--package` filter named is nonetheless
