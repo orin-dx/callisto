@@ -28,7 +28,7 @@
     },
     {
       "id": "AC-003",
-      "criterion": "Authorization requires a clean worktree before the capability is issued. 'Clean' means Git reports no staged, unstaged, unmerged, or untracked file under the repository worktree; ignored files do not make it dirty. The ignored-file exception is Git's fixed ignored classification, not a caller-configured path allowlist and not arbitrary .gitignore parsing by Callisto. A path outside the canonical root, an error while determining status, or an ambiguous repository layout fails closed. Diagnostics identify the policy condition and safe relative paths where available, but do not retain raw command output in durable data.",
+      "criterion": "Authorization requires a clean worktree before the capability is issued. 'Clean' means Git reports no staged, unstaged, unmerged, or untracked file under the repository worktree. An ignored file is clean only when its safe relative path matches Callisto's fixed, versioned harmless-artifact allowlist; arbitrary repository .gitignore rules never grant release-trust authority. A path outside the canonical root, an allowlist mismatch, an error while determining status, or an ambiguous repository layout fails closed. Diagnostics identify the policy condition and safe relative paths where available, but do not retain raw command output in durable data.",
       "is_error_case": true
     },
     {
