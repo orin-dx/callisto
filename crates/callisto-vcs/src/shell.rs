@@ -89,8 +89,10 @@ impl<'r> ShellGit<'r> {
                 "could not resolve a commit for release trust".to_string(),
             ));
         }
-        let head = CommitSha::parse(head.stdout_trimmed())
-            .map_err(|_| VcsError::Git("Git returned an invalid full HEAD commit for release trust".to_string()))?;
+        let head = CommitSha::parse(head.stdout_trimmed()).map_err(|error| {
+            drop(error);
+            VcsError::Git("Git returned an invalid full HEAD commit for release trust".to_string())
+        })?;
 
         let symbolic_head = self
             .runner
@@ -137,8 +139,10 @@ fn canonical_git_root(raw_root: &str) -> Result<PathBuf, VcsError> {
             "Git returned an empty repository root for release trust".to_string(),
         ));
     }
-    dunce::canonicalize(raw_root)
-        .map_err(|_| VcsError::Git("could not canonicalize the Git repository root for release trust".to_string()))
+    dunce::canonicalize(raw_root).map_err(|error| {
+        drop(error);
+        VcsError::Git("could not canonicalize the Git repository root for release trust".to_string())
+    })
 }
 
 fn parse_release_worktree_status(status: &str) -> Result<Vec<PathBuf>, VcsError> {
