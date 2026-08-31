@@ -53,6 +53,34 @@ impl<'r> ShellGit<'r> {
             root: root.into(),
         }
     }
+
+    /// Checks the release-source invariant used by durable execution.
+    ///
+    /// A branch checkout is intentionally not accepted: a durable intent is
+    /// bound to one immutable commit rather than a moving ref. `git status`
+    /// includes tracked changes and non-ignored untracked files, so generated
+    /// files covered by the repository's explicit ignore policy do not alter
+    /// the source identity.
+    pub fn has_clean_detached_head(&self) -> Result<bool, VcsError> {
+        let symbolic = self.runner.run("git", &["symbolic-ref", "-q", "HEAD"], &self.root)?;
+        if symbolic.success() {
+            return Ok(false);
+        }
+
+        let status = self.runner.run(
+            "git",
+            &["status", "--porcelain=v1", "--untracked-files=all"],
+            &self.root,
+        )?;
+        if !status.success() {
+            return Err(VcsError::Git(format!(
+                "`git status --porcelain=v1 --untracked-files=all` failed in `{}`: {}",
+                self.root.display(),
+                redact_git_stderr(&status.stderr)
+            )));
+        }
+        Ok(status.stdout_trimmed().is_empty())
+    }
 }
 
 /// Compiles `glob` into a [`globset::GlobMatcher`], surfacing a malformed

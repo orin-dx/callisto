@@ -46,6 +46,14 @@ impl<'r> GitAccess<'r> {
             shell: ShellGit::new(runner, root.to_path_buf()),
         }
     }
+
+    /// Returns whether this checkout is detached and has no tracked or
+    /// non-ignored untracked changes. Durable release authorization uses the
+    /// shell backend deliberately: its porcelain output is Git's canonical
+    /// definition of worktree cleanliness and is available on every target.
+    pub fn has_clean_detached_head(&self) -> Result<bool, VcsError> {
+        self.shell.has_clean_detached_head()
+    }
 }
 
 impl GitDataSource for GitAccess<'_> {
