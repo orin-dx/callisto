@@ -661,22 +661,14 @@ fn operation_id_text(id: &ReleaseOperationId) -> String {
 }
 
 fn validate_operations(operations: &[ReleaseOperation]) -> Result<(), ReleaseIntentError> {
-    if operations.windows(2).any(|pair| pair[0].id >= pair[1].id) {
-        if operations.windows(2).any(|pair| pair[0].id == pair[1].id) {
+    let mut ids = BTreeSet::new();
+    for operation in operations {
+        if !ids.insert(operation.id.clone()) {
             return Err(ReleaseIntentError::DuplicateOperation {
-                id: Box::new(
-                    operations
-                        .windows(2)
-                        .find(|pair| pair[0].id == pair[1].id)
-                        .expect("duplicate window exists")[0]
-                        .id
-                        .clone(),
-                ),
+                id: Box::new(operation.id.clone()),
             });
         }
-        return Err(ReleaseIntentError::NonCanonicalOperationOrder);
     }
-    let ids: BTreeSet<_> = operations.iter().map(|operation| operation.id.clone()).collect();
     for operation in operations {
         if operation.prerequisites.windows(2).any(|pair| pair[0] >= pair[1]) {
             return Err(ReleaseIntentError::NonCanonicalPrerequisiteOrder {
@@ -701,38 +693,49 @@ fn validate_operations(operations: &[ReleaseOperation]) -> Result<(), ReleaseInt
         .iter()
         .map(|operation| (operation.id.clone(), operation.prerequisites.clone()))
         .collect();
-    let mut visiting = BTreeSet::new();
-    let mut visited = BTreeSet::new();
-    for id in edges.keys() {
-        if visit(id, &edges, &mut visiting, &mut visited) {
-            return Err(ReleaseIntentError::Cycle {
-                id: Box::new(id.clone()),
-            });
-        }
+    let canonical = stable_kahn_order(&edges)?;
+    if operations.iter().map(ReleaseOperation::id).ne(canonical.iter()) {
+        return Err(ReleaseIntentError::NonCanonicalOperationOrder);
     }
     Ok(())
 }
 
-fn visit(
-    id: &ReleaseOperationId,
-    edges: &BTreeMap<ReleaseOperationId, Vec<ReleaseOperationId>>,
-    visiting: &mut BTreeSet<ReleaseOperationId>,
-    visited: &mut BTreeSet<ReleaseOperationId>,
-) -> bool {
-    if visited.contains(id) {
-        return false;
+fn stable_kahn_order(
+    prerequisites: &BTreeMap<ReleaseOperationId, Vec<ReleaseOperationId>>,
+) -> Result<Vec<ReleaseOperationId>, ReleaseIntentError> {
+    let mut remaining: BTreeMap<_, usize> = prerequisites
+        .iter()
+        .map(|(id, prerequisites)| (id.clone(), prerequisites.len()))
+        .collect();
+    let mut dependents = BTreeMap::<ReleaseOperationId, Vec<ReleaseOperationId>>::new();
+    for (id, prerequisites) in prerequisites {
+        for prerequisite in prerequisites {
+            dependents.entry(prerequisite.clone()).or_default().push(id.clone());
+        }
     }
-    if !visiting.insert(id.clone()) {
-        return true;
+    let mut ready: BTreeSet<_> = remaining
+        .iter()
+        .filter_map(|(id, count)| (*count == 0).then_some(id.clone()))
+        .collect();
+    let mut ordered = Vec::with_capacity(prerequisites.len());
+    while let Some(id) = ready.pop_first() {
+        ordered.push(id.clone());
+        for dependent in dependents.get(&id).into_iter().flatten() {
+            let count = remaining.get_mut(dependent).expect("known DAG node");
+            *count -= 1;
+            if *count == 0 {
+                ready.insert(dependent.clone());
+            }
+        }
     }
-    let has_cycle = edges.get(id).is_some_and(|prerequisites| {
-        prerequisites
-            .iter()
-            .any(|prerequisite| visit(prerequisite, edges, visiting, visited))
-    });
-    visiting.remove(id);
-    visited.insert(id.clone());
-    has_cycle
+    if ordered.len() != prerequisites.len() {
+        let id = remaining
+            .into_iter()
+            .find_map(|(id, count)| (count != 0).then_some(id))
+            .expect("a nonempty cyclic DAG has a remaining node");
+        return Err(ReleaseIntentError::Cycle { id: Box::new(id) });
+    }
+    Ok(ordered)
 }
 
 /// Validation failure for a durable intent DAG.
@@ -756,23 +759,92 @@ pub enum ReleaseIntentError {
     Cycle { id: Box<ReleaseOperationId> },
 }
 
-/// A terminal outcome safe to persist in a receipt. No arbitrary error text is durable.
+/// A closed, credential-safe reason why an operation was blocked.
+///
+/// This deliberately carries no endpoint, command output, or arbitrary error
+/// text: durable execution records can safely outlive the process that made
+/// the observation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
+#[non_exhaustive]
+pub enum OperationBlockReason {
+    /// An existing remote or VCS object does not exactly match the intent.
+    ConflictingExistingOperation,
+    /// A completed attempt could not be conclusively observed after restart.
+    IndeterminateAttempt,
+    /// Fresh validation no longer agrees with the approved intent.
+    StaleValidation,
+    /// An exact prerequisite has not reached a successful terminal outcome.
+    UnmetPrerequisite,
+}
+
+/// A terminal outcome safe to persist in a receipt. No arbitrary error text is durable.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", tag = "kind", deny_unknown_fields)]
+#[non_exhaustive]
 pub enum OperationOutcome {
     Published,
     AlreadySatisfied,
     Failed,
-    Blocked,
+    Blocked { reason: OperationBlockReason },
 }
 
 /// Crash-safe state for an intent-bound execution. Pending and Attempting are nonterminal.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, Eq, JsonSchema)]
+#[schemars(with = "ReleaseExecutionStateV1Wire")]
 pub struct ReleaseExecutionStateV1 {
-    pub schema_version: u8,
+    schema_version: u8,
     intent_digest: IntentDigest,
     operations: BTreeMap<ReleaseOperationId, OperationState>,
+}
+
+/// The on-wire shape deliberately uses entries rather than a JSON object: a
+/// JSON object cannot express an exact `ReleaseOperationId` key and parsers
+/// commonly discard duplicate keys before domain validation sees them.
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ReleaseExecutionStateV1Wire {
+    schema_version: u8,
+    intent_digest: IntentDigest,
+    operations: Vec<OperationStateEntryV1>,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct OperationStateEntryV1 {
+    operation: ReleaseOperationId,
+    state: OperationState,
+}
+
+impl Serialize for ReleaseExecutionStateV1 {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        ReleaseExecutionStateV1Wire {
+            schema_version: self.schema_version,
+            intent_digest: self.intent_digest.clone(),
+            operations: self
+                .operations
+                .iter()
+                .map(|(operation, state)| OperationStateEntryV1 {
+                    operation: operation.clone(),
+                    state: *state,
+                })
+                .collect(),
+        }
+        .serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for ReleaseExecutionStateV1 {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = ReleaseExecutionStateV1Wire::deserialize(deserializer)?;
+        Self::from_wire(wire).map_err(serde::de::Error::custom)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -783,22 +855,74 @@ pub enum OperationState {
     Published,
     AlreadySatisfied,
     Failed,
-    Blocked,
+    Blocked { reason: OperationBlockReason },
 }
 
 impl ReleaseExecutionStateV1 {
     pub const SCHEMA_VERSION: u8 = 1;
 
-    pub fn pending(intent_digest: IntentDigest, ids: &[ReleaseOperationId]) -> Self {
+    /// Starts execution for exactly the roster authorized by `intent`.
+    pub fn pending(intent: &ReleaseIntentV1) -> Self {
         Self {
             schema_version: Self::SCHEMA_VERSION,
-            intent_digest,
-            operations: ids.iter().cloned().map(|id| (id, OperationState::Pending)).collect(),
+            intent_digest: intent.digest.clone(),
+            operations: intent
+                .operations
+                .iter()
+                .map(|operation| (operation.id.clone(), OperationState::Pending))
+                .collect(),
         }
     }
 
     pub fn intent_digest(&self) -> &IntentDigest {
         &self.intent_digest
+    }
+
+    /// Validates that this state belongs to this exact intent and operation roster.
+    ///
+    /// Resume and reconciliation must call this before treating any state as
+    /// evidence or before making a remote/VCS mutation.
+    pub fn validate_for_intent(&self, intent: &ReleaseIntentV1) -> Result<(), ReleaseStateError> {
+        if self.schema_version != Self::SCHEMA_VERSION {
+            return Err(ReleaseStateError::UnsupportedSchema {
+                found: self.schema_version,
+            });
+        }
+        if self.intent_digest != intent.digest {
+            return Err(ReleaseStateError::MismatchedIntent);
+        }
+        let expected: BTreeSet<_> = intent.operations.iter().map(|operation| operation.id.clone()).collect();
+        let actual: BTreeSet<_> = self.operations.keys().cloned().collect();
+        if actual != expected {
+            return Err(ReleaseStateError::MismatchedOperationRoster);
+        }
+        Ok(())
+    }
+
+    /// Returns the persisted state for an exact operation identity.
+    pub fn operation_state(&self, id: &ReleaseOperationId) -> Option<OperationState> {
+        self.operations.get(id).copied()
+    }
+
+    fn from_wire(wire: ReleaseExecutionStateV1Wire) -> Result<Self, ReleaseStateError> {
+        if wire.schema_version != Self::SCHEMA_VERSION {
+            return Err(ReleaseStateError::UnsupportedSchema {
+                found: wire.schema_version,
+            });
+        }
+        let mut operations = BTreeMap::new();
+        for entry in wire.operations {
+            if operations.insert(entry.operation.clone(), entry.state).is_some() {
+                return Err(ReleaseStateError::DuplicateOperation {
+                    id: Box::new(entry.operation),
+                });
+            }
+        }
+        Ok(Self {
+            schema_version: wire.schema_version,
+            intent_digest: wire.intent_digest,
+            operations,
+        })
     }
 
     pub fn mark_attempting(&mut self, id: &ReleaseOperationId) -> Result<(), ReleaseStateError> {
@@ -839,7 +963,7 @@ impl ReleaseExecutionStateV1 {
             OperationOutcome::Published => OperationState::Published,
             OperationOutcome::AlreadySatisfied => OperationState::AlreadySatisfied,
             OperationOutcome::Failed => OperationState::Failed,
-            OperationOutcome::Blocked => OperationState::Blocked,
+            OperationOutcome::Blocked { reason } => OperationState::Blocked { reason },
         };
         Ok(())
     }
@@ -848,6 +972,14 @@ impl ReleaseExecutionStateV1 {
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum ReleaseStateError {
+    #[error("unsupported release execution state schema version {found}")]
+    UnsupportedSchema { found: u8 },
+    #[error("release state is bound to a different intent")]
+    MismatchedIntent,
+    #[error("release state operation roster differs from the bound intent")]
+    MismatchedOperationRoster,
+    #[error("release state contains duplicate operation `{id:?}`")]
+    DuplicateOperation { id: Box<ReleaseOperationId> },
     #[error("release state does not contain operation `{id:?}`")]
     UnknownOperation { id: Box<ReleaseOperationId> },
     #[error("operation `{id:?}` cannot transition from {from:?}")]
@@ -858,25 +990,75 @@ pub enum ReleaseStateError {
 }
 
 /// A terminal receipt derived only from a complete execution state.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, Eq, JsonSchema)]
+#[schemars(with = "ReleaseReceiptV1Wire")]
 pub struct ReleaseReceiptV1 {
-    pub schema_version: u8,
+    schema_version: u8,
     intent_digest: IntentDigest,
     outcomes: BTreeMap<ReleaseOperationId, OperationOutcome>,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ReleaseReceiptV1Wire {
+    schema_version: u8,
+    intent_digest: IntentDigest,
+    outcomes: Vec<OperationOutcomeEntryV1>,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct OperationOutcomeEntryV1 {
+    operation: ReleaseOperationId,
+    outcome: OperationOutcome,
+}
+
+impl Serialize for ReleaseReceiptV1 {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        ReleaseReceiptV1Wire {
+            schema_version: self.schema_version,
+            intent_digest: self.intent_digest.clone(),
+            outcomes: self
+                .outcomes
+                .iter()
+                .map(|(operation, outcome)| OperationOutcomeEntryV1 {
+                    operation: operation.clone(),
+                    outcome: *outcome,
+                })
+                .collect(),
+        }
+        .serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for ReleaseReceiptV1 {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = ReleaseReceiptV1Wire::deserialize(deserializer)?;
+        Self::from_wire(wire).map_err(serde::de::Error::custom)
+    }
 }
 
 impl ReleaseReceiptV1 {
     pub const SCHEMA_VERSION: u8 = 1;
 
-    pub fn from_state(state: &ReleaseExecutionStateV1) -> Result<Self, ReleaseReceiptError> {
+    /// Constructs a receipt only when state is complete and exact for `intent`.
+    pub fn from_state(intent: &ReleaseIntentV1, state: &ReleaseExecutionStateV1) -> Result<Self, ReleaseReceiptError> {
+        state
+            .validate_for_intent(intent)
+            .map_err(ReleaseReceiptError::InvalidState)?;
         let mut outcomes = BTreeMap::new();
         for (id, operation_state) in &state.operations {
             let outcome = match operation_state {
                 OperationState::Published => OperationOutcome::Published,
                 OperationState::AlreadySatisfied => OperationOutcome::AlreadySatisfied,
                 OperationState::Failed => OperationOutcome::Failed,
-                OperationState::Blocked => OperationOutcome::Blocked,
+                OperationState::Blocked { reason } => OperationOutcome::Blocked { reason: *reason },
                 OperationState::Pending | OperationState::Attempting => {
                     return Err(ReleaseReceiptError::NonTerminalOperation {
                         id: Box::new(id.clone()),
@@ -895,11 +1077,60 @@ impl ReleaseReceiptV1 {
     pub fn intent_digest(&self) -> &IntentDigest {
         &self.intent_digest
     }
+
+    /// Validates exact intent and operation-roster binding before reconciliation.
+    pub fn validate_for_intent(&self, intent: &ReleaseIntentV1) -> Result<(), ReleaseReceiptError> {
+        if self.schema_version != Self::SCHEMA_VERSION {
+            return Err(ReleaseReceiptError::UnsupportedSchema {
+                found: self.schema_version,
+            });
+        }
+        if self.intent_digest != intent.digest {
+            return Err(ReleaseReceiptError::MismatchedIntent);
+        }
+        let expected: BTreeSet<_> = intent.operations.iter().map(|operation| operation.id.clone()).collect();
+        let actual: BTreeSet<_> = self.outcomes.keys().cloned().collect();
+        if actual != expected {
+            return Err(ReleaseReceiptError::MismatchedOperationRoster);
+        }
+        Ok(())
+    }
+
+    fn from_wire(wire: ReleaseReceiptV1Wire) -> Result<Self, ReleaseReceiptError> {
+        if wire.schema_version != Self::SCHEMA_VERSION {
+            return Err(ReleaseReceiptError::UnsupportedSchema {
+                found: wire.schema_version,
+            });
+        }
+        let mut outcomes = BTreeMap::new();
+        for entry in wire.outcomes {
+            if outcomes.insert(entry.operation.clone(), entry.outcome).is_some() {
+                return Err(ReleaseReceiptError::DuplicateOperation {
+                    id: Box::new(entry.operation),
+                });
+            }
+        }
+        Ok(Self {
+            schema_version: wire.schema_version,
+            intent_digest: wire.intent_digest,
+            outcomes,
+        })
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum ReleaseReceiptError {
+    #[error("unsupported release receipt schema version {found}")]
+    UnsupportedSchema { found: u8 },
+    #[error("release receipt is bound to a different intent")]
+    MismatchedIntent,
+    #[error("release receipt operation roster differs from the bound intent")]
+    MismatchedOperationRoster,
+    #[error("release receipt contains duplicate operation `{id:?}")]
+    DuplicateOperation { id: Box<ReleaseOperationId> },
+    #[error("release receipt cannot be derived from invalid state: {0}")]
+    InvalidState(ReleaseStateError),
     #[error("release operation `{id:?}` is not terminal")]
     NonTerminalOperation { id: Box<ReleaseOperationId> },
 }
@@ -1064,16 +1295,106 @@ mod tests {
             vec![operation.clone()],
         )
         .unwrap();
-        let pending = ReleaseExecutionStateV1::pending(intent.digest().clone(), &[operation.id().clone()]);
-        assert!(ReleaseReceiptV1::from_state(&pending).is_err());
+        let pending = ReleaseExecutionStateV1::pending(&intent);
+        assert!(ReleaseReceiptV1::from_state(&intent, &pending).is_err());
 
         let mut complete = pending;
         complete.mark_attempting(operation.id()).unwrap();
         complete
             .mark_terminal(operation.id(), OperationOutcome::Published)
             .unwrap();
-        let receipt = ReleaseReceiptV1::from_state(&complete).unwrap();
+        let receipt = ReleaseReceiptV1::from_state(&intent, &complete).unwrap();
         assert_eq!(receipt.intent_digest(), intent.digest());
+    }
+
+    #[test]
+    fn state_and_receipt_wire_reject_unknown_schema_and_duplicate_operations() {
+        let operation = ReleaseOperation::registry_publish(
+            ReleasePackageId::parse("cargo/callisto-model").unwrap(),
+            Version::semver(1, 2, 3),
+            "cratesIo",
+            vec![],
+        )
+        .unwrap();
+        let intent = ReleaseIntentV1::new(
+            ReleaseInputSnapshotV1::new(SourceIdentity::git_commit("e".repeat(40)).unwrap(), vec![]),
+            ExecutionTrustProfileV1::GitCommit,
+            vec![operation.clone()],
+        )
+        .unwrap();
+        let state = ReleaseExecutionStateV1::pending(&intent);
+        let mut state_wire = serde_json::to_value(&state).unwrap();
+        state_wire["unexpected"] = serde_json::Value::Bool(true);
+        assert!(serde_json::from_value::<ReleaseExecutionStateV1>(state_wire).is_err());
+
+        let mut duplicate_state = serde_json::to_value(&state).unwrap();
+        let duplicate = duplicate_state["operations"][0].clone();
+        duplicate_state["operations"].as_array_mut().unwrap().push(duplicate);
+        assert!(serde_json::from_value::<ReleaseExecutionStateV1>(duplicate_state).is_err());
+
+        let mut complete = state;
+        complete.mark_attempting(operation.id()).unwrap();
+        complete
+            .mark_terminal(
+                operation.id(),
+                OperationOutcome::Blocked {
+                    reason: OperationBlockReason::StaleValidation,
+                },
+            )
+            .unwrap();
+        let receipt = ReleaseReceiptV1::from_state(&intent, &complete).unwrap();
+        let mut receipt_wire = serde_json::to_value(receipt).unwrap();
+        receipt_wire["schemaVersion"] = serde_json::Value::from(2);
+        assert!(serde_json::from_value::<ReleaseReceiptV1>(receipt_wire).is_err());
+    }
+
+    #[test]
+    fn state_and_receipt_require_exact_intent_digest_and_roster() {
+        let package = ReleasePackageId::parse("cargo/callisto-model").unwrap();
+        let operation = ReleaseOperation::tag(package.clone(), Version::semver(1, 2, 3), vec![]).unwrap();
+        let different_operation = ReleaseOperation::forge_release(package, Version::semver(1, 2, 3), vec![]).unwrap();
+        let first = ReleaseIntentV1::new(
+            ReleaseInputSnapshotV1::new(SourceIdentity::git_commit("f".repeat(40)).unwrap(), vec![]),
+            ExecutionTrustProfileV1::GitCommit,
+            vec![operation.clone()],
+        )
+        .unwrap();
+        let different_digest = ReleaseIntentV1::new(
+            ReleaseInputSnapshotV1::new(SourceIdentity::git_commit("0".repeat(40)).unwrap(), vec![]),
+            ExecutionTrustProfileV1::GitCommit,
+            vec![operation.clone()],
+        )
+        .unwrap();
+        let state = ReleaseExecutionStateV1::pending(&first);
+        assert!(matches!(
+            state.validate_for_intent(&different_digest),
+            Err(ReleaseStateError::MismatchedIntent)
+        ));
+        let mut wrong_roster_wire = serde_json::to_value(&state).unwrap();
+        wrong_roster_wire["operations"][0]["operation"] = serde_json::to_value(different_operation.id()).unwrap();
+        let wrong_roster = serde_json::from_value::<ReleaseExecutionStateV1>(wrong_roster_wire).unwrap();
+        assert!(matches!(
+            wrong_roster.validate_for_intent(&first),
+            Err(ReleaseStateError::MismatchedOperationRoster)
+        ));
+
+        let mut complete = state;
+        complete.mark_attempting(operation.id()).unwrap();
+        complete
+            .mark_terminal(operation.id(), OperationOutcome::Published)
+            .unwrap();
+        let receipt = ReleaseReceiptV1::from_state(&first, &complete).unwrap();
+        assert!(matches!(
+            receipt.validate_for_intent(&different_digest),
+            Err(ReleaseReceiptError::MismatchedIntent)
+        ));
+        let mut wrong_receipt_wire = serde_json::to_value(&receipt).unwrap();
+        wrong_receipt_wire["outcomes"][0]["operation"] = serde_json::to_value(different_operation.id()).unwrap();
+        let wrong_receipt = serde_json::from_value::<ReleaseReceiptV1>(wrong_receipt_wire).unwrap();
+        assert!(matches!(
+            wrong_receipt.validate_for_intent(&first),
+            Err(ReleaseReceiptError::MismatchedOperationRoster)
+        ));
     }
 
     #[test]
