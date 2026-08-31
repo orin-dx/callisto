@@ -155,7 +155,7 @@ fn derive_release_intent<R: CommandRunner, D: DependencyResolver>(
     trust_profile: ExecutionTrustProfileV1,
 ) -> Result<ReleaseIntentV1, GraphError> {
     let (snapshot, operations) = derive_release_inputs(workspace, selection, source)?;
-    ReleaseIntentV1::new(snapshot, trust_profile, operations).map_err(|_| GraphError::ReleaseIntentStale)
+    ReleaseIntentV1::new(snapshot, trust_profile, operations).map_err(|_error| GraphError::ReleaseIntentStale)
 }
 
 fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
@@ -189,7 +189,8 @@ fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
             .map(|manifest| manifest.ecosystem())
             .collect::<BTreeSet<_>>()
         {
-            let id = ReleasePackageId::new(ecosystem, package.id.name()).map_err(|_| GraphError::ReleaseIntentStale)?;
+            let id =
+                ReleasePackageId::new(ecosystem, package.id.name()).map_err(|_error| GraphError::ReleaseIntentStale)?;
             if let Some(version) = selection.versions().get(&id) {
                 selected.insert(id.clone(), (package, version.clone()));
                 package_ids.entry(package.id.clone()).or_default().push(id);
@@ -218,7 +219,7 @@ fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
                 let registry_key = target.registry_key().expect("registry target has registry key");
                 let operation =
                     ReleaseOperation::registry_publish(id.clone(), version.clone(), registry_key.as_str(), Vec::new())
-                        .map_err(|_| GraphError::ReleaseIntentStale)?;
+                        .map_err(|_error| GraphError::ReleaseIntentStale)?;
                 publishes.push(operation.id().clone());
                 operations.insert(operation.id().clone(), operation);
             }
@@ -252,7 +253,7 @@ fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
         for publish_id in publishes_by_package.get(id).into_iter().flatten() {
             let operation = operations.get(publish_id).expect("publish operation was constructed");
             let replacement = ReleaseOperation::new(operation.id().clone(), prerequisites.iter().cloned().collect())
-                .map_err(|_| GraphError::ReleaseIntentStale)?;
+                .map_err(|_error| GraphError::ReleaseIntentStale)?;
             operations.insert(publish_id.clone(), replacement);
         }
     }
@@ -270,7 +271,7 @@ fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
             version.clone(),
             publishes_by_package.get(id).cloned().unwrap_or_default(),
         )
-        .map_err(|_| GraphError::ReleaseIntentStale)?;
+        .map_err(|_error| GraphError::ReleaseIntentStale)?;
         tag_by_package.insert(id.clone(), tag.id().clone());
         operations.insert(tag.id().clone(), tag);
     }
@@ -282,7 +283,7 @@ fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
         {
             let tag = tag_by_package.get(id).expect("release point has tag").clone();
             let operation = ReleaseOperation::forge_release(id.clone(), version.clone(), vec![tag])
-                .map_err(|_| GraphError::ReleaseIntentStale)?;
+                .map_err(|_error| GraphError::ReleaseIntentStale)?;
             operations.insert(operation.id().clone(), operation);
         }
     }
@@ -467,7 +468,7 @@ fn push_registry_binding(
 }
 
 fn canonical_registry_binding(registry: &str, raw: &str) -> Result<RegistryBindingV1, GraphError> {
-    let parsed = url::Url::parse(raw).map_err(|_| GraphError::UnsafeRegistryBinding {
+    let parsed = url::Url::parse(raw).map_err(|_error| GraphError::UnsafeRegistryBinding {
         registry: registry.to_string(),
         reason: "invalid URL",
     })?;
