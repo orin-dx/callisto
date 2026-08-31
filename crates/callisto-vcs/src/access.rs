@@ -29,6 +29,61 @@ pub struct GitAccess<'r> {
     shell: ShellGit<'r>,
 }
 
+/// Fresh Git checkout facts used to bind a durable release intent to the
+/// exact repository it was validated against.
+///
+/// This is intentionally evidence, not a lossy `bool`: consumers must retain
+/// the canonical root and complete `HEAD` they compare to source identity.
+/// Its fields are private so only the VCS observation path can construct it.
+#[derive(Debug, PartialEq, Eq)]
+pub struct GitCommitTrustEvidence {
+    canonical_root: PathBuf,
+    head: CommitSha,
+    head_disposition: GitHeadDisposition,
+    allowed_ignored_paths: Vec<PathBuf>,
+}
+
+impl GitCommitTrustEvidence {
+    pub(crate) fn new(
+        canonical_root: PathBuf,
+        head: CommitSha,
+        head_disposition: GitHeadDisposition,
+        allowed_ignored_paths: Vec<PathBuf>,
+    ) -> Self {
+        Self {
+            canonical_root,
+            head,
+            head_disposition,
+            allowed_ignored_paths,
+        }
+    }
+
+    pub fn canonical_root(&self) -> &Path {
+        &self.canonical_root
+    }
+
+    pub fn head(&self) -> &CommitSha {
+        &self.head
+    }
+
+    pub fn head_disposition(&self) -> GitHeadDisposition {
+        self.head_disposition
+    }
+
+    pub fn allowed_ignored_paths(&self) -> &[PathBuf] {
+        &self.allowed_ignored_paths
+    }
+}
+
+/// Whether `HEAD` was attached to a symbolic reference when it was observed.
+/// A detached checkout is valid when its full [`CommitSha`] matches the
+/// release intent's source identity.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GitHeadDisposition {
+    Attached,
+    Detached,
+}
+
 impl<'r> GitAccess<'r> {
     /// Tries to discover a native `gix` repository at `root`; regardless of
     /// whether that succeeds, also prepares the `CommandRunner`-shelled
@@ -47,12 +102,11 @@ impl<'r> GitAccess<'r> {
         }
     }
 
-    /// Returns whether this checkout is detached and has no tracked or
-    /// non-ignored untracked changes. Durable release authorization uses the
-    /// shell backend deliberately: its porcelain output is Git's canonical
-    /// definition of worktree cleanliness and is available on every target.
-    pub fn has_clean_detached_head(&self) -> Result<bool, VcsError> {
-        self.shell.has_clean_detached_head()
+    /// Re-observes the root, full commit, symbolic-HEAD state, and worktree
+    /// through the shell backend. These facts must never come from a native
+    /// repository handle cached before final release validation.
+    pub fn observe_git_commit_trust(&self) -> Result<GitCommitTrustEvidence, VcsError> {
+        self.shell.observe_git_commit_trust()
     }
 }
 
