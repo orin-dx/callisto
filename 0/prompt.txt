@@ -1,0 +1,187 @@
+This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
+
+Summary:
+1. Primary Request and Intent:
+
+This session continued from a prior context-exhausted conversation. The original mandate was fixing all confirmed bugs from a publish pipeline audit. At session start, three "confidence gap" concerns from the prior session were resolved (all confirmed as non-issues: `only` filter, `emit_progress`, `PackageId::name()` behavior). A bug-hunter agent was run to find novel bugs via swallowed-error analysis. The user then explicitly requested "Do 3 more consecutive rounds looking for more bugs" (Rounds 1-3 executed), then asked "How many more rounds do we have to do to catch all of the bugs?" (answer: estimated 2-3 more), then said "Let's do 5 rounds and see where we are" (Rounds 4-8 executed). The final message is a summary request.
+
+**Security/Operational Constraints (MUST REMAIN IN EFFECT):**
+- NEVER commit to git without explicit user instruction
+- NEVER bump versions or run release/publish commands
+- `/Users/gabe/Projects/callisto-findings/` lives OUTSIDE the repo — must NEVER be committed
+- `callisto publish` must NEVER be invoked against a real registry
+- No emojis in documentation or code
+- TDD discipline: RED → GREEN → REFACTOR; never write production code without a failing test first
+- Sequential fix constraint: fixes for semantically coupled publish pipeline must be sequential, validate after each
+
+2. Key Technical Concepts:
+
+- **Callisto**: Rust CLI + Moon WASM extension for polyglot monorepo versioning (10 crates)
+- **PublishOrchestrator**: Generic `<R: RegistryClient, P: RateLimitPolicy, T: TimeProvider>` struct
+- **SubprocessRegistryClient**: Dispatches `RegistryClient` calls to cargo/npm/twine CLIs
+- **publish_with_retry**: Inner loop in `PublishOrchestrator` handling rate-limit retries with `MAX_RATE_LIMIT_RETRIES = 10` and `MAX_RETRY_AFTER_SECS = 600`
+- **PublishPlan / PublishReport**: Distinct JSON artifacts with `COMMAND` discriminators (`"plan-publish"` / `"publish"`)
+- **PublishAttemptResult**: Tagged enum `Published | AlreadyPublished | Failed { kind: String, error: String }` where `kind` carries camelCase RegistryError discriminator
+- **classify_twine_output**: Function classifying PyPI twine publish output — must distinguish "all-skip" from "mixed skip+upload"
+- **`--no-git-checks`**: pnpm flag required to publish from dirty working tree (after `callisto version` stages bumps)
+- **GraphError::UnknownPackage**: Existing error variant used to reject invalid `--package` filter names
+- **render_diagnostics**: CLI render function for DiagnosticSeverity-tagged diagnostics
+- **ReleaseEntry**: Plan entry for GitHub release tags — separate from ecosystem package vecs
+- **TDD discipline**: RED (failing test with correct failure message) → GREEN (minimal production fix) → confirm no regressions
+
+3. Files and Code Sections:
+
+- **`crates/callisto-graph/src/commands/publish_client.rs`**
+  - Fixed dual `if let Ok` swallowed errors in version mismatch guard (lines 193-223). Converted to `?` with `map_err` producing `RegistryError::Other` for both read failures and TOML parse failures.
+  - Fixed `classify_twine_output` — changed unconditional "already exist" check to only return `AlreadyPublished` when no "uploading" line is present:
+    ```rust
+    let has_skip = combined.contains("already exist");
+    let has_upload = combined.contains("uploading");
+    if has_skip && !has_upload {
+        return Ok(PublishOutcome::AlreadyPublished);
+    }
+    ```
+  - Fixed pnpm `build_npm_publish_command` — added `"--no-git-checks".to_string()` to pnpm args vector:
+    ```rust
+    if self.cwd.join("pnpm-lock.yaml").exists() {
+        let mut args = vec![
+            "publish".to_string(),
+            "--filter".to_string(),
+            package_name.to_string(),
+            "--no-git-checks".to_string(),
+        ];
+        args.extend(extra);
+        return ("pnpm".to_string(), args);
+    }
+    ```
+  - Added tests: `cargo_version_guard_errors_when_manifest_unreadable`, `cargo_version_guard_errors_when_manifest_unparseable`, `pypi_publish_mixed_skip_and_upload_is_published`, `pnpm_publish_includes_no_git_checks_flag`
+
+- **`crates/callisto-graph/src/commands/publish.rs`**
+  - Fixed `is_published` error propagation — changed `?` to `unwrap_or(false)`:
+    ```rust
+    if self.client.is_published(pkg_id, version).unwrap_or(false) {
+        return Ok(PublishOutcome::AlreadyPublished);
+    }
+    ```
+  - Fixed retry cap off-by-one — changed `>` to `>=` and fixed error message to use constant:
+    ```rust
+    retries += 1;
+    if retries >= MAX_RATE_LIMIT_RETRIES {
+        return Err(RegistryError::Other(format!(
+            "rate-limited {MAX_RATE_LIMIT_RETRIES} consecutive times; giving up"
+        )));
+    }
+    ```
+  - Added unknown `--package` name validation after `retain` calls:
+    ```rust
+    let retained: std::collections::HashSet<&str> = rust_crates
+        .iter().map(|c| c.name.as_str())
+        .chain(npm_main_packages.iter().map(|c| c.name.as_str()))
+        .chain(npm_platform_packages.iter().map(|c| c.name.as_str()))
+        .chain(pypi_packages.iter().map(|c| c.name.as_str()))
+        .collect();
+    for requested in &opts.only {
+        if !retained.contains(requested.as_str()) {
+            return Err(crate::error::GraphError::UnknownPackage {
+                id: callisto_model::PackageId::Bare(requested.clone()),
+            });
+        }
+    }
+    ```
+  - Added tests: `is_published_error_is_ignored_and_publish_proceeds`, `test_publish_rate_limit_cap_fires_at_exactly_max_retries`
+
+- **`crates/callisto-cli/src/render/mod.rs`**
+  - Fixed `render_publish_report` — changed `Failed` arm from `{ error, .. }` to `{ kind, error }`:
+    ```rust
+    PublishAttemptResult::Failed { kind, error } => format!("FAILED [{kind}]: {error}"),
+    ```
+  - Fixed `render_publish` — moved `releases` rendering before the empty-plan early return, and added `render_diagnostics` in both the empty-plan path and at end of function:
+    ```rust
+    for rel in &report.releases {
+        writeln!(w, "  Tag: {} (sha: {})", rel.tag_name, rel.sha.as_str())?;
+    }
+    if total_packages == 0 && report.releases.is_empty() {
+        writeln!(w, "  No packages to publish.")?;
+        render_diagnostics(&report.diagnostics, w)?;
+        return Ok(());
+    }
+    if total_packages == 0 {
+        render_diagnostics(&report.diagnostics, w)?;
+        return Ok(());
+    }
+    // ... package listing ...
+    render_diagnostics(&report.diagnostics, w)?;
+    Ok(())
+    ```
+  - Updated existing test `render_publish_report_text_distinguishes_per_package_outcomes` to check `"FAILED [authFailed]: auth failed: bad token"` (was `"FAILED: auth failed: bad token"`)
+  - Added tests: `render_publish_report_failed_includes_error_kind`, `render_publish_surfaces_plan_diagnostics`
+
+- **`crates/callisto-cli/src/commands/publish.rs`**
+  - Fixed `write_dry_run_text` — added `&& plan.releases.is_empty()` to the `is_empty` computation:
+    ```rust
+    let is_empty = plan.rust_crates.is_empty()
+        && plan.npm_main_packages.is_empty()
+        && plan.npm_platform_packages.is_empty()
+        && plan.pypi_packages.is_empty()
+        && plan.releases.is_empty();
+    ```
+  - Added test: `dry_run_release_only_plan_is_not_empty`
+
+- **`crates/callisto-graph/tests/publish_tests.rs`**
+  - Added integration test: `publish_options_only_unknown_package_returns_error` — verifies `plan_publish` returns `Err(GraphError::UnknownPackage { .. })` when `--package` specifies a name not in the workspace
+
+4. Errors and Fixes:
+
+- **Test construction errors** — when adding `render_publish_surfaces_plan_diagnostics`, initially used `RegistryKey(callisto_model::RegistryKey::CRATES_IO.to_string())` outside the scope where `RegistryKey` is in scope (it's only imported inside `full_plan()`). Fixed by adding `use callisto_model::{CratePublish, RegistryKey};` inside the test.
+- **Version/diagnostics struct fields missing** — initial `render_publish_report_failed_includes_error_kind` test used `"1.0.0".to_string()` for `version` field (wrong type, needs `Version`) and omitted `diagnostics` field. Fixed by using `v1()` and `pkg()` helpers and adding `diagnostics: vec![]`.
+- **Existing pnpm test still used `captured_program`** — this was fine; the new `pnpm_publish_includes_no_git_checks_flag` test only needed `captured_args` from `program_capturing_runner`.
+
+5. Problem Solving:
+
+**All solved:**
+- Version mismatch guard silent skip → hard error with actionable message
+- `is_published` abort-before-publish → treat error as "unknown, proceed"
+- Twine mixed-output misclassification → only `AlreadyPublished` when no "uploading" line
+- `kind` dropped from render output → `"FAILED [{kind}]: {error}"`
+- Retry count off-by-one → `>=` instead of `>`
+- Plan diagnostics dropped in text output → `render_diagnostics` added to both paths
+- Releases invisible in empty-plan dry-run → releases rendered before early return, `is_empty` includes releases
+- pnpm dirty-tree publish failure → `--no-git-checks` added unconditionally
+- `--package` typo silently empty plan → validates all names match at least one retained entry
+
+**Rounds that found no bugs:** Round 5 (runner/cargo output), Round 7 (cross-crate invariants).
+
+6. All user messages:
+
+- (Session resumed from prior context — no initial user message; the session started by continuing prior work on confidence gaps)
+- "Do 3 more consecutive rounds looking for more bugs"
+- "How many more rounds do we have to do to catch all of the bugs?"
+- "Let's do 5 rounds and see where we are"
+- "CRITICAL: Respond with TEXT ONLY. Do NOT call any tools. [summary request]"
+
+7. Pending Tasks:
+
+- None explicitly pending. All 5 requested rounds (Rounds 4-8) have been completed and all found bugs have been fixed and validated.
+- Round 5 and Round 7 found no confirmed bugs.
+- All fixes follow TDD (RED → GREEN), all tests pass.
+- No git commits have been made (per standing constraint).
+
+8. Current Work:
+
+The last active work was completing Round 8's second bug fix — the `--package` unknown-name silent drop. The fix added a validation loop after the `retain` calls in `plan_publish` in `crates/callisto-graph/src/commands/publish.rs`. The integration test `publish_options_only_unknown_package_returns_error` in `crates/callisto-graph/tests/publish_tests.rs` was added and confirmed RED (returned `Ok(empty_plan)`) then GREEN after the fix (returns `Err(GraphError::UnknownPackage { .. })`).
+
+Final test counts before the summary request:
+- callisto-graph: 142 unit tests + 9 integration publish tests — all pass
+- callisto-cli: 34 tests — all pass
+- Full workspace: confirmed clean
+
+Total bugs fixed across this entire session: 10 distinct bugs across 5 files.
+
+9. Optional Next Step:
+
+The user asked for 5 rounds and all 5 were completed (Rounds 4-8 in the "Let's do 5 rounds" sequence). The user's last explicit request was the summary, which is being addressed now. There is no pending work explicitly requested beyond this summary.
+
+If the user wants to continue, natural next steps would be to run `just ci` (the full verification suite: formatting, Clippy, Moon unit/integration tests, WASM target check) to validate the entire working tree, or to ask the user whether they want to commit the accumulated fixes. However, these should not be initiated without explicit instruction given the standing constraint against committing without explicit user instruction.
+
+If you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/gabe/.claude/projects/-Users-gabe-Projects-callisto/575b7a46-37b7-42f0-9db7-b2c329b2abab.jsonl
+Continue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with "I'll continue" or similar. Pick up the last task as if the break never happened.
