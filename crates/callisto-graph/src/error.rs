@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 
-use callisto_model::{Ecosystem, GroupName, ManifestError, PackageId, TagTemplateError, VersionParseError};
+use callisto_model::{
+    ArtifactManifestError, Ecosystem, GroupName, ManifestError, PackageId, TagTemplateError, VersionParseError,
+};
 
 pub use crate::locate::LocateError;
 
@@ -234,6 +236,41 @@ pub enum GraphError {
         help("Regenerate and reapprove the release intent; no release operation was authorized.")
     )]
     ReleaseIntentStale,
+
+    #[error("artifact manifest is not authorized by this release intent: {source}")]
+    #[diagnostic(
+        code(E136),
+        help("Regenerate the artifact manifest for this exact release intent; no artifact was uploaded.")
+    )]
+    ArtifactManifest {
+        #[source]
+        source: ArtifactManifestError,
+    },
+
+    #[error("artifact path `{path}` is unsafe: {reason}")]
+    #[diagnostic(
+        code(E137),
+        help("Place the built asset directly beneath the explicit artifact directory without symbolic links.")
+    )]
+    UnsafeArtifactPath { path: PathBuf, reason: &'static str },
+
+    #[error("cannot read artifact `{path}`: {message}")]
+    #[diagnostic(
+        code(E138),
+        help("Ensure the build artifact is readable and has not changed since it was attested.")
+    )]
+    ArtifactRead { path: PathBuf, message: String },
+
+    #[error("artifact `{path}` does not match its manifest digest or byte length")]
+    #[diagnostic(code(E139), help("Rebuild and re-attest the artifact; it was not uploaded."))]
+    ArtifactBytesMismatch { path: PathBuf },
+
+    #[error("GitHub could not verify the attestation for artifact `{path}`: {message}")]
+    #[diagnostic(
+        code(E140),
+        help("Verify that the artifact was built by the exact trusted workflow and source commit declared in the release intent.")
+    )]
+    ArtifactAttestation { path: PathBuf, message: String },
 
     #[error("cannot read release input `{}`: {message}", .path.display())]
     #[diagnostic(
