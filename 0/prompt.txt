@@ -1,0 +1,45 @@
+<task-notification>
+<task-id>a60615f256d6be9a7</task-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/b90cda92-db13-4c63-8d7f-c9fa7d9196ab/tasks/a60615f256d6be9a7.output</output-file>
+<status>completed</status>
+<summary>Agent "Audit SPEC-007 for quality issues" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Audit result: SPEC-007 (GitHub Release Binary Assets) — **FAIL**
+
+Audited via `canon:auditor`, with every cited file:line in the spec cross-checked against live source at `/Users/gabe/Projects/callisto`. All grounding citations checked out. No scope overlap against other specs in `.claude/specs/`. No boundary-round-trip gap (the action.yml asset-attach round trip is self-contained within this spec).
+
+Note: `.claude/shared/references/workspace-conventions.md` (the `load_first` reference) doesn't exist anywhere in the workspace — no `.claude/shared/` directory at all. The auditor treated this as a fact rather than a license to skip checks, and directly enumerated/grepped every spec under `.claude/specs/` instead.
+
+### Issues (4)
+
+**1. AC-002 — ambiguous**
+"config resolution returns `Err(ConfigError::UnknownKey)` (or equivalent config error)" has two valid readings — exactly that variant, or any failing variant. Codebase precedent (`crates/callisto-graph/src/config/resolve.rs:156-178, 387-409`) always uses `UnknownKey` specifically, so the fix pins the wording to match actual convention:
+&gt; "Given a `[[package]] github-release-assets` entry missing the `name` key (or with `path`/`triple`/`name` set to an empty string, or a non-string type), config resolution returns `Err(ConfigError::UnknownKey { key, .. })` where `key` names both the malformed field and the `callisto.toml` path, rather than silently omitting that entry from the resolved `github_release_assets` vec or defaulting the missing field to an empty string."
+
+**2. Missing error case — `gh release upload` failures beyond missing-file precheck**
+AC-011 only covers the on-disk artifact-existence precheck. No criterion covers `gh release upload` itself failing (asset-name collision, auth failure, or a target release that never got created because the preceding `gh release create "$TAG" ... || true` silently swallowed its own failure). Suggested new **AC-014** (`is_error_case: true`):
+&gt; "Given a `ReleaseEntry.assets` entry whose `artifactPath` exists on disk but whose `gh release upload` invocation exits non-zero for any reason (asset-name collision, `gh` auth failure, or the target release not existing because the preceding `gh release create` call for that tag failed and was swallowed by its own `|| true`), the step's log output contains an `::error::` line naming that entry's `assetName` and the tag, and the step exits non-zero before any subsequent `ReleaseEntry` in the same run is processed — identical halting behavior to AC-011's missing-artifact case, driven by the same `|| { ...; exit 1; }` wrapper."
+
+**3. Incomplete scope — two files SPEC-005 treated as required for the same field-addition shape, omitted here**
+- `crates/callisto-cli/tests/schema_guard_test.rs:87-93` (`ac13_report_struct_field_shapes_are_unchanged`) asserts an exact allowlisted `ReleaseEntry` props set; adding `assets: Vec&lt;GitHubReleaseAsset&gt;` (confirmed absent at `crates/callisto-model/src/plan.rs:111-120`) breaks it. SPEC-005 budgeted this exact update as its scope item 4.
+- `docs/01-spec.md:1740-1763` (canonical `ReleaseEntry` doc block) and its decision table (row 24, line 2675) aren't updated. SPEC-005 budgeted this as scope item 7.
+
+Suggested fix — add to scope:
+&gt; "(4) Update `crates/callisto-cli/tests/schema_guard_test.rs`'s `ac13_report_struct_field_shapes_are_unchanged` test: add `assets` to the expected `ReleaseEntry` props set (~line 92) and update its module-doc permitted-schema-delta comment (lines 1-8). (5) Update `docs/01-spec.md`'s `ReleaseEntry` struct doc block (lines 1740-1763) to document `assets: Vec&lt;GitHubReleaseAsset&gt;`, and append a new decision-table row after row 24 (line 2675), without modifying row 24 itself."
+
+**4. Unnecessary prose — `non_goals[13]`**
+Re-derives, nearly clause-for-clause, the rationale already given in scope's opening paragraph (ecosystem-native-manifest vs. `callisto.toml` distinction), citing "(see scope)" and then restating it anyway.
+&gt; "Extending `PlatformTargetKind` (`crates/callisto-model/src/matrix.rs:49-54`) with a third variant for GitHub Release binaries, or routing this feature through `callisto matrix`/`callisto-action`'s existing `nativeMatrix` placement loop at all — rejected for the reason given in `scope`: GitHub-Release binary targets are declared in `callisto.toml`, not an ecosystem-native manifest, so they use a parallel type and code path instead."
+
+### Code cross-checks performed (all accurate)
+- `crates/callisto-model/src/plan.rs:111-120` — `ReleaseEntry` struct
+- `crates/callisto-model/src/matrix.rs:49-54` — `PlatformTargetKind`
+- `crates/callisto-graph/src/config/resolve.rs:132-139, 156-178, 387-409` — config parsing precedent
+- `crates/callisto-graph/src/commands/publish.rs:358-373` — `GitHubRelease` dispatch arm
+- `.github/actions/callisto-action/action.yml:177, 213-234` — YAML consumer
+- `crates/callisto-cli/tests/schema_guard_test.rs:87-93` — schema guard test (unaddressed by scope)
+- `docs/01-spec.md:1740-1763, 2675` — canonical doc block (unaddressed by scope)
+
+Route this back to the spec drafter (`spec007-drafter`) to fix AC-002's wording, add AC-014, expand scope to cover the schema-guard test and docs update, and trim `non_goals[13]`.</result>
+<usage><subagent_tokens>38994</subagent_tokens><tool_uses>2</tool_uses><duration_ms>296038</duration_ms></usage>
+</task-notification>
