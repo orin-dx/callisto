@@ -1,0 +1,5 @@
+I don't think platform manifests get their onw git tags. They'd be attached to the overall "tool" right so it makes sense to keep things together.
+
+Correct that we need to keep things in lock-step.
+
+How should we handle added/dropped items from a fixed group set?
