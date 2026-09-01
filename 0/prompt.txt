@@ -1,0 +1,1 @@
+Before we start implementing we can to cleanup plans and docs that are litering our repo and will cause confusion later. What is the current plan, what is outdated, etc
