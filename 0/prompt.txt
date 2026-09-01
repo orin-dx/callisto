@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>b7i1q41kh</task-id>
+<tool-use-id>toolu_01UXvjXaWV31pojC2ZbcXM7a</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/e9efeaba-9875-4c8b-ad83-aa1c06f21756/tasks/b7i1q41kh.output</output-file>
+<status>completed</status>
+<summary>Background command "Run full test suites for callisto-cli and callisto-graph" completed (exit code 0)</summary>
+</task-notification>
