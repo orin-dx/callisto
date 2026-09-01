@@ -1,0 +1,1 @@
+Let's triple check these and make a plan to fix them. Consider the architecture, performance and semantic models when considering a fix. Consider interactions, issues that we might introduce. Think through it well, plan accordingly using agent teams.
