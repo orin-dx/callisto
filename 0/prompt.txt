@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bp6bpcuuf</task-id>
+<tool-use-id>toolu_01Y6kbxryqTo6rT1gCgVAMW7</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a7b3643b-af0c-4790-a38d-870e88a7dd3e/tasks/bp6bpcuuf.output</output-file>
+<status>completed</status>
+<summary>Background command "Final full just ci run across all landed commits" completed (exit code 0)</summary>
+</task-notification>
