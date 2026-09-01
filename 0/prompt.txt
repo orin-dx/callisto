@@ -1,0 +1,40 @@
+<task-notification>
+<task-id>a2cd1557158606297</task-id>
+<tool-use-id>toolu_018eqEc7KtqUcMRzXZ8EekSw</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a2cd1557158606297.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement TASK-30 (AC-14 Cargo malformed-input slice)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Tree is clean.
+
+## Summary
+
+**task_id:** TASK-30
+**status:** done
+**steps_completed:**
+1. Verified all 25 prior commits (0971005..d4dd8cc) present on `crates/callisto-graph/src/locate/ignore_walk.rs` and tree was clean before starting.
+2. Read AC-09, AC-09b, AC-09d, AC-09f, AC-09i, and AC-14 exact text from `.claude/specs/SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json` on disk (not the plan's paraphrase). Cross-checked the plan's five fixtures against AC-14's exact fixture text — all five match verbatim (no under-delivery found this time, unlike TASK-20/21/23/28).
+3. Wrote `ac14_cargo_malformed_edge_case_regression_slice` in `crates/callisto-graph/src/locate/ignore_walk.rs` (lines 1777–1919), reassembling the five Cargo-slice fixtures, using `Path::new(...)` on the RHS of `==` (not `PathBuf::from`) to match repo convention and avoid `clippy::cmp_owned`.
+4. Ran the test — it passed immediately with zero implementation changes, matching the TASK-07-established "regression-proof, no red step" pattern.
+5. Adversarially verified non-vacuity: temporarily changed `read_cargo_membership` in `crates/callisto-graph/src/locate/membership.rs:88` from a `match ... Err(_) =&gt; return absent_cargo_membership()` fallback to `.unwrap()`. Reran the test — it failed with a real panic (`TomlError` unwrap on the AC-09d malformed-TOML fixture), confirming the test is load-bearing. Restored the original guard; `git diff` on membership.rs came back empty, confirming full restoration.
+6. `cargo fmt -p callisto-graph`, full `cargo test -p callisto-graph --lib` (310 passed), and `cargo clippy -p callisto-graph --all-targets -- -D warnings` (clean) before committing.
+7. Committed as `a62b291` with corrected, accurate commit message.
+
+**test_result:** pass
+**commit_sha:** a62b291
+
+**criteria_evidence:**
+| criterion | test_file | test_line | implementation_file | implementation_line |
+|---|---|---|---|---|
+| AC-09 | crates/callisto-graph/src/locate/ignore_walk.rs | 1778 (block starts 1779) | crates/callisto-graph/src/locate/membership.rs | 100–103 |
+| AC-09b | crates/callisto-graph/src/locate/ignore_walk.rs | 1778 (block starts 1803) | crates/callisto-graph/src/locate/membership.rs | 104–108 |
+| AC-09d | crates/callisto-graph/src/locate/ignore_walk.rs | 1778 (block starts 1852) | crates/callisto-graph/src/locate/membership.rs | 88–91 |
+| AC-09f | crates/callisto-graph/src/locate/ignore_walk.rs | 1778 (block starts 1870) | crates/callisto-graph/src/locate/membership.rs | 12–19 (`build_globset`) |
+| AC-09i | crates/callisto-graph/src/locate/ignore_walk.rs | 1778 (block starts 1895) | crates/callisto-graph/src/locate/membership.rs | 12–19 (`build_globset`) |
+
+Note: the task's `covers_criteria` field only lists `AC-14`, but I've mapped underlying sub-criteria evidence since that's what the test actually proves per-block; AC-14 itself is the umbrella consolidated criterion satisfied by this whole test function (test_line 1778, implementation spans membership.rs 12–114).
+
+**precision_tests_absorbed:** none supplied for this task.
+**concerns:** none — no red step occurred because this is a pure regression-consolidation task (no implementation change), consistent with the TASK-07 through TASK-29 precedent, and I independently confirmed the test is not vacuous via fault injection.</result>
+<usage><subagent_tokens>63467</subagent_tokens><tool_uses>21</tool_uses><duration_ms>366726</duration_ms></usage>
+</task-notification>
