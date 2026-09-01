@@ -793,6 +793,14 @@ pub enum ReleaseOperationError {
     DuplicatePrerequisite { id: Box<ReleaseOperationId> },
 }
 
+/// Immutable GitHub provenance policy declared by a binary release slot.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct GitHubAttestationPolicyV1 {
+    pub repository: String,
+    pub signer_workflow: String,
+}
+
 /// Exact binary asset declaration authorized by a durable release intent.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -801,6 +809,7 @@ pub struct ArtifactSlotId {
     pub version: Version,
     pub platform: String,
     pub asset_name: String,
+    pub attestation_policy: GitHubAttestationPolicyV1,
 }
 
 impl ArtifactSlotId {
@@ -809,10 +818,18 @@ impl ArtifactSlotId {
         version: Version,
         platform: impl Into<String>,
         asset_name: impl Into<String>,
+        repository: impl Into<String>,
+        signer_workflow: impl Into<String>,
     ) -> Result<Self, ArtifactSlotError> {
         let platform = platform.into();
         let asset_name = asset_name.into();
-        if !is_safe_artifact_component(&platform) || !is_safe_artifact_component(&asset_name) {
+        let repository = repository.into();
+        let signer_workflow = signer_workflow.into();
+        if !is_safe_artifact_component(&platform)
+            || !is_safe_artifact_component(&asset_name)
+            || !is_safe_github_repository(&repository)
+            || !is_safe_workflow_ref(&signer_workflow)
+        {
             return Err(ArtifactSlotError::UnsafeSlotComponent);
         }
         Ok(Self {
@@ -820,6 +837,10 @@ impl ArtifactSlotId {
             version,
             platform,
             asset_name,
+            attestation_policy: GitHubAttestationPolicyV1 {
+                repository,
+                signer_workflow,
+            },
         })
     }
 }
@@ -831,13 +852,34 @@ impl PartialOrd for ArtifactSlotId {
 }
 impl Ord for ArtifactSlotId {
     fn cmp(&self, other: &Self) -> Ordering {
-        (&self.package, self.version.render(), &self.platform, &self.asset_name).cmp(&(
-            &other.package,
-            other.version.render(),
-            &other.platform,
-            &other.asset_name,
-        ))
+        (
+            &self.package,
+            self.version.render(),
+            &self.platform,
+            &self.asset_name,
+            &self.attestation_policy.repository,
+            &self.attestation_policy.signer_workflow,
+        )
+            .cmp(&(
+                &other.package,
+                other.version.render(),
+                &other.platform,
+                &other.asset_name,
+                &other.attestation_policy.repository,
+                &other.attestation_policy.signer_workflow,
+            ))
     }
+}
+
+fn is_safe_github_repository(value: &str) -> bool {
+    let Some((owner, repository)) = value.split_once('/') else {
+        return false;
+    };
+    !owner.is_empty() && !repository.is_empty() && !repository.contains('/')
+}
+
+fn is_safe_workflow_ref(value: &str) -> bool {
+    value.starts_with("refs/") && value.contains(":.github/workflows/") && !value.contains("..")
 }
 
 fn is_safe_artifact_component(value: &str) -> bool {
@@ -897,10 +939,12 @@ impl ArtifactManifestV1 {
         if entries.iter().map(|entry| &entry.slot).ne(expected.iter()) {
             return Err(ArtifactManifestError::MismatchedSlotRoster);
         }
-        if entries
-            .iter()
-            .any(|entry| entry.digest != entry.attestation.subject_digest || entry.attestation.source_commit != *sha)
-        {
+        if entries.iter().any(|entry| {
+            entry.digest != entry.attestation.subject_digest
+                || entry.attestation.source_commit != *sha
+                || entry.attestation.repository != entry.slot.attestation_policy.repository
+                || entry.attestation.signer_workflow != entry.slot.attestation_policy.signer_workflow
+        }) {
             return Err(ArtifactManifestError::MismatchedAttestation);
         }
         Ok(Self {
@@ -1718,7 +1762,15 @@ mod tests {
         let package = ReleasePackageId::parse("cargo/demo").unwrap();
         let version = Version::semver(1, 0, 0);
         let operation = ReleaseOperation::tag(package.clone(), version.clone(), vec![]).unwrap();
-        let slot = ArtifactSlotId::new(package, version, "x86_64-unknown-linux-gnu", "demo.tar.gz").unwrap();
+        let slot = ArtifactSlotId::new(
+            package,
+            version,
+            "x86_64-unknown-linux-gnu",
+            "demo.tar.gz",
+            "orin-dx/callisto",
+            "refs/heads/main:.github/workflows/release.yml",
+        )
+        .unwrap();
         let intent = test_intent_with_slots(
             ReleaseInputSnapshotV1::new(SourceIdentity::git_commit("a".repeat(40)).unwrap(), vec![]),
             ExecutionTrustProfileV1::GitCommit,
