@@ -1,0 +1,174 @@
+This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
+
+Summary:
+1. Primary Request and Intent:
+
+**Session opening** (continuation of prior bug-hunt session): All in-flight fix agents from the prior session completed. The session began by answering the user's design question: "What happens if someone adds a changeset and then removes it before merging the release PR?" — answered with a clear explanation of the double-bump risk and the root cause (Callisto uses manifest versions not git tags as bump baseline).
+
+**New edge-case/adversarial audit request** (most recent user message): "Let's go through our spec and codebase and understand not just our happy path but anything else. We don't always do a good job of planning for edge cases, failure cases, errors, etc. Let's be very intentional and comprehensively understand and document these states so we can identify gaps and bugs. Then let's do an adversarial analysis on the results and consider our architecture, performance, security, DX and maintainability."
+
+**Standing constraints (must never be violated)**:
+- NEVER commit to git without explicit user instruction
+- NEVER bump versions or run release/publish commands
+- `/Users/gabe/Projects/callisto-findings/FINDINGS.md` lives OUTSIDE the repo — must NEVER be committed
+- `callisto publish` must NEVER be invoked against a real registry
+- All changes as uncommitted working-tree edits
+
+2. Key Technical Concepts:
+
+- **Callisto**: Rust CLI + moon WASM extension for polyglot monorepo versioning (Cargo/npm/PyPI), byte-compatible with `@changesets/cli`
+- **ApplyPermit**: Zero-sized compile-time dry-run enforcement token
+- **TDD discipline**: All fixes require failing test first
+- **PackageId::matches()**: Handles bare-vs-prefixed cross-ecosystem matching (raw string equality is wrong)
+- **PreMode::Pre vs PreMode::Exit**: Pre-release state machine — Exit should finalize to stable version
+- **GroupTable::resolve()**: Groups feature code — `#[allow(dead_code)]` and never called from production
+- **IdentityResolver::resolve()**: Python ecosystem arm was missing, causing crash on any Pypi package
+- **Cross-ecosystem cascade**: npm→cargo deps use `resolve_native_with_fallback` for cross-ecosystem lookup
+- **atomic_write**: All file writes gated by `ApplyPermit`, uses `NamedTempFile` + POSIX `rename(2)`
+- **manifest_cache**: `RefCell<BTreeMap<PathBuf, Arc<dyn Manifest>>>` in graph — every manifest read twice (locate + build)
+- **nextest test groups**: `moon-sandbox` group serializes WASM sandbox tests that share global state
+- **Changeset lifecycle**: Files in `.changeset/` deleted during `apply_version_plan`; orphaned changesets now emit `UnknownPackage` diagnostic and are NOT consumed
+- **Base version gap**: Callisto reads bumps from manifest version, not git tag → double-bump risk when changeset restored after version run
+
+3. Files and Code Sections:
+
+**`.config/nextest.toml`** (new file created):
+```toml
+[test-groups]
+moon-sandbox = { max-threads = 1 }
+
+[[profile.default.overrides]]
+filter = "test(moon_wasm_sandbox)"
+# WASM sandbox tests share global WasmHost state and must run serially.
+test-group = "moon-sandbox"
+```
+Created to fix parallel nextest failures for callisto-moon WASM sandbox tests.
+
+**`crates/callisto-graph/src/commands/status.rs:43-45`** (inline fix):
+```rust
+// Before:
+.map_or(false, |entry_id| pkg.id.matches(&entry_id));
+// After:
+.is_some_and(|entry_id| pkg.id.matches(&entry_id));
+```
+Clippy lint fix (`unnecessary_map_or`).
+
+**`crates/callisto-graph/src/identity.rs:190, 218`** (inline doc fixes):
+```rust
+// Before:
+/// should use [`resolve_native_with_fallback`] instead
+/// Like [`resolve_native`] but pushes a [`callisto_model::Diagnostic`]
+// After:
+/// should use [`Self::resolve_native_with_fallback`] instead
+/// Like [`Self::resolve_native`] but pushes a [`callisto_model::Diagnostic`]
+```
+Fixed broken rustdoc intra-doc links.
+
+**Key agent-applied changes**:
+- `crates/callisto-cli/src/commands/add.rs:43`: `id.name()` → `id.display_name()` (ecosystem prefix preservation)
+- `crates/callisto-cli/src/commands/pre.rs`: Re-enter guard, double-exit guard, empty tag rejection, git staging of pre.json
+- `crates/callisto-graph/src/aggregate.rs`: Orphaned changeset emits warning, not added to consumed; load_changesets error includes filename; fixed group stale member emits diagnostic + skipped
+- `crates/callisto-graph/src/cascade.rs`: `bump_target` now branches on `pre.mode == PreMode::Exit` to call `versioning.bump()` (stable finalization) instead of `bump_prerelease()`
+- `crates/callisto-graph/src/identity.rs`: Added `Ecosystem::Pypi` arm to `IdentityResolver::resolve()`; added cross-ecosystem fallback in `resolve_native_with_fallback`
+- `crates/callisto-graph/src/walk.rs`: Uses `proj.id.clone()` directly instead of re-resolving through `identity_resolver.resolve()`
+- `crates/callisto-graph/src/config/resolve.rs`: Per-package config properly wired (release-trigger, tag-template, changelog, pre-major-inference)
+- `crates/callisto-model/src/diagnostic.rs`: Added `InvalidPackageName`, `EmptySummary` variants to `DiagnosticCode`
+- `crates/callisto-format/src/changeset/mod.rs`: Fixed AND-gate to OR-gate for empty summary validation; added `WriteError::EmptySummary`, `ParseError::EmptySummary`
+- `crates/callisto-graph/src/commands/version.rs`: pre.json parse errors propagate (no longer swallowed with `.ok()`); post-aggregate injection for PreMode::Exit packages
+
+4. Errors and Fixes:
+
+- **`just ci` format failure**: Multiple agents wrote code with non-standard formatting. Fixed by running `just fmt`.
+- **Clippy lint in status.rs**: `map_or(false, |entry_id| ...)` → `is_some_and(|entry_id| ...)`. Fixed inline.
+- **Rustdoc broken intra-doc links in identity.rs**: `resolve_native` and `resolve_native_with_fallback` referenced without `Self::` prefix. Fixed inline.
+- **Moon WASM sandbox tests flaky under parallel nextest**: Tests share global `WasmHost` state. Fixed by adding `.config/nextest.toml` with `[test-groups] moon-sandbox = { max-threads = 1 }` and `[[profile.default.overrides]]` routing all `moon_wasm_sandbox` tests to that group.
+- **nextest override `test-threads` is not a valid key**: First attempt used `test-threads = 1` in the override, which was rejected with "ignoring unknown configuration key". Fixed by using the proper `test-group = "moon-sandbox"` pattern with a `[test-groups]` section.
+
+5. Problem Solving:
+
+**Changeset deletion idempotency design gap**: Documented that Callisto uses manifest versions (not git tags) as bump base, making "delete changeset after version" cause double-bump. Identified that the correct fix is to use last git tag as base, falling back to manifest only for new packages.
+
+**Python workspace crash (Critical)**: `IdentityResolver::resolve` had no `Pypi` arm, returning `Err(GraphError::AmbiguousName { name: "unsupported ecosystem" })` for any Python project. Fixed by:
+1. Adding Pypi arm to `IdentityResolver::resolve()`
+2. Changing `walk.rs` to use `proj.id.clone()` directly (the locator already resolved the ID correctly)
+
+**Cross-ecosystem cascade edges**: `resolve_native(eco, name)` used strict `(eco, name)` lookup. npm→cargo deps produced no graph edge. Fixed by adding `resolve_native_with_fallback` with cross-ecosystem lookup and ambiguity diagnostic.
+
+**Fixed/linked group crash**: `union_fixed()` and `union_linked()` didn't check if group members still exist in workspace. Fixed by adding `!base_versions.contains_key(&m)` guard that emits warning diagnostic and skips stale members.
+
+**Pre-release finalization bug**: `bump_target` always called `bump_prerelease()` when `pre` is `Some`, regardless of `PreMode::Exit`. Fixed by branching on `pre.mode` and calling `versioning.bump(base, sev)` for Exit mode.
+
+**`just ci` fully green**: After all fixes + formatting + doc link fixes + nextest config: 428/428 tests pass.
+
+6. All User Messages:
+
+- The design question about changeset deletion: The assistant answered about the double-bump risk for the changeset deletion scenario.
+- **Most recent user message**: "Let's go through our spec and codebase and understand not just our happy path but anything else. We don't always do a good job of planning for edge cases, failure cases, errors, etc. Let's be very intentional and comprehensively understand and document these states so we can identify gaps and bugs. Then let's do an adversarial analysis on the results and consider our architecture, performance, security, DX and maintainability."
+
+7. Pending Tasks:
+
+- **Wait for 2 remaining audit agents**: version planning edge cases (a39dcffd8ec51d7fd) and architecture/DX analysis (a44aa29242770ca79) are still running
+- **Synthesize all 8 audit results** into a comprehensive designed HTML artifact
+- **Artifact design plan established**:
+  - Color: `#F7F6F2` warm ground / `#18171A` deep charcoal / `#2C5BE8` engineering-blue accent / severity: `#C93D2E` critical → `#D97008` high → `#B8960C` medium → `#3D7A4A` low / dark: `#13121A` bg, `#E9E5DF` text
+  - Type: `system-ui` body, `ui-monospace` code
+  - Layout: Sticky left nav (25%) + scrollable main (75%), severity-striped finding cards
+
+**Known unaddressed bugs from this wave's audits** (not yet fixed):
+- [Critical] `[[fixed-group]]`/`[[linked-group]]` groups feature entirely dead (GroupTable::resolve() never called)
+- [High] `[[package-set]]` config block completely dead
+- [High] `[[package]] publish-to` always None
+- [High] GitHub Action exit code 1 vs 2 not distinguished
+- [Medium] `[target.cfg(...).dependencies]` invisible to cascade
+- [Medium] `[project.optional-dependencies]` not visited
+- [Medium] python.rs update_dependency_spec silent Ok when not found
+- [Medium] BOM in callisto.toml causes cryptic error
+- [Medium] Unknown keys silently ignored (no deny_unknown_fields)
+- [Medium] npm "0.0.0-use.local" treated as bumpable
+- [Medium] published=true set before publish executes
+- [Medium] publishedPackages reports plan not actual outcomes
+- [Medium] plan_snapshot calls GitRepository::discover directly (no CommandRunner fallback)
+- [Medium] validate --strict silently inert
+- [Medium] changelog path traversal in resolve.rs
+- [High] setup-callisto YAML expression injection
+- [High] eval command injection
+- [High] $token_flag unquoted
+- [Low-Medium] Shallow clone: all packages show as changed
+- [Low] pre exit doesn't stage pre.json
+- [Low] Concurrent add slug collision
+- [Low] snapshot --tag "" no validation
+- [Low] --dry-run JSON output missing dryRun marker in 4 commands
+- [Low] changesets.dir = "." causes parse failures
+- [Low] Non-changeset .md files in changeset dir cause confusing errors
+- [Low] DuplicatePackage error never emitted
+- Performance: double manifest reads, no batch writes for workspace root Cargo.toml
+- [Low] --refresh-lockfiles flag silently ignored
+
+8. Current Work:
+
+Immediately before the summary request, 5 of 8 audit agents had completed and the assistant was waiting on the remaining 2 (version planning a39dcffd8ec51d7fd and architecture/DX a44aa29242770ca79). The security audit (a5c33201e0996846e) had just completed with findings including:
+- [High] setup-callisto YAML injection (`${{ inputs.version }}` in run block at `.github/actions/setup-callisto/action.yml:36`)
+- [High] `eval "$INPUT_VERSION_COMMAND"` and `eval "$INPUT_PUBLISH"` - command injection
+- [High] `$token_flag` unquoted in cargo publish args
+- [Medium] changelog field path traversal (no validation after per-package config wiring)
+- [Medium] write_changeset doesn't reject newlines in names
+- [Medium] PATH manipulation attack surface for cargo/npm/twine
+- [Low] atomic_write creates 0600 files
+
+The assistant had completed the artifact-design skill invocation and established a design plan for the final report artifact. The plan was:
+- Sticky left nav + scrollable main content
+- `system-ui` / `ui-monospace` typography
+- Engineering-blue accent with severity-colored finding cards
+
+9. Optional Next Step:
+
+Wait for the 2 remaining audit agents (version planning and architecture/DX) to complete, then synthesize all 8 audit results into a comprehensive HTML artifact that documents:
+1. All findings organized by category and severity
+2. Summary dashboard at top
+3. Per-finding cards with severity stripe, file:line citation, failing scenario, and verification strategy
+4. Adversarial analysis sections covering architecture, performance, security, DX, and maintainability
+
+The user's most recent request was: "Let's go through our spec and codebase and understand not just our happy path but anything else. We don't always do a good job of planning for edge cases, failure cases, errors, etc. Let's be very intentional and comprehensively understand and document these states so we can identify gaps and bugs. Then let's do an adversarial analysis on the results and consider our architecture, performance, security, DX and maintainability."
+
+If you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/gabe/.claude/projects/-Users-gabe-Projects-callisto/575b7a46-37b7-42f0-9db7-b2c329b2abab.jsonl
+Continue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with "I'll continue" or similar. Pick up the last task as if the break never happened.
