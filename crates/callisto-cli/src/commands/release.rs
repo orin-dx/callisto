@@ -6,7 +6,7 @@
 //! identities; exposing a permissive fallback here would recreate the legacy
 //! publish/tag bypass this command family replaces.
 
-use std::{io::Write, process::ExitCode};
+use std::process::ExitCode;
 
 use callisto_graph::commands::{
     build_release_intent, derive_selected_release_decision, execute_release_with_artifacts,
@@ -67,7 +67,9 @@ fn plan(args: ReleasePlanArgs, global: &GlobalArgs) -> Result<ExitCode, CliError
         &decision,
         ExecutionTrustProfileV1::GitCommit,
     )?;
-    write_intent(&args.out, &intent)?;
+    let permit = ApplyPermit::granted_unless_dry_run(global.dry_run)
+        .expect("release plan rejects --dry-run before creating its explicit output");
+    write_intent(&args.out, &intent, &permit)?;
     match global.format {
         OutputFormat::Json => write_json(&mut std::io::stdout(), &intent)?,
         OutputFormat::Text => println!("Wrote release intent {} to {}", intent.digest(), args.out.display()),
@@ -158,27 +160,10 @@ fn read_json_file(path: &std::path::Path) -> Result<serde_json::Value, CliError>
         .map_err(|error| CliError::Other(format!("invalid JSON in {}: {error}", path.display())))
 }
 
-fn write_intent(path: &std::path::Path, intent: &ReleaseIntentV1) -> Result<(), CliError> {
+fn write_intent(path: &std::path::Path, intent: &ReleaseIntentV1, permit: &ApplyPermit) -> Result<(), CliError> {
     let content = serde_json::to_string_pretty(intent).expect("release intent serializes") + "\n";
-    let parent = path.parent().unwrap_or_else(|| std::path::Path::new("."));
-    std::fs::create_dir_all(parent).map_err(|source| CliError::Io {
+    callisto_model::atomic::atomic_write(path, &content, permit).map_err(|source| CliError::Io {
         source,
-        path: Some(parent.to_path_buf()),
-    })?;
-    let mut temporary = tempfile::NamedTempFile::new_in(parent).map_err(|source| CliError::Io {
-        source,
-        path: Some(parent.to_path_buf()),
-    })?;
-    temporary.write_all(content.as_bytes()).map_err(|source| CliError::Io {
-        source,
-        path: Some(path.to_path_buf()),
-    })?;
-    temporary.as_file().sync_all().map_err(|source| CliError::Io {
-        source,
-        path: Some(path.to_path_buf()),
-    })?;
-    temporary.persist(path).map_err(|error| CliError::Io {
-        source: error.error,
         path: Some(path.to_path_buf()),
     })?;
     Ok(())
