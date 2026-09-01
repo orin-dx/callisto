@@ -1,0 +1,28 @@
+<task-notification>
+<task-id>a3cc9f08e42a38490</task-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8a85b651-0c9a-44fa-9e0a-ac694c4409e1/tasks/a3cc9f08e42a38490.output</output-file>
+<status>completed</status>
+<summary>Agent "Correct SPEC-002 for scoped-name sanitization" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>The corrected spec passed exit-gate and is written to disk.
+
+**Summary of this round's correction (SPEC-002, AC-001):**
+
+The contradiction: `artifact_name_for_package_platform` was documented as embedding `package_name` verbatim, but the shipped code (`crates/callisto-graph/src/matrix.rs:36-52`) sanitizes it first — replacing every `/` with `-` — so npm scoped package names (`@scope/addon`) don't produce an invalid, slash-containing `artifactName` that `actions/upload-artifact`/`gh run download` would reject.
+
+Changes written to `/Users/gabe/Projects/callisto/.claude/specs/SPEC-002-native-artifact-placement.json`:
+- **AC-001**: now states the `/`-to-`-` sanitization rule explicitly, with a concrete verified example (`@scope/addon` → `@scope-addon-darwin-arm64`, no `/` in the result), alongside the existing pkg-a/pkg-b example.
+- **`api_surface[0]`** description and **`scope`**'s Rust-change sentence: both updated to state the sanitization step.
+- **New `non_goals` entry**: explicitly declares the narrow theoretical `a/b`-vs-`a-b` post-sanitization collision as out of scope, with rationale (npm/Cargo/PyPI name-character constraints make it vanishingly unlikely; artifactName is documented as an opaque correlation token).
+- **New `AC-012`**: added after the auditor caught that `.claude/specs/callisto-matrix.md` §4 still shows the stale unsanitized example `@scope/addon-darwin-arm64` (line 203) — this is now the one criterion in the spec still requiring an actual edit; `scope` was extended to name this doc fix too.
+- **`revision_note`**: appended as a fifth paragraph documenting this round's correction and the two auditor-driven fixes within it, preserving the full four-prior-round history.
+
+This took two auditor rounds (first caught the stale doc example gap and a self-contradictory AC-001 parenthetical; second caught that my fix for the parenthetical leaked an internal function name (`triple_to_role`) into a criterion, which I removed in favor of the existing black-box-testable negative-substring check) plus one exit-gate pass, which returned **pass**.
+
+**Two items intentionally left untouched, flagged for you separately:**
+- The spec's `id` field (`"SPEC-002"`) collides with `.claude/specs/track-e-specificity.json`, which already owns that id.
+- `AC-001`/`AC-002`/`api_surface[0]` duplicate content already owned by `track-g-matrix-napi-maturin.json`'s `AC-013` (that spec's own revision_note already credits "SPEC-002" for this exact change).
+
+Both are pre-existing conditions of the file, not introduced by this round, and are spec-portfolio housekeeping decisions (renaming an id, deciding which spec is authoritative for the artifactName contract) rather than defects in the AC-001 correction itself — I left them out of scope for a single-criterion correction pass rather than unilaterally restructuring the spec. Worth a separate cleanup pass if you want one.</result>
+<usage><subagent_tokens>139443</subagent_tokens><tool_uses>27</tool_uses><duration_ms>1275310</duration_ms></usage>
+</task-notification>
