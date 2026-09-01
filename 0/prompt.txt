@@ -1,0 +1,24 @@
+<task-notification>
+<task-id>af26d33eba44274f6</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/bb531e8d-c394-4e47-a8ae-e4a9ceeca6d2/tasks/af26d33eba44274f6.output</output-file>
+<status>completed</status>
+<summary>Agent "Scope the cross-ecosystem rewrite-key fix" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Report: Track 9 rewrite-key bug — scope investigation
+
+**Directive**: investigate scope of the `RewriteKey.name` cross-ecosystem bug in `cascade.rs`.
+
+**1. `CascadeInput` needs a new field, but that's not the real blocker.** `IdentityIndex` is not accessible via `solve_cascade`'s existing scope. Adding `identity: &amp;'a IdentityIndex` to `CascadeInput` (mirroring `tags: &amp;'a TagIndex`) is necessary but not sufficient — see #2.
+
+**2. The real blocker: `plan_version`/`plan_snapshot` can't obtain `&amp;IdentityIndex` from `ws.graph` at all.** Both are generic — `plan_version&lt;R: CommandRunner, D: DependencyResolver, I: SeverityInference&gt;`, `plan_snapshot&lt;R: CommandRunner, D: DependencyResolver&gt;` — and `Workspace&lt;'a, R, D = ManifestWalkResolver&gt;`. `.identity()` is an inherent method on the concrete `ManifestWalkResolver` only, not part of the `DependencyResolver` trait (which lives in `callisto-model`, Layer 1, and cannot reference `IdentityIndex`, a Layer 2 type in `callisto-graph`, without violating CLAUDE.md's layer-isolation invariant). So `ws.graph.identity()` will not compile inside either generic function as-is. Two real options: (a) a new Layer-2-only trait (e.g. `HasIdentity`) added as a second bound on `D` everywhere `plan_version`/`plan_snapshot`/`solve_cascade` are generic — cascades into every test fixture's custom resolver needing to implement it too; (b) store `IdentityIndex` as a sibling field directly on `Workspace` (populated by `Workspace::load` from `walk::build`'s already-computed `index`, independent of `D`), and thread `&amp;ws.identity` into `CascadeInput` at the two real call sites. (b) is cleaner — no trait-bound changes, no layer violation — but still requires a `Workspace` struct field addition plus checking/updating every direct `Workspace { .. }` literal construction outside `::load`.
+
+**3. Construction-site count**: 16 total `CascadeInput {` sites — 8 in `cascade.rs`'s own test module, 6 in `crates/callisto-graph/tests/cascade_tests.rs`, 2 real (`commands/version.rs:73`, `commands/snapshot.rs:54`). Same order of magnitude as Track 1's `tags` field addition (which touched 15 sites).
+
+**4. Fix shape at the call site** (cascade.rs ~253-280): `eco` is already correctly derived from `edge.from` (the manifest being rewritten). The one-line fix is `name: input.identity.native_name(&amp;edge.to, eco).unwrap_or_else(|| edge.to.name()).to_string()`. Fallback to `edge.to.name()` when `native_name` returns `None` is the right choice — it's the current (buggy but non-crashing) behavior for the common case where no cross-ecosystem identity was ever registered, so this fallback is a pure improvement with no new failure mode.
+
+**5. "Crashes outright" claim: still accurate in spirit.** `RewriteKey.name` flows into `update_dependency_spec` (`crates/callisto-manifests/src/cargo.rs:300`), which returns `Err(ManifestError::DependencyNotFound)` (confirmed at lines 308/341/349/697) when the key doesn't match a real manifest entry — not a Rust panic, but a hard `Result::Err` that propagates via `?` through `apply_version_plan`, aborting the whole apply for that package. Not a literal crash, but a hard user-visible failure on exactly the scenario described (a real cross-ecosystem rewrite with mismatched native name).
+
+**Bottom line**: this is NOT "narrow, single-function" as the master plan's tier assignment claimed. The actual code-level fix (one line, `native_name` lookup with fallback) is trivial, but making it *compilable* requires either a new cross-layer trait bound (touching 3+ generic function signatures) or a `Workspace` struct field addition plus `Workspace::load` changes — both are architecture-level changes on par with Track 1's `CascadeInput.tags` work, touching ~16 call sites. Recommend re-scoping to at least the same rigor as Track 1 (full canon pipeline or a carefully-planned multi-task lighter loop), not a single quick patch.</result>
+<usage><subagent_tokens>866128</subagent_tokens><tool_uses>4</tool_uses><duration_ms>76088</duration_ms></usage>
+</task-notification>
