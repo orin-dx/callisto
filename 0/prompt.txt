@@ -1,0 +1,38 @@
+<task-notification>
+<task-id>a7f0b0a05ab0a0ccb</task-id>
+<tool-use-id>toolu_01Ws1u6X7Kp3c5TE8a6PEJXa</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/tasks/a7f0b0a05ab0a0ccb.output</output-file>
+<status>completed</status>
+<summary>Agent "Review T13 commit" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Review of commit 2698a10 (T13 — wire persist() into ManifestCstEditor blanket impl)
+
+**1. Scope adherence** — Confirmed. `git show --stat 2698a10` shows only `crates/callisto-manifests/src/lib.rs` touched (38 lines: 36 insertions, 2 deletions).
+
+**2. Non-negotiable violations (rust-hazards.md)** — None found. The `?` propagation is correct: `self.write_version(new_version, permit)?` short-circuits with the mutator's `Err` before `self.persist(permit)` is ever reached, for both `update_version_cst` and `update_dependency_cst`. No T1–T10 patterns present (no `.unwrap()`/`.expect()`, no `map_err(|_|`, no silent `Ok(())` swallowing, no discarded results). `cargo clippy -p callisto-manifests --lib --all-features -- -D warnings` is clean.
+
+**3. Production impact check** — Confirmed via workspace-wide grep: `update_version_cst`/`update_dependency_cst` have zero callers anywhere outside `crates/callisto-manifests/src/lib.rs` itself (only definition + blanket impl + the new test call it), and `ManifestCstEditor` has zero usages outside that crate. The "cosmetic, currently-dead-code" framing from earlier reviews in this track is accurate as of this commit. Also verified the underlying premise — mutators in `python.rs`, `cargo.rs`, and `npm.rs` all have dedicated `*_does_not_touch_disk_until_persist_called` tests confirming they no longer self-persist, so this fix is real (not defending against a non-existent regression) even though currently unreachable from production code paths.
+
+**4. Test quality** — `update_version_cst_persists_to_disk` (lib.rs:203-233) genuinely exercises the fix: it calls `manifest.update_version_cst(...)` on a `Box&lt;dyn Manifest&gt;` (there is no inherent `update_version_cst` method on `PyprojectToml` — it only exists via the blanket impl over the `Manifest` trait), and it reads the file back from disk afterward and asserts the new version string is present. This is a real integration-level check, not an implementation-detail assertion. The `#[cfg(all(test, feature = "pypi"))]` gating claim is accurate: `pypi` is in `default = ["cargo", "npm", "pypi"]` in `crates/callisto-manifests/Cargo.toml`, so a plain `cargo test -p callisto-manifests --lib` (no explicit `--features`) compiles and runs this module. Verified directly — ran the suite, all 107 tests pass including the new one.
+
+**Gap found**: only `update_version_cst` got a persistence test. `update_dependency_cst` — the second call site this commit fixes — has no corresponding test anywhere verifying its `persist()` call actually reaches disk. The two branches are structurally identical and trivial, so risk is low, but this task exists specifically to close a "silently no-op'd on disk" gap, and that exact risk is now unverified for one of the two methods the commit claims to fix. This is inconsistent with the crate's own convention (e.g. `write_version_does_not_touch_disk_until_persist_called` and `update_dependency_spec_does_not_touch_disk_until_persist_called` are written in symmetric pairs throughout `python.rs`, `cargo.rs`, `npm.rs`).
+
+```json
+{
+  "status": "changes_requested",
+  "issues": [
+    {
+      "file": "crates/callisto-manifests/src/lib.rs",
+      "line": 89,
+      "description": "update_dependency_cst's persist() wiring (added in this commit alongside update_version_cst's) has no corresponding disk-persistence test. Only update_version_cst_persists_to_disk was added; no analogous update_dependency_cst_persists_to_disk test exists. This leaves half of the fix this task set out to make unverified by any test — the exact 'silently no-op'd on disk' risk this commit exists to close.",
+      "severity": "must_fix"
+    }
+  ],
+  "sibling_gaps": [],
+  "reasoning": "Diff is scope-clean, single file. ? propagation verified correct by reading control flow — mutator Err short-circuits before persist. Grep across the whole workspace (including feature-gated builds) confirms zero production callers of ManifestCstEditor methods, so the 'cosmetic, dead-code' framing holds. Confirmed mutators in all three ecosystem files no longer self-persist (existing does_not_touch_disk_until_persist_called tests). New test genuinely calls through the trait on a boxed dyn Manifest and reads disk after — not a shortcut. Feature-gating claim verified against Cargo.toml default feature list. The one gap is the missing mirror test for update_dependency_cst; flagged must_fix because it's the same defect class this task exists to close, not a cosmetic gap, and the crate's own test conventions consistently write both mutator variants in pairs."
+}
+```
+
+Relevant files: `/Users/gabe/Projects/callisto/crates/callisto-manifests/src/lib.rs`, `/Users/gabe/Projects/callisto/crates/callisto-manifests/src/python.rs`, `/Users/gabe/Projects/callisto/crates/callisto-manifests/src/cargo.rs`, `/Users/gabe/Projects/callisto/crates/callisto-manifests/src/npm.rs`, `/Users/gabe/Projects/callisto/crates/callisto-manifests/Cargo.toml`.</result>
+<usage><subagent_tokens>58627</subagent_tokens><tool_uses>18</tool_uses><duration_ms>168049</duration_ms></usage>
+</task-notification>
