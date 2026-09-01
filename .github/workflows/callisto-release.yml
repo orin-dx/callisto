@@ -282,4 +282,3 @@ jobs:
             args+=(--artifact-manifest .release-build/release-artifacts/manifest.json --artifact-dir .release-build/release-artifacts)
           fi
           callisto release execute "${args[@]}"
-        uses: ./.github/actions/setup-callisto
