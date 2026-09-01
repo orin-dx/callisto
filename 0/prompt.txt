@@ -1,0 +1,165 @@
+This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
+
+Summary:
+1. Primary Request and Intent:
+
+The session has two main threads:
+
+**Thread 1 — Architecture diagram prettification (completed):**
+- User asked to "prettify the marmaid diagram" in ARCHITECTURE.md
+- Initially assistant created an HTML artifact, user corrected: "We're not publishing a web site here. Just the markdown file. Cleanup the html"
+- All four mermaid diagrams in ARCHITECTURE.md were improved in-place with `%%{init: ...}%%` blocks, refined color palette (sky→indigo→violet→emerald→amber consistent across diagrams), expanded cascade diagram, and updated sequence diagram showing `callisto publish` instead of old bash loop text
+
+**Thread 2 — Plugin installation + full code audit + fixes (in progress):**
+- User requested installing plugins from `https://github.com/orin-dx/agent-plugins`
+- The repo uses AGY schema; Claude CLI expects Anthropic schema at `.claude-plugin/marketplace.json`
+- Solution: created `.claude-plugin/marketplace.json` in `~/Projects/agent-plugins`, committed and pushed
+- User installed all 9 plugins manually via `/plugin install <name>` commands
+- All 9 plugins active: basis, proof, axiom, graph, trace, canon, vector, lambda, delta
+- Full proof audit completed: 36 candidates → 23 confirmed findings
+- User said: "Yes, let's start fixing please"
+- Lambda skill was invoked and is now requesting this summary before dispatching fix agents
+
+**CRITICAL STANDING CONSTRAINTS (must be preserved verbatim):**
+- NEVER commit to git without explicit user instruction
+- NEVER bump versions or run release/publish commands
+- `/Users/gabe/Projects/callisto-findings/FINDINGS.md` lives OUTSIDE the repo — must NEVER be committed
+- `callisto publish` must NEVER be invoked against a real registry
+- All changes land as uncommitted working-tree edits only
+- No emojis in documentation
+- TDD discipline: RED → GREEN → REFACTOR; never write production code without a failing test first
+
+2. Key Technical Concepts:
+
+- **Callisto**: Rust CLI + Moon WASM extension for polyglot monorepo versioning (Cargo/npm/PyPI)
+- **TDD**: RED → GREEN → REFACTOR; failing test required before any production code
+- **proof:proof skill**: 4-phase pipeline: recon → scanner → adversary → exit-gate
+- **finding-report@1 schema**: structured output from proof audits
+- **lambda:lambda skill**: TDD implementation via lambda-recon → lambda-implementer → lambda-reviewer → lambda-exit-gate
+- **Plugin marketplace**: Claude CLI requires `.claude-plugin/marketplace.json` with Anthropic schema; orin-dx repo uses AGY schema at root `marketplace.json`
+- **TOCTOU races**: Multiple `exists()` + write/delete patterns that are not atomic
+- **O(N²) lookups**: `packages().find()` called inside loops instead of pre-built maps
+- **Slug collision**: `generate_human_slug` derives all 3 indices from same nanosecond timestamp → only 8,000 values, clock coalescing causes collisions
+- **PreMajorInferencePolicy**: Config field parsed but `OFF` always hardcoded in `aggregate()`
+- **Substring vs line-boundary match**: `normalised.contains(version_heading)` fires on `"## 1.0.0-alpha.1"` when writing `"## 1.0.0"`
+- **u64 overflow**: Unchecked `+ 1` on version components wraps to 0 in release builds
+- **Argument injection**: Package names passed to subprocess without `--` end-of-options terminator
+- **Path traversal**: `changesets_dir` from raw TOML `PathBuf::from()` with no `../` validation
+
+3. Files and Code Sections:
+
+- **`/Users/gabe/Projects/callisto/ARCHITECTURE.md`**
+  - Four mermaid diagrams updated in-place
+  - All diagrams got `%%{init: {'theme': 'base', 'themeVariables': {'lineColor': '#64748b', 'edgeLabelBackground': '#f8fafc', 'fontFamily': 'ui-sans-serif, system-ui, sans-serif'}}}%%`
+  - Consistent color palette: Stage1=`fill:#dbeafe,stroke:#2563eb,color:#1e3a8a`, Stage2=`fill:#e0e7ff,stroke:#4338ca,color:#312e81`, Stage3=`fill:#ede9fe,stroke:#7c3aed,color:#4c1d95`, Stage4=`fill:#d1fae5,stroke:#059669,color:#064e3b`, Stage5=`fill:#fed7aa,stroke:#ea580c,color:#7c2d12`
+  - Layer topology uses same palette inverted: L1=sky, L2=indigo, L3=violet, L4=green
+  - Diagram 4 sequence updated: `callisto publish` instead of "Sequential cargo publish..."
+
+- **`/Users/gabe/Projects/agent-plugins/.claude-plugin/marketplace.json`** (created and pushed)
+  - Anthropic schema wrapper for Claude CLI compatibility
+  - 9 plugins with `"source": {"source": "git-subdir", "url": "https://github.com/orin-dx/agent-plugins.git", "path": "plugins/<name>", "ref": "main"}`
+
+- **`crates/callisto-changelog/src/write.rs:56`** (CORR-001 — to fix)
+  - `normalised.contains(version_heading)` → should be `normalised.lines().any(|l| l.trim() == version_heading)`
+  - Bug: `"## 1.0.0-alpha.1".contains("## 1.0.0")` is `true` in Rust; stable release entry permanently dropped after pre-release
+
+- **`crates/callisto-changelog/src/render.rs:24`** (CORR-002 — to fix)
+  - `if entries.is_empty() { continue; }` doesn't filter entries by non-empty summary
+  - Bug: dangling `### Patch Changes` heading when all entries have blank summaries
+
+- **`crates/callisto-graph/src/aggregate.rs:218,221`** (EH-001 + CORR-003 — to fix)
+  - Line 221: `if let Ok(Some(outcome)) = inference.infer(pkg, window)` silently drops errors
+  - Line 218: `policy: PreMajorInferencePolicy::OFF` hardcoded; never reads per-package config
+
+- **`crates/callisto-cli/src/commands/add.rs:282`** (FS-001 — to fix)
+  - `generate_human_slug` uses timestamp bitshifts; only 8,000 distinct values; concurrent invocations collide
+
+- **`crates/callisto-graph/src/commands/publish.rs:42,124,32`** (PERF-003/4/5 — to fix)
+  - Line 32: double PackageId clone before toposort
+  - Line 42: O(N²) `packages().find()` inside topo loop
+  - Line 124: O(N·E) `packages().find()` inside dep-edge loop
+
+- **`crates/callisto-graph/src/commands/version.rs:88,224`** (PERF-006/8 — to fix)
+  - Line 88: O(N²) `packages().find()` per severity entry
+  - Line 224: `state.changesets.contains(&stem)` on `Vec<String>` — O(N²) growth
+
+- **`crates/callisto-graph/src/toposort.rs:17`** (PERF-001 — to fix)
+  - `all_packages.contains(id)` is O(N) per member; validation always passes in production
+
+- **`crates/callisto-graph/src/resolver.rs:13,57`** (PERF-002/7 — to fix)
+  - Line 13: clones all PackageIds into throwaway Vec on every toposort call
+  - Line 57: intermediate `Vec<&DepEdge>` built then immediately consumed
+
+- **`crates/callisto-graph/src/config/resolve.rs:181`** (FS-007 — to fix)
+  - `PathBuf::from(raw_value)` with no `../` check → path traversal via `changesets_dir`
+
+- **`crates/callisto-graph/src/commands/publish_client.rs:61`** (SEC-002 — to fix)
+  - `&["publish", "-p", package.name(), "--locked"]` — no `--` terminator; raw deserialized name bypasses `PackageId::parse()`
+
+- **`crates/callisto-format/src/bump.rs:94,125,201`** (MS-001/2/3 — to fix)
+  - Unchecked `+ 1` on u64 components; wraps to 0 in release mode at u64::MAX
+
+- **`crates/callisto-graph/src/cascade.rs:358`** (DEAD-01 — to fix)
+  - `calculate_bump_severity` dead function with `#[allow(dead_code)]` — delete it
+
+- **`crates/callisto-graph/src/commands/init.rs:130`** (FS-004 — to fix)
+  - `!config_path.exists()` + `atomic_write` TOCTOU
+
+4. Errors and Fixes:
+
+- **`claude plugin marketplace add orin-dx/agent-plugins` failed**: CLI looks for `.claude-plugin/marketplace.json` but repo has `marketplace.json` at root in AGY schema. Fixed by creating `.claude-plugin/marketplace.json` with Anthropic schema in the repo.
+- **`git push` blocked by classifier**: Auto-mode classifier blocked push to external repo. User ran the push themselves via `! cd ~/Projects/agent-plugins && git push origin main`.
+- **User corrected diagram approach**: Initially created HTML artifact for mermaid diagrams. User: "We're not publishing a web site here. Just the markdown file. Cleanup the html" — switched to editing ARCHITECTURE.md directly.
+- **`ReportFindings` short_summary too long**: Initial call had summaries >60 chars. Fixed by truncating all short_summary fields.
+
+5. Problem Solving:
+
+- **Completed**: Architecture diagrams prettified in ARCHITECTURE.md directly
+- **Completed**: orin-dx marketplace registered and all 9 plugins installed
+- **Completed**: Full proof audit — 23 confirmed findings across correctness, security, performance categories
+- **In Progress**: Fixing all 23 confirmed findings — lambda skill invoked, about to dispatch parallel fix agents
+
+6. All user messages:
+
+- "Can we pretiffy the marmaid diagram? We can do a lot better right?" (prior session end)
+- "We're not publishing a web site here. Just the markdown file. Cleanup the html"
+- "Let's install the new plugins from our agent-plugins marketplace repo"
+- "https://github.com/orin-dx/agent-plugins"
+- "Yes" (approving creation + push of `.claude-plugin/marketplace.json`)
+- "Try again please, the code should be in ~/Projects right?"
+- "[Request interrupted by user] No, we install like proper plugins right?" (interrupted manual file copy; wanted CLI install)
+- "It's already cloned there" (agent-plugins already at ~/Projects/agent-plugins)
+- "`! cd ~/Projects/agent-plugins && git push origin main`" (ran push themselves)
+- "Let's do a full code audit, including bugs, performance, security, architecture"
+- "Yes, let's start fixing please"
+
+7. Pending Tasks:
+
+Fix all 23 confirmed findings from the proof audit, following TDD (red → green → commit per fix). Organized into parallel workstreams by file ownership:
+
+- **Workstream A** — `changelog/write.rs` (CORR-001) + `changelog/render.rs` (CORR-002)
+- **Workstream B** — `graph/aggregate.rs` (EH-001 + CORR-003, same file)
+- **Workstream C** — `cli/commands/add.rs` (FS-001 slug collision)
+- **Workstream D** — `publish_client.rs` (SEC-002) + `config/resolve.rs` (FS-007)
+- **Workstream E** — `commands/publish.rs` (PERF-003/4/5)
+- **Workstream F** — `commands/version.rs` (PERF-006/8)
+- **Workstream G** — `toposort.rs` (PERF-001) + `resolver.rs` (PERF-002/7)
+- **Workstream H** — `bump.rs` (MS-001/2/3) + `cascade.rs` (DEAD-01) + `commands/init.rs` (FS-004)
+
+8. Current Work:
+
+The lambda skill was just invoked in response to the user saying "Yes, let's start fixing please." The skill loaded and requested this text-only summary. The immediate next action is to dispatch parallel fix agents across the 8 workstreams above, following TDD discipline: write the failing test first, confirm it fails, implement the minimal fix, confirm it passes, then leave uncommitted (do NOT commit without explicit user instruction).
+
+9. Optional Next Step:
+
+Launch a parallel fix workflow covering all 23 confirmed findings. The user's last message was "Yes, let's start fixing please" — the next step is to dispatch lambda-implementer agents across the 8 independent workstreams in parallel, each following the full TDD cycle (red → green), leaving changes as uncommitted working-tree edits per the standing constraint.
+
+Highest-priority fixes to lead with:
+1. CORR-001 (`write.rs:56`): change `contains` to line-boundary check
+2. EH-001 + CORR-003 (`aggregate.rs:218,221`): fix silent error drop + hardcoded OFF
+3. FS-001 (`add.rs:282`): fix slug collision with proper entropy
+4. SEC-002 + FS-007 (`publish_client.rs:61`, `resolve.rs:181`): security fixes
+5. PERF-004/5 (`publish.rs:42,124`): O(N²) → pre-built map
+
+If you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/gabe/.claude/projects/-Users-gabe-Projects-callisto/575b7a46-37b7-42f0-9db7-b2c329b2abab.jsonl
+Continue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with "I'll continue" or similar. Pick up the last task as if the break never happened.
