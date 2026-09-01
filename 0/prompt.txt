@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bl1sgntd5</task-id>
+<tool-use-id>toolu_01L8kDdzVjKpRrraBiVjAoXp</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a15bbbf7-aba0-415d-bfdc-c773ea65cfc7/tasks/bl1sgntd5.output</output-file>
+<status>completed</status>
+<summary>Background command "rtk just ci 2&gt;&amp;1" completed (exit code 0)</summary>
+</task-notification>
