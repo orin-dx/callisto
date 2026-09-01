@@ -1,0 +1,8 @@
+<task-notification>
+<task-id>btiiibnkx</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/e9efeaba-9875-4c8b-ad83-aa1c06f21756/tasks/btiiibnkx.output</output-file>
+<status>killed</status>
+<summary>Background command "cd /Users/gabe/Projects/callisto
+rtk cargo clippy -p callisto-model -p callisto-graph --all-targets -- -D warnings" was stopped</summary>
+</task-notification>
