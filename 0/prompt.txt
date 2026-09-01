@@ -1,0 +1,40 @@
+<task-notification>
+<task-id>ae944bf55249793fd</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/ae944bf55249793fd.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement TASK-25 (AC-09h regression test)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>```json
+{
+  "task_id": "TASK-25",
+  "status": "done",
+  "steps_completed": [
+    "verified 20 prior commits present on ignore_walk.rs and clean working tree",
+    "read AC-09h exact criterion text from .claude/specs/SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json (matches plan's fixture verbatim)",
+    "wrote ac09h_invalid_glob_in_pnpm_packages_is_skipped_without_disabling_sibling_entries test in ignore_walk.rs",
+    "ran test: passed immediately with no implementation change (as predicted, mirroring TASK-22/24 pattern)",
+    "adversarially verified non-vacuity: temporarily broke build_globset's per-entry skip in membership.rs (Ok(...) -&gt; expect(...) panic), reran test, confirmed it FAILED with a panic pointing at the invalid glob entry",
+    "restored membership.rs to original state, verified git diff clean on that file",
+    "ran cargo fmt -p callisto-graph, cargo test (green), cargo clippy --all-targets -D warnings (clean)",
+    "committed as 83fb272"
+  ],
+  "test_result": "pass",
+  "commit_sha": "83fb272",
+  "criteria_evidence": [
+    {
+      "criterion_id": "AC-09h",
+      "test_file": "crates/callisto-graph/src/locate/ignore_walk.rs",
+      "test_line": 1378,
+      "implementation_file": "crates/callisto-graph/src/locate/membership.rs",
+      "implementation_line": 12
+    }
+  ],
+  "concerns": null,
+  "reasoning": "No new implementation was needed since build_globset's per-entry skip-on-compile-failure logic (already proven in isolation and wired through the pnpm branch by earlier tasks in this plan) already covers this case identically to the npm/Cargo analogs. Confirmed the test is not vacuous by breaking the exact code path (build_globset in membership.rs) and observing the test fail with a panic, then restoring it cleanly."
+}
+```
+
+Summary: Added regression test `ac09h_invalid_glob_in_pnpm_packages_is_skipped_without_disabling_sibling_entries` at `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs:1378`, proving AC-09h against the existing `build_globset` implementation at `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs:12`. No implementation changes were needed — same regression-proof pattern as TASK-07 through TASK-24. Verified non-vacuity by temporarily breaking the per-entry skip logic (confirmed the test fails), then restored it before committing. Test passes, clippy and fmt clean, committed as `83fb272`.</result>
+<usage><subagent_tokens>55632</subagent_tokens><tool_uses>21</tool_uses><duration_ms>326940</duration_ms></usage>
+</task-notification>
