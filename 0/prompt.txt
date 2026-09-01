@@ -1,0 +1,6 @@
+<task-notification>
+<task-id>bcwf1b0f7</task-id>
+<summary>Monitor event: "just ci live progress with step timestamps"</summary>
+<event>[+1447s]         PASS [   5.672s] (1062/1065) callisto-moon::moon_wasm_sandbox initialize_extension_moon_unavailable_reports_clean_error_not_panic</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
