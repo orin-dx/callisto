@@ -1,0 +1,297 @@
+<task-notification>
+<task-id>ab0536209862fb278</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a15bbbf7-aba0-415d-bfdc-c773ea65cfc7/tasks/ab0536209862fb278.output</output-file>
+<status>completed</status>
+<summary>Agent "Hardcoded values audit: callisto-graph crate (cascade, aggregate, apply, walk, commands)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I have now read every `.rs` file in the crate. Here is the complete findings report.
+
+---
+
+## Hardcoded-Values Audit: `callisto-graph/src/`
+
+All findings below are new — none appear in FINDINGS.md.
+
+---
+
+### [Critical] `[[fixed-group]]` and `[[linked-group]]` config sections are parsed, validated, and then silently discarded — groups are always empty at runtime
+
+- **Status**: CONFIRMED (fully traced)
+- **Location**: `crates/callisto-graph/src/config/resolve.rs:265-269, 327`
+- **Classification**: Policy Default That Ignores Config
+- **Root Cause**: `config::load` builds `let raw_groups = RawGroupTable { fixed: ..., linked: ... }` (line 265-268), calls `GroupTable::validate_syntactic(&amp;raw_groups)?` to reject duplicate/empty groups (line 269), and then sets `groups: GroupTable::default()` (line 327) — an empty table — rather than calling `GroupTable::resolve(&amp;raw_groups, &amp;index)`. The function that would actually build the table from config is `GroupTable::resolve` in `groups.rs:136`, which is decorated `#[allow(dead_code)]` and is never called from any live code path. The consequence: `ws.config.groups` is always empty. `run_cascade` receives an empty `GroupTable`; `union_fixed`/`union_linked` in `aggregate.rs` always skip their loops; fixed-group and linked-group version coordination does nothing. A user who configures `[[fixed-group]] name = "core" members = ["crate-a","crate-b"]` in callisto.toml will get zero version synchronization and no error.
+- **Failing Scenario**: Add `[[fixed-group]]\nname = "core"\nmembers = ["crate-a", "crate-b"]` to callisto.toml. Give only `crate-a` a changeset with `minor`. Run `callisto version`. `crate-b` is NOT bumped despite the fixed-group rule.
+- **Severity**: Critical — silently breaks a major declared feature.
+- **Verification Strategy**: Assert `ws.config.groups.fixed.len() &gt; 0` after loading a callisto.toml with a `[[fixed-group]]` block. Currently fails; would pass once `GroupTable::resolve` is called from `config::load`.
+
+---
+
+### [High] `SemVerVersioning` hardcoded in `bump_target` — crashes or silently misversions all PEP 440 packages during cascade
+
+- **Status**: CONFIRMED (fully traced)
+- **Location**: `crates/callisto-graph/src/cascade.rs:386`
+- **Classification**: Strategy/Dispatch Hardcode
+- **Root Cause**: `bump_target` unconditionally creates `let versioning = callisto_format::SemVerVersioning;` and calls `versioning.bump(&amp;base, sev)` regardless of the package's actual versioning grammar. When `base` is a PEP 440 version that is not simultaneously valid SemVer (e.g., `1.0a1`, `1.0.0.post1`, `2.0.0+local`), `SemVerVersioning::bump` returns `Err(BumpError::NotSemVer { .. })` which propagates as `GraphError::Bump`, aborting the entire cascade run for every changeset touching that package. Even for PEP 440 versions that happen to parse as SemVer (e.g., `1.2.3`), the bump output is a SemVer string, not a canonical PEP 440 string — potentially corrupting version fields.
+- **Failing Scenario**: A Python package at `1.0a1` (pre-release) gets a changeset. `plan_version` → `run_cascade` → `bump_target` → `SemVerVersioning::bump("1.0a1", Patch)` → `Err(BumpError::NotSemVer)` → crash.
+- **Severity**: High — crashes the primary version planning command for any workspace containing a Python package currently at a non-SemVer version string.
+- **Verification Strategy**: Add a pypi package at version `1.0a1` to a test workspace, add a changeset for it, call `plan_version`. Currently returns `Err(GraphError::Bump)`. Should dispatch to `Pep440Versioning::bump` based on `base.grammar()`.
+
+---
+
+### [High] `[[package]] publish-to` config field is silently ignored — never read from resolved config
+
+- **Status**: CONFIRMED (fully traced)
+- **Location**: `crates/callisto-graph/src/config/resolve.rs:274-311`
+- **Classification**: Policy Default That Ignores Config
+- **Root Cause**: `RawPackageConfig` has `pub publish_to: Option&lt;Vec&lt;String&gt;&gt;` (raw.rs:68). The resolution loop in `resolve.rs` reads `raw_pkg.release_trigger`, `raw_pkg.tag_template`, `raw_pkg.changelog`, and `raw_pkg.pre_major_inference`, but never touches `raw_pkg.publish_to`. The resulting `PackageConfig` is always constructed with `publish_to: None` (line 304). The `publish_to` field on `PackageConfig` therefore carries `None` for every package. In `walk.rs`, `pkg_override.and_then(|o| o.publish_to.clone())` is never consulted — in fact the code doesn't even try to apply that field since the walk derives publish targets from manifests directly. A user who adds `publish-to = ["crates.io"]` to a `[[package]]` block expecting it to override the manifest-derived targets gets no effect and no error.
+- **Failing Scenario**: `callisto.toml` has `[[package]]\nmatch = "my-internal-crate"\npublish-to = []` to mark a package as private. `plan_publish` still includes the crate in `rust_crates` because `publish_to: None` is never consulted.
+- **Severity**: High — documented config key silently does nothing.
+- **Verification Strategy**: Write a test that loads a callisto.toml with `[[package]] match = "x"\npublish-to = []` and asserts the resolved `PackageConfig.publish_to` is `Some(vec![])`. Currently resolves to `None`.
+
+---
+
+### [High] `pre-major-inference` config per-package setting always overridden with `OFF` in `aggregate`
+
+- **Status**: CONFIRMED (fully traced)
+- **Location**: `crates/callisto-graph/src/aggregate.rs:218`
+- **Classification**: Policy Default That Ignores Config
+- **Root Cause**: `aggregate()` builds an `InferenceWindowSpec` with `policy: PreMajorInferencePolicy::OFF` hardcoded. `PackageConfig` carries `pre_major_inference: Option&lt;PreMajorInferencePolicy&gt;` — populated correctly from `[[package]]` blocks — but `aggregate()` never looks up the package's configured policy. `apply_pre_major()` receives `OFF` and always returns the unremapped severity. A user who sets `pre-major-inference = "conservative"` to downgrade breaking-change commits from `major` to `minor` for a 0.x package gets no effect.
+- **Failing Scenario**: `callisto.toml` has `[[package]]\nmatch = "my-lib"\npre-major-inference = "conservative"`. A conventional commit `feat!: breaking change` would normally produce `Major`. With the conservative policy it should be `Minor` for a 0.x package. Currently it stays `Major`.
+- **Severity**: High — documented config key silently does nothing.
+- **Verification Strategy**: Thread `pkg_override.and_then(|o| o.pre_major_inference).unwrap_or(PreMajorInferencePolicy::OFF)` into the `InferenceWindowSpec` construction instead of the hardcoded `OFF`.
+
+---
+
+### [High] `SemVerVersioning` hardcoded in `fixed_group_target` — same ecosystem-mismatch failure as cascade
+
+- **Status**: CONFIRMED
+- **Location**: `crates/callisto-graph/src/groups.rs:130`
+- **Classification**: Strategy/Dispatch Hardcode
+- **Root Cause**: `fixed_group_target` unconditionally uses `callisto_format::SemVerVersioning` to bump the aligned base version, regardless of the group members' actual grammar. If a fixed group contains a Python package, `SemVerVersioning::bump` will fail or misversion it identically to the `cascade.rs` finding above.
+- **Failing Scenario**: A fixed group containing a `pypi` package with a PEP 440 version — `fixed_group_target` crashes with `BumpError::NotSemVer`.
+- **Severity**: High — same class as the `cascade.rs` finding.
+- **Verification Strategy**: Replace `callisto_format::SemVerVersioning` with a dispatch on `aligned_base.grammar()`.
+
+---
+
+### [Medium] `_ =&gt; Ecosystem::Npm` catch-all silently misclassifies unknown (including "pypi") custom registry kinds
+
+- **Status**: CONFIRMED
+- **Location**: `crates/callisto-graph/src/config/resolve.rs:256-259`
+- **Classification**: Hardcoded Ecosystem Assumption / Silent Fallback
+- **Root Cause**: When parsing `[registries.*]` blocks, `kind` values of `"pypi"` (or any string other than `"cargo"`/`"npm"`) silently fall through to `_ =&gt; Ecosystem::Npm`. A user who adds `[registries.my-pypi]\nkind = "pypi"\nurl = "..."` gets their custom PyPI index registered as an npm registry, which makes it invisible to any PyPI-aware publish logic.
+- **Failing Scenario**: Custom PyPI index configured in `[registries]` is silently turned into `Ecosystem::Npm`.
+- **Severity**: Medium — wrong-ecosystem misclassification.
+- **Verification Strategy**: Add `"pypi" =&gt; Ecosystem::Pypi` arm, return `Err(ConfigError::UnknownKey)` for truly unknown kinds.
+
+---
+
+### [Medium] `.changeset/pre.json` path hardcoded in three places — ignores user-configured `changesets_dir`
+
+- **Status**: CONFIRMED (three independent hardcodes)
+- **Location**:
+  - `crates/callisto-graph/src/commands/version.rs:27` — `ws.root.join(".changeset/pre.json")`
+  - `crates/callisto-graph/src/apply.rs:144` — `PathBuf::from(".changeset")` (default fallback for pre_state_update)
+  - `crates/callisto-graph/src/apply.rs:161` — `PathBuf::from(".changeset/pre.json")` (delete_pre_json path)
+- **Classification**: Hardcoded File Path
+- **Root Cause**: `ResolvedConfig.changesets_dir` is correctly populated from `[changesets] dir = "..."` in callisto.toml and defaults to `.changeset`. But none of the three above sites consult it. `apply_version_plan` doesn't even accept a `cfg` parameter, so it cannot read the configured path. If a user sets `dir = ".changesets"` (plural) the `pre.json` read (`version.rs:27`), write (`apply.rs:144`), and delete (`apply.rs:161`) all target the wrong directory — the write/delete are no-ops (wrong path) and the read produces a silent `None` (file not found in the right dir).
+- **Failing Scenario**: `callisto.toml` has `[changesets]\ndir = ".changesets"`. Run `callisto pre enter`. Pre-release state is written to `.changesets/pre.json` (correct). Run `callisto version`. `plan_version` looks in `.changeset/pre.json` (wrong path), finds nothing, proceeds without pre-release state — potentially finalizing in wrong mode.
+- **Severity**: Medium — silently breaks pre-release workflow when `changesets_dir` is non-default.
+- **Verification Strategy**: Replace all three hardcodes with derivation from `ws.config.changesets_dir` / `cfg.changesets_dir`.
+
+---
+
+### [Medium] `.changeset` hardcoded in `init` for changeset directory creation
+
+- **Status**: CONFIRMED
+- **Location**: `crates/callisto-graph/src/commands/init.rs:173`
+- **Classification**: Hardcoded File Path
+- **Root Cause**: `let cs_dir = ws.root.join(".changeset");` is hardcoded. If the user's `callisto.toml` already has `[changesets] dir = ".changesets"` before calling `init`, the command creates `.changeset/` (wrong name) instead of the configured directory.
+- **Failing Scenario**: Pre-existing callisto.toml with `dir = ".changesets"`, call `callisto init`. Creates `.changeset/README.md` in the wrong location, while the rest of the tool writes changesets to `.changesets/`.
+- **Severity**: Medium.
+- **Verification Strategy**: Replace with `ws.root.join(&amp;ws.config.changesets_dir)`.
+
+---
+
+### [Medium] `"README.md"`, `"config.json"`, `"pre.json"` hardcoded exclusions in `load_changesets`
+
+- **Status**: CONFIRMED
+- **Location**: `crates/callisto-graph/src/aggregate.rs:61`
+- **Classification**: Hardcoded File Path / Magic String
+- **Root Cause**: `load_changesets` skips files named `"README.md"`, `"config.json"`, and `"pre.json"` by hardcoded string comparison. The name `"pre.json"` should be a constant derived from the changeset dir config so it stays in sync. More importantly, `"config.json"` is not mentioned anywhere else in the codebase (it appears to be a Changesets.js artefact), and is never written by callisto itself — its presence as a hardcoded exclusion is undocumented.
+- **Severity**: Low-Medium — exclusion works correctly for default setup, but `"pre.json"` should track the configured filename.
+
+---
+
+### [Medium] `unwrap_or(Ecosystem::Cargo)` fallback for ecosystem in snapshot rewrite
+
+- **Status**: CONFIRMED
+- **Location**: `crates/callisto-graph/src/commands/snapshot.rs:112`
+- **Classification**: Hardcoded Ecosystem Assumption
+- **Root Cause**: `rewrite.dependency.ecosystem().unwrap_or(callisto_model::Ecosystem::Cargo)` — when a snapshot dependency's `PackageId` is bare (no ecosystem prefix), the cascade `rewrite_spec` call receives `Ecosystem::Cargo`. For a PyPI package's snapshot dependency written with a bare `PackageId`, this produces a Cargo-style spec rewrite.
+- **Severity**: Medium — wrong ecosystem for snapshot rewrite in polyglot workspaces.
+
+---
+
+### [Medium] `unwrap_or(VersionGrammar::SemVer)` in `create_tags_with_options` — twice
+
+- **Status**: CONFIRMED
+- **Location**: `crates/callisto-graph/src/commands/tag.rs:59, 94`
+- **Classification**: Silent Fallback / Hardcoded Grammar Default
+- **Root Cause**: Both the dry-run branch (line 59) and the real-write branch (line 94) call `.unwrap_or(callisto_model::VersionGrammar::SemVer)` when a package cannot be found in the graph or cannot yield its grammar. For a PyPI package, failing to determine grammar and silently falling back to SemVer means `Version::parse(v_str, grammar)` below might misparse the version string — producing a wrong major tag or silently no-op-ing.
+- **Severity**: Medium.
+
+---
+
+### [Medium] `"next"` hardcoded as npm dist-tag for all pre-release versions
+
+- **Status**: CONFIRMED
+- **Location**: `crates/callisto-graph/src/commands/publish.rs:103`
+- **Classification**: Hardcoded String / Policy Default
+- **Root Cause**: `let tag = if ver.is_prerelease() { Some("next".to_string()) } else { None };` — the npm dist-tag is unconditionally `"next"` regardless of the pre-release identifier in the version string. A `1.0.0-alpha.1` release gets tagged `next` on the npm registry, which is probably wrong (should be `alpha`). The per-package `publish-to` config can specify a custom registry but not a custom dist-tag.
+- **Severity**: Medium — publishes pre-releases under the wrong npm tag.
+
+---
+
+### [Medium] `_ =&gt; (PackageJson, "package.json")` catch-all for unknown ecosystems in `walk.rs`
+
+- **Status**: CONFIRMED
+- **Location**: `crates/callisto-graph/src/walk.rs:83-84`
+- **Classification**: Hardcoded Ecosystem Assumption
+- **Root Cause**: The `match eco { Ecosystem::Cargo =&gt; ..., Ecosystem::Npm =&gt; ..., Ecosystem::Pypi =&gt; ..., _ =&gt; (ManifestFormat::PackageJson, "package.json") }` catch-all silently treats any future ecosystem (Go, Java, etc.) as npm. A future ecosystem's packages would get an incorrect `ManifestDecl` pointing at `package.json`.
+- **Severity**: Medium — wrong fallback for future ecosystems, no compile-time warning.
+
+---
+
+### [Low] `4 * package_count + 1` convergence bound — magic multiplier `4` unexplained
+
+- **Status**: CONFIRMED
+- **Location**: `crates/callisto-graph/src/cascade.rs:469`
+- **Classification**: Magic Number
+- **Root Cause**: `convergence_bound` returns `4 * package_count + 1`. The factor `4` is not documented. The question in the original audit prompt ("is `4N+1` actually justified?") is unanswered anywhere in the code or comments. In the worst-case cascade graph (a fully-connected peer-escalation mesh) the theoretical bound is `O(N^2)` iterations, so `4N+1` could be too low and produce false `CascadeNotConverged` errors on dense graphs, or too high and mask actual oscillation bugs.
+- **Severity**: Low — magic number that should at minimum be a named constant with a justification comment.
+
+---
+
+### [Low] `_opts: &amp;ApplyOptions` discarded — `refresh_lockfiles` never consulted, `lockfile_refresh_results` always `None`
+
+- **Status**: CONFIRMED
+- **Location**: `crates/callisto-graph/src/apply.rs:49` (parameter name), `:17-18` (doc comment)
+- **Classification**: Discarded Parameter
+- **Root Cause**: The doc comment on `ApplyOptions::refresh_lockfiles` explicitly states "not yet consulted here". `_opts` is the leading-underscore parameter that confirms the entire options struct is ignored. `ApplyOutcome::lockfile_refresh_results` is hardcoded `None` as a result.
+- **Severity**: Low — acknowledged, but the `--refresh-lockfiles` CLI flag is visible to users who expect something to happen.
+
+---
+
+### [Low] `_runner: &amp;R` discarded in `ManifestWalkResolver::build`
+
+- **Status**: CONFIRMED
+- **Location**: `crates/callisto-graph/src/walk.rs:26`
+- **Classification**: Discarded Parameter
+- **Root Cause**: The `CommandRunner` is passed in but never used. This is a hazard at the architecture boundary — if future logic in `build` needs to shell out (e.g., for an ecosystem that requires a CLI to enumerate packages), the parameter is already there but callers may have provided a no-op runner that would silently fail.
+- **Severity**: Low.
+
+---
+
+### [Low] `_cfg: &amp;ResolvedConfig` discarded in `TagIndex::build`
+
+- **Status**: CONFIRMED
+- **Location**: `crates/callisto-graph/src/tags.rs:106`
+- **Classification**: Discarded Parameter
+- **Root Cause**: `_cfg` is passed in and never used. If tag-related config (e.g., a global default tag template) were added to `ResolvedConfig`, callers would not know the parameter needs to be non-dummy.
+- **Severity**: Low.
+
+---
+
+### [Low] Hardcoded 60-second default rate-limit retry and 600-second max-wait cutoff in `publish_client`
+
+- **Status**: CONFIRMED
+- **Location**: `crates/callisto-graph/src/commands/publish_client.rs:230, 353` (via `publish.rs:353`)
+- **Classification**: Magic Number
+- **Root Cause**: `extract_retry_after_duration(...).unwrap_or(Duration::from_secs(60))` — when a rate-limit response contains no parseable `Retry-After` value, 60 seconds is assumed with no config knob. Separately, `if retry_after &gt; Duration::from_secs(600)` — if any registry asks for more than 10 minutes, the orchestrator gives up immediately, with no way to override this cutoff in config or at call sites.
+- **Severity**: Low — magic numbers that should be named constants; the 600s cutoff is particularly opaque to operators.
+
+---
+
+### [Low] `"callisto/version-packages"` hardcoded default branch name in `pr_body.rs` (appears twice)
+
+- **Status**: CONFIRMED
+- **Location**: `crates/callisto-graph/src/commands/pr_body.rs:65, 226`
+- **Classification**: Magic String / Hardcoded Constant
+- **Root Cause**: `opts.branch.as_deref().unwrap_or("callisto/version-packages")` appears in both the empty-plan branch and the non-empty-plan footer. This string should be a single named constant. If the branch naming convention changes, both sites must be updated independently.
+- **Severity**: Low.
+
+---
+
+### [Low] `"https://github.com/orin-dx/callisto"` hardcoded GitHub URL in generated PR body
+
+- **Status**: CONFIRMED
+- **Location**: `crates/callisto-graph/src/commands/pr_body.rs:48`
+- **Classification**: Hardcoded Constant (Magic String)
+- **Root Cause**: The generated PR body contains a literal link to `https://github.com/orin-dx/callisto`. If the repository moves or if users running callisto from a fork want to point to their own version, this is baked in at compile time and cannot be overridden without recompiling.
+- **Severity**: Low.
+
+---
+
+### [Low] `unwrap_or_else(|| Version::semver(0, 0, 0))` — hardcoded SemVer 0.0.0 for changelog version fallback
+
+- **Status**: CONFIRMED
+- **Location**: `crates/callisto-graph/src/aggregate.rs:289`
+- **Classification**: Silent Fallback / Hardcoded Value
+- **Root Cause**: When building a `ChangelogInput` for a package that has no last tag and no base version entry, `pkg_ver` silently falls to `Version::semver(0, 0, 0)`. For a PyPI package this is a SemVer-grammar version being used where a `Pep440`-grammar version is expected by the changelog renderer. The fallback is also semantically wrong — a package with no version recorded should be an error, not version `0.0.0`.
+- **Severity**: Low.
+
+---
+
+### [Low] No PyPI default registry entry pre-populated in `ResolvedConfig::load` — ecosystem asymmetry
+
+- **Status**: CONFIRMED
+- **Location**: `crates/callisto-graph/src/config/resolve.rs:238-252`
+- **Classification**: Hardcoded Ecosystem Assumption
+- **Root Cause**: `crates.io` (Cargo) and `npm` (Npm) are always pre-inserted into `registries`. No PyPI equivalent is pre-inserted. Code that looks up a registry by `Ecosystem::Pypi` will find nothing in the default registries map.
+- **Severity**: Low — PyPI publish currently goes through `publish_to: RegistryKey("pypi".to_string())` (hardcoded in `publish.rs:171`) which happens to match if a user adds a `[registries.pypi]` block, but no default is provided the way `crates.io` and `npm` are.
+
+---
+
+### [Low] `"unknown"` hardcoded as platform and arch in `GroupTable::resolve` PlatformManifest arm
+
+- **Status**: CONFIRMED
+- **Location**: `crates/callisto-graph/src/config/groups.rs:154-157`
+- **Classification**: Hardcoded Dummy Value
+- **Root Cause**: `GroupTable::resolve` constructs `ManifestRole::Platform { platform: "unknown".to_string(), arch: "unknown".to_string(), abi: None }` for platform manifest group members. Though this function is currently `#[allow(dead_code)]`, if it is ever wired in, the `"unknown"` platform/arch would propagate into manifests.
+- **Severity**: Low (dead code currently, but acknowledged Hardcoded Constant Dummy Smell).
+
+---
+
+**Summary table:**
+
+| # | File:Line | Expression | Severity |
+|---|---|---|---|
+| 1 | `config/resolve.rs:327` | `groups: GroupTable::default()` — groups never populated | Critical |
+| 2 | `cascade.rs:386` | `SemVerVersioning` hardcoded — breaks PyPI cascade | High |
+| 3 | `config/resolve.rs:304` | `publish_to: None` always — `[[package]] publish-to` ignored | High |
+| 4 | `aggregate.rs:218` | `policy: PreMajorInferencePolicy::OFF` always | High |
+| 5 | `groups.rs:130` | `SemVerVersioning` hardcoded in `fixed_group_target` | High |
+| 6 | `config/resolve.rs:259` | `_ =&gt; Ecosystem::Npm` for unknown registry kind | Medium |
+| 7 | `commands/version.rs:27` | `.changeset/pre.json` hardcoded | Medium |
+| 8 | `apply.rs:144, 161` | `.changeset` / `.changeset/pre.json` hardcoded x2 | Medium |
+| 9 | `commands/init.rs:173` | `.changeset` hardcoded for dir creation | Medium |
+| 10 | `aggregate.rs:61` | `"pre.json"` etc. hardcoded exclusions | Medium |
+| 11 | `commands/snapshot.rs:112` | `unwrap_or(Ecosystem::Cargo)` fallback | Medium |
+| 12 | `commands/tag.rs:59, 94` | `unwrap_or(VersionGrammar::SemVer)` x2 | Medium |
+| 13 | `commands/publish.rs:103` | `"next"` npm dist-tag hardcoded | Medium |
+| 14 | `walk.rs:83-84` | `_ =&gt; (PackageJson, "package.json")` catch-all | Medium |
+| 15 | `cascade.rs:469` | `4 * package_count + 1` — unexplained multiplier | Low |
+| 16 | `apply.rs:49` | `_opts: &amp;ApplyOptions` discarded | Low |
+| 17 | `walk.rs:26` | `_runner: &amp;R` discarded | Low |
+| 18 | `tags.rs:106` | `_cfg: &amp;ResolvedConfig` discarded | Low |
+| 19 | `publish_client.rs:230` | `Duration::from_secs(60)` default retry | Low |
+| 20 | `publish.rs:353` | `Duration::from_secs(600)` max-wait cutoff | Low |
+| 21 | `pr_body.rs:65, 226` | `"callisto/version-packages"` branch default x2 | Low |
+| 22 | `pr_body.rs:48` | `"https://github.com/orin-dx/callisto"` hardcoded URL | Low |
+| 23 | `aggregate.rs:289` | `unwrap_or_else(\|\| Version::semver(0, 0, 0))` | Low |
+| 24 | `config/resolve.rs:238-252` | No PyPI default registry pre-populated | Low |
+| 25 | `config/groups.rs:154-157` | `"unknown"` platform/arch in dead `resolve()` | Low |</result>
+<usage><subagent_tokens>148169</subagent_tokens><tool_uses>40</tool_uses><duration_ms>426117</duration_ms></usage>
+</task-notification>
