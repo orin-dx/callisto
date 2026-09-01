@@ -1,0 +1,1 @@
+This means our test should be running with a very simple git config because we don;t know what is setup in any machine this might be running. you need to think our setup through here please. Any other such issues we'll run into?
