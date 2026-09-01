@@ -1,0 +1,32 @@
+<task-notification>
+<task-id>afb6e1a8138d77470</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/08ccaac1-3846-4134-8b06-140e5b9c22f2/tasks/afb6e1a8138d77470.output</output-file>
+<status>completed</status>
+<summary>Agent "Investigate Track 5 data availability" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Report
+
+**1. pr_body.rs vs render_section — CONFIRMED, requires real integration work, not a one-liner.**
+`crates/callisto-graph/src/commands/pr_body.rs` (322 lines) never imports or calls anything from `callisto_changelog` — confirmed via full read. It hand-builds a summary table + collapsible-details Markdown structure directly from `VersionPlan.bumps: Vec&lt;PlannedBump&gt;` (each with a single `Option&lt;BumpReason&gt;`), matching on `BumpReason` variants inline (lines ~104-123, ~185-225).
+
+`callisto_changelog::render_section` (`crates/callisto-changelog/src/render.rs:5`) is structurally different: it renders ONE severity-grouped changelog section for ONE package's ONE version transition, from `ChangelogInput{package, from, to, entries: Vec&lt;ChangelogEntry&gt;}`. It has no concept of "all packages in this run" or of pr_body.rs's table/collapsible-details wrapper.
+
+**Verdict: not a mechanical swap.** A real fix means calling `render_section` once per bumped package (building a `ChangelogInput` from each `PlannedBump`, mapping `BumpReason` → `ChangeSource` — logic that already exists in `commands/version.rs:157-195` and could be shared/reused) and embedding each package's rendered section inside pr_body.rs's own composition structure. This is data marshaling + reuse of existing mapping logic, not new business logic, but it is a genuine refactor, not a one-line change.
+
+**2. ChangeSource::Commit / BumpReason::Inference — data ALREADY EXISTS, pure wiring gap.**
+`InferenceOutcome` (`crates/callisto-graph/src/infer.rs:29-34`) already carries `commits: Vec&lt;(CommitSha, String)&gt;` — full per-commit sha+subject, not just a count. At the only construction site of `BumpReason::Inference` (`crates/callisto-graph/src/aggregate.rs:224-229`), only `outcome.commit_count` (a `usize`) is kept; `outcome.commits` (the real Vec) is discarded on the spot — never stored anywhere. No architecture change needed to surface it, just threading it through (e.g. add a representative-commit field to `BumpReason::Inference`, or carry the Vec separately to wherever `ChangeSource::Commit` needs to be built in `commands/version.rs`). No existing code/docs comment indicates which commit should be "representative" if multiple contributed — that's an open design choice, not a blocked-on-missing-data problem.
+
+**3. ChangeSource::NewGroupMember — data ALREADY EXISTS, pure wiring gap.**
+`pre_mutation_checks` (Track 1, already shipped) returns `GroupCheckOutcome.new_members: BTreeMap&lt;GroupName, Vec&lt;PackageId&gt;&gt;` (`crates/callisto-graph/src/groups.rs:14,85`) — exactly the `group: GroupName` data `ChangeSource::NewGroupMember` needs, per package. It's computed in `plan_version` (`commands/version.rs:87-93` as `group_check`) but only `group_check.diagnostics` is ever consumed (line 219) — `group_check.new_members` is computed and then never read anywhere in the function. Same verdict as #2: wiring gap, not missing data.
+
+**4. ChangelogInput.entries union bug — CONFIRMED, root cause is upstream single-valued reason maps.**
+At `commands/version.rs:148-154`: `if let Some(mut agg_input) = agg.changelog_inputs.get(id).cloned()` — changeset-sourced entries are used as-is (only `from`/`to` overwritten) when present; the `else` branch (lines 156-195, which synthesizes `ChangeSource` from `outcome.reasons.get(id)`) never runs when a changeset entry exists. So changeset-vs-synthesized is a hard if/else, not a union — this matches "changeset always wins over other sources" exactly.
+
+Deeper root cause: `outcome.reasons`/`agg.reasons` are `BTreeMap&lt;PackageId, BumpReason&gt;` — single-valued per package by construction, all the way up through `cascade.rs`'s severity/reason bookkeeping. So even within the non-changeset branch, only one synthesized entry is ever possible per package regardless of how many real causes contributed.
+
+**Scoped fix is achievable without deep architecture change**: `outcome.reasons.get(id)` is still readable inside the changeset branch (it's a separate map from `agg.changelog_inputs`), so the union fix can be: when a changeset drove the bump AND `outcome.reasons.get(id)` also holds a genuine non-changeset reason (cascade/peer-escalation/group-union), append a second synthesized `ChangelogEntry` to `agg_input.entries` alongside the changeset one. This closes the most common real-world case (changeset + cascade colliding) without touching the single-valued `reasons` maps upstream. A *full* multi-cause union (e.g. two cascades from different paths) would need `reasons` to become `Vec&lt;BumpReason&gt;` throughout cascade.rs — out of reach for a scoped fix, should be flagged as a known remaining limitation if the spec doesn't take it on.
+
+**Summary for spec-scoping, mirroring the ComposePrBodyReport precedent:** unlike that case, all three "missing" pieces here (#2, #3, and the common-case union in #4) have real backing data sitting one hop away from where they're discarded — none require fabricating placeholder data. #1 is real integration work reusing existing mapping logic. The spec can require full implementation of all four rather than deferring any of them, though #4 should scope explicitly to "changeset + one other reason" and name the deeper multi-cascade-union case as an explicit non-goal.</result>
+<usage><subagent_tokens>684301</subagent_tokens><tool_uses>10</tool_uses><duration_ms>86847</duration_ms></usage>
+</task-notification>
