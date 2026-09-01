@@ -1,0 +1,26 @@
+<task-notification>
+<task-id>a9b4b757062134d6b</task-id>
+<tool-use-id>toolu_01BDD7LoTSG7jwnNMTE2Neys</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a9b4b757062134d6b.output</output-file>
+<status>completed</status>
+<summary>Agent "Re-verify docs/01-spec.md GraphError fixes" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Re-verification Report — docs/01-spec.md M.13.3 diff (round 2)
+
+**1. Comment-ordering bug — FIXED.** `UnexpectedManifestVersion`'s own new doc comment (docs/01-spec.md:2418–2424, "`apply_version_plan`'s rerun-safety check...") sits directly above the variant (2427). "§G.10.2 step 3. Two packages' bumps..." (2434–2438) now sits directly above `WorkspaceVersionConflict` (2442), its original target.
+
+**2. Message text — FIXED.** docs/01-spec.md:2425–2426: `"cannot apply version plan: manifest \`{path}\` is at version {found}, expected {expected_from} (pre-apply) or {expected_to} (already applied — safe to retry)"` — matches error.rs:151 field-for-field (named vs positional args only).
+
+**3. False "already applied" prose — FIXED.** docs/01-spec.md:2421–2424 now reads "...take a separate early branch whenever `found` already equals the target version — this variant is only ever constructed once that branch is ruled out, so `found` here is guaranteed to differ from *both*...". Verified against apply.rs:144–157 and 188–200: both call sites gate on `if current == target {skip} else if current == from {write} else {Err(UnexpectedManifestVersion)}`, confirming the claim.
+
+**4. PublishTargetEcosystemMismatch format — FIXED.** docs/01-spec.md:2473–2477 uses `.target_ecosystem.prefix()` / `.package_ecosystems.iter().map(|e| e.prefix()).collect::&lt;Vec&lt;_&gt;&gt;().join(", ")`, matching error.rs:195–199 exactly (no `{:?}` Debug formatting).
+
+**5. Inline "E1xx." suffix — FIXED.** `grep -n 'E11[4-9]\.$\|E120\.$' docs/01-spec.md` returns no matches.
+
+**6. Intro paragraph count — STILL BROKEN.** docs/01-spec.md:2290–2291: *"All 20 of `GraphError`'s coded (non-transparent) variants are shown below: 19 grouped together above, plus `ParseChangeset`..."* Independent count of error.rs (32 total variants, 11 `#[error(transparent)]`) gives **21** non-transparent variants, not 20. The doc's arithmetic accounts for `ParseChangeset` sitting among the wrapper block but misses `Command` (error.rs:61–62, `#[error("command error: {0}")]` — also non-transparent, also embedded in the "Locate through Command" wrapper range at docs/01-spec.md:2495–2533). This is the same defect class as the original bug, now shifted to a different variant.
+
+**Fence count:** `grep -c '^```' docs/01-spec.md` = 402, matches baseline — no fence broken.
+
+No other new factual errors found in the diffed regions.</result>
+<usage><subagent_tokens>74350</subagent_tokens><tool_uses>18</tool_uses><duration_ms>203496</duration_ms></usage>
+</task-notification>
