@@ -110,18 +110,18 @@ mod tests {
         )
         .unwrap();
 
-        drop(
-            std::process::Command::new("git")
-                .args(["add", "."])
-                .current_dir(root)
-                .output(),
-        );
-        drop(
-            std::process::Command::new("git")
-                .args(["commit", "-m", "seed", "--allow-empty"])
-                .current_dir(root)
-                .output(),
-        );
+        assert!(std::process::Command::new("git")
+            .args(["add", "."])
+            .current_dir(root)
+            .status()
+            .unwrap()
+            .success());
+        assert!(std::process::Command::new("git")
+            .args(["-c", "commit.gpgSign=false", "commit", "-m", "seed", "--allow-empty"])
+            .current_dir(root)
+            .status()
+            .unwrap()
+            .success());
 
         let result = handle(
             SnapshotArgs {
