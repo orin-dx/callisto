@@ -1,0 +1,118 @@
+<task-notification>
+<task-id>a93c74b0d1809f6ae</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a15bbbf7-aba0-415d-bfdc-c773ea65cfc7/tasks/a93c74b0d1809f6ae.output</output-file>
+<status>completed</status>
+<summary>Agent "Adversarial correctness audit of recent changes" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I have now traced every relevant execution path. Here is the full findings report.
+
+---
+
+## Audit Results: ApplyPermit System, npm validate-first, Manifest Cache, init/pre dry-run
+
+### Audit summary
+
+All seven specific audit questions from the task came back clean. No confirmed or highly plausible bugs were found in the files listed in scope. Details follow by audit question.
+
+---
+
+### 1. Permit bypass paths
+
+**CONFIRMED CLEAN.**
+
+Every production write primitive requires `&amp;ApplyPermit`:
+
+- `callisto_manifests::atomic::atomic_write` — signature enforces it at `/Users/gabe/Projects/callisto/crates/callisto-manifests/src/atomic.rs:25`
+- `Manifest::write_version`, `Manifest::update_dependency_spec`, `Manifest::update_optional_dependencies` — all defined with `permit: &amp;ApplyPermit` in the trait at `/Users/gabe/Projects/callisto/crates/callisto-manifests/src/lib.rs:30-56`
+- `WorkspaceCargoResolver::write_version`, `write_dependency` — both require `permit: &amp;ApplyPermit` at `/Users/gabe/Projects/callisto/crates/callisto-manifests/src/cargo.rs:539-581`
+- `callisto_changelog::prepend` — requires `permit: &amp;ApplyPermit` at `/Users/gabe/Projects/callisto/crates/callisto-changelog/src/write.rs:13`
+
+The two `fs::remove_file` calls inside `apply_version_plan` at `/Users/gabe/Projects/callisto/crates/callisto-graph/src/apply.rs:123` and `apply.rs:154` do not individually carry `&amp;ApplyPermit`, but they are unreachable without one since the containing function signature is `apply_version_plan(..., permit: &amp;ApplyPermit)`. This is an intentional design choice: the permit gates the function, not each individual OS call within it. It is not a bug, but if a future refactor extracts a standalone file-deletion function without copying the permit parameter, that site would be a permit bypass candidate.
+
+The three `create_dir_all` calls in non-test CLI/graph code are all properly downstream of permit checks:
+- `/Users/gabe/Projects/callisto/crates/callisto-cli/src/commands/add.rs:200` — after `let Some(permit) = ... else { return }` at line 179
+- `/Users/gabe/Projects/callisto/crates/callisto-cli/src/commands/pre.rs:63` — after `let Some(permit) = permit else { return }` at line 57
+- `/Users/gabe/Projects/callisto/crates/callisto-graph/src/commands/init.rs:169` — inside `if let Some(permit) = permit { ... }` at line 167
+
+---
+
+### 2. Permit construction escape hatches
+
+**CONFIRMED CLEAN.**
+
+`ApplyPermit` has a private `_private: ()` field making struct literal construction impossible from any module. There is no `derive(Default)`, no `unsafe`, no `..Default::default()` pattern. The only constructor in production-reachable code is `granted_unless_dry_run` at `/Users/gabe/Projects/callisto/crates/callisto-model/src/permit.rs:51`.
+
+`force_for_tests` is gated by `#[cfg(any(test, feature = "test-util"))]` at `permit.rs:65`. The `test-util` feature is only activated in `[dev-dependencies]` entries, verified across all five crates that use it (`callisto-manifests/Cargo.toml:34`, `callisto-graph/Cargo.toml:39`, `callisto-cli/Cargo.toml:47`). A production binary build cannot activate `test-util` because dev-dependencies are excluded from non-test build targets.
+
+---
+
+### 3. force_for_tests scope
+
+**CONFIRMED CLEAN.**
+
+All 12 call sites of `force_for_tests` are in `#[cfg(test)]` blocks or test-only files:
+
+- `callisto-manifests/src/npm.rs:425` — inside `#[cfg(test)] mod tests`
+- `callisto-manifests/src/cargo.rs:660` — inside `#[cfg(test)] mod tests`
+- `callisto-manifests/src/python.rs:397` — inside `#[cfg(test)] mod tests`
+- `callisto-vcs/src/access.rs:129` — inside `#[cfg(test)] mod tests`
+- `callisto-vcs/src/shell.rs:251` — inside `#[cfg(test)] mod tests`
+- `callisto-changelog/src/write.rs:111` — inside `#[cfg(test)] mod tests`
+- `callisto-graph/src/commands/publish_client.rs:316` — inside `#[cfg(test)] mod tests`
+- `callisto-graph/src/commands/publish.rs:336` — inside `#[cfg(test)] mod tests`
+- `callisto-cli/tests/adversarial_tests.rs:30,42,107` — test file
+- `callisto-graph/tests/graph_tests.rs:312,577,731,1104` — test file
+- `callisto-graph/tests/init_reconcile_test.rs:20` — test file
+
+`callisto-fixtures` is declared as `[dev-dependencies]` everywhere it appears and does not itself call `force_for_tests`.
+
+---
+
+### 4. npm validate-before-mutate race window and coverage
+
+**CONFIRMED CLEAN.**
+
+`update_dependency_spec` in `/Users/gabe/Projects/callisto/crates/callisto-manifests/src/npm.rs:269-284` validates via an immutable `get` before any `get_mut` mutation. Since `PackageJson` is single-owner and Rust's borrow checker prevents concurrent access to `self.doc`, there is no race window.
+
+The validation covers the primary section keyed on `kind` (e.g. `"dependencies"` for `DepKind::Runtime`). The `overrides`/`resolutions` tables are updated opportunistically after the primary section validates — these tables are secondary pinning entries, and updating them only if the name is already present there (lines 294-300) is semantically correct. The previous bug was that overrides/resolutions were mutated even when the primary section update failed; the fix correctly gates all mutations behind the primary section check.
+
+---
+
+### 5. Manifest cache staleness
+
+**CONFIRMED CLEAN.**
+
+The module-level doc comment at `/Users/gabe/Projects/callisto/crates/callisto-graph/src/manifest_cache.rs:1-28` documents the invariant explicitly: the cache is read-only and `apply.rs` deliberately bypasses it, calling `callisto_manifests::open` directly for every write target.
+
+The actual command execution order for `callisto version` is: `plan_version` (reads `base_versions` via cache) → `apply_version_plan` (writes via fresh `open` calls, not cache). There is no post-apply call to `base_versions` or any other cache reader within the same command run. Staleness within a run is structurally impossible given this flow.
+
+The `Workspace` field docstring at `/Users/gabe/Projects/callisto/crates/callisto-graph/src/lib.rs:76-81` also explicitly states the write-open path is never served from this cache.
+
+---
+
+### 6. init dry-run completeness
+
+**CONFIRMED CLEAN.**
+
+Both write sites in `/Users/gabe/Projects/callisto/crates/callisto-graph/src/commands/init.rs` are inside `if let Some(permit) = permit` guards:
+
+- First-run `callisto.toml` write: `init.rs:133`
+- Re-run drift apply write: `init.rs:155`
+- `.changeset/README.md` write and `create_dir_all`: `init.rs:167-180`
+
+On dry-run (permit is `None`), none of these branches execute. The drift diff computation and `set_recorded_ecosystems` TOML re-render still run (by design, so a config that would fail to parse on a real run also fails the dry run), but produce no disk side effects.
+
+The CLI handler at `/Users/gabe/Projects/callisto/crates/callisto-cli/src/commands/init.rs:41` correctly computes `permit = ApplyPermit::granted_unless_dry_run(global.dry_run)` and passes `permit.as_ref()` to the graph layer.
+
+---
+
+### 7. pre.rs dry-run completeness
+
+**CONFIRMED CLEAN.**
+
+`pre enter` (`/Users/gabe/Projects/callisto/crates/callisto-cli/src/commands/pre.rs:46-79`): the permit is checked at line 57 with an early return on `None`; `fs::create_dir_all` at line 63 and `atomic_write` at line 64 are only reached when permit is `Some`.
+
+`pre exit` (`pre.rs:81-119`): `pre.json` is read at line 89 before the permit check at line 98. This is intentional — the read produces the preview content shown in dry-run JSON/text output. The read does not constitute a write side effect. If `pre.json` does not exist (workspace is not in pre mode), `fs::read_to_string` returns `Err`, which propagates as `CliError::Io` before the permit check is reached. This is correct behavior: both dry-run and real-run fail with the same error when the user is not in pre mode, which is the appropriate signal ("you can't exit pre mode you never entered"). The task description identifies this read as intentional; the code confirms it.</result>
+<usage><subagent_tokens>90003</subagent_tokens><tool_uses>43</tool_uses><duration_ms>502224</duration_ms></usage>
+</task-notification>
