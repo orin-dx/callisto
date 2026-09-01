@@ -1,0 +1,269 @@
+{
+  "cli_version": "0.10.3-nightly.202608260614.6561a64b8",
+  "checkpoint_id": "01M1FE96B8JSK4YWNJRHREPDV7",
+  "session_id": "f21fbbf3-d9f7-4109-9c36-8de0a6e308fd",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-01T21:33:57.880939Z",
+  "branch": "codex/release-execution-foundation",
+  "checkpoints_count": 1,
+  "save_step_count": 7,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5",
+  "turn_id": "8449874e4594",
+  "checkpoint_transcript_start": 28426,
+  "transcript_lines_at_start": 28426,
+  "compact_transcript_start": 3468,
+  "token_usage": {
+    "input_tokens": 8,
+    "cache_creation_tokens": 4073,
+    "cache_read_tokens": 2809662,
+    "output_tokens": 1370,
+    "api_call_count": 5,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_012pqp9ZZhcrRstBhMtfFpK7",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "trace:trace"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "51af44df10de",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 4054,
+        "end": 4055,
+        "entry_ids": [
+          "b7a9c8e2-39fb-480f-a958-2f1020580af0"
+        ],
+        "tool_use_id": "toolu_012pqp9ZZhcrRstBhMtfFpK7"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_012pqp9ZZhcrRstBhMtfFpK7"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: trace:trace",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01WMSwBPyMoymRJbL5rBa9HZ",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "delta:pr"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "942aa1e1faea",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 9827,
+        "end": 9828,
+        "entry_ids": [
+          "d494abb7-7585-41e0-87ae-71187cd54c7f"
+        ],
+        "tool_use_id": "toolu_01WMSwBPyMoymRJbL5rBa9HZ"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01WMSwBPyMoymRJbL5rBa9HZ"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: delta:pr",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "prompt-skill-claude-code-delta:pr-2026-08-26T22:47:19.223486Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "delta:pr"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "9ee7338cf612",
+      "timestamp": "2026-08-26T22:47:19.223486Z",
+      "native": {
+        "command": "/delta:pr"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/delta:pr",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01U63Fg7tzvDGwwZBCy5vDfD",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "artifact-design"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "081fe95c9448",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 19538,
+        "end": 19539,
+        "entry_ids": [
+          "7cf4c502-d629-41ad-a306-b5e329f3d17a"
+        ],
+        "tool_use_id": "toolu_01U63Fg7tzvDGwwZBCy5vDfD"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01U63Fg7tzvDGwwZBCy5vDfD"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: artifact-design",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01VGEw7w5hcTAnUzVAcu1rgh",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "6411d2d9f7e2",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 26149,
+        "end": 26150,
+        "entry_ids": [
+          "76b2d0bf-8143-47ab-854b-fd5012550821"
+        ],
+        "tool_use_id": "toolu_01VGEw7w5hcTAnUzVAcu1rgh"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01VGEw7w5hcTAnUzVAcu1rgh"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 429
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 91,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1591,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 77
+      }
+    },
+    {
+      "checkpoint_number": 4,
+      "user_lines_added": 409,
+      "user_lines_removed": 1,
+      "agent_lines_added": 1591,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 77,
+        "crates/callisto-vcs/src/access.rs": 73,
+        "crates/callisto-vcs/src/shell.rs": 245
+      },
+      "user_removed_per_file": {
+        "crates/callisto-vcs/src/shell.rs": 1
+      }
+    },
+    {
+      "checkpoint_number": 5,
+      "user_lines_added": 91,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1909,
+      "agent_lines_removed": 1,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 77
+      }
+    },
+    {
+      "checkpoint_number": 6,
+      "user_lines_added": 91,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1909,
+      "agent_lines_removed": 1,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 77
+      }
+    },
+    {
+      "checkpoint_number": 7,
+      "user_lines_added": 91,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1909,
+      "agent_lines_removed": 1,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 77
+      }
+    },
+    {
+      "checkpoint_number": 8,
+      "user_lines_added": 91,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1909,
+      "agent_lines_removed": 1,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 77
+      }
+    }
+  ]
+}
