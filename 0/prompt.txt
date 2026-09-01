@@ -1,0 +1,17 @@
+We've split some of the specs you had scoped out and implemented most of it. Can you please analyze the work we did after re-reading through the specs to consider what we implemented?? Do a very thorough analysis looking for compliance, DX, security, performance and actually achieving our goals.
+
+Also consider where claude is stuck:
+
+This round's results are two different stories.
+
+005 is nearly done — this is real, close signal. All three previously-flagged verify gaps are fully resolved. The lambda:exit-gate agent even ran mutation testing by hand (deliberately breaking the code 8 different ways and confirming the tests catch it) and found exactly one missing test: merging the docs/.md and semantic-model/.md valid-authority-value sets together wouldn't be caught by any existing assertion, even though that's the exact cross-glob-contamination bug AC-004 exists to prevent. That's a single, well-defined test to add — this one is essentially done.
+
+001A, 001B, 001C, 004, and 006 all failed again, but the character of the failures has changed. These aren't spec-wording gaps anymore — they're real architecture questions:
+
+- 001A: digest computation needs data from callisto-graph (config resolution, package discovery), but the spec places it in callisto-model, which callisto-graph depends on — so as specified, this would require a dependency cycle. That's not a wording fix, that's a real "where does this code actually live" decision. Also found a genuine cross-build correctness bug: DepKind's derived Ord (declaration order) disagrees with its serialized string's lexicographic order, so the "sorted by kind" comparator is ambiguous and two conforming builds would produce different digests for the same input — silently defeating the entire point of the digest scheme.
+- 001B: found a real logic bug — under the new status record, publish.rs's existing success check (!is_failure()) would treat every never-attempted operation as "shipped" after an interruption, meaning callisto tag could tag and release packages that were never actually published.
+- 001C, 004, 006: narrower but still substantive — an undefined CLI argument, a contradiction between two criteria's rules for the empty-plan case, an unenforceable "prove this function was never called" test requirement, and (006) a genuinely unsatisfiable "reject the package" rule once more than one package qualifies.
+
+This is a different kind of blocker than what we've been fixing all session — these need someone to make actual design calls (where does digest logic live, what's the real fix for the tag-after-interrupted-publish bug), not another verify-and-patch round. Given how long this has run, I'd suggest: land 005 now (one test, trivial), and treat 001A/001B/001C/004/006 as a separate, focused design pass — probably worth a fresh session with your direct involvement on the architecture calls rather than more autonomous iteration here.
+
+Report back first. Don't rush to fix or change things. Analyze, re-evaluate and consider what we have and what we need to address.
