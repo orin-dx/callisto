@@ -1,0 +1,157 @@
+This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
+
+Summary:
+1. Primary Request and Intent:
+
+The user is building "callisto," a Rust CLI + moon-extension that coordinates SemVer version bumps across polyglot (Rust/npm, napi-bridged) monorepos, byte-compatible with `@changesets/cli`'s file format, for GitHub org `orin-dx` (public repo: github.com/orin-dx/callisto).
+
+The session covered: (a) thorough adversarial evaluation of the codebase, (b) planning and dispatching multiple parallel fix batches, (c) security remediation (moving the bug-finding ledger out of the public repo), (d) asking "is callisto ready for moon integration?" which triggered deep investigation of callisto-moon's protocol correctness, (e) identifying more stubs and unfinished areas, and (f) launching a new 5-track parallel batch covering PEP 440 bugs, gix unification, moon protocol type fixes, and publish orchestrator redesign.
+
+**Critical standing constraints (must preserve verbatim):**
+- NEVER commit to git without explicit user instruction
+- NEVER bump versions or run release/publish commands without explicit instruction
+- `/Users/gabe/Projects/callisto-findings/FINDINGS.md` lives OUTSIDE the repo deliberately — it names unfixed defects and must NEVER be committed to the public repo
+- The `callisto publish` command being built must NEVER be invoked against a real registry without explicit user instruction
+- All changes land as uncommitted working-tree edits for user to review
+
+2. Key Technical Concepts:
+- Cargo workspace with 10 crates in strict architectural layers (Layer 1: model/format, Layer 1.5: vcs, Layer 2: manifests/conventional/changelog, Layer 3: graph, Layer 4: cli/moon, Dev: fixtures)
+- AGPL-3.0-only (upper layers) vs MIT/Apache-2.0 (lower layers) licensing boundary — Layer 1 and 1.5 must remain permissive
+- `callisto-moon`: a WASM plugin for moonrepo implementing extism-pdk's plugin function protocol — currently BROKEN on every protocol boundary (type mismatches) and exec seam (std::process::Command inside WASM doesn't work)
+- moon v2.4.6 real PDK types: `RegisterExtensionInput {id: Id}`, `RegisterExtensionOutput {name, description: Option<String>, plugin_version}`, `ExecuteExtensionInput {args, context: MoonContext}` — all four `#[plugin_fn]` exports in callisto-moon are wire-incompatible with these
+- moon sandbox grants real WASI preopens (`/workspace` mapped to workspace root via warpgate/extism's `allowed_paths`), not just host function bridges — so gix plumbing crates COULD theoretically read a real repo directly inside the guest
+- gitoxide (gix) v0.86.0: WASM CI only builds (never tests) low-level plumbing crates for wasm32-wasip1; the higher-level crates that open real repos (gix-discover, gix-odb, gix-ref, gix-worktree, the gix facade) are NOT in that CI matrix — unproven
+- PEP 440 vs SemVer: epochs (`1!2.0.0`), pre-release (`a`/`b`/`rc`), post-release (`.postN`), dev-release (`.devN`), normalization of non-canonical forms; two real bugs found via independent re-verification
+- PublishOrchestrator: fully built, fully mock-tested in `callisto-graph/src/commands/publish.rs` but NEVER constructed in production — only in `#[cfg(test)]`. Redesign: zero HTTP, native CLI tools only (cargo publish / npm view+npm publish / twine upload --skip-existing)
+- `CommandRunner` trait (`callisto-model/src/exec.rs`): the codebase's established subprocess-wrapping abstraction; real impl is `CliCommandRunner` in `callisto-cli/src/runner.rs`
+- `RegistryClient` trait (`callisto-model/src/registry.rs`): `is_published` and `publish` — being redesigned so `publish` returns `Result<PublishOutcome, RegistryError>` where `PublishOutcome = Published | AlreadyPublished`
+- `FINDINGS.md` ledger at `/Users/gabe/Projects/callisto-findings/FINDINGS.md` — external to repo, never tracked in git, contains confirmed unfixed defects with root cause/failing scenario detail
+- `just ci` = full verification suite (format-check, lint, tests, wasm-check); currently 178/178 tests passing from last verified checkpoint
+- Track 0 (gix WASM spike): prototype using gix-odb, gix-ref, gix-object, gix-hash, gix-index, gix-pack, gix-revision, gix-traverse, gix-actor (the ones in gitoxide's WASM CI matrix) to open `.git` at a known path and read HEAD/commit/tag — go/no-go gate for Track C's exec-seam design
+
+3. Files and Code Sections:
+
+**`/Users/gabe/Projects/callisto-findings/FINDINGS.md`** (OUTSIDE REPO — critical)
+- External bug ledger. Contents: linked-group convergence (fixed in current batch), pre-release baseline (fixed), PEP 735 declared but not implemented, callisto-moon protocol mismatch (2 Criticals), snapshot wrong version format (Critical), commits_since unbounded fallback (Medium), list_tags glob-swallow (Plausible Medium), init --yes discarded (Low), PublishOrchestrator dead code (High).
+- Was previously tracked in the public repo at `.agents/skills/bug-hunter/FINDINGS.md`; moved out in this session. The historical commit (1b97136, also b7e6af8) is still on origin/main and is publicly visible — user decided against history rewrite.
+- `.gitignore` updated to block `.agents/skills/bug-hunter/FINDINGS.md` from being re-tracked.
+
+**`crates/callisto-moon/src/extension.rs`** (C1 edits DONE per agent message, not yet compile-verified)
+- Track C1 agent has replaced the locally-invented input/output structs with moon's real types from `moon_pdk_api`. The agent reports its edits are done but it cannot do a final `cargo check --target wasm32-wasip1` because Track D's agent has modified `crates/callisto-graph/src/commands/mod.rs` to declare `pub mod publish_client;` but `publish_client.rs` doesn't exist on disk yet.
+- Original broken shapes: `RegisterExtensionInput { moon_version: String }` (moon sends `{id: Id}`), `RegisterExtensionOutput { version, description: &'static str }` (moon expects `{plugin_version, description: Option<String>}`), `ExecuteExtensionInput { workspace_root: String }` (moon sends `{args, context: MoonContext}`)
+
+**`crates/callisto-moon/Cargo.toml`** (C1 edits in progress)
+- Adding `moon_pdk_api = "2.0.4"`, `moon_pdk = "2.0.4"`, bumping `extism-pdk` to `1.4.1` (moon v2.4.6's pin). These must stay behind the existing `pdk` feature flag.
+
+**`crates/callisto-graph/src/commands/mod.rs`** (Track D modified)
+- Track D's agent has already added `pub mod publish_client;` here, but `publish_client.rs` doesn't exist yet — this is the source of Track C1's compile blockage.
+
+**`crates/callisto-graph/src/commands/publish_client.rs`** (Track D, doesn't exist yet)
+- Will contain `SubprocessRegistryClient<R: CommandRunner>` implementing `RegistryClient` for Cargo/npm/PyPI using native CLI tools.
+
+**`crates/callisto-graph/src/commands/publish.rs`** (Track D modifying)
+- Contains `PublishOrchestrator<R, P, T>` (lines 177-260) and `RegistryClient`/`RateLimitPolicy`/`TimeProvider` traits + full mock test suite. `publish_with_retry` handles rate-limit retry up to 600s cutoff, auth-fail-fast, already-published idempotency.
+- Track D is changing `publish()` return type from `Result<(), RegistryError>` to `Result<PublishOutcome, RegistryError>` where `PublishOutcome = Published | AlreadyPublished`.
+
+**`crates/callisto-model/src/registry.rs`** (Track D modifying)
+- Current `RegistryClient` trait: `is_published(&self, package: &PackageId, version: &Version) -> Result<bool, RegistryError>` and `publish(&self, package: &PackageId, version: &Version) -> Result<(), RegistryError>`. Adding `PublishOutcome` enum and changing return type.
+
+**`crates/callisto-format/src/bump.rs`** (Track A modifying)
+- Bug 1: `finalize_in_place` condition `parsed.is_pre() || parsed.is_dev()` missing `is_post()` check — `1.2.3.post1.dev1` (which PEP 440 orders ABOVE `1.2.3`) incorrectly finalizes in place to `1.2.3` on a Patch bump (decreases version, violates invariant). Fix: only finalize-in-place when no post segment.
+
+**`crates/callisto-model/src/version.rs`** (Track A modifying)
+- Bug 2: `Version` stores literal `raw` input string verbatim; derives `PartialEq`/`Eq`/`Hash` over whole struct including `raw`. `Version::parse("1.0.0-alpha1", Pep440)` and `Version::parse("1.0.0a1", Pep440)` compare equal via `compare()` but are NOT `==` and hash differently. Fix: normalize `raw` to `pep440_rs::Version`'s canonical `Display` output on parse.
+
+**`crates/callisto-vcs/src/lib.rs`** (Track B adding methods)
+- Adding `pub fn resolve_commit(&self, refname: &str) -> Result<Option<CommitSha>, VcsError>` — replaces `aggregate.rs`'s `git rev-parse --verify --quiet` shell-out. Pattern: `rev_parse_single(r)` → `peel_to_kind(gix::object::Kind::Commit)`.
+- Adding `pub fn commits_since_with_pathspec(&self, since: Option<&CommitSha>, pathspecs: &[PathBuf]) -> Result<Vec<CommitInfo>, VcsError>` — replaces `callisto-conventional`'s `git log --no-merges HEAD -- <pathspecs>` shell-out. Uses revwalk + per-commit tree-diff to filter by pathspec.
+
+**`crates/callisto-conventional/src/window.rs`** (Track B modifying)
+- Currently shells out via CommandRunner: `runner.run("git", &["log", "--no-merges", "HEAD", "--", ...], cwd)` in `fetch_commits`. Changing to use `GitRepository::commits_since_with_pathspec` instead.
+
+**`crates/callisto-conventional/Cargo.toml`** (Track B modifying)
+- Adding dependency on `callisto-vcs` — confirmed layering-legal (callisto-graph already depends on callisto-vcs; callisto-conventional sits above Layer 1.5 so this is a downward dependency).
+
+**`crates/callisto-graph/src/aggregate.rs`** (Track B modifying)
+- Contains `resolve_since` helper that currently shells to `git rev-parse --verify --quiet <tag>^{commit}`. Replacing with a call to new `GitRepository::resolve_commit()`. Also contains prior work from this session: `test_aggregate_scopes_inference_window_to_last_tag`, `resolve_target_package()` helper, 3 union_linked tests (all prior session work, must not be disturbed).
+
+**`/Users/gabe/.claude/plans/polished-meandering-dove.md`** (approved plan)
+- Current approved plan covers 5 tracks: Track 0 (gix WASM spike), Track A (PEP 440 fixes), Track B (gix unification), Track C1 (moon protocol type fixes, not gated), Track C2+C3 (moon exec-seam + tests, gated by Track 0), Track D (publish orchestrator redesign).
+
+**`AGENTS.md`** (fixed this session)
+- License table was inverted for 3 crates. Now corrected: Layer 1 (model, format) = MIT/Apache-2.0; Layer 1.5 (vcs) = MIT/Apache-2.0; Layer 2 (manifests, conventional, changelog) = AGPL-3.0-only; Layers 3-4 = AGPL-3.0-only; fixtures = AGPL-3.0-only.
+
+**`.github/actions/callisto-action/action.yml`** (NOT being modified in Track D)
+- Current shell logic: calls `callisto plan-publish --format json`, then bash `publish_crate_with_retry` function with `cargo publish ... || true` and idempotency detection. The cutover from this to the new `callisto publish` command is explicitly deferred — NOT part of the current implementation task. Must preserve existing GitHub Action outputs (`hasChangesets`, `published`, `publishedPackages`) when cutover eventually happens.
+
+4. Errors and fixes:
+
+- **`just ci` format failures after parallel batch runs**: Multiple times, parallel agents left formatting drift (e.g. `vec![x]` instead of array literal in tests, doc comment linking to private item, test assertions formatted differently). Fixed each time by running `just fmt` then re-running `just ci`.
+- **Clippy `useless_vec` in aggregate.rs tests**: Track E's agent used `vec![pkg_cargo, pkg_npm]` in test code; clippy caught it. Fixed inline: changed to array literal `[pkg_cargo, pkg_npm]`.
+- **Rustdoc private intra-doc link in callisto-manifests**: Track H's agent added `/// Resets [`OPEN_CALL_COUNT`] to zero` doc comment referencing a private static. Fixed by rewriting as `/// Resets the internal manifest-open call counter to zero`.
+- **Track C1 compile blockage (current, unresolved)**: Track D's agent modified `commands/mod.rs` to add `pub mod publish_client;` before the file `publish_client.rs` existed. C1 agent cannot get a clean `wasm32-wasip1` compile of callisto-moon because callisto-graph fails to compile. C1 agent set a background monitor to retry when the file appears.
+- **`trycmd` snapshot test failure after CLI help text addition**: Track D's help-text changes updated clap output; the snapshot test at `tests/cmd/help.trycmd` needed updating. Fixed by running `TRYCMD=overwrite cargo test -p callisto-cli --test trycmd_tests`.
+- **FINDINGS.md in public repo**: The file was committed to the public repo on 2026-07-27 and is on origin/main. User decided not to do history rewrite (too disruptive, risk already 7 days old). File moved to `/Users/gabe/Projects/callisto-findings/FINDINGS.md`, repo `.gitignore` updated, all reference files updated to point to new external location.
+
+5. Problem Solving:
+
+- **callisto-moon protocol mismatch**: Confirmed against moon's actual v2.4.6 source via `gh api repos/moonrepo/moon/contents/crates/pdk-api/src/extension.rs`. All 4 `#[plugin_fn]` exports have incompatible types. Track C1 is addressing the type fixes; Track C2+C3 (gated by Track 0) will address the exec-seam and add real integration tests.
+- **gix-in-WASM feasibility**: Research found moon grants real WASI preopens (not just host functions), making gix THEORETICALLY possible. But gitoxide's own CI matrix doesn't include the higher-level repo-reading crates for wasm32-wasip1. Track 0 spike is running to get an empirical answer.
+- **PublishOrchestrator dead code**: Redesigned around native CLI tools only (no HTTP) after user pushback on the initial HTTP-for-crates.io-index approach. crates.io: cargo publish, classify output. npm: npm view for pre-check + npm publish. PyPI: twine upload --skip-existing. New `callisto publish` command, action.yml cutover deferred.
+- **Two native git-shelling call sites** identified: `aggregate.rs:resolve_since` (git rev-parse) and `callisto-conventional:fetch_commits` (git log). Track B is replacing both with native gix calls. callisto-moon's git access is handled separately (Track 0/C, because it's WASM).
+- **PEP 440 bugs**: Two confirmed via independent re-verification: (1) post+dev combined bump produces version lower than input, (2) non-canonical input doesn't normalize breaking Eq/Hash. Track A is fixing both.
+
+6. All user messages:
+- "We've prepped the first phase of callisto and have a working release workflow. We're also in the process of building support for python... Can you take account of the docs, specs and code and help evaluate the quality of each part? Evaluate architecture, best practices, performance, quality of the spec in accounting for the languages we plan on supporting, real world examples of what usage would be like and requirements? Performance, security, maintainability, usability and dx?"
+- "Let's make a plan and dispatch agent teams and workflows to best address all of our issues. Let's appropriately plan extremely well with high effort and a good model and work with the most efficient models for high quality and token efficiency."
+- [Plan approval message approving the 4-track Phase 1 + Phase 2 plan]
+- "Another Claude session sent a message:" [ledger re-audit results from teammate] — informational, agent-generated
+- "Some context from gemini agent: [5 AI-assisted coding failure modes and 7 hardening tasks H1-H7]"
+- [Answer to "Dispatch Batch 2 now?" = "Yes, dispatch now"; "Phase 2b = Spec Python items first"]
+- "We should add this stubbed publish orchestrator right? Shouldn't it be properly coded and used?"
+- "For git we should be using gix right? But yes, we should have a command runner for the cargo/npm publish for lack of a better client"
+- "We should consider, research, analyze, triple check ourselves and appropriately plan this and the moon work for sure"
+- "Skip the rewrite, let's just land the fixes fast" [re: FINDINGS.md git history]
+- "Can we use the GH CLI to modify branch settings and cleanup the git history? How long has the file been there? Can we do some git surgery to excise it?"
+- "Is callisto ready to be completely integrated in a moon monorepo with RS crates?"
+- "Yes, dig into callisto-moon and let me know if we have any other places that still need hardening"
+- "Can we make sure this is for the latest version of moon??"
+- "What other places do we have stubs????"
+- "We should definitely unify on gix across ALL our crates and NEVER shell out for git"
+- "We should also research pep 440 right? We're implementing python support along with getting MOON working and fixing the issues we've identified"
+- [Answer to "Moon git exception?" = "Investigate further before deciding"; Answer to "HTTP dep for registry checks?" = "I think we need to think a lot more deeply about this because if we start re-implementing publishing we'll run into issues. What is the best way to rely on the tool provided for each ecosystem in a way that doesn't create a moving target for us? Think tomorrow a new NPM comes out with new features, etc. We want to rely on the native publishing mechanism I think. Correct me if I'm wrong here"; Answer to "Batch sequencing?" = "All four in parallel (Recommended)"]
+- [Answer to "callisto-moon git exception?" = "Prototype gix plumbing-crate reading first"]
+- [Plan approval for final 5-track plan (Track 0, A, B, C1, D)]
+
+7. Pending Tasks:
+- **Track 0 (running)**: gix WASM spike — prototype gix plumbing crates reading a real repo under wasm32-wasip1 with real WASI preopen; go/no-go gate for Track C2's exec-seam design
+- **Track A (running)**: PEP 440 fixes — post+dev combined bump bug in bump.rs, normalization bug in version.rs
+- **Track B (running)**: gix unification — replace git-shelling in aggregate.rs (resolve_since) and callisto-conventional (fetch_commits) with native gix via new GitRepository methods
+- **Track C1 (blocked, agent monitoring)**: moon protocol type fixes — C1 agent's own edits are done, waiting for Track D to create publish_client.rs so callisto-graph compiles, then will do final wasm-target compile verification
+- **Track C2+C3 (not yet dispatched, gated by Track 0)**: moon exec-seam fix (gix-plumbing or warpgate_pdk depending on Track 0 outcome) + real MoonWasmSandbox integration tests + CI update to build-and-run
+- **Track D (running, causing C1 blockage)**: publish orchestrator redesign — RegistryClient contract change, SubprocessRegistryClient for cargo/npm/PyPI, new `callisto publish` CLI command
+- **Remaining confirmed unfixed bugs in ledger**: snapshot wrong version format (Critical), commits_since unbounded fallback (Medium), list_tags glob-swallow (Plausible Medium), init --yes discarded (Low), PEP 735 spec-claimed but not implemented (Medium)
+- **After all tracks complete**: run `just ci`, verify 100% pass, then report full picture including Track 0's verdict
+
+8. Current Work:
+
+The workflow `wf_ce181828-a76` is currently running in the background with 5 parallel agents. A teammate message from the Track C1 agent (a5a2be64b9a40a67f) reports:
+
+> "FYI while verifying my callisto-moon (Track C1) wasm-target build, `cargo check` fails at the callisto-graph dependency level: crates/callisto-graph/src/commands/mod.rs declares `pub mod publish_client;` but crates/callisto-graph/src/commands/publish_client.rs doesn't exist on disk yet. This looks like mid-flight work from the Track D publish-orchestrator-redesign agent (git status shows commands/mod.rs and commands/publish.rs modified, plus new untracked manifest_cache.rs/manifest_cache_test.rs). I can't get a clean wasm-target compile of callisto-moon until that resolves. I've set a background monitor to detect when the file appears and will retry then. My own extension.rs/lib.rs/Cargo.toml edits for the moon protocol type fixes are done; only the final compile verification is blocked on this."
+
+This is a race condition between Track C1 and Track D running in parallel: Track D's agent added `pub mod publish_client;` to `commands/mod.rs` before it finished creating `publish_client.rs`. The C1 agent is correctly handling this by monitoring and retrying. No manual intervention is needed — this will resolve naturally once Track D finishes creating the file.
+
+The overall workflow is still running. Once all 5 tracks complete, the next steps are: (1) check Track 0's verdict (go/no-go for gix in WASM), (2) run `just fmt` + `just ci` to clean up formatting drift and verify all tests pass, (3) depending on Track 0's result, dispatch Track C2+C3 for the moon exec-seam fix, (4) update the FINDINGS.md ledger with any newly fixed items.
+
+9. Optional Next Step:
+
+Wait for the background workflow `wf_ce181828-a76` to complete. Once the task notification arrives:
+1. Read Track 0's go/no-go verdict on gix plumbing crates under wasm32-wasip1
+2. Run `just fmt` then `just ci` to address any formatting drift from parallel edits and verify 178+ tests pass
+3. Based on Track 0's result, dispatch Track C2+C3 (moon exec-seam fix and real integration tests) using the appropriate exec-seam design:
+   - If Track 0 = GO: use gix-plumbing native reads for git access inside the WASM guest
+   - If Track 0 = NO-GO: use `warpgate_pdk::exec_captured`/`exec_command` host-function bridge
+4. Update `/Users/gabe/Projects/callisto-findings/FINDINGS.md` with fixed items
+
+If you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/gabe/.claude/projects/-Users-gabe-Projects-callisto/575b7a46-37b7-42f0-9db7-b2c329b2abab.jsonl
+Continue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with "I'll continue" or similar. Pick up the last task as if the break never happened.
