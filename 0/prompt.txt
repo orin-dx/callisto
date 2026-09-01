@@ -1,0 +1,22 @@
+<task-notification>
+<task-id>a8631fab12dc304b7</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a8631fab12dc304b7.output</output-file>
+<status>completed</status>
+<summary>Agent "Review CLI inference wiring implementation" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>**Verdict: correct and safe to commit.**
+
+1. `select_inference()` (`crates/callisto-cli/src/workspace.rs:29-35`) is properly `#[cfg(not(feature = "inference"))]` / `#[cfg(feature = "inference")]` gated — mutually exclusive, exhaustive, returns `NoInference` vs `CommitInference` respectively via `impl SeverityInference`. `CommitInference` (`crates/callisto-graph/src/infer.rs:56`) is confirmed a genuine zero-field marker struct, consistent with the "no params/lifetime needed" claim.
+
+2. Fixture is sound. `crates/callisto-graph/src/aggregate.rs:193` builds pathspecs from `pkg.manifests.iter().map(|m| m.path.clone())` — package manifest paths, not the directory — matching the test's comment. The test's "feat" commit does write to `root.join("Cargo.toml")` (adding a `description` field) before committing, so it actually satisfies the pathspec constraint.
+
+3. Assertion is a genuine positive: `BumpReason::Inference` is set in exactly one place in `aggregate.rs` (line 229), inside the `Ok(Some(outcome))` arm of `inference.infer(...)` — no cascade/changeset/group-union/peer-escalation path can produce it. `NoInference::infer` always returns `Ok(None)`, so a broken `select_inference()` would leave `pkg_alpha` with no bump at all, and the test's `.find()` would panic with its explicit message — a real red-for-the-right-reason design. Grep confirms the new test never touches `.changeset` (those references are in the unrelated `make_fixture` helper used only by other tests). `feat:` → `Severity::Minor` is confirmed in `callisto-conventional/src/severity.rs:10`, consistent with the expected `1.0.0 → 1.1.0`.
+
+4. Independently reproduced: `cargo test -p callisto-cli --features inference --lib` → **49 passed**, including `version_uses_real_commit_inference_when_feature_enabled`. `cargo test -p callisto-cli --lib` (default) → **48 passed**, new test correctly absent (not run, not failed).
+
+5. `cargo clippy -p callisto-cli --all-targets --features inference -- -D warnings` and the same without `--features inference` (both forced to recompile via `touch`) → clean, zero warnings, both configurations.
+
+6/7. No sibling gap: `NoInference`/`CommitInference`/`select_inference` grep across `callisto-cli/src` shows only `version.rs` and `compose_pr_body.rs` ever construct a `SeverityInference` impl (only they call `plan_version`/`PrBodyOptions`); no other command or `main.rs` needs wiring. The top-level `use callisto_graph::infer::NoInference;` was cleanly removed from both files (no unused-import warnings in either clippy run), and the test module's own separate `use callisto_graph::infer::NoInference;` (`version.rs:66`) remains intact and unaffected — both pre-existing tests still pass.</result>
+<usage><subagent_tokens>64583</subagent_tokens><tool_uses>20</tool_uses><duration_ms>143691</duration_ms></usage>
+</task-notification>
