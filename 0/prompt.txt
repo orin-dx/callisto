@@ -1,0 +1,32 @@
+<task-notification>
+<task-id>a3b55c5311841c59d</task-id>
+<tool-use-id>toolu_015v16KWyJp7C7zp8818F8br</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/08ccaac1-3846-4134-8b06-140e5b9c22f2/tasks/a3b55c5311841c59d.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix ValidateReport field rename" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Summary
+
+TDD cycle completed for the `ValidateReport` field-mismatch fix (Track 6-mechanical, scoped to ValidateReport only).
+
+**Verification of findings** (both confirmed against live doc/code):
+1. `docs/01-spec.md` M.12.6 documents `ok: bool`; code had `valid: bool` — confirmed and fixed.
+2. Doc explicitly states diagnostics is mandatory ("validate's entire payload *is* its diagnostics"); code had `#[serde(default, skip_serializing_if = "Vec::is_empty")]` — confirmed and removed.
+3. `crates/callisto-cli/tests/schema_guard_test.rs` does not reference `ValidateReport` at all — confirmed, no change needed there.
+
+**Red phase**: Added `crates/callisto-model/src/report.rs:497-543` (`validate_report_tests` module) referencing a not-yet-existing `ok` field — compile failure confirmed the test was red before any implementation change.
+
+**Green phase**: Renamed `valid` → `ok` and removed the `skip_serializing_if` attribute at `crates/callisto-model/src/report.rs:477-486`. Updated every real (non-test) construction/consumption site:
+- `crates/callisto-graph/src/commands/validate.rs:145` (construction)
+- `crates/callisto-cli/src/render/mod.rs:140` (consumption)
+- `crates/callisto-cli/src/commands/validate.rs:30` (consumption/exit code)
+- `crates/callisto-moon/src/extension.rs:203` (consumption/exit code)
+- `crates/callisto-graph/tests/validate_command_tests.rs:203` (pre-existing test, updated to compile/pass)
+
+**Verification**: `cargo test -p callisto-model` (92 passed), `cargo test -p callisto-graph` (all passed), `cargo test -p callisto-cli` (all passed, e2e output confirmed `{"schemaVersion":1,"ok":true,"diagnostics":[]}`), `cargo fmt --check` clean on all four touched crates, `cargo clippy --all-targets -- -D warnings` clean.
+
+**Commit**: `c277c561` — `fix(model): align ValidateReport wire shape with docs/01-spec.md M.12.6`
+
+No schema_version bump, per the resolved constraint. No contradiction found — doc and intended code agreed; only the code was out of sync.</result>
+<usage><subagent_tokens>77048</subagent_tokens><tool_uses>50</tool_uses><duration_ms>1076667</duration_ms></usage>
+</task-notification>
