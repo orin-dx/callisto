@@ -1,0 +1,26 @@
+<task-notification>
+<task-id>ab9ba7def10207ef6</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/tasks/ab9ba7def10207ef6.output</output-file>
+<status>completed</status>
+<summary>Agent "Exit gate for Spec A" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>**Verdict: FAIL** (retry_count 1, confidence high). Verdict written to `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/verdict-spec-manifest-persist-001-retry1.json`.
+
+Both claimed fixes are defective on independent re-verification, and the fresh pass found three more issues in previously-untouched sections. Nine blockers.
+
+**Fix 1 (AC-008) — the disclosure is accurate about the mechanism but its load-bearing claim is false.**
+
+The delegation branch (`cargo.rs:303-307`) genuinely never touches `self.document`, and for a member manifest distinct from the workspace root the extra persist is a redundant byte-identical write. But `CargoToml::open` derives both `self.absolute` and `self.workspace_root` from the same `ctx.workspace_root` (`cargo.rs:28`, `:92`), while the delegation targets `self.workspace_root.join("Cargo.toml")` (`:304`). When the handle's own relative path *is* `Cargo.toml` — a non-virtual workspace root that is both `[workspace]` and `[package]` and declares `dep = { workspace = true }` against its own `[workspace.dependencies]` — those are the same file. The delegation writes the new spec, then the loop's persist writes back the stale document parsed at open. The rewrite is silently lost and `apply_version_plan` returns `Ok` and stages the file.
+
+This matters for your stated premise: **this data-loss path does not come from grouping logic.** Removing batching did not remove the data-loss class here; it comes from AC-005/AC-008's treatment of the delegation branch. Related: `cascade.rs:241-247` routes every `edge.inherited` rewrite to `CargoWorkspaceDependency`, never to `DepWriteTarget::Manifest`, so AC-008 describes runtime behavior of a path the loop cannot currently reach — while AC-009(b) claims to verify it.
+
+**Fix 2 (AC-009) — all three mechanisms are defective.**
+
+I read all four named tests. None reaches `write_version` or `update_dependency_spec` through `apply_version_plan`: two put the manifest already at `bump.to` and hit the skip branch (`apply.rs:85`), one hits the error branch (`:89`), one has `writes: vec![]`. **All four pass identically if the implementer never wires a single `persist()` call into apply.rs** — i.e. if the refactor silently drops every manifest disk write. Check (a) has zero power against the exact regression this refactor risks. Check (b) is a property, not a deliverable — it silently requires unspecified new tests. Check (c) prescribes a process-global counter assertion inside the parallel unit-test binary; the repo's own precedent (`tests/manifest_cache_test.rs:71-85`, `#[serial]`, with a comment naming this exact hazard) shows the correct pattern and the spec does not follow it. `#[serial]` alone would not fix it, since the sibling apply.rs tests are unmarked.
+
+**Fresh-pass findings elsewhere:** AC-005 flatly contradicts non_goals 2/3 and AC-008 — it demands zero *indirect* `atomic_write` in the workspace-delegation branch, which necessarily reaches `WorkspaceCargoResolver::persist`; a developer obeying it literally deletes the root-manifest write. AC-011 contains an unfalsifiable clause ("whatever state persist()'s own failure mode leaves it") and no failure-injection mechanism. No criterion covers persist failure in the rewrites loop, asymmetric against AC-011. And AC-005 orphans `any_updated` (`python.rs:430/473/478`), which fails AC-016's `-D warnings`.
+
+**What passed:** no TBDs anywhere; scope is comfortably one planning cycle; the grouping/batching exclusions genuinely hold. I also confirmed by repo-wide grep that the three mutators have no production callers outside `apply.rs` — `update_optional_dependencies` has none at all — so extracting persist cannot break an unlisted caller. That part of the scope is sound.</result>
+<usage><subagent_tokens>138936</subagent_tokens><tool_uses>19</tool_uses><duration_ms>370113</duration_ms></usage>
+</task-notification>
