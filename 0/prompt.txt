@@ -1,0 +1,35 @@
+<task-notification>
+<task-id>ae8389603ec276032</task-id>
+<tool-use-id>toolu_01MiZ8HPriwhxF7HHAJpEPmt</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a15bbbf7-aba0-415d-bfdc-c773ea65cfc7/tasks/ae8389603ec276032.output</output-file>
+<status>completed</status>
+<summary>Agent "Documentation sweep — 20 issues across 5 files" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Both checks pass clean. Here is a summary of what was done:
+
+**`crates/callisto-graph/src/apply.rs`**
+- Added `///` doc to `ApplyOptions`: "Options governing how a version plan is applied to the workspace."
+- Added `///` doc to `ApplyOutcome`: "The result of a successful `apply_version_plan` call..."
+- Added `///` docs to `ApplyOutcome::staged` and `ApplyOutcome::lockfile_refresh_results` fields.
+- Added `# Errors` section to `apply_version_plan` listing manifest parse/write failures, git subprocess failures, and I/O errors.
+
+**`crates/callisto-model/src/identity.rs`**
+- Added `# Errors` to `PackageId::parse`'s existing doc.
+- Added `///` docs to `display_name`, `ecosystem`, and `name` methods.
+- Added `///` doc to `PackageIdParseError` enum: "Errors produced by `PackageId::parse`."
+- Added `///` docs to `CommitSha::parse` (with `# Errors`), `as_str`, and `short`.
+- Added `///` doc to `GroupName::as_str`.
+- Added `///` docs to `RegistryKey::CRATES_IO`, `RegistryKey::NPM`, and `RegistryKey::as_str`.
+
+**`crates/callisto-manifests/src/atomic.rs`**
+- Added `# Errors` to `ChangesetStorage::atomic_write_durable`.
+- Added `# Errors` to `atomic_write`.
+
+**`crates/callisto-graph/src/commands/init.rs`**
+- Added `///` doc to `InitOptions` struct.
+- Added `# Errors` section to `pub fn init`.
+
+**`crates/callisto-fixtures/src/dry_run.rs`**
+- Moved the inline panic description into a proper `# Panics` section in `assert_no_disk_mutation`.</result>
+<usage><subagent_tokens>38956</subagent_tokens><tool_uses>23</tool_uses><duration_ms>125869</duration_ms></usage>
+</task-notification>
