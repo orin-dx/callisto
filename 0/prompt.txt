@@ -1,0 +1,1 @@
+Don't rely on claude CLI, use your own agent and subagent ability to do this yourself
