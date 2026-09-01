@@ -1,0 +1,46 @@
+<task-notification>
+<task-id>ad3a6e302d644d82d</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/ad3a6e302d644d82d.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement TASK-12 (AC-12 regression test)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>The consolidated regression test proves AC-12 by exercising the implementation at `crates/callisto-graph/src/locate/ignore_walk.rs:39` (`ProjectLocator::projects()`, which calls `membership::read_cargo_membership` at line 41 and `CargoMembership::admits` in `crates/callisto-graph/src/locate/membership.rs:43`).
+
+```json
+{
+  "task_id": "TASK-12",
+  "status": "done",
+  "steps_completed": [
+    "Confirmed all 7 prerequisite commits (0971005, d812cac, 8c6de26, 498f27c, 58ae93d, d5d659b, 1e0dc69) present and git tree clean",
+    "Read AC-12 exact spec text from .claude/specs/SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json",
+    "Discovered spec text requires an additional 7th fixture block (AC-07 exclude=[\".\"] exemption case) not present in the plan's failing_test code, and added it",
+    "Wrote consolidated regression test ac12_cargo_workspace_membership_regression_group with all 7 fixture blocks",
+    "Ran test: passed immediately (no red step), consistent with TASK-07..11 precedent",
+    "Adversarially verified non-vacuousness: broke CargoMembership::admits to always return true, confirmed test failed at the crates/scratch-example exclusion assertion, then restored original code and confirmed green again",
+    "Ran cargo fmt -p callisto-graph (no changes needed)",
+    "Ran cargo clippy -p callisto-graph --all-targets -- -D warnings (clean)",
+    "Ran full cargo test -p callisto-graph --lib suite: 283 passed, 0 failed",
+    "Committed as 37fcada"
+  ],
+  "test_result": "pass",
+  "commit_sha": "37fcada",
+  "concerns": "The plan's failing_test code for TASK-12 only had 6 fixture blocks; it omitted the 7th fixture the spec text explicitly describes ('a further separate workspace root Cargo.toml with ... exclude = [\".\"]' asserting AC-07's exclude-exemption claim). I added this 7th block since the spec is the authority per instructions, not the plan's paraphrase. No implementation change was needed — the behavior was already covered by the pre-existing ac07_includes_root_package_as_implicit_member_even_when_exclude_would_match_it test and CargoMembership::admits's hybrid_root exemption logic.",
+  "criteria_evidence": [
+    {
+      "criterion_id": "AC-12",
+      "test_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs",
+      "test_line": 526,
+      "implementation_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs",
+      "implementation_line": 43
+    }
+  ],
+  "reasoning": "Task was a regression-proof consolidation task requiring no new implementation logic, only assembly of already-proven fixtures into one test function. The one deviation from the plan's literal code was adding the missing 7th fixture (AC-07 exclude=['.'] case) because the spec's AC-12 text explicitly names it as part of the consolidated group, and the plan under-delivered relative to the spec. Adversarial mutation of CargoMembership::admits confirmed the test is not vacuous — it fails when the exclude logic is broken."
+}
+```
+
+Files touched:
+- `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs` (test added, lines 519–657, function starts at line 526)
+- No implementation files modified — `crates/callisto-graph/src/locate/membership.rs` was temporarily mutated for adversarial verification and restored to its original committed state (confirmed via `git status` showing only `ignore_walk.rs` changed).</result>
+<usage><subagent_tokens>67068</subagent_tokens><tool_uses>21</tool_uses><duration_ms>397998</duration_ms></usage>
+</task-notification>
