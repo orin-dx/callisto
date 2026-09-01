@@ -1,0 +1,17 @@
+Response from claude:
+
+Verified the load-bearing citations against real code — all check out exactly as claimed: ApplyPermit's capability-token pattern (permit.rs), PackageId::matches' deliberate bare-name wildcard behavior with its own caller-contract warning (identity.rs:122-129), PublishAttemptResult::is_failure/PublishReport::has_failures matching only Failed (report.rs:94-105), and Workspace's RefCell/OnceCell fields (lib.rs:5,53). Nothing fabricated.
+
+Substantively: this is stronger than where I'd gotten to, and I'd defer to it. Specific points where it's genuinely better, not just different:
+
+- The ValidatedReleaseIntent opaque-capability design resolves the crate-cycle problem more cleanly than anything I proposed. I flagged the cycle but left "where does digest logic live" as an open question; Codex's answer — callisto-graph builds an opaque, non-Serialize, non-forgeable type, and mutation requires holding both it and &ApplyPermit — is a real solution, not a workaround, and it's the same shape as the existing ApplyPermit pattern rather than a new one bolted on.
+- PackageId::matches being wrong for release-operation identity is a genuinely new finding. None of my reconciliation or gate rounds caught this. It's correct: that method is explicitly documented as an ecosystem-wildcard matcher for human-facing lookups, and using it for exact operation identity would silently conflate packages across ecosystems that share a bare name.
+- The receipt-model framing is more principled than my "needs a decision" note on the tag-after-interrupted-publish bug. "Every operation has exactly one terminal outcome, absence of failure cannot mean success" is the actual fix, not "add more enum variants and hope callers update."
+- The registry-URL-secret point is real and new. CratePublish.registry: Option<String> — confirmed, raw string, could carry userinfo or a token-bearing query string on a custom index. Nothing in this session's audit rounds touched that.
+
+Two things worth adding to their write-up before it becomes the accepted spec:
+
+1. The olpc-cjson vs. JCS/RFC 8785 tradeoff should be an explicit, argued decision in the spec, not just resolved in Codex's favor by default. Their point is correct — olpc-cjson's own docs say it can emit non-standard JSON — but that only matters if something outside this Rust codebase needs to independently recompute the digest. If verification only ever happens in-process (Rust reading Rust-written bytes), strict RFC 8785 compliance is a nice-to-have, not load-bearing, and serde_json_canonicalizer is a less production-proven dependency than olpc-cjson (already shipping in tough, already in Cargo.lock). Worth having trace settle this against whether cross-language verification is an actual requirement rather than a hypothetical one.
+2. Connect 006's open decision explicitly to the bug fix-006-final already found. Codex's "decide whether prerelease is workspace-global shaping or explicit release-set authority" is exactly the bump_target-has-no-roster-check finding from this session (an off-roster package still gets prerelease-tagged in PreMode::Pre because the check that would gate it doesn't exist). Worth citing that concretely in the foundational spec rather than re-discovering it.
+
+Everything else — the Rayon/Tokio rejection, the miette-vs-durable-JSON separation, the #[non_exhaustive] guidance, deferring all six specs until the foundational contract lands — I have no pushback on. Go with it.
