@@ -4,23 +4,25 @@
   "owner_track": "release-security",
   "last_verified_revision": "289001ec",
   "depends_on": [],
-  "purpose": "Define Callisto's durable release architecture: one approved release decision becomes a credential-free intent, a freshly validated private capability, crash-safe execution state, and a terminal receipt. This umbrella records architecture decisions; narrower successor specs will define implementation requirements.",
+  "purpose": "Define Callisto's durable release architecture: a reviewed, merged Callisto release-PR commit is the release authority; the workflow derives a credential-free transient intent from that immutable commit, freshly validates a private capability, records crash-safe execution state, and emits a terminal receipt. This umbrella records architecture decisions; narrower successor specs define implementation requirements.",
   "scope": "Release decision authority, durable intent, source trust, prepared execution inputs, artifact handoff, recovery state, CLI migration, and GitHub workflow topology. This spec does not itself authorize implementation until successor specs have passed review and are accepted.",
   "decisions": {
     "linked_group_roster": "Selecting a package in a linked group expands the approved release roster to every member of that linked group. Outside linked groups, only explicitly selected packages are included.",
+    "release_authority": "A Callisto versioning run creates or updates a release PR from the then-current changesets. The PR changes versions and changelogs and deletes exactly its consumed changesets. Those changesets remain on the base branch until that PR merges. After merge, the protected, trusted merge commit and its parent-to-commit delta are the sole CI release authority. CI does not consult PR metadata, a cache, a checked-in decision file, a checked-in intent file, or rerun changeset planning after merge.",
+    "transient_intent": "ReleaseDecisionV1 remains versioned because it is embedded in the serialized ReleaseIntentV1 schema. The intent is produced and consumed within one workflow run as an integrity-checked artifact; it is not committed, cached across runs, or independently operator-authored. Local use may explicitly write an intent outside version control for the duration of a release operation.",
     "source_trust_v1": "The first durable release flow supports only a clean detached Git checkout at one full commit SHA. Non-Git or HermeticContent release support is deferred until a closed-root byte observer is separately specified and implemented.",
     "legacy_command_migration": "During migration, plan-publish, publish, tag --plan, and filter-plan may remain only as clearly labelled read-only previews. release execute is the sole production path allowed to publish, tag, or create a forge release.",
     "state_location": "Local state defaults outside the repository in the platform application-state directory, keyed by canonical repository root and intent digest. CI and advanced users supply an explicit state path. State is never committed and is not correctness-cached.",
     "binary_artifacts": "A source publish and a compiled binary release are separate operations in one intent. The intent declares required artifact slots; a later artifact manifest binds actual bytes and SHA-256 digests to that intent and source commit before privileged execution. In version 1, each binary must also have a verified GitHub artifact attestation from the configured repository and signer workflow; local execution supports source-only releases."
   },
   "non_goals": [
-    "Treating PublishPlan, PublishReport, PLAN_JSON, a CI cache, or an arbitrary shell command as release authority.",
+    "Treating PublishPlan, PublishReport, PLAN_JSON, PR metadata, a checked-in decision or intent file, a CI cache, or an arbitrary shell command as release authority.",
     "Persisting credentials, raw endpoints, raw configuration bytes, command lines, provider stderr, miette reports, or arbitrary error text in an intent, state file, receipt, or artifact manifest.",
     "Supporting non-Git source trust in the first durable release flow.",
     "Parallel publish/tag/forge effects via Rayon or Tokio."
   ],
   "architecture": [
-    "ReleaseDecisionV1 is graph-derived policy output. It owns selected package/version roster, linked-group expansion, and prerelease/group/cascade decisions; downstream execution never recomputes it from PublishPlan.",
+    "ReleaseDecisionV1 is graph-derived policy output. Local planning derives it from exact selections; CI derives it by interpreting the trusted merged release-PR delta, including the exact consumed changesets and version/changelog closure. It owns selected package/version roster, linked-group expansion, and prerelease/group/cascade decisions; downstream execution never recomputes it from PublishPlan or re-plans changesets.",
     "ReleaseIntentV1 is a serializable, typed, credential-free record of an approved decision, semantic inputs, exact operation DAG, and declared artifact slots.",
     "ValidatedReleaseIntent is graph-private, non-Clone, and non-Serialize. It is produced only by fresh root-bound validation and owns trust evidence, a release lock, and exact prepared inputs for every operation.",
     "ReleaseExecutionStateV1 and ReleaseReceiptV1 are exact-intent records. Attempting is persisted before an effect; recovery observes exact role-specific identity rather than assuming no legacy failure means success.",
