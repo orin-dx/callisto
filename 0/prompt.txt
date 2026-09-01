@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bma5lcrwn</task-id>
+<tool-use-id>toolu_01QWUTtbJB7Q4DJDjLPCZJmU</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8a85b651-0c9a-44fa-9e0a-ac694c4409e1/tasks/bma5lcrwn.output</output-file>
+<status>completed</status>
+<summary>Background command "cargo nextest run -p callisto-graph --lib matrix::tests::artifact_name_for_package_platform_sanitizes_scoped_npm_package_name 2&gt;&amp;1 | tail -30" completed (exit code 0)</summary>
+</task-notification>
