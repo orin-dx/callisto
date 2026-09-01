@@ -1,0 +1,42 @@
+<task-notification>
+<task-id>ad8a2f4e834b7417e</task-id>
+<tool-use-id>toolu_01DU3fTSgh5D2pZJKtf6BEtp</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8a85b651-0c9a-44fa-9e0a-ac694c4409e1/tasks/ad8a2f4e834b7417e.output</output-file>
+<status>completed</status>
+<summary>Agent "Research local dev build-speed improvements" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Sufficient grounding gathered. Final report:
+
+---
+
+**Task**: Research local Rust dev-experience improvements for `/Users/gabe/Projects/callisto`, grounded in today's actual pain (Cargo.lock churn now fixed; serial `just ci` at ~25-45 min clean).
+
+## Ranked recommendations
+
+**1. Stop running `moon_wasm_sandbox` three times per `just ci`. [safe to just do, highest impact]**
+Confirmed in `.config/nextest.toml` and `Justfile`: this is the single slowest test file (wasmtime sandbox spin-up, serialized to `max-threads=1`). It currently runs three times per `just ci`: once in `test`'s `cargo nextest run --workspace`, again explicitly in `wasm-check`'s `cargo test -p callisto-moon --test moon_wasm_sandbox`, and a third time inside `coverage`'s `cargo llvm-cov --all-features` (which re-runs the whole suite under instrumentation). Fix: have `wasm-check` skip re-running it (the build+check steps before it already prove the wasm artifact compiles; `test` already exercises it) — drop `wasm-check`'s trailing `cargo test -p callisto-moon --test moon_wasm_sandbox` line, or add an nextest exclude filter to `coverage`. Zero tooling change, pure Justfile edit.
+
+**2. Don't run `coverage` on every local `just ci`. [worth discussing — changes what `just ci` means]**
+Real CI (`callisto-ci.yml`) already runs coverage as its own parallel job on a separate runner — locally it's tacked onto the end of a serial pipeline, recompiling the entire workspace a third time under instrumentation. For local pre-PR checks, `just ci` minus `coverage` (i.e. `fmt-check lint test audit doc-check wasm-check`) covers correctness; coverage numbers are a reporting concern, not a merge gate a developer needs on every local run. Suggest a `just ci-fast` (no coverage) as the everyday default, keeping `just ci` as the full parity check.
+
+**3. Upgrade `cargo-llvm-cov` 0.8.7 → 0.9.0+. [safe to just do, moderate impact]**
+0.9.0 changed instrumentation to apply coverage flags only to crates that need them, instead of the whole dependency graph — meaningful here since `wasmtime` (a heavy transitive dev-dependency via `moon_pdk_test_utils`) currently gets instrumented too. One-line `cargo install cargo-llvm-cov --locked` bump, no config change.
+
+**4. `just lint-affected` over `just lint` during iteration. [already exists, just underused]**
+Already implemented correctly (moon's affected-project graph → single scoped `cargo clippy` invocation, avoiding the build-lock serialization the `lint` recipe's own comment warns about). `just ci` correctly uses full `lint`; day-to-day iteration should default to `lint-affected`, not full `lint`.
+
+**5. No linker swap. [don't do this]**
+Verified: `mold` doesn't support macOS at all; on Apple Silicon, Apple's native linker already outperforms `lld`. This is a real difference from Linux advice — skip it, it would make things worse here.
+
+**6. `moon` 2.4.5 → 2.5.3 upgrade: situational, not the fix for today's issue.**
+2.5.3's headline feature is `cache.unstable_sharedWorktreeCache` (shared cache across git worktrees) — only pays off if using `moon`-tracked git worktrees regularly (this session's subagents do create `.claude/worktrees/*` sometimes). Unrelated to the Cargo.lock-churn/serial-pipeline pain diagnosed today. Low-risk to take opportunistically, not urgent.
+
+**7. `sccache`: inconclusive, not recommended to adopt now.**
+Could not confirm clean compatibility with `cargo-llvm-cov`'s instrumentation flags from available sources — real risk of double-caching/invalidation bugs between sccache and llvm-cov's own object-cache. Given #1-#3 already address the concrete measured pain without a new required tool, not worth the adoption/setup cost right now.
+
+**8. `cargo hakari` (workspace-hack): not worth it at this scale.**
+10-crate workspace with `resolver = "2"` and no evidence of feature-unification thrashing in what was measured today (the slowness traced to lockfile churn + redundant test execution, not per-crate feature-set duplication). Skip.
+
+**Try first, in order**: #1 → #4 → #3. Combined, #1+#2 alone should cut a clean `just ci`-equivalent local check from ~25-45 min to roughly the ~5-10 min range (dominated by the wasm build/test path running once instead of three times).</result>
+<usage><subagent_tokens>518651</subagent_tokens><tool_uses>9</tool_uses><duration_ms>96385</duration_ms></usage>
+</task-notification>
