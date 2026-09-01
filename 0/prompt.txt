@@ -1,0 +1,3 @@
+Can we consider an agent team and workflow that best leverages our models and efforts to build callisto, review the work and ensure that we're following our best practices?
+
+Version as 0.0.0 if you think that follows best practices
