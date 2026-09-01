@@ -1,0 +1,3 @@
+I need you to pause and think. I gave you some reading, I requested a spec and a plan. You need to deliver on the plan based on the spec. What gets you in trouble is losing track of that bigger picture. I want you to make sure we're not losing track of that and going off and changing directions, or getting distracted by a bug that should be addressed in the context of the spec and plan vs as a one-off without thinking of the overall architecture, rigth?
+
+Help me understand what you're doing, that you're not going off and if you are how you're going to stay on track. Don't rush, don't start working. Think, plan and tell me
