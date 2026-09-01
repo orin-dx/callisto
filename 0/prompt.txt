@@ -1,0 +1,40 @@
+<task-notification>
+<task-id>a8e3e0fd1fc8512f6</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/bb531e8d-c394-4e47-a8ae-e4a9ceeca6d2/tasks/a8e3e0fd1fc8512f6.output</output-file>
+<status>completed</status>
+<summary>Agent "Exit-gate Track 2 spec (retry 3)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result># Verdict: PASS (retry_count 3, confidence high)
+
+Verdict written to `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/verdict-track2-retry3.json` (schema-valid, zero blockers).
+
+**No escalation needed.** The spec is cleared for planning.
+
+## The three retry-2 fixes — all genuinely landed
+
+I verified each against live code rather than the summary:
+
+1. **AC-002b now asserts at the public entry point.** It requires `plan_version` to return `Ok(..)` with `PlatformWrite.from == "3.2.1"`. The behavior is confirmed achievable, not speculative — `cargo.rs:178-189` returns `Ok(inherited version)` when inheritance is present and only falls through to `Err(WorkspaceInherited)` when it is absent, and an **existing test at `cargo.rs:1749-1779` already proves exactly this shape** (asserts `current_version() == "4.5.6"` with a resolver supplied).
+2. **AC-002's headline is now literally true** for both the direct-declaration and workspace-inherited cases. The prior false universal is gone.
+3. **AC-002b's path is corrected and both line ranges are exact** — `crates/callisto-manifests/src/cargo.rs:47-52` is precisely the `inherited_version` detection; `580-587` is precisely the version resolution inside `inheritance()`.
+
+## The cross-check that mattered most
+
+AC-002 and AC-002b are not merely non-contradictory — they are **jointly load-bearing**. `cargo.rs:80-87` hard-errors on open when `uses_inheritance &amp;&amp; ctx.cargo_workspace.is_none()`. Without AC-002's mandated `OpenContext` derivation, AC-002b's maturin scenario would fail at open. And AC-002's unconditional `ManifestRole::Canonical` is required because `package.rs:104-106` rejects `Platform` role + `CargoToml` format. Both anchors verified verbatim.
+
+## Retry-1 blockers 1-4 — no regression
+
+I re-read the retry-1 verdict from disk and checked each against current text. All four remain resolved: the false npm-refresh claim (confirmed — `apply.rs:354-408` has only Cargo and Pypi branches, no Npm), the `ManifestDecl::new`-vs-`open` conflation, AC-005's unobservable per-group scoping, and AC-011's assertion on function-local `active_ecosystems` (now on `ApplyOutcome.staged`, confirmed public and assigned at `apply.rs:469`).
+
+All four gate conditions hold: 16 testable criteria, zero TBDs (the sole "TBD" string is the phrase "No TBDs remain" in the private reasoning field), error cases AC-008 and AC-012 correctly flagged `is_error_case: true` with AC-012b correctly flagged `false` as a success path, and scope confined to one cycle behind seven non-goals.
+
+## One non-gating observation to relay
+
+The `purpose` field opens *"Make callisto-cli's plan_version()..."* — but `plan_version` is defined only at `crates/callisto-graph/src/commands/version.rs:22`; callisto-cli merely calls it at `crates/callisto-cli/src/commands/version.rs:25`.
+
+I deliberately did **not** gate on this, and want to be explicit about why rather than bury it: it sits in framing prose, touches none of the four pass conditions, and every actionable pointer — the `scope` field, both `api_surface` entries, and all 16 criteria — correctly names `callisto-graph`. A developer implements from scope and the criteria, which answer "which crate" unambiguously three separate ways. Forcing a fourth cycle and a human escalation over a noun in a summary sentence, while all sixteen criteria and every file/line reference verify clean, would be gate theater. Worth a one-word cleanup on any future touch.
+
+This is a genuine pass — no condition was relaxed and no criterion was waved through as close enough.</result>
+<usage><subagent_tokens>70183</subagent_tokens><tool_uses>26</tool_uses><duration_ms>318974</duration_ms></usage>
+</task-notification>
