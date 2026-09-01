@@ -1,0 +1,28 @@
+<task-notification>
+<task-id>aeadab9ddd7ee2768</task-id>
+<tool-use-id>toolu_01Qn7dL6mqQL1g4oSVEs1x1G</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/aeadab9ddd7ee2768.output</output-file>
+<status>completed</status>
+<summary>Agent "Review Track 3a TASK-04a through 04e" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Everything is confirmed. Here is my review.
+
+```json
+{
+  "status": "approved",
+  "issues": [],
+  "sibling_gaps": [
+    "As of the true end state of TASK-04a-04e (commit 5ac5846), NpmMembership::admits(&amp;self, rel: &amp;Path) still takes a single argument with no hybrid_root/is_root support, while CargoMembership::admits(&amp;self, rel: &amp;Path, is_root: bool) has had hybrid-root support since TASK-03a. This is a real structural asymmetry between the two ecosystems' membership filters at this point in the series, but it is explicitly scoped to TASK-04f (a separate, already-planned task, noted as concurrent WIP in this review's instructions) rather than an unaddressed gap within 04a-04e's own scope — not a blocker for this review."
+  ],
+  "reasoning": "Read the plan (plan-track3a-v2.json) tasks TASK-04a through TASK-04e in full, and diffed each of the five commits (2c796c1, 2c816d5, f129491, 4731817, 5ac5846) against membership.rs. Every diff matches its task's specified implementation and test code byte-for-byte (function bodies, doc comments, test fixtures, commit messages all line up with the plan). Checked out the true end state at 5ac5846 via a git worktree (avoided touching the dirty working tree per instructions) and: (1) ran `cargo test -p callisto-graph --lib locate::membership::` — all 27 tests pass; (2) ran `cargo clippy -p callisto-graph --lib --tests -- -D warnings` — clean, no violations of the Rust hazards reference (no bare .unwrap()/.expect()/panic! remain in production code paths — grepped the final file and confirmed every remaining .unwrap()/.expect() is inside a #[cfg(test)] module); (3) independently verified the 'honest non-red' claim in TASK-04e's task note by checking out the pre-04e commit (4731817), appending both AC-09e's fixture (unparseable package.json) and the non-string-pnpm-sequence fixture as ad hoc probe tests, and running them: the package.json probe passed unchanged (confirming AC-09e genuinely was honest-non-red, not mislabeled) and the pnpm-sequence probe panicked with the exact 'naive: TASK-04e hardens non-string sequence elements' message (confirming that half was genuinely red) — this exactly matches the plan's own claim and the task prompt's hint about a pattern 'already seen and correctly handled in the Cargo series'; no discrepancy found. Verified `git log --oneline -- membership.rs` shows exactly 12 commits total (TASK-01/02/03a-e/04a-e) with no extra out-of-band corrective commits, meaning nothing needed silent patching. Verified the pnpm 'zero documents' fixture (comment-only YAML) genuinely produces docs.len()==0 via yaml_rust2, so that test's name and claimed code path are accurate, not just accidentally passing through a different branch. Checked structural symmetry against the Cargo series: array/string-shape hardening (parse_toml_string_array vs the JSON ?-chain), TOML/YAML-parse-error fallback, and non-string-entry hardening for both ecosystems' 'list of package globs' concept are all present and mirror each other appropriately, accounting for JSON's lack of a Cargo-style intermediate table (correctly not staged naive per TASK-04a's own note) and YAML's distinct 'missing key vs wrong scalar type' collapsing behavior (correctly tested together in TASK-04c per the note explaining as_vec()'s identical None result for both). The one real asymmetry — npm's admits() not yet carrying an is_root/hybrid_root parameter — is explicitly deferred to TASK-04f, which the task prompt itself names as concurrent in-progress work, so it is not a defect of the reviewed commits themselves; flagged in sibling_gaps for visibility but not blocking."
+}
+```
+
+Files inspected (all absolute paths):
+- `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs` (as of commits 2c796c1, 2c816d5, f129491, 4731817, 5ac5846)
+- `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/plan-track3a-v2.json` (TASK-04a–04f definitions)
+- `/Users/gabe/Projects/agent-plugins/shared/references/rust-hazards.md`
+
+No blockers found. All five commits (04a–04e) exactly match their plan specifications, all 27 unit tests pass at the true end state (5ac5846), clippy is clean under `-D warnings`, no naive `.unwrap()`/`.expect()` remain in production code paths, and the "honest non-red" claim in TASK-04e was independently verified against actual test execution and found accurate.</result>
+<usage><subagent_tokens>117139</subagent_tokens><tool_uses>30</tool_uses><duration_ms>433439</duration_ms></usage>
+</task-notification>
