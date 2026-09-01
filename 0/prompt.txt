@@ -1,0 +1,235 @@
+This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
+
+Summary:
+1. Primary Request and Intent:
+
+The session resumed from a previous context window where an `apply-permit` agent was mid-task implementing structural dry-run enforcement via an `ApplyPermit` capability token. The user's primary requests this session (in order):
+
+- Verify the apply-permit agent's work and confirm `just ci` passes
+- Fix all Batch 2 bugs (E/F/G/H/I) in parallel
+- Run a comprehensive analysis wave (correctness, test coverage, documentation)
+- Fix all identified gaps in parallel
+- Commit everything with appropriate logical history (10 commits)
+- Assess remaining work and dispatch a completeness workflow covering Python round_trip, PyPI publish arm, PEP 735 spec fix, CLI second-wave
+- Verify 20 bugs reported by Gemini
+- Think through Gemini's 4 systemic quality gates and plan how to address them
+- **Most recent request**: "Let's look for real work examples and corner cases that we should test for and account for in our code. TS, Rust, and Python and integrations that would have relative dependencies between languages" — with CRITICAL constraint: TEXT ONLY, no tool calls
+
+**Critical standing constraints (verbatim, must be preserved):**
+- NEVER commit to git without explicit user instruction
+- NEVER bump versions or run release/publish commands without explicit instruction
+- `/Users/gabe/Projects/callisto-findings/FINDINGS.md` lives OUTSIDE the repo deliberately — names unfixed defects and must NEVER be committed to the public repo
+- The `callisto publish` command must NEVER be invoked against a real registry without explicit user instruction
+- All changes land as uncommitted working-tree edits for user to review
+*(Note: User subsequently instructed to commit — 10 commits were created. Future commits still require explicit instruction.)*
+
+---
+
+2. Key Technical Concepts:
+
+- **Callisto**: Rust CLI + moon WASM extension for polyglot monorepo versioning, byte-compatible with `@changesets/cli` file format
+- **Cargo workspace**: 10 crates in strict architectural layers (Layer 1: model/format MIT/Apache-2.0; Layer 1.5: vcs MIT/Apache-2.0; Layer 2: manifests/conventional/changelog AGPL; Layer 3: graph AGPL; Layer 4: cli/moon AGPL; Dev: fixtures AGPL)
+- **ApplyPermit**: Zero-sized capability token — `granted_unless_dry_run(bool) -> Option<Self>` — makes forgetting `--dry-run` a compile error. `force_for_tests()` gated by `#[cfg(any(test, feature = "test-util"))]`
+- **manifest_cache**: `open_cached()` memoizes read-only manifest opens by path within a `Workspace` lifetime. Write-open path in `apply.rs` always calls `callisto_manifests::open` directly to avoid aliasing.
+- **GitDataSource trait**: Consolidates 5 hand-rolled gix/shell patterns. `GitRepository` (native gix) and `ShellGit` backends. `GitAccess::discover` with asymmetric fallback: reads retry through shell on native error; writes never retry through shell.
+- **TagIndex**: Built lazily via `OnceCell` on first `ws.tags()` call.
+- **PublishOrchestrator**: Native-tool pipeline — `cargo publish` for crates.io, `npm publish` for npm, `twine upload --skip-existing` for PyPI. No HTTP client.
+- **moon v2.4.6 PDK types**: `RegisterExtensionInput {id: Id}`, `RegisterExtensionOutput {name, description: Option<String>, plugin_version}`, `ExecuteExtensionInput {args, context: MoonContext}`
+- **PEP 508 round_trip**: Rewrites `==X.Y.Z` → `==NEW`, `~=X.Y.Z` → `~=NEW`, `>=X.Y.Z` → `>=NEW`, `>=X.Y.Z,<A.B` → `>=NEW,<NEXT_MAJOR`. Returns `None` for 3+ clause or unrecognized forms.
+- **PackageId::matches()**: Bare acts as ecosystem wildcard ("could be same package"). `resolve_target_package` handles multi-match by returning `Err(AmbiguousName)` on 2+.
+- **serial_test**: Added to manifest_cache tests to prevent global `OPEN_CALL_COUNT` contamination from parallel test runs.
+
+---
+
+3. Files and Code Sections:
+
+**`crates/callisto-model/src/permit.rs`** (new)
+```rust
+pub struct ApplyPermit { _private: () }
+impl ApplyPermit {
+    pub fn granted_unless_dry_run(dry_run: bool) -> Option<Self> {
+        if dry_run { None } else { Some(Self { _private: () }) }
+    }
+    #[cfg(any(test, feature = "test-util"))]
+    pub fn force_for_tests() -> Self { Self { _private: () } }
+}
+```
+
+**`crates/callisto-manifests/src/atomic.rs`** — `atomic_write` now requires `permit: &ApplyPermit`
+
+**`crates/callisto-manifests/src/lib.rs`** — `Manifest::write_version`, `update_dependency_spec`, `update_optional_dependencies` all take `permit: &ApplyPermit`
+
+**`crates/callisto-cli/src/commands/pre.rs`** — Fixed dry-run bug:
+```rust
+pub fn handle(args: PreArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
+    let runner = CliCommandRunner;
+    let permit = ApplyPermit::granted_unless_dry_run(global.dry_run);
+    match args {
+        PreArgs::Enter { tag } => {
+            // ... build pre_state, text ...
+            let Some(permit) = permit else {
+                preview(global, "pre", &tag, &text)?;
+                return Ok(ExitCode::SUCCESS);
+            };
+            // ... atomic_write with permit ...
+        }
+        PreArgs::Exit => {
+            // reads pre.json first (intentional for preview content)
+            let Some(permit) = permit else {
+                preview(global, "exit", &pre_state.tag, &updated)?;
+                return Ok(ExitCode::SUCCESS);
+            };
+            // ... atomic_write with permit ...
+        }
+    }
+}
+```
+
+**`crates/callisto-graph/src/commands/init.rs`** — dry-run threading; doc fix for private link:
+- Changed `[set_recorded_ecosystems]` to `set_recorded_ecosystems` (backtick only) to fix rustdoc private-item link error
+
+**`crates/callisto-fixtures/src/dry_run.rs`** (new) — `assert_no_disk_mutation` helper with `# Panics` section
+
+**`crates/callisto-manifests/src/npm.rs`** — validate-before-mutate fix: checks primary section before touching overrides/resolutions. 8 new tests covering co-mutation, resolutions, DepKind::Dev.
+
+**`crates/callisto-graph/src/manifest_cache.rs`** (new) — `open_cached()` with `RefCell<BTreeMap<PathBuf, Arc<dyn Manifest>>>`
+
+**`crates/callisto-graph/tests/manifest_cache_test.rs`** (new) — uses `#[serial]` from `serial_test = "3"` dev-dependency
+
+**`crates/callisto-cli/src/tty.rs`** (new) — `pub fn is_interactive() -> bool` wrapping `std::io::stdin().is_terminal()`
+
+**`crates/callisto-manifests/src/python.rs`** — `pub fn round_trip(spec: &DepSpec, target: &Version) -> Option<DepSpec>` with helpers `rewrite_single` and `rewrite_range`. 10 tests.
+
+**`crates/callisto-graph/src/commands/publish_client.rs`** — PypiClient implementing RegistryClient; `twine upload dist/* --skip-existing`; `classify_twine_output`
+
+**`crates/callisto-cli/src/commands/publish.rs`** (new) — CLI publish subcommand
+
+**`crates/callisto-graph/src/tags.rs`** — lazy TagIndex via OnceCell
+
+**`crates/callisto-vcs/src/access.rs`** (new) — `GitAccess::discover` with asymmetric fallback
+
+**`crates/callisto-vcs/src/shell.rs`** (new) — `ShellGit` backend with globset filtering
+
+---
+
+4. Errors and Fixes:
+
+- **Rustdoc private-item link error**: `crates/callisto-graph/src/commands/init.rs:111` had `[set_recorded_ecosystems]` linking to a private function. Fixed to backtick-only reference. Was blocking `just ci` (doc-check target).
+- **Format check failure after workflow agents**: Agents left unformatted code. Ran `just fmt` before re-running `just ci`.
+- **Workflow script parse error**: Backtick characters inside JS template strings in the workflow script caused a parse error (`Unexpected token`). Fixed by switching from template literals to string concatenation with `+` for agent prompt strings.
+- **cargo check failure noted by python agent**: `callisto-graph/src/commands/publish.rs` had missing `pypi_packages` struct field — resolved by the pypi_publish workflow agent adding the field to `PublishPlan`.
+- **Adversarial findings in workflow output** (3 confirmed bugs in new code):
+  1. `pypi_publish` glob: normalizes `_` → `-` but PEP 427 wheel filenames use `_` not `-`. Fix: use `replace(['-', '.'], "_")` or glob `dist/*`.
+  2. `rewrite_range` uses `splitn(2, ',')` — `>=1.0,<2.0,!=1.5.0` silently drops `!=1.5.0` clause. Fix: return `None` if `upper` contains a comma.
+  3. `classify_twine_output` returns `AlreadyPublished` on partial-batch failure.
+
+---
+
+5. Problem Solving:
+
+**Completed:**
+- ApplyPermit capability token fully wired — compile-time dry-run enforcement
+- All Batch 2 bugs verified (E/F/G/H/I): E was doc-only, F/G/H already implemented, I fixed
+- Comprehensive test coverage expansion across dry-run invariants, npm overrides, manifest cache, init reconcile
+- 20-issue documentation sweep
+- 10 logical commits with clean history
+- Python PEP 508 round_trip implemented with 10 tests
+- CLI second-wave: tty.rs created, --strict on snapshot/tag, exit code docs
+- PyPI publish arm wired, PEP 735 spec corrected
+- PEP 735 spec corrected to [PLANNED: NOT YET IMPLEMENTED]
+
+**In-progress:**
+- Two bug verification agents running for Gemini's 20 reported bugs (bugs 1-11 agent: `ac07e3f5ba59c2d70`, bugs 12-20 agent: `af8d19ffe55f6265d`)
+- `cargo check --workspace` is currently clean
+- Working tree has uncommitted changes from completeness workflow
+
+**Pending bug assessment (not yet verified):**
+- Bug 1: cascade.rs linked group escalation missing worklist enqueue (CRITICAL — was supposedly fixed previously, verifying)
+- Bug 2: path.rs workspace_relative(".") returns ""
+- Bug 3: exec.rs check_git_version rejects valid Git with non-digit minor suffixes (e.g. 2.43-ubuntu1)
+- Bug 4: changelog::prepend corrupts CRLF documents
+- Bug 5: apply.rs unconditional lockfile auto-staging
+- Bug 6: add.rs wizard uses name() instead of display_name() in polyglot repos
+- Bug 7: python.rs round_trip fails on 2-part PEP 440 versions (target.patch()? returns None)
+- Bug 8: npm.rs update_dependency_spec destroys nested overrides objects
+- Bug 9: publish_client.rs dist glob _ → - mismatch
+- Bug 10: shell.rs git rev-parse missing -- separator (CLI option injection)
+- Bug 11: commit.rs parse_commit drops multi-paragraph BREAKING CHANGE footers
+- Bugs 12-20: vcs/lib.rs short SHA comparison, double-prefixed annotated tags, Windows path slash, prerelease counter on un-dotted tags, frontmatter escaped quotes, WorkspaceCargoResolver BOM, workspace:true version insertion, TagIndex ignores tag_template, publish exits 0 on failure
+
+---
+
+6. All User Messages:
+
+- "We've prepped the first phase..." (initial context — prior session)
+- "This session is being continued from a previous conversation that ran out of context." (summary context)
+- "What's next?" — asked for status after ApplyPermit landed
+- "dispatch G, I, and F in parallel" — dispatched 3 parallel agents
+- "tackle E next" — dispatched PackageId matching analysis
+- "dispatch H" — track H already implemented
+- "Now let's do another wave or analysis validating what we just did and ensuring we're following best practices, appropriatelly testing not just the happy path and that we're properly documenting evertything"
+- "I thought we had addressed the dry-run issue with an architectural change no? Along with the plan and apply?" — correctly pushed back on misclassified dry-run test gaps
+- "Let's quickly fix everything you've identified"
+- **Mid-turn**: "Have we been commiting?" — answered: No, nothing committed, all working-tree edits
+- **Mid-turn**: "Let's commit with appropriate history for the changes we've made" — resulted in 10 logical commits
+- "What's next?" — status assessment of remaining work
+- "Is there a way to dispatch succesfully addressing it all with the most appropriate models and effort? Let's consider doc updates, rsdoc, testing, etc in a workflow" — dispatched completeness workflow
+- "Gemini found some bugs:" — pasted 11-bug report (bugs 1-11)
+- "Some more:" — pasted 9-bug report (bugs 12-20)
+- "Some thinking from gemini on how to stop these from happening going forward: [4 quality gates proposal] How can we best do this? Think through it, research, reason and plan"
+- "Let's look for real work examples and corner cases that we should test for and account for in our code. TS, Rust, and Python and integrations that would have relative dependencies between languages CRITICAL: Respond with TEXT ONLY. Do NOT call any tools."
+
+---
+
+7. Pending Tasks:
+
+- Wait for bug verification agents (bugs 1-11 and 12-20) to report back
+- Fix all confirmed real bugs from Gemini's 20-bug report
+- Fix 3 confirmed bugs from workflow adversarial verifier:
+  1. pypi_publish glob underscore normalization (wheels use `_` not `-`)
+  2. rewrite_range drops exclusion clauses (splitn(2) on 3+ clause specs)
+  3. classify_twine_output partial-batch failure classification
+- Implement Tier 1 systemic quality gates:
+  - Centralize BOM stripping in common.rs
+  - Normalize pathspec matching to POSIX in vcs/lib.rs
+  - Extend proptest to round_trip and bump functions with Version generators for 1/2/3-part versions
+  - Add AGENTS.md Invariant 6: Mandatory Input Boundaries
+- Implement Tier 2 quality gates:
+  - Exit code integration test suite (assert_cmd)
+  - Proptest round-trip property for manifests
+- Research and plan cross-language integration test scenarios (TypeScript + Rust + Python with relative dependencies) — user's most recent request
+- Commit all new changes when ready (requires explicit user instruction)
+
+---
+
+8. Current Work:
+
+The user's most recent request was: *"Let's look for real work examples and corner cases that we should test for and account for in our code. TS, Rust, and Python and integrations that would have relative dependencies between languages"* with a CRITICAL constraint to respond with text only and no tool calls.
+
+The context for this request is the systemic quality discussion following Gemini's 20-bug report. The user wants to understand what real-world polyglot monorepo integration scenarios — specifically TypeScript, Rust, and Python packages with cross-language dependencies — would look like as test cases and corner cases for Callisto's version management.
+
+The two bug verification agents are still running in the background:
+- Agent `ac07e3f5ba59c2d70`: verifying bugs 1-11
+- Agent `af8d19ffe55f6265d`: verifying bugs 12-20
+
+The workflow completeness run finished with all agents returning results. `cargo check --workspace` is clean. Working tree has uncommitted changes from the workflow (python round_trip, tty.rs, --strict flags, PyPI publish arm, PEP 735 spec fix).
+
+---
+
+9. Optional Next Step:
+
+The immediate next step is to answer the user's most recent explicit request with a detailed text-only analysis of real-world cross-language monorepo integration scenarios and what corner cases they surface for Callisto's test suite.
+
+Direct quote from user's request: *"Let's look for real work examples and corner cases that we should test for and account for in our code. TS, Rust, and Python and integrations that would have relative dependencies between languages"*
+
+The response should cover:
+- Real-world monorepo patterns where Rust (napi-rs/wasm-pack), TypeScript/JavaScript, and Python packages have inter-language dependencies
+- What version bump scenarios arise (e.g., bumping a Rust napi crate that is consumed by an npm package that is consumed by a Python tool)
+- What changeset cascade behaviors these trigger
+- What edge cases in dependency-constraint rewriting emerge at language boundaries
+- What test fixtures would represent these scenarios authentically
+
+This should be answered in text only before any tool calls resume.
+
+If you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/gabe/.claude/projects/-Users-gabe-Projects-callisto/575b7a46-37b7-42f0-9db7-b2c329b2abab.jsonl
+Continue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with "I'll continue" or similar. Pick up the last task as if the break never happened.
