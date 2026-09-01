@@ -1,0 +1,5 @@
+<task-notification>
+<task-id>b51bobhmy</task-id>
+<summary>Monitor event: "wait for full callisto-graph test suite (be35knbgp) to finish"</summary>
+<event>[Monitor timed out — re-arm if needed.]</event>
+</task-notification>
