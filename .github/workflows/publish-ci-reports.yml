@@ -1,0 +1,165 @@
+name: Publish CI Reports
+
+on:
+  workflow_run:
+    workflows: ["Callisto CI & Validation"]
+    types: [completed]
+
+# This workflow runs from the default branch and has the only token allowed to
+# update PR comments. It never checks out code from the triggering PR.
+permissions:
+  actions: read
+  pull-requests: write
+
+jobs:
+  publish:
+    name: Publish test and coverage reports
+    if: >-
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.pull_requests[0] != null
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Nextest report artifacts
+        continue-on-error: true
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ github.event.workflow_run.id }}
+          pattern: callisto-nextest-*
+          path: reports/nextest
+          merge-multiple: true
+      - name: Download LCOV artifact
+        continue-on-error: true
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ github.event.workflow_run.id }}
+          name: code-coverage-report
+          path: reports/coverage
+      - name: Update sticky PR reports
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        with:
+          script: |
+            const fs = require('node:fs');
+            const path = require('node:path');
+
+            const run = context.payload.workflow_run;
+            const pullRequest = run.pull_requests?.[0];
+            if (!Number.isInteger(pullRequest?.number)) {
+              core.setFailed('The completed CI run is not associated with a pull request.');
+              return;
+            }
+
+            function filesBelow(root, suffix) {
+              if (!fs.existsSync(root)) return [];
+              return fs.readdirSync(root, { recursive: true, withFileTypes: true })
+                .filter((entry) => entry.isFile() && entry.name.endsWith(suffix))
+                .map((entry) => path.join(entry.parentPath, entry.name));
+            }
+
+            function countMatches(text, expression) {
+              return [...text.matchAll(expression)].length;
+            }
+
+            const junitFiles = filesBelow('reports/nextest', '.xml');
+            let tests = 0;
+            let failures = 0;
+            let errors = 0;
+            let skipped = 0;
+            for (const file of junitFiles) {
+              const xml = fs.readFileSync(file, 'utf8');
+              tests += countMatches(xml, /<testcase(?:\s|>)/g);
+              failures += countMatches(xml, /<failure(?:\s|>)/g);
+              errors += countMatches(xml, /<error(?:\s|>)/g);
+              skipped += countMatches(xml, /<skipped(?:\s|>)/g);
+            }
+
+            const lcovFiles = filesBelow('reports/coverage', '.info');
+            let executableLines = 0;
+            let coveredLines = 0;
+            for (const file of lcovFiles) {
+              for (const line of fs.readFileSync(file, 'utf8').split(/\r?\n/)) {
+                const match = /^(LF|LH):(\d+)$/.exec(line);
+                if (!match) continue;
+                const value = Number(match[2]);
+                if (!Number.isSafeInteger(value)) continue;
+                if (match[1] === 'LF') executableLines += value;
+                else coveredLines += value;
+              }
+            }
+
+            const source = `[CI run #${run.run_number}](${run.html_url})`;
+            const testBody = junitFiles.length === 0
+              ? [
+                  '<!-- callisto-nextest-report -->',
+                  '### Nextest report',
+                  '',
+                  `No JUnit artifact was available from ${source}.`,
+                ].join('\n')
+              : [
+                  '<!-- callisto-nextest-report -->',
+                  '### Nextest report',
+                  '',
+                  `Source: ${source}`,
+                  '',
+                  '| Test executions | Passed | Failed | Errors | Skipped |',
+                  '| ---: | ---: | ---: | ---: | ---: |',
+                  `| ${tests} | ${tests - failures - errors - skipped} | ${failures} | ${errors} | ${skipped} |`,
+                  '',
+                  'Results aggregate the Linux and macOS test matrices.',
+                ].join('\n');
+
+            const coverage = executableLines === 0
+              ? null
+              : (coveredLines / executableLines * 100).toFixed(2);
+            const coverageBody = coverage === null
+              ? [
+                  '<!-- callisto-lcov-report -->',
+                  '### Line coverage',
+                  '',
+                  `No LCOV artifact was available from ${source}.`,
+                ].join('\n')
+              : [
+                  '<!-- callisto-lcov-report -->',
+                  '### Line coverage',
+                  '',
+                  `Source: ${source}`,
+                  '',
+                  '| Covered lines | Executable lines | Line coverage |',
+                  '| ---: | ---: | ---: |',
+                  `| ${coveredLines} | ${executableLines} | ${coverage}% |`,
+                  '',
+                  'The CI gate requires at least 90.00% line coverage.',
+                ].join('\n');
+
+            async function updateStickyComment(marker, body) {
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pullRequest.number,
+                per_page: 100,
+              });
+              const existing = comments.find((comment) => comment.body?.includes(marker));
+              if (existing) {
+                await github.rest.issues.updateComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: existing.id,
+                  body,
+                });
+              } else {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: pullRequest.number,
+                  body,
+                });
+              }
+            }
+
+            await updateStickyComment('<!-- callisto-nextest-report -->', testBody);
+            await updateStickyComment('<!-- callisto-lcov-report -->', coverageBody);
+            await core.summary
+              .addHeading('Published CI reports')
+              .addRaw(`Updated Nextest and LCOV PR comments for #${pullRequest.number}.`)
+              .write();

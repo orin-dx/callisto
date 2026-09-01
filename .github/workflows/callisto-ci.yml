@@ -14,9 +14,6 @@ concurrency:
 
 permissions:
   contents: read
-  pull-requests: write
-  checks: write
-  statuses: write
 
 jobs:
   fmt:
@@ -65,8 +62,16 @@ jobs:
       - uses: orin-dx/actions/setup-rust@2521888266780dabc7f5fd4c32b02d6ab82849db # v1.1
         with:
           targets: wasm32-wasip1
-      - run: just test
+      - run: just test-ci
       - run: just wasm-check
+      - name: Upload Nextest report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: callisto-nextest-${{ matrix.os }}
+          path: target/nextest/ci/junit.xml
+          if-no-files-found: warn
+          retention-days: 14
 
   coverage:
     name: Code Coverage & Test Report
@@ -96,6 +101,7 @@ jobs:
           name: code-coverage-report
           path: lcov.info
           if-no-files-found: warn
+          retention-days: 14
 
   security:
     name: Security & Advisory Audit (Moon & Just)

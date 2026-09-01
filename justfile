@@ -15,6 +15,12 @@ test:
     cargo nextest run --workspace || moon run :test
     cargo test --doc
 
+# CI variant of `test`: emits Nextest's JUnit report under target/nextest/ci
+# for the trusted PR reporter. Keep the everyday local command artifact-free.
+test-ci:
+    cargo nextest run --workspace --profile ci
+    cargo test --doc
+
 # Run Clippy lints (warnings treated as errors) as a single workspace invocation.
 # Moon's per-project `cargo clippy -p $project` tasks all lock the same shared
 # target/ dir, so running them one-per-project serializes on Cargo's own build
