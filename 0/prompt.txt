@@ -1,0 +1,60 @@
+<task-notification>
+<task-id>a18859c3b7c671d0f</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8a85b651-0c9a-44fa-9e0a-ac694c4409e1/tasks/a18859c3b7c671d0f.output</output-file>
+<status>completed</status>
+<summary>Agent "lambda:exit-gate for PLAN-002" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## verdict@1
+
+```json
+{
+  "verdict": "fail",
+  "confidence": "high",
+  "artifact_type": "implementation",
+  "retry_count": 1,
+  "blockers": [
+    {
+      "criterion": "AC-008",
+      "finding": "Two of AC-008's three conjuncts are unmet as written. (1) The criterion requires `runs-on:` to use `${{ matrix.hostRunner }}`; the file has `runs-on: ${{ matrix.target.hostRunner }}`. (2) The criterion requires the block to not reference `matrix.target`; the block contains four `matrix.target` references (`matrix.target.hostRunner`, `.triple`, `.artifactName`, `.packageDir`). The third conjunct passes: every dereferenced field name (hostRunner, triple, artifactName, packageDir) is real, and matrix.os / matrix.package are gone. Two mutually exclusive fixes, pick one. FIX A (satisfies AC-008 literally, valid GitHub Actions): change the build job's strategy block from `matrix:\\n        target: ${{ fromJson(needs.matrix.outputs.nativeMatrix) }}` to `matrix:\\n        include: ${{ fromJson(needs.matrix.outputs.nativeMatrix) }}`, then drop the `target.` segment from all four dereferences, giving `runs-on: ${{ matrix.hostRunner }}`, `--target ${{ matrix.triple }}`, `name: ${{ matrix.artifactName }}`, `path: ${{ matrix.packageDir }}/*.node`. `include:` fed a JSON array of objects promotes each object's keys to bare matrix variables, so this renders a working workflow. FIX B (spec correction, route to canon:correct-spec): the current code is a working, idiomatic GHA form and matches the pattern already published in .claude/specs/callisto-matrix.md:287-289, which the spec itself cites as canonical in AC-010 — under FIX A, ARCHITECTURE.md §12 and callisto-matrix.md §6.1 would document two different matrix shapes for the same array. If that consistency is preferred, AC-008's `runs-on` conjunct and its `matrix.target` prohibition need rewording to permit the `matrix.&lt;key&gt;.&lt;field&gt;` namespaced form and to forbid only bare `${{ matrix.target }}`/`${{ matrix.os }}`/`${{ matrix.package }}` used as values.",
+      "location": "/Users/gabe/Projects/callisto/ARCHITECTURE.md:489-500 (strategy/runs-on at 489-492)"
+    }
+  ],
+  "verdict_summary": "10 of 11 criteria verified against code read from scratch; all named tests pass. AC-008 fails: ARCHITECTURE.md:492 uses ${{ matrix.target.hostRunner }}, but the criterion requires ${{ matrix.hostRunner }} and forbids matrix.target. One-line fix in ARCHITECTURE.md, or correct AC-008. No other gaps.",
+  "reasoning": "Spec read from disk at /Users/gabe/Projects/callisto/.claude/specs/SPEC-002-native-artifact-placement.json; sha256 matches PLAN-002.json's spec_hash exactly (39b12cf...), so no spec drift. Commit summary treated as pointers only; every location re-read. Rust: matrix.rs:40-42 and the call site at :140 confirmed; render/mod.rs:541 is the one stale fixture (non-blocking, see notes). Action: action.yml:167-179 confirmed inside the INPUT_PUBLISH guard and before plan-publish at :182. Docs: ARCHITECTURE.md 445-513 and callisto-matrix.md 295-327 read end to end. Mutation: pipeline stage not reported to me, so I ran cargo-mutants 27.1.0 scoped to the changed functions myself — 4 mutants, 3 caught, 1 unviable, 0 survivors."
+}
+```
+
+## What was verified, and how
+
+Every criterion was checked by reading the current file, not the implementer's report. Absolute paths below.
+
+**Pass (10/11)**
+
+- **AC-001** — `/Users/gabe/Projects/callisto/crates/callisto-graph/src/matrix.rs:40-42` returns `format!("native-{package_name}-{triple}")`; call site at `:140` passes `package_name`. Proven end to end at `:516-539`, which builds a real two-package report and asserts `native-pkg-a-…` ≠ `native-pkg-b-…`, not just the helper in isolation.
+- **AC-002** — `test_native_matrix_dedup.sh` greps the live `unique_by(.artifactName)` filter out of `action.yml:164` and runs it against a two-package fixture. It cannot drift from the file.
+- **AC-003 / AC-004 / AC-005 / AC-006 / AC-010** — the loop at `action.yml:169-178` sits inside the `INPUT_PUBLISH` guard opened at `:167`, ahead of `plan-publish` at `:182`. Process substitution (`done &lt; &lt;(…)`), not a pipe, so the `exit 1` at `:177` kills the step rather than a subshell. `test_native_artifact_placement.sh` extracts that exact text via `sed` and stubs only `gh`/`mkdir`.
+- **AC-007** — no `callisto publish-target` anywhere in the fenced block; `git show 50512a2c` confirms the status note at `ARCHITECTURE.md:447` is untouched.
+- **AC-009** — build→upload→callisto-action(place+publish) all present at `ARCHITECTURE.md:486-513`.
+- **AC-011** — `.claude/specs/callisto-matrix.md:321` pins `$GITHUB_RUN_ID`, `:320` does `mkdir -p` first, and the cross-reference note is at `:325-327`.
+
+**Test results — all green, run for real**
+
+- `cargo nextest run -p callisto-graph --lib matrix::` → 28 passed, 0 failed.
+- `test_native_artifact_placement.sh` → 4 pass; `test_native_matrix_dedup.sh` → 1 pass; `test_github_release_creation.sh` → 7 pass; `test_status_check_branching.sh` → 4 pass. No regressions in the two pre-existing harnesses.
+
+## Sibling-gap scan
+
+- No live reference to the old `artifact_name_for_triple` survives anywhere in `crates/`.
+- No live doc still shows the broken example. `.claude/worktrees/*/ARCHITECTURE.md` do, but those are stale detached agent worktrees, not shipped docs.
+- **Non-blocking:** `/Users/gabe/Projects/callisto/crates/callisto-cli/src/render/mod.rs:541` hand-builds a `PlatformTarget` with `artifact_name: "native-aarch64-apple-darwin"` for `package_name: "native-mod"`. That value is now unproducible — real output would be `native-native-mod-aarch64-apple-darwin`. It never calls the helper, so nothing fails, but the render test's corpus no longer mirrors reality. Worth a one-line fixture update alongside the AC-008 fix.
+
+## Coverage gaps recorded
+
+1. **Mutation gate not reported.** No mutator report reached me. I ran `cargo mutants -f crates/callisto-graph/src/matrix.rs -F 'artifact_name_for_package_triple|build_platform_target'` directly: 4 mutants, 3 caught, 1 unviable, **0 survivors**. The contract's purpose is satisfied by direct evidence, so this does not add a second blocker — but the pipeline stage itself is unrecorded.
+2. **No mutation coverage on the action.yml bash.** `cargo-mutants` is Rust-only, so AC-003 through AC-006 and AC-010 rest entirely on the extract-and-stub harness. That harness is well built (it reads the live file), but nothing verifies it would catch a fault injected into the loop.
+3. Full-workspace regression rests on the separate `just ci` run in progress elsewhere; I scoped to the criteria and the named commands as instructed.
+
+The single blocker is a one-line documentation change or a one-clause spec correction — nothing in the Rust or the action logic is wrong.</result>
+<usage><subagent_tokens>109897</subagent_tokens><tool_uses>23</tool_uses><duration_ms>607698</duration_ms></usage>
+</task-notification>
