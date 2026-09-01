@@ -1,0 +1,24 @@
+<task-notification>
+<task-id>a1c5e42bbc36f24c3</task-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8a85b651-0c9a-44fa-9e0a-ac694c4409e1/tasks/a1c5e42bbc36f24c3.output</output-file>
+<status>completed</status>
+<summary>Agent "Correct SPEC-002's AC-008" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>The correction is complete and already went through the full re-review cycle.
+
+Summary of what happened on `/Users/gabe/Projects/callisto/.claude/specs/SPEC-002-native-artifact-placement.json`:
+
+- **AC-008** rewritten: previously required a bare `${{ matrix.hostRunner }}` form and forbade any `matrix.target` reference — this contradicted both the actually-committed `ARCHITECTURE.md` example (lines ~488-500) and `callisto-matrix.md` §6.1's own canonical `strategy.matrix.target` / `matrix.target.&lt;field&gt;` pattern (already cited by AC-010). AC-008 now requires the namespaced `matrix.target.&lt;field&gt;` form and forbids only genuinely nonexistent bare `matrix.os`/`matrix.package` or a bare-scalar `matrix.target`.
+- **AC-009** also revised (found during the follow-up `canon:auditor`/`canon:exit-gate` pass, not in the original contradiction report): its old "read end to end, shows a placement step" language was untestable and conflicted with AC-010/AC-011's "consumer writes no placement code — callisto-action handles it automatically" model. Rewritten to check for the exact observed structure in `ARCHITECTURE.md` §12.
+- **AC-010, AC-011**: reviewed, left unchanged — already consistent.
+
+The corrected spec passed `canon:auditor` and `canon:exit-gate` on the second round and was committed:
+
+```
+commit 96d8d72 — fix(spec): correct SPEC-002 AC-008 and AC-009 to match implementation
+branch: track-9-matrix-artifact-placement
+```
+
+One flagged follow-up outside this task's scope: `/Users/gabe/Projects/callisto/.claude/specs/track-g-matrix-napi-maturin.json`'s AC-013 still asserts the old pre-fix `artifactName` format (`native-&lt;triple&gt;` without the package-name segment), which SPEC-002 now contradicts. That would need its own `canon:correct-spec` pass if you want it closed — let me know if you'd like me to run that next.</result>
+<usage><subagent_tokens>59346</subagent_tokens><tool_uses>6</tool_uses><duration_ms>990567</duration_ms></usage>
+</task-notification>
