@@ -10,8 +10,8 @@ use std::process::ExitCode;
 
 use callisto_graph::commands::{
     build_release_intent, derive_release_commit_decision, derive_selected_release_decision,
-    execute_release_with_artifacts, reconcile_release_execution, validate_release_intent, PreparedReleaseEffectAdapter,
-    ReleaseStateStore, VersionOptions,
+    execute_release_with_artifacts, reconcile_release_execution, validate_release_intent, verify_artifact_manifest,
+    PreparedReleaseEffectAdapter, ReleaseStateStore, VersionOptions,
 };
 use callisto_graph::locate::IgnoreWalkLocator;
 use callisto_model::{
@@ -125,6 +125,29 @@ fn execute(args: ReleaseExecuteArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
         .as_deref()
         .map(read_artifact_manifest)
         .transpose()?;
+    match (
+        intent.artifact_slots.is_empty(),
+        manifest.as_ref(),
+        args.artifact_dir.as_deref(),
+    ) {
+        (true, None, None) => {}
+        (true, _, _) => {
+            return Err(CliError::Other(
+                "release intent declares no binary artifact slots; omit --artifact-manifest and --artifact-dir"
+                    .to_owned(),
+            ));
+        }
+        (false, Some(manifest), Some(directory)) => {
+            let runner = CliCommandRunner;
+            verify_artifact_manifest(&intent, manifest, directory, &runner)?;
+        }
+        (false, _, _) => {
+            return Err(CliError::Other(
+                "release intent declares binary artifact slots; provide both --artifact-manifest and --artifact-dir"
+                    .to_owned(),
+            ));
+        }
+    }
     let runner = CliCommandRunner;
     let root = dunce::canonicalize(&global.cwd).map_err(|source| CliError::Io {
         source,

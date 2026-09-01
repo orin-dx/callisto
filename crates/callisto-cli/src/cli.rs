@@ -307,6 +307,10 @@ pub struct ReleaseExecuteArgs {
     /// Explicit artifact manifest path required when the intent declares binary slots.
     #[arg(long, value_name = "FILE")]
     pub artifact_manifest: Option<PathBuf>,
+    /// Directory containing the exact regular artifact files named by the manifest.
+    /// Required with --artifact-manifest; it is never inferred from the checkout.
+    #[arg(long, value_name = "DIR", requires = "artifact_manifest")]
+    pub artifact_dir: Option<PathBuf>,
     /// Explicit durable state path. If omitted, state is stored outside the checkout.
     #[arg(long, value_name = "FILE")]
     pub state: Option<PathBuf>,
@@ -367,26 +371,31 @@ mod tests {
 
     #[test]
     fn release_plan_requires_exactly_one_authority_mode() {
-        let command = Cli::command();
-        let release = command
-            .get_subcommands()
-            .find(|subcommand| subcommand.get_name() == "release")
-            .expect("release command exists");
-        let plan = release
-            .get_subcommands()
-            .find(|subcommand| subcommand.get_name() == "plan")
-            .expect("release plan command exists");
-        let package = plan
-            .get_arguments()
-            .find(|argument| argument.get_long() == Some("package"))
-            .expect("package selector exists");
-        let commit = plan
-            .get_arguments()
-            .find(|argument| argument.get_long() == Some("from-release-commit"))
-            .expect("release commit selector exists");
-        assert!(package.is_required_set() || commit.is_required_set());
-        assert_eq!(package.get_conflicts(), ["from_release_commit"]);
-        assert_eq!(commit.get_conflicts(), ["packages"]);
+        use clap::Parser;
+
+        assert!(Cli::try_parse_from(["callisto", "release", "plan", "--out", "intent.json"]).is_err());
+        assert!(Cli::try_parse_from([
+            "callisto",
+            "release",
+            "plan",
+            "--package",
+            "cargo/demo",
+            "--from-release-commit",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "--out",
+            "intent.json",
+        ])
+        .is_err());
+        assert!(Cli::try_parse_from([
+            "callisto",
+            "release",
+            "plan",
+            "--from-release-commit",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "--out",
+            "intent.json",
+        ])
+        .is_ok());
     }
 
     /// AC-006/AC-007 (parse slice): `callisto matrix --package foo` parses
