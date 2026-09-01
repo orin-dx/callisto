@@ -5,6 +5,36 @@ to npm, where there are two distinct auth patterns and common points of confusio
 
 ---
 
+## Repository durable-release workflow
+
+Callisto's own `.github/workflows/callisto-release.yml` separates release work into four
+authority boundaries. A push with pending changesets creates or updates the release PR. That
+PR versions manifests and changelogs and removes only the changesets it consumed. Nothing is
+removed from `main` until that PR is merged.
+
+After a merge, the workflow derives a transient release intent from the signed merge commit's
+actual delta, builds from that exact commit, and passes the intent between jobs as a same-run
+GitHub artifact with a SHA-256 sidecar. It is not committed and it is never recovered from a
+cache. The execute job rechecks the handoff before calling `callisto release execute`.
+
+Create a GitHub Environment named `release` before enabling registry credentials. Configure
+at least one required reviewer and appropriate branch/tag deployment rules in the repository's
+Environment settings. The workflow queries the Environment API and fails if the reviewer rule
+is absent; the `environment: release` job boundary is what prevents registry secrets from being
+available to planning or build jobs.
+
+Only the `execute` job may receive `CARGO_REGISTRY_TOKEN`, `NPM_TOKEN`, or `TWINE_PASSWORD`.
+Do not put those secrets at workflow scope, in build jobs, or in an action input. Binary releases
+add exact files plus `release-artifacts/manifest.json` to the build handoff; their GitHub build
+attestations are verified by Callisto before upload. Source-only releases do not need that
+manifest.
+
+The composite `callisto-action` examples below describe the older consumer-action interface.
+They remain for migration compatibility; the repository's durable workflow is the supported
+path for Callisto's own releases.
+
+---
+
 ## npm Registry Authentication
 
 Callisto delegates all npm publishing to the `npm` or `pnpm` CLI (see the coordinator
