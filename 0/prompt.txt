@@ -1,0 +1,27 @@
+<task-notification>
+<task-id>a77140f30df640808</task-id>
+<tool-use-id>toolu_01AugreTTc1Hk5qNKs7WTu7i</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a15bbbf7-aba0-415d-bfdc-c773ea65cfc7/tasks/a77140f30df640808.output</output-file>
+<status>completed</status>
+<summary>Agent "pre.rs tests + manifest cache serialization + pre.rs docs" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All 125 tests pass. Here is a summary of what was done:
+
+---
+
+**Task 1 — two new tests in `crates/callisto-cli/tests/dry_run_invariant_tests.rs`**
+
+- **Test A (`pre_exit_without_pre_json_returns_io_error`)**: Creates a tempdir with a minimal `Cargo.toml` (so `find_workspace_root` succeeds), then calls `handle(PreArgs::Exit, &amp;g)` without any `.changeset/pre.json`. Asserts the result is `Err(CliError::Io { .. })`, exercising the `fs::read_to_string` error path.
+
+- **Test B (`pre_dry_run_json_output_fields_are_correct`)**: Uses `env!("CARGO_BIN_EXE_callisto")` to run the real binary as a subprocess (the same mechanism as other integration tests), then parses stdout as JSON and asserts all seven fields — `schemaVersion`, `command`, `dryRun`, `mode`, `tag`, `path`, `content` — for both `pre enter` and `pre exit` dry-run invocations.
+
+**Task 2 — serial isolation in `crates/callisto-graph/tests/manifest_cache_test.rs`**
+
+- Added `serial_test = "3"` to `[dev-dependencies]` in `crates/callisto-graph/Cargo.toml`.
+- Added `use serial_test::serial;` and `#[serial]` to `base_versions_reuses_manifests_opened_during_graph_discovery`, enforcing the isolation requirement the test comment had previously only noted as a manual convention.
+
+**Task 3 — doc comment on `handle` in `crates/callisto-cli/src/commands/pre.rs`**
+
+- Added the specified `///` doc block (describing the enter/exit semantics, the dry-run behaviour, and the `# Errors` section) immediately above `pub fn handle`.</result>
+<usage><subagent_tokens>57229</subagent_tokens><tool_uses>42</tool_uses><duration_ms>414962</duration_ms></usage>
+</task-notification>
