@@ -1,0 +1,44 @@
+<task-notification>
+<task-id>a93ef232afe0f72f8</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/tasks/a93ef232afe0f72f8.output</output-file>
+<status>completed</status>
+<summary>Agent "Review T03 commit" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Working tree is clean aside from untracked plan/spec artifacts (not part of the reviewed commit). Everything checks out.
+
+## Review Summary — commit 655abc6 (T03)
+
+**Status: approved** (no blockers found; per-commit checkpoint only, not a final verdict)
+
+### 1. Scope adherence — clean
+`git diff 655abc6^..655abc6 --name-only` shows exactly one file: `crates/callisto-graph/src/apply.rs`, +41/-0. The single production-code line added is `handle.persist(permit)?;` inside the bumps loop's `else if current == bump.from` branch (line 88). The rewrites loop (`for rewrite in &amp;plan.rewrites`, lines 108-129) is byte-for-byte untouched — no persist call added there, consistent with it being deferred to T04. Matches the plan task T03 spec exactly (file list, diff hunk, commit message all match `.claude/plans/manifest-persist-001-plan.json`).
+
+### 2. Non-negotiable violations — none
+Checked against `rust-hazards.md` taxonomies (write-only fields, false-success mutation, discarded parameters, missing error propagation, silent unwrap fallbacks, panics, integer overflow, unsafe blocks, error downgrade, duplicate diagnostics). The added line is a single `?`-propagated call with no unwrap/expect/panic, no error erasure, no unsafe. Placement is correct:
+- `write_version(&amp;bump.to, permit)?` — the leading `?` means `persist` at line 88 only runs if the write succeeded.
+- `current == bump.to` skip branch (lines 84-85) — no persist call, correctly, since nothing was mutated.
+- `else` / `UnexpectedManifestVersion` branch (lines 89-96) — no persist call, correctly, since this branch returns early via `?`-equivalent `return Err(...)` before persist would be reached.
+
+### 3. Sibling gaps — none; rewrites loop correctly deferred
+The rewrites loop is the only structurally similar candidate for a symmetric persist() call, and per the plan it's explicitly scoped to T04 (not yet implemented), gated behind T02's already-landed guard against the self-referential CargoToml delegation case. No other loop in apply.rs (changelog writes, changeset consumption, pre.json update) calls a `Manifest` handle's `write_version`/`persist` pair, so there is nothing else to flag as a gap at this point in the sequence.
+
+### 4. Test quality — good
+`apply_persists_bumps_loop_write_version_to_disk` (apply.rs:725-763) writes a real Cargo.toml to a tempdir, runs `apply_version_plan`, then reads the file back from disk (`std::fs::read_to_string`) and asserts the new version string is present — it verifies actual on-disk content, not merely `result.is_ok()`. `NoopRunner` (pre-existing double at apply.rs:353-368, already used by 3 sibling tests) is appropriate: this test exercises a plain single-manifest, no-cascade bump with no git/subprocess interaction required.
+
+### Independent verification performed
+- `cargo test -p callisto-graph --lib apply::tests` → 7 passed, 0 failed (including the new test).
+- `cargo test -p callisto-cli --test lifecycle_e2e_tests` → 5 passed, 0 failed.
+- `cargo test -p callisto-cli --test pre_mode_tests` → 6 passed, 0 failed.
+- `git status --short` → working tree clean aside from untracked plan/spec JSON files (not part of this commit).
+
+```json
+{
+  "status": "approved",
+  "issues": [],
+  "sibling_gaps": [],
+  "reasoning": "Diff is scoped to exactly the intended single line in apply.rs's bumps loop, correctly placed after write_version's ? (so persist only runs on successful write), correctly absent from the skip and error branches. Matches plan task T03 verbatim including the red-phase-waived rationale. No rust-hazards.md taxonomy violations present in the added code. Rewrites loop confirmed untouched, consistent with T04 being a separate future task gated on T02's guard. New test reads actual on-disk content post-apply rather than only checking Ok(()), and NoopRunner is a suitable double since no subprocess/git interaction is needed. Independently ran apply::tests (7 passed), lifecycle_e2e_tests (5 passed), and pre_mode_tests (6 passed) rather than trusting the implementer's report; git status shows a clean tree aside from unrelated untracked plan/spec files."
+}
+```</result>
+<usage><subagent_tokens>61694</subagent_tokens><tool_uses>14</tool_uses><duration_ms>115887</duration_ms></usage>
+</task-notification>
