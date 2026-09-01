@@ -1,0 +1,64 @@
+<task-notification>
+<task-id>a52de32e9f7b2d6ad</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/bb531e8d-c394-4e47-a8ae-e4a9ceeca6d2/tasks/a52de32e9f7b2d6ad.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement Track 4 T1" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Line numbers for evidence: test assertions AC-01 at line 32-36 (block starting line 32), AC-02 at 40-44, AC-04 at 48-52 (exit-0 case) and 56-60 (exit-127 case). Implementation: line 90 (AC-01 branch), line 92 (AC-02 branch), lines 94-96 (AC-04 else branch).
+
+```json
+{
+  "task_id": "T1",
+  "status": "done",
+  "steps_completed": [
+    "read plan T1 from PLAN-TRACK4-RELEASE-PIPELINE-CONTRACT-CORRECTNESS.json",
+    "read AC-01/AC-02/AC-04 from SPEC-TRACK4-RELEASE-PIPELINE-CONTRACT-CORRECTNESS.json and confirmed they match the task",
+    "created test file .github/actions/callisto-action/tests/test_status_check_branching.sh from plan content",
+    "ran test against unmodified action.yml, confirmed RED (AC-01 and AC-04-exit-0 failed as predicted)",
+    "discovered and fixed a bug in the plan-supplied test stub: `callisto() { exit N; }` calls the exit builtin inside a function, which terminates the whole harness script immediately (bash exit semantics, not `set -e`-gated), never letting `STATUS_EXIT=$?` or the if/elif/else run at all -- this made the test falsely fail AC-02 too and produced empty captured output for every case; changed the stub to `callisto() { return N; }` so the function's return value is only captured via $? by the caller, matching how a real external command's exit status behaves, and re-confirmed RED matched the plan's predicted pattern exactly",
+    "applied the plan's exact action.yml edit (STATUS_EXIT -eq 1 branch, unconditional `exit 1` with clarified ::error:: message in the else arm)",
+    "ran test again, confirmed GREEN (all 4 cases pass)",
+    "confirmed git status shows only action.yml and the new test script touched",
+    "ran cargo fmt --check / moon format-check, clean, no Rust files modified",
+    "committed with plan's exact commit message"
+  ],
+  "test_result": "pass",
+  "commit_sha": "2e6f25c5c914e6d65e2f4ba64bc1af07e0a56a29",
+  "concerns": "The plan's exact test content had a latent bash bug: stubbing `callisto` as `callisto() { exit ${stub_exit}; }` causes the `exit` builtin to terminate the entire test harness process the instant the stub is invoked, bypassing `set +e`/`set -e` and never letting the snippet's `STATUS_EXIT=$?` capture run. This made the RED-phase output diverge from the plan's expected_failure_output (AC-02 also failed, and all captured `out` values were empty, unlike the predicted `__HAS_CHANGESETS=&lt;unset&gt;__` text). I corrected the stub to use `return` instead of `exit` -- the minimal fix that makes the stub behave like a real external command's exit status instead of killing the harness -- and re-verified RED matched the plan's predicted pass/fail pattern (AC-01 fail, AC-02 pass, AC-04-exit-0 fail, AC-04-exit-127 pass) before touching action.yml. This is a one-line deviation from the plan's literal test content, made to keep the test scoped to what it was designed to prove; the assertions, exit codes tested, and structure are otherwise unchanged.",
+  "criteria_evidence": [
+    {
+      "criterion_id": "AC-01",
+      "test_file": ".github/actions/callisto-action/tests/test_status_check_branching.sh",
+      "test_line": 32,
+      "implementation_file": ".github/actions/callisto-action/action.yml",
+      "implementation_line": 90
+    },
+    {
+      "criterion_id": "AC-02",
+      "test_file": ".github/actions/callisto-action/tests/test_status_check_branching.sh",
+      "test_line": 40,
+      "implementation_file": ".github/actions/callisto-action/action.yml",
+      "implementation_line": 92
+    },
+    {
+      "criterion_id": "AC-04",
+      "test_file": ".github/actions/callisto-action/tests/test_status_check_branching.sh",
+      "test_line": 48,
+      "implementation_file": ".github/actions/callisto-action/action.yml",
+      "implementation_line": 94
+    }
+  ],
+  "reasoning": "T1 executed exactly per plan with one necessary correction to the plan's literal test-script text (exit-&gt;return in the stub) required for the test to actually exercise action.yml's branching rather than short-circuiting on the stub call itself. Confirmed via spec file on disk that AC-01/02/04 map to task's covers_criteria before writing anything. True RED (ran against buggy code, observed failure) preceded true GREEN (ran against fixed code, observed pass). Only the two files in the plan's `files` list were touched; fmt-check and format-check are clean; no Rust files modified."
+}
+```
+
+**Files touched** (both absolute paths):
+- `/Users/gabe/Projects/callisto/.github/actions/callisto-action/action.yml` (edited, lines 90-96)
+- `/Users/gabe/Projects/callisto/.github/actions/callisto-action/tests/test_status_check_branching.sh` (created)
+
+**Commit**: `2e6f25c5c914e6d65e2f4ba64bc1af07e0a56a29`
+
+One notable deviation worth flagging: the plan's exact test content stubbed `callisto` as `callisto() { exit ${stub_exit}; }`. In bash, calling `exit` inside a function called from the top-level script terminates the entire script immediately — it does not behave like a subprocess returning an exit code that `$?` can capture after `set +e`. This caused the RED-phase run to diverge from the plan's predicted output (AC-02 also failed, with empty captured output everywhere) rather than the predicted "AC-02 passes even on buggy code" pattern. I fixed the stub to use `return` instead of `exit`, re-verified the RED phase matched the plan's intended pass/fail pattern, and proceeded. This is a one-line change to the test harness mechanics only — the assertions and exit codes under test are unchanged from the plan.</result>
+<usage><subagent_tokens>57383</subagent_tokens><tool_uses>22</tool_uses><duration_ms>143998</duration_ms></usage>
+</task-notification>
