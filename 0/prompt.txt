@@ -1,0 +1,38 @@
+<task-notification>
+<task-id>a629f4d1de4ab1661</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a15bbbf7-aba0-415d-bfdc-c773ea65cfc7/tasks/a629f4d1de4ab1661.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix: pre-release mode critical bugs - exit finalization and parse error propagation" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All three tests green. Let me provide a concise summary of what was done.
+
+---
+
+All three bugs fixed and verified. Here's what was done:
+
+## Summary
+
+### Bug 1 (Critical): `pre.json` parse errors silently swallowed
+
+**Files changed:**
+- `/Users/gabe/Projects/callisto/crates/callisto-graph/src/error.rs` — Added two new error variants: `PreJson(callisto_format::PreJsonError)` (E114) and `PreJsonRead { message: String }` (E115)
+- `/Users/gabe/Projects/callisto/crates/callisto-graph/src/commands/version.rs` — Replaced the `.ok()` swallowing pattern with explicit `?`-propagation: IO errors map to `GraphError::PreJsonRead`, parse errors map to `GraphError::PreJson`
+- `/Users/gabe/Projects/callisto/crates/callisto-cli/tests/lifecycle_e2e_tests.rs` — Added `test_malformed_pre_json_returns_error_not_silent_normal_release`, which writes `{"mode": "p` (truncated JSON) to `.changeset/pre.json` and asserts `version::handle` returns `Err` and leaves Cargo.toml untouched
+
+### Bug 2 (High): `bump_target` never checks `PreMode::Exit`
+
+**Files changed:**
+- `/Users/gabe/Projects/callisto/crates/callisto-graph/src/cascade.rs` — `bump_target` now branches on `pre.mode`: `PreMode::Pre` uses existing `bump_prerelease` path; `PreMode::Exit` calls `versioning.bump(&amp;base, sev)`, which strips the pre-release tag and finalizes in-place (e.g. `bump("0.2.0-beta.0", Minor)` → `"0.2.0"`)
+- `/Users/gabe/Projects/callisto/crates/callisto-graph/src/commands/version.rs` — Added a post-aggregate injection step: when `pre.mode == Exit`, any package whose current version `is_prerelease()` gets a synthetic `Patch` severity with reason `BumpReason::PreRelease`, so `bump_target` is actually invoked even when no changeset files remain on disk (they were consumed and deleted during the pre-release phase)
+- `/Users/gabe/Projects/callisto/crates/callisto-graph/src/cascade.rs` — Added unit test `test_bump_target_exit_mode_finalizes_to_stable` confirming `base="1.0.0-alpha.2"` + `Exit` + `Minor` → `"1.0.0"`
+
+### Bug 3 (High): `test_pre_mode_blackbox_lifecycle` false positive
+
+**Files changed:**
+- `/Users/gabe/Projects/callisto/crates/callisto-cli/tests/lifecycle_e2e_tests.rs` — Replaced `assert!(final_cargo.contains("0.2.0"))` with `assert!(final_cargo.contains("version = \"0.2.0\""))` plus `assert!(!final_cargo.contains("beta"))`, which catches the pre-release substring that previously made the test pass when `0.2.0-beta.0` was still on disk
+
+### Pre-existing issues also fixed
+- `crates/callisto-graph/tests/graph_tests.rs` had `ParseError::EmptySummary` references from before `EmptySummary` existed in the enum — the variant existed in the working-tree copy of `callisto-format/src/changeset/mod.rs`, so no code change was needed (just reverted an erroneous intermediate substitution)</result>
+<usage><subagent_tokens>141650</subagent_tokens><tool_uses>109</tool_uses><duration_ms>1366764</duration_ms></usage>
+</task-notification>
