@@ -1,0 +1,121 @@
+<task-notification>
+<task-id>a0f85b01a14f276a3</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/bb531e8d-c394-4e47-a8ae-e4a9ceeca6d2/tasks/a0f85b01a14f276a3.output</output-file>
+<status>completed</status>
+<summary>Agent "Exit-gate Track 1 spec" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I independently traced every api_surface claim against the live code. The spec has accurate line numbers but points the fix at the wrong function. **Verdict: fail.**
+
+```json
+{
+  "artifact_type": "spec@1",
+  "artifact_id": "SPEC-TRACK1-FIXED-GROUP-CASCADE-CORRECTNESS",
+  "verdict": "fail",
+  "confidence": "high",
+  "retry_count": 1,
+  "verdict_summary": "Fail. Scoped fix (raise() loop, cascade.rs:464-478) cannot satisfy AC-001/002/004: seeded siblings take targets from solve_cascade:198, and the loop is gated by `sev &gt; sib_sev`. Fixed groups lack the convergence block Linked groups have at cascade.rs:314-379. Six further blockers.",
+  "blockers": [
+    {
+      "id": "BLK-01",
+      "severity": "critical",
+      "location": "AC-001, AC-002, AC-004; scope field; api_surface entry \"cascade::raise\"",
+      "description": "The spec scopes bug 1's fix to raise()'s per-sibling loop at cascade.rs:464-478, but that loop cannot produce the behavior AC-001 demands, for two independent reasons. (a) solve_cascade computes every SEEDED package's target itself at cascade.rs:198 (`let t = bump_target(id, sev, &amp;input)?;`) before raise() is ever called; raise() only runs at cascade.rs:296 when a dependent edge raises `edge.from`. AC-001's scenario -- 'both siblings are assigned a Minor severity bump' -- is a seed-path scenario, so both targets are already computed independently at line 198 and raise() never touches them. (b) Even if raise() did run, its loop body is guarded by `if sev &gt; sib_sev` (cascade.rs:466). With both siblings at Minor, sev == sib_sev, the guard is false, and the body never executes. Confirming the real shape of the bug: solve_cascade already contains a LINKED-group convergence block at cascade.rs:314-379 that computes one shared `winner` target and assigns it to every member, inside the `while changed` fixpoint. There is no Fixed-group analogue. That absence -- not raise()'s loop -- is bug 1.",
+      "required_change": "Rewrite the `scope` field and the `cascade::raise` api_surface entry to locate the fix in solve_cascade as a Fixed-group convergence block mirroring the Linked-group block at cascade.rs:314-379 (iterating `input.groups.fixed.values()`, computing one shared target via crate::groups::fixed_group_target, assigning it to all members, setting `changed = true` on any assignment so it reaches a fixpoint). If the drafter instead intends to keep the fix inside raise(), AC-001 must be restated to a scenario where raise() actually fires -- a sibling raised via a dependent edge to a STRICTLY HIGHER severity than the other sibling currently holds -- and the spec must then add a separate criterion covering the seed path at cascade.rs:198, which would otherwise remain broken."
+    },
+    {
+      "id": "BLK-02",
+      "severity": "critical",
+      "location": "AC-004",
+      "description": "AC-004 requires the shared group-aligned target to be observed 'through commands::snapshot::plan_snapshot's call path'. plan_snapshot discards cascade targets entirely: `cascade_out` is consumed only for `.rewrites` (snapshot.rs:111) and `.diagnostics` (snapshot.rs:140), and every PlannedBump's `to` is `snapshot_ver` (snapshot.rs:94), not a cascade target. Worse, snapshot.rs:113-126 overwrites each rewrite's `to` from `snapshot_versions`, so cascade targets do not survive into rewrites either. No caller of plan_snapshot can observe the cascade-stage target, so AC-004 is not confirmable as written. It also admits two readings -- call plan_snapshot, or call run_cascade with a snapshot-shaped CascadeInput -- and only the second is implementable.",
+      "required_change": "Restate AC-004 to assert the observable proposition: that crate::cascade::run_cascade, invoked with a CascadeInput constructed identically to snapshot.rs:53-62 (pre: None, every package seeded Severity::Patch), returns a CascadeOutcome whose `targets` map holds the same shared value for both Fixed-group siblings. Drop the phrase 'through plan_snapshot's call path' and replace the shared-code justification with an explicit statement that plan_snapshot and plan_version construct structurally identical CascadeInputs."
+    },
+    {
+      "id": "BLK-03",
+      "severity": "major",
+      "location": "AC-010c vs. api_surface entry \"config::groups::GroupTable::resolve\" and non_goals item 4",
+      "description": "AC-010c requires that after resolve(), 'group.members for that group contains the resolved PackageId only once (not twice)'. Current resolve() pushes one GroupMember::Package per raw spelling (config/groups.rs:148 and :179) and then calls only `members.sort()` (config/groups.rs:164, :195) -- there is no dedup. Satisfying AC-010c therefore requires a SECOND behavior change to resolve(). But the api_surface entry states the only internal change is cross-group conflict detection, and non_goals item 4 says 'do not refactor unrelated parts of resolve() as a side effect'. A planner reading api_surface would not implement dedup and AC-010c would fail. This is not cosmetic: duplicate members double-count in `g.members(GroupMemberKind::Package)`, which both fixed_group_target (groups.rs:105, :119) and pre_mutation_checks (groups.rs:30, :44) iterate.",
+      "required_change": "Add the dedup requirement explicitly to the GroupTable::resolve api_surface entry -- e.g. 'resolve() additionally deduplicates each group's resolved Package members so a PackageId reachable under two spellings within one group appears exactly once in GroupDef.members; apply via members.dedup() after the existing members.sort() at config/groups.rs:164 and :195' -- and amend non_goals item 4 to carve this out rather than forbid it."
+    },
+    {
+      "id": "BLK-04",
+      "severity": "major",
+      "location": "api_surface entry \"CascadeInput.tags\"",
+      "description": "The entry states raise()'s loop 'can call fixed_group_target(sib, tags, ...)'. That call form does not typecheck against the real signature at groups.rs:97-103: `fixed_group_target(g: &amp;GroupDef, base: &amp;BTreeMap&lt;PackageId, Version&gt;, severities: &amp;BTreeMap&lt;PackageId, Severity&gt;, tags: &amp;TagIndex, _pre: Option&lt;&amp;callisto_format::PreState&gt;) -&gt; Result&lt;Version, GraphError&gt;`. The first parameter is a &amp;GroupDef, not a sibling PackageId, and `tags` is the fourth argument, not the second. The api_surface is the drafter-facing contract for this call and currently misstates it.",
+      "required_change": "Replace the call sketch with the verified five-argument signature and name each argument's source at the call site (GroupDef from groups.fixed_group_of(pkg), base from input.base, severities from out.severities, tags from the new input.tags, pre from input.pre)."
+    },
+    {
+      "id": "BLK-05",
+      "severity": "major",
+      "location": "AC-001",
+      "description": "AC-001 says the shared target is 'derived from the released sibling's tag-based version via fixed_group_target'. fixed_group_target does not derive the target from the tag: groups.rs:129-135 sets `aligned_base = base.get(&amp;released[0])`, i.e. from the `base` map (plan_version's base_versions), using `tags` only to FILTER which members count as released (groups.rs:108). AC-001's fixture -- 'one already released with a prior tag at version 2.0.0, one never-released at version 0.1.0' -- never states what base_versions holds for the released member, so the expected target version is undetermined and an implementer must guess. Separately, fixed_group_target hardcodes `callisto_format::SemVerVersioning` (groups.rs:137) whereas bump_target dispatches on `base.grammar()` for Pep440 (cascade.rs:398-401); routing Fixed groups through fixed_group_target silently changes behavior for PEP440-based fixed groups, which no criterion covers.",
+      "required_change": "Restate AC-001 with concrete, fully-determined fixture values and a literal expected output -- e.g. 'base_versions = {A: 2.0.0, B: 0.1.0}, tags.last_tag(A) = Some(_), tags.last_tag(B) = None, both seeded Severity::Minor; both A and B receive target 2.1.0' -- and say the alignment base is `base[released[0]]` with tags used only as the released-member filter. Add a criterion (or an explicit non_goal) covering the SemVer-hardcoding divergence for PEP440 fixed groups."
+    },
+    {
+      "id": "BLK-06",
+      "severity": "minor",
+      "location": "AC-005",
+      "description": "AC-005 asserts plan_snapshot 'produces the identical snapshot_versions output'. `snapshot_versions` is a function-local BTreeMap declared at snapshot.rs:69 and never returned from plan_snapshot; it is not output and cannot be observed by a tester. AC-005 also frames the check as a before/after comparison ('running plan_snapshot before and after this fix'), which is not a runnable assertion since the pre-fix build will not exist once the change lands.",
+      "required_change": "Restate AC-005 against the actual return values: 'every PlannedBump in the returned VersionPlan.bumps and every BumpRecord in the returned SnapshotReport.bumps has `to` equal to the single parsed `0.0.0-&lt;tag&gt;-&lt;sha_short&gt;` version, for every package in the workspace, regardless of severity or Fixed-group membership.' Drop the before/after framing."
+    },
+    {
+      "id": "BLK-07",
+      "severity": "minor",
+      "location": "api_surface entry \"commands::version::plan_version\", clause (c)",
+      "description": "The entry lists pre_mutation_checks's arguments as 'base_versions, ws.config.groups, the new tags binding, and the new NapiTargetsIndex' -- four. The real signature at groups.rs:18-25 takes six: `pre_mutation_checks&lt;D: DependencyResolver&gt;(_graph: &amp;D, groups: &amp;GroupTable, base: &amp;BTreeMap&lt;PackageId, Version&gt;, tags: &amp;TagIndex, napi: &amp;NapiTargetsIndex, root: &amp;Path)`. The omitted `_graph` and `root` are both required and both available in plan_version (`&amp;ws.graph`, `ws.root`). Relatedly, the entry's example binding `let tags = ws.tags()?;` yields a `&amp;TagIndex` (lib.rs:148 returns `Result&lt;&amp;TagIndex, GraphError&gt;`), so CascadeInput's `tags: &amp;'a TagIndex` field takes `tags` directly, not `&amp;tags`.",
+      "required_change": "List all six arguments with their in-scope sources, and note that ws.tags() returns a borrowed &amp;TagIndex so the CascadeInput field is populated without an extra reference."
+    }
+  ],
+  "conditions_evaluated": {
+    "all_criteria_testable": "fail — AC-001 (undetermined expected value, BLK-05), AC-004 (not observable through the named entry point, BLK-02), AC-005 (asserts on a private local, BLK-06)",
+    "no_tbds": "pass — full-text scan of all fields found no TBD, TODO, tbd, or placeholder markers",
+    "error_cases_flagged": "pass — AC-007, AC-007b, AC-010, AC-010b all carry is_error_case: true; AC-011, AC-012, AC-010c are correctly flagged false as happy-path/regression criteria",
+    "single_planning_cycle": "conditional — three independent bugs across four files is borderline but acceptable as scoped. Note that resolving BLK-01 expands bug 1 from a loop edit into a new fixpoint block in solve_cascade; the drafter should re-check scope after that rewrite."
+  },
+  "corrections_verified_landed": {
+    "AC-007_rewrite": "landed and accurate — the divergence/grammar-mismatch fixture matches pre_mutation_checks's released-member filter (tags.last_tag(id).is_some(), groups.rs:33) and GraphError::FixedGroupDivergent/GroupGrammarMismatch both carry { group, members } as claimed (error.rs:111-121)",
+    "AC-007b_napi_load_failure": "landed and accurate — NapiTargetsIndex::load derives root.join(main_id.name()).join(\"package.json\") (napi.rs:29) and emits ManifestError::Read (napi.rs:36) / ManifestError::Parse with ManifestFormat::PackageJson (napi.rs:43-46); GraphError::Manifest(#[from] ManifestError) at error.rs:19 makes the `?` conversion to GraphError correct as stated",
+    "AC-010_rewrite_and_AC-010b": "landed and reachable — GroupTable::validate_syntactic compares raw member STRINGS (config/groups.rs:102, :115, :122), so differently-spelled members pass validation and reach resolve()'s unchecked fixed_of/linked_of inserts (config/groups.rs:149, :180). The Fixed+Linked joint-detection disambiguation is present and correct",
+    "AC-010c_duplicate_spelling": "landed but internally inconsistent with api_surface and non_goals — see BLK-03",
+    "GroupTable_resolve_api_surface_disambiguation": "landed — the 'at most one group total (Fixed or Linked), not one-per-kind' sentence is present and matches AC-010b"
+  },
+  "line_numbers_independently_confirmed": [
+    "cascade.rs:134-143 — CascadeInput has exactly the 8 fields the spec lists, none named tags (CONFIRMED)",
+    "cascade.rs:422-433 — raise() takes input: &amp;CascadeInput&lt;'_, D&gt; (CONFIRMED)",
+    "cascade.rs:464-478 — fixed_siblings loop spans exactly these lines (CONFIRMED)",
+    "cascade.rs:198, 341, 460, 474 — four non-test bump_target call sites; the spec's scope says 'bump_target call site' (singular, unqualified), which is ambiguous across them",
+    "version.rs:27 base_versions, :43 ws.tags()? inline in aggregate(), :70 CascadeInput, :203 diagnostics binding, :219 escalate() (ALL CONFIRMED)",
+    "snapshot.rs:53 CascadeInput, :82 snapshot_versions.insert (ALL CONFIRMED)",
+    "config/groups.rs:135 pub(crate) fn resolve(raw: &amp;RawGroupTable, index: &amp;IdentityIndex) -&gt; Result&lt;GroupTable, GraphError&gt; (CONFIRMED)",
+    "groups.rs:97 fixed_group_target has zero callers outside the lib.rs:43 re-export — the spec's claim of no pre-existing unit test is CONFIRMED",
+    "groups.rs:223 pre_mutation_checks has exactly one existing test caller — CONFIRMED"
+  ]
+}
+```
+
+## The finding that matters most
+
+The spec's line numbers are accurate — I checked every one, and the earlier canon-verifier/canon-auditor corrections did land. But the spec diagnoses bug 1 in the wrong function.
+
+`solve_cascade` already contains a **Linked**-group convergence block at `crates/callisto-graph/src/cascade.rs:314-379`: it iterates `input.groups.linked.values()`, computes one shared `winner` version, assigns it to every member, and sets `changed = true` so the outer `while changed` loop re-converges. **There is no Fixed-group counterpart.** That missing block is the bug.
+
+The spec instead targets `raise()`'s sibling loop at `cascade.rs:464-478`, which cannot fix AC-001's scenario:
+
+```rust
+// cascade.rs:198 — seeded packages get targets here, before raise() ever runs
+for (id, &amp;sev) in input.seed {
+    let t = bump_target(id, sev, &amp;input)?;
+    out.targets.insert(id.clone(), t);
+}
+
+// cascade.rs:464-466 — and the sibling loop is gated on a strict inequality
+for sib in groups.fixed_siblings(pkg) {
+    let sib_sev = out.severities.get(sib).copied().unwrap_or(Severity::None);
+    if sev &gt; sib_sev {   // both siblings at Minor =&gt; false =&gt; body never runs
+```
+
+Two siblings both seeded Minor take the line-198 path and never reach `raise()`; even if they did, `sev &gt; sib_sev` is false. BLK-01 is the blocker to fix first — BLK-02 through BLK-07 are downstream of it or independent smaller defects.
+
+Files I verified against: `/Users/gabe/Projects/callisto/crates/callisto-graph/src/cascade.rs`, `/Users/gabe/Projects/callisto/crates/callisto-graph/src/groups.rs`, `/Users/gabe/Projects/callisto/crates/callisto-graph/src/config/groups.rs`, `/Users/gabe/Projects/callisto/crates/callisto-graph/src/commands/version.rs`, `/Users/gabe/Projects/callisto/crates/callisto-graph/src/commands/snapshot.rs`, `/Users/gabe/Projects/callisto/crates/callisto-graph/src/napi.rs`, `/Users/gabe/Projects/callisto/crates/callisto-graph/src/error.rs`, `/Users/gabe/Projects/callisto/crates/callisto-graph/src/lib.rs`.</result>
+<usage><subagent_tokens>72725</subagent_tokens><tool_uses>16</tool_uses><duration_ms>295170</duration_ms></usage>
+</task-notification>
