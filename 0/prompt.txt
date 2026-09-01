@@ -1,0 +1,1 @@
+Should we setup renovate perhaps? What's the best option? How's the adapter work coming along?
