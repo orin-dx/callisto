@@ -1,0 +1,5 @@
+<task-notification>
+<task-id>bkenh13sd</task-id>
+<summary>Monitor event: "wait for T3 cargo test -p callisto-graph (b6ru9hx83) to finish"</summary>
+<event>[Monitor timed out — re-arm if needed.]</event>
+</task-notification>
