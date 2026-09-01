@@ -1,0 +1,1 @@
+Do you understand how we implement our work from specs and validate/verify using our claude plugins and agents? If you are to attempt to actually do the work you need to follow our process well.
