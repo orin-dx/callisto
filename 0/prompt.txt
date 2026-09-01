@@ -1,0 +1,5 @@
+<task-notification>
+<task-id>bn9txhfcj</task-id>
+<summary>Monitor event: "wait for T7 full test suite (beh0bkato) to finish"</summary>
+<event>[Monitor timed out — re-arm if needed.]</event>
+</task-notification>
