@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bq1ovz9q6</task-id>
+<tool-use-id>toolu_019oSZPAksZqL2zcgMhyroaZ</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/b90cda92-db13-4c63-8d7f-c9fa7d9196ab/tasks/bq1ovz9q6.output</output-file>
+<status>completed</status>
+<summary>Background command "Run the new skip_precheck tests" completed (exit code 0)</summary>
+</task-notification>
