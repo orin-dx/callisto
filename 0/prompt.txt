@@ -1,0 +1,35 @@
+<task-notification>
+<task-id>a2ccfbd1797ab1db5</task-id>
+<tool-use-id>toolu_01RBEBmUCtPsTbLfm8BjpAtg</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/0c4c4622-1ed8-4f2c-80e6-f0890a2dad72/tasks/a2ccfbd1797ab1db5.output</output-file>
+<status>completed</status>
+<summary>Agent "Clarify Tier 1 requirement gaps" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>```json
+{
+  "action": "complete",
+  "question": null,
+  "requirement": {
+    "id": "REQ-001",
+    "statement": "Callisto must provide a reference mechanism and pattern for placing CI-built native binary artifacts (napi-rs .node files, maturin equivalents) into their corresponding platform-stub package directories before `callisto publish` runs.",
+    "stakeholder": "The maintainer of callisto (also a consumer via downstream projects like \"michi\"), and by extension any callisto consumer building napi-rs or maturin native packages who needs a working end-to-end release pipeline.",
+    "why": "callisto matrix already resolves each native build target to artifactName/hostRunner/useCross/packageDir, and the publish-side platform-stub modeling and ordering are already correct, but nothing in callisto or the shipped callisto-action actually moves a per-platform build's artifact into the right package directory before publish. Every consumer has to hand-build this glue themselves from just the JSON field names, with no working reference anywhere in callisto's own docs — confirmed by a real downstream project (michi) hitting exactly this gap this session. The mechanism was already designed once (.claude/specs/callisto-matrix.md §6.2) but never built, and ARCHITECTURE.md's only example workflow (§12) is broken (references a nonexistent `callisto publish-target` subcommand) and stops before showing placement or publish at all.",
+    "done_when": [
+      "A documented, working end-to-end example exists showing a matrix-driven per-platform CI build job uploading its artifact, an orchestrating step downloading each named artifact and placing it into its package's packageDir, and callisto publish subsequently succeeding against those populated package directories.",
+      "The placement step is implemented as GitHub-platform-specific orchestration (e.g. using `gh run download` or an equivalent artifact-fetch primitive) living outside callisto's core Rust CLI, consistent with the CLI's hermetic/zero-network-call boundary.",
+      "ARCHITECTURE.md's §12 example workflow no longer references the nonexistent `callisto publish-target` subcommand and is extended to cover artifact placement and the publish step, not just the build step.",
+      "A consumer following the documented pattern can go from N per-platform build jobs producing artifacts to those artifacts sitting in the correct platform-stub package directories, with no custom glue code beyond invoking the documented steps."
+    ],
+    "out_of_scope": [
+      "Extending PlatformTargetKind to Java/JNI or .NET native-AOT targets — a separate, later concern.",
+      "Prebuilt Rust CLI binaries distributed as GitHub Release assets (\"Tier 2\") — a separate, related, deferred future spec; may reuse the existing per-tag `gh release create` loop in callisto-action via an added `gh release upload`, but that work is not part of this requirement.",
+      "Homebrew tap formula generation/distribution — deferred by the maintainer as a possible separate future tool.",
+      "Go binary distribution — already an existing non-goal per .claude/specs/callisto-matrix.md §8, not being revisited here.",
+      "A generic callisto-build-action that dispatches the actual per-platform build (napi build --platform --release, etc.) — this is callisto-matrix.md §7's secondary/optional proposal. This requirement covers only the placement step (getting an already-built, correctly-named artifact into its package directory); a consumer may use any build step of their own, including napi-rs's official CI template, as long as the artifact is uploaded with the expected name."
+    ]
+  },
+  "reasoning": "All four done_when criteria are testable propositions (doc existence with specific structural elements, code-location/boundary check via grep, absence of a specific broken reference plus presence of extended coverage, and an end-to-end no-custom-glue walkthrough) — each admits a concrete pass/fail check without further specification. Stakeholder is concrete: named maintainer role plus a named downstream consumer (michi) plus the general class of napi-rs/maturin package authors, with enough context (already discovered the gap firsthand) to know what they need. The only remaining weakness was out_of_scope being empty, but the conversation context supplies five explicit, specific exclusions (target-kind expansion, Tier 2 release-asset distribution, Homebrew tap, Go binaries, build-dispatch action) each with a stated reason and pointer to where the exclusion is otherwise recorded — none are vague placeholders. No further clarification is needed before a spec writer could act on this."
+}
+```</result>
+<usage><subagent_tokens>33314</subagent_tokens><tool_uses>0</tool_uses><duration_ms>28786</duration_ms></usage>
+</task-notification>
