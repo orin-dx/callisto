@@ -1,0 +1,43 @@
+<task-notification>
+<task-id>a1dccc69fd559dcd4</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/tasks/a1dccc69fd559dcd4.output</output-file>
+<status>completed</status>
+<summary>Agent "Review T05a commit" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Confirmed, single file touched. Everything checks out. Compiling my findings.
+
+## Review: commit 615f66c (T05a)
+
+**Verified facts:**
+- Diff touches only `crates/callisto-manifests/src/cargo.rs` — scope adherence confirmed.
+- The workspace-inherited-version branch's explanatory comment (why the bump routes to the member's own `[package]` rather than `[workspace.package]`) was preserved verbatim, not dropped during the body replacement.
+- `CargoToml::write_version` now correctly handles all branches: `inherited_version == true` (mutates + flips flag + `Ok(())`, no persist), and `false` with `pkg.get_mut("version")` returning `Some`+`as_value_mut()` `Some` (decor-preserving in-place replace), `Some`+`as_value_mut()` `None` (fallback insert), and `None` (insert) — all unchanged from before except the removed `self.persist(permit)` call and `Ok(())` in its place. The decor clone/restore logic for format preservation is byte-identical to the pre-commit version.
+- `permit` → `_permit` rename is legitimate: it's a required parameter on the `Manifest` trait signature, now unused in this impl only because persistence moved to the caller.
+- Regression check: ran `cargo test -p callisto-manifests --lib cargo::` (24/24 pass), `cargo test -p callisto-graph --lib apply::tests` (8/8 pass, including `apply_persists_bumps_loop_write_version_to_disk`), `cargo test -p callisto-cli --test lifecycle_e2e_tests` and `--test pre_mode_tests` (all pass). `apply_version_plan`'s end-to-end behavior is unchanged — T03's explicit `handle.persist(permit)?` after `write_version` at apply.rs:87-88 is correctly picking up the slack.
+- All 5 repaired tests' `persist()` insertions sit immediately before their respective disk reads, including the two-read `write_version_pins_explicitly_on_workspace_inheriting_member` test where `manifest.persist()` correctly precedes both the "root unchanged" and "member updated" reads.
+- The new `write_version_does_not_touch_disk_until_persist_called` test is genuinely meaningful: asserts disk content is byte-identical to the original *before* persist, then asserts the version string is present *after* persist — a real before/after contrast, not a tautology.
+- `cargo clippy -p callisto-manifests -p callisto-graph --lib -- -D warnings` is clean.
+- Hazards check against `rust-hazards.md`: no T1 (trait-required discarded param, documented false-positive case), no T8 false-success mutation (no early `Ok(())` return without mutation in either branch), no T2/T3/T4/T5/T6/T9/T10 hits introduced by this diff.
+
+**Noteworthy observation (not a blocker for this commit):** `ManifestCstEditor::update_version_cst` (crates/callisto-manifests/src/lib.rs:79-86) is a blanket-impl wrapper that calls `self.write_version(...)` without an explicit `persist()`. Before this commit, that transitively persisted for `CargoToml` (since `write_version` persisted internally); after this commit it silently does not. I grepped the whole workspace and confirmed `update_version_cst`/`update_dependency_cst` are never called anywhere — genuinely dead code today, so no live regression. The plan already schedules this exact fix as T13 ("Wire persist() into the ManifestCstEditor blanket impl"), so this is expected, tracked, sequenced work rather than a gap introduced carelessly. Flagging as a suggestion in case T13 is dropped or reordered later.
+
+**Sibling-implementation note:** `PackageJson::write_version` (npm.rs) and `PyprojectToml::write_version` (python.rs) still persist internally post-commit — correctly out of scope for T05a, since the plan assigns their strip to T07 and T10 respectively. Not a sibling gap for this checkpoint.
+
+```json
+{
+  "status": "approved",
+  "issues": [
+    {
+      "file": "crates/callisto-manifests/src/lib.rs",
+      "line": 79,
+      "description": "ManifestCstEditor's blanket update_version_cst/update_dependency_cst wrappers call write_version/update_dependency_spec without an explicit persist() call. Before this commit that was harmless because CargoToml::write_version persisted internally; after this commit it silently stops persisting for CargoToml. Currently dead code (no callers found workspace-wide via grep), and the plan already schedules the fix as T13, so this is not a live regression from this commit — just flagging so T13 isn't skipped.",
+      "severity": "suggestion"
+    }
+  ],
+  "sibling_gaps": [],
+  "reasoning": "Diff is scoped to cargo.rs only. Both write_version branches (inherited and ordinary, including the Some/as_value_mut Some/None and None sub-cases) correctly retain their mutation logic and decor-preservation, only removing the internal persist() call. The explanatory comment on the workspace-inherited branch survived the edit. All 5 repaired tests have persist() inserted at the correct position (immediately before the paired disk read), verified against the diff hunks and by reading the two-read test in full. The new disk-touch test is a genuine before/after check, not a tautology. Ran the exact regression commands specified in the task (callisto-manifests cargo:: tests, callisto-graph apply::tests, callisto-cli lifecycle_e2e_tests, pre_mode_tests) — all green, confirming T03/T04's explicit persist() calls fully absorb the removed internal persist with no end-to-end behavior change. Clippy clean. Checked rust-hazards.md taxonomies T1-T10 against the diff; only T1 (discarded param) pattern-matches and it's a documented trait-requirement false positive. Found one adjacent latent issue (ManifestCstEditor blanket impl losing transitive persist for CargoToml) but confirmed it's unreachable dead code today and already scheduled as T13 in the plan, so it's a suggestion-level note rather than a blocker. Checked npm.rs/python.rs write_version implementations still persist internally — correctly out of scope per plan (T07/T10 handle those later), not a sibling gap for this checkpoint."
+}
+```</result>
+<usage><subagent_tokens>61671</subagent_tokens><tool_uses>24</tool_uses><duration_ms>216262</duration_ms></usage>
+</task-notification>
