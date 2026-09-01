@@ -1,0 +1,34 @@
+<task-notification>
+<task-id>af9a042b3127701f6</task-id>
+<tool-use-id>toolu_01X17nFP2CHwjQJaQFFqT7vi</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/bb531e8d-c394-4e47-a8ae-e4a9ceeca6d2/tasks/af9a042b3127701f6.output</output-file>
+<status>completed</status>
+<summary>Agent "Exit-gate Track 1 spec (final retry)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Verdict: PASS
+
+verdict@1 written to `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/verdict-track1-retry4.json` (validated against `/Users/gabe/.claude/plugins/marketplaces/orin-dx-agent-plugins/shared/schemas/verdict@1.json`; `artifact_type: "spec@1"`, `retry_count: 4`, confidence high, zero blockers).
+
+### The two claimed fixes both landed correctly
+
+**AC-007 grammar fixture.** No `CalVer` remains anywhere in the document. The replacement pairing is not just plausible, it is traced reachable end-to-end: `ws.base_versions()` (`/Users/gabe/Projects/callisto/crates/callisto-graph/src/lib.rs:179-212`) opens each Canonical manifest; `callisto_manifests::open` dispatches `CargoToml` and `PyprojectToml`; `cargo.rs:200` parses with `VersionGrammar::SemVer` and `python.rs:166` with `VersionGrammar::Pep440`; and `locate/ignore_walk.rs:120` plus `walk.rs:187` confirm pyproject packages actually enter the graph. The branch also fires deterministically — `groups.rs:62-82` checks grammar before the divergence flag and returns immediately, so a SemVer/Pep440 pair always yields `GroupGrammarMismatch` regardless of member ordering. Maven was correctly avoided (declared-not-implemented).
+
+**AC-009 borrow.** The criterion now reads `&amp;ws.root`, matching `root: &amp;Path` at `groups.rs:18-25` against `pub root: PathBuf` (`lib.rs:54`) behind `&amp;Workspace`. The one surviving bare `ws.root` is inside `revision_note`'s BLK-07 narration — historical prose, no normative force.
+
+### Independent re-verification (defect classes from prior rounds specifically hunted)
+
+- **Non-existent symbols** (round 3's class): every symbol, signature, and field name in the spec exists as cited — `ConflictingGroupMembership { package, groups }` at `error.rs:129`, `fixed_group_target`'s five args, `pre_mutation_checks`'s six, `NapiTargetsIndex::load`, `TagIndex::empty`, `ManifestError::Parse { path, format: PackageJson }`. All 15 line-number citations are exact.
+- **Borrow/compile errors** (round 2's class): borrow-checked every api_surface sketch. `ws.tags()` returns `&amp;TagIndex` so `tags` not `&amp;tags` is right; `&amp;PathBuf` deref-coerces at the call site; `NapiTargetsIndex::load`'s `ManifestError` propagates via `#[from]` at `error.rs:19`; the Fixed block's `&amp;out.severities` borrow ends at the owned `Version` before `out.targets.insert`.
+- **Unreachable mechanism** (round 1's class): traced AC-001's arithmetic through real code — seed pass yields A=2.1.0/B=0.2.0, the new block's `fixed_group_target` returns 2.1.0 from `base[released[0]]`, overwriting B. Critically, the inner worklist loop **reads** `out.targets[&amp;pkg]` (`cascade.rs:215`) rather than recomputing, so re-queuing B does not revert it and the fixpoint terminates on pass two. No oscillation. I also confirmed AC-010's fixture isn't pre-empted by `validate_syntactic` (`config/groups.rs:99-121`), which is keyed on raw member strings and scoped per-kind — both differently-spelled fixtures slip past it and reach `resolve()`.
+- AC-003's thirteen pre-existing literals: workspace-wide grep confirms the enumeration is complete, and I read every group feeding them — all Linked or `GroupTable::default()`, so `TagIndex::empty()` is uniformly valid. `TagIndex` is publicly re-exported (`lib.rs:31`, `lib.rs:50`), so the six external integration-test literals can name it.
+- AC-012 and AC-014 premises both hold (`tests/config_resolve_tests.rs` exists; `snapshot.rs` genuinely never calls `ws.tags()`, and `tags_laziness_test.rs` documents the deterministic CommandRunner-fallback technique).
+
+### Gate conditions
+
+All four hold without relaxation: 15 criteria all assert concrete observables (exact versions, exact `Err` variants, exact build command); zero TBDs; five error criteria tagged `is_error_case: true` covering all three bugs; scope is one field + 15 call sites + one ~30-line mirrored block + ~20 lines of wiring.
+
+Two non-blocking observations are recorded in `reasoning` rather than issued as blockers, since neither makes a criterion unverifiable: AC-011's "not constructed anywhere" clause is unobservable but redundant with its testable `Ok(..)` assertion, and AC-008 doesn't pin strict-mode behavior (`escalate()` is a no-op under default `VersionOptions`).
+
+`retry_count` is 4, past the escalation threshold — but the escalation rule substitutes for issuing *another fail*. The spec meets every condition, so escalation does not apply. Cleared for `vector`.</result>
+<usage><subagent_tokens>112299</subagent_tokens><tool_uses>45</tool_uses><duration_ms>410406</duration_ms></usage>
+</task-notification>
