@@ -1,0 +1,46 @@
+<task-notification>
+<task-id>abbf8215ed309d35c</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/bb531e8d-c394-4e47-a8ae-e4a9ceeca6d2/tasks/abbf8215ed309d35c.output</output-file>
+<status>completed</status>
+<summary>Agent "Verify Track 1 spec grounding" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Verification Summary
+
+I read the full spec at `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/spec-track1-draft.json` and cross-referenced all 13 acceptance criteria against `requirement@1` (REQ-TRACK1-FIXED-GROUP-CASCADE-CORRECTNESS). No `research-report@1` exists for this spec, so the requirement's `done_when` array is the sole citable source; the drafter's own code-verification claims (in `reasoning`/`api_surface`) are not source artifacts and cannot substitute for a requirement citation.
+
+One notable finding: **AC-006 is internally contradictory** — its literal text asserts `commands::version::plan_version does not call pre_mutation_checks`, which directly contradicts `done_when` item 5 ("pre_mutation_checks is called from commands/version.rs's real orchestration path") and contradicts the spec's own AC-007/AC-008 (which assume plan_version *does* call it). This reads as a drafting error where `plan_snapshot` was intended, but as written it cites nothing supportive and self-contradicts the spec.
+
+```json
+{
+  "supported": [
+    { "criterion_id": "AC-001", "evidence": "done_when[0]: 'both siblings' computed target version is the SAME group-aligned version (derived from the released sibling's tag-based version per the existing fixed_group_target function...), not two independently-bumped versions computed from each sibling's own divergent base.'", "source": "requirement@1" },
+    { "criterion_id": "AC-002", "evidence": "done_when[1]: 'This holds through the real, live call path: crate::cascade::run_cascade -&gt; raise() -&gt; the per-sibling fixed-group loop -&gt; bump_target, not just in a unit test of fixed_group_target called directly.'", "source": "requirement@1" },
+    { "criterion_id": "AC-003", "evidence": "done_when[2]: 'CascadeInput gains a tags: &amp;TagIndex field... Both real construction sites are updated: crates/callisto-graph/src/commands/version.rs:70 and crates/callisto-graph/src/commands/snapshot.rs:53.'", "source": "requirement@1" },
+    { "criterion_id": "AC-004", "evidence": "done_when[3] requires an explicit, stated decision on whether snapshot.rs's fixed-group *target computation* is brought into scope by the same fix; combined with done_when[1]'s generic (command-agnostic) real-call-path requirement, testing that the cascade-stage fix also reaches plan_snapshot's path is the testable expression of that required decision.", "source": "requirement@1" },
+    { "criterion_id": "AC-005", "evidence": "done_when[3]'s demand that the snapshot.rs scope decision be explicit and testable ('not left ambiguous') supports asserting what does/does not change in plan_snapshot's observable output as the concrete, falsifiable form of that decision.", "source": "requirement@1" },
+    { "criterion_id": "AC-007", "evidence": "done_when[4]: 'pre_mutation_checks is called from commands/version.rs's real orchestration path, before run_cascade executes' and done_when[5]: 'divergence errors actually abort the command.'", "source": "requirement@1" },
+    { "criterion_id": "AC-008", "evidence": "done_when[5]: 'pre_mutation_checks's return value is actually consumed: diagnostics merged into real output...'", "source": "requirement@1" },
+    { "criterion_id": "AC-010", "evidence": "done_when[6]: 'GraphError::ConflictingGroupMembership is constructed by new detection logic in GroupTable::resolve or an equivalent post-resolution check for the two-differently-spelled-groups-same-resolved-package case...'", "source": "requirement@1" },
+    { "criterion_id": "AC-011", "evidence": "done_when[6] continues: '...and must NOT fire for the ordinary single-group-membership case.'", "source": "requirement@1" },
+    { "criterion_id": "AC-012", "evidence": "done_when[7]: 'Given a workspace config with no group spelling conflicts, GroupTable::resolve behaves exactly as it does today (regression: existing tests pass unmodified).'", "source": "requirement@1" },
+    { "criterion_id": "AC-013", "evidence": "done_when[8]: 'All three fixes are covered by tests that exercise the REAL call path, not just isolated unit tests of the already-existing helper functions.'", "source": "requirement@1" }
+  ],
+  "unsupported": [
+    {
+      "criterion_id": "AC-006",
+      "note": "As literally written, this criterion states plan_version does NOT call pre_mutation_checks — which directly contradicts requirement done_when[4] ('pre_mutation_checks is called from commands/version.rs's real orchestration path') and contradicts the spec's own AC-007/AC-008. No requirement passage supports the claim as written. If read charitably as a typo for 'plan_snapshot does not call pre_mutation_checks,' the general pattern (an explicit, reasoned scope decision) is grounded in done_when[3], but that item is scoped to bug 1's target computation, not bug 2's pre_mutation_checks — so even the charitable reading has no direct citation covering this specific exclusion. Either reading fails on citation grounds."
+    }
+  ],
+  "overfitted": [
+    {
+      "criterion_id": "AC-009",
+      "spec_claim": "Requires plan_version to construct the TagIndex 'via a newly-bound local variable, distinct from the existing inline, unbound ws.tags()? call passed directly as an argument to aggregate()' and a NapiTargetsIndex via a specific construction pattern — i.e., it tests a particular implementation shape (variable-binding structure), not just an outcome.",
+      "source_scope": "done_when[4] only requires that pre_mutation_checks be called from the real orchestration path with the correct inputs before run_cascade; it says nothing about how those inputs must be bound (new local vs. inline expression). AC-009 excludes valid implementations that satisfy the requirement's actual behavioral demand without introducing a distinctly-named local binding."
+    }
+  ],
+  "reasoning": "Nine of thirteen criteria trace cleanly to specific done_when items (AC-001/002/003/007/008/010/011/012/013), each with essentially a paraphrase-level match to a single done_when bullet — high confidence supported. AC-004 and AC-005 required more inference: they test the *consequences* of the explicit snapshot.rs-scope decision that done_when[3] mandates be made and stated, rather than restating a done_when bullet directly, but done_when[3]'s own language ('not left ambiguous') implies the decision must be testable, which is exactly what AC-004/AC-005 operationalize — I judged this close enough to direct citation rather than inferred plausibility. AC-006 is flagged unsupported primarily because its literal text is self-contradictory against both the requirement and the rest of the spec, not merely under-cited; I did not attempt to silently 'fix' the apparent typo and grade the corrected version, since the instructions say to evaluate the criterion as it stands. AC-009 is the clearest case of overfitting: the underlying need (correct TagIndex/NapiTargetsIndex supplied to pre_mutation_checks) is grounded, but the criterion bakes in an implementation-structural constraint (distinct newly-bound local variable) that the requirement never specifies and that would fail a functionally-correct alternative implementation. No criterion was found to have zero plausible connection to any done_when item — the unsupported/overfitted findings are about missing or contradictory citation and over-narrow implementation-detail testing, not about criteria invented from nothing."
+}
+```</result>
+<usage><subagent_tokens>45344</subagent_tokens><tool_uses>1</tool_uses><duration_ms>105646</duration_ms></usage>
+</task-notification>
