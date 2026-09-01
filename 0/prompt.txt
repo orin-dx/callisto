@@ -1,0 +1,252 @@
+This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
+
+Summary:
+1. Primary Request and Intent:
+
+This session is a continuation of a multi-session adversarial bug hunt and fix cycle on the Callisto codebase. The user's explicit requests in this session:
+
+- **Verify and fix all confirmed bugs** from prior audit waves (already underway at session start)
+- **"We are clearly only focusing on happy path and not anything else. We need to do a thorough bug hunt focusing on edge cases and corner cases."** — Specifically requested hunts for: empty changeset messages (explicitly said "we should not allow that"), new packages with no prior publish history, removing a package, merging/splitting packages, adding/removing dependencies between packages
+- **"What happens if someone adds a changesets and then removes it before merging the release PR? How should Callisto act? What should happen to outputs, changelogs, etc?"** — Design question about changeset deletion/idempotency
+
+**Critical standing constraints (verbatim, must never be violated):**
+- NEVER commit to git without explicit user instruction
+- NEVER bump versions or run release/publish commands without explicit instruction
+- `/Users/gabe/Projects/callisto-findings/FINDINGS.md` lives OUTSIDE the repo deliberately — names unfixed defects and must NEVER be committed to the public repo
+- The `callisto publish` command must NEVER be invoked against a real registry without explicit user instruction
+- All changes land as uncommitted working-tree edits for user to review
+
+2. Key Technical Concepts:
+
+- **Callisto**: Rust CLI + moon WASM extension for polyglot monorepo versioning, byte-compatible with `@changesets/cli` file format
+- **ApplyPermit**: Zero-sized capability token — compile-time dry-run enforcement
+- **TDD discipline**: All fixes require failing test first, confirm failure reason, implement, confirm green
+- **CST editing**: `toml_edit`, `serde_json` indentation fingerprinting — format preservation invariant
+- **atomic_write**: All file writes gated by ApplyPermit
+- **PackageId matching**: `PackageId::matches()` handles bare-vs-prefixed cross-ecosystem matching; raw string equality is wrong
+- **PreMode::Pre vs PreMode::Exit**: Pre-release state machine with enter/exit lifecycle
+- **bump_target**: Cascade function that computes version bumps, must check `PreMode::Exit` to finalize
+- **`is_workspace_root`**: Root discovery uses sentinel files; was using raw substring matching for `[workspace]`
+- **`[[package]]` config**: Per-package overrides in `callisto.toml` — confirmed entirely dead (ResolvedConfig.packages always empty)
+- **PreMajorInferencePolicy**: Always hardcoded to `OFF` in `aggregate()` — never reads from package config
+- **Path containment**: `PathBuf::join` with absolute path replaces base entirely; `validate_within_workspace` lexical normalization
+- **Changeset lifecycle**: Files in `.changeset/` are deleted during `apply_version_plan`; no transactional boundary; double-bump risk on recovery
+- **`write_changeset` AND-gate bug**: `entries.is_empty() && summary.trim().is_empty()` allows empty summary with non-empty entries
+
+3. Files and Code Sections:
+
+**`crates/callisto-manifests/src/cargo.rs`** — MODIFIED
+- Added `had_crlf: bool` field to `CargoToml` struct
+- CRLF detection in `open()`: `let had_crlf = clean_content.contains("\r\n");`
+- CRLF restoration in `persist()`: `text.replace("\r\n", "\n").replace('\n', "\r\n")` before BOM prepend
+- Added `has_bom: bool` field to `WorkspaceCargoResolver`
+- BOM detection/stripping in `load()`: `let has_bom = content.starts_with('\u{FEFF}');`
+- BOM restoration in `persist()`: prepend `'\u{FEFF}'` when `self.has_bom`
+- 2 new tests: `workspace_resolver_preserves_bom_on_write`, `preserves_crlf_line_endings_on_write`
+- 59 tests passing
+
+**`crates/callisto-graph/src/error.rs`** — MODIFIED
+- Added `ConfigError::PathTraversal { field: String, path: PathBuf }` variant with error code E113
+- Help hint: "Use workspace-relative paths only."
+
+**`crates/callisto-graph/src/config/resolve.rs`** — MODIFIED
+- New function `validate_within_workspace(base: &Path, raw: &str, field_name: &str) -> Result<PathBuf, ConfigError>`:
+  1. Rejects absolute `raw` paths immediately
+  2. Joins `base + raw` and walks components; if `..` would pop below base component count, returns `PathTraversal`
+  3. Returns normalized relative path
+- Wired for `changesets_dir` and `changelog.combined_path` in `load()`
+- 7 tests pass (covering `/tmp/evil`, `../../outside`, `.changeset`, `docs/CHANGELOG.md`, etc.)
+- 109 pre-existing tests pass
+
+**`crates/callisto-graph/src/locate/root.rs`** — MODIFIED
+- Bug 1 fix: Changed `content.contains("[workspace]")` (raw substring) to:
+  ```rust
+  if let Ok(doc) = content.parse::<toml_edit::DocumentMut>() {
+      return doc.contains_key("workspace");
+  }
+  ```
+- Bug 2 fix: Added `dir.join("callisto.toml").exists()` check to make Python-only monorepos discoverable
+- 3 new tests, 112 tests total passing
+
+**`crates/callisto-changelog/src/write.rs`** — MODIFIED (prior session agent)
+- `write_combined_changelog()` with same-day merge semantics
+- BOM strip (`strip_prefix('\u{FEFF}')`) before processing
+- CRLF detection and restoration
+- Empty entries early return
+- `section_boundary()` private helper for same-day collision handling
+
+**`crates/callisto-graph/src/commands/version.rs`** — pre.json parse error swallow at lines 84-92:
+```rust
+let pre_state = if pre_path.exists() {
+    if let Ok(text) = std::fs::read_to_string(&pre_path) {
+        callisto_format::parse_pre_json(&text).ok()  // ← BUG: swallows all parse errors
+    } else {
+        None
+    }
+} else {
+    None
+};
+```
+
+**`crates/callisto-graph/src/cascade.rs`** — `bump_target` never checks `PreMode::Exit`:
+- Always calls `bump_prerelease(...)` when `pre` is `Some`, regardless of whether mode is `Pre` or `Exit`
+- Exit mode should call `versioning.bump(pinned_base, sev)` for finalization
+
+**`crates/callisto-cli/tests/lifecycle_e2e_tests.rs`** — False positive test:
+```rust
+// Line 216-219 — passes on "0.2.0-beta.0" because contains("0.2.0") is true:
+assert!(final_cargo.contains("0.2.0"));
+// Should be:
+assert!(final_cargo.contains("version = \"0.2.0\""));
+assert!(!final_cargo.contains("beta"));
+```
+
+**`crates/callisto-graph/src/config/resolve.rs`** — `[[package]]` config dead:
+- Line 294: always constructs `ResolvedConfig` with `packages: BTreeMap::new()`
+- `raw.package` and `raw.package_set` are deserialized but never iterated
+
+**`crates/callisto-graph/src/walk.rs`** — Hardcoded Package defaults:
+- Line 114: `release_trigger: ReleaseTrigger::Changeset` (never reads from config)
+- Line 116: `tag_template: None` (never reads from config)
+- Line 113: `changelog: Some(rel_path.join("CHANGELOG.md"))` (never reads from config)
+
+**`crates/callisto-graph/src/aggregate.rs`** — Hardcoded inference policy:
+- Line 215: `policy: PreMajorInferencePolicy::OFF` — always OFF, never reads from package config
+- Line 169: `_pre` parameter (underscore = never used)
+- Line 233-234: Pushes changeset to `consumed` BEFORE entry loop — orphaned changeset silently deleted
+
+**`crates/callisto-graph/src/commands/status.rs`** — Divergent matching:
+- Line 43: `entry.name == pkg.id.to_string()` — raw string equality
+- Should be: `PackageId::parse(&entry.name).ok().map_or(false, |id| pkg.id.matches(&id))`
+
+**`crates/callisto-format/src/changeset/mod.rs`** — AND-gate guard:
+```rust
+// Current (wrong):
+if changeset.entries.is_empty() && changeset.summary.trim().is_empty() {
+    return Err(WriteError::EmptyChangeset);
+}
+// Should be (OR for summary):
+if changeset.summary.trim().is_empty() {
+    return Err(WriteError::EmptySummary);
+}
+if changeset.entries.is_empty() {
+    return Err(WriteError::EmptyChangeset);
+}
+```
+
+**`crates/callisto-cli/src/commands/add.rs`** — Non-interactive strips ecosystem prefix:
+- Line 43: `id.name().to_string()` drops `"cargo/"` prefix
+- Should be: `id.display_name()`
+
+**`crates/callisto-cli/src/commands/pre.rs`** — `pre enter` no existence check:
+- Lines 57-91: Never checks if pre.json already exists before overwriting
+- Lines 73-75: Writes file but never runs `git add .changeset/pre.json`
+
+**`crates/callisto-cli/src/commands/version.rs`** — `--strict` exit code:
+- Lines 32-47: Unconditionally returns `Ok(ExitCode::SUCCESS)` without checking diagnostics for Error severity
+
+**`crates/callisto-graph/src/apply.rs`** — Non-transactional apply:
+- Lines 75-93: Write all manifests
+- Lines 151-162: Delete changesets one-by-one with `?`
+- No rollback: crash between these phases → manifests bumped + changesets still present → double-bump on recovery
+
+4. Errors and Fixes:
+
+- **CargoToml missing CRLF restoration**: Unlike `npm.rs` and `python.rs`, `cargo.rs::persist()` only restored BOM but never CRLF. Fixed by adding `had_crlf: bool` field and restoring in `persist()`. Agent a28b4742b585a4056 confirmed 59 tests green.
+
+- **WorkspaceCargoResolver BOM stripping**: The workspace-root `Cargo.toml` path through `WorkspaceCargoResolver` had no `has_bom` field and silently stripped BOM on every write. Fixed with same pattern as `CargoToml`. Same agent.
+
+- **`is_workspace_root` substring false positive**: `content.contains("[workspace]")` matched comments like `# removed [workspace] approach`. Fixed to use `toml_edit::DocumentMut` TOML-aware parsing with `doc.contains_key("workspace")`. Agent a0c6ceb1b07e366ef, 112 tests green.
+
+- **Python workspace roots undetectable**: No sentinel file for Python-only repos. Fixed by adding `dir.join("callisto.toml").exists()` as a workspace root signal. Same agent.
+
+- **Path traversal in `combined-path` and `changesets.dir`**: `PathBuf::join` with absolute paths replaces the base entirely. Fixed with lexical `validate_within_workspace()` function that rejects absolute paths and `..` traversal above workspace root. Agent a75b7ca4937cd8d5c, 109 tests green.
+
+5. Problem Solving:
+
+**Changeset deletion idempotency design question** (user asked): 
+- Deleting before `callisto version` runs: works correctly (file gone = not aggregated)
+- Deleting after release PR is already open: the PR has bumped manifests + deleted changeset files. Re-running `callisto version` reads already-bumped manifest versions with no changesets → empty plan → no-op. No "revert and regenerate" mechanism exists. This is the double-bump design flaw confirmed by the idempotency hunt.
+- Current `apply_version_plan` has no transactional boundary: crash between manifest write and changeset deletion phases leaves workspace in double-bumpable state.
+
+**Pre-release mode broken end-to-end**: The `test_pre_mode_blackbox_lifecycle` E2E test was confirmed as a false positive — it uses `contains("0.2.0")` which matches `"0.2.0-beta.0"`. The actual exit-mode finalization is never tested or implemented. `bump_target` in `cascade.rs` always calls `bump_prerelease` when `pre` is `Some`, regardless of `PreMode::Exit`.
+
+**`[[package]]` config being entirely dead**: `ResolvedConfig.packages` is always `BTreeMap::new()`. All per-package overrides (release-trigger, tag-template, changelog, pre-major-inference) silently have no effect. Fix agent dispatched.
+
+6. All User Messages:
+
+- "I like your plan for addressing the bugs we've been finding" (mid-turn, prior session)
+- "Do we generate changelog files? Is it possible to generate a monorepo combine changelog?" (prior session)
+- "Address all of them comprehensively" (prior session)
+- "Let's commit and implement the combined changelog" (prior session)
+- "What kind of default should we have? What should be configurable?" (prior session)
+- "Let's do a thorough bug hunt on the changelog codebase once done" (prior session)
+- "Once that is done let's run through bug hunting through the versioning codebase, the git, the GH action, the parsing of pkg versions, the outputs, the CLI. Each looking for issues, patterns to cleanup or extract, missing tests, incorrect documentation, performance issues and DX issues" (prior session)
+- "Any other critical areas we should focus a bug hunt on?" (prior session, trigger for this session's wave)
+- **"We are clearly only focusing on happy path and not anything else. We need to do a thorough bug hunt focusing on edge cases and corner cases. What happens when a changesets message is empty, we should not allow that. What happens for a new package or crate? What if it wasn't published before? What happens when we remove a package? Merge packages? Split packages? When we add or remove a dependency between packages/crates/etc. Think through and understand what kind of cases we need to account for"**
+- **"What happens if someone adds a changesets and then removes it before merging the release PR? How should Callisto act? What should happen to outputs, changelogs, etc?"**
+
+7. Pending Tasks:
+
+**Fix agents still in-flight (not yet confirmed complete):**
+- `validate` malformed package names + `load_changesets` filename in errors (agent ab9bc936835f797fa)
+- Non-interactive add ecosystem prefix preservation + `version --strict` exit code fix (agent ab511c339e56e505c)
+- Dry-run markers for snapshot/tag + `WorkspaceRootNotFound` help text fix (agent a8d1fbc896f61c076)
+- Pre-release critical bugs: exit finalization, parse error propagation, false-positive test fix (agent a629f4d1de4ab1661)
+- `[[package]]` config wiring in resolve.rs and walk.rs (agent a49e388199e662886)
+- `pre enter` guard against re-enter + empty tag validation + git staging (agent a409cf461455fe80e)
+- Empty summary validation across write/wizard/validate/parse (agent afee45af0e40f4b1e)
+- `status.rs` package name matching divergence fix (agent a0d864615ff4e5541)
+
+**Hunt agents not yet reported:**
+- Stale changesets for removed/renamed packages (agent a526f8250264d3b63)
+- Dependency add/remove cascade correctness (agent a534062561ad7704b)
+
+**Known confirmed bugs still needing fix agents dispatched:**
+- GitHub Action: `published=true` before publish completes
+- GitHub Action: PyPI packages never published in built-in loop
+- GitHub Action: PEP 440 pre-release not detected (tagged as stable)
+- GitHub Action: `callisto status --check` exit code 1/2 disambiguation
+- pnpm `"0.0.0-use.local"` silently parses as bumpable
+- Registry `kind = "pypi"` silently defaults to npm
+- `callisto init` silently proceeds in CI without `--yes`
+- Cargo `[target.cfg(...).dependencies]` omitted from dep update scope
+- Python `[project.optional-dependencies]` invisible to read/write paths
+- `aggregate()` hardcodes `PreMajorInferencePolicy::OFF` (related to [[package]] config being dead)
+- Non-transactional `apply_version_plan` (changeset deletion atomicity)
+- Double-bump on crash recovery (needs design decision)
+- Orphaned CHANGELOG entries when release PR is reverted (design gap)
+
+**After all fixes land:**
+- Run `just fmt && just ci` to verify full suite is green
+- Commit when user explicitly authorizes
+
+8. Current Work:
+
+Immediately before the summary request, the last task-notification received was the **idempotency/changeset lifecycle hunt** (acc88041d4ec98bc3) completing with these confirmed findings:
+- **HIGH**: Double-bump when consumed changeset is restored (`version` reads current manifest, not git tag baseline)
+- **HIGH**: Crash mid-changeset-deletion leaves permanently double-bumpable state (no transactional boundary in `apply_version_plan`)
+- **MEDIUM**: Orphaned CHANGELOG entry when release PR is abandoned/reverted
+- **MEDIUM**: `status.rs` raw string identity confirmed as plausible bug
+
+Multiple fix agents were actively running in the background at summary time. The most recently dispatched fix agents were:
+- Empty summary validation (afee45af0e40f4b1e)
+- `status.rs` matching divergence (a0d864615ff4e5541)
+
+The confirmed-green fixes at summary time:
+- WorkspaceCargoResolver BOM + CargoToml CRLF (59 tests)
+- Path containment validation (109 tests)
+- `is_workspace_root` TOML-aware + Python detection (112 tests)
+
+9. Optional Next Step:
+
+The most immediate next step is to wait for the in-flight fix agents to complete, then run `just fmt && just ci` to verify the entire test suite passes across all accumulated changes. The user's most recent explicit requests were:
+
+> "We are clearly only focusing on happy path and not anything else. We need to do a thorough bug hunt focusing on edge cases and corner cases. What happens when a changesets message is empty, we should not allow that."
+
+> "What happens if someone adds a changesets and then removes it before merging the release PR? How should Callisto act? What should happen to outputs, changelogs, etc?"
+
+The empty summary validation fix (agent afee45af0e40f4b1e) directly addresses the first request. The idempotency hunt answered the second question (design gap: no mechanism to safely re-run `callisto version` after partial reversal; double-bump risk on recovery). Once all fix agents complete, a full `just fmt && just ci` run should be performed to verify the combined changes before asking the user if they want to commit.
+
+If you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/gabe/.claude/projects/-Users-gabe-Projects-callisto/575b7a46-37b7-42f0-9db7-b2c329b2abab.jsonl
+Continue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with "I'll continue" or similar. Pick up the last task as if the break never happened.
