@@ -9,11 +9,15 @@
 use std::{io::Write, process::ExitCode};
 
 use callisto_graph::commands::{
-    build_release_intent, derive_selected_release_decision, reconcile_release_execution, ReleaseStateStore,
+    build_release_intent, derive_selected_release_decision, execute_release_with_artifacts,
+    reconcile_release_execution, validate_release_intent, PreparedReleaseEffectAdapter, ReleaseStateStore,
     VersionOptions,
 };
 use callisto_graph::locate::IgnoreWalkLocator;
-use callisto_model::{ExecutionTrustProfileV1, ReleaseExecutionStateV1, ReleaseIntentV1, ReleasePackageId};
+use callisto_model::{
+    ApplyPermit, ArtifactManifestV1, ExecutionTrustProfileV1, ReleaseExecutionStateV1, ReleaseIntentV1,
+    ReleasePackageId,
+};
 
 use crate::cli::{
     GlobalArgs, OutputFormat, ReleaseArgs, ReleaseExecuteArgs, ReleaseInspectArgs, ReleasePlanArgs,
@@ -29,7 +33,7 @@ pub fn handle(args: ReleaseArgs, global: &GlobalArgs) -> Result<ExitCode, CliErr
         ReleaseArgs::Plan(args) => plan(args, global),
         ReleaseArgs::Inspect(args) => inspect(args, global),
         ReleaseArgs::Reconcile(args) => reconcile(args, global),
-        ReleaseArgs::Execute(args) => execute(args),
+        ReleaseArgs::Execute(args) => execute(args, global),
     }
 }
 
@@ -102,18 +106,47 @@ fn reconcile(args: ReleaseReconcileArgs, global: &GlobalArgs) -> Result<ExitCode
     Ok(ExitCode::SUCCESS)
 }
 
-fn execute(args: ReleaseExecuteArgs) -> Result<ExitCode, CliError> {
-    let _intent = read_intent(&args.intent)?;
-    let _manifest = args.artifact_manifest.map(|path| read_json_file(&path)).transpose()?;
-    let _state = args.state;
-    Err(CliError::Other(
-        "release execute is not enabled until Callisto's provider adapters can verify exact registry, Git, forge, and GitHub attestation identities; use release inspect or release reconcile while migrating from the legacy workflow".to_string(),
-    ))
+fn execute(args: ReleaseExecuteArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
+    let intent = read_intent(&args.intent)?;
+    let manifest = args
+        .artifact_manifest
+        .as_deref()
+        .map(read_artifact_manifest)
+        .transpose()?;
+    let runner = CliCommandRunner;
+    let root = dunce::canonicalize(&global.cwd).map_err(|source| CliError::Io {
+        source,
+        path: Some(global.cwd.clone()),
+    })?;
+    let locator = IgnoreWalkLocator::new(&root);
+    let capability = validate_release_intent(&root, &locator, &runner, intent)?;
+    let store = match args.state {
+        Some(path) => ReleaseStateStore::new(path),
+        None => ReleaseStateStore::default_for(&root, capability.intent())?,
+    };
+    let permit = ApplyPermit::granted_unless_dry_run(global.dry_run).ok_or_else(|| {
+        CliError::Other(
+            "release execute cannot run with --dry-run; use release reconcile for a read-only readiness check"
+                .to_string(),
+        )
+    })?;
+    let mut adapter = PreparedReleaseEffectAdapter;
+    let state = execute_release_with_artifacts(&capability, &store, &permit, manifest.as_ref(), &mut adapter)?;
+    match global.format {
+        OutputFormat::Json => write_json(&mut std::io::stdout(), &state)?,
+        OutputFormat::Text => println!("Release execution state saved to {}", store.path().display()),
+    }
+    Ok(ExitCode::SUCCESS)
 }
 
 fn read_intent(path: &std::path::Path) -> Result<ReleaseIntentV1, CliError> {
     serde_json::from_value(read_json_file(path)?)
         .map_err(|error| CliError::Other(format!("invalid release intent {}: {error}", path.display())))
+}
+
+fn read_artifact_manifest(path: &std::path::Path) -> Result<ArtifactManifestV1, CliError> {
+    serde_json::from_value(read_json_file(path)?)
+        .map_err(|error| CliError::Other(format!("invalid artifact manifest {}: {error}", path.display())))
 }
 
 fn read_json_file(path: &std::path::Path) -> Result<serde_json::Value, CliError> {

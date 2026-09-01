@@ -32,6 +32,22 @@ pub trait ReleaseEffectAdapter {
     ) -> Result<OperationOutcome, GraphError>;
 }
 
+/// Production adapter whose authority is entirely held by
+/// [`ValidatedReleaseIntent`].
+#[derive(Debug, Default)]
+pub struct PreparedReleaseEffectAdapter;
+
+impl ReleaseEffectAdapter for PreparedReleaseEffectAdapter {
+    fn dispatch(
+        &mut self,
+        capability: &ValidatedReleaseIntent<'_>,
+        permit: &ApplyPermit,
+        operation: &ReleaseOperationId,
+    ) -> Result<OperationOutcome, GraphError> {
+        capability.dispatch_prepared(permit, operation)
+    }
+}
+
 /// Executes eligible operations one at a time with crash-safe state updates.
 ///
 /// `Attempting` is persisted before adapter dispatch. If dispatch returns an

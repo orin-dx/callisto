@@ -9,10 +9,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use callisto_model::{
-    CanonicalTranscript, CommandRunner, CommitSha, DepKind, ExecutionTrustProfileV1, NpmAccess, PublishTarget,
-    RegistryBindingDigest, RegistryBindingId, RegistryKey, ReleaseDecisionV1, ReleaseInputSnapshotV1, ReleaseIntentV1,
-    ReleaseOperation, ReleaseOperationId, ReleasePackageId, ReleasePackageInputV1, SemanticInputDigest, SourceIdentity,
-    TagName, Version,
+    ApplyPermit, CanonicalTranscript, CommandRunner, CommitSha, DepKind, Ecosystem, ExecutionTrustProfileV1, NpmAccess,
+    OperationOutcome, PublishTarget, RegistryBindingDigest, RegistryBindingId, RegistryKey, ReleaseDecisionV1,
+    ReleaseInputSnapshotV1, ReleaseIntentV1, ReleaseOperation, ReleaseOperationId, ReleasePackageId,
+    ReleasePackageInputV1, SemanticInputDigest, SourceIdentity, TagName, Version,
 };
 use callisto_vcs::{
     access::{GitCommitTrustEvidence, GitHeadDisposition},
@@ -213,6 +213,137 @@ fn observe_git_trust<R: CommandRunner, D: DependencyResolver>(
 fn source_from_trust(evidence: &GitCommitTrustEvidence) -> SourceIdentity {
     SourceIdentity::GitCommit {
         sha: evidence.head().clone(),
+    }
+}
+
+impl ValidatedReleaseIntent<'_> {
+    /// Dispatches exactly one graph-private operation prepared during fresh
+    /// validation. This is intentionally the only production effect path: it
+    /// never accepts a path, endpoint, tag, package name, or version from a
+    /// caller.
+    pub(crate) fn dispatch_prepared(
+        &self,
+        permit: &ApplyPermit,
+        id: &ReleaseOperationId,
+    ) -> Result<OperationOutcome, GraphError> {
+        let operation = self.prepared.operations.get(id).ok_or(GraphError::ReleaseIntentStale)?;
+        match operation {
+            PreparedOperation::RegistryPublish {
+                package_dir,
+                package_name: _,
+                version: _,
+                registry,
+                npm_access,
+            } => self.dispatch_registry(permit, id, package_dir, registry, *npm_access),
+            PreparedOperation::Tag {
+                name,
+                target,
+                annotation,
+            } => self.dispatch_tag(name, target, annotation),
+            PreparedOperation::ForgeRelease { tag } => self.dispatch_forge_release(tag),
+        }
+    }
+
+    fn dispatch_registry(
+        &self,
+        _permit: &ApplyPermit,
+        id: &ReleaseOperationId,
+        package_dir: &std::path::Path,
+        registry: &PreparedRegistryBinding,
+        npm_access: Option<NpmAccess>,
+    ) -> Result<OperationOutcome, GraphError> {
+        let cwd = self.prepared.root.join(package_dir);
+        let output = match id.package.ecosystem() {
+            Ecosystem::Cargo => {
+                let manifest = cwd.join("Cargo.toml");
+                let manifest = manifest.to_string_lossy();
+                let mut args = vec!["publish", "--manifest-path", manifest.as_ref()];
+                if registry.key.as_str() != RegistryKey::CRATES_IO {
+                    args.extend(["--registry", registry.key.as_str()]);
+                }
+                self.runner.run("cargo", &args, &self.prepared.root)?
+            }
+            Ecosystem::Npm => {
+                let mut args = vec!["publish"];
+                if let Some(endpoint) = registry.endpoint.as_deref() {
+                    args.extend(["--registry", endpoint]);
+                }
+                if let Some(access) = npm_access {
+                    args.extend([
+                        "--access",
+                        match access {
+                            NpmAccess::Public => "public",
+                            NpmAccess::Restricted => "restricted",
+                        },
+                    ]);
+                }
+                self.runner.run("npm", &args, &cwd)?
+            }
+            Ecosystem::Pypi => return Err(GraphError::ReleaseIntentStale),
+            _ => return Err(GraphError::ReleaseIntentStale),
+        };
+        if output.exit_code == Some(0) {
+            Ok(OperationOutcome::Published)
+        } else if output.stderr.to_ascii_lowercase().contains("already exists")
+            || output.stderr.to_ascii_lowercase().contains("already published")
+        {
+            Ok(OperationOutcome::AlreadySatisfied)
+        } else {
+            Err(GraphError::ReleaseIntentStale)
+        }
+    }
+
+    fn dispatch_tag(
+        &self,
+        name: &TagName,
+        target: &CommitSha,
+        annotation: &str,
+    ) -> Result<OperationOutcome, GraphError> {
+        let reference = format!("refs/tags/{name}^{{commit}}");
+        let observed = self
+            .runner
+            .run("git", &["rev-parse", "--verify", &reference], &self.prepared.root)?;
+        if observed.exit_code == Some(0) {
+            return if observed.stdout.trim() == target.as_str() {
+                Ok(OperationOutcome::AlreadySatisfied)
+            } else {
+                Err(GraphError::ReleaseIntentStale)
+            };
+        }
+        let created = self.runner.run(
+            "git",
+            &["tag", "-a", name.as_str(), target.as_str(), "-m", annotation],
+            &self.prepared.root,
+        )?;
+        if created.exit_code != Some(0) {
+            return Err(GraphError::ReleaseIntentStale);
+        }
+        let pushed = self
+            .runner
+            .run("git", &["push", "origin", name.as_str()], &self.prepared.root)?;
+        if pushed.exit_code != Some(0) {
+            return Err(GraphError::ReleaseIntentStale);
+        }
+        Ok(OperationOutcome::Published)
+    }
+
+    fn dispatch_forge_release(&self, tag: &TagName) -> Result<OperationOutcome, GraphError> {
+        let observed = self
+            .runner
+            .run("gh", &["release", "view", tag.as_str()], &self.prepared.root)?;
+        if observed.exit_code == Some(0) {
+            return Ok(OperationOutcome::AlreadySatisfied);
+        }
+        let created = self.runner.run(
+            "gh",
+            &["release", "create", tag.as_str(), "--verify-tag", "--generate-notes"],
+            &self.prepared.root,
+        )?;
+        if created.exit_code == Some(0) {
+            Ok(OperationOutcome::Published)
+        } else {
+            Err(GraphError::ReleaseIntentStale)
+        }
     }
 }
 

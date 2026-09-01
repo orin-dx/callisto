@@ -27,8 +27,8 @@ pub use publish_client::SubprocessRegistryClient;
 pub use release::{build_release_intent, validate_release_intent, ValidatedReleaseIntent};
 pub use release_decision::{derive_release_decision, derive_selected_release_decision};
 pub use release_execution::{
-    execute_release, execute_release_with_artifacts, reconcile_release_execution, ReconciledReleaseExecution,
-    ReleaseEffectAdapter,
+    execute_release, execute_release_with_artifacts, reconcile_release_execution, PreparedReleaseEffectAdapter,
+    ReconciledReleaseExecution, ReleaseEffectAdapter,
 };
 pub use release_store::{AtomicReleaseStateWriter, ReleaseStateStore, ReleaseStateWriter};
 pub use snapshot::plan_snapshot;
