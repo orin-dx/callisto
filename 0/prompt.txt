@@ -1,0 +1,1 @@
+The bug hunter findings doesn't need to track every single bug right? We probably should track patterns that help improve our process not an overwelming and expensive amount of detail to keep around to eat context
