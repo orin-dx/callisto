@@ -1,0 +1,24 @@
+<task-notification>
+<task-id>a3dc080710e8f2eb6</task-id>
+<tool-use-id>toolu_01X24A1uzLDV6As6RoJdYF7s</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/bb531e8d-c394-4e47-a8ae-e4a9ceeca6d2/tasks/a3dc080710e8f2eb6.output</output-file>
+<status>completed</status>
+<summary>Agent "Readability pass on onboarding docs" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Diff confirmed clean and scoped — no interference with Track 9's cascade.rs/lib.rs/commands work (those diffs belong to the parallel background task, not this one). Reporting back.
+
+**Directive:** readability/scannability editorial pass on 14 onboarding-tier docs (per user's AskUserQuestion scope: "onboarding docs only").
+
+**Edited (2 files):**
+- `README.md` — replaced the "Why Callisto?" section (5 subsections, ~24 lines) that near-verbatim duplicated "Key Capabilities" above it with a single 5-row comparison table carrying the same facts (speed numbers, CST vs regex, Kahn+Tarjan, matrix discovery, portability list) with zero prose loss. Also split one overloaded sentence in the matrix-discovery blockquote into two, and dropped a stray trailing space.
+- `docs/release-paradigms.md` — cut the unverifiable "zero-risk" superlative from the opening line; replaced with a precise, checkable claim (CI-gated, differs by branching model/coordination overhead).
+
+**Left untouched (12 files) — already meet the bar:**
+- `CONTRIBUTING.md`, `ARCHITECTURE.md`, `docs/06-publishing.md` — already well-structured (headers, tables, mermaid diagrams, code blocks), no slop or walls of text found.
+- All 9 crate READMEs (`callisto-cli`, `callisto-graph`, `callisto-changelog`, `callisto-conventional`, `callisto-format`, `callisto-manifests`, `callisto-model`, `callisto-vcs`, `callisto-moon`) — already tight, consistent 15-line orientation format. Editing them further would just be churn.
+
+**Stale/questionable technical claims spotted but not fixed** (per scope — content correctness needs code verification, out of scope for this pass): none found. Every number and comparison I checked (10ms/300-500ms, layer/license table, Action input matrix) matched what the doc already stated elsewhere consistently.
+
+No emojis found anywhere in scope. Changes are unstaged in the working tree — not committed, per your instruction to keep this clear of Track 9's commit history.</result>
+<usage><subagent_tokens>176666</subagent_tokens><tool_uses>19</tool_uses><duration_ms>121557</duration_ms></usage>
+</task-notification>
