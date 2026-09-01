@@ -1,0 +1,25 @@
+<task-notification>
+<task-id>ad17c9eee208a307d</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/dc5ff9d8-ad6b-4ac9-8548-df397504bb34/tasks/ad17c9eee208a307d.output</output-file>
+<status>completed</status>
+<summary>Agent "(resumed)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Summary
+
+**Design for diff representation** (`crates/callisto-model/src/report.rs`):
+- Added `InitDiff { new_ecosystems: Vec&lt;Ecosystem&gt;, applied: bool }` and wired it into `InitReport` as a new `diff` field (replacing the previous bare `initialized: bool`-only signal for reconcile purposes; `initialized` is now documented as first-run-only).
+- To make drift detectable across `init` re-runs, added a lightweight `[init]` bookkeeping section (`ecosystems = [...]`) to `callisto.toml` itself, parsed via a new `RawInitConfig` in `crates/callisto-graph/src/config/raw.rs`. This records "ecosystems present as of the last init/reconcile run" so a later run has something concrete to diff the freshly-discovered state against (per docs/00-design.md §18 Q5.4 mechanism 1: "re-running `init` is the reconcile flow — it re-detects, prints a diff, and applies only with confirmation").
+
+**Implementation** (`crates/callisto-graph/src/commands/init.rs`):
+- `discovered_ecosystems` walks `ws.graph.packages()` → `canonical_manifests()` → `Ecosystem`.
+- On first run (no `callisto.toml`): direct write as before, now including the `[init]` tracking section; `diff` stays empty (nothing to diff against yet).
+- On re-run: reads recorded ecosystems from the existing file, computes `discovered - recorded`. If non-empty: reported via `diff.new_ecosystems` always; only written when `opts.yes` is true, via a `toml_edit`-based CST edit (`set_recorded_ecosystems`) that touches only the `[init]` table, preserving everything else the user may have hand-edited. `opts.yes == false` performs zero file writes.
+
+**Failing-test evidence before**: `cargo test -p callisto-graph --test init_reconcile_test` failed to compile (`no field diff on type InitReport` — 6 occurrences), confirming no diff/reconcile machinery existed.
+
+**After**: `cargo test -p callisto-graph -p callisto-model` — 131 tests total, all passing, including the 3 new tests (`first_run_on_fresh_workspace_writes_config_with_no_drift`, `rerun_with_yes_false_reports_new_ecosystem_without_mutating_files`, `rerun_with_yes_true_applies_new_ecosystem_to_config`) and all pre-existing suites. Also ran `cargo fmt`/`cargo clippy -p callisto-graph -p callisto-model --all-targets -- -D warnings` clean.
+
+Note: this session's working tree is shared with other concurrently-active agents (cascade-correctness-fix, ledger-audit, moon-exec-seam) touching overlapping files (`lib.rs`, `render/mod.rs`, `extension.rs`, etc.) for unrelated work. `callisto-graph` was transiently unbuildable mid-task due to another agent's in-flight `TagIndex` laziness refactor in `lib.rs`; I flagged it via SendMessage and waited rather than touching their file, and it self-resolved. My changes are confined to `crates/callisto-graph/src/commands/init.rs`, `crates/callisto-graph/src/config/raw.rs`, `crates/callisto-model/src/report.rs`, and the new test file `crates/callisto-graph/tests/init_reconcile_test.rs`. No commits made, no versions bumped.</result>
+<usage><subagent_tokens>160861</subagent_tokens><tool_uses>27</tool_uses><duration_ms>223200</duration_ms></usage>
+</task-notification>
