@@ -1,0 +1,57 @@
+<task-notification>
+<task-id>a791529011607936b</task-id>
+<tool-use-id>toolu_013o82NoEc53KvoSzg9nRwbH</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a791529011607936b.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement TASK-18 (AC-11c regression test)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Committed successfully as `1590c3b`.
+
+## Summary
+
+**TASK-18** — Regression-proof: AC-11c (malformed pnpm-workspace.yaml does not count as present for AC-08 precedence)
+
+Read the exact AC-11c criterion text from `/Users/gabe/Projects/callisto/.claude/specs/SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json` before writing the test — it matched the plan's fixture (package.json with `workspaces` + sibling malformed `pnpm-workspace.yaml` → `packages/y` must still be discovered via the package.json fallback). No fixture gaps found this time; the plan's test faithfully covers the spec text (including the AC-11b sibling note about wrong-shape `packages:` key, which is separately covered by other tasks).
+
+Confirmed the baseline: `git log --oneline -14` showed all 14 commits (0971005..98cb1e2) present, tree clean.
+
+Ran the test against current code: it passed immediately (no red step) — matching the plan's honest "REGRESSION-PROOF" note, since `read_pnpm_packages` already used `.ok()?` on `YamlLoader::load_from_str` (hardened in the prior TASK-04c/TASK-06 work).
+
+Per the established pattern, adversarially verified the test isn't vacuous: temporarily mutated `read_pnpm_packages` in `crates/callisto-graph/src/locate/membership.rs` to treat YAML parse failure as "present but empty" instead of "absent" — confirmed the new test then failed with a clear assertion message — then reverted the mutation exactly (verified `git status` showed membership.rs clean, no diff).
+
+Ran full suite (`cargo test -p callisto-graph --lib`): 290 passed, 0 failed. Ran `cargo fmt -p callisto-graph` and `cargo clippy -p callisto-graph --all-targets -- -D warnings`: clean.
+
+Committed only `crates/callisto-graph/src/locate/ignore_walk.rs` (the file this task is scoped to modify).
+
+```json
+{
+  "task_id": "TASK-18",
+  "status": "done",
+  "steps_completed": [
+    "verified prior 14 commits present and tree clean",
+    "read AC-11c criterion text from spec file on disk",
+    "wrote test ac11c_malformed_pnpm_yaml_does_not_count_as_present_for_precedence",
+    "ran test: passed immediately (honest non-red, matches plan note)",
+    "adversarial verification: mutated read_pnpm_packages to treat malformed YAML as present-but-empty, confirmed test failed",
+    "reverted mutation, confirmed membership.rs clean",
+    "ran full callisto-graph test suite: 290 passed",
+    "ran cargo fmt and cargo clippy -D warnings: clean",
+    "committed ignore_walk.rs"
+  ],
+  "test_result": "pass",
+  "commit_sha": "1590c3b",
+  "criteria_evidence": [
+    {
+      "criterion_id": "AC-11c",
+      "test_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs",
+      "test_line": 875,
+      "implementation_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs",
+      "implementation_line": 273
+    }
+  ],
+  "concerns": null,
+  "reasoning": "Regression-proof task as predicted by the plan; no implementation change needed since TASK-04c/TASK-06 already hardened read_pnpm_packages's YAML-parse-error fallback with .ok()?. Adversarial mutation confirmed the test genuinely exercises that fallback path rather than being vacuous."
+}
+```</result>
+<usage><subagent_tokens>84669</subagent_tokens><tool_uses>24</tool_uses><duration_ms>339995</duration_ms></usage>
+</task-notification>
