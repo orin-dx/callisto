@@ -1,0 +1,277 @@
+This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
+
+Summary:
+1. Primary Request and Intent:
+
+The conversation is a continuation of a prior context-exhausted session. The user's requests in this session were:
+- Fix the blocking CI failures left from the previous session (clippy `dead_code` on `GraphBuilder` fixture methods, `single_match` in `validate_tests.rs`)
+- Fix all known production bugs surfaced by earlier audit rounds
+- Be systematic and comprehensive about fixing everything remaining from the backlog
+
+**Standing constraints that must NEVER be violated:**
+- NEVER commit to git without explicit user instruction
+- NEVER bump versions or run release/publish commands
+- `/Users/gabe/Projects/callisto-findings/FINDINGS.md` lives OUTSIDE the repo — must NEVER be committed
+- `callisto publish` must NEVER be invoked against a real registry
+- All changes land as uncommitted working-tree edits only
+- No emojis in documentation
+
+**TDD discipline (mandatory):** Write failing test first (RED), verify failure message matches expected defect, then fix production code (GREEN). Never write production code without a failing test first.
+
+---
+
+2. Key Technical Concepts:
+
+- **Callisto**: Rust CLI + moon WASM extension for polyglot monorepo versioning (Cargo/npm/PyPI)
+- **TDD discipline**: RED → GREEN → REFACTOR for all changes
+- **Rust integration test structure**: Multiple test files under `tests/`, each its own binary; shared fixtures via `tests/fixtures/mod.rs` or similar
+- **Clippy `-D warnings`**: Every warning is a hard error; `#[allow(dead_code)]` needed for fixture methods used only by some test binaries
+- **`callisto_format::SemVerVersioning` / `Pep440Versioning`**: Versioning strategy dispatch via `Version::grammar()` returning `VersionGrammar`
+- **`GroupTable`**: Stores resolved fixed/linked groups from config; must be computed post-graph-build using `IdentityIndex`
+- **`ManifestWalkResolver::identity()`**: Returns `&IdentityIndex` — already a public method
+- **`ApplyPermit`**: Zero-sized compile-time dry-run enforcement token
+- **`GitDataSource` trait**: Unified git operations interface for `GitRepository` (gix), `ShellGit` (shell), and `GitAccess` (auto-dispatch)
+- **PEP 440**: Python versioning; `finalize_in_place = !parsed.is_post() && (parsed.is_pre() || parsed.is_dev())`
+- **`VersionPlan::delete_pre_json`**: Changed from `bool` to `Option<PathBuf>` to carry the actual relative path
+- **`moon_pdk_api`**: Real moon v2.4.6-compatible wire protocol types; already in use in extension.rs
+- **`SubprocessRegistryClient`**: Real `RegistryClient` implementation shelling out to `cargo publish`, `npm publish`, `twine upload` — fully implemented
+
+---
+
+3. Files and Code Sections:
+
+**`crates/callisto-graph/tests/fixtures/graph_builder.rs`**
+- Added `#[allow(dead_code)]` to `package` and `edge` methods to suppress clippy false-positives when individual test binaries don't use all methods
+```rust
+#[allow(dead_code)]
+pub fn package(mut self, ...) -> Self { ... }
+
+#[allow(dead_code)]
+pub fn edge(mut self, ...) -> Self { ... }
+```
+
+**`crates/callisto-cli/tests/validate_tests.rs` (line 82)**
+- Changed `match result { Ok(code) => assert_ne!(...), Err(_) => {} }` to `if let` form to satisfy `clippy::single_match`:
+```rust
+if let Ok(code) = result {
+    assert_ne!(
+        code,
+        ExitCode::SUCCESS,
+        "validate must not exit 0 when a changeset has an empty summary"
+    );
+}
+```
+
+**`crates/callisto-graph/src/cascade.rs` (line 386)**
+- Fixed hardcoded `SemVerVersioning` — was: `let versioning = callisto_format::SemVerVersioning;`
+- Now dispatches based on `base.grammar()`:
+```rust
+use callisto_format::Versioning as _;
+let versioning: &dyn callisto_format::Versioning = match base.grammar() {
+    callisto_model::VersionGrammar::Pep440 => &callisto_format::Pep440Versioning,
+    _ => &callisto_format::SemVerVersioning,
+};
+```
+
+**`crates/callisto-format/src/lib.rs`**
+- Added `Pep440Versioning` to public re-exports (was `pub` in `bump.rs` but not re-exported from the crate root)
+
+**`crates/callisto-graph/tests/cascade_tests.rs`**
+- Added `test_pep440_package_bump_succeeds` — verifies a PEP 440 version in a cascade run produces `Ok` (not `Err(BumpError::NotSemVer)`)
+
+**`crates/callisto-graph/src/config/groups.rs`**
+- Removed `#[allow(dead_code)]` from `GroupTable::resolve` (now called from `Workspace::load`)
+
+**`crates/callisto-graph/src/config/resolve.rs`**
+- Added `pub(crate) raw_groups: RawGroupTable` field to `ResolvedConfig`
+- Was setting `groups: GroupTable::default()` — now stores raw groups for later resolution
+- `ResolvedConfig` struct now holds both `groups: GroupTable` (initially default) and `raw_groups: RawGroupTable`
+
+**`crates/callisto-graph/src/lib.rs`** (`Workspace::load`)
+- Changed `config` to `let mut config`
+- Added after `ManifestWalkResolver::build()`:
+```rust
+config.groups = GroupTable::resolve(&config.raw_groups, graph.identity())?;
+```
+
+**`crates/callisto-graph/tests/config_resolve_tests.rs`** (new file)
+- Tests `linked_group_is_resolved_into_config` and `fixed_group_is_resolved_into_config`
+
+**`crates/callisto-moon/src/locator.rs`**
+- Added `has_pypi = abs_path.join("pyproject.toml").exists()` in `projects()`:
+```rust
+let has_pypi = abs_path.join("pyproject.toml").exists();
+// ... existing cargo/npm checks ...
+if has_pypi {
+    let id = self.resolve_id(&abs_path, Ecosystem::Pypi)?;
+    roots.push(ProjectRoot { id, path: project.root.clone(), ecosystem: Ecosystem::Pypi });
+}
+```
+- Added pyproject.toml → Ecosystem::Pypi detection in `declared_edges()` for both from/to
+- Cleaned up unused imports, moved impl block before tests
+
+**`crates/callisto-graph/src/plan.rs`**
+- Changed `pub delete_pre_json: bool` to `pub delete_pre_json: Option<PathBuf>`
+
+**`crates/callisto-graph/src/apply.rs`** (line 160-170)
+- Changed `else if plan.delete_pre_json { let rel_pre_path = PathBuf::from(".changeset/pre.json"); ... }` to:
+```rust
+} else if let Some(rel_pre_path) = &plan.delete_pre_json {
+    let pre_path = root.join(rel_pre_path);
+    if pre_path.exists() {
+        fs::remove_file(&pre_path)?;
+        modified_paths.push(rel_pre_path.clone());
+    }
+}
+```
+
+**`crates/callisto-graph/src/commands/version.rs`** (line 215-217)
+- Changed `(None, true)` for `PreMode::Exit` to:
+```rust
+let rel_pre_path = ws.config.changesets_dir.join("pre.json");
+(None, Some(rel_pre_path))
+```
+
+**`crates/callisto-graph/src/commands/pr_body.rs`** and **`snapshot.rs`**
+- Changed `delete_pre_json: false` to `delete_pre_json: None` in struct literals
+
+**`crates/callisto-graph/tests/apply_tests.rs`** (new file)
+- Test `pre_exit_deletes_pre_json_in_custom_changeset_dir` — places `pre.json` in `releases/` dir, sets `delete_pre_json: Some(PathBuf::from("releases/pre.json"))`, asserts the file is deleted
+
+**`crates/callisto-vcs/src/lib.rs`**
+- Added `fn head_sha(&self) -> Result<CommitSha, VcsError>;` to `GitDataSource` trait
+- Added `head_sha()` to `impl GitDataSource for GitRepository` delegating to inherent method
+
+**`crates/callisto-vcs/src/shell.rs`**
+- Added `ShellGit::head_sha()` to `impl GitDataSource for ShellGit<'_>`:
+```rust
+fn head_sha(&self) -> Result<CommitSha, VcsError> {
+    let output = self.runner.run("git", &["rev-parse", "HEAD"], &self.root)?;
+    if !output.success() {
+        return Err(VcsError::Git(format!(
+            "`git rev-parse HEAD` failed in `{}`: {}", self.root.display(), output.stderr
+        )));
+    }
+    let sha_str = output.stdout_trimmed();
+    CommitSha::parse(sha_str).map_err(|e| VcsError::Git(format!(
+        "could not parse HEAD SHA `{sha_str}`: {e}"
+    )))
+}
+```
+- Added tests: `test_head_sha_returns_current_head_commit`, `test_head_sha_propagates_git_failure`
+
+**`crates/callisto-vcs/src/access.rs`**
+- Added `GitAccess::head_sha()` to `impl GitDataSource for GitAccess<'_>` (native-first, shell-fallback)
+- Added test `test_head_sha_returns_head_of_real_repo`
+
+**`crates/callisto-model/src/version.rs`** (read for research)
+- PEP 440 canonical normalization already in place: `let canonical = parsed.to_string(); Ok(Version { raw: canonical, ... })`
+- Test `pep440_non_canonical_inputs_normalize_to_equal_versions` already exists and passes
+- These were listed as "remaining bugs" in plan but were already fixed
+
+**`crates/callisto-format/src/bump.rs`** (read for research)
+- `finalize_in_place = !parsed.is_post() && (parsed.is_pre() || parsed.is_dev())` — already correct
+- Post+dev combined bump bug was already fixed
+
+**`crates/callisto-conventional/src/window.rs`** (read for research)
+- `fetch_commits` already uses `GitAccess::discover` and `git.commits_since()` — Track B already done
+
+**`crates/callisto-graph/src/aggregate.rs`** (read for research)
+- `resolve_since` already uses `GitAccess` and `git.resolve_commit()` — Track B already done
+
+**`crates/callisto-moon/src/extension.rs`** (read for research)
+- Already imports real `moon_pdk_api` types — Track C protocol types already done
+- `execute_extension` uses real `input.context.workspace_root` from real `MoonContext`
+
+**`crates/callisto-cli/src/commands/publish.rs`** (read for research)
+- `callisto publish` CLI command fully implemented, using `SubprocessRegistryClient` and `PublishOrchestrator`
+- Track D publish orchestrator already done
+
+**`.github/actions/callisto-action/action.yml`** (read for research)
+- Still contains bash publish loops (`publish_crate_with_retry()`, `npm publish`) — Track D cutover to `callisto publish` not yet done
+
+**`crates/callisto-graph/tests/graph_tests.rs`** (read for research)
+- `test_absolute_path_workspace_cargo_resolver` is misplaced — tests `callisto_manifests::WorkspaceCargoResolver`, not graph functionality. Belongs in `callisto-manifests` tests.
+
+---
+
+4. Errors and Fixes:
+
+- **`callisto-graph:lint` dead_code error**: `GraphBuilder::package` and `GraphBuilder::edge` flagged as never used under `-D warnings`. Fixed by adding `#[allow(dead_code)]` to both methods in `fixtures/graph_builder.rs`.
+
+- **`callisto-cli:lint` single_match error** at `validate_tests.rs:82`: `match result { Ok(code) => ..., Err(_) => {} }` form triggers `clippy::single_match`. Fixed by rewriting as `if let Ok(code) = result { ... }`.
+
+- **`just ci` timeout (300s)**: The background CI run timed out but completed with exit code 0 in the task notification.
+
+- **`compose_pr_body` assertion too strict** (from previous session): Fixed by using `report.pr_body.contains("minor")` instead of asserting on raw changeset summary text.
+
+---
+
+5. Problem Solving:
+
+- **CI was blocked** by two clippy warnings treated as errors under `-D warnings`. Both fixed minimally without changing the underlying logic.
+
+- **5 production bugs** were fixed in parallel via 5 agents:
+  1. PEP 440 cascade versioning dispatch
+  2. GroupTable never resolved from TOML config
+  3. Moon locator missing pyproject.toml check
+  4. Hardcoded pre.json delete path
+  5. GitDataSource missing head_sha()
+
+- **Research phase** for "fix all of it" revealed that most large plan items (Track A PEP 440 bugs, Track B git unification, Track C moon protocol types, Track D publish orchestrator) were **already implemented** in the codebase. The plan document was stale relative to actual code state.
+
+- **Genuinely remaining** items identified:
+  1. `test_absolute_path_workspace_cargo_resolver` misplaced in `graph_tests.rs` (minor)
+  2. `action.yml` bash publish loops not yet migrated to `callisto publish`
+  3. Track 0 / Track C exec-seam WASM spike (R&D, gated by earlier user decision to prototype first)
+
+---
+
+6. All user messages:
+
+- "Are we all done? all issues addressed?"
+- "We need to fix all known issues"
+- "Let's fix all of it please, be systematic and comprehensive about it"
+- "CRITICAL: Respond with TEXT ONLY. Do NOT call any tools." [current summary request]
+
+---
+
+7. Pending Tasks:
+
+- **Move misplaced test**: `test_absolute_path_workspace_cargo_resolver` in `crates/callisto-graph/tests/graph_tests.rs` belongs in `callisto-manifests` tests (it tests `callisto_manifests::WorkspaceCargoResolver`, not graph logic)
+- **Migrate `action.yml` bash publish loops** to use `callisto publish` — high-stakes, requires careful cutover (one registry at a time, dry-run verification first before removing bash path). The `callisto publish` command and `SubprocessRegistryClient` already exist and are fully implemented.
+- **Track 0 WASM spike** (R&D): Prototype gix plumbing-crate repo reading under WASI to determine if callisto-moon can read the git repo natively from the WASM guest — previously user-decided to "prototype first" before committing to exec-seam design
+
+---
+
+8. Current Work:
+
+Immediately before the summary request, the assistant was mid-research into what's truly remaining after discovering that many plan items were already implemented. The assistant had just read:
+- `action.yml` (lines 140-220) and found bash publish loops still present (cargo/npm)
+- `crates/callisto-moon/tests/moon_wasm_sandbox.rs` — found it's a real 940-line WASM integration test suite using `moon_pdk_test_utils`
+- `crates/callisto-cli/src/commands/publish.rs` — found `callisto publish` CLI fully implemented
+- `crates/callisto-graph/src/commands/publish_client.rs` — found `SubprocessRegistryClient` fully implemented
+
+The research had just established what remains after "fix all of it" was requested:
+1. Misplaced test (minor)
+2. `action.yml` cutover (high-stakes)
+3. Track 0 WASM spike (R&D)
+
+The `just ci` final integration run passed with exit code 0 after all 5 parallel agent fixes landed.
+
+---
+
+9. Optional Next Step:
+
+The user's most recent explicit request was: **"Let's fix all of it please, be systematic and comprehensive about it"**
+
+The research phase revealed three genuinely remaining items. The next step is to address them in priority order:
+
+1. **Move the misplaced test** — trivial, do it first: move `test_absolute_path_workspace_cargo_resolver` from `crates/callisto-graph/tests/graph_tests.rs` to a new or existing test in `crates/callisto-manifests/tests/`
+
+2. **Migrate `action.yml` bash publish loops to `callisto publish`** — the `callisto publish` command and `SubprocessRegistryClient` are already fully implemented. The bash loops at lines 154-225 of `action.yml` can be replaced with a single `callisto publish` invocation. This must be done carefully (the plan said "cut over one registry at a time") given it affects real CI releases. The GitHub Action outputs (`published`, `publishedPackages`) must be preserved. This change should be made but presented to the user for review given the irreversible nature of release operations.
+
+3. **Track 0 WASM spike** — R&D prototype; given the user previously said "prototype first," this warrants a separate discussion before implementing.
+
+If you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/gabe/.claude/projects/-Users-gabe-Projects-callisto/575b7a46-37b7-42f0-9db7-b2c329b2abab.jsonl
+Continue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with "I'll continue" or similar. Pick up the last task as if the break never happened.
