@@ -1,0 +1,3 @@
+<command-name>/compact</command-name>
+            <command-message>compact</command-message>
+            <command-args>keep all context needed to wrap up track 5 and process the information we currently have in flight</command-args>
