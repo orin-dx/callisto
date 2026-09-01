@@ -1,0 +1,5 @@
+Ran into an issue with publishing michi that we should look into and think broadly about:
+
+2. Lock staleness — a real callisto design gap, worth filing upstream. callisto version's default behavior never refreshes Cargo.lock, but callisto publish internally always runs cargo publish --locked. Those two of callisto's own commands are inconsistent with each other by default — nothing in status/validate/plan-publish/version warns you before it silently produces an artifact that can never successfully complete callisto publish. The workaround is on our side (pass --refresh-lockfiles via the action's version_command input), but the root cause isn't ours — since you also maintain callisto, worth an upstream issue so the default gets fixed rather than every consumer needing to know this footgun exists.
+
+This came from the michi agent. What is our stance on this? What should it be? What about npm/pnpm, python, etc?
