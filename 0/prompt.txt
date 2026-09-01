@@ -1,0 +1,1 @@
+Exactly! Let's compact first and keep everything we need to proceed with all of the fixes. We should consider everything comprehensively and semantically. Consider the patterns the fixes show us and how we should adress them as whole as well as individually.
