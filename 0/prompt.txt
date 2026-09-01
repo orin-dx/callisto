@@ -1,0 +1,27 @@
+<task-notification>
+<task-id>a6b294b4b072b8466</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a15bbbf7-aba0-415d-bfdc-c773ea65cfc7/tasks/a6b294b4b072b8466.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix 3: locator.rs missing pyproject.toml" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>No errors found. All 444 tests passed and no task failures. `just ci` succeeded.
+
+Here is a summary of what was done:
+
+**Bug fixed:** `MoonProjectLocator::projects()` and `declared_edges()` in `/Users/gabe/Projects/callisto/crates/callisto-moon/src/locator.rs` now detect `pyproject.toml` and return/resolve `Ecosystem::Pypi` project roots and edges, alongside the existing Cargo/Npm detection.
+
+**Changes made (single file):** `/Users/gabe/Projects/callisto/crates/callisto-moon/src/locator.rs`
+
+1. **`projects()`** — added `let has_pypi = abs_path.join("pyproject.toml").exists();` and a corresponding push block for `Ecosystem::Pypi` (lines 121 and 139–146).
+
+2. **`declared_edges()`** — added `else if abs_from.join("pyproject.toml").exists() { Ecosystem::Pypi }` and the same for `abs_to`, in both the `from_eco` and `to_eco` detection chains (lines 174–175 and 184–185).
+
+3. **Tests added** in a new `#[cfg(test)] mod tests` block:
+   - `projects_discovers_pyproject_toml_as_pypi` — the primary regression test; confirmed to fail before the fix and pass after.
+   - `declared_edges_resolves_pypi_to_pypi_dependency` — verifies edges between two Python packages are resolved correctly.
+   - `projects_still_discovers_cargo_and_npm` — regression guard ensuring existing ecosystem detection is unaffected.
+
+All 8 unit tests in `callisto-moon` pass, and `just ci` completes cleanly (444 tests, 0 failures).</result>
+<usage><subagent_tokens>122970</subagent_tokens><tool_uses>53</tool_uses><duration_ms>1120941</duration_ms></usage>
+</task-notification>
