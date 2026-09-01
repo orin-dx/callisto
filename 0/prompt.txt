@@ -1,0 +1,187 @@
+<task-notification>
+<task-id>adc4d2cb086e02bcf</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a15bbbf7-aba0-415d-bfdc-c773ea65cfc7/tasks/adc4d2cb086e02bcf.output</output-file>
+<status>completed</status>
+<summary>Agent "Hardcoded values audit: callisto-manifests, callisto-format, callisto-model crates" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I have now read all files. Here is the complete hardcoded-values audit.
+
+---
+
+### [Critical] `parse_pre_json` hardcodes `VersionGrammar::SemVer` for all `initialVersions` — breaks any Python pre-release lifecycle
+
+- **Status**: CONFIRMED — path fully traced.
+- **Location**: `crates/callisto-format/src/pre.rs:L95`
+- **Classification**: Strategy/dispatch hardcode (Pattern 1)
+- **Root Cause**: `parse_pre_json` deserializes every entry in `initialVersions` via `Version::parse(v_str, VersionGrammar::SemVer)`. `write_pre_json` serializes `Version` via its `Serialize` impl which writes the raw string — so a PEP 440 initial version like `1.0.0a1` (a perfectly legal Python pre-release baseline) roundtrips through the file as the string `"1.0.0a1"`. On read-back, `Version::parse("1.0.0a1", VersionGrammar::SemVer)` fails because `a1` is not a valid SemVer pre-release token. The `Version::deserialize` multi-grammar fallback fix (in the findings ledger) does NOT help here — `parse_pre_json` does not go through serde; it calls `Version::parse` explicitly with a hardcoded grammar. Result: `Err(PreJsonError::InvalidInitialVersion)` propagates, killing any cascade or `pre exit` command for that workspace.
+- **Failing Scenario**: A workspace with a Python package at version `1.2.3a1` calls `callisto pre enter next`. `write_pre_json` stores `"1.2.3a1"` in `initialVersions`. On the next `callisto version`, `parse_pre_json` returns `InvalidInitialVersion { package: "my-lib", raw: "1.2.3a1", source: ... }`. The entire version command aborts. The same failure occurs for any PEP 440–exclusive version string (`.dev`, `.post`, epoch-prefixed, etc.).
+- **Fix direction**: `parse_pre_json` must try SemVer first and fall back to Pep440, exactly as `Version::deserialize` now does. Alternatively, store the grammar alongside the version in the JSON (breaking the wire format) or use `serde_json::from_value::&lt;Version&gt;` which goes through the now-correct `Deserialize` impl.
+- **Verification**: Write a `pre.json` with `initialVersions: { "my-pkg": "1.2.3a1" }` and call `parse_pre_json` — observe `Err(InvalidInitialVersion)`. Confirm that `write_pre_json` round-trips `Version::parse("1.2.3a1", VersionGrammar::Pep440)` as `"1.2.3a1"`.
+
+---
+
+### [High] `PyprojectToml::update_dependency_spec` silently returns `Ok(())` when the named dependency is not found — cascade falsely believes the write succeeded
+
+- **Status**: CONFIRMED — end-to-end path traced.
+- **Location**: `crates/callisto-manifests/src/python.rs:L362-L370`
+- **Classification**: Silent Fallback (Pattern 5, Hazard 4)
+- **Root Cause**: After scanning both the PEP 621 array and the Poetry table, if neither contains the named package, `updated` remains `false` and the function returns `Ok(())` unconditionally. `CargoToml::update_dependency_spec` and `PackageJson::update_dependency_spec` both return `Err(ManifestError::DependencyNotFound)` when the dependency is absent. Python's implementation diverges: a silent success. The cascade graph then records the spec rewrite as applied, proceeds, and the manifest is never modified.
+- **Failing Scenario**: A workspace has two Python packages; package B lists package A as a PEP 621 dependency. After cascade computes a bump for A, it calls `update_dependency_spec("package-a", DepKind::Runtime, new_spec, permit)` on package B's `PyprojectToml`. If the dependency entry name in `pyproject.toml` is `package_a` (underscore, per Python normalization) and the cascade resolved the name as `package-a` (hyphen, per the manifest's declared name), the name comparison `pkg_name.eq_ignore_ascii_case(name)` fails (underscore vs. hyphen), `updated` stays `false`, `Ok(())` is returned, and B's `pyproject.toml` is not updated. The cascade log shows success; the file on disk is stale.
+- **Fix direction**: Replace the final `Ok(())` with `Err(ManifestError::DependencyNotFound { ... })` when `!updated`, mirroring `cargo.rs` and `npm.rs`. Additionally, normalize hyphens/underscores in the name comparison per PEP 503/508.
+- **Verification**: Test `update_dependency_spec("nonexistent-pkg", DepKind::Runtime, ...)` against a `PyprojectToml` — expect `Err(DependencyNotFound)`, currently get `Ok(())`.
+
+---
+
+### [High] `WorkspaceCargoResolver` does not strip or restore BOM — silently corrupts workspace-root `Cargo.toml` with BOM on every write
+
+- **Status**: CONFIRMED in findings ledger as flagged, not yet fixed.
+- **Location**: `crates/callisto-manifests/src/cargo.rs:L488-L506` (`load`), `L641-L648` (`persist`)
+- **Classification**: BOM/encoding handling inconsistency (Pattern 7), I/O Safety
+- **Root Cause**: `CargoToml::open` records `has_bom` and restores it on `persist()`. `WorkspaceCargoResolver::load` reads the file with `fs::read_to_string` with no BOM stripping; its `persist()` calls `self.document.to_string()` with no BOM prepend. `toml_edit 0.22.27` does strip the BOM on parse internally — so the rendered output loses it. A workspace-root `Cargo.toml` with a BOM will have the BOM silently removed on the first inherited-version or inherited-dep write.
+- **Failing Scenario**: Any Cargo workspace using `version.workspace = true` or `dep = { workspace = true }`, where the root `Cargo.toml` was authored on Windows (common Windows editor behavior is to emit UTF-8 BOM). After `callisto version`, the file on disk loses the BOM, making git mark it dirty with a spurious byte-level change.
+- **Fix direction**: Mirror `CargoToml::open`'s BOM handling: detect `has_bom` in `WorkspaceCargoResolver::load`, prepend in `persist()`.
+
+---
+
+### [Medium] `PyprojectToml::iter_dependencies` does not iterate Poetry dev-dependencies or group-dependencies — cascade graph is blind to those edges
+
+- **Status**: CONFIRMED — examined `python.rs:L210-L282`.
+- **Location**: `crates/callisto-manifests/src/python.rs:L210-L282`
+- **Classification**: Hardcoded dependency section names (Pattern 8), Spec Drift
+- **Root Cause**: `iter_dependencies` reads only two sections: `[project].dependencies` (PEP 621 array) and `[tool.poetry.dependencies]` (Poetry runtime table). Missing:
+  - `[tool.poetry.dev-dependencies]` — Poetry ≤ 1.1 dev deps (the old format, still widely used in existing projects)
+  - `[tool.poetry.group.*.dependencies]` — Poetry ≥ 1.2 dependency groups (e.g. `[tool.poetry.group.dev.dependencies]`)
+  - `[project.optional-dependencies]` — PEP 621 optional deps (section exists in `ManifestFormat` but is never iterated)
+- **Failing Scenario**: A Poetry workspace where package B lists sibling package A under `[tool.poetry.dev-dependencies]`. The cascade graph never sees this edge. When A is bumped, B is not updated. `B`'s dev-dependency on `A` silently drifts out of range.
+- **Fix direction**: Extend `iter_dependencies` with the missing sections. Poetry group deps require iterating `tool.poetry.group` as a table, then each group's `dependencies` sub-table.
+
+---
+
+### [Medium] `CargoToml::iter_dependencies` ignores `[target.'cfg(...)'.dependencies]` — platform-specific Cargo deps are invisible to the cascade graph
+
+- **Status**: CONFIRMED — `cargo.rs:L55-L77, L232-L269` iterate only the three top-level sections.
+- **Location**: `crates/callisto-manifests/src/cargo.rs:L55-L77` (`open`, inherited_deps detection), `L232-L269` (`iter_dependencies`)
+- **Classification**: Hardcoded dependency section names (Pattern 8)
+- **Root Cause**: Both `open` (computing `inherited_deps`) and `iter_dependencies` visit exactly `["dependencies", "dev-dependencies", "build-dependencies"]`. Cargo's `[target.'cfg(windows)'.dependencies]`, `[target.'cfg(unix)'.dev-dependencies]`, etc. are never visited. A crate that depends on a sibling only on a specific platform would never be seen by the cascade graph.
+- **Failing Scenario**: Package B has `[target.'cfg(windows)'.dependencies] package-a = "1.0.0"`. Package A is bumped to `1.1.0`. Cascade never sees the edge B→A, never updates B's Windows-specific constraint. `cargo build --target x86_64-pc-windows-msvc` would then compile against the out-of-range old spec.
+- **Fix direction**: In `iter_dependencies`, iterate `document.get("target").as_table_like()`, then for each target key iterate `["dependencies", "dev-dependencies", "build-dependencies"]` sub-tables.
+
+---
+
+### [Medium] `pre.rs` `parse_pre_json`'s `initialVersions` grammar is hardcoded; `update_dependency_spec` in Python discards `_kind` parameter entirely
+
+- **Status**: CONFIRMED (two separate issues under one pattern).
+- **Location**: `crates/callisto-manifests/src/python.rs:L285-L290`, `crates/callisto-format/src/pre.rs:L95`
+- **Classification**: Discarded Parameter (Pattern 1 / Hazard 1)
+- **Root Cause**: `PyprojectToml::update_dependency_spec` accepts `_kind: DepKind` (explicitly underscore-prefixed, silently dropped). PEP 621 has distinct sections for `[project.dependencies]` (runtime), `[project.optional-dependencies]` (optional), and `[tool.poetry.group.dev.dependencies]` (dev). The kind parameter is there specifically to route to the correct section. Dropping it means all edits go to the same sections regardless of the kind the caller specified, and `DepKind::Optional` / `DepKind::Dev` updates are silently dropped because only `DepKind::Runtime` entries exist in the sections that are currently visited.
+- **Fix direction**: Use `kind` to select the target section when writing, matching the read-side section-selection logic.
+
+---
+
+### [Medium] `Manifest` trait default `publish_targets()` has `_ =&gt; vec![PublishTarget::None]` catch-all — silently misfires for any ecosystem the implementor forgets to override
+
+- **Status**: CONFIRMED — `lib.rs:L46-L50`.
+- **Location**: `crates/callisto-manifests/src/lib.rs:L46-L50`
+- **Classification**: Hardcoded ecosystem dispatch gap (Pattern 2), Silent Fallback
+- **Root Cause**: The default `publish_targets()` implementation matches on `self.ecosystem()` and has `_ =&gt; vec![PublishTarget::None]`. `PyprojectToml` overrides this correctly, but the default itself is wrong for `Pypi` (falls through), and for any future implementor of a new ecosystem (Go, NuGet, Deno, Jsr, Maven) that forgets to override — they get `None` silently, meaning all their packages appear as non-publishable and are silently skipped by the publish orchestrator.
+- **Fix direction**: Change the default to panic (or return `Err`) rather than silently returning `None`, forcing every new implementor to explicitly handle `publish_targets()`. Alternatively, make the method non-defaulted.
+
+---
+
+### [Medium] Magic strings `"*"` and `"&gt;=0.0.0"` used as sentinel/synthetic specs in `PyprojectToml::iter_dependencies`
+
+- **Status**: CONFIRMED — `python.rs:L230-L236`.
+- **Location**: `crates/callisto-manifests/src/python.rs:L230-L236`
+- **Classification**: Magic strings (Pattern 3)
+- **Root Cause**: When a PEP 508 dependency string has no version operator (e.g. `"requests"`), `op_idx` is `None`, `req_str` is set to the string literal `"*"`. This sentinel is then immediately replaced by the string `"&gt;=0.0.0"` to construct a parseable `VersionReq`. Neither `"*"` nor `"&gt;=0.0.0"` is a named constant. `"&gt;=0.0.0"` then appears in the `DepSpec::Range`'s raw string, meaning `round_trip` will rewrite it to a real constraint instead of leaving the entry unconstrained. A dependency like `requests` (no constraint) would become `requests&gt;=1.2.3` after cascade — changing the user's intended semantics.
+- **Failing Scenario**: `pyproject.toml` contains `dependencies = ["requests"]`. After cascade updates `requests` from workspace, `update_dependency_spec` rewrites the entry to `requests&gt;=2.31.0`. The user's intentionally-unconstrained dep is silently pinned.
+- **Fix direction**: Represent unconstrained deps as `DepSpec::Opaque("*")` or add a `DepSpec::Unconstrained` variant. Do not synthesize a `"&gt;=0.0.0"` Range for them.
+
+---
+
+### [Medium] Hardcoded `"Cargo.toml"` string literals in `CargoToml::write_version` and `update_dependency_spec` instead of `ManifestFormat::CargoToml.file_name()`
+
+- **Status**: CONFIRMED — `cargo.rs:L200, L291, L481`.
+- **Location**: `crates/callisto-manifests/src/cargo.rs:L200`, `L291`, `L481`
+- **Classification**: Hardcoded file names (Pattern 4)
+- **Root Cause**: Three separate occurrences:
+  - `L200`: `self.workspace_root.join("Cargo.toml")` in `write_version` when the version is inherited
+  - `L291`: `self.workspace_root.join("Cargo.toml")` in `update_dependency_spec` when the dep is inherited
+  - `L481`: `PathBuf::from("Cargo.toml")` as a fallback in `WorkspaceCargoResolver::load`
+  
+  `ManifestFormat::CargoToml.file_name()` already returns `"Cargo.toml"` as a named constant. Using the inline literal creates a divergence point if the constant changes, and means grep-for-constant searches miss these sites.
+- **Fix direction**: Use `ManifestFormat::CargoToml.file_name()` at all three sites.
+
+---
+
+### [Low-Medium] `detect_npm_workspace_kind` uses inline string literals for lock file names instead of `ManifestFormat::*.file_name()`
+
+- **Status**: CONFIRMED — `npm.rs:L393-L403`.
+- **Location**: `crates/callisto-manifests/src/npm.rs:L393-L403`
+- **Classification**: Hardcoded file names (Pattern 4)
+- **Root Cause**: `"pnpm-lock.yaml"`, `"yarn.lock"`, `"package-lock.json"`, `"package.json"` are inline string literals. `ManifestFormat::PnpmLockYaml.file_name()` returns `"pnpm-lock.yaml"`, etc. The detection logic would silently diverge if the constants in `ManifestFormat` were ever updated.
+- **Fix direction**: Replace each string literal with `ManifestFormat::PnpmLockYaml.file_name()`, `ManifestFormat::YarnLock.file_name()`, `ManifestFormat::PackageLockJson.file_name()`, `ManifestFormat::PackageJson.file_name()`.
+
+---
+
+### [Low] `bump_version` free function is unconditionally `SemVerVersioning` — misnamed public API invites PEP 440 misuse
+
+- **Status**: CONFIRMED — `bump.rs:L298-L300`.
+- **Location**: `crates/callisto-format/src/bump.rs:L298-L300`
+- **Classification**: Strategy/dispatch hardcode (Pattern 1)
+- **Root Cause**: `pub fn bump_version(current: &amp;Version, severity: Severity) -&gt; Result&lt;Version, BumpError&gt;` delegates unconditionally to `SEMVER_VERSIONING.bump(...)`. It returns `Err(BumpError::NotSemVer)` for PEP 440 input, but the function name gives no indication of this restriction. With Pypi now a first-class live ecosystem, callers adding new command paths are one `bump_version` call away from silently erroring on Python packages rather than using the correct `versioning_for(VersionGrammar::Pep440)` path. The function is `pub` and re-exported from `callisto-format/src/lib.rs:L12`.
+- **Fix direction**: Rename to `bump_semver_version` to make the restriction explicit; or add a `pub fn bump_for_grammar(current, severity, grammar) -&gt; ...` dispatcher that calls `versioning_for(grammar)?.bump(...)`.
+
+---
+
+### [Low] `CommitSha` hardcodes SHA-1 length (40) and short-SHA length (7) — git SHA-256 migration will silently break parsing
+
+- **Status**: CONFIRMED — `identity.rs:L303-L319`.
+- **Location**: `crates/callisto-model/src/identity.rs:L303-L310`, `L319`
+- **Classification**: Magic numbers (Pattern 3)
+- **Root Cause**: `CommitSha::parse` validates `trimmed.len() != 40`. `CommitSha::short` returns `&amp;self.0[..7]`. Both values are SHA-1 constants. Git is actively adding SHA-256 object support (OID length 64 hex chars, short SHA typically 8-12 chars). A SHA-256 repository or a future git version that defaults to SHA-256 would have every commit SHA rejected by `CommitSha::parse`.
+- **Fix direction**: Accept both 40-char (SHA-1) and 64-char (SHA-256) inputs; define constants `SHA1_LEN: usize = 40`, `SHA256_LEN: usize = 64`, `SHORT_SHA_LEN: usize = 7`. Or make short length dynamic (min of 7 or the full length).
+
+---
+
+### [Low] `check_git_version` uses `unwrap_or(0)` for version component parsing — silently treats a non-numeric git version as `0.0`, producing a wrong `IncompatibleVersion` error
+
+- **Status**: CONFIRMED — `exec.rs:L88-L89`.
+- **Location**: `crates/callisto-model/src/exec.rs:L88-L89`
+- **Classification**: `unwrap_or(literal)` silent fallback (Pattern 5)
+- **Root Cause**: `parts[0].parse().unwrap_or(0)` and `parts[1].parse().unwrap_or(0)`. If `git version` outputs a non-numeric major or minor token (e.g. a custom Git build reporting `git version 2.custom.0`), `parse::&lt;u64&gt;()` returns `Err` and the version defaults to 0. The subsequent check `if major &lt; 2 || (major == 2 &amp;&amp; minor &lt; 20)` would then see `2 &lt; 2 = false` and `(2 == 2 &amp;&amp; 0 &lt; 20) = true` — incorrectly rejecting a valid Git. Should return `IncompatibleVersion` with the actual parse-failure reason instead of silently coercing to 0.
+- **Fix direction**: Replace `unwrap_or(0)` with `ok_or_else(|| CommandError::IncompatibleVersion { ... })` and propagate.
+
+---
+
+### [Low] `atomic_write` silently discards directory `sync_all` errors
+
+- **Status**: CONFIRMED — `atomic.rs:L50-L58`.
+- **Location**: `crates/callisto-manifests/src/atomic.rs:L50-L58`
+- **Classification**: I/O Safety — `let _res = ...` discard (Hazard 6)
+- **Root Cause**: The parent and grandparent directory `sync_all()` calls are wrapped in `let _res = parent_file.sync_all()` — the error is captured but silently dropped. The docstring claims "parent and grandparent directory journal flushing" as a durable-write guarantee. On filesystems or kernel versions where directory fsync fails (e.g., `ext3` with `data=ordered`, or EROFS on a mounted read-only path), the function returns `Ok(())` while the directory entry change is not durably committed to disk. The file content is durable (the `sync_all` on the temp file succeeds), but the directory entry pointing to it is not — a crash between persist and directory sync leaves an orphaned inode.
+- **Fix direction**: Document explicitly as best-effort (not a hard durability guarantee), or propagate directory sync errors as `io::Result::Err`. Given that many common filesystems return `EINVAL` for `fsync` on directories, the pragmatic fix is documentation — but current doc text overpromises.
+
+---
+
+**Summary table** (new findings only, not already CONFIRMED+fixed in FINDINGS.md):
+
+| Sev | File | Line(s) | Pattern | Finding |
+|-----|------|---------|---------|---------|
+| Critical | `callisto-format/src/pre.rs` | 95 | 1 — Strategy hardcode | `parse_pre_json` forces `SemVer` on `initialVersions` — breaks Python pre-release lifecycle |
+| High | `callisto-manifests/src/python.rs` | 362–370 | 5 — Silent fallback | `update_dependency_spec` returns `Ok(())` when dep not found (should be `DependencyNotFound`) |
+| High | `callisto-manifests/src/cargo.rs` | 488–506, 641–648 | 7 — BOM inconsistency | `WorkspaceCargoResolver` doesn't strip/restore BOM (flagged unfixed in ledger) |
+| Medium | `callisto-manifests/src/python.rs` | 252–283 | 8 — Section names | Poetry dev-deps and group-deps never iterated |
+| Medium | `callisto-manifests/src/cargo.rs` | 55–77, 232–269 | 8 — Section names | `target.'cfg(...)'.dependencies` sections never visited |
+| Medium | `callisto-manifests/src/python.rs` | 285–290 | 1 — Discarded param | `_kind: DepKind` silently dropped; wrong section written |
+| Medium | `callisto-manifests/src/lib.rs` | 46–50 | 2 — Dispatch gap | Trait default `publish_targets()` has `_ =&gt; None` catch-all |
+| Medium | `callisto-manifests/src/python.rs` | 230–236 | 3 — Magic strings | `"*"` and `"&gt;=0.0.0"` as sentinels; silently pins unconstrained deps |
+| Medium | `callisto-manifests/src/cargo.rs` | 200, 291, 481 | 4 — File names | Inline `"Cargo.toml"` strings instead of `ManifestFormat::CargoToml.file_name()` |
+| Low-Med | `callisto-manifests/src/npm.rs` | 393–403 | 4 — File names | Inline lock-file name strings instead of `ManifestFormat::*.file_name()` |
+| Low | `callisto-format/src/bump.rs` | 298–300 | 1 — Strategy hardcode | `bump_version` public API hardcoded to SemVer, no indicator in name |
+| Low | `callisto-model/src/identity.rs` | 303–310, 319 | 3 — Magic numbers | SHA-1 length 40 and short-SHA 7 hardcoded |
+| Low | `callisto-model/src/exec.rs` | 88–89 | 5 — `unwrap_or(0)` | Git version component parse failure silently maps to 0 |
+| Low | `callisto-manifests/src/atomic.rs` | 50–58 | 6 — I/O safety | Directory `sync_all` errors silently discarded despite claiming durability |</result>
+<usage><subagent_tokens>137367</subagent_tokens><tool_uses>38</tool_uses><duration_ms>352255</duration_ms></usage>
+</task-notification>
