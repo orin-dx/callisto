@@ -1,0 +1,6 @@
+<task-notification>
+<task-id>bqn6x1360</task-id>
+<summary>Monitor event: "wait for git push (b6g9h7kit) to finish"</summary>
+<event>DONE</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
