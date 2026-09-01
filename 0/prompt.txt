@@ -1,0 +1,1 @@
+Do we have to make changes to our plugins to make sure they get triggered?
