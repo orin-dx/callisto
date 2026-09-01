@@ -1,0 +1,47 @@
+<task-notification>
+<task-id>ac3ae36fe96ab5f85</task-id>
+<tool-use-id>toolu_017o8ModjBX33zfX4hVhQLMb</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/ac3ae36fe96ab5f85.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement Track 3a TASK-03e" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Committed successfully as `3ed3486`. Pre-commit hooks (format-check) ran clean.
+
+## Summary
+
+TASK-03e is complete. Key finding worth flagging: the plan's note claimed both new tests were "honest non-red" (already passing against TASK-03d's landed code), but that claim was wrong for the members-key-absent test — the actual landed code (commit `14a2384`) still had `.expect("naive: TASK-03e replaces this with a safe fallback when members key is absent")` on the `members` lookup in `read_cargo_membership`. I verified this by actually running the test before touching implementation code, and it genuinely panicked. Per the TDD contract (never trust a note's characterization over an observed test run), I treated it as a real red step, applied the minimal fix (`workspace.get("members").and_then(parse_toml_string_array).map(...)`, mirroring the pattern already used for `exclude`), and reran to green. The empty-members-array test did pass immediately as predicted (honest non-red).
+
+`covers_criteria` for TASK-03e is `[]` in the plan, so no spec acceptance-criteria lookup or `criteria_evidence` was required.
+
+- Modified: `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs`
+  - Added tests `read_cargo_membership_honors_exclude_when_no_members_key_present` (line 206) and `read_cargo_membership_empty_members_array_admits_nothing` (line 220) in `cargo_membership_tests`
+  - Fixed `read_cargo_membership` members extraction (around line 106) to use a safe `.and_then(parse_toml_string_array)` chain instead of the naive `.expect(...)`
+
+All 258 `callisto-graph` lib tests pass, `cargo fmt` clean, `cargo clippy --all-targets -- -D warnings` clean, commit `3ed3486`.
+
+```json
+{
+  "task_id": "TASK-03e",
+  "status": "done",
+  "steps_completed": [
+    "verified TASK-03d commit 14a2384 present in git log before proceeding",
+    "read TASK-03e from plan file verbatim",
+    "confirmed covers_criteria is empty for this task (no spec criteria lookup required)",
+    "wrote both failing_test cases into cargo_membership_tests",
+    "ran read_cargo_membership_honors_exclude_when_no_members_key_present alone: genuinely panicked (contradicting plan's non-red claim) -- confirmed real red",
+    "ran read_cargo_membership_empty_members_array_admits_nothing alone: passed immediately, confirming plan's honest non-red claim for this second fixture",
+    "applied minimal fix: replaced naive .expect() on members lookup with .and_then(parse_toml_string_array) chain",
+    "reran both new tests plus full read_cargo_membership_ test group: all green",
+    "ran full callisto-graph lib test suite: 258 passed",
+    "ran cargo fmt -p callisto-graph",
+    "ran cargo clippy -p callisto-graph --all-targets -- -D warnings: clean",
+    "committed"
+  ],
+  "test_result": "pass",
+  "commit_sha": "3ed3486",
+  "concerns": "The plan's task note asserted both new fixtures were 'honest non-red' against TASK-03d's landed code. On actual execution, the members-key-absent test genuinely panicked against the real committed code (the naive .expect on the members lookup had not been replaced, unlike what TASK-03d's own implementation snippet in the plan showed). This was treated as a real red step per the TDD contract's requirement to observe actual behavior rather than trust the plan's characterization, and fixed with the minimal safe change. Downstream consumers of this plan should be aware TASK-03d's actual landed diff differs slightly from its plan-recorded implementation snippet.",
+  "reasoning": "Plan note for TASK-03e claimed no implementation change was needed. Running the tests first (as TDD requires) revealed one test genuinely failed against real code, contradicting the note. Applied minimal safe fix, confirmed green, verified full suite/fmt/clippy, committed. covers_criteria was empty so no spec criteria evidence to record."
+}
+```</result>
+<usage><subagent_tokens>85172</subagent_tokens><tool_uses>25</tool_uses><duration_ms>341401</duration_ms></usage>
+</task-notification>
