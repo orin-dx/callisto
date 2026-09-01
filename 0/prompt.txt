@@ -1,0 +1,41 @@
+<task-notification>
+<task-id>a237b0df021288e55</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a237b0df021288e55.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement TASK-21 (AC-09b regression test)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>```json
+{
+  "task_id": "TASK-21",
+  "status": "done",
+  "steps_completed": [
+    "Verified 16 prior commits present on ignore_walk.rs, tree clean",
+    "Read AC-09b exact text from SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json",
+    "Noted plan fixture only covered bare-string exclude case; spec also requires non-string-entry exclude array case, so added a second test for that",
+    "Added both tests to ignore_walk.rs test module",
+    "Ran cargo test -p callisto-graph --lib ac09b: both passed immediately (no red step, consistent with prior regression-proof tasks)",
+    "Adversarially broke the exclude fallback in membership.rs (fell back to a non-empty globset instead of GlobSet::empty), confirmed both new tests failed",
+    "Restored membership.rs to original, confirmed full suite green (296 passed)",
+    "Ran cargo fmt -p callisto-graph and cargo clippy -p callisto-graph --all-targets -- -D warnings, both clean",
+    "Committed"
+  ],
+  "test_result": "pass",
+  "commit_sha": "686ab58",
+  "criteria_evidence": [
+    {
+      "criterion_id": "AC-09b",
+      "test_file": "crates/callisto-graph/src/locate/ignore_walk.rs",
+      "test_line": 1218,
+      "implementation_file": "crates/callisto-graph/src/locate/membership.rs",
+      "implementation_line": 104
+    }
+  ],
+  "concerns": "This task's plan fixture only tested the bare-string exclude case. AC-09b's exact spec text (last sentence) also requires 'an exclude array containing one or more non-string entries' to be treated identically. Added ac09b_malformed_cargo_exclude_non_string_entry_falls_back_to_excluding_nothing to close that gap in the ignore_walk.rs-level integration coverage (the membership.rs unit-level tests already only covered the bare-string variant too, at both layers). Underlying implementation required no changes — the fallback logic in membership.rs's read_cargo_membership (lines 104-108) already handled both malformed shapes correctly via parse_toml_string_array returning None and unwrap_or_else(GlobSet::empty).",
+  "reasoning": "Confirmed via git log that exactly 16 commits (d812cac..ac02058) touch ignore_walk.rs as part of TASK-05..TASK-20, plus one unrelated pre-existing commit (ad019ea). Tree was clean, ahead of origin only. Read AC-09b from the spec file directly rather than trusting plan prose. The plan's failing_test only exercised the bare-string exclude shape; per the recurring pattern noted for TASK-12/14/17/20, added the missing non-string-entries exclude array variant explicitly required by the spec's final sentence. Both tests passed with zero implementation changes needed, consistent with the established regression-proof pattern for TASK-07 through TASK-20. Verified non-vacuousness by temporarily breaking the exclude-fallback unwrap_or_else in membership.rs and confirming both tests failed with assertion panics, then restored it exactly to its original state (git diff shows zero net change to membership.rs)."
+}
+```
+
+Summary: TASK-21 is done. Added two tests to `crates/callisto-graph/src/locate/ignore_walk.rs` — `ac09b_malformed_cargo_exclude_bare_string_falls_back_to_excluding_nothing` (line 1218, matching the plan) and `ac09b_malformed_cargo_exclude_non_string_entry_falls_back_to_excluding_nothing` (line 1259, added because the spec's AC-09b text requires it but the plan's fixture omitted it). No implementation change was needed — `read_cargo_membership` in `crates/callisto-graph/src/locate/membership.rs` (line 104) already falls back correctly for both malformed shapes. Verified non-vacuous by temporarily breaking the fallback and confirming both tests failed, then restored. Full suite (296 tests), fmt, and clippy all clean. Committed as `686ab58`.</result>
+<usage><subagent_tokens>57460</subagent_tokens><tool_uses>19</tool_uses><duration_ms>346404</duration_ms></usage>
+</task-notification>
