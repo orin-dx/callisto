@@ -1,0 +1,1 @@
+Can we use the GH CLI to modify branch settings and cleanup the git history? HOw long has the file been there? Can we do some git surgery to excise it?
