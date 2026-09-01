@@ -1,0 +1,5 @@
+<task-notification>
+<task-id>b6m0f9wyr</task-id>
+<summary>Monitor event: "wait for real per-crate coverage gate result"</summary>
+<event>[Monitor timed out — re-arm if needed.]</event>
+</task-notification>
