@@ -1,0 +1,173 @@
+<task-notification>
+<task-id>ae76f80186b6c8c09</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/bb531e8d-c394-4e47-a8ae-e4a9ceeca6d2/tasks/ae76f80186b6c8c09.output</output-file>
+<status>completed</status>
+<summary>Agent "Plan Track 9 rewrite-key implementation" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All 6 confirmed. Here is the complete plan@1.
+
+```json
+{
+  "goal": "Fix solve_cascade's RewriteKey.name construction to use the dependent manifest's own ecosystem-native identity (via a newly threaded IdentityIndex) instead of PackageId::name(), so dual-identity cross-ecosystem rewrite targets resolve to the correct dependency-manifest key and apply_version_plan no longer aborts with DependencyNotFound.",
+  "architecture": "Thread identity: &amp;'a IdentityIndex through CascadeInput and an owned identity: IdentityIndex through Workspace (populated once in Workspace::load from graph.identity()), following the exact precedent of Track 1's tags: &amp;TagIndex field. Both fields are added as scaffolding first, with mechanical fixups at every existing struct-literal construction site, then solve_cascade's single RewriteKey.name expression is changed to look up input.identity.native_name(&amp;edge.to, eco) with a PackageId::name() fallback when no cross-ecosystem registration exists. Verification proceeds bottom-up: a dual-identity test and a fallback/regression test through the real run_cascade call path, a full-suite regression pass, and a real on-disk end-to-end apply_version_plan test.",
+  "tech_stack": ["Rust", "cargo", "callisto-graph crate", "callisto-model crate"],
+  "linked_requirement": "REQ-TRACK9-CASCADE-REWRITE-KEY-CORRECTNESS",
+  "spec_file_path": ".claude/specs/SPEC-TRACK9-CASCADE-REWRITE-KEY-CORRECTNESS.json",
+  "spec_hash": "sha256:d4575f86242b4a8d0b1ffe6529e42a64d171b929c8d776153fbff1c7f4101199",
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Add Workspace.identity field, populate at load time, fix 18 test-literal sites",
+      "files": {
+        "modify": [
+          "crates/callisto-graph/src/lib.rs",
+          "crates/callisto-graph/tests/ecosystem_bugs_test.rs",
+          "crates/callisto-graph/tests/validate_command_tests.rs",
+          "crates/callisto-graph/tests/snapshot_tests.rs",
+          "crates/callisto-graph/tests/matrix_tests.rs",
+          "crates/callisto-graph/tests/graph_tests.rs",
+          "crates/callisto-graph/tests/tags_tests.rs",
+          "crates/callisto-graph/tests/publish_tests.rs"
+        ],
+        "test": ["crates/callisto-graph/tests/ecosystem_bugs_test.rs"]
+      },
+      "steps": [
+        "RED: append this new test function to the end of crates/callisto-graph/tests/ecosystem_bugs_test.rs (after the file's final closing brace, currently line 328):\n```rust\n#[test]\nfn workspace_load_populates_identity_field_from_graph_identity() {\n    let tmp = tempfile::tempdir().unwrap();\n    let root = tmp.path();\n    git_init(root);\n\n    fs::write(\n        root.join(\"Cargo.toml\"),\n        \"[package]\\nname = \\\"solo-crate\\\"\\nversion = \\\"0.1.0\\\"\\n\",\n    )\n    .unwrap();\n\n    let locator = IgnoreWalkLocator::new(root);\n    let runner = NoopRunner;\n\n    let ws = Workspace::load(root.to_path_buf(), &amp;locator, &amp;runner)\n        .expect(\"workspace should load\");\n\n    use callisto_model::Ecosystem;\n    assert_eq!(\n        ws.identity.native.get(&amp;(Ecosystem::Cargo, \"solo-crate\".to_string())),\n        Some(&amp;PackageId::parse(\"solo-crate\").unwrap()),\n        \"Workspace.identity must be populated from graph.identity() at load time\"\n    );\n}\n```",
+        "Run: `cargo test -p callisto-graph --test ecosystem_bugs_test workspace_load_populates_identity_field_from_graph_identity`. Expected failure: compile error `error[E0609]: no field \\`identity\\` on type \\`Workspace&lt;'_, NoopRunner&gt;\\`` (or similar 'no field identity' error), since Workspace has no identity field yet.",
+        "IMPLEMENT: in crates/callisto-graph/src/lib.rs, add a new field to the Workspace struct immediately after the existing `pub manifest_cache: RefCell&lt;BTreeMap&lt;PathBuf, Arc&lt;dyn Manifest&gt;&gt;&gt;,` field (currently the last field, line 95):\n```rust\n    pub identity: IdentityIndex,\n```\nIdentityIndex is already in scope in lib.rs via the existing `pub use identity::{IdentityIndex, IdentityResolver};` (line 44).",
+        "IMPLEMENT: in the same file's `impl&lt;'a, R: CommandRunner&gt; Workspace&lt;'a, R, ManifestWalkResolver&gt;` block, inside `Workspace::load`'s `Ok(Workspace { ... })` construction (currently lines 131-139), add a new field immediately after the `manifest_cache,` line:\n```rust\n            identity: graph.identity().clone(),\n```",
+        "Run: `cargo test -p callisto-graph --test ecosystem_bugs_test workspace_load_populates_identity_field_from_graph_identity`. Expected: test compiles and passes (1 passed; 0 failed).",
+        "Run: `cargo test -p callisto-graph --no-run` to surface every other site broken by the new required field. Expected failure: multiple `error[E0063]: missing field \\`identity\\` in initializer of \\`Workspace&lt;...&gt;\\`` errors, one for each of the 18 hand-constructed Workspace struct literals in: validate_command_tests.rs (lines 112, 180), snapshot_tests.rs (lines 70, 132, 183, 255), matrix_tests.rs (lines 63, 101), graph_tests.rs (line 35), tags_tests.rs (lines 62, 172, 333, 494), publish_tests.rs (lines 167, 679, 742, 974, 1342).",
+        "IMPLEMENT: in each of the 18 sites above, every literal ends its field list with a `manifest_cache: Default::default(),` line immediately before the literal's closing brace (confirmed by direct grep at every listed line). Insert a new line directly after that `manifest_cache: Default::default(),` line, in each of the 6 files, at every listed line number:\n```rust\n        identity: callisto_graph::IdentityIndex::default(),\n```",
+        "Run: `cargo test -p callisto-graph --no-run`. Expected: all test binaries compile with zero errors."
+      ],
+      "commit_message": "fix(graph): add Workspace.identity field populated from graph.identity() at load time",
+      "covers_criteria": []
+    },
+    {
+      "id": "T2",
+      "title": "Add CascadeInput.identity field, fix 14 test literals, wire both real construction sites",
+      "files": {
+        "modify": [
+          "crates/callisto-graph/src/cascade.rs",
+          "crates/callisto-graph/tests/cascade_tests.rs",
+          "crates/callisto-graph/src/commands/version.rs",
+          "crates/callisto-graph/src/commands/snapshot.rs"
+        ],
+        "test": ["crates/callisto-graph/src/cascade.rs"]
+      },
+      "depends_on": ["T1"],
+      "steps": [
+        "RED: add this new test function to crates/callisto-graph/src/cascade.rs's `#[cfg(test)] mod tests` block, immediately after the `caret_covers_excludes_prerelease_versions` test (currently ending at line 709, right before the `struct TwoPackageGraph` declaration at line 711):\n```rust\n#[test]\nfn cascade_input_accepts_identity_field() {\n    let graph = TwoPackageGraph { packages: vec![] };\n    let groups = GroupTable::default();\n    let cfg = CascadeConfig {\n        mode: CascadeMode::OutOfRange,\n        bump_severity: CascadeBumpSeverity::Patch,\n        peer_escalation: true,\n        preserve_npm_ranges: false,\n    };\n    let seed = BTreeMap::new();\n    let reasons = BTreeMap::new();\n    let named_by = BTreeMap::new();\n    let base = BTreeMap::new();\n    let identity = IdentityIndex::default();\n\n    let input = CascadeInput {\n        graph: &amp;graph,\n        groups: &amp;groups,\n        cfg: &amp;cfg,\n        seed: &amp;seed,\n        reasons: &amp;reasons,\n        named_by: &amp;named_by,\n        base: &amp;base,\n        pre: None,\n        tags: &amp;TagIndex::empty(),\n        identity: &amp;identity,\n    };\n\n    assert!(input.identity.native.is_empty());\n}\n```",
+        "Run: `cargo test -p callisto-graph --lib cascade::tests::cascade_input_accepts_identity_field`. Expected failure: compile error `error[E0560]: struct \\`CascadeInput\\` has no field named \\`identity\\`` (or `error[E0609]`), since CascadeInput has no identity field yet.",
+        "IMPLEMENT: in crates/callisto-graph/src/cascade.rs, add `use crate::identity::IdentityIndex;` to the top-of-file imports, immediately after `use crate::error::GraphError;` (line 11).",
+        "IMPLEMENT: in the same file's `CascadeInput&lt;'a, D: DependencyResolver&gt;` struct (lines 141-151), add a new field immediately after `pub tags: &amp;'a TagIndex,` (line 150):\n```rust\n    pub identity: &amp;'a IdentityIndex,\n```",
+        "Run: `cargo test -p callisto-graph --lib cascade::tests::cascade_input_accepts_identity_field`. Expected: still fails to compile, now with `error[E0063]: missing field \\`identity\\`` at every existing CascadeInput struct literal (8 in this file's own test module, plus version.rs:73 and snapshot.rs:54 once the lib target is checked).",
+        "IMPLEMENT: in crates/callisto-graph/src/cascade.rs's test module, every one of the 8 existing CascadeInput literals ends its field list with `tags: &amp;TagIndex::empty(),` immediately before the closing brace, at lines 834, 916, 988, 1086, 1214, 1298, 1379, 1533. Insert a new line directly after each `tags: &amp;TagIndex::empty(),` line, at every one of those 8 locations:\n```rust\n            identity: &amp;IdentityIndex::default(),\n```",
+        "IMPLEMENT: in crates/callisto-graph/src/commands/version.rs, in plan_version's CascadeInput construction (lines 73-83), insert a new line immediately after `tags,` (line 82):\n```rust\n        identity: &amp;ws.identity,\n```",
+        "IMPLEMENT: in crates/callisto-graph/src/commands/snapshot.rs, in plan_snapshot's CascadeInput construction (lines 54-64), insert a new line immediately after `tags,` (line 63):\n```rust\n        identity: &amp;ws.identity,\n```",
+        "Run: `cargo test -p callisto-graph --lib cascade::tests::cascade_input_accepts_identity_field`. Expected: compiles and passes (1 passed; 0 failed) -- this also confirms AC-005's compile-based proposition holds for the library target.",
+        "Run: `cargo test -p callisto-graph --no-run`. Expected failure: `error[E0063]: missing field \\`identity\\`` at the 6 CascadeInput struct literals in crates/callisto-graph/tests/cascade_tests.rs, lines 49, 143, 199, 262, 329, 417.",
+        "IMPLEMENT: in crates/callisto-graph/tests/cascade_tests.rs, add `use callisto_graph::IdentityIndex;` to the top-of-file imports, immediately after `use callisto_graph::TagIndex;` (line 6). Then, at each of the 6 literals (every one ends its field list with `tags: &amp;TagIndex::empty(),` at lines 58, 152, 208, 271, 338, 426), insert a new line directly after that line:\n```rust\n    identity: &amp;IdentityIndex::default(),\n```",
+        "Run: `cargo test -p callisto-graph --no-run`. Expected: all test binaries compile with zero errors. This confirms AC-005 in full: the crate fails to compile if either real construction site or the Workspace field is missing, and now compiles because all are present."
+      ],
+      "commit_message": "fix(graph): add CascadeInput.identity field and wire it from Workspace.identity at both real construction sites",
+      "covers_criteria": ["AC-005"]
+    },
+    {
+      "id": "T3",
+      "title": "Fix RewriteKey.name to use the dependent's ecosystem-native identity (AC-001, AC-002)",
+      "files": {
+        "modify": ["crates/callisto-graph/src/cascade.rs"],
+        "test": ["crates/callisto-graph/src/cascade.rs"]
+      },
+      "depends_on": ["T2"],
+      "steps": [
+        "RED: add this new test function to crates/callisto-graph/src/cascade.rs's `#[cfg(test)] mod tests` block, immediately after `bare_package` (currently ending at line 780, right before `test_linked_group_propagates_severity_to_unseeded_member_and_converges` at line 787):\n```rust\n/// AC-001/AC-002: a dual-identity rewrite target registered under two\n/// different native names per ecosystem must produce a RewriteKey whose\n/// `name` is the name registered for the DEPENDENT's own ecosystem, not\n/// PackageId::name() (the target's own native-ecosystem registration).\n/// Exercised through the real run_cascade -&gt; solve_cascade call path, not a\n/// direct, isolated call to IdentityIndex::native_name.\n#[test]\nfn test_dual_identity_rewrite_key_uses_dependents_ecosystem_native_name() {\n    let dep_target = PackageId::Bare(\"my-native-lib\".to_string());\n    let dependent = PackageId::Prefixed {\n        ecosystem: Ecosystem::Npm,\n        name: \"dep-app\".to_string(),\n    };\n\n    let edge = DepEdge {\n        from: dependent.clone(),\n        to: dep_target.clone(),\n        kind: DepKind::Runtime,\n        spec: DepSpec::Range(\n            callisto_model::VersionReq::parse(\"^1.0.0\", Ecosystem::Npm).unwrap(),\n            \"^1.0.0\".to_string(),\n        ),\n        from_manifest: std::path::PathBuf::from(\"dep-app/package.json\"),\n        inherited: false,\n    };\n\n    let graph = TestGraph {\n        packages: vec![bare_package(&amp;dep_target), bare_package(&amp;dependent)],\n        edges: vec![edge],\n    };\n\n    let mut base = BTreeMap::new();\n    base.insert(dep_target.clone(), Version::semver(1, 0, 0));\n    base.insert(dependent.clone(), Version::semver(1, 0, 0));\n\n    let mut seed = BTreeMap::new();\n    seed.insert(dep_target.clone(), Severity::Major);\n\n    let groups = GroupTable::default();\n    let cfg = CascadeConfig {\n        mode: CascadeMode::OutOfRange,\n        bump_severity: CascadeBumpSeverity::Patch,\n        peer_escalation: true,\n        preserve_npm_ranges: false,\n    };\n    let reasons = BTreeMap::new();\n    let named_by = BTreeMap::new();\n\n    let mut identity = IdentityIndex::default();\n    identity.native.insert(\n        (Ecosystem::Cargo, \"my-native-lib\".to_string()),\n        dep_target.clone(),\n    );\n    identity.native.insert(\n        (Ecosystem::Npm, \"@scope/my-native-lib\".to_string()),\n        dep_target.clone(),\n    );\n\n    let input = CascadeInput {\n        graph: &amp;graph,\n        groups: &amp;groups,\n        cfg: &amp;cfg,\n        seed: &amp;seed,\n        reasons: &amp;reasons,\n        named_by: &amp;named_by,\n        base: &amp;base,\n        pre: None,\n        tags: &amp;TagIndex::empty(),\n        identity: &amp;identity,\n    };\n\n    let outcome = run_cascade(input).unwrap();\n\n    let rewrite = outcome\n        .rewrites\n        .values()\n        .find(|r| r.dependency == dep_target)\n        .expect(\"a rewrite for dep_target must be produced\");\n\n    assert_eq!(\n        rewrite.key.name, \"@scope/my-native-lib\",\n        \"RewriteKey.name must use the Npm-native name registered for the \\\n         dependent's own ecosystem, not PackageId::name() (\\\"my-native-lib\\\")\"\n    );\n}\n```",
+        "Run: `cargo test -p callisto-graph --lib cascade::tests::test_dual_identity_rewrite_key_uses_dependents_ecosystem_native_name`. Expected failure: assertion failure `assertion \\`left == right\\` failed ... left: \"my-native-lib\", right: \"@scope/my-native-lib\"` -- the pre-fix code uses edge.to.name() unconditionally.",
+        "IMPLEMENT: in crates/callisto-graph/src/cascade.rs, inside solve_cascade's `if d.rewrite { ... }` block, replace the RewriteKey construction's `name` field (line 277) from:\n```rust\n                                name: edge.to.name().to_string(),\n```\nto:\n```rust\n                                name: input\n                                    .identity\n                                    .native_name(&amp;edge.to, eco)\n                                    .map(str::to_string)\n                                    .unwrap_or_else(|| edge.to.name().to_string()),\n```\nreusing the `eco` binding already computed two lines above the `match rewrite_spec(...)` call.",
+        "Run: `cargo test -p callisto-graph --lib cascade::tests::test_dual_identity_rewrite_key_uses_dependents_ecosystem_native_name`. Expected: test passes (1 passed; 0 failed)."
+      ],
+      "commit_message": "fix(graph): use the dependent's ecosystem-native identity for RewriteKey.name in solve_cascade",
+      "covers_criteria": ["AC-001", "AC-002"]
+    },
+    {
+      "id": "T4",
+      "title": "Prove the None-registration fallback is unchanged for Prefixed and Bare targets (AC-003, AC-007)",
+      "files": {
+        "modify": ["crates/callisto-graph/src/cascade.rs"],
+        "test": ["crates/callisto-graph/src/cascade.rs"]
+      },
+      "depends_on": ["T3"],
+      "steps": [
+        "NOTE: this task adds no further implementation change -- the fallback behavior (`unwrap_or_else(|| edge.to.name().to_string())`) was already implemented in T3. To demonstrate genuine RED-before-GREEN for this task's own tests (not merely tests that pass on arrival), temporarily revert T3's fix by replacing the current `name: input.identity.native_name(&amp;edge.to, eco).map(str::to_string).unwrap_or_else(|| edge.to.name().to_string()),` expression back to `name: edge.to.name().to_string(),` in a local, uncommitted working-tree edit before adding the tests below -- this reversion is not itself a real behavior change since both expressions produce the identical result when no native_name registration exists, so it is safe to use purely as a RED-phase probe.",
+        "RED (probe): add these two test functions to crates/callisto-graph/src/cascade.rs's `#[cfg(test)] mod tests` block, immediately after `test_dual_identity_rewrite_key_uses_dependents_ecosystem_native_name` (added in T3):\n```rust\n/// AC-003: when IdentityIndex::native_name(&amp;target, dependent_eco) returns\n/// None (the common, non-dual-identity case), RewriteKey.name must equal\n/// PackageId::name() exactly as it did before this fix, for a Prefixed\n/// target with no registration.\n#[test]\nfn test_none_registration_fallback_uses_package_id_name_ac003() {\n    let dep_target = PackageId::parse(\"pkg-core\").unwrap();\n    let dependent = PackageId::parse(\"pkg-app\").unwrap();\n    let edge = make_dep_edge(&amp;dependent, &amp;dep_target, \"^1.0.0\", Ecosystem::Cargo);\n\n    let graph = TestGraph {\n        packages: vec![bare_package(&amp;dep_target), bare_package(&amp;dependent)],\n        edges: vec![edge],\n    };\n\n    let mut base = BTreeMap::new();\n    base.insert(dep_target.clone(), Version::semver(1, 0, 0));\n    base.insert(dependent.clone(), Version::semver(1, 0, 0));\n\n    let mut seed = BTreeMap::new();\n    seed.insert(dep_target.clone(), Severity::Major);\n\n    let groups = GroupTable::default();\n    let cfg = CascadeConfig {\n        mode: CascadeMode::OutOfRange,\n        bump_severity: CascadeBumpSeverity::Patch,\n        peer_escalation: true,\n        preserve_npm_ranges: false,\n    };\n    let reasons = BTreeMap::new();\n    let named_by = BTreeMap::new();\n    let identity = IdentityIndex::default();\n\n    let input = CascadeInput {\n        graph: &amp;graph,\n        groups: &amp;groups,\n        cfg: &amp;cfg,\n        seed: &amp;seed,\n        reasons: &amp;reasons,\n        named_by: &amp;named_by,\n        base: &amp;base,\n        pre: None,\n        tags: &amp;TagIndex::empty(),\n        identity: &amp;identity,\n    };\n\n    let outcome = run_cascade(input).unwrap();\n    let rewrite = outcome\n        .rewrites\n        .values()\n        .find(|r| r.dependency == dep_target)\n        .expect(\"rewrite for dep_target must be produced\");\n\n    assert_eq!(\n        rewrite.key.name,\n        dep_target.name(),\n        \"with no IdentityIndex.native registration, RewriteKey.name must fall back to PackageId::name()\"\n    );\n}\n\n/// AC-007: same fallback, exercised for a PackageId::Bare target with no\n/// registration, confirming the Bare variant is handled identically to the\n/// Prefixed None-registration case in AC-003.\n#[test]\nfn test_bare_target_with_no_registration_falls_back_to_name_ac007() {\n    let dep_target = PackageId::Bare(\"foo\".to_string());\n    let dependent = PackageId::parse(\"pkg-app\").unwrap();\n    let edge = make_dep_edge(&amp;dependent, &amp;dep_target, \"^1.0.0\", Ecosystem::Cargo);\n\n    let graph = TestGraph {\n        packages: vec![bare_package(&amp;dep_target), bare_package(&amp;dependent)],\n        edges: vec![edge],\n    };\n\n    let mut base = BTreeMap::new();\n    base.insert(dep_target.clone(), Version::semver(1, 0, 0));\n    base.insert(dependent.clone(), Version::semver(1, 0, 0));\n\n    let mut seed = BTreeMap::new();\n    seed.insert(dep_target.clone(), Severity::Major);\n\n    let groups = GroupTable::default();\n    let cfg = CascadeConfig {\n        mode: CascadeMode::OutOfRange,\n        bump_severity: CascadeBumpSeverity::Patch,\n        peer_escalation: true,\n        preserve_npm_ranges: false,\n    };\n    let reasons = BTreeMap::new();\n    let named_by = BTreeMap::new();\n    let identity = IdentityIndex::default();\n\n    let input = CascadeInput {\n        graph: &amp;graph,\n        groups: &amp;groups,\n        cfg: &amp;cfg,\n        seed: &amp;seed,\n        reasons: &amp;reasons,\n        named_by: &amp;named_by,\n        base: &amp;base,\n        pre: None,\n        tags: &amp;TagIndex::empty(),\n        identity: &amp;identity,\n    };\n\n    let outcome = run_cascade(input).unwrap();\n    let rewrite = outcome\n        .rewrites\n        .values()\n        .find(|r| r.dependency == dep_target)\n        .expect(\"rewrite for dep_target must be produced\");\n\n    assert_eq!(\n        rewrite.key.name, \"foo\",\n        \"Bare target with no IdentityIndex.native registration must fall back to edge.to.name()\"\n    );\n}\n```",
+        "Run (with the T3 fix still reverted): `cargo test -p callisto-graph --lib cascade::tests::test_none_registration_fallback_uses_package_id_name_ac003 cascade::tests::test_bare_target_with_no_registration_falls_back_to_name_ac007`. Expected: both pass even with the fix reverted, confirming these two tests genuinely exercise only the untouched fallback path (this is the expected, documented outcome for a regression-invariance probe, not a false-positive test).",
+        "Restore T3's fix: replace the reverted `name: edge.to.name().to_string(),` expression back to the corrected expression from T3:\n```rust\n                                name: input\n                                    .identity\n                                    .native_name(&amp;edge.to, eco)\n                                    .map(str::to_string)\n                                    .unwrap_or_else(|| edge.to.name().to_string()),\n```",
+        "Run: `cargo test -p callisto-graph --lib cascade::tests::test_none_registration_fallback_uses_package_id_name_ac003 cascade::tests::test_bare_target_with_no_registration_falls_back_to_name_ac007 cascade::tests::test_dual_identity_rewrite_key_uses_dependents_ecosystem_native_name`. Expected: all 3 pass (3 passed; 0 failed)."
+      ],
+      "commit_message": "test(graph): pin AC-003/AC-007 RewriteKey None-registration fallback for Prefixed and Bare targets",
+      "covers_criteria": ["AC-003", "AC-007"]
+    },
+    {
+      "id": "T5",
+      "title": "Confirm full existing cascade/rewrite suite is byte-identical after the mechanical field additions (AC-004)",
+      "files": {
+        "modify": [],
+        "test": [
+          "crates/callisto-graph/src/cascade.rs",
+          "crates/callisto-graph/tests/cascade_tests.rs"
+        ]
+      },
+      "depends_on": ["T4"],
+      "steps": [
+        "NOTE: this task adds no code changes. Its RED phase already occurred historically: before T1 and T2's mechanical fixups, `cargo test -p callisto-graph --no-run` failed to COMPILE across every one of the 18 Workspace and 14 CascadeInput sites (confirmed by the compile-error steps in T1 and T2). This task confirms the transition to GREEN, and confirms zero assertion changes were needed beyond the mechanical `identity` field additions themselves.",
+        "Run: `git diff --stat crates/callisto-graph/src/cascade.rs crates/callisto-graph/tests/cascade_tests.rs` and manually confirm every changed line in these two files is either (a) an added `identity: &amp;IdentityIndex::default(),` / `identity: &amp;identity,` line from T2/T3/T4, (b) the single RewriteKey.name expression from T3, or (c) a wholly new #[test] function added in T3/T4 -- no existing assertion, existing test body, or existing RewriteKey/SpecRewrite value was altered.",
+        "Run: `cargo test -p callisto-graph --lib cascade::tests`. Expected: every pre-existing test in cascade.rs's test module passes with its original assertions unchanged (e.g. `cascade_action_peer_escalation_only_fires_for_non_patch_source`, `test_linked_group_propagates_severity_to_unseeded_member_and_converges`, `test_fixed_group_seeded_siblings_converge_on_shared_target`, and the CargoWorkspaceDependency/Manifest DepWriteTarget test) -- 0 failed.",
+        "Run: `cargo test -p callisto-graph --test cascade_tests`. Expected: every pre-existing test in tests/cascade_tests.rs (including `test_blackbox_cascade_propagation` and `test_diamond_cascade_convergence`) passes with its original assertions unchanged -- 0 failed.",
+        "Run: `cargo test -p callisto-graph`. Expected: full crate test suite passes -- 0 failed, confirming no workspace-wide, no-dual-identity fixture anywhere in the crate produced a different RewriteKey, SpecRewrite, or manifest write than before this spec's changes."
+      ],
+      "commit_message": "test(graph): confirm AC-004 -- full cascade/rewrite suite is byte-identical after mechanical identity field additions",
+      "covers_criteria": ["AC-004"]
+    },
+    {
+      "id": "T6",
+      "title": "Prove the real, on-disk Case D dual-identity scenario succeeds end-to-end through apply_version_plan (AC-006)",
+      "files": {
+        "modify": ["crates/callisto-graph/tests/version_tests.rs"],
+        "test": ["crates/callisto-graph/tests/version_tests.rs"]
+      },
+      "depends_on": ["T4"],
+      "steps": [
+        "IMPLEMENT (imports): at the top of crates/callisto-graph/tests/version_tests.rs, change `use callisto_model::{CommandError, CommandOutput, CommandRunner, PackageId, Severity};` to add `ApplyPermit`:\n```rust\nuse callisto_model::{ApplyPermit, CommandError, CommandOutput, CommandRunner, PackageId, Severity};\n```\nand add a new import line immediately below the existing `use callisto_graph::Workspace;` line:\n```rust\nuse callisto_graph::{apply_version_plan, ApplyOptions};\n```",
+        "RED (probe): before adding the test, temporarily revert T3's fix in crates/callisto-graph/src/cascade.rs back to `name: edge.to.name().to_string(),` (uncommitted working-tree edit) to prove this new integration test genuinely fails against the pre-fix behavior described in the spec's AC-006.",
+        "RED: append this new test function to the end of crates/callisto-graph/tests/version_tests.rs (after the file's final closing brace, currently line 158):\n```rust\n/// AC-006: the real, on-disk Cargo+npm co-located dual-identity scenario\n/// from the originating bug report -- a Cargo crate that is also its own\n/// napi-rs npm package (Case D: same directory, two manifests, one owning\n/// Bare PackageId since there is no naming collision elsewhere) -- must\n/// proceed through apply_version_plan to a successful completion for a\n/// cross-ecosystem npm dependent whose spec needs rewriting, with the\n/// dependent's package.json mutated to keep the correct, already-in-use\n/// dependency key. Before the fix, this aborts with\n/// Err(ManifestError::DependencyNotFound) because solve_cascade constructs\n/// the wrong key (\"my-native-lib\", the Cargo-native name) against a\n/// manifest that only has an \"@scope/my-native-lib\" entry.\n#[test]\nfn apply_version_plan_succeeds_for_dual_identity_cross_ecosystem_rewrite_ac006() {\n    let tmp = tempfile::tempdir().unwrap();\n    let root = tmp.path();\n    git_init_with_commit(root);\n\n    fs::create_dir_all(root.join(\"crates/my-native-lib\")).unwrap();\n    fs::write(\n        root.join(\"crates/my-native-lib/Cargo.toml\"),\n        \"[package]\\nname = \\\"my-native-lib\\\"\\nversion = \\\"1.0.0\\\"\\nedition = \\\"2021\\\"\\n\",\n    )\n    .unwrap();\n    fs::write(\n        root.join(\"crates/my-native-lib/package.json\"),\n        r#\"{\"name\":\"@scope/my-native-lib\",\"version\":\"1.0.0\"}\"#,\n    )\n    .unwrap();\n\n    fs::create_dir_all(root.join(\"packages/dep-app\")).unwrap();\n    fs::write(\n        root.join(\"packages/dep-app/package.json\"),\n        r#\"{\"name\":\"dep-app\",\"version\":\"1.0.0\",\"dependencies\":{\"@scope/my-native-lib\":\"^1.0.0\"}}\"#,\n    )\n    .unwrap();\n\n    fs::create_dir_all(root.join(\".changeset\")).unwrap();\n    fs::write(\n        root.join(\".changeset/breaking-native-api.md\"),\n        \"---\\n\\\"my-native-lib\\\": major\\n---\\n\\nBreaking native API change.\\n\",\n    )\n    .unwrap();\n\n    let locator = IgnoreWalkLocator::new(root);\n    let runner = NoopRunner;\n    let ws = Workspace::load(root.to_path_buf(), &amp;locator, &amp;runner)\n        .expect(\"workspace with Case D dual-identity package should load\");\n\n    let inference = NoInference;\n    let opts = VersionOptions {\n        strict: false,\n        strict_graph: false,\n        allow_empty_changesets: true,\n    };\n    let plan = plan_version(&amp;ws, &amp;inference, &amp;opts).expect(\"plan_version should succeed\");\n\n    let permit = ApplyPermit::force_for_tests();\n    let apply_opts = ApplyOptions::default();\n    let outcome = apply_version_plan(root, &amp;plan, &amp;runner, &amp;apply_opts, &amp;permit);\n\n    assert!(\n        outcome.is_ok(),\n        \"apply_version_plan must succeed for the dual-identity cross-ecosystem rewrite (AC-006); got: {:?}\",\n        outcome.err()\n    );\n\n    let dep_app_manifest =\n        fs::read_to_string(root.join(\"packages/dep-app/package.json\")).unwrap();\n    assert!(\n        dep_app_manifest.contains(\"\\\"@scope/my-native-lib\\\"\"),\n        \"dep-app's package.json must retain the ecosystem-native dependency key \\\"@scope/my-native-lib\\\"; got:\\n{dep_app_manifest}\"\n    );\n    assert!(\n        !dep_app_manifest.contains(\"\\\"^1.0.0\\\"\"),\n        \"dep-app's dependency spec on my-native-lib must have been rewritten away from the now out-of-range \\\"^1.0.0\\\"; got:\\n{dep_app_manifest}\"\n    );\n}\n```",
+        "Run (with T3's fix still reverted): `cargo test -p callisto-graph --test version_tests apply_version_plan_succeeds_for_dual_identity_cross_ecosystem_rewrite_ac006`. Expected failure: `apply_version_plan must succeed ... got: Some(ManifestError(DependencyNotFound { ... }))` (or the assertion panics with that error printed), confirming this reproduces the exact originating bug.",
+        "Restore T3's fix in crates/callisto-graph/src/cascade.rs (replace the reverted expression back to `name: input.identity.native_name(&amp;edge.to, eco).map(str::to_string).unwrap_or_else(|| edge.to.name().to_string()),`).",
+        "Run: `cargo test -p callisto-graph --test version_tests apply_version_plan_succeeds_for_dual_identity_cross_ecosystem_rewrite_ac006`. Expected: test passes (1 passed; 0 failed)."
+      ],
+      "commit_message": "test(graph): prove AC-006 end-to-end apply_version_plan success for a real on-disk dual-identity Case D rewrite",
+      "covers_criteria": ["AC-006"]
+    }
+  ],
+  "batches": [
+    {
+      "batch_id": "B1",
+      "title": "Scaffolding: field threading and mechanical fixups",
+      "target_crate": "callisto-graph",
+      "task_ids": ["T1", "T2"]
+    },
+    {
+      "batch_id": "B2",
+      "title": "The fix and its acceptance-criteria proofs",
+      "target_crate": "callisto-graph",
+      "task_ids": ["T3", "T4", "T5", "T6"]
+    }
+  ]
+}
+```
+
+Every acceptance criterion (AC-001 through AC-007) appears in exactly one task's `covers_criteria` (T2→AC-005, T3→AC-001/AC-002, T4→AC-003/AC-007, T5→AC-004, T6→AC-006). All file paths and line numbers were verified directly against the live repository (not merely trusted from the spec) before being written into task steps: `crates/callisto-graph/src/cascade.rs`, `crates/callisto-graph/src/lib.rs`, `crates/callisto-graph/src/commands/version.rs`, `crates/callisto-graph/src/commands/snapshot.rs`, `crates/callisto-graph/src/identity.rs`, `crates/callisto-graph/src/walk.rs`, and the six test files listed in the spec's `scope`. The calling process should persist this object to `.claude/plans/` and route it to `vector:challenger` next.</result>
+<usage><subagent_tokens>148995</subagent_tokens><tool_uses>66</tool_uses><duration_ms>757351</duration_ms></usage>
+</task-notification>
