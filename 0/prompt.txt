@@ -1,0 +1,70 @@
+<task-notification>
+<task-id>a177041578fa28c6d</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/tasks/a177041578fa28c6d.output</output-file>
+<status>completed</status>
+<summary>Agent "Adversarial audit of apply-batch spec" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Confirmed. Now I have full evidence for all four findings. Here is the audit.
+
+```json
+{
+  "issues": [
+    {
+      "criterion_id": "AC-004",
+      "type": "untestable",
+      "description": "open_call_count()/write_call_count() (crates/callisto-manifests/src/lib.rs:111) are process-global AtomicUsize counters, not scoped to a path, a test, or a thread. cargo test runs tests in parallel by default, and any other test in the same binary that concurrently calls callisto_manifests::open or atomic_write will increment the same counters, making 'open_call_count() increasing by exactly 1' nondeterministic. This is not a hypothetical: crates/callisto-graph/tests/manifest_cache_test.rs already hits this exact problem and works around it with #[serial] from the serial_test crate plus a comment reading 'This counter is process-global (see callisto_manifests::open_call_count).' AC-004 (and AC-006, AC-008, AC-011, all of which assert exact counter deltas) never mentions this requirement, so a developer following AC-004 alone will write a flaky test that passes in isolation and fails intermittently under full-suite parallel execution -- two developers running the same test suite could observe different pass/fail outcomes from identical code, which fails the auditability bar.",
+      "suggested_fix": "Append to AC-004: 'This test MUST be annotated #[serial] (the `serial_test` crate, already a dev-dependency per crates/callisto-graph/tests/manifest_cache_test.rs) or otherwise run with the counter-mutating tests excluded from parallel execution, because open_call_count()/write_call_count() are process-global counters shared across the entire test binary (see crates/callisto-manifests/src/lib.rs:111 and the precedent in manifest_cache_test.rs). Tests not marked #[serial] that assert exact counter deltta values are non-conforming implementations of this criterion.'"
+    },
+    {
+      "criterion_id": "AC-006",
+      "type": "untestable",
+      "description": "Same process-global counter race as AC-004: this criterion asserts open_call_count() increases 'by exactly 1' with no serialization requirement stated, despite the established #[serial] precedent in this same crate for exactly this counter.",
+      "suggested_fix": "Append to AC-006: 'This test MUST be annotated #[serial] (see manifest_cache_test.rs precedent) since open_call_count() is a process-global counter shared with every other test in the binary.'"
+    },
+    {
+      "criterion_id": "AC-008",
+      "type": "untestable",
+      "description": "Same process-global counter race as AC-004, applied to write_call_count() == 0. Under parallel test execution, an unrelated concurrently-running test that calls atomic_write (directly or via any manifest persist) will increment the shared counter and falsify 'write_call_count() == 0' even though this test's own code path never persisted P -- a false failure indistinguishable from a real regression.",
+      "suggested_fix": "Append to AC-008: 'This test MUST be annotated #[serial], for the same process-global-counter reason documented in crates/callisto-graph/tests/manifest_cache_test.rs.'"
+    },
+    {
+      "criterion_id": "AC-011",
+      "type": "untestable",
+      "description": "Same process-global counter race as AC-004/AC-006/AC-008, applied to the already-at-target idempotency skip. No serialization requirement is stated.",
+      "suggested_fix": "Append to AC-011: 'This test MUST be annotated #[serial], for the same process-global-counter reason documented in crates/callisto-graph/tests/manifest_cache_test.rs.'"
+    },
+    {
+      "criterion_id": "AC-003",
+      "type": "ambiguous",
+      "description": "AC-003 claims persisting an unmodified handle 'leaves the file's content unchanged from the file's pre-call content on disk' as an unqualified byte-for-byte guarantee. This is demonstrably not what the described PackageJson::persist implementation provides. Reading crates/callisto-manifests/src/npm.rs (lines 75-113, 147-151): PackageJson is NOT a true format-preserving CST -- it detects a 'FormatFingerprint' capturing only four dimensions (indent style, line-ending, BOM presence, trailing-newline presence) from the original text, then reconstructs the document by re-serializing a serde_json Map through serde_json::ser::PrettyFormatter::with_indent(...). Any original formatting outside those four tracked dimensions (blank lines between top-level keys, non-default colon/comma spacing, unusual numeric literal formatting, key insertion order if the `preserve_order` serde_json feature is not enabled) will NOT survive an unmodified persist() round-trip, producing different bytes even though nothing was semantically mutated. CargoToml/PyprojectToml (toml_edit-backed) do not have this problem since toml_edit is a genuine lossless CST. As written, AC-003 will be false for any package.json fixture whose formatting isn't captured by the fingerprint, and the spec gives the implementer no way to know whether that's a bug to fix or an accepted limitation to test around.",
+      "suggested_fix": "Rewrite AC-003 to scope the guarantee to what the fingerprint mechanism actually captures: 'Calling persist(&amp;mut self, permit) on a freshly-opened handle with zero prior mutations is not an error: it returns Ok(()). For CargoToml and PyprojectToml (toml_edit-backed CST), the resulting file content is byte-for-byte identical to the file's pre-call content. For PackageJson, the resulting file content is unchanged with respect to the four dimensions captured by FormatFingerprint (indent style, line-ending, BOM presence, trailing-newline presence) and is semantically equivalent (same keys, values, and structure) to the pre-call content; byte-for-byte identity is guaranteed only for package.json fixtures whose original formatting is fully described by those four dimensions (default single-space colon/comma spacing, no blank lines between properties, default numeric literal formatting). This asymmetry is pre-existing behavior of PackageJson's persist path, not introduced by this change, and is not fixed by this track.'"
+    },
+    {
+      "criterion_id": "AC-013",
+      "type": "incomplete",
+      "description": "AC-013 requires 'every test call site... that calls write_version, update_dependency_spec, or update_optional_dependencies and then reads the manifest's file back from disk' to get an inserted .persist() call, but gives no count or enumeration -- unlike AC-010, which names its six affected tests explicitly. The reasoning field separately claims 'exactly 28 call sites' via an internally inconsistent breakdown ('12 cargo.rs matches minus non-mutator hits + npm.rs 7 tests + python.rs 3 tests' sums to 22, not 28), and reasoning is explicitly a private scratchpad never forwarded downstream per the output contract, so vector-planner has no reliable inventory to plan against. I independently re-derived the count by grepping the #[cfg(test)] modules of each file for calls to the three mutators: cargo.rs = 8, npm.rs = 11, python.rs = 9, total = 28 -- the total in the reasoning field is actually correct, but the per-file breakdown that would let a planner partition work by file is wrong and unusable as written.",
+      "suggested_fix": "Replace AC-013's body with: 'Every test call site in crates/callisto-manifests/src/{cargo.rs,npm.rs,python.rs} test modules that calls write_version, update_dependency_spec, or update_optional_dependencies and then reads the manifest's file back from disk to assert on its content has an explicit .persist(&amp;permit) call inserted between the mutation call and the disk read. The affected call sites number exactly 28 total: 8 in cargo.rs's test module, 11 in npm.rs's test module, 9 in python.rs's test module (verified via `grep -nE \"\\.write_version\\(|\\.update_dependency_spec\\(|\\.update_optional_dependencies\\(\" &lt;file&gt;` restricted to each file's #[cfg(test)] module). The full crate test suite (cargo test -p callisto-manifests) passes with zero test assertion changes other than the inserted .persist() calls.'"
+    },
+    {
+      "criterion_id": null,
+      "type": "missing-error-case",
+      "description": "apply_version_plan's api_surface entry states that for each group, 'if every mutation in the group succeeds AND at least one mutation actually changed the in-memory document... call persist on the handle exactly once before moving to the next group,' but no acceptance criterion covers persist() itself returning Err (e.g. atomic_write failing due to a full disk, a permission change on the target file between open and persist, or an fsync failure on the parent/grandparent directory -- all of which surface as ManifestError::Write per crates/callisto-manifests/src/cargo.rs:107-112). This is a new, distinct failure mode introduced by this spec: previously every mutator's I/O failure happened inline per-entry; now this spec introduces a single persist() call per group whose failure happens *after* all in-memory mutations for that group already succeeded. AC-007/AC-008 only cover mutation *validation* failures (UnexpectedManifestVersion / DependencyNotFound), not I/O failures at the persist step, and AC-009's cross-file-atomicity guarantee is stated only for 'path B's writes then fail validation' -- it does not say what happens to path A's on-disk state, ApplyOutcome, or the group ordering when path B's group fails during the *persist* call rather than during mutation. A developer cannot tell from this spec whether a persist-time I/O failure should behave like AC-007/AC-009 (propagate Err, leave already-persisted earlier groups as-is, leave this group's in-memory mutations un-flushed) or something else.",
+      "suggested_fix": "Add AC-015: 'Given a VersionPlan targeting two or more distinct paths where path A\\'s group mutates and persists successfully, and path B\\'s group\\'s mutations all succeed in-memory but persist(&amp;permit) on path B\\'s handle returns Err(ManifestError::Write { .. }) (e.g. because atomic_write fails -- simulate by making the target path\\'s parent directory read-only before the call), apply_version_plan returns Err(GraphError::Manifest(_)) wrapping that ManifestError via the existing ? operator; path A\\'s file on disk reflects A\\'s already-persisted mutations (unaffected by B\\'s later persist failure, consistent with AC-009\\'s cross-file semantics); path B\\'s file on disk is unchanged from its state before the apply_version_plan call (persist failed, so nothing was flushed for B); and no group after B in scan order is opened or mutated.' is_error_case: true."
+    }
+  ],
+  "overall": "fail",
+  "reasoning": "The spec is unusually rigorous for most of its surface -- the api_surface section pins group-formation semantics, ordering, and failure boundaries precisely, and AC-007/AC-008/AC-009/AC-012 cover error cases with named error variants rather than vague language. But four concrete, code-verified gaps survive: (1) AC-004/006/008/011 build exact-count assertions on a counter that this exact codebase has already proven, in writing (manifest_cache_test.rs's own comment), requires #[serial] to be reliable -- the spec silently drops a precedent it's otherwise following faithfully. (2) AC-003's byte-for-byte claim is false for PackageJson as actually implemented (fingerprint-based reconstruction, not a real CST) -- verified by reading npm.rs directly. (3) AC-013's 28-call-site claim has an internally contradictory derivation in reasoning and no enumerated criterion text, even though I confirmed the total (28) is correct via independent grep -- the criterion itself just doesn't say so. (4) persist()-time I/O failure, a failure mode this spec's own restructuring introduces (single persist call after N in-memory mutations, replacing N inline persists), has no acceptance criterion at all. All four are the kind of thing a drafter who wrote 14 careful criteria would be most likely to wave through: they require either cross-referencing a sibling test file, reading ecosystem-specific serialization code, doing arithmetic on the reasoning field, or noticing a new failure surface implied but not stated by the api_surface prose. None of these is fixed by generic guidance; each has a concrete rewritten criterion above."
+}
+```
+
+**File paths referenced:**
+- Spec under audit: `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/SPEC-APPLY-BATCH-001.json`
+- `/Users/gabe/Projects/callisto/crates/callisto-manifests/src/lib.rs` (process-global `OPEN_CALL_COUNT`, lines 111-128)
+- `/Users/gabe/Projects/callisto/crates/callisto-graph/tests/manifest_cache_test.rs` (`#[serial]` precedent, lines 21, 72, 81-99)
+- `/Users/gabe/Projects/callisto/crates/callisto-manifests/src/npm.rs` (`FormatFingerprint`/`persist`, lines 18-113, 147-151)
+- `/Users/gabe/Projects/callisto/crates/callisto-manifests/src/cargo.rs` (`persist` impls, lines 102-113, 704-...)
+- `/Users/gabe/Projects/callisto/crates/callisto-model/src/error.rs` (`ManifestError::Write`, lines 89-91)
+- Related workspace specs checked for overlap: `/Users/gabe/Projects/callisto/.claude/specs/track-b-idempotent-apply.json`, `track-e-specificity.json`, `track-f-resolution-extraction.json` — no unresolved overlap found; Track B's `apply_version_plan` changes are explicitly preserved and cited by this spec.</result>
+<usage><subagent_tokens>67646</subagent_tokens><tool_uses>18</tool_uses><duration_ms>243433</duration_ms></usage>
+</task-notification>
