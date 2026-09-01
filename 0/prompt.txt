@@ -1,0 +1,49 @@
+<task-notification>
+<task-id>a08f4b0d318eae3d4</task-id>
+<tool-use-id>toolu_01L3oQ83audb9VwyaY15h8WH</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a08f4b0d318eae3d4.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement TASK-29 (AC-11d regression test)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Committed successfully as `d4dd8cc`.
+
+## Summary
+
+**TASK-29** — Regression-proof AC-11d (comments-only pnpm-workspace.yaml → zero YAML documents, no panic)
+
+Read the exact spec text from `.claude/specs/SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json`, which was broader than the plan's paraphrase: AC-11d covers three input shapes that all yield zero YAML documents — **empty (zero bytes)**, **whitespace-only**, and **comments-only** — not just the comments-only case the plan's `failing_test` stub included. I wrote a single test covering all three sub-cases per the "add anything missing" guidance.
+
+Test passed immediately (no red step, consistent with the plan's note that this is regression-proofing of already-existing behavior). Since a same-run false green is the exact failure mode this task type risks, I adversarially verified non-vacuousness: temporarily changed `crates/callisto-graph/src/locate/membership.rs:276` from `docs.first()?` to `&amp;docs[0]`, reran the test, confirmed it genuinely panics (`index out of bounds: the len is 0 but the index is 0`), then restored the original safe code. Full `cargo test -p callisto-graph --lib` (309 tests) passes clean, `cargo fmt` and `cargo clippy -p callisto-graph --all-targets -- -D warnings` are clean.
+
+```json
+{
+  "task_id": "TASK-29",
+  "status": "done",
+  "steps_completed": [
+    "confirmed 24 prior commits present on ignore_walk.rs and clean tree",
+    "read AC-11d exact criterion text from spec file on disk",
+    "wrote test covering all three zero-document input shapes (empty/whitespace/comments)",
+    "ran test — passed immediately (no red step, as expected for regression-proof task)",
+    "adversarially broke docs.first()? -&gt; docs[0] in membership.rs, confirmed test panics",
+    "restored membership.rs to original safe form, confirmed diff clean",
+    "ran full callisto-graph lib test suite (309 passed)",
+    "ran cargo fmt and cargo clippy -D warnings (clean)",
+    "committed"
+  ],
+  "test_result": "pass",
+  "commit_sha": "d4dd8cc",
+  "criteria_evidence": [
+    {
+      "criterion_id": "AC-11d",
+      "test_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs",
+      "test_line": 1709,
+      "implementation_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs",
+      "implementation_line": 276
+    }
+  ],
+  "concerns": "Plan's failing_test stub only covered the comments-only variant; test was expanded to cover all three zero-document shapes named in AC-11d's exact spec text (empty, whitespace-only, comments-only) per the task instruction to reconcile plan vs spec.",
+  "reasoning": "No implementation change needed; docs.first()? in membership.rs:276 already guards this case correctly, confirmed via mutation-style adversarial check."
+}
+```</result>
+<usage><subagent_tokens>53518</subagent_tokens><tool_uses>19</tool_uses><duration_ms>345078</duration_ms></usage>
+</task-notification>
