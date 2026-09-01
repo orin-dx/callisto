@@ -1,0 +1,216 @@
+This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
+
+Summary:
+1. Primary Request and Intent:
+
+The session resumed from a prior context-exhausted conversation. The user's core requests (in order):
+- (Resumed) Add the PUB-001 load_plan integration guard test to `crates/callisto-graph/tests/publish_tests.rs`
+- User asked for a status update on known bugs and codebase health
+- User explicitly pushed back: "How come we didn't address all of the bugs? I asked you to fix all in semantic batches, validating against the specs, expectations, test coverage, black box testing, best practices, performance, UX and DX"
+- User directed: "Yes, read the audit and consider how we validate as we go" — requesting the full audit be read before proceeding
+- The task is: fix ALL remaining confirmed bugs, in semantic/dependency order, with TDD (RED→GREEN), validating against specs, test coverage, black box behavior, best practices, performance, UX and DX after each fix
+
+**Security/operational constraints (must remain in effect):**
+- NEVER commit to git without explicit user instruction
+- NEVER bump versions or run release/publish commands
+- `/Users/gabe/Projects/callisto-findings/` lives OUTSIDE the repo — must NEVER be committed
+- `callisto publish` must NEVER be invoked against a real registry
+- No emojis in documentation or code
+- TDD discipline: RED → GREEN → REFACTOR; never write production code without a failing test first
+
+2. Key Technical Concepts:
+
+- **Callisto**: Rust CLI + Moon WASM extension for polyglot monorepo versioning (10 crates)
+- **SubprocessRegistryClient**: Dispatches `RegistryClient` calls to cargo/npm/twine CLIs via `CommandRunner`; requires `load_plan()` before `publish()` to thread per-package metadata
+- **PUB-001 regression guard**: Integration test verifying `load_plan()` populates `cargo_registry`, enabling `--registry` for private registries; without it, private-registry crates silently fall back to crates.io
+- **--refresh-lockfiles**: `ApplyOptions::refresh_lockfiles` was a documented no-op (`_opts` unused); now implemented to run `cargo update --workspace` (for Cargo), `uv lock` (for Python/uv), or `poetry lock --no-update` (for Python/Poetry) after version bumps — prevents `cargo publish --locked` from failing on stale Cargo.lock
+- **python -m build step**: Per `docs/04-python-engine-spec.md §8.3`, PyPI publishing is a mandatory two-step sequence: (1) `python -m build --sdist --wheel --outdir dist/`, then (2) `twine upload`. Build failures are non-transient (not retried). Previously, only twine was called.
+- **detect_rate_limit false positive**: Bare `text_lower.contains("429")` in `detect_rate_limit` matches cargo's own compressed-size output ("429.1KiB compressed"), causing infinite retry loops on unrelated failures. Fixed to require contextual phrases alongside "429".
+- **TDD pattern**: Every fix requires a failing test FIRST (RED), then minimal implementation (GREEN), then targeted test run validation before continuing
+- **Sequential fix constraint (from memory)**: Parallel agents fail on semantically coupled publish pipeline; fix sequentially, validate after each
+- **LockfileRefreshResult**: `callisto_model` struct: `{ filename: PathBuf, refresh_command: String, success: bool, exit_code: Option<i32> }` — stored in `ApplyOutcome::lockfile_refresh_results`
+- **ScriptedRunner semantics**: After python build step was added, `ScriptedRunner` needed to differentiate: returns `Ok(exit(0), "", "")` for `program == "python"` and configured output for ecosystem CLIs
+
+3. Files and Code Sections:
+
+- **`crates/callisto-graph/tests/publish_tests.rs`** — Added PUB-001 regression guard test
+  - Added `use std::path::PathBuf; use std::sync::{Arc, Mutex};` to imports
+  - Added `ArgsCapturingRunner` struct that captures all `(program, args)` calls
+  - Added test `pub_001_load_plan_required_for_private_registry_routing`: proves both WITH load_plan (--registry present) and WITHOUT load_plan (--registry absent) behaviors. This guards against accidental removal of `client.load_plan(&plan)` from CLI's `handle()`
+  - Format fix required: `cargo fmt -p callisto-graph` to fix struct literal formatting and iterator chain wrapping
+
+- **`crates/callisto-graph/src/apply.rs`** — Implemented `--refresh-lockfiles`
+  - Added `CommandOutput` to imports: `use callisto_model::{ApplyPermit, CommandError, CommandOutput, CommandRunner, LockfileRefreshResult, ManifestRole};`
+  - Renamed `_opts: &ApplyOptions` → `opts: &ApplyOptions` in `apply_version_plan` signature
+  - Inserted refresh logic AFTER `active_ecosystems` population, BEFORE git staging loop:
+    ```rust
+    if opts.refresh_lockfiles {
+        let mut refresh_results: Vec<LockfileRefreshResult> = Vec::new();
+        if active_ecosystems.contains(&Ecosystem::Cargo) {
+            let out = runner.run("cargo", &["update", "--workspace"], root)
+                .unwrap_or_else(|e| CommandOutput { exit_code: None, stdout: String::new(), stderr: e.to_string() });
+            refresh_results.push(LockfileRefreshResult {
+                filename: PathBuf::from("Cargo.lock"),
+                refresh_command: "cargo update --workspace".to_string(),
+                success: out.success(),
+                exit_code: out.exit_code,
+            });
+        }
+        if active_ecosystems.contains(&Ecosystem::Pypi) {
+            if root.join("uv.lock").exists() {
+                // run "uv lock"
+            } else if root.join("poetry.lock").exists() {
+                // run "poetry lock --no-update"
+            }
+        }
+        if !refresh_results.is_empty() {
+            outcome.lockfile_refresh_results = Some(refresh_results);
+        }
+    }
+    ```
+  - Added `RecordingRunner` to test module (records all `(program, args)` calls)
+  - Added tests: `refresh_lockfiles_calls_cargo_update_workspace_when_cargo_bumped` and `refresh_lockfiles_false_does_not_call_cargo_update`
+
+- **`crates/callisto-graph/src/commands/publish_client.rs`** — Multiple fixes
+  - Added `OrderedCallCapture` struct to test module (records all calls in order for sequencing verification)
+  - Added tests: `pypi_publish_runs_python_build_before_twine` and `pypi_publish_build_failure_does_not_call_twine`
+  - Added python -m build step to `pypi_publish` method:
+    ```rust
+    let build_out = self.run_in(
+        "python",
+        &["-m", "build", "--sdist", "--wheel", "--outdir", "dist/"],
+        &pkg_cwd,
+    )?;
+    if !build_out.success() {
+        return Err(RegistryError::Other(format!(
+            "python -m build failed for `{}` (exit {:?}): {}",
+            package.name(), build_out.exit_code, build_out.stderr.trim()
+        )));
+    }
+    ```
+  - Updated `ScriptedRunner` to return success for `python` calls:
+    ```rust
+    fn run(&self, program: &str, _args: &[&str], _cwd: &std::path::Path) -> Result<CommandOutput, CommandError> {
+        if program == "python" {
+            return Ok(output(0, "", ""));
+        }
+        Ok(self.0.clone())
+    }
+    ```
+  - Fixed `detect_rate_limit` to require contextual phrases alongside "429":
+    ```rust
+    fn detect_rate_limit(text_lower: &str) -> Option<RegistryError> {
+        let is_rate_limited = text_lower.contains("too many requests")
+            || text_lower.contains("rate limit")
+            || text_lower.contains("erate_limit")
+            || (text_lower.contains("429")
+                && (text_lower.contains("too many")
+                    || text_lower.contains("rate")
+                    || text_lower.contains("retry")));
+        ...
+    }
+    ```
+  - Added test `cargo_publish_compressed_size_containing_429_is_not_rate_limited`
+
+- **`/Users/gabe/Projects/callisto-findings/PUBLISH_AUDIT.md`** — Read for context (external file, never commit)
+  - 38 confirmed bugs, 5 P0s, 11 P1s, 15+ P2s, DX items
+  - Fix priority order documented
+  - Three root patterns: disconnected wires, text-substring classification, single-cwd architecture
+
+- **`/Users/gabe/Projects/callisto/docs/06-publishing.md`** — Read as auth spec contract
+  - npm Pattern A (NPM_TOKEN + manual npm config set) vs Pattern B (setup-node)
+  - Cargo: CARGO_REGISTRY_TOKEN
+  - Python: TWINE_USERNAME=__token__ + TWINE_PASSWORD (NOT TWINE_API_TOKEN)
+
+- **`/Users/gabe/Projects/callisto/docs/04-python-engine-spec.md`** — Read as PyPI spec contract
+  - §8.3: two-step mandatory sequence: python -m build then twine upload
+  - §8.4: auth model (TWINE_USERNAME/TWINE_PASSWORD)
+
+4. Errors and Fixes:
+
+- **Format check failure after adding pub_001 test**: `cargo fmt` caught single-line struct literal and long iterator chain. Fixed by running `cargo fmt -p callisto-graph`. Second CI run passed.
+
+- **`CommandOutput` not in scope in apply.rs**: After adding refresh logic, compiler reported `CommandOutput` not found. Fixed by adding `CommandOutput` to the imports.
+
+- **`pypi_publish_auth_failed` and `pypi_publish_rate_limited` broke after build step**: `ScriptedRunner` returned the same non-zero exit for ALL calls including the new `python -m build` step. The build step failed early, returning `RegistryError::Other` instead of the expected rate-limit/auth error from twine. Fixed by making `ScriptedRunner` return `Ok(output(0, "", ""))` when `program == "python"`.
+
+- **User feedback — stopped too early**: User explicitly stated the bugs weren't all addressed despite being asked. Acknowledged and resumed systematic fixing.
+
+5. Problem Solving:
+
+**Solved:**
+- PUB-001 regression guard: test using `ArgsCapturingRunner` documents both WITH and WITHOUT load_plan behaviors
+- --refresh-lockfiles P0: implemented `cargo update --workspace`, `uv lock`, `poetry lock --no-update` in proper position (after ecosystem detection, before git staging) so refreshed lockfiles get staged
+- python -m build P0: build step added before twine, build failures classified as non-retriable `RegistryError::Other`
+- NEW-429 false positive P1: `detect_rate_limit` now requires contextual phrases alongside "429"
+- ScriptedRunner semantics: program-aware routing to avoid breaking existing classification tests
+
+**Reconciliation of Audit vs. Code**: Many bugs from the original audit were already fixed in prior sessions:
+- F-002/PUB-002 (retry cap): MAX_RATE_LIMIT_RETRIES=10 already in code
+- F-006 (private npm "already published"): e409/409 conflict already in classifier
+- NEW-npmview (exit-0 empty): line 199-200 already returns Ok(false)
+- AUTH-002 (TWINE_API_TOKEN doc): already corrected in 06-publishing.md
+- PUB-003 (dry-run output): render_publish already renders all 4 ecosystems
+- F-08 (pypi literal): RegistryKey::PYPI constant already used
+
+6. All User Messages:
+
+- (Resumed from prior session — no initial user message in this session)
+- "What's the current status of our known bugs and the codebase?"
+- "How come we didn't address all of the bugs? I asked you to fix all in semantic batches, validating against the specs, expectations, test coverage, black box testing, best practices, performance, UX and DX"
+- "Yes, read the audit and consider how we validate as we go"
+
+7. Pending Tasks:
+
+Remaining open bugs to fix in priority order (continuing from Fix 3):
+
+**P1 (remaining 3):**
+- Fix 4: A2/F-005 — scoped npm packages default to `access: None` → restricted → 402 on first publish. Fix: detect `name.starts_with('@')` in `plan_publish` and set `access: Some(NpmAccess::Public)` (publish.rs lines 138, 169)
+- Fix 5: bun.lock text format not detected — only `bun.lockb` checked at line 280 of publish_client.rs; modern bun (>=1.1.1) uses `bun.lock` text format
+- Fix 6: NEW-version — planned vs. on-disk version mismatch; `plan_publish` uses `bump.to` (not-yet-written target) while subprocess publishes whatever is on disk; need pre-publish assertion
+
+**P2 (11 remaining):**
+- F-04: npm `--registry` never passed (registry field always None in plan_publish)
+- F-07: Python `is_publishable` always true (no override in python.rs)
+- AUTH-005: `npm_is_published` always queries public registry (no --registry)
+- AUTH-006: `id-token: write` permission with no OIDC flow in callisto-release.yml
+- PUB-005: No per-package progress output (silent during publish)
+- PUB-006: No `--only`/`--package` filter
+- PUB-007: All RegistryError variants collapse to string in JSON
+- PUB-008: `RegistryError::Network` dead enum arm
+- Diagnostics: `Vec::new()` hardcoded everywhere
+- Git discovery failure silently drops releases
+
+**DX (4 remaining):**
+- F-06: `.ok()` swallows changeset errors in plan_publish (line 29-30)
+- PUB-009: "No packages published" past tense in dry-run
+- PUB-010: No JSON type discriminator between PublishPlan and PublishReport
+- F-007: subprocess stdout fully buffered, no streaming
+
+8. Current Work:
+
+Immediately before this summary, working through the sequential bug fix sequence:
+
+**Fix 1 (COMPLETE)**: `--refresh-lockfiles` in `apply.rs` — renamed `_opts` to `opts`, added `CommandOutput` import, inserted lockfile refresh block (cargo update --workspace / uv lock / poetry lock --no-update) after active_ecosystems collection, before git staging. Two tests added and passing.
+
+**Fix 2 (COMPLETE)**: python -m build before twine in `publish_client.rs` — added build step to `pypi_publish`, updated `ScriptedRunner` to succeed for `python` calls, added `OrderedCallCapture` test helper, 2 new tests passing. All 57 publish_client tests pass.
+
+**Fix 3 (COMPLETE)**: `detect_rate_limit` false positive — removed bare `text_lower.contains("429")` match, replaced with contextual requirement. Added regression test `cargo_publish_compressed_size_containing_429_is_not_rate_limited`. All 57 publish_client tests pass.
+
+The last test run showed: `test result: ok. 57 passed; 0 failed; 0 ignored; 0 measured; 73 filtered out; finished in 3.41s`
+
+9. Optional Next Step:
+
+The next fix in the sequence is **Fix 4: A2/F-005 — scoped npm default access**.
+
+Per the audit: "Detect scoped packages (`name.starts_with('@')`) and default to `NpmAccess::Public` for them."
+
+In `crates/callisto-graph/src/commands/publish.rs`, lines 138 and 169 both set `access: None`. The fix:
+- In the npm publish plan entries, check if `pkg.id.name().starts_with('@')` and set `access: Some(NpmAccess::Public)` for scoped packages
+- This applies to both `npm_platform_packages` (line 138) and `npm_main_packages` (line 169)
+- Following TDD: write a failing test first that verifies a scoped package (`@scope/pkg`) gets `access: Some(NpmAccess::Public)` in the plan, then implement
+
+The user's request is to continue: "Let's fix ALL the bugs we know about. Don't leave things behind please. But let's make sure we run very thorough validation after each set of fixes" and "Yes, read the audit and consider how we validate as we go."
+
+If you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/gabe/.claude/projects/-Users-gabe-Projects-callisto/575b7a46-37b7-42f0-9db7-b2c329b2abab.jsonl
+Continue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with "I'll continue" or similar. Pick up the last task as if the break never happened.
