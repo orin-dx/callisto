@@ -1,0 +1,50 @@
+<task-notification>
+<task-id>a59d58990868abbab</task-id>
+<tool-use-id>toolu_01KaSHEkkQ3dTaBR3Rr3E21E</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a15bbbf7-aba0-415d-bfdc-c773ea65cfc7/tasks/a59d58990868abbab.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix: Python identity crash + cross-ecosystem cascade edge resolution" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All 6 tests pass. Here is a summary of what was done:
+
+---
+
+## Summary
+
+### Bug 1 — Python workspaces crash at graph load (Critical)
+
+**Root cause confirmed**: `IdentityResolver::resolve` in `/Users/gabe/Projects/callisto/crates/callisto-graph/src/identity.rs` fell through to `_ =&gt; Err(GraphError::AmbiguousName { name: "unsupported ecosystem", ... })` for `Ecosystem::Pypi`.
+
+**Fixes applied** (two complementary changes):
+
+1. **`identity.rs` lines 74–106**: Added an `Ecosystem::Pypi` arm to `IdentityResolver::resolve()` that reads `pyproject.toml` and checks `[project].name` (PEP 621) then `[tool.poetry].name` (Poetry) — matching the same discovery logic already in `IgnoreWalkLocator`.
+
+2. **`walk.rs` lines 55–63**: Replaced `identity_resolver.resolve(&amp;proj.path, proj.ecosystem)?` with `proj.id.clone()`. The locator already parsed each manifest during project discovery, so re-resolving was redundant and fragile. `IdentityResolver` remains public (used by `callisto-moon`) — only its call site in `walk.rs` was removed.
+
+### Bug 2 — Cross-ecosystem cascade edges silently absent (High)
+
+**Root cause confirmed**: `IdentityIndex::resolve_native` did `self.native.get(&amp;(eco, name))` — a strict same-ecosystem lookup. An npm package depending on a cargo crate by bare name got `resolve_native(Npm, "rust-addon")` which found nothing (the crate is indexed as `(Cargo, "rust-addon")`).
+
+**Fixes applied**:
+
+1. **`identity.rs` lines 175–242**: Rewrote `resolve_native` to try the exact `(eco, name)` lookup first, then fall back to scanning all other ecosystems for `name`. If exactly one cross-ecosystem match exists, it is returned. If multiple distinct `PackageId` values are found (genuine ambiguity), `None` is returned.
+
+2. **`identity.rs` lines 243–272**: Added `resolve_native_with_fallback(eco, name, &amp;mut Vec&lt;Diagnostic&gt;)` — same logic but emits a `DiagnosticCode::UnknownPackage` warning when cross-ecosystem ambiguity is detected.
+
+3. **`walk.rs` line 171**: Switched the edge-building loop from `resolve_native` to `resolve_native_with_fallback` so ambiguity diagnostics surface in the resolver's diagnostic list.
+
+### Tests written
+
+New test file: `/Users/gabe/Projects/callisto/crates/callisto-graph/tests/ecosystem_bugs_test.rs` — 6 tests, all green:
+- `python_workspace_loads_without_crashing` — PEP 621 pyproject.toml
+- `python_workspace_poetry_style_loads_without_crashing` — Poetry pyproject.toml
+- `mixed_cargo_python_workspace_loads_without_crashing` — both ecosystems together
+- `cross_ecosystem_npm_to_cargo_dep_edge_is_discovered` — npm→cargo DepEdge integration test
+- `resolve_native_falls_back_across_ecosystem_boundary` — unit test for cross-eco fallback
+- `resolve_native_deduplicates_same_bare_name_across_ecosystems` — unit test for dedup behavior
+
+### Pre-existing failures (not introduced)
+
+`aggregate::tests::test_union_fixed_stale_member_emits_diagnostic_and_is_skipped` was already failing in the working tree (`aggregate.rs` was already `M` in git status before this task). `graph_tests.rs` was also already broken (`ParseError::EmptySummary` variant doesn't exist). Neither is related to these changes.</result>
+<usage><subagent_tokens>81547</subagent_tokens><tool_uses>53</tool_uses><duration_ms>798006</duration_ms></usage>
+</task-notification>
