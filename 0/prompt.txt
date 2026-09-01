@@ -1,0 +1,40 @@
+<task-notification>
+<task-id>a55307b2030b9f7b6</task-id>
+<tool-use-id>toolu_01QE1ugrcn1uEpYHrRAfExnT</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/dc5ff9d8-ad6b-4ac9-8548-df397504bb34/tasks/a55307b2030b9f7b6.output</output-file>
+<status>completed</status>
+<summary>Agent "Maintainability sweep: duplication and drift" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Good, that confirms the design intent. I now have enough evidence for all 5 items.
+
+## 1. gix-vs-CommandRunner git-access split — full call-site audit
+
+Every `callisto_vcs::GitRepository::discover` call site outside `callisto-vcs` itself and its own test module:
+
+| Site | Fallback? |
+|---|---|
+| `crates/callisto-graph/src/changed.rs:32` | Yes — `if let Ok(repo)` falls through to `CommandRunner` (the original correct pattern). |
+| `crates/callisto-graph/src/tags.rs:34` (`fetch_all_tags`) | Yes — fixed this session, mirrors `changed.rs`. |
+| `crates/callisto-graph/src/aggregate.rs:181` | **No.** `.ok()` collapses to `None`; `resolve_since` (aggregate.rs:123-125) then just returns `None` — no `CommandRunner` path exists at all. On wasm this silently degrades severity inference to an **unbounded full-history commit walk** (the exact bug the adjacent test at aggregate.rs:511-512 documents as the thing to avoid) rather than crashing. Silent, not a crash, but real drift from the intended "scoped since" behavior. |
+| `crates/callisto-conventional/src/window.rs:28` (`fetch_commits`) | **No.** `_runner: &amp;dyn CommandRunner` is an explicitly discarded parameter (Taxonomy 1); `GitRepository::discover(cwd).map_err(...)?` hard-fails with no fallback. This is called from `callisto-conventional/src/infer.rs:27`, which is invoked by `aggregate()`'s `inference.infer(pkg, window)` — wrapped in `if let Ok(...)` at aggregate.rs, so on wasm this silently drops all conventional-commit severity inference rather than crashing. Same undiscovered-fallback class as the original tags.rs bug, just silently degrading instead of panicking. |
+| `crates/callisto-graph/src/commands/publish.rs:34` | Yes — `if let Ok(repo)` guards `head_sha()`, degrades to `None`. Acceptable (used for optional metadata only). |
+| `crates/callisto-graph/src/commands/tag.rs:27` (`create_tags_with_options`) | **No, and worse.** `let repo = callisto_vcs::GitRepository::discover(&amp;ws.root)?;` uses `?` directly — no fallback, no `Option`. Function takes `Workspace&lt;'_, R, D&gt;` with `R: CommandRunner` but never touches `runner` for git access at all; `list_tags`/`create_tag`/`create_floating_major` (tag.rs:61-82) are gix-only mutating calls. On wasm, `callisto tag`/`callisto publish`'s tag-creation step hard-crashes on the very first call, identical in shape to the original tags.rs bug — this is a **new, unfixed instance**, not yet in the ledger. |
+| `crates/callisto-graph/src/commands/snapshot.rs:12` | Yes — degrades to `String::new()`/`"0000000"` sha (already flagged separately in FINDINGS.md as its own bug, unrelated to fallback shape). |
+
+## 2. Test-double duplication
+
+Hand-rolled `CommandRunner` impls: `crates/callisto-cli/src/runner.rs:8` (`CliCommandRunner`, real), `crates/callisto-moon/src/runner.rs:15/47` (`MoonCommandRunner`, real, feature-gated), and six test-only doubles — `NoopRunner` (`callisto-graph/tests/manifest_cache_test.rs:24`), `ValidateArgTestRunner` (`callisto-graph/tests/graph_tests.rs:476`), `RealGitRunner` + `PoisonedRunner` (`callisto-graph/src/aggregate.rs:416,455`), `FakeGitTagRunner` (`callisto-graph/src/tags.rs:212`), `ScriptedRunner` (`callisto-graph/src/commands/publish_client.rs:321`), and a second, near-identical `PoisonedRunner` (`callisto-conventional/src/window.rs:68`). The two `PoisonedRunner`s and their accompanying `run_git`/`init_repo` helper functions (`aggregate.rs:438-444` vs. `window.rs:87-91`) are duplicated almost verbatim. `RegistryClient` mocks: `MockRegistryClient` (`callisto-graph/src/commands/publish.rs:311`). `callisto-fixtures` (`crates/callisto-fixtures/src/{lib,corpus}.rs`) currently holds only static corpus data — no `CommandRunner`/repo-mock helpers — confirming this is genuine unconsolidated duplication a shared fixture crate could absorb.
+
+## 3. ARCHITECTURE.md status legend staleness
+
+Python engine is correctly updated: `ARCHITECTURE.md:517` shows `**STATUS: [LIVE: IMPLEMENTED]**`. However there is no equivalent status marker for the moon protocol fix or the publish orchestrator — `ARCHITECTURE.md` section 9 (line 302, "GitHub Actions Orchestration") still describes the pre-fix flow verbatim: `Action-&gt;&gt;CLI: callisto plan-publish --format json` / `Sequential cargo publish in topological order with exponential backoff` (`ARCHITECTURE.md:327-328`), not the new `callisto publish` command backed by `PublishOrchestrator`/`SubprocessRegistryClient`. Section 8 (`ARCHITECTURE.md:296-300`, "Moon WASM Plugin Binding") is generic prose, not updated to mention the `warpgate_pdk::exec` host-exec bridge. `docs/01-spec.md` itself was not stale — it already specified `exec_command`/`MoonCommandRunner` correctly (`docs/01-spec.md:9843-9905`); code caught up to spec, not the reverse.
+
+## 4. `gix_wasi_spike.rs` — dead-end R&amp;D spike still in tree
+
+`crates/callisto-moon/examples/gix_wasi_spike.rs` remains, clearly headed `//! R&amp;D SPIKE — not production code.` (line 1) and cross-referenced from the real fix's rationale comment (`crates/callisto-moon/src/runner.rs:9-13`). It is not wired into any build path as production code, but its `[dev-dependencies]` (`crates/callisto-moon/Cargo.toml:37-45`, pinned `gix-odb`/`gix-ref`/`gix-object` etc.) are still part of the workspace's default `:audit` moon task and get scanned by `cargo-deny` on every CI run (confirmed in `.moon/cache/runReport.json`'s `callisto-moon:audit` entry), adding supply-chain audit surface for a proven-NO-GO path. Recommend either removing it or moving it to a `dead-ends/` doc-only reference (non-compiling) to stop it consuming audit budget.
+
+## 5. "Fetch once, reuse" pattern inconsistency
+
+`tags.rs`'s `fetch_all_tags` (`crates/callisto-graph/src/tags.rs:33-40`) is a named, documented function returning `Result&lt;Vec&lt;String&gt;, GraphError&gt;` with an explicit gix-try/`CommandRunner`-fallback body, consumed once by `TagIndex::build`. `aggregate.rs`'s equivalent (`aggregate.rs:181`) is an inline `let repo = ...discover(...).ok();` with no named function, no fallback, producing `Option&lt;GitRepository&gt;` (a handle, not data) consumed by a separate `resolve_since` helper (`aggregate.rs:123-125`) that has no `CommandRunner` path at all. A future maintainer has to learn two different shapes for "fetch once" — one that degrades via CommandRunner, one that silently returns `None` — for what the code comments (`aggregate.rs:176-179` vs. `tags.rs:14-22`) claim is the same batching intent.</result>
+<usage><subagent_tokens>53235</subagent_tokens><tool_uses>20</tool_uses><duration_ms>123410</duration_ms></usage>
+</task-notification>
