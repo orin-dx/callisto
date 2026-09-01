@@ -1,0 +1,51 @@
+<task-notification>
+<task-id>a8c8d3e09e5153e02</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a8c8d3e09e5153e02.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement TASK-16 (AC-08 regression test)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Commit succeeded, pre-commit hook passed. Task complete.
+
+## Summary
+
+TASK-16 executed and committed as `c98ae29`.
+
+**Findings:** As predicted by the plan (matching the TASK-07 through TASK-15 pattern), this was a genuine no-red-step regression-proof — the pnpm-over-npm-workspaces precedence logic was already fully implemented in `read_npm_membership` (membership.rs, wired via TASK-04b/TASK-06). I did not take that on faith: I temporarily neutered the precedence branch in `crates/callisto-graph/src/locate/membership.rs` (replacing `if let Some(packages) = read_pnpm_packages(root)` with a dead branch), reran the new test, confirmed it failed with `tools/x` missing from discovered projects, then restored the original code (verified via `git diff` showing zero net change to membership.rs).
+
+Spec AC-08 text was read directly from `.claude/specs/SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json` and matches the plan's fixture and assertions essentially verbatim — no gaps found this time (unlike TASK-12/TASK-14).
+
+One deviation from the plan's draft: the plan's `failing_test.code` used `p.path == PathBuf::from("tools/x")`, which would trip the `clippy::cmp_owned` lint flagged in the task notes. I used `Path::new("tools/x")` instead, consistent with every other test in this file (e.g. `ac04`, `ac06b`).
+
+```json
+{
+  "task_id": "TASK-16",
+  "status": "done",
+  "steps_completed": [
+    "read TASK-16 from plan-track3a-v2.json",
+    "read AC-08 acceptance criterion text from SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json",
+    "wrote ac08_pnpm_workspace_yaml_takes_precedence_over_package_json_workspaces_field test in ignore_walk.rs",
+    "ran test: passed immediately with no implementation change",
+    "adversarially disabled pnpm-precedence branch in membership.rs, reran test, confirmed it failed",
+    "restored membership.rs to original (verified via git diff showing no changes)",
+    "ran full callisto-graph test suite (287 passed)",
+    "ran cargo fmt -p callisto-graph",
+    "ran cargo clippy -p callisto-graph --all-targets -- -D warnings (clean)",
+    "committed"
+  ],
+  "test_result": "pass",
+  "commit_sha": "c98ae29",
+  "criteria_evidence": [
+    {
+      "criterion_id": "AC-08",
+      "test_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs",
+      "test_line": 638,
+      "implementation_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs",
+      "implementation_line": 257
+    }
+  ],
+  "concerns": null
+}
+```</result>
+<usage><subagent_tokens>80213</subagent_tokens><tool_uses>24</tool_uses><duration_ms>385638</duration_ms></usage>
+</task-notification>
