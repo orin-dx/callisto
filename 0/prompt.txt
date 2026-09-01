@@ -1,0 +1,49 @@
+<task-notification>
+<task-id>af813a5d51f12e381</task-id>
+<tool-use-id>toolu_01PJNphcWUoLWDKCLjNiAF9A</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/tasks/af813a5d51f12e381.output</output-file>
+<status>completed</status>
+<summary>Agent "Read-only review of git-discovery batching fix" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Review Summary
+
+I read the full diff across all three files (`crates/callisto-graph/src/changed.rs`, `crates/callisto-graph/src/commands/status.rs`, `crates/callisto-graph/src/commands/publish.rs`), the `GitAccess`/`ShellGit`/`GitRepository` struct definitions in `crates/callisto-vcs/src/access.rs` and `lib.rs`, all `publish_tests.rs` assertions touching `DiagnosticCode::GitDiscoveryFailed`, `crates/callisto-graph/src/tags.rs`'s `TagIndex::build`, and grepped the whole workspace for every other `GitRepository::discover` / `GitAccess::discover` call site. I also ran `cargo build --workspace --all-targets`, `cargo test -p callisto-graph`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo fmt -p callisto-graph -- --check` myself.
+
+**Point 1 (testability honesty) — the framing is accurate, not rationalization.** `GitAccess { native: Option&lt;GitRepository&gt;, shell: ShellGit&lt;'r&gt; }` (`crates/callisto-vcs/src/access.rs:36-39`) has zero interior mutability or caching that would make sharing an instance across packages behave differently than fresh per-package discovery — `head_sha`/`commits_since` just read through to `native` (a `gix::Repository`, read-only here) or fall back to `shell`. So there's no *correctness* risk from sharing, and the claim that the "N→1" reduction is enforced structurally (only `status()` can call `discover` now) rather than measured is a fair, disclosed limitation, not a dodge.
+
+**Point 2 — confirmed fine.** Grepped `publish_tests.rs`; all three tests touching this path (`non_git_workspace_emits_git_diagnostic`, `plan_publish_succeeds_when_git_binary_unavailable`, `plan_publish_release_entry_block_does_not_hard_fail_when_tag_index_is_none`) assert only on `DiagnosticCode::GitDiscoveryFailed`, never on message text. Collapsing the two messages is safe.
+
+**Point 3 — test quality is solid.** `tag_index_with_tag`'s `TagListRunner` is a fully separate `CommandRunner` impl from `RoutingRunner`; `TagIndex::build` (`crates/callisto-graph/src/tags.rs:102-116`) takes its own `runner` parameter, so tag-fetch calls never touch `RoutingRunner`'s counters. `shared_git_access_is_reusable_across_multiple_packages` is not vacuous — verified it actually runs (`cargo test -p callisto-graph --lib changed::` → 5/5 pass).
+
+**Point 4 — scope confirmed.** `git diff --stat` shows exactly the 3 files claimed, no stray changes.
+
+**Point 5 — all green.** Build clean, 18/18 `publish_tests.rs` pass, 5/5 new `changed.rs` tests pass, clippy clean with `-D warnings`, fmt clean.
+
+### Sibling gap (the one thing worth flagging hard)
+
+`crates/callisto-graph/src/commands/snapshot.rs:16` — `plan_snapshot` still does:
+```rust
+let repo = callisto_vcs::GitRepository::discover(&amp;ws.root)?;
+let sha = repo.head_sha()?;
+```
+This is the exact same bug class just fixed in `publish.rs`: `GitRepository::discover` unconditionally fails on `wasm32` (gix excluded from that target), bypassing `GitAccess`'s `CommandRunner` shell fallback entirely. A test comment in `crates/callisto-moon/tests/moon_wasm_sandbox.rs:374-390` documents this exact pattern being fixed once before for `TagIndex::build`/`tags.rs`. In `snapshot.rs` it's arguably worse than the publish.rs case: because it's a `?` propagation (not a soft diagnostic), `plan_snapshot` would hard-fail entirely on wasm32, not just silently omit entries. Note: there's a spec comment (§G.11 invariant #33) requiring resolution failure to surface as a real error, and an existing test `test_snapshot_sha_resolution_failure_is_surfaced_error` — so a correct fix would need `GitAccess::discover(&amp;ws.root, ws.runner).head_sha()?` (gain the shell fallback) while *preserving* the hard-fail-on-total-failure semantics, unlike publish.rs's soft-degrade. This was not touched by the current diff and is out of the explicit task scope, but it's the same defect class and should go on the record.
+
+```json
+{
+  "status": "approved",
+  "issues": [
+    {
+      "file": "crates/callisto-graph/src/commands/snapshot.rs",
+      "line": 16,
+      "description": "plan_snapshot calls callisto_vcs::GitRepository::discover(&amp;ws.root)? directly, same bug class as the head_sha fix just applied in publish.rs: on wasm32 this unconditionally fails (gix excluded from that target), and because it's a bare ?, plan_snapshot hard-errors entirely rather than degrading. Fix should route through GitAccess::discover(&amp;ws.root, ws.runner).head_sha() while preserving the hard-fail-on-total-failure contract required by spec invariant #33 / test_snapshot_sha_resolution_failure_is_surfaced_error. Not introduced by this diff and out of its explicit scope, but the same pattern was already fixed once for tags.rs and again for publish.rs, making this the one remaining instance.",
+      "severity": "suggestion"
+    }
+  ],
+  "sibling_gaps": [
+    "crates/callisto-graph/src/commands/snapshot.rs:16 uses callisto_vcs::GitRepository::discover(&amp;ws.root)? directly instead of GitAccess::discover(...).head_sha(), the same wasm32-hard-fail pattern just fixed in publish.rs's head_sha resolution and previously fixed in tags.rs (per crates/callisto-moon/tests/moon_wasm_sandbox.rs:374-390)."
+  ],
+  "reasoning": "Diff itself is correct and well-tested: GitAccess has no interior mutability (native: Option&lt;GitRepository&gt;, shell: ShellGit&lt;'r&gt;, both read-only across calls), so sharing one instance across packages in status() is behaviorally identical to fresh per-package discovery -- confirmed by reading access.rs directly. The publish.rs diagnostic-message merge is safe because all three publish_tests.rs assertions key off DiagnosticCode::GitDiscoveryFailed only, never message text. The 5 new changed.rs tests are non-vacuous and correctly isolated (TagListRunner vs RoutingRunner are separate CommandRunner impls, confirmed no call-count interference) -- verified by running them. Build/test/clippy/fmt all pass. The one real finding is the snapshot.rs sibling gap: identical bug class (direct GitRepository::discover bypassing GitAccess's CommandRunner fallback) left unfixed in an adjacent command file, which is exactly the kind of gap this review exists to catch even though it's outside the diff's explicit scope. Marking status approved since the diff under review has no must_fix issues and the finding is a suggestion/follow-up, not a defect in the committed work itself; the exit gate should decide whether to require a separate task for it."
+}
+```</result>
+<usage><subagent_tokens>79249</subagent_tokens><tool_uses>26</tool_uses><duration_ms>278556</duration_ms></usage>
+</task-notification>
