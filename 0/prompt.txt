@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>br215z6ui</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8a85b651-0c9a-44fa-9e0a-ac694c4409e1/tasks/br215z6ui.output</output-file>
+<status>completed</status>
+<summary>Background command "cargo llvm-cov -p callisto-cli --ignore-filename-regex '_pdk\.rs' --json --summary-only 2&gt;/tmp/llvm_cov_stderr4.log &gt; /tmp/cli_cov4.json; echo "exit=$?"" completed (exit code 0)</summary>
+</task-notification>
