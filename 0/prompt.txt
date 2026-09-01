@@ -1,0 +1,38 @@
+<task-notification>
+<task-id>a06f7a1ff2ac55b2a</task-id>
+<tool-use-id>toolu_016Wat3vrmz64zPingzY5WeK</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/08ccaac1-3846-4134-8b06-140e5b9c22f2/tasks/a06f7a1ff2ac55b2a.output</output-file>
+<status>completed</status>
+<summary>Agent "Exit-gate Track 5 spec" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Verdict: **FAIL** (retry_count 1 → 2)
+
+Verdict written to `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/verdict-track5-r2.json` (schema-validated against `/Users/gabe/Projects/agent-plugins/shared/schemas/verdict@1.json`).
+
+### Round-1 fixes: all six verified against live code
+
+| # | Status | Evidence |
+|---|---|---|
+| 1 | Holds mechanically | The four literal fragments exist **only** at `pr_body.rs:191/199/206/212` — repo-wide grep returns 4 hits, zero collision with the Summary table labels at 99-124 |
+| 2 | Holds | `BumpReason` has 8 variants; the details match at 177-217 handles 5 + `_ =&gt; {}`. Inference/PreRelease/NewGroupMember are exactly the three gaps. AC-002's example wordings typecheck against the real field types |
+| 3 | Holds | Both sub-cases now have distinct scenarios |
+| 4 | Holds | `render_pr_body_from_plan` is public at `pr_body.rs:29` |
+| 5+6 | Holds | `ChangelogEntry` has exactly two fields (`severity`, `source`), both required — constraining both fully pins the struct |
+
+Every line and type citation in the spec checks out. No TBDs. Scope fits one cycle.
+
+### Five new defects (fresh pass)
+
+**1. AC-001 directly contradicts AC-002** — the disqualifier. AC-001 requires the four fallback strings to grep to 0; AC-002 requires those same four arms to keep producing non-empty output for the no-changelog-file case, adds the three new arms "inside the same match (lines 178-216)", and calls Cascade "(pre-existing coverage)." Delete them → AC-002's Cascade test fails. Keep them → AC-001's grep fails. AC-001's justification is also false: rewording satisfies the grep while deleting nothing. Round 1 traded an enum-name collision for a collision with the spec's own retained-fallback requirement. The fix is architectural — the match is *retained* as the else-branch; replace the grep with a positive differential assertion.
+
+**2. AC-004 vs AC-005 arithmetic** — AC-005's "entries.len() == changeset count + 1" is absolute, but a never-tagged group member with a changeset and a group-union reason satisfies AC-004 too, demanding a second extra entry. Ordering of AC-004's entry is also unspecified.
+
+**3. AC-003 leaves Inference-with-empty-`commits` undefined** — AC-006 no longer covers it (AC-003 gives Inference a mapping), so the `match commits.first()` else-branch has no guidance. `commit_count` and `commits` are independent fields with no type-level invariant.
+
+**4. AC-003/AC-004 omit the `pkg.changelog.is_some()` precondition** that `version.rs:148` gates on and that AC-006 already states — making both unsatisfiable, not vacuous, on a fixture without a changelog file.
+
+**5. AC-007 covers one of two error paths** — `render_section` also returns `SeverityNoneEntry` via `group_entries(...)?` at `render.rs:9`. Reachable by exactly the hand-constructed-`VersionPlan` route AC-007 itself mandates.
+
+Blocker 1 fails the spec on its own; 2-5 each independently fail the "implementer must make a judgment call about what correct means" bar. Does not proceed to `vector:planner`. **Next round is the last before escalation.**</result>
+<usage><subagent_tokens>71058</subagent_tokens><tool_uses>18</tool_uses><duration_ms>298410</duration_ms></usage>
+</task-notification>
