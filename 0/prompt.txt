@@ -1,0 +1,112 @@
+<task-notification>
+<task-id>a9cbf1d2eebe77623</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/0c4c4622-1ed8-4f2c-80e6-f0890a2dad72/tasks/a9cbf1d2eebe77623.output</output-file>
+<status>completed</status>
+<summary>Agent "Audit git test fixtures for hermetic isolation gaps" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Good — exit code 1 means no matches, confirming callisto-changelog, callisto-format, callisto-manifests, and callisto-model have no real-git-repo test fixtures. That completes the inventory sweep.
+
+Now compiling the final report.
+
+## Report: Git-Repo Test Fixture Hermeticity Audit
+
+### Centralized fixture status
+
+`crates/callisto-fixtures/src/git.rs` **does** have a shared `init_repo` helper, but it does **not** guard gpgsign:
+
+```rust
+// crates/callisto-fixtures/src/git.rs:24-42
+pub fn run_git(dir: &amp;Path, args: &amp;[&amp;str]) {
+    let status = std::process::Command::new("git")
+        .args(args).current_dir(dir).status()
+        .expect("git must be installed to run this test");
+    assert!(status.success(), "git {args:?} failed in {dir:?}");
+}
+
+pub fn init_repo(root: &amp;Path) {
+    run_git(root, &amp;["init", "-q"]);
+    run_git(root, &amp;["config", "user.email", "test@example.com"]);
+    run_git(root, &amp;["config", "user.name", "Test"]);
+}
+```
+
+It sets `user.email`/`user.name` correctly (good — hermetic against missing global identity), but sets nothing for `commit.gpgsign`/`tag.gpgsign`, and doesn't pin `-b main` on init. It is used by only two callers: `crates/callisto-conventional/src/window.rs:52` and `crates/callisto-graph/src/aggregate.rs:517`. Every other crate independently duplicates its own version of this same helper.
+
+### Full inventory of independent git-repo-creating helpers
+
+| File | Function | Commits? | Tags? | gpgsign guarded? | user.name/email set locally? |
+|---|---|---|---|---|---|
+| `crates/callisto-fixtures/src/git.rs:38` | `init_repo` (canonical, shared) | via callers | via callers | **No** | Yes |
+| `crates/callisto-vcs/src/lib.rs:703` | `init_repo` (local dup) | Yes (many call sites) | Yes | Only tag calls (`-c tag.gpgSign=false`); commits unguarded except one test (`:1104`, ad hoc `commit.gpgsign=false`, inlined not via helper) | Yes |
+| `crates/callisto-vcs/src/access.rs:174` | `init_repo` (local dup) | Yes | Yes | Tag calls guarded (`:188`, `:246`); commits unguarded | Yes |
+| `crates/callisto-vcs/tests/revwalk_bound_count_test.rs:23` | `init_repo` (local dup) | Yes | No | **No guard at all** | Yes |
+| `crates/callisto-moon/tests/moon_wasm_sandbox.rs:300` | `run_git` (async, local dup) | Yes (`:404`,`:676`) | Yes, guarded (`:407`,`:679`) | Commits unguarded | Yes |
+| `crates/callisto-cli/tests/common/mod.rs:11` | `setup_polyglot_git_repo` | Yes (`:58`) | No | **No** | Yes |
+| `crates/callisto-cli/tests/strict_flag_tests.rs:26` | `make_git_workspace` (local, independent of common/mod.rs) | Yes (`:83`, `--allow-empty`) | No | **No** | Yes |
+| `crates/callisto-cli/tests/dry_run_invariant_tests.rs:21` | `git` (local dup) | Yes (`:56`,`:83`) | No (only string field named "tag", not a git-tag call) | **No** | Yes |
+| `crates/callisto-cli/src/commands/version.rs:107` | `run_git` (local dup, `#[cfg(feature="inference")]`) | Yes (`:290`,`:307`) | Yes, guarded (`:293`) | Commits unguarded | Yes |
+| `crates/callisto-graph/src/commands/snapshot.rs:188` | `git_init_with_commit` (local dup) | Yes (`:201`) | No | **No** | Yes |
+| `crates/callisto-graph/src/commands/version.rs` (inline, no named init helper) | ad hoc `Command::new("git")` sequence | Yes (`:392`,`:416`) | Yes, guarded (`:403`) | Commits unguarded | Yes |
+| `crates/callisto-graph/src/aggregate.rs` | imports `callisto_fixtures::git::{init_repo, run_git}` | Yes (many) | Yes, guarded (`:753`,`:959`) | Commits unguarded (inherits fixtures' gap) | Yes (inherits) |
+| `crates/callisto-graph/tests/version_tests.rs` (inline helper, no name) | ad hoc | Yes (`:37`,`:56`) | Yes, guarded (`:24`) | Commits unguarded | Yes (`:46-47`) |
+| `crates/callisto-graph/tests/snapshot_tests.rs:10` | `run_git` (local dup) + inline init sequence | Yes (`:25`) | No real invocation (mocked `tag --list`) | **No** | Yes |
+| `crates/callisto-graph/tests/publish_tests.rs` (inline helper) | ad hoc | Yes (`:52`) | No real invocation (mocked) | **No** | Yes |
+| `crates/callisto-graph/tests/tag_sha_fabrication_test.rs:291` | `init_git_repo` | Yes (`:310`) | Yes (`:373`, real; also mocked elsewhere) | **Yes — the only fully hermetic helper found**, `:307-308` | Yes |
+| `crates/callisto-conventional/src/window.rs` | uses `callisto_fixtures::git::{init_repo, run_git}` | Yes (many) | No | Inherits fixtures' gap | Inherits |
+| `crates/callisto-cli/tests/e2e_tests.rs`, `crates/callisto-cli/tests/cli_tests.rs` | inline `git init` only | **No commit** | No | N/A (no commit/tag risk) | N/A |
+| `crates/callisto-graph/tests/config_resolve_tests.rs`, `init_reconcile_test.rs`, `graph_tests.rs` | inline `git init` (+ `git add` in one case) only | **No commit** | No | N/A | N/A |
+| `crates/callisto-cli/tests/pre_mode_tests.rs` | calls `common::setup_polyglot_git_repo` | via common/mod.rs | No | inherits common/mod.rs gap | inherits |
+
+The single fully-correct exception is `crates/callisto-graph/tests/tag_sha_fabrication_test.rs:291-311` (`init_git_repo`) — it has an explicit code comment already naming this exact bug ("Force local, unsigned lightweight tags/commits regardless of the developer's global git config... never blocks on a missing... signing key") and sets both `commit.gpgsign=false` and `tag.gpgsign=false`. This fix was clearly discovered once and never propagated to the shared `callisto-fixtures` crate or any of the other ~15 duplicated helpers.
+
+### Blast radius summary
+
+- **66** real `git commit` call sites across **16** files.
+- Of those 16 files, only **2** apply any gpgsign guard, and in both cases it's local to one specific test (`callisto-vcs/src/lib.rs:1104`, ad hoc, not via the shared `init_repo`) or one file's dedicated helper (`tag_sha_fabrication_test.rs`). The remaining **14 files / ~60+ commit call sites** are fully exposed to the hang/failure under `cargo nextest` with global `commit.gpgsign=true`.
+- **7 independently duplicated** `init_repo`/`run_git`/equivalent helper functions exist outside the canonical `callisto-fixtures` one (in `callisto-vcs/src/lib.rs`, `callisto-vcs/src/access.rs`, `callisto-vcs/tests/revwalk_bound_count_test.rs`, `callisto-moon/tests/moon_wasm_sandbox.rs`, `callisto-cli/tests/common/mod.rs`, `callisto-cli/tests/strict_flag_tests.rs`, `callisto-cli/tests/dry_run_invariant_tests.rs`, `callisto-cli/src/commands/version.rs`, `callisto-graph/src/commands/snapshot.rs`, `callisto-graph/tests/tag_sha_fabrication_test.rs`) — roughly 10 duplicate implementations total, only 2 crates (`callisto-conventional`, `callisto-graph::aggregate`) actually reuse the shared one.
+- User identity (`user.name`/`user.email`) is set locally per-repo in **every single one** of these helpers — that gap is already closed everywhere. The remaining risk is purely gpgsign.
+
+### Other hermeticity risks (item 5)
+
+- **`init.defaultBranch`**: confirmed as a known, already-hit issue — `callisto-vcs/src/lib.rs:862-866` has an explicit comment stating the ambient default branch may not be `main`/could be `master`, and pins `-b main` on `git init`. This fix is local to that one test only; every other `git init -q` call site (the vast majority) does **not** pin a branch name. Currently this appears benign because most fixtures never `checkout` a named branch, but it's a latent risk for any future test that does (as this one comment demonstrates it already bit someone once).
+- **`credential.helper`**: no matches found; none of these tests perform network operations (clone/fetch/push) against real remotes, so this is low-risk currently but worth a defensive default if that ever changes.
+- **`core.hooksPath` / commit hooks**: no matches found, and none of the fixtures configure `core.hooksPath=/dev/null` or `--no-verify`. If a developer machine has a global `core.hooksPath` (e.g., a global husky/pre-commit setup) pointed at hooks that reject commits without a signed-off-by, ticket reference, etc., these fixture commits could fail non-deterministically. Not confirmed broken, but plausible and cheap to close (`-c core.hooksPath=/dev/null` or unset via the same local config approach used for gpgsign).
+- **`core.autocrlf`**: no matches found. Plausible on Windows machines with global `autocrlf=true`, since none of the fixture files control line endings; likely low priority unless Windows CI is in scope.
+- **Locale-dependent git output / `advice.*` messages**: no test greps raw git stdout for English-locale advice text or porcelain-unstable output in a way that would break under `LANG`/`LC_ALL` variation — checked via the same grep sweep; only `--porcelain`-style or explicit `rev-parse`/`log --format` calls were found, which are locale-stable. No finding here.
+
+### Recommended fix shape
+
+Centralize a single hermetic `init_repo(root: &amp;Path)` in `crates/callisto-fixtures/src/git.rs` that locally (not globally) configures, in order:
+
+```rust
+pub fn init_repo(root: &amp;Path) {
+    run_git(root, &amp;["init", "-q", "-b", "main"]);
+    run_git(root, &amp;["config", "user.email", "test@example.com"]);
+    run_git(root, &amp;["config", "user.name", "Test"]);
+    run_git(root, &amp;["config", "commit.gpgsign", "false"]);
+    run_git(root, &amp;["config", "tag.gpgsign", "false"]);
+    run_git(root, &amp;["config", "core.hooksPath", "/dev/null"]); // optional but cheap
+}
+```
+
+This closes the commit-signing gap at the source for every caller and also fixes the `init.defaultBranch` ambient-config risk by pinning `-b main` (matching the precedent already set in `callisto-vcs/src/lib.rs:862-866`). Any remaining ad hoc `-c tag.gpgSign=false` on individual `git tag` invocations becomes redundant but harmless once the repo-local config is set — could be cleaned up opportunistically, not required for correctness.
+
+**Files that would need touching to adopt it** (either delete their local duplicate and `use callisto_fixtures::git::init_repo`, or hand-patch their inline sequence to match):
+- `crates/callisto-vcs/src/lib.rs` (`init_repo` at `:703`, plus the one-off inline sequence at `:1101-1104` and `:862-868`)
+- `crates/callisto-vcs/src/access.rs` (`init_repo` at `:174`)
+- `crates/callisto-vcs/tests/revwalk_bound_count_test.rs` (`init_repo` at `:23`)
+- `crates/callisto-moon/tests/moon_wasm_sandbox.rs` (`run_git`/inline init at `:393-395`, `:665-667`) — note this one is `async`, so it can't call the sync fixtures helper directly without a wrapper, or the inline sequence needs the two extra `config` lines added by hand
+- `crates/callisto-cli/tests/common/mod.rs` (`setup_polyglot_git_repo`, `:11-27`)
+- `crates/callisto-cli/tests/strict_flag_tests.rs` (`make_git_workspace`, `:26-48`)
+- `crates/callisto-cli/tests/dry_run_invariant_tests.rs` (`git` helper + inline config, `:21-33`)
+- `crates/callisto-cli/src/commands/version.rs` (`run_git`, inline init sequence near `:87-88`)
+- `crates/callisto-graph/src/commands/snapshot.rs` (`git_init_with_commit`, `:188-193`)
+- `crates/callisto-graph/src/commands/version.rs` (inline init sequence near `:382-383`)
+- `crates/callisto-graph/tests/version_tests.rs`, `snapshot_tests.rs`, `publish_tests.rs` (inline init sequences)
+- `crates/callisto-graph/tests/tag_sha_fabrication_test.rs` — already correct; could be simplified to call the shared helper once it exists, but no urgency
+- `crates/callisto-graph/src/aggregate.rs` and `crates/callisto-conventional/src/window.rs` — already import the shared helper, so fixing `callisto-fixtures/src/git.rs` alone fixes these two for free, no per-call-site edit needed
+
+Given `callisto-vcs` and `callisto-cli` (binary crates, likely Layer-2/3 per the workspace's layering doc) are almost certainly allowed to dev-depend on `callisto-fixtures` already (it's a test-only fixture crate), the minimal-risk sequencing is: (1) fix `callisto-fixtures::git::init_repo` once, (2) migrate the 2 existing importers implicitly for free, (3) go crate-by-crate converting each duplicated helper to call the shared one (or, where a dev-dependency edge to `callisto-fixtures` doesn't yet exist for that crate, hand-patch the inline sequence to add the two `gpgsign` config lines — cheapest, lowest-risk patch, doesn't require introducing a new dev-dependency edge under time pressure).</result>
+<usage><subagent_tokens>82924</subagent_tokens><tool_uses>27</tool_uses><duration_ms>213342</duration_ms></usage>
+</task-notification>
