@@ -1,0 +1,1 @@
+Are we confident this will result in a proper release? Also packages that have a diffent bump should be in a separate changeset. A changeset should have related things right? Are all the patch bumps related? If so they can go in one changeset but they are not related to the minor bumps if they are not the same bump level, right? Does that make sense?
