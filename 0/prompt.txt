@@ -1,0 +1,21 @@
+<task-notification>
+<task-id>a92d5cdb28d4724e8</task-id>
+<tool-use-id>toolu_01RBbWoi4b6hJoAqxQtRSif9</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/tasks/a92d5cdb28d4724e8.output</output-file>
+<status>completed</status>
+<summary>Agent "Draft spec for apply_version_plan write batching" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I read the actual code before drafting — `crates/callisto-graph/src/apply.rs` (both loops, and confirmed the two-loop bumps/rewrites structure), `crates/callisto-manifests/src/lib.rs` (the `Manifest` trait, `open`/`OpenContext`, and the pre-existing `open_call_count()` test-observability counter), `crates/callisto-manifests/src/cargo.rs`, `npm.rs`, `python.rs` (every `write_version`/`update_dependency_spec`/`update_optional_dependencies`/private-`persist` implementation), `plan.rs` and `cascade.rs` (exact `VersionWriteTarget`, `DepWriteTarget`, `PlannedBump`, `SpecRewrite`, `RewriteKey` shapes), and `manifest_cache.rs` (the existing read-only cache and its doc comment explaining why apply.rs currently opens per-write).
+
+Key findings that shaped the spec:
+
+- **Asymmetry across ecosystems**: `CargoToml` and `PackageJson` already have a private inherent `persist` method called at the tail of their mutators — for those two, becoming a trait method is a visibility change. `PyprojectToml` has *no* persist method; it duplicates `render()` + `atomic_write(...)` inline three separate times. The spec calls this out explicitly so the implementer doesn't miss that Python needs new extraction work, not just a visibility widening.
+- **`WorkspaceCargoResolver`** (backing `VersionWriteTarget::CargoWorkspacePackage` / `DepWriteTarget::CargoWorkspaceDependency`) has the identical redundant open+persist pattern but is not a `Manifest` trait implementor — confirmed by reading its `write_version`/`write_dependency`/`persist` at cargo.rs lines ~602-712. Per the requirement, this is recorded as an investigation finding in `scope`, not fixed.
+- **The idempotency edge case**: the existing `apply_is_idempotent_when_manifest_already_at_target_version` test proves the handle is opened unconditionally even when the bump is a no-op skip — so "persist at most once" must permit a persist-count of *zero* while still requiring open-count of exactly one for an all-skip group (AC-011).
+- Since no production write-counter existed for persist (only `open_call_count()` for open), the spec proposes a new `write_call_count()`/`reset_write_call_count()` pair in `callisto_manifests::atomic`, mirroring the existing pattern, so acceptance criteria stay externally falsifiable without requiring internal knowledge of `apply_version_plan`.
+
+Spec written to `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/SPEC-APPLY-BATCH-001.json` — 14 acceptance criteria (4 error-case), full `api_surface` covering the new `persist` trait method, the now-pure-mutation methods, the new counters, and `apply_version_plan`'s grouping contract (group key = `PathBuf` as it literally appears in `VersionWriteTarget::Manifest`/`DepWriteTarget::Manifest`, unioned across the bumps-then-rewrites scan, no canonicalization).
+
+This spec has not been run through the `canon-exit-gate` or `canon-verifier` — if you want it formally gated before handing to `vector` for planning, let me know and I'll invoke `canon:canon-exit-gate` and `canon:canon-verifier` against it.</result>
+<usage><subagent_tokens>119481</subagent_tokens><tool_uses>16</tool_uses><duration_ms>265811</duration_ms></usage>
+</task-notification>
