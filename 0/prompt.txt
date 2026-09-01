@@ -1,0 +1,1 @@
+Outside of our skills and agents what are the best practices for SDD in rust? What can we learn from spec-kit, tessl, etc?
