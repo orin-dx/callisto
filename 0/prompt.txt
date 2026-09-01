@@ -1,0 +1,5 @@
+<task-notification>
+<task-id>b5ggr0nu1</task-id>
+<summary>Monitor event: "re-verify baseline after clearing stale wasm build cache"</summary>
+<event>[Monitor timed out — re-arm if needed.]</event>
+</task-notification>
