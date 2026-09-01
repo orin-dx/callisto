@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>b4v6bi67j</task-id>
+<tool-use-id>toolu_01TtoPuZLYP442eUyGHe7716</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/bb531e8d-c394-4e47-a8ae-e4a9ceeca6d2/tasks/b4v6bi67j.output</output-file>
+<status>completed</status>
+<summary>Background command "Test callisto-model first" completed (exit code 0)</summary>
+</task-notification>
