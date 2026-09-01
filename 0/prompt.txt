@@ -1,0 +1,12 @@
+<task-notification>
+<task-id>wzd2cdxkc</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a7b3643b-af0c-4790-a38d-870e88a7dd3e/tasks/wzd2cdxkc.output</output-file>
+<status>completed</status>
+<summary>Dynamic workflow "Implement P0 critical bug fixes across 6 independent tracks (TDD: red-green-commit)" completed</summary>
+<result>{"tracks_completed":6,"t00_moon":"done","t04_action":"done","t05_footer":"done","t01_publish":"done","t02_python":"done","t03_aggregate":"done"}</result>
+<diagnostics>Per-agent results: /Users/gabe/.claude/projects/-Users-gabe-Projects-callisto/575b7a46-37b7-42f0-9db7-b2c329b2abab/subagents/workflows/wf_8766519e-2e5/journal.jsonl — one {"type":"result",...} line per completed agent with its full return value.
+If the result above is empty or unexpected, Read this file BEFORE diagnosing — do not assume agents returned non-empty results.
+To re-run with edited post-processing: Workflow({scriptPath: '/Users/gabe/.claude/projects/-Users-gabe-Projects-callisto/575b7a46-37b7-42f0-9db7-b2c329b2abab/workflows/scripts/callisto-p0-fixes-wf_8766519e-2e5.js', resumeFromRunId: 'wf_8766519e-2e5'}) — agents whose (prompt, opts) are unchanged replay from cache.</diagnostics>
+<usage><agent_count>6</agent_count><agents_done>6</agents_done><agents_error>0</agents_error><agents_skipped>0</agents_skipped><agents_empty_result>0</agents_empty_result><subagent_tokens>363176</subagent_tokens><tool_uses>176</tool_uses><duration_ms>1134477</duration_ms></usage>
+</task-notification>
