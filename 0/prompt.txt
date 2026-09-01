@@ -1,0 +1,265 @@
+This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
+
+Summary:
+1. Primary Request and Intent:
+
+**Standing constraints (must never be violated):**
+- NEVER commit to git without explicit user instruction
+- NEVER bump versions or run release/publish commands
+- `/Users/gabe/Projects/callisto-findings/FINDINGS.md` lives OUTSIDE the repo — must NEVER be committed
+- `callisto publish` must NEVER be invoked against a real registry
+- All changes as uncommitted working-tree edits
+
+**Session requests:**
+- (Continued from prior session) An adversarial audit of the entire Callisto codebase covering happy paths, edge cases, failure cases, errors, architecture, performance, security, DX, and maintainability
+- Synthesize 8 audit agent results into a comprehensive HTML artifact
+- User (frustrated): "How do we still have hard-coded values in the codebase? I've asked many times for you to look for these. I'm not feeling too confident you haven't missed others. Please do a very very thorough analysis"
+- User (mid-turn): "We also need to evaluate what's in the GH action. I feel like even more is not in callisto and can be removed from the action right?"
+
+2. Key Technical Concepts:
+
+- **Callisto**: Rust CLI + moon WASM extension for polyglot monorepo versioning (Cargo/npm/PyPI), byte-compatible with `@changesets/cli`
+- **ApplyPermit**: Zero-sized compile-time dry-run enforcement token
+- **Layer isolation**: Layer 1 (model, format) → Layer 1.5 (vcs) → Layer 2 (graph, manifests) → Layer 3 (cli, moon)
+- **SemVerVersioning / Pep440Versioning / versioning_for()**: Dispatch function that selects versioning strategy by `VersionGrammar`; `versioning_for()` exists but was not called from `bump_target()` or `fixed_group_target()`
+- **GroupTable::resolve()**: Function that builds fixed/linked group table from config — marked `#[allow(dead_code)]`, never called from production code
+- **GroupTable::default()**: What is actually set in `config::load` — always empty, silently discarding all group config
+- **PreMajorInferencePolicy::OFF**: Hardcoded in `aggregate()` — the per-package policy from config is never consulted
+- **ReleaseTrigger**: `Changeset` vs `Auto` — the guard preventing inference for `Changeset`-trigger packages was never added
+- **changesets_dir / ResolvedConfig**: Config field for the changeset directory, defaulting to `.changeset`; graph layer reads it but CLI commands (`add`, `pre enter`) hardcode `.changeset/`
+- **parse_pre_json**: Deserializes `initialVersions` entries with hardcoded `VersionGrammar::SemVer` — breaks Python pre-release lifecycle
+- **PublishPlan vs PublishReport**: Different JSON schemas; dry-run and real-run of `callisto publish` emit completely different structures with no `dryRun` discriminator
+- **MoonProjectLocator**: Only checks `Cargo.toml` and `package.json` to infer ecosystem — silently drops Python packages
+- **atomic_write**: All file writes gated by `ApplyPermit`; uses `NamedTempFile` + POSIX `rename(2)`; creates files with 0600 mode
+- **PreMode serialization**: `PreMode` enum has `#[serde(rename_all = "lowercase")]`, but CLI JSON output hardcodes the strings `"pre"` and `"exit"` in 4 independent sites instead of using serde
+- **`npm publish "$PKG"` vs `npm publish --workspace <name>`**: The action uses positional syntax (expects a directory path), while `callisto publish` uses the correct workspace flag
+
+3. Files and Code Sections:
+
+- **`crates/callisto-graph/src/cascade.rs:386`**
+  - `let versioning = callisto_format::SemVerVersioning;` — hardcoded strategy, crashes for PEP 440 packages
+  - Fix: use `versioning_for(base.grammar()).ok_or(...)?`
+
+- **`crates/callisto-graph/src/groups.rs:130`**
+  - `fixed_group_target` also hardcodes `callisto_format::SemVerVersioning` — same crash for PEP 440 in groups
+
+- **`crates/callisto-graph/src/config/resolve.rs:327`**
+  - `groups: GroupTable::default()` — groups config validated then thrown away; should be `GroupTable::resolve(&raw_groups, &index)`
+  - Critical: `[[fixed-group]]` and `[[linked-group]]` completely inert
+
+- **`crates/callisto-graph/src/config/resolve.rs:304`**
+  - `publish_to: None` — `[[package]] publish-to` config never read; always None at runtime
+
+- **`crates/callisto-graph/src/config/resolve.rs:259`**
+  - `_ => Ecosystem::Npm` — unknown registry `kind` values (including `"pypi"`) silently classified as Npm
+
+- **`crates/callisto-graph/src/aggregate.rs:218`**
+  - `policy: PreMajorInferencePolicy::OFF` hardcoded in `InferenceWindowSpec`
+
+- **`crates/callisto-format/src/pre.rs:95`**
+  - `Version::parse(v_str, VersionGrammar::SemVer)` — forces SemVer grammar on all `initialVersions` entries; `"1.2.3a1"` fails parsing, breaking any Python pre-release workspace
+
+- **`crates/callisto-graph/src/commands/version.rs:27`**, **`apply.rs:144`**, **`apply.rs:161`**
+  - Three independent `.changeset/pre.json` hardcodes; none consult `ws.config.changesets_dir`
+  - Pre-release workflow silently broken when `changesets_dir` is non-default
+
+- **`crates/callisto-graph/src/commands/init.rs:173`**
+  - `ws.root.join(".changeset")` hardcoded; ignores configured dir
+
+- **`crates/callisto-graph/src/commands/publish.rs:103`**
+  - `let tag = if ver.is_prerelease() { Some("next".to_string()) }` — all npm pre-releases tagged as "next" regardless of pre-release identifier
+
+- **`crates/callisto-graph/src/commands/snapshot.rs:112`**
+  - `unwrap_or(callisto_model::Ecosystem::Cargo)` — bare PackageId treated as Cargo in snapshot
+
+- **`crates/callisto-graph/src/commands/tag.rs:59, 94`**
+  - `unwrap_or(callisto_model::VersionGrammar::SemVer)` twice — wrong grammar for Python packages
+
+- **`crates/callisto-graph/src/walk.rs:83-84`**
+  - `_ => (ManifestFormat::PackageJson, "package.json")` catch-all — future ecosystems (Go, etc.) misclassified as npm
+
+- **`crates/callisto-graph/src/aggregate.rs:61`**
+  - `"README.md"`, `"config.json"`, `"pre.json"` exclusions hardcoded
+
+- **`crates/callisto-graph/src/aggregate.rs:289`**
+  - `unwrap_or_else(|| Version::semver(0, 0, 0))` — SemVer fallback for packages with no version
+
+- **`crates/callisto-graph/src/commands/pr_body.rs:48`**
+  - `"https://github.com/orin-dx/callisto"` hardcoded URL in PR body
+
+- **`crates/callisto-graph/src/commands/pr_body.rs:65, 226`**
+  - `"callisto/version-packages"` default branch hardcoded twice
+
+- **`crates/callisto-manifests/src/python.rs:362-370`**
+  - `update_dependency_spec` returns `Ok(())` silently when dependency not found; Cargo/npm return `DependencyNotFound`
+
+- **`crates/callisto-manifests/src/python.rs:285-290`**
+  - `_kind: DepKind` silently dropped — all writes go to same sections regardless of Runtime/Optional/Dev
+
+- **`crates/callisto-manifests/src/python.rs:230-236`**
+  - `"*"` and `">=0.0.0"` sentinels for unconstrained deps — cascade rewrites unconstrained `requests` to `requests>=2.31.0`
+
+- **`crates/callisto-manifests/src/python.rs:252-283`**
+  - `iter_dependencies` misses `[tool.poetry.dev-dependencies]`, `[tool.poetry.group.*.dependencies]`, `[project.optional-dependencies]`
+
+- **`crates/callisto-manifests/src/cargo.rs:200, 291, 481`**
+  - Inline `"Cargo.toml"` strings instead of `ManifestFormat::CargoToml.file_name()`
+
+- **`crates/callisto-manifests/src/cargo.rs:55-77, 232-269`**
+  - `[target.'cfg(...)'.dependencies]` sections never visited in `open` or `iter_dependencies`
+
+- **`crates/callisto-manifests/src/cargo.rs:488-506, 641-648`**
+  - `WorkspaceCargoResolver` doesn't strip/restore BOM — silently removes BOM on write
+
+- **`crates/callisto-manifests/src/lib.rs:46-50`**
+  - `publish_targets()` default has `_ => vec![PublishTarget::None]` catch-all — silent misclassification for unknown ecosystems
+
+- **`crates/callisto-manifests/src/npm.rs:393-403`**
+  - Inline lock-file name strings instead of `ManifestFormat::*.file_name()`
+
+- **`crates/callisto-format/src/bump.rs:298-300`**
+  - Public `bump_version()` function hardcoded to SemVer with nothing in name indicating restriction
+
+- **`crates/callisto-model/src/identity.rs:303-310, 319`**
+  - SHA-1 length 40 and short-SHA 7 hardcoded magic numbers
+
+- **`crates/callisto-model/src/exec.rs:88-89`**
+  - `unwrap_or(0)` in git version parsing — silently treats non-numeric version as 0
+
+- **`crates/callisto-manifests/src/atomic.rs:50-58`**
+  - Directory `sync_all()` errors silently discarded despite claiming durability guarantee
+
+- **`crates/callisto-moon/src/locator.rs:119-138, 161-175`**
+  - Only checks `Cargo.toml` and `package.json`; `pyproject.toml` not checked — Python packages silently absent from graph
+
+- **`crates/callisto-moon/src/extension.rs:27-35`**
+  - Moon version constraint string duplicated — parse string and error message can drift independently; `.unwrap()` on compile-time constant (runtime panic on typo)
+
+- **`crates/callisto-moon/src/extension.rs:94-101, 143-219`**
+  - Unrecognized subcommand silently falls through to `status` — typo in CI invocation appears to succeed
+
+- **`crates/callisto-conventional/src/severity.rs:L5-13`**
+  - `raw_severity` is a hardcoded match: `"feat"` → Minor, `"fix"|"perf"|"revert"` → Patch, `_` → None. No user extension point for custom commit types.
+
+- **`crates/callisto-cli/src/commands/add.rs:180, 183`**
+  - `ws.root.join(".changeset")` and format `.changeset/{filename}` — ignores `ws.config.changesets_dir`
+
+- **`crates/callisto-cli/src/commands/pre.rs:70-71`**
+  - `let pre_dir = ws.root.join(".changeset")` — ignores `ws.config.changesets_dir`
+
+- **`crates/callisto-cli/src/commands/pre.rs:90, 113, 151, 162`**
+  - `"pre"` and `"exit"` mode strings hardcoded in JSON output independently of `PreMode` serde serialization
+
+- **`crates/callisto-cli/src/commands/publish.rs:35, 51`**
+  - Dry-run emits `PublishPlan` (field: `releases`); real run emits `PublishReport` (field: `attempts`) — no `dryRun` discriminator, different schemas
+
+- **`crates/callisto-cli/src/commands/snapshot.rs:41`**
+  - `refresh_lockfiles: false` permanently hardcoded; flag exists on `version` but absent from `snapshot`
+
+- **`crates/callisto-cli/src/commands/status.rs:44`**
+  - `ExitCode::from(2)` — magic number, no named constant
+
+- **`.github/actions/callisto-action/action.yml:213-222`**
+  - `npm publish "$PKG" --access public || true` — wrong syntax (positional name not `--workspace`), no auth, errors suppressed
+
+- **`.github/actions/callisto-action/action.yml:159-223`**
+  - `pypiPackages` from plan JSON never extracted; no `twine` call; PyPI packages never published
+
+- **`.github/actions/callisto-action/action.yml:170-172`**
+  - `NPM_TOKEN` set in workflow env but never read by action; no npm auth configured
+
+- **`.github/actions/callisto-action/action.yml:228-229`**
+  - `callisto tag ... || true` and `git push origin --tags || true` — failures suppressed
+
+- **`.github/actions/callisto-action/action.yml:147-151`**
+  - `publishedPackages` output written from plan before publish runs; never updated with actual results
+
+- **`.github/actions/callisto-action/action.yml:240`**
+  - Prerelease regex `-(alpha|beta|rc|pre|next)` requires hyphen; PEP 440 `1.0rc1` does not match → published as stable GitHub Release
+
+- **`.github/actions/setup-callisto/action.yml` and `setup-callisto-wasm/action.yml`**
+  - `orin-dx/callisto` hardcoded in 4 URL constructions; should be `${{ github.repository }}`
+
+- **`/private/tmp/.../scratchpad/callisto-audit.html`** (scratchpad, published as artifact)
+  - Comprehensive audit report artifact published at: https://claude.ai/code/artifact/eb0d2641-8f89-4f09-9f4f-87103b2001f8
+  - Contains 40 findings from round 1; needs update with ~60+ new hardcoded-values findings
+
+- **`/Users/gabe/.claude/projects/-Users-gabe-Projects-callisto/memory/feedback_hardcoded_values.md`**
+  - Saved memory about user frustration with missed hardcoded values; instructions to always include a dedicated pass in any audit
+
+- **`/Users/gabe/.claude/projects/-Users-gabe-Projects-callisto/memory/MEMORY.md`**
+  - Memory index file
+
+4. Errors and fixes:
+
+- **Hardcoded `SemVerVersioning` in cascade.rs found late**: The prior full audit (8 agents) surfaced this as Critical. User was frustrated that hardcoded values keep appearing despite being asked to look for them. The assistant launched 5 more dedicated hardcoded-values agents covering every crate and the GitHub Actions layer.
+
+- **Memory system not initialized**: On user feedback about hardcoded values, the assistant created the memory directory and files for the first time in this project.
+
+5. Problem Solving:
+
+**Round 1 audit synthesis**: Completed. 40 findings organized into 9 categories in the artifact.
+
+**Round 2 hardcoded values audit**: 5 agents completed, finding approximately 60+ additional issues:
+- 3 Critical total (1 new: `parse_pre_json` forces SemVer grammar)
+- Multiple new High findings (SemVerVersioning in groups.rs, add/pre ignore changesets_dir, npm publish wrong syntax, PyPI never published, NPM_TOKEN not read)
+- Many new Medium/Low findings across all layers
+
+**GitHub Actions "move to Callisto" analysis**:
+- The entire publish loop (Block G) should be replaced by `callisto publish` — the bash loop has 3 confirmed High bugs and is a stale duplicate
+- Blocks A, C, D, F, H are already correctly delegated to Callisto CLI
+- Blocks B, I, J are genuinely GitHub-specific (GitHub API calls, git push to remote, release creation)
+- Block E (git commit/push/PR) stays in the action but `git add -A` may be redundant with callisto's internal staging
+
+**The `changesets_dir` gap**: The graph layer (aggregate.rs) reads `cfg.changesets_dir` correctly, but `callisto add`, `callisto pre enter`, `apply.rs`, `version.rs`, and `init.rs` all hardcode `.changeset/`. This means a non-default `changesets_dir` breaks the entire workflow silently.
+
+6. All user messages:
+
+- "Let's go through our spec and codebase and understand not just our happy path but anything else. We don't always do a good job of planning for edge cases, failure cases, errors, etc. Let's be very intentional and comprehensively understand and document these states so we can identify gaps and bugs. Then let's do an adversarial analysis on the results and consider our architecture, performance, security, DX and maintainability." (from prior session, carried forward)
+
+- "How do we still have hard-coded values in the codebase? I've asked many times for you to look for these. I'm not feeling too confident you haven't missed others. Please do a very very thorough analysis"
+
+- (Mid-turn, while agents were running): "We also need to evaluate what's in the GH action. I feel like even more is not in callisto and can be removed from the action right?"
+
+7. Pending Tasks:
+
+- **Update the audit artifact**: The existing artifact at https://claude.ai/code/artifact/eb0d2641-8f89-4f09-9f4f-87103b2001f8 shows round 1's 40 findings. All 5 hardcoded-values agents have completed. The artifact needs to be updated with:
+  - New hardcoded values section (~60+ additional findings)
+  - GitHub Actions section: hardcoded values + "what belongs in Callisto" analysis
+  - Updated summary counts and risk matrix
+  - The 6 confirmed GitHub Action bugs
+
+- **No code fixes have been implemented** — all findings are documented only; user has not requested fixes yet for the new findings
+
+8. Current Work:
+
+All 5 hardcoded-values audit agents completed sequentially:
+1. a2ded7e20fa135ffd (vcs/conventional/changelog/moon/fixtures) — completed
+2. adc4d2cb086e02bcf (manifests/format/model) — completed, found Critical: `parse_pre_json` SemVer hardcode
+3. ab0536209862fb278 (callisto-graph) — completed, found Critical: groups config discarded, 24 additional findings
+4. a9592e9c03adda7e3 (callisto-cli) — completed, found High: changesets_dir ignored, publish schema mismatch
+5. a9ba4d60f28a7220d (GitHub Actions) — completed, found 6 bugs and full "move to Callisto" analysis
+
+The assistant's last action was acknowledging all 5 agents completed and stating it was about to synthesize everything into a comprehensive updated artifact: "All 5 agents complete. Now synthesizing into a comprehensive updated artifact — the findings count is substantially larger than round 1."
+
+The artifact file is at:
+`/private/tmp/claude-501/-Users-gabe-Projects-callisto/575b7a46-37b7-42f0-9db7-b2c329b2abab/scratchpad/callisto-audit.html`
+
+Published URL: https://claude.ai/code/artifact/eb0d2641-8f89-4f09-9f4f-87103b2001f8
+
+9. Optional Next Step:
+
+The immediate next step is to update the audit artifact with all new findings from the 5 hardcoded-values agents. The user asked for a "very very thorough analysis" and also wants the GitHub Actions evaluation. All agent data is in context. The artifact needs:
+
+1. Updated summary counts (was 40 findings, now ~100+)
+2. New "Hardcoded Values & Wiring Gaps" section with all new findings organized by severity
+3. Updated "GitHub Actions" section covering:
+   - All hardcoded values in the action
+   - The 6 confirmed bugs (npm publish wrong syntax, PyPI never published, NPM_TOKEN not read, tag/push errors suppressed, publishedPackages shows plan not results, PEP 440 prerelease regex)
+   - "Move to Callisto" disposition for each action block
+4. Updated risk matrix
+
+The work was interrupted by this summary request immediately after the last agent completed. The next step is directly continuing the synthesis that was in progress: updating the artifact file at `/private/tmp/claude-501/-Users-gabe-Projects-callisto/575b7a46-37b7-42f0-9db7-b2c329b2abab/scratchpad/callisto-audit.html` and republishing to the same URL.
+
+If you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/gabe/.claude/projects/-Users-gabe-Projects-callisto/575b7a46-37b7-42f0-9db7-b2c329b2abab.jsonl
+Continue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with "I'll continue" or similar. Pick up the last task as if the break never happened.
