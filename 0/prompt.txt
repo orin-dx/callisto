@@ -1,0 +1,18 @@
+<task-notification>
+<task-id>aad03053b9b76f432</task-id>
+<tool-use-id>toolu_013vqtjRjeTeop6CikvhNMke</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/tasks/aad03053b9b76f432.output</output-file>
+<status>completed</status>
+<summary>Agent "Revise Spec A per audit findings" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>The spec is consistent and complete. Both fixes are applied:
+
+1. **AC-008** now explicitly discloses the extra content-identical write on the member CargoToml manifest that occurs when the rewrite hits the workspace-inherited-dependency delegation branch, in addition to the delegation's own pre-existing write to the workspace root manifest. `non_goals[0]` (the "exactly as many opens and disk writes" claim) and `non_goals[3]` (the delegation-branch non-goal) now both name this exception explicitly alongside the pre-existing PyprojectToml exception (AC-013), and are cross-referenced consistently throughout.
+
+2. **AC-009** no longer asks for a literal before/after differential build. It now specifies three concrete, mechanically checkable verifications: (a) the four named existing tests in `apply.rs` continue passing unmodified with identical `ApplyOutcome` assertions, (b) AC-002/AC-003's on-disk-byte assertions hold for every write reachable from `apply_version_plan`, and (c) a new test resets and reads `open_call_count()` around a fixture-driven `apply_version_plan` call, asserting a fixed integer determined from the test's own fixture — no separately-built pre-change binary required.
+
+I also propagated the AC-009 rewording into AC-008 and AC-013's cross-references (both previously said "AC-009's byte-for-byte guarantee," which no longer exists as a single named property — updated to point at the specific check that supports each claim), and validated the file is well-formed JSON.
+
+File overwritten at: `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/spec-manifest-persist-001.json`</result>
+<usage><subagent_tokens>69208</subagent_tokens><tool_uses>13</tool_uses><duration_ms>86160</duration_ms></usage>
+</task-notification>
