@@ -1,0 +1,1 @@
+No, i mean us publishing details of all the bugs provides too much details that nefarious parties could use against our codebase, right?
