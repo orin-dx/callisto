@@ -1,0 +1,112 @@
+<task-notification>
+<task-id>a2d17bcb0264c710b</task-id>
+<tool-use-id>toolu_01BkwcKnAK5sfsQGt5Z2cK7b</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a15bbbf7-aba0-415d-bfdc-c773ea65cfc7/tasks/a2d17bcb0264c710b.output</output-file>
+<status>completed</status>
+<summary>Agent "Audit: git/VCS edge cases and failure modes" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I now have a complete picture. Here is the full audit report.
+
+---
+
+## VCS/Git Layer Audit — Callisto
+
+Pre-check: confirmed the findings ledger has no overlapping items for the areas below.
+
+---
+
+### [High] GitHub Action — exit code 1 (graph error) and exit code 2 (no changesets) are not distinguished
+
+- **Status**: CONFIRMED
+- **Location**: `.github/actions/callisto-action/action.yml:80-84`, `crates/callisto-cli/src/commands/status.rs:29-47`
+- **Classification**: Boundary Condition / Silent Fallback
+- **Root Cause**: The action uses a plain `if callisto status --check; then ... else ... fi` test. `callisto status --check` has three distinct exit codes: `0` = pending changesets found (success), `1` = `ExitCode::FAILURE` = diagnostics error (broken graph), `2` = `ExitCode::from(2)` = no pending changesets (healthy, nothing to do). Both exit 1 and exit 2 are non-zero. The `if` test treats all non-zero as identical, so `HAS_CHANGESETS=false` is set for either. The action then proceeds to the publish branch on a broken graph exactly as it would on a healthy "nothing to release" state.
+- **Failing Scenario**: A workspace with a stale fixed-group member (emits an error-severity diagnostic) causes `callisto status --check` to exit 1. The action sets `HAS_CHANGESETS=false` and runs `callisto plan-publish`, which may then attempt to publish packages against a broken graph or with wrong version calculations.
+- **Severity**: High — a graph diagnostic error on a release branch silently routes to the publish path rather than aborting. The `--check` convention producing three meaningful exit codes only has value if callers distinguish them.
+- **Verification Strategy**: In the action, replace the plain `if` with explicit `status=$?` capture and a three-way branch: `status=0` → `HAS_CHANGESETS=true`; `status=2` → no changesets; anything else → `exit $status` (abort).
+
+---
+
+### [Medium] GitHub Action — `published=true` output is written before publish executes
+
+- **Status**: CONFIRMED
+- **Location**: `.github/actions/callisto-action/action.yml:144`
+- **Classification**: Ordering / Spec Drift
+- **Root Cause**: Line 144 writes `echo "published=true" &gt;&gt; $GITHUB_OUTPUT` unconditionally before the publish step begins at line 155. If the built-in publish loop exits with error (e.g., `exit 1` at line 202 after exhausting retry attempts), `set -e` terminates the shell step with a failure status, but `$GITHUB_OUTPUT` has already been written. Downstream jobs that read `steps.callisto-orchestrate.outputs.published` see `true` even though publishing failed.
+- **Failing Scenario**: A crate publish fails after 12 retries. The step exits with failure. The calling workflow sees `steps.*.outputs.published == 'true'` and proceeds to post-release bookkeeping (tagging, GitHub Release creation, notifications) against a partially-published state.
+- **Severity**: Medium — the output is documented as "whether packages were published" but the current code makes it mean "whether we tried to publish."
+- **Verification Strategy**: Move `echo "published=true"` to after the publish loop completes. Use a `PUBLISH_SUCCESS=false` flag, set it to `true` only on the happy path, and emit the output at the end of the block.
+
+---
+
+### [Medium] GitHub Action — `publishedPackages` output is the plan JSON, not actual publish outcomes; npm failures are silently discarded
+
+- **Status**: CONFIRMED
+- **Location**: `.github/actions/callisto-action/action.yml:149-151, 214, 220`
+- **Classification**: Silent Fallback / Spec Drift
+- **Root Cause**: Lines 149-151 set `publishedPackages` to `$PLAN_JSON` — the output of `callisto plan-publish`, which is what was scheduled to publish, not what actually succeeded. Lines 214 and 220 both use `npm publish ... || true`, so npm publish failures are never observed. Any number of npm packages can fail to publish; the output still lists all of them as "published." Callers reading `publishedPackages` for post-release automation receive incorrect data.
+- **Failing Scenario**: An npm package publish returns an auth error. `|| true` discards it. `$GITHUB_OUTPUT` still lists that package in `publishedPackages`. A downstream `create-release` job reads `publishedPackages`, creates GitHub Release entries for the npm package, and links release assets to a package that was never actually pushed to the registry.
+- **Severity**: Medium — the output is described as "JSON list of published packages" but acts as "JSON list of packages that were attempted."
+- **Verification Strategy**: Track per-package publish outcomes. Only include a package in `publishedPackages` after its publish command exits 0. Remove `|| true` for npm (or check exit code explicitly) and surface npm failures.
+
+---
+
+### [Medium] `plan_snapshot` calls `GitRepository::discover` directly — no `CommandRunner` fallback for HEAD SHA resolution
+
+- **Status**: CONFIRMED
+- **Location**: `crates/callisto-graph/src/commands/snapshot.rs:16-17`
+- **Classification**: Boundary Condition / Architecture Gap
+- **Root Cause**: Every other git operation in `callisto-graph` (tags, changed, aggregate, conventional) was migrated to `GitAccess::discover` which tries native gix first and falls back to `ShellGit` via `CommandRunner` when gix is unavailable. `plan_snapshot` still calls `callisto_vcs::GitRepository::discover(&amp;ws.root)?` then `repo.head_sha()?` directly — no fallback. On `wasm32`, `GitRepository::discover` always returns `Err(VcsError::RepoNotFound { message: "gix native git operations disabled on WASM target" })`, so `plan_snapshot` always fails with `?` propagation. There is no `ShellGit::head_sha` equivalent, and `GitAccess` doesn't expose `head_sha` through `GitDataSource`.
+- **Failing Scenario**: If the moon WASM extension exposes a `snapshot` command, every invocation on a valid repo fails at the discover call before any version logic runs. Even natively, any environment where gix discovery fails (read-only `.git`, unusual repo layout) has no recovery path.
+- **Severity**: Medium — `snapshot` is the only graph command that cannot fall back to the shell runner for its first git operation. The `GitDataSource` trait doesn't include `head_sha`, which means adding a fallback requires either extending the trait or using a `git rev-parse HEAD` one-off shell call.
+- **Verification Strategy**: Add `fn head_sha(&amp;self) -&gt; Result&lt;CommitSha, VcsError&gt;` to `GitDataSource` with a `ShellGit` implementation that calls `git rev-parse HEAD`, then replace the direct `GitRepository::discover` call with `GitAccess::discover(…).head_sha()`.
+
+---
+
+### [Low-Medium] Shallow clone: `changed_since_last_tag` silently returns `Ok(true)` when the tag's commit is inaccessible
+
+- **Status**: CONFIRMED
+- **Location**: `crates/callisto-graph/src/changed.rs:37-52`
+- **Classification**: Boundary Condition / Silent Fallback
+- **Root Cause**: With GitHub Actions default `fetch-depth: 1`, release tags are not fetched unless explicitly requested with `fetch-depth: 0` or a `git fetch --tags` step. When `last.name.as_str()` (e.g., `pkg-a@1.0.0`) is not in the shallow history:
+  1. `git.commits_since(Some(last.name.as_str()), &amp;[])`: native gix's `resolve_commit` finds the ref does not exist in the shallow refstore → returns `Ok(None)` → `commits_since` converts to `Err(VcsError::RefNotFound)`. `GitAccess` falls back to the shell backend, which runs `git log &lt;tag&gt;..HEAD` → git exits 128 ("fatal: bad revision") → `ShellGit::commits_since` returns `Err(VcsError::Git(...))`.
+  2. `if let Ok(commits)` silently discards the error.
+  3. Falls through to `runner.run("git", &amp;["diff", "--quiet", last.name.as_str(), "--", ...], root)?`. `git diff --quiet &lt;tag&gt;` against an unfetched tag also exits 128. `output.success()` is `false` (exit code 128 ≠ 0).
+  4. Returns `Ok(true)` — package is "changed."
+  All packages show as "changed since last tag" in a shallow checkout.
+- **Failing Scenario**: CI workflow using `actions/checkout` with default `fetch-depth: 1` (the GitHub Actions default). `callisto status` marks every package as changed. Severity inference in `aggregate.rs` resolves `since = None` (tag not resolvable) and walks the full shallow history, potentially inflating detected severity.
+- **Note on impact**: `callisto status --check` gates on actual changeset files, not on `changed_since_last_tag`. So a shallow clone doesn't cause spurious version PRs, but every `callisto status` display is misleading and severity inference is unscoped.
+- **Severity**: Low-Medium — systematic false positive in shallow CI checkouts. Neither `callisto-action` nor `setup-callisto` documents `fetch-depth: 0` as a requirement, and `setup-callisto` performs no `git fetch --tags`.
+- **Verification Strategy**: Detect non-zero exit from `git diff --quiet` that indicates a fatal error (exit 128) rather than an actual diff (exit 1). Alternatively, surface the `VcsError::RefNotFound` from `commits_since` as a `Diagnostic::Warning` on the `StatusReport` rather than silently treating it as "changed."
+
+---
+
+## Items audited and found correct / as-designed
+
+**Detached HEAD.** `gix::Repository::head_commit()` (`lib.rs:170`) resolves HEAD by reading the ref and peeling to a commit object. In detached HEAD state, HEAD contains a raw SHA — gix handles this via its ref-store machinery. `head_sha()` works correctly in detached HEAD. `callisto status` and `callisto snapshot` both function in detached HEAD.
+
+**No commits (bare initial state).** `callisto init` performs no git operations; it writes `callisto.toml` and `.changeset/`. `callisto status`: if no last tag exists, `changed_since_last_tag` returns `Ok(true)` immediately at `tags.rs:29-31` (no git op). `TagIndex::build` calls `fetch_all_tags` → `git tag --list` returns an empty list in a no-commit repo; works cleanly. `callisto snapshot` would fail at `head_sha()` because there is no HEAD commit — this is correct and expected; a snapshot of an uncommitted workspace is not meaningful.
+
+**`.git` as a file (worktrees, submodules).** `GitRepository::discover` calls `gix::discover` after `dunce::canonicalize`. The `gix` library follows `gitdir: &lt;path&gt;` pointers in `.git` files as part of its repository discovery, so both worktrees and submodules are handled correctly.
+
+**Multiple tags on the same commit.** `select_last_tag` (`tag.rs:200-258`) iterates all matching candidates, picks the one with the highest version via `Version::compare`, and tiebreaks on `tag.name.as_str() &gt; prev.name.as_str()` (lexicographic) when two tags have equal version values (`tag.rs:231-234`). Deterministic. The equal-version case only arises if the same version string was tagged twice under the same template, which is unusual and the lexicographic tiebreak is documented behavior (lines 231-234 are visible and in the selection algorithm itself, not hidden).
+
+**Annotated vs lightweight tags.** `gix::references().tags()` and `git tag --list` both return all tags regardless of type (annotated or lightweight). `select_last_tag` does not inspect tag type; it only examines the version string extracted by `TagTemplate::extract_version_str`. Both tag types participate in version selection identically.
+
+**Tags with no version (`release`, `v1`).** `extract_version_str` returns `None` for tags that don't match the template's version placeholder pattern. `select_last_tag` skips them at `tag.rs:209` (`let Some(extracted) = ... else { continue }`). Correct.
+
+**Tags that look like versions but aren't (`v1.x`, `v1.0.0-foo-bar-baz` with unusual prerelease).** `Version::parse(extracted, grammar)` fails for `v1.x`; the tag is pushed to `skipped` with a `TagGlobNonVersionMatch` diagnostic (`tag.rs:241-254`). Correct. `v1.0.0-foo-bar-baz` is valid semver with a prerelease identifier and would be included. That is correct behavior.
+
+**Very many tags (10,000+).** Tag listing is O(n) — one pass over the ref-store or `git tag --list` output, one globset-match pass, one linear scan to find the maximum. No artificial limit. At 10,000 tags this is fast in both backends. No concern.
+
+**`git tag` already exists.** `create_tags_with_options` checks `!git.list_tags(Some(tag_str))?.is_empty()` before creating (`tag.rs:79-83`). If the tag exists, creation is skipped silently. The glob used for the check is the exact tag name — no wildcards in a semver-format tag name — so the match is precise.
+
+**`git add` fails (locked index, read-only).** Per the prior session's ledger entry (`apply.rs`), staging failures now propagate via `?` and `output.success()` checks. Confirmed in current code.
+
+**Snapshot with no packages bumped.** `plan_snapshot` bumps all packages unconditionally to the snapshot version (`snapshot.rs:37-43`); an empty graph would have already failed `Workspace::load` earlier. No edge case.
+
+**Two snapshots with same `tag` argument.** `snapshot_tag = "0.0.0-{tag}-{sha_short}"` is deterministic for a given commit and tag argument. Re-running with the same inputs produces the same version string; writing the same version to manifests is idempotent.
+
+**GPG tag signing — behavioral note.** The native gix `create_tag` path never invokes GPG (gix does not implement signing). The `ShellGit` path calls `git tag -a` which *does* respect `tag.gpgSign` from git config. If a user has `tag.gpgSign=true` and gix discovery fails (falling back to `ShellGit`), the shell `git tag` call will attempt GPG signing and likely fail in a headless CI environment. In practice, on native (non-WASM) hosts, gix is always available and its result is authoritative (`create_tag` is a write op; `GitAccess` does not retry through the shell on a discovered repo's failure), so this asymmetry is only reachable on WASM or when gix discovery itself fails. Low severity in typical use.</result>
+<usage><subagent_tokens>106100</subagent_tokens><tool_uses>28</tool_uses><duration_ms>444975</duration_ms></usage>
+</task-notification>
