@@ -1,0 +1,277 @@
+This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
+
+Summary:
+## 1. Primary Request and Intent
+
+The session continued from a prior context-exhausted conversation with these sequential goals:
+
+1. **Implement `[[package-set]]`** (Part A of the scratchpad plan) using TDD — this was in the RED state at session start.
+2. **Implement idempotent `apply_version_plan`** (Part B) — error variant, workspace_version(), and RED tests.
+3. **Pause for architectural reflection** — the user asked me to stop and verify I wasn't going off-track from the plan.
+4. **Audit what's actually implemented** — the user asked for a full status inventory before any further work.
+5. **Comprehensive architectural analysis** — what can each part of Callisto learn from the others, and from Changesets/Knope/Release Please/NX Release?
+6. **Doc and plan cleanup inventory** — identify what's stale, contradictory, or outdated before implementing anything new.
+7. **Spec methodology discussion** — how to do SDD+TDD together in a Rust-native, drift-proof way.
+8. **Track E design question** — what is the best approach to the PackageId ecosystem ambiguity problem (the user had no solution to bring, wanted analysis).
+
+**Security/Operational Constraints (MUST REMAIN IN EFFECT):**
+- NEVER commit to git without explicit user instruction
+- NEVER bump versions or run release/publish commands
+- `/Users/gabe/Projects/callisto-findings/` lives OUTSIDE the repo — must NEVER be committed
+- `callisto publish` must NEVER be invoked against a real registry
+- No emojis in documentation or code
+- TDD discipline: RED → GREEN → REFACTOR; never write production code without a failing test first
+- Sequential fix constraint: fixes for semantically coupled publish pipeline must be sequential, validate after each
+
+---
+
+## 2. Key Technical Concepts
+
+- **`[[package-set]]`** — bulk config-override mechanism in `callisto.toml`. Uses glob patterns (NOT `PackageId` exact match). Applies to ALL packages whose name matches the glob. `[[package]]` always takes priority over `[[package-set]]` for the same package.
+- **`PackagePattern`** — a new type in `callisto-graph/src/config/pattern.rs` wrapping `globset::GlobMatcher`. Has `matches(&PackageId) -> bool` that tests `id.name()` against the glob.
+- **`PackageId::matches()`** — existing method that does exact OR bare-wildcard matching. `Bare("foo").matches(Prefixed(Cargo, "foo"))` → true; `Bare("foo").matches(Prefixed(Npm, "foo"))` → also true. This is Track E's concern.
+- **Idempotent apply** — `apply_version_plan` should check current manifest version against `bump.from`/`bump.to` before writing. Three cases: at-from → write; at-to → skip write but still stage; at-neither → `Err(UnexpectedManifestVersion)`.
+- **`ApplyPermit`** — capability token required for all mutating operations.
+- **`WorkspaceCargoResolver::workspace_version()`** — new method reading `[workspace.package] version` from an already-parsed document. Needed for idempotency guard on CargoWorkspacePackage writes.
+- **Semantic Model approach** — spec concepts (PackageId, Workspace, VersionPlan, ApplyOutcome, PublishPlan), not features. Invariants numbered per concept. Tests named after invariant numbers.
+- **`VersionPlan` serializability** — `VersionPlan` and `PublishPlan` already derive `Serialize`/`Deserialize`/`JsonSchema` but are never persisted. Major missed opportunity (Release Please pattern).
+- **`PackageMatchedNothing`** — error variant exists in `ConfigError` but is never emitted anywhere. Config rules that match no packages silently succeed.
+- **Track E** — `identity.rs::matches()` is unchanged. Bare PackageId still matches any ecosystem. In a polyglot workspace with `cargo:foo` AND `npm:foo`, a `[[package]] match = "foo"` rule applies to both packages identically.
+
+---
+
+## 3. Files and Code Sections
+
+### `crates/callisto-graph/src/config/pattern.rs` (CREATED THIS SESSION)
+New file. `PackagePattern` wraps `globset::GlobMatcher` for glob-based package name matching in `[[package-set]]` blocks.
+
+```rust
+use callisto_model::PackageId;
+use globset::{Glob, GlobMatcher};
+
+#[derive(Clone, Debug)]
+pub struct PackagePattern {
+    raw: String,
+    matcher: GlobMatcher,
+}
+
+impl PackagePattern {
+    pub fn parse(s: &str) -> Result<Self, globset::Error> {
+        let glob = Glob::new(s)?;
+        Ok(Self {
+            raw: s.to_string(),
+            matcher: glob.compile_matcher(),
+        })
+    }
+
+    pub fn matches(&self, id: &PackageId) -> bool {
+        self.matcher.is_match(id.name())
+    }
+
+    pub fn as_str(&self) -> &str { &self.raw }
+}
+```
+
+### `crates/callisto-graph/src/config/mod.rs` (MODIFIED)
+Added `pub mod pattern;` and `pub use pattern::PackagePattern;`.
+
+### `crates/callisto-graph/src/config/resolve.rs` (MODIFIED)
+- Added `use crate::config::pattern::PackagePattern;`
+- Added to `ResolvedConfig` struct:
+```rust
+/// Bulk config-override rules from `[[package-set]]` blocks, in TOML declaration order.
+/// Applied as a fallback when no `[[package]]` rule matches a package.
+pub package_sets: Vec<(PackagePattern, PackageConfig)>,
+```
+- Added a full parsing loop for `raw.package_set` (identical structure to the `raw.package` loop, using `PackagePattern::parse` instead of `PackageId::parse`)
+- Added `package_sets` to the `Ok(ResolvedConfig { ... })` return
+
+Also added earlier this session:
+- `parse_publish_target()` function
+- `#[serde(deny_unknown_fields)]` on Raw structs
+- Unit tests: `test_package_set_is_parsed_into_resolved_config`, `test_typo_in_callisto_toml_is_rejected_not_silently_ignored`, `test_package_override_publish_to_is_parsed_not_discarded`
+
+### `crates/callisto-graph/src/walk.rs` (MODIFIED)
+Added `set_override` fallback after `pkg_override` computation, and replaced all uses of `pkg_override` with `active_override`:
+
+```rust
+let set_override = if pkg_override.is_none() {
+    cfg.package_sets
+        .iter()
+        .find(|(pattern, _)| pattern.matches(&id))
+        .map(|(_, cfg)| cfg)
+} else {
+    None
+};
+let active_override = pkg_override.or(set_override);
+// All subsequent uses of pkg_override replaced with active_override
+```
+
+Also added earlier: `publish_to` override application, duplicate `PackageId` detection.
+
+### `crates/callisto-graph/src/error.rs` (MODIFIED)
+Added `UnexpectedManifestVersion` variant to `GraphError`:
+
+```rust
+#[error("cannot apply version plan: manifest `{}` is at version {}, expected {} (pre-apply) or {} (already applied — safe to retry)", .path.display(), .found.render(), .expected_from.render(), .expected_to.render())]
+#[diagnostic(code(E117), help("..."))]
+UnexpectedManifestVersion {
+    path: PathBuf,
+    expected_from: callisto_model::Version,
+    expected_to: callisto_model::Version,
+    found: callisto_model::Version,
+}
+```
+
+### `crates/callisto-manifests/src/cargo.rs` (MODIFIED)
+Added `workspace_version()` method to `WorkspaceCargoResolver`:
+
+```rust
+pub fn workspace_version(&self) -> Result<Option<Version>, ManifestError> {
+    let raw = match self
+        .document.get("workspace")
+        .and_then(|w| w.get("package"))
+        .and_then(|p| p.get("version"))
+        .and_then(|v| v.as_str())
+    {
+        Some(s) => s,
+        None => return Ok(None),
+    };
+    Version::parse(raw, VersionGrammar::SemVer).map(Some).map_err(...)
+}
+```
+
+Also added BOM handling (`has_bom` field) in prior work.
+
+### `crates/callisto-graph/src/apply.rs` (MODIFIED — RED TESTS ADDED, NO GREEN)
+Three RED tests added at the end of the test module:
+1. `apply_is_idempotent_when_manifest_already_at_target_version` — Cargo.toml at 1.1.0 (already bumped), plan says bump from 1.0.0 to 1.1.0. Should return Ok, not re-bump, still delete changeset, still stage manifest.
+2. `apply_returns_error_when_manifest_has_unexpected_version` — Cargo.toml at 2.0.0 (neither from=1.0.0 nor to=1.1.0). Should return `Err(GraphError::UnexpectedManifestVersion { .. })`.
+3. `apply_stages_changeset_path_even_when_file_already_deleted` — Cargo.toml at 1.1.0, changeset does NOT exist on disk. Should still include changeset path in `outcome.staged`.
+
+**CRITICAL: The actual implementation (GREEN) in `apply_version_plan`'s loop at lines 75-93 has NOT been written.** The loop still unconditionally calls `handle.write_version(&bump.to, permit)?` with no version check.
+
+### `crates/callisto-graph/tests/publish_tests.rs` (MODIFIED)
+Added two integration tests:
+- `package_set_override_applies_to_all_matching_packages` — workspace with pkg-a and pkg-b, `[[package-set]] match = "pkg-*" publish-to = ["none"]`, verifies both are suppressed from rust_crates.
+- `package_rule_takes_priority_over_package_set_rule` — pkg-a has `[[package]]` rule for crates-io, pkg-b does not; `[[package-set]]` suppresses all `pkg-*`; verifies pkg-a appears in plan, pkg-b does not.
+
+Also added earlier: `package_override_publish_to_none_excludes_package_from_plan` (PUB-014).
+
+### `crates/callisto-graph/src/config/raw.rs` (MODIFIED)
+Added `#[serde(deny_unknown_fields)]` to: `RawConfig`, `RawInitConfig`, `RawChangesetsConfig`, `RawCascadeConfig`, `RawValidationConfig`, `RawRegistryConfig`, `RawPackageConfig`, `RawPackageSetConfig`.
+NOT added to: `RawMoonYml`, `RawMoonExtensions`, `RawMoonCallistoConfig` (parse moon.yml, not callisto.toml).
+
+### `docs/00-design.md` (MODIFIED — contradiction identified)
+Section 9.4 "Idempotence — provided by the ecosystem tools, not callisto" contradicts the idempotency guard we're adding to `apply_version_plan`. Needs updating before Part B GREEN is implemented.
+
+### `docs/07-matrix-spec.md` (NEW, UNTRACKED)
+Full spec for `callisto matrix` command (napi-rs/maturin/.NET cross-compilation target auto-discovery, GitHub Actions matrix JSON output). Zero implementation exists. Decision pending: commit as `[PLANNED: SPECIFIED]` or defer/remove.
+
+---
+
+## 4. Errors and Fixes
+
+- **`PackageId::matches()` doesn't support globs** — `[[package-set]]` needs glob matching. Solution: created `PackagePattern` type wrapping `globset::GlobMatcher` instead of using `PackageId` for `package_sets`.
+- **Vec type annotation mismatch** — `let mut package_sets: Vec<(PackageId, PackageConfig)>` still said `PackageId` after switching to `PackagePattern`. Fixed by updating the type annotation.
+- **`deny_unknown_fields` broke CLI integration test** — fixture used `"[workspace]\n"` as callisto.toml content. Invalid section caught by deny_unknown_fields. Fixed by changing fixture to empty string `""`.
+- **Workspace doesn't implement Debug** — `result.unwrap_err()` in version_tests needed Debug. Fixed by using `match result { Ok(_) => panic!(...), Err(e) => assert!(...) }`.
+- **`indoc` not available in callisto-manifests** — replaced with plain string literals using `\n` escapes.
+- **User feedback on parallel fixing** — user's memory includes "Parallel agents for fixes fail on semantically coupled systems even across different files; use parallel for investigation only." Followed throughout.
+
+---
+
+## 5. Problem Solving
+
+**Solved this session:**
+- Part A `[[package-set]]` fully implemented with TDD: `PackagePattern` type, resolve.rs parsing, walk.rs fallback, 2 integration tests + 1 unit test. All 147 lib tests + integration tests pass.
+
+**In progress:**
+- Part B idempotent apply: error variant + workspace_version() added, 3 RED tests written, GREEN implementation not done.
+
+**Identified but not started:**
+- Track E: PackageId ecosystem ambiguity — `identity.rs::matches()` unchanged.
+- Config validation: `PackageMatchedNothing` exists in error.rs but is never emitted.
+- Plan persistence: `VersionPlan` is serializable but never saved to disk.
+- docs/00-design.md §9.4 needs updating.
+- `.claude/plans/polished-meandering-dove.md` needs closing out.
+
+**Architectural insight from status audit:** Tracks A, B, C, D and Batch 2 F-I were all completed by background workflow agents. The broader plan is 90% done. Only Track E and Part B remain from the original work scope.
+
+---
+
+## 6. All User Messages
+
+1. *[Continuing from prior context — no explicit first message, resumed from summary]*
+
+2. "I need you to pause and think. I gave you some reading, I requested a spec and a plan. You need to deliver on the plan based on the spec. What gets you in trouble is losing track of that bigger picture. I want you to make sure we're not losing track of that and going off and changing directions, or getting distracted by a bug that should be addressed in the context of the spec and plan vs as a one-off without thinking of the overall architecture, right? Help me understand what you're doing, that you're not going off and if you are how you're going to stay on track. Don't rush, don't start working. Think, plan and tell me"
+
+3. "I want you to take a look at the scratch pad and all the plans. We need to figure out what's implemented already and what is not first. Don't rush, figure it out first."
+
+4. "[Request interrupted by user for tool use] — set effort to xhigh — Pickup the work I stopped"
+
+5. "Can we think about all of these comprehensively and together as a full architecture? What can each part learn from the other? What are things that should be extracted or re-organized? Anything in regards to these that we can learn from changesets? knope? release please? nx release? etc? Analyze and think more comprehensively about our architecture first. Advise yourself on changes and report back here."
+
+6. "Before we start implementing we can to cleanup plans and docs that are litering our repo and will cause confusion later. What is the current plan, what is outdated, etc"
+
+7. "Then we need to thoroughly flush out all of the details of what we're setting out to implement. What are inputs/outputs, contracts, boundaries, errors, what tests need to cover, what documentation needs to be done. We want to write this in SDD and TDD together right? We want a spec we can verify against and enforce in the most rust native way possible. How do we do all of that? Think of that first"
+
+8. "My fear is we write each of these per feature and not semantically and comprehensively so things drift and bugs appear"
+
+9. "What is the best way to address track E? Help me sort this out, I don't have a solution I'm bringing with me. CRITICAL: Respond with TEXT ONLY. Do NOT call any tools. [...] Your task is to create a detailed summary of the conversation so far..."
+
+---
+
+## 7. Pending Tasks
+
+1. **Answer Track E design question** (current task — text only, no tools)
+2. **Write the semantic model document** — single source of truth for all concepts and invariants across Callisto, before implementing anything
+3. **Update docs/00-design.md §9.4** — remove/update the claim that idempotency is provided by ecosystem tools, not callisto
+4. **Decide on docs/07-matrix-spec.md** — commit as `[PLANNED: SPECIFIED]` or defer/remove
+5. **Close out `.claude/plans/polished-meandering-dove.md`** — archive or delete, only Track E remains
+6. **Implement Part B GREEN** — the idempotency guard in `apply_version_plan`'s manifest write loop (lines 75-93 of apply.rs)
+7. **Implement changeset always-staged fix** (B-4) — `modified_paths.push(cs_path.clone())` regardless of `full.exists()`
+8. **Implement Track E fix** — after design decision is made
+9. **Implement config validation** — emit `PackageMatchedNothing` / `PackageSetMatchedNothing` after workspace walk
+10. **Run full CI** (`just ci`) after all implementations are complete
+
+---
+
+## 8. Current Work
+
+The user asked (in the final message) for Track E analysis — text only, no tools. This is the immediate task.
+
+**Track E background:**
+- `identity.rs::matches()` behavior: `Bare("foo").matches(Prefixed(Cargo, "foo"))` → true; `Bare("foo").matches(Prefixed(Npm, "foo"))` → also true
+- In `walk.rs`, config rule application: `cfg.packages.find(|(p,_)| p.matches(&id))` — for each discovered package, finds the first matching rule. If `[[package]] match = "foo"` is in config and both `cargo:foo` and `npm:foo` are discovered, the SAME rule applies to BOTH packages.
+- `[[package-set]]` using `PackagePattern::matches()` also only checks `id.name()`, ignoring ecosystem — by design (glob semantics apply across ecosystems)
+- Track E asks: should `[[package]] match = "foo"` (bare name) apply to all ecosystems or be restricted?
+
+**The design question:** Is it a bug or a feature that a bare `[[package]]` name pattern applies to multiple ecosystems?
+
+**The key distinction:**
+- For `[[package-set]]`: Multi-ecosystem application is DESIRED — that's the whole point of a bulk override
+- For `[[package]]`: The user likely intends ONE specific package; applying to multiple is probably accidental
+
+**Proposed resolution:** The fix should NOT change `PackageId::matches()` itself (that would break legitimate uses). Instead:
+- After workspace walk (in the same validation pass that would emit `PackageMatchedNothing`), check if any bare-name `[[package]]` rule matched packages in more than one ecosystem. If so, emit a diagnostic warning recommending the user use an ecosystem-prefixed pattern like `cargo:my-lib`.
+- This connects Track E to the config validation work — they're the same validation pass, checking different invariants.
+- `[[package-set]]` is exempt from this warning because multi-ecosystem application is its explicit purpose.
+- This is backwards-compatible (warning not error), gives operators time to migrate configs.
+
+---
+
+## 9. Optional Next Step
+
+The immediate next step is to answer the Track E design question in text (as requested — the current tool-use turn is this summary). After that, the user will decide on direction.
+
+The most recent explicit user request: "What is the best way to address track E? Help me sort this out, I don't have a solution I'm bringing with me."
+
+The analysis above (in section 8 and in the analysis block) constitutes the answer. After delivering it, the next step would be:
+
+1. Write the semantic model document together with the user (agreed approach before any implementation)
+2. Make the Track E design decision based on the analysis
+3. Then implement the remaining work in order: Part B GREEN → Track E → config validation → doc cleanup
+
+If you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/gabe/.claude/projects/-Users-gabe-Projects-callisto/575b7a46-37b7-42f0-9db7-b2c329b2abab.jsonl
+Continue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with "I'll continue" or similar. Pick up the last task as if the break never happened.
