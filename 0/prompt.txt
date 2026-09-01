@@ -1,0 +1,19 @@
+Something else for you to look into and deliberate:
+
+Short answer on the four tools: none of them solve this natively. They're all version-bump/changelog engines; the native-binary-publish-ordering problem is universally solved by bolting napi-rs's own tooling (napi build / napi create-npm-dirs / napi artifacts / napi prepublish) onto a custom CI step, regardless of which one you use.
+
+- Changesets: platform packages are typically listed in .changeset/config.json's ignore array — excluded from changesets' own version-bump/changelog reasoning entirely. A separate build-matrix CI step generates each platform package.json (version copied from the main package, not independently decided) and npm publishs it directly. Changesets only ever publishes the wrapper package, after that matrix step finishes.
+- release-please: same shape — its manifest config only tracks "real" packages; platform dirs are generated/published by a hand-rolled matrix job release-please knows nothing about.
+- Nx release: closest to first-class support, because Nx itself ships this way. It models the platform packages as real projects in the dependency graph, so nx release publish respects topological order (native packages before the wrapper) automatically. The binary build + optionalDependencies injection is still custom, but the ordering is a built-in primitive there in a way it isn't in the others.
+- Knope: lower confidence, but I'm not aware of it having anything special here either — same custom-matrix pattern would apply.
+
+The common thread: version-bump tools treat these platform packages as either invisible or as dumb publish targets whose version is copied, never independently decided. The actual "build N binaries, publish each first, then publish the thing that depends on them" choreography always lives in your own CI, not the release tool.
+
+For your repo specifically, I checked callisto.toml — it's worse than "not sequenced," it's not tracked at all. The [[package]] list only covers 2 crates + 3 npm wrapper packages (cli, napi, vite-plugin). All 10 platform packages (5 for cli, 5 for napi) have zero entry in callisto's publish plan. So right now, even a working callisto run would never publish them — this isn't just an ordering gap, it's a missing step entirely.
+
+Recommendation: yes, wire it into release.yml, structured as three phases:
+1. Callisto does version-decision only (no publish) — it needs to run first regardless, since the platform packages' versions are copied from whatever it decides for cli/napi.
+2. A new build-matrix job (per target) runs napi b/manual package.json generation with the now-knownversion → npm publish for each of the 10 platform packages, keyed off Cargo's oxc-react-docgen/oxc-react-docgen-napi versionthat callisto just decided.
+3. Callisto's actual publish: true step runs last, publishing cli/napi/vite-plugin — by which point their optionalDependencies resolve cleanly.
+
+That's a real workflow restructure (splitting call publish calls, adding a build matrix), not a small patch. Want me to check whether callisto-action/the callisto CLI even exposes a version-only vs. publish-only split before I sketch the actual release.yml changes?
