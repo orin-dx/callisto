@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bqn6x1360</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/c0ad64b2-6440-4937-8328-8d9fd9db278c/tasks/bqn6x1360.output</output-file>
+<status>completed</status>
+<summary>Monitor "wait for git push (b6g9h7kit) to finish" stream ended</summary>
+</task-notification>
