@@ -1,0 +1,240 @@
+This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
+
+Summary:
+1. Primary Request and Intent:
+
+The session continued from a prior conversation. The core requests were:
+
+1. **Launch a sequential workflow** implementing all remaining callisto tracks (E0 spec, Phase 2 auth/registry fixes, E1 napi.rs rewrite, D1-D3 publish orchestrator, E2-E6 matrix feature, Track 0 WASI spike, C2+C3 moon exec-seam, Phase 3 cleanup) with CI validation gates between each step.
+
+2. **Verify everything**: "Let's make sure we check, validate, verify? Quadruple check everything we just did please. Look for stubs, hardcoded values, magic numbers, what should be constants, patterns that should be extracted, etc"
+
+3. **Fix all confirmed bugs**: "Let's fix ALL the bugs we know about. Don't leave things behind please. But let's make sure we run very thorough validation after each set of fixes"
+
+4. **Crate usage question**: "are we appropriately using all of the crates we have for thread safety, output, error output, parallelism, etc?"
+
+**Security/operational constraints (must remain in effect verbatim):**
+- NEVER commit to git without explicit user instruction
+- NEVER bump versions or run release/publish commands
+- `/Users/gabe/Projects/callisto-findings/FINDINGS.md` lives OUTSIDE the repo — must NEVER be committed
+- `callisto publish` must NEVER be invoked against a real registry
+- No emojis in documentation or code
+- TDD discipline: RED → GREEN → REFACTOR; never write production code without a failing test first
+
+2. Key Technical Concepts:
+
+- **Callisto**: Rust CLI + Moon WASM extension for polyglot monorepo versioning (10 crates at /Users/gabe/Projects/callisto)
+- **napi-rs target triples**: 18-entry static lookup table mapping Rust target triples → Node.js `{platform, arch, abi}`. Rust uses `aarch64` but Node.js uses `arm64`; `x86_64` → `x64`; etc.
+- **ManifestRole::Platform**: Variant for napi platform packages carrying `{platform, arch, abi}` fields
+- **NapiTargetsIndex**: Reads `napi.targets` from package.json for each group's main package; previously a stub that always returned empty
+- **napi_drift**: Set-difference between declared triples and group member triples; produces `NapiTargetAddedNotInMembers` and `NapiTargetRemovedStillOnDisk` diagnostics
+- **PublishOutcome**: Enum with `Published` / `AlreadyPublished` variants (returned by `publish()`)
+- **SubprocessRegistryClient**: Dispatches `RegistryClient` calls to cargo/npm/twine CLIs via `CommandRunner`; requires `load_plan()` call before `publish()` to thread per-package metadata
+- **PEP 427 wheel normalization**: Requires collapsing RUNS of `-`, `.`, `_` into single `_` — char-by-char replace is wrong for names like `my--lib`
+- **Injectable env closure pattern**: `fn check_credentials(plan, env: impl Fn(&str) -> Result<String, VarError>)` — avoids `std::env::remove_var` in tests (which is not thread-safe in parallel test runners)
+- **Private Cargo registries**: Need `CARGO_REGISTRIES_<UPPERCASE_NAME>_TOKEN` (e.g., `CARGO_REGISTRIES_CLOUDSMITH_TOKEN`), NOT `CARGO_REGISTRY_TOKEN`
+- **sequential constraint**: Per saved memory — parallel implementation agents fail on semantically coupled systems; parallel only safe for investigation
+- **GroupMember variants**: `Package(PackageId)` and `PlatformManifest { owner, role, path, name }`
+- **PUBLISH_TIMEOUT_SECS**: Named constant = 300 seconds for subprocess publish commands
+- **CapturingRunner / ScriptedRunner**: Test helpers for verifying CLI arg construction vs. output classification
+
+3. Files and Code Sections:
+
+- **`crates/callisto-graph/src/napi.rs`** (FULLY REWRITTEN by E1 agent — confirmed correct)
+  - `NapiTargetsIndex::load`: Now reads `root.join(main_id.name()).join("package.json")`, parses `napi.targets` array
+  - `napi_drift`: Uses `BTreeSet::difference()` — `declared_triples - member_triples` → `NapiTargetAddedNotInMembers`; `member_triples - declared_triples` (disk check) → `NapiTargetRemovedStillOnDisk`
+  - `triple_to_role`: 18-entry static match (correct Node.js arch names: "arm64", "x64", "ia32", "arm", "riscv64", "ppc64", "s390x", "wasm32")
+  - `role_to_triple`: Canonical 4-segment inverse match
+  - Test module with 5 tests including `triple_to_role_known_triples_round_trip` covering all 18 triples
+
+- **`crates/callisto-cli/src/commands/publish.rs`** (MODIFIED this session)
+  - `check_credentials` refactored to injectable closure:
+    ```rust
+    fn check_credentials(
+        plan: &callisto_model::PublishPlan,
+        env: impl Fn(&str) -> Result<String, std::env::VarError>,
+    ) -> Vec<String>
+    ```
+  - Cargo token check now distinguishes crates.io (`CARGO_REGISTRY_TOKEN`) from private registries (`CARGO_REGISTRIES_<NAME>_TOKEN`):
+    ```rust
+    let mut cargo_vars_checked = std::collections::BTreeSet::new();
+    for pkg in &plan.rust_crates {
+        let var = match &pkg.registry {
+            None => "CARGO_REGISTRY_TOKEN".to_string(),
+            Some(name) => format!(
+                "CARGO_REGISTRIES_{}_TOKEN",
+                name.to_uppercase().replace('-', "_")
+            ),
+        };
+        if cargo_vars_checked.insert(var.clone()) && env(&var).is_err() {
+            warnings.push(format!("warning: {var} is not set; cargo publish may fail authentication"));
+        }
+    }
+    ```
+  - Call site: `check_credentials(&plan, |s| std::env::var(s))`
+  - Test helpers (thread-safe, no `remove_var`):
+    ```rust
+    fn missing_env(_var: &str) -> Result<String, std::env::VarError> {
+        Err(std::env::VarError::NotPresent)
+    }
+    fn present_env(_var: &str) -> Result<String, std::env::VarError> {
+        Ok("token".to_string())
+    }
+    ```
+  - 3 tests: `credential_check_warns_when_npm_token_missing` (updated), `credential_check_no_warnings_when_all_tokens_present` (new), `credential_check_private_cargo_registry_checks_correct_var` (new)
+
+- **`crates/callisto-graph/src/commands/publish_client.rs`** (MODIFIED this session)
+  - PyPI glob normalization fixed — PEP 427 run-collapsing:
+    ```rust
+    let normalized = package
+        .name()
+        .to_lowercase()
+        .split(['-', '.', '_'])
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join("_");
+    ```
+  - New test `pypi_glob_pattern_normalizes_dots_to_underscore` — tests `"my-pkg.lib"` → `"dist/my_pkg_lib-1.2.3*"`
+  - `cargo_publish_passes_registry_when_set` updated to assert `-p` and `--locked` are always present
+  - New test `cargo_publish_always_includes_p_and_locked_without_registry`
+
+- **`.github/actions/callisto-action/action.yml`** (MODIFIED this session)
+  - `nativeMatrix` output added to `outputs:` block
+  - `NPM_TOKEN`, `CARGO_REGISTRY_TOKEN`, `TWINE_PASSWORD` added to step `env:` block
+  - `nativeMatrix` emission added before publish step:
+    ```bash
+    NATIVE_MATRIX=$(callisto matrix --format json 2>/dev/null || echo '{"platformTargets":{}}')
+    echo "nativeMatrix=$NATIVE_MATRIX" >> $GITHUB_OUTPUT
+    ```
+
+- **`crates/callisto-graph/src/commands/publish.rs`** (modified by workflow agents)
+  - `package_dir` field populated for npm/pypi packages
+  - Rate-limit retry constants: `MAX_RATE_LIMIT_RETRIES = 10`, `MAX_RETRY_AFTER_SECS = 600`, `DEFAULT_RATE_LIMIT_WAIT_SECS = 60`
+
+- **`crates/callisto-graph/src/groups.rs`** (confirmed correct — adversarial review P1#4 was wrong)
+  - Lines 89-90 already correctly wire `napi_drift`:
+    ```rust
+    if let Some(declared) = napi.declared_for(&g.name) {
+        outcome.diagnostics.extend(napi_drift(g, declared, root));
+    }
+    ```
+  - `napi: &NapiTargetsIndex` parameter has NO underscore — it IS used
+
+- **`docs/07-matrix-spec.md`** — EXISTS (created by E0 agent, 16.2 KB)
+
+- **`crates/callisto-graph/tests/publish_tests.rs`** — existing file with napi platform classification test and topological order test
+
+4. Errors and fixes:
+
+- **CI format-check failure (groups.rs, napi.rs)**: After E1 agent ran, formatting diffs existed. Fixed with `cargo fmt -p callisto-graph`.
+
+- **Lifetime error passing `std::env::var` as function pointer**:
+  ```
+  implementation of `FnOnce` is not general enough
+  `fn(&'2 str) -> Result<String, VarError>` must implement `FnOnce<(&'1 str,)>` for any lifetime
+  ```
+  Fixed by using `|s| std::env::var(s)` wrapper closure.
+
+- **Type error: `.replace('-', '_')` with char**:
+  ```
+  expected `&str`, found `char`
+  ```
+  Fixed: `replace('-', "_")` (string slice).
+
+- **Clippy `manual_pattern_char_comparison`**:
+  ```
+  .split(|c: char| c == '-' || c == '.' || c == '_')
+  ```
+  Fixed: `.split(['-', '.', '_'])` (array pattern).
+
+- **Second format-check failure** in callisto-cli publish.rs after edits. Fixed with `cargo fmt -p callisto-cli -p callisto-graph`.
+
+- **Adversarial review P1 #4 was incorrect**: The review claimed `pre_mutation_checks` had `_napi` underscore and never called `napi_drift`. Confirmed by reading groups.rs that the function already has `napi: &NapiTargetsIndex` (no underscore) and already calls `napi_drift` at lines 89-90. This was already correct before any changes.
+
+5. Problem Solving:
+
+**Solved:**
+- Thread-safety issue with `remove_var` in tests: Solved by injecting env-lookup closure — avoids any process environment mutation, safe under parallel test execution, no `serial_test` dep needed
+- Private registry credential check gap: Solved by per-crate registry field inspection, emitting `CARGO_REGISTRIES_<NAME>_TOKEN` for named registries
+- PyPI glob double-underscore for consecutive separators: Solved with split-filter-join pattern that collapses runs
+- NPM_TOKEN not explicit in action.yml step env block: Added explicit forwarding
+- nativeMatrix missing from action outputs: Added declaration + emission with safe fallback
+
+**Ongoing (CI was running at summary time):**
+- `just ci` was running in background (task b32ts1i1u) after clippy fix — result unknown
+- **load_plan integration guard test** was the next item to add to `crates/callisto-graph/tests/publish_tests.rs` — not yet done
+
+**Absent features (not implemented by any workflow agent):**
+- `callisto matrix` CLI command (E2-E4) — matrix.rs does not exist
+- `callisto-build-action` composite action (E5-E6) — .github/actions/callisto-build-action/action.yml does not exist
+- Track 0 (WASI spike), C2+C3 (moon exec-seam), Phase 3 cleanup — none started
+
+6. All user messages:
+
+- "Are we planning on building the zero-config native matrix auto-discovery?" [from prior session summary]
+- "That can be rolled into the fixes for all the existing issues" [from prior session summary]
+- "you need to consider multi-arch packages (mac arm, linux arm, linux x86, windows for example)" [from prior session summary]
+- "We should consider how the callisto GH action maps this matrix output no?" [from prior session summary]
+- "What would this need to look like for java and C# support" [from prior session summary]
+- "Is it possible to provide the matrix output from the CLI/wasm and allow the user to wire but also provide an out-of-the-box experience where it all works? That integrates with the publish appropriately?" [from prior session summary]
+- "How does this fit with the proposed fixes to all the prior issues?" [from prior session summary]
+- "Are we considering the conversation about the dangers of parallel work on the same codebase?" [from prior session summary]
+- "We definitely need to read the original spec, think through the complexities of rust, ts/js, python and architect this semantically and comprehensively first." [from prior session summary]
+- "Let's fire with agent teams and a workflow using the most appropriate model and effort to balance quality and cost" [from prior session summary — triggered the implementation workflow]
+- "Also, don't forget to verify right? Check tests, check we built what we set out that we didn't add more code debt, etc" [mid-turn during workflow launch]
+- "Let's make sure we check, validate, verify? Quadruple check everything we just did please. Look for stubs, hardcoded values, magic numbers, what should be constants, patterns that should be extracted, etc"
+- "are we appropriately using all of the crates we have for thread safety, output, error output, parallelism, etc?"
+- "Let's fix ALL the bugs we know about. Don't leave things behind please. But let's make sure we run very thorough validation after each set of fixes"
+
+7. Pending Tasks:
+
+**P1 bugs still needing fixes:**
+- **Artifact routing** (action.yml) — stub was added but real `gh run download` logic not implemented (noted as P1 in audit, though depends on matrix feature existing)
+
+**P2 bugs still needing fixes:**
+- **load_plan integration guard test** — `crates/callisto-graph/tests/publish_tests.rs` — was about to be added when summary was requested; verifies `load_plan()` stays wired in CLI `handle()` function (PUB-001 regression guard)
+
+**Absent features (never implemented):**
+- `callisto matrix` CLI command (`crates/callisto-graph/src/commands/matrix.rs`) — E2-E4
+- `callisto-build-action` composite action (`.github/actions/callisto-build-action/action.yml`) — E5-E6
+- Track 0 WASI spike
+- C2+C3 moon exec-seam fix + integration tests
+- Phase 3 cleanup (RegistryError::Network, diagnostics, PUB-007, test architecture)
+
+**CI validation:**
+- `just ci` was running in background (task b32ts1i1u) — result still unknown
+
+8. Current Work:
+
+Immediately before the summary request, the following work was being done sequentially fixing all confirmed bugs:
+
+**Already applied (Group 1 + P2 fixes):**
+1. `check_credentials` refactored to injectable closure (thread-safe)
+2. Private registry credential check fixed per-crate
+3. PyPI dot-normalization test added
+4. PyPI glob run-collapsing normalization fixed
+5. Cargo CapturingRunner test updated to assert `-p` and `--locked`
+6. New `cargo_publish_always_includes_p_and_locked_without_registry` test added
+7. `action.yml` — `nativeMatrix` output declared
+8. `action.yml` — `NPM_TOKEN`, `CARGO_REGISTRY_TOKEN`, `TWINE_PASSWORD` added to step env block
+9. `action.yml` — nativeMatrix emission added (with `|| echo '{"platformTargets":{}}'` fallback)
+
+**About to be done (interrupted by summary):**
+- Adding the load_plan integration guard test to `crates/callisto-graph/tests/publish_tests.rs`
+
+The `just ci` full validation run was in background (task b32ts1i1u). Before the last CI run (which was still running), clippy had failed with `manual_pattern_char_comparison` on the PyPI normalization code, which was fixed by changing `.split(|c: char| c == '-' || c == '.' || c == '_')` to `.split(['-', '.', '_'])`.
+
+9. Optional Next Step:
+
+The immediate next step is to add the load_plan integration guard test to `crates/callisto-graph/tests/publish_tests.rs`, which was being worked on when the summary was requested:
+
+From the audit: "No integration-level test guards against removing `client.load_plan()` from the `handle()` function; the PUB-001 regression guard only exists at the `SubprocessRegistryClient` unit-test level. Removing line 106 (`client.load_plan(&plan)`) from `handle()` would silently reintroduce PUB-001."
+
+The test should verify that the full `handle()` code path calls `load_plan` before `execute` by using a `CwdCapturingRunner` wired through the full `SubprocessRegistryClient + PublishOrchestrator` stack with a `bun.lockb` fixture.
+
+After that, verify the background CI run (task b32ts1i1u) passed, then report the full completion status of all fixes to the user.
+
+The task the user asked for was: "Let's fix ALL the bugs we know about. Don't leave things behind please. But let's make sure we run very thorough validation after each set of fixes" — and specifically the remaining item is the load_plan integration guard test (last P2 item) plus CI verification.
+
+If you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/gabe/.claude/projects/-Users-gabe-Projects-callisto/575b7a46-37b7-42f0-9db7-b2c329b2abab.jsonl
+Continue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with "I'll continue" or similar. Pick up the last task as if the break never happened.
