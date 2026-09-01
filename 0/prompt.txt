@@ -1,0 +1,53 @@
+<task-notification>
+<task-id>a84ce6d4bb3d4bc34</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8a85b651-0c9a-44fa-9e0a-ac694c4409e1/tasks/a84ce6d4bb3d4bc34.output</output-file>
+<status>completed</status>
+<summary>Agent "Audit coverage gaps: moon, model, cli" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Enough evidence gathered across all three crates to write a grounded, actionable report.
+
+## Coverage Gap Audit: callisto-moon, callisto-model, callisto-cli
+
+### callisto-moon (70.89% lines) — mostly NOT a real gap
+
+**runner.rs** (45.21%) and **extension.rs** (54.26%): the entire uncovered surface is the `#[cfg(feature = "pdk")]`-gated code — `MoonCommandRunner`'s pdk impl, `execute_extension`, `initialize_extension`, `register_extension`. This code calls Extism-host-only `extern "C"` imports that don't exist on native linking; the crate's own doc comments (runner.rs:19-50, extension.rs:299-321) document this was verified empirically. **This code is already black-box tested** — via `tests/moon_wasm_sandbox.rs`, which drives the real compiled `.wasm` artifact through an actual Extism/wasmtime host. `cargo-llvm-cov` instruments the native build only, so it structurally cannot see coverage from a separately-compiled wasm binary. **Verdict: not a real gap — a coverage-tool blind spot.** No action closes this within llvm-cov's current methodology; the 70.89% number is misleading for this crate specifically.
+
+The one exception: `extension.rs:31` (a branch inside `check_moon_version` where the input string fails to *parse* as semver, vs. parsing but being out of range) — checked, but both paths produce the identical `Err(IncompatibleMoonVersion)` observable result, so a dedicated test would only hit an internal branch, not new behavior. Excluded as trivial.
+
+### callisto-model (82.17%) — real gaps, worth closing
+
+**tag.rs** (75.17%) — the biggest real find. Core git-tag domain logic, essentially untested beyond the happy path:
+- `TagTemplate::parse`'s three untested error variants: unknown placeholder (`"v{foo}"`), multiple placeholders (`"{version}-{version}"`), glob metacharacters in literal text (`"v*{version}"`). **Error cases.**
+- `TagTemplate::default_for()` — entirely untested. **Happy path.**
+- `extract_version_str`'s mismatch paths (tag doesn't match prefix/suffix). **Error case.**
+- `is_valid_git_ref_name`'s rejection rules beyond the one already tested (leading hyphen): `..`, `@{`, `.lock`-suffixed components, leading-dot components, control chars, `~^:?*[\`. **Edge cases**, currently only reachable indirectly and mostly unexercised.
+- `select_last_tag` (the actual candidate-selection algorithm): grammar-mismatch during comparison, equal-version tie-breaking (higher tag name wins), lower-version-doesn't-replace, and non-version-placeholder-skipped-with-diagnostic. **All error/edge cases on the real selection algorithm** — this picks the release tag; untested tie-breaking is a real risk.
+
+**package.rs** (56.32%) — `Package`'s own query methods have zero direct coverage: `platform_manifests()`, `lockfiles()`, `is_release_point()`, `is_dual_published()`. `ManifestDecl::new`'s other two validation branches (Platform-role-with-CargoToml-format, lockfile-format-with-non-lockfile-role) untested — only one of three rejection rules is covered. `ManifestFormat::from_path`, `file_name()`, `is_writable()` have no direct test at all (14-arm exhaustive matches). **All happy-path/edge-case gaps on real public API**, not indirectly covered elsewhere as far as this file's own tests show.
+
+**report.rs** (80.78%) — checked: 100% of the uncovered lines are repeated `impl Report for X { fn schema_version() { self.schema_version } fn diagnostics() { &amp;self.diagnostics } }` — trivial one-line field accessors on a marker trait, no branching. **Verdict: not worth testing, exclude entirely.**
+
+### callisto-cli (84.03%) — two distinct patterns
+
+**add.rs** (worst file, 87 uncovered lines) is the clearest example:
+- Non-interactive error paths: malformed `package:severity` spec (missing colon), invalid severity string. **Error cases**, easy CLI-level black-box tests (already has good precedent tests right in this file for the *fixed* bugs).
+- The entire interactive wizard (`dialoguer` MultiSelect/Input/Confirm prompts, ~110 lines) is genuinely untested anywhere in the codebase — this isn't a coverage-tool blind spot like moon's case, it's a real absence. Closing it needs pty/terminal-simulation test infrastructure (e.g. `rexpect` or similar), not a simple unit test — flagging as real but structurally bigger work, not a quick add.
+
+Other CLI files (`render/mod.rs`, `runner.rs`, `publish.rs`, `tag.rs`, `version.rs`, `init.rs`, `snapshot.rs`) — spot-checked, follow the same two shapes: untested `--format json` output arms mirroring an already-tested `--format text` arm (real but low-risk gaps, same logic different serialization), and a few interactive/confirmation-prompt paths (same pty-infra gap as add.rs).
+
+### Summary
+
+- **Real gaps found, worth writing tests for now**: ~25-30, concentrated in `tag.rs` (highest value — untested tie-breaking logic in the actual release-tag-selection algorithm) and `package.rs` (untested public query methods and validation branches).
+- **Excluded as not real gaps**: the majority of callisto-moon's uncovered lines (coverage-tool blind spot, already tested elsewhere) and all of `report.rs` (trivial accessors).
+- **Real gap, but needs new infrastructure, not just more tests**: CLI interactive wizards (`add.rs` and others) — needs a pty-based e2e harness, a bigger lift than the rest.
+
+**Priority order for someone writing these next:**
+1. `tag.rs` — `select_last_tag`'s tie-breaking/error paths (highest behavioral risk: this picks what gets released) and `TagTemplate::parse`'s three error variants.
+2. `package.rs` — the four zero-coverage `Package` query methods and the two missing `ManifestDecl::new` validation branches.
+3. `add.rs` and siblings' non-interactive CLI error paths (malformed input, easy black-box tests).
+4. (Separate, bigger effort) pty-based e2e harness for interactive wizards, if that flow is worth the investment — currently zero coverage anywhere, not just in this report.
+
+Not recommended: chasing `callisto-moon`'s or `report.rs`'s numbers up — neither reflects a real testing gap.</result>
+<usage><subagent_tokens>663789</subagent_tokens><tool_uses>10</tool_uses><duration_ms>180006</duration_ms></usage>
+</task-notification>
