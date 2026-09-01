@@ -1,0 +1,22 @@
+<task-notification>
+<task-id>a7fc111ae3155d5a6</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a7fc111ae3155d5a6.output</output-file>
+<status>completed</status>
+<summary>Agent "Review docs/01-spec.md ConfigError completion" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All verification is complete.
+
+## Verdict: All 3 new variants are factually accurate. No discrepancies found.
+
+**1. `InvalidChangesetsDir` / `InvalidChangelogPath` — accurate.** Fields (`dir: String`; `pattern: String, value: String`) and `#[error(...)]` message text match `error.rs` lines 324-338 verbatim. Real source does carry `#[diagnostic(code(E116)...)]` and `#[diagnostic(code(E113)...)]`, but the doc correctly omits them — every other variant in this same `ConfigError` block (and the enum's own `#[derive]` line, which drops `miette::Diagnostic` entirely) follows the no-inline-code convention. No reintroduction of the flagged "E1xx." style.
+
+**2. Doc-comment claims — accurate.** `raw.rs` lines 36-42 (`RawChangesetsConfig.dir`) and lines 74-88 / 96-110 (`RawPackageConfig`/`RawPackageSetConfig.changelog`) genuinely contain the claimed text, naming `ConfigError::InvalidChangesetsDir`/E116 and `ConfigError::InvalidChangelogPath`/E113 and the absolute-or-`..` rejection rule. Construction sites in `config/resolve.rs` (lines 247, 372, 445) match the doc's description exactly — both are `workspace_relative(...)` validation failures.
+
+**3. `VersionParse` "currently unconstructed" — accurate.** Grepped the entire `callisto-graph` crate for `ConfigError::VersionParse`: only the declaration in `error.rs` exists, no construction site. `config/resolve.rs` and `config/groups.rs` (the only functions returning `Result&lt;_, ConfigError&gt;`) contain zero references to `Version`/`Version::parse`. All `Version::parse` calls elsewhere in the crate (cascade.rs, apply.rs, publish_client.rs, publish.rs, tag.rs, snapshot.rs) are test code or unrelated to `ConfigError`'s `?`-conversion path (e.g., `GraphError::VersionParse` is a separate, pre-existing variant).
+
+**4. Declaration order — matches exactly**: `InvalidPreMajorInference` → `InvalidChangesetsDir` → `InvalidChangelogPath` → `Tag` → `VersionParse`.
+
+**5. Fence balance**: `grep -c '^```' docs/01-spec.md` = 402 (even, unchanged).</result>
+<usage><subagent_tokens>57805</subagent_tokens><tool_uses>13</tool_uses><duration_ms>51419</duration_ms></usage>
+</task-notification>
