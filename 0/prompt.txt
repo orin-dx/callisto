@@ -1,0 +1,1 @@
+When the plan is running in CI how do we best handle this? Is there a problem to checking in files that we can forget to clean up? Should it be cached by GH instead?
