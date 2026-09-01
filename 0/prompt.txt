@@ -1,0 +1,272 @@
+This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
+
+Summary:
+1. Primary Request and Intent:
+
+The session continued from a previous conversation where Phase 0 Fix 3 (ManifestRole::Platform wiring in walk.rs) was in progress. The user's stated intent was: "Progress through each phase, loop and validate each phase as they finish before heading to the next one."
+
+Subsequently the user asked about Phase 2, asked for a thorough audit of previous phases ("Have we done everything for the previous phases? Have we validated the fixes? Added tests, updated docs? Checked performance? Checked against the specs and expected output?"), and then requested a comprehensive full-codebase pass: "Let's make a full pass looking for literals that should be (or are constants), for magic numbers, for stubbed content, for gaps. Let's make sure we clean md files with outdated information and update what needs updating before moving on please."
+
+**Security/operational constraints (must remain in effect):**
+- NEVER commit to git without explicit user instruction
+- NEVER bump versions or run release/publish commands
+- `/Users/gabe/Projects/callisto-findings/FINDINGS.md` lives OUTSIDE the repo — must NEVER be committed
+- `callisto publish` must NEVER be invoked against a real registry
+- No emojis in documentation or code
+- TDD discipline: RED → GREEN → REFACTOR; never write production code without a failing test first
+
+2. Key Technical Concepts:
+
+- Callisto: Rust CLI + Moon WASM extension for polyglot monorepo versioning (10 crates)
+- `ManifestRole::Platform { platform, arch, abi }` — variant for napi platform packages; a platform package now gets BOTH a `Canonical` decl (for version/grammar reading) and a `Platform` decl (for publish routing)
+- `detect_npm_role(abs_path: &Path) -> ManifestRole` — reads `os`/`cpu` fields from package.json to classify napi platform packages; has a known double-read performance gap (manifest cache stores `Arc<dyn Manifest>`, not raw JSON)
+- `SubprocessRegistryClient::load_plan(&mut self, plan: &PublishPlan)` — must be called before `orchestrator.execute`; PUB-001 was this call being absent from the CLI handler
+- `PublishOrchestrator::publish_with_retry` — now has `MAX_RATE_LIMIT_RETRIES = 10` iteration cap; previously looped indefinitely on 429 responses
+- `RegistryKey` constants: `CRATES_IO = "cratesIo"`, `NPM = "npm"`, `PYPI = "pypi"`, `NUGET = "nuget"` (all now defined)
+- `PUBLISH_TIMEOUT_SECS = 300`, `MAX_RATE_LIMIT_RETRIES = 10`, `MAX_RETRY_AFTER_SECS = 600`, `DEFAULT_RATE_LIMIT_WAIT_SECS = 60` — all now named constants replacing magic numbers
+- `render_publish` — now renders all four package lists (rust_crates, npm_main_packages, npm_platform_packages, pypi_packages); previously only rendered release tags
+- TDD: RED (compile failure or test failure) → GREEN (implementation) → targeted test validation → full crate test suite → next fix
+- Per-fix validation: every individual change must be validated with targeted tests before moving on (user feedback: "wtf" about batching changes)
+
+3. Files and Code Sections:
+
+- **`crates/callisto-graph/src/walk.rs`**
+  - Added `use serde_json::Value;` import
+  - Added `detect_npm_role` function that reads `os`/`cpu` arrays from package.json; returns `ManifestRole::Platform` with proper `platform`/`arch`/`abi: None` when both present and valid UTF-8 strings; returns `ManifestRole::Canonical` otherwise (including on read/parse failure)
+  - Changed manifest construction: now always pushes `Canonical` decl first, then conditionally pushes `Platform` decl for npm platform packages
+  - Has code comment documenting the double-read performance gap and what would be needed to fix it
+  ```rust
+  let manifest_rel = rel_path.join(filename);
+  if let Ok(decl) = ManifestDecl::new(manifest_rel.clone(), ManifestRole::Canonical, fmt) {
+      decls.push(decl);
+  }
+  if *eco == Ecosystem::Npm {
+      if let ManifestRole::Platform { platform, arch, abi } = detect_npm_role(&root.join(&manifest_rel)) {
+          if let Ok(platform_decl) = ManifestDecl::new(manifest_rel, ManifestRole::Platform { platform, arch, abi }, fmt) {
+              decls.push(platform_decl);
+          }
+      }
+  }
+  ```
+  ```rust
+  fn detect_npm_role(abs_path: &Path) -> ManifestRole {
+      let Ok(bytes) = std::fs::read(abs_path) else { return ManifestRole::Canonical; };
+      let Ok(Value::Object(map)) = serde_json::from_slice(&bytes) else { return ManifestRole::Canonical; };
+      let has_os = map.get("os").and_then(|v| v.as_array()).is_some_and(|a| !a.is_empty());
+      let has_cpu = map.get("cpu").and_then(|v| v.as_array()).is_some_and(|a| !a.is_empty());
+      if !has_os || !has_cpu { return ManifestRole::Canonical; }
+      let Some(platform) = map.get("os").and_then(|v| v.as_array()).and_then(|a| a.first()).and_then(|v| v.as_str()).map(str::to_string) else { return ManifestRole::Canonical; };
+      let Some(arch) = map.get("cpu").and_then(|v| v.as_array()).and_then(|a| a.first()).and_then(|v| v.as_str()).map(str::to_string) else { return ManifestRole::Canonical; };
+      ManifestRole::Platform { platform, arch, abi: None }
+  }
+  ```
+
+- **`crates/callisto-graph/tests/publish_tests.rs`**
+  - Added `use callisto_graph::locate::IgnoreWalkLocator;` import
+  - Added `napi_platform_package_is_classified_as_npm_platform_packages` test (RED then GREEN)
+
+- **`crates/callisto-graph/src/commands/publish_client.rs`**
+  - Added `const PUBLISH_TIMEOUT_SECS: u64 = 300` constant
+  - `run_in` now uses `Duration::from_secs(PUBLISH_TIMEOUT_SECS)` 
+  - Rate-limit fallback now uses `crate::commands::publish::DEFAULT_RATE_LIMIT_WAIT_SECS`
+  - Test `cargo_publish_rate_limited_without_parseable_duration_uses_default` updated to use `DEFAULT_RATE_LIMIT_WAIT_SECS`
+  - Added `#[allow(clippy::type_complexity)]` on `program_capturing_runner` helper
+  - All `"pypi"` test literals replaced with `RegistryKey::PYPI`
+  - Added `publish_without_load_plan_uses_workspace_root_as_cwd` regression guard test (documents pre-fix behavior: without `load_plan`, workspace root is used as cwd)
+
+- **`crates/callisto-graph/src/commands/publish.rs`**
+  - Added three constants:
+    ```rust
+    pub(crate) const MAX_RATE_LIMIT_RETRIES: usize = 10;
+    const MAX_RETRY_AFTER_SECS: u64 = 600;
+    pub(crate) const DEFAULT_RATE_LIMIT_WAIT_SECS: u64 = 60;
+    ```
+  - `publish_with_retry` now has an iteration cap:
+    ```rust
+    let mut retries = 0usize;
+    loop {
+        match self.client.publish(pkg_id, version, permit) {
+            Err(RegistryError::RateLimited(retry_after)) => {
+                if retry_after > Duration::from_secs(MAX_RETRY_AFTER_SECS) {
+                    return Err(RegistryError::RateLimited(retry_after));
+                }
+                retries += 1;
+                if retries > MAX_RATE_LIMIT_RETRIES {
+                    return Err(RegistryError::Other(format!(
+                        "rate-limited {} consecutive times; giving up", retries
+                    )));
+                }
+                self.policy.check_rate_limit(retry_after)?;
+                self.time.sleep(retry_after);
+            }
+            ...
+        }
+    }
+    ```
+  - All `"crates.io"` test fixtures replaced with `RegistryKey::CRATES_IO.to_string()`
+  - `601` literal in test replaced with `MAX_RETRY_AFTER_SECS + 1`
+  - `RegistryKey("pypi"...)` in `plan_publish` and test helper `pypi_publish_entry` replaced with `RegistryKey::PYPI`
+  - Added `test_publish_rate_limit_cap_aborts_after_max_retries` test (RED then GREEN)
+
+- **`crates/callisto-cli/src/commands/publish.rs`**
+  - Fixed PUB-001: added `client.load_plan(&plan)`:
+    ```rust
+    let mut client = SubprocessRegistryClient::new(CliCommandRunner, ws.root.clone());
+    client.load_plan(&plan);
+    let orchestrator = PublishOrchestrator::new(client, AlwaysRetryPolicy, SystemTimeProvider);
+    ```
+
+- **`crates/callisto-cli/src/render/mod.rs`**
+  - PUB-003: `render_publish` now renders all four package lists:
+    ```rust
+    if !report.rust_crates.is_empty() {
+        writeln!(w, "  Crates ({}):", report.rust_crates.len())?;
+        for pkg in &report.rust_crates { writeln!(w, "    {} {}", pkg.name, pkg.version.raw())?; }
+    }
+    if !report.npm_main_packages.is_empty() {
+        writeln!(w, "  npm packages ({}):", report.npm_main_packages.len())?;
+        for pkg in &report.npm_main_packages { writeln!(w, "    {} {}", pkg.name, pkg.version.raw())?; }
+    }
+    if !report.npm_platform_packages.is_empty() {
+        writeln!(w, "  npm platform packages ({}):", report.npm_platform_packages.len())?;
+        for pkg in &report.npm_platform_packages { writeln!(w, "    {} {}", pkg.name, pkg.version.raw())?; }
+    }
+    if !report.pypi_packages.is_empty() {
+        writeln!(w, "  PyPI packages ({}):", report.pypi_packages.len())?;
+        for pkg in &report.pypi_packages { writeln!(w, "    {} {}", pkg.name, pkg.version.raw())?; }
+    }
+    ```
+  - Added `full_plan()` helper and `render_publish_lists_all_four_package_types` test
+  - All `schema_version: 1` replaced with `callisto_model::SCHEMA_VERSION`
+
+- **`crates/callisto-cli/src/commands/status.rs`**
+  - `schema_version: 1` replaced with `callisto_model::SCHEMA_VERSION`
+
+- **`crates/callisto-cli/src/runner.rs`**
+  - `run_with_timeout` override with real spawn+poll+kill (from prior session)
+  - Uses `drop()` for Rust 2024 compatibility instead of `let _ =`
+
+- **`crates/callisto-model/src/identity.rs`**
+  - Added `RegistryKey::PYPI = "pypi"` and `RegistryKey::NUGET = "nuget"` constants alongside existing `CRATES_IO` and `NPM`
+
+- **`crates/callisto-model/src/ecosystem.rs`**
+  - Replaced `"pypi"` and `"nuget"` string literals with `RegistryKey::PYPI` and `RegistryKey::NUGET`
+
+- **`crates/callisto-model/src/exec.rs`**
+  - Fixed broken intra-doc link: removed `[CliCommandRunner]` reference (not in scope for callisto-model)
+  - Has `CommandError::TimedOut { program: String, seconds: u64 }` variant
+  - Has `run_with_timeout` default method
+
+- **`ARCHITECTURE.md`**
+  - §5 `atomic_write` signature corrected: `content: &[u8]` → `content: &str`, added `permit: &ApplyPermit`, return type `io::Result<()>`, added fsync explanation
+  - §8 `CommandRunner` trait: `exec` → `run`, added `run_with_timeout` method
+  - §8 `Manifest` trait expanded from 3 to 9 methods with correct signatures including `permit` parameters
+  - §8 removed stale duplicate `DependencyResolver` block; new accurate one added with `dependents_of` and `diagnostics` methods
+
+- **`docs/00-design.md`**
+  - Point 1 updated from "does not run cargo publish" to accurate description of `callisto publish` shelling out to ecosystem tools
+
+- **`docs/06-publishing.md`**
+  - PyPI section updated: removed "when implemented" / "demand-gated" language; replaced with correct `TWINE_USERNAME=__token__` + `TWINE_PASSWORD` env var pattern; explicitly notes `TWINE_API_TOKEN` is not a valid twine variable name
+
+- **`README.md`**
+  - Two occurrences of `callisto matrix` as live feature marked as "(planned)" / "Not yet implemented"
+
+4. Errors and Fixes:
+
+- **ManifestRole::Platform replacing Canonical → MissingField { field: "version" }**: First attempt assigned `ManifestRole::Platform` as the only role for platform packages. `base_versions()` only reads `Canonical` manifests. Fix: push BOTH Canonical and Platform decls for the same package.json.
+
+- **NoCanonicalManifest after base_versions fix**: Trying to fix `base_versions()` to fall back to Platform manifests exposed `version_grammar()` in `package.rs` which also requires a Canonical manifest. Fix: abandoned the `lib.rs` change; the dual-decl approach is correct.
+
+- **Rust 2024 `let _ =` on types with destructors**: `let _ = handle.join()` is an error in Rust 2024. Fix: use `drop(handle.join())` in `runner.rs`.
+
+- **Broken intra-doc link `[CliCommandRunner]` in callisto-model**: `CliCommandRunner` is not in scope for `callisto-model`. Fix: removed the reference from the `run_with_timeout` doc comment.
+
+- **Clippy `type_complexity` on `program_capturing_runner`**: The helper function returns a complex tuple type. Fix: added `#[allow(clippy::type_complexity)]`.
+
+- **`crate::commands::publish` path error in `publish_client.rs` tests**: Used `super::publish::` which doesn't resolve correctly from within the test module. Fix: use `crate::commands::publish::DEFAULT_RATE_LIMIT_WAIT_SECS`.
+
+- **Constants `pub(crate)` not `pub`**: `DEFAULT_RATE_LIMIT_WAIT_SECS` was private, causing error when referenced from `publish_client.rs`. Fix: made it `pub(crate)`.
+
+- **Unused import in negative-path test**: The `publish_without_load_plan_uses_workspace_root_as_cwd` test originally imported `NpmMainPublish, RegistryKey, SCHEMA_VERSION` which were unused. Fix: removed the import block.
+
+- **Format-check failure after audit fixes**: The last action before this summary was running `just ci` which failed on `callisto-graph:format-check` due to formatting of the new constant usage. **This is still pending — `cargo fmt` has not been run yet.**
+
+- **User feedback "wtf" on process**: User frustrated by batching multiple fixes and running CI only at the end. Saved to memory: validate after every individual change with targeted tests before moving to the next fix.
+
+5. Problem Solving:
+
+**Completed:**
+- Phase 0 Fix 3: ManifestRole::Platform wiring — napi platform packages now correctly appear in `npm_platform_packages` via dual Canonical+Platform manifest decl approach
+- Phase 1 PUB-001: `load_plan` now called before `orchestrator.execute` in CLI handler
+- PUB-003: `render_publish` now renders all four package lists
+- Retry cap: `publish_with_retry` now aborts after `MAX_RATE_LIMIT_RETRIES = 10` consecutive 429s
+- All magic numbers named: PUBLISH_TIMEOUT_SECS, MAX_RATE_LIMIT_RETRIES, MAX_RETRY_AFTER_SECS, DEFAULT_RATE_LIMIT_WAIT_SECS
+- All registry key literals replaced with named constants (CRATES_IO, NPM, PYPI, NUGET)
+- `schema_version: 1` in tests replaced with `SCHEMA_VERSION`
+- ARCHITECTURE.md corrected: atomic_write signature, CommandRunner method names, Manifest trait methods, DependencyResolver methods
+- docs/00-design.md corrected: publish statement updated
+- docs/06-publishing.md corrected: PyPI auth correctly documented, TWINE_API_TOKEN error fixed
+- README.md: `callisto matrix` marked as planned
+
+**Ongoing:**
+- `cargo fmt` needs to be run to fix the format-check failure from the most recent `just ci` run
+- After formatting, `just ci` needs to pass clean
+
+**Documented gaps (not fixing now, require design decisions):**
+- `detect_npm_role` double-read: would need `Manifest::npm_role()` trait extension to fix
+- `python -m build` step before `twine upload`: spec acknowledges this as future work
+- `napi_drift`, `triple_to_role`, `role_to_triple` dead exports in `napi.rs`
+- `NapiTargetsIndex::load` never reads manifest data (always returns empty index)
+- `--refresh-lockfiles` plumbed but silently ignored in `apply.rs`
+- `PathBuf::new()` in production error variants (npm.rs:155,160; resolve.rs:141)
+- `npm_is_published` exit-0-empty-stdout behavior untested (F-006 Phase 2 item)
+- Mixed-ecosystem `execute()` test missing
+- AUTH-001, AUTH-003 (Phase 2) not yet addressed
+
+6. All User Messages:
+
+- "Progress through each phase, loop and validate each phase as they finish before heading to the next one." (sent mid-turn during Phase 0 Fix 1)
+- "What about phase 2?"
+- "What is left?" (sent mid-investigation of Phase 2)
+- "Have we done everything for the previous phases? Have we validated the fixes? Added tests, updated docs? Checked performance? Checked against the specs and expected output?"
+- "You should be doing very thorough validation after any piece of fix to ensure we're not adding more issues behind us. wtf"
+- "Let's make a full pass looking for literals that should be (or are constants), for magic numbers, for stubbed content, for gaps. Let's make sure we clean md files with outdated information and update what needs updating before moving on please."
+- "CRITICAL: Respond with TEXT ONLY. Do NOT call any tools." (current summary request)
+
+7. Pending Tasks:
+
+- **Immediate**: Run `cargo fmt -p callisto-graph` (and any other affected crates) to fix the format-check failure from the last `just ci` run, then run `just ci` to confirm clean CI
+- **Phase 2 items** (not yet started):
+  - AUTH-001: Wire npm auth token into npm config in `.github/workflows/callisto-release.yml` (no `npm config set` step exists)
+  - AUTH-002: Already fixed (TWINE_API_TOKEN docs corrected)
+  - AUTH-003: Pre-flight credential check (new feature, not yet implemented)
+  - F-006: `npm_is_published` exit-0-empty-stdout → `Ok(false)` (private registry conflict detection)
+  - PUB-003: Already fixed (render_publish now shows all four package lists)
+- **Documented gaps not being fixed now**: `detect_npm_role` double-read, `python -m build` step, napi dead code, `--refresh-lockfiles` stub, `PathBuf::new()` in error variants
+
+8. Current Work:
+
+Immediately before this summary request, the full audit pass had applied all fixes and was running `just ci` to validate everything. The CI run failed on `callisto-graph:format-check` with this output:
+
+```
+callisto-graph:format-check | +            crate::commands::publish::DEFAULT_RATE_LIMIT_WAIT_SECS,
+callisto-graph:format-check | +        ));
+callisto-graph:format-check |          Some(RegistryError::RateLimited(dur))
+...
+error: recipe `fmt-check` failed on line 23 with exit code 1
+```
+
+The failure is a formatting issue in `publish_client.rs` related to the multi-line expression for `DEFAULT_RATE_LIMIT_WAIT_SECS`. The fix requires running `cargo fmt -p callisto-graph` (and possibly other crates that were changed: `callisto-model`, `callisto-cli`) and then re-running `just ci`.
+
+9. Optional Next Step:
+
+The most recent work ended with a CI format-check failure. The direct next step is:
+
+1. Run `cargo fmt -p callisto-graph -p callisto-model -p callisto-cli` to fix formatting across all recently modified crates
+2. Run `just ci` to confirm the full CI suite passes clean
+
+This is directly in line with the user's request: "Let's make a full pass... Let's make sure we clean md files with outdated information and update what needs updating before moving on please." — the "before moving on" implies CI must be green before Phase 2 begins.
+
+If you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/gabe/.claude/projects/-Users-gabe-Projects-callisto/575b7a46-37b7-42f0-9db7-b2c329b2abab.jsonl
+Continue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with "I'll continue" or similar. Pick up the last task as if the break never happened.
