@@ -1,0 +1,42 @@
+<task-notification>
+<task-id>acbdfd34fb31c0b46</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/be3206f0-36f6-4eb6-82ee-1a6f04cb1a40/tasks/acbdfd34fb31c0b46.output</output-file>
+<status>completed</status>
+<summary>Agent "Reconcile 01-spec.md's graph section with true complete draft" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Done. Section 7 (`callisto-graph`) has been reconciled against the true complete draft.
+
+## What changed
+
+Section 7 grew from **1,644 → 2,656 lines**. Roughly **60% of §G.1–§G.7 was replaced or substantially expanded**; §G.8–§G.17 were already faithful (the prior pass had that half of the draft) and were left almost entirely intact.
+
+**§G.1** — added the "four questions this crate answers / five things it does not do" framing; added the full list of types imported from `callisto-model` plus the `raises` strictness helper; expanded the module layout to the real nested tree (`config/`, `locate/`, `toposort.rs`, per-command files); added the real signature block for sibling-crate entry points (`open`, `WorkspaceCargoResolver::inherited`, `Versioning`/`versioning_for`, `render_section`) with a note on what is deliberately absent; **§G.1.7** gained the full why-not-feature-flags / why-not-a-lint / why-cargo-metadata argument and the `xtask dep-audit` pseudocode with the `FORBIDDEN` set and the separate dev-edge closure; new **§G.1.8** (path conventions + determinism) appended in the one free slot.
+
+**§G.2** — added the `ProjectLocator` trait verbatim (it was entirely missing), the per-(path, ecosystem) and sort-order contracts, the nearest-first root rule, and `IgnoreWalkLocator`'s full 7-step algorithm (membership globs, virtual-manifest exclusion, `OutsideWorkspaceRoot`, provisional identity).
+
+**§G.3** — real trait rationale (RPITIT/no-dyn), the four unwritten implementor contracts, `ManifestWalkResolver`'s real field shape (edge vec + two index maps + `IdentityIndex`), and `toposort`'s 4-step algorithm with cycle extraction and the per-edge-kind justification.
+
+**§G.4** — full construction algorithm (9 steps), "what is *not* walked", the `IdentityIndex` type and §5.4 resolution order, the Case D / identity-promotion decision table incl. the benign non-`SplitIdentity` case, the edge-extraction pseudocode with Cargo inheritance, and the cross-check's 5-step algorithm plus the never-compare-kinds argument.
+
+**§G.5** — `load()` entry point, the layered per-package precedence algorithm, the `derive_from_manifests` table, `root` field, `CascadeBumpSeverity` (replacing the reconstructed `bump_severity: Severity` — the real draft argues explicitly against it), registry pre-population, and `GroupTable`'s real shape (reverse indices, `GroupKind`, `fixed_siblings`, two-pass method signatures, resolution rules, post-resolution conflict checks).
+
+**§G.6** — `aggregate()`, the `Aggregation`/`NamedBy` types, the 7-step pipeline, `apply_pre_major` with the two inert cases and the release-please `#2087`/`#2635` rationale, and pseudocode for both group unions and the joint-version union.
+
+**§G.7** — the headline gap: `cascade_action` is now the real annotated six-arm dispatch returning `CascadeDecision { severity, rewrite, governed_by, escalated, unknown_coverage }`, with the `effective`-coverage computation and the rewrite-gated-on-real-coverage rule (the reconstructed `CascadeAction {Nothing, RewriteOnly, Bump}` is gone); `RewriteKey`; `CascadeInput`/`CascadeOutcome` with `targets` and `governed_by`; the real fixpoint pseudocode; `bump_target`; and `raise`'s real body incl. the "linked groups: nothing, by construction" line.
+
+## Reconciliations honoured over the draft
+
+Where §11.2 conflicted with the real draft, the reconciliation won: R6 (`round_trip` owns grammar, `rewrite_spec` owns policy), R7 (`CommitInference` in `callisto-graph` behind `inference`; the draft's "no `callisto-conventional` dependency" claim not restored), R10 (`IdentityResolver` kept at §G.4.2, now alongside `IdentityIndex`), R11 (`ConfigProvenance {Default, Explicit}` + `rendered_value` kept — the draft's 3-valued `Provenance` rejected because §CLI.5.3/§CF depend on it), R12 (`commands::init` kept), R14 (`LoadedChangeset` kept at §G.6.1), R18 (`GraphError`'s `Changelog`/`Conventional` wrappers kept). `probe_git` (§G.2.4) and the `templates`/`template()` half of `TagIndex` are assembly additions with external callers and were preserved.
+
+## Cross-reference audit
+
+- `§G.` references: **234 lines / 311 occurrences before → 311 occurrences after**.
+- Every `§G.x` and `§G.x.y` reference in the document resolves to a real heading, except the twelve `§G.15.1`–`§G.15.12` refs, which point at numbered list items inside §G.15 and were already like that before this pass.
+- The set of `§G.` references **outside** section 7 is byte-for-byte identical before and after (`diff` clean) — sections 1–6 and 8–11 were not touched except the numbering-neutral edits inside section 7.
+- All 25 `[SPEC DECISION]` markers still present, matching §G.16's 25-row index and §11.1's "25 decisions".
+- Code fences balanced (132 in section 7, 362 doc-wide).
+
+One pre-existing inaccuracy I left alone: lines 960 and 3094 cite "§G.7.3" for coverage computation, which actually lives at §G.7.2. It predates this pass and fixing it means editing sections 3–4.</result>
+<usage><subagent_tokens>204928</subagent_tokens><tool_uses>54</tool_uses><duration_ms>789501</duration_ms></usage>
+</task-notification>
