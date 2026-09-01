@@ -1,0 +1,1 @@
+What categoies of bugs should we analyze our codebase for? Don't do any work, just help me plan and give me a very thorough prompt to guide bug finding agents.
