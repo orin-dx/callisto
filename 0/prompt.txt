@@ -1,0 +1,3 @@
+How do we feel about a deep adversarial analysis of our codebase for architectural issues, modeling, looking for seams, gaps and bugs, performance issues, security issues, etc? Make a comprehensive report that thinks through the issues and what patterns semantically and architecturally. Consider crates we should use or use better.
+
+Anything we should re-organize, extract, test, document better?
