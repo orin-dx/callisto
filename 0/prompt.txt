@@ -1,0 +1,49 @@
+<task-notification>
+<task-id>aa9beafac3ae80d0a</task-id>
+<tool-use-id>toolu_01XAVAAdo4J7jL8sxumPyqXj</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/aa9beafac3ae80d0a.output</output-file>
+<status>completed</status>
+<summary>Agent "Verify Track 3b1 core spec grounding" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Verification Summary
+
+I read the draft spec at `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/spec-track3b1-identity-promotion-core.json` in full (all 20 acceptance criteria, api_surface, non_goals, scope) and cross-checked each criterion against the requirement text provided (`REQ-TRACK3-IDENTITY-HARDENING-B`, three named bugs) plus the "additional context" paragraph explicitly blessing the `resolve_package_config` ambiguity-awareness and "data structures and lifecycle" extensions as necessary consequences of fixing bug (2). I also spot-checked `docs/01-spec.md` §G.4.2 (lines ~6075-6076, "serde" worked example — confirmed verbatim, and directly referenced by the requirement's bug-3 text) and §G.4.3 (Case D collapse rule at docs/01-spec.md:6122-6157). Per the task's judgment rule, only requirement@1 (and, transitively, docs/01-spec.md passages the requirement itself cites) count as evidence; plausibility alone does not.
+
+Key finding: the spec's own `reasoning` field admits several criteria are its "own architectural decisions, not citations of an already-resolved doc section" — most notably the set-disjointness-vs-set-inequality promotion predicate (AC-06, AC-08). I treated that self-admission as decisive for classifying those as unsupported rather than inferring justification from plausibility.
+
+```json
+{
+  "supported": [
+    {"criterion_id": "AC-01", "evidence": "\"the documented cargo:foo/npm:foo ecosystem-prefixed group-member spelling always fails with a false 'not found' error\"", "source": "requirement@1"},
+    {"criterion_id": "AC-02", "evidence": "\"IdentityIndex.prefixed (identity.rs) is never populated in walk.rs::build\"", "source": "requirement@1"},
+    {"criterion_id": "AC-04", "evidence": "\"two unrelated same-named packages in different ecosystems ... blocks the entire workspace with DuplicatePackage. Confirmed live.\"", "source": "requirement@1"},
+    {"criterion_id": "AC-05", "evidence": "Direct structural corollary of bug (2): both distinct packages must remain independently resolvable via index.native, not merely avoid the error, for the fix to actually work", "source": "requirement@1"},
+    {"criterion_id": "AC-09", "evidence": "\"the standard maturin/PyO3 layout: a Rust crate + its Python binding, same name, sibling dirs\" -- exact match to AC-09's fixture", "source": "requirement@1"},
+    {"criterion_id": "AC-12", "evidence": "bug (3): resolve_native_with_fallback \"silently falls back to a cross-ecosystem name match when the same-ecosystem lookup misses ... needs the fallback removed or gated off by default\"", "source": "requirement@1"},
+    {"criterion_id": "AC-13", "evidence": "Necessary consequence of the promotion mechanism per the launching agent's additional context: promoting a package's identity requires all internal indices storing the old id (including platform-manifest ownership) to be rewritten, part of the blessed 'data structures and lifecycle' extension", "source": "requirement@1"},
+    {"criterion_id": "AC-14", "evidence": "bug (3) plus embedded citation: \"contradicting the spec's own worked example in docs/01-spec.md around §G.4.2 (a Cargo serde dependency must not resolve to an npm workspace member called serde)\" -- confirmed verbatim at docs/01-spec.md:6075-6076", "source": "requirement@1"},
+    {"criterion_id": "AC-15", "evidence": "Direct scope of the same named function, resolve_native_with_fallback, whose fix bug (3) specifies", "source": "requirement@1"},
+    {"criterion_id": "AC-18", "evidence": "Wraps AC-12/AC-14/AC-15, all independently supported by bug (3)", "source": "requirement@1"},
+    {"criterion_id": "AC-19", "evidence": "\"the ambiguity-detection mechanism for [[package]] config-rule matching (resolve_package_config) becoming aware of promoted-package collisions ... legitimate scope necessitated by fixing bug (2) above ... not requirement drift\"", "source": "requirement@1"},
+    {"criterion_id": "AC-20", "evidence": "\"an explicit 'data structures and their lifecycle' section resolving a real execution-order bug (the promotion data needed to exist at two different call sites with different timing relative to ManifestWalkResolver::build) ... legitimate scope ... not requirement drift\"", "source": "requirement@1"}
+  ],
+  "unsupported": [
+    {"criterion_id": "AC-03", "note": "Requirement's bug (1) only describes the false-negative failure mode (prefixed spelling wrongly not found). Nothing in the requirement addresses the complementary case of a prefixed spelling that legitimately doesn't exist. Plausible non-regression check, but no citation."},
+    {"criterion_id": "AC-06", "note": "Requires IdentityIndex.bare to drop the promoted key and resolve_human to return AmbiguousName for the bare spelling post-promotion. This exact behavior is not described anywhere in the requirement, which only asks that the two packages not collide into DuplicatePackage -- it says nothing about what an unprefixed lookup against them should subsequently do."},
+    {"criterion_id": "AC-07", "note": "N&gt;2 collision generalization and order-independence guarantee. The requirement's own example and confirmed-live description is exactly two packages ('two unrelated same-named packages'); the N&gt;2 case and its 'already-promoted-name detection' mechanism is the spec's own generalization, not something the requirement asks for or rules out."},
+    {"criterion_id": "AC-08", "note": "The set-disjointness-vs-set-inequality promotion predicate that AC-08 depends on. The spec's own reasoning/scope text states outright that this predicate is 'this spec's own architectural decision, not citation of an already-resolved doc section' -- i.e., the drafter itself found no basis for it in the referenced doc, let alone the requirement, which never mentions Case D interacting with a third colliding path at all."},
+    {"criterion_id": "AC-10", "note": "Asserts same-ecosystem DuplicatePackage behavior is unchanged. The requirement never discusses this boundary case or requires it be preserved; it is an inferred non-regression constraint, not a cited one."},
+    {"criterion_id": "AC-11", "note": "Asserts a genuine Case D (single-path, dual-ecosystem) package's Bare identity is unaffected. The requirement's bug (2) is entirely about two packages at two different paths; it says nothing about the single-path Case D scenario that AC-11 formalizes as a non-goal-turned-criterion."},
+    {"criterion_id": "AC-16", "note": "Compound 'ships with regression test' criterion bundling AC-01 (supported), AC-02 (supported), and AC-03 (unsupported) into a single required test. Inherits AC-03's lack of grounding."},
+    {"criterion_id": "AC-17", "note": "Compound criterion bundling AC-04/AC-05/AC-09 (supported) together with AC-06/AC-07/AC-08/AC-10/AC-11 (unsupported) into one required regression-test set. The majority of the fixtures this criterion mandates (Case D vs third-path, N=3 ordering, same-ecosystem duplicate, Case D unchanged) rest on unsupported design decisions above."}
+  ],
+  "overfitted": [],
+  "reasoning": "No criteria were classified as overfitted (narrower than source supports, excluding valid cases) -- the spec's departures from the requirement all run the other direction: it either matches the requirement's stated scope closely (AC-01/02/04/09/12/14/15) or extends beyond it into architectural decisions the requirement never addresses (AC-06/07/08/10/11) or that the launching agent's additional context explicitly pre-authorized as necessary consequences (AC-13/19/20). The bug-3 fix is correctly *scoped* to resolve_native_with_fallback only (leaving resolve_native's cross-ecosystem fallback untouched) which matches the requirement's specific function citation rather than narrowing it improperly. The clearest unsupported cluster is the promotion predicate (AC-06/AC-08), which the spec's own reasoning field admits is not grounded in any cited doc section, let alone the requirement -- this is the textbook case the judgment criteria warns about: plausible, well-reasoned, but uncited. AC-07's N&gt;2 generalization and AC-10/AC-11's non-regression assertions are reasonable engineering completeness but likewise trace to no source passage. AC-16/AC-17 are flagged unsupported as compound criteria because they mandate tests for the unsupported sub-criteria as a package deal."
+}
+```
+
+Files referenced:
+- `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/spec-track3b1-identity-promotion-core.json` (spec under verification)
+- `/Users/gabe/Projects/callisto/docs/01-spec.md` (lines 5940-6230, §G.4.1-G.4.4) — used only to check the requirement's own embedded citations (bug 3's §G.4.2 quote) and to confirm the spec's self-admission that the promotion predicate in §G.4.3 does not resolve AC-08's specific case.</result>
+<usage><subagent_tokens>79942</subagent_tokens><tool_uses>6</tool_uses><duration_ms>157343</duration_ms></usage>
+</task-notification>
