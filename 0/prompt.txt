@@ -1,0 +1,20 @@
+<task-notification>
+<task-id>a84ae946a03d1202b</task-id>
+<tool-use-id>toolu_014DhWhEgjLYRu4qeDZVh2Jq</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a84ae946a03d1202b.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix Track 3b2 spec, round 3" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>The corrected spec@1 is now valid JSON, written to the same file path, with both audit issues resolved.
+
+Summary of changes to `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/spec-track3b2-consumer-collision-safety.json`:
+
+1. **Fix 1 (decisive)** — Both the scope section's publish.rs "CORRECTION" paragraph and the `PublishOptions::only` resolution `api_surface` entry were rewritten to describe the *identical* mechanism: for each surviving entry across `rust_crates`/`npm_main_packages`/`npm_platform_packages`/`pypi_packages`/`releases`, reconstruct its full `PackageId` (`Prefixed{ecosystem: &lt;list's fixed ecosystem&gt;, name: c.name.clone()}` for the four per-ecosystem lists, `r.package.clone()` for releases) into a `Vec&lt;PackageId&gt;` of surviving identities, then error with `GraphError::UnknownPackage` for the first resolved id with no surviving identity satisfying `resolved_id.matches(&amp;surviving_id)`. Both locations now explicitly state this is not a raw name-string membership test and explain why (cross-ecosystem bare-name collisions let an ineligible sibling hide behind an eligible, differently-scoped one).
+
+2. **Fix 2 (missing-error-case)** — Added `AC-19` (`is_error_case: true`): promoted siblings `cargo/shared-lib` (eligible) and `npm/shared-lib` (registered, empty `publish_to`, ineligible); `callisto publish --only cargo/shared-lib --only npm/shared-lib` must return `Err(GraphError::UnknownPackage)` naming `npm/shared-lib`, not a plan that silently omits it.
+
+Both `.retain()` and error paths were verified against real source: `crates/callisto-graph/src/commands/publish.rs:437-461` (current `keep`/retain/`retained` logic), `crates/callisto-model/src/plan.rs:44-137` (`CratePublish`/`NpmMainPublish`/`NpmPublish`/`PypiPublish` bare `name: String`, `ReleaseEntry.package: PackageId`), and `crates/callisto-model/src/identity.rs:94-160` (`PackageId::matches`/`name`/`ecosystem`) and `error.rs:80` (`GraphError::UnknownPackage{id: PackageId}`).
+
+`revision_note` was updated to describe round 2's two fixes and their citations; `linked_requirement`, `reasoning`, and all other criteria/non_goals/api_surface entries were left untouched except for the AC cross-references, which now also point at AC-19.</result>
+<usage><subagent_tokens>72156</subagent_tokens><tool_uses>20</tool_uses><duration_ms>133750</duration_ms></usage>
+</task-notification>
