@@ -1,0 +1,8 @@
+<task-notification>
+<task-id>b9awkf9si</task-id>
+<tool-use-id>toolu_01ToBWH9rafTXYVvnbAB8nib</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/c0ad64b2-6440-4937-8328-8d9fd9db278c/tasks/b9awkf9si.output</output-file>
+<status>killed</status>
+<summary>Background command "cd /Users/gabe/Projects/callisto
+cargo check -p callisto-graph -p callisto-model -p callisto-format -p callisto-changelog --all-targets 2&gt;&amp;1 | tail -30" was stopped</summary>
+</task-notification>
