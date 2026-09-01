@@ -1,0 +1,3 @@
+<command-name>/reload-plugins</command-name>
+            <command-message>reload-plugins</command-message>
+            <command-args></command-args>
