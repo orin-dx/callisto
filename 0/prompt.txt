@@ -1,0 +1,5 @@
+<task-notification>
+<task-id>bjcpitskt</task-id>
+<summary>Monitor event: "wait for real compile to finish, second attempt"</summary>
+<event>[Monitor timed out — re-arm if needed.]</event>
+</task-notification>
