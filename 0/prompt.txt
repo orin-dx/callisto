@@ -1,0 +1,5 @@
+<task-notification>
+<task-id>bcw10tzpl</task-id>
+<summary>Monitor event: "wait for T4 full test suite (bnuxnkcug) to finish"</summary>
+<event>[Monitor timed out — re-arm if needed.]</event>
+</task-notification>
