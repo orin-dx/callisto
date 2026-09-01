@@ -1,0 +1,178 @@
+This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
+
+Summary:
+1. Primary Request and Intent:
+
+The user is building "callisto," a Rust CLI + moon-extension that coordinates SemVer version bumps across polyglot (Rust/npm, napi-bridged) monorepos, byte-compatible with `@changesets/cli`'s file format, for GitHub org `orin-dx`. The session covered: comprehensive quality evaluation, many parallel fix batches, moon integration work, PEP 440 Python support, gix unification, moon protocol fixes, publish orchestrator redesign, multiple test coverage gap fixes, deep architectural improvements (GitDataSource trait consolidation), and comprehensive CLI flag analysis culminating in dispatching an ApplyPermit capability token implementation.
+
+**Critical standing constraints (must preserve verbatim):**
+- NEVER commit to git without explicit user instruction
+- NEVER bump versions or run release/publish commands without explicit instruction
+- `/Users/gabe/Projects/callisto-findings/FINDINGS.md` lives OUTSIDE the repo deliberately — names unfixed defects and must NEVER be committed to the public repo
+- The `callisto publish` command must NEVER be invoked against a real registry without explicit user instruction
+- All changes land as uncommitted working-tree edits for user to review
+
+2. Key Technical Concepts:
+- Cargo workspace with 10 crates in strict architectural layers (Layer 1: model/format MIT/Apache-2.0, Layer 1.5: vcs MIT/Apache-2.0, Layer 2: manifests/conventional/changelog AGPL, Layer 3: graph AGPL, Layer 4: cli/moon AGPL, Dev: fixtures AGPL)
+- `ApplyPermit` capability token pattern (PermRust/typestate) — a zero-sized type only constructible from `dry_run: bool`, required as parameter by all write primitives so forgetting to check dry_run becomes a compile error
+- `GitDataSource` trait (new, in callisto-vcs) — consolidates 5 hand-rolled gix-vs-CommandRunner fallback patterns: `GitRepository` (native gix) and `ShellGit` backends, `GitAccess::discover` selection layer with asymmetric fallback (reads retry through shell on any native error; writes never retry through shell if gix was discovered and failed)
+- `callisto-moon` uses warpgate_pdk's `exec`/`command_exists` host-function bridge for git access on wasm32 (gix ruled out — memmap2 has no wasm32-wasip1 backend, confirmed via real wasmtime run)
+- moon v2.4.6 real PDK types: `RegisterExtensionInput {id: Id}`, `RegisterExtensionOutput {name, description: Option<String>, plugin_version}`, `ExecuteExtensionInput {args, context: MoonContext}`, all now correctly using moon_pdk_api re-exports
+- Lazy `OnceCell<TagIndex>` in Workspace — `TagIndex` only built on first `ws.tags()` call, transparent to every command
+- `GitAccess::discover(root, runner)` — single factory that tries gix then falls back to ShellGit
+- `Version::deserialize` now tries SemVer first, falls back to Pep440 (mirrors VersionReq pattern)
+- `init` reconcile/diff: `[init]` tracking section in callisto.toml, `InitDiff{new_ecosystems, applied}`, `--yes` gates apply, `--dry-run` (once fixed) will gate all writes
+- Snapshot version: now correctly `0.0.0-{tag}-{sha7}` workspace-wide, sha failure is real Err not silent "0000000"
+- `PublishReport` type with per-package `PublishAttempt`/outcome replacing the plan re-render
+- `ApplyOptions.transient` (existing pattern) used by version/snapshot; `ApplyPermit` will be the unified mechanism
+
+3. Files and Code Sections:
+
+**Currently in-progress (apply-permit agent working on these):**
+- `crates/callisto-model/src/permit.rs` (NEW) — `ApplyPermit` type:
+```rust
+pub struct ApplyPermit { _private: () }
+impl ApplyPermit {
+    pub fn granted_unless_dry_run(dry_run: bool) -> Option<Self> {
+        if dry_run { None } else { Some(Self { _private: () }) }
+    }
+    #[cfg(any(test, feature = "test-util"))]
+    pub fn force_for_tests() -> Self { Self { _private: () } }
+}
+```
+- `crates/callisto-fixtures/src/dry_run.rs` (NEW) — shared regression test helper using assert_fs
+- `crates/callisto-manifests/src/atomic.rs` — adding `permit: &ApplyPermit` parameter to `atomic_write`
+- `crates/callisto-graph/src/apply.rs` — requiring `&ApplyPermit` for git staging calls
+- `crates/callisto-model/src/registry.rs` — requiring permit for publish calls
+- `crates/callisto-cli/src/commands/pre.rs` — adding missing `global.dry_run` check (pre enter/exit write unconditionally today)
+- `crates/callisto-graph/src/commands/init.rs` / `crates/callisto-cli/src/commands/init.rs` — adding dry_run handling alongside existing --yes/reconcile logic
+
+**`crates/callisto-manifests/src/lib.rs`** (already updated by apply-permit agent):
+- `Manifest::write_version` now takes `permit: &ApplyPermit`
+- `Manifest::update_dependency_spec` takes `permit: &ApplyPermit`
+- `Manifest::update_optional_dependencies` takes `permit: &ApplyPermit`
+- `ManifestCstEditor` methods similarly updated
+
+**`crates/callisto-vcs/src/{shell.rs, access.rs}`** (new files from GitDataSource consolidation):
+- `ShellGit<'r>` — CommandRunner-shelled backend with globset filtering, git log RS/US parsing, tag creation
+- `GitAccess<'r>` — selection layer: `discover(root, runner)`, asymmetric read/write fallback policy
+
+**`crates/callisto-graph/src/commands/snapshot.rs`** — fixed version format to `0.0.0-{tag}-{sha7}`
+
+**`crates/callisto-graph/src/lib.rs`** — `Workspace.tags: OnceCell<TagIndex>`, lazy accessor `Workspace::tags(&self) -> Result<&TagIndex, GraphError>`
+
+**`crates/callisto-model/src/version.rs`** — `Version::deserialize` now tries SemVer then Pep440
+
+**`/Users/gabe/Projects/callisto-findings/FINDINGS.md`** (external, never committed) — fully updated ledger of all bugs, fixes, and open items
+
+4. Errors and Fixes:
+
+- **`let_underscore_drop` clippy lint on `lib.rs:122`**: `let _ = self.tags.set(built)` — fixed directly by main session agent to `self.tags.set(built).ok()` because it was blocking multiple other agents mid-workflow
+- **`callisto-graph` transient compile breaks during parallel agent work**: multiple agents touching the same files (init.rs, lib.rs, aggregate.rs) caused race conditions visible to other agents as "missing field diff on InitReport", "no method ecosystem on Package", etc. — handled by agents monitoring and retrying, resolved by waiting for owning agents to finish
+- **Track C1 compile blockage**: Track D's `pub mod publish_client` declared before the file existed — C1 agent monitored and retried, self-resolved
+- **RUSTSEC advisories from moon_pdk_test_utils/warpgate/wasmtime**: dev-only dependency chain carrying multiple open advisories; scoped `[advisories] ignore` added to deny.toml with documentation that the list is unstable (RustSec DB actively updated)
+- **Native cdylib build failure on `cargo llvm-cov --all-features`**: `crate-type = ["cdylib", "rlib"]` in Cargo.toml caused native link failure for extism-pdk's WASM-only symbols; fixed by removing the manifest-level crate-type and using `cargo rustc --crate-type cdylib` only where the WASM artifact is explicitly needed
+
+5. Problem Solving:
+
+**Major architectural decisions made this session:**
+- gix-in-WASM: proved NO-GO via real wasmtime run (memmap2 stub returns Unsupported for all object reads); warpgate_pdk exec bridge is the correct architecture regardless
+- GitDataSource trait: 5 hand-rolled "try gix, fall back to CommandRunner" duplicates consolidated into one abstraction with correct asymmetric read/write fallback policy
+- ApplyPermit: capability token pattern chosen over "remember to check a bool" after research showed even cargo itself has open bugs from exactly this class
+- Lazy TagIndex: OnceCell chosen over a lightweight constructor because it's transparent to every caller and benefits all commands, not just add.rs
+
+**Ongoing work:** The `apply-permit` agent is mid-task implementing the structural dry-run fix. It has modified the necessary files and `cargo check --workspace` passes, but it has not sent its completion report yet (it keeps sending idle notifications rather than a substantive result).
+
+6. All user messages:
+- Initial context message about building callisto (mentioned in summary context)
+- "We've prepped the first phase of callisto and have a working release workflow. We're also in the process of building support for python... Can you take account of the docs, specs and code and help evaluate the quality of each part?"
+- "Let's make a plan and dispatch agent teams and workflows to best address all of our issues."
+- [Plan approval message]
+- "Another Claude session sent a message:" [various teammate relay messages throughout]
+- "We should add this stubbed publish orchestrator right? Shouldn't it be properly coded and used?"
+- "For git we should be using gix right?"
+- "We should consider, research, analyze, triple check ourselves and appropriately plan this and the moon work"
+- "Skip the rewrite, let's just land the fixes fast" [re: FINDINGS.md git history]
+- "Is callisto ready to be completely integrated in a moon monorepo with RS crates?"
+- "Yes, dig into callisto-moon"
+- "Can we make sure this is for the latest version of moon??"
+- "What other places do we have stubs????"
+- "We should definitely unify on gix across ALL our crates and NEVER shell out for git"
+- "We should also research pep 440 right?"
+- [Plan approval for 5-track plan]
+- "What's the state?"
+- "Add the scoped deny.toml ignore and finish just ci"
+- "Another Claude session sent a message:" [various idle notifications and status updates]
+- "Is everything appropriately tested and documented?"
+- "Lets address all of the gaps"
+- "Please do a much deeper code analysis to find more issues of this pattern. Also consider performance, DX, UX and maintainability"
+- "Dispatch fixes for all of these"
+- "What does this mean for our gix usage?"
+- "Scope tags.rs and changed.rs fix, dispatch it"
+- "So we delve a bit into the possible ways to tackle this architecture-wise so it's consistent with best practices in the industry?"
+- "Yes, help me draft an issue. Friendly, eng focused, direct, succinct and scannable. Devoid of AI slop, word salad or filler words."
+- "Please validate anything we're going to be asserting here at least 3 times over to be sure."
+- "So we found a file with existing issues, should we add the comment to it?"
+- "Yes, draft the comment for #2772"
+- "What else do we need to fix?"
+- "Let's fix this all comprehensively, semantically and considering patterns."
+- "Is everything appropriately tested and documented?" (second occurrence)
+- "TDD yes but you've been known to have some spec and test blindness right?"
+- "Lets address all of the gaps" (second occurrence)
+- "What's the state?" (second occurrence)
+- "How do tools like release-please and nx release, etc work with publishing orchestration?"
+- "Is it possible to contribute a wasm gix fix to the core source?"
+- "Should we get rid of the gix usage and make it all wasm compatible? Or do we duplicate some of this work with two paths to support moon?"
+- "What else do we need to fix?" (second occurrence)
+- "Lets fix this all comprehensively, semantically and considering patterns. We should consider best practices, code cleanups, crates to use, code to split or extract for maintainability and architecture. Performance and dx"
+- "Dispatch fixes for all of these" (second occurrence)
+- "Do we appropriately account for all the CLI properties like dry-run across the board? How do we make sure that we don't mistakenly ignore dry run and others?"
+- "Let's research how others in rust-land do this kind of work and see how to integrate dry-run awareness into the framework."
+- "Scope and dispatch. This sounds good"
+- "Something happened right?"
+- "Are we done?"
+- "Is it even running?"
+- "done now?"
+- "I don't see anything running in the UI here"
+
+7. Pending Tasks:
+
+- **`apply-permit` agent**: implementing ApplyPermit capability token — agent has made real file changes, `cargo check --workspace` passes, but has not sent a completion report. Fixes needed: `pre.rs` dry-run bug, `init.rs` dry-run bug, signature propagation to all write primitives, shared regression test helper
+- **Logging/verbosity**: zero logging infrastructure (no tracing/log/-v flag) — researched and planned as a second wave after ApplyPermit lands
+- **Exit-code convention**: inconsistent (status has 3-way, everything else binary) — second wave
+- **CI/non-interactive detection**: `add.rs`/`init.rs` both independently reinvent `stdin().is_terminal()` — second wave
+- **`--strict`/`--strict-graph` on mutating commands**: snapshot/tag/publish have none — second wave
+- **Confirmation/--yes for publish**: highest-stakes command has weakest "are you sure" story — second wave
+- **`docs/01-spec.md`** navigability — lower priority
+- **`.github/actions/callisto-action/action.yml`** publish cutover — explicitly deferred, separate decision
+- **Python workspace discovery, dependency-constraint rewriting, PEP 735** — feature work, needs separate scoping
+- **Go engine** — spec only, no code
+- **`WorkspaceCargoResolver`'s BOM write path** — flagged unverified, latent gap
+
+8. Current Work:
+
+The `apply-permit` agent was dispatched to implement the structural fix for dry-run correctness. It was running as an Opus-model background agent. The agent has modified these files (confirmed via `git status`):
+- `crates/callisto-model/src/permit.rs` (new) — the ApplyPermit type
+- `crates/callisto-fixtures/src/dry_run.rs` (new) — regression test helper
+- `crates/callisto-model/src/lib.rs`, `src/registry.rs`, `src/report.rs`, `src/version.rs` — updated to thread permit
+- `crates/callisto-manifests/src/atomic.rs` — atomic_write now requires permit
+- `crates/callisto-graph/src/apply.rs` — git staging requires permit
+- `crates/callisto-cli/src/commands/pre.rs` — dry-run check added
+- `crates/callisto-graph/src/commands/init.rs`, `crates/callisto-cli/src/commands/init.rs` — dry-run fixed
+- `crates/callisto-fixtures/src/corpus.rs`, `src/lib.rs`, `Cargo.toml` — fixture updates
+
+The workspace compiles cleanly (`cargo check --workspace` passes). The agent has been sending idle notifications repeatedly rather than a final completion report. The user asked "I don't see anything running in the UI here" suggesting the agent's work may be complete or stalled at the final verification step.
+
+9. Optional Next Step:
+
+The agent may have completed its work and simply not sent a final report. The immediate next step is to run `just fmt && just ci` to verify the current working tree state is clean and all tests pass, then:
+1. Check `cargo test --workspace` results
+2. Verify that `pre.rs` and `init.rs` now correctly handle `--dry-run`
+3. Check that the shared regression test helper catches those bugs
+4. Update the FINDINGS.md ledger with the ApplyPermit fix
+5. If everything passes, report completion to the user and discuss the second wave (logging, exit codes, CI detection)
+
+The user's most recent question before the summary request: "I don't see anything running in the UI here" — confirming there's no visible progress, and requesting the summary to re-establish context.
+
+If you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/gabe/.claude/projects/-Users-gabe-Projects-callisto/575b7a46-37b7-42f0-9db7-b2c329b2abab.jsonl
+Continue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with "I'll continue" or similar. Pick up the last task as if the break never happened.
