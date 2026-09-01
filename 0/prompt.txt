@@ -1,0 +1,6 @@
+<task-notification>
+<task-id>bk3k6at28</task-id>
+<summary>Monitor event: "final just ci run before PR, persistent to avoid premature timeout-kill"</summary>
+<event>[+2316s]     Finished `test` profile [unoptimized + debuginfo] target(s) in 16.04s</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
