@@ -1,0 +1,1 @@
+Now let's do another wave or analysis validating what we just did and ensuring we're following best practices, appropriatelly testing not just the happy path and that we're properly documenting evertything
