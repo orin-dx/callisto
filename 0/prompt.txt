@@ -1,0 +1,28 @@
+<task-notification>
+<task-id>a61ae773b40846736</task-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a61ae773b40846736.output</output-file>
+<status>completed</status>
+<summary>Agent "Draft spec for Track 3b-e identity hardening" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>The spec@1 has been drafted, grounded in direct source reading (not just the requirement's prose), and one defect from the draft (a self-contradictory AC-15 with leaked drafting scratch text) has been fixed. The corrected spec is at:
+
+`/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/spec-track3-identity-hardening.json`
+
+Key points from the drafting process:
+
+**Grounded findings that shaped the spec** (confirmed by reading actual source, not assumed from the requirement):
+- `IgnoreWalkLocator::projects()` in `crates/callisto-graph/src/locate/ignore_walk.rs` has zero membership-filter logic — only `skip` dirnames and `max_depth` apply.
+- `IdentityIndex.prefixed` in `crates/callisto-graph/src/identity.rs` is read by `resolve_human` but never written anywhere in `walk.rs` — confirmed dead.
+- `walk.rs`'s `package_manifest_decls.insert` (around line 126) correctly collapses same-path multi-ecosystem packages (Case D) but has no cross-path, cross-ecosystem promotion-to-`Prefixed` logic — it goes straight to `DuplicatePackage` regardless of ecosystem.
+- `docs/01-spec.md` §G.4.4's own pseudocode calls the non-fallback `resolve_native` at the edge-extraction site, confirming the real code's use of `resolve_native_with_fallback` there is itself the documented contradiction.
+
+**22 acceptance criteria** (AC-01 through AC-22) expand the 7 done_when items into falsifiable propositions with exact error variants (`GraphError::DuplicatePackage`, `GraphError::MissingGroupMember`, `DiagnosticCode::UnknownPackage`) and exact `PackageId`/`Ecosystem` values, including error-case coverage the original requirement didn't specify: malformed TOML `members` field (AC-19), empty `workspaces: []` array vs. absent field (AC-20), malformed pnpm-workspace.yaml (AC-21), and the true 2+-candidate ambiguity case (AC-18).
+
+**Three genuine judgment calls flagged in `reasoning`** (not silently resolved):
+1. DW4's exact disambiguation mechanism — resolved via §G.4.3's own documented promotion-to-`Prefixed` algorithm.
+2. Whether `resolve_native_with_fallback` should be deleted or behaviorally changed — resolved as "keep it, change default no-match behavior," since `resolve_native` remains needed by other callers (AC-17).
+3. Malformed-glob/YAML handling — not specified anywhere in the requirement or spec docs; chosen as "fall back to absent-filter" rather than erroring the whole walk, flagged explicitly as an implementer-confirmable choice.
+
+This spec has not yet been run through the `canon-exit-gate`. If you want it formally gated before it proceeds to `vector` for planning, say so and I'll run that next.</result>
+<usage><subagent_tokens>64333</subagent_tokens><tool_uses>4</tool_uses><duration_ms>244475</duration_ms></usage>
+</task-notification>
