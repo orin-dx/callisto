@@ -1,0 +1,23 @@
+<task-notification>
+<task-id>ae5f2e4c5f9e5e229</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/tasks/ae5f2e4c5f9e5e229.output</output-file>
+<status>completed</status>
+<summary>Agent "Review T02 commit" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>`persist()` always writes `self.document.to_string()` unconditionally (no dirty-check short circuit), so the third assertion in the test (persist afterward reproduces unchanged content) is a real, non-vacuous check that `self.document` wasn't mutated by the guarded call before the early return. This confirms the test is meaningful, not vacuous, since persist always serializes and writes.
+
+All four review dimensions check out cleanly. Here is the structured finding report.
+
+```json
+{
+  "status": "approved",
+  "issues": [],
+  "sibling_gaps": [],
+  "reasoning": "Scope: git show 4b394ea touches exactly crates/callisto-manifests/src/cargo.rs and crates/callisto-model/src/error.rs; grep confirmed crates/callisto-graph/src/apply.rs (the only apply.rs in the repo) was untouched, consistent with T04 not yet landed. Non-negotiables (rust-hazards.md): new InvariantViolation variant carries a full-context String message plus path, no T10 error-downgrade (no map_err(|_| or lossy .to_string() swallowing structured context — the message itself is constructed fresh, not derived by downgrading an existing error); diagnostic code E027 is unique across error.rs (grep found no duplicate code(E0xx) values, ruling out T9). guard uses `path: self.path.clone()` which matches every other ManifestError construction site in cargo.rs (11/11 use self.path, none use self.absolute for error reporting) - consistent with codebase convention of reporting the workspace-relative path, not the absolute filesystem path. No T1 (no leading-underscore params), no T2 (no unwrap_or fallback masking the guard), no T3 new panics, no T5/T6 concerns (no new arithmetic or unsafe). Sibling gaps: write_version's inherited-version branch (line 198-216) mutates self.document directly and calls self.persist(permit) on itself - it never constructs a WorkspaceCargoResolver over a second document handle, so there is no dual-in-memory-document hazard there; confirmed no guard was needed. Grepped callisto-manifests for WorkspaceCargoResolver/ws_res/delegat outside cargo.rs - no hits in python.rs (PyprojectToml) or any packagejson module, confirming Cargo is the only format with this workspace-inheritance-delegation pattern, so no equivalent guard was missed elsewhere. Test quality: fixture writes a Cargo.toml with both [workspace] and [package] sections and a workspace-inherited dependency at the SAME path used as root_cargo, genuinely exercising self.absolute == root_cargo (not an ordinary member delegation). Three-part assertion is meaningful: (1) error variant returned, (2) disk unchanged, (3) persist() afterward reproduces unchanged content - this third check is non-vacuous because persist() unconditionally serializes self.document.to_string() and writes it (no dirty-bit short-circuit, confirmed by reading the persist() impl), so it would have caught any partial mutation of the in-memory document before the guard's early return. cargo build -p callisto-manifests -p callisto-model and the targeted test both pass cleanly."
+}
+```
+
+Files reviewed: `/Users/gabe/Projects/callisto/crates/callisto-manifests/src/cargo.rs`, `/Users/gabe/Projects/callisto/crates/callisto-model/src/error.rs`. Cross-checked but not modified in this commit: `/Users/gabe/Projects/callisto/crates/callisto-graph/src/apply.rs`, `/Users/gabe/Projects/callisto/crates/callisto-manifests/src/python.rs`.</result>
+<usage><subagent_tokens>49889</subagent_tokens><tool_uses>17</tool_uses><duration_ms>130303</duration_ms></usage>
+</task-notification>
