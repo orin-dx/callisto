@@ -1,0 +1,50 @@
+<task-notification>
+<task-id>af76bbaee0c7274b7</task-id>
+<tool-use-id>toolu_017R4cGn4syfvc9ts1oJyMDB</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/af76bbaee0c7274b7.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement TASK-20 (AC-09, AC-09d regression tests)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Clean tree, all 294 tests pass.
+
+## Summary
+
+**task_id:** TASK-20
+**status:** done
+**test_result:** pass
+**commit_sha:** ac02058
+
+**steps_completed:**
+- Confirmed baseline: 15 prior commits (0971005..dd90a76) present on `crates/callisto-graph/src/locate/ignore_walk.rs`, tree clean, 291 tests passing at start
+- Read AC-09 and AC-09d exact criterion text directly from `.claude/specs/SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json`
+- Discovered AC-09's text has two clauses — bare-string members AND a members array with a non-string entry (`members = ["crates/*", 42]`) — but the plan's TASK-20 fixture only covered the bare-string clause. Added the missing non-string-entry integration fixture to close that gap.
+- Wrote 3 tests in `crates/callisto-graph/src/locate/ignore_walk.rs`: `ac09_malformed_cargo_members_bare_string_falls_back_to_absent_filter`, `ac09_malformed_cargo_members_non_string_entry_falls_back_to_absent_filter` (new, not in plan), `ac09d_malformed_root_cargo_toml_syntax_falls_back_to_absent_cargo_filter`
+- Ran the new tests: all passed immediately, no red step (matches TASK-07..19 "regression-proof" pattern — behavior already implemented in TASK-03b/03d, wired in TASK-05)
+- Adversarially verified non-vacuousness: temporarily forced panics in `membership.rs`'s TOML-parse-Err fallback (line 90) and in the members-extraction safe chain (lines 100-103), reran the specific tests, confirmed all 3 failed with the expected panics, then restored the original code
+- Ran full suite (294 passed), `cargo fmt`, `cargo clippy --all-targets -- -D warnings` (clean)
+- Committed as `ac02058`; pre-commit format-check hook passed
+
+**criteria_evidence:**
+```json
+[
+  {
+    "criterion_id": "AC-09",
+    "test_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs",
+    "test_line": 1155,
+    "implementation_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs",
+    "implementation_line": 100
+  },
+  {
+    "criterion_id": "AC-09d",
+    "test_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs",
+    "test_line": 1201,
+    "implementation_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs",
+    "implementation_line": 88
+  }
+]
+```
+(AC-09's second clause — non-string array entry — is additionally proven by `ac09_malformed_cargo_members_non_string_entry_falls_back_to_absent_filter` at ignore_walk.rs:1178, hitting the same `parse_toml_string_array` call at membership.rs:100-102.)
+
+**concerns:** None. No precision_tests were supplied for this task. No spec contradiction found — both AC-09 and AC-09d's claimed fallback behavior matched actual observed system behavior exactly.</result>
+<usage><subagent_tokens>86871</subagent_tokens><tool_uses>27</tool_uses><duration_ms>445013</duration_ms></usage>
+</task-notification>
