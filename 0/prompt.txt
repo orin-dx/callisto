@@ -1,0 +1,138 @@
+From agy:
+
+  Here is a comprehensive code review of PR #23: fix(graph): skip publishing an npm main package when a declared platform     
+  dependency fails https://github.com/orin-dx/callisto/pull/23 across correctness, architecture, performance, and DX.         
+  ──────                                                                                                                      
+  ### 1. Correctness & Bug: Cross-Ecosystem False-Positive Collision                                                          
+                                                                                                                              
+  #### The Defect                                                                                                             
+                                                                                                                              
+  In publish.rs:705-709:                                                                                                      
+                                                                                                                              
+    let failed_platform_names: std::collections::HashSet<String> = attempts                                                   
+        .iter()                                                                                                               
+        .filter(|a| a.result.is_failure())                                                                                    
+        .map(|a| a.package.name().to_string())                                                                                
+        .collect();                                                                                                           
+                                                                                                                              
+  Prior to line 705, attempts contains published and failed attempts from both plan.rust_crates (Cargo) and                   
+  plan.npm_platform_packages (npm).                                                                                           
+                                                                                                                              
+  Because .map(|a| a.package.name().to_string()) strips the ecosystem prefix (Ecosystem::Cargo vs Ecosystem::Npm), if a Cargo 
+  crate publish to crates.io fails (e.g. network glitch, auth/token issue, or crates.io rate limiting) on a crate named my-   
+  cli-linux-x64 (or core, native, plugin), its bare name is collected into failed_platform_names.                             
+                                                                                                                              
+  When the npm_main_packages loop subsequently executes:                                                                      
+                                                                                                                              
+    let failed_deps: Vec<&str> = npm_pkg                                                                                      
+        .depends_on_platforms                                                                                                 
+        .iter()                                                                                                               
+        .map(String::as_str)                                                                                                  
+        .filter(|dep| failed_platform_names.contains(*dep))                                                                   
+        .collect();                                                                                                           
+                                                                                                                              
+  An npm main package with depends_on_platforms: ["my-cli-linux-x64"] will match the failed Cargo crate's name and be         
+  erroneously skipped with dependencyFailed, even if the npm platform package npm/my-cli-linux-x64 successfully published to  
+  npm.                                                                                                                        
+                                                                                                                              
+  #### The Fix                                                                                                                
+                                                                                                                              
+  Filter attempts by Ecosystem::Npm:                                                                                          
+                                                                                                                              
+    let failed_platform_names: std::collections::HashSet<&str> = attempts                                                     
+        .iter()                                                                                                               
+        .filter(|a| a.package.ecosystem() == Some(Ecosystem::Npm) && a.result.is_failure())                                   
+        .map(|a| a.package.name())                                                                                            
+        .collect();                                                                                                           
+  ──────                                                                                                                      
+  ### 2. Architectural & Invariant Analysis                                                                                   
+                                                                                                                              
+  • Identity Layering Invariant:                                                                                              
+  This defect is a classic manifestation of Raw String Identity Smell (comparing package identities via .name() without       
+  ecosystem qualification). Callisto’s model explicitly uses PackageId::Prefixed { ecosystem, name } to isolate namespaces    
+  across polyglot boundaries (Cargo, npm, PyPI).                                                                              
+  • Execution Boundary:                                                                                                       
+  depends_on_platforms on NpmMainPublish is exclusively an npm manifest construct (optionalDependencies pointing to companion 
+  platform packages). Scoping failure detection strictly to a.package.ecosystem() == Some(Ecosystem::Npm) reinforces this     
+  boundary.                                                                                                                   
+  ──────                                                                                                                      
+  ### 3. Performance & Allocation Optimizations                                                                               
+                                                                                                                              
+  • Zero-Allocation Set Construction:                                                                                         
+  failed_platform_names currently allocates heap strings via .to_string() for every failed attempt. Because a.package.name()  
+  returns &str and npm_pkg.depends_on_platforms entries can be borrowed as &str, the entire check can run without heap        
+  allocation:                                                                                                                 
+    let failed_platform_names: std::collections::HashSet<&str> = attempts                                                     
+        .iter()                                                                                                               
+        .filter(|a| a.package.ecosystem() == Some(Ecosystem::Npm) && a.result.is_failure())                                   
+        .map(|a| a.package.name())                                                                                            
+        .collect();                                                                                                           
+                                                                                                                              
+  ──────                                                                                                                      
+  ### 4. Developer Experience (DX) & Observability                                                                            
+                                                                                                                              
+  • Report Integration:                                                                                                       
+  Recording the skip as PublishAttemptResult::Failed { kind: "dependencyFailed", error: ... } integrates smoothly with        
+  mod.rs:99-116. The CLI output clearly communicates why the wrapper was not published:                                       
+    npm/@scope/my-cli 1.0.0 — FAILED [dependencyFailed]: skipped: platform dependency failed to publish: @scope/my-cli-linux- 
+  x64                                                                                                                         
+                                                                                                                              
+  • Grammar / Pluralization:                                                                                                  
+  The inline conditional dependenc{} ... if failed_deps.len() == 1 { "y" } else { "ies" } correctly formats both single and   
+  multiple platform failures.                                                                                                 
+  ──────                                                                                                                      
+  ### 5. Missing Test Scenarios                                                                                               
+                                                                                                                              
+  The test suite in PR #23 should be augmented with:                                                                          
+                                                                                                                              
+  1. Cross-Ecosystem Isolation Test:                                                                                          
+  Asserts that a failing Cargo crate (cargo/pkg-x64) does not cause an npm main package depending on npm/pkg-x64 to skip when 
+  the npm platform package succeeded.                                                                                         
+  2. Multi-Platform Partial Failure Test:                                                                                     
+  Asserts that if 1 of 3 platform packages fails, the error message correctly names only the failed platform package and skips
+  the main package.                                                                                                           
+  3. All Platforms Succeeded Test:                                                                                            
+  Asserts that when all platform dependencies succeed, the main package publishes normally.                                   
+  ──────                                                                                                                      
+  ### Suggested Patch                                                                                                         
+  
+    // In crates/callisto-graph/src/commands/publish.rs (lines 705-722)
+  
+    let failed_platform_names: std::collections::HashSet<&str> = attempts
+        .iter()
+        .filter(|a| a.package.ecosystem() == Some(Ecosystem::Npm) && a.result.is_failure())
+        .map(|a| a.package.name())
+        .collect();
+  
+    for npm_pkg in &plan.npm_main_packages {
+        let pkg_id = PackageId::Prefixed {
+            ecosystem: Ecosystem::Npm,
+            name: npm_pkg.name.clone(),
+        };
+        let failed_deps: Vec<&str> = npm_pkg
+            .depends_on_platforms
+            .iter()
+            .map(String::as_str)
+            .filter(|dep| failed_platform_names.contains(dep))
+            .collect();
+        if !failed_deps.is_empty() {
+            attempts.push(PublishAttempt {
+                package: pkg_id,
+                version: npm_pkg.version.clone(),
+                result: PublishAttemptResult::Failed {
+                    kind: "dependencyFailed".to_string(),
+                    error: format!(
+                "skipped: platform dependenc{} failed to publish: {}",
+                if failed_deps.len() == 1 { "y" } else { "ies" },
+                failed_deps.join(", ")
+                    ),
+                },
+            });
+            continue;
+        }
+        self.emit_progress(&npm_pkg.name, &npm_pkg.version);
+        attempts.push(self.attempt_publish(pkg_id, npm_pkg.version.clone(), permit));
+    }
+
+  All tests in callisto-graph passed (412 tests). The review findings for PR #23 above are fully ready to be applied or shared
+  as PR feedback. Let me know if you would like me to draft a PR comment or apply the patch directly
