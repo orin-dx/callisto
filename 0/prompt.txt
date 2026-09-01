@@ -1,0 +1,8 @@
+<task-notification>
+<task-id>bk1xu904l</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/c0ad64b2-6440-4937-8328-8d9fd9db278c/tasks/bk1xu904l.output</output-file>
+<status>completed</status>
+<summary>Background command "cd /Users/gabe/Projects/callisto
+cargo test -p callisto-changelog 2&gt;&amp;1 | tail -60" completed (exit code 0)</summary>
+</task-notification>
