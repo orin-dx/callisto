@@ -1,0 +1,23 @@
+<task-notification>
+<task-id>a96072cd85d6d6f17</task-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8a85b651-0c9a-44fa-9e0a-ac694c4409e1/tasks/a96072cd85d6d6f17.output</output-file>
+<status>completed</status>
+<summary>Agent "Final lambda:exit-gate re-verification for SPEC-002" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>**Mutation gate now closed on the current code.** The scoped re-run against `crates/callisto-graph/src/matrix.rs` reports 60 mutants tested, 46 caught, 14 unviable, **zero survivors and zero missed** — replacing the stale 25-Aug-10:53 run whose `caught.txt` still named the deleted `artifact_name_for_package_triple`. Both format arms of the current function are now genuinely mutation-covered.
+
+Still outstanding: the two Rust suites. My first attempts sat 22 minutes on the cargo build lock behind the concurrent `just ci` and produced no output, so I killed them (the exit-144s in the notifications are my own kills, not failures) and restarted both against an isolated `CARGO_TARGET_DIR`. That rebuild is in flight.
+
+I am not issuing the verdict until those two report. Everything else is settled:
+
+- **AC-001 through AC-011: all implemented**, each verified by reading the code at the location rather than trusting a pointer.
+- **All four shell scripts pass for real** (exit 0 each).
+- **Mutation gate: passed, zero survivors.**
+- **Stale-format sweep: `.github/` and `.claude/` are clean** — but note my first two sweeps were invalid because I omitted `--hidden`, which silently skipped exactly those two directories. The corrected sweep found the superseded `native-{triple}` format surviving in five untouched files: `docs/01-spec.md:8557`, `docs/00-design.md:2113`, `.claude/specs/track-g-matrix-napi-maturin.json:129`, and two historical plan records. None is named by any of the 11 criteria, so none is an AC failure, but `docs/01-spec.md` and `docs/00-design.md` are live design docs now asserting a format the code cannot emit, and the Track-G spec's criterion directly contradicts SPEC-002 — a future `spec-drift` run against Track G would fire on it.
+- **One test-coverage gap for the verdict:** AC-003's requirement that the loop sit *inside* the `INPUT_PUBLISH` guard, and AC-004's second clause, are implemented but have no automated regression test. `test_native_artifact_placement.sh` extracts the loop body between the `::group::`/`::endgroup::` markers and runs it in isolation, so moving the loop outside the guard would break neither test; `rg 'INPUT_PUBLISH'` across the tests directory returns nothing.
+
+Unrelated to this spec: `Cargo.lock` carries an uncommitted 0.4.0→0.4.1 bump and `.claude/plans/PLAN-002.json` is untracked.
+
+I'll deliver the binding `verdict@1` as soon as the two suites report.</result>
+<usage><subagent_tokens>110574</subagent_tokens><tool_uses>59</tool_uses><duration_ms>1401136</duration_ms></usage>
+</task-notification>
