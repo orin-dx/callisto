@@ -1,0 +1,60 @@
+<task-notification>
+<task-id>a5717a0072fa46aae</task-id>
+<tool-use-id>toolu_01LBqE4417Up1eB92xYUArfk</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/08ccaac1-3846-4134-8b06-140e5b9c22f2/tasks/a5717a0072fa46aae.output</output-file>
+<status>completed</status>
+<summary>Agent "Exit-gate Track 5 spec final round" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Verdict: FAIL — and this is the third failure. Escalate to human review; do not run a fourth round.
+
+Verdict file: `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/verdict-track5-round4.json`
+
+### Round 3's two blockers are genuinely fixed
+
+**(a) State table re-derived from live code.** `aggregate.rs:297` gates the reason overwrite on `entry.severity &gt; cur_sev` while `aggregate.rs:309` pushes into `changelog_inputs` whenever `severity != None` — so `{changelog_inputs: Some, reason: Inference}` is confirmed reachable. AC-003's new `changelog_inputs is None` precondition plus AC-005's expanded reason list now cover it, with no double-coverage. Full table:
+
+| changelog_inputs | reason | covered by |
+|---|---|---|
+| Some | Cascade / PeerEscalation / Fixed / LinkedGroupUnion / **Inference** | AC-005 only |
+| None | Inference | AC-003 only (AC-006 correctly excludes it now) |
+| None | None or Changeset | AC-006 only |
+| Some | Changeset | pre-existing `version.rs:149` passthrough — no criterion, unchanged behavior |
+| None | Cascade / PeerEscalation / Fixed / LinkedGroupUnion | **uncovered by all three** — pre-existing untouched code at `version.rs:158-187`; noted, not blocking |
+
+**(b) AC-004's changeset-mechanism claim is now correct.** Aggregate's `union_fixed` leaves `reasons[fresh] = Changeset` (the fresh member holds the group max, so line 421's `target &gt; cur` is false for it), so the changeset entry does arrive via `version.rs:149`, not AC-005 — as the corrected text says.
+
+**(c) AC-001/002/006/007 re-verified from scratch**, all hold. Every line citation checked: `version.rs:87-94`, `groups.rs:85`, `version.rs:148-215/149/158-187/188-199`, `pr_body.rs:82-136/99-124/175-218/178-216`, `aggregate.rs:223-236` — all accurate. `BumpReason::{Inference,PreRelease,NewGroupMember}` all exist and all fall to `_ =&gt; {}` at `pr_body.rs:216` while the heading is pushed unconditionally at 176. `ChangelogError::EmptyInput` and `SeverityNoneEntry` both exist and are reachable. `git log --no-merges` carries no `--reverse`, so AC-003's `commits[0]`-is-newest rationale holds.
+
+### Two new blockers, both introduced or left by round 3's own corrections
+
+**1. AC-003 now contradicts AC-004.** Round 3's fix added an unqualified "contains EXACTLY ONE entry" to both AC-003 branches. A never-tagged fixed-group member with `pkg.changelog`, no changeset, bumped by inference satisfies AC-003 *and* AC-004 simultaneously — AC-003 demands 1 entry, AC-004 demands the NewGroupMember append making 2. AC-005 and AC-006 both already carry the carve-out; AC-003 is the only one missing it.
+
+**2. AC-004's new second test case is not constructible as described — and neither is the first.** This is the one I was asked to trace hardest, and the trace does not clear it. `new_members` is populated *only* from `groups.fixed` (`groups.rs:28`), so any AC-004 fixture is necessarily a fixed group, which means `solve_cascade`'s fixed-group convergence block always runs. That block computes the winner from the **already-released** member's base:
+
+```rust
+// groups.rs:129-135 — fixed_group_target
+let aligned_base = if !released.is_empty() {
+    base.get(&amp;released[0]).cloned().unwrap_or_else(|| Version::semver(1, 0, 0))
+} else { Version::semver(0, 0, 0) };
+```
+
+and then, at `cascade.rs:433-440`, overwrites the reason for any member whose target differs:
+
+```rust
+for id in member_ids {
+    if out.targets.get(&amp;id) != Some(&amp;winner) {
+        out.targets.insert(id.clone(), winner.clone());
+        out.reasons.insert(id.clone(), BumpReason::FixedGroupUnion { group: g.name.clone() });
+```
+
+The fresh member's target came from `bump_target` on *its own* base. So unless the two members' manifest versions are identical, `reasons[fresh]` gets overwritten to `FixedGroupUnion` **after** the cascade sets it — which breaks case (2)'s asserted `DependencyUpdate` middle entry *and* case (1)'s premise that no AC-005 mapping applies (making it 3 entries, not the asserted 2). "A fresh, never-tagged member" naturally reads as a package at a different version from the released one, so the natural fixture is the failing one.
+
+AC-004 does check for an overwrite — but only at `cascade.rs:501`, which is the wrong site (and is `sev &gt; cur_sev`, not `target &gt; cur_sev`; `target` is not the identifier there). The gate at 501 is real and correctly characterized; it just isn't the one that threatens the reason.
+
+The fixture *is* constructible with one added constraint: both members at the same manifest version (e.g. 1.0.0), only the released one tagged. Then `bump_target(fresh, sev) == winner`, line 433 never fires, and both cases produce exactly the asserted sequences.
+
+### Recommendation
+
+Both blockers are one-sentence fixes and I've written the exact replacement text into the verdict file. But the retry budget is spent, and the pattern across all three rounds is identical — an absolute claim in a criterion that is false on a reachable state, each round's correction introducing the next one. That is a signal about the review loop, not about any single sentence. A human should apply the two fixes and clear it directly rather than sending it back through the gate a fourth time.</result>
+<usage><subagent_tokens>95401</subagent_tokens><tool_uses>21</tool_uses><duration_ms>394429</duration_ms></usage>
+</task-notification>
