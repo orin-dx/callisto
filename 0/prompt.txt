@@ -1,0 +1,28 @@
+<task-notification>
+<task-id>a7a9ed4151582b309</task-id>
+<tool-use-id>toolu_016gvYJLcwTQTbQBgCsVUWco</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/bb531e8d-c394-4e47-a8ae-e4a9ceeca6d2/tasks/a7a9ed4151582b309.output</output-file>
+<status>completed</status>
+<summary>Agent "Exit-gate Track 4 spec (final round)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>**Verdict: PASS** (confidence: high). Full verdict@1 written to `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/verdict-track4-round4.json`.
+
+```json
+{"verdict": "pass", "confidence": "high", "artifact_type": "spec@1", "retry_count": 4, "blockers": []}
+```
+
+Both round-3 blockers are genuinely fixed at the root, verified against live code rather than taken on the submission's word:
+
+**1. `pkg.changelog` (was critical).** `crates/callisto-model/src/package.rs:17` has the field. `crates/callisto-graph/src/walk.rs:387-392` wraps both arms in `Some` — override path or `ch_path` (`rel_path.join("CHANGELOG.md")`, walk.rs:323) — with no `None` branch. I independently confirmed walk.rs is the *only* production constructor: every `changelog: None` site across the workspace (add.rs:330, tags.rs, aggregate.rs, cascade.rs, crosscheck.rs, changed.rs, status.rs, two `tests/` files) sits inside a `#[cfg(test)]` module. Read/write agreement holds: `crates/callisto-graph/src/commands/version.rs:148` is literally `if let Some(ch_path) = &amp;pkg.changelog`.
+
+**2. AC-12b (was major).** Deleted cleanly. Token-enumerated every `AC-*` reference in the document — exactly the 16 claimed criteria, zero `AC-12b` mentions in criteria, scope, non_goals, or api_surface, and no dangling AC-03/AC-09 references from earlier rounds.
+
+**Round-2 blockers re-verified directly:** `DiagnosticSeverity` is exactly `{Warning, Error}` (diagnostic.rs:76-79); `plan.rs:116` is the `skip_serializing_if` attribute above `changelog_section` at :117, so the key-absent-not-null language is exact; the stub-`CommandRunner` fixture is real — `shell.rs:109-125` shells precisely `git rev-parse --verify --quiet &lt;ref&gt;^{commit}` and returns `Ok(None)` on non-success, and `tags_laziness_test.rs:33` is an existing precedent stubbing `git tag --list` through the same seam.
+
+**Fresh pass over the rest.** Every line citation in the spec resolves exactly — action.yml:85-96 (including the bare `exit $STATUS_EXIT` at :96 that AC-04 targets), main.rs:19-21, status.rs:18, and all nine tag.rs anchors (:30, :48, :53-80, :64-69, :74-78, :82, :99-107, :102, :113-117). Two findings worth flagging as confirmations rather than problems: `crates/callisto-graph/src/commands/publish.rs:427` is the *sole* production `changelog_section: None` site (cli/publish.rs:361 is test-body), so the spec's scope misses no sibling; and `plan-publish` has no `--strict` flag (cli.rs:181-185), so AC-11/12/12c's "exits 0" is unconditionally decidable.
+
+One residual latitude I considered and deliberately did **not** raise: `pkg.changelog` is typed `Option&lt;PathBuf&gt;`, so the implementer must write *something* for the `None` arm that the spec doesn't specify. That arm is unreachable in production and every criterion is verified through an on-disk workspace fixture (i.e. through walk.rs), so no criterion's truth value depends on the choice. Failing on it would mean inventing a fifth gate condition.
+
+Cleared for planning — no conditions attached.</result>
+<usage><subagent_tokens>82009</subagent_tokens><tool_uses>27</tool_uses><duration_ms>311324</duration_ms></usage>
+</task-notification>
