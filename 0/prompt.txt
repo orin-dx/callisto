@@ -1,0 +1,6 @@
+<task-notification>
+<task-id>bqtsrrz4v</task-id>
+<summary>Monitor event: "Rerun of failed WASM check job on main"</summary>
+<event>{"conclusion":"","job":{"conclusion":"","status":"in_progress"},"status":"in_progress"}</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
