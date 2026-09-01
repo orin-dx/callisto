@@ -1,0 +1,87 @@
+<task-notification>
+<task-id>aa7c3b72b3b5f71b1</task-id>
+<tool-use-id>toolu_014B84Sk7sELTBRQ6t3N8tCq</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/aa7c3b72b3b5f71b1.output</output-file>
+<status>completed</status>
+<summary>Agent "Verify Track 3a spec grounding" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Verification Findings — SPEC-TRACK3A-WORKSPACE-MEMBERSHIP
+
+**Source artifacts available:** the requirement text supplied inline (REQ-TRACK3-IDENTITY-HARDENING, workspace-membership half). No `research-report@1` file exists in the scratchpad for this track — I checked `/private/tmp/claude-501/.../scratchpad/` and found `spec-track3-identity-hardening.json`, `spec-track3b-identity-resolution.json`, and `verdict-track3-identity-hardening.json`, but no `research-report*.json`. So every "supported" citation below is necessarily sourced from `requirement@1` only; there is no research-report evidence to draw on.
+
+```json
+{
+  "supported": [
+    {
+      "criterion_id": "AC-01",
+      "evidence": "\"never filters by Cargo [workspace] members/exclude ... an intentionally-excluded crate (fuzz target, scratch example) is discovered and treated as a real release-managed package\"",
+      "source": "requirement@1"
+    },
+    {
+      "criterion_id": "AC-02",
+      "evidence": "\"never filters by Cargo [workspace] members/exclude\" — fixing the filter necessarily requires a matching, non-excluded members-glob candidate to still be admitted; the requirement's complaint is about filtering being entirely absent, which spans both the exclusion and inclusion halves of the same members/exclude mechanism",
+      "source": "requirement@1"
+    },
+    {
+      "criterion_id": "AC-03",
+      "evidence": "\"never filters by ... npm \\\"workspaces\\\"/pnpm-workspace.yaml globs\"",
+      "source": "requirement@1"
+    },
+    {
+      "criterion_id": "AC-04",
+      "evidence": "\"never filters by ... npm \\\"workspaces\\\"/pnpm-workspace.yaml globs\"",
+      "source": "requirement@1"
+    }
+  ],
+  "unsupported": [
+    {
+      "criterion_id": "AC-05",
+      "note": "No-[workspace]-table single-crate case is not mentioned anywhere in the requirement text. It is a plausible necessary edge case for any correct implementation of the members/exclude filter, but plausibility is not a citation — no passage in requirement@1 addresses what happens absent a [workspace] table."
+    },
+    {
+      "criterion_id": "AC-06",
+      "note": "Absence-of-both-markers no-filter behavior for npm is not stated in the requirement. Same reasoning as AC-05: reasonable inference, no direct textual basis."
+    },
+    {
+      "criterion_id": "AC-07",
+      "note": "Hybrid [package]+[workspace] root-manifest edge case. Per the task framing, this is one of the criteria the canon-exit-gate required as a new addition (item (a)), not something the original requirement text discusses — the requirement only states that filtering is entirely absent and gives a fuzz-target/scratch-example example, with no mention of a root manifest that is simultaneously a package and a workspace. Legitimate exit-gate-driven addition, not requirement-drift, but there is no requirement or research-report citation to classify it as supported."
+    },
+    {
+      "criterion_id": "AC-08",
+      "note": "npm-vs-pnpm precedence when both markers are present. Exit-gate-required addition (item (b) per task framing) — the requirement mentions npm \"workspaces\" and pnpm-workspace.yaml as two separate, unfiltered mechanisms but never addresses what happens when both exist at the same root. No citation exists for the precedence rule itself."
+    },
+    {
+      "criterion_id": "AC-09",
+      "note": "Malformed Cargo members field (bare string) fallback-to-absent, no-panic behavior. Not mentioned in the requirement, which only states filtering is missing, not how malformed input to a present filter should degrade. No citation."
+    },
+    {
+      "criterion_id": "AC-10",
+      "note": "Empty workspaces array vs. absent field distinction. Not mentioned in the requirement. No citation for treating an explicit empty list as a real (zero-admitting) filter."
+    },
+    {
+      "criterion_id": "AC-11",
+      "note": "Malformed pnpm-workspace.yaml (YAML parse error) fallback behavior, tied to the newly chosen yaml-rust2 dependency. Exit-gate-required addition (item (c) per task framing) — the requirement never discusses a YAML parsing dependency or malformed-YAML handling; it only states pnpm-workspace.yaml globs currently aren't consulted at all. Legitimate exit-gate-driven addition, not requirement-drift, but no requirement/research-report citation exists."
+    },
+    {
+      "criterion_id": "AC-12",
+      "note": "Requires specific regression-test fixtures for the Cargo group. The requirement states discovery is 'confirmed against current code' but does not mandate any regression-test suite, fixture set, or test-authoring criterion. No citation."
+    },
+    {
+      "criterion_id": "AC-13",
+      "note": "Requires specific regression-test fixtures for the npm/pnpm group. Same gap as AC-12 — no testing mandate anywhere in the requirement text."
+    },
+    {
+      "criterion_id": "AC-14",
+      "note": "Requires specific regression-test fixtures for the malformed/edge-case group. Same gap as AC-12/AC-13 — the revision_note attributes this to resolving 'blocker 5' from a prior canon-exit-gate pass, not to anything in the requirement itself."
+    }
+  ],
+  "overfitted": [],
+  "reasoning": "The requirement is a single, fairly narrow paragraph: IgnoreWalkLocator::projects() doesn't filter by Cargo members/exclude or npm workspaces/pnpm-workspace.yaml globs, illustrated by a fuzz-target/scratch-example crate being wrongly treated as release-managed, plus a note that this is foundational for downstream tracks. That paragraph directly supports the core positive-filtering criteria (AC-01 through AC-04: exclude works, members-inclusion works, npm workspaces works, pnpm-workspace.yaml works) since these are the literal named mechanisms. It does not support any of the edge-case/absence-of-declaration criteria (AC-05, AC-06), the hybrid-root and precedence rules (AC-07, AC-08), the malformed-input fallback behaviors (AC-09, AC-11), the empty-vs-absent distinction (AC-10), or the three test-fixture criteria (AC-12/13/14) — none of these appear in or are implied by any specific requirement passage. I did not find a research-report@1 file for this track in the scratchpad, so there was no second source to check citations against; every 'supported' entry is grounded in requirement@1 alone. Per the task framing, AC-07/AC-08/AC-11 are flagged by the caller as legitimate exit-gate-driven additions rather than drafter invention, and I've preserved that distinction in the notes rather than treating them identically to AC-05/AC-06/AC-09/AC-10/AC-12/13/14, which have no such external justification offered at all — those latter six are inferences the drafter made independently, with no stated authority (requirement, research report, or named exit-gate blocker) grounding their existence. No criterion here reads as narrower than the source supports (i.e., excluding a case the requirement clearly wanted covered) — the requirement is minimal and the spec is broader than it in every direction, so the 'overfitted' category is empty; the surplus is better characterized as additions with varying degrees of external authority (exit-gate blockers) versus none at all, which is what the unsupported classification and notes capture."
+}
+```
+
+Files consulted:
+- `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/spec-track3a-workspace-membership.json` (the draft spec under review)
+- Directory listing of `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/` (confirmed no `research-report@1` file exists for this track)</result>
+<usage><subagent_tokens>47892</subagent_tokens><tool_uses>2</tool_uses><duration_ms>58313</duration_ms></usage>
+</task-notification>
