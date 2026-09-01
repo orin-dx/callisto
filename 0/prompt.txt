@@ -1,0 +1,1 @@
+For the shells we don't need to tell the claude agents why the shell exists, that is a waste of context and does not contribute ot the task right?? That is human context. Tell me if I'm wrong
