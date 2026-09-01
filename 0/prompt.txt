@@ -1,0 +1,1 @@
+Why is ReleaseDecisionV1 versioned? Should we adjust it to better suit its new role?
