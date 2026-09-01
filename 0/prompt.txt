@@ -1,0 +1,1 @@
+30 min CI seems slow. Why is it so slow. Is that normal for rust or are we doing something wrong??
