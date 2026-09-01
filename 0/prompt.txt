@@ -1,0 +1,1 @@
+Didn’t we write a publish orchestrator in rust? If so we should move to it right?
