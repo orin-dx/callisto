@@ -1,0 +1,53 @@
+<task-notification>
+<task-id>a928e1c7c18ab8875</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a928e1c7c18ab8875.output</output-file>
+<status>completed</status>
+<summary>Agent "Audit Track 3b1 core spec, round 6" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Confirmed: SPEC-TRACK3B2 does not exist yet as a file, and track-f-resolution-extraction.json's AC-F6 pins the pre-Result call-site text verbatim plus a real regression test file (`crates/callisto-graph/tests/per_package_config_test.rs`). I have what I need to finalize.
+
+Now let me report the audit result.
+
+## Audit summary
+
+I read the spec fresh from disk (185 lines) and hand-traced the actual current source: `crates/callisto-graph/src/walk.rs`, `identity.rs`, `config/resolve.rs`, `lib.rs`, `aggregate.rs`, `error.rs`, `callisto-model/src/identity.rs`, `callisto-model/src/package.rs`, plus the three sibling specs the scope section names (`.claude/specs/track-e-specificity.json`, `track-f-resolution-extraction.json`, `track-g-matrix-napi-maturin.json`).
+
+**Hand-trace results (tasks a–c):**
+- **Branch (ii)'s full write sequence** (already-promoted-name lookup → disjointness check → `primary_id` reassignment → decls loop → `package_manifest_decls` insert) is now internally consistent and correctly ordered: the reassignment-before-decls-loop statement plus the "location (4) only, as a first-time insert" rule fully resolves the previously-flagged ambiguity/contradiction. No remaining gap found.
+- **Branch (i)** is correctly described as needing genuine post-hoc rewrite at all four STALE-KEY locations, and the document now explicitly scopes that checklist to branch (i) only, with branch (ii) routed to the separate ORDERING STATEMENT. No leftover "applies to both branches" language remains.
+- **`claiming_ecosystems` vs. the new ordering**: no interaction bug. `claiming_ecosystems` is populated per-path immediately after `primary_id` is computed and keyed by `primary_id.name()`, which is identical whether or not `primary_id` is later reassigned to its Prefixed form — so the timing of the reassignment cannot desync it from the claiming-ecosystem-set lookups branch (ii) performs.
+- Every specific line-number citation I spot-checked against the real files (walk.rs, identity.rs, config/resolve.rs, lib.rs, aggregate.rs, package.rs) matched current source precisely, confirming this round's hand-tracing was genuine, not asserted.
+
+**Fresh 5-dimension sweep (task d):** acceptance criteria are uniformly concrete, externally observable, and free of vague/untestable language or semantic-model violations. One genuine issue survived:
+
+```json
+{
+  "issues": [
+    {
+      "criterion_id": null,
+      "type": "scope-overlap",
+      "description": "This spec's non_goals entry (index 10) acknowledges that changing resolve_package_config's return type breaks .claude/specs/track-f-resolution-extraction.json's AC-F6, which pins the pre-Result call-site text `let pkg_override = resolve_package_config(&amp;id, cfg);` verbatim and asserts 'All tests in crates/callisto-graph/tests/per_package_config_test.rs pass without modification.' The non_goals text defers reconciling that text to SPEC-TRACK3B2 -- but SPEC-TRACK3B2, as this spec's own scope section defines it, only covers (a) matrix.rs/commands/matrix.rs collision-safety and --package filter ambiguity-awareness, (b) publish.rs --only filter ambiguity-awareness, and (c) 'the resulting doc-comment and sibling-spec-criterion edits those two fixes require' -- i.e. edits required by (a) and (b), not by this spec's own breakage of AC-F6. No spec, as currently planned, actually owns updating AC-F6's now-false verbatim-text pin; the deferral names a spec whose defined scope does not include the item being deferred. (Secondary, lower-severity instance of the same pattern: .claude/specs/track-e-specificity.json's non_goals prose states 'walk.rs returns DuplicatePackage for [a same-name-different-ecosystem, different-path collision] before the diagnostic pass is reached' -- this becomes false for any pair whose claiming-ecosystem sets are disjoint, since this spec promotes such pairs instead of erroring. This is uncommitted-as-a-testable-criterion prose, not a pinned AC, so it is lower stakes than AC-F6, but it is the same class of drift this spec introduces into a sibling spec's text without an owner.)",
+      "suggested_fix": "Amend non_goals entry index 10's final clause from: 'this spec's own exit criteria are satisfied by the behavioral change alone, verified via this spec's own AC-19 and AC-20 regression-test criteria covering the call-site's own compiling shape, not via editing another spec's file.' to: 'this spec's own exit criteria are satisfied by the behavioral change alone, verified via this spec's own AC-19 and AC-20 regression-test criteria covering the call-site's own compiling shape, not via editing another spec's file. However, track-f-resolution-extraction.json's AC-F6 is not reconciled by SPEC-TRACK3B2's scope as defined above (items (a)-(c) cover only matrix.rs/publish.rs collision-safety and the doc/criterion edits those two fixes require) -- reconciling AC-F6's now-false verbatim-text pin is therefore added as an explicit, minimal task within THIS spec's own closing work: after this spec's implementation lands, update track-f-resolution-extraction.json's AC-F6 criterion text to read the new `let pkg_override = resolve_package_config(&amp;id, &amp;cfg_with_local_promotions)?;` call-site form in place of the old verbatim text, and confirm crates/callisto-graph/tests/per_package_config_test.rs (which does not call resolve_package_config directly and exercises no promoted-collision fixture) still passes unmodified. This is a one-paragraph edit to an already-committed sibling spec's criterion text, not new production code, and does not expand this spec's scope.section beyond the sibling-spec-editing non-goal's own stated intent of avoiding *unplanned* drift -- it simply gives the acknowledged AC-F6 breakage a concrete owner and closing step instead of a dangling deferral to a not-yet-scoped follow-on spec. Also strike or soften track-e-specificity.json's non_goals sentence beginning 'Packages whose name appears in two different directories but with different ecosystems: walk.rs returns DuplicatePackage for this case' -- flag it in that sibling spec as stale rationale once this spec lands, since disjoint-ecosystem collisions now promote rather than error.'"
+    }
+  ],
+  "overall": "fail",
+  "reasoning": "Full hand-trace of branch (i)/(ii) confirms the round-5 fix is internally consistent, execution-order-correct, and free of the two previously-found defects, with claiming_ecosystems interacting correctly with the new primary_id-reassignment-before-decls-loop timing. All spot-checked line citations verified against real current source with high precision. Acceptance criteria are uniformly testable and externally observable -- no vague language, no semantic-model violations, no missing error cases found across AC-01 through AC-24. The single surviving issue is a genuine scope-overlap/dangling-reference: this spec's own non_goals section correctly identifies that it breaks a sibling spec's pinned criterion (track-f AC-F6) but defers the fix to a follow-on spec whose own stated scope does not include that fix, leaving no actual owner for the reconciliation. This is exactly the kind of issue worth blocking on since it will silently invalidate an already-passed, already-committed sibling spec's acceptance criterion with no plan to correct it -- fixable with a small, concrete addition to this spec's own closing work rather than a structural rewrite."
+}
+```
+
+**Files reviewed** (all read fresh this session, absolute paths):
+- `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/spec-track3b1-identity-promotion-core.json` (the spec under audit)
+- `/Users/gabe/Projects/callisto/crates/callisto-graph/src/walk.rs`
+- `/Users/gabe/Projects/callisto/crates/callisto-graph/src/identity.rs`
+- `/Users/gabe/Projects/callisto/crates/callisto-graph/src/config/resolve.rs`
+- `/Users/gabe/Projects/callisto/crates/callisto-graph/src/lib.rs`
+- `/Users/gabe/Projects/callisto/crates/callisto-graph/src/aggregate.rs`
+- `/Users/gabe/Projects/callisto/crates/callisto-graph/src/error.rs`
+- `/Users/gabe/Projects/callisto/crates/callisto-model/src/identity.rs`
+- `/Users/gabe/Projects/callisto/crates/callisto-model/src/package.rs`
+- `/Users/gabe/Projects/callisto/.claude/specs/track-f-resolution-extraction.json`
+- `/Users/gabe/Projects/callisto/.claude/specs/track-e-specificity.json`
+- `/Users/gabe/Projects/callisto/.claude/specs/track-g-matrix-napi-maturin.json`</result>
+<usage><subagent_tokens>160803</subagent_tokens><tool_uses>15</tool_uses><duration_ms>306133</duration_ms></usage>
+</task-notification>
