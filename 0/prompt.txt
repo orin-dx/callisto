@@ -1,0 +1,24 @@
+<task-notification>
+<task-id>a2ae951816088d45d</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/tasks/a2ae951816088d45d.output</output-file>
+<status>completed</status>
+<summary>Agent "Second revision of apply-batch spec" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All 7 blockers have been fixed and re-verified against the actual source code (not the prior draft's prose). Summary of what changed in `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/SPEC-APPLY-BATCH-001.json`:
+
+1. **write_call_count placement** — moved to `crates/callisto-model/src/atomic.rs` (Layer 1, where `atomic_write` actually has a body), added to `scope`. Confirmed via reading both files that the re-export in `callisto-manifests` stays untouched, so `fn_addr_eq` test needs no change (function pointer equality is unaffected by adding a counter inside the target function's body).
+
+2. **#[serial] race** — new counter-asserting tests (AC-004/006/008/011) moved to a brand-new file `crates/callisto-graph/tests/apply_batch_test.rs`, mirroring `manifest_cache_test.rs`'s actual isolation mechanism (being the sole open()/atomic_write()-touching test in its compiled binary — confirmed by reading that file's own doc comment). Apply.rs's existing 6 tests are untouched; AC-010 updated to explain why no shared-binary hazard exists.
+
+3. **AC-003 byte-for-byte claim** — read `python.rs` render() (lines 66-75): confirmed the CRLF branch rewrites every bare LF including inside triple-quoted strings, so PyprojectToml is lossy. Read `cargo.rs` persist() (lines 102-111): confirmed genuinely unconditional losslessness. AC-003 rewritten so only CargoToml gets the unconditional guarantee; PyprojectToml gets PackageJson-style conditional treatment; a non_goals entry documents the pre-existing lossiness.
+
+4. **Missed persist call sites** — read `CargoToml::write_version` (two persist calls, lines 215 and 239), `CargoToml::update_dependency_spec` (workspace-inherited branch at line 306 persists the root manifest via `WorkspaceCargoResolver`, not `self`), and `PyprojectToml::update_optional_dependencies` (atomic_write at lines 478-483 guarded by `if any_updated`). api_surface and `scope` rewritten with exact file:line enumeration; explicit decision recorded that workspace-inherited paths are out of scope (documented limitation, not silently wrong).
+
+5. **AC-007 reference point** — added explicit statement to `apply_version_plan`'s api_surface entry that post-batching, entry N≥2 in a group compares against the handle's in-memory state, not disk; AC-007 rewritten with a concrete before/after in-memory-version construction.
+
+6. **AC-015 repro** — read `callisto-model/src/atomic.rs` atomic_write precisely: failure occurs at `NamedTempFile::new_in(parent)?` (line 52), before any write/rename. AC-015 rewritten to require A and B under distinct parent directories and correctly describes the failure point.
+
+7. Final AC-010 re-check confirmed no change to existing tests was needed given the blocker-2 resolution.</result>
+<usage><subagent_tokens>94522</subagent_tokens><tool_uses>21</tool_uses><duration_ms>218468</duration_ms></usage>
+</task-notification>
