@@ -1,0 +1,1 @@
+for callisto moon, how do we exclude the blindspots from the coverage count? Normally in TS we can add an exclude comment. What's the process?
