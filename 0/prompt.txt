@@ -1,0 +1,63 @@
+<task-notification>
+<task-id>a21e86b514c63303d</task-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/bb531e8d-c394-4e47-a8ae-e4a9ceeca6d2/tasks/a21e86b514c63303d.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement T05 (Fixed-group convergence block)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Task T05 complete and committed (short SHA `1160367`).
+
+Summary:
+
+- Read T05 from the plan, and AC-001/AC-002/AC-004 text directly from `.claude/specs/SPEC-TRACK1-FIXED-GROUP-CASCADE-CORRECTNESS.json`.
+- Added the RED test `test_fixed_group_seeded_siblings_converge_on_shared_target` to `crates/callisto-graph/src/cascade.rs` per the plan's exact spec, but with one necessary fixture fix: `bare_package` (empty `manifests`) breaks `Package::version_grammar()`, which `TagIndex::build` requires — so the test constructs packages with a canonical Cargo.toml manifest (mirroring the `make_pkg` helper pattern already used in `crates/callisto-graph/src/tags.rs`) instead of using `bare_package`. This is a test-fixture correction, not a spec contradiction — the plan's assertions and reasoning were correct; only the literal packaging helper needed a manifest.
+- Confirmed RED: first run failed on `Result::unwrap()` at the `TagIndex::build` call due to the fixture gap; after the fixture fix, it failed exactly as the plan predicted — `left: "0.2.0", right: "2.1.0"` on the `target_b` assertion.
+- Implemented the Fixed-group convergence block in `solve_cascade` (crates/callisto-graph/src/cascade.rs:384-427), inserted immediately after the Linked-group block and before the outer `while changed` loop's closing brace, exactly as specified in the plan (mirrors Linked-group's severity max, calls `crate::groups::fixed_group_target`, updates `out.targets`/`out.severities`/`worklist`/`changed`).
+- Confirmed GREEN for the target test, then all 9 cascade module tests, then `cargo fmt -p callisto-graph`, `cargo clippy -p callisto-graph --all-targets -- -D warnings` (clean), and the full `cargo test -p callisto-graph` suite (all passed, 0 failed).
+- Committed as `1160367` — `fix(graph): add Fixed-group convergence block to solve_cascade`.
+
+```json
+{
+  "task_id": "T05",
+  "status": "done",
+  "steps_completed": [
+    "Read AC-001/AC-002/AC-004 from spec file on disk",
+    "RED: added test_fixed_group_seeded_siblings_converge_on_shared_target, confirmed it fails before implementation (initially on a fixture manifest gap, then on the expected 0.2.0 vs 2.1.0 assertion after fixing the fixture)",
+    "Implement: added Fixed-group convergence block in solve_cascade per plan spec",
+    "GREEN: target test passes",
+    "Ran full cascade::tests:: module - 9 passed, 0 failed",
+    "cargo fmt -p callisto-graph",
+    "cargo clippy -p callisto-graph --all-targets -- -D warnings (clean)",
+    "cargo test -p callisto-graph (full suite, 0 failed)",
+    "Committed"
+  ],
+  "test_result": "pass",
+  "commit_sha": "1160367",
+  "concerns": "The plan's exact test code used bare_package() (empty manifests) for pkg_a/pkg_b, which causes TagIndex::build to fail with ModelError::NoCanonicalManifest since Package::version_grammar() requires at least one canonical manifest. Fixed by attaching a canonical Cargo.toml ManifestDecl to each test package (mirroring the make_pkg helper already used in tags.rs's own test module) instead of bare_package. This is a fixture-only change; the test's assertions, scenario, and the implementation are unchanged from the plan.",
+  "criteria_evidence": [
+    {
+      "criterion_id": "AC-001",
+      "test_file": "crates/callisto-graph/src/cascade.rs",
+      "test_line": 1478,
+      "implementation_file": "crates/callisto-graph/src/cascade.rs",
+      "implementation_line": 412
+    },
+    {
+      "criterion_id": "AC-002",
+      "test_file": "crates/callisto-graph/src/cascade.rs",
+      "test_line": 1465,
+      "implementation_file": "crates/callisto-graph/src/cascade.rs",
+      "implementation_line": 388
+    },
+    {
+      "criterion_id": "AC-004",
+      "test_file": "crates/callisto-graph/src/cascade.rs",
+      "test_line": 1465,
+      "implementation_file": "crates/callisto-graph/src/cascade.rs",
+      "implementation_line": 427
+    }
+  ],
+  "reasoning": "Followed the plan verbatim except for a fixture fix required by real Package::version_grammar() semantics. RED confirmed twice (fixture bug, then true red on assertion). GREEN confirmed for target test, module, and full crate suite. fmt/clippy clean. Committed once."
+}
+```</result>
+<usage><subagent_tokens>84859</subagent_tokens><tool_uses>51</tool_uses><duration_ms>655486</duration_ms></usage>
+</task-notification>
