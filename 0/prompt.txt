@@ -1,0 +1,8 @@
+<task-notification>
+<task-id>bkro0gyuw</task-id>
+<tool-use-id>toolu_01HbkeUBKLcQuemtqUzcTx1H</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/b90cda92-db13-4c63-8d7f-c9fa7d9196ab/tasks/bkro0gyuw.output</output-file>
+<status>killed</status>
+<summary>Background command "cd /Users/gabe/Projects/callisto
+cargo test -p callisto-graph --lib 2&gt;&amp;1 | tail -30" was stopped</summary>
+</task-notification>
