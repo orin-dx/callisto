@@ -1,0 +1,32 @@
+<task-notification>
+<task-id>a19e958a21728439d</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/f21fbbf3-d9f7-4109-9c36-8de0a6e308fd/tasks/a19e958a21728439d.output</output-file>
+<status>completed</status>
+<summary>Agent "Review finding-1 bounded revwalk fix" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Verdict: PASS
+
+**Diff scope.** `crates/callisto-vcs/src/lib.rs` replaces the two-walk-then-exclude pattern with `self.repo.rev_walk(vec![head.id]).with_hidden(Some(since_oid)).all()`, adds a process-global `REVWALK_VISIT_COUNT` counter, and leaves merge-exclusion (`parent_ids().count() &gt; 1`) and pathspec filtering (`commit_touches_pathspecs`) byte-for-byte untouched below the walk-construction block — confirmed via diff, this is a pure bounding change.
+
+**2. Branchy-history correctness (the critical item).** Read `gix-traverse-0.60.0/src/commit/simple.rs`'s `compute_hidden_frontier`: it runs a generation-number-prioritized flag-propagation over a temporary graph, marking commits `VISIBLE` if reachable from a visible tip and `HIDDEN` if reachable from a hidden tip; the returned frontier is exactly the set with **both** flags. The actual walk (`next_by_topology`/`next_by_commit_date`) then refuses to enqueue any parent in that frontier (`insert_into_seen_and_next` returns early on `hidden.contains_key`).
+
+This gives a rigorous, topology-independent correctness argument, not just an empirical one: given the contract that `since` is an ancestor of HEAD (the only sensible calling contract for a "since" bound), every ancestor of `since` is transitively an ancestor of HEAD, so `ancestors(since) == ancestors(since) ∩ ancestors(HEAD)` — precisely the both-flags intersection the frontier computes. This holds for **any** DAG shape: multiple independent branches diverging at different points before `since`, or a branch merging back in after `since` (exactly what `test_commits_since_with_pathspec_includes_pre_tag_branch_commits` exercises — commit B is a shared ancestor of both hidden tip S and visible-only commits D/E; B correctly lands in the frontier while D/E, never reachable from S, do not). I traced this by hand against the test's actual commit graph and it holds. Ran `cargo test -p callisto-vcs --lib`: this test and `test_commits_since_with_pathspec_respects_since_bound` both pass.
+
+**One genuine caveat (not a correctness bug, a performance-generalization caveat):** `compute_hidden_frontier`'s termination condition is "no non-`STALE` item remains in the priority queue" — a `VISIBLE`-only branch that never intersects hidden ancestry (e.g., a very old, deep side-branch merged in long after diverging near the repo root, with `since` only a few commits before HEAD) must be walked to convergence before the loop can terminate, same as `git rev-list`'s own boundary algorithm. So the "always ~O(since..HEAD)" framing is not universally true for pathological topologies — it's inherent to the merge-base-style algorithm itself (not a regression this fix introduces), but the 265x benchmark (linear 3000-commit history) doesn't exercise this. Worth knowing, not blocking.
+
+**3. Exclusivity.** `with_hidden` hides the tip itself plus ancestors; `test_commits_since_with_pathspec_respects_since_bound` builds c1→c2→c3, sets `since=c1`, and asserts the result is exactly `[c3, c2]` — confirmed passing.
+
+**4. Merge/pathspec filtering unchanged** — confirmed by diff inspection, untouched code paths.
+
+**5. Counter placement.** `REVWALK_VISIT_COUNT.fetch_add(1, ...)` sits inside `for info in revwalk`, immediately after `info.map_err(...)?`, one increment per loop iteration, before any `continue`. No double-counting, no under-counting — it faithfully measures "how many `Info`s did the primary walk yield."
+
+**6. Integration test.** `crates/callisto-vcs/tests/revwalk_bound_count_test.rs` builds exactly 30 linear commits, captures `since` there, adds 3 more, uses `#[serial]` (mirrors the `apply_persist_open_count_test.rs` precedent for process-global-counter isolation). Traced gix internals: hidden commits are never enqueued (blocked at `insert_into_seen_and_next`), so the boundary is crisp — `assert_eq!(..., 3, ...)` reflects the walk's actual mechanics, not an incidental artifact; low flake risk across gix versions since it follows directly from the documented `since..HEAD` contract.
+
+**7. Sibling gaps.** Only one `rev_walk` call site exists in `crates/callisto-vcs/src` and `crates/callisto-graph/src` combined (grep confirmed) — no other two-walk-then-exclude pattern to fix.
+
+**8. Verification run myself:** `cargo test -p callisto-vcs` — 38/38 lib tests pass, 1/1 integration test passes, 0 doc-tests. `cargo clippy -p callisto-vcs --all-targets --tests -- -D warnings` — clean, zero warnings.
+
+No blocking issues found.</result>
+<usage><subagent_tokens>101827</subagent_tokens><tool_uses>25</tool_uses><duration_ms>531557</duration_ms></usage>
+</task-notification>
