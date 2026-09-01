@@ -1,0 +1,4 @@
+https://tessl.io
+https://github.github.com/spec-kit/reference/agentic-sdd.html
+https://www.thebcms.com/blog/spec-driven-development/
+https://ai-sdd.com/en/#core-model
