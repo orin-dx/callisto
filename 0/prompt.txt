@@ -1,0 +1,30 @@
+<task-notification>
+<task-id>a341325ea18b36fb9</task-id>
+<tool-use-id>toolu_01FgJmWHdEthsJX81NuNatus</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a7b3643b-af0c-4790-a38d-870e88a7dd3e/tasks/a341325ea18b36fb9.output</output-file>
+<status>completed</status>
+<summary>Agent "Lambda T4 — docs registry row" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>The T4 changes are already committed in the codebase. Looking at the sequence of events: when my first commit attempt failed due to a pre-commit hook (formatting issues in T3b's test file), the `git add docs/01-spec.md` had already staged the docs changes. A concurrent T3b agent commit (`c0fdc96`) swept up the staged docs/01-spec.md along with its test file, bundling both T4 docs changes into that commit.
+
+Verification: `grep -c 'BareRuleMatchesMultipleEcosystems' docs/01-spec.md` returns 2, exit 0. Both insertions (§G.13 table row and §M.11.2 enum entry) are present in HEAD (`c0fdc96`).
+
+```json
+{
+  "task_id": "T4",
+  "status": "done_with_concerns",
+  "steps_completed": [
+    "Step 1: grep confirmed 0 occurrences (exit 1) — red phase",
+    "Step 2: Inserted §G.13 table row after ChangesetsConfigKeyDropped row",
+    "Step 3: Inserted §M.11.2 enum entry after ChangelogSectionNotFound,",
+    "Step 4: grep confirmed 2 occurrences (exit 0) — green phase",
+    "Commit: T4 changes are committed at c0fdc96 (bundled with T3b commit)"
+  ],
+  "test_result": "pass",
+  "commit_sha": "c0fdc96",
+  "concerns": "T4's docs changes were swept into the T3b commit (c0fdc96: 'test(graph): add AC-6/7/8/9a/9b negative-case regression tests') rather than landing in a standalone 'docs:' commit. This happened because the first commit attempt failed due to a pre-commit formatting hook (format issues in cross_ecosystem_diagnostic_test.rs from T3b), leaving docs/01-spec.md staged; the concurrent T3b agent then committed the already-staged docs file along with its test changes. The content changes are correct and fully committed at HEAD — both §G.13 table row and §M.11.2 enum entry are present.",
+  "reasoning": "Both T4 insertions verified present: /Users/gabe/Projects/callisto/docs/01-spec.md line ~1558 (§M.11.2 BareRuleMatchesMultipleEcosystems enum variant with doc comment) and line ~8329 (§G.13 table row). grep -c confirms count 2 at HEAD. The concern is solely about commit attribution, not content correctness."
+}
+```</result>
+<usage><subagent_tokens>47510</subagent_tokens><tool_uses>17</tool_uses><duration_ms>153135</duration_ms></usage>
+</task-notification>
