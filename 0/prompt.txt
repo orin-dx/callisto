@@ -1,0 +1,1 @@
+Go ahead and get it done then. Use agents and workflows (agent teams in claude, not sure what you call it, swarm?) to get the work done without interfearing with each other
