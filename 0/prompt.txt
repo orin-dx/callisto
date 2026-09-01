@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bvlrsxtw5</task-id>
+<summary>Monitor event: "final just ci run with dev-exp fixes applied, persistent"</summary>
+<event>[+1210s]     Finished report saved to lcov.info
+CI_DONE TOTAL_ELAPSED=1210s</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
