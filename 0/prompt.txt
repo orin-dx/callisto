@@ -1,0 +1,3 @@
+2. your git-only sounds good
+3. That seems fine as long as we're considering some of our packages are compiled to binary before publish (say rust publishing to crate as source and GH as binary)
+4. sound good
