@@ -1,0 +1,61 @@
+<task-notification>
+<task-id>a5f0f9acc65d6857f</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/bb531e8d-c394-4e47-a8ae-e4a9ceeca6d2/tasks/a5f0f9acc65d6857f.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement Track 4 T8" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Commit succeeded: `47f05e2d9051acda532beb88241240bbfa833bce`.
+
+## Summary
+
+Task T8 executed and committed.
+
+- **Spec criteria read from disk** at `/Users/gabe/Projects/callisto/.claude/specs/SPEC-TRACK4-RELEASE-PIPELINE-CONTRACT-CORRECTNESS.json`: AC-10b (empty matched section) and AC-12 (no matching heading), both `is_error_case: true`, both requiring `changelog_section` to be `None` plus a `ChangelogSectionNotFound` Warning diagnostic naming the package.
+- **Appended two tests** to `/Users/gabe/Projects/callisto/crates/callisto-graph/tests/publish_tests.rs` (plan's exact content):
+  - `plan_publish_leaves_changelog_section_none_when_matched_heading_section_is_empty` (line 1458)
+  - `plan_publish_leaves_changelog_section_none_when_no_matching_heading` (line 1493)
+- This is a pure regression-proof task per the plan — T7 (already committed) implements `resolve_changelog_section` in `/Users/gabe/Projects/callisto/crates/callisto-graph/src/commands/publish.rs` (function at line 71, `ChangelogSectionNotFound` emitted at lines 83 and 119), which already routes both the empty-section and no-heading cases through `extract_section` uniformly. Per the task's explicit instruction, a pass on first run was expected and correctly observed — not treated as a broken red phase, since no implementation change was made or needed.
+- Both new tests passed immediately on first run (verified via background cargo test run, not assumed).
+- Ran `cargo test -p callisto-graph` (full suite, 0 failures), `cargo fmt -p callisto-graph -- --check` (applied one reformat to match rustfmt, then verified clean), and `cargo clippy -p callisto-graph --all-targets -- -D warnings` (clean).
+- Committed with the plan's exact message to `crates/callisto-graph/tests/publish_tests.rs` only.
+
+No precision tests were supplied for this task (mutator step not part of this invocation).
+
+```json
+{
+  "task_id": "T8",
+  "status": "done",
+  "steps_completed": [
+    "read_spec_criteria_ac10b_ac12",
+    "appended_regression_tests",
+    "ran_targeted_tests_confirmed_pass_as_expected",
+    "ran_full_callisto_graph_test_suite",
+    "ran_fmt_check_and_applied_formatting",
+    "ran_clippy_deny_warnings",
+    "committed"
+  ],
+  "test_result": "pass",
+  "commit_sha": "47f05e2d9051acda532beb88241240bbfa833bce",
+  "concerns": null,
+  "criteria_evidence": [
+    {
+      "criterion_id": "AC-10b",
+      "test_file": "crates/callisto-graph/tests/publish_tests.rs",
+      "test_line": 1458,
+      "implementation_file": "crates/callisto-graph/src/commands/publish.rs",
+      "implementation_line": 71
+    },
+    {
+      "criterion_id": "AC-12",
+      "test_file": "crates/callisto-graph/tests/publish_tests.rs",
+      "test_line": 1493,
+      "implementation_file": "crates/callisto-graph/src/commands/publish.rs",
+      "implementation_line": 71
+    }
+  ],
+  "reasoning": "Task explicitly designated as pure regression-proof with no implementation change, matching prior pattern (T5, Track9 T4/T6). Confirmed spec criteria on disk before writing tests. Confirmed both tests pass immediately (expected, since T7 already implements the shared extract_section/ChangelogSectionNotFound path for both scenarios) rather than treating the pass as a broken red phase, per the task's explicit carve-out for pure regression tasks. Ran full test/fmt/clippy gates before committing exactly as instructed."
+}
+```</result>
+<usage><subagent_tokens>61736</subagent_tokens><tool_uses>24</tool_uses><duration_ms>563165</duration_ms></usage>
+</task-notification>
