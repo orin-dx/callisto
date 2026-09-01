@@ -1,0 +1,5 @@
+<task-notification>
+<task-id>bzhuwclza</task-id>
+<summary>Monitor event: "confirm RED state for ensure_git_supported"</summary>
+<event>[Monitor timed out — re-arm if needed.]</event>
+</task-notification>
