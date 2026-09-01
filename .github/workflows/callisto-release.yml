@@ -1,4 +1,4 @@
-name: Release & Publish Workflow
+name: Durable release
 
 on:
   push:
@@ -6,25 +6,32 @@ on:
       - main
   workflow_dispatch:
 
+permissions: {}
+
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: durable-release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   verify:
-    name: Verify CI Pipeline (Format, Lint, Test, WASM, Security Audit)
+    name: Verify release candidate
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
+          persist-credentials: false
 
-      - name: Install Toolchain & Cache
+      - name: Build local Callisto
         uses: ./.github/actions/setup-callisto
+        with:
+          source: local
 
       - name: Install just
-        uses: extractions/setup-just@v2
+        uses: extractions/setup-just@dd310ad5a97d8e7b41793f8ef055398d51ad4de6 # v2
 
       - name: Format Check
         run: just fmt-check
@@ -39,29 +46,232 @@ jobs:
         run: just wasm-check
 
       - name: Install cargo-deny
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@0758d235715de2f3551eacc980d9ae8fce9342c3 # v2
         with:
           tool: cargo-deny
 
       - name: Supply Chain Audit
         run: just audit
 
-  release:
-    name: Legacy release route (disabled during durable-release migration)
-    needs: [verify]
-    # The old composite action can independently publish, tag, and create a
-    # forge release. Keep this job disabled until the separate plan/build/
-    # Environment-gated execute jobs are connected to verified adapters.
-    if: ${{ false }}
+      - name: Reject mutable GitHub Actions references
+        run: .github/tests/verify-action-pins.sh
+
+  version-pr:
+    name: Create or update the Callisto release PR
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      has_pending_changesets: ${{ steps.status.outputs.has_pending_changesets }}
+
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-callisto
+        with:
+          source: local
+      - name: Inspect pending changesets
+        id: status
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +e
+          callisto status --check
+          status=$?
+          set -e
+          case "$status" in
+            1) echo 'has_pending_changesets=true' >> "$GITHUB_OUTPUT" ;;
+            2) echo 'has_pending_changesets=false' >> "$GITHUB_OUTPUT" ;;
+            *) echo "::error::callisto status --check exited $status"; exit 1 ;;
+          esac
+      - name: Compose, version, and open the release PR
+        if: steps.status.outputs.has_pending_changesets == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          branch='callisto/version-packages'
+          label='callisto: release'
+          title='chore(release): version packages'
+          body=$(gh pr list --head "$branch" --json body --jq '.[0].body // empty')
+          if [[ -n "$body" ]]; then
+            body=$(printf '%s' "$body" | callisto compose-pr-body --existing-body - --label "$label" --branch main --format text)
+          else
+            body=$(callisto compose-pr-body --label "$label" --branch main --format text)
+          fi
+          # This is the sole step that edits manifests, changelogs, and removes
+          # exactly the changesets consumed by the release PR.
+          callisto version
+          test -n "$(git status --porcelain)" || { echo '::error::pending changesets produced no release-PR delta'; exit 1; }
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git switch -C "$branch"
+          git add -A
+          git commit -m "$title"
+          git push --force-with-lease origin "$branch"
+          gh label create "$label" --color 0e8a16 --description 'Callisto release packages' 2>/dev/null || true
+          pr=$(gh pr list --head "$branch" --json number --jq '.[0].number // empty')
+          if [[ -n "$pr" ]]; then gh pr edit "$pr" --title "$title" --body "$body" --add-label "$label"; else gh pr create --head "$branch" --base main --title "$title" --body "$body" --label "$label"; fi
+
+  release-candidate:
+    name: Identify a merged Callisto release PR
+    needs: [verify, version-pr]
+    if: needs.version-pr.outputs.has_pending_changesets == 'false'
     runs-on: ubuntu-latest
     permissions:
       contents: read
-
+      pull-requests: read
+    outputs:
+      is_release_pr: ${{ steps.candidate.outputs.is_release_pr }}
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+      - id: candidate
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # This only schedules the job. `release plan` verifies the actual
+          # parent-to-merge delta; labels and PR metadata are never authority.
+          prs=$(gh api --paginate "/repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/pulls" --jq '[.[] | select(.merged_at != null and .base.ref == "main" and .head.ref == "callisto/version-packages")] | length')
+          [[ "$prs" == 1 ]] && echo 'is_release_pr=true' >> "$GITHUB_OUTPUT" || echo 'is_release_pr=false' >> "$GITHUB_OUTPUT"
 
-      - name: Install Toolchain
+  plan:
+    name: Derive ephemeral intent from the merged release commit
+    needs: release-candidate
+    if: needs.release-candidate.outputs.is_release_pr == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/setup-callisto
+        with:
+          source: local
+      - name: Derive and hash intent
+        run: |
+          set -euo pipefail
+          callisto release plan --merged-release-commit --out release-intent.json
+          shasum -a 256 release-intent.json > release-intent.json.sha256
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: callisto-release-intent-${{ github.run_id }}
+          path: |
+            release-intent.json
+            release-intent.json.sha256
+          if-no-files-found: error
+          retention-days: 1
+
+  build:
+    name: Build the intent-bound source tree
+    needs: plan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      attestations: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/setup-callisto
+        with:
+          source: local
+      - uses: extractions/setup-just@dd310ad5a97d8e7b41793f8ef055398d51ad4de6 # v2
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: callisto-release-intent-${{ github.run_id }}
+          path: .release-handoff
+      - name: Verify handoff and build
+        run: |
+          set -euo pipefail
+          (cd .release-handoff && shasum -a 256 -c release-intent.json.sha256)
+          callisto release inspect --input .release-handoff/release-intent.json
+          mkdir -p release-artifacts
+          just build
+      - name: Attest declared binary artifacts
+        if: hashFiles('release-artifacts/**') != ''
+        uses: actions/attest-build-provenance@db473fddc028af60658334401dc6fa3ffd8669fd # v2.3.0
+        with:
+          subject-path: release-artifacts/**
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: callisto-release-build-${{ github.run_id }}
+          path: |
+            .release-handoff
+            release-artifacts
+          if-no-files-found: error
+          retention-days: 1
+
+  environment-policy:
+    name: Verify release Environment protection
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+    steps:
+      - name: Require release Environment reviewers
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          reviewers=$(gh api "/repos/${GITHUB_REPOSITORY}/environments/release" --jq '.protection_rules // [] | map(select(.type == "required_reviewers")) | length')
+          [[ "$reviewers" != 0 ]] || { echo '::error::GitHub Environment release has no required-reviewers protection rule'; exit 1; }
+
+  execute:
+    name: Execute approved release
+    needs: environment-policy
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write
+      attestations: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/setup-callisto
+        with:
+          source: local
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: callisto-release-intent-${{ github.run_id }}
+          path: .release-intent
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: callisto-release-build-${{ github.run_id }}
+          path: .release-build
+      - name: Verify same-run handoff before credentials
+        run: |
+          set -euo pipefail
+          (cd .release-intent && shasum -a 256 -c release-intent.json.sha256)
+          cmp .release-intent/release-intent.json .release-build/release-intent.json
+      - name: Execute verified release
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          TWINE_PASSWORD: ${{ secrets.TWINE_PASSWORD }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          state_dir="${RUNNER_TEMP}/callisto-release-state/${GITHUB_RUN_ID}"
+          mkdir -p "$state_dir"
+          args=(--intent .release-intent/release-intent.json --state "$state_dir/execution-state.json")
+          if [[ -f .release-build/release-artifacts/manifest.json ]]; then
+            args+=(--artifact-manifest .release-build/release-artifacts/manifest.json --artifact-dir .release-build/release-artifacts)
+          fi
+          callisto release execute "${args[@]}"
         uses: ./.github/actions/setup-callisto
