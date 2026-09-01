@@ -1,0 +1,1 @@
+Shouldn't the new path do everything the old one did? We should check and if it does clean up the legacy one
