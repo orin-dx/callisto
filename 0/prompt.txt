@@ -1,0 +1,1 @@
+Do we appropriatelly account for all the CLI properties like dry-run across the board? How do we make sure that we don't mistakenly ignore dry run and others?
