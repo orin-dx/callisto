@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bc5b4hz5x</task-id>
+<tool-use-id>toolu_013VTbGJnMsoTCH189npvFvh</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a7b3643b-af0c-4790-a38d-870e88a7dd3e/tasks/bc5b4hz5x.output</output-file>
+<status>completed</status>
+<summary>Background command "Run full workspace test suite" completed (exit code 0)</summary>
+</task-notification>
