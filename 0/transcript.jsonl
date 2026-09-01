@@ -1,0 +1,2 @@
+{"v":1,"agent":"codex","cli_version":"0.10.3-nightly.202608260614.6561a64b8","type":"user","ts":"2026-08-29T15:34:17.957Z","content":[{"text":"Background agent \"Read the spec@1 at /Users/gabe/Projects/callisto/....\" was stopped by the user."}]}
+{"v":1,"agent":"codex","cli_version":"0.10.3-nightly.202608260614.6561a64b8","type":"user","ts":"2026-08-29T15:34:17.957Z","content":[{"text":"[Request interrupted by user]"}]}
