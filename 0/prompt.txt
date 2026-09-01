@@ -1,0 +1,21 @@
+<task-notification>
+<task-id>a0f1ee3344cf97558</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a15bbbf7-aba0-415d-bfdc-c773ea65cfc7/tasks/a0f1ee3344cf97558.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix TagIndex ignoring pkg.tag_template in tags.rs" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Clean. Here's a summary of what was done:
+
+**Bug confirmed:** `TagIndex::build` in `/Users/gabe/Projects/callisto/crates/callisto-graph/src/tags.rs` (line 119) always constructed the tag template as `{name}@{version}`, ignoring `pkg.tag_template: Option&lt;TagTemplate&gt;`. Any package with a custom template (e.g. `v{version}`) would silently resolve to `None` because the wrong glob pattern was searched.
+
+**Red phase:** Added test `tag_index_uses_custom_tag_template_when_set` (around line 383) that builds a `TagIndex` for two packages — one with `tag_template: Some(TagTemplate::parse("v{version}"))` and one with `tag_template: None` — against a tag list of `["v1.2.3", "pkg-default@4.5.6"]`. The test asserted each resolves to its correct tag. It failed as expected: the custom-template package returned `None` instead of `Some("1.2.3")`.
+
+**Green phase:** The fix in `TagIndex::build`:
+```rust
+let default_tmpl = TagTemplate::parse(&amp;format!("{}@{{version}}", pkg.id.display_name()))?;
+let tmpl = pkg.tag_template.clone().unwrap_or(default_tmpl);
+```
+This constructs the default template first (preserving the `?` error propagation path), then falls through to `pkg.tag_template` when it's set. All 101 tests pass, clippy is clean.</result>
+<usage><subagent_tokens>30911</subagent_tokens><tool_uses>7</tool_uses><duration_ms>95071</duration_ms></usage>
+</task-notification>
