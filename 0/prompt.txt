@@ -1,0 +1,63 @@
+<task-notification>
+<task-id>afeab95f8308854bf</task-id>
+<tool-use-id>toolu_01ErzDy4Nu8rhzkbym4C1LH1</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/bb531e8d-c394-4e47-a8ae-e4a9ceeca6d2/tasks/afeab95f8308854bf.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement T04 (plan_snapshot tags wiring + AC pins)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>```json
+{
+  "task_id": "T04",
+  "status": "done",
+  "steps_completed": [
+    "Confirmed RED: cargo test -p callisto-graph --no-run failed with E0063 missing field `tags` at commands/snapshot.rs:53, the only remaining compile error in the crate",
+    "Added `let tags = ws.tags()?;` after base_versions binding (line 38)",
+    "Added `tags,` field to CascadeInput literal (line 63)",
+    "Confirmed compile GREEN: cargo test -p callisto-graph --no-run succeeds, whole crate + all test binaries compile",
+    "Added #[cfg(test)] mod tests with 3 tests pinning AC-014, AC-005, AC-006",
+    "Fixed a self-referential bug in the AC-006 test as originally specified in the plan: include_str!(\"snapshot.rs\") pulls in the entire file including the test module itself, whose own name/doc-comments contain the string \"pre_mutation_checks\" -- causing a guaranteed false failure. Fixed by splitting the source at the #[cfg(test)] boundary and checking only the production code above it.",
+    "Confirmed GREEN (behavior): all 3 new tests pass",
+    "Ran cargo fmt -p callisto-graph (whitespace-only reformat)",
+    "Ran cargo clippy -p callisto-graph --all-targets -- -D warnings: clean",
+    "Ran full crate suite: cargo test -p callisto-graph --lib (356 passed), cargo test -p callisto-graph --test cascade_tests (7 passed), and full cargo test -p callisto-graph (all binaries, exit code 0, zero failures)",
+    "Committed as bf2bde7"
+  ],
+  "test_result": "pass",
+  "precision_tests_absorbed": [],
+  "commit_sha": "bf2bde7",
+  "concerns": "The plan's exact literal test code for AC-006 (plan_snapshot_source_never_calls_pre_mutation_checks) was self-defeating: it uses include_str!(\"snapshot.rs\") to scan the whole file for the substring \"pre_mutation_checks\", but the test module being added contains that exact string in its own name and doc comments, guaranteeing a false failure. I deviated from the plan's literal test body (kept its intent and assertion message identical) by scoping the substring check to only the source above the #[cfg(test)] boundary. This is a minimal, targeted fix to a test-authoring bug in the plan, not a scope change -- verified the test still fails if pre_mutation_checks were actually called in production code (the split correctly isolates only the pre-test-module source).",
+  "criteria_evidence": [
+    {
+      "criterion_id": "AC-005",
+      "test_file": "crates/callisto-graph/src/commands/snapshot.rs",
+      "test_line": 262,
+      "implementation_file": "crates/callisto-graph/src/commands/snapshot.rs",
+      "implementation_line": 96
+    },
+    {
+      "criterion_id": "AC-006",
+      "test_file": "crates/callisto-graph/src/commands/snapshot.rs",
+      "test_line": 316,
+      "implementation_file": "crates/callisto-graph/src/commands/snapshot.rs",
+      "implementation_line": 9
+    },
+    {
+      "criterion_id": "AC-014",
+      "test_file": "crates/callisto-graph/src/commands/snapshot.rs",
+      "test_line": 230,
+      "implementation_file": "crates/callisto-graph/src/commands/snapshot.rs",
+      "implementation_line": 38
+    }
+  ],
+  "reasoning": "AC-003 (crate compiles) is also covered by this task per the plan's covers_criteria list, satisfied by the compile-GREEN step; no dedicated test needed since it's a compile-level property, so it's omitted from criteria_evidence proper (no single test/impl line pair proves a whole-crate compile) but the full-suite run and clean clippy/fmt confirm it. AC-005's implementation_line points to PlannedBump.to (line 96); BumpRecord.to is at line 106, both proven by the same test."
+}
+```
+
+Files touched:
+- `/Users/gabe/Projects/callisto/crates/callisto-graph/src/commands/snapshot.rs` (only file modified — `tags` wiring at lines 38/63, new test module at lines 155–334)
+
+Commit: `bf2bde7` — "fix(graph): wire tags into plan_snapshot's CascadeInput and pin AC-005/AC-006/AC-014"
+
+One deviation worth flagging: the plan's literal AC-006 test body was self-referential (checking the whole file's source via `include_str!` for a string that necessarily appears in the test's own name/comments), which would have made it fail unconditionally. I fixed this by scoping the substring check to only the code above the `#[cfg(test)]` boundary, preserving the test's intent and assertion message.</result>
+<usage><subagent_tokens>70078</subagent_tokens><tool_uses>30</tool_uses><duration_ms>1628640</duration_ms></usage>
+</task-notification>
