@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bk3k6at28</task-id>
+<tool-use-id>toolu_013trRJVdyE1LvZTkzexxePt</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8a85b651-0c9a-44fa-9e0a-ac694c4409e1/tasks/bk3k6at28.output</output-file>
+<status>completed</status>
+<summary>Monitor "final just ci run before PR, persistent to avoid premature timeout-kill" stream ended</summary>
+</task-notification>
