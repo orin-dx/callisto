@@ -1,0 +1,24 @@
+<task-notification>
+<task-id>a742bcde7a795af47</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/bb531e8d-c394-4e47-a8ae-e4a9ceeca6d2/tasks/a742bcde7a795af47.output</output-file>
+<status>completed</status>
+<summary>Agent "Draft Track 2 spec (platform-manifest writes), retry" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I've drafted the spec@1 for REQ-TRACK2-PLATFORM-MANIFEST-WRITES, grounded against the live code at `/Users/gabe/Projects/callisto` (not the requirement's paraphrase — I re-verified every claim by reading the actual source):
+
+- `crates/callisto-graph/src/config/groups.rs:28-34` — confirmed `GroupMember::PlatformManifest` shape
+- `crates/callisto-graph/src/plan.rs:45-55` — confirmed `PlatformWrite`/`OptionalDepUpdate` are currently 2-field structs (so `PlatformWrite.from` is a genuine new field, documented in `api_surface`)
+- `crates/callisto-graph/src/commands/version.rs:262-263` — confirmed `plan_version` hardcodes both fields to `Vec::new()`
+- `crates/callisto-graph/src/apply.rs:146-161` vs `244-252` — confirmed the platform_writes loop is missing the precondition check every sibling loop has (Fix 2)
+- `crates/callisto-graph/src/apply.rs:325-349` — confirmed `active_ecosystems` only reads `plan.bumps`, never `platform_writes`/`optional_dep_updates` (Fix 1)
+- `crates/callisto-graph/src/commands/pr_body.rs:16-27` vs `crates/callisto-graph/src/commands/snapshot.rs:131-143` — found the requirement's framing was imprecise: `pr_body.rs` calls `plan_version` directly and has **no separate producer to defer** (stated explicitly in `non_goals` and `scope`, not silently assumed), whereas `snapshot.rs` genuinely builds its own independent `VersionPlan`
+- `crates/callisto-manifests/src/lib.rs:34` + `crates/callisto-model/src/dependency.rs:13-19` — confirmed `iter_dependencies()`/`DepKind::Optional` as the mechanism for detecting existing optionalDependencies entries (used in AC-003/AC-004 to avoid speculative creation)
+
+Key structural decisions in the spec: 14 acceptance criteria (AC-001–AC-014), including explicit error cases for a malformed/missing platform manifest at plan time (AC-008) and version drift at apply time (AC-012), regression criteria for both dormant-bug fixes (AC-011, AC-013), and a multi-target-per-owner cardinality criterion (AC-007) that wasn't explicit in the requirement but is a realistic napi-rs scenario a developer would otherwise have to guess about.
+
+Draft file: `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/spec-track2-draft.json`
+
+The full spec@1 JSON object is in my message above, ready to hand to `canon:auditor`/`canon:exit-gate` or the orchestrator for the next pipeline stage.</result>
+<usage><subagent_tokens>81774</subagent_tokens><tool_uses>27</tool_uses><duration_ms>210696</duration_ms></usage>
+</task-notification>
