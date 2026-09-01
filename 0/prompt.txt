@@ -1,0 +1,1 @@
+Just to be clear, we're publishing the crate to crates.io but the binary to GH right?
