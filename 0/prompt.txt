@@ -1,0 +1,3 @@
+We've prepped the first phase of callisto and have a working release workflow. We're also in the process of building support for python. We're also spec'd out support for other languages. Can you take account of the docs, specs and code and help evaluate the quality of each part?
+
+Evaluate architecture, best practices, performance, quality of the spec in accouting for the languages we plan on supporting, real world examples of what usage would be like and requirements? Performance, security, maintainability, usability and dx?
