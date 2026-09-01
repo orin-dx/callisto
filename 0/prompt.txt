@@ -1,0 +1,57 @@
+<task-notification>
+<task-id>ae0fcefe3eb7d3548</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/c0ad64b2-6440-4937-8328-8d9fd9db278c/tasks/ae0fcefe3eb7d3548.output</output-file>
+<status>completed</status>
+<summary>Agent "Audit SPEC-005 for quality issues (retry)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Spec Audit: SPEC-005 (release-entry-is-prerelease)
+
+I read the spec from disk, cross-referenced it against the live source it references (`plan.rs`, `publish.rs`, `version.rs`, `action.yml`, `docs/01-spec.md` — all line-number citations in the spec check out against current code, so no stale-reference issue), and diffed its scope against all 15 other files in `.claude/specs/`.
+
+Overall this is an unusually disciplined spec — most criteria are genuinely falsifiable from observable output. The issues below are the ones a drafter this careful would be most likely to wave through.
+
+```json
+{
+  "issues": [
+    {
+      "criterion_id": null,
+      "type": "missing-error-case",
+      "description": "No criterion covers the off-nominal input case for the Action script itself: what happens when $PLAN_JSON's releases[] entry is missing the isPrerelease key (a stale cached plan, a hand-edited fixture, a plan produced by a pre-this-change callisto binary in a mixed CI environment). The non_goals explicitly rule out a regex fallback but never state what the jq-based read does instead. Left unspecified, the most likely real behavior is jq returning `null`, which a naive `[[ \"$(jq -r '.isPrerelease')\" == \"true\" ]]` check silently evaluates to false -- reproducing, for a missing field, the exact class of silent-wrong-default bug this spec exists to eliminate for a mismatched substring.",
+      "suggested_fix": "Add AC-015: \"For each tag processed by .github/actions/callisto-action/action.yml's GitHub Release creation loop, if the tag's matching releases[] entry has no isPrerelease key at all, the step fails with a non-zero exit code and an error message naming the offending tag, before any `gh release create` call is made for that tag -- the missing key is never treated as isPrerelease: false.\" Extend AC-010's test enumeration to add: \"one case where a releases[] entry omits the isPrerelease key entirely, asserting the step exits non-zero and gh is never invoked for that tag.\""
+    },
+    {
+      "criterion_id": "AC-003",
+      "type": "ambiguous",
+      "description": "AC-003 through AC-006 each refer to \"the corresponding entry\" in releases[] for a package under test, but never state the correlation key. Since ReleaseEntry carries both `package` and `tagName` fields, a test author could correlate by package identity or by tag-string match -- both are 'valid' readings, and if a fixture ever has more than one release in flight, an implementer following the tag-string reading could pick the wrong entry without the criterion being violated on its own text.",
+      "suggested_fix": "Reword AC-003 (and apply the same clause to AC-004, AC-005, AC-006): \"For a package P whose resolved release version is the SemVer value `1.2.3` (no pre-release component), the entry in `callisto plan-publish --format json`'s `releases[]` array whose `package` field equals P's PackageId -- there is exactly one such entry per package per invocation -- has `isPrerelease: false`.\""
+    },
+    {
+      "criterion_id": "AC-012",
+      "type": "untestable",
+      "description": "AC-012 is tagged is_error_case: true but describes a regression/non-breakage guarantee (existing golden tests updated, full suite green) -- not behavior under a nil, malformed, or out-of-range input. It also bundles two distinct propositions (existing tests updated vs. full suite passes) into one criterion, and the mislabeling matters downstream: vector/lambda treat is_error_case:true as a signal to write off-nominal-input tests, so this label causes tooling to believe an error path is covered when none exists here.",
+      "suggested_fix": "Set is_error_case: false and split into two criteria. AC-012a: \"Every existing golden-file or snapshot test in callisto-graph or callisto-fixtures asserting the JSON shape of a ReleaseEntry is updated to include the `isPrerelease` key at its expected value.\" AC-012b: \"`just test` / `moon run :test` exits 0 after this change, with no remaining test asserting a ReleaseEntry JSON shape that omits `isPrerelease`.\""
+    },
+    {
+      "criterion_id": "AC-013",
+      "type": "untestable",
+      "description": "AC-013 is tagged is_error_case: true but asserts the absence of an error path (\"no error-handling branch needs to exist... and none should be added\"), reasoned from Rust's type system rather than from any observable behavior under a bad input. It is not a testable proposition about system behavior at all -- it's a structural/code-review assertion, and mislabeling it as an error case risks a reviewer believing malformed-version handling was considered when the criterion actually argues the opposite (that it's unreachable).",
+      "suggested_fix": "Set is_error_case: false and reword as a structural/non-goal-style criterion: \"A grep of crates/callisto-graph/src/commands/publish.rs's plan_publish function shows no default-false fallback, no `Result`/`Option` wrapping, and no new conditional branch introduced around the `ver.is_prerelease()` call added for ReleaseEntry.is_prerelease -- consistent with `ver: &amp;Version` at that call site already being a successfully-parsed, non-optional value.\" Alternatively, move this content into non_goals entirely, since it documents what is deliberately *not* being added rather than a testable outcome."
+    },
+    {
+      "criterion_id": null,
+      "type": "scope-overlap",
+      "description": "SPEC-TRACK4-RELEASE-PIPELINE-CONTRACT-CORRECTNESS (in the same .claude/specs/ directory) modifies the exact same struct-literal construction site this spec modifies: crates/callisto-graph/src/commands/publish.rs's `plan_publish`, the `releases.push(ReleaseEntry { ... })` block (SPEC-005: adding `is_prerelease: ver.is_prerelease()`; TRACK4's AC-10/AC-10b/AC-11/AC-12: populating `changelog_section` from a hardcoded `None`). TRACK4's own AC-13 asserts \"none of the fixes in this spec change... the presence/absence of any struct field in... ReleaseEntry\" -- true for TRACK4 alone, but the two specs are not coordinated on implementation order, and both editing the same ~6-line literal block guarantees a merge conflict if worked in parallel, with no stated tie-breaker for which lands first.",
+      "suggested_fix": "Add to non_goals: \"This spec's edit to the `releases.push(ReleaseEntry { ... })` block in crates/callisto-graph/src/commands/publish.rs (lines 505-510) touches the same struct literal that SPEC-TRACK4-RELEASE-PIPELINE-CONTRACT-CORRECTNESS's AC-10/AC-10b/AC-11/AC-12 also modify (populating `changelog_section`). Whichever spec lands first, the second must rebase its diff to this block against the first's committed change rather than against the pre-existing hardcoded lines; no field ordering within the literal is prescribed beyond `is_prerelease` being present as a keyed field.\""
+    }
+  ],
+  "overall": "fail",
+  "reasoning": "Core criteria (AC-001 through AC-011, AC-014) are genuinely falsifiable and well-grounded -- line numbers checked out against live code, and the PEP440/SemVer regression fixtures are concrete. But: one real off-nominal-input gap (missing isPrerelease key in the Action's JSON read) that reproduces the spec's own motivating bug class if left unhandled; a genuine correlation ambiguity in AC-003-006; two is_error_case mislabelings that would mislead downstream planning/gating tools about what error coverage exists; and a confirmed scope collision with SPEC-TRACK4 on the identical struct-literal edit site with no coordination language. These are fixable with the rewrites given, but as written the spec does not pass."
+}
+```
+
+File audited: `/Users/gabe/Projects/callisto/.claude/specs/SPEC-005-release-entry-is-prerelease.json`
+Overlap check performed against: `/Users/gabe/Projects/callisto/.claude/specs/SPEC-TRACK4-RELEASE-PIPELINE-CONTRACT-CORRECTNESS.json` (confirmed collision), plus `SPEC-TRACK3B2-CONSUMER-COLLISION-SAFETY.json` and `track-g-matrix-napi-maturin.json` (matched only on incidental "prerelease" substring, no real overlap).
+Source files cross-checked: `crates/callisto-model/src/plan.rs`, `crates/callisto-graph/src/commands/publish.rs`, `crates/callisto-model/src/version.rs`, `.github/actions/callisto-action/action.yml`, `docs/01-spec.md`.</result>
+<usage><subagent_tokens>59057</subagent_tokens><tool_uses>8</tool_uses><duration_ms>142596</duration_ms></usage>
+</task-notification>
