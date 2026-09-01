@@ -1,0 +1,1 @@
+No, I'm not asking for changings to the plugins, I'm asking for changes to the callisto code. We're handling changes to the plugins direclty.
