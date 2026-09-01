@@ -1,0 +1,9 @@
+<task-notification>
+<task-id>biiwf6qbj</task-id>
+<tool-use-id>toolu_01EoFcK4WbafttEsM8xcqzAo</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/c0ad64b2-6440-4937-8328-8d9fd9db278c/tasks/biiwf6qbj.output</output-file>
+<status>killed</status>
+<summary>Background command "cargo test -p callisto-graph --lib publish_order 2&gt;&amp;1 | tail -30
+echo "=== cascade_tests.rs (toposort_impl call site update) ==="
+cargo test -p callisto-graph --test cascade_tests 2&gt;&amp;1 | tail -20" was stopped</summary>
+</task-notification>
