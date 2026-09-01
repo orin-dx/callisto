@@ -1,0 +1,9 @@
+<task-notification>
+<task-id>bcwf1b0f7</task-id>
+<summary>Monitor event: "just ci live progress with step timestamps"</summary>
+<event>[+1373s]         PASS [   0.869s] ( 258/1065) callisto-graph aggregate::tests::test_aggregate_inference_error_emits_diagnostic
+[+1373s]         PASS [   0.007s] ( 260/1065) callisto-graph aggregate::tests::test_resolve_target_package_ambiguous_bare_name_errors
+[+1373s]         PASS [   0.007s] ( 261/1065) callisto-graph aggregate::tests::test_resolve_target_package_ambiguous_bare_name_three_ecosystems_errors
+[+1373s]         PASS [   0.008s] ( 273/1065) callisto-graph apply::tests::apply_returns_error_when_manifest_has_unexpected_version</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
