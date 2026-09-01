@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>b488la452</task-id>
+<tool-use-id>toolu_01RxueqKq8tHq1EGqGTe3J7s</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/c0ad64b2-6440-4937-8328-8d9fd9db278c/tasks/b488la452.output</output-file>
+<status>completed</status>
+<summary>Monitor "PR #11 CI checks (fix-publish-order-dev-deps)" stream ended</summary>
+</task-notification>
