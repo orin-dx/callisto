@@ -1,0 +1,75 @@
+<task-notification>
+<task-id>a308f31d8dedc629f</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/0c4c4622-1ed8-4f2c-80e6-f0890a2dad72/tasks/a308f31d8dedc629f.output</output-file>
+<status>completed</status>
+<summary>Agent "Assess risks of tiered matrix distribution recommendation" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>```json
+{
+  "risks": [
+    {
+      "description": "Adding real execution behind `PublishTarget::GitHubRelease` changes a currently-safe no-op (Warning diagnostic, publish skipped — confirmed at crates/callisto-graph/src/commands/publish.rs:358-374) into a side-effecting network call, for any consumer who already has `publish-to = [\"github-release\"]` configured expecting the warn-and-skip behavior.",
+      "severity": "critical",
+      "likelihood": "medium",
+      "trigger": "A consumer project (e.g. michi) upgrades callisto after Tier 2 ships, still has `github-release` in `publish-to`, and the next CI run now actually creates/uploads a GitHub Release with real side effects (visible release, notification emails, downstream automation firing) instead of the prior silent skip — with no opt-in flag gating the behavior change.",
+      "mitigation": "Treat this as a semver-major behavior change regardless of `#[non_exhaustive]` protecting Rust match exhaustiveness (which only helps compile-time, not runtime behavior). Require an explicit opt-in (e.g. a config version bump or a `--allow-real-github-release` flag) for at least one minor release, emit a one-time loud migration diagnostic before flipping the default, and document the change prominently in the changelog with a migration note."
+    },
+    {
+      "description": "`gh release upload` requires a pre-existing GitHub Release object; no code path in the repository creates one (no `gh release create` / release-creation logic found anywhere in `crates/`, only git-tag creation via `ReleaseTrigger`/`tags.rs`). Tier 2 as scoped only mentions the upload step, not release creation or its ordering relative to tag creation.",
+      "severity": "high",
+      "likelihood": "high",
+      "trigger": "A Tier 2 implementation wires `gh release upload` directly behind `GitHubRelease` without first calling `gh release create` (or verifying one exists) — first real publish attempt fails outright with a non-zero exit from `gh`, surfaced as an opaque subprocess error rather than a clear diagnostic.",
+      "mitigation": "Explicitly scope Tier 2 to include release-existence handling: either `gh release create` (idempotent, keyed off the tag callisto already produces) before upload, or an explicit dependency on a separate release-creation step/action with a documented ordering contract. Add this as an acceptance criterion before spec drafting, not left implicit."
+    },
+    {
+      "description": "`PlatformTargetKind` (crates-model/src/matrix.rs) is a plain public enum — not `#[non_exhaustive]` — carrying a doc comment stating it 'deliberately omits' variants 'out of scope for this spec,' and derives `JsonSchema`/`Serialize` with `rename_all = \"lowercase\"`. It is exposed via `callisto matrix --format json`, which external consumers (michi) plausibly parse. Tier 2 explicitly proposes adding a new variant to this enum.",
+      "severity": "high",
+      "likelihood": "medium",
+      "trigger": "Tier 2 ships adding e.g. `PlatformTargetKind::CliBinary`; a consumer's Rust code exhaustively matches on the enum (compile break) or a consumer's schema-validating JSON consumer rejects the new lowercase variant string as unrecognized (runtime break), surfacing only when that consumer's CI next runs `callisto matrix` after the callisto upgrade.",
+      "mitigation": "Mark `PlatformTargetKind` `#[non_exhaustive]` now, in Tier 1, before any consumer can plausibly write exhaustive matches against the current two-variant shape — closes the door cheaply while the surface is still small. Document in the matrix JSON schema that the kind set is expected to grow."
+    },
+    {
+      "description": "Sequencing/type-corner risk on `artifact_name_for_triple` and `PlatformTarget`: the report frames this as a straightforward generalization, but if Tier 1 ships with the literal `\"native-{triple}\"` string baked into consumer-facing artifacts — the `callisto-build-action` composite action, generated GitHub Actions workflow YAML, or docs/examples that `michi` copies — rather than exclusively behind the (to-be-generalized) function, then Tier 2's renaming/generalization becomes a consumer-visible artifact-naming migration, not just an internal refactor.",
+      "severity": "medium",
+      "likelihood": "medium",
+      "trigger": "Tier 1 ships composite-action YAML or docs hardcoding `native-${triple}` as the artifact name a consumer's workflow references directly (e.g. in a `gh run download --name` step written by the consumer, not generated by callisto); Tier 2 later needs a different naming scheme to disambiguate CLI-binary artifacts from napi/maturin artifacts, forcing consumers to update pinned workflow files.",
+      "mitigation": "In Tier 1, route every artifact-name reference in generated/example workflow YAML through the single `artifact_name_for_triple` function (already true internally per the report) and avoid publishing consumer-facing docs that assume the literal prefix is permanent. State explicitly in Tier 1 docs that artifact naming is an implementation detail subject to change before Tier 2 ships."
+    },
+    {
+      "description": "Scope-creep erosion of the tiering discipline itself: Tier 1 and Tier 2 share the same files (`callisto-graph/src/matrix.rs`, `PublishTarget`, the `PlatformTargetKind` enum) and the same diagnostic (`PublishTargetNotImplemented`) currently covers both `NuGet` and `GitHubRelease` no-ops, making it easy for a Tier 1 spec/implementation pass to informally absorb Tier 2 pieces (e.g. shipping the `PlatformTargetKind` generalization or touching the `GitHubRelease` match arm) 'while already in the file.'",
+      "severity": "medium",
+      "likelihood": "medium",
+      "trigger": "A spec or implementation session working on Tier 1's `gh run download` step also touches the adjacent `GitHubRelease` diagnostic arm in publish.rs 'since it's right there,' shipping partial Tier 2 behavior without Tier 2's own acceptance criteria (dry-run integration, release-creation ordering, credential requirements) having been specified.",
+      "mitigation": "Scope Tier 1's spec/plan explicitly to exclude any change to `PublishTarget::GitHubRelease` handling or `PlatformTargetKind` variants, and have canon:gate-spec / vector:challenger check for out-of-tier file touches as an explicit gate criterion."
+    },
+    {
+      "description": "Tier 3 exclusion is framed as 'explicit non-goal for now,' but the same consumer pressure that surfaced the original napi/maturin gap (michi) is a plausible source of a near-term Homebrew ask, and no extension point is reserved for it beyond `PublishTarget`'s existing `#[non_exhaustive]` attribute (which already covers this — adding a future `Homebrew` variant is non-breaking for external matchers by construction).",
+      "severity": "low",
+      "likelihood": "low",
+      "trigger": "michi or another consumer requests Homebrew tap support before a dedicated Tier 3 spec exists, and finds that — beyond the enum already being extensible — no credential-handling pattern, cross-repo-write capability, or templating seam exists anywhere in callisto to build on, forcing a from-scratch design under time pressure.",
+      "mitigation": "No code changes needed now given `#[non_exhaustive]` already reserves the enum extension point; the residual risk is purely process (no pre-thought-through cross-repo-credential pattern). Mitigate by noting the shape of that gap in the Tier 3 non-goal write-up so a future spec author isn't starting from zero."
+    },
+    {
+      "description": "`docs/00-design.md`'s unresolved self-contradiction (top summary vs. §9's opening line vs. §11.1's resolution) is a documentation-debt risk to the Tier 1/2 spec-drafting process itself: a spec author who reads only §9's framing ('does not run the actual publish') could scope Tier 2 as not requiring real `gh release upload` execution, contradicting both the actual shipped code (`publish_client.rs` already execs cargo/npm/twine) and Tier 2's own stated goal.",
+      "severity": "medium",
+      "likelihood": "medium",
+      "trigger": "canon:draft-spec or a human spec author greps/reads §9 in isolation (a natural entry point given it's titled around publish semantics) without cross-referencing §11.1, and drafts Tier 2 acceptance criteria around 'plan only, no real upload,' which then contradicts the actual shipped `publish_client.rs` behavior and has to be corrected mid-review.",
+      "mitigation": "Fix the `docs/00-design.md` contradiction directly (align §9's opening line with §11.1's resolution and the top-of-doc summary) before or alongside Tier 1/2 spec drafting — this is a small, low-risk doc edit that removes an entire class of spec-drafting error at negligible cost."
+    },
+    {
+      "description": "Both Tier 1's `gh run download` and Tier 2's `gh release upload` live inside the GitHub-Actions-specific composite action layer, not the core hermetic CLI — consistent with ARCHITECTURE.md §13's 'thin adapter seams' framing, so they don't violate the zero-network-call invariant that applies specifically to `status`/`plan-publish`/`matrix`. However, this does entrench a GitHub-Actions-and-`gh`-CLI-shaped seam for polyglot artifact distribution that a later Bazel/Buck2/Nix/GitLab-CI artifact-distribution effort cannot reuse and must reimplement independently.",
+      "severity": "low",
+      "likelihood": "low",
+      "trigger": "A consumer building on `rules_callisto` (Bazel) or another non-GHA hermetic build system asks for the same napi/maturin-artifact-placement or CLI-binary-release capability Tier 1/2 provide, and discovers the `gh run download`/`gh release upload` logic is baked into a GitHub Actions composite action with no CLI-agnostic equivalent to call directly.",
+      "mitigation": "No change needed for Tier 1/2 given they're explicitly GHA-scoped today and this doesn't contradict §13. If a non-GHA artifact-distribution need arises, treat it as a new spec that factors the artifact-fetch/upload logic into a CLI-invocable primitive rather than composite-action-only, rather than trying to make Tier 1/2 anticipate it now."
+    }
+  ],
+  "overall_risk": "high",
+  "reasoning": "Two risks anchor the overall rating: the GitHubRelease behavior-change risk (critical severity, medium likelihood — a real consumer with publish-to=[\"github-release\"] configured today would get an unannounced switch from safe no-op to real network side effects) and the missing release-creation precondition for gh release upload (high severity, high likelihood — verified by grep that no gh release create or equivalent exists anywhere in crates/, only tag creation, so the very first real Tier 2 publish attempt as scoped would fail). Both are concrete, code-grounded, and would change what the Tier 2 spec must contain (an explicit migration/opt-in mechanism, and explicit release-creation-ordering acceptance criteria) rather than being addressable as an implementation afterthought. The PlatformTargetKind non-exhaustiveness gap and the docs/00-design.md contradiction are medium risks because they're process/API-hygiene issues with cheap, well-understood fixes (mark #[non_exhaustive], fix a doc section) rather than structural blockers. Tier 3's non-goal framing and the gh CLI/GHA-lock-in concern were downgraded to low after checking the code: PublishTarget is already #[non_exhaustive] (extension point already reserved), and ARCHITECTURE.md §13's zero-network-call invariant is scoped to status/plan-publish/matrix, not publish or the composite-action layer, so neither the report's Tier 3 framing nor the gh-CLI choice actually conflicts with stated architecture the way a first read might suggest — I excluded a theoretical 'gh CLI unavailable in some runner' concern since GitHub-hosted runners ship gh by default and self-hosted runner gh-availability is an ops precondition already implicit in using gh anywhere in the pipeline, not a new risk this plan introduces. Overall likelihood-weighted severity lands the plan at high risk primarily due to the two anchoring findings, which would materially change the spec's acceptance criteria if left unaddressed."
+}
+```
+
+Key files consulted for grounding: `/Users/gabe/Projects/callisto/crates/callisto-model/src/ecosystem.rs` (PublishTarget, `#[non_exhaustive]`), `/Users/gabe/Projects/callisto/crates/callisto-graph/src/commands/publish.rs:358-374` (GitHubRelease warn-and-skip), `/Users/gabe/Projects/callisto/crates/callisto-model/src/matrix.rs` (PlatformTargetKind, not non_exhaustive), `/Users/gabe/Projects/callisto/crates/callisto-graph/src/matrix.rs` (artifact_name_for_triple, triple_host_runner_use_cross), `/Users/gabe/Projects/callisto/ARCHITECTURE.md` §13 and §11, `/Users/gabe/Projects/callisto/docs/00-design.md` (lines ~825, §11.1), `/Users/gabe/Projects/callisto/.claude/specs/callisto-matrix.md` (§6.2/§7/§8 references). No `gh release create` or dry-run wiring found anywhere in `crates/callisto-graph/src/commands/publish.rs`, confirming the release-precondition gap.</result>
+<usage><subagent_tokens>65608</subagent_tokens><tool_uses>8</tool_uses><duration_ms>127673</duration_ms></usage>
+</task-notification>
