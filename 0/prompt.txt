@@ -1,0 +1,24 @@
+<task-notification>
+<task-id>a3b6b1774ff25dddd</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/bb531e8d-c394-4e47-a8ae-e4a9ceeca6d2/tasks/a3b6b1774ff25dddd.output</output-file>
+<status>completed</status>
+<summary>Agent "Exit-gate Track 1 implementation" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Verification is well advanced; two long-running checks remain in flight. Current state:
+
+**Read from disk (not from context):** spec at `/Users/gabe/Projects/callisto/.claude/specs/SPEC-TRACK1-FIXED-GROUP-CASCADE-CORRECTNESS.json` — 16 criteria confirmed.
+
+**Confirmed by reading code, not the implementer's pointers:**
+- Fixed-group convergence block at `/Users/gabe/Projects/callisto/crates/callisto-graph/src/cascade.rs:384-434` matches the spec's api_surface exactly, and the test at `cascade.rs:1395-1486` is genuinely *discriminating* — pre-fix it would yield A=2.1.0/B=0.2.0 and fail on B. AC-001/002/004 earned.
+- Ordering in `version.rs`: `NapiTargetsIndex::load` (:83) and `pre_mutation_checks` (:84-91) both `?`-propagate **before** `run_cascade` (:93), so AC-007/AC-007b's "run_cascade never executes" is structurally guaranteed.
+- Cross-group conflict detection uses a single combined `claimed_by` map checked in *both* loops (`config/groups.rs:149`, `:190`) — AC-010b's cross-kind requirement genuinely met, not two per-kind maps.
+- AC-012 verified mechanically: the entire 12-commit range has **844 insertions and exactly one deletion**, and that deletion is `ws.tags()?,` — the inline-arg replacement AC-009 mandates. Zero test assertions altered.
+
+**Two findings worth flagging now:**
+1. The mutation run is **not** dead as reported — cargo-mutants (PID 11538) is still actively running, correctly scoped to the four changed files. It's at 36/113. All 21 survivors so far are in `cascade_action`, `coverage`, and `caret_covers` — pre-existing untouched functions (`cascade_action` is explicitly Track 9's scope). It has not yet reached the new code.
+2. `GroupTable::from_groups` (`config/groups.rs:259-289`) is a **third** membership-building path with no conflict check of any kind. It's `pub` and re-exported, currently test-only. Not a spec violation (the spec scoped the fix to `resolve`), but a real sibling gap for the verdict.
+
+I'm holding the verdict until `cargo test -p callisto-graph` completes and I've run the workspace regression checks — I won't certify a pass on an unobserved test result. I'll report as soon as they land.</result>
+<usage><subagent_tokens>105435</subagent_tokens><tool_uses>46</tool_uses><duration_ms>401034</duration_ms></usage>
+</task-notification>
