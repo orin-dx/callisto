@@ -1,0 +1,5 @@
+<task-notification>
+<task-id>babe7ht1l</task-id>
+<summary>Monitor event: "wait for T6 full test suite (bhkxhqu08) to finish"</summary>
+<event>[Monitor timed out — re-arm if needed.]</event>
+</task-notification>
