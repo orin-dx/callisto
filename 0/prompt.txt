@@ -1,0 +1,1 @@
+So we delve a bit into the possible ways to tackle this architecture-wise so it's consistent with best practices in the industry? With the codebase? What are the performance implications here? Security? DX?
