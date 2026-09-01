@@ -1,0 +1,1 @@
+Following symlinks seems like the right thing to do, no?
