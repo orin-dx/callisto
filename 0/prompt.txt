@@ -1,0 +1,1 @@
+Can you help me summarize the next set of work that could go into a PR as a succinct prompt that points to the right context, so a clean session can do high-quality work?
