@@ -1,0 +1,1 @@
+Shouldn't plan_version be derived in the PR from its data? Why do we need to backtrace information that we already had from the changesets?? Are we making this harder than it has to be?
