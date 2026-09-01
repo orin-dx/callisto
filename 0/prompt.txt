@@ -1,0 +1,1 @@
+Please read through our codebase and do a very thorough adversarial analysis leveraging our best models and the most appropriate effort for high quality at a reasonable token usage. Look for bugs and lack of testing to meet the specs, performance issues, security issue, misses in UX and DX along with any other categories you think we should analyze for.
