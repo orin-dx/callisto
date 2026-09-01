@@ -1,0 +1,3 @@
+The legacy way or working should remain consistent. We should have the ability to do a release PR that when merged removes the relevant changeset files. Whenever callisto runs it should be indepondent so it should produce the same PR results. If a new changeset is added that should be incorporated into the release PR and its changeset file be removed as part of the PR.
+
+NOte that none of the changeset files are removed until that release PR is merged. Does that change anything?
