@@ -1,0 +1,41 @@
+<task-notification>
+<task-id>aa6e499071a66acba</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/dc5ff9d8-ad6b-4ac9-8548-df397504bb34/tasks/aa6e499071a66acba.output</output-file>
+<status>completed</status>
+<summary>Agent "Deep-dive callisto-moon extension protocol" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Investigation Report: `callisto-moon`
+
+**Files read in full:** `crates/callisto-moon/src/{extension.rs,lib.rs,locator.rs,runner.rs}`, `crates/callisto-moon/Cargo.toml`, `docs/02-library-vs-moon-decision.md`, `README.md` (moon section), `.github/workflows/callisto-ci.yml`. Cross-referenced against moon's actual source (`moonrepo/moon` on GitHub, fetched live) for `crates/pdk-api` extension types and `website/docs/guides/wasm-plugins.mdx`.
+
+### 1. Protocol correctness — **CONFIRMED BROKEN**
+`lib.rs:16-46` implements four `#[plugin_fn]` exports: `register_extension`, `define_extension_config`, `execute_extension`, `initialize_extension` — the right function *names*. But the wire types don't match moon's actual schema:
+- Moon's real `RegisterExtensionInput` has one field, `id: Id` (the configured extension id). Callisto's (`extension.rs:6-8`) requires `moon_version: String`, a field moon never sends. Since it's non-optional/no `#[serde(default)]`, deserialization of moon's real payload will fail outright — `register_extension` cannot succeed against a real moon host, ever.
+- Moon's real `RegisterExtensionOutput` is `{name: String, description: Option&lt;String&gt;, plugin_version: String}`. Callisto's (`extension.rs:11-15`) uses `description: &amp;'static str` (not `Option`) and `version` instead of `plugin_version` — field name mismatch will drop/ignore the version on moon's side even if it got that far.
+- Moon's real `ExecuteExtensionInput` is `{args, context: MoonContext}`. Callisto's (`extension.rs:57-60`) is `{args, workspace_root: String}` — flat field instead of nested `context`. Deserialization from real moon input fails here too.
+
+This is not a minor drift — the plugin was built against an assumed/imagined schema, never against moon's actual `pdk-api` types (no vendored moon crate exists in Cargo.lock to check against — grep confirms zero `moon_pdk`/`moon-pdk`/`warpgate` deps).
+
+### 2. The exec seam — **CONFIRMED STUBBED / NOT WIRED**
+`runner.rs:5-22` (`MoonCommandRunner`) implements `callisto_model::CommandRunner` (trait at `callisto-model/src/exec.rs:6-8`) using `std::process::Command::new(program).output()` directly — plain native subprocess spawning. Moon's real WASM plugins get host exec via a `moon_pdk`-provided `exec_command!` macro built on an extism `#[host_fn] fn exec_command(...)` declaration (confirmed via moon's own `wasm-plugins.mdx` docs). `callisto-moon` depends only on bare `extism-pdk` (Cargo.toml:15) — no `moon_pdk`, no `#[host_fn]` declaration anywhere in the crate (`grep` confirms). `docs/02-library-vs-moon-decision.md:34` explicitly documents this exact requirement and even warns that `std::process::Command` "compiles... it just fails at runtime via std's unsupported PAL shim" under WASI — i.e., the design doc predicted precisely the bug that shipped. The `CommandRunner` seam itself is real and well-placed (used correctly by `locator.rs` and `extension.rs`), but its WASM implementation is a native-process stub, not a host-function bridge. Under real extism/WASI sandboxing this will fail at runtime on the very first `moon project-graph --json` call (`locator.rs:37`), meaning discovery — and everything downstream, including any git-touching command — cannot function.
+
+### 3. Locator — **PLAUSIBLE, architecture is sound but untested**
+`locator.rs` shells to `moon project-graph --json` via the (broken) `CommandRunner`, parses into `MoonProjectGraph`, and derives `ProjectRoot`/`DeclaredEdge` by checking `Cargo.toml`/`package.json` existence at each project root (`locator.rs:119-137`, `161-175`) — filesystem existence checks, not a walk, so it avoids the "can't walk the FS in WASM" problem structurally. This mirrors the documented Q1a/Q1b design in `docs/02-library-vs-moon-decision.md:57-58` reasonably faithfully. But it's gated entirely behind item 2's broken exec seam — it can never reach the parsing logic against real moon.
+
+### 4. Panics — **CONFIRMED LOW RISK, but two present**
+Two `.unwrap()` calls: `extension.rs:19` (parsing a hardcoded, always-valid semver constraint string — effectively safe) and `locator.rs:50` (`OnceLock::get().unwrap()` immediately after `.set()` in the same call — safe by construction, single-threaded WASM). No `panic!()`, no unsafe `.expect()` on external input. Error handling elsewhere is solid — `execute_extension` (`extension.rs:85-198`) exhaustively matches errors into JSON reports rather than unwinding. Not the weak point.
+
+### 5. Build/CI verification — **CONFIRMED, type-check only**
+`.github/workflows/callisto-ci.yml:53-71` runs `just test` then `just wasm-check`, which is `cargo check -p callisto-moon --target wasm32-wasip1 --features pdk` (justfile:54-56) — compiles, never links/runs as `.wasm`, never invoked under `wasmtime`/`extism-cli`, no moon installation anywhere in CI. No `tests/` directory, one embedded unit test (`extension.rs:222-228`, semver only).
+
+### 6. Config schema — **CONFIRMED trivially consistent but vacuous**
+`define_extension_config` (`extension.rs:46-54`) returns an empty-properties JSON Schema object matching moon's `DefineExtensionConfigOutput{schema: Schema}` shape structurally. README's `.moon/workspace.yml` example (`README.md:227-230`) only sets `plugin: &lt;url&gt;`, no config block, which is consistent — but only because nothing is exposed to configure.
+
+### What breaks first against a real moon workspace
+1. `register_extension` deserialization fails immediately on moon's real `{"id": ...}` payload (item 1) — the plugin likely never loads.
+2. Even patched past that, `execute_extension`'s input shape mismatch (`context` vs `workspace_root`) fails next.
+3. Even hand-waved past both, `MoonCommandRunner` calling native `Command::new("moon")` fails at runtime in the WASI sandbox (item 2) — nothing that needs `moon project-graph` or git can work.
+4. Everything downstream (locator, publish/validate/status subcommands) is unreachable until 1–3 are fixed; this crate has never round-tripped against real moon.</result>
+<usage><subagent_tokens>51463</subagent_tokens><tool_uses>16</tool_uses><duration_ms>133181</duration_ms></usage>
+</task-notification>
