@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bcdydyv5h</task-id>
+<tool-use-id>toolu_01K3hHznrVeaNi99ejPHoq9V</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/b90cda92-db13-4c63-8d7f-c9fa7d9196ab/tasks/bcdydyv5h.output</output-file>
+<status>completed</status>
+<summary>Background command "Run clippy on callisto-graph and callisto-cli" completed (exit code 0)</summary>
+</task-notification>
