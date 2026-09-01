@@ -1,0 +1,44 @@
+<task-notification>
+<task-id>a39aab4308e3326a8</task-id>
+<tool-use-id>toolu_0178S63kv9BPCBBC8WtbEgMw</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a39aab4308e3326a8.output</output-file>
+<status>completed</status>
+<summary>Agent "Re-submit Track 3b to exit-gate" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Verdict: FAIL (retry_count 2, confidence high)
+
+Verdict artifact: `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/verdict-track3b-identity-resolution.json` (schema-validated against `verdict@1`, `artifact_type: "spec@1"`, 5 blockers).
+
+### The 5 prior blockers — all genuinely fixed
+
+I re-derived each against real working-tree source, not the drafter's summary.
+
+1. **Promotion for multi-ecosystem collisions** — AC-29 added with `is_error_case: true`; I traced its fixture through real `walk.rs` (`by_path` collapse → `ecosystem_primary_priority` sort → collision at `walk.rs:126-129` → BTreeMap ordering yields `paths = [crates/foo, packages/foo]`). AC-29 itself is sound. **But the new predicate broke AC-21 — see below.**
+2. **AC-27 / track-g** — resolved. Track-g's AC-006 sentence and AC-009 parenthetical match byte-for-byte; the `api_surface` paragraph's first two sentences do end exactly at the quoted boundary; the map-keys-vs-`PlatformTarget.package_name` split is now correct (`crates/callisto-graph/src/matrix.rs:154` is indeed the field-population site, untouched by AC-22's rekey at `matrix.rs:476`/`:483`). I also checked the third entity in the original sentence — `RuntimeVersionEntry` has no name field, so its "owning key" is the map key and is covered.
+3. **serde citation** — resolved. `docs/01-spec.md:6075-6076` contains the sentence verbatim and falls under §G.4.2 (heading line 6014), and AC-13/AC-17 now explicitly assert symmetry rather than verbatim reproduction.
+4. **Drifted citations** — a full independent sweep of ~50 citations came back byte-exact for the overwhelming majority. Two residual drifts remain (blockers 3-4 below).
+5. **AC-15/AC-16 `is_error_case`** — resolved, and I audited the flag across all 29 criteria: consistent.
+
+### Two new hard blockers
+
+**Blocker 1 — AC-18's mandated mechanism cannot produce AC-18's asserted outcome.** AC-18 requires `ManifestWalkResolver::build` to return `Err(GraphError::AmbiguousName)`, detected "via the new `cfg.promoted_siblings` field." But the spec fixes that field's population site at `lib.rs:110`, and real source shows `lib.rs:107` is the `build(...)` call itself:
+
+```
+107:        let graph = ManifestWalkResolver::build(&amp;root, locator, runner, &amp;config, &amp;manifest_cache)?;
+109:        config.groups = GroupTable::resolve(&amp;config.raw_groups, graph.identity())?;
+```
+
+So `promoted_siblings` is still the `BTreeMap::new()` default from `resolve.rs:489` for the whole duration of `build`, and `walk.rs:175` — the only in-build call site — reads an unconditionally empty map. The derivation is also circular: it is specified to come from `graph.identity().prefixed`, and `graph` doesn't exist until `build` returns. `grep` confirms only two production call sites exist (`walk.rs:175`, `aggregate.rs:211`), and `Workspace::load` never re-invokes either. Net effect as written: the unprefixed `[[package]]` rule silently applies to *both* promoted packages at `walk.rs:175` — the exact defect AC-18 exists to eliminate — and `non_goals` entry 5 forecloses the parameter-threading escape.
+
+**Blocker 2 — AC-21 contradicts the disjointness predicate introduced to fix blocker 1.** The predicate captures each path's **full** ecosystem set, "derived the same way `package_ecosystems` is already derived." Verified: `walk.rs` derives it as `decls.iter().map(|d| d.ecosystem())`, and AC-21's `crates/native-core` path pushes a Cargo canonical decl, an Npm canonical decl, *and* an Npm Platform decl — set `{Cargo, Npm}`. Against `packages/native-core`'s `{Npm}` the sets share Npm, so the predicate mandates `DuplicatePackage`. AC-21 asserts `Workspace::load` **succeeds** with promotion. Both cannot hold.
+
+The fix is unambiguous and I verified it satisfies both criteria: scope the predicate to the ecosystems in which each path claims the *colliding bare name* (the `id.name()` used as the `index.native` key at `walk.rs:121-123`), not the path's full ecosystem set. AC-21 then gives `{Cargo}` vs `{Npm}` → promote; AC-29 gives `{Cargo, Npm}` vs `{Npm}` → error. The `api_surface` must also separate the name-scoped *predicate* from the whole-path *rewrite*, which it currently conflates.
+
+### Three precision blockers
+`identity.rs:94-101` should be `:94-99`; the `PackageId::matches` arm is really `(None, _) | (_, None) =&gt; true` (direction-independent, which matters for the Bare-rule-vs-Prefixed-id comparison); and AC-20's `aggregate()` quotation omits the `where` clause at `aggregate.rs:173-175`.
+
+**Scope:** unchanged from my prior verdict — acceptable. I considered splitting promotion core from downstream consumer hardening and rejected it: an intermediate cycle would ship a known silent BTreeMap overwrite in `matrix.rs` and a known silent double-publish in `publish.rs`. Not moving that goalpost on a resubmission.
+
+Escalation threshold (`retry_count &gt; 3`) not reached.</result>
+<usage><subagent_tokens>123270</subagent_tokens><tool_uses>28</tool_uses><duration_ms>606841</duration_ms></usage>
+</task-notification>
