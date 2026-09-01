@@ -1,0 +1,30 @@
+<task-notification>
+<task-id>a0f822b88413dbb8c</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/b90cda92-db13-4c63-8d7f-c9fa7d9196ab/tasks/a0f822b88413dbb8c.output</output-file>
+<status>completed</status>
+<summary>Agent "Clarify GitHub Release requirement gaps" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>```json
+{
+  "action": "question",
+  "question": "Is this feature scoped to callisto-cli's own eventual public release specifically (in which case the artifact set/naming/target list can be hardcoded or minimal), or must it be general-purpose so any downstream consumer's binary crate can configure its own set of platform artifacts through callisto.toml (in which case the spec needs a config schema for declaring expected artifacts/targets)?",
+  "requirement": {
+    "id": "REQ-001",
+    "statement": "When a package sets `publish-to = [\"github-release\"]` in `callisto.toml`, `callisto publish` must attach real build artifacts (e.g., a compiled CLI binary, built per-platform in CI) to that package's GitHub Release as downloadable assets, instead of skipping the target with a `PublishTargetNotImplemented` warning.",
+    "stakeholder": "Engineers who configure `publish-to = [\"github-release\"]` for a package that ships compiled binaries -- most concretely, callisto-cli's own future public release, or any downstream consumer publishing a Rust CLI/binary crate through callisto.",
+    "why": "`PublishTarget::GitHubRelease` exists in the model but is stubbed as unimplemented in `crates/callisto-graph/src/commands/publish.rs:358-372`, so any package targeting it is silently skipped with only a warning diagnostic. Separately, `callisto-action` already creates the GitHub Release entry (tag + changelog notes) but never attaches artifacts to it. The result: there is no working path today for a binary-shipping package to get its compiled artifacts onto its GitHub Release through callisto, even though the release entry itself exists -- a gap confirmed against Knope, which supports this natively via configured asset attachment.",
+    "done_when": [
+      "A package configured with `publish-to = [\"github-release\"]` that ships compiled binaries has those binaries present as downloadable assets on the corresponding GitHub Release after a `callisto publish` run completes, for every platform/target the package is configured to build.",
+      "Running `callisto publish` against a `github-release` target no longer emits the `PublishTargetNotImplemented` diagnostic for that target.",
+      "If the expected build artifact for a configured platform/target is missing at the point of attachment, the publish run reports a clear, attributable error identifying the missing artifact and target, rather than silently omitting the asset or silently succeeding.",
+      "The GitHub Release entry for the package (tag, rendered changelog notes) continues to be created exactly as before, with attached assets being an addition to that existing entry, not a replacement of it.",
+      "No new outbound network/HTTP call is introduced directly from `callisto-graph` or `callisto-model`; any GitHub API interaction required for asset upload is performed via `gh` subprocess invocation, consistent with existing PR-creation and release-entry-creation code paths."
+    ],
+    "out_of_scope": []
+  },
+  "reasoning": "The done_when criteria are individually testable, and stakeholder identification is specific enough (names the concrete callisto-cli use case plus the general downstream-consumer case). The critical unresolved gap is the scope boundary itself: done_when item 1 says artifacts must be attached 'for every platform/target the package is configured to build,' but the requirement text explicitly flags as unresolved whether this is a one-off feature for callisto-cli's own release or a general-purpose, config-driven mechanism any binary crate can use. This isn't a deferrable implementation detail (unlike the PlatformTarget/nativeMatrix reuse question, which affects only internal mechanism and not the contract) -- it determines whether the spec needs a new user-facing config schema for declaring artifact/target expectations, what out_of_scope should say about non-Rust or non-CLI binaries, and what 'configured to build' even means as a testable proposition. Until this is answered, out_of_scope cannot be populated with real boundaries (e.g. 'non-Rust binary crates out of scope' only applies under the general-purpose reading), so completing the requirement now would be premature."
+}
+```</result>
+<usage><subagent_tokens>33389</subagent_tokens><tool_uses>0</tool_uses><duration_ms>22500</duration_ms></usage>
+</task-notification>
