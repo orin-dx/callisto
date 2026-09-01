@@ -1,0 +1,3 @@
+Let’s make sure we check, validate, verify? Quadruple check everything we just did please.
+
+Look for stubs, hardcoded values, magic numbers, what should be constants, patterns that should be extracted, etc
