@@ -1,0 +1,1 @@
+<local-command-stdout>✓ Installed graph. Plugin is now active.</local-command-stdout>
