@@ -1,0 +1,1 @@
+Don't forget to think semantically and semantic model level, right? We can't think of all the issues in terms of individual bugs when addressing them. We want to think comprehensively and architectually. Consider SDD, TDD and what our spec should be
