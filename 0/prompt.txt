@@ -1,0 +1,3 @@
+Let's triple check all our tests to make sure we're assertig the right behavior and that we don't just cover the happy path but we also cover the edge cases, error cases, etc
+
+Ensure we're splitting files appropriately based on rust best practices to avoid overly large files as we add functionality and tests, right? Public vs internal and any other best practices
