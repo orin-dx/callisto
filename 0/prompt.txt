@@ -1,0 +1,45 @@
+<task-notification>
+<task-id>a66e40e64cb4bc6b0</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/be3206f0-36f6-4eb6-82ee-1a6f04cb1a40/tasks/a66e40e64cb4bc6b0.output</output-file>
+<status>completed</status>
+<summary>Agent "Reconcile 01-spec.md's model/graph sections with real drafts" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Done. Here's what I found and what changed.
+
+## Important finding first: the two files I was given are not complete drafts
+
+`real-model-draft.md` begins mid-sentence inside **§M.9.3 step 4**; `real-graph-draft.md` begins mid-paragraph inside **§G.7.5's SPEC DECISION**. They are the *tail halves* of the drafts — i.e. exactly the parts the synthesis agent said it *did* receive. They contain nothing at all for §M.1–M.9.2 or §G.1–G.7.4, the regions the task says were reconstructed.
+
+Worse for the premise: over their overlapping range, **01-spec.md was already a strict superset** of both files. Every difference was 01-spec.md carrying *more* — the added `§CLI.3`/`§G.2.4`/`§CM.4.4`-style cross-references, the dyn-compatibility note (R13), the `Changelog`/`Conventional` `GraphError` wrappers (R18), the `round_trip`/`rewrite_spec` split (R6), `ApplyOptions`/`ApplyOutcome`, `PlatformWrite`/`OptionalDepUpdate`/`ChangelogWrite`, the `commands::init` decision (R12), `ConfigError::InvalidBumpSeverity`/`InvalidPreMajorInference`, the `Report` impls, `ModelError::InvalidCommitSha`. So those regions needed essentially nothing.
+
+**However**, I found the *actual* full `callisto-model` draft in the same scratchpad: `.../scratchpad/p1.md` (2008 lines, crate-local `§1.x` numbering, §1.0–§1.16). Its tail matches `real-model-draft.md` line-for-line modulo renumbering, and it is consistently *more* detailed — `real-model-draft.md` is a lossy re-transcription of it. Its head (§1.0–§1.8.3) is the authoritative source for the reconstructed §M.1–M.9.2, so I reconciled against that. **No equivalent head exists anywhere for `callisto-graph`** — §G.1–G.7.4 has no authoritative source on disk (I checked all three session scratchpads).
+
+## What I changed (all in section 2; section 7 needed 1 line)
+
+Restored from the real draft, kept 01-spec.md's numbering and every §11.2 reconciliation:
+
+- **§M.1.1** — the CI-enforced "no `callisto-*` dependency" structural property; the `semver` workspace-pinning rationale (why §6.2's byte-exactness claim needs it).
+- **§M.1.3** — `workspace_relative` lexically normalises `.`/`..`; caller resolves against a real root. Added `path.rs` to the module layout.
+- **§M.2** — `PackageId::parse`: an unknown leading segment is **neither an error nor a prefix** (`not-an-ecosystem/foo` → `Bare`); `EmptyNameAfterPrefix` gains its `prefix` field; the **`Ord` = `(ecosystem_or_none, name)`** paragraph naming §G.7.5 and §G.3.2 as the two load-bearing tie-breaks (this was entirely missing); `name()`'s ecosystem-native doc; `as_str`/`Display` on `GroupName`/`RegistryKey`.
+- **§M.3** — the full per-ecosystem grammar mapping incl. Go's `v`-prefix reasoning; `Ecosystem::is_implemented()`; `Ord` note; `PublishTarget::ecosystem()` and the registry-key resolution rules.
+- **§M.4.1/4.2** — `major/minor/patch` now `Option&lt;u64&gt;` (SemVer-only, not a guess) and `partial_compare` added; `Version`'s internals no longer expose a `semver::Version` field; fuller rationale (the `Version&lt;G&gt;` alternative, the `jq -r` breakage, `BTreeMap`/`.max()` silent-wrongness, the `1.2.3+abc` fixture argument).
+- **§M.4.3** — the version-grammar vs requirement-dialect two-axes paragraph, tied to R6.
+- **§M.4.5** — replaced with the real draft's three-bullet argument, including the "**the primitive worth spreading is a two-crate primitive**" line that §M.14 already cited but which didn't exist anywhere in the document.
+- **§M.6** — `is_dual_published()`; `ManifestDecl: Hash`; `ManifestRole` internally tagged; `ManifestFormat::file_name()`; the `YarnLock` justification.
+- **§M.7** — `DepKind`'s `Optional` rationale and the symmetric Cargo-no-peer / npm-no-build `DependencyNotFound` rule; `DepSpec` serde.
+- **§M.9.1/9.3** — **the most substantive correctness fix**: the reconstruction had collapsed step 4 into "does not parse ⇒ dropped **and** produces `TagGlobNonVersionMatch` — never a silent skip." The real draft splits it: **4a** glob over-match ⇒ skip *silently* (a glob is a superset by construction); **4b** parse failure ⇒ diagnostic. Also `TagTemplate::as_str`, serde, and the "never inverts the template" note.
+- **§M.10** — restored `REQUIRED_GIT` / `check_git_version`, wired to §G.2.4's `probe_git` rather than duplicating it.
+- **§M.11.1** — restored `ConfigKey::ALL`.
+- **§M.12.1/12.4** — serde conventions made crate-wide/normative; `StatusReport.packages[]` "six" → **seven** fields (it lists seven).
+- **§M.17** — added the `Version` equality/comparison fixture as item 5.
+- **§G.7.5** — "the fixpoint still converges **in one pass**" (the draft's actual claim).
+- **§M.16** rows 5 and 13 updated to match.
+
+## Cross-references
+
+Heading count is **284 before and after** — no subsection was renumbered, so all ~500 `§M.x`/`§G.x` cross-references from sections 3–10 still resolve. I ran a full ref-vs-heading audit; the only unmatched refs are the pre-existing fixture-*item* convention (`§X.9.n`, `§G.15.n`, `§M.17.n`), which are list items, not headings.
+
+The one numbering consequence I did create: inserting §M.17 item 5 shifted items 5–7 to 6–8. I updated all six affected references — two inside §M.1.2/§M.1.5, and four in §CF.4/§CF.6's fixture index (section 10), which is a direct consequence of the change. Code-fence parity verified balanced.</result>
+<usage><subagent_tokens>215693</subagent_tokens><tool_uses>101</tool_uses><duration_ms>751861</duration_ms></usage>
+</task-notification>
