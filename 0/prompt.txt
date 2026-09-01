@@ -1,0 +1,98 @@
+<task-notification>
+<task-id>a8837e2b0002915ad</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a8837e2b0002915ad.output</output-file>
+<status>completed</status>
+<summary>Agent "Verify Track 3b2 spec grounding" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Verification Report: SPEC-TRACK3B2 grounding in SPEC-TRACK3B1
+
+I read the full draft spec, the full originating requirement (SPEC-TRACK3B1-IDENTITY-PROMOTION-CORE.json, including its non_goals deployment-ordering section and the track-f AC-F6 closing-task precedent), and the sibling spec track-g-matrix-napi-maturin.json (AC-006, AC-009 text confirmed verbatim).
+
+```json
+{
+  "supported": [
+    {
+      "criterion_id": "AC-01",
+      "evidence": "SPEC-TRACK3B1 scope: 'A second spec, SPEC-TRACK3B2 ... will cover: (a) matrix.rs's platform_targets/runtime_versions BTreeMap collision-safety under promotion and its --package filter's ambiguity-awareness'",
+      "source": "requirement@1"
+    },
+    {
+      "criterion_id": "AC-02",
+      "evidence": "Same requirement (a) clause names runtime_versions BTreeMap collision-safety explicitly alongside platform_targets",
+      "source": "requirement@1"
+    },
+    {
+      "criterion_id": "AC-04",
+      "evidence": "Requirement (a) clause: 'its --package filter's ambiguity-awareness'",
+      "source": "requirement@1"
+    },
+    {
+      "criterion_id": "AC-05",
+      "evidence": "Requirement (a) 'ambiguity-awareness' for --package necessarily implies a disambiguation path (qualified-name resolution), consistent with the existing resolve_target_package pattern SPEC-TRACK3B1 leaves reusable",
+      "source": "requirement@1"
+    },
+    {
+      "criterion_id": "AC-07",
+      "evidence": "Requirement (b): 'publish.rs's --only filter's ambiguity-awareness'",
+      "source": "requirement@1"
+    },
+    {
+      "criterion_id": "AC-08",
+      "evidence": "Requirement (b) --only ambiguity-awareness, disambiguation branch",
+      "source": "requirement@1"
+    },
+    {
+      "criterion_id": "AC-09",
+      "evidence": "Requirement (b) --only ambiguity-awareness, disambiguation branch (second sibling)",
+      "source": "requirement@1"
+    },
+    {
+      "criterion_id": "AC-11",
+      "evidence": "Requirement (b) --only filter's ambiguity-awareness covers all lists --only scopes, including releases (the retain predicate applying resolved PackageId to ReleaseEntry.package)",
+      "source": "requirement@1"
+    },
+    {
+      "criterion_id": "AC-12",
+      "evidence": "Requirement (c): 'the resulting doc-comment and sibling-spec-criterion edits those two fixes require' -- covers matrix.rs/matrix.rs-model doc comments",
+      "source": "requirement@1"
+    },
+    {
+      "criterion_id": "AC-13",
+      "evidence": "Requirement (c) doc-comment edits clause, applied to commands/matrix.rs and commands/publish.rs option doc comments",
+      "source": "requirement@1"
+    },
+    {
+      "criterion_id": "AC-14",
+      "evidence": "Requirement (c): 'sibling-spec-criterion edits those two fixes require.' Directly verified against track-g-matrix-napi-maturin.json: AC-006 states '--package matches against the same PackageId::name() string used as the map keys ... not display_name()' and AC-009 states 'each key being the exact PackageId::name() string' -- both are genuine testable acceptance_criteria entries (not non_goals/api_surface prose), so this spec's fix makes them literally false and requirement clause (c) obligates their correction. This mirrors SPEC-TRACK3B1's own precedent of closing track-f-resolution-extraction.json's AC-F6 as its own final closing task for the same reason (stale call-site text pinned as a testable criterion, made false by the spec's own change) -- SPEC-TRACK3B1's non_goals section documents that precedent in full.",
+      "source": "requirement@1"
+    }
+  ],
+  "unsupported": [
+    {
+      "criterion_id": "AC-03",
+      "note": "Asserts byte-identical matrix output for the no-collision case. No sentence in SPEC-TRACK3B1's scope, non_goals, or api_surface asserts a non-regression/backward-compatibility obligation for matrix.rs's existing (unpromoted) output. The draft spec's own justification ('display_name() returns the bare name unchanged for Bare') is the drafter's inference from PackageId::display_name()'s behavior, not a requirement citation -- plausible but not evidenced in the source text."
+    },
+    {
+      "criterion_id": "AC-06",
+      "note": "Asserts --package continues to behave identically for unpromoted packages and UnknownPackage is unchanged. No requirement passage states this non-regression constraint; it is inferred from general expectation that a fix should not change unrelated behavior, not cited."
+    },
+    {
+      "criterion_id": "AC-10",
+      "note": "Asserts --only continues to behave identically for unpromoted packages and UnknownPackage is unchanged. Same gap as AC-06 -- no requirement citation for this non-regression obligation."
+    },
+    {
+      "criterion_id": "AC-15",
+      "note": "Asserts every pre-existing matrix.rs test passes unmodified after the rekey. No requirement passage demands preservation of a specific pre-existing test suite's pass status; this is the drafter's own quality bar, not sourced from SPEC-TRACK3B1's text."
+    }
+  ],
+  "overfitted": [],
+  "reasoning": "The requirement's deferred-work text names three clauses: (a) matrix.rs BTreeMap collision-safety + --package ambiguity-awareness, (b) publish.rs --only ambiguity-awareness, (c) resulting doc-comment and sibling-spec-criterion edits. AC-01/02/04/05 map cleanly to (a); AC-07/08/09/11 map cleanly to (b); AC-12/13/14 map cleanly to (c), with AC-14 independently verified against the actual track-g file content (AC-006 and AC-009 do pin PackageId::name() as literal, testable text, confirming the drafter's claim rather than merely asserting plausibility). AC-03/AC-06/AC-10/AC-15 are all 'no regression / behaves identically to today' assertions -- reasonable engineering hygiene, and arguably necessary for any responsible fix, but the requirement text nowhere states a non-regression obligation for matrix.rs or publish.rs's unpromoted-case behavior or existing test suite. Per the judgment standard (plausibility is not evidence), these four are classified unsupported rather than inferred as covered by the collision-safety/ambiguity-awareness clauses, since those clauses speak only to the new promoted-collision behavior, not to preservation of old behavior. No criterion was found to be narrower than what the requirement supports (no overfitted classifications) -- the spec's scope split (matrix.rs + publish.rs + track-g only, explicitly leaving track-e/track-f alone per SPEC-TRACK3B1's own non_goals) matches the requirement's explicit deferral boundary rather than narrowing it."
+}
+```
+
+Files read: `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/spec-track3b2-consumer-collision-safety.json`, `/Users/gabe/Projects/callisto/.claude/specs/SPEC-TRACK3B1-IDENTITY-PROMOTION-CORE.json`, `/Users/gabe/Projects/callisto/.claude/specs/track-g-matrix-napi-maturin.json`.
+
+This is an evidence collection only, per instructions — no pass/fail verdict is issued.</result>
+<usage><subagent_tokens>82150</subagent_tokens><tool_uses>5</tool_uses><duration_ms>73303</duration_ms></usage>
+</task-notification>
