@@ -1,0 +1,44 @@
+<task-notification>
+<task-id>ac5cddfe743ade93d</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/b90cda92-db13-4c63-8d7f-c9fa7d9196ab/tasks/ac5cddfe743ade93d.output</output-file>
+<status>completed</status>
+<summary>Agent "Research feature parity vs changesets/knope/release-please/nx" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Feature parity: callisto vs changesets / knope / release-please / nx release
+
+**Changesets** (changesets/changesets)
+- Per-change intent files, combined at release time (highest bump wins) → **Yes** — callisto's `add`/changeset files work identically, with fixed/linked group convergence on top (changesets itself has no native grouping; callisto's is stronger here).
+- Version PR automation via GitHub Action → **Yes** — callisto-action does this.
+- Prerelease mode (`changeset pre enter/exit`) → **Yes** — `callisto pre enter/exit`.
+
+**Knope** (knope-dev/knope)
+- Conventional-commits + changesets combined → **Yes** — callisto's `inference` feature + changeset files, same dual-mode.
+- GitHub release + changelog generation → **Yes**.
+- Knope Bot draft releases **with asset attachment** → **No** — callisto has no binary/asset upload to GitHub Releases at all (see below).
+
+**release-please** (googleapis/release-please)
+- Parses Conventional Commits from git history to auto-determine bump/changelog, no manual changeset files required → **Partial** — callisto's `inference` feature does this, but it's opt-in behind a Cargo feature flag, not the primary/default flow the way it is for release-please (callisto's default flow is changeset-file-based, like changesets, not commit-parsing-based).
+- Manifest-driven monorepo component tracking → **Yes** — callisto's own manifest walk does this natively, arguably more robustly (real per-ecosystem manifest editors vs release-please's config/manifest JSON).
+- Zero manual intervention (merge PR → tag → GitHub release) → **Yes**.
+
+**Nx release**
+- `nx release` version/changelog/publish in one command → **Yes** — `callisto version` + `callisto publish` (split, not fused, but equivalent).
+- Independent per-project vs grouped versioning → **Yes** — ungrouped packages version independently; fixed/linked groups available.
+- "Version plans" (file-based bump declarations, Nx's own changesets-alike) → **Yes** — this *is* callisto's core changeset mechanism.
+- Skip release if no relevant commits → **Yes** — empty-changeset diagnostic/gating.
+
+### Genuinely missing or partial (not scope-boundary items)
+1. **No binary/asset upload to GitHub Releases.** `PublishTarget::GitHubRelease` exists as an enum variant but is explicitly unimplemented (`publish.rs:358-372`) — a warning diagnostic fires and nothing publishes. callisto-action creates GitHub Release *entries* (tag + changelog notes) but never attaches build artifacts to them. Knope supports this natively (draft releases with configured assets); changesets/release-please/nx don't do this natively either (it's normally a separate `gh release upload` or `softprops/action-gh-release` step), so callisto is at parity with the npm-ecosystem tools here — the gap is specifically against Knope, not universal.
+2. **Commit-parsing-only mode (release-please's core model) is secondary, not primary**, in callisto — it exists but is feature-flagged behind changeset-file-first design.
+3. **No `@changesets/cli` config-migration path** (already flagged this session) — a real, still-open v0.4-committed item, unrelated to this comparison but worth repeating.
+
+Sources:
+- [changesets/changesets README](https://github.com/changesets/changesets/blob/main/README.md)
+- [knope-dev/knope README](https://github.com/knope-dev/knope/blob/main/README.md)
+- [Knope Bot features](https://knope.tech/reference/knope-bot-github-app/features/)
+- [googleapis/release-please README](https://github.com/googleapis/release-please)
+- [Nx Release docs](https://nx.dev/docs/guides/nx-release)
+- [Nx Release CLI command reference](https://20.nx.dev/nx-api/nx/documents/release)</result>
+<usage><subagent_tokens>693268</subagent_tokens><tool_uses>5</tool_uses><duration_ms>52028</duration_ms></usage>
+</task-notification>
