@@ -7,7 +7,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use callisto_model::{
-    ApplyPermit, OperationOutcome, OperationState, ReleaseExecutionStateV1, ReleaseIntentV1, ReleaseOperationId,
+    ApplyPermit, ArtifactManifestV1, OperationOutcome, OperationState, ReleaseExecutionStateV1, ReleaseIntentV1,
+    ReleaseOperationId,
 };
 
 use crate::{
@@ -42,7 +43,26 @@ pub fn execute_release<W: ReleaseStateWriter, A: ReleaseEffectAdapter>(
     permit: &ApplyPermit,
     adapter: &mut A,
 ) -> Result<ReleaseExecutionStateV1, GraphError> {
+    execute_release_with_artifacts(capability, store, permit, None, adapter)
+}
+
+/// Executes a release after requiring the exact artifact manifest whenever
+/// the intent declares compiled-binary slots.
+pub fn execute_release_with_artifacts<W: ReleaseStateWriter, A: ReleaseEffectAdapter>(
+    capability: &ValidatedReleaseIntent<'_>,
+    store: &ReleaseStateStore<W>,
+    permit: &ApplyPermit,
+    artifacts: Option<&ArtifactManifestV1>,
+    adapter: &mut A,
+) -> Result<ReleaseExecutionStateV1, GraphError> {
     let intent = capability.intent();
+    match (intent.artifact_slots.is_empty(), artifacts) {
+        (true, None) => {}
+        (true, Some(manifest)) | (false, Some(manifest)) => manifest
+            .validate_for_intent(intent)
+            .map_err(|_error| GraphError::ReleaseIntentStale)?,
+        (false, None) => return Err(GraphError::ReleaseIntentStale),
+    }
     let mut state = store.load_or_initialize(intent, permit)?;
     loop {
         let Some(operation) = reconcile_release_execution(intent, &state)?.eligible().first().cloned() else {
