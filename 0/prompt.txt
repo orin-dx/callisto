@@ -1,0 +1,23 @@
+<task-notification>
+<task-id>a7276faac00338dbe</task-id>
+<tool-use-id>toolu_01RWgEqoxqRkpMpz8wUbE9vF</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/c0ad64b2-6440-4937-8328-8d9fd9db278c/tasks/a7276faac00338dbe.output</output-file>
+<status>completed</status>
+<summary>Agent "Draft comprehensive changeset for unreleased work" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>File written: `/Users/gabe/Projects/callisto/.changeset/release-pipeline-and-matrix-hardening.md`
+
+**Per-package severity:**
+- `callisto-model`: **major** — breaking report field renames (`valid`→`ok`, `pr_body`→`body`, `created_tags`→`tags`), `PublishTarget::Npm.restricted: bool` reshaped to `access: Option&lt;NpmAccess&gt;`, new `PackageIdParseError::LeadingHyphen` variant
+- `callisto-graph`: **major** — `CascadeInput` gained two new required fields (`tags`, `identity`)
+- `callisto-cli`: **major** — its `--format json` output directly surfaces the model report renames above
+- `callisto-manifests`: **major** — `Manifest::persist` promoted to a required trait method
+- `callisto-conventional`: **major** — `fetch_commits`/`infer_severity` signatures changed to `&amp;dyn CommitWalker`; `ConventionalError::Vcs` renamed to `CommitWalk`
+- `callisto-vcs`: **minor** — additive `CommitWalker` trait impls + a real branchy-history correctness fix; no breaking signature found (`GitCommit` is now a source-compatible type alias)
+- `callisto-moon`: **patch** — bug fixes only; the `MoonProjectGraph` schema rewrite corrects a shape moon never actually emitted, not a break of working behavior
+- `callisto-changelog`: **patch** — pure internal dependency swap (`atomic_write` moved to `callisto-model`), own API unchanged
+- `callisto-format`: **patch** — diagnostic-code renumbering (duplicate E048/E049 → E055–E057) plus dependency hygiene
+
+**Commits ACTIVE.md didn't cover** (researched directly from the log): the security hardening batch (`4adc9a55` DoS-bounded subprocess capture, `899da29a`/`c01c6daa` credential redaction, `e3ee5b48` tag-ref injection, `bb194cc2` npm registry SSRF allowlist, `9dc84769` Action shell-injection fix), `d1a1be37` (`PublishTarget::Npm` 3-state reshape), `f66aae88` (`PackageIdParseError::LeadingHyphen` split), `f4fc9e2b` (`callisto-conventional`/`callisto-vcs` decoupling via `CommitWalker`), `7e3391bc` (branchy-history revwalk fix), and `79a70f60` (`MoonProjectGraph` schema rewrite).</result>
+<usage><subagent_tokens>334885</subagent_tokens><tool_uses>16</tool_uses><duration_ms>210535</duration_ms></usage>
+</task-notification>
