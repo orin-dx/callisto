@@ -1,0 +1,6 @@
+<task-notification>
+<task-id>bvlrsxtw5</task-id>
+<summary>Monitor event: "final just ci run with dev-exp fixes applied, persistent"</summary>
+<event>[+631s]     Finished `test` profile [unoptimized + debuginfo] target(s) in 1.09s</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
