@@ -1,0 +1,1 @@
+Let's do deep research to make sure we understand all of the requirements. Read docs for GH publishing, anything we should review for publish to NPM.js via pnpm, cargo publishing, etc
