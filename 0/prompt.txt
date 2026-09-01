@@ -1,0 +1,5 @@
+<task-notification>
+<task-id>bayar8h1i</task-id>
+<summary>Monitor event: "continue waiting for callisto-graph compile (large crate, may be doing a fuller rebuild after kill)"</summary>
+<event>[Monitor timed out — re-arm if needed.]</event>
+</task-notification>
