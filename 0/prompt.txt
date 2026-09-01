@@ -1,0 +1,174 @@
+This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
+
+Summary:
+1. Primary Request and Intent:
+   The user is building "callisto," a Rust CLI + moon-extension that coordinates SemVer version bumps across polyglot (Rust/npm, napi-bridged) monorepos, byte-compatible with `@changesets/cli`'s file format, for the GitHub org `orin-dx` (repo `github.com/orin-dx/callisto`). The engagement progressed through: (a) reading/researching design docs, (b) resolving an open architecture question (library-first vs moon-first) via multi-agent research, (c) writing and exhaustively critiquing a full design spec (`00-design.md`) and an implementation spec (`01-spec.md`), (d) scaffolding a real Cargo workspace and beginning strict-TDD implementation of `callisto-format`/`callisto-model`, (e) setting up `moon`/`proto` as the project's real task-runner/toolchain, (f) explicitly opting into agent-team/workflow-based development for the remaining build. Mid-session, the user revealed they had been using a separate tool ("antigravity CLI") to independently implement a huge amount of code across the whole workspace while my own workflow attempt failed (session limit / server overload). The user's most recent explicit request is: **"Let's make sure we're follow the rust community latest and greatest in terms of best practices and test coverage"** — i.e., audit and bring the now-much-larger codebase (produced partly by me, partly by the other tool) up to current Rust community best practices, and substantially improve test coverage, especially where it's currently thin. A standing, repeatedly-reinforced constraint: **do not commit anything to git, and do not "version"/release anything, until explicitly told to** — the user pushed back explicitly on this ("Let's hold versioning until we have actual working things to release right? Why rush to version things that are not usable???"), and I agreed to hold off. Nothing has been committed in this entire conversation.
+
+2. Key Technical Concepts:
+   - Cargo workspace with 9 originally-planned crates (`callisto-format`, `callisto-model` MIT/Apache-2.0; `callisto-graph`, `callisto-manifests`, `callisto-conventional`, `callisto-changelog`, `callisto-cli`, `callisto-moon` AGPL-3.0; `callisto-fixtures` dev-only/unpublished AGPL-3.0) — now with a 10th, unplanned crate `callisto-vcs` (MIT/Apache-2.0) that appeared from external work.
+   - Strict TDD (red-green-refactor, "no production code without a failing test first") — the `superpowers:test-driven-development` skill was explicitly loaded and its Iron Law followed for all code I personally wrote.
+   - `moon` (moonrepo build orchestrator) + `proto` (toolchain pinner) — set up for real, with empirically-debugged config (see below).
+   - Cargo workspace lints (`[workspace.lints.rust]` / `[workspace.lints.clippy]`, stable since Rust 1.74) — just added as the first concrete "best practices" step.
+   - `thiserror`-based error enums, `#[non_exhaustive]` public error types, newtype wrappers for identity (`PackageId`, `GroupName`, etc.) — established code style throughout.
+   - SemVer precedence vs. the `semver` crate's actual `Ord` behavior (real bug found: the crate's derived `Ord` factors in build metadata as a tiebreaker, which is NOT true SemVer precedence — fixed by comparing `(major, minor, patch, &pre)` tuples directly).
+   - Two-pass parsing (find delimiters first, then parse content within them) vs. single-pass — a real bug class found in my own `parse_changeset` implementation.
+   - `Workflow` tool orchestration patterns: parallel research fan-out, draft→synthesize, dual independent critique (Opus + Fable) → consolidated fix → final verify, and a reusable `implement→review→fix→verify` unit pattern (script saved, path known, reusable via `scriptPath`).
+   - Empirical verification over assumption — repeatedly, when moon config or Rust crate behavior was uncertain, the resolution was to actually run the command/test and read real output rather than trust recalled documentation (e.g., discovering `$MOON_PROJECT_ID` is the real token, not `$projectName`/`$MOON_PROJECT_NAME`, by dumping `env` inside a moon task).
+   - Test-coverage-to-code-volume ratio as a diagnostic heuristic for whether TDD was actually practiced (used to flag `callisto-graph` and several other crates as almost certainly NOT built via TDD).
+
+3. Files and Code Sections:
+   - **`/Users/gabe/Projects/callisto/docs/00-design.md`** — canonical design spec (~1966+ lines by the end), extensively revised: §0.1 resolved (Option C), §15 crate layout finalized (9 crates), §13 grew to 28 numbered invariants, §18 Q0–Q5 all resolved/committed, §17 milestones updated, §4 P1 scope note added, §12.2/§12.5 updated with GH-Actions PR-body findings. Authoritative for *why* decisions were made.
+   - **`/Users/gabe/Projects/callisto/docs/02-library-vs-moon-decision.md`** — resolves the moon-vs-library architecture question (Option C); fact-checked and red-teamed; fixed for citation drift and argument issues (licensing overclaim removed, `MoonProjectGraphResolver` deletion justified via moon's actual `ProjectDependencyConfig` struct, `ProjectLocator`/`DeclaredEdge` design added).
+   - **`/Users/gabe/Projects/callisto/docs/01-spec.md`** — the full implementation spec (~9288+ lines after fixes, may have grown further from external edits I haven't re-measured), one section per crate, full Rust trait/type signatures, `[SPEC DECISION]` markers, per-crate fixture-obligation lists (e.g. §F.9 for callisto-format, §G.15 for callisto-graph with 12+ required test classes). This is the **authoritative implementation contract** — all code must match it exactly; multiple rounds of dual-critique (Opus+Fable) and fix passes were applied to it (23 items fixed in one pass, 10 more found and 6 fixed in a follow-up verify pass, plus a `GroupKind` duplicate-definition fix I made personally, plus a deep `GraphError::GrammarMismatch`/`raise()` parameter/`NapiTargetsIndex`/`RawGroupTable`/`MoonProjectGraph` residue-fixing session).
+   - **`/Users/gabe/Projects/callisto/Cargo.toml`** (workspace root) — originally scaffolded by me with `[workspace]` (resolver="2", members=["crates/*"]), `[workspace.package]` (version="0.1.0", edition="2021"), `[workspace.dependencies]` (semver, serde, serde_json, thiserror, indexmap), `[profile.release] lto=true`. **Externally modified** (by the other tool) to add more workspace.dependencies: `toml_edit = "0.22"`, `ignore = "0.4"`, `toml = "0.8"`, `serde_yaml = "0.9"`, `globset = "0.4"`. **Just edited by me** (last action before this summary) to append:
+     ```toml
+     [workspace.lints.rust]
+     unsafe_code = "forbid"
+     missing_docs = "warn"
+     unreachable_pub = "warn"
+
+     [workspace.lints.clippy]
+     all = { level = "warn", priority = -1 }
+     pedantic = { level = "warn", priority = -1 }
+     nursery = { level = "warn", priority = -1 }
+     module_name_repetitions = "allow"
+     must_use_candidate = "allow"
+     ```
+     This edit succeeded but **`cargo clippy` has NOT yet been re-run** to see what it surfaces, and no crate's `Cargo.toml` yet has `[lints] workspace = true` added to opt in.
+   - **`crates/callisto-model/src/severity.rs`** — `Severity` enum (None/Patch/Minor/Major, in that Ord-significant order), `FromStr`/`Display`, `SeverityParseError`. Built by me via strict TDD, 6 tests, all passing. (Note: system reminders show `callisto-model/src/lib.rs` was later restructured externally into many more modules — `tag`, `error`, `path`, `identity`, `ecosystem`, `version`, `severity`, `package`, `dependency`, `discovery`, `exec`, `diagnostic`, `plan`, `report` — severity.rs's content is presumably preserved/extended within that new structure but I have not re-verified its exact current content post-external-edit.)
+   - **`crates/callisto-model/src/version.rs`** — `Version` (grammar-tagged struct, private `ParsedVersion` enum wrapping `semver::Version`), `VersionGrammar` (SemVer/Pep440/Maven, non_exhaustive), `Version::parse/semver/grammar/render/major/minor/patch/is_prerelease/compare/partial_compare`, `VersionParseError`, `GrammarMismatch`. Built by me via strict TDD, 14 tests (later shown as 19 total in callisto-model after external growth). Contains the load-bearing fix/comment:
+     ```rust
+     /// For SemVer this is true *precedence*, not `semver::Version`'s own derived `Ord` —
+     /// that crate's `Ord` factors in build metadata as a total-order tiebreaker...
+     pub fn compare(&self, other: &Version) -> Result<std::cmp::Ordering, GrammarMismatch> {
+         if self.grammar != other.grammar {
+             return Err(GrammarMismatch { left: self.grammar, right: other.grammar });
+         }
+         match (&self.parsed, &other.parsed) {
+             (ParsedVersion::SemVer(a), ParsedVersion::SemVer(b)) => {
+                 Ok((a.major, a.minor, a.patch, &a.pre).cmp(&(b.major, b.minor, b.patch, &b.pre)))
+             }
+         }
+     }
+     ```
+   - **`crates/callisto-format/src/changeset/frontmatter.rs`** — private tokenizer: `NameToken<'a>` (Bare/Quoted), `LineError` (UnclosedQuotedName/AmbiguousNameQuoting/MissingSeparator/EmptyName/`InvalidSeverity { name: String, source: SeverityParseError }`), `split_name_and_rest`, `parse_entry_line`, `needs_quoting`. Built via strict TDD.
+   - **`crates/callisto-format/src/changeset/mod.rs`** — `Changeset`, `Entry`, `ParseError` (non_exhaustive, 8 variants), `WriteError` (3 variants), `parse_changeset` (two-pass: find closing `---` index first via `lines[1..].iter().position(...)`, then parse only within `lines[1..closing_index]`), `write_changeset`, `promote_line_error`. 31 tests, all passing.
+   - **`crates/callisto-format/src/lib.rs`** — externally modified; now shows `pub mod bump; pub mod changeset; pub mod pre;` with re-exports including `bump_version`, `BumpError`, `SemVerVersioning`, `Versioning`, `parse_pre_json`, `write_pre_json`, `PreJsonError`, `PreMode`, `PreState` — **meaning `bump.rs` and `pre.rs` (which my own workflow was supposed to build but failed to) already exist**, presumably from the external tool's work. `cargo test --workspace` output confirmed real, passing tests exist for both: `bump::tests::zero_x_bump_major_becomes_one_zero_zero`, `bump::tests::bumps_semver_versions`, `bump::tests::bump_prerelease_monotonic_counter`, `pre::tests::pre_json_round_trips` — only 4 tests total for this fairly large surface (thinner than what I would have produced via full TDD, but present and passing).
+   - **`crates/callisto-format/Cargo.toml`** — externally modified, added `schemars = "0.8"` dependency (not in the original spec).
+   - **`crates/callisto-vcs/`** (NEW, unplanned crate) — `Cargo.toml` declares `license = "MIT OR Apache-2.0"`, deps: `callisto-model`, `gix = "0.72"`, `thiserror`, `globset`; dev-dep `tempfile`. `src/lib.rs` (140 lines): `VcsError` enum, `GitCommit` struct, `GitRepository` wrapping `gix::Repository` with `discover()`/`head_sha()`. **Confirmed via grep: zero source files anywhere in the workspace actually call into `callisto_vcs`**, despite `callisto-graph/Cargo.toml` declaring it as a dependency — it is dead/unused code. `callisto-model`'s `CommandRunner` trait (the spec's actual git-shelling abstraction, in `crates/callisto-model/src/exec.rs`) is confirmed still intact and genuinely used throughout `callisto-cli`, `callisto-conventional`, `callisto-fixtures`, `callisto-graph`, `callisto-moon`.
+   - **`crates/callisto-graph/src/cascade.rs`** — spot-checked and confirmed the exact `[cascade].mode = "always"` fix I made in `01-spec.md` earlier IS correctly present in the real implementation: `(CascadeMode::Always, _) => DoesNotCover` (line ~34), not the original buggy version — good evidence this was built against current spec text.
+   - **`crates/callisto-graph/src/lib.rs`** — externally built out into 18 modules (`aggregate`, `apply`, `cascade`, `changed`, `commands`, `config`, `crosscheck`, `error`, `groups`, `identity`, `infer`, `locate`, `napi`, `plan`, `resolver`, `tags`, `toposort`, `walk`) with a `Workspace<'a, R, D>` struct and full re-exports matching almost all of §7's spec surface. **Only 2 tests exist for 3,520 lines** (`toposort::tests::test_toposort_linear` and one blackbox integration test `test_blackbox_cascade_propagation` in `tests/graph_tests.rs`) — this is the single biggest coverage gap found.
+   - **`crates/callisto-manifests/src/lib.rs`** — externally built: `Manifest` trait, `OpenContext`, `open()`, `round_trip()`, `CargoToml`/`PackageJson`/`WorkspaceCargoResolver` re-exported from `cargo`/`npm` submodules (feature-gated: `cargo`, `npm`, `pypi`, `go`, `maven`, `nuget`, `deno` features declared, only cargo/npm implemented). 4 tests for 1104 lines.
+   - **`crates/callisto-cli/src/main.rs`** — externally built: full `clap`-based CLI with `Cli`/`Command` (Add/Status/Version/Pre/Validate/Snapshot/Init/PlanPublish/ComposePrBody/Tag/Completions/Schema subcommands), dispatching to `callisto_cli::commands::*` handlers. `#![allow(clippy::result_large_err)]` at crate top. 3 tests for 902 lines.
+   - **`crates/callisto-changelog/src/lib.rs`**, **`crates/callisto-conventional/src/lib.rs`**, **`crates/callisto-moon/src/lib.rs`** — all externally built out into multiple real modules matching their respective spec sections (§CL, §C, §MO), each with only 1-2 tests for several hundred lines.
+   - **`crates/callisto-fixtures/src/lib.rs`** — externally built: `pub mod corpus;` plus feature-gated (`graph`) `graph_builder`/`runner`/`scenario` modules exporting `GraphBuilder`, `InMemoryGraph`, `PackageBuilder`, `ReplayCommandRunner`, `Scenario`. **0 tests.**
+   - **`.moon/workspace.yml`** — `projects: ["crates/*"]` (fixed from moon's default `["packages/*"]`), vcs provider "github", defaultBranch "main".
+   - **`.moon/toolchains.yml`** — `rust: { version: "1.96.0", syncToolchainConfig: true, components: ["clippy", "rustfmt"] }`.
+   - **`.moon/tasks/rust.yml`** (note: NOT `.moon/tasks.yml` — that filename doesn't work; must be tag-scoped under `.moon/tasks/<toolchain>.yml`) — global tasks inherited by all 9(+1) projects:
+     ```yaml
+     tasks:
+       build:
+         script: "cargo build -p $MOON_PROJECT_ID"
+         inputs: ["src/**/*", "Cargo.toml"]
+       test:
+         script: "cargo test -p $MOON_PROJECT_ID"
+         inputs: ["src/**/*", "Cargo.toml"]
+       lint:
+         script: "cargo clippy -p $MOON_PROJECT_ID --all-targets -- -D warnings"
+         inputs: ["src/**/*", "Cargo.toml"]
+       format:
+         script: "cargo fmt -p $MOON_PROJECT_ID"
+         inputs: ["src/**/*"]
+       format-check:
+         script: "cargo fmt -p $MOON_PROJECT_ID -- --check"
+         inputs: ["src/**/*"]
+     ```
+     Uses `script:` (not `command:`) for proper variable expansion; the correct env var is `$MOON_PROJECT_ID` (verified empirically, `$projectName` and `$MOON_PROJECT_NAME` do NOT work).
+   - **`rust-toolchain.toml`** — manually created (moon's `syncToolchainConfig` doesn't create it from scratch, only syncs an existing one): `[toolchain] channel = "1.96.0"`, `components = ["clippy", "rustfmt"]`.
+   - **`.prototools`** — pins `moon = "2.4.5"`.
+   - **`.gitignore`** — `/target`, `.DS_Store`, plus moon-added `.moon/cache`, `.moon/docker`.
+   - **`crates/callisto-model/LICENSE-MIT`**, **`LICENSE-APACHE`**, and the same copied to **`crates/callisto-format/`** — added per §16's dual-license requirement.
+   - **`README.md`** (repo root) — appeared externally; I have not yet read its content.
+
+4. Errors and fixes:
+   - **Semver crate `Ord` bug**: `semver::Version`'s derived `Ord` factors in build metadata (`"1.2.3".cmp("1.2.3+abc")` → `Less`, empirically verified via a throwaway `/tmp` test project), contradicting true SemVer precedence (which must ignore build metadata). Fixed by implementing `Version::compare()` via explicit `(major, minor, patch, &pre)` tuple comparison instead of delegating to the crate's own `Ord`. Verified the fix against known-correct precedence rules (prerelease ordering, numeric-vs-alphanumeric identifiers) empirically before applying.
+   - **Single-pass parser ambiguity bug**: my first `parse_changeset` implementation used one pass that tried to parse every line as a frontmatter entry until it happened to hit a literal `---`; an unclosed-frontmatter input would instead fail with a misleading `MissingSeparator` on some later non-entry line instead of `UnclosedFrontmatter`. Fixed with a two-pass approach (find the closing `---`'s index first across the whole line array, error immediately if absent, only then parse entries within the established boundary).
+   - **`LineError::InvalidSeverity` missing the entry name**: `ParseError::InvalidSeverity` (the promoted, crate-public error) needs `{line, name, source}`, but the private `LineError::InvalidSeverity` only carried `SeverityParseError`. Fixed by changing it to `InvalidSeverity { name: String, source: SeverityParseError }` and updating `parse_entry_line`/the `promote_line_error` mapping function accordingly; also had to update a frontmatter.rs test's pattern match from `LineError::InvalidSeverity(_)` to `LineError::InvalidSeverity { .. }`.
+   - **`cargo fmt` diffs**: after implementing bump.rs-adjacent work, `cargo fmt --check` flagged pure formatting (multi-field struct literals needing line-wrapping) — fixed by running `cargo fmt` directly; re-verified tests still passed after.
+   - **`moon init --yes` wrong default project glob**: generated `projects: ["packages/*"]`; fixed to `["crates/*"]` to match this repo's actual layout.
+   - **`.moon/tasks.yml` not recognized**: moon 2.4.5 requires the tag-scoped filename `.moon/tasks/<toolchain>.yml` (I used `rust.yml`), not a flat `.moon/tasks.yml` — discovered via `moon query tasks` returning empty despite the file existing, then confirmed the fix worked once moved.
+   - **`$projectName` / `$MOON_PROJECT_NAME` don't exist as moon tokens**: both silently resolved to empty string when interpolated into task `command`/`script` strings (confirmed via `moon query tasks --project callisto-model` showing an empty arg, and via `cargo` itself erroring "requires a SPEC format value" with nothing after `-p`). Root-caused by adding a temporary `debug-env: { script: "env | grep -i project" }` task and running it — revealed the real variable is `MOON_PROJECT_ID`. Also had to switch the task field from `command:` to `script:` for shell-style variable expansion to occur at all. Removed the debug task after finding the answer.
+   - **`rust-toolchain.toml` not auto-created**: `moon sync` did not create it despite `syncToolchainConfig: true` being set (that setting only *syncs an existing file's* channel field, per the toolchain plugin's own documented behavior — it doesn't scaffold a new file). Fixed by manually writing `rust-toolchain.toml`.
+   - **Read tool returning "Wasted call — file unchanged since your last Read"** for `Cargo.toml` when I actually needed fresh content (the file had been edited externally since my stale cached read) — worked around by using `cat` via Bash instead of the Read tool to force a fresh read.
+   - **Background workflow total failure**: the `callisto-build-unit` workflow (bump.rs/pre.rs implement→review→fix→verify) failed completely — first agent hit "API Error: 529 Overloaded", all 5 subsequent agents hit "You've hit your session limit · resets 3:30pm (America/Los_Angeles)". Zero usable output; this was reported honestly to the user as a total failure, not glossed over. This is **not yet resolved/retried** — the user's "Sure, that works / Try again" message was ambiguous and I had begun checking task status (via ToolSearch for TaskOutput/TaskList) when the actual notification and the "antigravity CLI" revelation arrived in the same turn, redirecting attention entirely to the external-work audit instead of retrying the failed workflow.
+   - **User feedback on committing**: explicit correction — "Let's hold versioning until we have actual working things to release right? Why rush to version things that are not usable???" — I acknowledged the distinction between git commits (safe, local, not a release) and actual releases/versioning, agreed to hold off on committing until asked, and have not committed anything since.
+   - **User feedback on crate version numbers**: given explicit discretion ("Version as 0.0.0 if you think that follows best practices") but I concluded 0.0.0 was NOT actually better practice (would create drift against `01-spec.md`'s literal already-written `version = "0.1.0"` Cargo.toml text; 0.x already signals no-stability-promise regardless of the specific value) and explained this reasoning rather than deferring to the apparent implied preference — kept `0.1.0`.
+
+5. Problem Solving:
+   - Resolved the moon-vs-library architecture question (§0.1) through structured multi-agent research + adversarial verification, landing on Option C with concrete crate-boundary implications, later reflected in `01-spec.md`.
+   - Diagnosed and fixed a synthesis-agent factual error (claimed "truncated" drafts) by directly reading raw JSONL transcripts and discovering the real cause (multi-message-split responses only partially captured); recovered the true complete drafts and re-reconciled the affected spec sections with a full cross-reference audit proving nothing broke.
+   - Ran two full rounds of dual/independent critique + fix + re-verify on `01-spec.md`, converging on a spec with no known outstanding critique findings before implementation began.
+   - Diagnosed moon's actual (undocumented-to-me) config conventions empirically rather than guessing from possibly-stale memory, three separate times (global task filename, project-name token, toolchain-config file creation behavior).
+   - **Currently unresolved / actively being worked**: understanding the scope and quality of a large body of code (~9,600 lines across 8 crates, excluding the two I wrote personally) produced by an external tool while my own session was blocked. Established via direct empirical measurement (not the file-listing alone) that: it compiles, all existing tests pass, clippy (default lints) is clean — but test coverage is drastically uneven and almost certainly not TDD-produced for most crates (especially `callisto-graph` at 2 tests / 3,520 lines), and there is one clear structural anomaly (`callisto-vcs`, a fully-implemented but completely unwired/dead-dependency crate wrapping `gix`, not part of the original 9-crate spec). One reassuring spot-check (the `cascade` `always`-mode bug fix) confirmed the code reflects the *current* spec text, not a stale version — but fidelity to `01-spec.md` has only been verified for that one specific function; the vast majority of the ~9,600 external lines have not yet been checked against the spec.
+   - Just began the "best practices" phase of the newest request by adding workspace-wide Rust lints (`unsafe_code = "forbid"`, `missing_docs = "warn"`, `unreachable_pub = "warn"`, clippy `all`/`pedantic`/`nursery` at "warn" with two noise-reduction allows) to the root `Cargo.toml` — **not yet run against the codebase, and no crate yet has `[lints] workspace = true`** to actually opt in.
+
+6. All user messages:
+   - "What folder is this in?"
+   - "This should be a project for the @orin-dx/callisto project that in the Orin-DX org in GH"
+   - "I've added two files in the docs folder, Read them completely, don't skim, don't skip anything"
+   - "Can we know-out the next few deliverables in succession using agent teams and the most appropriate models/effort?" (typo for "knock out")
+   - "keep going" (mid-workflow, while a background task was running)
+   - "How do we address the issues the two models found?"
+   - "Yes, write it into 00-design.md"
+   - "Do we have a good idea of how to handle NAPI issues from the lessons of Nova? For GH actions, have we learned anything from the alternatives on the best way to output data in the release PR?"
+   - "I mostly mean do we have a good grip on RS + NAPI + NPM versioning or any combination of languages that makes sense?"
+   - "I don't think platform manifests get their onw git tags. They'd be attached to the overall 'tool' right so it makes sense to keep things together. Correct that we need to keep things in lock-step. How should we handle added/dropped items from a fixed group set?"
+   - "Yes, all crates AGPL-3.0" / "Keep the dual-license split (Recommended)" (AskUserQuestion response)
+   - "Don't stop on multi-hour go ahead and leverage the best model for the work. Be it fable 5 or opus 5"
+   - "keep going" (repeated, at multiple points during long background workflows)
+   - "pickup where you were interrupted" (after a session-limit failure requiring a workflow resume)
+   - "What's next?"
+   - "Can we know-out the next few deliverables in succession using agent teams and the most appropriate models/effort?"
+   - "keep going" (again)
+   - "Are we ready to start implementing?"
+   - "Can we make sure all our commits are made with email gabe@techworx.dev?"
+   - "Let's tackle the residue" (referring to the 5 remaining lower-priority issues from the final spec verification pass)
+   - "Can we make sure all our commits are made with email gabe@techworx.dev?" (this appears to be a duplicate/re-ask; answered: repo's git config already correctly set, no local override, existing commit already correct)
+   - "All our work should be AGPL3 licensed please"
+   - "Keep the dual-license split (Recommended)" (AskUserQuestion answer)
+   - "Let's scaffold the workspace and start with callisto-format"
+   - "Do we use moon, proto, just, oxfm, oxlint, clippy, rsfmt and all appropriate best practices? Do we need oxfmt and oxlint?"
+   - "Adopt moon now (Recommended)" (AskUserQuestion answer)
+   - "Ok, what's next?"
+   - "Let's hold versioning until we have actual working things to release right? Why rush to version things that are not usable???"
+   - "Can we consider an agent team and workflow that best leverages our models and efforts to build callisto, review the work and ensure that we're following our best practices? Version as 0.0.0 if you think that follows best practices"
+   - "Sure, that works\nTry again"
+   - "I've had the antigravity CLI working while you were blocked. Can you re-read the docs and what we have right now to understand how far we've come?" (this arrived attached to a task-notification system message, but the sentence itself is a genuine user message)
+   - "Let's make sure we're follow the rust community latest and greatest in terms of best practices and test coverage"
+   - [Local `/effort` command sets effort to "medium"] followed by an explicit, unambiguous meta-instruction (marked with `<local-command-caveat>`) directing me to produce ONLY this structured conversation summary, with no tool calls — the literal instruction text includes a question ("Did you managed to finish the analysis of the work that antigravity LLM did on this repo or did you get blocked?") but frames the entire message as a compaction/summarization task, not a request to act further before summarizing.
+
+7. Pending Tasks:
+   - Bring the codebase up to current Rust community best practices (explicit, most recent user request) — workspace lints just added, not yet run/reacted to, and no crate has opted in via `[lints] workspace = true` yet.
+   - Substantially improve test coverage, especially for `callisto-graph` (2 tests / 3,520 lines — the worst ratio and highest-risk crate), and also `callisto-fixtures` (0 tests), `callisto-conventional`, `callisto-changelog`, `callisto-moon`, `callisto-vcs`, `callisto-manifests`, `callisto-cli` (all thin relative to code volume and to `01-spec.md`'s own per-crate fixture-obligation lists).
+   - Decide what to do with `callisto-vcs` (unused, unwired `gix`-based crate) — finish integrating it, or remove it — this was explicitly asked as an open question and not yet answered by the user.
+   - Verify fidelity of the ~9,600 lines of externally-produced code against `01-spec.md`'s actual type signatures and algorithms (only one specific function, `cascade_action`'s `always`-mode handling, has been spot-checked so far).
+   - Retry/replace the previously-failed `callisto-build-unit` workflow (bump.rs/pre.rs implement→review→fix→verify) if still relevant — though bump.rs and pre.rs now appear to already exist (with passing tests) via the external tool's work, so this specific workflow's original purpose may now be moot; needs reassessment against what already exists.
+   - Never commit to git without explicit instruction (standing constraint, repeatedly reaffirmed).
+   - Do not bump crate versions away from `0.1.0` without a documented reason (decision already made and explained to the user this same turn).
+
+8. Current Work:
+   Immediately before this summary was requested, I was beginning the "Rust community best practices + test coverage" audit the user just asked for. My stated plan (in the message just before the edit) was: "Let me set up workspace-wide lint policy first (a genuine 'latest Rust best practice' — centralized `[workspace.lints]`, stable since 1.74), see what it surfaces, then launch a per-crate audit workflow starting with `callisto-graph` given how far behind it is." I then:
+   1. Attempted `Read` on root `Cargo.toml`, got a stale-cache "Wasted call" response.
+   2. Used `cat` via Bash to get the fresh, current content (confirming the externally-added `workspace.dependencies` entries: `toml_edit`, `ignore`, `toml`, `serde_yaml`, `globset`).
+   3. Made an `Edit` to root `Cargo.toml` appending `[workspace.lints.rust]` (`unsafe_code = "forbid"`, `missing_docs = "warn"`, `unreachable_pub = "warn"`) and `[workspace.lints.clippy]` (`all`/`pedantic`/`nursery` at "warn" priority -1, with `module_name_repetitions` and `must_use_candidate` allowed) — this edit succeeded.
+   This was the last action taken before the user's local `/effort` command (setting effort to "medium") and the explicit compaction-request message arrived, which instructed text-only output with no further tool calls. **I have not yet**: re-run `cargo clippy` to see what the new pedantic/nursery lints surface across the (now much larger, partly externally-written) codebase, added `[lints] workspace = true` to any individual crate's `Cargo.toml`, or launched any per-crate audit/coverage-improvement workflow (e.g., for `callisto-graph`).
+
+9. Optional Next Step:
+   Per my own stated plan immediately prior to this summary request — "Let me set up workspace-wide lint policy first ... see what it surfaces, then launch a per-crate audit workflow starting with callisto-graph given how far behind it is" — the direct next step, once back in normal (tool-using) mode, is to:
+   1. Add `[lints] workspace = true` to each of the 10 crates' `Cargo.toml` files so the new workspace lint policy actually applies.
+   2. Run `cargo clippy --workspace --all-targets` (and/or `cargo clippy --workspace --all-targets -- -W clippy::pedantic -W clippy::nursery` if the workspace-level config isn't picked up automatically) to see exactly what best-practices findings surface across the codebase, prioritizing review of `callisto-graph` given its extreme test-coverage gap (2 tests / 3,520 lines).
+   3. Based on those findings plus the already-known `01-spec.md` fidelity-verification gap, propose (or, given the user's demonstrated preference for direct action combined with agent-team workflows, likely launch) a per-crate audit-and-improve workflow — very likely starting with `callisto-graph` specifically, given it is simultaneously the highest-risk (most algorithmically complex), worst-tested, and entirely spec-unverified crate in the codebase.
+   This next step should explicitly avoid committing anything to git, and should not be presented as a "release" or version bump under any circumstances, per the user's standing, repeated instruction.
+
+If you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/gabe/.claude/projects/-Users-gabe-Projects-callisto/575b7a46-37b7-42f0-9db7-b2c329b2abab.jsonl
+Continue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with "I'll continue" or similar. Pick up the last task as if the break never happened.
