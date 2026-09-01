@@ -1,0 +1,1 @@
+Now that you've found a bunch of things do we have to reevaluate or reconsider anythning in our models and architecture to better implement our features? Don't hold back in analyzing and considering how to do this properly. Report back
