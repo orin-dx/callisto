@@ -1,0 +1,8 @@
+<task-notification>
+<task-id>b2n5rqrpb</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/b2n5rqrpb.output</output-file>
+<status>completed</status>
+<summary>Background command "cd /Users/gabe/Projects/callisto
+cargo test -p callisto-cli --features inference version_uses_real_commit_inference_when_feature_enabled -- --nocapture 2&gt;&amp;1 | tail -30" completed (exit code 0)</summary>
+</task-notification>
