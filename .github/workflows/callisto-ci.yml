@@ -91,9 +91,11 @@ jobs:
       # promote to a required check once existing per-crate gaps are closed.
       - run: just coverage-per-crate 90 || echo "::warning::one or more crates below 90% line coverage (non-blocking, see job log above)"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: ${{ always() }}
         with:
           name: code-coverage-report
           path: lcov.info
+          if-no-files-found: warn
 
   security:
     name: Security & Advisory Audit (Moon & Just)
