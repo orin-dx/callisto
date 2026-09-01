@@ -1,0 +1,36 @@
+<task-notification>
+<task-id>a8f47fc27417cce4a</task-id>
+<tool-use-id>toolu_01LWwtabA8dcatWKeYXwuATP</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/tasks/a8f47fc27417cce4a.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement T06: strip persist from update_dependency_spec" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Task T06 complete.
+
+```json
+{
+  "task_id": "T06",
+  "status": "done",
+  "steps_completed": [
+    "Read AC-003, AC-005, AC-006, AC-015 from .claude/specs/SPEC-MANIFEST-PERSIST-001.json before writing any test",
+    "Wrote failing test update_dependency_spec_does_not_touch_disk_until_persist_called in crates/callisto-manifests/src/cargo.rs",
+    "Confirmed RED: cargo test -p callisto-manifests --lib cargo::tests::update_dependency_spec_does_not_touch_disk_until_persist_called failed with the exact assertion mismatch predicted by the plan",
+    "Replaced trailing `self.persist(permit)` with `Ok(())` in update_dependency_spec's non-delegating branch; kept parameter name `permit` (still used by the workspace-delegation branch's ws_res.write_dependency call)",
+    "Repaired the 3 named tests (test_cargo_inline_table_dependency_update, update_dependency_spec_preserves_decor_on_full_table_version, test_cargo_dependency_version_update_decor_preservation) by inserting manifest.persist(&amp;permit()).unwrap() before their post-call disk reads",
+    "Fixed a bug in the plan's own failing_test assertion: for the plain-string dep fixture (`helper = \"1.0.0\"`) the update rewrites the bare value in place, producing `helper = \"^1.1.0\"`, not `version = \"^1.1.0\"` (that phrasing only applies to table-form deps) — corrected the final assertion to match actual, verified behavior",
+    "Confirmed GREEN: whole cargo::tests module — 25 passed, 0 failed",
+    "Verified update_optional_dependencies untouched and still unconditionally returns Err(UnsupportedOperation) with zero disk I/O (no edit made, per task instructions)",
+    "Ran full callisto-manifests crate test suite (unit + integration + doctests): 99 + 1 + 0 passed, 0 failed",
+    "Verified sole external caller (crates/callisto-graph/src/apply.rs:115-121) already calls handle.persist(permit)? explicitly after update_dependency_spec, so no regression",
+    "Ran cargo fmt -p callisto-manifests (required by pre-commit hook), reran tests (still 25/25 green), committed"
+  ],
+  "test_result": "pass",
+  "commit_sha": "1ea7f2a732764f50e206e9b75691a15d45d4f24d",
+  "concerns": "The plan's supplied failing_test JSON had an incorrect final assertion (`updated.contains(\"version = \\\"^1.1.0\\\"\")`) that does not match actual toml_edit output for a plain-string dependency value — it would have failed even with a correct implementation. I corrected it to `updated.contains(\"helper = \\\"^1.1.0\\\"\")` after verifying the real on-disk output, and the red/green cycle proceeded from there. This is a minor plan-authoring defect, not an implementation defect; flagging for awareness.",
+  "reasoning": "Followed strict TDD: read spec criteria first, wrote the new test, ran it to confirm red (matched plan's expected_failure verbatim for the pre-persist assertion), then made the minimal implementation change (self.persist(permit) -&gt; Ok(())) plus the 3 test repairs in the same commit. After implementing, the new test's final assertion failed for a reason unrelated to the implementation (a fixture/assertion mismatch in the plan itself), which I diagnosed by reading toml_edit's actual rewrite behavior for a bare string value vs a table's version key, then fixed the assertion to reflect ground truth rather than blindly matching the plan text. Verified no sibling regressions in callisto-graph (the only external caller already explicitly persists). Commit message used verbatim from the plan."
+}
+```
+
+Files touched: `/Users/gabe/Projects/callisto/crates/callisto-manifests/src/cargo.rs` (only file changed, as scoped).</result>
+<usage><subagent_tokens>81368</subagent_tokens><tool_uses>53</tool_uses><duration_ms>520964</duration_ms></usage>
+</task-notification>
