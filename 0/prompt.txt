@@ -1,0 +1,1 @@
+How come we didn't catch this regression?? This means we could have introduced 10000 regressions and not know. How can SDD not have caught this? How come our tests didn't catch this regression? This is not acceptable.
