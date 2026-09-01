@@ -1,0 +1,217 @@
+<task-notification>
+<task-id>a6b8e338387dd6aa2</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/0c4c4622-1ed8-4f2c-80e6-f0890a2dad72/tasks/a6b8e338387dd6aa2.output</output-file>
+<status>completed</status>
+<summary>Agent "Fetch and extract publish-tool official docs" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Confirmed internally: `PublishTarget::GitHubRelease` is entirely stubbed — `commands/publish.rs:359-374` only emits a `PublishTargetNotImplemented` warning diagnostic; no `Command::new("gh", ...)` invocation exists anywhere in the codebase. Tag creation is local-git-only (`git tag`, via `callisto-vcs`/`callisto-graph::commands::tag.rs`, `version.rs:387-417`, `access.rs`) — no `git push --tags` or `gh` call was found either, so tags may not even reach the remote before any future `gh release create` would run against it.
+
+Enough has been gathered to produce the extraction output.
+
+```json
+{
+  "findings": [
+    {
+      "claim": "callisto's PublishTarget::GitHubRelease is fully stubbed: it only pushes a PublishTargetNotImplemented warning diagnostic and performs no dispatch.",
+      "evidence": "callisto_model::PublishTarget::GitHubRelease =&gt; { diagnostics.push(Diagnostic { code: DiagnosticCode::PublishTargetNotImplemented, ... message: \"...GitHub Release publishing is not yet implemented; this target will not be published\" ... }) }",
+      "source": "crates/callisto-graph/src/commands/publish.rs:359-374",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "A test explicitly documents that GitHubRelease has no real dispatch implementation.",
+      "evidence": "\"target (GitHubRelease) has no real dispatch implementation; got: {:?}\"",
+      "source": "crates/callisto-graph/tests/publish_tests.rs:1247-1316",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "No `gh` CLI invocation of any kind (create or upload) exists anywhere in the callisto codebase; only `git tag` calls exist for release tagging.",
+      "evidence": "grep for 'gh release', 'gh_release', '\"gh\"' across crates/ returns zero Command::new(\"gh\", ...) call sites — only PublishTarget::GitHubRelease enum/match references and test names. Tag creation is via std::process::Command::new(\"git\").args([\"-c\",\"tag.gpgSign=false\",\"tag\",\"-m\",\"release\",name]) in commands/version.rs:387-417, commands/tag.rs, callisto-vcs/src/access.rs and lib.rs.",
+      "source": "crates/callisto-graph/src/commands/version.rs:387-417; crates/callisto-vcs/src/access.rs:88,166-308; crates/callisto-vcs/src/lib.rs:130,414,629-732; crates/callisto-graph/src/commands/tag.rs:13-28",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "No `git push` of the created tag to the remote was found in the grepped call sites either — tag creation appears local-only in what was read.",
+      "evidence": "All 'tag' Command::new(\"git\", ...) call sites found are `tag`, `tag --list`, `tag -f`, `tag -a` subcommands; no `push --tags` or `push origin &lt;tag&gt;` call site appeared in the same grep pass.",
+      "source": "grep across crates/callisto-graph/src, crates/callisto-vcs/src for 'push'/'tag' patterns",
+      "confidence": "likely"
+    },
+    {
+      "claim": "callisto ships real subprocess invocations for cargo publish, npm/pnpm/yarn/bun publish, and python -m build + twine upload — GitHubRelease and NuGet are the two unimplemented PublishTarget variants.",
+      "evidence": "cargo: self.run(\"cargo\", &amp;[\"publish\",\"-p\",name,\"--locked\", ...]) (with optional --registry); npm/pnpm/yarn/bun dispatch in build_npm_publish_command; PyPI: self.run_in(\"python\",&amp;[\"-m\",\"build\",\"--sdist\",\"--wheel\",\"--outdir\",\"dist/\"],...) then self.run_in(\"twine\",&amp;[\"upload\",\"--skip-existing\",pattern],...)",
+      "source": "crates/callisto-graph/src/commands/publish_client.rs:172-283 (cargo), 347-457 (npm family), 477-528 (pypi)",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "cargo publish is always invoked with --locked and -p &lt;name&gt;, optionally --registry &lt;name&gt;. No --dry-run, --allow-dirty, --no-verify, or --frozen flags are used.",
+      "evidence": "self.run(\"cargo\", &amp;[\"publish\", \"-p\", package.name(), \"--locked\", \"--registry\", reg])? / self.run(\"cargo\", &amp;[\"publish\", \"-p\", package.name(), \"--locked\"])?",
+      "source": "crates/callisto-graph/src/commands/publish_client.rs:274-281",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "npm-family publish command construction detects package manager by lockfile presence (pnpm-lock.yaml &gt; yarn.lock &gt; bun.lockb/bun.lock &gt; default npm), and for pnpm always appends --no-git-checks.",
+      "evidence": "pnpm branch: args = [\"publish\",\"--filter\",name,\"--no-git-checks\"] with comment: \"pnpm ≥ 7 refuses to publish from a dirty working tree by default. After callisto version stages manifest bumps, the tree is always dirty until the operator commits, so we must bypass the git-status check here.\"",
+      "source": "crates/callisto-graph/src/commands/publish_client.rs:368-381",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "npm publish access level defaults to omitting --access entirely when unset, relying on npm's own default (restricted for scoped, public for unscoped) rather than callisto forcing a value; when publishConfig.access is explicitly set, callisto passes the corresponding --access flag.",
+      "evidence": "\"when None, omits --access entirely so the package manager applies its ecosystem default (restricted for @scoped/packages, public for unscoped)\"",
+      "source": "crates/callisto-graph/src/commands/publish_client.rs:412-421",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "No --provenance, --otp, or --dry-run flags are used anywhere in callisto's npm/pnpm invocation, and no cargo --dry-run either — callisto does not currently support 2FA/OTP or provenance attestation.",
+      "evidence": "build_npm_publish_command only ever appends --tag, --access, --registry, plus pnpm's --no-git-checks; cargo_publish only ever appends -p, --locked, --registry.",
+      "source": "crates/callisto-graph/src/commands/publish_client.rs:347-410, 274-281",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "twine upload is always called with --skip-existing and optionally --repository-url; TWINE_USERNAME/TWINE_PASSWORD are the documented auth vars, and callisto's own docs explicitly warn against TWINE_API_TOKEN as an unrecognized name.",
+      "evidence": "\"Do not use TWINE_API_TOKEN — twine does not recognise that variable name.\"",
+      "source": "docs/06-publishing.md:112-125; crates/callisto-graph/src/commands/publish_client.rs:518-526",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "callisto's docs document two distinct, mutually-exclusive npm auth patterns in CI (manual `.npmrc` write via NPM_TOKEN vs. actions/setup-node + NODE_AUTH_TOKEN) and warn that setting NODE_AUTH_TOKEN without setup-node's registry-url is silently ignored by npm (fails with an auth error, not a 'var not found' error).",
+      "evidence": "\"NODE_AUTH_TOKEN is silently ignored by npm if no .npmrc contains a ${NODE_AUTH_TOKEN} interpolation... your publish will fail with an authentication error — not a variable-not-found error\"",
+      "source": "docs/06-publishing.md:73-93",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "gh release create does NOT require the tag to already exist — if the tag doesn't exist it is automatically created from the latest state of the default branch (or --target). --verify-tag can be used to force it to require an existing tag instead.",
+      "evidence": "\"If a matching git tag does not yet exist, one will automatically get created from the latest state of the default branch.\" / --verify-tag \"abort the release if the tag doesn't already exist\"",
+      "source": "https://cli.github.com/manual/gh_release_create",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "gh release create flag set includes -d/--draft, -p/--prerelease, --latest, -n/--notes, -F/--notes-file, --notes-from-tag, --generate-notes, --notes-start-tag, --target, --verify-tag, --fail-on-no-commits, --discussion-category, -t/--title, -R/--repo.",
+      "evidence": "full flag list extracted from gh_release_create manual page",
+      "source": "https://cli.github.com/manual/gh_release_create",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "gh release upload's documentation does not describe implicit release creation — it operates against an existing release tag and does not indicate it can create one. Its own flag is --clobber (delete+reupload existing assets of the same name), and if the reupload after clobber fails, the original assets are permanently lost.",
+      "evidence": "\"The documentation does not indicate that releases can be created implicitly—it requires specifying a release tag that presumably already exists.\" / \"When using --clobber, existing assets are deleted before new assets are uploaded. If the upload fails, the original assets will be lost.\"",
+      "source": "https://cli.github.com/manual/gh_release_upload",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "This directly grounds the prior research pass's premise: gh release upload requires a pre-existing release object (the fetched manual text doesn't explicitly state a hard precondition, only the absence of any implicit-creation language) — so callisto adding gh release upload without first calling gh release create (or equivalent) would fail against a nonexistent release.",
+      "evidence": "Synthesis note, not a direct doc quote — see reasoning for caveat on how strong this inference is.",
+      "source": "inference from https://cli.github.com/manual/gh_release_upload combined with internal grep finding no gh release create call site",
+      "confidence": "likely"
+    },
+    {
+      "claim": "GitHub REST API for creating a release requires only tag_name; target_commitish is unused if the tag already exists, meaning the API itself can create the tag (at target_commitish, defaulting to the repo's default branch) when it doesn't yet exist. draft/prerelease/generate_release_notes/make_latest all have documented defaults (false/false/false/true respectively). Creating a release requires push access to the repo, and workflow-file-touching commits need extra token scope; secondary rate limiting can occur on rapid creation.",
+      "evidence": "\"target_commitish ... Unused if the Git tag already exists\" / \"Only tag_name is mandatory\" / \"Users with push access to the repository can create a release.\" / \"Creating content too quickly using this endpoint may result in secondary rate limiting.\"",
+      "source": "https://docs.github.com/en/rest/releases/releases",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "As of pnpm v11, pnpm publish is implemented natively and no longer delegates to the npm CLI (a change from earlier pnpm versions where it shelled out to npm publish under the hood).",
+      "evidence": "\"Since v11, pnpm publish is implemented natively and no longer delegates to the npm CLI.\"",
+      "source": "https://pnpm.io/cli/publish",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "pnpm publish by default validates branch match, working-tree cleanliness, and remote sync before publishing; --no-git-checks (which callisto always passes) disables all of these checks, not just the dirty-tree check.",
+      "evidence": "\"By default, pnpm validates that the current branch matches the publish branch, the repository is clean, and changes are synced with remote. These checks can be disabled via --no-git-checks...\"",
+      "source": "https://pnpm.io/cli/publish",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "pnpm publish supports --provenance, --otp, --force (publish even if version exists in registry), --publish-branch, --dry-run, and --report-summary — none of which callisto currently passes.",
+      "evidence": "flag table from pnpm.io/cli/publish",
+      "source": "https://pnpm.io/cli/publish",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "npm publish's --access default is 'public' for new packages, and existing packages retain their current access level regardless of the flag; unscoped packages cannot be set to restricted at all.",
+      "evidence": "\"Default: 'public' for new packages; existing packages retain current level ... Unscoped packages cannot be set to restricted\"",
+      "source": "https://docs.npmjs.com/cli/v10/commands/npm-publish",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "npm publish fails if the exact name+version combination already exists in the target registry, and once published a name-version pair can never be reused even after unpublishing.",
+      "evidence": "\"The publish will fail if the package name and version combination already exists in the specified registry.\" Once published, a name-version pair cannot be reused, even if unpublished.",
+      "source": "https://docs.npmjs.com/cli/v10/commands/npm-publish",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "npm publish --provenance and --provenance-file are mutually exclusive and --provenance requires a supported CI/CD system (not usable from an arbitrary local/self-hosted shell environment without that support).",
+      "evidence": "\"--provenance ... Links published packages to their build/CI system origin (supported CI/CD only) ... Cannot be used with --provenance-file\"",
+      "source": "https://docs.npmjs.com/cli/v10/commands/npm-publish",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "cargo publish --locked fails only if the lock file is missing or if cargo would need to change the lock file due to different dependency resolution — NOT merely because Cargo.toml's own package version differs from what's recorded elsewhere. This directly answers the research question's specific ask about --locked semantics.",
+      "evidence": "\"--locked: Assert exact dependency/version match to existing Cargo.lock. Semantics: Fails if: Lock file is missing, OR Cargo attempts to change the lock file due to different dependency resolution ... Note: Does NOT fail on Cargo.toml changes alone—only on lock file update *needs*\"",
+      "source": "https://doc.rust-lang.org/cargo/commands/cargo-publish.html",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "cargo publish exits with code 101 on failure, 0 on success — matches the exit-code assumptions in callisto's classify_cargo_output.",
+      "evidence": "\"Exit Status: 0: Success, 101: Failure\"",
+      "source": "https://doc.rust-lang.org/cargo/commands/cargo-publish.html",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "crates.io requires license/license-file, description, homepage, repository, and readme fields in Cargo.toml before publish; the .crate file size limit is 10MB; published versions are permanent and can never be overwritten or deleted (only yanked, which does not delete code) — leaked secrets require token revocation, not deletion.",
+      "evidence": "Required fields list; \"Maximum .crate file size: 10MB\"; \"Publish is permanent — the version can never be overwritten, and code cannot be deleted\"; \"Yanking does NOT delete code; if secrets leak, revoke API tokens immediately\"",
+      "source": "https://doc.rust-lang.org/cargo/reference/publishing.html",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "twine --skip-existing (used by callisto unconditionally) is documented as only valid when uploading to PyPI itself — other repository implementations (private indexes) may not support it, which is a direct risk for callisto's --repository-url / private-index path that also passes --skip-existing.",
+      "evidence": "\"(Only valid when uploading to PyPI. Other implementations may not support this.)\"",
+      "source": "https://twine.readthedocs.io/en/stable/",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "twine does not recognize TWINE_API_TOKEN as an environment variable (matches callisto's own doc warning); keyring-based API token storage is a separate mechanism from the TWINE_USERNAME/TWINE_PASSWORD env vars callisto's docs instruct users to set.",
+      "evidence": "\"The documentation does not mention TWINE_API_TOKEN; however, keyring supports API tokens via keyring set https://upload.pypi.org/legacy/ __token__\"",
+      "source": "https://twine.readthedocs.io/en/stable/",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "NuGet.org package size limit is approximately 250MB, returning a 413 RequestEntityTooLarge on the CLI when exceeded; package names must start with a letter/number/underscore, contain only letters/numbers/dots/dashes, no consecutive dot/dash, and be ≤100 characters. dotnet nuget push requires an API key (or NUGET_API_KEY env var as of NuGet 7.6/.NET SDK 10.0.300+) and a --source URL.",
+      "evidence": "\"Nuget.org has a package size limit of about 250 MB... error: Response status code does not indicate success: 413\"; naming rules list; \"dotnet nuget push &lt;package-file&gt; --api-key &lt;API-key&gt; --source https://api.nuget.org/v3/index.json\"; \"Starting with NuGet 7.6 (.NET SDK 10.0.300), you can set the NUGET_API_KEY environment variable\"",
+      "source": "https://learn.microsoft.com/en-us/nuget/nuget-org/publish-a-package",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "callisto's PublishTarget::NuGet variant is likewise entirely stubbed (warning diagnostic only, no dispatch) — same gap class as GitHubRelease.",
+      "evidence": "PublishTarget::NuGet { .. } =&gt; { diagnostics.push(Diagnostic { code: DiagnosticCode::PublishTargetNotImplemented, message: \"...NuGet publishing is not yet implemented...\" }) }",
+      "source": "crates/callisto-graph/src/commands/publish.rs:343-357",
+      "confidence": "confirmed"
+    }
+  ],
+  "sources_read": [
+    "crates/callisto-graph/src/commands/publish_client.rs",
+    "crates/callisto-model/src/ecosystem.rs",
+    "docs/06-publishing.md",
+    "crates/callisto-graph/src/commands/publish.rs (lines 1-500 region relevant to GitHubRelease/NuGet dispatch)",
+    "crates/callisto-graph/src/config/resolve.rs (grep only, PublishTarget::GitHubRelease parsing/tests)",
+    "crates/callisto-graph/tests/publish_target_ecosystem_mismatch_test.rs (grep only)",
+    "crates/callisto-graph/tests/publish_tests.rs (grep only, GitHubRelease dispatch-gap test)",
+    "crates/callisto-graph/src/commands/version.rs (grep only, git tag creation call sites)",
+    "crates/callisto-graph/src/commands/tag.rs (grep only)",
+    "crates/callisto-vcs/src/access.rs (grep only)",
+    "crates/callisto-vcs/src/lib.rs (grep only)",
+    "crates/callisto-vcs/src/shell.rs (grep only)",
+    "https://cli.github.com/manual/gh_release_create",
+    "https://cli.github.com/manual/gh_release_upload",
+    "https://docs.github.com/en/rest/releases/releases",
+    "https://pnpm.io/cli/publish",
+    "https://docs.npmjs.com/cli/v10/commands/npm-publish",
+    "https://doc.rust-lang.org/cargo/commands/cargo-publish.html",
+    "https://doc.rust-lang.org/cargo/reference/publishing.html",
+    "https://twine.readthedocs.io/en/stable/",
+    "https://learn.microsoft.com/en-us/nuget/nuget-org/publish-a-package"
+  ],
+  "reasoning": "All 8 primary external sources fetched successfully (no 404s encountered — every given URL resolved). All 3 internal baseline sources read fully as instructed, plus targeted greps to verify the research context's specific claim about zero `gh release create` call sites in the codebase — confirmed true via grep: only enum-match/warning-diagnostic references to GitHubRelease exist, no Command::new(\"gh\", ...) anywhere. Also discovered NuGet is stubbed identically to GitHubRelease (same warning-only pattern), which is directly relevant scope the question didn't explicitly ask about but the codebase pattern makes salient. Notable partial contradiction worth flagging to the spec writer: the WebFetch summary for gh_release_upload states its docs 'do not indicate releases can be created implicitly' but this is an inference from absence of stated behavior, not a directly quoted precondition sentence — I marked that specific synthesis finding as 'likely' rather than 'confirmed' to avoid overstating certainty, since the raw manual page text for gh_release_upload was not quoted verbatim beyond the synopsis and flag list. The GitHub REST API doc is unambiguous that tag_name is the only required field and the API can create the tag itself server-side when target_commitish is given — this is a genuine, confirmed, load-bearing fact for the publish/distribution spec: a real GitHubRelease implementation could rely on gh release create's auto-tag-creation instead of requiring callisto's own git-tag-then-push step to have already run, which changes the ordering constraints the spec needs to state. No tag-push (git push --tags / push origin &lt;tag&gt;) call site was found in the grepped files, which is itself a finding worth flagging (tags may only exist locally in the callisto workflow, not on the remote, until some external CI step pushes them) — I marked this 'likely' since I did not exhaustively read every line of every vcs file, only grepped for the pattern. No source came back empty or unreadable. No two external sources materially disagreed with each other; the REST API doc and gh CLI doc are consistent (gh CLI's auto-tag-creation is a client-side convenience wrapping the same API behavior). callisto's own docs (06-publishing.md) were internally consistent and matched the actual code in publish_client.rs for auth env vars used (TWINE_USERNAME/PASSWORD, CARGO_REGISTRY_TOKEN, NPM_TOKEN/NODE_AUTH_TOKEN)."
+}
+```</result>
+<usage><subagent_tokens>96420</subagent_tokens><tool_uses>19</tool_uses><duration_ms>118713</duration_ms></usage>
+</task-notification>
