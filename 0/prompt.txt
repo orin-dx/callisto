@@ -1,0 +1,5 @@
+<task-notification>
+<task-id>bwcbd3yj0</task-id>
+<summary>Monitor event: "wait for real compile+test to finish this time"</summary>
+<event>[Monitor timed out — re-arm if needed.]</event>
+</task-notification>
