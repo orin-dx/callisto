@@ -64,7 +64,12 @@ fn lock_path(canonical_root: &Path, state_directory: Option<&Path>) -> Result<Pa
     Ok(base.join("callisto").join("release-locks").join(format!("{key}.lock")))
 }
 
-fn platform_state_directory() -> Result<PathBuf, VcsError> {
+/// Resolves Callisto's platform application-state base directory.
+///
+/// This is operational routing only; callers must still key state by a
+/// canonical workspace and durable intent rather than treating the location
+/// as release authority.
+pub fn platform_state_directory() -> Result<PathBuf, VcsError> {
     #[cfg(target_os = "macos")]
     let candidate = std::env::var_os("HOME").map(|home| PathBuf::from(home).join("Library/Application Support"));
     #[cfg(target_os = "windows")]

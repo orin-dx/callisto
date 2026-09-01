@@ -38,6 +38,26 @@ impl ReleaseStateStore {
     pub fn new(path: impl Into<PathBuf>) -> Self {
         Self::with_writer(path, AtomicReleaseStateWriter)
     }
+
+    /// Creates a local state store outside the checkout, keyed by the exact
+    /// durable intent. CI should use [`Self::new`] with an explicit path so a
+    /// workflow artifact can hand state between jobs without using a cache.
+    pub fn default_for(canonical_root: &Path, intent: &ReleaseIntentV1) -> Result<Self, GraphError> {
+        let root = dunce::canonicalize(canonical_root).map_err(|error| GraphError::ReleaseStateRead {
+            path: canonical_root.to_path_buf(),
+            message: error.to_string(),
+        })?;
+        let mut transcript = callisto_model::CanonicalTranscript::semantic_input_v1();
+        transcript.push_str("workspace-root", &root.to_string_lossy());
+        let root_key = callisto_model::SemanticInputDigest::from_transcript(&transcript);
+        let base = callisto_vcs::release_lock::platform_state_directory()?;
+        Ok(Self::new(
+            base.join("callisto")
+                .join("release-state")
+                .join(root_key.as_str())
+                .join(format!("{}.json", intent.digest().as_str())),
+        ))
+    }
 }
 
 impl<W> ReleaseStateStore<W>
@@ -173,6 +193,15 @@ mod tests {
             store.load(&intent('b')),
             Err(GraphError::ReleaseExecutionState { .. })
         ));
+    }
+
+    #[test]
+    fn default_state_path_is_outside_the_checkout_and_intent_bound() {
+        let directory = tempdir().unwrap();
+        let first = ReleaseStateStore::default_for(directory.path(), &intent('a')).unwrap();
+        let second = ReleaseStateStore::default_for(directory.path(), &intent('b')).unwrap();
+        assert_ne!(first.path(), second.path());
+        assert!(!first.path().starts_with(directory.path()));
     }
 
     #[derive(Clone, Copy, Debug)]
