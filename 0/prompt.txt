@@ -1,0 +1,1 @@
+THink very carefully, plann extensively for tests, docs, etc. Then execute the plan. Write it down to survive compaction of the context window.
