@@ -1,0 +1,1 @@
+We should add tresholds for coverage and block merge in the PRs though
