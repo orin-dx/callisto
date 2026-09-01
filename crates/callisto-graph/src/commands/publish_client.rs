@@ -672,7 +672,7 @@ fn detect_auth_failure(text_lower: &str, raw_stderr: &str) -> Option<RegistryErr
     }
 }
 
-fn classify_cargo_output(output: &CommandOutput) -> Result<PublishOutcome, RegistryError> {
+pub(crate) fn classify_cargo_output(output: &CommandOutput) -> Result<PublishOutcome, RegistryError> {
     let combined = combined_lower(output);
 
     if combined.contains("already exists") || combined.contains("already uploaded") {
@@ -694,7 +694,7 @@ fn classify_cargo_output(output: &CommandOutput) -> Result<PublishOutcome, Regis
     )))
 }
 
-fn classify_npm_publish_output(output: &CommandOutput) -> Result<PublishOutcome, RegistryError> {
+pub(crate) fn classify_npm_publish_output(output: &CommandOutput) -> Result<PublishOutcome, RegistryError> {
     let combined = combined_lower(output);
 
     if combined.contains("epublishconflict")
@@ -738,7 +738,7 @@ fn classify_npm_publish_output(output: &CommandOutput) -> Result<PublishOutcome,
 /// 4. Auth-failure signal (`401`, `403`, `authentication`, etc.) →
 ///    [`RegistryError::AuthFailed`].
 /// 5. Anything else → [`RegistryError::Other`].
-fn classify_twine_output(output: &CommandOutput) -> Result<PublishOutcome, RegistryError> {
+pub(crate) fn classify_twine_output(output: &CommandOutput) -> Result<PublishOutcome, RegistryError> {
     let combined = combined_lower(output);
 
     let has_skip = combined.contains("already exist");

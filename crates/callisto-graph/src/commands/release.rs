@@ -10,8 +10,8 @@ use std::path::Path;
 
 use callisto_model::{
     ApplyPermit, CanonicalTranscript, CommandRunner, CommitSha, DepKind, Ecosystem, ExecutionTrustProfileV1, NpmAccess,
-    OperationOutcome, PublishTarget, RegistryBindingDigest, RegistryBindingId, RegistryKey, ReleaseDecisionV1,
-    ReleaseInputSnapshotV1, ReleaseIntentV1, ReleaseOperation, ReleaseOperationId, ReleasePackageId,
+    OperationOutcome, PublishOutcome, PublishTarget, RegistryBindingDigest, RegistryBindingId, RegistryKey,
+    ReleaseDecisionV1, ReleaseInputSnapshotV1, ReleaseIntentV1, ReleaseOperation, ReleaseOperationId, ReleasePackageId,
     ReleasePackageInputV1, SemanticInputDigest, SourceIdentity, TagName, Version,
 };
 use callisto_vcs::{
@@ -19,7 +19,7 @@ use callisto_vcs::{
     release_lock::ReleaseWorkspaceLock,
 };
 
-use crate::{DependencyResolver, GraphError, ProjectLocator, Workspace};
+use crate::{commands::publish_client, DependencyResolver, GraphError, ProjectLocator, Workspace};
 
 /// The invocation data for one effect. This is deliberately graph-private:
 /// callers can inspect the serializable intent, but cannot substitute a new
@@ -267,13 +267,7 @@ impl ValidatedReleaseIntent<'_> {
     ) -> Result<OperationOutcome, GraphError> {
         let operation = self.prepared.operations.get(id).ok_or(GraphError::ReleaseIntentStale)?;
         match operation {
-            PreparedOperation::RegistryPublish {
-                package_dir,
-                package_name: _,
-                version: _,
-                registry,
-                npm_access,
-            } => self.dispatch_registry(permit, id, package_dir, registry, *npm_access),
+            PreparedOperation::RegistryPublish { .. } => self.dispatch_registry(permit, id, operation),
             PreparedOperation::Tag {
                 name,
                 target,
@@ -287,10 +281,18 @@ impl ValidatedReleaseIntent<'_> {
         &self,
         _permit: &ApplyPermit,
         id: &ReleaseOperationId,
-        package_dir: &std::path::Path,
-        registry: &PreparedRegistryBinding,
-        npm_access: Option<NpmAccess>,
+        prepared: &PreparedOperation,
     ) -> Result<OperationOutcome, GraphError> {
+        let PreparedOperation::RegistryPublish {
+            package_dir,
+            package_name,
+            version,
+            registry,
+            npm_access,
+        } = prepared
+        else {
+            return Err(GraphError::ReleaseIntentStale);
+        };
         let cwd = self.prepared.root.join(package_dir);
         let output = match id.package.ecosystem() {
             Ecosystem::Cargo => {
@@ -303,6 +305,9 @@ impl ValidatedReleaseIntent<'_> {
                 self.runner.run("cargo", &args, &self.prepared.root)?
             }
             Ecosystem::Npm => {
+                if self.npm_version_is_published(package_name, version, registry.endpoint.as_deref())? {
+                    return Ok(OperationOutcome::AlreadySatisfied);
+                }
                 let mut args = vec!["publish"];
                 if let Some(endpoint) = registry.endpoint.as_deref() {
                     args.extend(["--registry", endpoint]);
@@ -355,15 +360,54 @@ impl ValidatedReleaseIntent<'_> {
             }
             _ => return Err(GraphError::ReleaseIntentStale),
         };
-        if output.exit_code == Some(0) {
-            Ok(OperationOutcome::Published)
-        } else if output.stderr.to_ascii_lowercase().contains("already exists")
-            || output.stderr.to_ascii_lowercase().contains("already published")
-        {
-            Ok(OperationOutcome::AlreadySatisfied)
-        } else {
-            Err(GraphError::ReleaseIntentStale)
+        let outcome = match id.package.ecosystem() {
+            Ecosystem::Cargo => publish_client::classify_cargo_output(&output),
+            Ecosystem::Npm => publish_client::classify_npm_publish_output(&output),
+            Ecosystem::Pypi => publish_client::classify_twine_output(&output),
+            _ => return Err(GraphError::ReleaseIntentStale),
         }
+        .map_err(|_error| GraphError::ReleaseIntentStale)?;
+        if matches!(id.package.ecosystem(), Ecosystem::Npm)
+            && matches!(outcome, PublishOutcome::Published)
+            && !self.npm_version_is_published(package_name, version, registry.endpoint.as_deref())?
+        {
+            // A successful client process is not a receipt. The operation
+            // remains Attempting for reconciliation rather than asserting a
+            // release the registry cannot yet prove exists.
+            return Err(GraphError::ReleaseIntentStale);
+        }
+        Ok(match outcome {
+            PublishOutcome::Published => OperationOutcome::Published,
+            PublishOutcome::AlreadyPublished => OperationOutcome::AlreadySatisfied,
+        })
+    }
+
+    fn npm_version_is_published(
+        &self,
+        package_name: &str,
+        version: &Version,
+        registry: Option<&str>,
+    ) -> Result<bool, GraphError> {
+        let spec = format!("{package_name}@{}", version.render());
+        let mut args = vec!["view", spec.as_str(), "--json"];
+        if let Some(registry) = registry {
+            args.extend(["--registry", registry]);
+        }
+        let output = self
+            .runner
+            .run_quiet("npm", &args, &self.prepared.root, std::time::Duration::from_secs(300))?;
+        if output.success() {
+            return Ok(!output.stdout_trimmed().is_empty());
+        }
+        let details = format!("{}\n{}", output.stdout, output.stderr).to_ascii_lowercase();
+        if details.contains("e404")
+            || details.contains("etarget")
+            || details.contains("no matching version")
+            || details.contains("is not in this registry")
+        {
+            return Ok(false);
+        }
+        Err(GraphError::ReleaseIntentStale)
     }
 
     fn dispatch_tag(
