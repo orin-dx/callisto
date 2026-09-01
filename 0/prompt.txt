@@ -1,0 +1,26 @@
+<task-notification>
+<task-id>a278058975144abdd</task-id>
+<tool-use-id>toolu_01YRF4C2oJj1uBTuhd3vwPB3</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a7b3643b-af0c-4790-a38d-870e88a7dd3e/tasks/a278058975144abdd.output</output-file>
+<status>completed</status>
+<summary>Agent "Review T3b commit" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I have enough to deliver the verdict.
+
+```json
+{
+  "status": "changes_requested",
+  "issues": [
+    {
+      "file": "docs/01-spec.md",
+      "line": 1556,
+      "description": "T4 work landed in the T3b commit. The commit adds two hunks to docs/01-spec.md: (1) the §M.11.2 DiagnosticCode enum listing entry for BareRuleMatchesMultipleEcosystems (+4 lines) and (2) the §G.13 table row (+1 line). Both are explicitly T4 steps 2 and 3. T3b's task specification lists only 'crates/callisto-graph/tests/cross_ecosystem_diagnostic_test.rs' under files.modify; docs/01-spec.md is not in scope. The docs content itself is correct and matches T4's requirements verbatim, but it belongs in a separate commit with T4's commit message.",
+      "severity": "must_fix"
+    }
+  ],
+  "sibling_gaps": [],
+  "reasoning": "Scope: Two files were changed — the test file (T3b scope) and docs/01-spec.md (T4 scope). The docs diff is exactly the two changes T4 specifies: the §M.11.2 DiagnosticCode listing entry (4 lines) and the §G.13 table row (1 line), totalling the 5 inserted lines shown in git show --stat. No implementation code was touched.\n\nTest quality: All five tests are substantive, not vacuous. AC-6 uses a real Cargo-only workspace to ensure the diagnostic pass runs on exactly one canonical ManifestDecl (Cargo), and relies on AC-5's positive proof that the diagnostic CAN fire — together they triangulate the boundary. AC-7 creates the napi-style fixture (two manifests in one directory) and uses a prefixed rule; the test exercises the `pattern.ecosystem().is_some()` skip branch directly. AC-8 moves the multi-ecosystem package into cfg.package_sets by writing [[package-set]] instead of [[package]], leaving cfg.packages empty — this directly tests that the loop body never executes for set rules. AC-9a passes an empty callisto.toml (cfg.packages Vec is empty). AC-9b keeps cfg.packages non-empty but places no manifest files on disk, so the packages BTreeMap has zero entries and the inner ecosystem set never accumulates two elements. Each test is falsifiable by a specific implementation defect.\n\nSibling gaps: No uncovered negative cases from the spec were identified. AC-6 through AC-9b as listed in the plan are all present.\n\nNon-negotiables: No lib code was modified in this commit. Test code uses .unwrap() on fs operations only, which is acceptable in test context. No HashMap-for-output-map usage introduced. No unsafe.\n\nThe only actionable issue is the docs/01-spec.md changes being in the wrong commit. They should be removed from this commit and applied in T4 with T4's commit message."
+}
+```</result>
+<usage><subagent_tokens>45710</subagent_tokens><tool_uses>5</tool_uses><duration_ms>107871</duration_ms></usage>
+</task-notification>
