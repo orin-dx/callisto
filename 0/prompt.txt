@@ -1,0 +1,1 @@
+Let's make sure we're keeping in mind that our rsdoc should be simple, concise, succint, to the point and avoid prose, wordiness, etc. Also ensure that we're making updates to our specs as we find issues and propose fixes, if necessary. And that we appropriately address tests/coverage and ensure that we cover ourselves against regression.
