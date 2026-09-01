@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bya3f2nwf</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/tasks/bya3f2nwf.output</output-file>
+<status>killed</status>
+<summary>Background command "just coverage &gt; /private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/coverage.log 2&gt;&amp;1; echo "EXIT_CODE=$?" &gt;&gt; /private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/coverage.log" was stopped</summary>
+</task-notification>
