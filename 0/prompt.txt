@@ -1,0 +1,55 @@
+<task-notification>
+<task-id>a09e940941f746480</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/bb531e8d-c394-4e47-a8ae-e4a9ceeca6d2/tasks/a09e940941f746480.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement TASK-7 (active_ecosystems extension)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>```json
+{
+  "task_id": "TASK-7",
+  "status": "done",
+  "steps_completed": [
+    "Confirmed TASK-1 commit 5eb5937 present and tree clean before starting",
+    "Read AC-009, AC-010, AC-011 verbatim from .claude/specs/SPEC-TRACK2-PLATFORM-MANIFEST-WRITES.json",
+    "Wrote two failing tests: platform_writes_only_plan_stages_npm_lockfile_without_refresh and optional_dep_updates_only_plan_stages_npm_lockfile_without_refresh",
+    "Confirmed red: both tests failed (npm lockfile not staged) before implementation",
+    "Extended active_ecosystems HashSet-building expression in apply.rs to chain plan.platform_writes and plan.optional_dep_updates manifest paths through ManifestFormat::from_path(...).ecosystem()",
+    "Confirmed green: both new tests pass",
+    "Ran full crate suite: cargo test -p callisto-graph --lib -&gt; 364 passed, 0 failed (AC-011 regression proof)",
+    "Ran cargo fmt -p callisto-graph and cargo clippy -p callisto-graph --all-targets -- -D warnings, both clean",
+    "Staged only apply.rs (left commands/version.rs, modified by concurrent TASK-2 agent, untouched) and committed"
+  ],
+  "test_result": "pass",
+  "commit_sha": "a309ff7",
+  "concerns": "TASK-2 is running concurrently in this workspace and has crates/callisto-graph/src/commands/version.rs modified in the working tree. I did not touch, stage, or commit that file; only crates/callisto-graph/src/apply.rs was included in this commit.",
+  "criteria_evidence": [
+    {
+      "criterion_id": "AC-009",
+      "test_file": "crates/callisto-graph/src/apply.rs",
+      "test_line": 2321,
+      "implementation_file": "crates/callisto-graph/src/apply.rs",
+      "implementation_line": 349
+    },
+    {
+      "criterion_id": "AC-010",
+      "test_file": "crates/callisto-graph/src/apply.rs",
+      "test_line": 2375,
+      "implementation_file": "crates/callisto-graph/src/apply.rs",
+      "implementation_line": 355
+    },
+    {
+      "criterion_id": "AC-011",
+      "test_file": "crates/callisto-graph/src/apply.rs",
+      "test_line": 828,
+      "implementation_file": "crates/callisto-graph/src/apply.rs",
+      "implementation_line": 325
+    }
+  ],
+  "reasoning": "Extended active_ecosystems (apply.rs:325) with two .chain() calls (lines 349, 355) folding in platform_writes and optional_dep_updates manifest ecosystems, leaving the plan.bumps-driven logic (lines 326-348) and lockfile refresh/staging logic (lines 354+ post-edit) untouched, satisfying AC-011's byte-for-byte regression requirement (proven by all 362 pre-existing tests, representatively anchored at the AC-011-relevant refresh_lockfiles_calls_cargo_update_workspace_when_cargo_bumped test at line 828, passing unmodified). AC-009 and AC-010 tests assert staging-only behavior and explicitly assert no npm entry in lockfile_refresh_results, matching the spec's confirmed absence of any npm refresh subprocess."
+}
+```
+
+Summary: Task TASK-7 executed via TDD. Files touched: `/Users/gabe/Projects/callisto/crates/callisto-graph/src/apply.rs` (implementation extension at lines 325-361, plus two new tests at lines 2321 and 2375). Full crate suite (364 tests), fmt, and clippy all clean. Commit `a309ff7`. Left the concurrently-modified `crates/callisto-graph/src/commands/version.rs` (TASK-2's file) untouched and unstaged.</result>
+<usage><subagent_tokens>66663</subagent_tokens><tool_uses>23</tool_uses><duration_ms>194119</duration_ms></usage>
+</task-notification>
