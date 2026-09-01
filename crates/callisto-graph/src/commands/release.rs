@@ -55,6 +55,16 @@ struct PreparedRegistryBinding {
     identity: RegistryBindingDigest,
 }
 
+/// Immutable, credential-free destination for Git effects. Its canonical
+/// digest is included in each tag-producing package fingerprint; the URL is
+/// retained only in the validated, non-serializable capability.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct PreparedGitRemote {
+    endpoint: String,
+    identity: SemanticInputDigest,
+    github_repository: Option<String>,
+}
+
 /// Graph-private inputs prepared from the same fresh observation as an intent.
 /// The executor will consume these when introduced; retaining them in the
 /// capability prevents a validated public intent being paired with new inputs.
@@ -64,6 +74,7 @@ struct PreparedReleaseInputs {
     root: std::path::PathBuf,
     source: SourceIdentity,
     trust: GitCommitTrustEvidence,
+    git_remote: Option<PreparedGitRemote>,
     _lock: ReleaseWorkspaceLock,
     operations: BTreeMap<ReleaseOperationId, PreparedOperation>,
 }
@@ -74,11 +85,24 @@ struct ObservedTag {
     annotation: String,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+enum ForgeReleaseObservation {
+    Missing,
+    Exact,
+    Conflict,
+}
+
 type DerivedReleaseInputs = (
     ReleaseInputSnapshotV1,
     Vec<ReleaseOperation>,
     BTreeMap<ReleaseOperationId, PreparedOperation>,
+    Option<PreparedGitRemote>,
 );
+
+struct PreparedDerivation {
+    operations: BTreeMap<ReleaseOperationId, PreparedOperation>,
+    git_remote: Option<PreparedGitRemote>,
+}
 
 /// In-memory, non-transferable proof that an intent was rebuilt from a fresh
 /// workspace observation. It is intentionally neither cloneable nor serializable.
@@ -114,6 +138,14 @@ impl ValidatedReleaseIntent<'_> {
         let evidence =
             callisto_vcs::GitAccess::discover(&self.prepared.root, self.runner).observe_git_commit_trust()?;
         if evidence != self.prepared.trust || source_from_trust(&evidence) != self.prepared.source {
+            return Err(GraphError::ReleaseIntentStale);
+        }
+        if self
+            .prepared
+            .git_remote
+            .as_ref()
+            .is_some_and(|expected| prepared_git_remote(&self.prepared.root, self.runner).as_ref() != Ok(expected))
+        {
             return Err(GraphError::ReleaseIntentStale);
         }
         Ok(())
@@ -180,8 +212,9 @@ fn validate_release_intent_with_state_directory<'a, L: ProjectLocator, R: Comman
             root,
             source,
             trust: final_trust,
+            git_remote: prepared.git_remote,
             _lock: lock,
-            operations: prepared,
+            operations: prepared.operations,
         },
         intent: received,
         runner,
@@ -362,9 +395,11 @@ impl ValidatedReleaseIntent<'_> {
         if created.exit_code != Some(0) {
             return Err(GraphError::ReleaseIntentStale);
         }
-        let pushed = self
-            .runner
-            .run("git", &["push", "origin", name.as_str()], &self.prepared.root)?;
+        let pushed = self.runner.run(
+            "git",
+            &["push", self.checked_git_remote()?.endpoint.as_str(), name.as_str()],
+            &self.prepared.root,
+        )?;
         if pushed.exit_code != Some(0) {
             return Err(GraphError::ReleaseIntentStale);
         }
@@ -379,15 +414,32 @@ impl ValidatedReleaseIntent<'_> {
     }
 
     fn dispatch_forge_release(&self, tag: &TagName) -> Result<OperationOutcome, GraphError> {
-        if self.observed_forge_release_target(tag)? {
-            return Ok(OperationOutcome::AlreadySatisfied);
+        let remote = self.checked_git_remote()?;
+        let repository = remote
+            .github_repository
+            .as_deref()
+            .ok_or(GraphError::ReleaseIntentStale)?;
+        match self.observed_forge_release_target(tag, repository)? {
+            ForgeReleaseObservation::Exact => return Ok(OperationOutcome::AlreadySatisfied),
+            ForgeReleaseObservation::Conflict => return Err(GraphError::ReleaseIntentStale),
+            ForgeReleaseObservation::Missing => {}
         }
         let created = self.runner.run(
             "gh",
-            &["release", "create", tag.as_str(), "--verify-tag", "--generate-notes"],
+            &[
+                "release",
+                "create",
+                tag.as_str(),
+                "--repo",
+                repository,
+                "--verify-tag",
+                "--generate-notes",
+            ],
             &self.prepared.root,
         )?;
-        if created.exit_code == Some(0) && self.observed_forge_release_target(tag)? {
+        if created.exit_code == Some(0)
+            && self.observed_forge_release_target(tag, repository)? == ForgeReleaseObservation::Exact
+        {
             Ok(OperationOutcome::Published)
         } else {
             Err(GraphError::ReleaseIntentStale)
@@ -430,26 +482,77 @@ impl ValidatedReleaseIntent<'_> {
         }))
     }
 
-    fn observed_forge_release_target(&self, tag: &TagName) -> Result<bool, GraphError> {
+    fn observed_forge_release_target(
+        &self,
+        tag: &TagName,
+        repository: &str,
+    ) -> Result<ForgeReleaseObservation, GraphError> {
         let observed = self.runner.run(
             "gh",
-            &["release", "view", tag.as_str(), "--json", "tagName,targetCommitish"],
+            &[
+                "api",
+                "--include",
+                "--method",
+                "GET",
+                &format!("repos/{repository}/releases/tags/{tag}"),
+                "--repo",
+                repository,
+            ],
             &self.prepared.root,
         )?;
-        if observed.exit_code != Some(0) {
-            return Ok(false);
+        let (status, body) = parse_github_api_response(&observed.stdout)?;
+        if status == 404 {
+            return Ok(ForgeReleaseObservation::Missing);
         }
-        let value: serde_json::Value =
-            serde_json::from_str(&observed.stdout).map_err(|_error| GraphError::ReleaseIntentStale)?;
+        if status != 200 || observed.exit_code != Some(0) {
+            return Err(GraphError::ReleaseIntentStale);
+        }
+        let value: serde_json::Value = serde_json::from_str(body).map_err(|_error| GraphError::ReleaseIntentStale)?;
         let expected = match &self.prepared.source {
             SourceIdentity::GitCommit { sha } => sha.as_str(),
             SourceIdentity::HermeticContent { .. } => return Err(GraphError::ReleaseIntentStale),
         };
         Ok(
-            value.get("tagName").and_then(serde_json::Value::as_str) == Some(tag.as_str())
-                && value.get("targetCommitish").and_then(serde_json::Value::as_str) == Some(expected),
+            if value.get("tag_name").and_then(serde_json::Value::as_str) == Some(tag.as_str())
+                && value.get("target_commitish").and_then(serde_json::Value::as_str) == Some(expected)
+            {
+                ForgeReleaseObservation::Exact
+            } else {
+                ForgeReleaseObservation::Conflict
+            },
         )
     }
+
+    fn checked_git_remote(&self) -> Result<&PreparedGitRemote, GraphError> {
+        let expected = self
+            .prepared
+            .git_remote
+            .as_ref()
+            .ok_or(GraphError::ReleaseIntentStale)?;
+        if prepared_git_remote(&self.prepared.root, self.runner)? != *expected {
+            return Err(GraphError::ReleaseIntentStale);
+        }
+        Ok(expected)
+    }
+}
+
+fn parse_github_api_response(stdout: &str) -> Result<(u16, &str), GraphError> {
+    let (headers, body) = stdout
+        .rsplit_once("\r\n\r\n")
+        .or_else(|| stdout.rsplit_once("\n\n"))
+        .ok_or(GraphError::ReleaseIntentStale)?;
+    let status_line = headers
+        .lines()
+        .rev()
+        .find(|line| line.trim_end_matches('\r').starts_with("HTTP/"))
+        .ok_or(GraphError::ReleaseIntentStale)?;
+    let status = status_line
+        .split_whitespace()
+        .nth(1)
+        .ok_or(GraphError::ReleaseIntentStale)?
+        .parse::<u16>()
+        .map_err(|_error| GraphError::ReleaseIntentStale)?;
+    Ok((status, body))
 }
 
 fn derive_release_intent<R: CommandRunner, D: DependencyResolver>(
@@ -458,7 +561,7 @@ fn derive_release_intent<R: CommandRunner, D: DependencyResolver>(
     source: SourceIdentity,
     trust_profile: ExecutionTrustProfileV1,
 ) -> Result<ReleaseIntentV1, GraphError> {
-    let (snapshot, operations, _) = derive_release_inputs(workspace, decision, source)?;
+    let (snapshot, operations, _, _) = derive_release_inputs(workspace, decision, source)?;
     ReleaseIntentV1::new(decision.clone(), snapshot, trust_profile, operations, vec![])
         .map_err(|_error| GraphError::ReleaseIntentStale)
 }
@@ -468,11 +571,17 @@ fn derive_release_intent_with_prepared<R: CommandRunner, D: DependencyResolver>(
     decision: &ReleaseDecisionV1,
     source: SourceIdentity,
     trust_profile: ExecutionTrustProfileV1,
-) -> Result<(ReleaseIntentV1, BTreeMap<ReleaseOperationId, PreparedOperation>), GraphError> {
-    let (snapshot, operations, prepared) = derive_release_inputs(workspace, decision, source)?;
+) -> Result<(ReleaseIntentV1, PreparedDerivation), GraphError> {
+    let (snapshot, operations, prepared, git_remote) = derive_release_inputs(workspace, decision, source)?;
     let intent = ReleaseIntentV1::new(decision.clone(), snapshot, trust_profile, operations, vec![])
         .map_err(|_error| GraphError::ReleaseIntentStale)?;
-    Ok((intent, prepared))
+    Ok((
+        intent,
+        PreparedDerivation {
+            operations: prepared,
+            git_remote,
+        },
+    ))
 }
 
 fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
@@ -505,6 +614,16 @@ fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
         }
     }
 
+    let requires_git_remote = selected.values().any(|(package, _)| {
+        package
+            .publish_to
+            .iter()
+            .any(|target| !matches!(target, PublishTarget::None))
+    });
+    let git_remote = requires_git_remote
+        .then(|| prepared_git_remote(&workspace.root, workspace.runner))
+        .transpose()?;
+
     let mut operations = BTreeMap::<ReleaseOperationId, ReleaseOperation>::new();
     let mut prepared = BTreeMap::<ReleaseOperationId, PreparedOperation>::new();
     let mut publishes_by_package = BTreeMap::<ReleasePackageId, Vec<ReleaseOperationId>>::new();
@@ -513,7 +632,17 @@ fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
     // First construct leaves so dependency prerequisites can refer only to
     // exact selected release identities, never PackageId's wildcard matcher.
     for (id, (package, version)) in &selected {
-        let fingerprint = package_fingerprint(workspace, id, package, version)?;
+        let produces_tag = package
+            .publish_to
+            .iter()
+            .any(|target| !matches!(target, PublishTarget::None));
+        let fingerprint = package_fingerprint(
+            workspace,
+            id,
+            package,
+            version,
+            produces_tag.then_some(git_remote.as_ref()).flatten(),
+        )?;
         package_inputs.push(ReleasePackageInputV1 {
             package: id.clone(),
             fingerprint,
@@ -647,6 +776,7 @@ fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
         ReleaseInputSnapshotV1::new(source, package_inputs).map_err(|_error| GraphError::ReleaseIntentStale)?,
         canonical_operation_order(operations)?,
         prepared,
+        git_remote,
     ))
 }
 
@@ -655,6 +785,7 @@ fn package_fingerprint<R: CommandRunner, D: DependencyResolver>(
     id: &ReleasePackageId,
     package: &callisto_model::Package,
     version: &Version,
+    git_remote: Option<&PreparedGitRemote>,
 ) -> Result<SemanticInputDigest, GraphError> {
     let mut transcript = CanonicalTranscript::semantic_input_v1();
     transcript.push_str("package.id", &id.to_string());
@@ -680,6 +811,9 @@ fn package_fingerprint<R: CommandRunner, D: DependencyResolver>(
     );
     for target in &package.publish_to {
         transcript.push_str("package.target", target_fingerprint(workspace, target)?.as_str());
+    }
+    if let Some(remote) = git_remote {
+        transcript.push_str("package.gitRemote", remote.identity.as_str());
     }
     Ok(SemanticInputDigest::from_transcript(&transcript))
 }
@@ -907,6 +1041,107 @@ fn canonical_registry_binding(registry: &str, raw: &str) -> Result<RegistryBindi
     })
 }
 
+fn prepared_git_remote(root: &Path, runner: &dyn CommandRunner) -> Result<PreparedGitRemote, GraphError> {
+    let output = runner.run("git", &["remote", "get-url", "--push", "origin"], root)?;
+    if output.exit_code != Some(0) {
+        return Err(GraphError::UnsafeGitRemote {
+            reason: "origin must have a push URL",
+        });
+    }
+    canonical_git_remote(output.stdout.trim())
+}
+
+fn canonical_git_remote(raw: &str) -> Result<PreparedGitRemote, GraphError> {
+    let ssh_url = if raw.starts_with("git@") && !raw.contains("//") {
+        let (host, path) =
+            raw.strip_prefix("git@")
+                .and_then(|value| value.split_once(':'))
+                .ok_or(GraphError::UnsafeGitRemote {
+                    reason: "invalid SSH remote syntax",
+                })?;
+        format!("ssh://git@{host}/{path}")
+    } else {
+        raw.to_string()
+    };
+    let parsed = url::Url::parse(&ssh_url).map_err(|_error| GraphError::UnsafeGitRemote { reason: "invalid URL" })?;
+    if parsed.cannot_be_a_base() || parsed.host_str().is_none() {
+        return Err(GraphError::UnsafeGitRemote {
+            reason: "URL must have an authority",
+        });
+    }
+    if !matches!(parsed.scheme(), "https" | "ssh") {
+        return Err(GraphError::UnsafeGitRemote {
+            reason: "URL scheme must be HTTPS or SSH",
+        });
+    }
+    if parsed.password().is_some() || parsed.query().is_some() || parsed.fragment().is_some() {
+        return Err(GraphError::UnsafeGitRemote {
+            reason: "credentials, query strings, and fragments are forbidden",
+        });
+    }
+    if parsed.scheme() == "https" && !parsed.username().is_empty() {
+        return Err(GraphError::UnsafeGitRemote {
+            reason: "HTTPS userinfo is forbidden",
+        });
+    }
+    if parsed.scheme() == "ssh" && parsed.username() != "git" {
+        return Err(GraphError::UnsafeGitRemote {
+            reason: "SSH remotes must use the git account",
+        });
+    }
+    let host = parsed.host_str().expect("validated authority").to_ascii_lowercase();
+    let mut components = parsed.path_segments().ok_or(GraphError::UnsafeGitRemote {
+        reason: "remote path is invalid",
+    })?;
+    let owner = components
+        .next()
+        .filter(|value| !value.is_empty())
+        .ok_or(GraphError::UnsafeGitRemote {
+            reason: "remote path must name an owner and repository",
+        })?;
+    let repository = components
+        .next()
+        .filter(|value| !value.is_empty())
+        .ok_or(GraphError::UnsafeGitRemote {
+            reason: "remote path must name an owner and repository",
+        })?;
+    if components.next().is_some() || owner == "." || owner == ".." || repository == "." || repository == ".." {
+        return Err(GraphError::UnsafeGitRemote {
+            reason: "remote path must contain exactly an owner and repository",
+        });
+    }
+    let repository = repository.strip_suffix(".git").unwrap_or(repository);
+    if repository.is_empty() {
+        return Err(GraphError::UnsafeGitRemote {
+            reason: "repository name is empty",
+        });
+    }
+    let port = parsed.port_or_known_default();
+    let port_text = match (parsed.scheme(), port) {
+        ("https", Some(443)) | ("ssh", Some(22)) | (_, None) => String::new(),
+        (_, Some(port)) => format!(":{port}"),
+    };
+    let endpoint = match parsed.scheme() {
+        "https" => format!("https://{host}{port_text}/{owner}/{repository}.git"),
+        "ssh" => format!("ssh://git@{host}{port_text}/{owner}/{repository}.git"),
+        _ => unreachable!("scheme checked above"),
+    };
+    let mut transcript = CanonicalTranscript::semantic_input_v1();
+    transcript.push_str("gitRemote.scheme", parsed.scheme());
+    transcript.push_str("gitRemote.host", &host);
+    transcript.push_str(
+        "gitRemote.port",
+        &port.map_or_else(String::new, |port| port.to_string()),
+    );
+    transcript.push_str("gitRemote.owner", owner);
+    transcript.push_str("gitRemote.repository", repository);
+    Ok(PreparedGitRemote {
+        endpoint,
+        identity: SemanticInputDigest::from_transcript(&transcript),
+        github_repository: (host == "github.com").then(|| format!("{owner}/{repository}")),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -947,6 +1182,13 @@ mod tests {
             ["config", "user.email", "test@example.com"].as_slice(),
             ["config", "user.name", "Test"].as_slice(),
             ["config", "commit.gpgsign", "false"].as_slice(),
+            [
+                "remote",
+                "add",
+                "origin",
+                "https://github.com/example/release-fixture.git",
+            ]
+            .as_slice(),
             ["add", "."].as_slice(),
             ["commit", "-q", "-m", "fixture"].as_slice(),
             ["checkout", "--detach", "-q", "HEAD"].as_slice(),
@@ -1021,6 +1263,25 @@ mod tests {
         assert_eq!(explicit.host, "registry.example.test");
         assert_eq!(explicit.effective_port, Some(443));
         assert_eq!(explicit.path, "/index");
+    }
+
+    #[test]
+    fn git_remote_binding_normalizes_credential_free_ssh_and_rejects_credentialed_https() {
+        let ssh = canonical_git_remote("git@GitHub.com:example/release-fixture.git").unwrap();
+        assert_eq!(ssh.endpoint, "ssh://git@github.com/example/release-fixture.git");
+        assert_eq!(ssh.github_repository.as_deref(), Some("example/release-fixture"));
+        assert!(canonical_git_remote("https://token@github.com/example/release-fixture.git").is_err());
+    }
+
+    #[test]
+    fn github_api_observation_parser_requires_an_explicit_http_status() {
+        let (status, body) = parse_github_api_response(
+            "HTTP/2 404\r\ncontent-type: application/json\r\n\r\n{\"message\":\"Not Found\"}",
+        )
+        .unwrap();
+        assert_eq!(status, 404);
+        assert_eq!(body, "{\"message\":\"Not Found\"}");
+        assert!(parse_github_api_response("not a response").is_err());
     }
 
     #[test]
@@ -1187,7 +1448,7 @@ mod tests {
         let root = canonical_root(dir.path()).unwrap();
         let workspace = Workspace::load(root.clone(), &locator, &runner).unwrap();
         let source = observe_source(&workspace, ExecutionTrustProfileV1::GitCommit).unwrap();
-        let (before_snapshot, before_operations, _) =
+        let (before_snapshot, before_operations, _, _) =
             derive_release_inputs(&workspace, &decision(), source.clone()).unwrap();
 
         std::fs::write(
@@ -1196,7 +1457,7 @@ mod tests {
         )
         .unwrap();
         let reread = Workspace::load(root, &locator, &runner).unwrap();
-        let (after_snapshot, after_operations, _) = derive_release_inputs(&reread, &decision(), source).unwrap();
+        let (after_snapshot, after_operations, _, _) = derive_release_inputs(&reread, &decision(), source).unwrap();
 
         assert_eq!(before_snapshot, after_snapshot);
         assert_eq!(before_operations, after_operations);

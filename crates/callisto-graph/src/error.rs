@@ -249,6 +249,10 @@ pub enum GraphError {
     )]
     UnsafeRegistryBinding { registry: String, reason: &'static str },
 
+    #[error("unsafe Git push remote: {reason}")]
+    #[diagnostic(code(E132), help("Configure origin with a credential-free HTTPS or SSH URL."))]
+    UnsafeGitRemote { reason: &'static str },
+
     #[error("release execution state is invalid: {source}")]
     #[diagnostic(
         code(E127),
