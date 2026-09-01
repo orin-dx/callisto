@@ -1,0 +1,9 @@
+<task-notification>
+<task-id>b5xwwyytf</task-id>
+<tool-use-id>toolu_014oFAM5H731LcQ3omvFKE1n</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8a85b651-0c9a-44fa-9e0a-ac694c4409e1/tasks/b5xwwyytf.output</output-file>
+<status>completed</status>
+<summary>Background command "rtk grep -E "^test result:|^error" /private/tmp/claude-501/-Users-gabe-Projects-callisto/8a85b651-0c9a-44fa-9e0a-ac694c4409e1/tasks/brxt8jlga.output 2&gt;/dev/null
+echo "---rerun since doc comment changed---"
+cargo test -p callisto-cli --lib -- workspace:: 2&gt;&amp;1 | tail -60" completed (exit code 0)</summary>
+</task-notification>
