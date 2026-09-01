@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bsc4hk1f3</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a7b3643b-af0c-4790-a38d-870e88a7dd3e/tasks/bsc4hk1f3.output</output-file>
+<status>completed</status>
+<summary>Background command "Full just ci run for Track G completion" completed (exit code 0)</summary>
+</task-notification>
