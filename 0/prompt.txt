@@ -1,0 +1,22 @@
+<task-notification>
+<task-id>a3389b59b353f9058</task-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a3389b59b353f9058.output</output-file>
+<status>completed</status>
+<summary>Agent "Audit Track 3b1 core spec quality" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>The audit is complete. Result: **overall: fail** — but the redraft succeeded on the thing that mattered most: the auditor independently re-traced `ManifestWalkResolver::build`'s execution order in the real source and confirmed the central timing claim (`cfg.promoted_siblings` is provably empty at walk.rs:175, so the local-overlay mechanism is genuinely required) holds — this is the exact defect class that killed the predecessor spec across 9+4 rounds, and it did not recur. Every line citation checked (across identity.rs, walk.rs, lib.rs, config/resolve.rs, aggregate.rs, plus config/groups.rs, error.rs, and callisto-model/identity.rs) matched real code exactly.
+
+Six second-order issues were found, all with concrete replacement text:
+
+1. **AC-08 (untestable)** — its trailing clause about "no competing writes to index.native" is unobservable, since `build()` returns `Err` before any `Self`/`IdentityIndex` is ever constructed on that path. Fix: replace with a concrete Case-D-vs-npm-only-package scenario asserting `DuplicatePackage` return.
+2. **Missing error case** — the "already-promoted-name" rejection branch (ii) for N&gt;2 (a third path colliding non-disjointly with one specific member of an existing promoted group) has no acceptance criterion. Fix: new AC-21 with a 3-package scenario.
+3. **Ambiguous** — the "GUARD AGAINST STALE index.bare RE-INSERTION" instruction offers an "either skip insertion, or remove at promotion time" choice that's only actually implementable one way for branch (i) promotions. Fix: rewritten to spell out which strategy applies to which branch.
+4. **Incomplete** — the spec's own promotion mechanism falsifies a load-bearing comment at walk.rs:284-288 ("Packages-map keys are ALWAYS PackageId::Bare") but never requires updating it or documents why the downstream diagnostic pass at 296-330 stays safe anyway. Fix: added explanatory/requirement text.
+5. **Incomplete** — the justification for `resolve_native`'s unchanged fallback behavior cites a caller class ("group-member resolution") that a codebase grep shows doesn't actually call it. Fix: corrected justification (no production caller currently exists).
+6. **Scope overlap** — `track-f-resolution-extraction.json`'s AC-F6 pins verbatim call-site text this spec explicitly rewrites; the deferral to "whichever spec next touches it" is non-committal. Fix: pin the deferral explicitly to SPEC-TRACK3B2.
+
+No overlap was found against SPEC-TRACK3A-WORKSPACE-MEMBERSHIP, confirming the intended disjointness.
+
+Full JSON result (issues array with criterion_id/type/description/suggested_fix, overall, reasoning) is in the notification above — let me know if you want it written to a file or the six fixes applied directly to the spec.</result>
+<usage><subagent_tokens>36136</subagent_tokens><tool_uses>2</tool_uses><duration_ms>367831</duration_ms></usage>
+</task-notification>
