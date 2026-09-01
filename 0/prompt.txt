@@ -1,0 +1,1 @@
+Let's do all of the work necessary to finish and wrap up the adapter work since it's a blocker for us
