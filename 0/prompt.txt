@@ -1,0 +1,18 @@
+<task-notification>
+<task-id>a5034afcfebf396a1</task-id>
+<tool-use-id>toolu_01PHY3jPKRxnh1K73kVdb6tV</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a15bbbf7-aba0-415d-bfdc-c773ea65cfc7/tasks/a5034afcfebf396a1.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix python.rs rewrite_range dropping exclusion clauses via splitn" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All clean. Here's a summary of what was done:
+
+**Bug confirmed:** `rewrite_range` used `splitn(2, ',')` on the raw spec string. For `"&gt;=1.0.0,&lt;2.0.0,!=1.5.0"` this produced `lower = "&gt;=1.0.0"` and `upper = "&lt;2.0.0,!=1.5.0"`. The upper bound guard (`starts_with('&lt;') &amp;&amp; !starts_with("&lt;=")`) passed, so the function silently rewrote to `"&gt;=1.2.0,&lt;2"` — dropping the `!=1.5.0` exclusion clause entirely.
+
+**Test added** (`round_trip_returns_none_for_three_clause_spec` at line 977): spec `"&gt;=1.0.0,&lt;2.0.0,!=1.5.0"`, target `"1.2.0"`, asserts `round_trip` returns `None`. Confirmed failing before the fix.
+
+**Fix applied** in `rewrite_range` (`/Users/gabe/Projects/callisto/crates/callisto-manifests/src/python.rs`, around line 454): added an upfront clause count guard — `if original.split(',').count() != 2 { return None; }` — before any processing. Specs with exactly 2 clauses continue through the existing `&gt;=`/`&lt;` pattern checks as before.
+
+**Results:** 57/57 tests pass, clippy reports no warnings.</result>
+<usage><subagent_tokens>32698</subagent_tokens><tool_uses>6</tool_uses><duration_ms>79313</duration_ms></usage>
+</task-notification>
