@@ -6,9 +6,62 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use callisto_model::{OperationState, ReleaseExecutionStateV1, ReleaseIntentV1, ReleaseOperationId};
+use callisto_model::{
+    ApplyPermit, OperationOutcome, OperationState, ReleaseExecutionStateV1, ReleaseIntentV1, ReleaseOperationId,
+};
 
-use crate::GraphError;
+use crate::{
+    commands::{ReleaseStateStore, ReleaseStateWriter},
+    GraphError,
+};
+
+use super::release::ValidatedReleaseIntent;
+
+/// The sole effect-dispatch seam for durable release execution.
+///
+/// Implementations receive the opaque capability rather than package paths,
+/// endpoints, tags, or provider configuration. They can therefore select
+/// only an operation already prepared during fresh validation.
+pub trait ReleaseEffectAdapter {
+    fn dispatch(
+        &mut self,
+        capability: &ValidatedReleaseIntent<'_>,
+        permit: &ApplyPermit,
+        operation: &ReleaseOperationId,
+    ) -> Result<OperationOutcome, GraphError>;
+}
+
+/// Executes eligible operations one at a time with crash-safe state updates.
+///
+/// `Attempting` is persisted before adapter dispatch. If dispatch returns an
+/// error, the state deliberately remains `Attempting`: recovery must observe
+/// the exact remote identity rather than guessing whether an effect occurred.
+pub fn execute_release<W: ReleaseStateWriter, A: ReleaseEffectAdapter>(
+    capability: &ValidatedReleaseIntent<'_>,
+    store: &ReleaseStateStore<W>,
+    permit: &ApplyPermit,
+    adapter: &mut A,
+) -> Result<ReleaseExecutionStateV1, GraphError> {
+    let intent = capability.intent();
+    let mut state = store.load_or_initialize(intent, permit)?;
+    loop {
+        let Some(operation) = reconcile_release_execution(intent, &state)?.eligible().first().cloned() else {
+            break;
+        };
+        capability.recheck_trust()?;
+        state
+            .mark_attempting(&operation)
+            .map_err(|source| GraphError::ReleaseExecutionState { source })?;
+        store.save(intent, &state, permit)?;
+
+        let outcome = adapter.dispatch(capability, permit, &operation)?;
+        state
+            .mark_terminal(&operation, outcome)
+            .map_err(|source| GraphError::ReleaseExecutionState { source })?;
+        store.save(intent, &state, permit)?;
+    }
+    Ok(state)
+}
 
 /// The exact pending operations which are safe for a future executor to
 /// consider. Being listed here does not perform an effect or bypass its
