@@ -134,12 +134,7 @@ fn verify_github_attestation<R: CommandRunner>(
     runner: &R,
 ) -> Result<(), GraphError> {
     let policy = &entry.slot.attestation_policy;
-    let workflow = format!(
-        "{}/{}@{}",
-        policy.repository,
-        policy.workflow_path,
-        policy.workflow_commit.as_str()
-    );
+    let workflow = format!("{}/{}", policy.repository, policy.workflow_path);
     let path_argument = path.to_string_lossy();
     let source_commit = manifest.source_commit.as_str();
     let args = [
@@ -150,6 +145,8 @@ fn verify_github_attestation<R: CommandRunner>(
         policy.repository.as_str(),
         "--signer-workflow",
         workflow.as_str(),
+        "--signer-digest",
+        policy.workflow_commit.as_str(),
         "--source-digest",
         source_commit,
         "--deny-self-hosted-runners",
@@ -284,11 +281,14 @@ mod tests {
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].0, "gh");
         assert!(calls[0].1.windows(2).any(|args| args == ["--repo", "owner/repository"]));
-        assert!(calls[0].1.windows(2).any(|args| args
-            == [
-                "--signer-workflow",
-                "owner/repository/.github/workflows/release.yml@bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-            ]));
+        assert!(calls[0]
+            .1
+            .windows(2)
+            .any(|args| args == ["--signer-workflow", "owner/repository/.github/workflows/release.yml"]));
+        assert!(calls[0]
+            .1
+            .windows(2)
+            .any(|args| args == ["--signer-digest", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"]));
         assert!(calls[0]
             .1
             .windows(2)
