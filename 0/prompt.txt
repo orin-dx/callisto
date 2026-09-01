@@ -1,0 +1,8 @@
+<task-notification>
+<task-id>bofsd3qk7</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/c0ad64b2-6440-4937-8328-8d9fd9db278c/tasks/bofsd3qk7.output</output-file>
+<status>completed</status>
+<summary>Background command "cd /Users/gabe/Projects/callisto
+rtk git push -u origin docs-cleanup-agents-readme" completed (exit code 0)</summary>
+</task-notification>
