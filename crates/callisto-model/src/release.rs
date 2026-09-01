@@ -595,6 +595,9 @@ pub enum ReleaseOperationRole {
     },
     Tag,
     ForgeRelease,
+    ArtifactUpload {
+        slot: ArtifactSlotId,
+    },
 }
 
 #[derive(Deserialize)]
@@ -608,6 +611,9 @@ enum ReleaseOperationRoleWire {
     },
     Tag,
     ForgeRelease,
+    ArtifactUpload {
+        slot: ArtifactSlotId,
+    },
 }
 
 impl<'de> Deserialize<'de> for ReleaseOperationRole {
@@ -624,6 +630,7 @@ impl<'de> Deserialize<'de> for ReleaseOperationRole {
                 .map_err(serde::de::Error::custom),
             ReleaseOperationRoleWire::Tag => Ok(Self::Tag),
             ReleaseOperationRoleWire::ForgeRelease => Ok(Self::ForgeRelease),
+            ReleaseOperationRoleWire::ArtifactUpload { slot } => Ok(Self::ArtifactUpload { slot }),
         }
     }
 }
@@ -634,24 +641,56 @@ impl ReleaseOperationRole {
             Self::RegistryPublish { .. } => 0,
             Self::Tag => 1,
             Self::ForgeRelease => 2,
+            Self::ArtifactUpload { .. } => 3,
         }
     }
 
     fn registry(&self) -> Option<&RegistryBindingId> {
         match self {
             Self::RegistryPublish { registry } => Some(registry),
-            Self::Tag | Self::ForgeRelease => None,
+            Self::Tag | Self::ForgeRelease | Self::ArtifactUpload { .. } => None,
+        }
+    }
+
+    fn artifact_slot(&self) -> Option<&ArtifactSlotId> {
+        match self {
+            Self::ArtifactUpload { slot } => Some(slot),
+            Self::RegistryPublish { .. } | Self::Tag | Self::ForgeRelease => None,
         }
     }
 }
 
 /// Exact identity for one durable release operation.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ReleaseOperationId {
     pub package: ReleasePackageId,
     pub role: ReleaseOperationRole,
     pub version: Version,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ReleaseOperationIdWire {
+    package: ReleasePackageId,
+    role: ReleaseOperationRole,
+    version: Version,
+}
+
+impl<'de> Deserialize<'de> for ReleaseOperationId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = ReleaseOperationIdWire::deserialize(deserializer)?;
+        let id = Self {
+            package: wire.package,
+            role: wire.role,
+            version: wire.version,
+        };
+        id.validate_artifact_slot().map_err(serde::de::Error::custom)?;
+        Ok(id)
+    }
 }
 
 impl ReleaseOperationId {
@@ -678,6 +717,24 @@ impl ReleaseOperationId {
             version,
         }
     }
+
+    pub fn artifact_upload(slot: ArtifactSlotId) -> Self {
+        Self {
+            package: slot.package.clone(),
+            version: slot.version.clone(),
+            role: ReleaseOperationRole::ArtifactUpload { slot },
+        }
+    }
+
+    fn validate_artifact_slot(&self) -> Result<(), ReleaseOperationError> {
+        let Some(slot) = self.role.artifact_slot() else {
+            return Ok(());
+        };
+        if slot.package != self.package || slot.version != self.version {
+            return Err(ReleaseOperationError::MismatchedArtifactSlot);
+        }
+        Ok(())
+    }
 }
 
 impl PartialOrd for ReleaseOperationId {
@@ -701,6 +758,10 @@ impl Ord for ReleaseOperationId {
                 .registry()
                 .map(|registry| registry.binding_digest().as_str())
                 .unwrap_or(""),
+            self.role
+                .artifact_slot()
+                .map(|slot| format!("{}|{}", slot.platform, slot.asset_name))
+                .unwrap_or_default(),
         )
             .cmp(&(
                 other.package.ecosystem().prefix(),
@@ -717,6 +778,11 @@ impl Ord for ReleaseOperationId {
                     .registry()
                     .map(|registry| registry.binding_digest().as_str())
                     .unwrap_or(""),
+                other
+                    .role
+                    .artifact_slot()
+                    .map(|slot| format!("{}|{}", slot.platform, slot.asset_name))
+                    .unwrap_or_default(),
             ))
     }
 }
@@ -758,10 +824,18 @@ impl ReleaseOperation {
         Self::new(ReleaseOperationId::forge_release(package, version), prerequisites)
     }
 
+    pub fn artifact_upload(
+        slot: ArtifactSlotId,
+        prerequisites: Vec<ReleaseOperationId>,
+    ) -> Result<Self, ReleaseOperationError> {
+        Self::new(ReleaseOperationId::artifact_upload(slot), prerequisites)
+    }
+
     pub fn new(
         id: ReleaseOperationId,
         mut prerequisites: Vec<ReleaseOperationId>,
     ) -> Result<Self, ReleaseOperationError> {
+        id.validate_artifact_slot()?;
         prerequisites.sort();
         if prerequisites.iter().any(|prerequisite| prerequisite == &id) {
             return Err(ReleaseOperationError::SelfPrerequisite { id: Box::new(id) });
@@ -791,14 +865,54 @@ pub enum ReleaseOperationError {
     SelfPrerequisite { id: Box<ReleaseOperationId> },
     #[error("release operation `{id:?}` has duplicate prerequisites")]
     DuplicatePrerequisite { id: Box<ReleaseOperationId> },
+    #[error("artifact upload operation identity must match its slot package and version")]
+    MismatchedArtifactSlot,
 }
 
 /// Immutable GitHub provenance policy declared by a binary release slot.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GitHubAttestationPolicyV1 {
     pub repository: String,
-    pub signer_workflow: String,
+    pub workflow_path: String,
+    pub workflow_commit: CommitSha,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct GitHubAttestationPolicyV1Wire {
+    repository: String,
+    workflow_path: String,
+    workflow_commit: CommitSha,
+}
+
+impl GitHubAttestationPolicyV1 {
+    pub fn new(
+        repository: impl Into<String>,
+        workflow_path: impl Into<String>,
+        workflow_commit: CommitSha,
+    ) -> Result<Self, ArtifactSlotError> {
+        let repository = repository.into();
+        let workflow_path = workflow_path.into();
+        if !is_safe_github_repository(&repository) || !is_safe_workflow_path(&workflow_path) {
+            return Err(ArtifactSlotError::UnsafeSlotComponent);
+        }
+        Ok(Self {
+            repository,
+            workflow_path,
+            workflow_commit,
+        })
+    }
+}
+
+impl<'de> Deserialize<'de> for GitHubAttestationPolicyV1 {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = GitHubAttestationPolicyV1Wire::deserialize(deserializer)?;
+        Self::new(wire.repository, wire.workflow_path, wire.workflow_commit).map_err(serde::de::Error::custom)
+    }
 }
 
 /// Exact binary asset declaration authorized by a durable release intent.
@@ -819,17 +933,13 @@ impl ArtifactSlotId {
         platform: impl Into<String>,
         asset_name: impl Into<String>,
         repository: impl Into<String>,
-        signer_workflow: impl Into<String>,
+        workflow_path: impl Into<String>,
+        workflow_commit: CommitSha,
     ) -> Result<Self, ArtifactSlotError> {
         let platform = platform.into();
         let asset_name = asset_name.into();
-        let repository = repository.into();
-        let signer_workflow = signer_workflow.into();
-        if !is_safe_artifact_component(&platform)
-            || !is_safe_artifact_component(&asset_name)
-            || !is_safe_github_repository(&repository)
-            || !is_safe_workflow_ref(&signer_workflow)
-        {
+        let policy = GitHubAttestationPolicyV1::new(repository, workflow_path, workflow_commit)?;
+        if !is_safe_artifact_component(&platform) || !is_safe_artifact_component(&asset_name) {
             return Err(ArtifactSlotError::UnsafeSlotComponent);
         }
         Ok(Self {
@@ -837,10 +947,7 @@ impl ArtifactSlotId {
             version,
             platform,
             asset_name,
-            attestation_policy: GitHubAttestationPolicyV1 {
-                repository,
-                signer_workflow,
-            },
+            attestation_policy: policy,
         })
     }
 }
@@ -858,7 +965,8 @@ impl Ord for ArtifactSlotId {
             &self.platform,
             &self.asset_name,
             &self.attestation_policy.repository,
-            &self.attestation_policy.signer_workflow,
+            &self.attestation_policy.workflow_path,
+            &self.attestation_policy.workflow_commit,
         )
             .cmp(&(
                 &other.package,
@@ -866,7 +974,8 @@ impl Ord for ArtifactSlotId {
                 &other.platform,
                 &other.asset_name,
                 &other.attestation_policy.repository,
-                &other.attestation_policy.signer_workflow,
+                &other.attestation_policy.workflow_path,
+                &other.attestation_policy.workflow_commit,
             ))
     }
 }
@@ -878,8 +987,13 @@ fn is_safe_github_repository(value: &str) -> bool {
     !owner.is_empty() && !repository.is_empty() && !repository.contains('/')
 }
 
-fn is_safe_workflow_ref(value: &str) -> bool {
-    value.starts_with("refs/") && value.contains(":.github/workflows/") && !value.contains("..")
+fn is_safe_workflow_path(value: &str) -> bool {
+    value.starts_with(".github/workflows/")
+        && value.ends_with(".yml")
+        && !value.contains("..")
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b'/'))
 }
 
 fn is_safe_artifact_component(value: &str) -> bool {
@@ -896,7 +1010,8 @@ fn is_safe_artifact_component(value: &str) -> bool {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GitHubArtifactAttestationV1 {
     pub repository: String,
-    pub signer_workflow: String,
+    pub workflow_path: String,
+    pub workflow_commit: CommitSha,
     pub subject_digest: ArtifactDigest,
     pub source_commit: CommitSha,
 }
@@ -943,7 +1058,8 @@ impl ArtifactManifestV1 {
             entry.digest != entry.attestation.subject_digest
                 || entry.attestation.source_commit != *sha
                 || entry.attestation.repository != entry.slot.attestation_policy.repository
-                || entry.attestation.signer_workflow != entry.slot.attestation_policy.signer_workflow
+                || entry.attestation.workflow_path != entry.slot.attestation_policy.workflow_path
+                || entry.attestation.workflow_commit != entry.slot.attestation_policy.workflow_commit
         }) {
             return Err(ArtifactManifestError::MismatchedAttestation);
         }
@@ -1083,6 +1199,7 @@ impl ReleaseIntentV1 {
         }) {
             return Err(ReleaseIntentError::ArtifactSlotOutsideDecision);
         }
+        validate_artifact_upload_roster(&operations, &artifact_slots)?;
         let digest = digest_intent(&decision, &snapshot, trust_profile, &operations, &artifact_slots);
         Ok(Self {
             schema_version: Self::SCHEMA_VERSION,
@@ -1129,6 +1246,12 @@ fn digest_intent(
         transcript.push_str("artifact-slot.version", slot.version.render());
         transcript.push_str("artifact-slot.platform", &slot.platform);
         transcript.push_str("artifact-slot.asset", &slot.asset_name);
+        transcript.push_str("artifact-slot.repository", &slot.attestation_policy.repository);
+        transcript.push_str("artifact-slot.workflow-path", &slot.attestation_policy.workflow_path);
+        transcript.push_str(
+            "artifact-slot.workflow-commit",
+            slot.attestation_policy.workflow_commit.as_str(),
+        );
     }
     IntentDigest::from_transcript(&transcript)
 }
@@ -1151,6 +1274,21 @@ fn validate_operation_roster(
     Ok(())
 }
 
+fn validate_artifact_upload_roster(
+    operations: &[ReleaseOperation],
+    artifact_slots: &[ArtifactSlotId],
+) -> Result<(), ReleaseIntentError> {
+    let mut uploads = operations
+        .iter()
+        .filter_map(|operation| operation.id.role.artifact_slot())
+        .collect::<Vec<_>>();
+    uploads.sort();
+    if uploads.iter().map(|slot| *slot).ne(artifact_slots.iter()) {
+        return Err(ReleaseIntentError::MismatchedArtifactUploadRoster);
+    }
+    Ok(())
+}
+
 fn operation_id_text(id: &ReleaseOperationId) -> String {
     let role = match &id.role {
         ReleaseOperationRole::RegistryPublish { registry } => format!(
@@ -1160,6 +1298,15 @@ fn operation_id_text(id: &ReleaseOperationId) -> String {
         ),
         ReleaseOperationRole::Tag => "tag".to_string(),
         ReleaseOperationRole::ForgeRelease => "forge-release".to_string(),
+        ReleaseOperationRole::ArtifactUpload { slot } => format!(
+            "artifact-upload:{}:{}:{}:{}:{}:{}",
+            slot.platform,
+            slot.asset_name,
+            slot.attestation_policy.repository,
+            slot.attestation_policy.workflow_path,
+            slot.attestation_policy.workflow_commit.as_str(),
+            slot.version.render(),
+        ),
     };
     format!("{}|{}|{}", id.package, role, id.version.render())
 }
@@ -1254,6 +1401,8 @@ pub enum ReleaseIntentError {
     DuplicateArtifactSlot,
     #[error("artifact slot is not authorized by the embedded release decision")]
     ArtifactSlotOutsideDecision,
+    #[error("artifact upload operations must exactly match the declared artifact slots")]
+    MismatchedArtifactUploadRoster,
     #[error("release operations are not in canonical order")]
     NonCanonicalOperationOrder,
     #[error("duplicate release operation `{id:?}`")]
@@ -1761,16 +1910,17 @@ mod tests {
     fn artifact_manifest_requires_exact_slot_digest_and_source_binding() {
         let package = ReleasePackageId::parse("cargo/demo").unwrap();
         let version = Version::semver(1, 0, 0);
-        let operation = ReleaseOperation::tag(package.clone(), version.clone(), vec![]).unwrap();
         let slot = ArtifactSlotId::new(
-            package,
-            version,
+            package.clone(),
+            version.clone(),
             "x86_64-unknown-linux-gnu",
             "demo.tar.gz",
             "orin-dx/callisto",
-            "refs/heads/main:.github/workflows/release.yml",
+            ".github/workflows/release.yml",
+            CommitSha::parse(&"b".repeat(40)).unwrap(),
         )
         .unwrap();
+        let operation = ReleaseOperation::artifact_upload(slot.clone(), vec![]).unwrap();
         let intent = test_intent_with_slots(
             ReleaseInputSnapshotV1::new(SourceIdentity::git_commit("a".repeat(40)).unwrap(), vec![]),
             ExecutionTrustProfileV1::GitCommit,
@@ -1787,7 +1937,8 @@ mod tests {
                 byte_length: 6,
                 attestation: GitHubArtifactAttestationV1 {
                     repository: "orin-dx/callisto".to_string(),
-                    signer_workflow: "refs/heads/main:.github/workflows/release.yml".to_string(),
+                    workflow_path: ".github/workflows/release.yml".to_string(),
+                    workflow_commit: CommitSha::parse(&"b".repeat(40)).unwrap(),
                     subject_digest: digest,
                     source_commit: CommitSha::parse(&"a".repeat(40)).unwrap(),
                 },
