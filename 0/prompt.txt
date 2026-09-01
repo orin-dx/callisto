@@ -1,0 +1,12 @@
+<task-notification>
+<task-id>bcwf1b0f7</task-id>
+<summary>Monitor event: "just ci live progress with step timestamps"</summary>
+<event>[+1372s]         PASS [   0.007s] ( 126/1065) callisto-conventional pre_cursor::tests::advance_pre_cursor_redacts_credential_from_advance_failed_error
+[+1372s]         PASS [   0.007s] ( 127/1065) callisto-conventional pre_cursor::tests::advance_pre_cursor_returns_error_when_update_ref_fails
+[+1372s]         PASS [   0.007s] ( 133/1065) callisto-conventional pre_cursor::tests::resolve_pre_cursor_propagates_command_error
+[+1372s]         PASS [   0.007s] ( 134/1065) callisto-conventional pre_cursor::tests::resolve_pre_cursor_redacts_credential_from_malformed_ref_error
+[+1372s]         PASS [   0.007s] ( 136/1065) callisto-conventional pre_cursor::tests::resolve_pre_cursor_returns_malformed_error_for_unparseable_output
+[+1372s]         PASS [   0.017s] ( 142/1065) callisto-conventional window::tests::test_backend_command_error_narrows_to_commit_walk_command
+[+1372s]         PASS [   0.007s] ( 144/1065) callisto-conventional window::tests::test_fetch_commits_propagates_walker_error</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
