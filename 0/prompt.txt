@@ -1,0 +1,135 @@
+<task-notification>
+<task-id>a1060e7063e24d49d</task-id>
+<tool-use-id>toolu_01GGK9HGCdwQBVXoTWtNdGgi</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a15bbbf7-aba0-415d-bfdc-c773ea65cfc7/tasks/a1060e7063e24d49d.output</output-file>
+<status>completed</status>
+<summary>Agent "Test coverage gap analysis — edge cases and error paths" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Now I have everything needed for a comprehensive audit. Here are the findings:
+
+---
+
+## Test Coverage Audit — Findings
+
+### 1. `callisto-model/src/permit.rs` — ApplyPermit
+
+**Covered:** Both `granted_unless_dry_run(true)` and `granted_unless_dry_run(false)` have dedicated unit tests.
+
+**Gap 1a — `force_for_tests()` has no unit test.**
+File: `/Users/gabe/Projects/callisto/crates/callisto-model/src/permit.rs`
+
+The two inline tests (`dry_run_yields_no_permit`, `real_run_yields_a_permit`) never call `force_for_tests()`. It is used pervasively in test fixtures across the codebase, but nothing in permit.rs itself asserts it returns a permit (i.e., `is_some()` in isolation). If someone accidentally changed its return type or broke the feature gate, no focused unit test would fail — errors would appear only as compilation failures in distant test files. A test like `assert!(matches!(force_for_tests(), ApplyPermit { .. }))` (or just that the returned value is usable in `atomic_write`) would pin the contract.
+
+**Gap 1b — No `#[compile_fail]` doctest for the type-system enforcement.**
+The module comment claims "a command handler that forgets the check now has nothing to pass, and fails to compile." There is no doctest or `trybuild` test asserting that calling `atomic_write` without an `&amp;ApplyPermit` produces a compile error. This is a documentation-level claim with no machine-checked proof. A `trybuild`/`compiletest` negative test would catch any future signature change that accidentally made the permit parameter optional.
+
+---
+
+### 2. `callisto-cli/src/commands/pre.rs` — dry-run for pre enter/exit
+
+**Covered:** Both `pre_enter_dry_run_writes_nothing` and `pre_exit_dry_run_writes_nothing` exist in `dry_run_invariant_tests.rs` and use `assert_no_disk_mutation`.
+
+**Gap 2a — `pre exit` when `.changeset/pre.json` does not exist: not tested.**
+File: `/Users/gabe/Projects/callisto/crates/callisto-cli/src/commands/pre.rs` (line 89)
+
+```rust
+let text = fs::read_to_string(&amp;pre_path).map_err(|source| CliError::Io {
+    source,
+    path: Some(pre_path.clone()),
+})?;
+```
+
+There is no test that calls `commands::pre::handle(PreArgs::Exit, ...)` on a workspace where `.changeset/pre.json` was never written. The code returns `CliError::Io`, but the error message and path field in that variant are untested. This matters because a user who runs `pre exit` without having run `pre enter` will see whatever this error surfaces — if the `path` field is wrong or the error is swallowed upstream, there is no test catching it.
+
+**Gap 2b — JSON output format of dry-run preview is never asserted.**
+Files: `/Users/gabe/Projects/callisto/crates/callisto-cli/tests/dry_run_invariant_tests.rs`, `/Users/gabe/Projects/callisto/crates/callisto-cli/src/commands/pre.rs` (lines 22–38)
+
+All dry-run invariant tests use `assert_no_disk_mutation`, which verifies no filesystem state changed. None of them capture stdout and assert the JSON envelope. The `preview()` function in `pre.rs` emits a JSON object with `schemaVersion`, `command`, `dryRun`, `mode`, `tag`, `path`, and `content` fields. If any field name was renamed, dropped, or misspelled, no test would catch it. This is the entire API contract for tooling that consumes `--dry-run --format json` output. The same gap exists for the text format's `[DRY-RUN] Would write ...` line.
+
+---
+
+### 3. `callisto-graph/src/commands/init.rs` and `callisto-cli/src/commands/init.rs`
+
+**All three scenarios from the audit prompt are covered:**
+- `init --dry-run` writes nothing: `init_dry_run_writes_nothing_on_first_run`
+- `init --dry-run --yes` writes nothing: `init_dry_run_writes_nothing_even_with_yes`
+- Idempotent reconcile (running init twice): `rerun_with_yes_true_applies_new_ecosystem_to_config` (runs it three times and asserts the third is a no-op)
+
+No gaps found in this section.
+
+---
+
+### 4. `callisto-manifests/src/npm.rs` — validate-before-mutate
+
+**Gap 4a — `resolutions` field not covered by the regression test.**
+File: `/Users/gabe/Projects/callisto/crates/callisto-manifests/src/npm.rs` (line 294)
+
+```rust
+for extra in ["overrides", "resolutions"] {
+    if let Some(tbl) = self.doc.get_mut(extra).and_then(|v| v.as_object_mut()) {
+        if tbl.contains_key(name) {
+            tbl.insert(name.to_string(), Value::String(new.render()));
+        }
+    }
+}
+```
+
+The existing regression test (`update_dependency_spec_does_not_mutate_overrides_when_primary_section_missing`) has `overrides` but not `resolutions`. There is no test that puts a package in `resolutions` alone (or alongside `overrides`) and verifies that: (a) a failed primary-section update leaves `resolutions` untouched, and (b) a successful update co-mutates `resolutions`. A regression where the loop accidentally only checked `"overrides"` (e.g., a copy-paste that left out `"resolutions"`) would pass all existing tests.
+
+**Gap 4b — Successful `update_dependency_spec` co-mutating `overrides`/`resolutions` is completely untested.**
+File: `/Users/gabe/Projects/callisto/crates/callisto-manifests/src/npm.rs`
+
+The happy path of `update_dependency_spec` — where the dep exists in the primary section and the function should also update any matching key in `overrides` or `resolutions` — has no test. `parses_package_json_and_updates_version` tests `write_version`, not `update_dependency_spec`. If the co-mutation block (lines 294–301) was simply deleted or had its condition inverted, no test would catch it. This means the entire feature ("overrides are kept in sync on a successful version bump") has zero test coverage.
+
+**Gap 4c — `devDependencies` validate-before-mutate is not covered.**
+File: `/Users/gabe/Projects/callisto/crates/callisto-manifests/src/npm.rs` (lines 260–280)
+
+The regression test hardcodes `DepKind::Runtime`, which maps to the `"dependencies"` section. The logic uses `section_name` derived from `kind`. A package in `overrides` but missing from `"devDependencies"` (i.e., `DepKind::Dev`) is a distinct code path (different `section_name`, different `get()` call) that is untested. If the `match kind` arm for `Dev` returned the wrong section name, the validate-before-mutate check would silently pass for that kind.
+
+---
+
+### 5. `callisto-graph/src/manifest_cache.rs`
+
+**Gap 5a — The write path in `apply.rs` bypassing the cache is architecturally asserted only in a comment, not in a test.**
+Files: `/Users/gabe/Projects/callisto/crates/callisto-graph/src/manifest_cache.rs` (lines 20–28), `/Users/gabe/Projects/callisto/crates/callisto-graph/src/apply.rs` (lines 72, 91)
+
+`manifest_cache.rs` documents: "apply.rs intentionally keeps calling `callisto_manifests::open` directly for every write." `apply.rs` confirms this — it imports `open` directly. But no test verifies the invariant. After a write in `apply.rs`, `open_call_count()` should be higher than after read-only discovery. A test that: (1) resets the counter, (2) loads the workspace, (3) records the count, (4) applies a version plan, (5) asserts the count increased by exactly the number of manifests written — would pin this behavioral contract. Without it, a future refactor that accidentally routes writes through `open_cached` (reusing a stale in-memory copy) would not be caught until silent data corruption was observed in production.
+
+**Gap 5b — The existing cache test (`base_versions_reuses_manifests_opened_during_graph_discovery`) is process-global and fragile.**
+File: `/Users/gabe/Projects/callisto/crates/callisto-graph/tests/manifest_cache_test.rs` (line 83)
+
+The comment on line 81 says: "This test must not run concurrently with other tests in this binary that also open real manifests." This is a real isolation hazard — `OPEN_CALL_COUNT` is a `static AtomicUsize`. There is no `#[serial]` or mutex guard; the test merely documents the assumption. Any future test added to that binary that opens manifests and runs concurrently will corrupt the counter silently. The test should either use a per-test counter mechanism or use `cargo-serial-test` to serialize access.
+
+---
+
+### 6. `callisto-model/src/identity.rs` — PackageId matches()
+
+**Covered:** Unit tests cover:
+- `Bare` vs `Prefixed` (same name, different ecosystem): match
+- `Prefixed` vs `Prefixed` (same name, different ecosystem): no match
+- End-to-end through `resolve_target_package` for 2-ecosystem ambiguity: `test_resolve_target_package_ambiguous_bare_name_errors`
+- Single-ecosystem bare-name resolution: `test_resolve_target_package_unambiguous_bare_name_resolves`
+- Three-ecosystem ambiguity: `test_resolve_target_package_ambiguous_bare_name_three_ecosystems_errors`
+
+**Gap 6 — `Bare` vs `Bare` same-name match is not explicitly tested as a unit case.**
+File: `/Users/gabe/Projects/callisto/crates/callisto-model/src/identity.rs` (line 135)
+
+`matches()` short-circuits on `self == other`, which covers `Bare("foo") == Bare("foo")`. There is no dedicated unit test asserting `Bare("x").matches(&amp;Bare("x"))` is true and `Bare("x").matches(&amp;Bare("y"))` is false. The proptest covers identity (`bare.matches(&amp;prefixed_cargo)`), but the case of two bare IDs being compared — which can arise if a user provides an unqualified name and a changeset was written with an unqualified name — is tested only implicitly via the proptest and the `self == other` short-circuit. If someone altered the `Bare/Bare` branch behavior (e.g., making all bare-vs-bare comparisons ambiguous to force qualification), no targeted unit test would pinpoint the failure.
+
+---
+
+### Summary of Gaps by Priority
+
+| # | File | Scenario | Bug It Would Catch |
+|---|------|----------|-------------------|
+| 4b | `npm.rs` | Successful `update_dependency_spec` co-mutates `overrides`/`resolutions` | Silent failure to keep override tables in sync after a version bump |
+| 4a | `npm.rs` | Failed update leaves `resolutions` untouched | `resolutions` mutated despite primary section lookup failure |
+| 2b | `pre.rs` | JSON output fields of `--dry-run` are correct | Schema break in dry-run output API goes undetected |
+| 2a | `pre.rs` | `pre exit` without `pre.json` returns `CliError::Io` | Error path untested; wrong error or panic under user error |
+| 4c | `npm.rs` | `devDependencies` validate-before-mutate | Wrong section name for `DepKind::Dev` silently passes validation |
+| 5a | `manifest_cache.rs` | Write path bypasses cache (counter increases after apply) | Stale in-memory copy written if apply.rs accidentally uses `open_cached` |
+| 5b | `manifest_cache_test.rs` | Process-global `OPEN_CALL_COUNT` test is not serialized | Parallel test contamination gives false-green on cache regression |
+| 1b | `permit.rs` | Compile-fail test for missing permit | Type-system enforcement claim not machine-verified |
+| 6 | `identity.rs` | `Bare("x").matches(&amp;Bare("y"))` is false | Edge case in bare-vs-bare comparison if logic changes |</result>
+<usage><subagent_tokens>66861</subagent_tokens><tool_uses>38</tool_uses><duration_ms>263689</duration_ms></usage>
+</task-notification>
