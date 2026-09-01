@@ -1,0 +1,9 @@
+<task-notification>
+<task-id>b27apdk6g</task-id>
+<summary>Monitor event: "wait for detached `just coverage` full-workspace run to finish"</summary>
+<event>coverage run finished
+test result: ok. 32 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.55s
+Finished report saved to lcov.info
+EXIT_CODE=0</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
