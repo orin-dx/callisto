@@ -1,0 +1,1 @@
+On the lock file is that something we document or augment the GH action with?
