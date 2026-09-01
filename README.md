@@ -137,7 +137,7 @@ sequenceDiagram
   CLI->>Git: create tags, move floating alias
 ```
 
-`callisto-action` (the bundled GitHub Action) runs all four automatically; see [`docs/06-publishing.md`](docs/06-publishing.md) for registry authentication setup and the npm platform/main package split.
+`callisto-action` (the bundled GitHub Action) now creates or updates only the version PR. The repository durable workflow performs plan/build/attested execute after that PR merges; see [`docs/06-publishing.md`](docs/06-publishing.md).
 
 ---
 
@@ -193,7 +193,7 @@ jobs:
         uses: orin-dx/callisto-action@v1
         with:
           branch: changeset-release/main
-          publish: just publish
+          # The durable repository workflow performs publication after merge.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}

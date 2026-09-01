@@ -33,9 +33,9 @@ add exact files plus `release-artifacts/manifest.json` to the build handoff; the
 attestations are verified by Callisto before upload. Source-only releases do not need that
 manifest.
 
-The composite `callisto-action` examples below describe the older consumer-action interface.
-They remain for migration compatibility; the repository's durable workflow is the supported
-path for Callisto's own releases.
+`callisto-action` is now a compatibility version-PR action only. Its former `publish` and
+`create_github_release` inputs are ignored; it never publishes, tags, downloads artifacts, or
+creates a forge release. The repository durable workflow is the supported release path.
 
 ---
 
@@ -60,8 +60,7 @@ that writes the token into the npm config:
     NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
 - uses: ./.github/actions/callisto-action
-  with:
-    publish: "true"
+  # This action only creates or updates the release PR.
   env:
     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
@@ -90,8 +89,7 @@ variable. Set `NODE_AUTH_TOKEN` in the job environment:
     registry-url: 'https://registry.npmjs.org'
 
 - uses: ./.github/actions/callisto-action
-  with:
-    publish: "true"
+  # This action only creates or updates the release PR.
   env:
     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
@@ -257,8 +255,7 @@ jobs:
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
       - uses: ./.github/actions/callisto-action
-        with:
-          publish: "true"
+        # This action only creates or updates the release PR.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
