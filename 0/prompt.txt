@@ -1,0 +1,3 @@
+While we were out of tokens I had agy undertake some of the work we were doing. Can you check the current state vs the plan?
+
+We’ve updated the plugins to improve performance and token usage too
