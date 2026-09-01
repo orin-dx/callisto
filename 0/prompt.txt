@@ -1,0 +1,3 @@
+Did you consider our architecture? Our semantic models? I don't want you to rush to solutions. I want you to consider the issues in the context of the entire system and propose comprehensive solutions that are in keeping with the rest of the system. Consider it all holistically. Research if necessary, consider crates to use or better using what we have, adjusting our architecture and specs.
+
+Don't rush on this. It's important to get the architecture and plan correctly first.
