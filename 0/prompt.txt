@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bdv2wyb9l</task-id>
+<summary>Monitor event: "PR #5 CI checks after changeset-formatting commit"</summary>
+<event>Code Formatting (Moon &amp; Just): pass
+Security &amp; Advisory Audit (Moon &amp; Just): pass</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
