@@ -1,0 +1,50 @@
+<task-notification>
+<task-id>a2fc05a5b6fba58d2</task-id>
+<tool-use-id>toolu_01DJLQbo1sqmMGHoDyb8QJtA</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a2fc05a5b6fba58d2.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement TASK-23 (AC-09c, AC-09e regression tests)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Tree is clean, commit `aef88d5` on `main`.
+
+## Summary
+
+**task_id**: TASK-23
+**status**: done
+**test_result**: pass (301/301 in `callisto-graph --lib`, clippy clean, fmt clean)
+**commit_sha**: aef88d5
+
+**steps_completed**:
+1. Confirmed baseline: 18 prior commits (0971005..68af77f) present on `ignore_walk.rs`, tree clean.
+2. Read AC-09c and AC-09e exact criterion text from `.claude/specs/SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json` (also AC-09/AC-09b/AC-09d for pattern comparison).
+3. Discovered the plan's fixture for AC-09c only covered the bare-string clause, omitting the non-string-array-entry clause the spec text explicitly requires ("The same treatment applies to a 'workspaces' array containing one or more non-string entries") — the same gap pattern flagged in prior tasks (TASK-12/14/17/20/21). Added the missing `ac09c_malformed_npm_workspaces_non_string_entry_falls_back_to_absent_filter` test alongside the plan's two supplied tests.
+4. Ran all three new tests — all passed immediately with no implementation change needed (matches the TASK-07..22 "regression-proof" pattern; underlying `read_npm_membership`/`read_package_json_workspaces` in `membership.rs` already `?`-chain-safely handles bare-string, non-string-entry, and JSON-syntax-invalid shapes, wired into `IgnoreWalkLocator::projects()` since TASK-06).
+5. Adversarially verified non-vacuousness: temporarily broke `read_package_json_workspaces` in `membership.rs` (defaulting malformed shapes to a matching-nothing globset instead of `None`/absent), confirmed all three tests failed, then restored the original file (verified zero `git diff` against HEAD afterward).
+6. Ran `cargo fmt -p callisto-graph` and `cargo clippy -p callisto-graph --all-targets -- -D warnings` (clean).
+7. Ran full `cargo test -p callisto-graph --lib` (301 passed, 0 failed).
+8. Committed as `aef88d5`.
+
+**criteria_evidence**:
+```json
+[
+  {
+    "criterion_id": "AC-09c",
+    "test_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs",
+    "test_line": 1355,
+    "implementation_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs",
+    "implementation_line": 288
+  },
+  {
+    "criterion_id": "AC-09e",
+    "test_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs",
+    "test_line": 1397,
+    "implementation_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs",
+    "implementation_line": 289
+  }
+]
+```
+(AC-09c's second clause — non-string-entry — is additionally proven by the test at ignore_walk.rs:1374, pointing to the same `membership.rs:288` implementation.)
+
+No implementation changes were required; no concerns or contradictions found. The only deviation from the plan was adding the missing non-string-entry integration test for AC-09c's second clause.</result>
+<usage><subagent_tokens>72933</subagent_tokens><tool_uses>28</tool_uses><duration_ms>445280</duration_ms></usage>
+</task-notification>
