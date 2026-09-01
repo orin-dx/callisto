@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bcwzvjbc3</task-id>
+<tool-use-id>toolu_01L68YroT3n6FhY6Frv5GqA1</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8a85b651-0c9a-44fa-9e0a-ac694c4409e1/tasks/bcwzvjbc3.output</output-file>
+<status>completed</status>
+<summary>Background command "cargo test -p callisto-cli --lib 2&gt;&amp;1 | tail -20" completed (exit code 0)</summary>
+</task-notification>
