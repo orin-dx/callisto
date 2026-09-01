@@ -1,0 +1,23 @@
+<task-notification>
+<task-id>a01ccedcf508ad090</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a01ccedcf508ad090.output</output-file>
+<status>completed</status>
+<summary>Agent "Verify walk.rs claims against spec" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I completed the trace the peer session requested, but I'm unable to route a reply back to them — `SendMessage` reports no reachable agent for either `canon:canon-auditor` or `canon-auditor`, and there's no `ListAgents` tool available in this environment to find the correct address. That session may have already ended or isn't addressable from here.
+
+Here's what I found, for your own use:
+
+**The spec file changed significantly since my round-3 audit** — it's now on round 7+ (176 → 189+ lines), with new machinery: `claiming_ecosystems` and `path_native_keys` local maps, a restricted `IdentityIndex.prefixed` population rule, a new `resolve_human` branch, a single consolidated placement for ALREADY-PROMOTED-NAME DETECTION, and a new AC-25 that has this spec directly edit `.claude/specs/track-f-resolution-extraction.json`'s AC-F6 (previously deferred to SPEC-TRACK3B2).
+
+Tracing the peer's four questions against current `walk.rs`/`identity.rs`/`config/groups.rs`:
+
+1. **PROMOTION PREDICATE / `claiming_ecosystems`** — all line citations check out exactly against real source (walk.rs:64-70, 77-78, 101-108, 121-123, 165).
+2. **`path_native_keys` / STALE-KEY REWRITE location (3)** — unambiguous; consistently scoped to branch (i) only, matching the GUARD section.
+3. **ALREADY-PROMOTED-NAME DETECTION placement vs. GUARD/ORDERING STATEMENT — real contradiction found.** The detection-fix paragraph says branch (ii) should, as part of its upfront lookup (which runs *before* the decls loop at walk.rs:84-124), "insert into `package_manifest_decls` under its own Prefixed key" — but `package_manifest_decls` needs `Vec&lt;ManifestDecl&gt;`, which doesn't exist until that decls loop runs. The GUARD section separately (and correctly) says that insert actually happens later, at the normal `walk.rs:126-128` site. Two parts of the same spec entry give conflicting, and one impossible, timing for the same step.
+4. **Line-number accuracy** — every sampled citation (~15 across walk.rs, plus groups.rs:147/150/178/181) matches the current source exactly.
+
+If you want this relayed, you'll need to point me at a reachable address for that session, or relay it yourself.</result>
+<usage><subagent_tokens>182510</subagent_tokens><tool_uses>10</tool_uses><duration_ms>144089</duration_ms></usage>
+</task-notification>
