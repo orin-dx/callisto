@@ -1,0 +1,1 @@
+I think both but we need to heavily strengthen the TDD side of our codebase because this should have been caught by tests. That means our test coverage is not even close to appropriate at all.
