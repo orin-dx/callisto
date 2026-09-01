@@ -1,0 +1,20 @@
+<task-notification>
+<task-id>ae3cc6071d1e39a1b</task-id>
+<tool-use-id>toolu_013bgjqtxj1VAMCNczewJA1t</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/ae3cc6071d1e39a1b.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix Track 3b spec gaps, round 4" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>The corrected spec is valid JSON and has been written to the same file path, overwriting it.
+
+I applied all three fixes from the canon-auditor's 4th-round failure, verifying every citation against the real source before committing to wording:
+
+**Issue 1 (walk.rs:40-170 read fresh):** Confirmed `package_manifest_decls` (declared walk.rs:53-54, `.insert()` at walk.rs:126-129) discards the existing entry's ecosystem via `_` in `if let Some((existing_path, _)) = ...`, and that the final `packages` map (walk.rs:144) takes its `id` straight from this map's keys. Appended the third stale-key location to the `ManifestWalkResolver::build` api_surface entry and corrected "TWO...both required" to "THREE...all three required" at its one occurrence in the spec.
+
+**Issue 2 (track-f-resolution-extraction.json read fresh):** Confirmed AC-F6 still pins the old two-argument call-site text. Added a sentence to `scope` making the sibling-file edit explicitly in-scope for this spec's implementer, and added new criterion **AC-19** requiring the edit to have actually landed (exact three-argument text present, api_surface signature updated, all other criteria in that file byte-for-byte unchanged).
+
+**Issue 3 (identity.rs:240-300 and config/groups.rs read fresh):** Confirmed lines 278-286 are the sibling-disambiguation branch (returns `Ok`, requires non-empty `siblings`) and the true `AmbiguousName` return is at identity.rs:292-297, reached via the final `else` of the `candidates.is_empty()` check at line 288. Confirmed both `resolve_human` call sites (config/groups.rs:147, 178) pass `&amp;[]` via grep. Rewrote AC-06's citation to walk through the precise branch sequence with exact line numbers.
+
+Also updated `revision_note` to describe this 4th-round correction. File: `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/spec-track3b-identity-resolution.json`</result>
+<usage><subagent_tokens>88891</subagent_tokens><tool_uses>16</tool_uses><duration_ms>117762</duration_ms></usage>
+</task-notification>
