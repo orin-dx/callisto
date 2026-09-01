@@ -6,6 +6,7 @@
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
+use std::io::Read;
 use std::str::FromStr;
 
 use schemars::JsonSchema;
@@ -219,6 +220,26 @@ impl ArtifactDigest {
     /// Hashes the exact artifact bytes without normalization.
     pub fn from_bytes(bytes: impl AsRef<[u8]>) -> Self {
         Self::from_sha256(bytes)
+    }
+
+    /// Streams exact artifact bytes into SHA-256 without retaining the full
+    /// asset in memory. Release artifacts can be substantially larger than
+    /// manifests, so executor verification must use this path.
+    pub fn from_reader(mut reader: impl Read) -> std::io::Result<(Self, u64)> {
+        let mut hasher = Sha256::new();
+        let mut length = 0_u64;
+        let mut buffer = [0_u8; 64 * 1024];
+        loop {
+            let read = reader.read(&mut buffer)?;
+            if read == 0 {
+                break;
+            }
+            hasher.update(&buffer[..read]);
+            length = length.checked_add(read as u64).ok_or_else(|| {
+                std::io::Error::new(std::io::ErrorKind::InvalidData, "artifact exceeds supported length")
+            })?;
+        }
+        Ok((Self(format!("{:x}", hasher.finalize())), length))
     }
 }
 
