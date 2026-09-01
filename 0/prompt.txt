@@ -1,0 +1,73 @@
+Some thinking from gemini on how to stop these from happening going forward:
+
+  ### Root Cause Retrospective: Why Did These Slip Through?                                                                                                         
+                                                                                                                                                                    
+  #### 1. "Happy Path" Implementation Assumptions                                                                                                                   
+                                                                                                                                                                    
+  • The Gap: Features were coded against simplified mental models rather than full ecosystem specifications.                                                        
+  • Examples:                                                                                                                                                       
+      • Assuming all PEP 440 versions have 3 parts (major.minor.patch), missing 2-part versions like version = "1.2" (Bug 7).                                       
+      • Assuming git tag ref names are always bare strings without "refs/tags/" prefixes (Bug 13).                                                                  
+      • Assuming pathspecs match identically on Linux and Windows without testing Windows backslashes \ against POSIX forward slashes / (Bug 14).                   
+                                                                                                                                                                    
+                                                                                                                                                                    
+  #### 2. Author-Biased Unit Test Coverage                                                                                                                          
+                                                                                                                                                                    
+  • The Gap: Unit tests written alongside features only verified inputs anticipated by the author.                                                                  
+  • Examples:                                                                                                                                                       
+      • Testing callisto publish with happy-path mock runners, but never asserting CLI exit code behavior when publishing fails (Bug 20).                           
+      • Testing TagIndex with default pkg@version tags, but never testing custom package tag_template overrides (Bug 19).                                           
+      • Testing changelog::prepend on Linux \n files, but never testing Windows CRLF (\r\n) line endings (Bug 4).                                                   
+                                                                                                                                                                    
+                                                                                                                                                                    
+  #### 3. Duplicated Helper Logic Across Crates                                                                                                                     
+                                                                                                                                                                    
+  • The Gap: Writing ad-hoc helper routines in different crates rather than centralizing them under single, tested workspace traits.                                
+  • Examples:                                                                                                                                                       
+      • CargoToml::open stripped BOM headers, but WorkspaceCargoResolver::load duplicated TOML parsing without BOM stripping (Bug 17).
+      • PyprojectToml stripped BOM on read, but omitted format fingerprinting during write operations.
+  
+
+  #### 4. Missing Property-Based Testing (proptest) & Fuzzing
+  
+  • The Gap: Static hand-crafted test cases miss edge cases that randomized property testing catches immediately.
+  • Examples:
+      • Testing SemVerVersioning::bump_prerelease with alpha.1 (dotted), but missing alpha1 (un-dotted) (Bug 15).
+      • Testing split_name_and_rest with "foo": patch, but missing escaped quotes "my\"pkg": patch (Bug 16).
+  
+
+  #### 5. Incomplete Loop & State Validation
+  
+  • The Gap: Mutating state maps without validating nested types or re-enqueuing affected nodes in iterative graph solvers.
+  • Examples:
+      • Escalating linked group severity in cascade.rs without re-enqueuing member id into worklist (Bug 1).
+      • Updating npm overrides table keys without checking if tbl[name] is a nested Object vs a String scalar (Bug 8).
+  
+  ──────
+  ### What We Need to Stop Bugs From Slipping Through
+  
+  To guarantee these defects are eliminated and prevent future regressions, we institute 4 Systemic Quality Gates:
+  
+    ┌────────────────────────────────────────────────────────────────────────┐
+    │            4 SYSTEMIC QUALITY GATES                             │
+    ├───────────────────┬────────────────────────────────────────────────────┤
+    │ QUALITY GATE      │ MANDATE & ENFORCEMENT                              │
+    ├───────────────────┼────────────────────────────────────────────────────┤
+    │ 1. Mandatory OS & │ Every file parser and path handler MUST be tested  │
+    │    Spec Boundary  │ against CRLF (\r\n), UTF-8 BOM (\u{FEFF}), Windows │
+    │    Matrix         │ backslashes (\), and 2-part version numbers.       │
+    ├───────────────────┼────────────────────────────────────────────────────┤
+    │ 2. Mandatory      │ Require proptest generators for all parsing and    │
+    │    Property       │ manifest writing functions to assert:              │
+    │    Testing        │ Parse(T) -> Mutate -> Serialize == T               │
+    ├───────────────────┼────────────────────────────────────────────────────┤
+    │ 3. CLI Failure    │ Integration tests in callisto-cli MUST assert      │
+    │    Exit Code      │ ExitCode::FAILURE whenever subcommands encounter   │
+    │    Assertions     │ publish or graph errors.                           │
+    ├───────────────────┼────────────────────────────────────────────────────┤
+    │ 4. Single-Trait   │ Unify TOML parsing, BOM stripping, path norm,      │
+    │    Centralization │ and atomic write under CstManifestEditor and       │
+    │            │ DurableStorage (zero duplicate parsing logic).     │
+    └───────────────────┴────────────────────────────────────────────────────┘
+
+How can we best do this? Think through it, research, reason and plan
