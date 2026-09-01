@@ -1,0 +1,135 @@
+<task-notification>
+<task-id>a89be1dce1b654d47</task-id>
+<tool-use-id>toolu_01817JHvEQjwry7ov3g6wvya</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a15bbbf7-aba0-415d-bfdc-c773ea65cfc7/tasks/a89be1dce1b654d47.output</output-file>
+<status>completed</status>
+<summary>Agent "Audit: manifest format parsing edge cases" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Now I have a complete picture. Let me compile the audit findings.
+
+---
+
+## Manifest Layer Audit Findings
+
+---
+
+### [High] `WorkspaceCargoResolver` drops BOM on every write — same bug class as the already-fixed `CargoToml` instance
+
+- **Status**: CONFIRMED (end-to-end trace complete; already flagged as "unverified" in the FINDINGS ledger; now verified against current code)
+- **Location**: `crates/callisto-manifests/src/cargo.rs:488` (load, no BOM detection), `cargo.rs:641-649` (persist, no BOM restoration)
+- **Classification**: Silent Fallback / Boundary Condition (I/O Safety)
+- **Root Cause**: `WorkspaceCargoResolver::load` reads the file with `fs::read_to_string` at line 488 with no BOM detection and no `has_bom: bool` field. `toml_edit` strips the BOM on parse internally and does not re-emit it on `document.to_string()`. `WorkspaceCargoResolver::persist` at line 641 calls `self.document.to_string()` directly, dropping the BOM silently. There is no equivalent of `CargoToml`'s `has_bom` guard and `format!("\u{FEFF}{}", text)` prefix (which are present at `cargo.rs:35-36` and `cargo.rs:104-106` for the per-member type but completely absent for the workspace resolver type).
+- **Failing Scenario**: A Windows-generated workspace-root `Cargo.toml` with a UTF-8 BOM. Any cascade or version bump that touches workspace-inherited members calls `write_version` → new `WorkspaceCargoResolver::load` → `write_version(v, permit)` → `persist()` (line 574), or `update_dependency_spec` on an inherited dep → `ws_res.write_dependency(name, new, permit)` (line 293) → `persist()` (line 638). Both paths go through `WorkspaceCargoResolver::persist` at line 641, and both silently strip the BOM on every write.
+- **Verification Strategy**: Write a `Cargo.toml` with a UTF-8 BOM, a `[workspace]` section with `[workspace.package] version = "1.0.0"`, and a member with `version.workspace = true`. Call `WorkspaceCargoResolver::load(&amp;root_path).unwrap().write_version(&amp;v, &amp;permit).unwrap()`. Assert the written bytes start with `0xEF 0xBB 0xBF`.
+
+---
+
+### [Medium] `[target.cfg(...).dependencies]` platform-conditional dependencies completely invisible to cascade
+
+- **Status**: CONFIRMED (static analysis — `iter_dependencies` and `update_dependency_spec` section lists verified)
+- **Location**: `crates/callisto-manifests/src/cargo.rs:232-234` (`iter_dependencies` section array), `cargo.rs:296-301` (`update_dependency_spec` `section_name` match)
+- **Classification**: Spec Drift / Boundary Condition
+- **Root Cause**: `iter_dependencies` at line 232 iterates only over `["dependencies", "dev-dependencies", "build-dependencies"]`. `update_dependency_spec` at lines 296-301 maps `DepKind` to the same three section names. Neither visits `[target.'cfg(...)'.dependencies]`, `[target.'cfg(...)'.dev-dependencies]`, or `[target.'cfg(unix)'.build-dependencies]` — the full set of platform-conditional dependency tables that Cargo supports. A workspace member that pins an in-workspace sibling exclusively via a target-conditional section is completely invisible to Callisto. The sibling can be bumped and the member's pin will never be rewritten.
+- **Failing Scenario**: Crate `foo` has in its `Cargo.toml`:
+  ```toml
+  [target.'cfg(unix)'.dependencies]
+  my-lib = { path = "../my-lib", version = "1.0.0" }
+  ```
+  `my-lib` gets a major bump to `2.0.0`. `callisto version` rewrites `my-lib/Cargo.toml` but never touches `foo/Cargo.toml`. `foo` still pins `my-lib` at `version = "1.0.0"` even after the bump. `cargo build` then fails on the version constraint mismatch.
+- **Verification Strategy**: Add a fixture Cargo workspace where one member depends on another via `[target.'cfg(unix)'.dependencies]`. Assert that after a `callisto version` bump of the dependency, the dependent's `[target]` section version is also rewritten.
+
+---
+
+### [Medium] `[project.optional-dependencies]` (PEP 621 extras) not visited by `iter_dependencies` or `update_dependency_spec`
+
+- **Status**: CONFIRMED (`python.rs:213-282` traced — only `[project].dependencies` array and `[tool.poetry.dependencies]` table are visited)
+- **Location**: `crates/callisto-manifests/src/python.rs:213-282` (`iter_dependencies`), `python.rs:300-370` (`update_dependency_spec`)
+- **Classification**: Spec Drift
+- **Root Cause**: PEP 621 defines `[project.optional-dependencies]` as a table mapping extra names to arrays of PEP 508 requirement strings (e.g., `[project.optional-dependencies] security = ["cryptography&gt;=41.0.0"]`). `iter_dependencies` checks `self.document.get("project").and_then(|p| p.get("dependencies"))` at line 215 — this gets only the top-level `[project].dependencies` array. The `[project.optional-dependencies]` sub-table is a sibling key, never accessed. `update_dependency_spec` has the same gap — it only modifies `[project].dependencies` entries and `[tool.poetry.dependencies]` table entries.
+- **Failing Scenario**: Python app `app` declares an in-workspace sibling in its optional extras:
+  ```toml
+  [project.optional-dependencies]
+  full = ["my-lib&gt;=1.0.0"]
+  ```
+  `my-lib` is bumped to `2.0.0`. Callisto considers `app` has no dependency on `my-lib` (since `iter_dependencies` never yields it), so `app`'s optional-extras pin is never rewritten. Users installing `app[full]` get `my-lib 1.x` while the workspace now requires `2.x`.
+- **Verification Strategy**: Fixture `pyproject.toml` with a sibling under `[project.optional-dependencies]`. Assert `iter_dependencies` yields it. Assert `update_dependency_spec` rewrites it.
+
+---
+
+### [Medium] `python.rs::update_dependency_spec` silently returns `Ok(())` when the package is not found in any section — diverges from `cargo.rs` and `npm.rs` contract
+
+- **Status**: CONFIRMED (`python.rs:362-371` traced end-to-end; `cargo.rs:314-319` and `npm.rs:279-283` compared)
+- **Location**: `crates/callisto-manifests/src/python.rs:362-371`
+- **Classification**: Silent Fallback
+- **Root Cause**: After attempting to update `[project].dependencies` (lines 303-338) and `[tool.poetry.dependencies]` (lines 341-359), the function checks `if updated { ... write ... }` at line 362 and returns `Ok(())` unconditionally at line 370 regardless of whether `updated` is `true` or `false`. If neither section contains the named package, the disk file is unchanged and no error is returned. The `cargo.rs` implementation returns `ManifestError::DependencyNotFound` at line 314 when the target section is absent. The `npm.rs` implementation returns the same at line 279. The Python implementation has no such guard.
+- **Failing Scenario**: Any future code path that calls `update_dependency_spec` on a `PyprojectToml` for a package that only appears in `[project.optional-dependencies]` (which `iter_dependencies` does not yield) would produce a silent no-op that the caller mistakes for success. The cascade reports the update applied; the file on disk retains the old pin.
+- **Verification Strategy**: Call `update_dependency_spec("nonexistent-lib", DepKind::Runtime, new_spec, &amp;permit)` on a `PyprojectToml` whose `[project].dependencies` does not include that name. Assert `Err(ManifestError::DependencyNotFound)` is returned.
+
+---
+
+### [Low] `WorkspaceInheritance::inheritance()` silently swallows workspace version parse errors — produces a misleading downstream error
+
+- **Status**: CONFIRMED (`cargo.rs:509-537` traced)
+- **Location**: `crates/callisto-manifests/src/cargo.rs:516`
+- **Classification**: Silent Fallback
+- **Root Cause**: The version extraction at line 512-516 uses `.and_then(|s| Version::parse(s, VersionGrammar::SemVer).ok())`. The `.ok()` converts a parse failure into `None`. If `[workspace.package].version` is present but malformed (e.g., `version = "not-a-version"` or a date like `"2024-01-01"`), the error is discarded and `WorkspaceInheritance { version: None }` is returned. A member crate with `version.workspace = true` then calls `current_version()`, which finds `inh.version` is `None` and returns `Err(ManifestError::WorkspaceInherited { key: "version" })` at `cargo.rs:173` — a misleading error that says the value is inherited (true) but gives no indication the workspace version itself is invalid.
+- **Failing Scenario**: `[workspace.package] version = "latest"` in root `Cargo.toml`. Member with `version.workspace = true`. `callisto version` reports `ManifestError::WorkspaceInherited`, not `ManifestError::InvalidVersion`. A user following the error message tries to set `version` explicitly on the member, which doesn't fix the root cause.
+- **Verification Strategy**: Assert that `WorkspaceCargoResolver::inheritance()` on a root with `[workspace.package] version = "not-semver"` either returns an `Err` with `InvalidVersion`, or returns `Ok(WorkspaceInheritance { version: None })` where `None` is distinguished from "no version declared" in a follow-up error.
+
+---
+
+### [Medium] npm `"0.0.0-use.local"` placeholder version is parsed as a bumpable SemVer prerelease — bumped to `0.0.0` if package lacks `"private": true`
+
+- **Status**: PLAUSIBLE (code path traced; requires specific user omission to trigger, not a use-pattern universally wrong)
+- **Location**: `crates/callisto-manifests/src/npm.rs:193-209` (`current_version`), `crates/callisto-format/src/bump.rs:70-91` (`SemVerVersioning::bump` prerelease branch)
+- **Classification**: Boundary Condition / Spec Drift
+- **Root Cause**: `"0.0.0-use.local"` is valid SemVer — the prerelease identifier `use.local` passes the grammar. `current_version()` at line 203 parses it as `Version("0.0.0-use.local")` with `grammar = SemVer`. `is_publishable()` at lines 165-175 returns `true` if `"private"` is absent. When the cascade bump runs on this package, `SemVerVersioning::bump(current, Patch)` enters the `is_prerelease()` branch at line 70 and returns `Version::semver(0, 0, 0)` — the base release, which is lower than the input in npm's pre-release ordering. The package goes from `0.0.0-use.local` to `0.0.0` in the manifest, and the publish plan includes it targeting the npm registry.
+- **Failing Scenario**: pnpm monorepo where local-only packages use `"version": "0.0.0-use.local"` (a common convention) but do not set `"private": true`. `callisto version` treats them as publishable, bumps them to `0.0.0`, and includes them in the publish plan.
+- **Verification Strategy**: Create a `package.json` with `"version": "0.0.0-use.local"` and no `"private": true`. Assert `is_publishable()` returns `false` OR `current_version()` returns a special sentinel, OR the version bump refuses to produce a lower version.
+
+---
+
+### [Low] `parse_changeset` gives a misleading `InvalidSeverity` error when a changeset entry name contains an embedded `"` character
+
+- **Status**: CONFIRMED (`changeset/frontmatter.rs:49` traced; `write_changeset` at `changeset/mod.rs:228-232` correctly blocks the write path)
+- **Location**: `crates/callisto-format/src/changeset/frontmatter.rs:49`
+- **Classification**: Boundary Condition
+- **Root Cause**: `split_name_and_rest` finds the closing quote of a quoted name using `after_quote.find('"')` at line 49, which returns the index of the **first** `"` after the opening quote. There is no backslash-escape convention (correctly documented in `WriteError::NameContainsQuote`), so a name like `"my "pkg"": patch` causes `find('"')` to terminate the name at `my `, leaving `pkg"": patch` as the "rest" field. This fails `Severity::from_str("pkg\"\"")`, producing `ParseError::InvalidSeverity { name: "my ", source: ... }` — a misleading error that blames the severity and truncates the name, rather than pointing to the embedded quote.
+- **Failing Scenario**: A hand-edited changeset file with `"my \"pkg\"": patch` on an entry line (from a user who assumed backslash-escape would work). The error message says `invalid severity for package "my "` — the user gets confused because the severity `patch` is clearly correct and the package name is garbled.
+- **Verification Strategy**: `parse_changeset("---\n\"foo \"bar\": patch\n---\n\nSummary.\n")` — assert the result is `Err(ParseError::UnclosedQuotedName)` or a new `ParseError::EmbeddedQuoteInName` variant, not `Err(ParseError::InvalidSeverity)`.
+
+---
+
+## Questions Addressed Directly
+
+**Cargo `[patch]` / `[replace]` sections**: Not walked by `iter_dependencies` — by design and correct. These sections override external registry crates for local development; they are not the primary dependency declarations for workspace members and don't need version cascade updates.
+
+**Virtual manifest (no `[package]`)**: `is_publishable()` at `cargo.rs:126-128` returns `false` early when `[package]` is absent. `package_name()` and `current_version()` return `MissingField` errors. Behavior is correct and consistent.
+
+**Git dependencies / path-only dependencies**: `parse_cargo_dep_item` at `cargo.rs:359-391` falls through to `DepSpec::Opaque(...)` for `{ git = "..." }` or `{ path = "..." }` entries with no `version` key. Opaque specs are not round-tripped. Correct behavior — no errors, no silent mutations.
+
+**npm `"private": true`**: Handled at `npm.rs:169-173`. ✓
+
+**npm `"workspaces"` glob patterns**: Member discovery is in the graph layer (`callisto-graph`), not the manifest layer. The manifest layer only reads individual `package.json` files that the graph layer has already located.
+
+**npm scoped packages `@scope/name`**: `package_name()` reads the raw JSON string field — `@scope/name` passes through unchanged. `needs_quoting()` at `frontmatter.rs:92-119` flags names starting with `@` for quoting in changeset files. Both are correct. ✓
+
+**Python dynamic version**: `current_version()` returns `ManifestError::MissingField { field: "project.version / tool.poetry.version" }` — correct in that it doesn't panic, but the error gives no hint the user declared `dynamic = ["version"]`. Low-severity UX gap.
+
+**Python `[tool.poetry]` AND `[project]` both present**: `[project]` wins for `package_name()`, `current_version()`, and `write_version()` (checked first in all three). `iter_dependencies` reads BOTH sections and yields entries from both, which could produce duplicate entries if the same package appears in both. `update_dependency_spec` also tries both sections — correct for dual-schema files.
+
+**Atomic write — cross-filesystem rename**: Not possible. `NamedTempFile::new_in(parent)` at `atomic.rs:44` places the temp file in the same directory as the target. `persist` (which calls `std::fs::rename` internally) is therefore always same-device. ✓
+
+**Atomic write — read-only filesystem**: `create_dir_all` or `NamedTempFile::new_in` fails with an `io::Error`, propagated to the caller. ✓
+
+**Atomic write — concurrent writes**: POSIX `rename(2)` is atomic. Last writer wins. No partial-write visible to readers. ✓
+
+**Changeset CRLF**: `parse_changeset` at `changeset/mod.rs:148` normalizes `\r\n` → `\n` before any parsing. ✓
+
+**Changeset severity case sensitivity**: `Severity::from_str` at `severity.rs:37` uses `to_ascii_lowercase()` before matching. `PATCH`, `Patch`, `patch` all parse. ✓
+
+**Changeset duplicate entries**: Detected by `first_seen` HashMap at `changeset/mod.rs:170-186`, returns `ParseError::DuplicateEntry`. ✓
+
+**Changeset whitespace-only frontmatter**: Blank lines are skipped at line 174. Whitespace-only frontmatter with non-empty summary parses as `Changeset { entries: [], summary }` — valid per spec §6.1. ✓</result>
+<usage><subagent_tokens>98418</subagent_tokens><tool_uses>16</tool_uses><duration_ms>406276</duration_ms></usage>
+</task-notification>
