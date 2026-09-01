@@ -1,0 +1,1 @@
+We need to think through our spec for matrix and do a proper evaluation, research, and spec proposal here. What do we need to be able to provide to publish multi-language packages with native dependencies. Say if we're also publishing rust binaries to GH for example too. Or go binaries that will go into a brew setup
