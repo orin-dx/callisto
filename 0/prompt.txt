@@ -1,0 +1,7 @@
+1. It depends on the configuration. If the packages are linked it should affect all. Otherwise only those included.
+
+2. Why is this an issue?
+
+3. How does our workflow work then?
+
+4. What's the best option here? We want to have things work out of the box but be customizable if need be
