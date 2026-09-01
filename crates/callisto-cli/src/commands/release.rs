@@ -9,9 +9,9 @@
 use std::process::ExitCode;
 
 use callisto_graph::commands::{
-    build_release_intent, derive_selected_release_decision, execute_release_with_artifacts,
-    reconcile_release_execution, validate_release_intent, PreparedReleaseEffectAdapter, ReleaseStateStore,
-    VersionOptions,
+    build_release_intent, derive_release_commit_decision, derive_selected_release_decision,
+    execute_release_with_artifacts, reconcile_release_execution, validate_release_intent, PreparedReleaseEffectAdapter,
+    ReleaseStateStore, VersionOptions,
 };
 use callisto_graph::locate::IgnoreWalkLocator;
 use callisto_model::{
@@ -43,22 +43,32 @@ fn plan(args: ReleasePlanArgs, global: &GlobalArgs) -> Result<ExitCode, CliError
             "release plan needs an output file; remove --dry-run because planning is already read-only".to_string(),
         ));
     }
-    let selections = args
-        .packages
-        .iter()
-        .map(|raw| {
-            ReleasePackageId::parse(raw).map_err(|error| {
-                CliError::Other(format!(
-                    "invalid release package `{raw}`: {error}; use an exact ecosystem-qualified identity such as cargo/callisto-cli"
-                ))
-            })
-        })
-        .collect::<Result<Vec<_>, _>>()?;
     let runner = CliCommandRunner;
     let workspace = load_workspace(global, &runner)?;
-    let inference = select_inference();
-    let version_plan = callisto_graph::commands::plan_version(&workspace, &inference, &VersionOptions::default())?;
-    let decision = derive_selected_release_decision(&workspace, &version_plan, &selections)?;
+    let decision = match args.from_release_commit.as_deref() {
+        Some(raw) => {
+            let commit = callisto_model::CommitSha::parse(raw)
+                .map_err(|error| CliError::Other(format!("invalid merged release commit `{raw}`: {error}")))?;
+            derive_release_commit_decision(&workspace, &commit)?
+        }
+        None => {
+            let selections = args
+                .packages
+                .iter()
+                .map(|raw| {
+                    ReleasePackageId::parse(raw).map_err(|error| {
+                        CliError::Other(format!(
+                            "invalid release package `{raw}`: {error}; use an exact ecosystem-qualified identity such as cargo/callisto-cli"
+                        ))
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let inference = select_inference();
+            let version_plan =
+                callisto_graph::commands::plan_version(&workspace, &inference, &VersionOptions::default())?;
+            derive_selected_release_decision(&workspace, &version_plan, &selections)?
+        }
+    };
     let locator = IgnoreWalkLocator::new(&workspace.root);
     let intent = build_release_intent(
         &workspace.root,

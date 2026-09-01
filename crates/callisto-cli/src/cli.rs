@@ -261,9 +261,22 @@ pub enum ReleaseArgs {
 
 #[derive(Args, Clone, Debug)]
 pub struct ReleasePlanArgs {
-    /// Exact qualified package identity, for example `cargo/callisto-cli`. Repeat this flag to select multiple packages.
-    #[arg(long = "package", required = true, value_name = "ECOSYSTEM/NAME")]
+    /// Exact qualified package identity, for example `cargo/callisto-cli`. Repeat this flag to select multiple packages. This local/manual mode cannot be combined with --from-release-commit.
+    #[arg(
+        long = "package",
+        value_name = "ECOSYSTEM/NAME",
+        conflicts_with = "from_release_commit",
+        required_unless_present = "from_release_commit"
+    )]
     pub packages: Vec<String>,
+    /// Exact merged release-PR commit checked out in this workspace. CI derives the roster from its versioned manifest delta and never reruns changeset planning.
+    #[arg(
+        long,
+        value_name = "SHA",
+        conflicts_with = "packages",
+        required_unless_present = "packages"
+    )]
+    pub from_release_commit: Option<String>,
     /// Explicit path where the immutable intent JSON will be atomically written.
     #[arg(long, value_name = "FILE")]
     pub out: PathBuf,
@@ -350,6 +363,30 @@ mod tests {
             help.len() > 20,
             "--strict help text is too short to be meaningful: {help:?}"
         );
+    }
+
+    #[test]
+    fn release_plan_requires_exactly_one_authority_mode() {
+        let command = Cli::command();
+        let release = command
+            .get_subcommands()
+            .find(|subcommand| subcommand.get_name() == "release")
+            .expect("release command exists");
+        let plan = release
+            .get_subcommands()
+            .find(|subcommand| subcommand.get_name() == "plan")
+            .expect("release plan command exists");
+        let package = plan
+            .get_arguments()
+            .find(|argument| argument.get_long() == Some("package"))
+            .expect("package selector exists");
+        let commit = plan
+            .get_arguments()
+            .find(|argument| argument.get_long() == Some("from-release-commit"))
+            .expect("release commit selector exists");
+        assert!(package.is_required_set() || commit.is_required_set());
+        assert_eq!(package.get_conflicts(), ["from_release_commit"]);
+        assert_eq!(commit.get_conflicts(), ["packages"]);
     }
 
     /// AC-006/AC-007 (parse slice): `callisto matrix --package foo` parses
