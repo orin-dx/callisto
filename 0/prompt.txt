@@ -1,0 +1,24 @@
+feedback from claude:
+
+Cross-cutting issues (apply to all six)
+
+1. No requirement@1 exists for any of them. No .claude/requirements/ directory exists at all — every spec cites a linked_requirement (REQ-*) with no backing file. Repo-wide process gap, not a defect in any one spec. Needs a decision: backfill requirements, or drop linked_requirement and treat specs as top-level.
+2. A dependency chain is implicit, not stated. GITHUB-HARDENING-003 AC-004 and SOURCE-PROVENANCE-002 both assume PLAN-DURABILITY-001's artifact-handoff/job-split exists. None of the three specs declares this dependency explicitly. Build order must be 001 → (002, 003) if attempted at all.
+3. PLAN-DURABILITY-001 assumes a two-job topology that doesn't exist. Today plan-publish→publish→filter-plan→tag all run in one release job, one shell block, in callisto-action. The artifact-upload/download AC presupposes a job split nothing in the spec calls out as an architecture change.
+
+Per-spec verdicts
+
+001 — Plan Durability: Biggest open risk is the "normalized configuration digest" — no algorithm specified, and PublishPlan's serde skip_serializing_if optional fields make naive JSON hashing unstable. Two failure directions are asymmetric: too-strict fails safe, too-loose executes a stale/wrong plan against real registry credentials. Secret-scanning AC is ambiguous (structural guarantee vs. heuristic regex scan — very different implementations). Needs the digest algorithm and secret-check mechanism pinned down before planning.
+
+002 — Source Provenance: Low implementation risk todayHEAD is stable throughout — the equality check isnearly tautological in the current architecture) but becomes load-bearing the moment 001's job-split ships (a race window opens betweeplan-job and execute-job checkouts). Spec-quality gap:llides with existing ReleaseEntry.sha (plan.rs:130)with no criterion forcing them equal. AC-003 mostly re-specifies already-shipped CreatedTag.already_existed — only the "annotated tag"part is actually new. AC-004/005 (signing policy) are no data shape, no named consumer.
+                                                                                                                                      003 — GitHub Release Hardening: Real, well-scoped gapsual workflow — no top-level permissions:, no SHA-pinned actions, release job over-grants write scopes even for changeset-PR-only runs. Composite-action architecture means the split doesn't  affect external callisto-action consumers (low couplinrisk: a GitHub Environment gate is invisible in theworkflow diff — the actual protection-rule config lives outside the reviewed file, so "references environment:" isn't provable safety without an out-of-band check. AC-001 doesn't state the (same gap noted in cross-cutting #3). AC-005 is likely redundant with AC-001 and should either be cut or rewritten around a concrete mechanism (e.g. CODEOWNERS on .github/workflows/).
+
+004 — Supply Chain Reproducibility: Verified premise is real and currently worse than the spec assumes — the yanked bisync advisory    reaches production code (callisto-cli/callisto-graph),ike the 11 already-ignored advisories. AC-001 ("records the advisory database revision") reads as a native cargo-deny flag; it isn't — recording the db revision requires a workaround         (separate git rev-parse HEAD step against the live adv"bounded exception" is never defined (no max expirystated). AC-004 (secrets out of logs) is untestable — no secrets currently touch this pipeline at all.                                 
+005 — Documentation Authority: All three "stale doc" claims independently verified true (design.md's status header contradicts its own milestones section; version-flow.md describes a bug ineady fixed; error-taxonomy.md's stale claim was already confirmed earlier). AC-001 and AC-004 are the weak points — neither specifies a concrete location/mechanism (where does the authority  index live? what pattern detects a "current behavior ae by both a rigorous and a trivial-compliance solutionequally. AC-004 also risks flagging its own protected historical/plan documents (non_goals conflict).                                  
+006 — Lane Policy: (from earlier report) AC-002's premise is factually false against already-shipped groups.rs conflict-detection code — the spec asks for something that already exists, neeing.
+
+Recommendation
+
+None of the six is implementation-ready as written. Ifrything else leans on its artifact/digest design), pinthe digest algorithm and job-split scope explicitly, then 002/003 in parallel, 004/005/006 are independent and can proceed once their spec-quality gaps (missing mechanisms, false premises,ed by canon:drafter revision passes.
+
+Per your standing instruction, this stays research onlted on any of the six.
