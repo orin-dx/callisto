@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>b15icf5cl</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/c0ad64b2-6440-4937-8328-8d9fd9db278c/tasks/b15icf5cl.output</output-file>
+<status>completed</status>
+<summary>Monitor "wait for vcs+moon full test suite (b3sajdn9e) to finish" stream ended</summary>
+</task-notification>
