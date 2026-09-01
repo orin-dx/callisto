@@ -1,0 +1,20 @@
+<task-notification>
+<task-id>a934e8f2eb35a440d</task-id>
+<tool-use-id>toolu_01FqvnnUC6iUmu37uQ3eU5NK</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a934e8f2eb35a440d.output</output-file>
+<status>completed</status>
+<summary>Agent "Review docs/01-spec.md field-mismatch fixes" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Verification Results
+
+**1. `MissingGroupMember`** — ACCURATE. Doc fields (`group: GroupName, member: String`) and message (`"group `{group}` lists member `{member}`, which was not found in the workspace"`) match `error.rs:123-125` exactly. The new doc comment's 3-branch account of `GroupTable::resolve` (groups.rs:135-204) is verified precisely: tries `index.resolve_human(name, &amp;[])` first, then `index.platform.get(name)`, and only on both failing constructs `MissingGroupMember { group: rg.name.clone(), member: name.clone() }` — `member` is indeed the raw unresolved config string, never a `PackageId`.
+
+**2. `WorkspaceVersionConflict`** — ACCURATE. Fields (`root_manifest: PathBuf, details: String`) and message match `error.rs:164-168` exactly. Independently confirmed via `grep -rn "GraphError::WorkspaceVersionConflict" crates/callisto-graph/src/` (excluding error.rs) — zero production call sites. Independently confirmed via `apply.rs:177-211`: the bump-write loop dispatches `VersionWriteTarget::CargoWorkspacePackage` by loading a fresh `WorkspaceCargoResolver` and calling `write_version(&amp;bump.to, ...)` per bump, with no cross-bump dedup or conflict check — `classify_manifest_writes`'s `resolver_routed`/`excluded` bookkeeping only routes plain `Manifest` writes away from workspace-package roots; it does not dedupe/conflict-check `CargoWorkspacePackage` writes themselves. Both claims hold.
+
+**3. Other prose locations** — untouched by this diff, as intended. The "de-duplicated by root before writing" pseudocode (line 8103, §G.10.2 step 3) and "6b. Typed version write targets" (line 8673) both still describe the aspirational dedup/conflict behavior as if implemented, and are outside this diff's hunks (which only touch 2291-2295 and 2389-2449). Not contradicted by anything newly added.
+
+**4. "All 21 coded variants match real source exactly" — DISCREPANCY (overclaim).** Independently diffing all 19 grouped coded variants against `error.rs`, at least 11 have `#[error(...)]` message text diverging from real source (field names/types do match): `Cycle` ("dependency cycle:" vs real "dependency cycle detected:"), `UnknownPackage` ("unknown package `{id}`" vs real "package `{id}` was not found in the workspace"), `DuplicatePackage`, `AmbiguousName`, `SplitIdentity`, `GrammarMismatch`, `GroupGrammarMismatch`, `FixedGroupDivergent`, `ConflictingGroupMembership`, `OnDiskVersionDrift`, `CascadeNotConverged` — all confirmed via direct grep against `crates/callisto-graph/src/error.rs`. This is pre-existing (not introduced by this diff), but the newly-added claim itself is false as written.
+
+**5. Fence balance** — `grep -c '^```' docs/01-spec.md` = 402 (even, unbroken). Confirmed.</result>
+<usage><subagent_tokens>95281</subagent_tokens><tool_uses>21</tool_uses><duration_ms>314478</duration_ms></usage>
+</task-notification>
