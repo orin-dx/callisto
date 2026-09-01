@@ -1,0 +1,5 @@
+<task-notification>
+<task-id>bzt3g5fru</task-id>
+<summary>Monitor event: "wait for just ci-fast to complete"</summary>
+<event>[Monitor timed out — re-arm if needed.]</event>
+</task-notification>
