@@ -1,0 +1,10 @@
+<task-notification>
+<task-id>b83l0lkqy</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/c0ad64b2-6440-4937-8328-8d9fd9db278c/tasks/b83l0lkqy.output</output-file>
+<status>completed</status>
+<summary>Background command "cargo test -p callisto-graph --lib publish_order &gt; /private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/rebase-test.log 2&gt;&amp;1
+echo "=== cascade_tests.rs ===" &gt;&gt; /private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/rebase-test.log
+cargo test -p callisto-graph --test cascade_tests &gt;&gt; /private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/rebase-test.log 2&gt;&amp;1
+echo DONE_$?" completed (exit code 0)</summary>
+</task-notification>
