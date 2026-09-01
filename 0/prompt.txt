@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>beqyz676s</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/b90cda92-db13-4c63-8d7f-c9fa7d9196ab/tasks/beqyz676s.output</output-file>
+<status>completed</status>
+<summary>Background command "Run clippy on callisto-graph" completed (exit code 0)</summary>
+</task-notification>
