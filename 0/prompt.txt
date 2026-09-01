@@ -1,0 +1,51 @@
+<task-notification>
+<task-id>a2eacd3e6f1c77635</task-id>
+<tool-use-id>toolu_01LCuXRjFFdmBCNzCiS2VmCp</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a2eacd3e6f1c77635.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement TASK-08 (AC-05b regression test)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Task complete.
+
+## Summary
+
+**TASK-08** (AC-05b regression-proof test) is done.
+
+- Read AC-05b from `/Users/gabe/Projects/callisto/.claude/specs/SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json` on disk before writing the test — criterion confirmed: root has no `Cargo.toml` at all, `crates/kept/Cargo.toml` elsewhere must still be admitted as `Ecosystem::Cargo`, treated identically to AC-05 (no filter, not zero admitted, no error).
+- Added `ac05b_admits_cargo_candidates_when_root_has_no_cargo_toml_file_at_all` at `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs:400`.
+- Ran it first: it passed immediately (matching TASK-07's precedent — the fallback logic already exists from TASK-03a/TASK-05, no code path was missing). Rather than trust that characterization, I adversarially broke `read_cargo_membership`'s `Err(_)` branch at `crates/callisto-graph/src/locate/membership.rs:86` (temporarily forcing `members: Some(empty)` instead of `absent_cargo_membership()`), reran, and confirmed the test genuinely fails (`crates/kept must be admitted as Cargo, got: []`) — proving the test isn't vacuous. Reverted the sabotage, reran, confirmed green again.
+- Full suite: `cargo test -p callisto-graph --lib` → 279 passed, 0 failed.
+- `cargo fmt -p callisto-graph` — no changes needed. `cargo clippy -p callisto-graph --all-targets -- -D warnings` — clean.
+- Committed as `498f27c`, pre-commit format-check hook passed.
+- No precision_tests were supplied for this task.
+
+```json
+{
+  "task_id": "TASK-08",
+  "status": "done",
+  "steps_completed": [
+    "read_spec_criterion_AC-05b",
+    "wrote_failing_test",
+    "confirmed_test_passed_immediately",
+    "adversarially_verified_test_is_not_vacuous_by_breaking_and_restoring_fallback",
+    "ran_full_lib_suite_green",
+    "cargo_fmt",
+    "cargo_clippy_clean",
+    "committed"
+  ],
+  "test_result": "pass",
+  "commit_sha": "498f27c",
+  "concerns": "No red-phase existed on the actual task diff, matching the TASK-07 precedent noted in the plan: the Cargo.toml-absent fallback (Err(_) =&gt; absent_cargo_membership()) was already implemented and wired by TASK-03a/TASK-05. Honesty was preserved by adversarially breaking that fallback and confirming the new test fails without it, then restoring it, rather than assuming the plan's 'no red step' note was correct.",
+  "criteria_evidence": [
+    {
+      "criterion_id": "AC-05b",
+      "test_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs",
+      "test_line": 400,
+      "implementation_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs",
+      "implementation_line": 86
+    }
+  ]
+}
+```</result>
+<usage><subagent_tokens>62755</subagent_tokens><tool_uses>34</tool_uses><duration_ms>745809</duration_ms></usage>
+</task-notification>
