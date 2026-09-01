@@ -1,0 +1,3 @@
+I’m calling bullshit in all of this. You missed something critical and I’m not even confident on your ability to to find all of the issues.
+
+I think you need to evaluate our codebase a lot closer to make sure our complete publishing of crates, along with npm and python packages appropriately. Please also consider performance and dx/ux. We want our tool to be foolproof and bulletproof.
