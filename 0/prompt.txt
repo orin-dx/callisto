@@ -1,0 +1,24 @@
+<task-notification>
+<task-id>a0ad9dd5e7226d12b</task-id>
+<tool-use-id>toolu_016T7R7BZCExDpLbx9H3Hwoo</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a0ad9dd5e7226d12b.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix Track 3b exit-gate blockers" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All five blockers are resolved and the file is valid JSON with no leftover drifted citations. The corrected spec has been written to the same path, overwriting the original.
+
+Summary of what changed at `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/spec-track3b-identity-resolution.json`:
+
+1. **Blocker 1 (promotion undefined for multi-ecosystem paths)** — Rewrote the `ManifestWalkResolver::build` api_surface entry to define promotion as a **set-disjointness** test (not set-inequality): promote only when colliding paths' ecosystem sets share zero ecosystems; any overlap is `GraphError::DuplicatePackage`. Also specified that a promoted multi-ecosystem (Case D) path mints exactly one `PackageId::Prefixed` keyed on its existing `primary_ecosystem` (via `ecosystem_primary_priority`, walk.rs:495-501), never one Prefixed id per ecosystem. Added new **AC-29** (`is_error_case: true`) with the exact Case D `{Cargo,Npm}` vs. single-ecosystem `{Npm}` fixture asserting `Err(DuplicatePackage)`.
+
+2. **Blocker 2 (AC-27 forbade the required edit)** — Rewrote AC-27 to explicitly require editing track-g's `MatrixReport` api_surface "Package identity and collision semantics" paragraph, supplying the exact replacement text (display_name()-based map keys per AC-22/AC-26) and a new sentence stating `PlatformTarget.package_name` (matrix.rs:154) is a deliberate exception that stays bare-name. Widened the diff clause accordingly.
+
+3. **Blocker 3 (misattributed serde example)** — Corrected AC-13, AC-17, and the `resolve_native_with_fallback` api_surface entry to cite docs/01-spec.md:6075-6076 (§G.4.2, verified verbatim), and reworded the "reproduces exactly" claim to "mirrors the stated intent in the opposite direction," matching the fixture's actual direction.
+
+4. **Blocker 4 (4 drifted citations)** — Corrected consistently everywhere: `matrix.rs:9-10` → `10-11`; `commands/matrix.rs:44` → `:46` (for the `id: p.id.clone()` reference); `publish.rs:11-14`/`12-16` → `13-15`; `build_matrix_report` `452-483`/`459-483` → `456-493`.
+
+5. **Blocker 5 (inconsistent is_error_case)** — Set AC-15 and AC-16 to `is_error_case: true`, matching AC-17's standard.
+
+`revision_note` and `reasoning` were updated (prepended) documenting all five fixes and the verification performed against current source.</result>
+<usage><subagent_tokens>157622</subagent_tokens><tool_uses>31</tool_uses><duration_ms>346641</duration_ms></usage>
+</task-notification>
