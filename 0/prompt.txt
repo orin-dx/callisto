@@ -1,0 +1,13 @@
+<task-notification>
+<task-id>bcwf1b0f7</task-id>
+<summary>Monitor event: "just ci live progress with step timestamps"</summary>
+<event>[+1372s]         PASS [   0.008s] ( 172/1065) callisto-format bump::tests::test_pep440_bump_at_max_returns_error
+[+1372s]         PASS [   0.009s] ( 197/1065) callisto-format bump::tests::test_semver_bump_major_at_max_returns_error
+[+1372s]         PASS [   0.007s] ( 208/1065) callisto-format bump::tests::test_semver_bump_patch_at_max_returns_error
+[+1372s]         PASS [   0.009s] ( 225/1065) callisto-format changeset::frontmatter::tests::unclosed_quote_is_an_error
+[+1372s]         PASS [   0.008s] ( 226/1065) callisto-format changeset::tests::duplicate_raw_name_is_an_error
+[+1372s]         PASS [   0.007s] ( 230/1065) callisto-format changeset::tests::line_numbers_in_errors_are_absolute_not_frontmatter_relative
+[+1372s]         PASS [   0.007s] ( 231/1065) callisto-format changeset::tests::missing_opening_delimiter_is_an_error
+[+1372s]         PASS [   0.007s] ( 238/1065) callisto-format changeset::tests::unclosed_frontmatter_is_an_error</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
