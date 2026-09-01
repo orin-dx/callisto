@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>b5q6quhx2</task-id>
+<tool-use-id>toolu_01R9KSnn9zrQNv1q57ovwPUa</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8a85b651-0c9a-44fa-9e0a-ac694c4409e1/tasks/b5q6quhx2.output</output-file>
+<status>completed</status>
+<summary>Background command "cd /Users/gabe/Projects/callisto &amp;&amp; cargo nextest run -p callisto-cli --lib render 2&gt;&amp;1 | tail -40" completed (exit code 0)</summary>
+</task-notification>
