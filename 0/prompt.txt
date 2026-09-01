@@ -1,0 +1,5 @@
+<task-notification>
+<task-id>b4wjgf310</task-id>
+<summary>Monitor event: "wait for the bugfix RED test to finish now that the lock is clear"</summary>
+<event>[Monitor timed out — re-arm if needed.]</event>
+</task-notification>
