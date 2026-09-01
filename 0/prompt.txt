@@ -1,0 +1,25 @@
+<task-notification>
+<task-id>aeaad51cd2253e4f4</task-id>
+<tool-use-id>toolu_01RSBxkdAurkSvXTVuPtiKEr</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/tasks/aeaad51cd2253e4f4.output</output-file>
+<status>completed</status>
+<summary>Agent "Review T04 commit" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>```json
+{
+  "status": "approved",
+  "issues": [],
+  "sibling_gaps": [],
+  "reasoning": "Scope: git show --stat confirms only crates/callisto-graph/src/apply.rs touched (51 insertions, 1 file). Non-negotiables (rust-hazards.md): the added `handle.persist(permit)?;` sits immediately after `handle.update_dependency_spec(...)?;` — the prior call ends in `?`, so a failure returns GraphError before persist() is ever reached (T4/T8 class not applicable; no silent-success path). No unwrap/expect/map_err(|_|)/T1-T10 patterns introduced in production code; the test's .unwrap() calls are acceptable under the T3 false-positive exception for test code. Ordering/call-path trace: apply.rs calls `open()` (callisto-manifests/src/lib.rs:125-151) which returns Box&lt;dyn Manifest&gt; dispatching to CargoToml::open for .toml — so handle.update_dependency_spec resolves to CargoToml::update_dependency_spec (cargo.rs:288). Read that function fresh: lines 303-316 check `inherited_deps.contains(...)` first, and specifically check `self.absolute == root_cargo` (line 305) BEFORE the unconditional delegation at line 314-315 (`ws_res.write_dependency` -&gt; WorkspaceCargoResolver::write_dependency, cargo.rs:649). The guard fires strictly before any delegation attempt, returning Err(InvariantViolation) for the self-referential case, which propagates via apply.rs's `?` and never reaches the new persist() call. For the ordinary (non-self-referential) delegation case, ws_res.write_dependency already self-persists internally (line 710), and CargoToml's own in-place section-write path also self-persists (line 374) — confirming the implementer's red-phase-waiver claim that on-disk correctness held even pre-change; T04's added persist() is a harmless/necessary re-serialization of handle's own (unmodified-in-delegate-case) document, consistent with the existing bumps-loop pattern at apply.rs:88. Verified T02's guard test (cargo::tests::update_dependency_spec_self_referential_workspace_delegation_returns_invariant_violation) still passes. Test quality: apply_persists_rewrites_loop_update_dependency_spec_to_disk (apply.rs) builds a plain single-package manifest fixture ([package] name/version/edition + [dependencies] helper — no [workspace] table, so inherited_deps is empty and the guard path is never touched), runs apply_version_plan, then reads the file back from disk via std::fs::read_to_string and asserts the new spec string is present — genuine on-disk verification, not just Result::is_ok(). Ran `cargo test -p callisto-graph apply_persists_rewrites_loop_update_dependency_spec_to_disk` — passed. No sibling gaps: grepped apply.rs for all `open(...)`/`handle.` sites — only two exist (bumps loop, already had persist() prior to this task; rewrites loop, now fixed by this commit) — both now persist explicitly, and the two ws_res-delegation arms (CargoWorkspacePackage, CargoWorkspaceDependency) both self-persist inside their own write_version/write_dependency implementations, so no additional persist() call is missing anywhere in this file."
+}
+```
+
+Files read/verified during this review (all absolute paths):
+- `/Users/gabe/Projects/callisto/crates/callisto-graph/src/apply.rs` (lines 80-150, plus full diff of commit 01d9c38)
+- `/Users/gabe/Projects/callisto/crates/callisto-manifests/src/cargo.rs` (lines 95-388, 640-715 — `update_dependency_spec`, `write_dependency`, both `persist` impls)
+- `/Users/gabe/Projects/callisto/crates/callisto-manifests/src/lib.rs` (lines 120-151 — `open()` dispatch, confirming `Box&lt;dyn Manifest&gt;` routes to `CargoToml`)
+- Ran `cargo test -p callisto-graph apply_persists_rewrites_loop_update_dependency_spec_to_disk` (passed) and `cargo test -p callisto-manifests update_dependency_spec_self_referential` (passed, confirming T02's guard test still holds).
+
+No blockers found. This is a per-commit checkpoint only — final pass/fail verdict is lambda-exit-gate's call after all 25 tasks land.</result>
+<usage><subagent_tokens>56596</subagent_tokens><tool_uses>20</tool_uses><duration_ms>233048</duration_ms></usage>
+</task-notification>
