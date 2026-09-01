@@ -1,0 +1,22 @@
+<task-notification>
+<task-id>ae99aa94d9a54de6e</task-id>
+<tool-use-id>toolu_01JeoMi1SpMfbpt1GrD2GGeX</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/ae99aa94d9a54de6e.output</output-file>
+<status>completed</status>
+<summary>Agent "Review index.native Case D fix" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>The specific new regression test passes, the full `cargo test -p callisto-graph` suite exited 0 (no failures across any of the test binaries), and `cargo clippy -p callisto-graph --all-targets -- -D warnings` was clean. All findings from the review are now confirmed. Here is my final report.
+
+## Verdict: Fix is correct and safe to commit.
+
+**1. `native_name`/`native_names` semantics — consistent, actually improved.** Post-fix, a Case D directory's `native` map stores multiple entries sharing the same value (`primary_id`) but keyed by each ecosystem's own manifest name (e.g. `(Cargo, "my-crate") → my-crate` and `(Npm, "@myorg/my-crate-linux-x64-gnu") → my-crate`). `native_name(id, eco)`/`native_names(id)` do reverse lookups (`registered_id == id`) and now correctly report each ecosystem's *true* manifest name for a shared package, rather than (pre-fix) reporting the primary ecosystem's name mislabeled under every ecosystem. Neither method has any production caller today (`callisto-graph/src/config/groups.rs` and `resolver.rs` only touch `index.platform`, which was already correctly keyed), so this is a forward-compatible correctness improvement with zero current behavioral risk.
+
+**2. No regression at other call sites.** `resolve_native`/`resolve_native_with_fallback` have exactly one production call site (`walk.rs:360`, the edge-building loop, keyed by `decl.ecosystem()` + the dependency's declared name — exactly what the fix targets). All other references are in `crates/callisto-graph/tests/ecosystem_bugs_test.rs`, which builds `IdentityIndex.native` manually with matching names per ecosystem (no Case D divergent-name scenario), so those tests are unaffected by the keying change. No caller anywhere assumed the old (buggy) `primary_id.name()`-for-every-ecosystem keying.
+
+**3. Regression test is faithful.** Traced the full resolution path: pre-fix, the Npm entry would have been keyed `(Npm, "my-crate")` (wrong name), so `resolve_native_with_fallback(Npm, "@myorg/my-crate-linux-x64-gnu", …)` misses the fast path, and the cross-ecosystem fallback also finds no match (the only other entry is `(Cargo, "my-crate")`, name mismatch) — yielding 0 candidates, `None`, no diagnostic, and no edge. The test's `.find(...).expect(...)` would panic for exactly that reason. Post-fix, the fast-path lookup hits directly and resolves to `primary_id`. The assertion chain exercises the bug precisely, not an incidental issue.
+
+**4. No sibling gaps.** Grepped `primary_id.name()`/`primary_id` across `callisto-graph` and `callisto-model`: the only other use (`index.bare.insert(primary_id.name()...)`, walk.rs:82) is a single insert per directory group (outside the per-ecosystem loop) and is intentionally keyed by the primary/canonical name — correct as-is, not the same bug pattern.
+
+**5/6. Independently verified:** `cargo test -p callisto-graph` — all suites pass (exit 0), including the new test individually confirmed green. `cargo clippy -p callisto-graph --all-targets -- -D warnings` — clean, no warnings.</result>
+<usage><subagent_tokens>80967</subagent_tokens><tool_uses>26</tool_uses><duration_ms>318435</duration_ms></usage>
+</task-notification>
