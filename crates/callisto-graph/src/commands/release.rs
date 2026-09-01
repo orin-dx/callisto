@@ -33,6 +33,7 @@ enum PreparedOperation {
         version: Version,
         registry: PreparedRegistryBinding,
         npm_access: Option<NpmAccess>,
+        npm_tag: Option<String>,
     },
     Tag {
         name: TagName,
@@ -289,6 +290,7 @@ impl ValidatedReleaseIntent<'_> {
             version,
             registry,
             npm_access,
+            npm_tag,
         } = prepared
         else {
             return Err(GraphError::ReleaseIntentStale);
@@ -320,6 +322,9 @@ impl ValidatedReleaseIntent<'_> {
                             NpmAccess::Restricted => "restricted",
                         },
                     ]);
+                }
+                if let Some(tag) = npm_tag {
+                    args.extend(["--tag", tag]);
                 }
                 self.runner.run("npm", &args, &cwd)?
             }
@@ -724,6 +729,9 @@ fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
                             PublishTarget::Npm { access, .. } => *access,
                             _ => None,
                         },
+                        npm_tag: matches!(target, PublishTarget::Npm { .. })
+                            .then(|| version.is_prerelease().then_some("next".to_string()))
+                            .flatten(),
                     },
                 );
                 publishes.push(operation.id().clone());
@@ -1374,6 +1382,7 @@ mod tests {
                     version,
                     registry,
                     npm_access,
+                    ..
                 } => Some((package_dir, package_name, version, registry, npm_access)),
                 _ => None,
             })
