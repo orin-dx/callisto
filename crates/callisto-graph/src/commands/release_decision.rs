@@ -40,6 +40,55 @@ pub fn derive_release_decision<R: callisto_model::CommandRunner, D: DependencyRe
     ReleaseDecisionV1::new(entries).map_err(|_error| GraphError::ReleaseIntentStale)
 }
 
+/// Derives a durable decision for explicit, exact release identities.
+///
+/// A linked group is one release unit: selecting any member includes every
+/// member of that linked group which the version plan selected. All other
+/// packages remain outside the authority boundary. The caller must pass
+/// ecosystem-qualified [`ReleasePackageId`] values; this function never uses
+/// `PackageId::matches`, whose bare-name wildcard semantics are unsuitable
+/// for release authority.
+pub fn derive_selected_release_decision<R: callisto_model::CommandRunner, D: DependencyResolver>(
+    workspace: &Workspace<'_, R, D>,
+    plan: &VersionPlan,
+    selections: &[ReleasePackageId],
+) -> Result<ReleaseDecisionV1, GraphError> {
+    let complete = derive_release_decision(workspace, plan)?;
+    let selected = selections.iter().collect::<std::collections::BTreeSet<_>>();
+    if selected.len() != selections.len() {
+        return Err(GraphError::ReleaseIntentStale);
+    }
+    if selected
+        .iter()
+        .any(|selection| !complete.entries.iter().any(|entry| &entry.package == *selection))
+    {
+        return Err(GraphError::ReleaseIntentStale);
+    }
+
+    let linked_groups = complete
+        .entries
+        .iter()
+        .filter(|entry| selected.contains(&entry.package))
+        .flat_map(|entry| entry.reasons.iter())
+        .filter_map(|reason| match reason {
+            ReleaseInclusionReason::LinkedGroup { group_id } => Some(group_id.clone()),
+            _ => None,
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+
+    let entries = complete
+        .entries
+        .into_iter()
+        .filter(|entry| {
+            selected.contains(&entry.package)
+                || entry.reasons.iter().any(|reason| {
+                    matches!(reason, ReleaseInclusionReason::LinkedGroup { group_id } if linked_groups.contains(group_id))
+                })
+        })
+        .collect();
+    ReleaseDecisionV1::new(entries).map_err(|_error| GraphError::ReleaseIntentStale)
+}
+
 fn reason_from_bump(
     reason: Option<&BumpReason>,
     package_ids: &std::collections::BTreeMap<callisto_model::PackageId, Vec<ReleasePackageId>>,

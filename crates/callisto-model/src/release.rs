@@ -1283,7 +1283,7 @@ fn validate_artifact_upload_roster(
         .filter_map(|operation| operation.id.role.artifact_slot())
         .collect::<Vec<_>>();
     uploads.sort();
-    if uploads.iter().map(|slot| *slot).ne(artifact_slots.iter()) {
+    if uploads.iter().copied().ne(artifact_slots.iter()) {
         return Err(ReleaseIntentError::MismatchedArtifactUploadRoster);
     }
     Ok(())
