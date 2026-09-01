@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>byyn6i2po</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/b90cda92-db13-4c63-8d7f-c9fa7d9196ab/tasks/byyn6i2po.output</output-file>
+<status>completed</status>
+<summary>Background command "Run runner.rs tests" completed (exit code 0)</summary>
+</task-notification>
