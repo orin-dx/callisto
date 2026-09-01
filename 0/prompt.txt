@@ -1,0 +1,38 @@
+<task-notification>
+<task-id>a0456e6df704d2166</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a7b3643b-af0c-4790-a38d-870e88a7dd3e/tasks/a0456e6df704d2166.output</output-file>
+<status>completed</status>
+<summary>Agent "Write callisto publish documentation additions" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All four additions are in place. Here is a summary of what was done:
+
+---
+
+**Files modified/created:**
+
+### 1. `/Users/gabe/Projects/callisto/docs/06-publishing.md` (new file)
+
+Covers `callisto publish` end-to-end:
+- What it does: reads the publish plan, shells out to `cargo publish`, `npm publish`, and `twine upload` via `PublishOrchestrator` in `callisto-graph`
+- Target registries table (crates.io, npm, PyPI)
+- Required credentials: `CARGO_REGISTRY_TOKEN`, npm auth token via `npm config set`, and `TWINE_*` / `~/.pypirc` for PyPI
+- The "coordinator not reimplementor" design principle with a pointer to `publish_client.rs`
+- How `publish: "true"` in callisto-action triggers `callisto publish` directly
+
+### 2. `/Users/gabe/Projects/callisto/ARCHITECTURE.md` — section 6 additions
+
+Added immediately after the existing `[[fixed-group]]` / `[[linked-group]]` bullet list:
+
+- **Mixed Rust/npm `[[fixed-group]]` example**: shows `members = ["michi", "@orin-axi/michi"]`, explains bare vs. qualified names (bare is valid when unambiguous; scoped npm names starting with `@` are inherently unambiguous)
+- **Rust-to-npm Cascade Non-Propagation callout** (block paragraph): explicitly states Rust crate bumps do not cascade to npm wrappers because the DAG has disjoint ecosystem edges; directs users to `[[fixed-group]]` or `[[linked-group]]` as the correct tool
+
+### 3. `/Users/gabe/Projects/callisto/docs/release-paradigms.md` — new "Rust + napi-rs npm Workflow" section
+
+Added at the end of the file with:
+- Architecture overview (verify → build-native → release job dependency chain)
+- Complete GitHub Actions YAML: `verify` job, a `build-native` matrix across linux-x64/darwin-x64/darwin-arm64/win32-x64 producing `.node` artifacts, and a `release` job that downloads artifacts, sets the npm auth token, then calls `callisto-action` with `publish: "true"` and both `CARGO_REGISTRY_TOKEN` and `NPM_TOKEN`
+- Publish ordering explanation (platform packages before main npm package, derived from the DAG)
+- Cross-reference to `docs/06-publishing.md` for full credential detail</result>
+<usage><subagent_tokens>61335</subagent_tokens><tool_uses>29</tool_uses><duration_ms>213106</duration_ms></usage>
+</task-notification>
