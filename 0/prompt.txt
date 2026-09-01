@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>b56zdy0qy</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/c0ad64b2-6440-4937-8328-8d9fd9db278c/tasks/b56zdy0qy.output</output-file>
+<status>completed</status>
+<summary>Monitor "wait for full callisto-graph test suite (pid 10011) to finish, final stretch" stream ended</summary>
+</task-notification>
