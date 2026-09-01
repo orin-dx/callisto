@@ -68,6 +68,12 @@ struct PreparedReleaseInputs {
     operations: BTreeMap<ReleaseOperationId, PreparedOperation>,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+struct ObservedTag {
+    target: CommitSha,
+    annotation: String,
+}
+
 type DerivedReleaseInputs = (
     ReleaseInputSnapshotV1,
     Vec<ReleaseOperation>,
@@ -333,8 +339,8 @@ impl ValidatedReleaseIntent<'_> {
         target: &CommitSha,
         annotation: &str,
     ) -> Result<OperationOutcome, GraphError> {
-        if let Some(observed) = self.observed_tag_target(name)? {
-            return if observed == *target {
+        if let Some(observed) = self.observed_tag(name)? {
+            return if observed.target == *target && observed.annotation == annotation {
                 Ok(OperationOutcome::AlreadySatisfied)
             } else {
                 Err(GraphError::ReleaseIntentStale)
@@ -342,7 +348,15 @@ impl ValidatedReleaseIntent<'_> {
         }
         let created = self.runner.run(
             "git",
-            &["tag", "-a", name.as_str(), target.as_str(), "-m", annotation],
+            &[
+                "tag",
+                "--no-sign",
+                "-a",
+                name.as_str(),
+                target.as_str(),
+                "-m",
+                annotation,
+            ],
             &self.prepared.root,
         )?;
         if created.exit_code != Some(0) {
@@ -354,7 +368,10 @@ impl ValidatedReleaseIntent<'_> {
         if pushed.exit_code != Some(0) {
             return Err(GraphError::ReleaseIntentStale);
         }
-        if self.observed_tag_target(name)?.as_ref() == Some(target) {
+        if self
+            .observed_tag(name)?
+            .is_some_and(|observed| observed.target == *target && observed.annotation == annotation)
+        {
             Ok(OperationOutcome::Published)
         } else {
             Err(GraphError::ReleaseIntentStale)
@@ -377,7 +394,7 @@ impl ValidatedReleaseIntent<'_> {
         }
     }
 
-    fn observed_tag_target(&self, name: &TagName) -> Result<Option<CommitSha>, GraphError> {
+    fn observed_tag(&self, name: &TagName) -> Result<Option<ObservedTag>, GraphError> {
         let reference = format!("refs/tags/{name}^{{commit}}");
         let observed = self
             .runner
@@ -385,9 +402,32 @@ impl ValidatedReleaseIntent<'_> {
         if observed.exit_code != Some(0) {
             return Ok(None);
         }
-        CommitSha::parse(observed.stdout.trim())
-            .map(Some)
-            .map_err(|_error| GraphError::ReleaseIntentStale)
+        let target = CommitSha::parse(observed.stdout.trim()).map_err(|_error| GraphError::ReleaseIntentStale)?;
+        let details = self.runner.run(
+            "git",
+            &[
+                "for-each-ref",
+                "--format=%(objecttype)%00%(contents:subject)%00%(contents:body)",
+                &format!("refs/tags/{name}"),
+            ],
+            &self.prepared.root,
+        )?;
+        if details.exit_code != Some(0) {
+            return Err(GraphError::ReleaseIntentStale);
+        }
+        let line = details.stdout.trim_end_matches(['\r', '\n']);
+        let mut fields = line.split('\0');
+        let object_type = fields.next();
+        let annotation = fields.next();
+        let body = fields.next();
+        if object_type != Some("tag") || body.is_none_or(|body| !body.trim().is_empty()) || fields.next().is_some() {
+            return Err(GraphError::ReleaseIntentStale);
+        }
+        let annotation = annotation.ok_or(GraphError::ReleaseIntentStale)?;
+        Ok(Some(ObservedTag {
+            target,
+            annotation: annotation.to_string(),
+        }))
     }
 
     fn observed_forge_release_target(&self, tag: &TagName) -> Result<bool, GraphError> {
@@ -1039,6 +1079,105 @@ mod tests {
         assert_eq!(registry.3.key.as_str(), "cratesIo");
         assert!(registry.3.endpoint.is_none());
         assert!(registry.4.is_none());
+    }
+
+    #[test]
+    fn prepared_tag_adapter_accepts_only_the_exact_intended_target() {
+        let (dir, runner) = fixture();
+        let state_dir = tempfile::tempdir().unwrap();
+        let locator = crate::IgnoreWalkLocator::new(dir.path());
+        let intent = build_release_intent(
+            dir.path(),
+            &locator,
+            &runner,
+            &decision(),
+            ExecutionTrustProfileV1::GitCommit,
+        )
+        .unwrap();
+        let validated =
+            validate_release_intent_with_state_directory(dir.path(), &locator, &runner, Some(state_dir.path()), intent)
+                .unwrap();
+        let tag_id = validated
+            .intent()
+            .operations
+            .iter()
+            .find(|operation| matches!(operation.id().role, callisto_model::ReleaseOperationRole::Tag))
+            .expect("tag operation")
+            .id()
+            .clone();
+        let tag_name = "release-fixture@1.2.3";
+        assert!(std::process::Command::new("git")
+            .args([
+                "-c",
+                "tag.gpgSign=false",
+                "tag",
+                "-a",
+                tag_name,
+                "HEAD",
+                "-m",
+                "Release release-fixture@1.2.3"
+            ])
+            .current_dir(dir.path())
+            .status()
+            .unwrap()
+            .success());
+        assert_eq!(
+            validated
+                .dispatch_prepared(&callisto_model::ApplyPermit::force_for_tests(), &tag_id)
+                .unwrap(),
+            OperationOutcome::AlreadySatisfied
+        );
+    }
+
+    #[test]
+    fn prepared_tag_adapter_rejects_conflicting_existing_target() {
+        let (dir, runner) = fixture();
+        let state_dir = tempfile::tempdir().unwrap();
+        let locator = crate::IgnoreWalkLocator::new(dir.path());
+        let intent = build_release_intent(
+            dir.path(),
+            &locator,
+            &runner,
+            &decision(),
+            ExecutionTrustProfileV1::GitCommit,
+        )
+        .unwrap();
+        let validated =
+            validate_release_intent_with_state_directory(dir.path(), &locator, &runner, Some(state_dir.path()), intent)
+                .unwrap();
+        let tag_id = validated
+            .intent()
+            .operations
+            .iter()
+            .find(|operation| matches!(operation.id().role, callisto_model::ReleaseOperationRole::Tag))
+            .expect("tag operation")
+            .id()
+            .clone();
+        assert!(std::process::Command::new("git")
+            .args(["commit", "--allow-empty", "-qm", "other"])
+            .current_dir(dir.path())
+            .status()
+            .unwrap()
+            .success());
+        assert!(std::process::Command::new("git")
+            .args([
+                "-c",
+                "tag.gpgSign=false",
+                "tag",
+                "-a",
+                "release-fixture@1.2.3",
+                "HEAD",
+                "-m",
+                "wrong",
+            ])
+            .current_dir(dir.path())
+            .status()
+            .unwrap()
+            .success());
+        assert!(matches!(
+            validated.dispatch_prepared(&callisto_model::ApplyPermit::force_for_tests(), &tag_id),
+            Err(GraphError::ReleaseIntentStale)
+        ));
     }
 
     #[test]
