@@ -10,8 +10,8 @@ use std::process::ExitCode;
 
 use callisto_graph::commands::{
     build_release_intent, derive_release_commit_decision, derive_selected_release_decision,
-    execute_release_with_artifacts, reconcile_release_execution, validate_release_intent, verify_artifact_manifest,
-    PreparedReleaseEffectAdapter, ReleaseStateStore, VersionOptions,
+    execute_release_with_artifacts, reconcile_release_execution, validate_release_intent_with_state_directory,
+    verify_artifact_manifest, PreparedReleaseEffectAdapter, ReleaseStateStore, VersionOptions,
 };
 use callisto_graph::locate::IgnoreWalkLocator;
 use callisto_model::{
@@ -154,7 +154,9 @@ fn execute(args: ReleaseExecuteArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
         path: Some(global.cwd.clone()),
     })?;
     let locator = IgnoreWalkLocator::new(&root);
-    let capability = validate_release_intent(&root, &locator, &runner, intent)?;
+    let explicit_state_directory = args.state.as_deref().and_then(std::path::Path::parent);
+    let capability =
+        validate_release_intent_with_state_directory(&root, &locator, &runner, explicit_state_directory, intent)?;
     let store = match args.state {
         Some(path) => ReleaseStateStore::new(path),
         None => ReleaseStateStore::default_for(&root, capability.intent())?,

@@ -9,7 +9,6 @@ path = "junit.xml"
 report-name = "callisto-nextest"
 store-success-output = false
 store-failure-output = true
-report-skipped = "ignored"
 flaky-fail-status = "failure"
 
 [[profile.default.overrides]]

@@ -185,7 +185,13 @@ pub fn validate_release_intent<'a, L: ProjectLocator, R: CommandRunner>(
     validate_release_intent_with_state_directory(root, locator, runner, None, received)
 }
 
-fn validate_release_intent_with_state_directory<'a, L: ProjectLocator, R: CommandRunner>(
+/// Validates an intent while placing its workspace lock under an explicit
+/// caller-owned state directory.
+///
+/// CI callers that supply an explicit durable state file must use its parent
+/// here as well.  Otherwise validation would still depend on the runner's
+/// implicit platform state location, defeating hermetic job handoff.
+pub fn validate_release_intent_with_state_directory<'a, L: ProjectLocator, R: CommandRunner>(
     root: &Path,
     locator: &L,
     runner: &'a R,

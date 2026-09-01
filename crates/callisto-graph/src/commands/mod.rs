@@ -25,7 +25,9 @@ pub use publish::{
     SystemTimeProvider,
 };
 pub use publish_client::SubprocessRegistryClient;
-pub use release::{build_release_intent, validate_release_intent, ValidatedReleaseIntent};
+pub use release::{
+    build_release_intent, validate_release_intent, validate_release_intent_with_state_directory, ValidatedReleaseIntent,
+};
 pub use release_artifacts::{verify_artifact_manifest, VerifiedArtifactManifest};
 pub use release_decision::{derive_release_commit_decision, derive_release_decision, derive_selected_release_decision};
 pub use release_execution::{
