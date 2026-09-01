@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bboknieh0</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/c0ad64b2-6440-4937-8328-8d9fd9db278c/tasks/bboknieh0.output</output-file>
+<status>completed</status>
+<summary>Background command "cargo clippy -p callisto-graph --all-targets -- -D warnings 2&gt;&amp;1 | tail -40; echo "CLIPPY_EXIT=$?"" completed (exit code 0)</summary>
+</task-notification>
