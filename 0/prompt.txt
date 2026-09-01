@@ -1,0 +1,21 @@
+<task-notification>
+<task-id>af9038d65efbbf2f4</task-id>
+<tool-use-id>toolu_01LaV21bEh8Xjvrgpt1NQzvb</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/af9038d65efbbf2f4.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix Track 3b1 core spec, round 2" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>JSON is valid, and all 22 acceptance criteria (including the two new ones) are present. The file has been overwritten in place.
+
+Summary of the corrected spec at `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/spec-track3b1-identity-promotion-core.json`:
+
+1. **AC-08** — removed the untestable "no competing writes to index.native" clause; replaced with `id == PackageId::Bare("foo")` and an explicit note that build() returns `Err` before any `IdentityIndex` is constructed, so only the `Err`'s `id`/`paths` fields are observable.
+2. **AC-21 (new)** — covers the N&gt;2 already-promoted-name rejection branch: a `{Cargo}`/`{Npm}`/`{Npm}` three-path fixture where the third path collides with only one of two existing group members; error must name only the offending member's path, not the whole group.
+3. **GUARD AGAINST STALE index.bare RE-INSERTION** — rewritten to show branch (i) (first pairwise collision) can only use remove-at-promotion-time, and branch (ii) (joining an existing group) can only use skip-on-insertion, rather than presenting both as interchangeable.
+4. **AC-22 (new)** — requires correcting the stale walk.rs:284-288 comment ("Packages-map keys are ALWAYS PackageId::Bare") and explains, with source citations, why the downstream SPEC-002 AC-5 diagnostic loop at walk.rs:296 stays correct regardless (it never reads `key.ecosystem()`, and `PackageId::matches` treats an unprefixed pattern as matching by name only).
+5. **resolve_native's api_surface entry** — corrected the justification: grep confirmed zero production call sites (only 3 direct test calls in `tests/ecosystem_bugs_test.rs`); "group-member resolution" as a caller class doesn't exist. Now states it's retained as a general-purpose, unused-in-production lookup kept for forward compatibility.
+6. **non_goals** — the AC-F6 deferral now explicitly names SPEC-TRACK3B2 rather than "whichever spec next touches it."
+
+All claims were verified against current source (`walk.rs`, `identity.rs`, `error.rs`, `track-f-resolution-extraction.json`) before being written. The `promoted_siblings` local-overlay timing mechanism was left untouched per instruction. `revision_note` documents all six changes and their rationale.</result>
+<usage><subagent_tokens>93538</subagent_tokens><tool_uses>21</tool_uses><duration_ms>240707</duration_ms></usage>
+</task-notification>
