@@ -1,0 +1,137 @@
+<task-notification>
+<task-id>a276b379714e91c99</task-id>
+<tool-use-id>toolu_016V1Ucybt16bkQyHnwTdJE6</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a276b379714e91c99.output</output-file>
+<status>completed</status>
+<summary>Agent "Validate remediation track structure" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result># Track Structure Validation — Callisto Remediation Plan
+
+## Methodology note
+
+I read `.claude/plans/ACTIVE.md` and `.claude/plans/SESSION_HANDOFF.md` in full, then re-verified the majority of your factual claims directly against current source (not just trusting the write-up) — every Track 1–6 and Track 9 claim, plus the highest-leverage Track 3/7/8/10 claims. Everything you asserted held up under direct code read, with two significant corrections/upgrades below (Track 2's real scope, and a nuance on Track 8). Tracks 7/10/11/12 got lighter spot-checks consistent with their own stated low/medium risk.
+
+---
+
+## 1. Track boundary validation
+
+**Tracks 1, 3(b–e), 4, 5, 9, 10 — boundaries confirmed sound, no changes needed.** Every specific code claim I checked (fixed-group bump independence, `pre_mutation_checks` zero call sites, `ConflictingGroupMembership` silent overwrite in `GroupTable::resolve`, ignore-walk's missing workspace-member filtering, `IdentityIndex.prefixed` never populated, `resolve_native_with_fallback`'s live cross-ecosystem fallback, `package_manifest_decls` colliding via `PackageId::Bare` losing ecosystem identity, the `status --check` exit-code contract, `tag`'s fabricated `sha` on existing tags, `plan_publish`'s hardcoded `changelog_section: None`, `pr_body.rs`'s hand-rolled markdown, `ChangeSource::Commit`/`NewGroupMember` never constructed, `cascade_action`'s unused `_source` parameter hardcoding `Severity::Major`, the rewrite key using `.name()` not `native_name`, the fixtures crate's 340-line/4-file reality) matched your description exactly.
+
+**One clarity issue in Track 1:** (a)/(b) live in `crates/callisto-graph/src/groups.rs` (top-level), while (c) lives in `crates/callisto-graph/src/config/groups.rs` — two distinct files with the same basename. Your write-up is internally correct but easy to misread; the spec should name the full paths explicitly so canon-drafter/lambda-implementer don't conflate them.
+
+**Track 1(a) blast radius is one call site wider than stated.** `CascadeInput` is constructed in three production sites, not two: `commands/version.rs:70`, `commands/apply` (implied via `run_cascade`), and **`commands/snapshot.rs:53`** — which you didn't mention for Track 1. If `CascadeInput` gains `tags: &amp;TagIndex`, `snapshot.rs` must be updated too, and `callisto snapshot`'s own fixed-group correctness should be either explicitly pulled into Track 1's acceptance criteria or explicitly declared out of scope — not silently swept in as a side effect of a signature change.
+
+**Track 2 needs a significant scope correction — this is the most important finding of this pass.** I checked not just whether `apply_version_plan` *reads* `plan.platform_writes`/`plan.optional_dep_updates` (confirmed zero references, as you said) but whether anything *populates* them. It doesn't:
+
+```
+crates/callisto-graph/src/commands/version.rs:249-250   platform_writes: Vec::new(), optional_dep_updates: Vec::new(),
+crates/callisto-graph/src/commands/snapshot.rs:132-133   platform_writes: Vec::new(), optional_dep_updates: Vec::new(),
+crates/callisto-graph/src/commands/pr_body.rs:282-283,303-304   platform_writes: vec![], optional_dep_updates: vec![],
+```
+
+Every single production `VersionPlan` construction site hardcodes both fields empty, with no TODO or doc comment explaining why. `grep -rn "PlatformWrite {"` across the whole crate returns **zero construction sites** outside the struct definition itself. This means Track 2 is not "add two consumption loops to already-populated plan data" — it's "design and build the planning-side logic that decides which packages need a platform-manifest write and which optional-dependency specs need rewriting, populate the plan fields, *then* consume them." That is materially larger scope than your write-up implies, and it directly contradicts the "Independent of Track 1" claim: platform writes for `GroupMember::PlatformManifest` entries (napi/maturin platform packages inside a fixed group) should get their version from the *corrected* group-aligned target — the exact thing Track 1(a)'s `fixed_group_target` delegation fixes. Building Track 2's planning logic before Track 1 ships risks baking the same per-sibling-independent-bump bug into platform manifests too.
+
+**Track 8 nuance on moon.yml:** it's not simply "never deserialized" — there are two explicit in-code rationale comments that are in tension with each other and should be read before drafting spec language:
+- `crates/callisto-graph/src/config/raw.rs` (on `RawMoonCallistoConfig.changelog`): *"nothing in this crate actually deserializes a `moon.yml` file into `RawMoonCallistoConfig` today... this documents the intended contract for whenever that wiring exists, not current behavior"* — implies eventual intent to build it.
+- `crates/callisto-moon/src/extension.rs` (on `define_extension_config`): *"callisto's real settings live in `callisto.toml`... **not** in moon's own `.moon/workspace.yml` `extensions.callisto.config` block"* — implies a deliberate decision **not** to build it this way.
+
+This raises the stakes on the product decision you already flagged — it's not a blank slate, there's already conflicting in-repo intent to reconcile.
+
+**Split recommendations:**
+- **Split Track 3** into 3a (name-vs-path matching, decision-gated, own future spec) and 3b–e (identity/workspace hardening, can proceed immediately). Bundling a decision-gated item into a track with four ready-to-spec items risks stalling all five on one open question.
+- **Split Track 6** into 6-mechanical (field-shape fixes, gated by the schemaVersion decision) and 6-doc (the `atomic_write`/"no I/O" correction). The latter is a documentation-only fix with no code change and shouldn't ride through either SDD tier as a code-governed spec item.
+- **Flag (don't yet split) Track 2** for a possible Spec-A/Spec-B-style split once its real scope is known, mirroring last session's precedent exactly (a safe "thread the fields through" half vs. a riskier "generate the right platform-write data" half).
+
+No merges recommended — Track 4/Track 6 sharing the Action script is real but they have different owners (Rust binary vs. YAML/bash) and different rigor mechanics (see §3); keep them separate but sequenced, as you proposed.
+
+---
+
+## 2. Cross-track dependencies not already flagged
+
+1. **Track 2 → Track 1(a)** (new, not just "independent"). See above — platform-write versions for fixed-group platform members need the corrected `fixed_group_target` output.
+2. **Track 1(a) touches `commands/snapshot.rs`**, a third `CascadeInput` construction site beyond version.rs/apply.rs.
+3. **Track 2 (and any new apply.rs write loops) must integrate with the already-shipped Spec A/Spec B write-batching invariants**, not bypass them. `apply_version_plan` now routes writes through `classify_manifest_writes`'s per-path batching/exclusion scheme specifically to prevent a stale-handle-clobber data-loss bug (documented in `ACTIVE.md`, heavily adversarially reviewed last session). Bolting two new, uncoordinated write loops onto `apply_version_plan` for `platform_writes`/`optional_dep_updates` risks reintroducing that exact class of bug on any package whose platform manifest is *also* touched by a normal version-bump write. This is a dependency on prior, already-completed work that wasn't in your track list at all — flag it explicitly in Track 2's spec.
+4. **Track 4's `main.rs` top-of-file exit-code doc comment is itself stale.** It claims `status`'s `--check` contract is "0 when no --check OR pending changeset," but the real implementation (`status.rs::check_exit_code_raw`) is 1 = pending, 2 = none pending, confirmed by both source and its own tests. If Track 4's spec gets drafted by re-deriving the contract from that comment instead of the real code, it'll re-encode the same error. Fold this doc correction into Track 4 (or Track 11/12) explicitly.
+5. **Confirmed, not just plausible:** Track 5 → Track 1(b). `BumpReason::NewGroupMember` is matched in both `pr_body.rs:121` and `callisto-changelog/src/render.rs:79` but has zero construction sites in `commands/version.rs`'s reason-assignment logic — its only possible source is `pre_mutation_checks`'s `new_members` output, which never reaches `version.rs` today. Real, hard sequencing dependency.
+6. **Confirmed, not just plausible:** Track 4 ↔ Track 6 share the same wire contract, verified via `action.yml`'s own `jq` consumption (`.platformTargets[].targets[]` from `callisto matrix`, `.releases[]?.tagName` from `plan-publish`'s JSON). This also means Track 4's `PublishPlan`/`CreatedTag` shapes are part of the *same* breaking-change surface as Track 6's report structs — treat as one coordinated release, not two coordinated-but-separate tracks.
+7. **New — reconcile against `SESSION_HANDOFF.md`'s open backlog.** 98 commits have landed since that handoff was written; at least one of its four named test-coverage gaps (`pre_cursor`) appears already closed (`ce78551 test(conventional): cover pre_cursor_ref_name/resolve_pre_cursor/advance_pre_cursor`). Before finalizing this 12-track plan, confirm whether this session's 144-finding audit is a full re-sweep of current `main` that supersedes/absorbs the old 41-item backlog, or a disjoint list that still needs manual reconciliation against what's already fixed — otherwise you risk either re-litigating closed items or silently losing ones the new audit didn't happen to re-find.
+
+---
+
+## 3. Rigor tier recommendation per track
+
+Using this project's own precedent: full pipeline was used for architecturally significant, wide-blast-radius, or open-design-question work (Tracks B/E/F/G, Spec A, Spec B — new subcommands, cross-cutting trait splits, a mid-design data-loss hazard that forced a scope split). The lighter TDD loop was used for confirmed, narrow, single-root-cause bugs with an obvious fix (the 8-bug remediation, and the 4 recommended follow-on gap closures). The memory note narrows this further: skip canon ceremony only when a RED test is already written and the fix is a targeted patch, not an open design question.
+
+| Track | Tier | Why |
+|---|---|---|
+| **1** (fixed-group engine) | **Full pipeline** | Real semantic redesign of version computation, 2 files, 3 call sites, an internal open sub-question in (c) (what "conflicting" means), proven live silent-corruption repros. Directly parallel to Track F/G. |
+| **2** (platform/optionalDeps writes) | **Full pipeline** (upgraded) | Real scope is now "build planning logic from scratch," depends on Track 1, and must integrate with Spec A/B's write-safety invariants — canon-drafter should explicitly evaluate a Spec-A/B-style split. |
+| **3a** (name vs path matching) | **Decision-gated — do not spec until resolved** | Semantic change to how every `callisto.toml` pattern is interpreted; real risk of breaking working configs. |
+| **3b–e** (identity/workspace hardening) | **Full pipeline** | Touches `IdentityIndex`, workspace-membership discovery, and `PackageId` keying — foundational primitives every other track implicitly depends on. Not simple patches. |
+| **4** (release-pipeline contract) | **Full pipeline** for the Rust side, coordinated `action.yml` edit reviewed against the same spec's acceptance criteria | Real contract redesign across 3 commands + the Action script; the pipeline protocol as documented is Rust/cargo-shaped, so explicitly decide how the YAML/bash half gets reviewed (scripted repro, not `cargo test`). |
+| **5** (changelog/PR-body consolidation) | **Full pipeline**, sequenced strictly after Track 1(b) | Real architectural consolidation (~80+ `push_str` calls replaced) plus a data-model change (`ChangelogInput.entries` union-of-causes) — matches Track F's own "stop duplicating logic in two places" precedent. |
+| **6-mechanical** (report field-shapes) | **Lighter TDD loop, one report type/field at a time**, gated by the schemaVersion decision first | Once the breaking-change policy is decided, each struct fix is a narrow, well-scoped patch — textbook lighter-loop material, but "never batching unrelated fixes" applies per-report-type. |
+| **6-doc** (atomic_write / "no I/O") | **No pipeline — doc-only correction** | Confirmed CLAUDE.md's actual Layer-1 invariant is license permissiveness only; this is a spec-text fix, not a code-governed change. |
+| **7** (performance) | **Lighter TDD loop per finding**, except the revwalk-bounding fix gets an extra review pass (lambda-reviewer + before/after re-measurement) | Mostly isolated, already-measured, mechanical fixes; the one exception bundles a correctness bug (`changedSinceLastTag`) with the perf win, so a naive bound could reintroduce it in a new form. |
+| **8** (moon.yml) | **Decision-gated — do not spec until resolved**, with both in-code rationale comments read first | See boundary note above. |
+| **8** (ConfigError variants) | **Lighter TDD loop** | Direct parallel to the already-shipped `def6862` fix for the sibling `PackageSetMatchedNothing` bug. |
+| **8** (pyproject workspace-root) | **Lighter TDD loop** | Single function, one new marker check, mirrors three existing checks exactly. |
+| **8** (Python "demand-gated" doc claim) | **No pipeline — doc-only** | Same category as 6-doc. |
+| **9** (peer-escalation &amp; rewrite keys) | **Lighter TDD loop** | Your own framing ("scoped, single-function... not architecturally sprawling") matches the project's stated lighter-loop criteria almost exactly; direct parallel to the 8-bug remediation pattern. |
+| **10** (fixtures/CI buildout) | **Explicit deferral — no tier assigned yet** | Matches your own citation of the SESSION_HANDOFF precedent for the 41-item backlog: name it, don't schedule it. |
+| **11/12** (diagnostics/doc polish) | **Lighter TDD loop, queued serially** | "Batch-friendly" should mean "many small lighter-loop passes back to back," not license to violate the project's own no-batching-unrelated-fixes rule — worth spelling out so it isn't misread. |
+
+---
+
+## 4. Priority / phase ordering
+
+**Phase 0 — decisions only, no canon-drafter sessions started:** resolve every item in §5 below. Tracks 1, 2, 3a, 4, 6, 8 all have at least one open decision blocking spec language.
+
+**Phase 1 — foundational correctness (full pipeline, sequential within this phase — shared core files, parallelizing risks re-derivation/merge conflicts):**
+1. Track 3b–e (identity/workspace hardening) — deepest layer; Tracks 1/2/5/9 all implicitly consume `IdentityIndex`/`PackageId` resolution.
+2. Track 1 (fixed-group engine) — depends on Track 3's identity fixes being stable underneath.
+3. Track 2 (platform/optionalDeps writes) — depends on Track 1's group-target correctness and on Spec A/B's write-safety invariants.
+4. Track 9 (peer-escalation/rewrite keys) — narrow and technically parallelizable, but shares `cascade.rs` with Track 1(a); sequence immediately before or after Track 1 rather than running two full-pipeline efforts on the same file concurrently.
+
+**Phase 2 — release-pipeline contract (CRITICAL, downstream of Phase 1's version correctness):**
+5. Track 6's schemaVersion decision, then Track 4 (Rust + Action script) and Track 6-mechanical together or immediately sequential — same wire contract, same Action-script consumer, confirmed via `jq` usage.
+
+**Phase 3 — rendering consolidation (depends on Track 1(b)):**
+6. Track 5.
+
+**Phase 4 — lighter-loop, parallelizable, no hard ordering against Phases 1–3:**
+7. Track 7 (performance) — touches `callisto-vcs`/`tags.rs`, largely disjoint files; can run as a separate work-stream in parallel rather than strictly after.
+8. Track 8's mechanical items (ConfigError variants, pyproject workspace-root).
+9. Track 11/12.
+
+**Phase 5 — deferred/backlog:**
+10. Track 8's moon.yml feature (pending Phase 0 decision — build or cut).
+11. Track 10 (fixtures buildout) — explicit deferral pending user scoping.
+
+Before locking this in, reconcile against SESSION_HANDOFF.md's open backlog (§2 item 7) — it may shrink or reshuffle Phase 4/5.
+
+---
+
+## 5. Consolidated decision points requiring sign-off before any spec drafting
+
+1. **Track 3a** — `[[package]]`/`[[package-set]] match`: name-based vs. path-based matching. Does any real config depend on current name-based behavior?
+2. **Track 8** — moon.yml `extensions.callisto`: build the real feature, or correct/cut the spec's "highest-precedence config layer" claim? Read both in-code rationale comments (`raw.rs`, `callisto-moon/extension.rs`) first — they don't agree with each other.
+3. **Track 6** — JSON wire-format breaking change: bump `schemaVersion`, and if so how (major rev / additive-with-deprecation / silent correctness fix)? Blocks both Track 6 and Track 4's acceptance criteria.
+4. **Track 6** — confirm the `atomic_write`/"no I/O" item is a doc-only spec correction, not a code-governed change (well-supported: CLAUDE.md's actual Layer-1 invariant is license permissiveness only).
+5. **Cross-cutting** — `inference` feature default-on status (confirmed not default anywhere today: not in either crate's default features, not referenced in `justfile` or any GitHub workflow). Separate from the pathspec bug fix, which should proceed regardless per your own framing.
+6. **Track 10** — fixtures/CI buildout: explicit scope/priority call, matching this project's own SESSION_HANDOFF precedent.
+7. **New — Track 2's real scope**: does it include building the platform-write/optional-dep *planning* logic from scratch (confirmed necessary — nothing populates these fields today), or should that be split into its own follow-on track the way Spec A/Spec B were split last session? Needs a scope decision before canon-drafting starts, not after.
+8. **New — reconcile this session's 144-finding audit against SESSION_HANDOFF.md's still-open 41-item backlog and 4 named gaps** before treating this 12-track structure as complete.
+
+---
+
+### Critical Files for Implementation
+
+- `/Users/gabe/Projects/callisto/crates/callisto-graph/src/groups.rs` — `fixed_group_target`, `pre_mutation_checks` (Track 1a/1b core)
+- `/Users/gabe/Projects/callisto/crates/callisto-graph/src/config/groups.rs` — `GroupTable::resolve` (Track 1c)
+- `/Users/gabe/Projects/callisto/crates/callisto-graph/src/cascade.rs` — `CascadeInput`, `raise`/`bump_target`, `cascade_action`, rewrite-key construction (Tracks 1a, 9)
+- `/Users/gabe/Projects/callisto/crates/callisto-graph/src/apply.rs` — `apply_version_plan`, `classify_manifest_writes` (Track 2, and the Spec A/B safety invariants it must respect)
+- `/Users/gabe/Projects/callisto/crates/callisto-graph/src/identity.rs` and `/Users/gabe/Projects/callisto/crates/callisto-graph/src/walk.rs` — `IdentityIndex`, `resolve_native_with_fallback`, `package_manifest_decls` construction (Track 3b–e)
+- `/Users/gabe/Projects/callisto/.github/actions/callisto-action/action.yml` and `/Users/gabe/Projects/callisto/crates/callisto-cli/src/commands/status.rs` — exit-code contract (Track 4, coordinated with Track 6)</result>
+<usage><subagent_tokens>105238</subagent_tokens><tool_uses>80</tool_uses><duration_ms>663584</duration_ms></usage>
+</task-notification>
