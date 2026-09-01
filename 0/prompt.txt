@@ -1,0 +1,35 @@
+<task-notification>
+<task-id>afcf26683e7c31de5</task-id>
+<tool-use-id>toolu_01GoTYAWb8JAN1JUQazq8aMi</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/afcf26683e7c31de5.output</output-file>
+<status>completed</status>
+<summary>Agent "Re-audit Track 3a spec, round 6" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>```json
+{
+  "issues": [
+    {
+      "criterion_id": "AC-11",
+      "type": "ambiguous",
+      "description": "AC-08 establishes that pnpm-workspace.yaml takes precedence over package.json's \"workspaces\" field 'whenever both markers are present at the same root' (package.json's workspaces field is 'consulted only when no pnpm-workspace.yaml exists'). AC-11 then states that a malformed pnpm-workspace.yaml (YAML parse error) is 'treated as absent ... falls back to AC-06's no-filter behavior.' These two rules are never reconciled for the case where a root has BOTH a malformed pnpm-workspace.yaml AND a present, well-formed package.json \"workspaces\" field. Two materially different, equally defensible implementations both satisfy every existing acceptance criterion: (1) 'treated as absent' means the pnpm marker is treated as if the file didn't exist at all, so AC-08's rule (c) falls through and package.json's workspaces field is consulted normally; or (2) 'treated as absent' means the ENTIRE npm membership filter for that root becomes absent (AC-06's literal no-marker-at-all behavior), and package.json's otherwise-valid workspaces field is ignored even though it is present and parseable. No fixture in AC-11, AC-11b, or AC-14 combines a malformed/schema-invalid pnpm-workspace.yaml with a present package.json workspaces field, so this divergence is completely untested. The same ambiguity applies identically to AC-11b (pnpm-workspace.yaml parses but has a missing/non-sequence packages: value).",
+      "suggested_fix": "Rewrite AC-11 to: \"Given a root package.json with no \\\"workspaces\\\" field, and a pnpm-workspace.yaml at the same root whose content is malformed YAML such that yaml_rust2::YamlLoader::load_from_str returns Err(..) (e.g. an unterminated flow sequence such as `packages: [\\\"packages/*\\\"`), IgnoreWalkLocator::projects() does not panic and does not error the entire walk; it treats the npm membership filter as absent for that workspace (falls back to AC-06's no-filter behavior), the same treatment as AC-09's malformed-TOML case. This criterion's fixture has no package.json \\\"workspaces\\\" field at the same root — AC-11c covers the case where one is also present and pins the interaction with AC-08's precedence rule.\" Add a new criterion AC-11c: \"Given a root package.json declaring {\\\"workspaces\\\": [\\\"packages/*\\\"]} and a sibling pnpm-workspace.yaml whose content is malformed YAML such that yaml_rust2::YamlLoader::load_from_str returns Err(..), calling projects() discovers a package.json at packages/y/package.json (matching the package.json workspaces glob) — a malformed pnpm-workspace.yaml does not count as 'present' for AC-08's precedence purposes; only a pnpm-workspace.yaml that exists, parses successfully, AND has a valid packages: sequence of strings suppresses package.json's \\\"workspaces\\\" field. AC-11b's parses-but-wrong-shape case (missing packages: key, or a non-sequence value) receives the identical treatment: it also does not count as 'present' for AC-08 precedence, and a package.json workspaces field at the same root is still consulted.\" Also tighten the Npm rule in the primary api_surface entry: replace '(b) a pnpm-workspace.yaml exists and dir matches one of its packages: globs' with '(b) a pnpm-workspace.yaml exists, parses successfully, and has a packages: value that is a YAML sequence of strings, and dir matches one of its glob entries' and replace '(c) no pnpm-workspace.yaml exists, a \"workspaces\" field exists' with '(c) no such parseable-and-valid-shape pnpm-workspace.yaml exists (whether because the file is absent, fails to parse, or lacks a valid packages: sequence), a \"workspaces\" field exists'. Extend AC-13's regression-fixture group to include AC-11c's fixture."
+    },
+    {
+      "criterion_id": "AC-11b",
+      "type": "ambiguous",
+      "description": "Same ambiguity as the AC-11 finding above, applied to the parses-successfully-but-wrong-shape case: AC-11b's 'treats the npm membership filter as absent for that workspace' does not state whether package.json's \"workspaces\" field is consulted as a fallback when it is present and valid at the same root. Untested by any existing fixture.",
+      "suggested_fix": "Covered by the AC-11c addition proposed above, which explicitly extends the same resolution to AC-11b's schema-mismatch case ('AC-11b's parses-but-wrong-shape case ... receives the identical treatment'). No separate criterion is needed beyond AC-11c if that text is adopted; if the spec owner prefers a fully separate fixture per case, add AC-11d mirroring AC-11c but with a pnpm-workspace.yaml that parses successfully with `packages: \"packages/*\"` (bare string, not a sequence) instead of unparseable YAML."
+    }
+  ],
+  "overall": "fail",
+  "reasoning": "Round 5's fix (non_goals[12] citing SPEC-APPLY-BATCH-002.json's line numbers) is verified accurate against the actual file content — no issue there. The remaining finding is new and was not surfaced in rounds 1-5: it sits at the seam between two rules that were each independently correct when added (AC-08's precedence rule in an earlier round, AC-11/AC-11b's malformed-fallback rules in round 2) but were never checked against each other's edge case. This is exactly the kind of interaction gap that survives many rounds of single-criterion-at-a-time review: each criterion in isolation reads as complete, but no fixture exercises the combination. It is concrete (two implementations diverge on discoverable output), grounded (traced directly against the spec's own stated rules, not invented), and would plausibly cause an incorrect implementation for any pnpm-managed monorepo with a broken pnpm-workspace.yaml and a still-valid legacy package.json workspaces field — a realistic migration-in-progress scenario, not a manufactured edge case."
+}
+```
+
+**Files referenced:**
+- `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/spec-track3a-workspace-membership.json`
+- `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs`
+- `/Users/gabe/Projects/callisto/.claude/specs/SPEC-APPLY-BATCH-002.json`
+- `/Users/gabe/Projects/callisto/.claude/specs/track-g-matrix-napi-maturin.json`</result>
+<usage><subagent_tokens>101887</subagent_tokens><tool_uses>15</tool_uses><duration_ms>181652</duration_ms></usage>
+</task-notification>
