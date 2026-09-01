@@ -1,0 +1,55 @@
+<task-notification>
+<task-id>a45aded0180cc9e34</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a45aded0180cc9e34.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement TASK-32 (AC-14 pnpm malformed-input slice)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Summary
+
+TASK-32 executed exactly as planned, with one correction: the plan's AC-11 fixture block omitted the root `package.json` file, which would have made that sub-block test AC-06b (file-absent) instead of AC-11's actual criterion (root `package.json` present with no `"workspaces"` field, alongside malformed pnpm YAML). I fixed the fixture to match AC-11's exact spec text and the fixture already proven by TASK-27 (commit f93e5aa), so the block genuinely proves AC-11 rather than a different, weaker criterion.
+
+**Verification steps taken:**
+1. Confirmed all 27 prior commits present on `ignore_walk.rs`, tree clean, before starting.
+2. Read AC-14, AC-09h, AC-11, AC-11b, AC-11d directly from `.claude/specs/SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json`.
+3. Cross-checked TASK-32's fixture against prior committed test fixtures (TASK-25/27/28/29) — found and fixed the AC-11 gap described above; AC-09h, AC-11b, AC-11d blocks matched exactly, no other gaps.
+4. Ran the new test — it passed immediately with no implementation change (predicted "regression-proof" pattern confirmed).
+5. Adversarially verified non-vacuousness: temporarily changed `membership.rs:275` from `.ok()?` to `.unwrap()` on the YAML parse, confirmed the test panics, then restored the safe form and confirmed green again.
+6. Ran `cargo fmt -p callisto-graph` (no diff), `cargo clippy -p callisto-graph --all-targets -- -D warnings` (clean), and the full `cargo test -p callisto-graph --lib` suite (312/312 pass).
+7. Committed — pre-commit format-check hook passed.
+
+**Files touched:** `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs` (test only, no implementation change).
+
+```json
+{
+  "task_id": "TASK-32",
+  "status": "done",
+  "steps_completed": [
+    "verified 27 prior commits present and tree clean",
+    "read AC-14/AC-09h/AC-11/AC-11b/AC-11d from spec file on disk",
+    "cross-checked plan fixture against spec text and prior proven fixtures; found and corrected AC-11 block (added required root package.json)",
+    "wrote consolidated regression test in ignore_walk.rs",
+    "ran test: passed immediately, no red step (regression-proof, as predicted)",
+    "adversarially broke read_pnpm_packages's YAML-parse fallback (.ok()? -&gt; .unwrap()), confirmed test panics",
+    "restored safe implementation, confirmed test green again",
+    "ran cargo fmt (no diff), cargo clippy -D warnings (clean)",
+    "ran full callisto-graph lib test suite: 312 passed, 0 failed",
+    "committed"
+  ],
+  "test_result": "pass",
+  "commit_sha": "c763bc8",
+  "criteria_evidence": [
+    {
+      "criterion_id": "AC-14",
+      "test_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs",
+      "test_line": 2048,
+      "implementation_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs",
+      "implementation_line": 273
+    }
+  ],
+  "concerns": "TASK-32's plan fixture for the AC-11 sub-block omitted the root package.json write, which would have made that sub-block indistinguishable from AC-06b (file-absent admits-all) rather than genuinely proving AC-11 (file present, workspaces field absent, malformed sibling pnpm YAML). Corrected to match AC-11's exact spec text and the already-proven TASK-27 fixture before committing. No other gaps found in the AC-09h/AC-11b/AC-11d blocks, which matched the plan and spec exactly.",
+  "reasoning": "Regression-proof task per the established pattern (TASK-07 through TASK-31); no implementation change expected or needed. The only deviation from the plan's literal fixture code was the AC-11 root package.json fix, justified by spec text and prior committed evidence."
+}
+```</result>
+<usage><subagent_tokens>97528</subagent_tokens><tool_uses>30</tool_uses><duration_ms>464494</duration_ms></usage>
+</task-notification>
