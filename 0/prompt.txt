@@ -1,0 +1,111 @@
+<task-notification>
+<task-id>abbc3947b348ea641</task-id>
+<tool-use-id>toolu_013LFXAUxfDUEcwj3uENjtxx</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a7b3643b-af0c-4790-a38d-870e88a7dd3e/tasks/abbc3947b348ea641.output</output-file>
+<status>completed</status>
+<summary>Agent "Bug hunt — tag commands, version command, config resolution" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>The findings are now confirmed. Here is the report:
+
+---
+
+### [High] `[[package]] publish-to` override silently discarded — field parsed but never applied
+
+- **Status**: CONFIRMED (end-to-end traced)
+- **Location**: `crates/callisto-graph/src/config/resolve.rs:326`, `crates/callisto-graph/src/walk.rs:147-171`
+- **Classification**: Discarded Parameter
+- **Root Cause**: `resolve.rs` L326 hardcodes `publish_to: None` when building `PackageConfig`, never reading `raw_pkg.publish_to` from the parsed TOML. Additionally, `walk.rs` L147-171 reads `pkg_override` for `release_trigger`, `tag_template`, and `changelog`, but never consults `pkg_override.publish_to` when constructing the `Package`. The `PackageConfig::publish_to: Option&lt;Vec&lt;PublishTarget&gt;&gt;` field and `RawPackageConfig::publish_to: Option&lt;Vec&lt;String&gt;&gt;` field both exist at every layer of the stack, but the wiring between them was never completed.
+- **Failing Scenario**: Operator adds to `callisto.toml`:
+  ```toml
+  [[package]]
+  match = "npm:my-lib"
+  publish-to = ["crates-io"]
+  ```
+  No error is emitted. `plan-publish` and `publish` ignore the override entirely and use whatever `editor.publish_targets()` returns from the manifest. A package that should not be published (or should target a different registry) is published anyway, or vice versa.
+- **Severity**: High — silent discard of an operator-visible config key with no error, causing publish routing to diverge from declared intent.
+- **Verification Strategy**: Add a test that creates a workspace with a Cargo package whose `Cargo.toml` has `publish = false`, adds a `[[package]]` override with `publish-to = ["crates-io"]` in `callisto.toml`, and asserts that `plan_publish` includes a `CratePublish` entry for that package. This test fails on current code.
+
+---
+
+### [High] `[[package-set]]` config blocks are parsed but entirely discarded — never processed
+
+- **Status**: CONFIRMED (end-to-end traced)
+- **Location**: `crates/callisto-graph/src/config/resolve.rs` (entire file — no reference to `raw.package_set`), `crates/callisto-graph/src/config/raw.rs:11-12`
+- **Classification**: Discarded Parameter / Spec Drift
+- **Root Cause**: `RawConfig::package_set: Option&lt;Vec&lt;RawPackageSetConfig&gt;&gt;` is deserialized from `callisto.toml`. The `load()` function in `resolve.rs` processes `raw.package` (L295), `raw.fixed_group`, and `raw.linked_group`, but `raw.package_set` is read into the struct and then never referenced again. The `PackageSetMatchedNone` and `PackageSetAmbiguous` error variants in `error.rs:206-213` exist but are never constructed anywhere in the codebase — they are dead code.
+- **Failing Scenario**: Operator adds a `[[package-set]]` section to `callisto.toml` to apply bulk overrides (e.g., `publish-to`, `tag-template`) to a glob of packages. The section is silently ignored: no error, no effect. Any configuration written in `[[package-set]]` blocks has zero effect on workspace behavior.
+- **Severity**: High — entire configuration feature is a no-op with no signal to the operator.
+- **Verification Strategy**: Add a test that writes a `[[package-set]] match = "cargo:*" release-trigger = "auto"` block, loads config via `load()`, and asserts that any package config override resolves to `ReleaseTrigger::Auto`. This test fails on current code.
+
+---
+
+### [High] `RawConfig` and sub-structs lack `#[serde(deny_unknown_fields)]` — TOML typos silently ignored
+
+- **Status**: CONFIRMED (end-to-end traced)
+- **Location**: `crates/callisto-graph/src/config/raw.rs:4-22` (`RawConfig`), same file for all sub-structs; `crates/callisto-graph/src/config/resolve.rs:171` (`toml::from_str::&lt;RawConfig&gt;`)
+- **Classification**: Silent Fallback
+- **Root Cause**: All `Raw*` structs use `#[derive(Deserialize)]` without `#[serde(deny_unknown_fields)]`. The `toml` crate's serde integration silently drops unrecognized keys in structs without that attribute, matching standard serde behavior. A one-character typo (`[registy]` instead of `[registries]`, `bump_severity` instead of `bump-severity`, `publish_to` instead of `publish-to`) silently drops the entire config section, replacing it with defaults. The operator receives no warning.
+- **Failing Scenario**: Operator writes:
+  ```toml
+  [cascade]
+  bump_severity = "minor"
+  ```
+  (underscore instead of hyphen). `RawCascadeConfig::bump_severity` uses `#[serde(rename = "bump-severity")]`, so `bump_severity` is an unknown key → silently ignored → effective cascade bump severity stays at the default `Patch`. Every cascade bump in the workspace silently produces patch bumps instead of the intended minor bumps.
+- **Severity**: High — silently produces wrong cascade behavior, wrong publish targets, or wrong registry routing with no operator-visible signal.
+- **Verification Strategy**: Write a test calling `load()` with a `callisto.toml` containing `[cascade]\nbump_severity = "minor"` and assert that the returned `ResolvedConfig::cascade.bump_severity == CascadeBumpSeverity::Patch` (confirming the override was silently dropped). Currently passes with incorrect behavior; adding `#[serde(deny_unknown_fields)]` to `RawCascadeConfig` makes `load()` return `Err`, which is the desired behavior.
+
+---
+
+### [High] `[registries]` `kind` with any value besides `"cargo"` or `"npm"` silently becomes `Ecosystem::Npm`
+
+- **Status**: CONFIRMED (single line, fully traced)
+- **Location**: `crates/callisto-graph/src/config/resolve.rs:277-281`
+- **Classification**: Silent Fallback
+- **Root Cause**:
+  ```rust
+  let kind = match reg.kind.as_deref() {
+      Some("cargo") =&gt; Ecosystem::Cargo,
+      Some("npm") =&gt; Ecosystem::Npm,
+      _ =&gt; Ecosystem::Npm,   // catches "pypi", "go", typos, missing, everything else
+  };
+  ```
+  `Ecosystem::Pypi` is fully implemented (`is_implemented()` returns `true`, `plan_publish` routes PyPI packages). But `kind = "pypi"` in a `[registries]` block falls through the `_` arm and produces a `RegistryConfig` with `kind: Ecosystem::Npm`. The operator believes they've registered a custom PyPI index; the orchestrator sees an Npm registry and routes PyPI packages through `npm publish` instead of `twine upload`.
+- **Failing Scenario**: Operator adds:
+  ```toml
+  [registries.my-pypi]
+  kind = "pypi"
+  url = "https://pypi.example.com"
+  ```
+  The resolved `RegistryConfig` has `kind: Ecosystem::Npm`. The publish orchestrator routes all packages that specify `publish-to = ["my-pypi"]` through the npm client, not the PyPI client.
+- **Severity**: High — wrong publish tool invoked for a declared registry; package either fails to publish or is sent to a mismatched registry.
+- **Verification Strategy**: Write a test calling `load()` with `[registries.my-pypi]\nkind = "pypi"\n` and assert `registries["my-pypi"].kind == Ecosystem::Pypi`. Currently fails (produces `Ecosystem::Npm`).
+
+---
+
+### [High] `apply_version_plan` crash during changeset deletion loop produces double-bump on retry
+
+- **Status**: CONFIRMED (execution path fully traced)
+- **Location**: `crates/callisto-graph/src/apply.rs:75-141`
+- **Classification**: I/O Safety / Crash-Safety (Un-Transactional Disk Mutation)
+- **Root Cause**: `apply_version_plan` writes version bumps to all manifests first (L75-93, each individually atomic via `atomic_write`), then enters a deletion loop for consumed changesets (L130-141, one `fs::remove_file` per changeset file). If the process is killed between changeset deletions — after manifests are fully updated to their new versions but while changeset files remain on disk — the workspace is left in a state where some changesets are deleted and some are not. On retry, `plan_version` calls `base_versions()` which reads the already-bumped version from each manifest, then finds the surviving changeset files and computes a further bump from the already-bumped base. The result is a double version bump (e.g., `1.0.0 → 1.1.0 → 1.2.0`) with no error or warning.
+- **Failing Scenario**: Three packages A, B, C each with a pending minor changeset. Process is killed after A's and B's manifests are written to `1.1.0` and A's changeset is deleted, but before B's and C's changesets are deleted. Re-running `callisto version` reads base versions `[A=1.1.0, B=1.1.0, C=1.0.0]`, finds changesets for B and C, and produces `[B: 1.1.0 → 1.2.0, C: 1.0.0 → 1.1.0]`. B is double-bumped.
+- **Severity**: High — version double-bumping is a release-correctness violation in a release management tool; once published to a registry, a spurious version cannot be retracted from crates.io.
+- **Verification Strategy**: A test that: (1) calls `apply_version_plan` on a plan with two packages and two changesets, (2) simulates a crash by leaving one changeset file on disk while the manifest is at the bumped version, (3) calls `plan_version` again, and asserts the returned plan is empty (no further bumps). Currently, the second `plan_version` call produces spurious bumps.
+
+---
+
+Items investigated but no bug found at critical/high severity:
+
+- **Q1 (SHA race)**: `create_tags` uses `release.sha` from the plan, which is frozen at `plan-publish` time. No race — the SHA is baked in and does not follow HEAD at tag-creation time. Correct by design.
+- **Q2 (tag idempotency under partial failure)**: `already_existed = !git.list_tags(Some(tag_str))?.is_empty()` skips `create_tag` for already-present tags. `create_floating_major` is force-tagged and always idempotent. Retry is safe.
+- **Q3 (plan_tag vs create_tags divergence)**: No separate `plan_tag` function exists. Dry-run and live mode both call `create_tags_with_options` with `permit = None` vs `permit = Some(&amp;permit)`. The same code path computes the tag set in both cases — no divergence.
+- **Q4 (floating major for PEP 440)**: `Version::major()` is defined for PEP 440 (`v.release().first().copied()`), so floating major tag creation works and produces `{prefix}{major}{suffix}`. No crash or wrong result.
+- **Q6 (multi-manifest packages)**: `plan_version` iterates `pkg.manifests` and adds every `ManifestRole::Canonical` decl to `writes` (L116-120). `walk.rs` adds all detected ecosystems' manifests as Canonical for a multi-manifest package. Both manifests are written.
+- **Q7 (changeset deletion)**: Changesets ARE deleted in `apply_version_plan` L130-141 (`plan.consumed_changesets`). The bug is the non-atomicity of the deletion loop (filed above), not the omission of deletion.
+- **Q8 (`base_versions` failure)**: Hard `?` propagation at `version.rs:27`. No silent skip — the whole command fails.
+- **Q10 (config missing vs error)**: Missing `callisto.toml` returns `RawConfig::default()` silently (documented, intentional). `changesets_dir` traversal is validated with a component check (L190-201). Not a bug.
+- **Q12 (gitignore respect)**: `WalkBuilder::git_ignore(true)` is set at `ignore_walk.rs:42`. The walker respects `.gitignore`.
+- **Q13 (symlinks)**: `WalkBuilder` does not set `follow_links(true)`, so the default (no symlink following) prevents symlink loop traversal.
+- **Q14 (Cargo workspace members)**: Filesystem walk correctly finds member crates under the workspace root. Members with `path = "../sibling"` (outside root) would not be discovered, but `to_workspace_relative` would emit `OutsideWorkspaceRoot` error rather than silently including them.</result>
+<usage><subagent_tokens>89572</subagent_tokens><tool_uses>44</tool_uses><duration_ms>491792</duration_ms></usage>
+</task-notification>
