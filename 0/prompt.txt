@@ -1,0 +1,29 @@
+<task-notification>
+<task-id>aab28f8d512f86368</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/0c4c4622-1ed8-4f2c-80e6-f0890a2dad72/tasks/aab28f8d512f86368.output</output-file>
+<status>completed</status>
+<summary>Agent "Adversarial review of PLAN-002" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>```json
+{
+  "issues": [
+    {
+      "task_id": "DOC-1",
+      "type": "under-specified",
+      "description": "AC-009 requires the example workflow to show 'a placement step downloading that artifact into its package directory' as one of three visible phases. DOC-1's replacement YAML does not show an explicit placement step — it folds placement into the single callisto-action step (publish: true) and only documents the behavior via an inline comment. This is a defensible reading given AC-010/the spec's non-goals establish callisto-action does placement internally, and the criterion's parenthetical '(or callisto-action with publish enabled)' suggests this is anticipated for the publish phase, but the criterion's plain text still asks for a visible placement step distinct from the publish step, and a strict reader could fail this AC on the grounds that no step in the YAML itself performs or is labeled as performing placement.",
+      "suggested_fix": "Either add a one-line comment directly on the callisto-action step (not just prose above it) explicitly naming it as performing 'placement + publish', or confirm with the spec author that folding placement into callisto-action's own step satisfies AC-009's 'placement step' requirement before DOC-1 is implemented, so lambda doesn't have to make this judgment call unsupervised."
+    },
+    {
+      "task_id": null,
+      "type": "under-specified",
+      "description": "Non-blocking process note, not a plan defect: the JSON for both spec@1 and plan@1 parsed cleanly with no truncation, and every file/line reference in RUST-1, ACTION-1, and DOC-1/DOC-2 was independently verified against the current on-disk state of crates/callisto-graph/src/matrix.rs, .github/actions/callisto-action/action.yml, ARCHITECTURE.md, and .claude/specs/callisto-matrix.md — all line numbers, function names, struct field names (platform_targets/targets/artifact_name, all camelCase-serialized per callisto-model/src/matrix.rs), and existing test/harness patterns (test_github_release_creation.sh's extract-and-stub mechanics, action.yml:219's process-substitution loop) matched exactly. No hallucinated line numbers or stale references were found.",
+      "suggested_fix": "No action needed."
+    }
+  ],
+  "overall": "pass",
+  "reasoning": "All 11 acceptance criteria (AC-001..AC-011) appear in exactly one task's covers_criteria with no orphans. Task ordering is correct: RUST-1 (Rust rename) precedes ACTION-2 (regression test whose fixture assumes the post-fix artifactName format) and precedes DOC-1/DOC-2 (docs describing callisto-action's placement behavior, which ACTION-1 introduces); ACTION-1 precedes DOC-1/DOC-2 per the stated batch order. Batching respects compilation boundaries: RUST-1 is a standalone Rust-crate batch verified by cargo test; ACTION-1/ACTION-2 touch bash/YAML with no compiler boundary; DOC-1/DOC-2 are pure text edits verified by grep. AC-006 (the spec's only is_error_case:true criterion) is covered by ACTION-1 with an explicit failing-gh-download test case that asserts the step halts, names the artifact and DIR, and never reaches subsequent entries. Interface-incompleteness pre-scan (per interface-implementers.md): RUST-1's only touched file, crates/callisto-graph/src/matrix.rs, contains zero `impl ... for ...` blocks (confirmed via grep), so the task modifies no shared trait implementer and the dimension does not apply; no other task touches a .rs/.ts/.js file. Live-repo verification of every plan-cited line number, field name, and code precedent (matrix.rs:36-40/126-142/718-729/751, action.yml:164-168/219, ARCHITECTURE.md:474-495/497, callisto-matrix.md:309-318, tempfile already a callisto-graph dev-dependency, PlatformTarget/PlatformTargetGroup/MatrixReport field shapes) found exact matches with no drift, no truncation, and no missing dependencies. One non-blocking judgment call flagged on DOC-1 regarding whether folding the placement step into callisto-action's single step satisfies AC-009's literal 'shows a placement step' language — defensible under the spec's own non-goals but worth a quick confirmation before implementation to avoid an exit-gate dispute later."
+}
+```</result>
+<usage><subagent_tokens>98706</subagent_tokens><tool_uses>24</tool_uses><duration_ms>346841</duration_ms></usage>
+</task-notification>
