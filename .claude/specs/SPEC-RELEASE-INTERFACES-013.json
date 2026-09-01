@@ -14,7 +14,7 @@
     "Keeping legacy publish/tag mutation behavior indefinitely."
   ],
   "command_contract": {
-    "release plan": "Read-only. From repeated exact qualified package selections or one named documented configuration-selection mode, computes one ReleaseDecisionV1 and embeds it in the durable ReleaseIntentV1 it writes from a clean detached checkout; it neither publishes, tags, pushes, nor creates a forge release.",
+    "release plan": "Read-only. Local use derives a decision from exact qualified package selections. CI uses an explicit merged-release-commit mode to derive it from the immutable Callisto release-PR delta and verify consumed changesets and version changes. It embeds the result in an intent; it neither publishes, tags, pushes, nor creates a forge release.",
     "release inspect": "Read-only. Displays an intent, artifact manifest, state, or receipt with their binding and readiness checks; it does not recompute an unapproved intent as a side effect.",
     "release execute": "The sole production mutation entry point. It consumes explicit intent and, when needed, artifact-manifest inputs, validates them, obtains a fresh ValidatedReleaseIntent and ApplyPermit, and runs the coordinator from SPEC-RELEASE-EXECUTION-012.",
     "release reconcile": "Read-only. Consumes explicit intent/state inputs and performs exact provider observations to report recoverability; it never publishes, tags, pushes, or creates a forge release."

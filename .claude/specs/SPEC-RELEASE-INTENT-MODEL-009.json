@@ -3,7 +3,7 @@
   "status": "draft",
   "owner_track": "release-security",
   "depends_on": ["SPEC-RELEASE-EXECUTION-FOUNDATION-007", "SPEC-RELEASE-DECISION-008"],
-  "purpose": "Define the typed, serializable, credential-free ReleaseIntentV1 that preserves an approved ReleaseDecisionV1 across process and CI boundaries. The intent is a semantic contract, not a serialized PublishPlan and not a bag of generic fingerprints: it names exact operation identities, semantic inputs, operation prerequisites, and required artifact slots without retaining secrets or mutable prepared inputs.",
+  "purpose": "Define the typed, serializable, credential-free ReleaseIntentV1 that preserves an approved ReleaseDecisionV1 across process and CI boundaries. In CI, graph derives that decision from the immutable merged Callisto release-PR delta rather than a separately managed decision file. The intent is a semantic contract, not a serialized PublishPlan or a bag of generic fingerprints.",
   "scope": "Layer-1 durable identity and digest types; typed semantic snapshot projections; registry/tag/forge binding identities; exact operation DAG; artifact-slot declarations; canonical encoding and fail-closed validation. Fresh graph observation, workspace locking, private prepared inputs, state/receipts, provider observation/effects, and CLI/action cutover are intentionally separate successor work.",
   "non_goals": [
     "Placing package discovery, config resolution, URL parsing, workspace access, group solving, or graph validation in callisto-model.",
@@ -23,7 +23,7 @@
   "acceptance_criteria": [
     {
       "id": "AC-001",
-      "criterion": "ReleaseIntentV1 can be constructed only from a ReleaseDecisionV1 plus explicitly typed semantic observations supplied by the graph layer. It records the exact DecisionDigest and rejects a malformed/unknown schema or an intent whose decision-derived roster, target versions, or declared operations cannot be internally reconciled. Constructing an intent from PublishPlan or a free-form JSON/TOML fingerprint does not satisfy this criterion.",
+      "criterion": "ReleaseIntentV1 can be constructed only from a ReleaseDecisionV1 plus explicitly typed semantic observations supplied by the graph layer. For CI, graph obtains that decision from a verified merged release-PR delta; for local use it obtains it from explicit selection. It records the exact DecisionDigest and rejects a malformed/unknown schema or an intent whose decision-derived roster, target versions, or declared operations cannot be internally reconciled. Constructing an intent from PublishPlan, a free-form JSON/TOML fingerprint, or a separately supplied decision file does not satisfy this criterion.",
       "is_error_case": true
     },
     {
