@@ -1,0 +1,1 @@
+Our changesets now seem to have long bullets and not be as scanable and readable as the single joint one, is that correct or just my impression?
