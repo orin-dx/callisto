@@ -1,0 +1,45 @@
+<task-notification>
+<task-id>aa9f2083cb0264ca4</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/c0ad64b2-6440-4937-8328-8d9fd9db278c/tasks/aa9f2083cb0264ca4.output</output-file>
+<status>completed</status>
+<summary>Agent "Exit-gate SPEC-005 retry 2" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I verified every citation in the spec against the live codebase rather than trusting the revision text. Here is the binding verdict.
+
+## verdict@1
+
+```json
+{
+  "artifact_type": "spec@1",
+  "artifact_path": "/Users/gabe/Projects/callisto/.claude/specs/SPEC-005-release-entry-is-prerelease.json",
+  "verdict": "pass",
+  "confidence": "high",
+  "retry_count": 3,
+  "blockers": [],
+  "verdict_summary": "All 5 prior blockers resolved. Every line citation verified against live code. 17 criteria all testable, zero TBDs, error case AC-015 flagged, scope is one cycle. Cleared for vector.",
+  "reasoning": "Default disposition fail; spec earned pass on all four conditions independently verified."
+}
+```
+
+## Verification performed (every claim re-checked against disk)
+
+**Prior blocker 1 — AC-012a/b/c split and struct-literal census.** `grep -rn ReleaseEntry --include=*.rs` returns exactly 8 struct literals. AC-012b names 7 (`callisto-cli/src/commands/publish.rs:357`; `tag_sha_fabrication_test.rs:98`; `tags_tests.rs:23,111,273,404,410`) — all 7 line numbers land on a literal. The 8th is the primary site at `publish.rs:505`, covered by scope item 2. Census is complete and line-exact. AC-012a's "from" state matches `schema_guard_test.rs:92,95` verbatim; lines 1-6 are indeed the permitted-schema-delta module doc.
+
+**Prior blocker 2 — entry-wise iteration.** AC-009 now correlates `tagName` and `isPrerelease` off the same entry object and explicitly resolves the duplicate-tag case. The bug it replaces is live at `action.yml:202`.
+
+**Prior blocker 3 — null/non-boolean coverage.** AC-015 requires `jq -e 'has("isPrerelease") and (.isPrerelease|type=="boolean")'` and forbids `//`. Well-motivated: the current code uses `// empty` at that exact line, and `false // empty` would collapse a legitimate `false` into a missing key.
+
+**Prior blocker 4 — `ver` ownership.** `publish.rs:237` binds `let (is_release, ver) = ...` from `bump.to.clone()` or `cur_ver` — an owned, already-parsed `Version`, in scope at 505 (line 501 already borrows it). AC-013's no-error-path argument is therefore sound, and its carve-out for the pre-existing `if ver.is_prerelease()` at line 390 is accurate.
+
+**Prior blocker 5 — decision-table row.** Row 23 is at `docs/01-spec.md:2667`, references §M.12.2, and covers `changelog_section`. Appending row 24 under the same section anchor is correct and leaves row 23 untouched.
+
+**Additional independent checks.** `version.rs:126-131` `is_prerelease()` matches the AC-002/004/005/006 semantics exactly; the cited test `pep440_dev_release_is_prerelease` is at `version.rs:365` precisely. `callisto-model/Cargo.toml` declares `license = "MIT OR Apache-2.0"` with the exact 10-dependency list AC-014 enumerates. `action.yml` lines 200-216 bound the release block as claimed (group 201, endgroup 215). `docs/01-spec.md:1740-1763` is the ReleaseEntry doc block with `pub struct ReleaseEntry` at 1742. README.md/ARCHITECTURE.md grep for `ReleaseEntry|prerelease` returns zero hits, confirming that non-goal. No JSON golden fixture anywhere contains a populated `releases[]` entry, so AC-012b's census has no hidden siblings — `strict_flag_tests.rs` uses only `"releases": []`. Vague-language and TBD sweep over the whole document returned zero matches.
+
+## Non-blocking observation (does not affect the verdict, no action required to pass)
+
+`docs/00-design.md:887` contains an illustrative `releases[]` JSON example that will go stale. It is already stale in the same way (it omits `package` too), and the spec's non-goal 6 establishes that pre-existing doc drift is out of scope, with `docs/01-spec.md` §M.12.2 as the normative doc of record. I am recording this as an optional follow-up, not as a condition of the pass — the spec is fully and correctly implementable exactly as written.
+
+**Cleared to enter planning.** No blockers, no conditions attached.</result>
+<usage><subagent_tokens>71188</subagent_tokens><tool_uses>17</tool_uses><duration_ms>210916</duration_ms></usage>
+</task-notification>
