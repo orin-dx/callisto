@@ -1,0 +1,103 @@
+<task-notification>
+<task-id>ac2f994b1a4cee064</task-id>
+<tool-use-id>toolu_01Yb4bfdTWR4PoHsPunpdcJJ</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/bb531e8d-c394-4e47-a8ae-e4a9ceeca6d2/tasks/ac2f994b1a4cee064.output</output-file>
+<status>completed</status>
+<summary>Agent "Re-verify Track 1 spec after redraft" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Verification Report — SPEC-TRACK1-FIXED-GROUP-CASCADE-CORRECTNESS
+
+I read the full spec (16 acceptance criteria: AC-001–AC-013 plus AC-007b, AC-010b, AC-010c) against the provided `requirement@1`. No `research-report@1` file exists on disk (checked `/Users/gabe/Projects/callisto` and the scratchpad) — the corresponding parameter is absent from this spec, and no such artifact could be located — so citations below are drawn from `requirement@1` only.
+
+```json
+{
+  "supported": [
+    {
+      "criterion_id": "AC-001",
+      "evidence": "done_when[0]: 'Given a Fixed group with two Package members, one already released ... at version 2.0.0 and one never-released at version 0.1.0, and a cascade run that assigns both a Minor severity bump, both siblings' computed target version is the SAME group-aligned version (derived from the released sibling's base version per the existing fixed_group_target function in groups.rs), not two independently-bumped versions.' AC-001's fixture values (2.0.0/0.1.0, Minor, both -&gt; 2.1.0) are a direct concretization of this exact scenario.",
+      "source": "requirement@1"
+    },
+    {
+      "criterion_id": "AC-002",
+      "evidence": "done_when[1]: 'This holds through the real, live cascade call path (crate::cascade::run_cascade / solve_cascade), not just in a unit test of fixed_group_target called directly.'",
+      "source": "requirement@1"
+    },
+    {
+      "criterion_id": "AC-003",
+      "evidence": "done_when[2]: 'CascadeInput gains a tags: &amp;TagIndex field. Both real construction sites are updated: commands/version.rs:70 and commands/snapshot.rs:53.'",
+      "source": "requirement@1"
+    },
+    {
+      "criterion_id": "AC-005",
+      "evidence": "done_when[3] requires 'Explicit decision, stated in the spec: whether commands/snapshot.rs's fixed-group target computation is brought into scope by this same fix or is explicitly out of scope with a stated reason.' AC-005 documents plan_snapshot's actual observable return behavior, which is the factual basis for the 'out of scope' half of that required decision.",
+      "source": "requirement@1"
+    },
+    {
+      "criterion_id": "AC-006",
+      "evidence": "Directly instantiates done_when[3]'s required explicit decision: AC-006 states the decision (pre_mutation_checks not wired into snapshot.rs) and the stated reason, exactly the two things done_when[3] demands be present.",
+      "source": "requirement@1"
+    },
+    {
+      "criterion_id": "AC-008",
+      "evidence": "done_when[5]: 'pre_mutation_checks's return value is actually consumed: diagnostics merged into real output, divergence errors actually abort the command.' AC-008 verifies the diagnostics-merge half of this.",
+      "source": "requirement@1"
+    },
+    {
+      "criterion_id": "AC-009",
+      "evidence": "done_when[4]: 'crate::groups::pre_mutation_checks is called from commands/version.rs's real orchestration path, before run_cascade executes,' combined with done_when[2]'s CascadeInput.tags requirement. AC-009 verifies plan_version constructs and threads the values (TagIndex, NapiTargetsIndex, tags) that these two done_when items require to exist and reach both call sites.",
+      "source": "requirement@1"
+    },
+    {
+      "criterion_id": "AC-010",
+      "evidence": "done_when[6]: 'GraphError::ConflictingGroupMembership is constructed by new detection logic in GroupTable::resolve for the two-differently-spelled-groups-same-resolved-package case.' This is a near-verbatim match to AC-010's scenario.",
+      "source": "requirement@1"
+    },
+    {
+      "criterion_id": "AC-011",
+      "evidence": "done_when[6]'s second clause: '...and must NOT fire for the ordinary single-group-membership case.' AC-011 is the direct test of this negative constraint.",
+      "source": "requirement@1"
+    },
+    {
+      "criterion_id": "AC-012",
+      "evidence": "done_when[7]: 'Given a workspace config with no group spelling conflicts, GroupTable::resolve behaves exactly as it does today (regression: existing tests pass unmodified).' AC-012's 'no conflicts -&gt; unmodified regression tests pass' claim is directly grounded here (its added 'no within-group duplicate spellings' qualifier reflects the spec's own dedup addition, which is separately flagged unsupported below).",
+      "source": "requirement@1"
+    },
+    {
+      "criterion_id": "AC-013",
+      "evidence": "done_when[8]: 'All three fixes are covered by tests that exercise the REAL call path, not just isolated unit tests of the already-existing helper functions.' AC-013 restates this per-bug.",
+      "source": "requirement@1"
+    }
+  ],
+  "unsupported": [
+    {
+      "criterion_id": "AC-004",
+      "note": "No done_when item asks for a test that constructs a CascadeInput 'identically in shape to snapshot.rs:53-62' and asserts run_cascade's raw CascadeOutcome.targets. done_when[1] (real call path) is already satisfied by AC-002 via plan_version; done_when[2] only requires the snapshot.rs construction *site* be updated to compile (covered by AC-003), not that a duplicate behavioral test be built mirroring its input shape to prove 'the fix applies uniformly regardless of which command constructs CascadeInput.' That uniformity claim and the specific test construction are the spec author's own invention, not traceable to any requirement passage."
+    },
+    {
+      "criterion_id": "AC-007b",
+      "note": "Requirement's done_when list says nothing about napi package.json being malformed, truncated, or unreadable, and does not mention ManifestError::Parse / ManifestError::Read or any manifest-read-failure abort path. Bug 2's requirement text only concerns pre_mutation_checks being called and its return value being consumed (done_when[4]/[5]); the malformed-JSON failure mode AC-007b tests is not derivable from any requirement passage."
+    },
+    {
+      "criterion_id": "AC-010c",
+      "note": "No done_when item mentions within-group duplicate spellings, dedup, or Vec::dedup() semantics — the requirement's bug 3 description and done_when[6] concern only the cross-group ConflictingGroupMembership case. Moreover, out_of_scope item 4 states 'GroupTable::resolve's other existing responsibilities and error paths beyond the new ConflictingGroupMembership detection' are out of scope; AC-010c's dedup behavior is exactly such an 'other responsibility' of resolve() with no textual basis in the requirement, and the spec's own revision_note (BLK-03) confirms this was added purely to satisfy an internal consistency gap raised by a prior exit-gate, not because the requirement calls for it."
+    }
+  ],
+  "overfitted": [
+    {
+      "criterion_id": "AC-007",
+      "spec_claim": "Introduces two specific, named error variants — GraphError::FixedGroupDivergent for unequal-parsed-version divergence and GraphError::GroupGrammarMismatch for cross-grammar divergence (e.g. SemVer vs CalVer) — as the required abort mechanism, with a bifurcated scenario (divergent-values case vs. divergent-grammar case) neither of which is named in the requirement.",
+      "source_scope": "done_when[5] only states, generically, that 'divergence errors actually abort the command' — it does not name FixedGroupDivergent, GroupGrammarMismatch, or distinguish a values-divergence case from a grammar-mismatch case. The general 'abort on divergence' behavior is supported; the specific variant names and the two-way scenario split are scope added by the drafter beyond what the requirement specifies."
+    },
+    {
+      "criterion_id": "AC-010b",
+      "spec_claim": "Requires the ConflictingGroupMembership check to be unified across group kinds — 'a single resolved PackageId may appear in at most one group total (Fixed or Linked), not one-per-kind' — checked against a single combined view of fixed_of and linked_of rather than two independently-scoped maps.",
+      "source_scope": "done_when[6] speaks only of 'the two-differently-spelled-groups-same-resolved-package conflict membership case' without ever addressing whether the check must span Fixed and Linked group kinds jointly or may be scoped per-kind. The cross-group-conflict concept itself is supported (see AC-010); the specific architectural requirement that detection be unified across kinds via one combined map is a design decision not grounded in the requirement text."
+    }
+  ],
+  "reasoning": "Checked for a research-report@1 on disk (scratchpad and project root) — none exists, so only requirement@1's 9 done_when items and 4 out_of_scope items were available as citation sources. Matched each of the 16 ACs against the closest done_when item and checked whether the AC's specific claims (fixture values, error variant names, scope boundaries, architectural choices like 'unified cross-kind check' or 'dedup via Vec::dedup()') were actually present in the requirement text versus merely plausible extrapolations by the drafter. AC-001/002/003/008/010/011/013 map almost verbatim to specific done_when items. AC-005/006/009/012 are direct restatements or necessary consequences of explicit done_when items. AC-007 and AC-010b have a supported core (abort-on-divergence; cross-group-conflict detection) but add specific mechanism/scope details (named error variants, grammar-mismatch branch, cross-kind unification) with no textual basis, so classified overfitted rather than fully supported. AC-004, AC-007b, and AC-010c were checked hardest since AC-004 and AC-010c both trace to revision_note blockers (BLK-02, BLK-03) added to satisfy a prior canon-exit-gate retry rather than the original requirement — the revision process fixed internal-consistency problems in the spec but in doing so introduced criteria whose justification is 'the exit-gate demanded it' rather than 'the requirement demanded it.' AC-010c is particularly notable: it plausibly conflicts with requirement's own out_of_scope item 4 rather than merely lacking support."
+}
+```
+
+Notably, three criteria (AC-004, AC-007b, AC-010c) trace their origin to the prior canon-exit-gate's blocker list (BLK-02, BLK-03 per the spec's `revision_note`) rather than to the source requirement — they were added to close internal-consistency gaps the exit-gate found, not because the requirement called for them. AC-010c in particular appears to sit in tension with `requirement@1`'s own `out_of_scope` boundary ("GroupTable::resolve's other existing responsibilities... beyond the new ConflictingGroupMembership detection"). These are flagged above for the auditor/exit-gate to weigh — no verdict issued here.</result>
+<usage><subagent_tokens>60476</subagent_tokens><tool_uses>2</tool_uses><duration_ms>367839</duration_ms></usage>
+</task-notification>
