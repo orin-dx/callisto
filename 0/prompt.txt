@@ -1,0 +1,1 @@
+Let's do an adversarial investigation looking for bugs, performance issues, missed corner cases and error cases, DX improvements, security issues that should be addressed. Use agent teams wih the most appropriate model and effort in a comprehensive workflow.
