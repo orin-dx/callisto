@@ -1,11 +1,10 @@
 use std::process::ExitCode;
 
-use callisto_model::{ApplyPermit, DiagnosticSeverity, PublishPlan};
+use callisto_model::{DiagnosticSeverity, PublishPlan};
 
 use crate::cli::{GlobalArgs, OutputFormat, TagArgs};
 use crate::error::CliError;
 use crate::output::write_json;
-use crate::render;
 use crate::runner::CliCommandRunner;
 use crate::workspace::load_workspace;
 
@@ -37,15 +36,12 @@ pub fn handle(args: TagArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
     let plan: PublishPlan =
         serde_json::from_str(&plan_text).map_err(|e| CliError::Other(format!("Failed to parse publish plan: {e}")))?;
 
-    let opts = callisto_graph::commands::TagOptions {
-        floating_major: args.floating_major,
-    };
-    let permit = ApplyPermit::granted_unless_dry_run(global.dry_run);
-    let report = callisto_graph::commands::create_tags_with_options(&ws, &plan, &opts, permit.as_ref())?;
-
     match global.format {
-        OutputFormat::Json => write_json(&mut std::io::stdout(), &report)?,
-        OutputFormat::Text => render::render_tag(&report, global.dry_run, &mut std::io::stdout())?,
+        OutputFormat::Json => write_json(&mut std::io::stdout(), &plan)?,
+        OutputFormat::Text => {
+            let _floating_major = args.floating_major;
+            println!("Tag preview only; no Git tags were created. Use `callisto release execute` after validating a durable release intent.");
+        }
     }
 
     Ok(ExitCode::SUCCESS)

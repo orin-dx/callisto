@@ -69,6 +69,9 @@ pub enum Command {
     /// Filter a publish plan down to what a publish report confirms
     /// actually succeeded, dropping anything that failed.
     FilterPlan(FilterPlanArgs),
+    /// Create, inspect, reconcile, or execute durable release intents.
+    #[command(subcommand)]
+    Release(ReleaseArgs),
     /// Generate shell completion scripts.
     Completions(CompletionsArgs),
     /// Print the JSON schema for a report type.
@@ -241,6 +244,59 @@ pub struct FilterPlanArgs {
     /// Path to a publish report JSON file, inline JSON, or `-` to read it from stdin.
     #[arg(long, value_name = "FILE|-")]
     pub report: String,
+}
+
+/// Durable release subcommands.
+#[derive(Subcommand, Clone, Debug)]
+pub enum ReleaseArgs {
+    /// Create a read-only durable release intent from exact package selections.
+    Plan(ReleasePlanArgs),
+    /// Display a durable intent, manifest, state, or receipt without recomputing it.
+    Inspect(ReleaseInspectArgs),
+    /// Report which pending operations are eligible without changing release state.
+    Reconcile(ReleaseReconcileArgs),
+    /// Execute a previously approved intent. This is the only durable mutation route.
+    Execute(ReleaseExecuteArgs),
+}
+
+#[derive(Args, Clone, Debug)]
+pub struct ReleasePlanArgs {
+    /// Exact qualified package identity, for example `cargo/callisto-cli`. Repeat this flag to select multiple packages.
+    #[arg(long = "package", required = true, value_name = "ECOSYSTEM/NAME")]
+    pub packages: Vec<String>,
+    /// Explicit path where the immutable intent JSON will be atomically written.
+    #[arg(long, value_name = "FILE")]
+    pub out: PathBuf,
+}
+
+#[derive(Args, Clone, Debug)]
+pub struct ReleaseInspectArgs {
+    /// Explicit path to an intent, artifact manifest, state, or receipt JSON document.
+    #[arg(long, value_name = "FILE")]
+    pub input: PathBuf,
+}
+
+#[derive(Args, Clone, Debug)]
+pub struct ReleaseReconcileArgs {
+    /// Explicit path to the durable release intent JSON document.
+    #[arg(long, value_name = "FILE")]
+    pub intent: PathBuf,
+    /// Explicit state path. If omitted, reconciliation reports the initialized state.
+    #[arg(long, value_name = "FILE")]
+    pub state: Option<PathBuf>,
+}
+
+#[derive(Args, Clone, Debug)]
+pub struct ReleaseExecuteArgs {
+    /// Explicit path to the durable release intent JSON document.
+    #[arg(long, value_name = "FILE")]
+    pub intent: PathBuf,
+    /// Explicit artifact manifest path required when the intent declares binary slots.
+    #[arg(long, value_name = "FILE")]
+    pub artifact_manifest: Option<PathBuf>,
+    /// Explicit durable state path. If omitted, state is stored outside the checkout.
+    #[arg(long, value_name = "FILE")]
+    pub state: Option<PathBuf>,
 }
 
 /// Arguments for the `completions` command.
