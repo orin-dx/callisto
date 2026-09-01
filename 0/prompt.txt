@@ -1,0 +1,1 @@
+Don't forget to consider RS best practices, language features in your proposal. We can consider changes, traits, etc. Do we leverage rayon, miette, etc?
