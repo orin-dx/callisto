@@ -1,0 +1,25 @@
+<task-notification>
+<task-id>a9655bdcd876d1d6f</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/tasks/a9655bdcd876d1d6f.output</output-file>
+<status>completed</status>
+<summary>Agent "Draft Spec A: Manifest trait persist split" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I read the actual code (not the wrong `crates/callisto-manifests/src/apply.rs` path — confirmed `apply_version_plan` lives in `crates/callisto-graph/src/apply.rs`) before drafting. Key things I verified directly in the source that shaped the spec:
+
+- `apply_version_plan`'s bumps loop (lines 75-105) and rewrites loop (lines 107-128) in `crates/callisto-graph/src/apply.rs` — confirmed the exact per-entry open/mutate structure and the "already at target, skip write" branch that must NOT get a persist call.
+- `CargoToml` and `PackageJson` already have a *private* inherent `persist` method (cargo.rs:102-113, npm.rs:75-110) that their mutators call at their tail — for these two, promoting to the trait method is mechanical.
+- `PyprojectToml` has **no** persist method today — its three mutators (`write_version` line 212, `update_dependency_spec` line 379, `update_optional_dependencies` line 480) each inline an identical `render()` + `atomic_write` + `map_err` sequence. This is the one place where "add persist" is genuinely new extraction, not just a promotion, and I flagged it explicitly in `api_surface` and AC-004/AC-013.
+- `PyprojectToml::update_dependency_spec` has a silent `_ =&gt; return Ok(())` branch (line 300-304) for non-`Range`/non-`Exact` `DepSpec` variants that never touched disk before. After the refactor, apply.rs's unconditional post-mutate persist will write identical bytes back — content-identical but call-count-different. I called this out as its own criterion (AC-013) so it isn't mistaken for a regression during review.
+- `WorkspaceCargoResolver` (cargo.rs lines 602-706) is a separate type with its own `write_version`/`write_dependency`/`persist`, never implements `Manifest` — confirmed out of scope matches the requirement.
+- `ManifestCstEditor`'s blanket impl (lib.rs 78-96) has zero in-repo callers (grepped repo-wide, excluding stale `.claude/worktrees` copies) — it's currently dead code, but the requirement calls it out explicitly, so I added AC-014 without inventing a caller.
+- Counted test-module call sites of the three mutators: 8 in cargo.rs, 11 in npm.rs, 9 in python.rs (28 total) — used to ground AC-015 without enumerating all 28 individually (that granularity belongs in a plan, not a spec).
+- Confirmed `GraphError::Manifest(ManifestError)` conversion exists so `persist(permit)?` propagates cleanly via `?` in apply.rs.
+
+The spec deliberately excludes the `Result&lt;bool, _&gt;` return-type change and any grouping/batching/counter machinery, per the explicit Spec-A/Spec-B split instruction — non_goals and reasoning both state why, so a reviewer or future agent doesn't reintroduce that scope.
+
+Spec file: `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/spec-manifest-persist-001.json`
+
+This is a draft spec@1 object only — I have not run it through canon-verifier or canon-exit-gate. Let me know if you'd like me to route it through those next (or write it to the repo's spec location) before planning begins.</result>
+<usage><subagent_tokens>82634</subagent_tokens><tool_uses>16</tool_uses><duration_ms>183474</duration_ms></usage>
+</task-notification>
