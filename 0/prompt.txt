@@ -1,0 +1,1 @@
+Yes, let's shipped them together right? We should make sure that we don't bump versions multiple times across a group of changesets in one release PR (two changesets with minor should not bump 0.2 -> 0.3 -> 0.4, it should be 0.2 -> 0.3). Do we have that speced out properly? Tested properly?
