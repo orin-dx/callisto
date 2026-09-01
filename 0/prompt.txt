@@ -1,0 +1,5 @@
+<task-notification>
+<task-id>bnnyxas70</task-id>
+<summary>Monitor event: "wait for T5 full test suite (bd0h1x8dd) to finish"</summary>
+<event>[Monitor timed out — re-arm if needed.]</event>
+</task-notification>
