@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bxq43h5z0</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/08ccaac1-3846-4134-8b06-140e5b9c22f2/tasks/bxq43h5z0.output</output-file>
+<status>completed</status>
+<summary>Background command "Test callisto-cli" completed (exit code 0)</summary>
+</task-notification>
