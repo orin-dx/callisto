@@ -1,0 +1,36 @@
+<task-notification>
+<task-id>aa84e6984ec4273d4</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/aa84e6984ec4273d4.output</output-file>
+<status>completed</status>
+<summary>Agent "Verify root-cause groupings for remediation plan" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Cluster A — fixed-group version engine
+
+Confirmed via crate-wide grep: `fixed_group_target`, `pre_mutation_checks`, and `napi_drift` are all re-exported from `lib.rs` (public API surface) but have **zero call sites** in `commands/version.rs`, `apply.rs`, or anywhere else in production code — only in their own module's tests (`groups.rs`, `napi.rs`) and one test in `walk.rs`. But they are unwired for **two different structural reasons**, not one:
+
+1. **`fixed_group_target` is dead because `cascade.rs`'s `raise()` uses a different, weaker mechanism.** For fixed-group siblings, `raise()` (line ~464) calls `bump_target(sib, sev, input)` — each sibling independently bumps from *its own* base version at the unioned severity. `fixed_group_target` instead computes one aligned target off the group's already-released members' shared base. These can diverge (unlike linked groups, which do have explicit convergence logic in `solve_cascade`'s linked-group loop). Fix touches `cascade.rs::raise`/`bump_target`, and likely requires adding a `tags: &amp;TagIndex` field to `CascadeInput` (not currently present) since `fixed_group_target` needs it.
+
+2. **`pre_mutation_checks` is simply never invoked by any command.** It's a standalone pre-flight validation (divergence check via tags + napi drift) that no caller in `commands/version.rs` runs before/around `run_cascade`. Fix touches the version command's orchestration, not `cascade.rs`.
+
+3. **`napi_drift`'s unwiring is a downstream consequence of #2, not a third root cause** — it's only called from inside `pre_mutation_checks`. Wiring #2 in also wires `napi_drift`.
+
+4. **`GraphError::ConflictingGroupMembership` (E109) is a separate, third gap.** It's defined in `error.rs` but never constructed anywhere. `GroupTable::resolve` (config/groups.rs) only returns `MissingGroupMember` for unresolvable names; `validate_syntactic` only catches *syntactic* string-level overlap (`ConflictingGroupNames`) before identity resolution. Neither catches a case where two differently-spelled raw member strings resolve, post-identity, to the same `PackageId` across groups. This needs new logic added inside `GroupTable::resolve` itself — unrelated to `bump_target`/`raise`.
+
+**Recommendation: 3 distinct fixes.** (1) `cascade.rs::raise`/`bump_target` — align fixed-group targets via `fixed_group_target`. (2) version-command orchestration — call `pre_mutation_checks` (covers `napi_drift` for free). (3) `config/groups.rs::GroupTable::resolve` — detect and raise `ConflictingGroupMembership` post-resolution.
+
+## Cluster B — identity/ecosystem resolution
+
+1. **Name-vs-path matching (`pattern.rs`/`resolve.rs`) and locator scoping (`ignore_walk.rs`) are independent.** `resolve.rs:349` parses `[[package]] match` into a `PackageId`; `walk.rs` (lines 175–201) then matches by `id.name()`/`PackagePattern::matches_in_ecosystems` — confirmed name-based, not path-based. `IgnoreWalkLocator::projects()` is a wholly separate concern: it walks every directory (skipping only `target`/`node_modules`/`.git`/`.moon`/`dist`) and treats any dir with a manifest as a project, with **no reference at all** to Cargo `[workspace]` members/exclude or npm `workspaces` globs. Two separate functions, two separate fixes.
+
+2. **`IdentityIndex.prefixed` dead code is independent of `resolve_native_with_fallback`'s cross-ecosystem fallback.** `walk.rs::build` populates `index.bare` and `index.native` but never calls `.prefixed.insert(...)` anywhere in the crate — confirmed via grep. `resolve_native_with_fallback` operates entirely on `native` (which is populated) and is functionally live. Separate bugs.
+
+3. **Package-name validation would fix neither of the above, nor are they the same as each other.** The `DuplicatePackage`/workspace-blocking issue is a `primary_id` collision in `walk.rs::build`'s `package_manifest_decls.insert` (keyed by name-derived id, not path/ecosystem) — a key-collision-strategy bug. The `prefixed` dead field is a missing-write bug. Validating manifest names at `PackageId::parse`/discovery time addresses neither.
+
+**Recommendation: 4 distinct fixes**, touching: (1) `walk.rs` package/package-set matching → path-aware matching, (2) `ignore_walk.rs::projects()` → workspace-membership filtering, (3) `walk.rs::build` → populate `index.prefixed`, (4) `walk.rs::build`'s `package_manifest_decls.insert` collision key → disambiguate by ecosystem/path, not name alone.
+
+## Cluster C
+
+Confirmed independent. Grepped `apply.rs` in full: zero references to `platform_writes`/`optional_dep_updates`, though `plan.rs`'s `VersionPlan` carries both fields. `apply_version_plan` only iterates `plan.bumps`, `plan.rewrites`, `plan.changelog_writes`, `plan.consumed_changesets`, `plan.pre_state_update`. This is a distinct gap in `apply_version_plan` itself (needs new write loops), unrelated to `cascade.rs`/`groups.rs`.</result>
+<usage><subagent_tokens>101344</subagent_tokens><tool_uses>27</tool_uses><duration_ms>153864</duration_ms></usage>
+</task-notification>
