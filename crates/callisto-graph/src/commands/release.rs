@@ -279,7 +279,41 @@ impl ValidatedReleaseIntent<'_> {
                 }
                 self.runner.run("npm", &args, &cwd)?
             }
-            Ecosystem::Pypi => return Err(GraphError::ReleaseIntentStale),
+            Ecosystem::Pypi => {
+                // Never upload from the workspace's mutable `dist/` directory.
+                // The temporary directory is created for this exact operation
+                // and dropped immediately afterwards, excluding stale files.
+                let output_dir = tempfile::tempdir().map_err(|error| GraphError::ReleaseInputRead {
+                    path: cwd.clone(),
+                    message: error.to_string(),
+                })?;
+                let output_path = output_dir.path().to_string_lossy();
+                let built = self
+                    .runner
+                    .run("python", &["-m", "build", "--outdir", output_path.as_ref()], &cwd)?;
+                if built.exit_code != Some(0) {
+                    return Err(GraphError::ReleaseIntentStale);
+                }
+                let files = std::fs::read_dir(output_dir.path())
+                    .map_err(|error| GraphError::ReleaseInputRead {
+                        path: output_dir.path().to_path_buf(),
+                        message: error.to_string(),
+                    })?
+                    .filter_map(Result::ok)
+                    .map(|entry| entry.path())
+                    .filter(|path| path.is_file())
+                    .collect::<Vec<_>>();
+                if files.is_empty() {
+                    return Err(GraphError::ReleaseIntentStale);
+                }
+                let mut args = vec!["upload", "--skip-existing"];
+                if let Some(endpoint) = registry.endpoint.as_deref() {
+                    args.extend(["--repository-url", endpoint]);
+                }
+                let files = files.iter().map(|path| path.to_string_lossy()).collect::<Vec<_>>();
+                args.extend(files.iter().map(std::convert::AsRef::as_ref));
+                self.runner.run("twine", &args, &cwd)?
+            }
             _ => return Err(GraphError::ReleaseIntentStale),
         };
         if output.exit_code == Some(0) {
@@ -299,12 +333,8 @@ impl ValidatedReleaseIntent<'_> {
         target: &CommitSha,
         annotation: &str,
     ) -> Result<OperationOutcome, GraphError> {
-        let reference = format!("refs/tags/{name}^{{commit}}");
-        let observed = self
-            .runner
-            .run("git", &["rev-parse", "--verify", &reference], &self.prepared.root)?;
-        if observed.exit_code == Some(0) {
-            return if observed.stdout.trim() == target.as_str() {
+        if let Some(observed) = self.observed_tag_target(name)? {
+            return if observed == *target {
                 Ok(OperationOutcome::AlreadySatisfied)
             } else {
                 Err(GraphError::ReleaseIntentStale)
@@ -324,14 +354,15 @@ impl ValidatedReleaseIntent<'_> {
         if pushed.exit_code != Some(0) {
             return Err(GraphError::ReleaseIntentStale);
         }
-        Ok(OperationOutcome::Published)
+        if self.observed_tag_target(name)?.as_ref() == Some(target) {
+            Ok(OperationOutcome::Published)
+        } else {
+            Err(GraphError::ReleaseIntentStale)
+        }
     }
 
     fn dispatch_forge_release(&self, tag: &TagName) -> Result<OperationOutcome, GraphError> {
-        let observed = self
-            .runner
-            .run("gh", &["release", "view", tag.as_str()], &self.prepared.root)?;
-        if observed.exit_code == Some(0) {
+        if self.observed_forge_release_target(tag)? {
             return Ok(OperationOutcome::AlreadySatisfied);
         }
         let created = self.runner.run(
@@ -339,11 +370,45 @@ impl ValidatedReleaseIntent<'_> {
             &["release", "create", tag.as_str(), "--verify-tag", "--generate-notes"],
             &self.prepared.root,
         )?;
-        if created.exit_code == Some(0) {
+        if created.exit_code == Some(0) && self.observed_forge_release_target(tag)? {
             Ok(OperationOutcome::Published)
         } else {
             Err(GraphError::ReleaseIntentStale)
         }
+    }
+
+    fn observed_tag_target(&self, name: &TagName) -> Result<Option<CommitSha>, GraphError> {
+        let reference = format!("refs/tags/{name}^{{commit}}");
+        let observed = self
+            .runner
+            .run("git", &["rev-parse", "--verify", &reference], &self.prepared.root)?;
+        if observed.exit_code != Some(0) {
+            return Ok(None);
+        }
+        CommitSha::parse(observed.stdout.trim())
+            .map(Some)
+            .map_err(|_error| GraphError::ReleaseIntentStale)
+    }
+
+    fn observed_forge_release_target(&self, tag: &TagName) -> Result<bool, GraphError> {
+        let observed = self.runner.run(
+            "gh",
+            &["release", "view", tag.as_str(), "--json", "tagName,targetCommitish"],
+            &self.prepared.root,
+        )?;
+        if observed.exit_code != Some(0) {
+            return Ok(false);
+        }
+        let value: serde_json::Value =
+            serde_json::from_str(&observed.stdout).map_err(|_error| GraphError::ReleaseIntentStale)?;
+        let expected = match &self.prepared.source {
+            SourceIdentity::GitCommit { sha } => sha.as_str(),
+            SourceIdentity::HermeticContent { .. } => return Err(GraphError::ReleaseIntentStale),
+        };
+        Ok(
+            value.get("tagName").and_then(serde_json::Value::as_str) == Some(tag.as_str())
+                && value.get("targetCommitish").and_then(serde_json::Value::as_str) == Some(expected),
+        )
     }
 }
 
