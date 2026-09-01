@@ -1,0 +1,1 @@
+All users of callisto are failing because we don't have a published binary to GH, we need to get this done quickly please
