@@ -1,0 +1,32 @@
+<task-notification>
+<task-id>a0e2dbe18cb2093ec</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/tasks/a0e2dbe18cb2093ec.output</output-file>
+<status>completed</status>
+<summary>Agent "Second revision of implementation plan" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All 8 findings from the round-2 vector-challenger pass have been fixed, and programmatic verification confirms complete criterion coverage with no structural defects.
+
+Summary of what was fixed, with verification performed before each fix:
+
+1. **T19's fabricated red phase (blocking)** — Grepped `crates/callisto-graph/src/apply.rs` and confirmed exactly two `open(&amp;decl, &amp;ctx)` call sites (bumps loop, rewrites loop), unchanged by this spec. Moved this task to new ID T20, added it to `red_phase_waived_tasks`, and rewrote its `expected_failure` in the honest waived form.
+
+2. **Fabricated npm.rs/python.rs test counts (blocking)** — Ran `grep -c '#\[test\]'` against the live files: npm.rs has 29 pre-existing tests (not 19), python.rs has 30 (not 24); cargo.rs's 21 baseline was confirmed correct. Rather than re-deriving a new fragile absolute-count sequence, switched every manifest test-count assertion (cargo.rs, npm.rs, python.rs) to a "0 failed + named new test(s)" form, with absolute totals kept only as non-binding informational asides.
+
+3. **AC-009 check (b) had no task (blocking)** — Added new task T14, placed after T13, with two `assert_eq!` byte-identity tests (one Cargo, one PackageJson) comparing `apply_version_plan`'s output against a hand-written open→write_version→persist sequence.
+
+4. **T06's guard landing too late** — Read `cargo.rs:303-307` and confirmed the hazard was real, not "provably harmless." Moved the guard task to new ID T02 (right after T01a/T01b), before the apply.rs wiring tasks, and corrected the wiring tasks' reasoning/commit messages accordingly.
+
+5. **T20 omitting 3 of 7 `just ci` phases** — Read the live `justfile` (`ci: fmt-check lint test audit doc-check wasm-check coverage`, and `coverage`'s `--all-features` flag) and split into T21a/T21b/T21c covering all 7 phases in justfile order, with an explicit `cargo check -p callisto-manifests --all-features` pre-check.
+
+6. **chmod 0o555 no-op under root** — Added a write-probe-and-early-return guard to both T16 and T17 (renumbered from T15/T16).
+
+7. **T01b's empty covers_criteria** — Set to `["AC-001"]`, noted as jointly covered with T01a.
+
+8. **T04 too large** — Split into T05a (production strip + genuine-red new test) and T05b (existing-test insertions, itself with a genuine red phase since T05a's edit breaks those tests first).
+
+Final verification (`python3` + `json`): all 21 criteria (AC-001–AC-020 plus AC-011b) appear in `covers_criteria`, 25 task IDs with zero duplicates, all `red_phase_waived_tasks` entries resolve to real tasks, and all required per-task fields are present.
+
+File updated in place: `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/plan-manifest-persist-001.json`</result>
+<usage><subagent_tokens>181691</subagent_tokens><tool_uses>13</tool_uses><duration_ms>626456</duration_ms></usage>
+</task-notification>
