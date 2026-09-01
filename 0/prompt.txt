@@ -1,0 +1,1 @@
+Once we're done do we rip out the legacy path to avoid making mistakes in the future or is that legacy path still necessary?
