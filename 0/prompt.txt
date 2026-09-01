@@ -1,0 +1,30 @@
+<task-notification>
+<task-id>a625ef0ce61b0dffc</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a15bbbf7-aba0-415d-bfdc-c773ea65cfc7/tasks/a625ef0ce61b0dffc.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix publish command returning ExitCode::SUCCESS on complete failure" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All 5 new tests pass. Here is a summary of what was done:
+
+---
+
+**Changes made (working tree only, not committed):**
+
+**`crates/callisto-model/src/report.rs`**
+
+- Added `impl PublishAttemptResult { pub fn is_failure(&amp;self) -&gt; bool }` — returns `true` only for the `Failed` variant via `matches!`.
+- Added `impl PublishReport { pub fn has_failures(&amp;self) -&gt; bool }` — returns `true` if any attempt's result `is_failure()`.
+- Added a `#[cfg(test)]` module with 5 tests covering: any-failure, all-failure, all-success, empty-report, and per-variant `is_failure` assertions.
+
+**`crates/callisto-cli/src/commands/publish.rs`**
+
+- After rendering the report, added: `if report.has_failures() { return Ok(ExitCode::FAILURE); }` before the final `Ok(ExitCode::SUCCESS)`.
+
+**TDD cycle confirmed:**
+
+- RED: tests failed with `method not found` errors for `is_failure` and `has_failures`.
+- GREEN: after adding the implementations, all 41 callisto-model tests pass (5 new + 36 pre-existing).
+- Clippy: `callisto-model` and `callisto-cli` both pass `-D warnings` cleanly. The errors surfaced by `-p callisto-cli -p callisto-model` together are in `callisto-conventional` (a transitive dependency) and are pre-existing, not introduced by this change.</result>
+<usage><subagent_tokens>40393</subagent_tokens><tool_uses>23</tool_uses><duration_ms>247736</duration_ms></usage>
+</task-notification>
