@@ -1,0 +1,30 @@
+<task-notification>
+<task-id>a632ca99df95390a9</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/tasks/a632ca99df95390a9.output</output-file>
+<status>completed</status>
+<summary>Agent "Exit gate retry 3 for Spec A" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>**Verdict: fail** (2 blockers). Written to `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/verdict-spec-manifest-persist-001-retry3.json`
+
+## All 5 claimed fixes are real — verified independently against the code
+
+1. **AC-020 `permit` rename** — exact. Every cited line is the *only* use of `permit` in its method body: `cargo.rs:215,239`; `npm.rs:253,340,362`; `python.rs:212,379,480`. The exclusion of `CargoToml::update_dependency_spec` is right — `cargo.rs:306` passes `permit` to `ws_res.write_dependency`. `CargoToml::update_optional_dependencies` already uses `_permit` and is correctly absent.
+2. **E020 → E027** — E020 genuinely collides (`exec.rs:59`, `version.rs:307`); E027 is genuinely free. (Prose nit: E034 is also free, contra the spec's "E030-E053 all assigned" — harmless, E027 is still lowest.)
+3. **AC-005 carve-out** — `write_version`'s inherited branch (`cargo.rs:199-216`) mutates `self.document` and persists its *own* file; it never touches `WorkspaceCargoResolver`. The false claim is gone.
+4. **AC-009 rewrites test** — present and constructible (`plan.rs:16` is `Vec&lt;SpecRewrite&gt;`; loop confirmed at `apply.rs:107-128`). Its characterization of the four secondary tests is factually correct.
+5. **AC-018 `OpenContext`** — both precedent tests exist exactly where cited (`ctx_with_ws` is at line 1385 precisely). Critically, `cargo.rs:28` computes `abs_path` with **no** `canonicalize()`, so `self.absolute == self.workspace_root.join("Cargo.toml")` genuinely holds and the guard fires. `inheritance()` is infallible, so the `.unwrap()` is safe.
+
+## What blocks
+
+**Blocker 1 (substantive).** The `scope` field's final clause assigns AC-009/AC-011/AC-011b's new tests to "each ecosystem module's own `#[cfg(test)]` module." Those tests all call `apply_version_plan`, which lives in callisto-graph. `crates/callisto-manifests/Cargo.toml` has no callisto-graph dependency and cannot have one — `callisto-graph/Cargo.toml:22` already depends on callisto-manifests. **The tests are uncompilable where scope puts them.** Meanwhile `apply.rs`'s `#[cfg(test)]` module is authorized nowhere in scope; its scope entry is narrowly worded as "the bumps loop and rewrites loop only." The clause also re-attributes AC-017 and AC-009(c) to ecosystem modules despite scope already listing their correct homes earlier in the same sentence. Exact replacement text is in the blocker.
+
+**Blocker 2 (narrow).** `api_surface[4]`'s signature for `PyprojectToml::update_optional_dependencies` still shows `permit`, but AC-020 requires `_permit` for that exact method. Alone this would not have justified a fail — AC-020 is explicit and AC-016's clippy gate forces it mechanically — but it is reported so the next round is complete.
+
+## Things I specifically hunted and found clean
+
+I looked hard for a third mutator loop over `plan.optional_dep_updates` or `plan.platform_writes` that would silently lose writes once the internal persist is stripped. There is none — `apply_version_plan` never consumes those fields, and `update_optional_dependencies` has zero production callers. Also clean: exactly three `Manifest` implementors (no fourth breaks AC-001), `persist` is object-safe so the `Arc&lt;dyn Manifest&gt;` caches are unaffected, `callisto-manifests/src/atomic.rs` is a pure re-export so AC-011's citation of callisto-model is correct with the failure point exactly as described, AC-017's cascade invariant is true as stated, and AC-015 does not collide with `WorkspaceCargoResolver::write_version`. No TBDs; no untestable criteria; five `is_error_case: true` criteria cover the error surface; scope size still fits one cycle.
+
+Both remaining fixes are mechanical text edits with replacement text supplied. `retry_count` is 3, which does not *exceed* 3, so this is a fail rather than an escalate — but a retry-4 gate must escalate to a human rather than issue another fail.</result>
+<usage><subagent_tokens>153459</subagent_tokens><tool_uses>36</tool_uses><duration_ms>641565</duration_ms></usage>
+</task-notification>
