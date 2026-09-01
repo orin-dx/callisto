@@ -1,0 +1,1 @@
+Can we write up specs for all of these thinsg you're suggesting? Create a branch in a separate worktree to avoid clashing with claude. Check the current stacked status of PRs and create a PR for the specs?
