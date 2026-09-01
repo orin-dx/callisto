@@ -1,0 +1,35 @@
+<task-notification>
+<task-id>ab8bb0f0ed88d23f1</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/ab8bb0f0ed88d23f1.output</output-file>
+<status>completed</status>
+<summary>Agent "Re-audit Track 3a spec, round 8" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I ran the full 8th-round audit directly against the spec JSON and the actual implementation file. Round 7's two fixes hold up:
+
+**AC-09i (Cargo exclude glob-compile-failure fixture)** — verified accurate and well-formed. It uses `exclude = ["crates/scratch-example", "crates/[unterminated"]` with both a valid `crates/scratch-example/Cargo.toml` and `crates/kept-example/Cargo.toml`, asserts the well-formed exclude entry is honored, the malformed entry is treated as never-matching, and the walk doesn't panic/error. It's correctly cross-referenced from the `glob-matching-semantics` api_surface entry and from AC-14's fixture list. No issues.
+
+**pnpm `!`-negation non_goals entry** — verified accurate. globset's `GlobBuilder` treats a `!`-prefixed string as a literal pattern; since no real workspace-relative path begins with `!`, the entry is provably inert (never matches, never excludes, never errors). Description is technically correct and properly scoped as a documented follow-up.
+
+**Cross-spec line citations** (non_goals entries 12 and 13) — re-verified against the current file: `to_workspace_relative` is still at lines 145-161, and the workspace-root `.` handling is still at lines 152-154, matching both track-g-matrix-napi-maturin.json's and SPEC-APPLY-BATCH-002.json's citations exactly. No drift yet; the forward-looking re-verification requirement remains correctly stated. Grepped every other spec in `.claude/specs/` for `ignore_walk.rs` references — no additional uncited citations found.
+
+**One new, verified defect found in the sweep**: I built a throwaway Cargo project and empirically tested `yaml_rust2::YamlLoader::load_from_str` against an empty string, a whitespace-only string, and a comments-only string. All three return `Ok(vec![])` — zero YAML documents, not an `Err` and not a single document with a missing key. This is a third, distinct code path the spec never addresses: AC-11 covers `Err(..)` (malformed YAML), AC-11b covers "parses successfully into a document that lacks `packages:` or has the wrong shape" — both assume a document exists to inspect. An empty or comment-only `pnpm-workspace.yaml` (a file that plausibly exists in the wild — e.g. someone deleted its contents, or it's all comments) parses successfully but yields no document at all. The extremely common idiomatic yaml-rust2 usage pattern (`&amp;docs[0]` or `.first().unwrap()`) panics on this input — exactly the outcome every other criterion in this spec is written to forbid. This isn't a mirror of an already-covered case; it's a genuinely different branch (zero documents vs. one document with the wrong shape) that AC-11b's prose doesn't reach.
+
+```json
+{
+  "issues": [
+    {
+      "criterion_id": "AC-11b",
+      "type": "missing-error-case",
+      "description": "Verified empirically (yaml-rust2, empty/whitespace-only/comment-only input) that yaml_rust2::YamlLoader::load_from_str returns Ok(vec![]) — zero YAML documents — for an empty or comments-only pnpm-workspace.yaml file. This is a third, distinct outcome from AC-11's Err(..) case and AC-11b's 'parses into a document missing/wrong-shape packages:' case: here parsing succeeds but produces no document object to inspect at all. The idiomatic yaml-rust2 access pattern (indexing docs[0] or docs.first().unwrap()) panics on this input, which every other criterion in this spec explicitly forbids. No existing criterion or fixture exercises an empty/whitespace/comments-only pnpm-workspace.yaml file.",
+      "suggested_fix": "Add AC-11d: \"Given a pnpm-workspace.yaml file that is empty (zero bytes), contains only whitespace, or contains only YAML comments — such that yaml_rust2::YamlLoader::load_from_str returns Ok(vec![]), a successful parse producing zero YAML documents rather than a single document — IgnoreWalkLocator::projects() does not panic (it must not unconditionally index docs[0] or call docs.first().unwrap()); it treats the npm membership filter as absent for that workspace, the same fallback as AC-11b's missing-packages-key case.\" Extend AC-14's regression-fixture group and the glob-matching/YAML-handling api_surface prose to name AC-11d alongside AC-11/AC-11b, with the exact fixture: a pnpm-workspace.yaml containing only \"# no packages here\\n\"."
+    }
+  ],
+  "overall": "fail",
+  "reasoning": "Round 7's two closed gaps (AC-09i, pnpm negation non_goals) both verified accurate and well-formed against the real spec text and real globset semantics — no issues there. Cross-spec line citations to SPEC-APPLY-BATCH-002.json and track-g-matrix-napi-maturin.json re-verified against the current ignore_walk.rs and still match exactly; no new sibling-spec overlap found in a full grep of .claude/specs/. However, empirically testing yaml_rust2::YamlLoader::load_from_str (not assumed — built and ran a throwaway crate) revealed it returns Ok(vec![]) for empty/whitespace/comment-only input, a third code path distinct from AC-11's Err case and AC-11b's wrong-shape-document case, and one that the idiomatic zero-document-unaware access pattern would panic on. This clears the bar the task set for a final-round finding: it's concrete (I verified the exact library behavior, not a hypothesis), grounded in a real input shape (an emptied-out or fully-commented workspace file is not exotic), and of real consequence (a panic, which is the exact failure mode every other criterion in this spec was written to rule out). It is not a mirror of an already-covered pattern — AC-11/AC-11b assume a document exists to inspect; this case has none. Recommend one more correction round adding AC-11d, then this spec should be very close to a genuine pass."
+}
+```
+
+Files read: `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/spec-track3a-workspace-membership.json`, `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs`, and all files in `/Users/gabe/Projects/callisto/.claude/specs/`.</result>
+<usage><subagent_tokens>76217</subagent_tokens><tool_uses>10</tool_uses><duration_ms>107578</duration_ms></usage>
+</task-notification>
