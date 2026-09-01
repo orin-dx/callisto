@@ -223,7 +223,7 @@ fn derive_release_intent<R: CommandRunner, D: DependencyResolver>(
     trust_profile: ExecutionTrustProfileV1,
 ) -> Result<ReleaseIntentV1, GraphError> {
     let (snapshot, operations, _) = derive_release_inputs(workspace, decision, source)?;
-    ReleaseIntentV1::new(decision.clone(), snapshot, trust_profile, operations)
+    ReleaseIntentV1::new(decision.clone(), snapshot, trust_profile, operations, vec![])
         .map_err(|_error| GraphError::ReleaseIntentStale)
 }
 
@@ -234,7 +234,7 @@ fn derive_release_intent_with_prepared<R: CommandRunner, D: DependencyResolver>(
     trust_profile: ExecutionTrustProfileV1,
 ) -> Result<(ReleaseIntentV1, BTreeMap<ReleaseOperationId, PreparedOperation>), GraphError> {
     let (snapshot, operations, prepared) = derive_release_inputs(workspace, decision, source)?;
-    let intent = ReleaseIntentV1::new(decision.clone(), snapshot, trust_profile, operations)
+    let intent = ReleaseIntentV1::new(decision.clone(), snapshot, trust_profile, operations, vec![])
         .map_err(|_error| GraphError::ReleaseIntentStale)?;
     Ok((intent, prepared))
 }

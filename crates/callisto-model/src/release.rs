@@ -793,6 +793,154 @@ pub enum ReleaseOperationError {
     DuplicatePrerequisite { id: Box<ReleaseOperationId> },
 }
 
+/// Exact binary asset declaration authorized by a durable release intent.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ArtifactSlotId {
+    pub package: ReleasePackageId,
+    pub version: Version,
+    pub platform: String,
+    pub asset_name: String,
+}
+
+impl ArtifactSlotId {
+    pub fn new(
+        package: ReleasePackageId,
+        version: Version,
+        platform: impl Into<String>,
+        asset_name: impl Into<String>,
+    ) -> Result<Self, ArtifactSlotError> {
+        let platform = platform.into();
+        let asset_name = asset_name.into();
+        if !is_safe_artifact_component(&platform) || !is_safe_artifact_component(&asset_name) {
+            return Err(ArtifactSlotError::UnsafeSlotComponent);
+        }
+        Ok(Self {
+            package,
+            version,
+            platform,
+            asset_name,
+        })
+    }
+}
+
+impl PartialOrd for ArtifactSlotId {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for ArtifactSlotId {
+    fn cmp(&self, other: &Self) -> Ordering {
+        (&self.package, self.version.render(), &self.platform, &self.asset_name).cmp(&(
+            &other.package,
+            other.version.render(),
+            &other.platform,
+            &other.asset_name,
+        ))
+    }
+}
+
+fn is_safe_artifact_component(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 255
+        && !value.contains("..")
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+}
+
+/// Credential-free GitHub attestation policy and verified provenance facts.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct GitHubArtifactAttestationV1 {
+    pub repository: String,
+    pub signer_workflow: String,
+    pub subject_digest: ArtifactDigest,
+    pub source_commit: CommitSha,
+}
+
+/// One exact built asset and its verified provenance binding.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ArtifactManifestEntryV1 {
+    pub slot: ArtifactSlotId,
+    pub digest: ArtifactDigest,
+    pub byte_length: u64,
+    pub attestation: GitHubArtifactAttestationV1,
+}
+
+/// Typed build output bound to one durable intent and source commit.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ArtifactManifestV1 {
+    pub schema_version: u8,
+    pub intent_digest: IntentDigest,
+    pub source_commit: CommitSha,
+    pub entries: Vec<ArtifactManifestEntryV1>,
+}
+
+impl ArtifactManifestV1 {
+    pub const SCHEMA_VERSION: u8 = 1;
+
+    pub fn new(
+        intent: &ReleaseIntentV1,
+        mut entries: Vec<ArtifactManifestEntryV1>,
+    ) -> Result<Self, ArtifactManifestError> {
+        let SourceIdentity::GitCommit { sha } = &intent.snapshot.source else {
+            return Err(ArtifactManifestError::NonGitSource);
+        };
+        entries.sort_by(|left, right| left.slot.cmp(&right.slot));
+        if entries.windows(2).any(|pair| pair[0].slot == pair[1].slot) {
+            return Err(ArtifactManifestError::DuplicateSlot);
+        }
+        let expected = &intent.artifact_slots;
+        if entries.iter().map(|entry| &entry.slot).ne(expected.iter()) {
+            return Err(ArtifactManifestError::MismatchedSlotRoster);
+        }
+        if entries
+            .iter()
+            .any(|entry| entry.digest != entry.attestation.subject_digest || entry.attestation.source_commit != *sha)
+        {
+            return Err(ArtifactManifestError::MismatchedAttestation);
+        }
+        Ok(Self {
+            schema_version: Self::SCHEMA_VERSION,
+            intent_digest: intent.digest.clone(),
+            source_commit: sha.clone(),
+            entries,
+        })
+    }
+
+    pub fn validate_for_intent(&self, intent: &ReleaseIntentV1) -> Result<(), ArtifactManifestError> {
+        if self.schema_version != Self::SCHEMA_VERSION || self.intent_digest != intent.digest {
+            return Err(ArtifactManifestError::MismatchedIntent);
+        }
+        Self::new(intent, self.entries.clone()).map(|_| ())
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
+pub enum ArtifactSlotError {
+    #[error("artifact slot platform and asset name must be safe relative identifiers")]
+    UnsafeSlotComponent,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
+pub enum ArtifactManifestError {
+    #[error("artifact manifests require a Git commit source")]
+    NonGitSource,
+    #[error("artifact manifest repeats an artifact slot")]
+    DuplicateSlot,
+    #[error("artifact manifest slot roster differs from the intent")]
+    MismatchedSlotRoster,
+    #[error("artifact attestation does not bind its exact bytes and intent source commit")]
+    MismatchedAttestation,
+    #[error("artifact manifest is bound to a different intent or schema")]
+    MismatchedIntent,
+}
+
 fn validated_registry_key(raw: String) -> Result<RegistryKey, ReleaseOperationError> {
     if raw.is_empty()
         || raw.len() > 128
@@ -814,6 +962,7 @@ pub struct ReleaseIntentV1 {
     pub snapshot: ReleaseInputSnapshotV1,
     pub trust_profile: ExecutionTrustProfileV1,
     pub operations: Vec<ReleaseOperation>,
+    pub artifact_slots: Vec<ArtifactSlotId>,
     digest: IntentDigest,
 }
 
@@ -825,6 +974,7 @@ struct ReleaseIntentV1Wire {
     snapshot: ReleaseInputSnapshotV1,
     trust_profile: ExecutionTrustProfileV1,
     operations: Vec<ReleaseOperation>,
+    artifact_slots: Vec<ArtifactSlotId>,
     digest: IntentDigest,
 }
 
@@ -843,8 +993,14 @@ impl<'de> Deserialize<'de> for ReleaseIntentV1 {
         if wire.snapshot.packages.windows(2).any(|pair| pair[0] >= pair[1]) {
             return Err(serde::de::Error::custom("release input packages are not canonical"));
         }
-        let intent = Self::new(wire.decision, wire.snapshot, wire.trust_profile, wire.operations)
-            .map_err(serde::de::Error::custom)?;
+        let intent = Self::new(
+            wire.decision,
+            wire.snapshot,
+            wire.trust_profile,
+            wire.operations,
+            wire.artifact_slots,
+        )
+        .map_err(serde::de::Error::custom)?;
         if intent.digest != wire.digest {
             return Err(serde::de::Error::custom(
                 "release intent digest does not match canonical content",
@@ -862,6 +1018,7 @@ impl ReleaseIntentV1 {
         snapshot: ReleaseInputSnapshotV1,
         trust_profile: ExecutionTrustProfileV1,
         operations: Vec<ReleaseOperation>,
+        mut artifact_slots: Vec<ArtifactSlotId>,
     ) -> Result<Self, ReleaseIntentError> {
         if !matches!(trust_profile, ExecutionTrustProfileV1::GitCommit)
             || !matches!(snapshot.source, SourceIdentity::GitCommit { .. })
@@ -870,13 +1027,26 @@ impl ReleaseIntentV1 {
         }
         validate_operations(&operations)?;
         validate_operation_roster(&decision, &operations)?;
-        let digest = digest_intent(&decision, &snapshot, trust_profile, &operations);
+        artifact_slots.sort();
+        if artifact_slots.windows(2).any(|pair| pair[0] == pair[1]) {
+            return Err(ReleaseIntentError::DuplicateArtifactSlot);
+        }
+        if artifact_slots.iter().any(|slot| {
+            !decision
+                .entries
+                .iter()
+                .any(|entry| entry.package == slot.package && entry.target_version == slot.version)
+        }) {
+            return Err(ReleaseIntentError::ArtifactSlotOutsideDecision);
+        }
+        let digest = digest_intent(&decision, &snapshot, trust_profile, &operations, &artifact_slots);
         Ok(Self {
             schema_version: Self::SCHEMA_VERSION,
             decision,
             snapshot,
             trust_profile,
             operations,
+            artifact_slots,
             digest,
         })
     }
@@ -891,6 +1061,7 @@ fn digest_intent(
     snapshot: &ReleaseInputSnapshotV1,
     trust_profile: ExecutionTrustProfileV1,
     operations: &[ReleaseOperation],
+    artifact_slots: &[ArtifactSlotId],
 ) -> IntentDigest {
     let mut transcript = CanonicalTranscript::intent_v1();
     transcript.push_bytes("schema", [ReleaseIntentV1::SCHEMA_VERSION]);
@@ -908,6 +1079,12 @@ fn digest_intent(
         for prerequisite in &operation.prerequisites {
             transcript.push_str("prerequisite", &operation_id_text(prerequisite));
         }
+    }
+    for slot in artifact_slots {
+        transcript.push_str("artifact-slot.package", &slot.package.to_string());
+        transcript.push_str("artifact-slot.version", slot.version.render());
+        transcript.push_str("artifact-slot.platform", &slot.platform);
+        transcript.push_str("artifact-slot.asset", &slot.asset_name);
     }
     IntentDigest::from_transcript(&transcript)
 }
@@ -1029,6 +1206,10 @@ pub enum ReleaseIntentError {
     UnsupportedTrustProfile,
     #[error("release operation `{id:?}` is not authorized by the embedded release decision")]
     OperationOutsideDecision { id: Box<ReleaseOperationId> },
+    #[error("release intent repeats an artifact slot")]
+    DuplicateArtifactSlot,
+    #[error("artifact slot is not authorized by the embedded release decision")]
+    ArtifactSlotOutsideDecision,
     #[error("release operations are not in canonical order")]
     NonCanonicalOperationOrder,
     #[error("duplicate release operation `{id:?}`")]
@@ -1453,6 +1634,15 @@ mod tests {
         trust_profile: ExecutionTrustProfileV1,
         operations: Vec<ReleaseOperation>,
     ) -> Result<ReleaseIntentV1, ReleaseIntentError> {
+        test_intent_with_slots(snapshot, trust_profile, operations, vec![])
+    }
+
+    fn test_intent_with_slots(
+        snapshot: Result<ReleaseInputSnapshotV1, ReleaseInputSnapshotError>,
+        trust_profile: ExecutionTrustProfileV1,
+        operations: Vec<ReleaseOperation>,
+        slots: Vec<ArtifactSlotId>,
+    ) -> Result<ReleaseIntentV1, ReleaseIntentError> {
         let mut entries = Vec::new();
         for operation in &operations {
             if !entries.iter().any(|entry: &ReleaseDecisionEntry| {
@@ -1470,6 +1660,7 @@ mod tests {
             snapshot.expect("test snapshot is valid"),
             trust_profile,
             operations,
+            slots,
         )
     }
 
@@ -1520,6 +1711,38 @@ mod tests {
             ArtifactDigest::from_bytes(b"callisto"),
             ArtifactDigest::from_bytes(b"callisto\n")
         );
+    }
+
+    #[test]
+    fn artifact_manifest_requires_exact_slot_digest_and_source_binding() {
+        let package = ReleasePackageId::parse("cargo/demo").unwrap();
+        let version = Version::semver(1, 0, 0);
+        let operation = ReleaseOperation::tag(package.clone(), version.clone(), vec![]).unwrap();
+        let slot = ArtifactSlotId::new(package, version, "x86_64-unknown-linux-gnu", "demo.tar.gz").unwrap();
+        let intent = test_intent_with_slots(
+            ReleaseInputSnapshotV1::new(SourceIdentity::git_commit("a".repeat(40)).unwrap(), vec![]),
+            ExecutionTrustProfileV1::GitCommit,
+            vec![operation],
+            vec![slot.clone()],
+        )
+        .unwrap();
+        let digest = ArtifactDigest::from_bytes(b"binary");
+        let manifest = ArtifactManifestV1::new(
+            &intent,
+            vec![ArtifactManifestEntryV1 {
+                slot,
+                digest: digest.clone(),
+                byte_length: 6,
+                attestation: GitHubArtifactAttestationV1 {
+                    repository: "orin-dx/callisto".to_string(),
+                    signer_workflow: "refs/heads/main:.github/workflows/release.yml".to_string(),
+                    subject_digest: digest,
+                    source_commit: CommitSha::parse(&"a".repeat(40)).unwrap(),
+                },
+            }],
+        )
+        .unwrap();
+        manifest.validate_for_intent(&intent).unwrap();
     }
 
     #[test]

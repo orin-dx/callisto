@@ -168,6 +168,7 @@ mod tests {
                 .unwrap(),
             ExecutionTrustProfileV1::GitCommit,
             vec![operation],
+            vec![],
         )
         .unwrap()
     }

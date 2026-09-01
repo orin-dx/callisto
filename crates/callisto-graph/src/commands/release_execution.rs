@@ -164,6 +164,7 @@ mod tests {
             ReleaseInputSnapshotV1::new(SourceIdentity::git_commit("a".repeat(40)).unwrap(), vec![]).unwrap(),
             ExecutionTrustProfileV1::GitCommit,
             vec![publish, tag, forge],
+            vec![],
         )
         .unwrap()
     }
