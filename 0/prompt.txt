@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bmx4rtux3</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/tasks/bmx4rtux3.output</output-file>
+<status>failed</status>
+<summary>Background command "Full crate test/clippy/fmt check after snapshot.rs fix" failed with exit code 1</summary>
+</task-notification>
