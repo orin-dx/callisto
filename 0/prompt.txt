@@ -1,0 +1,22 @@
+<task-notification>
+<task-id>a3febc5545fa3d8a0</task-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8a85b651-0c9a-44fa-9e0a-ac694c4409e1/tasks/a3febc5545fa3d8a0.output</output-file>
+<status>completed</status>
+<summary>Agent "Correct SPEC-002 for platform-arch-abi naming" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>The correction is complete and verified end to end.
+
+**Verdict: PASS** — SPEC-002 at `/Users/gabe/Projects/callisto/.claude/specs/SPEC-002-native-artifact-placement.json` is corrected, audited, and exit-gated.
+
+**What changed (AC-001 and its dependents):**
+- `scope` and `api_surface[0]` now describe the real function `artifact_name_for_package_platform(package_name: &amp;str, platform: &amp;str, arch: &amp;str, abi: Option&lt;&amp;str&gt;) -&gt; String` (`crates/callisto-graph/src/matrix.rs:142-152`), returning `{name}-{platform}-{arch}[-{abi}]`, replacing the stale triple-based `artifact_name_for_package_triple` description.
+- `AC-001` now asserts the napi-rs `&lt;packageName&gt;-&lt;platform&gt;-&lt;arch&gt;[-&lt;abi&gt;]` format with a concrete grounded example (`pkg-a-darwin-arm64` / `pkg-b-darwin-arm64` for two packages sharing `aarch64-apple-darwin`), and explicitly forbids raw-triple substrings, vendor components, and the old `native-` prefix.
+- `non_goals[17]` reworded to name both superseded formats (the original `native-{triple}` and the never-shipped intermediate `native-{package_name}-{triple}`) rather than just one.
+- `AC-002`–`AC-011` checked for stale references — none found; they're format-agnostic and untouched.
+- `revision_note` documents this pass's grounding (napi-rs docs, live source, existing unit tests pinning the exact output strings) plus the prior AC-008/AC-009 history.
+
+**Audit finding fixed in-file:** AC-001's example triple was inconsistent between its first sentence (`x86_64-apple-darwin`) and its worked example (`aarch64-apple-darwin`) — corrected to use `aarch64-apple-darwin` throughout.
+
+**Open item, correctly out of scope for this correction:** `.claude/specs/track-g-matrix-napi-maturin.json`'s AC-013 still asserts the old `native-{triple}` format and is now factually contradicted by the shipped code. That's a different spec file and needs its own `canon:correct-spec` pass — flagged for you to queue separately.</result>
+<usage><subagent_tokens>82245</subagent_tokens><tool_uses>17</tool_uses><duration_ms>734481</duration_ms></usage>
+</task-notification>
