@@ -1,0 +1,9 @@
+<task-notification>
+<task-id>bzlga0e9b</task-id>
+<tool-use-id>toolu_01Pup7x1p2cWfciwtjf95aor</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/b90cda92-db13-4c63-8d7f-c9fa7d9196ab/tasks/bzlga0e9b.output</output-file>
+<status>completed</status>
+<summary>Background command "kill 34383 2&gt;/dev/null; sleep 1
+cd /Users/gabe/Projects/callisto
+cargo test -p callisto-graph --lib -- npm_main_package_is_skipped 2&gt;&amp;1 | tail -60" completed (exit code 0)</summary>
+</task-notification>
