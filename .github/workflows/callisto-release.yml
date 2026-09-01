@@ -136,8 +136,16 @@ jobs:
           set -euo pipefail
           # This only schedules the job. `release plan` verifies the actual
           # parent-to-merge delta; labels and PR metadata are never authority.
+          # The GitHub API check is complementary provenance evidence: a
+          # trusted merge must be both an actual merge of the managed PR and
+          # a GitHub-verified signed commit. It cannot be a direct push.
           prs=$(gh api --paginate "/repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/pulls" --jq '[.[] | select(.merged_at != null and .base.ref == "main" and .head.ref == "callisto/version-packages")] | length')
-          [[ "$prs" == 1 ]] && echo 'is_release_pr=true' >> "$GITHUB_OUTPUT" || echo 'is_release_pr=false' >> "$GITHUB_OUTPUT"
+          verified=$(gh api "/repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}" --jq '.commit.verification.verified')
+          if [[ "$prs" == 1 && "$verified" == true ]]; then
+            echo 'is_release_pr=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'is_release_pr=false' >> "$GITHUB_OUTPUT"
+          fi
 
   plan:
     name: Derive ephemeral intent from the merged release commit
@@ -158,7 +166,7 @@ jobs:
       - name: Derive and hash intent
         run: |
           set -euo pipefail
-          callisto release plan --merged-release-commit --out release-intent.json
+          callisto release plan --from-release-commit "$GITHUB_SHA" --out release-intent.json
           shasum -a 256 release-intent.json > release-intent.json.sha256
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
