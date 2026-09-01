@@ -1,0 +1,291 @@
+<task-notification>
+<task-id>a9ba4d60f28a7220d</task-id>
+<tool-use-id>toolu_011Dk1e2mjuwofuvWAhaxsSS</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a15bbbf7-aba0-415d-bfdc-c773ea65cfc7/tasks/a9ba4d60f28a7220d.output</output-file>
+<status>completed</status>
+<summary>Agent "GitHub Action audit: what's hardcoded, what belongs in Callisto instead" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Now I have all the information needed. Here is the complete audit.
+
+---
+
+## Part 1: Hardcoded Values Audit
+
+### 1. Hardcoded version numbers (action pins — mutable semver tags, no SHA pinning)
+
+Every external action reference across all files is pinned only to a mutable major-version tag, not a git SHA. Supply-chain trust depends entirely on those tags not being mutated.
+
+Inventory:
+
+| File | Action | Pin |
+|---|---|---|
+| `callisto-ci.yml`, `callisto-release.yml` | `actions/checkout` | `@v4` |
+| `setup-callisto/action.yml`, `callisto-ci.yml`, `callisto-release.yml` | `dtolnay/rust-toolchain` | `@stable` (floating!) |
+| `setup-callisto/action.yml`, `callisto-ci.yml` | `Swatinem/rust-cache` | `@v2` |
+| `setup-callisto/action.yml`, `callisto-ci.yml` | `moonrepo/setup-toolchain` | `@v0` |
+| `callisto-ci.yml` | `extractions/setup-just` | `@v2` |
+| `callisto-ci.yml` | `taiki-e/install-action` | `@v2` |
+| `callisto-ci.yml` | `actions/upload-artifact` | `@v4` |
+| `callisto-ci.yml`, `callisto-release.yml` | `EmbarkStudios/cargo-deny-action` | `@v2` |
+| `setup-callisto-wasm/action.yml` | `actions/cache` | `@v4` |
+
+`dtolnay/rust-toolchain@stable` is the most concerning — `stable` is a rolling ref that follows every Rust release, not even a semver tag.
+
+### 2. Hardcoded registry URLs
+
+`setup-callisto/action.yml:57-58,72` and `setup-callisto-wasm/action.yml:38,41`:
+
+```
+https://github.com/orin-dx/callisto/releases/latest/download/$ASSET_NAME
+https://github.com/orin-dx/callisto/releases/download/$TAG_NAME/$ASSET_NAME
+https://github.com/orin-dx/callisto.git
+```
+
+The GitHub org+repo `orin-dx/callisto` is hardcoded in four URL constructions across both setup actions. When these actions are consumed from a fork, or when the repo is renamed, the setup steps silently try to download binaries from the original repo instead of the fork. There is no input to override this. It should be `${{ github.repository }}` or a dedicated `repository` input.
+
+`callisto-action/action.yml:189`: `crates.io rate limit` is mentioned only in a log message, not a URL — this is fine.
+
+The `callisto publish` CLI path (`publish_client.rs`) mentions `https://upload.pypi.org/legacy/` only in test fixture strings — not in action shell code.
+
+### 3. Hardcoded tool paths
+
+**`setup-callisto/action.yml:65`**: `cargo build -p callisto-cli` — builds in **debug mode** (no `--release`). When the action bootstraps itself from source, the callisto binary being installed for all subsequent steps is a debug build, which is substantially slower on large workspace analysis. This is the only path where callisto itself is built from source (i.e., when CI runs against this repo).
+
+**`callisto-action/action.yml:177`**: `cargo publish -p "$crate" --no-verify --allow-dirty`. The `cargo` binary is assumed on PATH (installed by the setup action upstream). `--no-verify --allow-dirty` are hardcoded flags that differ from how `callisto publish` invokes cargo (`cargo publish -p &lt;name&gt; --locked`, no `--no-verify`). This means the bash path skips the package-builds-cleanly verification that `--locked` enforces, allowing a broken crate to be published.
+
+**`callisto-action/action.yml:214,219`**: `npm publish "$PKG" --access public`. The `npm` binary is assumed on PATH, but there is no `setup-node` step anywhere in the action or workflow. See Bug 1 below.
+
+**`callisto-action/action.yml:228`**: `callisto tag --plan "$PLAN_JSON"` — passing the full plan JSON inline as a shell argument. `tag.rs:43` detects leading `{` and handles this correctly, so there is no parsing bug here, but for very large plans (hundreds of packages) the argument size could approach OS shell limits (~2 MB on Linux).
+
+No `pip`, `python`, or `twine` path is referenced in the action at all — PyPI publishing is entirely absent from the bash path.
+
+### 4. Hardcoded retry counts and delays
+
+**`callisto-action/action.yml`**:
+
+- `max_attempts=12` (line 165) — hardcoded, not an action input
+- `delay=15` seconds between index-propagation retries (line 166) — hardcoded
+- `sleep 600` (line 189) — hardcoded 10-minute wait when crates.io rate-limiting is detected
+
+None of these are exposed as inputs. A workspace that publishes many crates and consistently hits the index-propagation window would benefit from a configurable delay. The 600-second forced sleep on a rate limit is particularly impactful in a time-bounded CI runner.
+
+### 5. Hardcoded output field names
+
+`callisto-action/action.yml` outputs block:
+- `hasChangesets` — boolean string `"true"/"false"`, written via `echo "hasChangesets=true" &gt;&gt; $GITHUB_OUTPUT`
+- `published` — same pattern
+- `publishedPackages` — multiline heredoc containing the raw JSON from `callisto plan-publish --format json`
+
+The third output is the critical one: `publishedPackages` is set to the **plan** JSON (what Callisto intends to publish), not a report of what actually published. There is no second assignment to `publishedPackages` after the publish loop completes. Downstream workflows that read `publishedPackages` receive the pre-publish plan regardless of which packages succeeded or failed.
+
+`setup-callisto-wasm/action.yml` output `path`: the value expression is `${{ steps.download-wasm.outputs.path || inputs.dest }}`. When the cache hits, `steps.download-wasm` is skipped and its output is empty string, making the `|| inputs.dest` fallback the operative value. This works correctly but is subtle — the output is not stable to inspect mid-pipeline.
+
+### 6. Hardcoded jq queries — match analysis
+
+The jq expressions in `callisto-action/action.yml` against `callisto plan-publish --format json`:
+
+| jq expression | Rust field | `serde(rename_all)` | Serialized name | Match? |
+|---|---|---|---|---|
+| `.rustCrates[]?.name` | `PublishPlan.rust_crates` | `camelCase` | `rustCrates` | **YES** |
+| `.npmPlatformPackages[]?.name` | `PublishPlan.npm_platform_packages` | `camelCase` | `npmPlatformPackages` | **YES** |
+| `.npmMainPackages[]?.name` | `PublishPlan.npm_main_packages` | `camelCase` | `npmMainPackages` | **YES** |
+| `.releases[]?.tagName` | `ReleaseEntry.tag_name` | `camelCase` | `tagName` | **YES** |
+| *(missing)* | `PublishPlan.pypi_packages` | `camelCase` | `pypiPackages` | **NOT QUERIED** |
+
+All four present queries match the actual serialized field names. The critical gap is the fifth field: `pypiPackages` exists in the JSON output but is never extracted, so PyPI packages are silently skipped. See Bug 2.
+
+### 7. Hardcoded ecosystem-specific publish logic
+
+The action's `INPUT_PUBLISH == "true"` branch (lines 159–223) implements three ecosystem branches:
+
+**Cargo branch** (lines 207–209): `cargo publish -p "$CRATE" --no-verify --allow-dirty` with a 12-attempt retry loop.
+
+- This logic is partially duplicated with `callisto publish` → `SubprocessRegistryClient::cargo_publish`, which uses `cargo publish -p &lt;name&gt; --locked`. The flags differ materially: `--no-verify --allow-dirty` (bash) vs. `--locked` (CLI).
+- The bash retry loop manually detects `"already exists"`, `"429 Too Many Requests"`, `"rate-limits"` substring matches — the same classification logic implemented more robustly in `classify_cargo_output()`.
+- Disposition: **MOVE TO CALLISTO** — `callisto publish` already exists, is tested, and handles cargo with proper retry/idempotency. The bash loop is a stale duplicate.
+
+**NPM platform/main branch** (lines 212–222): `npm publish "$PKG" --access public || true`
+
+- **Bug**: `$PKG` is a bare package name (e.g., `"@my-org/my-pkg"`), but `npm publish [&lt;folder&gt;]` expects a directory path. `SubprocessRegistryClient::npm_publish` correctly uses `npm publish --workspace &lt;name&gt;` — the workspace flag selects a package by name within an npm workspace. The bash path omits `--workspace`, causing npm to treat the name as a relative path that almost certainly doesn't exist. The failure is silently suppressed by `|| true`.
+- No retry logic. No idempotency check (no `npm view` pre-check).
+- Disposition: **MOVE TO CALLISTO** — and the npm bug disappears in the process.
+
+**PyPI branch**: entirely absent. No `twine upload`, no `TWINE_*` environment variables, no jq extraction of `pypiPackages`. Python packages are scheduled in the plan but never published.
+
+- Disposition: **ALREADY IN CALLISTO** (`SubprocessRegistryClient::pypi_publish` uses `twine upload --skip-existing`). This branch should be deleted from the action and the cutover to `callisto publish` completed.
+
+### 8. Hardcoded authentication patterns
+
+**`callisto-action/action.yml:170`**: `if [[ -n "$CARGO_REGISTRY_TOKEN" ]]; then token_flag="--token $CARGO_REGISTRY_TOKEN"`. The env var name `CARGO_REGISTRY_TOKEN` is hardcoded; there is no action input for it. The workflow file (`callisto-release.yml:70`) handles the common naming variations via `${{ secrets.CARGO_REGISTRY_TOKEN || secrets.CARGO_TOKEN || secrets.CRATES_IO_TOKEN }}`, but this is workflow-level policy invisible to the action's documentation.
+
+**NPM auth**: `callisto-release.yml:71` sets `NPM_TOKEN: ${{ secrets.NPM_TOKEN }}` in the workflow env, but `callisto-action/action.yml` never reads `$NPM_TOKEN`. There is no `npm config set //registry.npmjs.org/:_authToken=$NPM_TOKEN`, no `.npmrc` setup, no `setup-node` step with `registry-url`. The npm publish steps run with no npm authentication configured, which would produce `ENEEDAUTH` errors in any real CI invocation.
+
+**PyPI auth**: Not mentioned anywhere — no `TWINE_*`, no `PYPI_TOKEN`, no documentation.
+
+None of these token names are documented as required inputs to the action. The action's `inputs:` block has no token-related inputs at all.
+
+### 9. Hardcoded branch names or tag patterns
+
+**Version PR source branch**: `callisto/version-packages` is hardcoded in five places (`callisto-action/action.yml:91,113,116,122,130`). This is not an action input. Users cannot change the branch name the version PR is opened from.
+
+**Base branch**: `main` is the default for `INPUT_BRANCH` (`callisto-action/action.yml:34`), and is hardcoded as the trigger branch in both workflows (`callisto-ci.yml:5,9`, `callisto-release.yml:5`).
+
+**Prerelease tag detection regex** (`callisto-action/action.yml:240`):
+```bash
+if [[ "$TAG" =~ -(alpha|beta|rc|pre|next) ]]; then
+  EXTRA_FLAGS="--prerelease"
+fi
+```
+This pattern requires a hyphen separator. PEP 440 pre-release tags have no hyphen: `1.0a1`, `1.0b2`, `1.0rc1`. If a Python package tag renders as `my-pkg@1.0rc1`, the regex does not match, and the GitHub Release is published without `--prerelease`, making a pre-release appear as a stable release on GitHub. The `callisto` tag template for PEP 440 packages would produce exactly this format.
+
+### 10. Hardcoded changeset directory
+
+The `.changeset` directory is not hardcoded in any action shell code. All callisto CLI commands (status, version, compose-pr-body, plan-publish) read the changeset directory from `callisto.toml` internally. The one reference — `git add -A` — stages everything, not just the changeset directory. No issue here at the action layer.
+
+---
+
+## Part 2: What Should Move into the Callisto CLI
+
+### Block A: `callisto status --check` (action.yml:80-84)
+**What it does**: Invokes `callisto status --check`. Returns exit 0 if changesets are pending, exit 2 if none.
+**CLI coverage**: ALREADY IN CALLISTO — `callisto status --check` is implemented at `crates/callisto-cli/src/commands/status.rs:36-45`.
+**Disposition**: ALREADY IN CALLISTO. Action correctly delegates; no bash reimplementation.
+
+### Block B: `gh pr list --head callisto/version-packages --json body --jq '.[0].body'` (action.yml:91)
+**What it does**: Fetches the existing version PR body from GitHub to feed into `callisto compose-pr-body --existing-body`.
+**CLI coverage**: None, and none needed. This is a GitHub API call.
+**Disposition**: KEEP IN ACTION — GitHub-specific, belongs at the CI layer.
+
+### Block C: `callisto compose-pr-body` (action.yml:95-98)
+**What it does**: Generates the PR body text.
+**CLI coverage**: ALREADY IN CALLISTO.
+**Disposition**: ALREADY IN CALLISTO. Action correctly delegates.
+
+### Block D: `eval "$INPUT_VERSION_COMMAND"` (action.yml:103)
+**What it does**: Runs the version command (default: `callisto version`) to bump versions and consume changesets.
+**CLI coverage**: ALREADY IN CALLISTO — `callisto version` handled by `crates/callisto-cli/src/commands/version.rs`.
+**Disposition**: ALREADY IN CALLISTO.
+
+### Block E: Git config, checkout, add -A, commit, push, PR create/update (action.yml:107-138)
+**What it does**: Configures git identity, creates/switches to `callisto/version-packages`, stages all changes, commits with the configured message, force-pushes, creates or updates the GitHub PR with title/body/label.
+
+**CLI coverage**: Partial.
+- `callisto version` already stages changed manifests via `git add` per file inside `apply.rs`. The `git add -A` in the action catches everything else (consumed changeset files, lockfile refreshes if `--refresh-lockfiles` was passed). Whether `callisto version` stages changeset deletions depends on whether it calls `git rm` — it should, but if it does, `git add -A` is redundant; if it doesn't, `git add -A` is load-bearing.
+- The commit, branch management, force-push, and GitHub PR lifecycle are all GitHub Actions infrastructure.
+
+**Disposition**: KEEP IN ACTION for branch/commit/push/PR steps. The `git add -A` may be redundant with callisto's internal staging — worth verifying whether `callisto version` stages changeset file removals. If it does, `git add -A` should become a named `git add` targeting only the files callisto might have missed, to avoid committing unintended artifacts.
+
+### Block F: `callisto plan-publish --format json` (action.yml:147)
+**What it does**: Generates the topological publish plan.
+**CLI coverage**: ALREADY IN CALLISTO.
+**Disposition**: ALREADY IN CALLISTO. Action correctly delegates.
+
+### Block G: The entire publish loop — `publish_crate_with_retry`, `npm publish`, (missing PyPI) (action.yml:163-223)
+**What it does**: For each package in the plan:
+1. Cargo: calls `cargo publish -p &lt;name&gt; --no-verify --allow-dirty` with a manual 12-attempt retry loop, hardcoded 15s delay, and hardcoded 600s rate-limit wait.
+2. npm: calls `npm publish &lt;name&gt; --access public || true` (wrong syntax, no auth, error suppressed).
+3. PyPI: not implemented.
+
+**CLI coverage**: ALREADY IN CALLISTO via `callisto publish` (`crates/callisto-cli/src/commands/publish.rs`), which calls `PublishOrchestrator` + `SubprocessRegistryClient`. The CLI handles all three ecosystems with proper retry, idempotency checks, per-package outcome recording, and correct npm workspace syntax (`npm publish --workspace &lt;name&gt;`).
+
+**Disposition**: MOVE TO CALLISTO — and immediately removes three confirmed bugs (wrong npm syntax, missing PyPI, suppressed errors). The ledger entry for this fix notes the cutover is deliberately staged. Replace the entire block F+G with:
+```bash
+callisto publish --format json | tee /tmp/publish-report.json
+echo "publishedPackages&lt;&lt;EOF" &gt;&gt; $GITHUB_OUTPUT
+cat /tmp/publish-report.json &gt;&gt; $GITHUB_OUTPUT
+echo "EOF" &gt;&gt; $GITHUB_OUTPUT
+```
+This also fixes the `publishedPackages` output correctness bug (Bug 5 below) at the same time.
+
+### Block H: `callisto tag --plan "$PLAN_JSON" --floating-major` (action.yml:228)
+**What it does**: Creates per-package git tags and floating major-version pointer aliases.
+**CLI coverage**: ALREADY IN CALLISTO — `crates/callisto-cli/src/commands/tag.rs`.
+**Disposition**: ALREADY IN CALLISTO. The `|| true` suppressing failures is a correctness issue (see Bug 4 below) but the command itself is correctly delegated.
+
+### Block I: `git push origin --tags` (action.yml:229)
+**What it does**: Pushes all local tags to the remote after `callisto tag` creates them locally.
+**CLI coverage**: None. `callisto tag` creates tags locally and does not push.
+**Disposition**: KEEP IN ACTION — pushing to a remote is a CI infrastructure concern. A `--push` flag on `callisto tag` would be a reasonable addition to consolidate this, but it is not a blocking issue.
+
+### Block J: `gh release create "$TAG" --title "$TAG" --generate-notes` (action.yml:234-246)
+**What it does**: Creates a GitHub Release entry for each tag in the plan. Uses `--generate-notes` for release note auto-generation regardless of whether Callisto has a changelog section for that package.
+**CLI coverage**: None, and none needed. This is a GitHub API call.
+**Disposition**: KEEP IN ACTION — GitHub-specific. However, `ReleaseEntry.changelog_section` in `plan.rs` exists for this purpose and is always `None` today. When that field is populated, this block should pass `--notes "$CHANGELOG_SECTION"` instead of `--generate-notes`.
+
+---
+
+## Confirmed Bugs
+
+### [High] Bug 1: `npm publish "$PKG"` uses positional-path syntax instead of `--workspace &lt;name&gt;`
+
+- **Status**: CONFIRMED — path traced through jq extraction (`.npmPlatformPackages[]?.name` → bare package name string) and `npm publish` documentation.
+- **Location**: `.github/actions/callisto-action/action.yml:213-222`
+- **Classification**: Silent Fallback / Incorrect Tool Invocation
+- **Root Cause**: `npm publish [&lt;folder&gt;]` expects a directory path or tarball. The action passes the npm package name (e.g., `@my-org/my-pkg`) as a positional argument, which npm interprets as a relative filesystem path. The `|| true` on every publish call suppresses the ENOTDIR or ENOENT failure, so npm platform and main packages are never published on the `publish: "true"` path.
+- **Contrast**: `SubprocessRegistryClient::npm_publish` in `publish_client.rs:104-116` correctly uses `npm publish --workspace &lt;name&gt;`.
+- **Failing Scenario**: Any workflow with `publish: "true"` and npm packages in the plan — all npm publishes fail silently, `published=true` is emitted, `publishedPackages` is set to the plan JSON, and no package reaches npm.
+- **Fix**: Replace the bash publish loop with `callisto publish`.
+
+### [High] Bug 2: `pypiPackages` in plan JSON is never consumed — PyPI packages silently skipped
+
+- **Status**: CONFIRMED — `PublishPlan.pypi_packages` serializes as `pypiPackages` (camelCase via `rename_all`); the action extracts `rustCrates`, `npmPlatformPackages`, `npmMainPackages` but not `pypiPackages`. No `twine` call anywhere in the action.
+- **Location**: `.github/actions/callisto-action/action.yml:159-223`
+- **Classification**: Silent Fallback
+- **Root Cause**: The PyPI ecosystem was added to `PublishPlan` and `SubprocessRegistryClient` but the corresponding extraction and publish step was never added to the action's bash loop.
+- **Failing Scenario**: A workspace with one or more `publish_to: [pypi]` packages — `callisto plan-publish` schedules them, the jq loop extracts nothing, no `twine upload` is called, the action emits `published=true`, and the packages remain unpublished.
+- **Fix**: Replace the bash publish loop with `callisto publish`, which already handles PyPI.
+
+### [High] Bug 3: `NPM_TOKEN` is set in the workflow but never read by the action
+
+- **Status**: CONFIRMED — `callisto-release.yml:71` sets `NPM_TOKEN: ${{ secrets.NPM_TOKEN }}` in the job env. The action's bash code contains `npm publish "$PKG" --access public` with no npm auth setup step, no `.npmrc` configuration, and no reference to `$NPM_TOKEN`.
+- **Location**: `.github/actions/callisto-action/action.yml:212-222`, `.github/workflows/callisto-release.yml:71`
+- **Classification**: Silent Fallback / Discarded Parameter
+- **Root Cause**: npm auth in CI must be pre-configured (via `.npmrc`, `npm config set //registry.npmjs.org/:_authToken=`, or a `setup-node` step with `registry-url`). None of these are present. The token is set in the environment but no tool reads it.
+- **Failing Scenario**: CI run with npm packages to publish — `npm publish` exits `ENEEDAUTH`, `|| true` suppresses it.
+- **Fix**: Either add a `setup-node` step with `registry-url: https://registry.npmjs.org/` (which makes `setup-node` write the auth token to `.npmrc` automatically), or replace the bash path with `callisto publish` (which inherits the runner environment and relies on npm's own `.npmrc` resolution — still requires the token to be in the environment in a form npm reads, but at least the `--workspace` flag is correct and errors propagate rather than being suppressed).
+
+### [Medium] Bug 4: `callisto tag ... || true` and `git push origin --tags || true` suppress all tag creation and push failures
+
+- **Status**: CONFIRMED — both commands on action.yml:228-229 are `|| true`.
+- **Location**: `.github/actions/callisto-action/action.yml:228-229`
+- **Classification**: Silent Fallback
+- **Root Cause**: If `callisto tag` fails (e.g., git not configured, workspace error, version plan parse error), the step succeeds. `git push origin --tags` then pushes nothing (or partial tags). The GitHub Release creation loop (lines 234-246) then calls `gh release create "$TAG"` for tags that were never pushed — GitHub creates orphan releases pointing at the commit directly, not at any tag, which defeats the purpose of the tag-based release workflow.
+- **Failing Scenario**: Any transient git error during `callisto tag` — the error is swallowed, the release step runs, and GitHub creates releases without corresponding tags.
+- **Fix**: Remove the `|| true` on both lines. The `set -e` at the top of the script will then correctly abort on tag failure.
+
+### [Medium] Bug 5: `publishedPackages` output is the publish **plan**, not the publish **result**
+
+- **Status**: CONFIRMED — action.yml:149-151 sets `publishedPackages` immediately after `callisto plan-publish`, before the publish loop runs. There is no second write to this output after publishing completes.
+- **Location**: `.github/actions/callisto-action/action.yml:147-151`
+- **Classification**: Spec Drift
+- **Root Cause**: `publishedPackages` is named as the set of packages that were published, but its value is the pre-publish plan. Failed publishes are indistinguishable from successful ones from the output's perspective. The existing ledger entry notes this was identified and partially fixed in the Rust orchestrator (which now produces a `PublishReport`), but the action's output was not updated.
+- **Fix**: Replace the publish loop with `callisto publish --format json` and pipe its JSON output to `publishedPackages`. The `PublishReport` JSON contains per-package `result: Published | AlreadyPublished | Failed { error }` entries.
+
+### [Medium] Bug 6: PEP 440 prerelease tags not detected — Python prereleases published as stable GitHub Releases
+
+- **Status**: CONFIRMED — regex `-(alpha|beta|rc|pre|next)` requires a hyphen separator; PEP 440 pre-release identifiers (`a`, `b`, `rc`) attach directly to the version number with no separator.
+- **Location**: `.github/actions/callisto-action/action.yml:240`
+- **Classification**: Spec Drift (PEP 440 vs. SemVer assumption)
+- **Root Cause**: The regex was written for SemVer-style pre-release identifiers. PEP 440 prereleases look like `1.0a1`, `1.0b2`, `1.0rc1`. A Python package tagged `my-pkg@2.0rc1` does not match `-(alpha|beta|rc|pre|next)` and is released on GitHub without `--prerelease`, appearing as a stable release.
+- **Failing Scenario**: Any workspace with a Python package in pre-release mode (`callisto pre enter rc`), with a bumped version like `1.0.0rc1` — the GitHub Release is created as stable.
+- **Fix**: Add PEP 440 pre-release detection: `[[ "$TAG" =~ [0-9](a|b|rc|alpha|beta)[0-9] ]] || [[ "$TAG" =~ -(alpha|beta|rc|pre|next) ]]`. Or, better, have `callisto plan-publish` emit a `prerelease: bool` field on `ReleaseEntry` and use that instead of regex-guessing from the tag string.
+
+---
+
+## Additional Issues (Not Confirmed Bugs — Medium/Low Severity)
+
+**`cargo build -p callisto-cli` (debug build)**: `setup-callisto/action.yml:65`. The bootstrapped callisto binary on the self-hosted path is a debug build. Should be `cargo build -p callisto-cli --release`.
+
+**Hardcoded `orin-dx/callisto` in both setup actions**: The four binary download URLs and the `cargo install` fallback URL in `setup-callisto/action.yml` and `setup-callisto-wasm/action.yml` all reference the hardcoded org. These actions cannot be used from forks or by downstream consumers that have their own releases. Should be a `repository` input defaulting to `${{ github.repository }}`.
+
+**Version PR branch `callisto/version-packages` not configurable**: Hardcoded in five places in `callisto-action/action.yml`. There is a `branch` input for the base branch but no input for the source branch of the PR. Workspaces that need a different naming convention cannot use the action.
+
+**`cargo publish --no-verify --allow-dirty` vs. `--locked`**: The bash path in the action skips build verification (`--no-verify`) and allows a dirty working tree (`--allow-dirty`). `callisto publish` uses `--locked` instead. The bash flags are less safe and could allow a malformed or inconsistent crate to reach crates.io. Once the cutover to `callisto publish` happens, this divergence disappears.
+
+**No SHA pinning on any action dependency**: All nine external action references use mutable semver tags. Standard practice for high-trust release workflows is to pin to a full commit SHA (`actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683`).
+
+**`git add -A` stages all changes including potential CI artifacts**: action.yml:115. After `callisto version` runs, any file modified or created in the repository (including debug build artifacts from earlier steps if they weren't cleaned up, any `target/` directory contents that leaked out) gets staged and committed to the version PR. This is unlikely to cause problems in practice on a clean GitHub Actions runner, but it is indiscriminate.
+
+**`ReleaseEntry.changelog_section` is always `None`**: `publish.rs:184` always sets `changelog_section: None`. The `gh release create` step uses `--generate-notes` universally. When changelog generation is implemented, the action will need updating to pass `--notes` from the plan instead.</result>
+<usage><subagent_tokens>70593</subagent_tokens><tool_uses>25</tool_uses><duration_ms>403434</duration_ms></usage>
+</task-notification>
