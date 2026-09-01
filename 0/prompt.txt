@@ -1,0 +1,1 @@
+gemini created a bug hunter skill and agent. Can you see it and evaluate it for use with claude?
