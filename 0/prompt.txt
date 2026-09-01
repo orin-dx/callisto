@@ -1,0 +1,68 @@
+<task-notification>
+<task-id>afee45af0e40f4b1e</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a15bbbf7-aba0-415d-bfdc-c773ea65cfc7/tasks/afee45af0e40f4b1e.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix: empty summary validation across write, wizard, validate, and parse" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All target tests pass. Here is a complete summary of what was implemented:
+
+---
+
+## What was done
+
+### Pre-existing compile errors fixed (needed to unblock test runs)
+- `/Users/gabe/Projects/callisto/crates/callisto-graph/src/aggregate.rs` — Fixed `DiagnosticCode::InvalidPackageName` (non-existent variant) → `DiagnosticCode::UnknownPackage` at the orphaned changeset diagnostic site.
+
+### Fix 1: `write_changeset` — OR-gate for empty summary (callisto-format)
+**File:** `/Users/gabe/Projects/callisto/crates/callisto-format/src/changeset/mod.rs`
+- Added `WriteError::EmptySummary` variant
+- Rewrote the guard: summary emptiness is checked first and independently from entries; a changeset with entries but an empty/whitespace-only summary now returns `WriteError::EmptySummary` instead of silently succeeding
+
+### Fix 2: `parse_changeset` — reject on-disk entries+empty-summary files
+**File:** `/Users/gabe/Projects/callisto/crates/callisto-format/src/changeset/mod.rs`
+- Added `ParseError::EmptySummary` variant
+- Added guard: after building entries and summary, returns `ParseError::EmptySummary` when entries are non-empty but summary is blank
+
+### Fix 1+2 tests
+**File:** `/Users/gabe/Projects/callisto/crates/callisto-format/src/changeset/tests.rs`
+- `write_rejects_empty_summary_with_entries`
+- `write_rejects_whitespace_only_summary_with_entries`
+- `parse_rejects_empty_summary_with_entries`
+- `parse_rejects_whitespace_only_summary_with_entries`
+
+### Fix 3: Interactive wizard — reject empty summary input
+**File:** `/Users/gabe/Projects/callisto/crates/callisto-cli/src/commands/add.rs`
+- Added `.validate_with(...)` to the `Input::new()` in Step 4, so the prompt re-prompts instead of accepting an empty string. The dialoguer 0.11 API supports this natively.
+
+### Fix 4: Non-interactive mode — validate summary before proceeding
+**File:** `/Users/gabe/Projects/callisto/crates/callisto-cli/src/commands/add.rs`
+- Added `validate_summary(summary: &amp;str) -&gt; Result&lt;String, CliError&gt;` helper that trims and rejects blank summaries with a clear error message
+- Summary is normalized through `validate_summary` before constructing `Changeset`
+
+### Fix 4 tests
+**File:** `/Users/gabe/Projects/callisto/crates/callisto-cli/src/commands/add.rs`
+- `non_interactive_empty_summary_is_rejected`
+- `non_interactive_whitespace_summary_is_rejected`
+- `non_interactive_nonempty_summary_is_accepted`
+- `validate_summary_trims_leading_and_trailing_whitespace`
+
+### Fix 5: `validate` command — flag empty summary in diagnostics
+**File:** `/Users/gabe/Projects/callisto/crates/callisto-model/src/diagnostic.rs`
+- Added `DiagnosticCode::EmptySummary` variant
+
+**File:** `/Users/gabe/Projects/callisto/crates/callisto-graph/src/commands/validate.rs`
+- Added diagnostic check in the validate loop: emits `DiagnosticCode::EmptySummary` error when a loaded changeset has entries but an empty summary (defense-in-depth)
+
+### Fix 5 tests
+**File:** `/Users/gabe/Projects/callisto/crates/callisto-graph/tests/graph_tests.rs`
+- `test_validate_rejects_entries_with_empty_summary` — verifies `load_changesets` returns `GraphError::ParseChangeset { source: ParseError::EmptySummary }` for a malformed file
+- `test_validate_rejects_entries_with_whitespace_only_summary` — same for whitespace-only body
+
+### Final test counts
+- `callisto-format`: 85 passed (up from 80, +5 new tests)
+- `callisto-cli` lib: 9 passed (up from 4, +4 new validate_summary tests + existing tests)
+- `callisto-graph` graph_tests: 21 passed (up from 18, +2 new tests + 1 pre-existing orphaned changeset test now passing)
+- Pre-existing failure not touched: `test_union_fixed_stale_member_emits_diagnostic_and_is_skipped` (unrelated to this task)</result>
+<usage><subagent_tokens>119782</subagent_tokens><tool_uses>100</tool_uses><duration_ms>1182182</duration_ms></usage>
+</task-notification>
