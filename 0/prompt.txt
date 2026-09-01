@@ -1,0 +1,42 @@
+<task-notification>
+<task-id>a71f86b566de9a737</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a71f86b566de9a737.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement TASK-14 (AC-06 regression test)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>The implementation logic proving AC-06 is `NpmMembership::admits` at `crates/callisto-graph/src/locate/membership.rs:230-238` (specifically the `None =&gt; true` arm at line 235), invoked from `ignore_walk.rs:106`.
+
+## Summary
+
+**task_id**: TASK-14
+**status**: done
+**commit_sha**: 1cf07b4
+
+**Steps completed**:
+1. Verified prerequisite state: `git log` confirmed all 9 prior commits (0971005 through d465ede) present on `crates/callisto-graph/src/locate/ignore_walk.rs`; `git status` confirmed clean tree.
+2. Read TASK-14 from the plan file — plan's fixture only asserted `packages/child` was admitted, not the root package.json.
+3. Read AC-06's exact text from `.claude/specs/SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json`: "every Npm candidate directory discovered by the walk is included" — this is broader than the plan's single-assertion fixture. Compared against AC-05's Cargo analog test (`ac05_admits_all_cargo_candidates_when_root_has_no_workspace_table`), which asserts both root `.` and `crates/child` are admitted. Corrected the plan's under-delivered fixture by adding an assertion that the root package (`.`) is also admitted as Npm, matching the spec's "every candidate" wording.
+4. Wrote the test at `crates/callisto-graph/src/locate/ignore_walk.rs:570`.
+5. Ran the test — it passed immediately with no implementation change (consistent with the TASK-07..13 "regression-proof" pattern; behavior already existed from TASK-06's wiring).
+6. Adversarially verified non-vacuousness: temporarily changed `NpmMembership::admits`'s `None =&gt; true` arm to `None =&gt; false` in `membership.rs`, reran the test, confirmed it failed exactly as expected (root admitted, child rejected), then restored the original code.
+7. Ran `cargo fmt -p callisto-graph`, `cargo clippy -p callisto-graph --all-targets -- -D warnings` (clean), and the full `cargo test -p callisto-graph --lib` suite (285 passed, 0 failed).
+8. Committed with message `test(graph): pin AC-06 no-npm-markers admits-all behavior`.
+
+**test_result**: pass
+**concerns**: None. No implementation change was needed — behavior already correct from TASK-06's membership wiring — consistent with the established regression-proof pattern for this stretch of the plan.
+
+**criteria_evidence**:
+```json
+[
+  {
+    "criterion_id": "AC-06",
+    "test_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs",
+    "test_line": 570,
+    "implementation_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs",
+    "implementation_line": 230
+  }
+]
+```</result>
+<usage><subagent_tokens>57694</subagent_tokens><tool_uses>19</tool_uses><duration_ms>323772</duration_ms></usage>
+</task-notification>
