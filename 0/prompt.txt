@@ -1,0 +1,42 @@
+<task-notification>
+<task-id>a6741ed0b051022c9</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a6741ed0b051022c9.output</output-file>
+<status>completed</status>
+<summary>Agent "Review Track 3a TASK-03c/03d/03e" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Review Summary
+
+**Scope reviewed:** commits `344b93d` (TASK-03c), `14a2384` (TASK-03d), `3ed3486` (TASK-03e) in `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs`, against `plan-track3a-v2.json` task specs and the loaded `rust-hazards.md` (`/Users/gabe/Projects/agent-plugins/shared/references/rust-hazards.md`).
+
+Important note on method: the live working tree has uncommitted TASK-04a-in-progress content (npm/pnpm membership code) layered on top of `3ed3486`, from a concurrent session. I excluded that from the review entirely and evaluated the reviewed commits via `git show &lt;sha&gt;:crates/callisto-graph/src/locate/membership.rs` at `3ed3486` (the true end state of the three commits), not the dirty working tree.
+
+**Findings:**
+
+1. **TASK-03c** — diff-verified as test-only (12 insertions, 0 implementation changes), matching the plan's "honest non-red" claim exactly. Test fixture and assertion are correct for the hybrid-root/exclude-exemption behavior.
+
+2. **TASK-03d** — matches plan almost verbatim: replaces the naive `.expect()` on TOML parse and on `[workspace]` lookup with `match`/`let...else` fallbacks to `absent_cargo_membership()`. `cargo test -p callisto-graph read_cargo_membership_` — all 9 tests pass at this commit's descendant state.
+
+3. **TASK-03e** — the implementer's deviation from the plan is correct and verified sound. At `14a2384` (03d), the `members` extraction line still read `workspace.get("members").expect("naive: TASK-03e replaces this...")` — confirmed directly in the 03d diff — so the plan's claim that 03d already left it as a safe Option-chain was factually wrong, and treating it as genuinely red was the right call, not blind plan-trust. The fix (`.and_then(parse_toml_string_array)`) is structurally identical to `exclude`'s TASK-03b pattern, reintroduces no panic path (`and_then` on `None` short-circuits to `None`, no unwrap/expect anywhere in the chain), and the empty-array test correctly composes with `build_globset(&amp;[])` → empty `GlobSet` → admits nothing.
+
+4. **Whole-arc sibling check (03a→03e):** every naive `.expect()`/`.unwrap()` TASK-03a introduced in `read_cargo_membership` has a corresponding hardening commit by 03e's end: TOML-parse (03d), `[workspace]`-absent (03d), members-array-shape/non-string-entries (03b), exclude-array-shape/non-string-entries (03b), members-key-absent (03e). No orphaned naive call remains in the function at `3ed3486`. `rust-hazards.md` T3 (panic in lib code) — clean; T2 (silent unwrap fallback on `exclude`) — intentional/documented, matches spec; no T1/T4/T5/T6/T9/T10 hits.
+
+5. **Minor doc staleness (non-blocking):** the doc comment above `read_cargo_membership` (lines 82–87 at `3ed3486`) still reads "Every other shape... is NOT yet handled safely -- this deliberately panics or misbehaves on those inputs today," which was true after 03a but is no longer true once 03d and 03e land within this same commit — the function is now fully hardened. 03e should have updated or removed this comment since it was the task that made it fully stale. Purely a documentation-accuracy issue, no functional impact.
+
+```json
+{
+  "status": "approved",
+  "issues": [
+    {
+      "file": "crates/callisto-graph/src/locate/membership.rs",
+      "line": 82,
+      "description": "Doc comment above read_cargo_membership still claims 'Every other shape ... is NOT yet handled safely -- this deliberately panics or misbehaves on those inputs today' after TASK-03e, but by this commit every one of those shapes (workspace-table-absent, TOML-parse-err, members-key-absent, non-array members/exclude) has been hardened. The comment is stale and should have been updated or removed in TASK-03e's commit.",
+      "severity": "suggestion"
+    }
+  ],
+  "sibling_gaps": [],
+  "reasoning": "Verified via git show at each SHA (not the live working tree, which has unrelated uncommitted TASK-04a WIP layered on top of 3ed3486 from a concurrent session -- excluded from scope). 03c is a pure test-only honest-non-red commit exactly as claimed. 03d hardens TOML-parse-err and workspace-table-absent via match/let-else, matching plan almost verbatim. 03e's deviation from the plan (treating members-key-absent as genuinely red rather than the plan's claimed non-red) is independently confirmed correct: 03d's diff shows the members line was still `.expect(\"naive: TASK-03e replaces...\")` untouched, contradicting the plan's inspection claim. The fix mirrors exclude's TASK-03b `.and_then(parse_toml_string_array)` pattern exactly, introduces no unwrap/expect, and cargo test -p callisto-graph read_cargo_membership_ passes all 9 tests. Whole-arc sweep of read_cargo_membership confirms every naive .expect()/.unwrap() TASK-03a introduced (TOML parse, workspace-absent, members shape, members entries, exclude shape, exclude entries, members-key-absent) has a corresponding hardening commit within 03b/03d/03e -- no orphaned naive call remains. rust-hazards.md taxonomy check clean (T3 panic-in-lib: none outside test code; T2 silent-fallback on exclude is intentional/spec-required; no other taxonomy hits). Only finding is a stale doc comment, non-blocking. Npm/pnpm mirror hardening (04c/04d/04e) is future/separate task scope per the plan, not a sibling gap in the Cargo arc under review."
+}
+```</result>
+<usage><subagent_tokens>90922</subagent_tokens><tool_uses>18</tool_uses><duration_ms>420082</duration_ms></usage>
+</task-notification>
