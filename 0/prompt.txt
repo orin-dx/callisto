@@ -1,0 +1,18 @@
+<task-notification>
+<task-id>ab333512d04008c97</task-id>
+<tool-use-id>toolu_01H6Rp3QHiLKuGLC3ZGyUxR6</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/ab333512d04008c97.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix Track 3b1 deployment hazard + branch-ii insert timing" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Both fixes are correctly applied and the JSON is valid. The file at `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/spec-track3b1-identity-promotion-core.json` has been overwritten with the corrected spec@1.
+
+Summary of what changed:
+
+**Fix 1 (deployment-ordering hazard)** — Added a new `non_goals` entry (9th entry, non_goals array now has 8 total after the append... verified 8 entries total) stating that this spec and SPEC-TRACK3B2 constitute a single atomic release unit, and that this spec's implementation must not be deployed ahead of SPEC-TRACK3B2 landing in any environment running `callisto matrix`/`callisto publish` against a real workspace. It quotes verbatim, from `.claude/specs/track-g-matrix-napi-maturin.json` (confirmed by reading that file), the exact sentence this spec invalidates: *"the walker already rejects two packages sharing the same bare name via GraphError::DuplicatePackage at insert time (walk.rs:125-132), so name() collisions across the matrix report's map keys cannot occur."* It also states explicitly that this spec's own passing acceptance criteria are necessary but not sufficient evidence of production safety in isolation.
+
+**Fix 2 (branch (ii) insert-timing contradiction)** — In the `ManifestWalkResolver::build` api_surface entry's ALREADY-PROMOTED-NAME DETECTION paragraph, removed the false claim that the upfront lookup itself performs the `package_manifest_decls` insert. Verified against current `crates/callisto-graph/src/walk.rs` (index.bare insert at 80-82, decls loop at 84-124, `package_manifest_decls.insert` at 126-128, still matching the pre-implementation baseline the spec describes) that the insert is keyed on `primary_id` and valued on `decls`, which the decls loop hasn't built yet at the lookup point. The text now states the lookup's only two actions (disjointness check; reassign `primary_id` and push onto `promoted_siblings`), and cross-references the GUARD/ORDERING STATEMENT section's already-correct description of the real insert happening later at the normal walk.rs:126-128 site, rather than re-describing it inline.
+
+`revision_note` was updated (prepended, prior rounds' history preserved) with the full rationale for both fixes and a cross-criterion check confirming AC-07/AC-21 (the branch (ii) exercising criteria) depend only on final Ok/Err outcomes, not lookup timing, so no acceptance criteria needed changes.</result>
+<usage><subagent_tokens>114587</subagent_tokens><tool_uses>13</tool_uses><duration_ms>126776</duration_ms></usage>
+</task-notification>
