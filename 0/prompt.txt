@@ -1,0 +1,1 @@
+Please take a look at this repo, understand the current claude setup and its plugins as well as the codebase. I need your help in optimizing the setup for GPT also. What do you think
