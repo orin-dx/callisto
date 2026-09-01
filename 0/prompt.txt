@@ -1,0 +1,3 @@
+<command-name>/exit</command-name>
+            <command-message>exit</command-message>
+            <command-args></command-args>
