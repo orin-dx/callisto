@@ -23,6 +23,10 @@ Environment settings. The workflow queries the Environment API and fails if the 
 is absent; the `environment: release` job boundary is what prevents registry secrets from being
 available to planning or build jobs.
 
+An administrator must also enable a branch-protection rule or ruleset on `main` that requires
+CODEOWNERS review. [`.github/CODEOWNERS`](../.github/CODEOWNERS) names the real owner for
+workflow and action changes, but GitHub does not enforce review merely because that file exists.
+
 Only the `execute` job may receive `CARGO_REGISTRY_TOKEN`, `NPM_TOKEN`, or `TWINE_PASSWORD`.
 Do not put those secrets at workflow scope, in build jobs, or in an action input. Binary releases
 add exact files plus `release-artifacts/manifest.json` to the build handoff; their GitHub build

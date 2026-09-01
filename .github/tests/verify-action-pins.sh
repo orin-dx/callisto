@@ -14,4 +14,11 @@ while IFS= read -r line; do
     status=1
   fi
 done < <(rg --no-heading --glob '*.yml' --glob '*.yaml' '^\s*uses:\s*' .github)
+codeowners=.github/CODEOWNERS
+if [[ ! -f "$codeowners" ]] \
+  || ! rg -q '^/\.github/workflows/\s+@[^[:space:]]+$' "$codeowners" \
+  || ! rg -q '^/\.github/actions/\s+@[^[:space:]]+$' "$codeowners"; then
+  printf 'CODEOWNERS must cover .github/workflows/ and .github/actions/ with a real owner\n' >&2
+  status=1
+fi
 exit "$status"
