@@ -1,0 +1,6 @@
+<task-notification>
+<task-id>bcwf1b0f7</task-id>
+<summary>Monitor event: "just ci live progress with step timestamps"</summary>
+<event>[+3s]    Compiling callisto-moon v0.4.1 (/Users/gabe/Projects/callisto/crates/callisto-moon)</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
