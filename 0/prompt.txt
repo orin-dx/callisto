@@ -1,0 +1,31 @@
+<task-notification>
+<task-id>ae2bc15299e11a843</task-id>
+<tool-use-id>toolu_01LKbm5tBmTF3tmy5sDbAg8f</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a15bbbf7-aba0-415d-bfdc-c773ea65cfc7/tasks/ae2bc15299e11a843.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix 2: GroupTable resolve never called" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All 14 test suites pass with no failures. Here is a summary of what was done:
+
+---
+
+## Summary
+
+**Bug:** `[[linked-group]]` and `[[fixed-group]]` entries in `callisto.toml` were silently ignored. `GroupTable::validate_syntactic()` was called on the raw groups, but `GroupTable::resolve()` was never called. `ResolvedConfig.groups` was always set to `GroupTable::default()`.
+
+**Fix (3 files changed):**
+
+1. **`crates/callisto-graph/src/config/resolve.rs`** — Added `pub(crate) raw_groups: RawGroupTable` field to `ResolvedConfig` and moved `raw_groups` into the struct at the end of `load()` (instead of discarding it after validation).
+
+2. **`crates/callisto-graph/src/lib.rs`** — In `Workspace::load`, changed `config` binding from `let` to `let mut` and added one line after `ManifestWalkResolver::build()`:
+   ```rust
+   config.groups = GroupTable::resolve(&amp;config.raw_groups, graph.identity())?;
+   ```
+
+3. **`crates/callisto-graph/src/config/groups.rs`** — Removed `#[allow(dead_code)]` from `GroupTable::resolve` since it is now called.
+
+**TDD:** Two tests were written in `crates/callisto-graph/tests/config_resolve_tests.rs` — `linked_group_is_resolved_into_config` and `fixed_group_is_resolved_into_config`. Both failed before the fix and pass after. All 14 test suites in `callisto-graph` pass clean.
+
+The `callisto-moon:lint` failures visible in `just ci` are pre-existing on `main` and unrelated to this change.</result>
+<usage><subagent_tokens>70229</subagent_tokens><tool_uses>46</tool_uses><duration_ms>470088</duration_ms></usage>
+</task-notification>
