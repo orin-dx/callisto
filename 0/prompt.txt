@@ -1,0 +1,19 @@
+<task-notification>
+<task-id>acefef41e11dbbfec</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/acefef41e11dbbfec.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix Track 3a spec gap, round 5" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>The JSON is valid and the file has been updated in place at `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/spec-track3a-workspace-membership.json`.
+
+Changes applied, exactly as specified:
+
+1. **AC-09g** added — npm `"workspaces"` array case (one valid glob `packages/kept-example`, one invalid glob `packages/[unterminated`), `is_error_case: true` (matching AC-09f).
+2. **AC-09h** added — pnpm `packages:` list case with the same shape, `is_error_case: true`.
+3. **AC-14** criterion group list extended to include AC-09g and AC-09h, and its fixture text extended with the exact fixtures for both (npm package.json fixture and pnpm-workspace.yaml fixture), placed alongside the existing AC-09f Cargo fixture.
+4. **revision_note** updated to a fifth-round entry describing the single round-4 finding and the fix, with the prior fourth-round note preserved below it for history.
+
+Nothing else in the spec (purpose, scope, non_goals, api_surface, other acceptance_criteria, linked_requirement, reasoning) was touched.</result>
+<usage><subagent_tokens>58061</subagent_tokens><tool_uses>5</tool_uses><duration_ms>50919</duration_ms></usage>
+</task-notification>
