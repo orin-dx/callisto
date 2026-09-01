@@ -1,0 +1,51 @@
+<task-notification>
+<task-id>a21d31ea63cdb4b30</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a21d31ea63cdb4b30.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement TASK-27 (AC-11 regression test)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Summary
+
+**TASK-27** (AC-11: malformed pnpm YAML, no package.json workspaces field present) — completed.
+
+Confirmed all 22 prior commits (0971005..24740e2) present and tree clean before starting.
+
+**Spec vs plan discrepancy found and corrected**: The plan's fixture omitted a root `package.json` entirely, but AC-11's exact spec text (read from `.claude/specs/SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json`) specifies "a root package.json with no 'workspaces' field" — i.e., the file must exist but lack the field. I verified in `membership.rs` that file-absent and field-absent are behaviorally equivalent (both fall through to `None` via `?`-chains), but wrote the test to match the spec's literal scenario rather than the plan's looser one, adding `std::fs::write(root.join("package.json"), r#"{"name":"root"}"#)`.
+
+As predicted by the "regression-proof" pattern (matching TASK-07 through TASK-26), the test passed immediately with no implementation change needed — behavior already existed. Per the established adversarial-verification precedent, I temporarily broke `read_pnpm_packages` in `crates/callisto-graph/src/locate/membership.rs` (made malformed YAML return `Some(Vec::new())` instead of falling through to `None`), confirmed the test failed with a clear assertion panic, then restored the original code (verified via `git diff --stat` showing zero diff on membership.rs).
+
+Ran `cargo fmt -p callisto-graph`, full `cargo test -p callisto-graph --lib` (307 passed), and `cargo clippy -p callisto-graph --all-targets -- -D warnings` (clean) before committing.
+
+```json
+{
+  "task_id": "TASK-27",
+  "status": "done",
+  "steps_completed": [
+    "verified 22 prior commits present and tree clean",
+    "read AC-11 exact criterion text from spec file on disk",
+    "found and fixed plan fixture gap (missing root package.json without workspaces field)",
+    "wrote test, ran it, confirmed pass (no red step, as expected for regression-proof)",
+    "adversarially broke membership.rs read_pnpm_packages, confirmed test fails",
+    "restored membership.rs to original (zero diff)",
+    "confirmed test green again",
+    "ran cargo fmt, full test suite (307 passed), clippy -D warnings (clean)",
+    "committed"
+  ],
+  "test_result": "pass",
+  "commit_sha": "f93e5aa",
+  "criteria_evidence": [
+    {
+      "criterion_id": "AC-11",
+      "test_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs",
+      "test_line": 1013,
+      "implementation_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs",
+      "implementation_line": 255
+    }
+  ],
+  "concerns": "Plan's failing_test fixture for TASK-27 omitted the root package.json file that AC-11's spec text explicitly requires (file present, workspaces field absent, as distinct from file entirely absent). Corrected in the committed test; no functional bug found (file-absent and field-absent are both handled by the same ?-chain fallback in read_package_json_workspaces), but the fixture now matches the spec's literal scenario rather than a behaviorally-equivalent-but-textually-different one.",
+  "reasoning": "No implementation change required; existing fallback logic in read_npm_membership/read_pnpm_packages already implements AC-11 correctly, confirmed via mutation-style break/restore rather than assumption."
+}
+```</result>
+<usage><subagent_tokens>60039</subagent_tokens><tool_uses>22</tool_uses><duration_ms>414564</duration_ms></usage>
+</task-notification>
