@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bog5dj8sk</task-id>
+<tool-use-id>toolu_016Pxn6hxNsZ1Lbh3KG3cbXJ</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a7b3643b-af0c-4790-a38d-870e88a7dd3e/tasks/bog5dj8sk.output</output-file>
+<status>completed</status>
+<summary>Background command "Full workspace test suite as final integrity confirmation" completed (exit code 0)</summary>
+</task-notification>
