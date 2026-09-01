@@ -1,0 +1,1 @@
+What prompt can I give with full details to the plugins/skills/agent agent to execute on improvemtns to our plugins as quickly and correctly as possible? Be details, be specific about the semantic model idea, how to fully enact SDD and TDD without relying on the lossy context window as we have been. Help me help you
