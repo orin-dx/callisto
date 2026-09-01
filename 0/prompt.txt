@@ -1,0 +1,51 @@
+<task-notification>
+<task-id>a5f850e1b82e9e1b4</task-id>
+<tool-use-id>toolu_019Q9LGyszupYLpo4SVFSpUp</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/bb531e8d-c394-4e47-a8ae-e4a9ceeca6d2/tasks/a5f850e1b82e9e1b4.output</output-file>
+<status>completed</status>
+<summary>Agent "Verify Track 2 spec grounding" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Verification Report: SPEC-TRACK2-PLATFORM-MANIFEST-WRITES vs REQ-TRACK2-PLATFORM-MANIFEST-WRITES
+
+I read the full spec at `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/spec-track2-draft.json` and cross-referenced all 14 acceptance criteria against the requirement's `done_when` list. No `research-report@1` artifact exists for this track (scratchpad directory checked — only track1 files present), so requirement@1 is the sole grounding source.
+
+```json
+{
+  "supported": [
+    { "criterion_id": "AC-001", "evidence": "\"Given a Fixed group with an owner Package member and a GroupMember::PlatformManifest member, and a computed PlannedBump for the owner, plan_version produces a VersionPlan whose platform_writes contains a PlatformWrite entry tracking the owner's bump target exactly.\"", "source": "requirement@1" },
+    { "criterion_id": "AC-003", "evidence": "\"Given the same scenario, and the owner's own canonical manifest declares an optionalDependencies entry naming the platform package, plan_version's optional_dep_updates contains an entry updating that dependency to the new version.\"", "source": "requirement@1" },
+    { "criterion_id": "AC-005", "evidence": "\"Given a Fixed group with NO GroupMember::PlatformManifest members, platform_writes and optional_dep_updates remain empty Vecs.\"", "source": "requirement@1" },
+    { "criterion_id": "AC-006", "evidence": "\"Given a Fixed group's owner package receiving NO version bump this run, no PlatformWrite or OptionalDepUpdate entry is produced.\"", "source": "requirement@1" },
+    { "criterion_id": "AC-009", "evidence": "\"Fix 1: active_ecosystems is extended to also derive ecosystem membership from platform_writes/optional_dep_updates manifest paths, so lockfile refresh/staging works even when a plan contains only those fields, no bumps.\"", "source": "requirement@1" },
+    { "criterion_id": "AC-010", "evidence": "Same done_when Fix 1 item explicitly names both platform_writes AND optional_dep_updates as the two manifest-path sources active_ecosystems must derive from.", "source": "requirement@1" },
+    { "criterion_id": "AC-011", "evidence": "\"Fix 1 regression: an ordinary plan with only plan.bumps entries has byte-for-byte unchanged active_ecosystems/lockfile behavior.\" (near-verbatim match)", "source": "requirement@1" },
+    { "criterion_id": "AC-012", "evidence": "\"Fix 2: PlatformWrite gains a `from: Version` field; the dispatch loop errors with GraphError::UnexpectedManifestVersion if the platform manifest's actual on-disk version doesn't match `from`, instead of silently overwriting.\"", "source": "requirement@1" },
+    { "criterion_id": "AC-013", "evidence": "\"Fix 2 regression: a platform manifest whose on-disk version matches `from` writes successfully exactly as before.\"", "source": "requirement@1" },
+    { "criterion_id": "AC-014", "evidence": "\"Every criterion proven through the real, live call path (plan_version / apply_version_plan), not isolated unit tests of a helper called directly.\" (near-verbatim match)", "source": "requirement@1" }
+  ],
+  "unsupported": [
+    {
+      "criterion_id": "AC-002",
+      "note": "Requirement's done_when items list producer criteria (1-4) discussing platform_writes/optional_dep_updates population, and separately Fix-2 criteria (7-8) about apply.rs's precondition check requiring PlatformWrite.from to exist. Nothing in requirement@1 specifies HOW plan_version must populate `from` -- specifically that it must be read via the platform manifest's own current_version() at plan time, independent of the owner's `from`. This is a plausible bridging mechanism the drafter invented to make Fix 2 work, but no passage states this derivation; it is inferred from domain plausibility, which the judgment standard explicitly disqualifies as evidence."
+    },
+    {
+      "criterion_id": "AC-004",
+      "note": "Requirement done_when #2 only describes the affirmative case (a matching optionalDependencies entry exists -&gt; an update is produced). No done_when item, the 'why', or out_of_scope text addresses the negative case (no matching entry exists -&gt; no speculative creation). AC-004 is a reasonable logical complement to AC-003 but has no direct textual citation in requirement@1."
+    },
+    {
+      "criterion_id": "AC-007",
+      "note": "Requirement done_when #1 refers to 'a GroupMember::PlatformManifest member' (singular scenario) and the requirement statement uses 'GroupMember::PlatformManifest members' only as a generic plural describing the class, not a specific multi-member-per-owner test scenario. No done_when item, why-text, or out_of_scope text discusses multiple platform-manifest members under one owner, or cardinality behavior at all. This is drafter-added scope grounded in a plausible napi-rs multi-target scenario, not in any requirement passage -- exactly the kind of stakeholder-unauthorized addition the verification pass is meant to catch, regardless of its technical reasonableness."
+    },
+    {
+      "criterion_id": "AC-008",
+      "note": "No done_when item, why-text, or out_of_scope passage in requirement@1 addresses what happens when a declared platform manifest is missing or malformed. The spec's own non_goals section asserts this becomes 'the existing ManifestFormat::from_path / Manifest::current_version error unchanged' but that is the drafter's own inference from code inspection, not a citation of the requirement. (Note: the spec's non_goals text cross-references this behavior as '(see AC-011)', which is itself the wrong AC id -- AC-011 is the Fix-1 regression criterion, not the error-case criterion (AC-008) -- an internal spec inconsistency worth flagging to the auditor separately.)"
+    }
+  ],
+  "overfitted": [],
+  "reasoning": "No true 'overfitted' cases found -- overfitted requires a criterion that narrows an established requirement scope and excludes valid cases the requirement intended to cover. AC-002/AC-004/AC-007/AC-008 are not narrowings of a supported criterion; they are net-new claims with zero textual basis, so they classify as unsupported rather than overfitted. Two scope items outside the 14 ACs deserve note for the downstream auditor/exit-gate even though they aren't themselves acceptance criteria: (1) The spec's handling of the requirement's pr_body.rs/snapshot.rs deferral is well-grounded and closes a real gap -- requirement out_of_scope explicitly demanded 'reasoning to be confirmed against live code and stated explicitly' for both, and the spec's scope+non_goals sections do exactly that (citing pr_body.rs lines 16-27 and snapshot.rs lines 100-143), correctly distinguishing pr_body.rs (needs zero code change, confirmed) from snapshot.rs (genuinely deferred). This is sound, evidence-based scope correction, not a gap. (2) An internal spec defect: non_goals references '(see AC-011)' for the malformed-manifest hard-error behavior, but AC-011 is actually the Fix-1 regression criterion -- the intended reference is almost certainly AC-008. This is a drafter cross-reference bug, not a grounding failure, but should be surfaced to canon:auditor since it could mislead an implementer. Overall: 10 of 14 criteria trace directly to requirement done_when text; 4 (AC-002, AC-004, AC-007, AC-008) are drafter-added without citation -- three of these (AC-004, AC-007, AC-008) are the 'fills in the obvious negative/edge case' pattern that feels reasonable but has no requirement basis, and AC-007 in particular is the flagged multi-target addition, which per the judgment standard must be classified as unsupported despite being a realistic and defensible engineering scenario."
+}
+```
+
+Summary for the parent agent: 10/14 criteria (AC-001, AC-003, AC-005, AC-006, AC-009 through AC-014) trace to direct requirement@1 done_when citations. 4/14 (AC-002, AC-004, AC-007, AC-008) have no citation in requirement@1 — including the explicitly-flagged AC-007 multi-target-per-owner cardinality criterion, which I classified as unsupported rather than overfitted since it adds new scope rather than narrowing existing scope. The spec's pr_body.rs/snapshot.rs scope correction is well-grounded and fulfills the requirement's explicit instruction to confirm and state that reasoning. One internal spec defect noted for the auditor: `non_goals` cites "(see AC-011)" where "AC-008" was almost certainly intended.</result>
+<usage><subagent_tokens>53210</subagent_tokens><tool_uses>3</tool_uses><duration_ms>106052</duration_ms></usage>
+</task-notification>
