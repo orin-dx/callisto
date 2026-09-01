@@ -1,0 +1,1 @@
+No, treat the remaining adapter as a blocker, implement it.
