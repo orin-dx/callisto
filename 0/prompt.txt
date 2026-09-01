@@ -1,0 +1,1 @@
+Shouldn't we adjust the spec as we learn? They are our source of truth and future AI reading them or folks reading them will be confused. Git preserves the history already anyway.
