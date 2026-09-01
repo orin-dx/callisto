@@ -1,0 +1,43 @@
+<task-notification>
+<task-id>a3c37497dbfa46bbe</task-id>
+<tool-use-id>toolu_01QrQgNKKEDN8YNBK4rZudEb</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/c0ad64b2-6440-4937-8328-8d9fd9db278c/tasks/a3c37497dbfa46bbe.output</output-file>
+<status>completed</status>
+<summary>Agent "Challenge PLAN-005" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Adversarial Review: PLAN-005 vs SPEC-005
+
+I read both artifacts from disk and cross-checked every file/line citation in the plan against the live repository (not just trusting the plan's own citations). Verified: `crates/callisto-model/src/plan.rs:111-118`, `crates/callisto-graph/src/commands/publish.rs:390,505`, `crates/callisto-cli/src/commands/publish.rs:357`, `crates/callisto-graph/tests/tag_sha_fabrication_test.rs:98`, `crates/callisto-graph/tests/tags_tests.rs:23,111,273,404,410`, `crates/callisto-cli/tests/schema_guard_test.rs:1-6,92-96`, `.github/actions/callisto-action/action.yml:200-216` (byte-for-byte match including trailing whitespace), and `docs/01-spec.md:1740-1763,2667` (plus confirmed the second, unrelated `row 23` at line 8873 that the plan correctly warns not to touch) — all citations are accurate against the current working tree. I also confirmed `fixtures::{GraphBuilder, PackageBuilder}` (`crates/callisto-graph/tests/fixtures/graph_builder.rs`) and `Workspace::load`'s signature match exactly what T1/T2's test code invokes, and that `InMemoryGraph` implements `DependencyResolver` so the manual `Workspace { ... }` literal construction pattern T2 uses is valid (and has direct precedent already in the same file at `publish_tests.rs:977`).
+
+I ran the actual command in T4's AC-014 verification step against this repository's installed toolchain (`cargo 1.96.0`) and it is broken as written:
+
+```
+cargo metadata --format-version 1 | jq -r --arg pkg callisto-model '.resolve.nodes[] | select(.id | startswith($pkg + " ")) | .deps[].name' | sort -u
+```
+
+produced **zero output**, not the expected crate list — because cargo 1.96's resolve-node `id` format is `path+file:///.../crates/callisto-model#0.3.3`, which never starts with `"callisto-model "`. This bug was true at the moment I ran it against the live repo, so the check as specified cannot ever produce its stated expected output on this project's toolchain.
+
+### Issues
+
+```json
+{
+  "issues": [
+    {
+      "task_id": "T4",
+      "type": "under-specified",
+      "description": "T4's AC-014 part-3 CHECK step runs `cargo metadata --format-version 1 | jq -r --arg pkg callisto-model '.resolve.nodes[] | select(.id | startswith($pkg + \" \")) | .deps[].name' | sort -u` and claims the expected output is the list of callisto-model's declared dependency names. Verified by actually running this exact command against the live repo (cargo 1.96.0): it produces empty output, because modern cargo's resolve-node id format is `path+file:///abs/path/crates/callisto-model#0.3.3`, not the old `callisto-model 0.3.3 (path+file://...)` format the `startswith($pkg + \" \")` filter assumes. The step will always show zero deps, silently defeating the AC-014 (no AGPL dependency edge) verification it exists to perform -- an implementer following it exactly gets no matches and cannot tell if that means 'no deps' (wrong) or 'the filter is broken' (correct). Separately, the step's own expected-output prose is self-contradictory: it says the output is 'exactly' a fixed list of names, then in the same sentence says 'plus each crate's own transitive non-workspace deps' -- exactly and plus-more cannot both be the expected result.",
+      "suggested_fix": "Replace the resolve-node filter with a name-based lookup that is stable across cargo id-format versions: `cargo metadata --format-version 1 | jq -r --arg pkg callisto-model '.packages[] | select(.name == $pkg) | .dependencies[].name' | sort -u`. State the expected output as exactly callisto-model's direct [dependencies] list per its Cargo.toml (camino, miette, path-slash, pep440_rs, schemars, semver, serde, serde_json, tempfile, thiserror) with no mention of transitive deps, since `.packages[].dependencies` already reflects only the direct edge this criterion cares about."
+    },
+    {
+      "task_id": "T2",
+      "type": "under-specified",
+      "description": "T2's RED step for the 4 fixture tests requires the implementer to manually revert the already-landed T1 production line `is_prerelease: ver.is_prerelease(),` back to `is_prerelease: false,` in publish.rs, run the tests to observe red, then revert the temporary change back before continuing -- a stateful, easy-to-botch manual dance (if the revert-back step is skipped or done incorrectly, the commit history could silently ship a regressed construction site). This isn't vague, but it's a fragile procedure for a 15-minute task with no automated safeguard (e.g. a git stash/diff check) confirming the revert actually happened before COMMIT.",
+      "suggested_fix": "Add an explicit verification sub-step after the revert-back: `git diff --stat crates/callisto-graph/src/commands/publish.rs` must show no changes relative to T1's committed state before running GREEN, so a forgotten revert is caught mechanically rather than relying on the implementer's memory."
+    }
+  ],
+  "overall": "fail",
+  "reasoning": "17/17 acceptance criteria (AC-001..AC-015, AC-012a/b/c) appear in some task's covers_criteria -- no orphaned-criteria. Task ordering is sound (T1 has no deps and lands the field + all 8 struct-literal call sites atomically per the spec's own compile-safety reasoning; T2/T3/T5/T6 correctly depend on T1; T4 correctly depends on T1-T3). Batching is correct: T1 combines AC-001+AC-007+AC-012b into one commit exactly as the spec's reasoning demands, so no commit leaves the workspace non-compiling. AC-015's error path (missing/null/non-boolean isPrerelease) has both a real implementation (jq -e has()+type==boolean check, no `//` operator) and a real test with 3 explicit negative cases in T5 -- missing-error-handling is satisfied. All file/line citations were verified against the live repository and are accurate, including the tricky two-tables-both-have-row-23 docs/01-spec.md case which the plan explicitly disambiguates. The one blocking defect is T4's AC-014 dependency-graph verification command, which I executed against the actual repo and confirmed produces no output on the installed cargo version due to an id-format assumption that no longer holds -- this silently breaks a licensing-safety check the spec treats as a real acceptance criterion, so overall must be fail. The T2 procedural fragility is a minor, non-blocking suggestion."
+}
+```</result>
+<usage><subagent_tokens>95173</subagent_tokens><tool_uses>38</tool_uses><duration_ms>203574</duration_ms></usage>
+</task-notification>
