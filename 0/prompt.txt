@@ -1,0 +1,49 @@
+<task-notification>
+<task-id>a47bc58405202d342</task-id>
+<tool-use-id>toolu_01N55LcTkUKEiKto837SUoWZ</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a47bc58405202d342.output</output-file>
+<status>completed</status>
+<summary>Agent "Final check of Track 3a amendment" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Audit Result
+
+I read the spec file directly (not the round-4 summary), confirmed it parses as valid JSON with 34 acceptance criteria and no duplicate IDs, and separately verified with a Python JSON-decode pass that no criterion (including AC-17) contains an embedded raw newline character — AC-17's YAML source text uses the literal two-character `\n` escape convention as intended. I also cross-checked the spec's factual claims against the real code at `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs` (to_workspace_relative is exactly at lines 145-161 as cited, globset is confirmed a workspace-true dependency, yaml-rust2 is confirmed not yet a dependency, no membership filter exists yet) and against the two other specs it cites line numbers into (`.claude/specs/track-g-matrix-napi-maturin.json`, `.claude/specs/SPEC-APPLY-BATCH-002.json` — both citations, including the 145-161/152-154 line numbers, are currently accurate).
+
+Doing the full fresh 5-dimension sweep turned up three real, small issues — consistent with the pattern you described of each round finding something smaller and more mechanical than the last:
+
+```json
+{
+  "issues": [
+    {
+      "criterion_id": "AC-09",
+      "type": "missing-error-case",
+      "description": "AC-09 covers only a bare-string members value (members = \"crates/*\"). Its npm sibling AC-09c and pnpm sibling AC-11b both explicitly state that an array/sequence containing one or more non-string entries (e.g. [\"packages/*\", 42]) receives identical fallback-to-absent treatment. AC-09 (and its regression fixture in AC-14) has no equivalent statement for Cargo's members = [\"crates/*\", 42] shape, even though the api_surface prose's general 'does not deserialize as an array of strings' language implies it should be covered the same way. This is an asymmetry across the three ecosystems' otherwise-parallel malformed-shape criteria.",
+      "suggested_fix": "Append to AC-09's criterion text: \"The same treatment applies to a members array containing one or more non-string entries (e.g. members = [\\\"crates/*\\\", 42]), which toml_edit also parses successfully but which fails to deserialize as an array of strings.\""
+    },
+    {
+      "criterion_id": "AC-09b",
+      "type": "missing-error-case",
+      "description": "Same asymmetry as AC-09 but for Cargo's exclude field: AC-09b covers only a bare-string exclude value. There is no explicit statement (matching AC-09c/AC-11b's pattern) that an exclude array containing a non-string entry falls back to 'nothing excluded' the same way.",
+      "suggested_fix": "Append to AC-09b's criterion text: \"The same treatment applies to an exclude array containing one or more non-string entries (e.g. exclude = [\\\"crates/scratch-example\\\", 42]): the malformed exclude field is treated as absent (nothing excluded) while a well-formed members filter, if present, still applies normally.\""
+    },
+    {
+      "criterion_id": "AC-12",
+      "type": "missing-error-case",
+      "description": "AC-07's own criterion text makes a specific, strong claim beyond simple hybrid-root inclusion: the root package is exempt from exclude matching even when an exclude glob would textually match \".\" (e.g. exclude = [\".\"]). But AC-12's regression-fixture group for AC-07 only specifies a fixture with members = [\"crates/*\"] and no exclude key at all -- it never exercises the exclude=[\".\"] case AC-07's own text calls out. The claim is asserted in prose but not backed by any fixture in the criterion that is supposed to prove it.",
+      "suggested_fix": "Extend AC-12's fixture description for the AC-07 group to add: \"...and a further separate workspace root Cargo.toml with [package] name = \\\"root-crate\\\", [workspace] members = [\\\"crates/*\\\"], and exclude = [\\\".\\\"] (asserting AC-07's exclude-exemption claim specifically: the root entry at path \\\".\\\" is still returned even though the exclude glob textually matches the root's own workspace-relative path).\""
+    },
+    {
+      "criterion_id": null,
+      "type": "scope-overlap",
+      "description": "The spec's `scope` field states identity resolution (identity.rs, walk.rs) 'is covered by the separate SPEC-TRACK3B-IDENTITY-RESOLUTION' -- but no spec with that id exists in .claude/specs/. The actual sibling spec is SPEC-TRACK3B1-IDENTITY-PROMOTION-CORE.json (id: SPEC-TRACK3B1-IDENTITY-PROMOTION-CORE), which itself correctly cross-references back with 'Does not include workspace-membership filtering (ignore_walk.rs), which is covered by the separate SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.' There is also a planned SPEC-TRACK3B2-CONSUMER-COLLISION-SAFETY.json covering a further slice of the same area. This spec's cross-reference is a stale/incorrect id that would send a reader looking for a document that doesn't exist.",
+      "suggested_fix": "Replace \"...is covered by the separate SPEC-TRACK3B-IDENTITY-RESOLUTION.\" in the scope field with: \"...is covered by the separate SPEC-TRACK3B1-IDENTITY-PROMOTION-CORE (crates/callisto-graph/src/identity.rs and walk.rs's promotion/collision logic), with a further planned follow-on SPEC-TRACK3B2-CONSUMER-COLLISION-SAFETY covering matrix.rs/publish.rs consumer-side collision-safety once SPEC-TRACK3B1's API surface is finalized.\""
+    }
+  ],
+  "overall": "fail",
+  "reasoning": "JSON is well-formed and AC-17's newline defect from round 3 is genuinely fixed (verified programmatically, not just by re-reading the text). All prior-round factual claims (line numbers into ignore_walk.rs, SPEC-APPLY-BATCH-002.json citations, globset/yaml-rust2 dependency status) check out against the live codebase. However, a fresh full sweep -- not trusting that 12 prior rounds exhausted every angle -- found a genuine, small asymmetry: Cargo's malformed members/exclude criteria (AC-09/AC-09b) omit the 'array containing a non-string entry' coverage that both npm's AC-09c and pnpm's AC-11b explicitly state, AC-07's exclude-matches-root claim has no proving fixture in AC-12, and the scope field cites a sibling spec id that does not exist (stale reference to SPEC-TRACK3B-IDENTITY-RESOLUTION instead of the real SPEC-TRACK3B1-IDENTITY-PROMOTION-CORE). These are exactly the kind of small, easy-to-rationalize-away gaps the audit is meant to catch -- textual asymmetries and stale cross-references, not architectural problems -- so I am not passing this round on the theory that the spec has 'earned' a pass; each is real, concrete, and independently fixable without further domain input."
+}
+```
+
+Files referenced: `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/spec-track3a-workspace-membership-v2.json` (audited spec), `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs` (target implementation, verified lines 145-161, 71-137), `/Users/gabe/Projects/callisto/.claude/specs/SPEC-APPLY-BATCH-002.json` and `/Users/gabe/Projects/callisto/.claude/specs/track-g-matrix-napi-maturin.json` (cross-spec citations, verified accurate), `/Users/gabe/Projects/callisto/.claude/specs/SPEC-TRACK3B1-IDENTITY-PROMOTION-CORE.json` (revealed the stale sibling-spec-id reference).</result>
+<usage><subagent_tokens>95539</subagent_tokens><tool_uses>12</tool_uses><duration_ms>194380</duration_ms></usage>
+</task-notification>
