@@ -1,0 +1,1 @@
+Question, are we being too wordy with or rust docs? We want to be succinct, precise, eng focused but avoid wall of text, filler words, AI slop or word salad. We want scannable and easily readable/understandable
