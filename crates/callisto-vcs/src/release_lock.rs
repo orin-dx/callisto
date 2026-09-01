@@ -4,10 +4,13 @@
 //! prevents cooperating Callisto processes from validating and executing the
 //! same checkout concurrently; Git trust is still re-observed before effects.
 
+#[cfg(not(target_arch = "wasm32"))]
 use std::fs::{self, File, OpenOptions};
 use std::path::{Path, PathBuf};
 
+#[cfg(not(target_arch = "wasm32"))]
 use fs2::FileExt;
+#[cfg(not(target_arch = "wasm32"))]
 use sha2::{Digest, Sha256};
 
 use crate::VcsError;
@@ -15,6 +18,7 @@ use crate::VcsError;
 /// An exclusive OS-backed advisory lock held for one canonical workspace.
 #[derive(Debug)]
 pub struct ReleaseWorkspaceLock {
+    #[cfg(not(target_arch = "wasm32"))]
     file: File,
     path: PathBuf,
 }
@@ -25,21 +29,31 @@ impl ReleaseWorkspaceLock {
     /// `state_directory` exists for CI and tests. Without it, the lock lives
     /// under the platform's application-state location.
     pub fn acquire(canonical_root: &Path, state_directory: Option<&Path>) -> Result<Self, VcsError> {
-        let path = lock_path(canonical_root, state_directory)?;
-        let parent = path.parent().expect("lock path always has a parent");
-        fs::create_dir_all(parent)
-            .map_err(|_error| VcsError::Git("could not create release state directory".to_string()))?;
-        let file = OpenOptions::new()
-            .create(true)
-            .read(true)
-            .write(true)
-            .truncate(false)
-            .open(&path)
-            .map_err(|_error| VcsError::Git("could not open release workspace lock".to_string()))?;
-        file.try_lock_exclusive().map_err(|_error| {
-            VcsError::Git("another Callisto release already holds this workspace lock".to_string())
-        })?;
-        Ok(Self { file, path })
+        #[cfg(target_arch = "wasm32")]
+        {
+            let _ = (canonical_root, state_directory);
+            return Err(VcsError::Git(
+                "durable release execution is unavailable on wasm32".to_string(),
+            ));
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let path = lock_path(canonical_root, state_directory)?;
+            let parent = path.parent().expect("lock path always has a parent");
+            fs::create_dir_all(parent)
+                .map_err(|_error| VcsError::Git("could not create release state directory".to_string()))?;
+            let file = OpenOptions::new()
+                .create(true)
+                .read(true)
+                .write(true)
+                .truncate(false)
+                .open(&path)
+                .map_err(|_error| VcsError::Git("could not open release workspace lock".to_string()))?;
+            file.try_lock_exclusive().map_err(|_error| {
+                VcsError::Git("another Callisto release already holds this workspace lock".to_string())
+            })?;
+            Ok(Self { file, path })
+        }
     }
 
     /// Returns the operational lock location for diagnostics and tests.
@@ -49,11 +63,15 @@ impl ReleaseWorkspaceLock {
 }
 
 impl Drop for ReleaseWorkspaceLock {
+    #[cfg(not(target_arch = "wasm32"))]
     fn drop(&mut self) {
         drop(self.file.unlock());
     }
+    #[cfg(target_arch = "wasm32")]
+    fn drop(&mut self) {}
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn lock_path(canonical_root: &Path, state_directory: Option<&Path>) -> Result<PathBuf, VcsError> {
     let base = match state_directory {
         Some(path) => path.to_path_buf(),
@@ -70,15 +88,24 @@ fn lock_path(canonical_root: &Path, state_directory: Option<&Path>) -> Result<Pa
 /// canonical workspace and durable intent rather than treating the location
 /// as release authority.
 pub fn platform_state_directory() -> Result<PathBuf, VcsError> {
-    #[cfg(target_os = "macos")]
-    let candidate = std::env::var_os("HOME").map(|home| PathBuf::from(home).join("Library/Application Support"));
-    #[cfg(target_os = "windows")]
-    let candidate = std::env::var_os("LOCALAPPDATA").map(PathBuf::from);
-    #[cfg(all(unix, not(target_os = "macos")))]
-    let candidate = std::env::var_os("XDG_STATE_HOME")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/state")));
-    candidate.ok_or_else(|| VcsError::Git("could not determine platform release state directory".to_string()))
+    #[cfg(target_arch = "wasm32")]
+    {
+        return Err(VcsError::Git(
+            "durable release execution is unavailable on wasm32".to_string(),
+        ));
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        #[cfg(target_os = "macos")]
+        let candidate = std::env::var_os("HOME").map(|home| PathBuf::from(home).join("Library/Application Support"));
+        #[cfg(target_os = "windows")]
+        let candidate = std::env::var_os("LOCALAPPDATA").map(PathBuf::from);
+        #[cfg(all(unix, not(target_os = "macos")))]
+        let candidate = std::env::var_os("XDG_STATE_HOME")
+            .map(PathBuf::from)
+            .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/state")));
+        candidate.ok_or_else(|| VcsError::Git("could not determine platform release state directory".to_string()))
+    }
 }
 
 #[cfg(test)]

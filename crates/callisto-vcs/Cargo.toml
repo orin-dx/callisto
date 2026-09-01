@@ -16,11 +16,11 @@ thiserror = { workspace = true }
 miette = { workspace = true }
 globset = { workspace = true }
 dunce = { workspace = true }
-fs2 = { workspace = true }
 sha2 = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 gix = "0.86"
+fs2 = { workspace = true }
 
 [dev-dependencies]
 callisto-model = { path = "../callisto-model", features = ["test-util"] }
