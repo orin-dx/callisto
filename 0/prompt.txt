@@ -1,0 +1,196 @@
+This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
+
+Summary:
+1. Primary Request and Intent:
+
+This session continued a prior context-exhausted conversation whose mandate was fixing confirmed bugs from a comprehensive publish pipeline audit. The user's explicit requests during this session:
+- Continue bug-hunting rounds (the session resumed mid-round after context exhaustion)
+- "Do 3 more consecutive rounds looking for more bugs" (prior session)
+- "Let's do 5 rounds and see where we are" (prior session)
+- "I feel like you're getting lazy in trying to find high quality bugs that are critical or high. Consider this a high bounty job" — demanding higher-severity findings
+- "Run the bug hunt over all areas now" — expand scope to entire codebase, not just publish pipeline
+- "Shall we do another across the entire codebase now?" — triggering the current parallel broad hunt
+
+**Security/Operational Constraints (MUST REMAIN IN EFFECT):**
+- NEVER commit to git without explicit user instruction
+- NEVER bump versions or run release/publish commands
+- `/Users/gabe/Projects/callisto-findings/` lives OUTSIDE the repo — must NEVER be committed
+- `callisto publish` must NEVER be invoked against a real registry
+- No emojis in documentation or code
+- TDD discipline: RED → GREEN → REFACTOR; never write production code without a failing test first
+- Sequential fix constraint: fixes for semantically coupled publish pipeline must be sequential, validate after each
+
+2. Key Technical Concepts:
+
+- **Callisto**: Rust CLI + Moon WASM extension for polyglot monorepo versioning (10 crates)
+- **PublishOrchestrator**: Generic `<R: RegistryClient, P: RateLimitPolicy, T: TimeProvider>` struct
+- **SubprocessRegistryClient**: Dispatches `RegistryClient` calls to cargo/npm/twine CLIs
+- **plan_publish / plan_version / apply_version_plan**: Core graph command functions
+- **TagIndex**: Lazily-built, `OnceCell`-backed tag index; failure on first call leaves cell empty so second call retries (key to PUB-012 bug)
+- **PublishTarget::Npm { registry, restricted }**: Model type for npm publish target — `restricted` field added in this session
+- **NpmAccess::Restricted / Public**: Plan-level enum determining `--access` flag passed to npm CLI
+- **`ws.tags()`**: `OnceCell`-backed lazy accessor; on failure, `OnceCell` remains unset and retries on next call
+- **GitAccess**: Two-backend git accessor (gix primary, shell fallback) used by `ws.tags()` but NOT by `head_sha` (which uses gix-only `GitRepository::discover`)
+- **TagTemplate / glob()**: Tag template struct; `glob()` produces `prefix*suffix`; `TagIndex::build` calls `version_grammar()` which can fail for mixed-ecosystem packages
+- **ManifestRole::Canonical vs Platform**: Only Canonical manifests are counted in `version_grammar()`; a package with only Platform manifests has no canonical manifests and `version_grammar()` fails
+- **`atomic_write`**: Canonical atomic file write with parent+grandparent fsync
+- **RawConfig / ResolvedConfig**: Two-layer config system; `RawConfig` deserialized from TOML, `ResolvedConfig` built by `resolve.rs`
+- **`#[serde(deny_unknown_fields)]`**: Missing from all `Raw*` config structs — silently drops typos
+
+3. Files and Code Sections:
+
+- **`crates/callisto-graph/src/commands/publish.rs`**
+  - PUB-011 fix: Added `tag_index` computation before the topo loop with soft error handling:
+    ```rust
+    let tag_index = match ws.tags() {
+        Ok(idx) => Some(idx),
+        Err(e) => {
+            diagnostics.push(callisto_model::Diagnostic {
+                code: callisto_model::DiagnosticCode::GitDiscoveryFailed,
+                severity: callisto_model::DiagnosticSeverity::Warning,
+                message: format!(
+                    "Could not read git tags: {e}; all packages treated as release candidates"
+                ),
+                package: None, path: None, escalated_by: None, governed_by: None,
+            });
+            None
+        }
+    };
+    ```
+  - Changed loop body from `ws.tags()?. last_tag(&pkg.id)` to `tag_index.and_then(|idx| idx.last_tag(&pkg.id))`
+  - PUB-012 fix: Changed release-entry block from `if let Some(ref sha) = head_sha` to `if let (Some(ref sha), Some(idx)) = (&head_sha, tag_index)`, using `idx.template(&pkg.id).render(&ver)` instead of `ws.tags()?.template(...)`
+  - PUB-013 fix: Changed registry/access extraction:
+    ```rust
+    let (npm_registry_url, npm_restricted) = pkg.publish_to.iter().find_map(|t| {
+        if let callisto_model::PublishTarget::Npm { registry, restricted } = t {
+            Some((registry.clone(), *restricted))
+        } else {
+            None
+        }
+    }).unwrap_or((None, false));
+    ```
+  - Changed access computation:
+    ```rust
+    let access = if npm_restricted {
+        Some(callisto_model::NpmAccess::Restricted)
+    } else if pkg.id.name().starts_with('@') {
+        Some(callisto_model::NpmAccess::Public)
+    } else {
+        None
+    };
+    ```
+
+- **`crates/callisto-model/src/ecosystem.rs`**
+  - Added `restricted: bool` field to `PublishTarget::Npm` variant:
+    ```rust
+    Npm {
+        registry: Option<String>,
+        /// `true` when `publishConfig.access` in `package.json` is `"restricted"`.
+        restricted: bool,
+    },
+    ```
+
+- **`crates/callisto-manifests/src/npm.rs`**
+  - Updated `publish_targets()` to read `publishConfig.access`:
+    ```rust
+    let publish_config = self.doc.get("publishConfig");
+    let registry = publish_config
+        .and_then(|pc| pc.get("registry"))
+        .and_then(|r| r.as_str())
+        .map(|s| s.to_string());
+    let restricted = publish_config
+        .and_then(|pc| pc.get("access"))
+        .and_then(|a| a.as_str())
+        == Some("restricted");
+    vec![callisto_model::PublishTarget::Npm { registry, restricted }]
+    ```
+
+- **`crates/callisto-manifests/src/lib.rs`**
+  - Updated default Npm target: `PublishTarget::Npm { registry: None, restricted: false }`
+
+- **`crates/callisto-graph/tests/publish_tests.rs`**
+  - Added `FailingRunner` struct (returns `Err(CommandError::NotFound)` for all commands)
+  - Added test `plan_publish_succeeds_when_git_binary_unavailable` (PUB-011 RED→GREEN)
+  - Added test `plan_publish_release_entry_block_does_not_hard_fail_when_tag_index_is_none` (PUB-012 RED→GREEN)
+  - Added test `scoped_npm_package_with_restricted_access_produces_restricted_access_in_plan` (PUB-013 RED→GREEN)
+  - Test count: 12 integration publish tests, all passing
+
+- **`crates/callisto-graph/tests/fixtures/graph_builder.rs`**
+  - Added `manifests()` setter to `PackageBuilder`:
+    ```rust
+    pub fn manifests(mut self, m: Vec<ManifestDecl>) -> Self {
+        self.manifests = m;
+        self
+    }
+    ```
+
+4. Errors and Fixes:
+
+- **PUB-011 RED test setup**: `FailingRunner` + no `.git` makes `head_sha = None`, which means release-entry block is never reached — the bug isn't triggered. Resolution: Used `FailingRunner` + no `.git` for the simplified test (the `ws.tags()?` soft-handling fix still needed); used mixed-manifest package (Cargo + PyprojectToml canonical) to trigger `version_grammar()` failure for the inner `ws.tags()?` test.
+
+- **PUB-012 test design**: Initially struggled to find a scenario where `head_sha` succeeds but `ws.tags()` fails consistently. Resolution: Used a package with BOTH `ManifestFormat::CargoToml` AND `ManifestFormat::PyprojectToml` as `ManifestRole::Canonical` manifests. `base_versions()` reads only the first (Cargo.toml), succeeds. `version_grammar()` sees `[SemVer, PEP440]` → `Err(MixedVersionGrammars)` → `TagIndex::build` fails. With real `.git`, `head_sha` succeeds via gix. This creates the exact divergence needed.
+
+- **`InMemoryGraph` private fields**: Couldn't construct `InMemoryGraph` directly; had to add `manifests()` setter to `PackageBuilder` instead.
+
+5. Problem Solving:
+
+**Solved:**
+- PUB-011: `ws.tags()?` inside topo loop hard-propagated when git binary unavailable → soft handler + `tag_index: Option<&TagIndex>` before loop
+- PUB-012: Inner `ws.tags()?` in release-entry block bypassed soft handler → gated on `(Some(sha), Some(idx))` tuple, using `tag_index` directly
+- PUB-013: Scoped npm packages always published as `--access public`, overriding `publishConfig.access: "restricted"` → added `restricted: bool` to `PublishTarget::Npm`, read from `publishConfig.access` in `npm.rs`, respected in `plan_publish`
+
+**Newly discovered (not yet fixed), from tag/version/config agent:**
+1. `[[package]] publish-to` override silently discarded — `resolve.rs:326` hardcodes `publish_to: None`, never reads `raw_pkg.publish_to`; `walk.rs:147-171` never consults `pkg_override.publish_to`
+2. `[[package-set]]` config blocks parsed but entirely discarded — `raw.package_set` is never referenced after deserialization in `resolve.rs`
+3. `RawConfig` lacks `#[serde(deny_unknown_fields)]` — TOML typos silently ignored across all `Raw*` structs
+4. `[registries]` `kind = "pypi"` falls to `_ => Ecosystem::Npm` at `resolve.rs:277-281` — wrong ecosystem routing
+5. `apply_version_plan` changeset deletion loop non-atomic — double-bump on retry after crash between manifest writes and changeset deletions (`apply.rs:75-141`)
+
+6. All user messages:
+
+- (Session resumed from prior context — no initial user message)
+- "I feel like you're getting lazy in trying to find high quality bugs that are critical or high. Consider this a high bounty job"
+- "Run the bug hunt over all areas now"
+- "Shall we do another across the entire codebase now?"
+- "CRITICAL: Respond with TEXT ONLY. Do NOT call any tools. [summary request]" (current message triggering this summary)
+
+7. Pending Tasks:
+
+- Fix the 5 newly confirmed HIGH severity bugs from the tag/version/config agent:
+  1. `[[package]] publish-to` override never applied (`resolve.rs`, `walk.rs`)
+  2. `[[package-set]]` config entirely discarded (`resolve.rs`)
+  3. `RawConfig` missing `#[serde(deny_unknown_fields)]` (all `Raw*` structs in `raw.rs`)
+  4. `[registries] kind = "pypi"` falls through to `Ecosystem::Npm` (`resolve.rs:277-281`)
+  5. `apply_version_plan` double-bump on crash-and-retry (`apply.rs:75-141`)
+- Process results from remaining 2 background agents (changeset parser/aggregate, graph resolver) when they complete
+- All fixes must follow TDD (RED → GREEN)
+
+8. Current Work:
+
+Three parallel bug-hunt agents were launched to cover the entire codebase:
+1. Tag commands, version command, config resolution → COMPLETED, returned 5 HIGH bugs
+2. Changeset parser, aggregate, conventional commits → Still running
+3. Graph resolver, dependency edges, cascade write path → Still running
+
+The first completed agent found these HIGH severity bugs at these exact locations:
+- `crates/callisto-graph/src/config/resolve.rs:326` — `publish_to: None` hardcoded
+- `crates/callisto-graph/src/walk.rs:147-171` — `pkg_override.publish_to` never consulted
+- `crates/callisto-graph/src/config/resolve.rs` — `raw.package_set` never processed
+- `crates/callisto-graph/src/config/raw.rs:4-22` — missing `#[serde(deny_unknown_fields)]`
+- `crates/callisto-graph/src/config/resolve.rs:277-281` — `_ => Ecosystem::Npm` catches `"pypi"`
+- `crates/callisto-graph/src/apply.rs:75-141` — non-atomic changeset deletion
+
+The full workspace test suite was confirmed clean (exit code 0) before the summary request.
+
+Session bug count: 13 bugs fixed total (PUB-001 through PUB-013).
+
+9. Optional Next Step:
+
+Wait for the two still-running background agents (changeset/aggregate and graph/resolver) to complete, then begin fixing the 5 HIGH severity bugs confirmed by the tag/version/config agent using TDD (RED → GREEN for each). The most impactful first fix would be the `[registries] kind = "pypi"` → `Ecosystem::Npm` silent fallback in `resolve.rs:277-281`, as it directly causes wrong publish tool invocation. Second would be the `apply_version_plan` double-bump crash-safety issue in `apply.rs:75-141`.
+
+Direct quote from the agent result establishing what needs fixing next:
+> "[registries] kind with any value besides 'cargo' or 'npm' silently becomes Ecosystem::Npm... `_ => Ecosystem::Npm` — catches 'pypi', 'go', typos, missing, everything else"
+> "apply_version_plan crash during changeset deletion loop produces double-bump on retry... Location: crates/callisto-graph/src/apply.rs:75-141"
+
+If you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/gabe/.claude/projects/-Users-gabe-Projects-callisto/575b7a46-37b7-42f0-9db7-b2c329b2abab.jsonl
+Continue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with "I'll continue" or similar. Pick up the last task as if the break never happened.
