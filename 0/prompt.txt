@@ -1,0 +1,26 @@
+<task-notification>
+<task-id>a04cacd36da52e0a5</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/tasks/a04cacd36da52e0a5.output</output-file>
+<status>completed</status>
+<summary>Agent "Review T01a commit" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Both relocated bodies confirmed byte-identical to the removed inherent methods. Review complete.
+
+```json
+{
+  "status": "approved",
+  "issues": [
+    {
+      "file": "crates/callisto-manifests/src/cargo.rs",
+      "line": 111,
+      "description": "persist()'s error mapping uses `.map_err(|e| ManifestError::Write { ... message: e.to_string() })`, which matches rust-hazards.md's T10 (Error Downgrade &amp; Source Erasure) signal for `.to_string()` inside `map_err`. This is pre-existing code being relocated verbatim (same pattern already present identically in write_version/update_dependency_spec across all three ecosystem modules), not new behavior introduced by this commit, so it is not a defect attributable to T01a. Flagging as a note only in case a future task wants to address the pattern workspace-wide.",
+      "severity": "suggestion"
+    }
+  ],
+  "sibling_gaps": [],
+  "reasoning": "T01a's stated scope: add Manifest::persist as a required trait method; relocate CargoToml/PackageJson's existing private inherent persist verbatim into impl Manifest blocks; add a new PyprojectToml::persist extracted from its render()+atomic_write pattern without touching the 3 inline call sites; leave mutator bodies untouched. Verified against the actual single-commit diff (git show 7883c3b, not a multi-commit range): lib.rs +1 line (trait decl only), cargo.rs +31/-2 (structural relocation of persist into impl Manifest, plus one new test), npm.rs +37/-37 (same relocation pattern), python.rs +8/-0 (new persist method only). Confirmed both relocated bodies (cargo.rs, npm.rs) are byte-for-byte identical to what was removed from the inherent impl blocks -- direct text comparison, no changes beyond brace repositioning. Confirmed python.rs's write_version/update_dependency_spec/update_optional_dependencies at lines 176/301/419 still each call atomic_write inline (3 separate sites), exactly as before -- persist() was added, nothing removed. Confirmed cargo.rs's and npm.rs's three mutators still call self.persist(permit) internally (grep for 'self.persist' shows all original call sites intact) -- no mutator body was touched, satisfying the explicit non-goal. WorkspaceCargoResolver's own separate persist/write_version at cargo.rs:602-704 (a distinct type that never implements Manifest) is correctly untouched -- confirmed out of scope per the spec's own non_goals item 2.\n\nAC-001 (the only criterion this task claims, per the plan's covers_criteria): verified genuinely, not nominally -- ran `cargo test -p callisto-manifests --lib` (94 passed, 0 failed), `cargo clippy -p callisto-manifests --all-features -- -D warnings` (clean), and `cargo check --workspace --all-features` (clean, confirming no other Manifest trait consumer broke). Grepped the whole workspace for `impl Manifest for` and `dyn Manifest` / `: Manifest` outside callisto-manifests/src -- only CargoToml, PackageJson, PyprojectToml implement the trait; callisto-graph only ever consumes it via Arc&lt;dyn Manifest&gt;, never implements it, so there are no missed sibling implementors.\n\nTest quality: persist_is_exposed_as_a_manifest_trait_method calls `&lt;CargoToml as Manifest&gt;::persist(...)` via UFCS specifically qualified to the trait, which is the correct way to force a compile error (E0576, as the plan's expected_failure documents) if persist were still just a private inherent method rather than a genuine trait member -- this is a meaningful distinction, not a weaker check than it appears. It also asserts the no-prior-mutation round-trip (file unchanged after persist with no write), matching the AC-002 preamble language. No sibling gap: the plan appropriately defers PackageJson/PyprojectToml's own direct persist tests to T01b (a separate, already-planned task), and this commit does not claim to cover those.\n\nNo unsafe code, no forbidden patterns beyond the noted pre-existing T10-style pattern (which predates this commit and is out of this task's scope to fix). Format-preservation invariant (toml_edit CST) is unaffected -- persist() only serializes and writes, doesn't touch document structure."
+}
+```</result>
+<usage><subagent_tokens>104229</subagent_tokens><tool_uses>18</tool_uses><duration_ms>212806</duration_ms></usage>
+</task-notification>
