@@ -1,0 +1,9 @@
+<task-notification>
+<task-id>bcwf1b0f7</task-id>
+<summary>Monitor event: "just ci live progress with step timestamps"</summary>
+<event>[+1377s]         PASS [   0.008s] ( 473/1065) callisto-graph error::tests::conflicting_platform_target_sources_message_names_package_and_both_sources
+[+1377s]         PASS [   0.008s] ( 474/1065) callisto-graph error::tests::graph_error_vcs_is_transparent_no_prefix
+[+1377s]         PASS [   0.008s] ( 476/1065) callisto-graph identity::tests::resolve_errors_when_manifest_file_missing
+[+1377s]         PASS [   0.008s] ( 477/1065) callisto-graph identity::tests::resolve_errors_when_name_field_missing</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
