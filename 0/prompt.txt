@@ -1,0 +1,47 @@
+<task-notification>
+<task-id>a205f474396d49247</task-id>
+<tool-use-id>toolu_01ThfTKtu8fxwEdvntkPCMNd</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/bb531e8d-c394-4e47-a8ae-e4a9ceeca6d2/tasks/a205f474396d49247.output</output-file>
+<status>completed</status>
+<summary>Agent "Research Track 6-mechanical field mismatches" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>This is a research-only task: comparing 7 report types (`report.rs`) against their documented wire contract (`docs/01-spec.md` §M.12.4–M.12.6) plus construction-site checks. No edits made.
+
+**Confirmed: no overlap** with MatrixReport/PublishPlan — the Action's only two `jq` sites (`.platformTargets[].targets[].artifactName`, `.releases[]?.tagName`) are untouched by anything below.
+
+**IMPORTANT CROSS-TRACK FINDING:** `TagReport`/`CreatedTag`'s mismatch is the *same underlying defect* as Track 4's "tag fabricated-sha" bug — `tag.rs:82` already computes `let already_existed = ws.tags()?.contains_tag(tag_str);` but the value is discarded; the doc's `CreatedTag` shape already specifies the fix (`already_existed: bool`, with explicit rationale: "An existing tag at a different sha is an error diagnostic, not a silent overwrite"). Whichever track lands first should own this field; the other must not duplicate it.
+
+---
+
+### StatusReport / StatusPackageRecord — MISMATCH (report.rs:298–336 vs spec:1883–1934)
+- `has_changesets: bool` — **doc says mandatory** ("§12.5 mandates `.hasChangesets`; the field the Action's mode dispatch reads") — **entirely missing from the struct**.
+- Doc's `StatusEntry` (renamed `StatusPackageRecord` in code, harmless) is missing `last_released_version: Option&lt;Version&gt;` and `release_trigger: ReleaseTrigger` — both absent from code.
+- `changed_since_last_tag: bool` — doc says "Mandatory... v0.1 reports the fact" (always serialized); code has `skip_serializing_if = "std::ops::Not::not"`, silently omitting the field from JSON when `false`.
+- Code has an extra field not in the doc: `pending_changesets: Vec&lt;String&gt;`.
+- Construction sites: `crates/callisto-graph/src/commands/status.rs:105`, `crates/callisto-cli/src/render/mod.rs:311`.
+
+### SnapshotReport — MAJOR MISMATCH, likely exception (report.rs:339–348 vs spec:1938–1962)
+- Doc: `version: Version` + `packages: Vec&lt;SnapshotPackage{name, ecosystem}&gt;`.
+- Code: `snapshot_tag: String` + `bumps: Vec&lt;BumpRecord&gt;` — **completely different field names, types, and shapes**, not a rename-level fix.
+- **Flagging as likely exception**: this isn't "populate a field correctly," it's two top-level fields with different names *and* different types/semantics. Construction site: `crates/callisto-graph/src/commands/snapshot.rs:146`.
+
+### ComposePrBodyReport — MISMATCH, borderline exception (report.rs:363–371 vs spec:1971–2018)
+- `body` (doc) vs `pr_body` (code) → JSON key `body` vs `prBody` — a rename, not additive.
+- `metadata: PrBodyMetadata` (labels/managed_labels/overflow — a whole label-tracking subsystem) is **entirely absent** from code.
+- Flagging: the rename is a breaking change; the missing `metadata` object is more than a one-line fix. Construction sites: `crates/callisto-graph/src/commands/pr_body.rs:74,237`.
+
+### ValidateReport — MISMATCH (report.rs:386–394 vs spec:2035–2045)
+- `ok` (doc) vs `valid` (code) → JSON key rename.
+- `diagnostics` — doc says mandatory/always-present here specifically ("entire payload *is* its diagnostics"); code has `skip_serializing_if = "Vec::is_empty"`, contradicting that. Construction site: `crates/callisto-graph/src/commands/validate.rs:143`.
+
+### TagReport / CreatedTag — MISMATCH, shares root cause with Track 4 (report.rs:409–437 vs spec:2049–2067)
+- `tags` (doc) vs `created_tags` (code) → JSON key rename.
+- `CreatedTag`: doc has `already_existed: bool` (missing from code — see cross-track finding above); code has an extra `package: PackageId` field not in the doc. Construction sites: `crates/callisto-graph/src/commands/tag.rs:65,74,103,113,120`.
+
+### InitReport — MOST DIVERGENT, definite exception (report.rs:440–461 vs spec:2071–2087)
+- Near-zero field overlap beyond `schema_version`/`diagnostics`. Doc: `locator: String`, `packages: Vec&lt;InitPackage&gt;`, `written: Vec&lt;PathBuf&gt;`, `proposed_config: Option&lt;String&gt;`. Code: `initialized: bool`, `config_path: PathBuf`, `diff: InitDiff{new_ecosystems, applied}` — none of these four exist in the other's shape.
+- This reads as a genuine design evolution the docs never caught up with (same category as the Track 3a/6-doc/8-doc precedent), not a mechanical correctness fix — **recommend routing through a doc-correction-first check** (confirm which design actually shipped and is intended) before treating this as "correctness-fix, no version bump." Construction site: `crates/callisto-graph/src/commands/init.rs:190`.
+
+**Net assessment against the resolved decision** ("correctness-fix the rest, no schemaVersion bump for these 7"): StatusReport's fixes are genuinely additive/correctness-shaped and fit the decision cleanly. SnapshotReport, ComposePrBodyReport's `body` rename, ValidateReport's `ok` rename, TagReport's `tags` rename, and InitReport all involve **renaming or wholesale-replacing existing fields**, not just adding missing ones — each is a real break for any existing consumer parsing the old key. Worth a quick decision-owner check on whether the "no version bump" assumption survives contact with these five before implementation starts.</result>
+<usage><subagent_tokens>265209</subagent_tokens><tool_uses>6</tool_uses><duration_ms>98573</duration_ms></usage>
+</task-notification>
