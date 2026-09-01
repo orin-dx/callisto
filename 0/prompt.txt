@@ -1,0 +1,5 @@
+<task-notification>
+<task-id>bn6s6yvb0</task-id>
+<summary>Monitor event: "wait for competing cargo/nextest processes to drain, then run clean baseline test"</summary>
+<event>[Monitor timed out — re-arm if needed.]</event>
+</task-notification>
