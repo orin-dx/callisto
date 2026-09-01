@@ -1,0 +1,5 @@
+<task-notification>
+<task-id>bpym4givd</task-id>
+<summary>Monitor event: "wait for RED confirmation on workspace.rs test"</summary>
+<event>[Monitor timed out — re-arm if needed.]</event>
+</task-notification>
