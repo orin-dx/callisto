@@ -1,0 +1,1 @@
+17 min for rustfmt is crazy, cleanup the readme appropriately, don't leave unverified claims please
