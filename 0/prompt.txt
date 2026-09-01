@@ -1,0 +1,202 @@
+<task-notification>
+<task-id>a857647e43c5aaae1</task-id>
+<tool-use-id>toolu_01Kp322DH6h2MyezgeVVpmCZ</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a15bbbf7-aba0-415d-bfdc-c773ea65cfc7/tasks/a857647e43c5aaae1.output</output-file>
+<status>completed</status>
+<summary>Agent "Audit: performance, scalability, and resource usage" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I now have all the data needed for the report. Let me compile the findings.
+
+---
+
+**Performance &amp; Scalability Audit — Callisto**
+
+Note: The FINDINGS.md ledger was checked. None of the findings below are already logged there.
+
+---
+
+### 1. Manifest Read Caching
+
+**Status**: CONFIRMED
+
+**Summary**: There IS a cache, but every manifest is read twice in the read-only path, and `base_versions()` performs redundant disk I/O every invocation even when the cache is warm.
+
+**Cache existence** (`crates/callisto-graph/src/manifest_cache.rs:1-55`): A `RefCell&lt;BTreeMap&lt;PathBuf, Arc&lt;dyn Manifest&gt;&gt;&gt;` is shared across all three read-only call sites in `walk.rs` (`publish_targets`, `iter_dependencies`) and `base_versions()`. Within the cache-covered sites, each manifest is opened at most once per command run. The apply path correctly bypasses the cache intentionally (needs `&amp;mut self`).
+
+**Double-read gap** (`crates/callisto-graph/src/locate/ignore_walk.rs:70-90`, `crates/callisto-graph/src/walk.rs:102`): `IgnoreWalkLocator::projects()` calls `fs::read_to_string` + `content.parse::&lt;toml_edit::DocumentMut&gt;()` on every discovered manifest to extract the package name. This happens before `ManifestWalkResolver::build` populates the cache. So when `open_cached` is called immediately afterward in `walk.rs`, it opens and re-parses each manifest a second time. Each manifest is read from disk exactly **twice** in the workspace-load path, regardless of whether it ends up being cached thereafter.
+
+**Magnitude**: For 1,000 packages with 100KB `Cargo.toml` each, the double-parse is ~200 disk reads and ~200 full `toml_edit` parses. On an SSD this is roughly 50-200ms of avoidable work. For Python projects with `pyproject.toml`, the same double-read applies.
+
+**Redundant OpenContext construction** (`crates/callisto-graph/src/lib.rs:130-148`): `base_versions()` builds a fresh `OpenContext` every call, which includes `WorkspaceCargoResolver::load(&amp;self.root.join("Cargo.toml"))` — a disk read and full TOML parse of the workspace root manifest — even though all manifests are already in the cache (so the context's `cargo_workspace` field will never actually be dereferenced). The same call was already made in `walk.rs:33` during graph building.
+
+**Verification**: Instrument `WorkspaceCargoResolver::load` with a counter; call `callisto version --dry-run` on a Cargo workspace. Expect the counter to read 2 (once in walk.rs, once in base_versions) without any code change, and 1 after caching the context.
+
+---
+
+### 2. Git Log Performance (`commits_since`)
+
+**Status**: CONFIRMED
+
+**There is no depth limit.** When `since = None` (no prior release tag for a package), `InferenceWindow::FullHistory` is passed down and `commits_since(since_ref: None, pathspecs)` is called.
+
+- **gix native path** (`crates/callisto-vcs/src/lib.rs:302-358`): The revwalk iterates every commit from HEAD to the beginning of the repo. For each commit that has matching pathspecs, it loads the commit object and diffs the tree against its parent (`commit_touches_pathspecs`). A tree diff for each of 100,000 commits is extremely expensive - it reads tree objects from the object store for every commit in the walk, not just the matching ones.
+
+- **Shell path** (`crates/callisto-vcs/src/shell.rs:118-145`): Runs `git log --no-merges --format=&lt;RS&gt;%H&lt;FS&gt;%B HEAD -- pathspecs` with no `--max-count`. The full log output is buffered in memory before parsing.
+
+**Scope**: `aggregate()` in `crates/callisto-graph/src/aggregate.rs:211` correctly passes `since = last_tag.and_then(|t| resolve_since(...))`. This means the unbounded walk only happens per-package when a package has **never been tagged**. In a brand-new workspace or for newly-added packages, every package triggers a full-history walk.
+
+**Magnitude**: On a repo with 100,000 commits and 50 untagged packages, `callisto version` would trigger 50 full-history revwalks. On the gix path each revwalk loads and diffs 100,000 commit trees; on the shell path it runs `git log` 50 times. This could add 10-60 seconds on a large repository.
+
+**A depth limit (e.g., `--max-count=500` or a configurable cap) is absent.** There is no mechanism to bound the commit window for inference.
+
+---
+
+### 3. Tag Listing Performance
+
+**Status**: CONFIRMED
+
+**`fetch_all_tags` / `ShellGit::list_tags`** (`crates/callisto-graph/src/tags.rs:27-31`, `crates/callisto-vcs/src/shell.rs:69-78`): The full unfiltered tag list is always fetched — `git tag --list` with no pattern argument — and filtered locally with `globset`. This is deliberate to guarantee byte-identical semantics between the gix and shell backends.
+
+**No pagination exists.** For 100,000 tags, `git tag --list` outputs all 100,000 names into a single string, which is held in memory. At ~15 bytes average per tag name, that's ~1.5MB. `TagIndex::build` fetches this once and reuses it for all packages (the N→1 batching fix is in place, `crates/callisto-graph/src/tags.rs:116`).
+
+**gix native path** (`crates/callisto-vcs/src/lib.rs:181-229`): Reads all refs from the git ref database (typically a packed-refs file), iterates them, applies globset filtering in memory. For 100,000 tags this is one sequential file scan — fast in practice (~10-50ms).
+
+**Shell path**: `git tag --list` on 100,000 tags typically takes 100-500ms and produces significant stdout. The result is parsed line by line.
+
+**Magnitude**: Single-command cost, not per-package. For 100,000 tags the shell path adds ~100-500ms. The gix path is faster. The impact is bounded: once per `TagIndex::build` call, and `TagIndex` is behind a `OnceCell` so it's built at most once per `Workspace` lifetime.
+
+---
+
+### 4. Cascade Computation
+
+**Status**: CONFIRMED
+
+**`convergence_bound(N) = 4*N+1`** (`crates/callisto-graph/src/cascade.rs:468-470`). For 5,000 packages: 20,001 maximum worklist pops.
+
+**Complexity**: Each worklist pop in `solve_cascade` (`crates/callisto-graph/src/cascade.rs:182-283`) performs:
+- `input.graph.dependents_of(&amp;pkg)` — O(degree(pkg))
+- BTreeMap lookups: `out.severities.get`, `out.targets[&amp;pkg]`, `out.targets.insert`, `out.rewrites.insert` — each O(log N)
+- `bump_target` → BTreeMap `get` — O(log N)
+- `raise` → BTreeMap writes + `groups.fixed_siblings(pkg)` scan — O(fixed_group_size)
+
+Total cascade cost: **O((N + E) × log N)** where E is the edge count. For 5,000 packages this is efficient.
+
+**The bound is tight, not loose.** A package can be raised at most 3 times (Patch→Minor→Major), so the maximum worklist insertions are N initial seeds + 3×N raises = 4×N, yielding the `4*N+1` bound.
+
+**One non-obvious cost**: `input.graph.packages().count()` is called once at the top of `solve_cascade` (`crates/callisto-graph/src/cascade.rs:176`) to compute `bound`. This iterates all packages. For `ManifestWalkResolver`, this is an O(N) BTreeMap iteration — trivial but redundant if `count()` was already known.
+
+**Linked-group scan** (`crates/callisto-graph/src/cascade.rs:286-353`): Runs inside the outer `while changed` loop, once per outer iteration. If there are G linked groups with M members each, and the outer loop runs K times, this is O(G×M×K) additional work — not counted in `iterations`. In practice G and M are small.
+
+---
+
+### 5. Workspace Discovery
+
+**Status**: CONFIRMED
+
+**`IgnoreWalkLocator`** (`crates/callisto-graph/src/locate/ignore_walk.rs:38-141`) uses the `ignore` crate's `WalkBuilder` with `.git_ignore(true)` and `.hidden(true)`, which respects `.gitignore` files within the traversed tree.
+
+**Explicit skip set** (line 18-28): `target`, `node_modules`, `.git`, `.moon`, `dist`. These protect directories that might not be in `.gitignore`. **Not present in the skip set**: `__pycache__`, `.venv`, `.tox`, `.pytest_cache`, `.ruff_cache`, `build` (Python wheel build dir). For Python projects that don't list these in `.gitignore`, the walker descends into them. Since these directories contain no `Cargo.toml`/`package.json`/`pyproject.toml`, no false package discoveries occur — but the traversal overhead is real.
+
+**`parents(false)` flag** (line 44): The walker does not read `.gitignore` files from directories above the workspace root. Any global `.gitignore` patterns from ancestor directories do not apply. This means a user relying on `~/.config/git/ignore` to exclude `__pycache__` globally will not have that applied during callisto's workspace walk.
+
+**Per-directory work**: For every directory not excluded, the locator checks `Cargo.toml`, `package.json`, and `pyproject.toml` with `path.join(filename).exists()` and `fs::read_to_string`. That's up to 3 `stat` + 3 `read` calls per directory. For 50,000 files in a monorepo with average 5 files/dir = 10,000 directories: up to 30,000 filesystem stats and potentially many reads.
+
+**Magnitude**: On a 50,000-file monorepo with `.gitignore` properly configured for build artifacts, discovery adds roughly 200-500ms. Without `__pycache__` in `.gitignore`, a Python-heavy workspace with thousands of cached bytecode directories adds meaningful overhead.
+
+---
+
+### 6. Memory Usage
+
+**Status**: CONFIRMED
+
+The `manifest_cache` (`crates/callisto-graph/src/lib.rs:81`) holds `Arc&lt;dyn Manifest&gt;` handles for every opened manifest. For `CargoToml`, the backing type contains a `toml_edit::DocumentMut`, which stores the full CST in memory. The CST representation is significantly larger than the raw text (toml_edit preserves whitespace, comments, and structure as a tree of nodes).
+
+**Rough estimate**: A 100KB `Cargo.toml` typically produces a `toml_edit::DocumentMut` of 500KB-2MB depending on the complexity of the table structure. For 1,000 packages: 500MB-2GB peak during the read-only phase. This is the dominant memory consumer in large workspaces.
+
+**No cache eviction**: The `BTreeMap&lt;PathBuf, Arc&lt;dyn Manifest&gt;&gt;` is never trimmed. Manifests remain in memory until the `Workspace` struct is dropped at end-of-command. For a CLI tool this is acceptable (process exits), but for a WASM plugin or library consumer with long lifetimes, this is a concern.
+
+**Write path** (`crates/callisto-graph/src/apply.rs`): Each `open` call for writing creates a new, independently-owned manifest handle that is dropped after the write. These are NOT in the cache and DO NOT accumulate. Memory for the write path is bounded by the largest single manifest, not by package count.
+
+---
+
+### 7. Changeset Loading
+
+**Status**: CONFIRMED
+
+**`load_changesets`** (`crates/callisto-graph/src/aggregate.rs:42-96`) uses `fs::read_dir` to list all entries, collects matching `.md` files into a `Vec`, sorts it, then reads and parses every file sequentially before returning. **All changesets are loaded eagerly into memory at once** before `aggregate()` processes any of them.
+
+**No streaming, no lazy loading, no limit.** For 10,000 changeset files with average 500 bytes each (~5MB total), all are read and all `parse_changeset` results are collected into `loaded: Vec&lt;LoadedChangeset&gt;` before the for-loop at line 243 begins.
+
+`parse_changeset` runs `callisto_format`'s YAML-frontmatter parser on each file. For 10,000 files, this is 10,000 sequential syscalls and 10,000 parser invocations.
+
+**Magnitude**: 10,000 changeset files is unlikely in practice (100-1,000 is more realistic), but the absence of any bound or streaming is an architectural concern. For 1,000 changesets at 500 bytes each, this adds ~20-50ms of I/O and parsing.
+
+---
+
+### 8. WASM Binary Size
+
+**Status**: PLAUSIBLE (cannot assess binary size without building)
+
+**`gix` exclusion** (`cfg(not(target_arch = "wasm32"))` in `crates/callisto-vcs/src/lib.rs:142-163`): `gix` is entirely excluded from the WASM build, which is the right call — `gix` links against system libraries and uses native file descriptors. This eliminates the largest dependency from the WASM artifact.
+
+**Features not disabled**: Looking at `crates/callisto-moon/Cargo.toml`, there are no WASM-specific feature flags that strip capabilities. `serde_json`, `semver`, and `callisto-graph` (the full release-graph logic) are all unconditionally included. `schematic` uses `default-features = false` with only `schema` and `schema_serde`, which is appropriate.
+
+**No CI check on binary size**: No evidence of a `wasm-opt --print-size`, `twiggy`, or threshold-gated size check in the build system. The `just wasm-check` target (referenced in Cargo.toml comments) likely compiles but does not assert on output size.
+
+**Risk**: Future dependencies added to `callisto-graph` or `callisto-manifests` (which are unconditionally pulled into the WASM build) will silently inflate the binary. Without a size gate, there's no signal when this happens.
+
+---
+
+### 9. Parallel Manifest Writes in `apply_version_plan`
+
+**Status**: CONFIRMED — two distinct performance issues
+
+**All writes are sequential** (`crates/callisto-graph/src/apply.rs:75-116`): The `for bump in &amp;plan.bumps` loop and `for rewrite in &amp;plan.rewrites` loop run sequentially with no parallelism. For 500 packages, this means up to 500 file reads + TOML/JSON parses + writes in serial.
+
+**No per-file batching** (the more serious issue): If a manifest file appears in both `plan.bumps` (as a `VersionWriteTarget::Manifest`) and `plan.rewrites` (as a `DepWriteTarget::Manifest`), it is opened, parsed, modified, and written separately for each operation. If package A's manifest needs a version bump AND 3 dependency rewrites, it's opened 4 times. The 2nd-4th opens read back from disk what the previous write flushed — this is correct but wasteful.
+
+**Worst case — workspace root `Cargo.toml`**: When many packages share dependencies via `[workspace.dependencies]`, each dependency needing a rewrite triggers one `WorkspaceCargoResolver::load(&amp;root.join(root_manifest))` call (`apply.rs:87` and `apply.rs:111`). If 100 workspace-level dependencies need rewriting, the root `Cargo.toml` is parsed and written 100 consecutive times. Each such round-trip reads the previously-written version to apply the next rewrite in isolation.
+
+This is also where the redundant `WorkspaceCargoResolver::load` at `apply.rs:56-63` (for `OpenContext` construction) adds one extra gratuitous load, separate from the per-rewrite loads at lines 87 and 111.
+
+**Magnitude**: For a 500-package workspace with 50 shared `[workspace.dependencies]` that all change: ~50 cycles of (read 100KB root manifest, parse toml_edit CST, write one field, write 100KB back). At ~5ms per cycle on an SSD: ~250ms just for root-manifest rewrites, done sequentially. For packages with large manifests this compounds.
+
+---
+
+### 10. Snapshot File
+
+**Status**: CONFIRMED
+
+**Format**: JSON `SnapshotReport` (`callisto_model::SnapshotReport`, referenced in `crates/callisto-graph/src/commands/snapshot.rs:138-143`), containing `schema_version`, `snapshot_tag` (string), `bumps` (one `BumpRecord` per package), and `diagnostics`.
+
+**Size for 500 packages**: Each `BumpRecord` contains package ID, from/to version strings, severity, governed_by, reason. Estimate ~200-400 bytes of JSON per record, so ~100-200KB for 500 packages. This is well within normal bounds and is not a concern.
+
+**Not read on every command invocation**: The snapshot operation is write-only (it produces the report as output and applies the plan to manifests). There is no code path that reads a previously-written `SnapshotReport` on subsequent commands. The snapshot command itself calls `ws.base_versions()` (triggering the redundant `WorkspaceCargoResolver::load` described above), but that's a general issue, not snapshot-specific.
+
+**One structural note**: `plan_snapshot` (`crates/callisto-graph/src/commands/snapshot.rs:17`) calls `callisto_vcs::GitRepository::discover(&amp;ws.root)?` directly (not through `GitAccess`), which means it hard-fails on WASM targets (`discover` always returns `Err` on `wasm32`). The snapshot command is not currently usable from the moon WASM plugin. This is a functional gap, not a performance issue.
+
+---
+
+### Cross-Cutting Finding: Discarded `_opts` Parameter in `apply_version_plan`
+
+**Status**: CONFIRMED
+
+**Location**: `crates/callisto-graph/src/apply.rs:49`
+
+**Classification**: Discarded Parameter
+
+`apply_version_plan` takes `_opts: &amp;ApplyOptions` (leading underscore signals it is never read). `ApplyOptions::refresh_lockfiles: bool` is populated by the CLI caller (`crates/callisto-cli/src/commands/version.rs:28-29`) from the `--refresh-lockfiles` flag, but the field is documented as "not yet consulted here." The flag is surfaced to users, set by callers, but silently ignored: `callisto version --refresh-lockfiles` currently does nothing different from `callisto version`. No diagnostic, no error, no behavior change.
+
+**Magnitude**: Correctness issue, not a performance issue. The `--refresh-lockfiles` feature is silently broken.
+
+---
+
+### Cross-Cutting Finding: Discarded `_source: Severity` in `cascade_action`
+
+**Status**: CONFIRMED
+
+**Location**: `crates/callisto-graph/src/cascade.rs:27`
+
+`cascade_action(kind, coverage, _source: Severity, cfg)` receives the triggering package's severity but never uses it. The cascaded severity is determined purely from `cfg.bump_severity` and the dependency kind/coverage. Whether the cascade was triggered by a `Major` or `Patch` bump has no effect on the cascaded result. This may be intentional by design, but it is a named, typed parameter that is provably unused — any caller expecting source-severity-sensitive cascade decisions would be silently wrong.</result>
+<usage><subagent_tokens>97699</subagent_tokens><tool_uses>29</tool_uses><duration_ms>392721</duration_ms></usage>
+</task-notification>
