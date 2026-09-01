@@ -1,0 +1,3 @@
+<command-name>/plugin</command-name>
+            <command-message>plugin</command-message>
+            <command-args></command-args>
