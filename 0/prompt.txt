@@ -1,0 +1,30 @@
+<task-notification>
+<task-id>a0c2f1dac868f87dd</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a0c2f1dac868f87dd.output</output-file>
+<status>completed</status>
+<summary>Agent "Verify diagnostic-code collision fix and new test" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All confirmed clean: fresh full workspace build (0 errors), all 420 tests pass (90+244+86), clippy with `-D warnings` clean across all three crates, and the working tree is back to exactly the original 6 modified files (no leftover test artifacts from my mutation-test spot check).
+
+## Summary
+
+I independently re-verified this fix from scratch. **One real issue found; everything else checks out.**
+
+### Issue found (not part of the reviewed diff, but a direct consequence of it)
+
+**`crates/callisto-graph/src/config/raw.rs` lines 88, 110, and 138** — three doc comments (on `RawPackageConfig::changelog`, `RawPackageSetConfig::changelog`, and `RawMoonCallistoConfig::changelog`) still read `(`ConfigError::InvalidChangelogPath`, E117)`. The renumbering moved this variant to E113, but `raw.rs` was not touched — it's a pre-existing committed file (last touched in commit `9ba0e91`), not part of this session's diff. These three comments are now stale/wrong and should be updated to say `E113`. This is exactly the kind of sibling-doc gap the task asked to hunt for; the fix's own doc update (`error-taxonomy.md`) didn't catch it because it's a different file.
+
+### Everything else verified clean
+
+1. **Full re-derivation of collisions**: My first attempt at the literal grep command from the task (`crates/*/src/**/*.rs crates/*/src/*.rs`) produced spurious "2×" counts for nearly every code — this is a zsh globbing artifact (`**` matches zero directories too, so both glob patterns match the same top-level files, double-listing them), not real duplicates. After deduping the file list, every one of ~90 real codes across the workspace appears exactly once. The apparent "duplicates" for E001/E042 in a second check were `lib.rs`'s own test-fixture strings (`code(E001)`, `code(E042)`) used to test the scanner itself — correctly excluded from `DIAGNOSTIC_CODE_SOURCE_FILES`. None of the 7 new codes (E029, E034, E054, E055, E056, E057, E113) collide with anything.
+2. **Per-renumbering diffs**: all 7 checked with full context — only the numeral inside `code(E...)` changed; `#[error(...)]`, field names, and `help(...)` text are byte-identical. No test anywhere in the workspace (grepped `"E020"`, `"E021"`, `"E025"`, `"E048"`, `"E050"`, `"E052"`, `"E117"` as literals, plus snapshot/fixture files) asserts on an old code tied to a moved variant.
+3. **Scanner correctness**: no `code(...)` in the 10 real source files deviates from `code(E\d+)` — no multi-line splits, no false-positive substrings. Traced the extractor logic for edge cases (embedded second `E`, non-digit trailing char) — correctly rejected by the `candidate[1..].all(is_ascii_digit)` guard. Ran a live mutation test (E029→E020) confirming the test fails and correctly names both `exec.rs` and `version.rs`; restored and reconfirmed green.
+4. **`include_str!` paths**: all 10 cross-checked against display names and confirmed to exist at the expected location.
+5. **Renumbering choices spot-checked**: `callisto-vcs`'s E050–E053 is genuinely contiguous and untouched; `docs/01-spec.md:10923` genuinely claims "chosen not to collide," which was false before this fix (E050/E052 collided with `changeset/mod.rs`) and is true now.
+6. **Build/test/clippy**: ran fresh (not cached) — `cargo build --workspace` exit 0, `cargo test -p callisto-model -p callisto-format -p callisto-graph --lib` → 90+244+86 = 420 passed, `cargo clippy --all-targets -- -D warnings` clean, `cargo test -p callisto-model --lib diagnostic_code` → 3/3 passed.
+7. **Sibling-file gap**: fresh `grep -rl "code(E[0-9]"` over all `crates/*/src/*.rs` found exactly 11 files — the 10 in `DIAGNOSTIC_CODE_SOURCE_FILES` plus `lib.rs` itself (correctly excluded, contains only test fixtures). No gap.
+
+Fix: change `E117` to `E113` in the three doc-comment references at `crates/callisto-graph/src/config/raw.rs:88,110,138`.</result>
+<usage><subagent_tokens>121281</subagent_tokens><tool_uses>54</tool_uses><duration_ms>722005</duration_ms></usage>
+</task-notification>
