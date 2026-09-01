@@ -76,13 +76,23 @@ type DerivedReleaseInputs = (
 
 /// In-memory, non-transferable proof that an intent was rebuilt from a fresh
 /// workspace observation. It is intentionally neither cloneable nor serializable.
-#[derive(Debug)]
-pub struct ValidatedReleaseIntent {
+pub struct ValidatedReleaseIntent<'a> {
     intent: ReleaseIntentV1,
     prepared: PreparedReleaseInputs,
+    #[allow(dead_code)] // consumed by the durable execution coordinator
+    runner: &'a dyn CommandRunner,
 }
 
-impl ValidatedReleaseIntent {
+impl std::fmt::Debug for ValidatedReleaseIntent<'_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("ValidatedReleaseIntent")
+            .field("intent", &self.intent)
+            .finish_non_exhaustive()
+    }
+}
+
+impl ValidatedReleaseIntent<'_> {
     pub fn intent(&self) -> &ReleaseIntentV1 {
         &self.intent
     }
@@ -90,6 +100,17 @@ impl ValidatedReleaseIntent {
     #[allow(dead_code)] // consumed by the durable executor batch
     fn prepared(&self) -> &PreparedReleaseInputs {
         &self.prepared
+    }
+
+    /// Re-observes the held workspace immediately before an effect.
+    #[allow(dead_code)] // consumed by the durable execution coordinator
+    pub(crate) fn recheck_trust(&self) -> Result<(), GraphError> {
+        let evidence =
+            callisto_vcs::GitAccess::discover(&self.prepared.root, self.runner).observe_git_commit_trust()?;
+        if evidence != self.prepared.trust || source_from_trust(&evidence) != self.prepared.source {
+            return Err(GraphError::ReleaseIntentStale);
+        }
+        Ok(())
     }
 }
 
@@ -116,22 +137,22 @@ pub fn build_release_intent<L: ProjectLocator, R: CommandRunner>(
 
 /// Re-observes root, config, package discovery, manifests, Git evidence, and
 /// the exact operation DAG before creating an opaque authorization capability.
-pub fn validate_release_intent<L: ProjectLocator, R: CommandRunner>(
+pub fn validate_release_intent<'a, L: ProjectLocator, R: CommandRunner>(
     root: &Path,
     locator: &L,
-    runner: &R,
+    runner: &'a R,
     received: ReleaseIntentV1,
-) -> Result<ValidatedReleaseIntent, GraphError> {
+) -> Result<ValidatedReleaseIntent<'a>, GraphError> {
     validate_release_intent_with_state_directory(root, locator, runner, None, received)
 }
 
-fn validate_release_intent_with_state_directory<L: ProjectLocator, R: CommandRunner>(
+fn validate_release_intent_with_state_directory<'a, L: ProjectLocator, R: CommandRunner>(
     root: &Path,
     locator: &L,
-    runner: &R,
+    runner: &'a R,
     state_directory: Option<&Path>,
     received: ReleaseIntentV1,
-) -> Result<ValidatedReleaseIntent, GraphError> {
+) -> Result<ValidatedReleaseIntent<'a>, GraphError> {
     let root = canonical_root(root)?;
     let workspace = Workspace::load(root.clone(), locator, runner)?;
     let initial_trust = observe_git_trust(&workspace, received.trust_profile)?;
@@ -157,6 +178,7 @@ fn validate_release_intent_with_state_directory<L: ProjectLocator, R: CommandRun
             operations: prepared,
         },
         intent: received,
+        runner,
     })
 }
 
