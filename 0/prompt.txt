@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bibwlrmvt</task-id>
+<summary>Monitor event: "PR #7 CI checks (flatten-changelog-severity-grouping)"</summary>
+<event>Validate Changesets &amp; Workspace Status: pass
+ALL CHECKS TERMINAL</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
