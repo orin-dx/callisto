@@ -1,0 +1,24 @@
+<task-notification>
+<task-id>add9e910e70c07e95</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/tasks/add9e910e70c07e95.output</output-file>
+<status>completed</status>
+<summary>Agent "Third revision of implementation plan" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All fixes verified programmatically and consistent with the source spec. The plan file at the same path has been overwritten in place.
+
+Summary of the round-4 fixes applied to `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/plan-manifest-persist-001.json`:
+
+1. **T14 fabricated red phase (blocking)** — moved `use callisto_model::{ManifestDecl, ManifestFormat};` into the `failing_test` step, rewrote `expected_failure` with the same honest NO-RED-PHASE wording T20 uses, changed `implementation` to state no production code change, and added `T14` to `red_phase_waived_tasks`.
+
+2. **T05a leaves the crate red / narrowed gate (blocking)** — re-split T05a/T05b along a new axis, verified against the real test at `crates/callisto-manifests/src/cargo.rs:1201-1278`. T05a now does the production strip plus mechanical `persist()` insertion in the 4 ordinary tests (`parses_cargo_toml_and_updates_version`, `preserves_bom_on_write_round_trip`, `preserves_tab_indentation_cargo_toml`, `test_cargo_decor_comment_preservation`), with `verify_command` running the full `cargo::tests` module and an `expected_pass` that names the single remaining disclosed failure — so any other failure is now visibly a regression.
+
+3. **T05b wrong binding name (blocking)** — confirmed the real binding is `manifest` (there is no `member_handle`), and the exact insertion point is between `manifest.write_version(...)` (line 1255) and `let root_updated = ...` (line 1258).
+
+4. **T05b `expected_failure` backwards (blocking)** — corrected: the new pre-persist assertion passes immediately; the genuine failure is the test's pre-existing post-write assertion (`member_updated.contains("version = \"1.1.0\"")`) since no persist() has happened yet.
+
+5. **T15's loose error assertion (non-blocking)** — tightened to `MissingField { field: "package", .. }`, confirmed against `current_version()`/`write_version()` in cargo.rs, and added a positive precondition proving the test reaches `write_version`.
+
+Verification script confirmed: no duplicate task IDs (25 tasks total), every spec AC-001..AC-020 plus AC-011b appears in `covers_criteria`, no orphaned coverage, and every `red_phase_waived_tasks` entry (`T01b, T03, T04, T14, T15, T16, T17, T18, T19, T20`) resolves to a real task ID.</result>
+<usage><subagent_tokens>163512</subagent_tokens><tool_uses>26</tool_uses><duration_ms>399740</duration_ms></usage>
+</task-notification>
