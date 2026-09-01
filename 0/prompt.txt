@@ -1,0 +1,21 @@
+<task-notification>
+<task-id>a0c6ceb1b07e366ef</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a15bbbf7-aba0-415d-bfdc-c773ea65cfc7/tasks/a0c6ceb1b07e366ef.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix: is_workspace_root substring false positive + Python workspace detection" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Both bugs are fixed. Here is a summary of what was done:
+
+**File changed**: `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/root.rs`
+
+**Bug 1 fix** (line 29-33): Replaced `content.contains("[workspace]")` with `content.parse::&lt;toml_edit::DocumentMut&gt;()` followed by `doc.contains_key("workspace")`. `toml_edit` was already a dependency of `callisto-graph`. This eliminates false positives from comments, string values, and table names that merely contain the substring `[workspace]`.
+
+**Bug 2 fix** (lines 56-58): Added `dir.join("callisto.toml").exists()` as a direct check in `is_workspace_root`. This makes Python-only monorepos (and any ecosystem without a native workspace manifest) discoverable — as long as a `callisto.toml` is present in the root, the walker stops there. This is consistent with the `E030` diagnostic already telling users "Ensure callisto.toml exists in workspace root."
+
+**TDD sequence**:
+- Wrote 3 tests (2 for Bug 1, 1 for Bug 2); confirmed 2 failures before touching production code
+- Implemented both fixes; all 3 new tests went green
+- Full suite: 112 tests passed, 0 regressions</result>
+<usage><subagent_tokens>26213</subagent_tokens><tool_uses>14</tool_uses><duration_ms>118599</duration_ms></usage>
+</task-notification>
