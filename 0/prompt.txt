@@ -1,0 +1,3 @@
+<command-name>/compact</command-name>
+            <command-message>compact</command-message>
+            <command-args>keep all of the context necessary to keep going and finish what is genuinely still open</command-args>
