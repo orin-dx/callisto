@@ -51,6 +51,7 @@ ignore = [
     "RUSTSEC-2026-0096", # wasmtime: miscompiled guest heap access, sandbox escape on aarch64 Cranelift
     "RUSTSEC-2026-0114", # wasmtime: panic allocating a table exceeding host address space
     "RUSTSEC-2026-0222", # wasmtime: stores can mix up type indices between engines
+    "RUSTSEC-2026-0269", # wasmtime: filesystem sandbox escape when paths or symlinks contain trailing slashes
     "RUSTSEC-2024-0370", # proc-macro-error: unmaintained (transitive via moon_config)
     "RUSTSEC-2026-0250", # im-rc: unmaintained (transitive via wasm-compose -> wasmtime)
     "RUSTSEC-2026-0251", # sized-chunks: unmaintained (transitive via im-rc -> wasm-compose -> wasmtime)
