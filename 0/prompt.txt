@@ -1,0 +1,1 @@
+We definitely need to read the orignal spec, think through the complexities of rust, ts/js, python and architect this semantically and comprehensively first.
