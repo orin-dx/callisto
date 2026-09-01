@@ -1,0 +1,41 @@
+<task-notification>
+<task-id>a0f6e3e0d9ce537e2</task-id>
+<tool-use-id>toolu_01QBHru6EnshorGHjHxcjESi</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a0f6e3e0d9ce537e2.output</output-file>
+<status>completed</status>
+<summary>Agent "Review TASK-05 and TASK-06 commits" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Review Summary — commits d812cac and 0971005
+
+**Scope confirmed via `git show`/`git diff HEAD`** (not the live working tree, which currently has an uncommitted AC-05 test from another concurrent agent stacked on top of HEAD=d812cac — verified via `git diff HEAD -- ignore_walk.rs` that this addition is purely a new test function with zero production-code changes, so it doesn't affect this review).
+
+**Files reviewed in full**: `crates/callisto-graph/src/locate/ignore_walk.rs` (355 lines at HEAD, full `projects()` body), `crates/callisto-graph/src/locate/membership.rs` (full file, 493 lines, both commits' diffs plus surrounding context).
+
+**Acceptance criteria read from** `.claude/specs/SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json`: AC-01, AC-02 (Cargo exclude/members), AC-03 (npm workspaces glob).
+
+**Tests actually run**: `cargo test -p callisto-graph --lib locate::` — 36 passed, 0 failed, including both new tests `ac01_ac02_excludes_scratch_example_and_includes_kept_example_via_cargo_workspace_exclude` and `ac03_excludes_package_outside_npm_workspaces_glob`.
+
+### Findings
+
+1. **Scope adherence — clean.** 0971005 wires `CargoMembership::admits(&amp;rel, is_root)` into the Cargo push at `ignore_walk.rs:84`, computed once at the top of `projects()` (line 41), exactly matching TASK-05. d812cac does the identical wiring for `NpmMembership::admits` at line 106 (computed line 42), matching TASK-06. Both commits also drop now-unneeded `#[allow(dead_code)]` markers in `membership.rs` — legitimate cleanup since `projects()` is now a real caller, not scope creep.
+
+2. **Non-negotiable violations — none found.** No `unsafe` (workspace's `unsafe_code = "forbid"` is untouched), no new `.unwrap()`/`.expect()`/`panic!` in production code, no `map_err(|_|` error erasure, no silent no-op mutation paths, no discarded parameters. The pre-existing `.unwrap_or_else(|_| PackageId::Bare(...))` fallback at line 86 is untouched by either diff.
+
+3. **Test quality — genuine.** Both new tests use real `tempfile::tempdir()` filesystems with actual `Cargo.toml`/`package.json` content containing real exclude/glob values, and call the real `IgnoreWalkLocator::new(root).projects()` end-to-end — not mocks or unit-level calls to `admits()` alone. They would fail against the pre-fix code (which pushed unconditionally) and pass only with correct gating. Confirmed green via actual test run, not inferred.
+
+4. **Sibling gap — real, flagged per instructions.** `ignore_walk.rs:120-146`, the pyproject.toml/PyPI branch, has the identical "walk finds manifest → unconditionally push to `results`" pattern that the Cargo and Npm branches had *before* these two commits fixed it. It computes no `pypi_membership` and calls no `.admits()` gate at all — any pyproject.toml anywhere in the tree, including one that should be excluded by a Python-side workspace/exclude convention, is discovered and pushed unconditionally. This is plausibly out of scope for TASK-05/TASK-06 specifically (spec's `scope` field only names Cargo/npm/pnpm membership), but it's the same hazard class left live in the same function, so it's worth the exit gate's attention as a known follow-on gap rather than a silent omission.
+
+```json
+{
+  "status": "approved",
+  "issues": [],
+  "sibling_gaps": [
+    "crates/callisto-graph/src/locate/ignore_walk.rs:120-146 — the pyproject.toml/PyPI branch of IgnoreWalkLocator::projects() has zero membership-filter gating; it unconditionally pushes every discovered pyproject.toml with a resolvable name, identical to the pre-fix pattern that both reviewed commits just eliminated for Cargo and Npm. No PypiMembership/read_pypi_membership equivalent exists yet. Plausibly out of scope for TASK-05/TASK-06 (spec scope names only Cargo/npm/pnpm), but same hazard class, same function, left live."
+  ],
+  "reasoning": "Verified both commits against true HEAD state via git show/git diff HEAD (working tree has an unrelated uncommitted AC-05 test from a concurrent agent, confirmed via diff to touch only test code, not production code, so it doesn't taint this review). Read membership.rs and ignore_walk.rs in full. Both commits do exactly what TASK-05/TASK-06 specify: wire the pre-existing, pre-tested admits() helpers into the real caller, add one genuine tempdir-based end-to-end test per task proving the stated ACs, and remove now-stale dead_code allows. No Rust hazard-reference violations (no unsafe, no unwrap/expect/panic added, no error erasure, no silent-Ok mutation). Ran cargo test -p callisto-graph --lib locate:: for real: 36/36 pass including both new tests. The only substantive finding is the pyproject.toml/PyPI branch's total lack of membership gating -- same pattern, same function, not touched by either commit. Since it's outside these two commits' and this spec's stated scope, I report it as a sibling_gap rather than a blocking issue against these commits specifically."
+}
+```
+
+Relevant paths: `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs`, `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs`, `/Users/gabe/Projects/callisto/.claude/specs/SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json`.</result>
+<usage><subagent_tokens>81546</subagent_tokens><tool_uses>25</tool_uses><duration_ms>362352</duration_ms></usage>
+</task-notification>
