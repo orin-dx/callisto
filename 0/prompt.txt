@@ -1,0 +1,5 @@
+<task-notification>
+<task-id>bhorcrpja</task-id>
+<summary>Monitor event: "wait for just ci-fast process to exit"</summary>
+<event>[Monitor timed out — re-arm if needed.]</event>
+</task-notification>
