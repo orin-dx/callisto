@@ -1,0 +1,8 @@
+<task-notification>
+<task-id>bpi6kucre</task-id>
+<tool-use-id>toolu_01DDXjbmAggWt78opA5BNWrw</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/bpi6kucre.output</output-file>
+<status>completed</status>
+<summary>Background command "cd /Users/gabe/Projects/callisto
+cargo clippy -p callisto-cli --all-targets --features inference -- -D warnings 2&gt;&amp;1 | tail -40" completed (exit code 0)</summary>
+</task-notification>
