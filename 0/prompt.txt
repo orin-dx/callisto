@@ -1,0 +1,55 @@
+<task-notification>
+<task-id>aed76070892e6bdf0</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/aed76070892e6bdf0.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement TASK-10 (AC-10c regression test)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Committed cleanly (pre-commit hooks passed). Final report:
+
+## Summary
+
+**TASK-10** — "Regression-proof: AC-10c (empty Cargo members array excludes everything)" — completed.
+
+- Pre-flight confirmed: all 5 prior commits (0971005, d812cac, 8c6de26, 498f27c, 58ae93d) present on `crates/callisto-graph/src/locate/ignore_walk.rs`, tree clean.
+- Read AC-10c directly from `/Users/gabe/Projects/callisto/.claude/specs/SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json`, confirmed it matches the plan's test intent (empty `members = []` must exclude every Cargo candidate).
+- Wrote the test `ac10c_empty_members_array_admits_zero_cargo_entries` in `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs` (lines 462–478).
+- Ran it: passed immediately, no red step — matching the plan's "regression-proof" prediction (same pattern as TASK-07/08/09).
+- Per instructions, adversarially verified non-vacuity: temporarily mutated `CargoMembership::admits` in `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs:50-53` (forced `Some(members) =&gt; members.is_match(rel) || true`), reran — test failed with a clear assertion message showing the leaked `crates/other` Cargo entry. Restored the original code (verified via `git diff` — zero diff on membership.rs).
+- Full `cargo test -p callisto-graph --lib`: 281 passed, 0 failed.
+- `cargo fmt -p callisto-graph` and `cargo clippy -p callisto-graph --all-targets -- -D warnings`: clean.
+- Committed as `d5d659b`.
+
+No implementation change was needed — behavior was already correctly wired by TASK-05 (`CargoMembership::admits`, membership.rs:43).
+
+```json
+{
+  "task_id": "TASK-10",
+  "status": "done",
+  "steps_completed": [
+    "confirmed prior commits present and tree clean",
+    "read AC-10c from spec file on disk",
+    "wrote test ac10c_empty_members_array_admits_zero_cargo_entries",
+    "ran test - passed immediately (no red step)",
+    "adversarially verified non-vacuity by mutating CargoMembership::admits and confirming the test then failed",
+    "restored membership.rs to original (zero diff confirmed)",
+    "ran full callisto-graph lib test suite - 281 passed",
+    "ran cargo fmt and clippy -D warnings - clean",
+    "committed"
+  ],
+  "test_result": "pass",
+  "commit_sha": "d5d659b",
+  "criteria_evidence": [
+    {
+      "criterion_id": "AC-10c",
+      "test_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs",
+      "test_line": 462,
+      "implementation_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs",
+      "implementation_line": 43
+    }
+  ],
+  "concerns": "No red step occurred (test passed on first run), consistent with TASK-07/08/09 pattern where behavior was already wired by an earlier task (TASK-05, commit 0971005). Non-vacuity was verified adversarially per instructions by mutating membership.rs:admits to always-admit and confirming the test failed, then restoring the original code (confirmed via git diff showing zero changes to membership.rs)."
+}
+```</result>
+<usage><subagent_tokens>59893</subagent_tokens><tool_uses>28</tool_uses><duration_ms>449337</duration_ms></usage>
+</task-notification>
