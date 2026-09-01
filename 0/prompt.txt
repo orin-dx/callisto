@@ -1,0 +1,24 @@
+<task-notification>
+<task-id>adf526736bd89fc22</task-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/c0ad64b2-6440-4937-8328-8d9fd9db278c/tasks/adf526736bd89fc22.output</output-file>
+<status>completed</status>
+<summary>Agent "Plan implementation for SPEC-005" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>The plan@1 for SPEC-005 is complete, verified against live source, and written to disk.
+
+**File:** `/Users/gabe/Projects/callisto/.claude/plans/PLAN-005-release-entry-is-prerelease.json`
+
+**Verification I ran:** confirmed all 17 criteria (AC-001 through AC-015, with AC-012 split a/b/c) each appear exactly once across `covers_criteria`, and that `spec_file_path`, `linked_requirement` (REQ-008), and `spec_hash` (`sha256:5217011e...`) are populated in the output JSON.
+
+**6 tasks / 6 batches, in dependency order:**
+
+1. **T1** — Adds `ReleaseEntry.is_prerelease: bool` in `crates/callisto-model/src/plan.rs`, populates it at the real construction site in `crates/callisto-graph/src/commands/publish.rs` (`ver.is_prerelease()`), and fixes all 7 sibling struct literals (`crates/callisto-cli/src/commands/publish.rs`, `tag_sha_fabrication_test.rs`, 5 sites in `tags_tests.rs`) in one task, so no non-compiling state is ever committed. Covers AC-001, AC-007, AC-012b.
+2. **T2** — Fixture-value regression tests (SemVer non-prerelease/numeric-prerelease, PEP 440 dev/alpha) asserting both the Rust bool and serialized `isPrerelease` key. Covers AC-002–AC-006.
+3. **T3** — Updates `crates/callisto-cli/tests/schema_guard_test.rs` expected sets and allowlist doc comment. Covers AC-012a.
+4. **T4** — Structural/grep checks (no conditional branch, no new dependency, no AGPL edge) plus full workspace suite green. Covers AC-013, AC-014, AC-012c.
+5. **T5** — Rewrites `.github/actions/callisto-action/action.yml`'s release loop to read `isPrerelease` per-entry (drops the old regex heuristic), hard-fails on missing/null/non-boolean, with a new bash test written first against the unedited action.yml. Covers AC-008, AC-009, AC-010, AC-015.
+6. **T6** — Docs: `docs/01-spec.md` struct doc block plus new decision-table row 24. Covers AC-011.
+
+Next step would typically be running this through `vector:challenger` for adversarial review before handing to `lambda` for implementation — let me know if you'd like that.</result>
+<usage><subagent_tokens>48123</subagent_tokens><tool_uses>3</tool_uses><duration_ms>796187</duration_ms></usage>
+</task-notification>
