@@ -1,0 +1,3 @@
+Should we re-architect anything here? Extract code, reorganize, etc??
+
+Think comprehensively and semantically across out entire system
