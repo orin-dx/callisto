@@ -1,0 +1,27 @@
+<task-notification>
+<task-id>abd7f912ad183f2ef</task-id>
+<tool-use-id>toolu_01Dvu1eyev59Lbcx7nFDFySW</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/abd7f912ad183f2ef.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix Track 3a exit-gate blockers" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All four blockers from the canon-exit-gate verdict have been applied to `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/spec-track3a-workspace-membership.json`, and the file is valid JSON (30 acceptance criteria retained, none added or removed).
+
+Changes made:
+
+1. **AC-09 self-contradiction** — deleted the clause "and does not silently admit every candidate as if no membership filter existed" from AC-09's criterion text. It now only asserts no-panic + fall-back-to-absent (matching AC-05) + no-whole-walk-error, consistent with api_surface[0] and AC-14.
+
+2. **Three-way inconsistency on `[workspace]` + `exclude`, no `members`** — added arm `(d)` to api_surface[0]'s enumerated Cargo survival rule ("the root Cargo.toml has a [workspace] table with no members key at all and dir does not match an exclude glob"), and qualified both api_surface[0]'s supplementary sentence and all of api_surface[2] to say "every Cargo candidate that does not match a well-formed exclude glob is admitted... (the exclude list, when present, is still honored — see AC-15)" instead of the unqualified "every Cargo candidate is admitted."
+
+3. **AC-09f unsatisfiable given-clause** — replaced "and both crates/kept-example/Cargo.toml and a hypothetical crates/[unterminated-shaped path not existing in the fixture" with "and crates/kept-example/Cargo.toml containing a valid [package] table, with no directory matching the literal path crates/[unterminated present anywhere in the fixture" — matching AC-14's already-correct restatement.
+
+4. **AC-14's 8 vacuous fixtures** — extended AC-09, AC-09b, AC-09c, AC-09d, AC-09e, AC-11, AC-11b, and AC-11d's fixture descriptions inside AC-14 with concrete candidate manifests and expected outcomes:
+   - AC-09/AC-09c: added an out-of-glob candidate (`tools/outside/Cargo.toml` / `tools/outside/package.json`) that disambiguates true fall-back-to-absent from a "malformed field treated as literal single-entry glob" misreading.
+   - AC-09b: added the full three-manifest fixture (`crates/scratch-example`, `crates/kept-example`, `tools/outside`) proving both halves of its claim.
+   - AC-09d, AC-09e, AC-11, AC-11b, AC-11d: each got one elsewhere-in-tree candidate manifest (`crates/kept/Cargo.toml` or `packages/kept/package.json`) proving the walk actually admits candidates rather than merely not panicking.
+
+`revision_note` was updated with a new tenth-round entry describing all four fixes and their citation to the round-9 exit-gate verdict, with the full prior history preserved beneath it per the established pattern. No other criterion, non_goal, or reasoning text was touched.
+
+The spec is ready to resubmit to `canon-exit-gate`.</result>
+<usage><subagent_tokens>89412</subagent_tokens><tool_uses>14</tool_uses><duration_ms>146120</duration_ms></usage>
+</task-notification>
