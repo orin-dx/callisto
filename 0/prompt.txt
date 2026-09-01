@@ -1,0 +1,6 @@
+<task-notification>
+<task-id>b56zdy0qy</task-id>
+<summary>Monitor event: "wait for full callisto-graph test suite (pid 10011) to finish, final stretch"</summary>
+<event>DONE</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
