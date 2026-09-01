@@ -1,0 +1,1 @@
+Please read all of those to get a deep understanding of our codebase and further suggest setup changes. Also do research to understand our competition including changesets, knope, release please and nx release. Review our docs and specs to see if we missed anything. Consider arch, semantic models, DX, performance and security.
