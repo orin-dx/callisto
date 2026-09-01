@@ -1,0 +1,23 @@
+<task-notification>
+<task-id>a3ce3dd7a9432c348</task-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a3ce3dd7a9432c348.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix Track 3b1 exit-gate blockers, round 3" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>The correction is complete. The canon-drafter agent read the spec fresh, re-verified every claim against the current source (`config/groups.rs`, `walk.rs`, `identity.rs`, `napi.rs`), and applied all 5 blockers:
+
+1. **`IdentityIndex.prefixed` population restricted** to only `id.name() == primary_id.name()` pairs — confirmed via `groups.rs:147/178` (tries `resolve_human` before `platform.get`) and `identity.rs:267-272` (bare-name candidate match with no colon), so platform manifests no longer leak a false `prefixed` entry that would misroute `GroupTable::resolve` into `GroupMember::Package` instead of `PlatformManifest`.
+2. **Added `path_native_keys: BTreeMap&lt;PathBuf, Vec&lt;(Ecosystem, String)&gt;&gt;`** alongside `claiming_ecosystems`, since the name-scoped set alone can't recover a differently-named platform manifest's `index.native` entry for the first-seen path — the STALE-KEY REWRITE location (3) procedure is now exact.
+3. **Unified the already-promoted-name lookup placement** across ALREADY-PROMOTED-NAME DETECTION, GUARD, and ORDERING STATEMENT to run immediately after `primary_id` is computed (before walk.rs:80-82), the earliest of the three previously-inconsistent placements.
+4. **AC-22** now uses a mechanical grep-for-exact-substrings check instead of the "or any equivalent...in any wording" judgment clause.
+5. **AC-01**'s expected value rewritten to a concrete `GroupMember::Package(PackageId::Bare("foo".to_string()))` instead of the self-referential "PackageId that IdentityIndex resolved."
+
+AC-02 was also revised since it implicitly depended on the old `prefixed` population claim; AC-04–11, AC-13, AC-16a/b, AC-17a/b, AC-19, AC-21, AC-23–25 were checked and found still consistent.
+
+The corrected spec (27 acceptance criteria, 7 api_surface entries, `revision_note` set with a full ROUND-7 account per blocker) has been written to:
+
+`/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/spec-track3b1-identity-promotion-core.json`
+
+I verified the file is valid JSON with the expected structure (id `SPEC-TRACK3B1-IDENTITY-PROMOTION-CORE`, `revision_note` present, no `spec_file_path` field). It's ready for resubmission to canon-exit-gate.</result>
+<usage><subagent_tokens>76996</subagent_tokens><tool_uses>5</tool_uses><duration_ms>514738</duration_ms></usage>
+</task-notification>
