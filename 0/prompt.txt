@@ -1,0 +1,9 @@
+<task-notification>
+<task-id>bcwf1b0f7</task-id>
+<summary>Monitor event: "just ci live progress with step timestamps"</summary>
+<event>[+1380s]         PASS [   0.045s] ( 744/1065) callisto-graph::tag_sha_fabrication_test apply_mode_fails_fast_when_resolve_commit_errors_for_existing_tag
+[+1380s]         PASS [   0.659s] ( 749/1065) callisto-graph::publish_tests publish_options_only_unknown_package_returns_error
+[+1380s]         PASS [   0.016s] ( 753/1065) callisto-graph::tag_sha_fabrication_test dry_run_mode_fails_fast_when_resolve_commit_errors_for_existing_tag
+[+1380s]         PASS [   0.100s] ( 764/1065) callisto-graph::tag_sha_fabrication_test tag_existing_at_release_sha_reports_release_sha_with_no_error_in_both_modes</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
