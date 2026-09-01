@@ -1,0 +1,54 @@
+<task-notification>
+<task-id>a95ba6a077e1e4504</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a95ba6a077e1e4504.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement TASK-15 (AC-06b regression test)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Committed successfully at `134465b`.
+
+## Summary
+
+**TASK-15** — "Regression-proof: AC-06b (package.json file entirely absent → npm no-filter)"
+
+- Verified baseline: all 10 prior commits (0971005..1cf07b4) present on the branch, `git status` clean before starting.
+- Read AC-06b's exact criterion text from `/Users/gabe/Projects/callisto/.claude/specs/SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json` (line 72) — it matched the plan's fixture exactly (root has no package.json at all, no pnpm-workspace.yaml anywhere, `packages/kept/package.json` with a `"name"` field must be admitted as `Ecosystem::Npm`). No gap between plan fixture and spec text this time.
+- Added test `ac06b_admits_npm_candidates_when_root_has_no_package_json_file_at_all` in `crates/callisto-graph/src/locate/ignore_walk.rs` (lines 607–624 after `cargo fmt`).
+- Ran it: passed immediately, no red step — consistent with the TASK-07..14 "regression-proof" pattern (the absent-file fallback path was already implemented in TASK-04a/wired in TASK-06).
+- Adversarially verified the test is not vacuous: temporarily mutated `NpmMembership::admits` in `crates/callisto-graph/src/locate/membership.rs` (`None =&gt; true` → `None =&gt; false`), reran — test failed as expected (`AC-06b: packages/kept must be admitted as Npm, got: []`), then restored the original code.
+- Full `cargo test -p callisto-graph --lib`: 286 passed, 0 failed.
+- `cargo fmt -p callisto-graph` and `cargo clippy -p callisto-graph --all-targets -- -D warnings`: clean.
+- Committed as `134465b`.
+
+```json
+{
+  "task_id": "TASK-15",
+  "status": "done",
+  "steps_completed": [
+    "verified_baseline_commits_and_clean_tree",
+    "read_spec_criterion_AC-06b_from_disk",
+    "wrote_test",
+    "confirmed_test_passes_without_red_step",
+    "adversarially_verified_non_vacuous_via_temporary_mutation",
+    "restored_mutation",
+    "ran_full_lib_test_suite",
+    "ran_fmt_and_clippy",
+    "committed"
+  ],
+  "test_result": "pass",
+  "commit_sha": "134465b",
+  "criteria_evidence": [
+    {
+      "criterion_id": "AC-06b",
+      "test_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs",
+      "test_line": 607,
+      "implementation_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs",
+      "implementation_line": 230
+    }
+  ],
+  "concerns": null,
+  "reasoning": "No red step occurred, matching plan expectation and TASK-07..14 precedent; adversarial mutation of NpmMembership::admits confirmed the test genuinely exercises the None-globs fallback path (admits() at membership.rs:230, read_npm_membership at membership.rs:255). Spec text for AC-06b matched plan's fixture exactly, no additional assertions needed."
+}
+```</result>
+<usage><subagent_tokens>80952</subagent_tokens><tool_uses>21</tool_uses><duration_ms>386217</duration_ms></usage>
+</task-notification>
