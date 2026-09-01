@@ -1,0 +1,29 @@
+<task-notification>
+<task-id>a3063381095720b25</task-id>
+<tool-use-id>toolu_013AAUsF1dtTJzXehXh4FXQk</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a3063381095720b25.output</output-file>
+<status>completed</status>
+<summary>Agent "Re-audit Track 3b1 core spec, round 4" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Confirmed exactly at `config/resolve.rs:348-349` as cited. All citations I sampled across the revision_note and acceptance criteria check out against real current source.
+
+Verdict: this round checks out clean. Summary of what I verified independently (not just trusted from the summary):
+
+- **AC-21 fixture hand-trace**: walked the by-path BTreeMap lexicographic order (`aaa/tri` &lt; `bbb/tri` &lt; `ccc/tri`) against the described PROMOTION PREDICATE / ALREADY-PROMOTED-NAME DETECTION algorithm by hand. `aaa/tri` (Case D, {Cargo,Npm}) and `bbb/tri` ({Pypi}) promote via branch (i) — disjoint. `ccc/tri` ({Npm}) then checks against retained sets: disjoint from `bbb/tri`'s {Pypi} but **not** disjoint from `aaa/tri`'s retained {Cargo,Npm} (both contain Npm) → correctly rejects with `DuplicatePackage{id: Bare("tri"), paths: [aaa/tri, ccc/tri]}`, excluding `bbb/tri`. Confirmed the claimed divergence under a naive single-primary-ecosystem re-derivation (would read `aaa/tri` as {Cargo} only, wrongly see it as disjoint from {Npm}, and flip Ok/Err) — the fixture genuinely distinguishes correct vs. reverted implementations, not just which path gets named.
+- **AC-23**: cross-checked against `lib.rs:98-113` (confirms `build` at line 107, `GroupTable::resolve` at line 109) and `aggregate.rs:164-213` (confirms `aggregate()`'s real signature and the exact `resolve_package_config(&amp;pkg.id, config)` call at line 211). The citations are accurate and the criterion genuinely exercises a call path AC-19 does not (post-`Workspace::load`, via `ResolvedConfig.promoted_siblings`, not the walk.rs:175 build-local overlay).
+- **AC-24**: confirmed `ReleaseTrigger::{Changeset, Auto}` (`ecosystem.rs:154-158`, `Changeset` is `#[default]`, matching `walk.rs:205`'s fallback) and that `[[package]] match` values parse via `PackageId::parse(&amp;raw_pkg.pattern)` at `config/resolve.rs:348-349`, so the `"cargo:native-core"` / `"npm:native-core"` fixture syntax is real. The fixture correctly isolates Pass 1 (Prefixed-tier) from the new Pass-2-only ambiguity check.
+- Spot-checked ~15 other line citations against the actual current source (`walk.rs:53-134`, `:143-175`, `:284-298`, `:360-364`, `:495-501`; `identity.rs:148-160`, `:238`, `:267-297`, `:314-392`; `error.rs:82-90`; `config/resolve.rs:15-42`, `:195-204`; `groups.rs:150,181`) — all exact, including a verbatim multi-line comment quote at `walk.rs:284-288`.
+- Checked scope-overlap: `track-f-resolution-extraction.json`'s AC-F6 does pin the literal pre-`Result` call-site text this spec breaks — the non_goals entry's claim is accurate and the deferral to SPEC-TRACK3B2 is appropriately scoped, not silently ignored. `SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json` scope is `ignore_walk.rs` only and explicitly defers identity/walk.rs work to this track — no overlap.
+- No TBD/placeholder/FIXME text found anywhere in the document.
+
+No new issues found across untestable/vague, ambiguous, missing-error-case, scope-overlap, or incomplete-section dimensions.
+
+```json
+{
+  "issues": [],
+  "overall": "pass",
+  "reasoning": "Round 4 fresh audit. Independently hand-traced AC-21's fixture against the described algorithm (branch i/ii promotion logic, disjointness checks) and confirmed it produces different Ok/Err outcomes under the old single-ecosystem-derivation vs. new BTreeSet&lt;Ecosystem&gt;-retained derivation, genuinely exercising the round-2 retype. Confirmed AC-23 exercises the lib.rs:109-110/aggregate.rs:211 path distinctly from AC-19's walk.rs:175 path, with accurate line citations verified against current source. Confirmed AC-24 correctly isolates Pass 1 from the new Pass-2 ambiguity check with a real, parseable TOML fixture. Sampled ~20 line/text citations throughout the spec against the actual current files (walk.rs, identity.rs, error.rs, config/resolve.rs, lib.rs, aggregate.rs, config/groups.rs) and all matched exactly, including a verbatim comment block quote. Verified the drafter's correction to the auditor's own suggested AC-21 fixture (bbb/tri Pypi-only vs Npm-only) is right: Npm-only would not be disjoint from aaa/tri's {Cargo,Npm}, causing bbb/tri itself to fail to promote via branch (i), breaking the whole fixture's premise. Checked scope-overlap against track-f-resolution-extraction.json (AC-F6's literal-text pin is accurately acknowledged and deferred) and SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json (no overlap, explicit mutual carve-outs). No TBD/placeholder text found. No untestable, ambiguous, missing-error-case, scope-overlap, or incomplete issues found. This is a genuine pass, not a rubber stamp -- I found real inconsistencies during verification (none survived to the final document) and traced the hardest criterion by hand rather than trusting the revision_note's self-report."
+}
+```</result>
+<usage><subagent_tokens>124029</subagent_tokens><tool_uses>19</tool_uses><duration_ms>158057</duration_ms></usage>
+</task-notification>
