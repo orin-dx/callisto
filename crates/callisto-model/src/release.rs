@@ -199,8 +199,13 @@ macro_rules! release_digest {
 }
 
 release_digest!(ArtifactDigest, "SHA-256 over exact artifact bytes.");
+release_digest!(DecisionDigest, "SHA-256 over a release-decision transcript.");
 release_digest!(SemanticInputDigest, "SHA-256 over a semantic-input transcript.");
 release_digest!(IntentDigest, "SHA-256 over a release-intent transcript.");
+release_digest!(
+    RegistryBindingDigest,
+    "SHA-256 over a normalized, credential-free registry binding."
+);
 
 /// Error returned when a durable digest is not canonical lowercase SHA-256.
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
@@ -217,6 +222,132 @@ impl ArtifactDigest {
     }
 }
 
+impl DecisionDigest {
+    /// Hashes a versioned release-decision transcript.
+    pub fn from_transcript(transcript: &CanonicalTranscript) -> Self {
+        Self::from_sha256(transcript.as_bytes())
+    }
+}
+
+/// The closed set of facts that can include a package in a durable release.
+///
+/// This is intentionally a model value: graph derives it, but every later
+/// process can validate the exact approved roster without importing graph.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", tag = "kind", deny_unknown_fields)]
+#[non_exhaustive]
+pub enum ReleaseInclusionReason {
+    Changeset,
+    Inference,
+    ExplicitSelection,
+    LinkedGroup { group_id: String },
+    FixedGroup { group_id: String },
+    Cascade { from: ReleasePackageId, edge_kind: String },
+    PreReleasePolicy { policy_id: String },
+}
+
+/// One exact package and version authorized by a release decision.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ReleaseDecisionEntry {
+    pub package: ReleasePackageId,
+    pub target_version: Version,
+    pub reasons: Vec<ReleaseInclusionReason>,
+}
+
+/// Credential-free, deterministic release authority derived by callisto-graph.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ReleaseDecisionV1 {
+    pub schema_version: u8,
+    pub entries: Vec<ReleaseDecisionEntry>,
+    pub digest: DecisionDigest,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ReleaseDecisionV1Wire {
+    schema_version: u8,
+    entries: Vec<ReleaseDecisionEntry>,
+    digest: DecisionDigest,
+}
+
+impl<'de> Deserialize<'de> for ReleaseDecisionV1 {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = ReleaseDecisionV1Wire::deserialize(deserializer)?;
+        if wire.schema_version != Self::SCHEMA_VERSION {
+            return Err(serde::de::Error::custom("unsupported release decision schema version"));
+        }
+        let decision = Self::new(wire.entries).map_err(serde::de::Error::custom)?;
+        if decision.digest != wire.digest {
+            return Err(serde::de::Error::custom(
+                "release decision digest does not match canonical content",
+            ));
+        }
+        Ok(decision)
+    }
+}
+
+impl ReleaseDecisionV1 {
+    pub const SCHEMA_VERSION: u8 = 1;
+
+    /// Creates a canonical decision or rejects an ambiguous release roster.
+    pub fn new(mut entries: Vec<ReleaseDecisionEntry>) -> Result<Self, ReleaseDecisionError> {
+        if entries.is_empty() {
+            return Err(ReleaseDecisionError::EmptyRoster);
+        }
+        for entry in &mut entries {
+            entry.reasons.sort();
+            entry.reasons.dedup();
+            if entry.reasons.is_empty() {
+                return Err(ReleaseDecisionError::MissingReason {
+                    package: entry.package.clone(),
+                });
+            }
+        }
+        entries.sort_by(|left, right| left.package.cmp(&right.package));
+        if entries.windows(2).any(|pair| pair[0].package == pair[1].package) {
+            return Err(ReleaseDecisionError::DuplicatePackage);
+        }
+        let digest = decision_digest(&entries);
+        Ok(Self {
+            schema_version: Self::SCHEMA_VERSION,
+            entries,
+            digest,
+        })
+    }
+}
+
+fn decision_digest(entries: &[ReleaseDecisionEntry]) -> DecisionDigest {
+    let mut transcript = CanonicalTranscript::decision_v1();
+    for entry in entries {
+        transcript.push_str("package", &entry.package.to_string());
+        transcript.push_str("target-version", entry.target_version.render());
+        for reason in &entry.reasons {
+            transcript.push_str(
+                "reason",
+                &serde_json::to_string(reason).expect("closed reason serializes"),
+            );
+        }
+    }
+    DecisionDigest::from_transcript(&transcript)
+}
+
+/// Decision construction or validation errors.
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
+pub enum ReleaseDecisionError {
+    #[error("a durable release decision must contain at least one package")]
+    EmptyRoster,
+    #[error("release decision repeats a package")]
+    DuplicatePackage,
+    #[error("release decision entry for {package} has no inclusion reason")]
+    MissingReason { package: ReleasePackageId },
+}
+
 impl SemanticInputDigest {
     /// Hashes a versioned semantic-input transcript.
     pub fn from_transcript(transcript: &CanonicalTranscript) -> Self {
@@ -227,6 +358,20 @@ impl SemanticInputDigest {
 impl IntentDigest {
     /// Hashes a versioned release-intent transcript.
     pub fn from_transcript(transcript: &CanonicalTranscript) -> Self {
+        Self::from_sha256(transcript.as_bytes())
+    }
+}
+
+impl RegistryBindingDigest {
+    /// Hashes a graph-normalized registry binding without retaining its source
+    /// endpoint in a durable model value.
+    ///
+    /// The caller is responsible for URL parsing, rejecting credentials and
+    /// query/fragment data, and producing a canonical binding before calling
+    /// this method. Only this digest is retained.
+    pub fn from_normalized_binding(bytes: impl AsRef<[u8]>) -> Self {
+        let mut transcript = CanonicalTranscript::registry_binding_v1();
+        transcript.push_bytes("binding", bytes);
         Self::from_sha256(transcript.as_bytes())
     }
 }
@@ -251,9 +396,19 @@ impl CanonicalTranscript {
         Self::v1(b"semantic-input")
     }
 
+    /// Starts the v1 transcript used for release decisions.
+    pub fn decision_v1() -> Self {
+        Self::v1(b"release-decision")
+    }
+
     /// Starts the v1 transcript used for release intents.
     pub fn intent_v1() -> Self {
         Self::v1(b"release-intent")
+    }
+
+    /// Starts the v1 transcript used for normalized registry bindings.
+    fn registry_binding_v1() -> Self {
+        Self::v1(b"registry-binding")
     }
 
     fn v1(domain: &[u8]) -> Self {
@@ -311,38 +466,47 @@ pub enum ExecutionTrustProfileV1 {
     HermeticContent,
 }
 
-/// A named, credential-free fingerprint of one graph-derived release input.
+/// A closed semantic projection for one exact package in a release intent.
+///
+/// The model never accepts caller-defined component names: adding a durable
+/// input must add a typed field and update the transcript below. This makes
+/// the schema itself the inventory of release-authorizing inputs.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct ReleaseInputComponentV1 {
-    pub kind: String,
+pub struct ReleasePackageInputV1 {
+    pub package: ReleasePackageId,
     pub fingerprint: SemanticInputDigest,
 }
 
 /// The versioned semantic input projection built and compared by callisto-graph.
 ///
-/// This model deliberately stores only already-derived fingerprints. Graph is
-/// responsible for selecting the complete set of components and never puts
-/// raw endpoints, credentials, command lines, or environment values here.
+/// This model deliberately stores only typed, already-derived fingerprints.
+/// Graph owns the projection and never puts raw endpoints, credentials,
+/// command lines, or environment values here.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ReleaseInputSnapshotV1 {
     pub schema_version: u8,
     pub source: SourceIdentity,
-    pub components: Vec<ReleaseInputComponentV1>,
+    pub packages: Vec<ReleasePackageInputV1>,
 }
 
 impl ReleaseInputSnapshotV1 {
     pub const SCHEMA_VERSION: u8 = 1;
 
-    pub fn new(source: SourceIdentity, mut components: Vec<ReleaseInputComponentV1>) -> Self {
-        components.sort();
-        components.dedup();
-        Self {
+    pub fn new(
+        source: SourceIdentity,
+        mut packages: Vec<ReleasePackageInputV1>,
+    ) -> Result<Self, ReleaseInputSnapshotError> {
+        packages.sort();
+        if packages.windows(2).any(|pair| pair[0].package == pair[1].package) {
+            return Err(ReleaseInputSnapshotError::DuplicatePackage);
+        }
+        Ok(Self {
             schema_version: Self::SCHEMA_VERSION,
             source,
-            components,
-        }
+            packages,
+        })
     }
 
     pub fn digest(&self) -> SemanticInputDigest {
@@ -352,11 +516,72 @@ impl ReleaseInputSnapshotV1 {
             SourceIdentity::GitCommit { sha } => transcript.push_str("source.git", sha.as_str()),
             SourceIdentity::HermeticContent { digest } => transcript.push_str("source.hermetic", digest.as_str()),
         }
-        for component in &self.components {
-            transcript.push_str("component.kind", &component.kind);
-            transcript.push_str("component.fingerprint", component.fingerprint.as_str());
+        for package in &self.packages {
+            transcript.push_str("package", &package.package.to_string());
+            transcript.push_str("package.fingerprint", package.fingerprint.as_str());
         }
         SemanticInputDigest::from_transcript(&transcript)
+    }
+}
+
+/// Errors in a typed semantic input snapshot.
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
+pub enum ReleaseInputSnapshotError {
+    #[error("release input snapshot repeats a package")]
+    DuplicatePackage,
+}
+
+/// A credential-free identity for one configured registry binding.
+///
+/// This is intentionally not a URL. `registry_key` says which configured
+/// target was selected, while `binding_digest` commits to the graph-normalized
+/// target that will receive the effect. Durable intents never retain the raw
+/// endpoint, credentials, query parameters, or fragments.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RegistryBindingId {
+    registry_key: RegistryKey,
+    binding_digest: RegistryBindingDigest,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RegistryBindingIdWire {
+    registry_key: String,
+    binding_digest: RegistryBindingDigest,
+}
+
+impl<'de> Deserialize<'de> for RegistryBindingId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = RegistryBindingIdWire::deserialize(deserializer)?;
+        Self::new(wire.registry_key, wire.binding_digest).map_err(serde::de::Error::custom)
+    }
+}
+
+impl RegistryBindingId {
+    /// Builds an exact, validated registry binding identity.
+    pub fn new(
+        registry_key: impl Into<String>,
+        binding_digest: RegistryBindingDigest,
+    ) -> Result<Self, ReleaseOperationError> {
+        Ok(Self {
+            registry_key: validated_registry_key(registry_key.into())?,
+            binding_digest,
+        })
+    }
+
+    /// Returns the logical configured registry key, never an endpoint.
+    pub fn registry_key(&self) -> &RegistryKey {
+        &self.registry_key
+    }
+
+    /// Returns the commitment to the normalized registry binding.
+    pub fn binding_digest(&self) -> &RegistryBindingDigest {
+        &self.binding_digest
     }
 }
 
@@ -364,7 +589,10 @@ impl ReleaseInputSnapshotV1 {
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase", tag = "kind", deny_unknown_fields)]
 pub enum ReleaseOperationRole {
-    RegistryPublish { registry_key: RegistryKey },
+    RegistryPublish {
+        #[serde(flatten)]
+        registry: RegistryBindingId,
+    },
     Tag,
     ForgeRelease,
 }
@@ -372,7 +600,12 @@ pub enum ReleaseOperationRole {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", tag = "kind", deny_unknown_fields)]
 enum ReleaseOperationRoleWire {
-    RegistryPublish { registry_key: String },
+    RegistryPublish {
+        #[serde(rename = "registryKey")]
+        registry_key: String,
+        #[serde(rename = "bindingDigest")]
+        binding_digest: RegistryBindingDigest,
+    },
     Tag,
     ForgeRelease,
 }
@@ -383,8 +616,11 @@ impl<'de> Deserialize<'de> for ReleaseOperationRole {
         D: Deserializer<'de>,
     {
         match ReleaseOperationRoleWire::deserialize(deserializer)? {
-            ReleaseOperationRoleWire::RegistryPublish { registry_key } => validated_registry_key(registry_key)
-                .map(|registry_key| Self::RegistryPublish { registry_key })
+            ReleaseOperationRoleWire::RegistryPublish {
+                registry_key,
+                binding_digest,
+            } => RegistryBindingId::new(registry_key, binding_digest)
+                .map(|registry| Self::RegistryPublish { registry })
                 .map_err(serde::de::Error::custom),
             ReleaseOperationRoleWire::Tag => Ok(Self::Tag),
             ReleaseOperationRoleWire::ForgeRelease => Ok(Self::ForgeRelease),
@@ -401,9 +637,9 @@ impl ReleaseOperationRole {
         }
     }
 
-    fn registry_key(&self) -> Option<&RegistryKey> {
+    fn registry(&self) -> Option<&RegistryBindingId> {
         match self {
-            Self::RegistryPublish { registry_key } => Some(registry_key),
+            Self::RegistryPublish { registry } => Some(registry),
             Self::Tag | Self::ForgeRelease => None,
         }
     }
@@ -419,17 +655,12 @@ pub struct ReleaseOperationId {
 }
 
 impl ReleaseOperationId {
-    pub fn registry_publish(
-        package: ReleasePackageId,
-        version: Version,
-        registry_key: impl Into<String>,
-    ) -> Result<Self, ReleaseOperationError> {
-        let registry_key = validated_registry_key(registry_key.into())?;
-        Ok(Self {
+    pub fn registry_publish(package: ReleasePackageId, version: Version, registry: RegistryBindingId) -> Self {
+        Self {
             package,
-            role: ReleaseOperationRole::RegistryPublish { registry_key },
+            role: ReleaseOperationRole::RegistryPublish { registry },
             version,
-        })
+        }
     }
 
     pub fn tag(package: ReleasePackageId, version: Version) -> Self {
@@ -462,14 +693,30 @@ impl Ord for ReleaseOperationId {
             self.package.name(),
             self.role.discriminator(),
             self.version.render(),
-            self.role.registry_key().map(RegistryKey::as_str).unwrap_or(""),
+            self.role
+                .registry()
+                .map(|registry| registry.registry_key().as_str())
+                .unwrap_or(""),
+            self.role
+                .registry()
+                .map(|registry| registry.binding_digest().as_str())
+                .unwrap_or(""),
         )
             .cmp(&(
                 other.package.ecosystem().prefix(),
                 other.package.name(),
                 other.role.discriminator(),
                 other.version.render(),
-                other.role.registry_key().map(RegistryKey::as_str).unwrap_or(""),
+                other
+                    .role
+                    .registry()
+                    .map(|registry| registry.registry_key().as_str())
+                    .unwrap_or(""),
+                other
+                    .role
+                    .registry()
+                    .map(|registry| registry.binding_digest().as_str())
+                    .unwrap_or(""),
             ))
     }
 }
@@ -486,11 +733,11 @@ impl ReleaseOperation {
     pub fn registry_publish(
         package: ReleasePackageId,
         version: Version,
-        registry_key: impl Into<String>,
+        registry: RegistryBindingId,
         prerequisites: Vec<ReleaseOperationId>,
     ) -> Result<Self, ReleaseOperationError> {
         Self::new(
-            ReleaseOperationId::registry_publish(package, version, registry_key)?,
+            ReleaseOperationId::registry_publish(package, version, registry),
             prerequisites,
         )
     }
@@ -563,6 +810,7 @@ fn validated_registry_key(raw: String) -> Result<RegistryKey, ReleaseOperationEr
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ReleaseIntentV1 {
     pub schema_version: u8,
+    pub decision: ReleaseDecisionV1,
     pub snapshot: ReleaseInputSnapshotV1,
     pub trust_profile: ExecutionTrustProfileV1,
     pub operations: Vec<ReleaseOperation>,
@@ -573,6 +821,7 @@ pub struct ReleaseIntentV1 {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ReleaseIntentV1Wire {
     schema_version: u8,
+    decision: ReleaseDecisionV1,
     snapshot: ReleaseInputSnapshotV1,
     trust_profile: ExecutionTrustProfileV1,
     operations: Vec<ReleaseOperation>,
@@ -586,14 +835,16 @@ impl<'de> Deserialize<'de> for ReleaseIntentV1 {
     {
         let wire = ReleaseIntentV1Wire::deserialize(deserializer)?;
         if wire.schema_version != Self::SCHEMA_VERSION
+            || wire.decision.schema_version != ReleaseDecisionV1::SCHEMA_VERSION
             || wire.snapshot.schema_version != ReleaseInputSnapshotV1::SCHEMA_VERSION
         {
             return Err(serde::de::Error::custom("unsupported release intent schema version"));
         }
-        if wire.snapshot.components.windows(2).any(|pair| pair[0] >= pair[1]) {
-            return Err(serde::de::Error::custom("release input components are not canonical"));
+        if wire.snapshot.packages.windows(2).any(|pair| pair[0] >= pair[1]) {
+            return Err(serde::de::Error::custom("release input packages are not canonical"));
         }
-        let intent = Self::new(wire.snapshot, wire.trust_profile, wire.operations).map_err(serde::de::Error::custom)?;
+        let intent = Self::new(wire.decision, wire.snapshot, wire.trust_profile, wire.operations)
+            .map_err(serde::de::Error::custom)?;
         if intent.digest != wire.digest {
             return Err(serde::de::Error::custom(
                 "release intent digest does not match canonical content",
@@ -607,14 +858,22 @@ impl ReleaseIntentV1 {
     pub const SCHEMA_VERSION: u8 = 1;
 
     pub fn new(
+        decision: ReleaseDecisionV1,
         snapshot: ReleaseInputSnapshotV1,
         trust_profile: ExecutionTrustProfileV1,
         operations: Vec<ReleaseOperation>,
     ) -> Result<Self, ReleaseIntentError> {
+        if !matches!(trust_profile, ExecutionTrustProfileV1::GitCommit)
+            || !matches!(snapshot.source, SourceIdentity::GitCommit { .. })
+        {
+            return Err(ReleaseIntentError::UnsupportedTrustProfile);
+        }
         validate_operations(&operations)?;
-        let digest = digest_intent(&snapshot, trust_profile, &operations);
+        validate_operation_roster(&decision, &operations)?;
+        let digest = digest_intent(&decision, &snapshot, trust_profile, &operations);
         Ok(Self {
             schema_version: Self::SCHEMA_VERSION,
+            decision,
             snapshot,
             trust_profile,
             operations,
@@ -628,12 +887,14 @@ impl ReleaseIntentV1 {
 }
 
 fn digest_intent(
+    decision: &ReleaseDecisionV1,
     snapshot: &ReleaseInputSnapshotV1,
     trust_profile: ExecutionTrustProfileV1,
     operations: &[ReleaseOperation],
 ) -> IntentDigest {
     let mut transcript = CanonicalTranscript::intent_v1();
     transcript.push_bytes("schema", [ReleaseIntentV1::SCHEMA_VERSION]);
+    transcript.push_str("decision", decision.digest.as_str());
     transcript.push_str("snapshot", snapshot.digest().as_str());
     transcript.push_str(
         "trust-profile",
@@ -651,9 +912,31 @@ fn digest_intent(
     IntentDigest::from_transcript(&transcript)
 }
 
+fn validate_operation_roster(
+    decision: &ReleaseDecisionV1,
+    operations: &[ReleaseOperation],
+) -> Result<(), ReleaseIntentError> {
+    let roster = &decision.entries;
+    for operation in operations {
+        if !roster
+            .iter()
+            .any(|entry| entry.package == operation.id.package && entry.target_version == operation.id.version)
+        {
+            return Err(ReleaseIntentError::OperationOutsideDecision {
+                id: Box::new(operation.id.clone()),
+            });
+        }
+    }
+    Ok(())
+}
+
 fn operation_id_text(id: &ReleaseOperationId) -> String {
     let role = match &id.role {
-        ReleaseOperationRole::RegistryPublish { registry_key } => format!("publish:{}", registry_key.as_str()),
+        ReleaseOperationRole::RegistryPublish { registry } => format!(
+            "publish:{}:{}",
+            registry.registry_key().as_str(),
+            registry.binding_digest().as_str()
+        ),
         ReleaseOperationRole::Tag => "tag".to_string(),
         ReleaseOperationRole::ForgeRelease => "forge-release".to_string(),
     };
@@ -742,6 +1025,10 @@ fn stable_kahn_order(
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum ReleaseIntentError {
+    #[error("durable release intents support only clean Git commit trust in v1")]
+    UnsupportedTrustProfile,
+    #[error("release operation `{id:?}` is not authorized by the embedded release decision")]
+    OperationOutsideDecision { id: Box<ReleaseOperationId> },
     #[error("release operations are not in canonical order")]
     NonCanonicalOperationOrder,
     #[error("duplicate release operation `{id:?}`")]
@@ -1057,8 +1344,11 @@ impl ReleaseReceiptV1 {
             let outcome = match operation_state {
                 OperationState::Published => OperationOutcome::Published,
                 OperationState::AlreadySatisfied => OperationOutcome::AlreadySatisfied,
-                OperationState::Failed => OperationOutcome::Failed,
-                OperationState::Blocked { reason } => OperationOutcome::Blocked { reason: *reason },
+                OperationState::Failed | OperationState::Blocked { .. } => {
+                    return Err(ReleaseReceiptError::NonSuccessfulOperation {
+                        id: Box::new(id.clone()),
+                    });
+                }
                 OperationState::Pending | OperationState::Attempting => {
                     return Err(ReleaseReceiptError::NonTerminalOperation {
                         id: Box::new(id.clone()),
@@ -1104,6 +1394,14 @@ impl ReleaseReceiptV1 {
         }
         let mut outcomes = BTreeMap::new();
         for entry in wire.outcomes {
+            if !matches!(
+                entry.outcome,
+                OperationOutcome::Published | OperationOutcome::AlreadySatisfied
+            ) {
+                return Err(ReleaseReceiptError::NonSuccessfulOperation {
+                    id: Box::new(entry.operation),
+                });
+            }
             if outcomes.insert(entry.operation.clone(), entry.outcome).is_some() {
                 return Err(ReleaseReceiptError::DuplicateOperation {
                     id: Box::new(entry.operation),
@@ -1133,12 +1431,47 @@ pub enum ReleaseReceiptError {
     InvalidState(ReleaseStateError),
     #[error("release operation `{id:?}` is not terminal")]
     NonTerminalOperation { id: Box<ReleaseOperationId> },
+    #[error("release operation `{id:?}` did not complete successfully")]
+    NonSuccessfulOperation { id: Box<ReleaseOperationId> },
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::Ecosystem;
+
+    fn registry_binding(key: &str) -> RegistryBindingId {
+        RegistryBindingId::new(
+            key,
+            RegistryBindingDigest::from_normalized_binding(format!("https://{key}.example.test/index")),
+        )
+        .unwrap()
+    }
+
+    fn test_intent(
+        snapshot: Result<ReleaseInputSnapshotV1, ReleaseInputSnapshotError>,
+        trust_profile: ExecutionTrustProfileV1,
+        operations: Vec<ReleaseOperation>,
+    ) -> Result<ReleaseIntentV1, ReleaseIntentError> {
+        let mut entries = Vec::new();
+        for operation in &operations {
+            if !entries.iter().any(|entry: &ReleaseDecisionEntry| {
+                entry.package == operation.id.package && entry.target_version == operation.id.version
+            }) {
+                entries.push(ReleaseDecisionEntry {
+                    package: operation.id.package.clone(),
+                    target_version: operation.id.version.clone(),
+                    reasons: vec![ReleaseInclusionReason::ExplicitSelection],
+                });
+            }
+        }
+        ReleaseIntentV1::new(
+            ReleaseDecisionV1::new(entries).expect("test operations define a roster"),
+            snapshot.expect("test snapshot is valid"),
+            trust_profile,
+            operations,
+        )
+    }
 
     #[test]
     fn release_package_id_requires_a_qualified_canonical_identity() {
@@ -1217,9 +1550,11 @@ mod tests {
     }
 
     #[test]
-    fn transcript_domain_separation_prevents_intent_and_snapshot_collisions() {
+    fn transcript_domain_separation_prevents_decision_intent_and_snapshot_collisions() {
         let mut snapshot = CanonicalTranscript::semantic_input_v1();
         snapshot.push_str("role", "publish");
+        let mut decision = CanonicalTranscript::decision_v1();
+        decision.push_str("role", "publish");
         let mut intent = CanonicalTranscript::intent_v1();
         intent.push_str("role", "publish");
 
@@ -1227,13 +1562,50 @@ mod tests {
             SemanticInputDigest::from_transcript(&snapshot).as_str(),
             IntentDigest::from_transcript(&intent).as_str()
         );
+        assert_ne!(
+            DecisionDigest::from_transcript(&decision).as_str(),
+            IntentDigest::from_transcript(&intent).as_str()
+        );
+    }
+
+    #[test]
+    fn registry_binding_is_credential_free_and_part_of_operation_identity() {
+        let first = RegistryBindingId::new(
+            "cratesIo",
+            RegistryBindingDigest::from_normalized_binding("https://index.example.test/v1"),
+        )
+        .unwrap();
+        let second = RegistryBindingId::new(
+            "cratesIo",
+            RegistryBindingDigest::from_normalized_binding("https://mirror.example.test/v1"),
+        )
+        .unwrap();
+        assert_ne!(first, second);
+
+        let wire = serde_json::to_string(&first).unwrap();
+        assert!(wire.contains("registryKey"));
+        assert!(wire.contains("bindingDigest"));
+        assert!(!wire.contains("example.test"));
+        assert!(!wire.contains("token"));
+
+        let package = ReleasePackageId::parse("cargo/callisto-model").unwrap();
+        let version = Version::semver(1, 2, 3);
+        let first_operation = ReleaseOperationId::registry_publish(package.clone(), version.clone(), first);
+        let second_operation = ReleaseOperationId::registry_publish(package, version, second);
+        assert_ne!(first_operation, second_operation);
+        assert_ne!(
+            operation_id_text(&first_operation),
+            operation_id_text(&second_operation)
+        );
     }
 
     #[test]
     fn release_operation_orders_exactly_and_rejects_invalid_prerequisites() {
         let package = ReleasePackageId::parse("cargo/callisto-model").unwrap();
         let version = Version::semver(1, 2, 3);
-        let publish = ReleaseOperation::registry_publish(package.clone(), version.clone(), "cratesIo", vec![]).unwrap();
+        let publish =
+            ReleaseOperation::registry_publish(package.clone(), version.clone(), registry_binding("cratesIo"), vec![])
+                .unwrap();
         let tag = ReleaseOperation::tag(package, version, vec![publish.id().clone()]).unwrap();
 
         assert!(publish.id() < tag.id());
@@ -1249,18 +1621,20 @@ mod tests {
     fn release_intent_rejects_noncanonical_duplicate_and_cyclic_dags() {
         let package = ReleasePackageId::parse("cargo/callisto-model").unwrap();
         let version = Version::semver(1, 2, 3);
-        let publish = ReleaseOperation::registry_publish(package.clone(), version.clone(), "cratesIo", vec![]).unwrap();
+        let publish =
+            ReleaseOperation::registry_publish(package.clone(), version.clone(), registry_binding("cratesIo"), vec![])
+                .unwrap();
         let tag = ReleaseOperation::tag(package, version, vec![publish.id().clone()]).unwrap();
         let snapshot = ReleaseInputSnapshotV1::new(SourceIdentity::git_commit("a".repeat(40)).unwrap(), vec![]);
 
-        let reversed = ReleaseIntentV1::new(
+        let reversed = test_intent(
             snapshot.clone(),
             ExecutionTrustProfileV1::GitCommit,
             vec![tag.clone(), publish.clone()],
         );
         assert!(matches!(reversed, Err(ReleaseIntentError::NonCanonicalOperationOrder)));
 
-        let duplicate = ReleaseIntentV1::new(
+        let duplicate = test_intent(
             snapshot,
             ExecutionTrustProfileV1::GitCommit,
             vec![publish.clone(), publish],
@@ -1270,13 +1644,13 @@ mod tests {
         let mut cycle_publish = ReleaseOperation::registry_publish(
             ReleasePackageId::parse("cargo/callisto-model").unwrap(),
             Version::semver(1, 2, 3),
-            "cratesIo",
+            registry_binding("cratesIo"),
             vec![tag.id().clone()],
         )
         .unwrap();
         // The public constructor permits referring to a distinct operation; intent validation owns cycle detection.
         cycle_publish.prerequisites = vec![tag.id().clone()];
-        let cycle = ReleaseIntentV1::new(
+        let cycle = test_intent(
             ReleaseInputSnapshotV1::new(SourceIdentity::git_commit("b".repeat(40)).unwrap(), vec![]),
             ExecutionTrustProfileV1::GitCommit,
             vec![cycle_publish, tag],
@@ -1288,8 +1662,9 @@ mod tests {
     fn receipt_is_bound_to_intent_and_requires_terminal_outcomes() {
         let package = ReleasePackageId::parse("cargo/callisto-model").unwrap();
         let operation =
-            ReleaseOperation::registry_publish(package, Version::semver(1, 2, 3), "cratesIo", vec![]).unwrap();
-        let intent = ReleaseIntentV1::new(
+            ReleaseOperation::registry_publish(package, Version::semver(1, 2, 3), registry_binding("cratesIo"), vec![])
+                .unwrap();
+        let intent = test_intent(
             ReleaseInputSnapshotV1::new(SourceIdentity::git_commit("c".repeat(40)).unwrap(), vec![]),
             ExecutionTrustProfileV1::GitCommit,
             vec![operation.clone()],
@@ -1305,6 +1680,14 @@ mod tests {
             .unwrap();
         let receipt = ReleaseReceiptV1::from_state(&intent, &complete).unwrap();
         assert_eq!(receipt.intent_digest(), intent.digest());
+
+        let mut failed = ReleaseExecutionStateV1::pending(&intent);
+        failed.mark_attempting(operation.id()).unwrap();
+        failed.mark_terminal(operation.id(), OperationOutcome::Failed).unwrap();
+        assert!(matches!(
+            ReleaseReceiptV1::from_state(&intent, &failed),
+            Err(ReleaseReceiptError::NonSuccessfulOperation { .. })
+        ));
     }
 
     #[test]
@@ -1312,11 +1695,11 @@ mod tests {
         let operation = ReleaseOperation::registry_publish(
             ReleasePackageId::parse("cargo/callisto-model").unwrap(),
             Version::semver(1, 2, 3),
-            "cratesIo",
+            registry_binding("cratesIo"),
             vec![],
         )
         .unwrap();
-        let intent = ReleaseIntentV1::new(
+        let intent = test_intent(
             ReleaseInputSnapshotV1::new(SourceIdentity::git_commit("e".repeat(40)).unwrap(), vec![]),
             ExecutionTrustProfileV1::GitCommit,
             vec![operation.clone()],
@@ -1335,12 +1718,7 @@ mod tests {
         let mut complete = state;
         complete.mark_attempting(operation.id()).unwrap();
         complete
-            .mark_terminal(
-                operation.id(),
-                OperationOutcome::Blocked {
-                    reason: OperationBlockReason::StaleValidation,
-                },
-            )
+            .mark_terminal(operation.id(), OperationOutcome::Published)
             .unwrap();
         let receipt = ReleaseReceiptV1::from_state(&intent, &complete).unwrap();
         let mut receipt_wire = serde_json::to_value(receipt).unwrap();
@@ -1353,13 +1731,13 @@ mod tests {
         let package = ReleasePackageId::parse("cargo/callisto-model").unwrap();
         let operation = ReleaseOperation::tag(package.clone(), Version::semver(1, 2, 3), vec![]).unwrap();
         let different_operation = ReleaseOperation::forge_release(package, Version::semver(1, 2, 3), vec![]).unwrap();
-        let first = ReleaseIntentV1::new(
+        let first = test_intent(
             ReleaseInputSnapshotV1::new(SourceIdentity::git_commit("f".repeat(40)).unwrap(), vec![]),
             ExecutionTrustProfileV1::GitCommit,
             vec![operation.clone()],
         )
         .unwrap();
-        let different_digest = ReleaseIntentV1::new(
+        let different_digest = test_intent(
             ReleaseInputSnapshotV1::new(SourceIdentity::git_commit("0".repeat(40)).unwrap(), vec![]),
             ExecutionTrustProfileV1::GitCommit,
             vec![operation.clone()],
@@ -1402,11 +1780,11 @@ mod tests {
         let operation = ReleaseOperation::registry_publish(
             ReleasePackageId::parse("cargo/callisto-model").unwrap(),
             Version::semver(1, 2, 3),
-            "cratesIo",
+            registry_binding("cratesIo"),
             vec![],
         )
         .unwrap();
-        let intent = ReleaseIntentV1::new(
+        let intent = test_intent(
             ReleaseInputSnapshotV1::new(SourceIdentity::git_commit("d".repeat(40)).unwrap(), vec![]),
             ExecutionTrustProfileV1::GitCommit,
             vec![operation],

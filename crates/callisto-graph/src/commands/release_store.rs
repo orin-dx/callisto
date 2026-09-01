@@ -121,8 +121,8 @@ mod tests {
     use std::io;
 
     use callisto_model::{
-        Ecosystem, ExecutionTrustProfileV1, ReleaseInputSnapshotV1, ReleaseOperation, ReleasePackageId, SourceIdentity,
-        Version,
+        Ecosystem, ExecutionTrustProfileV1, RegistryBindingDigest, RegistryBindingId, ReleaseInputSnapshotV1,
+        ReleaseOperation, ReleasePackageId, SourceIdentity, Version,
     };
     use tempfile::tempdir;
 
@@ -130,10 +130,22 @@ mod tests {
 
     fn intent(sha: char) -> ReleaseIntentV1 {
         let package = ReleasePackageId::new(Ecosystem::Cargo, "demo").unwrap();
+        let registry = RegistryBindingId::new(
+            "crates",
+            RegistryBindingDigest::from_normalized_binding(b"crates-default"),
+        )
+        .unwrap();
         let operation =
-            ReleaseOperation::registry_publish(package, Version::semver(1, 0, 0), "crates", vec![]).unwrap();
+            ReleaseOperation::registry_publish(package.clone(), Version::semver(1, 0, 0), registry, vec![]).unwrap();
         ReleaseIntentV1::new(
-            ReleaseInputSnapshotV1::new(SourceIdentity::git_commit(sha.to_string().repeat(40)).unwrap(), vec![]),
+            callisto_model::ReleaseDecisionV1::new(vec![callisto_model::ReleaseDecisionEntry {
+                package: package.clone(),
+                target_version: Version::semver(1, 0, 0),
+                reasons: vec![callisto_model::ReleaseInclusionReason::ExplicitSelection],
+            }])
+            .unwrap(),
+            ReleaseInputSnapshotV1::new(SourceIdentity::git_commit(sha.to_string().repeat(40)).unwrap(), vec![])
+                .unwrap(),
             ExecutionTrustProfileV1::GitCommit,
             vec![operation],
         )

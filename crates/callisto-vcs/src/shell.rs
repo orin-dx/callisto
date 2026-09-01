@@ -81,6 +81,23 @@ impl<'r> ShellGit<'r> {
         }
         let canonical_root = canonical_git_root(root.stdout_trimmed())?;
 
+        let object_format = self
+            .runner
+            .run("git", &["rev-parse", "--show-object-format"], &self.root)?;
+        if !object_format.success() || object_format.stdout_trimmed() != "sha1" {
+            return Err(VcsError::Git(
+                "release trust requires a SHA-1 Git object format".to_string(),
+            ));
+        }
+        let shallow = self
+            .runner
+            .run("git", &["rev-parse", "--is-shallow-repository"], &self.root)?;
+        if !shallow.success() || shallow.stdout_trimmed() != "false" {
+            return Err(VcsError::Git(
+                "release trust requires a complete, non-shallow Git repository".to_string(),
+            ));
+        }
+
         let head = self
             .runner
             .run("git", &["rev-parse", "--verify", "HEAD^{commit}"], &self.root)?;
@@ -445,6 +462,8 @@ mod tests {
     fn trust_response(root: PathBuf, status: String, detached: bool) -> Box<ResponseFn> {
         Box::new(move |args| match args {
             ["rev-parse", "--show-toplevel"] => Ok(ok(format!("{}\n", root.display()))),
+            ["rev-parse", "--show-object-format"] => Ok(ok("sha1\n")),
+            ["rev-parse", "--is-shallow-repository"] => Ok(ok("false\n")),
             ["rev-parse", "--verify", "HEAD^{commit}"] => Ok(ok(format!("{}\n", "a".repeat(40)))),
             ["symbolic-ref", "--quiet", "HEAD"] if detached => Ok(CommandOutput {
                 exit_code: Some(1),
@@ -519,6 +538,30 @@ mod tests {
             .expect_err("ignored generated input must not be silently accepted");
 
         assert!(matches!(error, VcsError::Git(message) if message.contains("fixed allowlist")));
+    }
+
+    #[test]
+    fn git_commit_trust_rejects_sha256_or_shallow_repositories() {
+        let temp = tempfile::tempdir().unwrap();
+        for (arguments, response) in [
+            (("--show-object-format", "sha256\n"), "SHA-1 Git object format"),
+            (("--is-shallow-repository", "true\n"), "non-shallow Git repository"),
+        ] {
+            let root = temp.path().to_path_buf();
+            let runner = FakeRunner {
+                calls: Mutex::new(Vec::new()),
+                response: Box::new(move |args| {
+                    if args == ["rev-parse", arguments.0] {
+                        return Ok(ok(arguments.1));
+                    }
+                    trust_response(root.clone(), String::new(), true)(args)
+                }),
+            };
+            let error = ShellGit::new(&runner, temp.path())
+                .observe_git_commit_trust()
+                .expect_err("unsupported repository trust evidence must reject");
+            assert!(matches!(error, VcsError::Git(message) if message.contains(response)));
+        }
     }
 
     #[test]

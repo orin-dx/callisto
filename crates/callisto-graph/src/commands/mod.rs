@@ -6,6 +6,7 @@ pub mod pr_body;
 pub mod publish;
 pub mod publish_client;
 pub mod release;
+pub mod release_decision;
 pub mod release_execution;
 pub mod release_store;
 pub mod snapshot;
@@ -14,6 +15,7 @@ pub mod tag;
 pub mod validate;
 pub mod version;
 
+pub use callisto_model::{ReleaseDecisionEntry, ReleaseDecisionError, ReleaseDecisionV1, ReleaseInclusionReason};
 pub use init::{init, InitOptions};
 pub use matrix::{matrix, MatrixOptions};
 pub use pr_body::{compose_pr_body, PrBodyOptions};
@@ -22,7 +24,8 @@ pub use publish::{
     SystemTimeProvider,
 };
 pub use publish_client::SubprocessRegistryClient;
-pub use release::{build_release_intent, validate_release_intent, ReleaseSelection, ValidatedReleaseIntent};
+pub use release::{build_release_intent, validate_release_intent, ValidatedReleaseIntent};
+pub use release_decision::derive_release_decision;
 pub use release_execution::{reconcile_release_execution, ReconciledReleaseExecution};
 pub use release_store::{AtomicReleaseStateWriter, ReleaseStateStore, ReleaseStateWriter};
 pub use snapshot::plan_snapshot;

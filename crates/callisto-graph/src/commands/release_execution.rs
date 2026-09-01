@@ -84,8 +84,8 @@ fn prerequisites_satisfied_transitively(
 #[cfg(test)]
 mod tests {
     use callisto_model::{
-        Ecosystem, ExecutionTrustProfileV1, OperationBlockReason, OperationOutcome, ReleaseInputSnapshotV1,
-        ReleaseOperation, ReleasePackageId, SourceIdentity, Version,
+        Ecosystem, ExecutionTrustProfileV1, OperationBlockReason, OperationOutcome, RegistryBindingDigest,
+        RegistryBindingId, ReleaseInputSnapshotV1, ReleaseOperation, ReleasePackageId, SourceIdentity, Version,
     };
 
     use super::*;
@@ -93,11 +93,22 @@ mod tests {
     fn intent() -> ReleaseIntentV1 {
         let package = ReleasePackageId::new(Ecosystem::Cargo, "demo").unwrap();
         let version = Version::semver(1, 0, 0);
-        let publish = ReleaseOperation::registry_publish(package.clone(), version.clone(), "crates", vec![]).unwrap();
+        let registry = RegistryBindingId::new(
+            "crates",
+            RegistryBindingDigest::from_normalized_binding(b"crates-default"),
+        )
+        .unwrap();
+        let publish = ReleaseOperation::registry_publish(package.clone(), version.clone(), registry, vec![]).unwrap();
         let tag = ReleaseOperation::tag(package.clone(), version.clone(), vec![publish.id().clone()]).unwrap();
-        let forge = ReleaseOperation::forge_release(package, version, vec![tag.id().clone()]).unwrap();
+        let forge = ReleaseOperation::forge_release(package.clone(), version.clone(), vec![tag.id().clone()]).unwrap();
         ReleaseIntentV1::new(
-            ReleaseInputSnapshotV1::new(SourceIdentity::git_commit("a".repeat(40)).unwrap(), vec![]),
+            callisto_model::ReleaseDecisionV1::new(vec![callisto_model::ReleaseDecisionEntry {
+                package: package.clone(),
+                target_version: version.clone(),
+                reasons: vec![callisto_model::ReleaseInclusionReason::ExplicitSelection],
+            }])
+            .unwrap(),
+            ReleaseInputSnapshotV1::new(SourceIdentity::git_commit("a".repeat(40)).unwrap(), vec![]).unwrap(),
             ExecutionTrustProfileV1::GitCommit,
             vec![publish, tag, forge],
         )
