@@ -14,7 +14,10 @@ use callisto_model::{
     ReleaseOperation, ReleaseOperationId, ReleasePackageId, ReleasePackageInputV1, SemanticInputDigest, SourceIdentity,
     TagName, Version,
 };
-use callisto_vcs::access::GitHeadDisposition;
+use callisto_vcs::{
+    access::{GitCommitTrustEvidence, GitHeadDisposition},
+    release_lock::ReleaseWorkspaceLock,
+};
 
 use crate::{DependencyResolver, GraphError, ProjectLocator, Workspace};
 
@@ -60,6 +63,8 @@ struct PreparedRegistryBinding {
 struct PreparedReleaseInputs {
     root: std::path::PathBuf,
     source: SourceIdentity,
+    trust: GitCommitTrustEvidence,
+    _lock: ReleaseWorkspaceLock,
     operations: BTreeMap<ReleaseOperationId, PreparedOperation>,
 }
 
@@ -117,12 +122,29 @@ pub fn validate_release_intent<L: ProjectLocator, R: CommandRunner>(
     runner: &R,
     received: ReleaseIntentV1,
 ) -> Result<ValidatedReleaseIntent, GraphError> {
+    validate_release_intent_with_state_directory(root, locator, runner, None, received)
+}
+
+fn validate_release_intent_with_state_directory<L: ProjectLocator, R: CommandRunner>(
+    root: &Path,
+    locator: &L,
+    runner: &R,
+    state_directory: Option<&Path>,
+    received: ReleaseIntentV1,
+) -> Result<ValidatedReleaseIntent, GraphError> {
     let root = canonical_root(root)?;
     let workspace = Workspace::load(root.clone(), locator, runner)?;
-    let source = observe_source(&workspace, received.trust_profile)?;
+    let initial_trust = observe_git_trust(&workspace, received.trust_profile)?;
+    let lock = ReleaseWorkspaceLock::acquire(&root, state_directory)?;
+    let trust = observe_git_trust(&workspace, received.trust_profile)?;
+    if trust != initial_trust {
+        return Err(GraphError::ReleaseIntentStale);
+    }
+    let source = source_from_trust(&trust);
     let (expected, prepared) =
         derive_release_intent_with_prepared(&workspace, &received.decision, source.clone(), received.trust_profile)?;
-    if expected != received || observe_source(&workspace, received.trust_profile)? != source {
+    let final_trust = observe_git_trust(&workspace, received.trust_profile)?;
+    if expected != received || final_trust != trust {
         return Err(GraphError::ReleaseIntentStale);
     }
 
@@ -130,6 +152,8 @@ pub fn validate_release_intent<L: ProjectLocator, R: CommandRunner>(
         prepared: PreparedReleaseInputs {
             root,
             source,
+            trust: final_trust,
+            _lock: lock,
             operations: prepared,
         },
         intent: received,
@@ -147,21 +171,26 @@ fn observe_source<R: CommandRunner, D: DependencyResolver>(
     workspace: &Workspace<'_, R, D>,
     trust_profile: ExecutionTrustProfileV1,
 ) -> Result<SourceIdentity, GraphError> {
-    match trust_profile {
-        ExecutionTrustProfileV1::GitCommit => {
-            let evidence = workspace.git_access().observe_git_commit_trust()?;
-            if evidence.canonical_root() != workspace.root
-                || evidence.head_disposition() != GitHeadDisposition::Detached
-            {
-                return Err(GraphError::ReleaseIntentStale);
-            }
-            Ok(SourceIdentity::GitCommit {
-                sha: evidence.head().clone(),
-            })
-        }
-        // No closed-root observer exists yet. Reject rather than claim Git
-        // cleanliness proves a hermetic content identity.
-        ExecutionTrustProfileV1::HermeticContent => Err(GraphError::ReleaseIntentStale),
+    Ok(source_from_trust(&observe_git_trust(workspace, trust_profile)?))
+}
+
+fn observe_git_trust<R: CommandRunner, D: DependencyResolver>(
+    workspace: &Workspace<'_, R, D>,
+    trust_profile: ExecutionTrustProfileV1,
+) -> Result<GitCommitTrustEvidence, GraphError> {
+    if !matches!(trust_profile, ExecutionTrustProfileV1::GitCommit) {
+        return Err(GraphError::ReleaseIntentStale);
+    }
+    let evidence = workspace.git_access().observe_git_commit_trust()?;
+    if evidence.canonical_root() != workspace.root || evidence.head_disposition() != GitHeadDisposition::Detached {
+        return Err(GraphError::ReleaseIntentStale);
+    }
+    Ok(evidence)
+}
+
+fn source_from_trust(evidence: &GitCommitTrustEvidence) -> SourceIdentity {
+    SourceIdentity::GitCommit {
+        sha: evidence.head().clone(),
     }
 }
 
@@ -684,6 +713,7 @@ mod tests {
     #[test]
     fn fresh_validation_rejects_manifest_change() {
         let (dir, runner) = fixture();
+        let state_dir = tempfile::tempdir().unwrap();
         let locator = crate::IgnoreWalkLocator::new(dir.path());
         let intent = build_release_intent(
             dir.path(),
@@ -693,14 +723,22 @@ mod tests {
             ExecutionTrustProfileV1::GitCommit,
         )
         .unwrap();
-        validate_release_intent(dir.path(), &locator, &runner, intent.clone()).unwrap();
+        validate_release_intent_with_state_directory(
+            dir.path(),
+            &locator,
+            &runner,
+            Some(state_dir.path()),
+            intent.clone(),
+        )
+        .unwrap();
         std::fs::write(
             dir.path().join("Cargo.toml"),
             "[package]\nname = \"release-fixture\"\nversion = \"1.2.4\"\nedition = \"2021\"\n",
         )
         .unwrap();
-        let error = validate_release_intent(dir.path(), &locator, &runner, intent)
-            .expect_err("a dirty checkout cannot produce Git commit trust evidence");
+        let error =
+            validate_release_intent_with_state_directory(dir.path(), &locator, &runner, Some(state_dir.path()), intent)
+                .expect_err("a dirty checkout cannot produce Git commit trust evidence");
         assert!(matches!(error, GraphError::Vcs(_)));
     }
     #[test]
@@ -730,6 +768,7 @@ mod tests {
     #[test]
     fn prepared_capability_retains_exact_tag_and_registry_inputs() {
         let (dir, runner) = fixture();
+        let state_dir = tempfile::tempdir().unwrap();
         let locator = crate::IgnoreWalkLocator::new(dir.path());
         let intent = build_release_intent(
             dir.path(),
@@ -739,7 +778,9 @@ mod tests {
             ExecutionTrustProfileV1::GitCommit,
         )
         .unwrap();
-        let validated = validate_release_intent(dir.path(), &locator, &runner, intent).unwrap();
+        let validated =
+            validate_release_intent_with_state_directory(dir.path(), &locator, &runner, Some(state_dir.path()), intent)
+                .unwrap();
         let inputs = validated.prepared();
         assert!(inputs.root.is_absolute());
         assert!(matches!(&inputs.source, SourceIdentity::GitCommit { .. }));
