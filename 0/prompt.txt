@@ -1,0 +1,41 @@
+<task-notification>
+<task-id>a7cfa80ab0dc97c7d</task-id>
+<tool-use-id>toolu_015JMUWiiHLKAyLoDTGA7m8t</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a15bbbf7-aba0-415d-bfdc-c773ea65cfc7/tasks/a7cfa80ab0dc97c7d.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix prepend contains() false positive and render_section empty section heading" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Both targeted tests pass. Here is a summary of what was done:
+
+---
+
+## What was done
+
+### Red phase (failing tests written first)
+
+**Bug A test** added to `write.rs` (`prepend_idempotency_check_uses_line_boundary_not_substring`):
+- Builds an existing changelog where `## 1.1.0` appears only inside a bullet (`- Removed legacy ## 1.1.0 wire format support`), never as a standalone heading.
+- Calls `prepend` with `rendered = "## 1.1.0\n\n### Patch Changes\n\n- New thing\n"`.
+- Asserts `- New thing` appears in the result and that `## 1.1.0` exists as a complete line.
+- Failed before the fix because `contains("## 1.1.0")` returned true on the bullet text, causing an early return.
+
+**Bug B test** added to `render.rs` (`render_section_suppresses_heading_when_all_entries_have_empty_summaries`):
+- Creates a `ChangelogInput` with one `Changeset` entry where `summary = ""`.
+- Asserts the rendered output contains no `### Patch Changes` (or any section) heading.
+- Failed before the fix because the heading was emitted before the per-entry loop, leaving an orphaned heading.
+
+### Green phase (fixes applied)
+
+**`crates/callisto-changelog/src/write.rs`** — `prepend()`, line ~151:
+- Replaced `normalised.contains(version_heading)` with a line-boundary check: `normalised.contains(&amp;format!("{version_heading}\n")) || normalised == version_heading`. The substring form was a false positive whenever the heading text appeared inside a bullet.
+
+**`crates/callisto-changelog/src/render.rs`** — `render_section()`, section loop:
+- Moved all bullet-building into a local `bullets: String` buffer. The section heading (`### Patch Changes`, etc.) is now only pushed to `out` when `!bullets.is_empty()`, eliminating orphaned headings when every entry has a blank summary.
+
+### Verification
+
+- `cargo test -p callisto-changelog`: 16 passed (up from 14 before my additions); 4 pre-existing failures unrelated to this task remain unchanged.
+- `cargo clippy -p callisto-changelog -- -D warnings`: no issues found.
+- Changes left in the working tree, not committed.</result>
+<usage><subagent_tokens>35096</subagent_tokens><tool_uses>14</tool_uses><duration_ms>151818</duration_ms></usage>
+</task-notification>
