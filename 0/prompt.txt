@@ -1,0 +1,40 @@
+<task-notification>
+<task-id>a151f525e89c86815</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a151f525e89c86815.output</output-file>
+<status>completed</status>
+<summary>Agent "Re-submit Track 3b1 to exit-gate, attempt 3" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Verdict: **FAIL** (retry_count 3, confidence high)
+
+Written to `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/verdict-track3b1-identity-promotion-core-retry3.json` — schema-validated against `/Users/gabe/Projects/agent-plugins/shared/schemas/verdict@1.json`, `artifact_type: "spec@1"`, 5 blockers.
+
+### What passed
+
+**(a) The `IdentityIndex.prefixed` restriction — verified from scratch, CORRECT and NECESSARY.** I read `config/groups.rs` and `identity.rs` directly. `GroupTable::resolve` really does try `resolve_human` first and only falls through to `index.platform.get(name)` in an `else if`. `resolve_human`'s candidates loop is `for ((_eco, n), id) in &amp;self.prefixed { if n == name { ... } }` — raw string against bare native-name, and `candidates.len() == 1` returns `Ok` early. So an unrestricted population would resolve a platform manifest's own name to `GroupMember::Package`, and `napi_drift` filters on `GroupMemberKind::PlatformManifest` and would never see it. I also grepped every `prefixed` occurrence workspace-wide: the **only** readers are `identity.rs:258` and `identity.rs:268`, both inside `resolve_human`; nothing needs unrestricted population. The restriction breaks nothing.
+
+**(b) Branch (ii) hand-traced end-to-end against AC-21** — correct. `ccc/tri {Npm}` is disjoint from `bbb/tri {Pypi}` but not from `aaa/tri {Cargo,Npm}`, rejecting with `id == Bare("tri")` and paths `[aaa/tri, ccc/tri]`, exactly as AC-21 pins. The Round-8 correction is right: `decls` genuinely does not exist at the lookup point. No Prefixed-key collision risk.
+
+**(c) The track-g quote is verbatim-accurate** (exact `in` check against the file), and its substance holds — track-g really does justify `PackageId::name()` keying on `DuplicatePackage` rejection.
+
+**(d)** No TBDs, `is_error_case` flags consistent, error cases genuinely covered, scope acceptable for one cycle. Line references are accurate throughout.
+
+### What fails it
+
+**Blocker 1 (decisive).** The `STALE-KEY REWRITE` list is labeled "FOUR LOCATIONS, ALL REQUIRED" and **omits `index.prefixed`**. For branch (i), `index.prefixed` is written inside the decls loop with the pre-promotion `Bare` id, and nothing rewrites it. Traced against AC-04's fixture: both `prefixed` entries hold `Bare("native-core")`, so item 5's derivation ("retain only names whose distinct-id count is 2 or more") drops the name, `ResolvedConfig.promoted_siblings` is empty, and **AC-23 is unsatisfiable** — the spec's only criterion exercising the `aggregate.rs:211` ambiguity branch. The omission is not covered by the lead-in sentence: item 2's INVARIANT states "never a stale pre-promotion id" for `index.native` *and* `index.platform` and conspicuously omits it for `index.prefixed`, while item 5 simultaneously *asserts* the property it never instructs anyone to establish.
+
+**Blocker 2 (decisive).** AC-22's first grep substring does not exist in `walk.rs`. The real comment is:
+
+```
+// in. `id` itself is always PackageId::Bare here (see the
+```
+
+The backticks break the spec's substring `id itself is always PackageId::Bare here` — 0 matches today, confirmed by both `grep` and a python `in` check. So AC-22's stated prior-state fact is false, and half the criterion is vacuously satisfied: an implementer can leave the now-incorrect comment untouched and AC-22 still passes. (The second substring is correct — exactly 1 occurrence at `walk.rs:284`.)
+
+**Blockers 3–5 (mechanical).** The scope section both forbids and mandates editing `track-f-resolution-extraction.json`; the `resolve_native_with_fallback` entry cites AC-10 where it means AC-14; and the AC-F6 closing task leaves a second stale reference (`...replaced by a single call to resolve_package_config(&amp;id, cfg).`) that AC-25's semicolon-terminated absence check does not cover — so AC-F6 stays literally false after the task whose only purpose is to fix it.
+
+Since `retry_count` is 3 and does not *exceed* 3, this is a fail rather than an escalation. A fourth submission would need to go to a human reviewer rather than cycle again — so I'd recommend fixing all five and treating that pass as the last automated one.
+
+Two verification forks I launched (`verify-prefixed-restriction`, `verify-trackg-quote`) are still running; every finding above is from my own direct reads, not theirs.</result>
+<usage><subagent_tokens>144011</subagent_tokens><tool_uses>41</tool_uses><duration_ms>616061</duration_ms></usage>
+</task-notification>
