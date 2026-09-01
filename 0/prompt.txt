@@ -1,0 +1,9 @@
+<task-notification>
+<task-id>a64324e1d3715943d</task-id>
+<tool-use-id>toolu_01Ry9zwidnHpdzemTy1AAMrA</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/bb531e8d-c394-4e47-a8ae-e4a9ceeca6d2/tasks/a64324e1d3715943d.output</output-file>
+<status>failed</status>
+<summary>Agent "Recon Track 1 workspace baseline" failed: Agent stalled: no progress for 600s (stream watchdog did not recover)</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Let me extract the files targeted by the plan and prepare the final manifest:</result>
+</task-notification>
