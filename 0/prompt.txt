@@ -1,0 +1,21 @@
+<task-notification>
+<task-id>a3de19c97d9d2f6d5</task-id>
+<tool-use-id>toolu_01KLiKmssy11PBN7gN6UfNZW</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/tasks/a3de19c97d9d2f6d5.output</output-file>
+<status>completed</status>
+<summary>Agent "Review T07 commit" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>```json
+{
+  "status": "approved",
+  "issues": [],
+  "sibling_gaps": [
+    "PackageJson::update_dependency_spec (crates/callisto-manifests/src/npm.rs:283-341) still calls self.persist(permit) internally — same 'strip internal persist' pattern as write_version, but this is explicitly T08's scope, not T07's, so it is a forward-looking note rather than a defect in this commit.",
+    "PackageJson::update_optional_dependencies (crates/callisto-manifests/src/npm.rs:343-363) still calls self.persist(permit) internally — same pattern, explicitly scoped to T09.",
+    "PyprojectToml::write_version (crates/callisto-manifests/src/python.rs:176) still takes a live (non-underscored) `permit` and presumably still persists internally — scoped to T10, not a gap in this commit."
+  ],
+  "reasoning": "Diff confirmed to touch only crates/callisto-manifests/src/npm.rs: the write_version body (now doc-mutation-only, returns Ok(())), the permit-&gt;_permit rename, and three test-related hunks (one new test, two persist() insertions in existing tests). update_dependency_spec and update_optional_dependencies in the same file are untouched, matching the plan's later T08/T09 scope. Read persist() (lines 131-166) and confirmed all BOM/indent/line-ending/trailing-newline formatting logic already lives there per T01a — write_version's original body was only doc.insert + self.persist(permit), so nothing was dropped in the extraction. Confirmed PackageJson::write_version has no conditional/delegation branch (unlike CargoToml's inherited_version branch), so the full permit-&gt;_permit rename is correct and not a T1 discarded-parameter violation — the trait signature still requires the parameter but this impl genuinely no longer touches disk, deferring that entirely to the caller's persist() call. Verified both repaired tests (parses_package_json_and_updates_version:562-564, tab_indentation_is_preserved_after_version_write:1138-1145) insert persist() in the correct position (after write_version, before the disk read). The new test write_version_does_not_touch_disk_until_persist_called (512-530) asserts disk is unchanged before persist() and correctly updated after — genuinely meaningful, not a tautology. Independently ran cargo test -p callisto-graph --lib apply::tests (8 passed), cargo test -p callisto-cli --test lifecycle_e2e_tests (5 passed), and cargo test -p callisto-cli --test pre_mode_tests (6 passed) — all green, confirming T03's bumps-loop persist() call already covers apply_version_plan's npm end-to-end behavior post-T07."
+}
+```</result>
+<usage><subagent_tokens>59668</subagent_tokens><tool_uses>18</tool_uses><duration_ms>223095</duration_ms></usage>
+</task-notification>
