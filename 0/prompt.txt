@@ -1,0 +1,1 @@
+Is callisto ready to be completely integrated in a moon monorepo with RS crates?
