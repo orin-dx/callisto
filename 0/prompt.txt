@@ -1,0 +1,14 @@
+<task-notification>
+<task-id>bcwf1b0f7</task-id>
+<summary>Monitor event: "just ci live progress with step timestamps"</summary>
+<event>[+1374s]         PASS [   0.013s] ( 335/1065) callisto-graph commands::publish::tests::is_published_error_is_ignored_and_publish_proceeds
+[+1374s]         PASS [   0.013s] ( 338/1065) callisto-graph commands::publish::tests::publish_order_still_errors_on_a_real_runtime_cycle
+[+1374s]         PASS [   0.013s] ( 345/1065) callisto-graph commands::publish::tests::test_publish_already_published_is_not_an_error_and_does_not_retry
+[+1374s]         PASS [   0.011s] ( 363/1065) callisto-graph commands::publish_client::tests::cargo_publish_error_redacts_url_userinfo_from_stderr
+[+1374s]         PASS [   0.011s] ( 365/1065) callisto-graph commands::publish_client::tests::cargo_publish_generic_error
+[+1374s]         PASS [   0.011s] ( 374/1065) callisto-graph commands::publish_client::tests::cargo_version_guard_errors_when_manifest_unparseable
+[+1374s]         PASS [   0.012s] ( 376/1065) callisto-graph commands::publish_client::tests::cargo_version_guard_errors_when_manifest_unreadable
+[+1374s]         PASS [   0.013s] ( 377/1065) callisto-graph commands::publish_client::tests::npm_is_published_ambiguous_failure_propagates_as_error
+[+1374s]         PASS [   0.014s] ( 389/1065) callisto-graph commands::publish_client::tests::npm_publish_generic_error</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
