@@ -1,0 +1,2 @@
+<command-message>insights</command-message>
+<command-name>/insights</command-name>
