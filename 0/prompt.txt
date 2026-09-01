@@ -1,0 +1,70 @@
+<task-notification>
+<task-id>a7360fd23891385ea</task-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/c0ad64b2-6440-4937-8328-8d9fd9db278c/tasks/a7360fd23891385ea.output</output-file>
+<status>completed</status>
+<summary>Agent "/code-review high 5 --comment" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All findings posted. Here is the final review output.
+
+```json
+[
+  {
+    "file": "crates/callisto-graph/src/locate/ignore_walk.rs",
+    "line": 68,
+    "summary": "Directory-hood is decided with path.is_dir(), which follows symlinks, letting a symlinked directory escape workspace containment.",
+    "failure_scenario": "A repo has vendor/link -&gt; /external/path containing a Cargo.toml with [package]. WalkBuilder yields the symlink as a leaf (follow_links defaults to false), is_dir() resolves through it and returns true, so the manifest is read and registered as a ProjectRoot; later apply/version steps then write through the same symlink outside the intended workspace."
+  },
+  {
+    "file": "crates/callisto-graph/src/commands/validate.rs",
+    "line": 103,
+    "summary": "validate() uses the permissive PackageId::matches (None ecosystem matches anything), so it never detects a bare name that resolves to packages in two different ecosystems, while aggregate.rs's resolve_target_package hard-errors on the identical input.",
+    "failure_scenario": "A changeset names a bare `serde` that exists as both a Cargo crate and an npm package. `callisto validate` passes it silently; `plan_version`/aggregate() then fails downstream with GraphError::AmbiguousName on a changeset validate already approved."
+  },
+  {
+    "file": "crates/callisto-graph/src/commands/tag.rs",
+    "line": 69,
+    "summary": "In the dry-run/preview branch, the floating-major-tag block reports sha: release.sha.clone() unconditionally, even when the tag already exists, unlike the primary-tag block a few lines below which resolves the existing tag's real sha.",
+    "failure_scenario": "The floating major tag (e.g. v2) already exists at an older commit; previewing a new patch release with --floating-major and no apply permit reports already_existed: true but sha: &lt;new release's sha&gt; — a fabricated sha, the same bug class tag_sha_fabrication_test.rs was written to catch, left unfixed for this path."
+  },
+  {
+    "file": "crates/callisto-vcs/src/shell.rs",
+    "line": 97,
+    "summary": "ShellGit::list_tags never checks output.success(), so a failing `git tag --list` is silently treated as zero tags instead of an error, unlike every sibling method in the same impl.",
+    "failure_scenario": "A transient git failure (locked/corrupted repo) on the WASM/CommandRunner fallback path returns an empty tag list instead of Err; downstream logic treats \"no matching tag\" as \"package never released,\" computing a wrong baseline version."
+  },
+  {
+    "file": "crates/callisto-graph/src/walk.rs",
+    "line": 213,
+    "summary": "index.platform (4th field on IdentityIndex) is never re-keyed by any of the 5 hand-synchronized STALE-KEY REWRITE sites that fix up index.bare/native/prefixed/package_manifest_decls during cross-ecosystem promotion.",
+    "failure_scenario": "A directory has both a promoted Cargo/npm manifest and an npm platform (napi) manifest; after promotion, index.platform still points at the pre-promotion bare id — a recurrence of the exact AC-04 manifests-bleed bug class this rewrite block was written to fix, untested."
+  },
+  {
+    "file": "crates/callisto-graph/src/locate/ignore_walk.rs",
+    "line": 121,
+    "summary": "The pyproject.toml discovery branch has no workspace-membership filter at all, unlike the Cargo/npm branches this PR just gated with cargo_membership.admits()/npm_membership.admits().",
+    "failure_scenario": "A pyproject.toml workspace excludes examples/demo via [tool.uv.workspace], but examples/demo/pyproject.toml is still unconditionally admitted as a package since no PythonMembership type exists."
+  },
+  {
+    "file": "crates/callisto-manifests/src/cargo.rs",
+    "line": 327,
+    "summary": "update_dependency_spec's workspace-inherited-dependency branch delegates to WorkspaceCargoResolver, which persists the root Cargo.toml itself, but callers unconditionally persist the member manifest again afterward.",
+    "failure_scenario": "Every workspace-inherited dependency update triggers a redundant, byte-identical atomic_write of the member's Cargo.toml (extra fsync + rename), undermining this PR's own persist_call_count \"flushed at most once\" guarantee."
+  },
+  {
+    "file": "crates/callisto-cli/src/runner.rs",
+    "line": 169,
+    "summary": "pending_line, used only for live stderr echo, has no size cap, unlike captured which is correctly bounded at MAX_CAPTURED_OUTPUT_BYTES.",
+    "failure_scenario": "A publish subprocess writes megabytes of stderr with no newline; captured stays bounded at 10MiB but pending_line grows unboundedly in memory — exactly the failure mode the surrounding doc comment says this reader was written to avoid."
+  },
+  {
+    "file": "crates/callisto-graph/src/identity.rs",
+    "line": 466,
+    "summary": "resolve_native_with_fallback's doc comment and diagnostic text still describe two-or-more-candidate \"ambiguity,\" but the logic (intentionally, per SPEC-TRACK3B2) now fires identically for exactly one cross-ecosystem candidate.",
+    "failure_scenario": "A single-candidate cross-ecosystem dependency produces a diagnostic reading \"is ambiguous across ecosystems: cargo:foo\" listing only one candidate — self-contradictory, confusing output in validate/build diagnostics."
+  }
+]
+```
+
+Process notes: 8 finder angles ran (3 correctness-focused splits of the diff, removed-behavior audit, cross-file tracer, reuse/simplification/efficiency, altitude, CLAUDE.md conventions — the last returned no violations). One high-profile candidate (`identity.rs` `resolve_native_with_fallback` silently dropping a single-candidate cross-ecosystem match) was **REFUTED** after verification found git history (`de83f6f5`, `4ab9a283`) proving it was a deliberate, tested fix — a good example of independent finder convergence still needing verification. All 9 surviving findings were posted to PR #5: 5 as inline review comments (lines within diff hunks) and 4 as a general PR comment (lines pre-existing within touched functions, not directly addressable by GitHub's inline-comment API).</result>
+<usage><subagent_tokens>190634</subagent_tokens><tool_uses>275</tool_uses><duration_ms>1313998</duration_ms></usage>
+</task-notification>
