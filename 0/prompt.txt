@@ -1,0 +1,10 @@
+<task-notification>
+<task-id>aba8f59acb0ed6a2c</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/aba8f59acb0ed6a2c.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement Track 3a TASK-04d" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I'll stop polling and wait for the notification to arrive.</result>
+<usage><subagent_tokens>54412</subagent_tokens><tool_uses>22</tool_uses><duration_ms>234397</duration_ms></usage>
+</task-notification>
