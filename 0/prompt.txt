@@ -1,0 +1,137 @@
+<task-notification>
+<task-id>a17201a392c423105</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/0c4c4622-1ed8-4f2c-80e6-f0890a2dad72/tasks/a17201a392c423105.output</output-file>
+<status>completed</status>
+<summary>Agent "Synthesize matrix distribution research report" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>```json
+{
+  "question": "What should callisto's native-artifact / multi-target distribution model be?",
+  "findings": [
+    {
+      "claim": "PlatformTargetKind has exactly two variants (Napi, Maturin); DotnetAot deliberately omitted, enforced by a test.",
+      "evidence": "crates/callisto-model/src/matrix.rs:48-54,125-134",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "PlatformTarget carries only Rust-triple identity fields — no RID field, no generic binary-kind field that could represent a bare CLI binary or Go binary.",
+      "evidence": "crates/callisto-model/src/matrix.rs:56-71",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "artifact_name_for_triple is unconditionally \"native-{triple}\" — hardcoded to the napi/maturin shape, not parameterized by ecosystem/package kind.",
+      "evidence": "crates/callisto-graph/src/matrix.rs:36-40,718-729",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "The per-triple hostRunner/useCross table recognizes exactly 18 hardcoded Rust target triples via match statement — no Go GOOS/GOARCH entries, no generic CLI-binary-triple table.",
+      "evidence": "callisto-graph/src/matrix.rs:12-34,686-716",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "PublishTarget enum (drives plan_publish/publish dispatch) has exactly: CratesIo, Npm{registry,access}, Pypi{index}, NuGet{source}, GitHubRelease, None (#[non_exhaustive]). No Homebrew/HomebrewTap/generic-binary-release variant.",
+      "evidence": "crates/callisto-model/src/ecosystem.rs:65-90",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "NuGet and GitHubRelease targets push a Warning-severity diagnostic (PublishTargetNotImplemented) and are skipped — not a hard failure, not silent. This corrects the maintainer-supplied historical claim that these were \"fixed to loud-fail via E119\"; actual behavior is warn-and-skip.",
+      "evidence": "callisto-graph/src/commands/publish.rs:343-374",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "GitHubRelease is explicitly documented as \"orphaned by §9.5's scope cut\" — a plan-shape label with no execution capability by deliberate design; callisto itself never creates a GitHub Release, and §9.5 removed octocrab/reqwest/GitHub-release-creation from the dependency tree entirely.",
+      "evidence": "docs/00-design.md:362-368,954-965",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "docs/00-design.md has an internal self-contradiction: top-of-doc says callisto \"runs cargo publish, npm publish, and twine upload\" (real execution); §9's opening says callisto \"is a versioning coordinator, not a release orchestrator... does not run the actual publish\"; §11.1 resolves this in favor of real execution, matching the top summary and actual code. §9 read in isolation would mislead a spec writer.",
+      "evidence": "docs/00-design.md:12-15,823-829,1026-1066",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "callisto's own scope table (§2.2) never lists native-binary/cargo-dist-style CLI distribution or Homebrew anywhere — enumerated polyglot cases are all registry-published Cargo/npm/PyPI + napi coordination.",
+      "evidence": "docs/00-design.md:126-190",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "Go ecosystem support is explicitly scoped as tag-only (no registry backend, no build/binary distribution).",
+      "evidence": "docs/00-design.md:158; docs/05-go-engine-spec.md:1-29",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "callisto-matrix.md explicitly designed but never implemented: §6.2 artifact-placement (gh run download loop keyed by artifactName/packageDir) and §7 a callisto-build-action composite action dispatching napi/maturin/dotnet-aot builds. Both absent from the codebase.",
+      "evidence": ".claude/specs/callisto-matrix.md:295-403",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "The same design doc's non-goals (§8) explicitly exclude Go from the matrix subcommand: Go's cross-compilation story does not follow a manifest-declared target list pattern and does not produce language-native binary modules in the napi/maturin/dotnet-aot sense.",
+      "evidence": ".claude/specs/callisto-matrix.md:435-437",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "The shipped spec (track-g-matrix-napi-maturin.json) explicitly non-goals dotnet-aot as deferred follow-up, and treats callisto-build-action as optional/not required for spec completion.",
+      "evidence": "track-g-matrix-napi-maturin.json:6-10",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "ARCHITECTURE.md §12 flags `callisto publish-target` as unimplemented/planned-for-future, alongside Java/JNI and .NET native-AOT discovery.",
+      "evidence": "ARCHITECTURE.md:445-447,486-494",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "ARCHITECTURE.md §13 positions callisto as build-system-agnostic, hermetic, zero-network-calls, stdout/JSON-only — reinforcing coordinator-not-builder-not-uploader identity.",
+      "evidence": "ARCHITECTURE.md:540-544",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "docs/06-publishing.md covers only npm/Cargo/PyPI credential setup — no GitHub Release, Homebrew, or binary-distribution content at all.",
+      "evidence": "docs/06-publishing.md:1-187",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "docs/release-paradigms.md frames all three release paradigms purely around when/how callisto-action's publish:\"true\" runs — no per-platform binary builds, artifact matrices, or non-registry channels discussed; all example workflows are single-job.",
+      "evidence": "docs/release-paradigms.md:1-190",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "CLAUDE.md states no scope philosophy about native-artifact distribution, Homebrew, or GitHub Release binaries at all.",
+      "evidence": "CLAUDE.md",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "walk.rs's platform-manifest discovery is npm-only and directory-scoped (no Cargo/maturin equivalent) — a structural gap any new native-binary model would need to reuse-and-extend or bypass.",
+      "evidence": ".claude/plans/ACTIVE.md:153",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "goreleaser separates build (per-triple compile) → archive → release (GH/GL upload) → announce/downstream-publish, including a native `brews:` block that generates and pushes a Homebrew formula to a separate tap repo, referencing the release's tagged tarball URL + SHA256; one goreleaser.yaml declares the whole pipeline via a shared versioned dist manifest.",
+      "evidence": "general knowledge, not verified in-repo",
+      "confidence": "likely"
+    },
+    {
+      "claim": "cargo-dist generates its own GitHub Actions workflow YAML (unlike callisto matrix, which only emits JSON), builds per-target, creates a GitHub Release with tarballs/installer scripts, and has/had a Homebrew tap-publishing target structurally analogous to goreleaser's brews block, at smaller maturity.",
+      "evidence": "general knowledge, not verified in-repo",
+      "confidence": "assumed"
+    },
+    {
+      "claim": "napi-rs's official template CI convention builds a matrix job per platform, uploads artifacts, then a separate downstream job downloads all artifacts and moves each into its platform-stub package directory before npm publish — the exact artifact-placement step callisto never built, matching callisto-matrix.md's abandoned §6/§7 shape.",
+      "evidence": "general knowledge, not verified in-repo",
+      "confidence": "likely"
+    }
+  ],
+  "recommendation": "Do not adopt a single unified 'artifact distribution' abstraction covering napi/maturin/CLI-binaries/Homebrew in one spec. The evidence splits into three tiers that warrant different treatment, and forcing one model now would either over-scope the near-term work or under-scope the later work.\n\nTier 1 — ship now, smallest lift, already designed: close the napi/maturin artifact-placement gap (callisto-matrix.md §6.2, and optionally §7's build-action) as its own scoped spec. It requires no new type-system surface — PlatformTargetKind/PlatformTarget/artifact_name_for_triple already model this case correctly (findings 1-4) — and it is the most validated, most demanded piece (finding 11 shows it was fully designed once; finding 22 shows napi-rs's own ecosystem convention already assumes this step exists). This should land before any generalization work, both because it's independently valuable and because its 'gh run download → move into package dir → publish' shape is the natural reference pattern a later CLI-binary spec would extend.\n\nTier 2 — extend the existing matrix/PublishTarget model, don't replace it: CLI-binary-per-platform GitHub Release distribution (the cargo-dist problem, Rust-only) fits callisto's demonstrated shape and 'lean on native tools' philosophy (findings 9, 15-17) better than it first appears, because (a) it reuses the same triple-identity/hostRunner/useCross machinery already built for napi/maturin (findings 3-4), needing only a new PlatformTargetKind variant plus a generalized artifact_name_for_triple, and (b) uploading to a GitHub Release can be done via `gh release upload`, a native tool call, consistent with how callisto already shells out to cargo/npm/twine for real execution (finding 8's resolved contradiction: callisto does execute real publishes, it does not merely plan them). This also finally gives GitHubRelease's already-reserved PublishTarget enum slot (currently orphaned by design, finding 7) real execution behavior instead of permanent warn-and-skip (finding 6).\n\nTier 3 — treat as a distinct, later, explicitly-scoped non-goal-for-now: Homebrew tap-formula generation should NOT be folded into the same abstraction as Tiers 1-2. Unlike registry publishes or GitHub Release uploads, no native tool performs formula generation and cross-repo push — `brew` itself doesn't publish formulas; goreleaser and cargo-dist reimplement that templating+push logic themselves (findings 20-21). Building it in callisto means reimplementing that logic, which contradicts the 'coordinate what's already there, don't reimplement' philosophy the maintainer has stated. It also requires writing to a second repository with separate credentials — a capability class nothing else in callisto has — and directly conflicts with ARCHITECTURE.md §13's zero-network-calls framing and §2.2's registry-only scope table (findings 9, 15). This is not evidence that Homebrew support is wrong to build, only that it is architecturally and philosophically a different kind of feature than Tiers 1-2, and needs its own explicit spec with the maintainer's sign-off on relaxing the zero-network-calls/coordinator invariant — not an assumed extension of the matrix type system.\n\nGo binary distribution: leave entirely out of scope. This is not a gap, it's an existing, explicit, twice-stated non-goal (findings 10, 12) with no evidence of demand to revisit it.\n\nA supporting structural observation: the current model's inability to represent CLI-binaries/Homebrew is not one unifying gap but two separate clusters — the build/identity side (PlatformTargetKind, PlatformTarget's triple-only fields, artifact_name_for_triple, the 18-triple table) and the distribution/sink side (PublishTarget's closed variant set). This mirrors goreleaser's own build/archive/release/announce separation (finding 20) — evidence that if/when generalization does happen, decoupling build-target identity from distribution-sink is the right shape to extend toward, but that shape should be earned incrementally through Tiers 1 and 2, not designed wholesale before either ships.",
+  "confidence": "medium",
+  "open_questions": [
+    "IF the maintainer wants the napi/maturin artifact-placement gap (callisto-matrix.md §6.2/§7) closed as a prerequisite before any broader distribution work THEN the recommendation is to ship that as its own scoped spec first, with CLI-binary/Homebrew work deferred to later specs. IF instead the maintainer wants one unified build-target/distribution-sink model designed now even though only the napi/maturin slice ships first THEN the PlatformTargetKind/PlatformTarget/PublishTarget generalization must happen in the same spec, producing a materially larger type-system change upfront than Tier 1 alone requires.",
+    "IF the maintainer confirms Homebrew tap-formula generation is in-scope for callisto at all (not merely deferred) THEN it needs its own spec addressing the new capability class it introduces — cross-repo git write, credential model, template ownership — and an explicit, deliberate relaxation of ARCHITECTURE.md §13's zero-network-calls/coordinator framing. IF the maintainer says Homebrew is out of scope entirely THEN §2.2's scope table stays closed and no PublishTarget variant or template-rendering code needs to be built for it at all.",
+    "IF the maintainer wants CLI-binary-per-platform distribution scoped to Rust CLIs only (reusing the existing 18-triple hostRunner/useCross table) THEN the build-side change is additive: one new PlatformTargetKind variant plus a generalized artifact_name_for_triple. IF the maintainer wants it to also cover non-Rust (e.g. Go) binaries THEN PlatformTarget's identity model needs a non-triple-based generic path, a materially larger change that directly conflicts with the existing explicit Go non-goal (finding 12) and would need deliberate reconciliation with that decision, not a silent override.",
+    "IF finding 6's correction (NuGet/GitHubRelease already warn-and-skip today, not the loud-fail the maintainer believed was shipped) changes the maintainer's near-term priority THEN confirm whether implementing real GitHubRelease execution (Tier 2) should be pulled forward as an independent near-term fix, separate from the larger CLI-binary/Homebrew distribution-model question — the current behavior is not broken or silent, but it is also not what the maintainer believed was already true."
+  ],
+  "reasoning": "Assembled from reader's 22-item findings array without dropping or merging any. Core interpretive work: (1) resolved finding #8's doc self-contradiction using §11.1 + actual code as the tiebreaker; (2) used finding #6 to explicitly correct the maintainer's stated historical belief rather than silently accepting it; (3) split the type-system gap into two clusters (build/identity vs. distribution/sink) rather than treating it as one monolithic gap, since the evidence (findings 1-4 vs. 5) supports two distinct closure surfaces; (4) built the tiered recommendation by testing each candidate feature (napi/maturin placement, CLI-binary-to-GHRelease, Homebrew-tap) against the maintainer's stated 'lean on native tools, coordinate don't reimplement' philosophy using findings 9 and 15-17, which produced a clear differentiator: gh CLI exists as a native upload tool but no native tool performs Homebrew formula templating+push, so goreleaser/cargo-dist reimplement it themselves — meaning callisto doing the same would violate its stated identity, not extend it."
+}
+```
+
+This research-report@1 is ready to feed directly into `canon:draft-spec`. No files were written — the report is returned inline above per the schema at `shared/schemas/research-report@1.json`.</result>
+<usage><subagent_tokens>35459</subagent_tokens><tool_uses>0</tool_uses><duration_ms>91077</duration_ms></usage>
+</task-notification>
