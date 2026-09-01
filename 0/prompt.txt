@@ -1,0 +1,17 @@
+<task-notification>
+<task-id>ab3e0c4a3b6b1b2eb</task-id>
+<tool-use-id>toolu_01Vfxt4ctFovRsUB2cPsxyPg</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/ab3e0c4a3b6b1b2eb.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix Track 3a spec gap, round 6" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>The spec has been corrected and written to `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/spec-track3a-workspace-membership.json` (SPEC-TRACK3A-WORKSPACE-MEMBERSHIP), overwriting the same path — JSON validated.
+
+What changed:
+- Added a twelfth `non_goals` entry, parallel in structure to the existing eleventh entry, flagging that `.claude/specs/SPEC-APPLY-BATCH-002.json` (verified directly, not taken from the task's paraphrase) cites `ignore_walk.rs:145-161` (`to_workspace_relative`), with lines 152-154 called out specifically for the workspace-root `.` case, in its AC-015 and revision-2 reasoning. This spec's membership-filter insertion sits immediately above `to_workspace_relative` in the same file and will shift those line numbers, requiring the same post-landing re-verification SPEC-APPLY-BATCH-002 already owes track-g's AC-010/AC-010b.
+- Updated `revision_note` to describe this sixth correction round, citing the canon-auditor's round-5 finding and the exact citation text confirmed by reading SPEC-APPLY-BATCH-002.json, with the prior fifth-round note preserved below for history (matching the file's existing convention of chaining revision history).
+- Nothing else in the spec (acceptance criteria, api_surface, other non_goals entries, purpose, scope, reasoning) was touched, per the task's instruction.
+
+I verified the exact line numbers by reading SPEC-APPLY-BATCH-002.json directly (line 130's reasoning text and AC-015 at line 110) rather than trusting the task's quoted numbers — they matched exactly, so no adjustment was needed.</result>
+<usage><subagent_tokens>83098</subagent_tokens><tool_uses>9</tool_uses><duration_ms>43904</duration_ms></usage>
+</task-notification>
