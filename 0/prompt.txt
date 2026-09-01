@@ -1,0 +1,32 @@
+From agy:
+
+  Reviewing Progress on Tests
+  That is a great catch and an excellent review by Claude. Those three critiques are completely spot on:
+  
+  1. Dedicated Error Variant vs UnknownKey:
+      • Precedent in error.rs:297-312 sets dedicated error variants for paths failing workspace_relative: error.rs:304 (E116) 
+      and error.rs:311 (E113).
+      • Reusing UnknownKey for path validation was an architectural inconsistency.
+      • Fix applied: Added SPEC-007-github-release-binary-assets.json:40-43 (code E121) to api_surface, updated
+      parse_github_release_assets, and updated SPEC-007-github-release-binary-assets.json:78 (is_error_case: true) to assert  
+      this dedicated variant.
+  2. Shadowing Mechanism in AC-020:
+      • In walk.rs:351-360, [[package]] vs [[package-set]] is governed by active_override = pkg_override.or(set_override). It 
+      is a whole-object override (if any [[package]] rule matches, the [[package-set]] config is ignored entirely for that    
+      package, with no field-by-field fallback). "Prefixed-then-bare" only applies within resolve_package_config among        
+      [[package]] rules.
+      • Fix applied: Corrected SPEC-007-github-release-binary-assets.json:80 to describe the real whole-object shadowing      
+      mechanism (pkg_override.or(set_override)), ensuring implementers understand the behavior accurately.
+  3. Sequential Numbering & Internal References:
+      • Fixed the numbering order to run strictly sequentially from SPEC-007-github-release-binary-assets.json:61 through     
+      SPEC-007-github-release-binary-assets.json:80, and aligned internal cross-references (such as
+      SPEC-007-github-release-binary-assets.json:75 pointing to SPEC-007-github-release-binary-assets.json:72's missing       
+      artifact test case).
+  
+  ──────
+  ### Verification Summary
+  
+  • File: SPEC-007-github-release-binary-assets.json
+  • JSON Syntax: Validated via jq . (clean exit 0)
+  • All 20 Acceptance Criteria: Sequenced AC-001 through AC-020, with exact error variants, precise AST resolution mechanisms,
+  and unambiguous testability.
