@@ -35,7 +35,9 @@ jobs:
         # syntax. Keep all other actionlint diagnostics strict.
         uses: docker://rhysd/actionlint@sha256:9d36088643581e728c969f35141f88139fec77280b2be23c1f66f8e40e1025e7 # v1.7.12
         with:
-          args: -color -ignore=specifying\ action\ "\$/.+"\ in\ invalid\ format
+          # Docker action arguments are passed directly, rather than through a
+          # shell. Keep the exception as one argument so its regex is intact.
+          args: -color -ignore=\$/.+
       - name: Audit workflow and action security
         run: zizmor --offline --strict-collection .
       - name: Verify pinned actions
