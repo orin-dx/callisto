@@ -164,12 +164,18 @@ fn fake_publishers(
     external: &Path,
     release_commit: &str,
     fail_cargo_publish: bool,
-) -> (std::path::PathBuf, std::path::PathBuf, std::path::PathBuf) {
+) -> (
+    std::path::PathBuf,
+    std::path::PathBuf,
+    std::path::PathBuf,
+    std::path::PathBuf,
+) {
     use std::os::unix::fs::PermissionsExt;
 
     let bin = external.join("fake-bin");
     fs::create_dir_all(&bin).unwrap();
     let log = external.join("external-effects.log");
+    let git_trace = external.join("git-commands.log");
     let forge_marker = external.join("forge-release-created");
     let cargo_exit = if fail_cargo_publish { "exit 23" } else { "exit 0" };
     fs::write(
@@ -179,7 +185,7 @@ fn fake_publishers(
     .unwrap();
     fs::write(
         bin.join("git"),
-        "#!/bin/sh\nif [ \"$1\" = push ]; then\n  printf 'git %s\\n' \"$*\" >> \"$CALLISTO_TEST_LOG\"\n  exit 0\nfi\nexec /usr/bin/git \"$@\"\n",
+        "#!/bin/sh\nprintf 'git %s\\n' \"$*\" >> \"$CALLISTO_TEST_GIT_TRACE\"\nif [ \"$1\" = push ]; then\n  printf 'git %s\\n' \"$*\" >> \"$CALLISTO_TEST_LOG\"\n  exit 0\nfi\nexec /usr/bin/git \"$@\"\n",
     )
     .unwrap();
     fs::write(
@@ -192,10 +198,18 @@ fn fake_publishers(
     for program in [bin.join("cargo"), bin.join("git"), bin.join("gh")] {
         fs::set_permissions(&program, fs::Permissions::from_mode(0o755)).unwrap();
     }
-    (bin, log, forge_marker)
+    (bin, log, forge_marker, git_trace)
 }
 
-fn execute(root: &Path, intent: &Path, state: &Path, bin: &Path, log: &Path, forge_marker: &Path) -> Output {
+fn execute(
+    root: &Path,
+    intent: &Path,
+    state: &Path,
+    bin: &Path,
+    log: &Path,
+    forge_marker: &Path,
+    git_trace: &Path,
+) -> Output {
     let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap());
     Command::new(env!("CARGO_BIN_EXE_callisto"))
         .args(["--format", "json", "--cwd", root.to_str().unwrap()])
@@ -209,6 +223,7 @@ fn execute(root: &Path, intent: &Path, state: &Path, bin: &Path, log: &Path, for
         ])
         .env("PATH", path)
         .env("CALLISTO_TEST_LOG", log)
+        .env("CALLISTO_TEST_GIT_TRACE", git_trace)
         .env("CALLISTO_TEST_FORGE_MARKER", forge_marker)
         .output()
         .expect("release execute should run")
@@ -221,13 +236,14 @@ fn merged_release_commit_executes_exactly_once_through_real_cli() {
     let root = dir.path();
     let intent = plan_intent(root, external.path(), &release_commit);
     let state = external.path().join("release-state.json");
-    let (bin, log, forge_marker) = fake_publishers(external.path(), &release_commit, false);
+    let (bin, log, forge_marker, git_trace) = fake_publishers(external.path(), &release_commit, false);
 
-    let first = execute(root, &intent, &state, &bin, &log, &forge_marker);
+    let first = execute(root, &intent, &state, &bin, &log, &forge_marker, &git_trace);
     assert!(
         first.status.success(),
-        "release execute failed: {}",
-        String::from_utf8_lossy(&first.stderr)
+        "release execute failed: {}\nGit command trace:\n{}",
+        String::from_utf8_lossy(&first.stderr),
+        fs::read_to_string(&git_trace).unwrap_or_else(|_| "<unavailable>".to_owned())
     );
     assert!(git(root, &["tag", "--list", "core-crate@0.2.0"]).contains("core-crate@0.2.0"));
     let effects = fs::read_to_string(&log).unwrap();
@@ -239,7 +255,7 @@ fn merged_release_commit_executes_exactly_once_through_real_cli() {
         "durable execution state must be persisted outside implicit memory"
     );
 
-    let second = execute(root, &intent, &state, &bin, &log, &forge_marker);
+    let second = execute(root, &intent, &state, &bin, &log, &forge_marker, &git_trace);
     assert!(
         second.status.success(),
         "a completed release must reconcile without retrying effects: {}",
@@ -259,9 +275,9 @@ fn failed_publish_persists_indeterminate_attempt_and_never_tags() {
     let root = dir.path();
     let intent = plan_intent(root, external.path(), &release_commit);
     let state = external.path().join("release-state.json");
-    let (bin, log, forge_marker) = fake_publishers(external.path(), &release_commit, true);
+    let (bin, log, forge_marker, git_trace) = fake_publishers(external.path(), &release_commit, true);
 
-    let output = execute(root, &intent, &state, &bin, &log, &forge_marker);
+    let output = execute(root, &intent, &state, &bin, &log, &forge_marker, &git_trace);
     assert!(
         !output.status.success(),
         "a failed registry publish must fail release execution"
@@ -282,7 +298,7 @@ fn changed_checkout_after_planning_never_reaches_a_publish_boundary() {
     let root = dir.path();
     let intent = plan_intent(root, external.path(), &release_commit);
     let state = external.path().join("release-state.json");
-    let (bin, log, forge_marker) = fake_publishers(external.path(), &release_commit, false);
+    let (bin, log, forge_marker, git_trace) = fake_publishers(external.path(), &release_commit, false);
 
     // This simulates a checkout which changed after plan approval but before
     // the gated execution job.  It must fail before any publisher or forge
@@ -293,7 +309,7 @@ fn changed_checkout_after_planning_never_reaches_a_publish_boundary() {
     )
     .unwrap();
 
-    let output = execute(root, &intent, &state, &bin, &log, &forge_marker);
+    let output = execute(root, &intent, &state, &bin, &log, &forge_marker, &git_trace);
     assert!(
         !output.status.success(),
         "a changed checkout must invalidate the approved release intent"
