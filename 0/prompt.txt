@@ -1,0 +1,105 @@
+Pickup from where you were interrupted
+
+---
+
+Are you 100% confident on the work that you did and the quality of the infrastructure and tests? Are we appropriatelly testing things across our platforms? How did we miss this before?
+
+---
+
+Any improvements we can make to our actions to simplify things or make them more effective?
+
+---
+
+Let's get to fixing all of these please
+
+---
+
+Is that all in the latest PR?
+
+---
+
+Looks like you're still missing things: https://github.com/orin-dx/callisto/actions/runs/33653455623/job/100328721967?pr=39
+
+---
+
+This was working before. Why did it start failing? What changed?
+
+---
+
+Can we fix and make sure there are no other hidden issues?
+
+---
+
+Merged
+
+---
+
+What's next?
+
+---
+
+Can we take a look at this?? https://github.com/orin-dx/callisto/pull/40
+
+---
+
+Let's keep an eye on this too: https://github.com/orin-dx/callisto/actions/runs/33667848642
+
+---
+
+This failed: https://github.com/orin-dx/callisto/actions/runs/33667848642
+
+---
+
+Can you check everything else? I don't want to keep going back and forth
+
+---
+
+Can we install rg and leverage the best tool for the job?
+
+---
+
+Still failed: https://github.com/orin-dx/callisto/actions/runs/33679599559/job/100417043346
+
+---
+
+WTF, I asked you to check on things
+
+---
+
+We need it through
+
+---
+
+Anything else that we need to give permission to?
+
+---
+
+How would that work for our users? Seems like you're not thinking about this before. Prior versions of callisto were updating the release branch and the PR
+
+---
+
+Why would there be workflow changes in the release branch? Those should be a regular PR that we made changes to right?
+
+---
+
+Shouldn't it be a rebase against main? How does changeset and knope do it?
+
+---
+
+How should we change our actions then?
+
+---
+
+Callisto needs to work correctly with minimal config out of the box
+
+---
+
+Does this more closely match changeset and knope's actions?
+
+---
+
+Let's get this all fixed up appropriately. Do you have any questions or know what to do?
+
+---
+
+Is this how we test actions??? What are the best practices?
