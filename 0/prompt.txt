@@ -1,0 +1,1 @@
+Should we consider the states of spec where draft, acepted, implemented or something similar? How does the W3C and other orgs consider specs, drafts, etc?
