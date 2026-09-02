@@ -1,0 +1,66 @@
+{
+  "cli_version": "0.10.4-nightly.202609020630.ee6d53f3d",
+  "checkpoint_id": "01M1HD3SXGC6CMC38005MH2P4V",
+  "session_id": "01a04adc-934d-7aa3-b352-bdba70d0f67c",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-02T15:52:08.560047Z",
+  "branch": "codex/release-execution-foundation",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "crates/callisto-cli/src/runner.rs",
+    "crates/callisto-cli/tests/durable_release_e2e_tests.rs",
+    "crates/callisto-moon/examples/gix_wasm_spike.rs",
+    "justfile"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-terra",
+  "turn_id": "7846562882f2",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 206086,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 3616768,
+    "output_tokens": 4084,
+    "api_call_count": 1432
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-02T15:52:06.538265Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 420,
+    "human_modified": 13,
+    "human_removed": 0,
+    "total_committed": 420,
+    "total_lines_changed": 433,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 2291,
+      "user_lines_removed": 1,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".opencode/plugins/entire.ts": 269,
+        ".playwright-mcp/console-2026-08-29T15-59-57-136Z.log": 11,
+        ".playwright-mcp/console-2026-08-29T16-01-28-866Z.log": 3,
+        ".playwright-mcp/page-2026-08-29T15-59-57-414Z.yml": 4,
+        ".playwright-mcp/page-2026-08-29T16-01-29-130Z.yml": 300,
+        ".playwright-mcp/page-2026-08-29T16-01-55-533Z.yml": 347,
+        ".playwright-mcp/page-2026-08-29T16-07-25-102Z.yml": 462,
+        ".playwright-mcp/page-2026-08-29T16-08-10-779Z.yml": 462,
+        "crates/callisto-vcs/src/access.rs": 73,
+        "crates/callisto-vcs/src/shell.rs": 245,
+        "err.log": 2
+      },
+      "user_removed_per_file": {
+        "crates/callisto-vcs/src/shell.rs": 1
+      }
+    }
+  ]
+}
