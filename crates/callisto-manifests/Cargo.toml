@@ -1,6 +1,6 @@
 [package]
 name = "callisto-manifests"
-version = "0.5.0"
+version = "0.6.0"
 edition.workspace = true
 license = "AGPL-3.0-only"
 description = "Callisto Release Engine — CST-preserving manifest editors for Cargo.toml, package.json, and pyproject.toml."
@@ -21,7 +21,7 @@ nuget = []
 deno = []
 
 [dependencies]
-callisto-model = { path = "../callisto-model", version = "0.5.0" }
+callisto-model = { path = "../callisto-model", version = "0.6.0" }
 camino.workspace = true
 toml_edit = { workspace = true, optional = true }
 serde = { workspace = true }
