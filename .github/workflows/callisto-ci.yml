@@ -132,3 +132,5 @@ jobs:
         with:
           fetch-depth: 0
       - uses: ./.github/actions/callisto-validate
+      - name: Verify Release-PR action contract
+        run: just test-release-action

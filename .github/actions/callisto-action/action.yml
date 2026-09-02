@@ -22,9 +22,17 @@ inputs:
     required: false
     default: 'true'
   branch:
-    description: 'Target branch'
+    description: 'Base branch for the release PR'
     required: false
     default: 'main'
+  release_branch:
+    description: 'Branch managed for the release PR'
+    required: false
+    default: 'callisto/version-packages'
+  setup_callisto:
+    description: 'Install the Callisto environment before running'
+    required: false
+    default: 'true'
   cwd:
     description: 'Workspace directory'
     required: false
@@ -46,6 +54,7 @@ runs:
   using: composite
   steps:
     - name: Setup Callisto Environment
+      if: inputs.setup_callisto == 'true'
       uses: ./.github/actions/setup-callisto
     - name: Create or update release PR
       id: version-pr
@@ -57,8 +66,12 @@ runs:
         INPUT_PR_LABEL: ${{ inputs.pr_label }}
         INPUT_SETUP_GIT_USER: ${{ inputs.setup_git_user }}
         INPUT_BRANCH: ${{ inputs.branch }}
+        INPUT_RELEASE_BRANCH: ${{ inputs.release_branch }}
         INPUT_CWD: ${{ inputs.cwd }}
-        GH_TOKEN: ${{ env.GITHUB_TOKEN }}
+        # GitHub exposes the installation token as a context, not a guaranteed
+        # inherited environment variable. Using the context also works for the
+        # repository workflow that invokes this action after checkout.
+        GH_TOKEN: ${{ github.token }}
       run: |
         set -euo pipefail
         cd "$INPUT_CWD"
@@ -77,7 +90,16 @@ runs:
             ;;
           *) echo "::error::callisto status --check exited $status"; exit 1 ;;
         esac
-        existing=$(gh pr list --head callisto/version-packages --json body --jq '.[0].body // empty')
+        # A managed branch must have at most one open PR to its configured
+        # base. Selecting the first result would make an ambiguous repository
+        # state silently mutate the wrong PR.
+        prs=$(gh pr list --state open --head "$INPUT_RELEASE_BRANCH" --base "$INPUT_BRANCH" --json number,body)
+        pr_count=$(jq 'length' <<< "$prs")
+        case "$pr_count" in
+          0) existing='' ;;
+          1) existing=$(jq -r '.[0].body // empty' <<< "$prs") ;;
+          *) echo "::error::found $pr_count open release PRs for $INPUT_RELEASE_BRANCH -> $INPUT_BRANCH"; exit 1 ;;
+        esac
         if [[ -n "$existing" ]]; then
           body=$(printf '%s' "$existing" | callisto compose-pr-body --existing-body - --label "$INPUT_PR_LABEL" --branch "$INPUT_BRANCH" --format text)
         else
@@ -90,14 +112,17 @@ runs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
         fi
-        git switch -C callisto/version-packages
+        git switch -C "$INPUT_RELEASE_BRANCH"
         git add -A
         git commit -m "$INPUT_COMMIT_MESSAGE"
-        git push --force-with-lease origin callisto/version-packages
-        gh label create "$INPUT_PR_LABEL" --color 0e8a16 --description 'Callisto release packages' 2>/dev/null || true
-        pr=$(gh pr list --head callisto/version-packages --json number --jq '.[0].number // empty')
+        git push --force-with-lease origin "$INPUT_RELEASE_BRANCH"
+        label_exists=$(gh api --paginate "/repos/${GITHUB_REPOSITORY}/labels?per_page=100" --slurp --jq 'any(.[][]; .name == env.INPUT_PR_LABEL)')
+        if [[ "$label_exists" != true ]]; then
+          gh label create "$INPUT_PR_LABEL" --color 0e8a16 --description 'Callisto release packages'
+        fi
+        pr=$(jq -r '.[0].number // empty' <<< "$prs")
         if [[ -n "$pr" ]]; then
           gh pr edit "$pr" --title "$INPUT_TITLE" --body "$body" --add-label "$INPUT_PR_LABEL"
         else
-          gh pr create --head callisto/version-packages --base "$INPUT_BRANCH" --title "$INPUT_TITLE" --body "$body" --label "$INPUT_PR_LABEL"
+          gh pr create --head "$INPUT_RELEASE_BRANCH" --base "$INPUT_BRANCH" --title "$INPUT_TITLE" --body "$body" --label "$INPUT_PR_LABEL"
         fi
