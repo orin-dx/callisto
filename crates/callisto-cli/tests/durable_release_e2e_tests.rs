@@ -9,7 +9,7 @@
 
 use std::{
     fs,
-    path::{Path, PathBuf},
+    path::Path,
     process::{Command, Output},
 };
 
@@ -31,21 +31,6 @@ fn callisto(root: &Path, args: &[&str]) -> Output {
         .args(args)
         .output()
         .expect("callisto binary should be invocable")
-}
-
-fn system_program(name: &str) -> PathBuf {
-    std::env::var_os("PATH")
-        .into_iter()
-        .flat_map(|path| std::env::split_paths(&path).collect::<Vec<_>>())
-        .map(|directory| directory.join(name))
-        .find(|candidate| {
-            candidate.is_file()
-                && Command::new(candidate).arg("--version").output().is_ok_and(|output| {
-                    output.status.success()
-                        && String::from_utf8_lossy(&output.stdout).starts_with(&format!("{name} version "))
-                })
-        })
-        .unwrap_or_else(|| panic!("{name} must be available on PATH"))
 }
 
 /// Builds the exact shape a merged release PR must have: its parent contains
@@ -194,7 +179,7 @@ fn fake_publishers(
     .unwrap();
     fs::write(
         bin.join("git"),
-        "#!/bin/sh\nif [ \"$1\" = push ]; then\n  printf 'git %s\\n' \"$*\" >> \"$CALLISTO_TEST_LOG\"\n  exit 0\nfi\nexec \"$CALLISTO_TEST_REAL_GIT\" \"$@\"\n",
+        "#!/bin/sh\nif [ \"$1\" = push ]; then\n  printf 'git %s\\n' \"$*\" >> \"$CALLISTO_TEST_LOG\"\n  exit 0\nfi\nexec /usr/bin/git \"$@\"\n",
     )
     .unwrap();
     fs::write(
@@ -223,7 +208,6 @@ fn execute(root: &Path, intent: &Path, state: &Path, bin: &Path, log: &Path, for
             state.to_str().unwrap(),
         ])
         .env("PATH", path)
-        .env("CALLISTO_TEST_REAL_GIT", system_program("git"))
         .env("CALLISTO_TEST_LOG", log)
         .env("CALLISTO_TEST_FORGE_MARKER", forge_marker)
         .output()
