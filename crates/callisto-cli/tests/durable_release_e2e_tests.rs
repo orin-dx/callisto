@@ -191,7 +191,7 @@ fn fake_publishers(
     fs::write(
         bin.join("gh"),
         format!(
-            "#!/bin/sh\nprintf 'gh %s\\n' \"$*\" >> \"$CALLISTO_TEST_LOG\"\nif [ \"$1\" = api ]; then\n  if [ -f \"$CALLISTO_TEST_FORGE_MARKER\" ]; then\n    printf 'HTTP/1.1 200 OK\\r\\n\\r\\n{{\\\"tag_name\\\":\\\"core-crate@0.2.0\\\",\\\"target_commitish\\\":\\\"{release_commit}\\\"}}'\n  else\n    printf 'HTTP/1.1 404 Not Found\\r\\n\\r\\n{{}}'\n  fi\n  exit 0\nfi\nif [ \"$1\" = release ] && [ \"$2\" = create ]; then\n  : > \"$CALLISTO_TEST_FORGE_MARKER\"\nfi\nexit 0\n"
+            "#!/bin/sh\nprintf 'gh %s\\n' \"$*\" >> \"$CALLISTO_TEST_LOG\"\nif [ \"$1\" = api ]; then\n  if [ -f \"$CALLISTO_TEST_FORGE_MARKER\" ]; then\n    printf '%s\\n\\n%s\\n' 'HTTP/1.1 200 OK' '{{\\\"tag_name\\\":\\\"core-crate@0.2.0\\\",\\\"target_commitish\\\":\\\"{release_commit}\\\"}}'\n  else\n    printf '%s\\n\\n%s\\n' 'HTTP/1.1 404 Not Found' '{{}}'\n  fi\n  exit 0\nfi\nif [ \"$1\" = release ] && [ \"$2\" = create ]; then\n  : > \"$CALLISTO_TEST_FORGE_MARKER\"\nfi\nexit 0\n"
         ),
     )
     .unwrap();
