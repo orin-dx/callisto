@@ -91,7 +91,8 @@ else
   echo 'PASS: updates the sole PR and creates a missing label'
 fi
 
-if rg -q 'gh label create.*\|\| true' "$action_yml"; then
+action_contents="$(<"$action_yml")"
+if [[ "$action_contents" == *'gh label create'*'|| true'* ]]; then
   echo 'FAIL: label-creation errors are still hidden'
   fail=1
 else

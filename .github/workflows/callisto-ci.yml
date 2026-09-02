@@ -133,4 +133,7 @@ jobs:
           fetch-depth: 0
       - uses: ./.github/actions/callisto-validate
       - name: Verify Release-PR action contract
-        run: just test-release-action
+        # Keep this lightweight validation job independent of `just`: the
+        # executable contract is a standalone Bash test and the action above
+        # installs only the Callisto runtime it needs.
+        run: bash .github/actions/callisto-action/tests/test_release_pr_contract.sh
