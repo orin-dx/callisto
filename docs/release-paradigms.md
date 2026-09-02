@@ -66,20 +66,9 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
       - uses: ./.github/actions/setup-callisto
-      # npm auth: callisto-action does NOT call actions/setup-node, so NODE_AUTH_TOKEN
-      # is silently ignored by npm. Use Pattern A: write the token to npm config explicitly.
-      # See docs/06-publishing.md for a full explanation of Pattern A vs. Pattern B.
-      - name: Authenticate with npm registry
-        run: npm config set //registry.npmjs.org/:_authToken $NPM_TOKEN
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
       - uses: ./.github/actions/callisto-action
-        with:
-          # Publishing is performed by the durable repository workflow after merge.
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        # Publishing is performed by the durable repository workflow after merge.
+        # Registry credentials belong only in its protected execute job.
 ```
 
 ---
@@ -123,17 +112,9 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
       - uses: ./.github/actions/setup-callisto
-      - name: Authenticate with npm registry
-        run: npm config set //registry.npmjs.org/:_authToken $NPM_TOKEN
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
       - uses: ./.github/actions/callisto-action
-        with:
-          # Publishing is performed by the durable repository workflow after merge.
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        # Publishing is performed by the durable repository workflow after merge.
+        # Registry credentials belong only in its protected execute job.
 ```
 
 ---
@@ -175,15 +156,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-callisto
-      - name: Authenticate with npm registry
-        run: npm config set //registry.npmjs.org/:_authToken $NPM_TOKEN
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
       - uses: ./.github/actions/callisto-action
-        with:
-          # Publishing is performed by the durable repository workflow after merge.
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        # Publishing is performed by the durable repository workflow after merge.
+        # Registry credentials belong only in its protected execute job.
 ```

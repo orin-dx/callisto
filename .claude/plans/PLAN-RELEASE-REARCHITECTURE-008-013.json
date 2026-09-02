@@ -10,7 +10,7 @@
     { "id": "SPEC-RELEASE-TRUST-010", "file": ".claude/specs/SPEC-RELEASE-TRUST-010.json", "sha256": "9be173c2cc28dbf5a76d449e23513dd81e297ae7bd9ae22b5b8b557cbf5a9ac2" },
     { "id": "SPEC-RELEASE-CAPABILITY-011", "file": ".claude/specs/SPEC-RELEASE-CAPABILITY-011.json", "sha256": "d5838a53afd8e3b62326e754a4c9bffb5fdc17169329ad23d8e6b2e690cbcd3d" },
     { "id": "SPEC-RELEASE-EXECUTION-012", "file": ".claude/specs/SPEC-RELEASE-EXECUTION-012.json", "sha256": "aab151ef46ff5c1932bd523f22b818d8cb5d07b0bd1013331e243ef68e74b855" },
-    { "id": "SPEC-RELEASE-INTERFACES-013", "file": ".claude/specs/SPEC-RELEASE-INTERFACES-013.json", "sha256": "bb53ab64e15cfdeaff4bae8ce7dc652cef771dce17b82f5c9c8e126c51163378" }
+    { "id": "SPEC-RELEASE-INTERFACES-013", "file": ".claude/specs/SPEC-RELEASE-INTERFACES-013.json", "sha256": "ab9b6d142b3bc637fed2da42717803f426a1403923f8f9faf37c7d4f24a91152" }
   ],
   "linked_requirement": null,
   "requirement_note": "No requirement@1 records exist for these REQ-less release specs. This plan is deliberately linked directly to the six specs; requirement backfill is a repository-process task and must not be fabricated here.",
@@ -149,7 +149,7 @@
     },
     {
       "id": "T12", "batch_id": "B6-interfaces", "depends_on": ["T11"], "kind": "github-workflow", "covers": ["013:AC-004", "013:AC-005", "013:AC-006"],
-      "description": "Replace single-job/composite mutable release handoff with GitHub plan/build/execute jobs, same-run artifact and attestation verification, Environment-gated privilege, least permissions, SHA-pinned actions, policy checks, and CODEOWNERS coverage.",
+      "description": "Replace single-job/composite mutable release handoff with GitHub plan/build/execute jobs, same-run artifact and attestation verification, Environment-gated privilege, least permissions, SHA-pinned actions, policy checks, and CODEOWNERS coverage. The version-PR action rebuilds from the current base branch; when GitHub denies a stable managed-branch update solely because reviewed workflow history changed, it automatically replaces that PR with a SHA-suffixed managed branch and continues to update the replacement without requiring an elevated token.",
       "files": [".github/workflows/release.yml", ".github/actions/callisto-action/action.yml", ".github/workflows/check-release-environment.yml", ".github/workflows/check-action-pins.yml", "CODEOWNERS", ".github/actions/callisto-action/tests/"],
       "red": "Workflow/static harness tests first assert no execute credentials in plan/build, build-only id-token/attestations permissions, one attestation per binary, explicit job boundaries, same-run artifact download, intent/source/artifact/attestation verification before execute, immutable action SHAs, no cache authority paths, named Environment, and environment API check rejecting no reviewers.",
       "green": "Keep composite action unprivileged/read-only or setup-only. Document administrator verification of live Environment rules; do not claim YAML alone enforces review protection.",

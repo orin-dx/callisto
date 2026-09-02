@@ -5,7 +5,7 @@ runs:
   using: 'composite'
   steps:
     - name: Setup Callisto Environment
-      uses: ./.github/actions/setup-callisto
+      uses: $/.github/actions/setup-callisto
 
     - name: Validate Configuration, Package Discovery & Changesets
       shell: bash

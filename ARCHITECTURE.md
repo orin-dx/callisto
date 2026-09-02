@@ -359,14 +359,17 @@ pub trait DependencyResolver: Send + Sync {
 
 ## 9. GitHub Actions Orchestration (`callisto-action`)
 
-Callisto includes a built-in composite action ([`.github/actions/callisto-action/action.yml`](.github/actions/callisto-action/action.yml)) for CI/CD automation and supports 3 release paradigms (see [`docs/release-paradigms.md`](docs/release-paradigms.md)):
+Callisto includes a built-in composite action ([`.github/actions/callisto-action/action.yml`](.github/actions/callisto-action/action.yml)) that creates or updates a reviewed version PR. The repository durable workflow owns the post-merge plan, build, attestation, and protected execute stages; see [`docs/06-publishing.md`](docs/06-publishing.md).
 
 ```mermaid
 %%{init: {'theme': 'base', 'themeVariables': {'lineColor': '#64748b', 'edgeLabelBackground': '#f8fafc', 'fontFamily': 'ui-sans-serif, system-ui, sans-serif'}}}%%
 sequenceDiagram
     participant Runner as GitHub Actions Runner
     participant Verify as Job 1: verify (Mandatory CI Gate)
-    participant Action as Job 2: release (needs: [verify])
+    participant VersionPR as Job 2: version-pr (needs: [verify])
+    participant Plan as Job 3: plan
+    participant Build as Job 4: build
+    participant Execute as Job 5: execute (release Environment)
     participant CLI as callisto CLI
     participant GH as GitHub API (gh CLI)
 
@@ -375,17 +378,18 @@ sequenceDiagram
     alt CI Fails
         Verify-->>Runner: Exit 1 — Job 2 cancelled
     else CI Passes
-        Verify->>Action: Trigger release job
-        Action->>CLI: callisto status --check
+        Verify->>VersionPR: Trigger version-PR job
+        VersionPR->>CLI: callisto status --check
         alt Pending Changesets
-            Action->>CLI: callisto version
-            Action->>CLI: callisto compose-pr-body
-            Action->>GH: Create or update callisto/version-packages PR
-        else Version PR Merged (zero changesets)
-            Action->>CLI: callisto plan-publish --format json
-            Action->>CLI: callisto publish
-            Action->>CLI: callisto tag --floating-major
-            Action->>GH: Create GitHub Releases & update floating major alias (v1)
+            VersionPR->>CLI: callisto version
+            VersionPR->>CLI: callisto compose-pr-body
+            VersionPR->>GH: Create or update managed release PR
+        else Trusted release PR merge
+            Plan->>CLI: callisto release plan --from-release-commit
+            Plan->>Build: Intent + SHA-256 workflow artifact
+            Build->>Build: Build and attest declared binaries
+            Build->>Execute: Intent-bound artifacts
+            Execute->>CLI: callisto release execute
         end
     end
 ```
@@ -394,21 +398,22 @@ sequenceDiagram
 
 | Input | Default | Purpose |
 | :--- | :--- | :--- |
-| `publish` | `""` | Command to execute when publishing packages (`cargo publish`, `pnpm publish`, `moon run :publish`). |
 | `version_command` | `"callisto version"` | Custom versioning command. Append `--refresh-lockfiles` if your workspace has interdependent Cargo/Python packages -- see below. |
 | `commit_message` | `"chore(release): version packages"` | Commit message for the Version Packages PR. |
 | `title` | `"chore(release): version packages"` | Pull Request title. |
 | `pr_label` | `"callisto: release"` | Label automatically attached to the Version Packages PR. |
-| `create_github_release` | `"true"` | Toggle GitHub Release entry creation for calculated tags. |
 | `setup_git_user` | `"true"` | Automatically configure `git config user.name` & `user.email` bot credentials. |
 | `branch` | `"main"` | Base branch for Version PRs. |
+| `release_branch` | `"callisto/version-packages"` | Managed head branch for the Version PR. GitHub-token fallback branches are created automatically when needed. |
+| `github_token` | `""` | Optional token for GitHub PR operations; checkout must use the same token for Git pushes. The built-in token remains the default. |
+| `setup_callisto` | `"true"` | Install the Callisto environment before versioning. |
 | `cwd` | `"."` | Working directory path if workspace root is nested in a subfolder. |
 
 ### Lockfile Staleness (`--refresh-lockfiles`)
 
 `callisto version` bumps manifest versions (`Cargo.toml`, `package.json`, `pyproject.toml`) but
-does not regenerate lockfiles by default. `callisto publish` always runs `cargo publish
---locked`, which fails if `Cargo.lock` is stale relative to the bumped `Cargo.toml` versions --
+does not regenerate lockfiles by default. The durable release executor publishes Cargo packages
+with `cargo publish --locked`, which fails if `Cargo.lock` is stale relative to the bumped `Cargo.toml` versions --
 this can happen when bumping an interdependent Cargo package changes what a workspace member's
 own `Cargo.lock` entry should say.
 
@@ -557,17 +562,9 @@ jobs:
           name: ${{ matrix.target.artifactName }}
           path: ${{ matrix.target.packageDir }}/*.node
 
-  release:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      # Placement of each build job's uploaded artifact into its packageDir,
-      # then callisto publish, both happen automatically inside this step
-      # once nativeMatrix is non-empty and publish is enabled.
-      - uses: ./.github/actions/callisto-action
-        with:
-          publish: true
+  # The durable release workflow consumes these binaries only through its
+  # intent-bound artifact manifest and verified GitHub attestations. Do not
+  # pass registry credentials or a publish command to callisto-action.
 ```
 
 ---
@@ -670,7 +667,6 @@ Callisto is engineered to support polyglot monorepos across **Rust, TypeScript/J
 - **CST Engine**: MSBuild XML CST editor (`xmltree`) for `*.csproj` and `Directory.Build.props`.
 - **Central Package Management (CPM)**: Updating `<PackageVersion Include="..." Version="..." />` in `Directory.Packages.props`.
 - **Lockfile Auto-Staging**: `packages.lock.json`.
-
 
 
 

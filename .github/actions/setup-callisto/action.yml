@@ -33,14 +33,17 @@ runs:
 
     - name: Install or Build Callisto Binary
       shell: bash
-      run: |
+      env:
+        INPUT_CALLISTO_SOURCE: ${{ inputs.source }}
+        INPUT_CALLISTO_VERSION: ${{ inputs.version }}
+      run: | # zizmor: ignore[github-env] the PATH entry is a fixed child of the trusted runner temporary directory, not action input or downloaded archive content.
         # Install into $RUNNER_TEMP so the binary never lands inside the workspace
         # tree (preventing accidental git-staging by downstream steps that run
         # "git add -A").
         CALLISTO_BIN_DIR="${RUNNER_TEMP}/callisto-bin"
         mkdir -p "$CALLISTO_BIN_DIR"
-        TAG_NAME="${{ inputs.version || 'latest' }}"
-        SOURCE="${{ inputs.source }}"
+        TAG_NAME="$INPUT_CALLISTO_VERSION"
+        SOURCE="$INPUT_CALLISTO_SOURCE"
 
         if [[ "$SOURCE" != "auto" && "$SOURCE" != "local" ]]; then
           echo "::error::unsupported setup-callisto source '$SOURCE' (expected auto or local)"

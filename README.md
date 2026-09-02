@@ -194,10 +194,6 @@ jobs:
         with:
           branch: changeset-release/main
           # The durable repository workflow performs publication after merge.
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 ```
 
 ### 3. Bypassing Heavy CI Workflows on Release PRs
