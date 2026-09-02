@@ -1,0 +1,25 @@
+Claude's review of our work:
+
+Everything below is independently verified — I ran the actual build/test/lint suite and read the real code, not just Codex's summary.
+
+The specs (007, and successors 008–013)
+
+Genuinely strong, and a real step up from the earlier round. SPEC-007 got split into six focused successors (decision → intent model → trust → capability → execution → interfaces) after — per its own revision_note — "adversarial review exposed three architectural gaps: generic snapshot fingerprints could contain raw configuration data, registry identity collapsed distinct endpoints, and the validated capability did not retain exact future effect inputs." That's the right kind of self-correction, and every successor spec directly answers one of the concerns from this session's earlier reviews (registry-URL credential stripping, PackageId::matches explicitly forbidden for operation identity, total-outcome receipts instead of "absence of failure = success").
+
+The code — independently verified, not just reported
+
+- cargo clippy --workspace --all-targets -- -D warnings: clean.
+- just fmt-check: clean.
+- just test: 1246/1246 tests pass, 0 skipped, 0 failed — full workspace, at the actual merge commit ab55d678.
+- .github/tests/verify-action-pins.sh: passes — every external action is SHA-pinned, CODEOWNERS covers .github/workflows/ and .github/actions/.
+- Credential-stripping is real, not just claimed: crates/callisto-graph/src/commands/release.rs:1070-1139 rejects userinfo and query/fragment on registry URLs, forbids HTTPS userinfo entirely, and requires SSH remotes use git as the username — exactly matching the intent-model spec's AC-003.
+- PackageId::matches is genuinely never called anywhere in the new release code — only referenced in a doc comment explaining why not.
+- ReleaseWorkspaceLock (callisto-vcs/src/release_lock.rs) is a real OS-backed exclusive advisory lock (fs2), keyed by a SHA-256 digest of the canonical workspace root, living outside the checkout, released on Drop — matches SPEC-010 AC-004 precisely, with a real concurrency test.
+- The GitHub workflow topology is correct and matches the hardest part of SPEC-013 exactly: top-level permissions: {}, seven separate jobs (verify/version-pr/release-candidate/plan/builde), only build gets attestations: write+id-token: write (to create attestations), only execute gets environment: release plus write-scoped contents. There's a dedicated environment-polic  job that queries the GitHub API and specifically fil_reviewers" before execute is allowed to run — this isthe exact subtlety an earlier risk-assessment pass in this session flagged (a non-empty protection_rules array alone isn't          sufficient, since a branch_policy-only environment hgot it right.
+                                                                                                                                    One real process concern
+                                                                                                                                    All seven specs, and the implementation plan itself, a"draft". SPEC-007 explicitly states: "This spec doesnot itself authorize implementation until successor specs have passed review and are accepted." But ~7,600 lines of real production code (CLI, graph, vcs, GitHub workflows) are already c commit messages across the whole implementation rangefor any review/gate/canon step — found nothing. So either the review-and-accept step happened outside what's visible in git history, or the implementation went ahead before the specs' own stwhich is exactly the kind of process shortcut Codex'sown stated pipeline ("if any batch reveals another dependency-layer conflict... halt and route it back through canon/architect; do not 'finish the ticket'") was designed to prevent. Worth aer that gate actually ran, since I can't confirm itfrom what's in the repo — and this is separate from code quality, which is genuinely high based on everything I could independently
+verify.
+
+Bottom line
+
+This is careful, well-verified engineering — the stronhis whole release-trust track. The one open item isprocedural, not technical: confirm the specs actually passed review before being implemented against, and consider flipping their status to "accepted" now that the code backing them ex
