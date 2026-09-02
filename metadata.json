@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.10.4-nightly.202609020630.ee6d53f3d",
+  "checkpoint_id": "01M1J4TC2SE1P6JTFX8Y1Q67N3",
+  "strategy": "manual-commit",
+  "branch": "fix/durable-release-pr-workflow",
+  "checkpoints_count": 9,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 49494,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 1859584,
+    "output_tokens": 2660,
+    "api_call_count": 21
+  }
+}
