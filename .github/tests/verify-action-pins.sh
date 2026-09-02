@@ -13,11 +13,20 @@ while IFS= read -r line; do
     printf 'mutable or malformed external action reference: %s\n' "$line" >&2
     status=1
   fi
-done < <(rg --no-heading --glob '*.yml' --glob '*.yaml' '^\s*uses:\s*' .github)
+done < <(
+  # This verifier runs in the release job, whose minimal toolchain does not
+  # promise ripgrep. Traverse only tracked workflow/action YAML with Git and
+  # use the ubiquitous grep implementation provided by the runner image.
+  git ls-files -- .github | while IFS= read -r file; do
+    if [[ "$file" == *.yml || "$file" == *.yaml ]]; then
+      grep -E '^[[:space:]]*uses:[[:space:]]*' "$file"
+    fi
+  done
+)
 codeowners=.github/CODEOWNERS
 if [[ ! -f "$codeowners" ]] \
-  || ! rg -q '^/\.github/workflows/\s+@[^[:space:]]+$' "$codeowners" \
-  || ! rg -q '^/\.github/actions/\s+@[^[:space:]]+$' "$codeowners"; then
+  || ! grep -Eq '^/\.github/workflows/[[:space:]]+@[^[:space:]]+$' "$codeowners" \
+  || ! grep -Eq '^/\.github/actions/[[:space:]]+@[^[:space:]]+$' "$codeowners"; then
   printf 'CODEOWNERS must cover .github/workflows/ and .github/actions/ with a real owner\n' >&2
   status=1
 fi
