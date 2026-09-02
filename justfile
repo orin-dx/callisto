@@ -10,10 +10,29 @@ build:
 build-release:
     cargo build --release -p callisto-cli
 
-# Run unit, integration, doctests, and E2E tests
+# Run unit, integration, doctests, and E2E tests. This intentionally uses the
+# same Nextest command as CI: a runner/configuration failure must never be
+# mistaken for a passing Moon fallback.
 test:
-    cargo nextest run --workspace || moon run :test
-    cargo test --doc
+    cargo nextest run --workspace --all-features
+    cargo test --doc --all-features
+
+# Explicit compatibility path for contributors who do not have cargo-nextest
+# installed. It is never used by CI or pre-merge verification.
+test-moon:
+    moon run :test
+    cargo test --doc --all-features
+
+# Exercise the Release-PR action's real shell block with Git and GitHub API
+# boundaries faked. This keeps its state-transition contract executable.
+test-release-action:
+    bash .github/actions/callisto-action/tests/test_release_pr_contract.sh
+
+# CI variant of `test`: emits Nextest's JUnit report under target/nextest/ci
+# for the trusted PR reporter. Keep the everyday local command artifact-free.
+test-ci:
+    cargo nextest run --workspace --all-features --profile ci
+    cargo test --doc --all-features
 
 # Run Clippy lints (warnings treated as errors) as a single workspace invocation.
 # Moon's per-project `cargo clippy -p $project` tasks all lock the same shared
@@ -92,18 +111,22 @@ wasm-check:
 # document its own exclusion this way.
 #
 # Optional `threshold`: when set, fails if total line coverage drops below
-# it (--fail-under-lines). Unset locally (informational only, matching
-# ARCHITECTURE.md's "coverage generation is a CI-only gate" note); CI calls
-# `just coverage 90` -- this is the one command both run, so a CI coverage
-# failure always reproduces locally with the exact same invocation.
+# it (--fail-under-lines). The human-readable summary is always emitted
+# before enforcing the threshold: LCOV output itself contains no aggregate
+# percentage, and a failed CI gate must say what developers need to improve.
+# Unset locally (informational only, matching ARCHITECTURE.md's "coverage
+# generation is a CI-only gate" note); CI calls `just coverage 90` -- this is
+# the one command both run, so a CI coverage failure always reproduces locally
+# with the exact same invocation.
 coverage threshold="":
     #!/usr/bin/env bash
     set -euo pipefail
     args=(--all-features --lcov --output-path lcov.info --ignore-filename-regex '_pdk\.rs$')
-    if [[ -n "{{threshold}}" ]]; then
-      args+=(--fail-under-lines "{{threshold}}")
-    fi
     cargo llvm-cov "${args[@]}"
+    cargo llvm-cov report --summary-only --ignore-filename-regex '_pdk\.rs$'
+    if [[ -n "{{threshold}}" ]]; then
+      cargo llvm-cov report --summary-only --ignore-filename-regex '_pdk\.rs$' --fail-under-lines "{{threshold}}"
+    fi
 
 # Check per-crate line coverage against a threshold (default 90%). The
 # workspace-total --fail-under-lines gate can pass while a small crate is

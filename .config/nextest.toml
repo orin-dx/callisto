@@ -1,6 +1,16 @@
 [test-groups]
 moon-sandbox = { max-threads = 1 }
 
+# CI emits a portable, machine-readable report in addition to Nextest's
+# terminal output. The trusted reporting workflow consumes this artifact to
+# produce a sticky PR summary without executing or checking out PR code.
+[profile.ci.junit]
+path = "junit.xml"
+report-name = "callisto-nextest"
+store-success-output = false
+store-failure-output = true
+flaky-fail-status = "failure"
+
 [[profile.default.overrides]]
 # `binary()` matches on the integration-test binary name, not the test
 # function name. `test(moon_wasm_sandbox)` matches nothing because individual

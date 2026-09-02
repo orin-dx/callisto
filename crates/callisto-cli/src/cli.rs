@@ -69,6 +69,9 @@ pub enum Command {
     /// Filter a publish plan down to what a publish report confirms
     /// actually succeeded, dropping anything that failed.
     FilterPlan(FilterPlanArgs),
+    /// Create, inspect, reconcile, or execute durable release intents.
+    #[command(subcommand)]
+    Release(ReleaseArgs),
     /// Generate shell completion scripts.
     Completions(CompletionsArgs),
     /// Print the JSON schema for a report type.
@@ -243,6 +246,76 @@ pub struct FilterPlanArgs {
     pub report: String,
 }
 
+/// Durable release subcommands.
+#[derive(Subcommand, Clone, Debug)]
+pub enum ReleaseArgs {
+    /// Create a read-only durable release intent from exact package selections.
+    Plan(ReleasePlanArgs),
+    /// Display a durable intent, manifest, state, or receipt without recomputing it.
+    Inspect(ReleaseInspectArgs),
+    /// Report which pending operations are eligible without changing release state.
+    Reconcile(ReleaseReconcileArgs),
+    /// Execute a previously approved intent. This is the only durable mutation route.
+    Execute(ReleaseExecuteArgs),
+}
+
+#[derive(Args, Clone, Debug)]
+pub struct ReleasePlanArgs {
+    /// Exact qualified package identity, for example `cargo/callisto-cli`. Repeat this flag to select multiple packages. This local/manual mode cannot be combined with --from-release-commit.
+    #[arg(
+        long = "package",
+        value_name = "ECOSYSTEM/NAME",
+        conflicts_with = "from_release_commit",
+        required_unless_present = "from_release_commit"
+    )]
+    pub packages: Vec<String>,
+    /// Exact merged release-PR commit checked out in this workspace. CI derives the roster from its versioned manifest delta and never reruns changeset planning.
+    #[arg(
+        long,
+        value_name = "SHA",
+        conflicts_with = "packages",
+        required_unless_present = "packages"
+    )]
+    pub from_release_commit: Option<String>,
+    /// Explicit path where the immutable intent JSON will be atomically written.
+    #[arg(long, value_name = "FILE")]
+    pub out: PathBuf,
+}
+
+#[derive(Args, Clone, Debug)]
+pub struct ReleaseInspectArgs {
+    /// Explicit path to an intent, artifact manifest, state, or receipt JSON document.
+    #[arg(long, value_name = "FILE")]
+    pub input: PathBuf,
+}
+
+#[derive(Args, Clone, Debug)]
+pub struct ReleaseReconcileArgs {
+    /// Explicit path to the durable release intent JSON document.
+    #[arg(long, value_name = "FILE")]
+    pub intent: PathBuf,
+    /// Explicit state path. If omitted, reconciliation reports the initialized state.
+    #[arg(long, value_name = "FILE")]
+    pub state: Option<PathBuf>,
+}
+
+#[derive(Args, Clone, Debug)]
+pub struct ReleaseExecuteArgs {
+    /// Explicit path to the durable release intent JSON document.
+    #[arg(long, value_name = "FILE")]
+    pub intent: PathBuf,
+    /// Explicit artifact manifest path required when the intent declares binary slots.
+    #[arg(long, value_name = "FILE")]
+    pub artifact_manifest: Option<PathBuf>,
+    /// Directory containing the exact regular artifact files named by the manifest.
+    /// Required with --artifact-manifest; it is never inferred from the checkout.
+    #[arg(long, value_name = "DIR", requires = "artifact_manifest")]
+    pub artifact_dir: Option<PathBuf>,
+    /// Explicit durable state path. If omitted, state is stored outside the checkout.
+    #[arg(long, value_name = "FILE")]
+    pub state: Option<PathBuf>,
+}
+
 /// Arguments for the `completions` command.
 #[derive(Args, Clone, Debug)]
 pub struct CompletionsArgs {
@@ -294,6 +367,35 @@ mod tests {
             help.len() > 20,
             "--strict help text is too short to be meaningful: {help:?}"
         );
+    }
+
+    #[test]
+    fn release_plan_requires_exactly_one_authority_mode() {
+        use clap::Parser;
+
+        assert!(Cli::try_parse_from(["callisto", "release", "plan", "--out", "intent.json"]).is_err());
+        assert!(Cli::try_parse_from([
+            "callisto",
+            "release",
+            "plan",
+            "--package",
+            "cargo/demo",
+            "--from-release-commit",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "--out",
+            "intent.json",
+        ])
+        .is_err());
+        assert!(Cli::try_parse_from([
+            "callisto",
+            "release",
+            "plan",
+            "--from-release-commit",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "--out",
+            "intent.json",
+        ])
+        .is_ok());
     }
 
     /// AC-006/AC-007 (parse slice): `callisto matrix --package foo` parses

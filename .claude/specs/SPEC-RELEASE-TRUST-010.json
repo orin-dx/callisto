@@ -1,0 +1,61 @@
+{
+  "id": "SPEC-RELEASE-TRUST-010",
+  "status": "draft",
+  "owner_track": "release-security",
+  "last_verified_revision": "289001ec",
+  "depends_on": [
+    "SPEC-RELEASE-DECISION-008",
+    "SPEC-RELEASE-INTENT-MODEL-009"
+  ],
+  "purpose": "Define the Git-only source-trust and workspace-exclusion contract used by version-1 durable releases. It turns the approved source commit into freshly observed, non-durable trust evidence and prevents two Callisto release processes from validating or effecting the same workspace concurrently.",
+  "scope": "Fresh Git observation, canonical workspace-root binding, clean detached-HEAD policy, local release locking, and re-observation rules. This does not define release policy, durable intent fields, graph preparation, provider effects, or a non-Git release mode.",
+  "non_goals": [
+    "Supporting branch, symbolic-HEAD, dirty-worktree, non-Git, HermeticContent, or SHA-256 Git-object-format execution in version 1.",
+    "Using a Git SHA as evidence of human authorship, signature verification, or forge authorization.",
+    "Persisting a workspace path, lock handle, raw git output, remote URL, or arbitrary Git diagnostic in a durable intent, state, receipt, or artifact manifest.",
+    "Making an advisory local lock substitute for re-observing Git state before effects."
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "AC-001",
+      "criterion": "Version-1 authorization starts from a caller-supplied workspace root, canonicalizes that root, discovers the Git repository containing it, and rejects a root that does not resolve to that repository's worktree root. The observed identity is the exact full CommitSha at HEAD; it is never supplied by a CLI flag, inferred from a branch name, or obtained from a remote ref. The private trust evidence binds the canonical root and observed commit together.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-002",
+      "criterion": "Version 1 accepts only a SHA-1 Git repository and a detached HEAD at the exact 40-hex GitCommit SourceIdentity in the received ReleaseIntentV1. It rejects SHA-256 Git-object-format repositories, a symbolic HEAD even when it currently resolves to the same commit, an absent/unresolvable HEAD, a non-canonical or non-equal commit, and a shallow/incomplete checkout when the required commit or tag inspection cannot be performed. Equality uses CommitSha values, never prefix or raw-string comparison.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-003",
+      "criterion": "Authorization requires a clean worktree before the capability is issued. 'Clean' means Git reports no staged, unstaged, unmerged, or untracked file under the repository worktree. An ignored file is clean only when its safe relative path matches Callisto's fixed, versioned harmless-artifact allowlist; arbitrary repository .gitignore rules never grant release-trust authority. A path outside the canonical root, an allowlist mismatch, an error while determining status, or an ambiguous repository layout fails closed. Diagnostics identify the policy condition and safe relative paths where available, but do not retain raw command output in durable data.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-004",
+      "criterion": "A ReleaseWorkspaceLock is acquired after root/repository discovery and held from the final successful authorization observation until the validated capability is dropped after state/receipt persistence. Its lock identity is derived from the canonical workspace root using a stable collision-resistant digest and its lock file is outside the checkout in the platform application-state area (or a caller-selected operational directory). It is an exclusive OS-backed advisory lock, releases on process exit/crash, and reports contention with a stable structured error. The lock path and handle are private operational data, not serializable release data.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-005",
+      "criterion": "The release executor re-observes the same canonical root, detached HEAD, clean-worktree status, and exact approved commit while holding ReleaseWorkspaceLock immediately before every remote or VCS effect. A change after authorization blocks the next effect; the lock only coordinates cooperating Callisto processes and never makes external writers safe by assumption.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-006",
+      "criterion": "The trust API is a read-only callisto-vcs surface returning closed, typed GitCommitTrustEvidence and ReleaseWorkspaceLock values. It does not depend on callisto-graph, callisto-cli, forge SDKs, or registry clients. Its errors derive miette::Diagnostic with stable codes and remediation, and its durable-facing output contains only validated typed identities rather than shell text.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-007",
+      "criterion": "Tests cover non-Git roots, nested/non-root invocation, symbolic HEAD, dirty tracked and untracked worktrees, commit mismatch, lock contention, lock release after drop, and a mutation between authorization and an effect-time recheck. Tests assert that each failure occurs before an effect adapter is invoked.",
+      "is_error_case": true
+    }
+  ],
+  "implementation_notes": [
+    "GitAccess/ShellGit should expose structured observation rather than making graph parse porcelain or command text. The existing CommitSha type is the equality boundary.",
+    "Use a maintained cross-platform file-lock crate only if it provides process-lifetime exclusive locking with explicit acquisition errors. Keep the dependency in callisto-vcs or a lower permitted layer; do not introduce Tokio or Rayon for this ordered, lock-held path.",
+    "A future closed-root byte observer may add HermeticContent under a separate schema/profile version. It must not weaken the GitCommit behavior specified here."
+  ],
+  "reasoning": "A Git commit only becomes a release trust boundary when the executor proves it is operating at the approved checkout and prevents its own concurrent release processes from racing. A local lock improves coordination; mandatory fresh observation preserves correctness when another tool changes the workspace."
+}

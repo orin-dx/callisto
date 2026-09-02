@@ -1,0 +1,76 @@
+{
+  "id": "SPEC-RELEASE-INTENT-MODEL-009",
+  "status": "draft",
+  "owner_track": "release-security",
+  "depends_on": ["SPEC-RELEASE-EXECUTION-FOUNDATION-007", "SPEC-RELEASE-DECISION-008"],
+  "purpose": "Define the typed, serializable, credential-free ReleaseIntentV1 that preserves an approved ReleaseDecisionV1 across process and CI boundaries. In CI, graph derives that decision from the immutable merged Callisto release-PR delta rather than a separately managed decision file. The intent is a semantic contract, not a serialized PublishPlan or a bag of generic fingerprints.",
+  "scope": "Layer-1 durable identity and digest types; typed semantic snapshot projections; registry/tag/forge binding identities; exact operation DAG; artifact-slot declarations; canonical encoding and fail-closed validation. Fresh graph observation, workspace locking, private prepared inputs, state/receipts, provider observation/effects, and CLI/action cutover are intentionally separate successor work.",
+  "non_goals": [
+    "Placing package discovery, config resolution, URL parsing, workspace access, group solving, or graph validation in callisto-model.",
+    "Persisting raw registry endpoints, URL userinfo, query strings, fragments, credentials, HTTP headers, raw configuration bytes, command lines, provider stderr, arbitrary errors, local filesystem paths, or Debug-rendered values in an intent or its digest inputs.",
+    "Making ReleaseIntentV1 by itself a capability to publish, tag, push, create a forge release, or reuse a stale prepared input.",
+    "Using PublishPlan, PublishReport, PLAN_JSON, a cache entry, or an artifact filename as an operation identity or authorization substitute."
+  ],
+  "data_model": {
+    "intent": "ReleaseIntentV1 is a versioned, serde-deny-unknown-fields record containing IntentDigest, DecisionDigest, source identity, typed semantic snapshot, exact operations, declared artifact slots, and schema/digest scheme versions. It is public/auditable and credential-free.",
+    "semantic_snapshot": "ReleaseInputSnapshotV1 is a closed typed projection of facts that affect authorization: qualified package/version/manifest-role facts, effective release-policy facts, relevant dependency-edge facts, typed remote binding identities, source policy facts, and tag/forge policy facts. It must not expose a generic kind:String plus arbitrary fingerprint:String escape hatch.",
+    "remote_binding": "RegistryBindingId is a durable identity consisting of a logical registry key and BindingDigest. The graph derives BindingDigest from a validated canonical endpoint binding only after rejecting userinfo, query, fragment, and other credential-bearing forms; the raw endpoint remains graph-private. Distinct normalized endpoint bindings must yield distinct binding identities even where their logical registry key and package/version match. TagBindingId and ForgeBindingId similarly bind their exact tag, target commit, and policy digest rather than a generic display name.",
+    "operation": "ReleaseOperationId is exact and role-specific. A registry operation binds qualified package identity, target version, and RegistryBindingId; tag and forge operations bind TagBindingId or ForgeBindingId; an artifact upload binds one declared ArtifactSlotId. It never delegates equality to PackageId::matches or another human-facing wildcard matcher. A forge creation depends on its tag; each artifact upload depends on its forge creation and its own verified slot.",
+    "dag": "Every operation has an explicit, duplicate-free prerequisite set of ReleaseOperationId values. The intent stores the canonical stable topological order and rejects cycles, missing prerequisites, self-prerequisites, duplicate operation IDs, and an order inconsistent with prerequisites.",
+    "artifact_slot": "ArtifactSlotV1 has a canonical ArtifactSlotId and declares an expected binary artifact role, package/version association where applicable, platform/target identity, intended forge asset name, and a GitHub attestation policy: repository and immutable signer-workflow identity. It does not contain bytes, a path, a token, or an attestation bundle. A later ArtifactManifestV1 binds actual bytes and SHA-256 to this slot, the IntentDigest, and the source commit; the executor separately verifies the GitHub attestation against those bytes and policy. Source registry publishing is a separate operation and never falsely consumes a binary slot.",
+    "intent_digest": "IntentDigest is SHA-256 of a versioned, length-prefixed canonical transcript of all authority-bearing typed intent fields. The encoding has explicit field ordering, semantic collection ordering, and length delimiters; it does not depend on JSON object order, skipped serde fields, TOML formatting, raw input-file bytes, platform paths, locale, wall-clock time, or Rust Debug/Ord implementation accidents."
+  },
+  "acceptance_criteria": [
+    {
+      "id": "AC-001",
+      "criterion": "ReleaseIntentV1 can be constructed only from a ReleaseDecisionV1 plus explicitly typed semantic observations supplied by the graph layer. For CI, graph obtains that decision from a verified merged release-PR delta; for local use it obtains it from explicit selection. It records the exact DecisionDigest and rejects a malformed/unknown schema or an intent whose decision-derived roster, target versions, or declared operations cannot be internally reconciled. Constructing an intent from PublishPlan, a free-form JSON/TOML fingerprint, or a separately supplied decision file does not satisfy this criterion.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-002",
+      "criterion": "The durable snapshot uses closed typed projections for every authority-bearing input. Formatting-only changes to configuration do not change its identity, while a semantic release-policy, package/version, dependency, registry-binding, tag-policy, forge-policy, or source-policy change does. No snapshot field may be `kind: String` paired with a generic digest/fingerprint whose input set is undocumented or can include raw bytes.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-003",
+      "criterion": "RegistryBindingId separates remote targets safely. Graph code rejects a configured endpoint containing userinfo, query, or fragment before constructing a binding. The durable model receives only logical registry identity plus BindingDigest and cannot reconstruct an endpoint. Tests prove that two distinct normalized endpoint bindings for the same logical registry, package, and version produce distinct registry operation identities, while equivalent accepted endpoint spellings produce the same binding identity.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-004",
+      "criterion": "Intent operation identity is exact and ecosystem-qualified. Two packages with the same bare name but different ecosystems cannot collide; the model rejects duplicate IDs rather than silently coalescing operations. Release-operation comparisons do not call PackageId::matches, whose documented wildcard behavior is reserved for human-facing lookup.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-005",
+      "criterion": "The operation DAG is complete and deterministic. All prerequisites refer to operations in the same intent, each operation has one deterministic position in a stable Kahn topological order, and every prerequisite precedes its dependent. The model rejects cycles and invalid references before any future executor can act. Tie-breaking is specified by exact operation identity's canonical ordering, not enum declaration order or hash iteration.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-006",
+      "criterion": "Intent serialization is schema-versioned and strict: unknown fields, unsupported schema/digest scheme versions, malformed digest strings, invalid qualified identities, duplicate collection keys, or an IntentDigest that does not exactly match the recomputed canonical transcript are hard validation failures before any downstream authorization. Omitted/default serialization forms have one defined canonical meaning; no field may obtain a value from process environment or current time while validating intent bytes.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-007",
+      "criterion": "Intent and artifact-slot persistence is structurally secret-safe. A private durable-schema inventory maps every serializable field in ReleaseIntentV1 and its nested serializable records exactly once to Decision, TypedWorkspaceObservation, SourceTrustPolicy, StaticSchema, or ComputedCanonicalValue. A two-way coverage test fails both for a serialized field missing from the inventory and for an inventory entry that is no longer serialized. No source variant denotes environment, credential, raw endpoint, raw file bytes, or provider response.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-008",
+      "criterion": "callisto-model remains a Layer-1, provider-neutral crate. It may own typed values, parsing/validation, canonical transcript construction, SHA-256, serde, schemars, and miette-compatible error types, but it must not depend on callisto-graph, callisto-vcs, a forge SDK, URL/network clients, or a registry client. Endpoint parsing and prepared remote inputs remain above the model boundary.",
+      "is_error_case": true
+    }
+  ],
+  "verification": [
+    "Golden and permutation tests cover stable canonical intent bytes/digests for reordered input vectors/maps, then mutate one semantic field at a time and assert a digest change.",
+    "Negative tests cover raw/unknown fields, duplicate exact operation IDs, same bare name across ecosystems, invalid or cyclic DAGs, a stale/mismatched digest, malformed binding digest, unsafe endpoint forms at the graph-to-model boundary, and registry-binding collision attempts.",
+    "Schema/provenance tests assert two-way coverage of all serialized durable fields and confirm endpoint/configuration secrets cannot enter an intent through an untyped extension field."
+  ],
+  "implementation_notes": [
+    "Retain the existing versioned length-prefixed transcript approach rather than introduce JSON canonicalization unless independent cross-language digest recomputation becomes an explicit requirement. The format must be documented and test-vector-backed.",
+    "Use BTree collections or defined sorted vectors for durable ordering. If existing enum Ord conflicts with its canonical serialized identity, implement a dedicated canonical sort key; do not rely on declaration order.",
+    "Use miette for transient diagnostics and closed safe data structures for persistence. Do not persist miette reports or arbitrary provider errors.",
+    "The successor graph-capability spec will construct an opaque non-Serialize/non-Clone ValidatedReleaseIntent from this durable intent, freshly re-observed workspace state, Git evidence, a workspace lock, and operation-specific private prepared inputs."
+  ]
+}

@@ -1,10 +1,6 @@
 use std::process::ExitCode;
 
-use callisto_graph::commands::{
-    plan_publish, AlwaysRetryPolicy, PublishOptions, PublishOrchestrator, SubprocessRegistryClient, SystemTimeProvider,
-};
-
-use callisto_model::ApplyPermit;
+use callisto_graph::commands::{plan_publish, PublishOptions};
 
 use crate::cli::{GlobalArgs, OutputFormat, PublishArgs};
 use crate::error::CliError;
@@ -48,6 +44,7 @@ pub(crate) fn write_dry_run_text<W: std::io::Write>(
 /// Soft pre-flight check only -- doesn't fail hard. Missing credentials
 /// may still let publish succeed via an alternative auth mechanism (a
 /// pre-configured `.npmrc` or `~/.cargo/credentials`).
+#[cfg(test)]
 fn check_credentials(
     plan: &callisto_model::PublishPlan,
     env: impl Fn(&str) -> Result<String, std::env::VarError>,
@@ -82,56 +79,26 @@ fn check_credentials(
     warnings
 }
 
-/// Publishes every package in the workspace's publish plan to its ecosystem
-/// registry (crates.io, npm, PyPI) by shelling out to that ecosystem's own
-/// publisher CLI (`cargo publish`, `npm publish`, `twine upload`) — never by
-/// talking to a registry's HTTP API directly.
+/// Compatibility preview for the retired mutable publish route.
 ///
-/// Respects the global `--dry-run` flag: when set, this only computes and
-/// prints the plan that WOULD be published (the same plan `plan-publish`
-/// reports) and returns without constructing a [`PublishOrchestrator`] or
-/// running any publisher command.
+/// This command intentionally never obtains an [`ApplyPermit`] or constructs
+/// a registry client. Production publication moves to `release execute` once
+/// its exact provider adapters are available.
 pub fn handle(args: PublishArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
     let runner = CliCommandRunner;
     let ws = load_workspace(global, &runner)?;
 
-    let skip_publish_precheck = args.skip_publish_precheck;
+    let _skip_publish_precheck = args.skip_publish_precheck;
     let opts = PublishOptions { only: args.only };
     let plan = plan_publish(&ws, &opts)?;
 
-    let Some(permit) = ApplyPermit::granted_unless_dry_run(global.dry_run) else {
-        match global.format {
-            OutputFormat::Json => write_report_json(&mut std::io::stdout(), &plan)?,
-            OutputFormat::Text => write_dry_run_text(&plan, &mut std::io::stdout())?,
-        }
-        return Ok(ExitCode::SUCCESS);
-    };
-
-    // Pre-flight credential check — warns before any packages are published so
-    // the operator can identify missing auth tokens early.
-    for warning in check_credentials(&plan, |s| std::env::var(s)) {
-        eprintln!("{warning}");
-    }
-
-    let mut client = SubprocessRegistryClient::new(CliCommandRunner, ws.root.clone());
-    client.load_plan(&plan);
-    let format = global.format;
-    let orchestrator = PublishOrchestrator::new(client, AlwaysRetryPolicy, SystemTimeProvider)
-        .with_progress(move |msg| {
-            crate::output::log_line(format, &msg);
-        })
-        .with_skip_precheck(skip_publish_precheck);
-    let report = orchestrator.execute(&plan, &permit);
-
     match global.format {
-        OutputFormat::Json => write_report_json(&mut std::io::stdout(), &report)?,
-        OutputFormat::Text => render::render_publish_report(&report, &mut std::io::stdout())?,
+        OutputFormat::Json => write_report_json(&mut std::io::stdout(), &plan)?,
+        OutputFormat::Text => {
+            write_dry_run_text(&plan, &mut std::io::stdout())?;
+            eprintln!("`callisto publish` is a compatibility preview; use `callisto release plan` and `callisto release execute` for durable releases.");
+        }
     }
-
-    if report.has_failures() {
-        return Ok(ExitCode::FAILURE);
-    }
-
     Ok(ExitCode::SUCCESS)
 }
 

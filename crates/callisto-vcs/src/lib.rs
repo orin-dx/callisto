@@ -4,6 +4,7 @@ use callisto_model::{ApplyPermit, CommandError, CommitRecord, CommitSha, CommitW
 use thiserror::Error;
 
 pub mod access;
+pub mod release_lock;
 pub mod shell;
 
 pub use access::GitAccess;

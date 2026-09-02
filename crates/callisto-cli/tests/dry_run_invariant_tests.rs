@@ -353,8 +353,8 @@ fn tag_dry_run_text_output_does_not_say_created_tags() {
         "tag --dry-run text output must not say 'Created Tags:', got: {text:?}"
     );
     assert!(
-        text.contains("Would create tags:"),
-        "tag --dry-run text output should say 'Would create tags:', got: {text:?}"
+        text.contains("Tag preview only; no Git tags were created."),
+        "tag --dry-run must remain a compatibility preview, got: {text:?}"
     );
 }
 

@@ -1,300 +1,128 @@
-name: 'Callisto Release Action'
-description: 'Automated changesets release manager: creates version PRs or publishes packages'
+name: 'Callisto Release-PR Action'
+description: 'Creates or updates a Callisto release PR; durable execution belongs to the repository workflow'
 inputs:
-  publish:
-    description: 'Command to run when publishing packages (e.g. "moon run :publish", "cargo publish", or "pnpm publish")'
-    required: false
   version_command:
-    description: 'Custom version command to run (defaults to "callisto version")'
+    description: 'Version command; defaults to callisto version'
     required: false
     default: 'callisto version'
   commit_message:
-    description: 'Commit message for the Version PR'
+    description: 'Release-PR commit message'
     required: false
     default: 'chore(release): version packages'
   title:
-    description: 'Title for the Version PR'
+    description: 'Release-PR title'
     required: false
     default: 'chore(release): version packages'
   pr_label:
-    description: 'Label to attach to the Version Packages Pull Request'
+    description: 'Release-PR label'
     required: false
     default: 'callisto: release'
-  create_github_release:
-    description: 'Whether to create GitHub Release entries for calculated tags'
-    required: false
-    default: 'true'
   setup_git_user:
-    description: 'Whether to automatically configure git user.name and user.email'
+    description: 'Configure github-actions[bot] before committing'
     required: false
     default: 'true'
   branch:
-    description: 'Base branch for Version PRs'
+    description: 'Base branch for the release PR'
     required: false
     default: 'main'
+  release_branch:
+    description: 'Branch managed for the release PR'
+    required: false
+    default: 'callisto/version-packages'
+  setup_callisto:
+    description: 'Install the Callisto environment before running'
+    required: false
+    default: 'true'
   cwd:
-    description: 'Working directory path if workspace is in a subfolder'
+    description: 'Workspace directory'
     required: false
     default: '.'
-
 outputs:
   hasChangesets:
     description: 'Whether pending changesets were found'
-    value: ${{ steps.callisto-orchestrate.outputs.hasChangesets }}
+    value: ${{ steps.version-pr.outputs.hasChangesets }}
   published:
-    description: 'Whether packages were published'
-    value: ${{ steps.callisto-orchestrate.outputs.published }}
+    description: 'Always false: this action never publishes'
+    value: 'false'
   publishedPackages:
-    description: 'JSON list of published packages'
-    value: ${{ steps.callisto-orchestrate.outputs.publishedPackages }}
+    description: 'Always an empty JSON array'
+    value: '[]'
   nativeMatrix:
-    description: 'JSON array of native platform build targets discovered from manifests (callisto matrix output). Empty array when no native packages are present or callisto matrix is not yet available.'
-    value: ${{ steps.callisto-orchestrate.outputs.nativeMatrix }}
-
+    description: 'Native build matrix preview'
+    value: ${{ steps.version-pr.outputs.nativeMatrix }}
 runs:
-  using: 'composite'
+  using: composite
   steps:
     - name: Setup Callisto Environment
+      if: inputs.setup_callisto == 'true'
       uses: ./.github/actions/setup-callisto
-
-    - name: Orchestrate Version PR or Publish
-      id: callisto-orchestrate
+    - name: Create or update release PR
+      id: version-pr
       shell: bash
       env:
-        INPUT_PUBLISH: ${{ inputs.publish }}
         INPUT_VERSION_COMMAND: ${{ inputs.version_command }}
         INPUT_COMMIT_MESSAGE: ${{ inputs.commit_message }}
         INPUT_TITLE: ${{ inputs.title }}
         INPUT_PR_LABEL: ${{ inputs.pr_label }}
-        INPUT_CREATE_GITHUB_RELEASE: ${{ inputs.create_github_release }}
         INPUT_SETUP_GIT_USER: ${{ inputs.setup_git_user }}
         INPUT_BRANCH: ${{ inputs.branch }}
+        INPUT_RELEASE_BRANCH: ${{ inputs.release_branch }}
         INPUT_CWD: ${{ inputs.cwd }}
-        GH_TOKEN: ${{ env.GITHUB_TOKEN }}
-        NPM_TOKEN: ${{ env.NPM_TOKEN }}
-        CARGO_REGISTRY_TOKEN: ${{ env.CARGO_REGISTRY_TOKEN }}
-        TWINE_PASSWORD: ${{ env.TWINE_PASSWORD }}
-        FORCE_COLOR: "1"
-        CLICOLOR_FORCE: "1"
+        # GitHub exposes the installation token as a context, not a guaranteed
+        # inherited environment variable. Using the context also works for the
+        # repository workflow that invokes this action after checkout.
+        GH_TOKEN: ${{ github.token }}
       run: |
-        set -e
-        if [[ "$INPUT_CWD" != "." ]]; then
-          cd "$INPUT_CWD"
-        fi
-
-        echo "::group::1. Inspecting Workspace Status"
+        set -euo pipefail
+        cd "$INPUT_CWD"
         set +e
         callisto status --check
-        STATUS_EXIT=$?
+        status=$?
         set -e
-        if [[ $STATUS_EXIT -eq 1 ]]; then
-          HAS_CHANGESETS=true
-        elif [[ $STATUS_EXIT -eq 2 ]]; then
-          HAS_CHANGESETS=false
+        case "$status" in
+          1) echo 'hasChangesets=true' >> "$GITHUB_OUTPUT" ;;
+          2)
+            echo 'hasChangesets=false' >> "$GITHUB_OUTPUT"
+            matrix=$(callisto matrix --format json | jq -c '[.platformTargets[].targets[]] | unique_by(.artifactName)')
+            echo "nativeMatrix=$matrix" >> "$GITHUB_OUTPUT"
+            echo '::notice::No changesets. This action does not publish, tag, download artifacts, or create releases; use the durable repository workflow.'
+            exit 0
+            ;;
+          *) echo "::error::callisto status --check exited $status"; exit 1 ;;
+        esac
+        # A managed branch must have at most one open PR to its configured
+        # base. Selecting the first result would make an ambiguous repository
+        # state silently mutate the wrong PR.
+        prs=$(gh pr list --state open --head "$INPUT_RELEASE_BRANCH" --base "$INPUT_BRANCH" --json number,body)
+        pr_count=$(jq 'length' <<< "$prs")
+        case "$pr_count" in
+          0) existing='' ;;
+          1) existing=$(jq -r '.[0].body // empty' <<< "$prs") ;;
+          *) echo "::error::found $pr_count open release PRs for $INPUT_RELEASE_BRANCH -> $INPUT_BRANCH"; exit 1 ;;
+        esac
+        if [[ -n "$existing" ]]; then
+          body=$(printf '%s' "$existing" | callisto compose-pr-body --existing-body - --label "$INPUT_PR_LABEL" --branch "$INPUT_BRANCH" --format text)
         else
-          echo "::error::callisto status --check exited with unexpected code $STATUS_EXIT (expected 1 for pending changesets or 2 for none pending)"
-          exit 1
+          body=$(callisto compose-pr-body --label "$INPUT_PR_LABEL" --branch "$INPUT_BRANCH" --format text)
         fi
-        echo "::endgroup::"
-
-        if [[ "$HAS_CHANGESETS" == "true" ]]; then
-          echo "hasChangesets=true" >> $GITHUB_OUTPUT
-          echo "published=false" >> $GITHUB_OUTPUT
-
-          EXISTING_PR_BODY=$(gh pr list --head callisto/version-packages --json body --jq '.[0].body // empty' 2>/dev/null || true)
-
-          echo "::group::2. Composing Version PR Body"
-          if [[ -n "$EXISTING_PR_BODY" ]]; then
-            PR_BODY=$(echo "$EXISTING_PR_BODY" | callisto compose-pr-body --existing-body - --label "$INPUT_PR_LABEL" --branch "$INPUT_BRANCH" --format text)
-          else
-            PR_BODY=$(callisto compose-pr-body --label "$INPUT_PR_LABEL" --branch "$INPUT_BRANCH" --format text)
-          fi
-          echo "$PR_BODY"
-          echo "::endgroup::"
-
-          echo "::group::3. Bumping Package Versions ($INPUT_VERSION_COMMAND)"
-          read -ra _version_cmd <<< "$INPUT_VERSION_COMMAND"
-          "${_version_cmd[@]}"
-          echo "::endgroup::"
-
-          echo "::group::4. Creating / Updating Version Packages Pull Request"
-          if [[ -n $(git status --porcelain) ]]; then
-            if [[ "$INPUT_SETUP_GIT_USER" == "true" ]]; then
-              git config user.name "github-actions[bot]"
-              git config user.email "github-actions[bot]@users.noreply.github.com"
-            fi
-
-            git checkout -B callisto/version-packages
-            git add -A
-            git commit -m "$INPUT_COMMIT_MESSAGE"
-            git push origin callisto/version-packages --force
-
-            if [[ -n "$INPUT_PR_LABEL" ]]; then
-              gh label create "$INPUT_PR_LABEL" --color "0e8a16" --description "Release packages" 2>/dev/null || true
-            fi
-
-            EXISTING_PR=$(gh pr list --head callisto/version-packages --json number --jq '.[0].number // empty')
-            if [[ -n "$EXISTING_PR" ]]; then
-              gh pr edit "$EXISTING_PR" --title "$INPUT_TITLE" --body "$PR_BODY" || true
-              if [[ -n "$INPUT_PR_LABEL" ]]; then
-                gh pr edit "$EXISTING_PR" --add-label "$INPUT_PR_LABEL" || true
-              fi
-            else
-              if [[ -n "$INPUT_PR_LABEL" ]]; then
-                gh pr create --title "$INPUT_TITLE" --body "$PR_BODY" --head callisto/version-packages --base "$INPUT_BRANCH" --label "$INPUT_PR_LABEL" || gh pr create --title "$INPUT_TITLE" --body "$PR_BODY" --head callisto/version-packages --base "$INPUT_BRANCH"
-              else
-                gh pr create --title "$INPUT_TITLE" --body "$PR_BODY" --head callisto/version-packages --base "$INPUT_BRANCH"
-              fi
-            fi
-
-            echo "### Version Packages PR Created/Updated" >> $GITHUB_STEP_SUMMARY
-            echo "$PR_BODY" >> $GITHUB_STEP_SUMMARY
-          fi
-          echo "::endgroup::"
+        read -ra command <<< "$INPUT_VERSION_COMMAND"
+        "${command[@]}"
+        test -n "$(git status --porcelain)" || { echo '::error::pending changesets produced no release-PR delta'; exit 1; }
+        if [[ "$INPUT_SETUP_GIT_USER" == true ]]; then
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+        fi
+        git switch -C "$INPUT_RELEASE_BRANCH"
+        git add -A
+        git commit -m "$INPUT_COMMIT_MESSAGE"
+        git push --force-with-lease origin "$INPUT_RELEASE_BRANCH"
+        label_exists=$(gh api --paginate "/repos/${GITHUB_REPOSITORY}/labels?per_page=100" --slurp --jq 'any(.[][]; .name == env.INPUT_PR_LABEL)')
+        if [[ "$label_exists" != true ]]; then
+          gh label create "$INPUT_PR_LABEL" --color 0e8a16 --description 'Callisto release packages'
+        fi
+        pr=$(jq -r '.[0].number // empty' <<< "$prs")
+        if [[ -n "$pr" ]]; then
+          gh pr edit "$pr" --title "$INPUT_TITLE" --body "$body" --add-label "$INPUT_PR_LABEL"
         else
-          echo "hasChangesets=false" >> $GITHUB_OUTPUT
-
-          # Emit native matrix targets for downstream build jobs, deduplicated
-          # by artifactName in case the same triple is declared by more than
-          # one package's platform-target group. set -o pipefail ensures a
-          # hard `callisto matrix` error (e.g. malformed manifest, conflicting
-          # platform-target sources) fails this step instead of silently
-          # producing empty output.
-          set -o pipefail
-          NATIVE_MATRIX=$(callisto matrix --format json | jq -c '[.platformTargets[].targets[]] | unique_by(.artifactName)') || { echo "::error::callisto matrix failed"; exit 1; }
-          echo "nativeMatrix=$NATIVE_MATRIX" >> $GITHUB_OUTPUT
-
-          echo "::group::2. Calculating Topological Publish Plan"
-          PLAN_JSON=$(callisto plan-publish --format json)
-          echo "$PLAN_JSON"
-          echo "::endgroup::"
-
-          # A single source of truth for "nothing to publish this run" --
-          # mirrors PublishPlan::is_empty() so this can never drift from what
-          # the CLI itself considers empty.
-          if echo "$PLAN_JSON" | jq -e '(.rustCrates + .npmPlatformPackages + .npmMainPackages + (.pypiPackages // []) + .releases) | length == 0' > /dev/null; then
-            PLAN_IS_EMPTY=true
-          else
-            PLAN_IS_EMPTY=false
-          fi
-
-          if [[ "$PLAN_IS_EMPTY" == "true" ]]; then
-            echo "published=false" >> $GITHUB_OUTPUT
-            echo "Nothing to publish this run (no changesets pending, or no package has a pending release)."
-          else
-          if [[ -n "$INPUT_PUBLISH" && "$INPUT_PUBLISH" != "false" ]]; then
-            echo "::group::Placing Native Build Artifacts"
-            while IFS=$'\t' read -r ARTIFACT DIR_RAW; do
-              DIR="."
-              if [[ -n "$DIR_RAW" ]]; then
-                DIR="$DIR_RAW"
-              fi
-              mkdir -p "$DIR"
-              gh run download "$GITHUB_RUN_ID" --name "$ARTIFACT" --dir "$DIR" || { echo "::error::failed to download artifact '$ARTIFACT' for placement into '$DIR' within run $GITHUB_RUN_ID"; exit 1; }
-            done < <(printf '%s' "$NATIVE_MATRIX" | jq -r '.[] | [.artifactName, (.packageDir | if . == null then "null" else . end)] | @tsv')
-            echo "::endgroup::"
-
-            # Wire NPM_TOKEN into npm config so npm publish can authenticate.
-            # NPM_TOKEN is forwarded explicitly in this step's env: block so it
-            # is available regardless of how the caller sets it.
-            if [[ -n "$NPM_TOKEN" ]]; then
-              npm config set //registry.npmjs.org/:_authToken "$NPM_TOKEN"
-            fi
-
-            echo "::group::3. Executing Package Publishing"
-            if [[ "$INPUT_PUBLISH" != "true" ]]; then
-              echo "Executing custom publish script: $INPUT_PUBLISH"
-              read -ra _publish_cmd <<< "$INPUT_PUBLISH"
-              "${_publish_cmd[@]}"
-              PUBLISH_EXIT=0
-            else
-              set +e
-              REPORT_JSON=$(callisto publish --format json)
-              PUBLISH_EXIT=$?
-              set -e
-              echo "$REPORT_JSON"
-              # Narrow PLAN_JSON down to what the report confirms actually
-              # published, so a single package's failure doesn't cost its
-              # already-succeeded siblings a tag or a GitHub Release below.
-              # Not possible for a custom publish script -- there is no
-              # structured report to filter by, so PLAN_JSON is left as-is
-              # in that branch (unchanged, pre-existing behaviour).
-              PLAN_JSON=$(callisto filter-plan --plan "$PLAN_JSON" --report "$REPORT_JSON" --format json)
-            fi
-            echo "::endgroup::"
-
-            echo "published=true" >> $GITHUB_OUTPUT
-            echo "publishedPackages<<EOF" >> $GITHUB_OUTPUT
-            echo "$PLAN_JSON" >> $GITHUB_OUTPUT
-            echo "EOF" >> $GITHUB_OUTPUT
-
-            if echo "$PLAN_JSON" | jq -e '(.rustCrates + .npmPlatformPackages + .npmMainPackages + (.pypiPackages // []) + .releases) | length == 0' > /dev/null; then
-              echo "No packages in this run actually published successfully; skipping tag/release creation."
-            else
-              echo "::group::4. Tagging Release Commits & Updating Major Version Pointer Aliases"
-              set +e
-              TAG_REPORT_JSON=$(callisto tag --plan "$PLAN_JSON" --floating-major --format json)
-              TAG_EXIT=$?
-              set -e
-              if [[ $TAG_EXIT -ne 0 ]]; then
-                echo "::error::callisto tag failed (exit $TAG_EXIT): $TAG_REPORT_JSON"
-              else
-                echo "$TAG_REPORT_JSON"
-                # Only the floating major-version alias (e.g. `v1`) is meant to
-                # move once created -- force-pushing it is correct. An
-                # immutable per-version release tag must never be force-moved;
-                # pushing it plainly lets git's own non-fast-forward check
-                # catch a genuine conflict instead of silently overwriting it.
-                IMMUTABLE_TAGS=()
-                while IFS= read -r line; do
-                  [[ -n "$line" ]] && IMMUTABLE_TAGS+=("$line")
-                done < <(echo "$TAG_REPORT_JSON" | jq -r '.tags[] | select(.isFloatingMajor == false) | .tagName')
-                FLOATING_TAGS=()
-                while IFS= read -r line; do
-                  [[ -n "$line" ]] && FLOATING_TAGS+=("$line")
-                done < <(echo "$TAG_REPORT_JSON" | jq -r '.tags[] | select(.isFloatingMajor == true) | .tagName')
-
-                if (( ${#IMMUTABLE_TAGS[@]} > 0 )); then
-                  git push origin "${IMMUTABLE_TAGS[@]}"
-                fi
-                if (( ${#FLOATING_TAGS[@]} > 0 )); then
-                  git push origin --force "${FLOATING_TAGS[@]}"
-                fi
-              fi
-              echo "::endgroup::"
-
-              if [[ "$INPUT_CREATE_GITHUB_RELEASE" == "true" ]]; then
-                echo "::group::5. Creating GitHub Release Entries"
-                while IFS=$'\t' read -r TAG HAS_VALID_PRERELEASE IS_PRERELEASE; do
-                  [[ -z "$TAG" ]] && continue
-
-                  if [[ "$HAS_VALID_PRERELEASE" != "true" ]]; then
-                    echo "::error::release entry for tag $TAG has a missing or non-boolean isPrerelease field"
-                    exit 1
-                  fi
-
-                  echo "Creating GitHub Release for tag: $TAG"
-
-                  EXTRA_FLAGS=""
-                  if [[ "$IS_PRERELEASE" == "true" ]]; then
-                    EXTRA_FLAGS="--prerelease"
-                  fi
-
-                  gh release create "$TAG" --title "$TAG" --generate-notes $EXTRA_FLAGS || true
-                done < <(echo "$PLAN_JSON" | jq -r '.releases[]? | [.tagName, (has("isPrerelease") and (.isPrerelease|type=="boolean")), (.isPrerelease // false)] | @tsv')
-                echo "::endgroup::"
-              fi
-
-              echo "### Packages Published Successfully" >> $GITHUB_STEP_SUMMARY
-            fi
-
-            if [[ $PUBLISH_EXIT -ne 0 ]]; then
-              echo "::error::callisto publish reported one or more failures; see the report above"
-              exit 1
-            fi
-          else
-            echo "published=false" >> $GITHUB_OUTPUT
-            echo "No changesets pending and no publish command provided."
-          fi
-          fi
+          gh pr create --head "$INPUT_RELEASE_BRANCH" --base "$INPUT_BRANCH" --title "$INPUT_TITLE" --body "$body" --label "$INPUT_PR_LABEL"
         fi

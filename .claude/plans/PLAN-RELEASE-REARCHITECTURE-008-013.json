@@ -1,0 +1,187 @@
+{
+  "artifact_type": "plan@1",
+  "schema": "plan@1",
+  "id": "PLAN-RELEASE-REARCHITECTURE-008-013",
+  "status": "draft",
+  "goal": "Implement the version-1 durable release architecture as a safe, deterministic path from release decision through intent, trust, graph capability, crash-safe execution, and CLI/CI migration, without allowing existing PublishPlan routes to authorize effects.",
+  "specs": [
+    { "id": "SPEC-RELEASE-DECISION-008", "file": ".claude/specs/SPEC-RELEASE-DECISION-008.json", "sha256": "90e1c3bf5dd68d6e7cb04f5cfcb2ec0add783911b0bf45592d0d7dae0106d371" },
+    { "id": "SPEC-RELEASE-INTENT-MODEL-009", "file": ".claude/specs/SPEC-RELEASE-INTENT-MODEL-009.json", "sha256": "e51fb1a54d505186dac60575495c18df13688994ef3f19c19df7b6feeb3090ea" },
+    { "id": "SPEC-RELEASE-TRUST-010", "file": ".claude/specs/SPEC-RELEASE-TRUST-010.json", "sha256": "9be173c2cc28dbf5a76d449e23513dd81e297ae7bd9ae22b5b8b557cbf5a9ac2" },
+    { "id": "SPEC-RELEASE-CAPABILITY-011", "file": ".claude/specs/SPEC-RELEASE-CAPABILITY-011.json", "sha256": "d5838a53afd8e3b62326e754a4c9bffb5fdc17169329ad23d8e6b2e690cbcd3d" },
+    { "id": "SPEC-RELEASE-EXECUTION-012", "file": ".claude/specs/SPEC-RELEASE-EXECUTION-012.json", "sha256": "aab151ef46ff5c1932bd523f22b818d8cb5d07b0bd1013331e243ef68e74b855" },
+    { "id": "SPEC-RELEASE-INTERFACES-013", "file": ".claude/specs/SPEC-RELEASE-INTERFACES-013.json", "sha256": "bb53ab64e15cfdeaff4bae8ce7dc652cef771dce17b82f5c9c8e126c51163378" }
+  ],
+  "linked_requirement": null,
+  "requirement_note": "No requirement@1 records exist for these REQ-less release specs. This plan is deliberately linked directly to the six specs; requirement backfill is a repository-process task and must not be fabricated here.",
+  "architecture": "The dependency direction is strict: graph computes the policy decision; model owns only serializable typed identities, canonical transcripts, durable intent/state/receipt schemas; vcs owns fresh Git trust and lock evidence; graph turns a durable intent plus fresh observation into an opaque capability containing private prepared inputs; the ordered executor consumes that capability and ApplyPermit; CLI and CI are adapters. Layer 1 never depends on graph/vcs/providers, and no generic fingerprint, raw config bytes, endpoint, credential, workspace path, provider output, PublishPlan, or cache becomes durable authority.",
+  "tech_stack": ["Rust stable", "BTreeMap/BTreeSet and explicit canonical keys", "sha2", "serde/schemars", "miette", "callisto_model::atomic::atomic_write", "callisto-vcs structured Git API", "standards-compliant url parser in callisto-graph", "OS-backed advisory lock crate only after API review", "just", "moon"],
+  "execution_rules": {
+    "tdd": "Every behavior-changing task starts with a focused RED test or a documented regression-proof test when the preceding task already implements the behavior. GREEN is followed by the named moon/just verification. Never introduce a temporary unsafe implementation merely to make a test red.",
+    "ordering": "Batches execute in order. Tasks within a batch may run in parallel only when their files and public APIs do not overlap; integration tasks wait for all predecessors. No provider effect code starts before capability, state, and observation contracts are green.",
+    "commits": "Commit only one verified semantic interval at a time using the task's conventional commit. Do not combine model, VCS, graph, executor, and interface changes in one commit.",
+    "verification": "Use moon or just for Rust verification: moon run callisto-model:test, moon run callisto-vcs:test, moon run callisto-graph:test, moon run callisto-cli:test, just fmt-check, just lint, just test, and just ci. Focused test filtering is configured through the task runner where available; raw cargo commands are not the acceptance verification path.",
+    "gates": "After each batch, run an independent mutation/review gate. The final exit gate re-reads all specs, maps every AC to tests/code, runs just ci, checks release routes structurally, and verifies the worktree is limited to planned files plus intentionally added tests/docs/workflow files."
+  },
+  "prototype_disposition": {
+    "rule": "Before T01, inventory every uncommitted or prior foundation/prototype release file against these six specs. Retain only code that passes the task's RED/GREEN tests without weakening its assertions; otherwise delete it or revert it in the same semantic interval before new implementation begins.",
+    "known_rejections": ["Do not retain generic ReleaseInputComponentV1 kind/fingerprint fields or raw configuration-byte hashing.", "Do not retain graph validation based on a cached Workspace, caller-supplied SHA, manual registry URL parsing, or a capability lacking per-operation prepared inputs.", "Do not retain executor logic where !is_failure or absence of a record implies success.", "Do not retain PublishPlan/PLAN_JSON as a durable intent, identity, or mutation authority."],
+    "verification": "Record the inventory and disposition in the task commit body or a test-only comment; `git diff --check` and targeted tests must pass after cleanup."
+  },
+  "batches": [
+    { "id": "B0-baseline", "depends_on": [], "task_ids": ["T00"], "description": "Inventory/discard unsafe prototypes and establish a clean TDD baseline." },
+    { "id": "B1-decision", "depends_on": ["B0-baseline"], "task_ids": ["T01", "T02"], "description": "Graph-owned deterministic release roster and explanations." },
+    { "id": "B2-intent-model", "depends_on": ["B1-decision"], "task_ids": ["T03", "T04"], "description": "Layer-1 typed durable decision/intent, bindings, DAG, artifact slots, and canonical validation." },
+    { "id": "B3-trust", "depends_on": ["B2-intent-model"], "task_ids": ["T05"], "description": "VCS-owned clean detached Git evidence and workspace exclusion lock." },
+    { "id": "B4-capability", "depends_on": ["B1-decision", "B2-intent-model", "B3-trust"], "task_ids": ["T06", "T07"], "description": "Fresh graph re-observation, safe endpoint preparation, and opaque validated authority." },
+    { "id": "B5-execution", "depends_on": ["B4-capability"], "task_ids": ["T08", "T09", "T10"], "description": "Atomic state/receipt, observation-driven reconciliation, provider adapter contracts, and artifact-manifest binding." },
+    { "id": "B6-interfaces", "depends_on": ["B5-execution"], "task_ids": ["T11", "T12", "T13"], "description": "CLI migration, GitHub plan/build/execute topology, docs, and removal of legacy mutation authority." },
+    { "id": "B7-exit", "depends_on": ["B6-interfaces"], "task_ids": ["T14"], "description": "Independent mutation, security, and spec-compliance exit gate." }
+  ],
+  "tasks": [
+    {
+      "id": "T00", "batch_id": "B0-baseline", "depends_on": [], "kind": "baseline", "covers": [],
+      "description": "Inventory the existing model/graph/VCS/reconciliation prototypes and discard or isolate every implementation that violates the new typed-boundary contract before extending it.",
+      "files": ["crates/callisto-model/src/release.rs", "crates/callisto-graph/src/commands/release.rs", "crates/callisto-vcs/src/lib.rs"],
+      "red": "Add characterization tests proving generic raw fingerprint acceptance, cached-workspace acceptance, caller-supplied source substitution, manual URL acceptance, and absence-of-failure success are rejected by the intended new public boundaries; record which tests reveal prototype violations.",
+      "green": "Remove/replace rejected prototype paths; preserve only existing code that meets the characterization contract without compatibility shims granting authority.",
+      "verify": ["just fmt-check", "just lint", "moon run callisto-model:test", "moon run callisto-graph:test", "moon run callisto-vcs:test"],
+      "commit": "chore(release): remove unsafe durable-release prototypes"
+    },
+    {
+      "id": "T01", "batch_id": "B1-decision", "depends_on": ["T00"], "kind": "implementation", "covers": ["008:AC-001", "008:AC-002", "008:AC-003", "008:AC-004", "008:AC-006", "008:AC-007"],
+      "description": "Add graph-owned ReleaseDecisionV1 derivation from exact qualified CLI selection or a named configuration-selection mode and fresh configuration/discovery, including non-overlapping linked-group closure, configured fixed-group/cascade/prerelease rules, exact qualified roster entries, target versions, and closed inclusion reasons.",
+      "files": ["crates/callisto-graph/src/commands/release_decision.rs", "crates/callisto-graph/src/error.rs", "crates/callisto-graph/tests/release_decision_test.rs"],
+      "red": "Table tests first: exact CLI selection, named configuration selection, overlapping linked-group configuration rejection, fixed/cascade expansion, prerelease off-roster exclusion, empty selection rejection, conflicting target versions, same bare name across ecosystems, and safe miette diagnostics.",
+      "green": "Implement using existing group/cascade/prerelease semantics only; emit a serializable graph result without PublishPlan dependency or effects.",
+      "verify": ["moon run callisto-graph:test", "just fmt-check", "just lint"],
+      "commit": "feat(graph): derive explicit durable release decisions"
+    },
+    {
+      "id": "T02", "batch_id": "B1-decision", "depends_on": ["T01"], "kind": "determinism", "covers": ["008:AC-005"],
+      "description": "Define decision canonical ordering and DecisionDigest transcript, independent of discovery order, HashMap iteration, enum declaration order, source formatting, and wall clock.",
+      "files": ["crates/callisto-graph/src/commands/release_decision.rs", "crates/callisto-graph/tests/release_decision_test.rs", "crates/callisto-model/src/release.rs"],
+      "red": "Permutation tests reorder packages, groups, edges, and reasons and assert byte-identical canonical decision data/digest; a targeted DepKind declaration-order regression proves the explicit semantic key is used.",
+      "green": "Use BTree collections or documented sorted vectors and the versioned length-prefixed transcript primitive; do not serialize Debug/Ord output as authority.",
+      "verify": ["moon run callisto-model:test", "moon run callisto-graph:test", "just fmt-check", "just lint"],
+      "commit": "feat(release): canonicalize durable release decisions"
+    },
+    {
+      "id": "T03", "batch_id": "B2-intent-model", "depends_on": ["T02"], "kind": "model", "covers": ["009:AC-001", "009:AC-002", "009:AC-004", "009:AC-005", "009:AC-006", "009:AC-008"],
+      "description": "Replace broad release-intent prototype fields with closed Layer-1 semantic snapshot types, exact ReleaseOperationId variants, explicit prerequisite DAG, artifact slots, strict schema validation, and IntentDigest.",
+      "files": ["crates/callisto-model/src/release.rs", "crates/callisto-model/src/lib.rs", "crates/callisto-model/tests/release_intent_test.rs"],
+      "red": "Golden/permutation and negative tests first: malformed/unknown fields, digest mismatch, duplicate qualified operation identity, bare-name ecosystem collision, missing/self/cyclic prerequisites, invalid canonical order, omitted/default ambiguity, and semantic-one-field digest mutation.",
+      "green": "Implement typed parsing/validation and stable Kahn ordering in model without graph/VCS/URL/provider dependencies; retain the versioned length-prefixed SHA-256 transcript.",
+      "verify": ["moon run callisto-model:test", "just fmt-check", "just lint"],
+      "commit": "feat(model): define typed durable release intent"
+    },
+    {
+      "id": "T04", "batch_id": "B2-intent-model", "depends_on": ["T03"], "kind": "model-security", "covers": ["009:AC-003", "009:AC-007"],
+      "description": "Add durable RegistryBindingId/BindingDigest and artifact provenance coverage, ensuring the model cannot retain endpoints, credentials, raw bytes, or unclassified serialized authority fields.",
+      "files": ["crates/callisto-model/src/release.rs", "crates/callisto-model/tests/release_intent_test.rs", "crates/callisto-graph/tests/release_binding_test.rs"],
+      "red": "Tests prove distinct normalized bindings cannot collide, equivalent accepted bindings converge at the graph/model boundary, unsafe endpoint forms are rejected before model construction, and a serialized-field/provenance mismatch fails coverage.",
+      "green": "Make provenance a closed schema companion and keep URL normalization/parsing in graph; model receives only typed logical key plus digest.",
+      "verify": ["moon run callisto-model:test", "moon run callisto-graph:test", "just fmt-check", "just lint"],
+      "commit": "feat(model): bind release operations to safe remote identities"
+    },
+    {
+      "id": "T05", "batch_id": "B3-trust", "depends_on": ["T04"], "kind": "vcs", "covers": ["010:AC-001", "010:AC-002", "010:AC-003", "010:AC-004", "010:AC-005", "010:AC-006", "010:AC-007"],
+      "description": "Expose structured VCS trust observation: canonical repository-root binding, detached exact CommitSha, clean tracked/untracked status, OS-backed release lock outside checkout, and effect-time recheck.",
+      "files": ["crates/callisto-vcs/src/release_trust.rs", "crates/callisto-vcs/src/lib.rs", "crates/callisto-vcs/tests/release_trust_test.rs", "Cargo.toml", "crates/callisto-vcs/Cargo.toml"],
+      "red": "Real temporary-repository tests first for non-Git/nested roots, symbolic HEAD, mismatch, dirty tracked/untracked files, lock contention/drop release, shallow/inspection failure, and changed source between validation and recheck. Recording fake adapters prove failures precede effects.",
+      "green": "Use structured Git observation and typed miette errors; select a maintained OS lock crate only after checking cross-platform exclusive-lock and drop semantics. Keep lock path/handle private and non-serializable.",
+      "verify": ["moon run callisto-vcs:test", "just fmt-check", "just lint"],
+      "commit": "feat(vcs): bind durable releases to fresh Git trust"
+    },
+    {
+      "id": "T06", "batch_id": "B4-capability", "depends_on": ["T01", "T04", "T05"], "kind": "graph-authorization", "covers": ["011:AC-001", "011:AC-002", "011:AC-003", "011:AC-004", "011:AC-007", "011:AC-008"],
+      "description": "Build a fresh graph observation boundary that acquires trust/lock, reconstructs decision/snapshot/operations from disk, compares exactly with received intent, and returns opaque non-Clone/non-Serde ValidatedReleaseIntent only on a complete match.",
+      "files": ["crates/callisto-graph/src/commands/release.rs", "crates/callisto-graph/src/commands/mod.rs", "crates/callisto-graph/src/error.rs", "crates/callisto-graph/tests/release_capability_test.rs"],
+      "red": "Independent workspace fixtures first for changed manifest/config/policy/selection/roster/version/edge/DAG/source/slot/registry binding, source substitution, duplicate/cycle, and equivalent insertion permutations; every rejection asserts zero fake adapter calls.",
+      "green": "Construct a new observation boundary rather than reading Workspace interior caches. Keep fields private and capability non-forgeable; compare typed values, never raw config/Debug/display strings.",
+      "verify": ["moon run callisto-graph:test", "moon run callisto-vcs:test", "just fmt-check", "just lint"],
+      "commit": "feat(graph): authorize fresh durable release intents"
+    },
+    {
+      "id": "T07", "batch_id": "B4-capability", "depends_on": ["T06"], "kind": "graph-preparation", "covers": ["011:AC-005", "011:AC-006"],
+      "description": "Prepare operation-specific private inputs during the same successful observation: package directories, parsed safe endpoints, exact tag/annotation policy, forge bindings, and artifact slots, keyed by exact operation ID.",
+      "files": ["crates/callisto-graph/src/commands/release.rs", "crates/callisto-graph/tests/release_capability_test.rs"],
+      "red": "Tests prove URL userinfo/query/fragment rejection, normalized-equivalence behavior, prepared input retention, exact-ID-only selection, and that neither a plan nor mutable config can reconstruct an operation after authorization.",
+      "green": "Use the URL crate only in graph, redact endpoint values from diagnostics, and expose at most a narrow internal prepared-operation accessor to the future executor.",
+      "verify": ["moon run callisto-graph:test", "just fmt-check", "just lint"],
+      "commit": "feat(graph): prepare private release effect inputs"
+    },
+    {
+      "id": "T08", "batch_id": "B5-execution", "depends_on": ["T07"], "kind": "execution-state", "covers": ["012:AC-001", "012:AC-002", "012:AC-007", "012:AC-008"],
+      "description": "Implement typed intent-bound execution state and receipt with complete roster validation, monotonic Pending→Attempting→terminal transitions, atomic outside-checkout default/override persistence, and closed safe outcomes.",
+      "files": ["crates/callisto-model/src/release.rs", "crates/callisto-graph/src/release_execution.rs", "crates/callisto-model/tests/release_execution_test.rs", "crates/callisto-graph/tests/release_execution_test.rs"],
+      "red": "Tests simulate crash after Attempting persistence, stale/mismatched state, invalid transition, incomplete roster, terminal rewrite, duplicate/mismatched receipt, unsafe serialized field, and default state path outside root.",
+      "green": "Use callisto_model::atomic::atomic_write for complete state rewrites; never use absence of failure as success and never serialize diagnostics/provider strings/operational paths.",
+      "verify": ["moon run callisto-model:test", "moon run callisto-graph:test", "just fmt-check", "just lint"],
+      "commit": "feat(release): persist durable execution state and receipts"
+    },
+    {
+      "id": "T09", "batch_id": "B5-execution", "depends_on": ["T08"], "kind": "reconciliation", "covers": ["012:AC-003", "012:AC-004", "012:AC-005"],
+      "description": "Add the ordered coordinator and narrow observation/effect adapter contracts. Reconcile Pending/Attempting by exact identity, run trust/prerequisite rechecks under lock before each dispatch, and make conflicting/ambiguous existing remote objects safe non-successes.",
+      "files": ["crates/callisto-graph/src/release_execution.rs", "crates/callisto-graph/tests/release_execution_test.rs", "crates/callisto-vcs/src/release_trust.rs"],
+      "red": "Recording adapters model interruption before call, provider-side success before persistence, exact existing object, conflicting tag/registry/forge object, ambiguous response, changed HEAD, and unattempted prerequisite; assert no dependent unauthorized calls.",
+      "green": "Dispatch only through ValidatedReleaseIntent plus ApplyPermit and exact operation IDs. Registry proof keys package/version/binding; tag proof checks target/annotation policy; forge proof checks tag/target binding. No parallel execution, retries, or generic boolean observation results.",
+      "verify": ["moon run callisto-graph:test", "moon run callisto-vcs:test", "just fmt-check", "just lint"],
+      "commit": "feat(release): reconcile effects from exact provider evidence"
+    },
+    {
+      "id": "T10", "batch_id": "B5-execution", "depends_on": ["T09"], "kind": "artifacts", "covers": ["012:AC-006"],
+      "description": "Implement ArtifactManifestV1 and verified GitHub artifact-attestation proof for declared binary slots, bound to intent digest and exact source commit, without coupling source registry publishing to binary uploads.",
+      "files": ["crates/callisto-model/src/release.rs", "crates/callisto-graph/src/release_execution.rs", "crates/callisto-model/tests/release_execution_test.rs", "crates/callisto-graph/tests/release_execution_test.rs"],
+      "red": "Tests cover missing/duplicate/unexpected slot, wrong platform/version/source/intent, byte SHA/length mismatch, manifest substitution, unverified/wrong-repository/wrong-workflow/wrong-source attestation, and source registry publish with no binary slot consumption.",
+      "green": "Validate manifest schema and all downloaded bytes before binary adapter construction; cryptographically verify the exact artifact against the configured GitHub repository and immutable signer workflow, then check the provenance source commit. Use typed slots/digests and no arbitrary durable paths.",
+      "verify": ["moon run callisto-model:test", "moon run callisto-graph:test", "just fmt-check", "just lint"],
+      "commit": "feat(release): verify intent-bound binary artifacts"
+    },
+    {
+      "id": "T11", "batch_id": "B6-interfaces", "depends_on": ["T10"], "kind": "cli", "covers": ["013:AC-001", "013:AC-002", "013:AC-003"],
+      "description": "Introduce release plan/inspect/execute/reconcile and migrate legacy plan-publish/publish/tag --plan/filter-plan to explicitly read-only compatibility previews; only release execute may obtain ApplyPermit and adapters.",
+      "files": ["crates/callisto-cli/src/commands/release.rs", "crates/callisto-cli/src/main.rs", "crates/callisto-cli/tests/release_commands_test.rs", "crates/callisto-graph/src/commands/publish.rs", "crates/callisto-graph/src/commands/tag.rs"],
+      "red": "CLI integration tests with recording adapters exercise every command and malformed/stale input path: plan/inspect/reconcile/legacy commands have zero effects, execute requires explicit intent and required manifest, and only execute reaches permit/effect dispatch.",
+      "green": "Use explicit file paths, no checkout search/inline JSON/default plan recomputation. Preserve legacy display behavior only where it is non-authoritative and label migration replacements in help/errors.",
+      "verify": ["moon run callisto-cli:test", "moon run callisto-graph:test", "just fmt-check", "just lint"],
+      "commit": "feat(cli): route releases through durable execution"
+    },
+    {
+      "id": "T12", "batch_id": "B6-interfaces", "depends_on": ["T11"], "kind": "github-workflow", "covers": ["013:AC-004", "013:AC-005", "013:AC-006"],
+      "description": "Replace single-job/composite mutable release handoff with GitHub plan/build/execute jobs, same-run artifact and attestation verification, Environment-gated privilege, least permissions, SHA-pinned actions, policy checks, and CODEOWNERS coverage.",
+      "files": [".github/workflows/release.yml", ".github/actions/callisto-action/action.yml", ".github/workflows/check-release-environment.yml", ".github/workflows/check-action-pins.yml", "CODEOWNERS", ".github/actions/callisto-action/tests/"],
+      "red": "Workflow/static harness tests first assert no execute credentials in plan/build, build-only id-token/attestations permissions, one attestation per binary, explicit job boundaries, same-run artifact download, intent/source/artifact/attestation verification before execute, immutable action SHAs, no cache authority paths, named Environment, and environment API check rejecting no reviewers.",
+      "green": "Keep composite action unprivileged/read-only or setup-only. Document administrator verification of live Environment rules; do not claim YAML alone enforces review protection.",
+      "verify": ["just fmt-check", "just lint", "just ci"],
+      "commit": "feat(ci): gate durable release execution by verified artifacts"
+    },
+    {
+      "id": "T13", "batch_id": "B6-interfaces", "depends_on": ["T12"], "kind": "documentation", "covers": ["013:AC-007"],
+      "description": "Document local and CI plan/build/execute/reconcile recovery including detached-clean Git requirement, linked-group roster behavior, source crate versus binary asset distinction, outside-checkout local state, explicit CI state artifact, and cache prohibition.",
+      "files": ["docs/06-publishing.md", "README.md", ".github/workflows/release.yml"],
+      "red": "Documentation contract test/grep first asserts obsolete mutable PublishPlan workflow and cache-as-recovery guidance are absent, and required durable-flow terms are present.",
+      "green": "Update the existing authority-classified operational docs without rewriting historical/rationale documents as current behavior.",
+      "verify": ["just fmt-check", "just lint", "just ci"],
+      "commit": "docs(release): document durable local and CI recovery flow"
+    },
+    {
+      "id": "T14", "batch_id": "B7-exit", "depends_on": ["T13"], "kind": "exit-gate", "covers": ["008:AC-001..AC-007", "009:AC-001..AC-008", "010:AC-001..AC-007", "011:AC-001..AC-008", "012:AC-001..AC-008", "013:AC-001..AC-007"],
+      "description": "Independent adversarial exit gate: map every acceptance criterion to code/tests, mutate critical invariants, audit all legacy mutation routes and durable schemas, and run full verification.",
+      "files": [".claude/plans/PLAN-RELEASE-REARCHITECTURE-008-013.json"],
+      "red": "Manual mutation matrix: permit a generic fingerprint; use PackageId::matches; reorder DAG ties; use stale workspace; accept branch/dirty HEAD; skip Attempting write; treat absence of failure as success; leak endpoint into persisted bytes; allow legacy publish/tag effect; accept artifact SHA/source mismatch; accept an unverified, wrong-repository, wrong-workflow, or wrong-source artifact attestation; grant plan job write credentials. Each mutation must make a named test/policy check fail.",
+      "green": "Restore implementation only after each mutation is caught. Produce an AC-to-test matrix and a route reachability audit showing release execute is the sole production effect entry.",
+      "verify": ["just fmt-check", "just lint", "just test", "just wasm-check", "just ci"],
+      "commit": "test(release): complete durable release architecture exit gate"
+    }
+  ],
+  "batch_gates": [
+    { "after": "B1-decision", "gate": "Independent graph reviewer validates policy compatibility, roster closure, exact qualified identity, and permutation coverage." },
+    { "after": "B2-intent-model", "gate": "Independent model/security reviewer validates canonical transcript vectors, schema/provenance coverage, and absence of raw endpoint/config fields." },
+    { "after": "B3-trust", "gate": "Independent VCS reviewer validates real detached/dirty/lock behavior and error redaction." },
+    { "after": "B4-capability", "gate": "Capability reviewer attempts stale/cache/source-substitution/prepared-input bypasses with recording adapters." },
+    { "after": "B5-execution", "gate": "Crash-recovery reviewer injects interruptions at every state/effect boundary and checks role-specific observation proof." },
+    { "after": "B6-interfaces", "gate": "CLI/CI security reviewer traces all permit/effect call sites, workflow permissions, artifact checks, cache use, and GitHub Environment verification." }
+  ],
+  "final_acceptance": "Do not mark any spec accepted or claim release execution complete until T14 passes, all batch gates have clean findings or explicit fixed follow-ups, every planned semantic commit is present, and the full just ci result is green."
+}

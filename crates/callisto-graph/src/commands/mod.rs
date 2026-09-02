@@ -5,12 +5,18 @@ pub mod matrix;
 pub mod pr_body;
 pub mod publish;
 pub mod publish_client;
+pub mod release;
+pub mod release_artifacts;
+pub mod release_decision;
+pub mod release_execution;
+pub mod release_store;
 pub mod snapshot;
 pub mod status;
 pub mod tag;
 pub mod validate;
 pub mod version;
 
+pub use callisto_model::{ReleaseDecisionEntry, ReleaseDecisionError, ReleaseDecisionV1, ReleaseInclusionReason};
 pub use init::{init, InitOptions};
 pub use matrix::{matrix, MatrixOptions};
 pub use pr_body::{compose_pr_body, PrBodyOptions};
@@ -19,6 +25,16 @@ pub use publish::{
     SystemTimeProvider,
 };
 pub use publish_client::SubprocessRegistryClient;
+pub use release::{
+    build_release_intent, validate_release_intent, validate_release_intent_with_state_directory, ValidatedReleaseIntent,
+};
+pub use release_artifacts::{verify_artifact_manifest, VerifiedArtifactManifest};
+pub use release_decision::{derive_release_commit_decision, derive_release_decision, derive_selected_release_decision};
+pub use release_execution::{
+    execute_release, execute_release_with_artifacts, reconcile_release_execution, PreparedReleaseEffectAdapter,
+    ReconciledReleaseExecution, ReleaseEffectAdapter,
+};
+pub use release_store::{AtomicReleaseStateWriter, ReleaseStateStore, ReleaseStateWriter};
 pub use snapshot::plan_snapshot;
 pub use status::{status, StatusOptions};
 pub use tag::{create_tags, create_tags_with_options, TagOptions};

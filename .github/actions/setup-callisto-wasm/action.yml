@@ -20,7 +20,8 @@ runs:
   steps:
     - name: Cache Callisto WASM
       id: cache-wasm
-      uses: actions/cache@v4
+      # actions/cache v4.2.3
+      uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684
       with:
         path: ${{ inputs.dest }}
         key: ${{ runner.os }}-callisto-wasm-${{ inputs.version }}

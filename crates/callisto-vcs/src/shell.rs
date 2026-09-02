@@ -16,7 +16,10 @@ use std::path::{Path, PathBuf};
 
 use callisto_model::{ApplyPermit, CommandRunner, CommitSha, TagName};
 
-use crate::{GitCommit, GitDataSource, VcsError};
+use crate::{
+    access::{GitCommitTrustEvidence, GitHeadDisposition},
+    GitCommit, GitDataSource, VcsError,
+};
 
 /// Record separator placed immediately before each commit's fields in
 /// `git log --format=` output, so a commit message containing `\n` can
@@ -26,6 +29,19 @@ const RECORD_SEP: char = '\u{1e}';
 /// Unit separator between a commit's sha and its raw message body in
 /// `git log --format=` output.
 const FIELD_SEP: char = '\u{1f}';
+
+/// Closed release policy for ignored worktree artifacts. Repository ignore
+/// rules are not authority to omit arbitrary release input from trust.
+const RELEASE_IGNORED_ALLOWLIST: &[&str] = &[
+    ".DS_Store",
+    "target/",
+    "bin/",
+    ".moon/cache/",
+    ".moon/docker/",
+    ".claude/worktrees/",
+    "mutants.out/",
+    "lcov.info",
+];
 
 /// Redacts known registry/VCS credential env-var values and any URL
 /// userinfo component from raw `git` subprocess stderr before it is
@@ -53,6 +69,135 @@ impl<'r> ShellGit<'r> {
             root: root.into(),
         }
     }
+
+    /// Returns explicit, fresh Git trust evidence for a durable release.
+    /// Errors deliberately omit raw stderr and worktree path text.
+    pub fn observe_git_commit_trust(&self) -> Result<GitCommitTrustEvidence, VcsError> {
+        let root = self.runner.run("git", &["rev-parse", "--show-toplevel"], &self.root)?;
+        if !root.success() {
+            return Err(VcsError::Git(
+                "could not determine the Git repository root for release trust".to_string(),
+            ));
+        }
+        let canonical_root = canonical_git_root(root.stdout_trimmed())?;
+
+        let object_format = self
+            .runner
+            .run("git", &["rev-parse", "--show-object-format"], &self.root)?;
+        if !object_format.success() || object_format.stdout_trimmed() != "sha1" {
+            return Err(VcsError::Git(
+                "release trust requires a SHA-1 Git object format".to_string(),
+            ));
+        }
+        let shallow = self
+            .runner
+            .run("git", &["rev-parse", "--is-shallow-repository"], &self.root)?;
+        if !shallow.success() || shallow.stdout_trimmed() != "false" {
+            return Err(VcsError::Git(
+                "release trust requires a complete, non-shallow Git repository".to_string(),
+            ));
+        }
+
+        let head = self
+            .runner
+            .run("git", &["rev-parse", "--verify", "HEAD^{commit}"], &self.root)?;
+        if !head.success() {
+            return Err(VcsError::Git(
+                "could not resolve a commit for release trust".to_string(),
+            ));
+        }
+        let head = CommitSha::parse(head.stdout_trimmed()).map_err(|error| {
+            drop(error);
+            VcsError::Git("Git returned an invalid full HEAD commit for release trust".to_string())
+        })?;
+
+        let symbolic_head = self
+            .runner
+            .run("git", &["symbolic-ref", "--quiet", "HEAD"], &self.root)?;
+        let head_disposition = match symbolic_head.exit_code {
+            Some(0) => GitHeadDisposition::Attached,
+            Some(1) => GitHeadDisposition::Detached,
+            _ => {
+                return Err(VcsError::Git(
+                    "could not determine the symbolic HEAD state for release trust".to_string(),
+                ))
+            }
+        };
+
+        let status = self.runner.run(
+            "git",
+            &[
+                "status",
+                "--porcelain=v1",
+                "-z",
+                "--untracked-files=all",
+                "--ignored=matching",
+            ],
+            &self.root,
+        )?;
+        if !status.success() {
+            return Err(VcsError::Git(
+                "could not inspect the worktree for release trust".to_string(),
+            ));
+        }
+
+        Ok(GitCommitTrustEvidence::new(
+            canonical_root,
+            head,
+            head_disposition,
+            parse_release_worktree_status(&status.stdout)?,
+        ))
+    }
+}
+
+fn canonical_git_root(raw_root: &str) -> Result<PathBuf, VcsError> {
+    if raw_root.is_empty() {
+        return Err(VcsError::Git(
+            "Git returned an empty repository root for release trust".to_string(),
+        ));
+    }
+    dunce::canonicalize(raw_root).map_err(|error| {
+        drop(error);
+        VcsError::Git("could not canonicalize the Git repository root for release trust".to_string())
+    })
+}
+
+fn parse_release_worktree_status(status: &str) -> Result<Vec<PathBuf>, VcsError> {
+    let mut allowed_ignored_paths = Vec::new();
+    for record in status.split('\0').filter(|record| !record.is_empty()) {
+        let Some(path) = record.strip_prefix("!! ") else {
+            return Err(VcsError::Git(
+                "release trust requires a worktree with no tracked or untracked files".to_string(),
+            ));
+        };
+        let path = PathBuf::from(path);
+        if !is_release_ignored_path_allowed(&path) {
+            return Err(VcsError::Git(
+                "release trust found an ignored path outside its fixed allowlist".to_string(),
+            ));
+        }
+        allowed_ignored_paths.push(path);
+    }
+    allowed_ignored_paths.sort();
+    allowed_ignored_paths.dedup();
+    Ok(allowed_ignored_paths)
+}
+
+fn is_release_ignored_path_allowed(path: &Path) -> bool {
+    if path.is_absolute()
+        || path
+            .components()
+            .any(|component| !matches!(component, std::path::Component::Normal(_)))
+    {
+        return false;
+    }
+    let rendered = path.to_string_lossy().replace('\\', "/");
+    RELEASE_IGNORED_ALLOWLIST.iter().any(|allowed| {
+        allowed.strip_suffix('/').map_or_else(
+            || rendered == *allowed,
+            |directory| rendered == directory || rendered.starts_with(&format!("{directory}/")),
+        )
+    })
 }
 
 /// Compiles `glob` into a [`globset::GlobMatcher`], surfacing a malformed
@@ -311,6 +456,111 @@ mod tests {
             exit_code: Some(0),
             stdout: stdout.into(),
             stderr: String::new(),
+        }
+    }
+
+    fn trust_response(root: PathBuf, status: String, detached: bool) -> Box<ResponseFn> {
+        Box::new(move |args| match args {
+            ["rev-parse", "--show-toplevel"] => Ok(ok(format!("{}\n", root.display()))),
+            ["rev-parse", "--show-object-format"] => Ok(ok("sha1\n")),
+            ["rev-parse", "--is-shallow-repository"] => Ok(ok("false\n")),
+            ["rev-parse", "--verify", "HEAD^{commit}"] => Ok(ok(format!("{}\n", "a".repeat(40)))),
+            ["symbolic-ref", "--quiet", "HEAD"] if detached => Ok(CommandOutput {
+                exit_code: Some(1),
+                stdout: String::new(),
+                stderr: String::new(),
+            }),
+            ["symbolic-ref", "--quiet", "HEAD"] => Ok(ok("refs/heads/main\n")),
+            ["status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignored=matching"] => Ok(ok(status.clone())),
+            other => panic!("unexpected Git trust command: {other:?}"),
+        })
+    }
+
+    #[test]
+    fn git_commit_trust_evidence_is_root_bound_and_allows_only_fixed_ignored_paths() {
+        let temp = tempfile::tempdir().unwrap();
+        let expected_root = dunce::canonicalize(temp.path()).unwrap();
+        let runner = FakeRunner {
+            calls: Mutex::new(Vec::new()),
+            response: trust_response(
+                temp.path().to_path_buf(),
+                "!! target/debug/callisto\0!! .moon/cache/state\0".to_string(),
+                true,
+            ),
+        };
+        let git = ShellGit::new(&runner, temp.path());
+
+        let evidence = git.observe_git_commit_trust().unwrap();
+
+        assert_eq!(evidence.canonical_root(), expected_root);
+        assert_eq!(evidence.head().as_str(), "a".repeat(40));
+        assert_eq!(evidence.head_disposition(), GitHeadDisposition::Detached);
+        assert_eq!(
+            evidence.allowed_ignored_paths(),
+            &[
+                PathBuf::from(".moon/cache/state"),
+                PathBuf::from("target/debug/callisto")
+            ]
+        );
+    }
+
+    #[test]
+    fn git_commit_trust_rejects_untracked_or_tracked_worktree_entries() {
+        let temp = tempfile::tempdir().unwrap();
+        let runner = FakeRunner {
+            calls: Mutex::new(Vec::new()),
+            response: trust_response(temp.path().to_path_buf(), "?? release-input.txt\0".to_string(), false),
+        };
+        let git = ShellGit::new(&runner, temp.path());
+
+        let error = git
+            .observe_git_commit_trust()
+            .expect_err("untracked source must reject trust");
+
+        assert!(matches!(error, VcsError::Git(message) if message.contains("no tracked or untracked files")));
+    }
+
+    #[test]
+    fn git_commit_trust_rejects_ignored_paths_outside_fixed_allowlist() {
+        let temp = tempfile::tempdir().unwrap();
+        let runner = FakeRunner {
+            calls: Mutex::new(Vec::new()),
+            response: trust_response(
+                temp.path().to_path_buf(),
+                "!! callisto-schema.json\0".to_string(),
+                false,
+            ),
+        };
+        let git = ShellGit::new(&runner, temp.path());
+
+        let error = git
+            .observe_git_commit_trust()
+            .expect_err("ignored generated input must not be silently accepted");
+
+        assert!(matches!(error, VcsError::Git(message) if message.contains("fixed allowlist")));
+    }
+
+    #[test]
+    fn git_commit_trust_rejects_sha256_or_shallow_repositories() {
+        let temp = tempfile::tempdir().unwrap();
+        for (arguments, response) in [
+            (("--show-object-format", "sha256\n"), "SHA-1 Git object format"),
+            (("--is-shallow-repository", "true\n"), "non-shallow Git repository"),
+        ] {
+            let root = temp.path().to_path_buf();
+            let runner = FakeRunner {
+                calls: Mutex::new(Vec::new()),
+                response: Box::new(move |args| {
+                    if args == ["rev-parse", arguments.0] {
+                        return Ok(ok(arguments.1));
+                    }
+                    trust_response(root.clone(), String::new(), true)(args)
+                }),
+            };
+            let error = ShellGit::new(&runner, temp.path())
+                .observe_git_commit_trust()
+                .expect_err("unsupported repository trust evidence must reject");
+            assert!(matches!(error, VcsError::Git(message) if message.contains(response)));
         }
     }
 

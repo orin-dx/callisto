@@ -1,0 +1,6 @@
+# Release automation is a security boundary. Branch protection must require
+# this owner for changes to these paths; the repository workflow verifies the
+# file is present, while GitHub enforces the review requirement.
+/.github/workflows/ @castrog
+/.github/actions/ @castrog
+/.github/dependabot.yml @castrog

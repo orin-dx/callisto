@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 
-use callisto_model::{Ecosystem, GroupName, ManifestError, PackageId, TagTemplateError, VersionParseError};
+use callisto_model::{
+    ArtifactManifestError, Ecosystem, GroupName, ManifestError, PackageId, TagTemplateError, VersionParseError,
+};
 
 pub use crate::locate::LocateError;
 
@@ -223,6 +225,98 @@ pub enum GraphError {
     #[error("package `{id}` was requested via `--package` but is not part of this publish plan: {reason}")]
     #[diagnostic(code(E122))]
     PackageNotInPublishPlan { id: PackageId, reason: NotInPlanReason },
+
+    #[error("release intent references package `{package}` which is not an exact selected workspace package")]
+    #[diagnostic(code(E123), help("Rebuild the release intent from the current workspace instead of reusing a selection from another workspace."))]
+    ReleasePackageNotSelected { package: callisto_model::ReleasePackageId },
+
+    #[error("release intent no longer matches the current workspace snapshot")]
+    #[diagnostic(
+        code(E124),
+        help("Regenerate and reapprove the release intent; no release operation was authorized.")
+    )]
+    ReleaseIntentStale,
+
+    #[error("artifact manifest is not authorized by this release intent: {source}")]
+    #[diagnostic(
+        code(E136),
+        help("Regenerate the artifact manifest for this exact release intent; no artifact was uploaded.")
+    )]
+    ArtifactManifest {
+        #[source]
+        source: ArtifactManifestError,
+    },
+
+    #[error("artifact path `{path}` is unsafe: {reason}")]
+    #[diagnostic(
+        code(E137),
+        help("Place the built asset directly beneath the explicit artifact directory without symbolic links.")
+    )]
+    UnsafeArtifactPath { path: PathBuf, reason: &'static str },
+
+    #[error("cannot read artifact `{path}`: {message}")]
+    #[diagnostic(
+        code(E138),
+        help("Ensure the build artifact is readable and has not changed since it was attested.")
+    )]
+    ArtifactRead { path: PathBuf, message: String },
+
+    #[error("artifact `{path}` does not match its manifest digest or byte length")]
+    #[diagnostic(code(E139), help("Rebuild and re-attest the artifact; it was not uploaded."))]
+    ArtifactBytesMismatch { path: PathBuf },
+
+    #[error("GitHub could not verify the attestation for artifact `{path}`: {message}")]
+    #[diagnostic(
+        code(E140),
+        help("Verify that the artifact was built by the exact trusted workflow and source commit declared in the release intent.")
+    )]
+    ArtifactAttestation { path: PathBuf, message: String },
+
+    #[error("cannot read release input `{}`: {message}", .path.display())]
+    #[diagnostic(
+        code(E125),
+        help("Ensure the release manifest and configuration files remain readable until validation completes.")
+    )]
+    ReleaseInputRead { path: PathBuf, message: String },
+
+    #[error("registry binding `{registry}` is not a credential-free canonical URL: {reason}")]
+    #[diagnostic(
+        code(E126),
+        help("Use a URL without userinfo, query parameters, or fragments in callisto.toml.")
+    )]
+    UnsafeRegistryBinding { registry: String, reason: &'static str },
+
+    #[error("unsafe Git push remote: {reason}")]
+    #[diagnostic(code(E132), help("Configure origin with a credential-free HTTPS or SSH URL."))]
+    UnsafeGitRemote { reason: &'static str },
+
+    #[error("release execution state is invalid: {source}")]
+    #[diagnostic(
+        code(E127),
+        help("Regenerate the release intent or remove the invalid state file; no release operation was authorized.")
+    )]
+    ReleaseExecutionState {
+        #[source]
+        source: callisto_model::ReleaseStateError,
+    },
+
+    #[error("cannot read release execution state `{}`: {message}", .path.display())]
+    #[diagnostic(code(E128), help("Ensure the explicit release state path is readable."))]
+    ReleaseStateRead { path: PathBuf, message: String },
+
+    #[error("release execution state `{}` is not valid JSON: {message}", .path.display())]
+    #[diagnostic(
+        code(E129),
+        help("Restore the state file from a known-good receipt or start a new release intent; it was not treated as success.")
+    )]
+    ReleaseStateDecode { path: PathBuf, message: String },
+
+    #[error("cannot persist release execution state `{}`: {message}", .path.display())]
+    #[diagnostic(
+        code(E130),
+        help("Resolve the local filesystem error before any remote release effect is attempted.")
+    )]
+    ReleaseStateWrite { path: PathBuf, message: String },
 }
 
 /// Why a workspace package that a `--package` filter named is nonetheless

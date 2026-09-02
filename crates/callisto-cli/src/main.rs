@@ -77,6 +77,7 @@ fn main() -> ExitCode {
         Command::ComposePrBody(args) => compose_pr_body::handle(args, &cli.global),
         Command::Tag(args) => tag::handle(args, &cli.global),
         Command::FilterPlan(args) => filter_plan::handle(args, &cli.global),
+        Command::Release(args) => release::handle(args, &cli.global),
         Command::Completions(args) => completions::handle(args, &cli.global),
         Command::Schema(args) => schema::handle(args, &cli.global),
     };

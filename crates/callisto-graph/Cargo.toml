@@ -17,6 +17,7 @@ npm = ["callisto-manifests/npm"]
 inference = ["dep:callisto-conventional"]
 
 [dependencies]
+tempfile = { workspace = true }
 callisto-model = { path = "../callisto-model", version = "0.5.0" }
 callisto-vcs = { path = "../callisto-vcs", version = "0.5.0" }
 callisto-manifests = { path = "../callisto-manifests", version = "0.5.0" }
@@ -35,6 +36,7 @@ thiserror = { workspace = true }
 miette = { workspace = true }
 indexmap = { workspace = true }
 petgraph = { workspace = true }
+url = { workspace = true }
 
 [dev-dependencies]
 callisto-model = { path = "../callisto-model", features = ["test-util"] }
