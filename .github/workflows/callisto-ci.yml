@@ -16,6 +16,23 @@ permissions:
   contents: read
 
 jobs:
+  workflow-contracts:
+    name: Workflow Contracts
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+      # Match the deliberately small command surface available to the durable
+      # release verifier. This prevents an accidental dependency on a
+      # contributor-installed utility from reaching main.
+      - name: Verify pinned actions on the release runner baseline
+        run: env PATH=/usr/bin:/bin bash .github/tests/verify-action-pins.sh
+      - name: Verify Release-PR action contract
+        run: env PATH=/usr/bin:/bin bash .github/actions/callisto-action/tests/test_release_pr_contract.sh
+
   fmt:
     name: Code Formatting (Moon & Just)
     runs-on: ubuntu-latest
@@ -125,7 +142,7 @@ jobs:
 
   validate:
     name: Validate Changesets & Workspace Status
-    needs: [fmt, clippy, test, coverage, security]
+    needs: [workflow-contracts, fmt, clippy, test, coverage, security]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
