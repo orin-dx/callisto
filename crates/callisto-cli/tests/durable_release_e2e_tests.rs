@@ -38,7 +38,13 @@ fn system_program(name: &str) -> PathBuf {
         .into_iter()
         .flat_map(|path| std::env::split_paths(&path).collect::<Vec<_>>())
         .map(|directory| directory.join(name))
-        .find(|candidate| candidate.is_file())
+        .find(|candidate| {
+            candidate.is_file()
+                && Command::new(candidate).arg("--version").output().is_ok_and(|output| {
+                    output.status.success()
+                        && String::from_utf8_lossy(&output.stdout).starts_with(&format!("{name} version "))
+                })
+        })
         .unwrap_or_else(|| panic!("{name} must be available on PATH"))
 }
 
