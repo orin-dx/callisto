@@ -29,11 +29,13 @@ jobs:
       - name: Install workflow validation tools
         uses: taiki-e/install-action@0758d235715de2f3551eacc980d9ae8fce9342c3 # v2
         with:
-          tool: ripgrep,zizmor
+          tool: ripgrep,zizmor@1.30.0
       - name: Lint workflow and action metadata
+        # actionlint v1.7.12 predates GitHub's documented $/ self-repository
+        # syntax. Keep all other actionlint diagnostics strict.
         uses: docker://rhysd/actionlint@sha256:9d36088643581e728c969f35141f88139fec77280b2be23c1f66f8e40e1025e7 # v1.7.12
         with:
-          args: -color
+          args: -color -ignore=specifying\ action\ "\$/.+"\ in\ invalid\ format
       - name: Audit workflow and action security
         run: zizmor --offline --strict-collection .
       - name: Verify pinned actions
@@ -52,6 +54,8 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
+        with:
+          just-version: '1.58.0'
       - uses: moonrepo/setup-toolchain@261c62cb5b0f580c7be7c8cd0f023a2e96756095 # v0
       - uses: orin-dx/actions/setup-rust@2521888266780dabc7f5fd4c32b02d6ab82849db # v1.1
         with:
@@ -68,6 +72,8 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
+        with:
+          just-version: '1.58.0'
       - uses: moonrepo/setup-toolchain@261c62cb5b0f580c7be7c8cd0f023a2e96756095 # v0
       - uses: orin-dx/actions/setup-rust@2521888266780dabc7f5fd4c32b02d6ab82849db # v1.1
         with:
@@ -88,6 +94,8 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
+        with:
+          just-version: '1.58.0'
       - uses: moonrepo/setup-toolchain@261c62cb5b0f580c7be7c8cd0f023a2e96756095 # v0
       - uses: orin-dx/actions/setup-rust@2521888266780dabc7f5fd4c32b02d6ab82849db # v1.1
         with:
@@ -115,6 +123,8 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
+        with:
+          just-version: '1.58.0'
       - uses: orin-dx/actions/setup-rust@2521888266780dabc7f5fd4c32b02d6ab82849db # v1.1
         with:
           components: llvm-tools-preview
@@ -146,6 +156,8 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
+        with:
+          just-version: '1.58.0'
       - uses: moonrepo/setup-toolchain@261c62cb5b0f580c7be7c8cd0f023a2e96756095 # v0
       - uses: orin-dx/actions/setup-rust@2521888266780dabc7f5fd4c32b02d6ab82849db # v1.1
         with:
@@ -164,7 +176,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: ./.github/actions/callisto-validate
+      - uses: $/.github/actions/callisto-validate
       - name: Verify Release-PR action contract
         # Keep this lightweight validation job independent of `just`: the
         # executable contract is a standalone Bash test and the action above

@@ -9,7 +9,9 @@ while IFS= read -r line; do
   reference=${line#*uses: }
   reference=${reference%% #*}
   reference=${reference//[[:space:]]/}
-  [[ "$reference" == ./* ]] && continue
+  # Workspace-relative and GitHub's self-repository references are bound to
+  # local repository content; only external actions need an explicit pin.
+  [[ "$reference" == ./* || "$reference" == '$/'* ]] && continue
   if [[ "$reference" == docker://* ]]; then
     valid='^docker://[^@[:space:]]+@sha256:[0-9a-f]{64}$'
   else

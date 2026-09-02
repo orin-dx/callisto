@@ -59,7 +59,7 @@ runs:
   steps:
     - name: Setup Callisto Environment
       if: inputs.setup_callisto == 'true'
-      uses: ./.github/actions/setup-callisto
+      uses: $/.github/actions/setup-callisto
     - name: Create or update release PR
       id: version-pr
       shell: bash
