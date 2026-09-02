@@ -31,9 +31,9 @@ jobs:
         with:
           tool: ripgrep,zizmor
       - name: Lint workflow and action metadata
-        uses: nicholas-fedor/actionlint-action@78fd91fa48051abcbeac14c695a0921b0a71e9a1 # v1.7.12
+        uses: docker://rhysd/actionlint@sha256:9d36088643581e728c969f35141f88139fec77280b2be23c1f66f8e40e1025e7 # v1.7.12
         with:
-          version: '1.7.12' # renovate: datasource=github-releases depName=rhysd/actionlint
+          args: -color
       - name: Audit workflow and action security
         run: zizmor --offline --strict-collection .
       - name: Verify pinned actions
