@@ -241,9 +241,10 @@ fn merged_release_commit_executes_exactly_once_through_real_cli() {
     let first = execute(root, &intent, &state, &bin, &log, &forge_marker, &git_trace);
     assert!(
         first.status.success(),
-        "release execute failed: {}\nGit command trace:\n{}",
+        "release execute failed: {}\nGit command trace:\n{}\nEffect trace:\n{}",
         String::from_utf8_lossy(&first.stderr),
-        fs::read_to_string(&git_trace).unwrap_or_else(|_| "<unavailable>".to_owned())
+        fs::read_to_string(&git_trace).unwrap_or_else(|_| "<unavailable>".to_owned()),
+        fs::read_to_string(&log).unwrap_or_else(|_| "<unavailable>".to_owned())
     );
     assert!(git(root, &["tag", "--list", "core-crate@0.2.0"]).contains("core-crate@0.2.0"));
     let effects = fs::read_to_string(&log).unwrap();

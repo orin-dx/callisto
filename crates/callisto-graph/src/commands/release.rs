@@ -503,9 +503,11 @@ impl ValidatedReleaseIntent<'_> {
 
     fn observed_tag(&self, name: &TagName) -> Result<Option<ObservedTag>, GraphError> {
         let reference = format!("refs/tags/{name}^{{commit}}");
-        let observed = self
-            .runner
-            .run("git", &["rev-parse", "--verify", &reference], &self.prepared.root)?;
+        let observed = self.runner.run(
+            "git",
+            &["rev-parse", "--verify", "--quiet", &reference],
+            &self.prepared.root,
+        )?;
         if observed.exit_code != Some(0) {
             return Ok(None);
         }
