@@ -65,7 +65,6 @@ fn main() {
 
 #[cfg(feature = "gix-spike")]
 fn main() {
-    use gix_odb::HeaderExt as _;
     if let Err(e) = run() {
         eprintln!("SPIKE FAIL: {e}");
         std::process::exit(1);
@@ -74,6 +73,8 @@ fn main() {
 
 #[cfg(feature = "gix-spike")]
 fn run() -> Result<(), Box<dyn std::error::Error>> {
+    use gix_odb::HeaderExt as _;
+
     let cwd = std::env::current_dir()?;
     println!("cwd: {}", cwd.display());
 

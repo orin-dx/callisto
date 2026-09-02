@@ -10,16 +10,24 @@ build:
 build-release:
     cargo build --release -p callisto-cli
 
-# Run unit, integration, doctests, and E2E tests
+# Run unit, integration, doctests, and E2E tests. This intentionally uses the
+# same Nextest command as CI: a runner/configuration failure must never be
+# mistaken for a passing Moon fallback.
 test:
-    cargo nextest run --workspace || moon run :test
-    cargo test --doc
+    cargo nextest run --workspace --all-features
+    cargo test --doc --all-features
+
+# Explicit compatibility path for contributors who do not have cargo-nextest
+# installed. It is never used by CI or pre-merge verification.
+test-moon:
+    moon run :test
+    cargo test --doc --all-features
 
 # CI variant of `test`: emits Nextest's JUnit report under target/nextest/ci
 # for the trusted PR reporter. Keep the everyday local command artifact-free.
 test-ci:
-    cargo nextest run --workspace --profile ci
-    cargo test --doc
+    cargo nextest run --workspace --all-features --profile ci
+    cargo test --doc --all-features
 
 # Run Clippy lints (warnings treated as errors) as a single workspace invocation.
 # Moon's per-project `cargo clippy -p $project` tasks all lock the same shared

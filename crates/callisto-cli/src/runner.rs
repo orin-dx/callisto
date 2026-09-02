@@ -28,10 +28,11 @@ impl CommandRunner for CliCommandRunner {
         match output {
             Ok(o) => {
                 let stderr = String::from_utf8_lossy(&o.stderr).into_owned();
-                // Print stderr to the terminal before constructing the output
-                // so the caller sees it even if they don't inspect the field.
+                // Keep raw stderr available to callers for protocol/error
+                // classification, but never leak credentials to the terminal.
                 if !stderr.is_empty() {
-                    eprint!("{stderr}");
+                    let secrets = known_credential_env_values(std::env::vars());
+                    eprint!("{}", redact_known_secrets(&stderr, &secrets));
                 }
                 Ok(CommandOutput {
                     exit_code: o.status.code(),
@@ -747,6 +748,39 @@ mod tests {
             "live-streamed stderr must contain the redaction marker in place of the \
              credential, got: {stderr}"
         );
+    }
+
+    #[test]
+    fn run_redacts_known_credential_env_value_from_live_stderr_echo() {
+        const CHILD_ENV: &str = "CALLISTO_RUN_REDACT_CHILD";
+        const TOKEN: &str = "run-leak-1234";
+
+        if std::env::var(CHILD_ENV).is_ok() {
+            let runner = CliCommandRunner;
+            let output = runner
+                .run("sh", &["-c", "echo run-leak-1234 >&2"], std::path::Path::new("."))
+                .expect("run must capture child output");
+            assert!(output.stderr.contains(TOKEN), "captured stderr must remain raw");
+            return;
+        }
+
+        let exe = std::env::current_exe().expect("current_exe should be available in tests");
+        let output = std::process::Command::new(exe)
+            .arg("--exact")
+            .arg("runner::tests::run_redacts_known_credential_env_value_from_live_stderr_echo")
+            .arg("--nocapture")
+            .env(CHILD_ENV, "1")
+            .env("NPM_TOKEN", TOKEN)
+            .output()
+            .expect("failed to re-exec test binary");
+
+        assert!(output.status.success(), "child test must succeed");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            !stderr.contains(TOKEN),
+            "raw credential leaked to live stderr: {stderr}"
+        );
+        assert!(stderr.contains("[REDACTED]"), "redaction marker missing: {stderr}");
     }
 
     /// Guards against over-redaction breaking downstream error classification:
