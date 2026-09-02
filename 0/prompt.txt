@@ -1,0 +1,49 @@
+Pickup from where you were interrupted
+
+---
+
+Are you 100% confident on the work that you did and the quality of the infrastructure and tests? Are we appropriatelly testing things across our platforms? How did we miss this before?
+
+---
+
+Any improvements we can make to our actions to simplify things or make them more effective?
+
+---
+
+Let's get to fixing all of these please
+
+---
+
+Is that all in the latest PR?
+
+---
+
+Looks like you're still missing things: https://github.com/orin-dx/callisto/actions/runs/33653455623/job/100328721967?pr=39
+
+---
+
+This was working before. Why did it start failing? What changed?
+
+---
+
+Can we fix and make sure there are no other hidden issues?
+
+---
+
+Merged
+
+---
+
+What's next?
+
+---
+
+Can we take a look at this?? https://github.com/orin-dx/callisto/pull/40
+
+---
+
+Let's keep an eye on this too: https://github.com/orin-dx/callisto/actions/runs/33667848642
+
+---
+
+This failed: https://github.com/orin-dx/callisto/actions/runs/33667848642
