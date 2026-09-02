@@ -1,6 +1,6 @@
 name: Publish CI Reports
 
-on:
+on: # zizmor: ignore[dangerous-triggers] no untrusted code is checked out or executed; artifacts are reduced to numeric report counts before commenting.
   workflow_run:
     workflows: ["Callisto CI & Validation"]
     types: [completed]
@@ -15,6 +15,7 @@ jobs:
   publish:
     name: Publish test and coverage reports
     if: >-
+      github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'pull_request' &&
       github.event.workflow_run.pull_requests[0] != null
     runs-on: ubuntu-latest

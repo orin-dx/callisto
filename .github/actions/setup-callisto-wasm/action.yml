@@ -30,10 +30,13 @@ runs:
       id: download-wasm
       if: steps.cache-wasm.outputs.cache-hit != 'true'
       shell: bash
+      env:
+        INPUT_WASM_DEST: ${{ inputs.dest }}
+        INPUT_WASM_VERSION: ${{ inputs.version }}
       run: |
-        DEST_PATH="${{ inputs.dest }}"
+        DEST_PATH="$INPUT_WASM_DEST"
         mkdir -p "$(dirname "$DEST_PATH")"
-        TAG_NAME="${{ inputs.version }}"
+        TAG_NAME="$INPUT_WASM_VERSION"
 
         if [[ "$TAG_NAME" == "latest" ]]; then
           DOWNLOAD_URL="https://github.com/orin-dx/callisto/releases/latest/download/callisto-moon.wasm"
