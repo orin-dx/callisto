@@ -39,10 +39,10 @@ jobs:
       - name: Clippy Lints
         run: just lint
 
-      - name: Install cargo-nextest
+      - name: Install release verification tools
         uses: taiki-e/install-action@0758d235715de2f3551eacc980d9ae8fce9342c3 # v2
         with:
-          tool: cargo-nextest
+          tool: cargo-nextest,ripgrep
 
       - name: Unit & Integration Tests
         run: just test
