@@ -12,6 +12,18 @@ authority boundaries. A push with pending changesets creates or updates the rele
 PR versions manifests and changelogs and removes only the changesets it consumed. Nothing is
 removed from `main` until that PR is merged.
 
+The normal GitHub flow keeps one `callisto/version-packages` release PR and recomputes it from
+the current base branch whenever changesets land. This is a reconstruction from `main`, not a
+literal rebase of an old generated commit: recomputation prevents stale version, changelog, or
+changeset-deletion edits from being carried forward. GitHub's built-in workflow token can refuse
+to force-update that long-lived branch after `main` has changed a workflow. In that uncommon
+case Callisto automatically creates a SHA-suffixed replacement branch and release PR from the
+same current `main` and changesets, then closes the superseded PR with a link. No publishing
+credential or elevated GitHub token is required; subsequent ordinary updates continue on the
+replacement PR. Repositories that require the same PR number through that GitHub-specific edge
+case may optionally provide an App or fine-grained token with workflow-write authority to both
+checkout and `callisto-action`'s `github_token` input.
+
 After a merge, the workflow derives a transient release intent from the signed merge commit's
 actual delta, builds from that exact commit, and passes the intent between jobs as a same-run
 GitHub artifact with a SHA-256 sidecar. It is not committed and it is never recovered from a
@@ -48,10 +60,10 @@ supported patterns.
 
 ---
 
-### Pattern A: Manual `.npmrc` setup via `NPM_TOKEN` (what `callisto-action` uses)
+### Pattern A: Manual `.npmrc` setup via `NPM_TOKEN`
 
-Set an `NPM_TOKEN` secret in your repository. Add a step before the callisto-action step
-that writes the token into the npm config:
+Set an `NPM_TOKEN` secret in your repository. Add this only in the protected `execute`
+job, immediately before the command that publishes:
 
 ```yaml
 - name: Authenticate with npm registry
@@ -59,20 +71,13 @@ that writes the token into the npm config:
   env:
     NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-- uses: ./.github/actions/callisto-action
-  # This action only creates or updates the release PR.
-  env:
-    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-    NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+- run: callisto release execute --intent .release-intent/release-intent.json
 ```
 
 This works because `npm config set` writes to the user-level `.npmrc`, which the npm CLI
 reads for every subsequent publish call in the same job.
 
-`callisto-action` does NOT call `actions/setup-node` internally. If you need npm auth,
-Pattern A is the straightforward path that does not depend on any action-provided toolchain
-setup.
+The version-PR action never receives this token. It only creates or updates a reviewed PR.
 
 ---
 
@@ -88,11 +93,8 @@ variable. Set `NODE_AUTH_TOKEN` in the job environment:
     node-version: '20'
     registry-url: 'https://registry.npmjs.org'
 
-- uses: ./.github/actions/callisto-action
-  # This action only creates or updates the release PR.
+- run: callisto release execute --intent .release-intent/release-intent.json
   env:
-    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
     NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 ```
 
@@ -116,13 +118,12 @@ in that case.
 |---|---|---|
 | Depends on `actions/setup-node` | No | Yes — `registry-url` must be set |
 | Node.js version management | Separate step or pre-installed | Handled by `setup-node` |
-| What the examples in this repo use | Yes (the workflow examples in `release-paradigms.md`) | No |
-| Works without callisto-action changes | Yes | Yes, if `setup-node` is already in your job |
+| Recommended when | Your execute job does not otherwise need Node setup | Your execute job already uses `setup-node` |
+| Release-PR action receives the token | Never | Never |
 
-The examples in `release-paradigms.md` use Pattern A. If your job already calls
-`actions/setup-node` for other reasons and you set `registry-url`, Pattern B works too —
-but only because `setup-node` wrote the `.npmrc`. Do not add `NODE_AUTH_TOKEN` to a job
-that does not run `setup-node` with `registry-url`.
+If your execute job already calls `actions/setup-node` and sets `registry-url`, Pattern B
+works because `setup-node` wrote the `.npmrc`. Do not add `NODE_AUTH_TOKEN` to a job that
+does not run `setup-node` with `registry-url`.
 
 ---
 
@@ -247,17 +248,7 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
       - uses: ./.github/actions/setup-callisto
-      # Pattern A: write the npm auth token before callisto-action runs.
-      # callisto-action does not call actions/setup-node, so NODE_AUTH_TOKEN
-      # alone would be silently ignored by npm. This manual step is required.
-      - name: Authenticate with npm registry
-        run: npm config set //registry.npmjs.org/:_authToken $NPM_TOKEN
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
       - uses: ./.github/actions/callisto-action
-        # This action only creates or updates the release PR.
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        # This action only creates or updates the release PR. Registry tokens
+        # belong exclusively in the protected execute job after merge.
 ```

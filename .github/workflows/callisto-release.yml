@@ -75,6 +75,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: true # zizmor: ignore[artipacked] this isolated version-PR job must authenticate its managed-branch push; no artifacts are uploaded from it.
       - uses: ./.github/actions/setup-callisto
         with:
           source: local
@@ -110,7 +111,7 @@ jobs:
           # The GitHub API check is complementary provenance evidence: a
           # trusted merge must be both an actual merge of the managed PR and
           # a GitHub-verified signed commit. It cannot be a direct push.
-          prs=$(gh api --paginate "/repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/pulls" --jq '[.[] | select(.merged_at != null and .base.ref == "main" and .head.ref == "callisto/version-packages")] | length')
+          prs=$(gh api --paginate "/repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/pulls" --jq '[.[] | select(.merged_at != null and .base.ref == "main" and (.head.ref == "callisto/version-packages" or (.head.ref | test("^callisto/version-packages--[0-9a-f]{40}$"))))] | length')
           verified=$(gh api "/repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}" --jq '.commit.verification.verified')
           if [[ "$prs" == 1 && "$verified" == true ]]; then
             echo 'is_release_pr=true' >> "$GITHUB_OUTPUT"
@@ -155,7 +156,6 @@ jobs:
     permissions:
       contents: read
       attestations: write
-      artifact-metadata: write
       id-token: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
