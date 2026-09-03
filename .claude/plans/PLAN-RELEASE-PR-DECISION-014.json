@@ -1,0 +1,15 @@
+{
+  "artifact_type": "plan@1",
+  "schema": "plan@1",
+  "id": "PLAN-RELEASE-PR-DECISION-014",
+  "status": "draft",
+  "goal": "Implement typed Callisto-owned release-PR decisions and make the GitHub composite action a verified executor.",
+  "specs": [{"id": "SPEC-RELEASE-PR-DECISION-014", "file": ".claude/specs/SPEC-RELEASE-PR-DECISION-014.json", "sha256": "dab8bf395b38414581d73e73ae89c470c14999a225c084d93abd76789afcdf42"}],
+  "steps": [
+    {"id": "T01", "kind": "model", "description": "Add strict versioned release-PR snapshot/config/decision types and pure deterministic decision derivation in callisto-model.", "verify": ["moon run callisto-model:test", "just fmt-check", "just lint"], "commit": "feat(model): define release PR decisions"},
+    {"id": "T02", "kind": "cli", "depends_on": ["T01"], "description": "Add read-only `callisto release-pr decide`, loading workspace status and rendering its typed decision as JSON.", "verify": ["moon run callisto-cli:test", "just fmt-check", "just lint"], "commit": "feat(cli): decide managed release PR operations"},
+    {"id": "T03", "kind": "action", "depends_on": ["T02"], "description": "Replace shell-side policy discovery with snapshot collection, CLI decision invocation, expected-state rechecks, and closed decision execution.", "verify": ["just test-release-action", "just ci"], "commit": "feat(action): execute Callisto release PR decisions"},
+    {"id": "T04", "kind": "exit-gate", "depends_on": ["T03"], "description": "Map every acceptance criterion to mutation-resistant Rust, CLI, and exact-action black-box tests.", "verify": ["just ci", "just wasm-check"], "commit": "test(release): verify release PR decision contract"}
+  ],
+  "final_acceptance": "Do not mark the spec accepted until every acceptance criterion has a named passing test, the exact GitHub action contract is green on GitHub, and no action path independently derives create/update/supersede policy."
+}
