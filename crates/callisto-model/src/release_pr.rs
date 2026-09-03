@@ -144,7 +144,12 @@ pub struct ReleasePrPullRequestV1 {
 
 /// A closed release-PR operation selected by Callisto.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase", tag = "kind", deny_unknown_fields)]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "kind",
+    deny_unknown_fields
+)]
 #[non_exhaustive]
 pub enum ReleasePrActionV1 {
     Noop {
@@ -456,6 +461,29 @@ mod tests {
                 }
             );
         }
+    }
+
+    #[test]
+    fn action_variant_fields_serialize_as_camel_case() {
+        let update = ReleasePrActionV1::Update {
+            pull_request_number: 42,
+            branch: "callisto/version-packages".to_string(),
+        };
+        let value = serde_json::to_value(&update).unwrap();
+        assert_eq!(value["kind"], "update");
+        assert_eq!(value["pullRequestNumber"], 42);
+        assert!(value.get("pull_request_number").is_none());
+
+        let supersede = ReleasePrActionV1::Supersede {
+            pull_request_number: 42,
+            expected_branch: "callisto/version-packages".to_string(),
+            replacement_branch: "callisto/version-packages--sha".to_string(),
+        };
+        let value = serde_json::to_value(&supersede).unwrap();
+        assert_eq!(value["kind"], "supersede");
+        assert_eq!(value["pullRequestNumber"], 42);
+        assert_eq!(value["expectedBranch"], "callisto/version-packages");
+        assert_eq!(value["replacementBranch"], "callisto/version-packages--sha");
     }
 
     #[test]
