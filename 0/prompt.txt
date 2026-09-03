@@ -1,0 +1,3 @@
+codex did a lot of work in the recent PRs but now release is not working: https://github.com/orin-dx/callisto/actions/runs/33711966075/job/100515577416
+
+Can you help me fix this. YOu might want to check PRs merged in the last week for more context
