@@ -72,6 +72,9 @@ pub enum Command {
     /// Create, inspect, reconcile, or execute durable release intents.
     #[command(subcommand)]
     Release(ReleaseArgs),
+    /// Decide the next managed release-pull-request operation from a forge snapshot.
+    #[command(subcommand)]
+    ReleasePr(ReleasePrArgs),
     /// Generate shell completion scripts.
     Completions(CompletionsArgs),
     /// Print the JSON schema for a report type.
@@ -257,6 +260,41 @@ pub enum ReleaseArgs {
     Reconcile(ReleaseReconcileArgs),
     /// Execute a previously approved intent. This is the only durable mutation route.
     Execute(ReleaseExecuteArgs),
+}
+
+/// Read-only managed release-pull-request subcommands.
+#[derive(Subcommand, Clone, Debug)]
+pub enum ReleasePrArgs {
+    /// Derive create, update, supersede, or no-op from fresh workspace and forge facts.
+    Decide(ReleasePrDecideArgs),
+    /// Verify that a freshly collected forge snapshot still matches a prior decision.
+    Verify(ReleasePrVerifyArgs),
+}
+
+#[derive(Args, Clone, Debug)]
+pub struct ReleasePrDecideArgs {
+    /// Versioned credential-free forge snapshot JSON, inline JSON, file path, or `-` for stdin.
+    #[arg(long, value_name = "FILE|JSON|-")]
+    pub snapshot: String,
+    /// Exact configured forge repository identity, for example `orin-dx/callisto`.
+    #[arg(long, value_name = "OWNER/REPOSITORY")]
+    pub repository: String,
+    /// Configured base branch for the managed release PR.
+    #[arg(long)]
+    pub base_branch: String,
+    /// Canonical branch managed for the release PR.
+    #[arg(long)]
+    pub release_branch: String,
+}
+
+#[derive(Args, Clone, Debug)]
+pub struct ReleasePrVerifyArgs {
+    /// Versioned decision JSON, inline JSON, file path, or `-` for stdin.
+    #[arg(long, value_name = "FILE|JSON|-")]
+    pub decision: String,
+    /// Fresh versioned credential-free forge snapshot JSON, inline JSON, file path, or `-` for stdin.
+    #[arg(long, value_name = "FILE|JSON|-")]
+    pub snapshot: String,
 }
 
 #[derive(Args, Clone, Debug)]

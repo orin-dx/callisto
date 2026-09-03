@@ -1,63 +1,90 @@
 #!/usr/bin/env bash
-# Creates or refreshes the non-privileged Callisto release PR. This script is
-# intentionally the composite action's executable implementation so its tests
-# exercise the exact code a GitHub runner invokes.
+# Executes a typed Callisto release-PR decision. Forge reads stay here; all
+# create/update/supersede policy belongs to `callisto release-pr decide`.
 set -euo pipefail
 
 cd "$INPUT_CWD"
 
-set +e
-callisto status --check
-status=$?
-set -e
-case "$status" in
-  1) echo 'hasChangesets=true' >> "$GITHUB_OUTPUT" ;;
-  2)
+# This checkout starts on the configured base. Preserve its exact commit for
+# both observations; after `version` commits, HEAD intentionally changes.
+base_commit=$(git rev-parse HEAD)
+
+release_pr_snapshot() {
+  local raw_prs initial enriched number repository branch workflow_delta
+  raw_prs=$(gh pr list --state open --base "$INPUT_BRANCH" --limit 1000 --json number,headRefName,headRepository)
+  initial=$(jq -c '[.[] | {
+    number,
+    headRepository: (.headRepository.nameWithOwner // ""),
+    headBranch: .headRefName,
+    workflowDeltaFromBase: false
+  }]' <<< "$raw_prs")
+  enriched='[]'
+
+  # This is forge/Git observation, not policy: fetch every safe same-repository
+  # PR branch and report whether its workflow files differ from the checked-out
+  # base. Callisto decides whether that fact requires a replacement PR.
+  while IFS=$'\t' read -r number repository branch; do
+    workflow_delta=false
+    if [[ "$repository" == "$GITHUB_REPOSITORY" ]] && git check-ref-format --branch "$branch" > /dev/null 2>&1; then
+      git fetch --no-tags origin "refs/heads/$branch:refs/remotes/origin/$branch"
+      if ! git diff --quiet "refs/remotes/origin/$branch...HEAD" -- .github/workflows; then
+        workflow_delta=true
+      fi
+    fi
+    enriched=$(jq -c \
+      --argjson number "$number" \
+      --arg repository "$repository" \
+      --arg branch "$branch" \
+      --argjson workflow_delta "$workflow_delta" \
+      '. + [{number: $number, headRepository: $repository, headBranch: $branch, workflowDeltaFromBase: $workflow_delta}]' \
+      <<< "$enriched")
+  done < <(jq -r '.[] | [.number, .headRepository, .headBranch] | @tsv' <<< "$initial")
+
+  jq -cn \
+    --arg repository "$GITHUB_REPOSITORY" \
+    --arg base_branch "$INPUT_BRANCH" \
+    --arg base_commit "$base_commit" \
+    --argjson open_pull_requests "$enriched" \
+    '{schemaVersion: 1, repository: $repository, baseBranch: $base_branch, baseCommit: $base_commit, openPullRequests: $open_pull_requests}'
+}
+
+snapshot=$(release_pr_snapshot)
+decision=$(callisto --format json release-pr decide \
+  --snapshot "$snapshot" \
+  --repository "$GITHUB_REPOSITORY" \
+  --base-branch "$INPUT_BRANCH" \
+  --release-branch "$INPUT_RELEASE_BRANCH")
+decision_kind=$(jq -r '.action.kind' <<< "$decision")
+
+case "$decision_kind" in
+  noop)
     echo 'hasChangesets=false' >> "$GITHUB_OUTPUT"
     matrix=$(callisto matrix --format json | jq -c '[.platformTargets[].targets[]] | unique_by(.artifactName)')
     echo "nativeMatrix=$matrix" >> "$GITHUB_OUTPUT"
     echo '::notice::No changesets. This action does not publish, tag, download artifacts, or create releases; use the durable repository workflow.'
     exit 0
     ;;
-  *) echo "::error::callisto status --check exited $status"; exit 1 ;;
+  create)
+    release_branch=$(jq -r '.action.branch' <<< "$decision")
+    existing_pr=''
+    ;;
+  update)
+    existing_pr=$(jq -r '.action.pullRequestNumber' <<< "$decision")
+    release_branch=$(jq -r '.action.branch' <<< "$decision")
+    ;;
+  supersede)
+    existing_pr=$(jq -r '.action.pullRequestNumber' <<< "$decision")
+    release_branch=$(jq -r '.action.replacementBranch' <<< "$decision")
+    ;;
+  *) echo "::error::Callisto returned unsupported release PR decision kind: $decision_kind"; exit 1 ;;
 esac
 
-# A managed branch must have at most one open PR to its configured base. The
-# SHA-suffixed form is an automatic GitHub-token fallback used only when
-# updating the long-lived branch would cross a workflow file change.
-prs=$(gh pr list --state open --base "$INPUT_BRANCH" --limit 1000 --json number,body,headRefName,headRepository \
-  --jq '[.[] | select(.headRepository.nameWithOwner == env.GITHUB_REPOSITORY and (.headRefName == env.INPUT_RELEASE_BRANCH or ((.headRefName | startswith(env.INPUT_RELEASE_BRANCH + "--")) and ((.headRefName | ltrimstr(env.INPUT_RELEASE_BRANCH + "--")) | test("^[0-9a-f]{40}$")))))]')
-pr_count=$(jq 'length' <<< "$prs")
-case "$pr_count" in
-  0) existing='' ;;
-  1) existing=$(jq -r '.[0].body // empty' <<< "$prs") ;;
-  *) echo "::error::found $pr_count open release PRs for $INPUT_RELEASE_BRANCH -> $INPUT_BRANCH"; exit 1 ;;
-esac
-
-if [[ -n "$existing" ]]; then
-  body=$(printf '%s' "$existing" | callisto compose-pr-body --existing-body - --label "$INPUT_PR_LABEL" --branch "$INPUT_BRANCH" --format text)
+echo 'hasChangesets=true' >> "$GITHUB_OUTPUT"
+if [[ -n "$existing_pr" ]]; then
+  existing_body=$(gh pr view "$existing_pr" --json body --jq '.body')
+  body=$(printf '%s' "$existing_body" | callisto compose-pr-body --existing-body - --label "$INPUT_PR_LABEL" --branch "$INPUT_BRANCH" --format text)
 else
   body=$(callisto compose-pr-body --label "$INPUT_PR_LABEL" --branch "$INPUT_BRANCH" --format text)
-fi
-active_branch=$(jq -r '.[0].headRefName // empty' <<< "$prs")
-if [[ -z "$active_branch" ]]; then
-  active_branch="$INPUT_RELEASE_BRANCH"
-fi
-
-# Rebuild the generated release commit from the current base branch on every
-# run. A literal rebase would preserve stale generated version, changelog, and
-# changeset-deletion edits rather than recomputing them. GitHub's installation
-# token rejects force-updating an old managed ref when its replacement crosses
-# an already-reviewed workflow change on the base branch. In that narrow case
-# rotate to a deterministic SHA-suffixed managed branch.
-release_branch="$active_branch"
-if git ls-remote --exit-code --heads origin "refs/heads/$active_branch" > /dev/null 2>&1; then
-  git fetch --no-tags origin "refs/heads/$active_branch:refs/remotes/origin/$active_branch"
-  if ! git diff --quiet "refs/remotes/origin/$active_branch...HEAD" -- .github/workflows; then
-    base_sha=$(git rev-parse HEAD)
-    release_branch="${INPUT_RELEASE_BRANCH}--${base_sha}"
-    echo "::notice::Rotating the generated release branch because the base branch changed a workflow since the current release PR was created."
-  fi
 fi
 
 read -ra command <<< "$INPUT_VERSION_COMMAND"
@@ -70,18 +97,30 @@ fi
 git switch -C "$release_branch"
 git add -A
 git commit -m "$INPUT_COMMIT_MESSAGE"
+
+# A local commit does not authorize a stale force-push. Re-observe immediately
+# before mutating the remote branch, then again before GitHub label/PR writes.
+current_snapshot=$(release_pr_snapshot)
+callisto release-pr verify --decision "$decision" --snapshot "$current_snapshot" > /dev/null
 git push --force-with-lease origin "$release_branch"
 
-label_exists=$(gh api --paginate "/repos/${GITHUB_REPOSITORY}/labels?per_page=100" --slurp --jq 'any(.[][]; .name == env.INPUT_PR_LABEL)')
+current_snapshot=$(release_pr_snapshot)
+callisto release-pr verify --decision "$decision" --snapshot "$current_snapshot" > /dev/null
+
+label_exists=$(gh label list --limit 1000 --json name --jq 'any(.[]; .name == env.INPUT_PR_LABEL)')
 if [[ "$label_exists" != true ]]; then
   gh label create "$INPUT_PR_LABEL" --color 0e8a16 --description 'Callisto release packages'
 fi
-pr=$(jq -r '.[0].number // empty' <<< "$prs")
-if [[ -n "$pr" && "$release_branch" == "$active_branch" ]]; then
-  gh pr edit "$pr" --title "$INPUT_TITLE" --body "$body" --add-label "$INPUT_PR_LABEL"
-else
-  new_pr_url=$(gh pr create --head "$release_branch" --base "$INPUT_BRANCH" --title "$INPUT_TITLE" --body "$body" --label "$INPUT_PR_LABEL")
-  if [[ -n "$pr" ]]; then
-    gh pr close "$pr" --comment "Superseded by $new_pr_url because GitHub requires elevated workflow authority to update this generated branch. The replacement was recomputed from the current base branch and pending changesets."
-  fi
-fi
+
+case "$decision_kind" in
+  create)
+    gh pr create --head "$release_branch" --base "$INPUT_BRANCH" --title "$INPUT_TITLE" --body "$body" --label "$INPUT_PR_LABEL"
+    ;;
+  update)
+    gh pr edit "$existing_pr" --title "$INPUT_TITLE" --body "$body" --add-label "$INPUT_PR_LABEL"
+    ;;
+  supersede)
+    new_pr_url=$(gh pr create --head "$release_branch" --base "$INPUT_BRANCH" --title "$INPUT_TITLE" --body "$body" --label "$INPUT_PR_LABEL")
+    gh pr close "$existing_pr" --comment "Superseded by $new_pr_url because GitHub requires elevated workflow authority to update this generated branch. The replacement was recomputed from the current base branch and pending changesets."
+    ;;
+esac

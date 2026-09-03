@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# Black-box regression coverage for the release-PR action implementation. The
-# real executable script is run with fake process boundaries, so this checks
-# observable GitHub/Git behavior without talking to a repository.
+# Black-box coverage for the exact release-PR action executable. The fake
+# process boundary proves the script executes only Callisto's closed decision
+# set; Rust tests cover decision policy itself.
 set -euo pipefail
 
 action_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 script="$action_dir/scripts/create-or-update-release-pr.sh"
 
 run_case() {
-  local prs="$1" label_exists="$2" remote_branch_exists="$3" workflow_changed="$4" status_code="$5"
+  local prs="$1" decision="$2" label_exists="$3" workflow_changed="$4" verify_code="$5"
   local calls_file output_file harness
   calls_file="$(mktemp)"
   output_file="$(mktemp)"
@@ -17,8 +17,10 @@ run_case() {
   {
     cat <<'STUBS'
 callisto() {
+  echo "callisto $*" >> "$CALLS_FILE"
+  if [[ " $* " == *' release-pr decide '* ]]; then printf '%s\n' "$DECISION"; return 0; fi
+  if [[ " $* " == *' release-pr verify '* ]]; then return "$VERIFY_CODE"; fi
   case "$1" in
-    status) return "$STATUS_CODE" ;;
     matrix) printf '%s\n' '{"platformTargets":[]}' ;;
     compose-pr-body) echo 'composed release body' ;;
     version) return 0 ;;
@@ -27,21 +29,18 @@ callisto() {
 }
 gh() {
   echo "gh $*" >> "$CALLS_FILE"
-  if [[ "$1 $2" == 'pr list' ]]; then
-    local query="${!#}"
-    jq "$query" <<< "$PR_LIST"
-    return 0
-  fi
-  if [[ "$1" == api ]]; then echo "$LABEL_EXISTS"; return 0; fi
+  if [[ "$1 $2" == 'pr list' ]]; then printf '%s\n' "$PR_LIST"; return 0; fi
+  if [[ "$1 $2" == 'pr view' ]]; then echo 'existing body'; return 0; fi
+  if [[ "$1 $2" == 'label list' ]]; then echo "$LABEL_EXISTS"; return 0; fi
   if [[ "$1 $2" == 'pr create' ]]; then echo 'https://github.com/orin-dx/callisto/pull/99'; return 0; fi
 }
 git() {
   echo "git $*" >> "$CALLS_FILE"
   case "$1" in
     status) echo ' M Cargo.toml'; return 0 ;;
-    ls-remote) [[ "$REMOTE_BRANCH_EXISTS" == true ]] && return 0 || return 2 ;;
-    diff) [[ "$WORKFLOW_CHANGED" == true ]] && return 1 || return 0 ;;
     rev-parse) echo "$BASE_SHA"; return 0 ;;
+    check-ref-format|fetch) return 0 ;;
+    diff) [[ "$WORKFLOW_CHANGED" == true ]] && return 1 || return 0 ;;
   esac
   return 0
 }
@@ -49,9 +48,9 @@ STUBS
   } > "$harness"
 
   set +e
-  CALLS_FILE="$calls_file" PR_LIST="$prs" LABEL_EXISTS="$label_exists" \
-    REMOTE_BRANCH_EXISTS="$remote_branch_exists" WORKFLOW_CHANGED="$workflow_changed" \
-    BASE_SHA='0123456789abcdef0123456789abcdef01234567' STATUS_CODE="$status_code" GITHUB_OUTPUT="$output_file" \
+  CALLS_FILE="$calls_file" PR_LIST="$prs" DECISION="$decision" LABEL_EXISTS="$label_exists" \
+    WORKFLOW_CHANGED="$workflow_changed" VERIFY_CODE="$verify_code" \
+    BASE_SHA='0123456789abcdef0123456789abcdef01234567' GITHUB_OUTPUT="$output_file" \
     INPUT_VERSION_COMMAND='callisto version' \
     INPUT_COMMIT_MESSAGE='chore(release): version packages' \
     INPUT_TITLE='chore(release): version packages' \
@@ -70,89 +69,82 @@ STUBS
   rm -f "$calls_file" "$output_file" "$harness"
 }
 
+create='{"schemaVersion":1,"action":{"kind":"create","branch":"callisto/version-packages"}}'
+update='{"schemaVersion":1,"action":{"kind":"update","pullRequestNumber":42,"branch":"callisto/version-packages"}}'
+fallback_branch='callisto/version-packages--0123456789abcdef0123456789abcdef01234567'
+supersede="{\"schemaVersion\":1,\"action\":{\"kind\":\"supersede\",\"pullRequestNumber\":42,\"expectedBranch\":\"callisto/version-packages\",\"replacementBranch\":\"$fallback_branch\"}}"
+retained="{\"schemaVersion\":1,\"action\":{\"kind\":\"update\",\"pullRequestNumber\":99,\"branch\":\"$fallback_branch\"}}"
+noop='{"schemaVersion":1,"action":{"kind":"noop","reason":{"kind":"noPendingChangesets"}}}'
+
 fail=0
-output="$(run_case '[]' true false false 1)"
+output="$(run_case '[]' "$create" true false 0)"
 if [[ "$output" != 0$'\n'* ]] \
-  || [[ "$output" != *'gh pr create --head callisto/version-packages --base main'* ]] \
-  || [[ "$output" != *'git push --force-with-lease origin callisto/version-packages'* ]]; then
-  echo "FAIL: creates exactly the configured release PR branch: $output"
+  || [[ "$output" != *'callisto --format json release-pr decide'* ]] \
+  || [[ "$(grep -F -c 'callisto release-pr verify' <<< "$output")" != 2 ]] \
+  || [[ "$output" != *'gh pr create --head callisto/version-packages --base main'* ]]; then
+  echo "FAIL: executes Callisto create decision with both mutation-boundary checks: $output"
   fail=1
 else
-  echo 'PASS: creates the configured release PR branch'
+  echo 'PASS: executes Callisto create decision'
 fi
 
-output="$(run_case '[{"number":1,"body":"first","headRefName":"callisto/version-packages","headRepository":{"nameWithOwner":"orin-dx/callisto"}},{"number":2,"body":"second","headRefName":"callisto/version-packages--0123456789abcdef0123456789abcdef01234567","headRepository":{"nameWithOwner":"orin-dx/callisto"}}]' true false false 1)"
-if [[ "$output" != 1$'\n'* ]] || [[ "$output" == *'git switch'* ]]; then
-  echo "FAIL: ambiguous open release PRs must fail before mutation: $output"
-  fail=1
-else
-  echo 'PASS: rejects ambiguous release PR state'
-fi
-
-output="$(run_case '[{"number":7,"body":"foreign","headRefName":"callisto/version-packages","headRepository":{"nameWithOwner":"fork/callisto"}},{"number":8,"body":"malformed","headRefName":"callisto/version-packages--short","headRepository":{"nameWithOwner":"orin-dx/callisto"}}]' true false false 1)"
-if [[ "$output" != 0$'\n'* ]] \
-  || [[ "$output" != *'gh pr create --head callisto/version-packages --base main'* ]] \
-  || [[ "$output" == *'gh pr edit 7'* ]] \
-  || [[ "$output" == *'gh pr edit 8'* ]]; then
-  echo "FAIL: foreign or malformed managed-branch lookalikes must not be selected: $output"
-  fail=1
-else
-  echo 'PASS: rejects foreign and malformed managed-branch lookalikes'
-fi
-
-output="$(run_case '[{"number":42,"body":"existing","headRefName":"callisto/version-packages","headRepository":{"nameWithOwner":"orin-dx/callisto"}}]' false true false 1)"
+output="$(run_case '[{"number":42,"headRefName":"callisto/version-packages","headRepository":{"nameWithOwner":"orin-dx/callisto"}}]' "$update" false false 0)"
 if [[ "$output" != 0$'\n'* ]] \
   || [[ "$output" != *'gh label create callisto: release'* ]] \
   || [[ "$output" != *'gh pr edit 42'* ]] \
   || [[ "$output" == *'gh pr create'* ]]; then
-  echo "FAIL: updates the sole PR and propagates label failures: $output"
+  echo "FAIL: executes Callisto update decision: $output"
   fail=1
 else
-  echo 'PASS: updates the sole PR and creates a missing label'
+  echo 'PASS: executes Callisto update decision'
 fi
 
-output="$(run_case '[]' true true true 1)"
-fallback_branch='callisto/version-packages--0123456789abcdef0123456789abcdef01234567'
+output="$(run_case '[{"number":42,"headRefName":"callisto/version-packages","headRepository":{"nameWithOwner":"orin-dx/callisto"}}]' "$supersede" true true 0)"
 if [[ "$output" != 0$'\n'* ]] \
-  || [[ "$output" != *"git switch -C $fallback_branch"* ]] \
   || [[ "$output" != *"git push --force-with-lease origin $fallback_branch"* ]] \
-  || [[ "$output" != *"gh pr create --head $fallback_branch --base main"* ]]; then
-  echo "FAIL: workflow-history fallback must create a SHA-suffixed managed branch: $output"
-  fail=1
-else
-  echo 'PASS: rotates to a SHA-suffixed branch for workflow history'
-fi
-
-output="$(run_case '[{"number":42,"body":"existing","headRefName":"callisto/version-packages","headRepository":{"nameWithOwner":"orin-dx/callisto"}}]' true true true 1)"
-if [[ "$output" != 0$'\n'* ]] \
-  || [[ "$output" != *'gh pr create --head callisto/version-packages--0123456789abcdef0123456789abcdef01234567 --base main'* ]] \
+  || [[ "$output" != *"gh pr create --head $fallback_branch --base main"* ]] \
   || [[ "$output" != *'gh pr close 42 --comment Superseded by https://github.com/orin-dx/callisto/pull/99'* ]] \
   || [[ "$output" == *'gh pr edit 42'* ]]; then
-  echo "FAIL: fallback must replace, link, and close the superseded PR: $output"
+  echo "FAIL: executes Callisto supersede decision: $output"
   fail=1
 else
-  echo 'PASS: replaces and links the superseded PR only for workflow history'
+  echo 'PASS: executes Callisto supersede decision'
 fi
 
-output="$(run_case '[{"number":99,"body":"replacement","headRefName":"callisto/version-packages--0123456789abcdef0123456789abcdef01234567","headRepository":{"nameWithOwner":"orin-dx/callisto"}}]' true true false 1)"
+output="$(run_case "[{\"number\":99,\"headRefName\":\"$fallback_branch\",\"headRepository\":{\"nameWithOwner\":\"orin-dx/callisto\"}}]" "$retained" true false 0)"
 if [[ "$output" != 0$'\n'* ]] \
   || [[ "$output" != *"git push --force-with-lease origin $fallback_branch"* ]] \
   || [[ "$output" != *'gh pr edit 99'* ]] \
   || [[ "$output" == *'gh pr create'* ]]; then
-  echo "FAIL: later ordinary changes must retain the replacement branch and PR: $output"
+  echo "FAIL: retains Callisto-selected replacement PR: $output"
   fail=1
 else
-  echo 'PASS: retains the replacement PR after ordinary changes'
+  echo 'PASS: retains Callisto-selected replacement PR'
 fi
 
-output="$(run_case '[]' true false false 2)"
+output="$(run_case '[]' "$noop" true false 0)"
 if [[ "$output" != 0$'\n'* ]] \
   || [[ "$output" == *'git switch'* ]] \
-  || [[ "$output" == *'gh pr '* ]]; then
-  echo "FAIL: no changesets must stop before GitHub or Git mutation: $output"
+  || [[ "$output" == *'git push'* ]] \
+  || [[ "$output" == *'gh pr create'* ]] \
+  || [[ "$output" == *'gh pr edit'* ]]; then
+  echo "FAIL: no-op decision must stop before mutation: $output"
   fail=1
 else
-  echo 'PASS: no changesets stops before GitHub or Git mutation'
+  echo 'PASS: no-op decision stops before mutation'
+fi
+
+output="$(run_case '[]' "$create" true false 1)"
+if [[ "$output" != 1$'\n'* ]] \
+  || [[ "$output" == *'git push'* ]] \
+  || [[ "$output" == *'gh label '* ]] \
+  || [[ "$output" == *'gh pr create'* ]] \
+  || [[ "$output" == *'gh pr edit'* ]] \
+  || [[ "$output" == *'gh pr close'* ]]; then
+  echo "FAIL: stale snapshot must prevent every forge mutation: $output"
+  fail=1
+else
+  echo 'PASS: stale snapshot prevents forge mutation'
 fi
 
 action_contents="$(<"$action_dir/action.yml")"
@@ -164,11 +156,26 @@ else
 fi
 
 script_contents="$(<"$script")"
-if [[ "$script_contents" == *'gh label create'*'|| true'* ]]; then
-  echo 'FAIL: label-creation errors are hidden'
+if [[ "$script_contents" == *'gh api --paginate'*'--slurp'*'--jq'* ]]; then
+  echo 'FAIL: label lookup combines incompatible gh api --slurp and --jq flags'
+  fail=1
+elif [[ "$script_contents" != *'callisto --format json release-pr decide'* ]] \
+  || [[ "$script_contents" != *'callisto release-pr verify'* ]]; then
+  echo 'FAIL: action still derives release-PR policy outside Callisto'
   fail=1
 else
-  echo 'PASS: label-creation errors are not hidden'
+  echo 'PASS: action delegates policy and uses compatible label lookup'
+fi
+
+# The configured branch is policy input to Callisto, not an action-side branch
+# matching rule. A second reference would be a strong signal that the adapter
+# has started to recreate release-PR policy.
+release_branch_reference_count=$(grep -o 'INPUT_RELEASE_BRANCH' "$script" | wc -l | tr -d ' ')
+if [[ "$release_branch_reference_count" != 1 ]]; then
+  echo 'FAIL: action must pass the configured release branch to Callisto exactly once'
+  fail=1
+else
+  echo 'PASS: action does not recreate managed-branch policy'
 fi
 
 exit "$fail"
