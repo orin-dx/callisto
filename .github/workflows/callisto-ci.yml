@@ -106,6 +106,8 @@ jobs:
         with:
           tool: cargo-nextest
       - run: just test-ci
+      - name: Verify Release-PR action against the real callisto binary
+        run: bash .github/actions/callisto-action/tests/test_release_pr_decide_binary_contract.sh
       - run: just wasm-check
       - name: Upload Nextest report
         if: ${{ always() }}

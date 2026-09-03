@@ -2,6 +2,11 @@
 # Black-box coverage for the exact release-PR action executable. The fake
 # process boundary proves the script executes only Callisto's closed decision
 # set; Rust tests cover decision policy itself.
+#
+# This stubs `callisto` with hand-written JSON fixtures, so it cannot catch a
+# mismatch between what the real binary serializes and what this script's jq
+# expressions expect -- see test_release_pr_decide_binary_contract.sh, which
+# calls the compiled binary, for that check.
 set -euo pipefail
 
 action_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
