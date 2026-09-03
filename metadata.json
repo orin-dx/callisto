@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.10.4-nightly.202609020630.ee6d53f3d",
+  "checkpoint_id": "01M1M77ZTG7D1TE1JV9GXW4RYX",
+  "strategy": "manual-commit",
+  "branch": "fix/release-pr-action-field-casing",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".changeset/fix-release-pr-action-camel-case.md",
+    "crates/callisto-model/src/release_pr.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 92,
+    "cache_creation_tokens": 127647,
+    "cache_read_tokens": 4689389,
+    "output_tokens": 15859,
+    "api_call_count": 46
+  }
+}

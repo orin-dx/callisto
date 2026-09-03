@@ -1,0 +1,64 @@
+{
+  "cli_version": "0.10.4-nightly.202609020630.ee6d53f3d",
+  "checkpoint_id": "01M1M77ZTG7D1TE1JV9GXW4RYX",
+  "session_id": "a33915af-5e86-4584-9bde-f732d973cf9f",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-03T18:07:09.444842Z",
+  "branch": "fix/release-pr-action-field-casing",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".changeset/fix-release-pr-action-camel-case.md",
+    "crates/callisto-model/src/release_pr.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5",
+  "turn_id": "8d7e62b074d8",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 92,
+    "cache_creation_tokens": 127647,
+    "cache_read_tokens": 4689389,
+    "output_tokens": 15859,
+    "api_call_count": 46
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-03T18:07:09.409216Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 584,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 584,
+    "total_lines_changed": 584,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 2291,
+      "user_lines_removed": 1,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".opencode/plugins/entire.ts": 269,
+        ".playwright-mcp/console-2026-08-29T15-59-57-136Z.log": 11,
+        ".playwright-mcp/console-2026-08-29T16-01-28-866Z.log": 3,
+        ".playwright-mcp/page-2026-08-29T15-59-57-414Z.yml": 4,
+        ".playwright-mcp/page-2026-08-29T16-01-29-130Z.yml": 300,
+        ".playwright-mcp/page-2026-08-29T16-01-55-533Z.yml": 347,
+        ".playwright-mcp/page-2026-08-29T16-07-25-102Z.yml": 462,
+        ".playwright-mcp/page-2026-08-29T16-08-10-779Z.yml": 462,
+        "crates/callisto-vcs/src/access.rs": 73,
+        "crates/callisto-vcs/src/shell.rs": 245,
+        "err.log": 2
+      },
+      "user_removed_per_file": {
+        "crates/callisto-vcs/src/shell.rs": 1
+      }
+    }
+  ]
+}
