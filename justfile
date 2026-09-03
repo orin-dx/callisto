@@ -24,9 +24,18 @@ test-moon:
     cargo test --doc --all-features
 
 # Exercise the Release-PR action's real shell block with Git and GitHub API
-# boundaries faked. This keeps its state-transition contract executable.
+# boundaries faked. This proves the script's control flow given a decision
+# shape; it does not call the real `callisto` binary, so it cannot catch a
+# mismatch between what Callisto actually serializes and what this script's
+# jq expressions expect. See test-release-action-binary for that check.
 test-release-action:
     bash .github/actions/callisto-action/tests/test_release_pr_contract.sh
+
+# Compiles callisto and runs the Release-PR action's jq extraction against
+# its real JSON output. Requires pending changesets to exercise update and
+# supersede decisions; skips cleanly otherwise.
+test-release-action-binary:
+    bash .github/actions/callisto-action/tests/test_release_pr_decide_binary_contract.sh
 
 # CI variant of `test`: emits Nextest's JUnit report under target/nextest/ci
 # for the trusted PR reporter. Keep the everyday local command artifact-free.
