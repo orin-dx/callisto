@@ -80,7 +80,7 @@ fail=0
 output="$(run_case '[]' "$create" true false 0)"
 if [[ "$output" != 0$'\n'* ]] \
   || [[ "$output" != *'callisto --format json release-pr decide'* ]] \
-  || [[ "$(rg -F -c 'callisto release-pr verify' <<< "$output")" != 2 ]] \
+  || [[ "$(grep -F -c 'callisto release-pr verify' <<< "$output")" != 2 ]] \
   || [[ "$output" != *'gh pr create --head callisto/version-packages --base main'* ]]; then
   echo "FAIL: executes Callisto create decision with both mutation-boundary checks: $output"
   fail=1
@@ -170,7 +170,7 @@ fi
 # The configured branch is policy input to Callisto, not an action-side branch
 # matching rule. A second reference would be a strong signal that the adapter
 # has started to recreate release-PR policy.
-release_branch_reference_count=$(rg -o 'INPUT_RELEASE_BRANCH' "$script" | wc -l | tr -d ' ')
+release_branch_reference_count=$(grep -o 'INPUT_RELEASE_BRANCH' "$script" | wc -l | tr -d ' ')
 if [[ "$release_branch_reference_count" != 1 ]]; then
   echo 'FAIL: action must pass the configured release branch to Callisto exactly once'
   fail=1
