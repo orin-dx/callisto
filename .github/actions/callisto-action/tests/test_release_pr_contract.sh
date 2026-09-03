@@ -33,6 +33,7 @@ gh() {
     return 0
   fi
   if [[ "$1" == api ]]; then echo "$LABEL_EXISTS"; return 0; fi
+  if [[ "$1 $2" == 'label list' ]]; then echo "$LABEL_EXISTS"; return 0; fi
   if [[ "$1 $2" == 'pr create' ]]; then echo 'https://github.com/orin-dx/callisto/pull/99'; return 0; fi
 }
 git() {
@@ -164,6 +165,13 @@ else
 fi
 
 script_contents="$(<"$script")"
+if [[ "$script_contents" == *'gh api --paginate'*'--slurp'*'--jq'* ]]; then
+  echo 'FAIL: label lookup must not combine gh api --slurp with --jq'
+  fail=1
+else
+  echo 'PASS: label lookup avoids incompatible gh api output flags'
+fi
+
 if [[ "$script_contents" == *'gh label create'*'|| true'* ]]; then
   echo 'FAIL: label-creation errors are hidden'
   fail=1

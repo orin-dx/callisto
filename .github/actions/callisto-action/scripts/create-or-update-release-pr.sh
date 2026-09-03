@@ -72,7 +72,10 @@ git add -A
 git commit -m "$INPUT_COMMIT_MESSAGE"
 git push --force-with-lease origin "$release_branch"
 
-label_exists=$(gh api --paginate "/repos/${GITHUB_REPOSITORY}/labels?per_page=100" --slurp --jq 'any(.[][]; .name == env.INPUT_PR_LABEL)')
+# `gh api` rejects --slurp together with --jq. `gh label list` owns its own
+# pagination, so this query works across current GitHub CLI releases without
+# mixing incompatible output modes.
+label_exists=$(gh label list --limit 1000 --json name --jq 'any(.[]; .name == env.INPUT_PR_LABEL)')
 if [[ "$label_exists" != true ]]; then
   gh label create "$INPUT_PR_LABEL" --color 0e8a16 --description 'Callisto release packages'
 fi
