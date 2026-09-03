@@ -19,6 +19,7 @@ Commands:
   tag              Create git tags for packages in a publish plan
   filter-plan      Filter a publish plan down to what a publish report confirms actually succeeded, dropping anything that failed
   release          Create, inspect, reconcile, or execute durable release intents
+  release-pr       Decide the next managed release-pull-request operation from a forge snapshot
   completions      Generate shell completion scripts
   schema           Print the JSON schema for a report type
   help             Print this message or the help of the given subcommand(s)

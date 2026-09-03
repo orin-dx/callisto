@@ -78,6 +78,10 @@ pub enum CliError {
     Vcs(#[from] callisto_vcs::VcsError),
 
     #[error(transparent)]
+    #[diagnostic(transparent)]
+    ReleasePrDecision(#[from] callisto_model::ReleasePrDecisionError),
+
+    #[error(transparent)]
     #[diagnostic(code(callisto::pre_json_error))]
     PreJson(#[from] callisto_format::PreJsonError),
 
