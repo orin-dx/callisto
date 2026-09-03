@@ -81,7 +81,7 @@ fn check_credentials(
 
 /// Compatibility preview for the retired mutable publish route.
 ///
-/// This command intentionally never obtains an [`ApplyPermit`] or constructs
+/// This command intentionally never obtains an [`callisto_model::ApplyPermit`] or constructs
 /// a registry client. Production publication moves to `release execute` once
 /// its exact provider adapters are available.
 pub fn handle(args: PublishArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
