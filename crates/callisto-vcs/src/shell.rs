@@ -14,7 +14,7 @@
 
 use std::path::{Path, PathBuf};
 
-use callisto_model::{ApplyPermit, CommandRunner, CommitSha, TagName};
+use callisto_model::{ApplyPermit, CommandRunner, CommitSha, StagedChangeKindV1, StagedChangeV1, TagName};
 
 use crate::{
     access::{GitCommitTrustEvidence, GitHeadDisposition},
@@ -68,6 +68,48 @@ impl<'r> ShellGit<'r> {
             runner,
             root: root.into(),
         }
+    }
+
+    /// Returns every staged (Git index) change relative to `base`. File
+    /// contents for additions and modifications are read directly from the
+    /// worktree with [`std::fs::read`], never through a [`CommandRunner`]
+    /// (whose captured stdout is a lossy `String`), so CRLF and binary
+    /// content survive exactly.
+    pub fn staged_changes_since(&self, base: &CommitSha) -> Result<Vec<StagedChangeV1>, VcsError> {
+        let output = self.runner.run(
+            "git",
+            &["diff", "--cached", "--raw", "-z", "--no-renames", base.as_str()],
+            &self.root,
+        )?;
+        if !output.success() {
+            return Err(VcsError::Git(format!(
+                "`git diff --cached --raw` against `{}` failed: {}",
+                base.as_str(),
+                redact_git_stderr(&output.stderr)
+            )));
+        }
+
+        let entries = parse_raw_diff_z(&output.stdout)?;
+        let mut changes = Vec::with_capacity(entries.len());
+        for entry in entries {
+            let kind = staged_change_kind(entry.status);
+            let contents = match kind {
+                StagedChangeKindV1::Added | StagedChangeKindV1::Modified => {
+                    let bytes = std::fs::read(self.root.join(&entry.path)).map_err(|error| {
+                        VcsError::Git(format!("could not read staged file `{}`: {error}", entry.path))
+                    })?;
+                    Some(bytes)
+                }
+                _ => None,
+            };
+            changes.push(StagedChangeV1 {
+                path: entry.path,
+                kind,
+                new_mode: entry.new_mode,
+                contents,
+            });
+        }
+        Ok(changes)
     }
 
     /// Returns explicit, fresh Git trust evidence for a durable release.
@@ -147,6 +189,75 @@ impl<'r> ShellGit<'r> {
             head_disposition,
             parse_release_worktree_status(&status.stdout)?,
         ))
+    }
+}
+
+/// One `git diff --raw -z` record, before Git's single-letter status is
+/// mapped to a [`StagedChangeKindV1`] and file contents are read.
+struct RawDiffEntry {
+    path: String,
+    /// The post-image Git file mode, or `None` for a pure deletion.
+    new_mode: Option<u32>,
+    status: char,
+}
+
+/// Parses `git diff --raw -z --no-renames` output. Each record is two
+/// `\0`-separated tokens: a `:<old-mode> <new-mode> <old-sha> <new-sha>
+/// <status>` metadata line, then the path. `--no-renames` guarantees at
+/// most one path per record (a rename or copy would otherwise emit two).
+fn parse_raw_diff_z(raw: &str) -> Result<Vec<RawDiffEntry>, VcsError> {
+    let mut entries = Vec::new();
+    let mut tokens = raw.split('\0').filter(|token| !token.is_empty());
+    while let Some(meta) = tokens.next() {
+        let Some(meta) = meta.strip_prefix(':') else {
+            return Err(VcsError::Git(format!(
+                "unexpected token in `git diff --raw -z` output: {meta:?}"
+            )));
+        };
+        let path = tokens.next().ok_or_else(|| {
+            VcsError::Git("truncated `git diff --raw -z` output: missing a path after its metadata line".to_string())
+        })?;
+        let fields: Vec<&str> = meta.split(' ').collect();
+        let [_old_mode, new_mode, _old_sha, _new_sha, status_field] = fields.as_slice() else {
+            return Err(VcsError::Git(format!(
+                "malformed `git diff --raw -z` metadata line: {meta:?}"
+            )));
+        };
+        let status = status_field
+            .chars()
+            .next()
+            .ok_or_else(|| VcsError::Git(format!("empty status in `git diff --raw -z` metadata line: {meta:?}")))?;
+        let new_mode =
+            if status == 'D' {
+                None
+            } else {
+                Some(u32::from_str_radix(new_mode, 8).map_err(|error| {
+                    VcsError::Git(format!("invalid Git mode `{new_mode}` in raw diff output: {error}"))
+                })?)
+            };
+        entries.push(RawDiffEntry {
+            path: path.to_string(),
+            new_mode,
+            status,
+        });
+    }
+    Ok(entries)
+}
+
+/// Maps a `git diff --raw` single-letter status to a [`StagedChangeKindV1`].
+/// Any status this codebase does not have a named case for (Git's own docs
+/// list `X` as "unknown") conservatively maps to `Unmerged`, which
+/// [`callisto_model::ReleasePrCommitPlanV1::from_changes`] always rejects --
+/// safe by construction rather than by an exhaustive status list here.
+fn staged_change_kind(status: char) -> StagedChangeKindV1 {
+    match status {
+        'A' => StagedChangeKindV1::Added,
+        'M' => StagedChangeKindV1::Modified,
+        'D' => StagedChangeKindV1::Deleted,
+        'R' => StagedChangeKindV1::Renamed,
+        'C' => StagedChangeKindV1::Copied,
+        'T' => StagedChangeKindV1::TypeChanged,
+        _ => StagedChangeKindV1::Unmerged,
     }
 }
 
@@ -903,5 +1014,116 @@ mod tests {
         let rendered = format!("{err}");
         assert!(!rendered.contains("ghs_leaked_secret"), "got: {rendered}");
         assert!(rendered.contains("[REDACTED]"), "got: {rendered}");
+    }
+
+    #[test]
+    fn parse_raw_diff_z_parses_modes_status_and_odd_paths() {
+        let raw = [
+            ":000000 100644 0000000000000000000000000000000000000000 1111111111111111111111111111111111111111 A",
+            "VERSION",
+            ":100644 100644 2222222222222222222222222222222222222222 3333333333333333333333333333333333333333 M",
+            "path with spaces/файл.txt",
+            ":100644 000000 4444444444444444444444444444444444444444 0000000000000000000000000000000000000000 D",
+            ".changeset/old-entry.md",
+            ":100644 120000 5555555555555555555555555555555555555555 6666666666666666666666666666666666666666 T",
+            "was-a-file-now-a-symlink",
+            ":000000 100644 0000000000000000000000000000000000000000 7777777777777777777777777777777777777777 U",
+            "conflicted.txt",
+        ]
+        .join("\0")
+            + "\0";
+
+        let entries = parse_raw_diff_z(&raw).unwrap();
+        assert_eq!(entries.len(), 5);
+
+        assert_eq!(entries[0].path, "VERSION");
+        assert_eq!(entries[0].status, 'A');
+        assert_eq!(entries[0].new_mode, Some(0o100644));
+
+        assert_eq!(entries[1].path, "path with spaces/файл.txt");
+        assert_eq!(entries[1].status, 'M');
+
+        assert_eq!(entries[2].path, ".changeset/old-entry.md");
+        assert_eq!(entries[2].status, 'D');
+        assert_eq!(entries[2].new_mode, None, "a deletion has no post-image mode");
+
+        assert_eq!(entries[3].status, 'T');
+        assert_eq!(entries[3].new_mode, Some(0o120000));
+
+        assert_eq!(entries[4].status, 'U');
+
+        assert_eq!(staged_change_kind('A'), StagedChangeKindV1::Added);
+        assert_eq!(staged_change_kind('M'), StagedChangeKindV1::Modified);
+        assert_eq!(staged_change_kind('D'), StagedChangeKindV1::Deleted);
+        assert_eq!(staged_change_kind('T'), StagedChangeKindV1::TypeChanged);
+        assert_eq!(staged_change_kind('U'), StagedChangeKindV1::Unmerged);
+        assert_eq!(staged_change_kind('R'), StagedChangeKindV1::Renamed);
+        assert_eq!(staged_change_kind('C'), StagedChangeKindV1::Copied);
+        assert_eq!(
+            staged_change_kind('X'),
+            StagedChangeKindV1::Unmerged,
+            "an unrecognized status must fail closed via Unmerged, not panic or silently pass through"
+        );
+    }
+
+    #[test]
+    fn parse_raw_diff_z_rejects_truncated_or_malformed_input() {
+        assert!(
+            parse_raw_diff_z(":100644 100644 aaa bbb M\0").is_err(),
+            "metadata with no following path"
+        );
+        assert!(
+            parse_raw_diff_z("not-a-metadata-line\0path\0").is_err(),
+            "missing leading colon"
+        );
+        assert!(parse_raw_diff_z(":bad M\0path\0").is_err(), "too few metadata fields");
+    }
+
+    #[test]
+    fn staged_changes_since_reads_worktree_bytes_and_marks_deletions() {
+        let temp = tempfile::tempdir().unwrap();
+        std::fs::write(temp.path().join("VERSION"), b"1.2.3\r\n").unwrap();
+        std::fs::create_dir_all(temp.path().join("pkg")).unwrap();
+        let binary: Vec<u8> = (0..=255u8).collect();
+        std::fs::write(temp.path().join("pkg/binary.bin"), &binary).unwrap();
+
+        let base = CommitSha::parse(&"0".repeat(40)).unwrap();
+        let raw = [
+            ":000000 100644 0000000000000000000000000000000000000000 1111111111111111111111111111111111111111 A",
+            "VERSION",
+            ":000000 100644 0000000000000000000000000000000000000000 2222222222222222222222222222222222222222 A",
+            "pkg/binary.bin",
+            ":100644 000000 3333333333333333333333333333333333333333 0000000000000000000000000000000000000000 D",
+            ".changeset/old-entry.md",
+        ]
+        .join("\0")
+            + "\0";
+
+        let runner = FakeRunner {
+            calls: Mutex::new(Vec::new()),
+            response: Box::new(move |args| match args {
+                ["diff", "--cached", "--raw", "-z", "--no-renames", sha] if sha == &"0".repeat(40) => {
+                    Ok(ok(raw.clone()))
+                }
+                other => panic!("unexpected command: {other:?}"),
+            }),
+        };
+        let git = ShellGit::new(&runner, temp.path());
+
+        let changes = git.staged_changes_since(&base).unwrap();
+        assert_eq!(changes.len(), 3);
+
+        let version = changes.iter().find(|c| c.path == "VERSION").unwrap();
+        assert_eq!(version.kind, StagedChangeKindV1::Added);
+        assert_eq!(version.new_mode, Some(0o100644));
+        assert_eq!(version.contents.as_deref(), Some(b"1.2.3\r\n".as_slice()));
+
+        let bin = changes.iter().find(|c| c.path == "pkg/binary.bin").unwrap();
+        assert_eq!(bin.contents.as_deref(), Some(binary.as_slice()));
+
+        let deleted = changes.iter().find(|c| c.path == ".changeset/old-entry.md").unwrap();
+        assert_eq!(deleted.kind, StagedChangeKindV1::Deleted);
+        assert_eq!(deleted.new_mode, None);
+        assert_eq!(deleted.contents, None, "a deletion must carry no contents to read");
     }
 }
