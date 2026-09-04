@@ -451,6 +451,7 @@ name = "callisto-cli"
 version = "0.5.0"
 dependencies = [
  "anstream 0.6.21",
+ "base64 0.22.1",
  "callisto-changelog",
  "callisto-conventional",
  "callisto-fixtures",

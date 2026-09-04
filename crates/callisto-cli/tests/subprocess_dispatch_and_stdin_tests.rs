@@ -103,6 +103,36 @@ fn subprocess_lifecycle_exercises_every_main_dispatch_arm() {
         String::from_utf8_lossy(&version.stderr)
     );
 
+    let head = std::process::Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .current_dir(root)
+        .output()
+        .unwrap();
+    let head_sha = String::from_utf8(head.stdout).unwrap().trim().to_string();
+    std::fs::write(root.join("release-pr-dispatch-check.txt"), b"dispatch coverage\n").unwrap();
+    std::process::Command::new("git")
+        .args(["add", "-A"])
+        .current_dir(root)
+        .status()
+        .unwrap();
+    let commit_plan = run(&[
+        "--cwd",
+        &root_str,
+        "--format",
+        "json",
+        "release-pr",
+        "commit-plan",
+        "--base-commit",
+        &head_sha,
+        "--message",
+        "dispatch coverage",
+    ]);
+    assert!(
+        commit_plan.status.success(),
+        "release-pr commit-plan failed: {}",
+        String::from_utf8_lossy(&commit_plan.stderr)
+    );
+
     let completions = run(&["completions", "bash"]);
     assert!(
         completions.status.success(),
