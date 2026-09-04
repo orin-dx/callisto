@@ -265,10 +265,12 @@ pub enum ReleaseArgs {
 /// Read-only managed release-pull-request subcommands.
 #[derive(Subcommand, Clone, Debug)]
 pub enum ReleasePrArgs {
-    /// Derive create, update, supersede, or no-op from fresh workspace and forge facts.
+    /// Derive create, update, or no-op from fresh workspace and forge facts.
     Decide(ReleasePrDecideArgs),
     /// Verify that a freshly collected forge snapshot still matches a prior decision.
     Verify(ReleasePrVerifyArgs),
+    /// Build the exact forge commit-API file changes for the staged Git index.
+    CommitPlan(ReleasePrCommitPlanArgs),
 }
 
 #[derive(Args, Clone, Debug)]
@@ -295,6 +297,19 @@ pub struct ReleasePrVerifyArgs {
     /// Fresh versioned credential-free forge snapshot JSON, inline JSON, file path, or `-` for stdin.
     #[arg(long, value_name = "FILE|JSON|-")]
     pub snapshot: String,
+}
+
+#[derive(Args, Clone, Debug)]
+pub struct ReleasePrCommitPlanArgs {
+    /// Full commit SHA the staged changes are relative to (the staging branch's root).
+    #[arg(long)]
+    pub base_commit: String,
+    /// Commit message to record in the plan for the forge commit API.
+    #[arg(long)]
+    pub message: String,
+    /// Write the plan to this file instead of stdout.
+    #[arg(long, value_name = "FILE")]
+    pub out: Option<PathBuf>,
 }
 
 #[derive(Args, Clone, Debug)]

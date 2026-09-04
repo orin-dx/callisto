@@ -54,3 +54,4 @@ callisto-graph = { path = "../callisto-graph" }
 trycmd = "0.15"
 rstest.workspace = true
 insta.workspace = true
+base64.workspace = true
