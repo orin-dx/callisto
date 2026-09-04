@@ -39,7 +39,7 @@ if [[ "$checkout_count" != "$credential_free_checkout_count" ]]; then
   exit 1
 fi
 
-require_line "$version_pr" '          persist-credentials: true # zizmor: ignore[artipacked] this isolated version-PR job must authenticate its managed-branch push; no artifacts are uploaded from it.' 'version-pr must document its sole retained Git credential'
+require_line "$version_pr" '          persist-credentials: false' 'version-pr never git-pushes -- it commits through the forge API -- so it must not persist Git credentials'
 
 if rg -U 'run: \|(?s:.*?)\$\{\{ inputs\.' .github/actions/setup-callisto/action.yml .github/actions/setup-callisto-wasm/action.yml > /dev/null; then
   printf 'workflow contract failed: composite-action inputs must enter shell through named environment variables\n' >&2

@@ -18,7 +18,7 @@ inputs:
     required: false
     default: 'callisto: release'
   setup_git_user:
-    description: 'Configure github-actions[bot] before committing'
+    description: 'Unused no-op, kept for backward compatibility. The managed branch is committed through the forge commit API, not a local `git commit`, so no Git identity is ever configured.'
     required: false
     default: 'true'
   branch:
@@ -30,7 +30,7 @@ inputs:
     required: false
     default: 'callisto/version-packages'
   github_token:
-    description: 'Optional GitHub token for pull-request operations; checkout must use the same token for Git pushes'
+    description: 'Optional GitHub token for pull-request and forge commit API operations. The managed branch is never pushed with `git push`; the default GITHUB_TOKEN is sufficient even on a public repository, since the executor never writes `.github/workflows/*`.'
     required: false
     default: ''
   setup_callisto:
