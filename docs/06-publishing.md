@@ -15,14 +15,20 @@ removed from `main` until that PR is merged.
 The normal GitHub flow keeps one `callisto/version-packages` release PR and recomputes it from
 the current base branch whenever changesets land. This is a reconstruction from `main`, not a
 literal rebase of an old generated commit: recomputation prevents stale version, changelog, or
-changeset-deletion edits from being carried forward. GitHub's built-in workflow token can refuse
-to force-update that long-lived branch after `main` has changed a workflow. In that uncommon
-case Callisto automatically creates a SHA-suffixed replacement branch and release PR from the
-same current `main` and changesets, then closes the superseded PR with a link. No publishing
-credential or elevated GitHub token is required; subsequent ordinary updates continue on the
-replacement PR. Repositories that require the same PR number through that GitHub-specific edge
-case may optionally provide an App or fine-grained token with workflow-write authority to both
-checkout and `callisto-action`'s `github_token` input.
+changeset-deletion edits from being carried forward. The action never runs a local `git push`
+to update that branch. Instead it stages the recomputed change as a commit rooted at the
+current `main` via GitHub's `createCommitOnBranch` commit API, restricted to non-workflow
+paths so `.github/workflows/*` is always inherited unchanged from the branch's current tip,
+then moves the release branch's ref onto that commit with a plain REST ref update. GitHub's
+built-in `GITHUB_TOKEN` cannot write `.github/workflows/*` through the Git push protocol or
+through `createCommitOnBranch`'s own file changes on a public repository, but a ref move that
+carries no workflow-file write is not subject to that restriction, so the built-in token never
+needs elevated permission to keep the branch current. The resulting commits are GitHub-signed
+("Verified") and attributed to `github-actions[bot]`. Repositories that already have a
+SHA-suffixed branch and PR from before this change (created under the prior fallback behavior)
+do not need to migrate anything -- that branch is a normal, continuously-updated managed branch
+going forward. An optional App or fine-grained token remains available for repositories that
+want release PR operations attributed to a different identity, but is never required.
 
 After a merge, the workflow derives a transient release intent from the signed merge commit's
 actual delta, builds from that exact commit, and passes the intent between jobs as a same-run
