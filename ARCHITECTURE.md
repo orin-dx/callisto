@@ -402,10 +402,10 @@ sequenceDiagram
 | `commit_message` | `"chore(release): version packages"` | Commit message for the Version Packages PR. |
 | `title` | `"chore(release): version packages"` | Pull Request title. |
 | `pr_label` | `"callisto: release"` | Label automatically attached to the Version Packages PR. |
-| `setup_git_user` | `"true"` | Automatically configure `git config user.name` & `user.email` bot credentials. |
+| `setup_git_user` | `"true"` | Kept for backward compatibility; now a documented no-op. The action updates the release branch through the forge commit API, not a local Git commit, so there is no local Git identity left to configure. |
 | `branch` | `"main"` | Base branch for Version PRs. |
-| `release_branch` | `"callisto/version-packages"` | Managed head branch for the Version PR. GitHub-token fallback branches are created automatically when needed. |
-| `github_token` | `""` | Optional token for GitHub PR operations; checkout must use the same token for Git pushes. The built-in token remains the default. |
+| `release_branch` | `"callisto/version-packages"` | Managed head branch for the Version PR. |
+| `github_token` | `""` | Optional token for GitHub PR and commit-API operations. The built-in token remains the default and is sufficient, since the action never needs `.github/workflows/*` write permission. |
 | `setup_callisto` | `"true"` | Install the Callisto environment before versioning. |
 | `cwd` | `"."` | Working directory path if workspace root is nested in a subfolder. |
 

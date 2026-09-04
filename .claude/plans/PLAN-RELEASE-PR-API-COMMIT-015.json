@@ -1,0 +1,62 @@
+{
+  "artifact_type": "plan@1",
+  "schema": "plan@1",
+  "id": "PLAN-RELEASE-PR-API-COMMIT-015",
+  "status": "in-progress",
+  "goal": "Replace the release-PR executor's local `git push` with a forge-commit-API sequence (commit-plan, deterministic staging branch, tree-equality check, REST ref move) so the built-in GITHUB_TOKEN never needs `.github/workflows/*` write permission on any ref, removing the SHA-suffixed-replacement-branch fallback and the PR churn it caused.",
+  "specs": [{"id": "SPEC-RELEASE-PR-DECISION-014", "file": ".claude/specs/SPEC-RELEASE-PR-DECISION-014.json"}],
+  "steps": [
+    {
+      "id": "T00",
+      "kind": "spike",
+      "status": "complete",
+      "decision": "GO",
+      "description": "Empirically test the forge-commit-API approach against the real public orin-dx/callisto repository before committing to it as the fix.",
+      "evidence": "Reproduced the production failure directly: GitHub Actions run 33679599559 (2026-09-02) failed with 'refusing to allow a GitHub App to create or update workflow \".github/workflows/callisto-ci.yml\" without \"workflows\" permission', confirming GITHUB_TOKEN cannot write .github/workflows/* through the Git push protocol on a public repo. Tested whether GraphQL createCommitOnBranch's own fileChanges input is independently restricted the same way -- confirmed it is, on any ref, not just the managed branch. Tested the proposed workaround directly against the real repo: (1) createCommitOnBranch with a change set restricted to non-workflow paths only, parented on the current base commit, succeeded and produced a commit whose .github/workflows subtree was inherited unchanged from its parent; (2) a subsequent plain REST PATCH .../git/refs/heads/<branch> (force update) moving the managed branch's ref onto that new commit also succeeded, even though the branch's prior .github/workflows content differed from the new commit's inherited content, with the branch's .github/workflows subtree ending up byte-identical to main's afterward. This confirms a ref move is not itself treated as a write to .github/workflows/* by GitHub's restriction, unlike git push and unlike createCommitOnBranch's own fileChanges.",
+      "verify": ["manual: GitHub Actions run 33679599559 log", "manual: real-repo createCommitOnBranch + updateRef trial against orin-dx/callisto"],
+      "commit": null
+    },
+    {
+      "id": "T01",
+      "kind": "model",
+      "status": "complete",
+      "depends_on": ["T00"],
+      "description": "Replace ReleasePrSnapshotV1/ReleasePrActionV1/ReleasePrDecisionV1 (schema version 1) with V2 equivalents in callisto-model: ReleasePrPullRequestV1's workflow_delta_from_base: bool becomes ReleasePrPullRequestV2's head_commit: CommitSha; ReleasePrActionV2 has Noop{reason}/Create{branch, staging_branch}/Update{pull_request_number, branch, expected_head_commit, staging_branch} with Supersede removed entirely; staging_branch is deterministic via ReleasePrConfigV1::staging_branch() (\"{release_branch}--staging\"); verify_snapshot additionally catches a moved PR head via head_commit. Add ReleasePrCommitPlanV1 (schema version 1) with from_changes(base_commit, message, Vec<StagedChangeV1>) building the typed createCommitOnBranch payload (additions[{path, contentsBase64}], deletions[{path}]), failing closed with new error codes E149-E154 on: empty change set, non-regular-file Git mode, rename/copy/type-change/unmerged path, any .github/workflows/* or unsafe path (.git/, .., absolute, NUL), and a payload over MAX_COMMIT_PLAN_BYTES (4 MiB conservative cap).",
+      "verify": ["cargo test -p callisto-model", "just fmt-check", "just lint"],
+      "commit": "feat(model): release-PR v2 types for API-commit executor, drop supersede (b1c8c1be)"
+    },
+    {
+      "id": "T02",
+      "kind": "vcs",
+      "depends_on": ["T01"],
+      "description": "Add ShellGit::staged_changes_since(base) -> Vec<StagedChangeV1> to callisto-vcs (git diff --cached --raw parsing plus reading worktree bytes), exposed through the GitAccess trait.",
+      "verify": ["cargo test -p callisto-vcs", "just fmt-check", "just lint"],
+      "commit": "feat(vcs): add staged_changes_since observation"
+    },
+    {
+      "id": "T03",
+      "kind": "cli",
+      "depends_on": ["T01", "T02"],
+      "description": "Add a read-only `callisto release-pr commit-plan --base-commit <sha> --message <msg> [--out <file>]` subcommand to callisto-cli that renders a ReleasePrCommitPlanV1 as JSON.",
+      "verify": ["cargo test -p callisto-cli", "just fmt-check", "just lint"],
+      "commit": "feat(cli): add release-pr commit-plan subcommand"
+    },
+    {
+      "id": "T04",
+      "kind": "action",
+      "depends_on": ["T03"],
+      "description": "Rewrite .github/actions/callisto-action/scripts/create-or-update-release-pr.sh: drop the per-PR git fetch/workflow-diff loop from snapshot collection (now just gh pr list --json number,headRefName,headRepository,headRefOid); sequence becomes decide -> compose PR body -> run version command -> git add -A -> callisto release-pr commit-plan -> compare git write-tree against the API commit's tree SHA -> release-pr verify (before staging, before the real ref move, and before PR writes) -> stage via GraphQL createCommitOnBranch on the deterministic staging branch -> move the real branch's ref via REST PATCH/POST .../git/refs/heads/<branch> -> existing label/PR create-or-edit logic -> a trap that always deletes the staging ref. No `git push` anywhere in the script. Flip callisto-release.yml's version-pr job checkout to persist-credentials: false. Document setup_git_user in action.yml as a kept, backward-compatible no-op.",
+      "verify": ["just test-release-action", "just ci"],
+      "commit": "feat(action): execute release-pr updates via forge commit API instead of git push"
+    },
+    {
+      "id": "T05",
+      "kind": "docs",
+      "depends_on": ["T01", "T02", "T03", "T04"],
+      "description": "Update SPEC-RELEASE-PR-DECISION-014.json and SPEC-RELEASE-INTERFACES-013.json to describe the forge-commit-API architecture and drop Supersede language; add this plan; update docs/06-publishing.md and ARCHITECTURE.md to remove SHA-suffixed-fallback/git-push language; add changesets for callisto-model, callisto-cli, and callisto-vcs.",
+      "verify": ["python3 -m json.tool .claude/specs/SPEC-RELEASE-PR-DECISION-014.json", "python3 -m json.tool .claude/specs/SPEC-RELEASE-INTERFACES-013.json"],
+      "commit": "docs(release-pr): document forge-commit-api release-pr executor"
+    }
+  ],
+  "final_acceptance": "Do not mark SPEC-RELEASE-PR-DECISION-014 accepted until every acceptance criterion (including AC-006 for the commit-plan contract) has a named passing test, the exact GitHub action contract runs green with no git push, the SHA-suffixed replacement branches created under the prior supersede behavior remain recognized and updatable, and .github/workflows/* is provably never touched by the executor's mutations."
+}
