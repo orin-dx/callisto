@@ -1,0 +1,34 @@
+{
+  "cli_version": "0.10.4-nightly.202609020630.ee6d53f3d",
+  "checkpoint_id": "01M1Q08FP0ZYWPR8C0MCNEPATN",
+  "strategy": "manual-commit",
+  "branch": "feat/release-pr-api-commit",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "crates/callisto-vcs/src/access.rs",
+    "crates/callisto-vcs/src/shell.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 8,
+    "cache_creation_tokens": 23615,
+    "cache_read_tokens": 2094485,
+    "output_tokens": 13987,
+    "api_call_count": 4,
+    "subagent_tokens": {
+      "input_tokens": 10,
+      "cache_creation_tokens": 18346,
+      "cache_read_tokens": 2682933,
+      "output_tokens": 549,
+      "api_call_count": 5
+    }
+  }
+}
