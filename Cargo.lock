@@ -565,6 +565,7 @@ dependencies = [
 name = "callisto-model"
 version = "0.5.0"
 dependencies = [
+ "base64 0.22.1",
  "camino",
  "miette 7.6.0",
  "path-slash",
