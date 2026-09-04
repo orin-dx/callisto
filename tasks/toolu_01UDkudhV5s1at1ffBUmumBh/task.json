@@ -1,0 +1,12 @@
+{
+  "tool_use_id": "toolu_01UDkudhV5s1at1ffBUmumBh",
+  "agent_id": "ac0a7cd6af2cbbd35",
+  "subagent_type": "Explore",
+  "task_description": "Map release-pr consumers and conventions",
+  "files": [
+    "crates/callisto-vcs/src/access.rs",
+    "crates/callisto-vcs/src/shell.rs"
+  ],
+  "started_at": "2026-09-03T13:50:25.714207-07:00",
+  "completed_at": "2026-09-03T13:50:25.714431-07:00"
+}
