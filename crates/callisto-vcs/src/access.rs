@@ -3,7 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
-use callisto_model::{ApplyPermit, CommandRunner, CommitSha, TagName};
+use callisto_model::{ApplyPermit, CommandRunner, CommitSha, StagedChangeV1, TagName};
 
 use crate::{GitCommit, GitDataSource, GitRepository, ShellGit, VcsError};
 
@@ -107,6 +107,12 @@ impl<'r> GitAccess<'r> {
     /// repository handle cached before final release validation.
     pub fn observe_git_commit_trust(&self) -> Result<GitCommitTrustEvidence, VcsError> {
         self.shell.observe_git_commit_trust()
+    }
+
+    /// Returns every staged (Git index) change relative to `base`. Shell-only:
+    /// no native `gix` backend lists changed paths or reads blobs today.
+    pub fn staged_changes_since(&self, base: &CommitSha) -> Result<Vec<StagedChangeV1>, VcsError> {
+        self.shell.staged_changes_since(base)
     }
 }
 
