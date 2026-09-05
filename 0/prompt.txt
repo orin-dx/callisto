@@ -1,0 +1,5 @@
+<task-notification>
+<task-id>bq2xtv552</task-id>
+<summary>Monitor event: "wait for GREEN on ensure_git_supported test"</summary>
+<event>[Monitor timed out — re-arm if needed.]</event>
+</task-notification>
