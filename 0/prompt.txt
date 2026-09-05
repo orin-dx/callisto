@@ -1,0 +1,1 @@
+Let's think through this problem deeply, ensure that we understand it. Take into account our overall architecture, semantic models and scope out what the change would look like. What spec do we have to update? Make a plan and present it.
