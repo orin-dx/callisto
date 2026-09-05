@@ -1,0 +1,97 @@
+Yes, let’s tackle all of it comprehensively in agent teams and workflows that use the best model & effort to balance quality and cost.
+
+Also consider this feedback from the michi agent about attempting to use callisto to publish an npm package:
+
+```
+We're using callisto in a mixed Rust + napi-rs npm workspace (one root Rust crate published to crates.io, one npm package `@orin-axi/michi` built with napi-rs). We found several issues during setup. Please address all of them.
+
+---
+
+## Bug 1: npm publish order is inverted for napi packages
+
+`callisto publish` currently iterates:
+
+  1. rust_crates
+  2. npm_main_packages   ← published BEFORE platforms
+  3. npm_platform_packages
+
+This is incorrect. The main package lists platform packages in `optionalDependencies` at exact versions — if the platforms aren't on the registry yet, consumer installs 404. The correct order must be:
+
+  1. rust_crates
+  2. npm_platform_packages
+  3. npm_main_packages
+
+Please fix the publish orchestrator iteration order.
+
+---
+
+## Bug 2: `callisto publish` hardcodes `npm` regardless of workspace package manager
+
+The publish client calls `npm publish --workspace <name>` unconditionally. Projects using pnpm (`pnpm-lock.yaml` present), yarn (`yarn.lock`), or bun (`bun.lockb`) either fail outright or publish without lockfile integrity.
+
+Please detect the package manager from the workspace root and use the appropriate CLI:
+- `pnpm-lock.yaml` → `pnpm publish --filter <name>`
+- `yarn.lock` → `yarn workspace <name> npm publish`
+- `bun.lockb` → `bun publish`
+- fallback → `npm publish --workspace <name>`
+
+---
+
+## Documentation gap 1: `callisto publish` is missing from the CLI reference
+
+The CLI reference (§11 of the design doc) lists `add`, `status`, `version`, `pre`, `validate`, `snapshot`, `plan-publish`, `compose-pr-body`, `tag`, `completions` — but not `publish`. The callisto-action calls it when `publish: "true"` is set, making it the default publishing path, yet it is completely undiscoverable from the docs.
+
+Please add a `publish` entry to the CLI reference covering:
+- What it does (re-runs plan-publish internally, then shells out to cargo/npm/pypi CLIs in dependency order)
+- Flags: `--dry-run`, `--format`
+- How it relates to `plan-publish` (same plan logic, no `--plan FILE` input)
+- The "coordinator vs orchestrator" clarification — the design doc says callisto does not run publish commands, but `callisto publish` does. Reconcile or clarify.
+
+---
+
+## Documentation gap 2: npm auth setup is not explained
+
+`callisto publish` passes auth through ambient environment. For npm, the required env var is `NODE_AUTH_TOKEN` — but the docs and callisto-action README reference `NPM_TOKEN`. These are different: `NPM_TOKEN` is a convention for GitHub Actions secrets; `NODE_AUTH_TOKEN` is what the npm CLI reads. The bridge is `actions/setup-node` with `registry-url: 'https://registry.npmjs.org'`, which creates an `.npmrc` and maps `NODE_AUTH_TOKEN` from the environment.
+
+Without this, auth always fails silently. Please document:
+- That `actions/setup-node` with `registry-url` is required before `callisto publish` runs in CI
+- That `NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}` must be in the job `env` block
+- A complete release workflow snippet showing the correct setup order
+
+---
+
+## Documentation gap 3: no cross-ecosystem `[[fixed-group]]` example
+
+The only `[[fixed-group]]` example in the docs shows all-npm platform packages. There is no example mixing a Cargo crate name and an npm package name.
+
+We have:
+- Cargo crate named `michi` (from `Cargo.toml` `[package] name`)
+- npm package named `@orin-axi/michi` (from `package.json` `"name"`)
+
+We want them to always share the same version. Please:
+1. Add an example showing this exact case:
+   ```toml
+   [[fixed-group]]
+   name = "michi-and-node"
+   members = ["michi", "@orin-axi/michi"]
+   ```
+2. Confirm that member strings use each manifest's own `name` field (bare when unambiguous, `cargo/foo` or `npm/foo` prefix only on collision)
+3. Clarify whether `[[fixed-group]]` or `[[linked-group]]` is correct for this pattern — the docs describe fixed-group as "for napi main+platform coordination" which undersells it as a general version-lockstep primitive
+
+---
+
+## Documentation gap 4: Rust→npm cascade is unsupported but never stated
+
+The design doc describes cascade as graph-based over declared dependency edges. §L1 describes a disjoint Rust+npm workspace as having "no cross-ecosystem edges, by definition." But nowhere does the doc say plainly:
+
+> A Rust crate bump will NOT cascade to an npm wrapper package, even if the wrapper is conceptually dependent on the crate.
+
+This is the natural expectation for a crate + its napi binding, and the silence causes real confusion. Users set up `publish-to = ["npm"]` expecting cascade to flow, then find their `package.json` untouched after a release PR.
+
+Please add an explicit callout — in the cascade section and in a "common pitfalls" or FAQ section — stating this limitation and pointing to `[[fixed-group]]` as the correct tool for keeping them in lockstep.
+```
+
+
+Let’s heavily investigate what’s going on because this should all work. This means you missed something critical and called it working.
+
+This is embarrassing for both of us.
