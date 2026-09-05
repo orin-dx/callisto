@@ -1,0 +1,141 @@
+Base directory for this skill: /Users/gabe/.claude/plugins/cache/orin-dx-agent-plugins/canon/1.1.0/skills/canon
+
+# canon — Specification Skill
+
+<overview>
+canon turns requirements and research reports into unambiguous, testable specifications,
+and turns defect class findings into architectural remediation specs. It enforces one
+standard throughout: a developer who reads the output spec must be able to write an
+implementation without asking a single clarifying question, and every acceptance
+criterion must translate directly to a test case or type-level invariant check.
+</overview>
+
+---
+
+<sub_skills>
+
+### canon/draft
+Given a `requirement@1` and optionally a `research-report@1`, produce a `spec@1` draft
+with purpose, scope, non_goals, api_surface (if applicable), and acceptance criteria.
+All criteria are testable propositions; error cases are covered with `is_error_case: true`.
+
+### canon/verify
+Given a draft `spec@1` plus the originating `requirement@1` and optional `research-report@1`, check whether each acceptance criterion is grounded in the source artifacts. Classifies criteria as supported, unsupported, or overfitted. Collects evidence only — does not produce a pass/fail verdict. Use this **before implementation** to confirm the spec is traceable to requirements.
+
+### canon/drift
+Given a spec@1 (via `spec_file_path`) and a workspace root, verify that the current code implements every acceptance criterion. Reads the spec from disk, reads the implementation from the workspace, and reports: `covered` (criterion is implemented and tested), `uncovered` (criterion has no matching implementation), and `drifted` (implementation exists but diverges from the criterion's contract). Use this **after implementation** to catch spec drift during maintenance — it is a diagnostic tool, not a blocking gate. lambda-exit-gate is the blocking gate; canon/drift is the ongoing health check.
+
+### canon/audit
+Given a `spec@1`, adversarially review it for untestable criteria, ambiguous language,
+missing error cases, scope overlap, and incomplete sections. Returns a structured issue
+list with specific rewritten suggested fixes.
+
+### canon/gate
+Given a `spec@1`, produce a binding pass/fail verdict before the spec enters planning. Default disposition is fail. On fail, returns specific blockers the drafter can act on without asking a follow-up question. On pass, the calling agent writes the spec to disk and sets `spec_file_path` — see the `<orchestration>` section.
+
+### canon/architect
+Given a `finding-report@1` from proof, produce a `spec@1` for the structural change that
+eliminates the defect class — not a patch of individual instances but the abstraction
+boundary, type invariant, or interface redesign that makes the class impossible to
+reintroduce. This sub-skill closes the proof-to-design loop.
+
+</sub_skills>
+
+---
+
+<artifact_contracts>
+
+**Consumes**: `requirement@1`, `research-report@1` (optional), `finding-report@1` (canon/architect only), `spec_file_path` + workspace root (canon/drift only)
+
+**Produces**: `spec@1` (written to `.claude/specs/<id>.json` by the skill orchestrator after gate pass; `spec_file_path` set to the workspace-relative path), `verdict@1` (canon/gate only)
+
+</artifact_contracts>
+
+---
+
+<pipeline>
+
+**Standard drafting pipeline:**
+```
+requirement@1 [+ research-report@1]
+  → canon-drafter          (returns spec object — no disk write)
+  → canon-verifier         (grounding check against source artifacts)
+  → canon-auditor          (adversarial quality review)
+  → canon-exit-gate        (binding pass/fail verdict)
+  → [skill writes .claude/specs/<id>.json, sets spec_file_path]
+  → spec@1
+```
+
+**On-demand drift pipeline (maintenance, any time after implementation):**
+```
+spec_file_path + workspace root
+  → canon-drift-checker
+  → drift report (covered / uncovered / drifted)
+```
+
+**Architectural remediation pipeline (invoked after proof):**
+```
+finding-report@1
+  → canon-architect
+  → canon-exit-gate
+  → spec@1 (architectural)
+  → vector → lambda
+```
+
+`canon-architect` is not part of the standard drafting pipeline. It is invoked when
+proof returns a `finding-report@1` and the root cause requires a structural fix. The
+output spec feeds back into vector for planning.
+
+</pipeline>
+
+---
+
+<orchestration>
+
+After `canon-exit-gate` returns a pass verdict, the calling agent MUST perform this step before handing off to vector:
+
+1. Write the spec@1 JSON to `<workspace_root>/.claude/specs/<id>.json` using the file writing tool. Create the directory if it does not exist.
+2. Set `spec_file_path` to the workspace-relative path (e.g. `.claude/specs/SPEC-001.json`) in the spec@1 object.
+3. Pass the updated spec@1 — with `spec_file_path` set — to vector-planner.
+
+This step is not optional. Without `spec_file_path` set, downstream agents fall back to reading the spec from conversation context, which is lossy under compression and cannot be independently verified.
+
+</orchestration>
+
+---
+
+<framework_references>
+- [Agent Best Practices](../../../shared/agent-best-practices.md)
+- [Spec Schema](../../../shared/schemas/spec@1.json)
+- [Verdict Schema](../../../shared/schemas/verdict@1.json)
+- [Finding Report Schema](../../../shared/schemas/finding-report@1.json)
+</framework_references>
+
+---
+
+<subagent_dispatch_matrix>
+
+| Agent | Sub-skill | When to Delegate |
+| :--- | :--- | :--- |
+| **`canon-drafter`** | draft | Producing a new spec from a requirement or research report. |
+| **`canon-verifier`** | verify | Checking that each acceptance criterion is grounded in the source artifacts (pre-implementation only). |
+| **`canon-drift-checker`** | drift | On-demand post-implementation drift check: reads spec from disk, reads code, classifies criteria as covered / uncovered / drifted. |
+| **`canon-auditor`** | audit | Adversarial quality review for untestable language, ambiguity, and missing error cases. |
+| **`canon-exit-gate`** | gate | Binding pass/fail judgment before handing the spec to planning. |
+| **`canon-architect`** | architect | Designing the structural fix for a defect class surfaced by proof. |
+
+</subagent_dispatch_matrix>
+
+
+ARGUMENTS: Draft a spec for: apply_version_plan performance/architecture fix (Track: Manifest write-batching).
+
+Requirement:
+- crates/callisto-graph/src/apply.rs's apply_version_plan currently opens, reads, and parses a manifest file fresh (callisto_manifests::open) for EVERY entry in plan.bumps and plan.rewrites that targets it, and each of those calls Manifest::write_version / Manifest::update_dependency_spec internally persists (atomic_write: temp file + rename + fsync parent + fsync grandparent) on every single call. When N bumps/rewrites target the same file (e.g. an app crate depending on 5 sibling packages that bump together, all rewriting app/Cargo.toml's dependency table), this costs N full read+parse+write+2-fsync cycles on one file instead of 1.
+- Confirmed via code reading: crates/callisto-manifests/src/{cargo,npm,python}.rs each implement the Manifest trait's write_version/update_dependency_spec/update_optional_dependencies by mutating an in-memory doc and then calling a private `fn persist(&mut self, permit: &ApplyPermit) -> Result<(), ManifestError>` at the end of every one of those methods.
+- Fix requires: (1) restructure the Manifest trait (crates/callisto-manifests/src/lib.rs) so write_version/update_dependency_spec/update_optional_dependencies perform ONLY the in-memory mutation (no disk I/O), and expose persist as its own trait method the caller invokes explicitly; (2) apply.rs's apply_version_plan must group plan.bumps' writes and plan.rewrites by their resolved target path BEFORE looping, open each distinct path's manifest exactly once, apply every mutation destined for that path against the same open handle, then call persist() exactly once per file.
+- Constraints to respect: CLAUDE.md invariant #2 (format preservation via CST editors) must hold across multiple in-memory mutations before the single persist. unsafe_code = "forbid" (workspace-wide). Must not silently change existing callers' expectations without updating them.
+- Known blast radius to inventory precisely during spec/plan: ~28 existing call sites of write_version/update_dependency_spec/update_optional_dependencies inside crates/callisto-manifests/src/{cargo,npm,python}.rs's own #[cfg(test)] modules -- many read the manifest file back from disk immediately after calling one of these methods to assert on-disk content; each such test will need an explicit `.persist(&permit)` call added after its mutation(s) once auto-persist is removed. apply.rs itself is the only external (non-test) caller of these three methods anywhere in the workspace (confirmed via grep).
+- Explicit design decision needed and must be captured as a testable acceptance criterion: partial-failure/atomicity semantics change. Today, if bump 3-of-5 fails validation (e.g. UnexpectedManifestVersion) mid-loop, bumps 1-2 have ALREADY been persisted to disk (partial application). After batching (mutate-all-in-memory-then-persist-once-per-file), a failure during in-memory mutation for a given file would mean NOTHING for that file gets persisted (that file's batch is all-or-nothing), while files whose batches completed successfully before the failing one would still be persisted (across-file atomicity is unchanged; per-file atomicity improves to all-or-nothing). This must be stated explicitly in the spec's acceptance criteria, not left implicit, and needs its own test.
+- Out of scope: do not touch changelog writes, consumed-changeset deletion, pre.json write, or lockfile refresh logic in apply.rs -- only the plan.bumps (VersionWriteTarget::Manifest paths) and plan.rewrites (DepWriteTarget::Manifest paths) loops that currently call open()+write_version/update_dependency_spec per-entry. CargoWorkspacePackage/CargoWorkspaceDependency write targets (which go through WorkspaceCargoResolver, a different type, not the Manifest trait) are also out of scope for this track unless investigation shows they have the identical redundant-open problem -- check and note in the spec's scope section either way.
+
+Workspace root: /Users/gabe/Projects/callisto. Relevant files to read: crates/callisto-graph/src/apply.rs, crates/callisto-manifests/src/lib.rs (Manifest trait definition), crates/callisto-manifests/src/cargo.rs, crates/callisto-manifests/src/npm.rs, crates/callisto-manifests/src/python.rs, crates/callisto-graph/src/plan.rs (VersionPlan/PlannedBump/SpecRewrite/VersionWriteTarget/DepWriteTarget shapes).
