@@ -1,0 +1,88 @@
+<task-notification>
+<task-id>a20fcf86a8a74b446</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/0c4c4622-1ed8-4f2c-80e6-f0890a2dad72/tasks/a20fcf86a8a74b446.output</output-file>
+<status>completed</status>
+<summary>Agent "Draft Tier 1 spec@1" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Confirmed: `nativeMatrix` is computed and emitted in the same `callisto-orchestrate` composite-action step that later invokes `callisto plan-publish` and (per `INPUT_PUBLISH`) publish — so placement can run inline, between matrix computation and publish, inside this same step, with no cross-job artifact-access problem (`gh run download` works from any job in the run).
+
+Here is the spec@1 draft.
+
+```json
+{
+  "id": "SPEC-002",
+  "purpose": "Give callisto consumers a working, documented mechanism that places CI-built native binary artifacts (napi-rs .node files, maturin wheels) into their platform-stub package directories before `callisto publish` runs, closing the gap between `callisto matrix`'s output and a working end-to-end release.",
+  "scope": "Extends `.github/actions/callisto-action/action.yml`'s existing `callisto-orchestrate` composite-action step: after it computes `nativeMatrix` and before it invokes `callisto plan-publish`/publish (in the branch already gated by `INPUT_PUBLISH`), the step downloads each `nativeMatrix` entry's artifact by `artifactName` via `gh run download` and places its contents into `packageDir`, formalizing `.claude/specs/callisto-matrix.md` §6.2's design. Also corrects `ARCHITECTURE.md` §12's broken example workflow to remove the nonexistent `callisto publish-target` reference and extend it through placement and publish.",
+  "non_goals": [
+    "Extending PlatformTargetKind to Java/JNI or .NET native-AOT targets — a separate, later concern; this spec only routes the two kinds `PlatformTargetKind` already supports (Napi, Maturin).",
+    "Prebuilt Rust CLI binaries distributed as GitHub Release assets (\"Tier 2\") — a separate, related, deferred future spec.",
+    "Homebrew tap formula generation/distribution — deferred by the maintainer as a possible separate future tool.",
+    "Go binary distribution — already an existing non-goal per .claude/specs/callisto-matrix.md §8, not being revisited here.",
+    "A generic callisto-build-action that dispatches the actual per-platform build (napi build --platform --release, etc.) — callisto-matrix.md §7's secondary/optional proposal. This spec covers only placement of an already-built, correctly-named artifact; the build step itself is the consumer's own responsibility.",
+    "Validating the content of a downloaded artifact (e.g. confirming a .node file is well-formed, or that it is actually a valid binary for its target triple). The placement step moves whatever files `gh run download` retrieves into `packageDir`; content correctness is the build job's responsibility and surfaces later, at publish or install time, not at placement.",
+    "Adding a new required input to `callisto-action` to opt into placement. Placement is driven entirely by whether `nativeMatrix` is a non-empty array — consumers with no native platform targets see zero behavior change.",
+    "Implementing the nonexistent `callisto publish-target` Rust CLI subcommand referenced by the current ARCHITECTURE.md §12. That subcommand is not needed for this requirement; publish already works via the existing `callisto publish` command operating on on-disk state once artifacts are placed."
+  ],
+  "api_surface": [
+    {
+      "name": "callisto-action native artifact placement step",
+      "signature": "New step inside `.github/actions/callisto-action/action.yml`'s existing `callisto-orchestrate` composite step, sequenced after `NATIVE_MATRIX=$(callisto matrix --format json | jq ...)` is computed and before `callisto plan-publish`/publish executes, inside the branch guarded by `else` (no pending changesets) and further guarded by `[[ -n \"$INPUT_PUBLISH\" ... ]]`",
+      "description": "For each object in the `nativeMatrix` JSON array, runs `gh run download --name \"$ARTIFACT\" --dir \"$DIR\"` where `ARTIFACT` is the object's `artifactName` field and `DIR` is the object's `packageDir` field (workspace-root-relative, resolved against the action's working directory). Runs once per array element, in array order. Skipped entirely (zero `gh run download` invocations) when `nativeMatrix` is `[]`."
+    }
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "AC-001",
+      "criterion": "Given a workflow run where N per-platform build jobs each upload an artifact via `actions/upload-artifact` using the exact `artifactName` string from that platform's `callisto matrix --format json` entry, and the `callisto-orchestrate` step subsequently runs with `INPUT_PUBLISH` set: after the step completes, each of the N artifacts' downloaded file contents are present under the corresponding `packageDir` path relative to the working directory, and this placement completes before the step's `callisto plan-publish`/publish invocation begins.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-002",
+      "criterion": "Given `nativeMatrix` is `[]` (no native platform-target packages in the workspace), the `callisto-orchestrate` step invokes `gh run download` zero times and proceeds directly to `callisto plan-publish`/publish exactly as it did before this change.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-003",
+      "criterion": "Given a `nativeMatrix` entry whose `artifactName` was never uploaded in the current workflow run, the placement loop's `gh run download` invocation for that entry exits non-zero, the step fails (non-zero exit, workflow run marked failed) before reaching `callisto plan-publish`/publish, and the step's log output names the specific missing `artifactName`.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-004",
+      "criterion": "Given a `nativeMatrix` entry whose `packageDir` path does not exist on disk at placement time, the step fails (non-zero exit) with log output identifying the missing `packageDir` path, and `callisto plan-publish`/publish is not invoked for that run.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-005",
+      "criterion": "Given the `nativeMatrix` GitHub Actions output value is not valid JSON (e.g. truncated or hand-edited by a caller), the placement loop's `jq -c '.[]'` parse fails, the step exits non-zero before any `gh run download` call, and `callisto plan-publish`/publish is not invoked.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-006",
+      "criterion": "Two `nativeMatrix` entries that both name the same `artifactName` (already deduplicated upstream by `unique_by(.artifactName)` in the existing `NATIVE_MATRIX` computation) never both trigger a `gh run download` call for that name within a single step invocation — the existing dedup guarantees at most one download attempt per distinct `artifactName`.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-007",
+      "criterion": "`ARCHITECTURE.md` §12, read in full, contains no occurrence of the string `callisto publish-target` anywhere in its text or code blocks.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-008",
+      "criterion": "`ARCHITECTURE.md` §12's example workflow, read end to end, shows all of: a build job producing and uploading a per-platform artifact, a placement step downloading that artifact into its package directory, and a `callisto publish` (or `callisto-action` with publish enabled) step running afterward against the populated package directories — not just the build step.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-009",
+      "criterion": "A consumer workflow that already uses `callisto-action` for publishing and adds only a matrix-driven build job (per `.claude/specs/callisto-matrix.md` §6.1's `nativeMatrix` consumption pattern) uploading artifacts named per `artifactName`, with no additional bash, composite action, or script written by the consumer to perform placement, ends with artifacts correctly placed and `callisto publish` succeeding.",
+      "is_error_case": false
+    }
+  ],
+  "linked_requirement": "REQ-001",
+  "reasoning": "Implementation-shape decision: extend the existing callisto-action composite step rather than publish a new standalone documented-YAML pattern. Rationale: (1) the orchestrate step already computes nativeMatrix and already conditionally invokes plan-publish/publish in the same step, so placement can be inserted inline with no new job/step-output plumbing; (2) the codebase's confirmed, zero-exception pattern is that all GitHub-specific operations live in callisto-action's bash, not in consumer-owned YAML or the Rust CLI — a new detached workflow pattern would be the first deviation from that pattern; (3) REQ-001's done_when #4 requires 'no custom glue code beyond invoking the documented steps', which a baked-in, auto-triggered (nativeMatrix-driven, no new required input) step satisfies more directly than a copy-pasted YAML snippet a consumer must adapt; (4) matrix.md §6.2 already describes this as happening in 'the orchestrating step', i.e. callisto-orchestrate itself, not a separate action. AC-004's disk-not-found handling assumes packageDir already exists because it is a workspace package directory discovered by manifest scanning (present before CI runs), so a missing packageDir signals a real anomaly (e.g. stale matrix output vs. current disk state) rather than a case needing directory creation. AC-005 and AC-003 give nil/malformed-input and missing-artifact fail-fast behavior consistent with the existing step's set -o pipefail convention for callisto matrix itself."
+}
+```
+
+Grounding notes for downstream review: `PlatformTarget` (`crates/callisto-model/src/matrix.rs:60-71`) confirmed to already carry `artifact_name` and `package_dir` (workspace-root-relative); `artifact_name_for_triple` (`crates/callisto-graph/src/matrix.rs:38-40`) confirmed hardcoded to `native-{triple}` (unchanged by this spec); the existing `nativeMatrix` computation and `INPUT_PUBLISH`-gated publish invocation are both in `.github/actions/callisto-action/action.yml:157-169`; `.claude/specs/callisto-matrix.md:295-318` (§6.2) supplied the reference `gh run download` snippet this spec formalizes; `ARCHITECTURE.md:445-493` (§12) contains the broken `callisto publish-target` reference targeted by AC-007/AC-008, confirmed absent from the codebase via grep.</result>
+<usage><subagent_tokens>63684</subagent_tokens><tool_uses>9</tool_uses><duration_ms>101562</duration_ms></usage>
+</task-notification>
