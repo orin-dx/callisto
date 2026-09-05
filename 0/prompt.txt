@@ -1,0 +1,55 @@
+<task-notification>
+<task-id>a62a95924cbe7abd6</task-id>
+<tool-use-id>toolu_01Nozn5K7pn1nWkyNxfJoGe3</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/tasks/a62a95924cbe7abd6.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement T12: final stripping task" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Post-commit verification confirms everything still passes clean.
+
+## Summary
+
+**Task T12 executed via strict TDD and committed.**
+
+- Read AC-004, AC-005, AC-006, AC-015, AC-019, AC-020 from `.claude/specs/SPEC-MANIFEST-PERSIST-001.json` before writing any test.
+- Read the current body of `PyprojectToml::update_optional_dependencies` in `/Users/gabe/Projects/callisto/crates/callisto-manifests/src/python.rs` (lines 411-487) and confirmed it matched the plan's description exactly: `any_updated` only gated the trailing `atomic_write`, never the `arr.replace(idx, new_req)` mutation.
+- **RED**: added `update_optional_dependencies_does_not_touch_disk_until_persist_called` test in `crates/callisto-manifests/src/python.rs`, ran it before any implementation change — it failed with `assertion left == right failed: update_optional_dependencies alone must not write to disk`, exactly matching the plan's `expected_failure`.
+- **Implementation**: renamed `permit` → `_permit`; deleted `let mut any_updated = false;`; deleted `any_updated = true;` inside the loop (kept `arr.replace(idx, new_req);`); replaced the trailing `if any_updated { render()+atomic_write... }` block with bare `Ok(())`.
+- Repaired `update_optional_dependencies_actually_writes_to_document` by inserting `manifest.persist(&amp;permit()).unwrap();` before its disk read.
+- **GREEN**: `cargo test -p callisto-manifests --lib python::tests` → 35 passed, 0 failed (34 prior + 1 new, matches plan's `expected_pass`).
+- `cargo clippy -p callisto-manifests -- -D warnings` → clean, no unused-variable/unused-assignment warnings.
+- Committed only `crates/callisto-manifests/src/python.rs` with the plan's exact commit message: `c83c78a`.
+
+**Final sweep** (crate-wide, all three manifest files) for remaining internal `self.persist(permit)` (non-underscored) or inline `atomic_write(&amp;self.absolute...)` inside `write_version`/`update_dependency_spec`/`update_optional_dependencies` bodies:
+
+- `crates/callisto-manifests/src/cargo.rs:646` and `:710` — both `self.persist(permit)` calls are inside `WorkspaceCargoResolver::write_version` and `write_dependency`, the explicitly carved-out delegation target (AC-005 non_goals item 3), not inside `CargoToml`'s own methods.
+- `crates/callisto-manifests/src/cargo.rs:109`, `:715`, `npm.rs:160`, `python.rs:81` — all four are inside each type's own `persist()` method implementation (in scope, expected).
+
+**Result: zero remaining out-of-scope call sites.** This confirms T12 is genuinely the last stripping task — no `Manifest` mutator in cargo.rs/npm.rs/python.rs calls persist/atomic_write internally anymore, aside from the correctly-carved-out `WorkspaceCargoResolver` delegation and the `persist()` methods themselves.
+
+```json
+{
+  "task_id": "T12",
+  "status": "done",
+  "steps_completed": [
+    "read_spec_criteria_AC004_AC005_AC006_AC015_AC019_AC020",
+    "read_current_method_body_confirmed_matches_plan",
+    "wrote_failing_test_update_optional_dependencies_does_not_touch_disk_until_persist_called",
+    "confirmed_red",
+    "renamed_permit_to_underscore_permit",
+    "deleted_any_updated_declaration_and_assignment",
+    "replaced_trailing_write_block_with_bare_Ok",
+    "repaired_update_optional_dependencies_actually_writes_to_document_with_persist_insertion",
+    "confirmed_green_35_passed_0_failed",
+    "confirmed_clippy_clean",
+    "committed_c83c78a",
+    "final_sweep_zero_remaining_out_of_scope_call_sites"
+  ],
+  "test_result": "pass",
+  "commit_sha": "c83c78a",
+  "concerns": null,
+  "reasoning": "Straightforward stripping task matching prior T05a-T11 pattern. Verified red phase produced exactly the expected_failure text from the plan. Implementation matched plan's exact diff description. Final sweep confirmed all remaining persist/atomic_write call sites are either the persist() methods themselves or the explicitly-carved-out WorkspaceCargoResolver delegation branch, so this is genuinely the last stripping task in the track."
+}
+```</result>
+<usage><subagent_tokens>55492</subagent_tokens><tool_uses>20</tool_uses><duration_ms>116709</duration_ms></usage>
+</task-notification>
