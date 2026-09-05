@@ -1,0 +1,39 @@
+<task-notification>
+<task-id>a2be54d73197cc762</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/tasks/a2be54d73197cc762.output</output-file>
+<status>completed</status>
+<summary>Agent "Read-only review of publish-target/release-trigger tests" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Confirmed: only resolve.rs changed, walk.rs untouched. Scope is clean.
+
+Everything checks out. Final assessment.
+
+## Review Summary
+
+**Status: approved — no concerns.**
+
+Verified independently (not from the implementer's description):
+
+1. **Correctness**: `PublishTarget` enum in `crates/callisto-model/src/ecosystem.rs:74-93` confirms exact payload shapes — `Npm { registry: None, restricted: false }`, `Pypi { index: None }`, `NuGet { source: None }`, `GitHubRelease` as unit variant — all match the assertions in `resolve.rs:899-921`. `parse_publish_target`/`parse_release_trigger` (`resolve.rs:148-175`) return exactly what's asserted for every input string and reject path, including the `[[package]] publish-to: ...` context-wrapping at `resolve.rs:400-405` that the new test at line 1026 checks for.
+
+2. **Genuinely new coverage**: Confirmed pre-existing tests (lines 609-877, all before the diff's insertion point at line 890) already exercised `publish-to = ["none"/"crates-io"]` and `release-trigger = "auto"/"changeset"` through `load()` — consistent with the stated gap. One minor inaccuracy in the task's framing: it claimed "no release-trigger values were ever exercised through any test path," but `release-trigger = "auto"/"changeset"` *was* already exercised via `load()` at `resolve.rs:739,797,862-877`. This doesn't invalidate the new tests — they still add real, previously-missing coverage (direct-call testing of `parse_release_trigger`, and the unknown-value rejection path was untested before) — but the task's stated rationale overstates the gap slightly. Not a blocker.
+
+3. **Scope**: `git diff --stat` confirms only `resolve.rs` changed (160 insertions, 0 deletions, pure test-module addition). `crates/callisto-graph/src/walk.rs` is untouched, and the ecosystem-mismatch mechanism (tested separately in `crates/callisto-graph/tests/publish_target_ecosystem_mismatch_test.rs`) lives in `Workspace::load` (`lib.rs:86`), a different function from the module-local `resolve::load` (`resolve.rs:221`) that the new tests exercise — so the new fixtures using mismatched ecosystem/target pairs (e.g. `cargo/pkg-c` with `nuget`) are legitimate since they never reach the mismatch-validation code path.
+
+4. **Test independence**: No `static`/`OnceCell`/`Lazy`/`thread_local` in the file; each new test creates its own `tempfile::tempdir()`; no shared mutable state with the other ~16 pre-existing tests in the module.
+
+Tooling confirmed directly:
+- `cargo test -p callisto-graph`: full suite green, including `config::resolve::tests` (22 passed, 0 failed) and all integration test files.
+- `cargo clippy -p callisto-graph --all-targets -- -D warnings`: clean, no warnings.
+
+```json
+{
+  "status": "approved",
+  "issues": [],
+  "sibling_gaps": [],
+  "reasoning": "Verified enum shapes against callisto-model/src/ecosystem.rs directly rather than trusting the implementer's description. Confirmed pre-existing test coverage boundary at line 890 to validate the 'genuinely new' claim — found release-trigger auto/changeset was already covered via load() pre-existing, a minor inaccuracy in task framing but not in the code itself. Confirmed resolve::load vs Workspace::load are distinct functions, so ecosystem-mismatch validation in walk.rs is correctly not implicated by the new fixtures. No shared state, no scope creep, cargo test and clippy both run and confirmed green independently."
+}
+```</result>
+<usage><subagent_tokens>65380</subagent_tokens><tool_uses>20</tool_uses><duration_ms>220978</duration_ms></usage>
+</task-notification>
