@@ -1,0 +1,38 @@
+<task-notification>
+<task-id>ab3e08bcb5fc9c32a</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/tasks/ab3e08bcb5fc9c32a.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement T10: strip atomic_write from PyprojectToml::write_version" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Task T10 is complete.
+
+```json
+{
+  "task_id": "T10",
+  "status": "done",
+  "steps_completed": [
+    "read T10 from plan file",
+    "read AC-002, AC-005, AC-006, AC-020, AC-015 from spec file on disk",
+    "confirmed all 6 target test names exist verbatim in python.rs (preserves_bom_without_crlf_on_write, not the mistyped variant)",
+    "wrote failing test write_version_does_not_touch_disk_until_persist_called",
+    "confirmed red: assertion failure matched plan's expected_failure exactly",
+    "renamed permit to _permit in write_version signature",
+    "removed inline render()+atomic_write block, replaced tail with Ok(())",
+    "inserted manifest.persist(&amp;permit()).unwrap(); before disk read in all 6 listed tests",
+    "confirmed green: python::tests 32 passed, 0 failed",
+    "ran clippy -D warnings on callisto-manifests: clean",
+    "ran full cargo test -p callisto-manifests: 103 passed, 0 failed",
+    "ran cargo fmt (required by format-check hook) and re-verified green",
+    "committed with plan's exact commit message"
+  ],
+  "test_result": "pass",
+  "commit_sha": "6d8eeb6a485c52a41b1a296eddf48170c985a3bf",
+  "concerns": null,
+  "reasoning": "Baseline at 6cc7dc4 matched. Red phase confirmed byte-for-byte against plan's expected_failure. Implementation was minimal: signature rename + tail replacement with Ok(()). All 6 tests repaired with manifest.persist(&amp;permit()).unwrap() inserted at the correct binding name (manifest) before each test's disk read. Whole python::tests module green (32/0), whole crate green (103/0), clippy clean. Format-check hook required a cargo fmt pass on the new test before commit would succeed; re-verified tests stayed green after formatting. Scope was respected: only python.rs touched, only write_version and its 6 test repairs."
+}
+```
+
+Relevant file: `/Users/gabe/Projects/callisto/crates/callisto-manifests/src/python.rs`</result>
+<usage><subagent_tokens>67855</subagent_tokens><tool_uses>31</tool_uses><duration_ms>201090</duration_ms></usage>
+</task-notification>
