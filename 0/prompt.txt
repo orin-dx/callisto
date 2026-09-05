@@ -1,0 +1,10 @@
+<task-notification>
+<task-id>a85c448457c3bed14</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/bb531e8d-c394-4e47-a8ae-e4a9ceeca6d2/tasks/a85c448457c3bed14.output</output-file>
+<status>completed</status>
+<summary>Agent "Draft Track 2 spec (platform-manifest writes)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I've launched the canon:drafter agent to draft the spec. This involves reading and verifying several live code locations (GroupMember::PlatformManifest, PlatformWrite/OptionalDepUpdate, plan_version, apply_version_plan's dispatch loops, active_ecosystems, GraphError::UnexpectedManifestVersion) before producing the spec@1 JSON, so it will take a bit. I'll report back once it completes — then I'll continue through the canon pipeline (verifier → auditor → exit-gate) before finalizing.</result>
+<usage><subagent_tokens>45293</subagent_tokens><tool_uses>2</tool_uses><duration_ms>47067</duration_ms></usage>
+</task-notification>
