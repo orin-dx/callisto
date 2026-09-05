@@ -1,0 +1,28 @@
+<task-notification>
+<task-id>a9135b1fed811c940</task-id>
+<tool-use-id>toolu_017zwupiV3K2VzgVonsLkNtw</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a9135b1fed811c940.output</output-file>
+<status>completed</status>
+<summary>Agent "Exit-gate Track 3b spec" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Verdict: FAIL (high confidence)
+
+`verdict@1` written to `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/verdict-track3b-identity-resolution.json` (schema-validated against `/Users/gabe/Projects/agent-plugins/shared/schemas/verdict@1.json`, `artifact_type: spec@1`, `retry_count: 1`).
+
+### What passed
+No TBDs anywhere. Scope is one coherent purpose (one root cause, one fix, downstream consequences) — I did not fail on scope grounds, though I'd recommend the planner split it into sub-plans. Citation accuracy is genuinely high: I re-verified ~40 line citations by direct read and nearly all are exact to the line (walk.rs 53/80-82/115-118/121-123/126-129/161-162/175; identity.rs resolve_human 252-296 with 267/274/278/288/293; resolve.rs 195-204 and `Ok(ResolvedConfig {` at 489; groups.rs 147/150 **and** 178/181; aggregate.rs 153-162 and 211; all six named tests; `display_name()` → `"cargo/native-core"` confirmed; §G.4.3 at docs/01-spec.md:6122 states the promotion rules exactly as claimed). Sibling-spec quotes in AC-19/AC-23/AC-27 match those files verbatim.
+
+### Two substantive blockers
+
+**1. Promotion is undefined when a colliding path spans 2+ ecosystems.** Every promotion fixture (AC-04, AC-07, AC-08) uses single-ecosystem paths. A Case D path at `crates/foo` (Cargo.toml *and* package.json both named `foo`, ecosystem set `{Cargo, Npm}`) colliding with an npm-only `packages/foo` named `foo` satisfies *both* scope rules simultaneously — "two different paths in two different ecosystems" (promote) and "two different paths in the same ecosystem" (DuplicatePackage). The api_surface's "existing entry's ecosystem(s) … compared against the current path's own ecosystem" never says whether the test is set-disjointness or set-inequality. If the implementer promotes, both paths write `(Npm, "foo")` into `index.native` and one silently overwrites the other — the exact coalescing AC-05 forbids. Compounding it, api_surface item (3) ("rewritten to point at *that ecosystem's* new `Prefixed{ecosystem, name}`") mints two distinct ids for one Case D Package, colliding with non_goals entry 1. §G.4.3 has the same gap, so the doc doesn't rescue it.
+
+**2. AC-27 forbids the edit that scope declares required.** Scope: track-g's api_surface text "is amended by this spec". AC-27: "A diff of track-g-matrix-napi-maturin.json shows only these two criterion-text edits." Post-landing, track-g's api_surface still reads `both map keys ... use PackageId::name() ... -- NOT PackageId::display_name() ... so name() collisions across the matrix report's map keys cannot occur` while its own AC-009 (as amended by AC-27) says keys *are* `display_name()`. The spec's own round-6 revision_note flagged that prose as invalidated; round 8 fixed the criteria and left it, then AC-27 made fixing it a violation. That same sentence also covers `PlatformTarget.package_name`, which AC-22 does **not** change (`matrix.rs:154` still uses the bare `pkg.name`) and which the spec never mentions — so the implementer can't tell which half to rewrite.
+
+### Three precision blockers
+3. The serde example is misattributed to §G.4.4 — it's at `docs/01-spec.md:6075-6076` in §G.4.2, and runs the *opposite* direction (Cargo consumer → npm member) from AC-13/AC-17's fixture, making AC-13's "reproducing §G.4.4's worked example exactly" false twice.
+4. Four line citations drifted: `callisto-model/src/matrix.rs` doc comment is 10-11 not 9-10; `commands/matrix.rs` `id: p.id.clone(),` is :46 not :44; `publish.rs` `only` doc comment is 13-15 not 11-14 (revision_note itself says 12-16); `build_matrix_report` cited as both 452-483 and 459-483.
+5. `is_error_case` is applied inconsistently across the three test-coverage criteria: AC-17 is `true`, AC-15/AC-16 are `false` despite asserting `MissingGroupMember`, `AmbiguousName`, and `DuplicatePackage`.
+
+Each blocker names the criterion and the exact edit; a drafter can fix all five without a follow-up question.</result>
+<usage><subagent_tokens>130426</subagent_tokens><tool_uses>33</tool_uses><duration_ms>687700</duration_ms></usage>
+</task-notification>
