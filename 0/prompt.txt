@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bthv7dfw1</task-id>
+<tool-use-id>toolu_0195kF7RKoLG9j5nkUKNm58L</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a7b3643b-af0c-4790-a38d-870e88a7dd3e/tasks/bthv7dfw1.output</output-file>
+<status>completed</status>
+<summary>Background command "Run full CI suite" completed (exit code 0)</summary>
+</task-notification>
