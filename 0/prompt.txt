@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bmn5634cq</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8a85b651-0c9a-44fa-9e0a-ac694c4409e1/tasks/bmn5634cq.output</output-file>
+<status>completed</status>
+<summary>Background command "cargo clippy -p callisto-cli --all-targets --all-features -- -D warnings 2&gt;&amp;1 | tail -80" completed (exit code 0)</summary>
+</task-notification>
