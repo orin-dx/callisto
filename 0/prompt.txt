@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>baj1cf340</task-id>
+<tool-use-id>toolu_017s1HXygWFa8vwi6WyDivYy</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/c0ad64b2-6440-4937-8328-8d9fd9db278c/tasks/baj1cf340.output</output-file>
+<status>killed</status>
+<summary>Background command "cargo test -p callisto-moon --test moon_wasm_sandbox -- execute_extension_no_git_repo_succeeds_with_no_last_tag_not_panic 2&gt;&amp;1 | tail -30" was stopped</summary>
+</task-notification>
