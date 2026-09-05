@@ -1,0 +1,8 @@
+<task-notification>
+<task-id>bsunwhxil</task-id>
+<tool-use-id>toolu_01PPTK6zzFmbuskuybkz37ks</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/c0ad64b2-6440-4937-8328-8d9fd9db278c/tasks/bsunwhxil.output</output-file>
+<status>completed</status>
+<summary>Background command "(time just ci) &gt; /private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/ci-full.log 2&gt;&amp;1
+echo DONE_$?" completed (exit code 0)</summary>
+</task-notification>
