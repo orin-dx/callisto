@@ -1,0 +1,51 @@
+<task-notification>
+<task-id>a264f9cdb0ffbbaac</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a264f9cdb0ffbbaac.output</output-file>
+<status>completed</status>
+<summary>Agent "Re-audit corrected Track 3b spec" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Audit Findings — SPEC-TRACK3B-IDENTITY-RESOLUTION (revision 2)
+
+I read the spec fresh, then re-verified against the live code: `crates/callisto-graph/src/config/resolve.rs:195-204`, `crates/callisto-graph/src/walk.rs:55-189`, `crates/callisto-model/src/identity.rs:120-160`, `crates/callisto-graph/src/identity.rs:235-298`, `crates/callisto-graph/src/error.rs:84-90`, and the sibling specs `.claude/specs/track-e-specificity.json` and `.claude/specs/track-f-resolution-extraction.json`.
+
+**Verified correct:** the `walk.rs:121-123` citations (confirmed via `nl -ba`: line 120 is the closing `}`, the three-line `index.native.insert(...)` statement is genuinely 121-123, except the one deliberate historical quote in `revision_note`, which is correctly left as a quote). `PackageId::matches`'s `(None, _) | (_, None) =&gt; true` arm at `callisto-model/src/identity.rs:154` is cited correctly. `resolve_human` at `callisto-graph/src/identity.rs:252-298`, `GraphError::AmbiguousName` at `error.rs:87-90`, and both `groups.rs:147`/`178` passing empty siblings — all confirmed accurate. `IdentityIndex.prefixed` already exists in the struct exactly as the api_surface describes.
+
+**New/unresolved problems found:**
+
+1. **AC-18's mechanism is not actually implementable as scoped.** `resolve_package_config(id: &amp;PackageId, cfg: &amp;ResolvedConfig)` has no parameter through which it (or its caller) can learn that a *second* Prefixed package elsewhere in the workspace shares `id`'s bare name — that information lives in the promotion set built during `ManifestWalkResolver::build`, not in `ResolvedConfig`. Worse, the function's return type (`Option&lt;&amp;PackageConfig&gt;`, produced by `.map(|(_, pcfg)| pcfg)` at resolve.rs:203) erases which pass matched — the caller at walk.rs:175 cannot tell a Pass-1 (Prefixed, unambiguous) match from a Pass-2 (Bare, potentially ambiguous) match from the `Option` alone. The scope's boundary-contract paragraph promises "a small, precisely-bounded change" but never specifies the signature/data-flow change needed, so this is a real implementability gap, not a design nuance.
+
+2. **Scope-overlap with shipped SPEC-003 (track-f) not acknowledged.** AC-F6 in `track-f-resolution-extraction.json` pins the exact call-site artifact `let pkg_override = resolve_package_config(&amp;id, cfg);` as a tested proposition. Any fix to finding 1 necessarily changes that call's arity/return type, which invalidates AC-F6 as written. The new boundary-contract paragraph only discusses the `id` argument's Bare→Prefixed shape change; it says nothing about touching the call site's signature or the already-shipped AC-F6.
+
+3. **Citation off-by-one, unfixed this revision:** the `ManifestWalkResolver::build` api_surface entry cites `walk.rs:80-83` for the `index.bare.insert(...)` statement. Confirmed via direct line read: the statement is lines 80-82 (`index` / `.bare` / `.insert(...)`); line 83 is blank. This is the same defect class as the `120-123`→`121-123` fix applied elsewhere in this revision, but it was missed for this citation.
+
+```json
+{
+  "issues": [
+    {
+      "criterion_id": "AC-18",
+      "type": "incomplete",
+      "description": "resolve_package_config(id: &amp;PackageId, cfg: &amp;ResolvedConfig) cannot detect the AC-18 ambiguity: it has no access to sibling PackageIds elsewhere in the workspace (that data lives in ManifestWalkResolver::build's promotion set, not in ResolvedConfig), and its Option&lt;&amp;PackageConfig&gt; return type (built via .map(|(_, pcfg)| pcfg) at resolve.rs:203) discards which pass (Prefixed vs Bare) produced the match, so the walk.rs:175 caller cannot even distinguish an unambiguous Prefixed-tier match from a potentially-ambiguous Bare-tier one. The scope's boundary-contract paragraph asserts a 'small, precisely-bounded change' is in scope but never specifies what that change is, leaving the implementer to invent a signature.",
+      "suggested_fix": "Add to scope (boundary-contract paragraph) and api_surface: 'resolve_package_config gains a third parameter, promoted_siblings: &amp;BTreeMap&lt;String, Vec&lt;PackageId&gt;&gt;, mapping each bare name promoted during this spec's promotion pass (AC-04/AC-05) to every PackageId sharing it, and its return type changes to Result&lt;Option&lt;&amp;PackageConfig&gt;, GraphError&gt;. Inside Pass 2 (the Bare-tier .or_else(...) branch at resolve.rs:202) only — Pass 1's Prefixed-tier match is never ambiguous and is unaffected — before returning Ok(Some(pcfg)), look up id.name() in promoted_siblings; if the entry has 2+ PackageIds, return Err(GraphError::AmbiguousName { name: id.name().to_string(), candidates: promoted_siblings[id.name()].clone() }) instead. walk.rs:175 changes from `let pkg_override = resolve_package_config(&amp;id, cfg);` to `let pkg_override = resolve_package_config(&amp;id, cfg, &amp;promoted_siblings)?;`, where promoted_siblings is built once, before the per-package loop, from the same promotion bookkeeping AC-04/AC-05 already require ManifestWalkResolver::build to maintain.'"
+    },
+    {
+      "criterion_id": "AC-18",
+      "type": "scope-overlap",
+      "description": "The fix required for the AC-18 gap above changes resolve_package_config's signature and its walk.rs:175 call site, but SPEC-003 (track-f-resolution-extraction.json, already shipped) pins that exact call site as a tested artifact in AC-F6: 'The resulting binding is: let pkg_override = resolve_package_config(&amp;id, cfg);'. This spec's boundary-contract paragraph only discusses the `id` argument's Bare\u2192Prefixed shape change and never mentions that AC-F6's exact call-site text becomes stale once resolve_package_config's arity changes.",
+      "suggested_fix": "Add one sentence to the scope's boundary-contract paragraph: 'This spec's AC-18 fix changes resolve_package_config's signature (see api_surface) and therefore supersedes SPEC-003/track-f's AC-F6 call-site text (`let pkg_override = resolve_package_config(&amp;id, cfg);`) with `let pkg_override = resolve_package_config(&amp;id, cfg, &amp;promoted_siblings)?;`; SPEC-003's AC-F6 is considered amended by this spec for the call-site binding only, not for the two-pass specificity logic it verifies, which is unchanged.'"
+    },
+    {
+      "criterion_id": null,
+      "type": "incomplete",
+      "description": "The ManifestWalkResolver::build api_surface note cites 'walk.rs:80-83' for the index.bare.insert(primary_id.name().to_string(), primary_id.clone()) statement. Direct read of the file (nl -ba) confirms the three-line statement is lines 80-82 (`index` / `.bare` / `.insert(...)`); line 83 is a blank line, not part of the statement. This is the same off-by-one citation defect class the revision already fixed for walk.rs:120-123\u2192121-123, but this second occurrence of the pattern was missed.",
+      "suggested_fix": "Replace 'walk.rs:80-83, `index.bare.insert(primary_id.name().to_string(), primary_id.clone())`' with 'walk.rs:80-82, `index.bare.insert(primary_id.name().to_string(), primary_id.clone())` (the three-line statement spanning `index` / `.bare` / `.insert(...)`, immediately followed by a blank line at 83)'."
+    }
+  ],
+  "overall": "fail",
+  "reasoning": "Citation precision (walk.rs:121-123) and the previously-flagged track-e boundary-contract gap are now genuinely fixed and grounded. However this revision introduces a new, unaddressed implementability gap: AC-18 describes an observable outcome (Err(AmbiguousName)) that is individually testable, but the mechanism to produce it cannot exist within resolve_package_config's current signature — the function has neither visibility into sibling promoted packages nor a way to report which pass matched. That gap cascades into an unacknowledged scope-overlap with the already-shipped track-f spec's AC-F6, which pins the exact call-site code this fix must change. A third, smaller citation off-by-one (walk.rs:80-83 vs the actual 80-82) of the same class already fixed elsewhere in this revision was missed. Per the audit standard, a developer implementing AC-18 today would have to invent the signature change themselves — that is exactly the kind of assumption-forcing gap this audit exists to catch."
+}
+```
+
+Relevant file paths: `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/spec-track3b-identity-resolution.json`, `/Users/gabe/Projects/callisto/crates/callisto-graph/src/config/resolve.rs`, `/Users/gabe/Projects/callisto/crates/callisto-graph/src/walk.rs`, `/Users/gabe/Projects/callisto/crates/callisto-graph/src/identity.rs`, `/Users/gabe/Projects/callisto/crates/callisto-graph/src/error.rs`, `/Users/gabe/Projects/callisto/crates/callisto-model/src/identity.rs`, `/Users/gabe/Projects/callisto/.claude/specs/track-e-specificity.json`, `/Users/gabe/Projects/callisto/.claude/specs/track-f-resolution-extraction.json`.</result>
+<usage><subagent_tokens>83096</subagent_tokens><tool_uses>14</tool_uses><duration_ms>186951</duration_ms></usage>
+</task-notification>
