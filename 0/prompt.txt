@@ -1,0 +1,76 @@
+<task-notification>
+<task-id>a5f01d3471358b1d9</task-id>
+<tool-use-id>toolu_015BUYVFborPTKc4KtibtJMK</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a7b3643b-af0c-4790-a38d-870e88a7dd3e/tasks/a5f01d3471358b1d9.output</output-file>
+<status>completed</status>
+<summary>Agent "Track 0: gix WASI spike — go/no-go for reading git repo from inside WASM" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I have all the evidence needed. Let me produce the final report.
+
+---
+
+## Spike Verdict: NO-GO
+
+### What Was Found Before This Run
+
+The spike was already executed in a prior session (2026-08-04) and committed to `main` at `ffc922d`. The standalone probe crate at `/tmp/gix-wasm-probe/` and the documented example at `/Users/gabe/Projects/callisto/crates/callisto-moon/examples/gix_wasm_spike.rs` both still exist.
+
+### Fresh Re-Run (2026-08-05, wasmtime 47.0.3)
+
+**Build:** `cargo build --target wasm32-wasip1` succeeded with zero errors — all three gix plumbing crates compile cleanly for `wasm32-wasip1`.
+
+**Run command:**
+```
+wasmtime run --dir /Users/gabe/Projects/callisto::/ -- /tmp/gix-wasm-probe/target/wasm32-wasip1/debug/gix-wasm-probe.wasm
+```
+
+**Exact output:**
+```
+.git exists: true
+gix-odb opened OK
+gix-ref opened OK
+thread 'main' panicked: called `Result::unwrap()` on an `Err` value:
+  Find(PackedOpen(Io(Kind(Unsupported))))
+```
+
+Exit code 134 (abort).
+
+### Crates Attempted and Versions
+
+| Crate | Version | Feature | gitoxide wasm32-wasip1 CI? |
+|---|---|---|---|
+| `gix-hash` | 0.26 | `sha1` | Yes — tested in CI with `sha1` feature |
+| `gix-ref` | 0.66 | (default) | Not in CI matrix as a standalone crate |
+| `gix-odb` | 0.83 | `sha1` | Not in CI matrix as a standalone crate |
+
+(`gix-object`, `gix-commitgraph`, `gix-traverse`, `gix-pack` are in the CI matrix with `sha1`/`wasm` features — compilation only, no `wasmtime` execution.)
+
+### Specific Blocker
+
+**mmap is not implemented in WASI.** Both code paths fail at the same syscall:
+
+- **Loose objects** (prior run): `Find(Loose(Io { source: Kind(Unsupported), action: "open or map", path: "/.git/objects/..." }))`
+- **Packed objects** (this run): `Find(PackedOpen(Io(Kind(Unsupported))))`
+
+`std::io::ErrorKind::Unsupported` is WASI's response to `mmap()` — it returns ENOSYS. Both `gix-odb` (loose object reader) and `gix-pack` (pack index + data reader) use memory-mapped I/O internally. There is no public API in either crate to opt into read-based I/O instead. The callisto repo's objects happen to be fully packed right now, so the pack path fails first.
+
+The WASI filesystem preopens work correctly — the `.git` directory is visible, `gix-odb::at()` succeeds, `gix-ref::file::Store::at()` succeeds, and `ref_store.find("HEAD")` resolves the HEAD commit OID successfully. The failure is strictly in `odb.header()` / any object read.
+
+### Verdict Summary
+
+**NO-GO for gix-native object reads inside WASM.**
+
+- gix-ref (ref reads, HEAD resolution, branch name resolution) — **works** in WASI via regular file I/O
+- gix-odb / gix-pack (any object content or header read) — **fails** with `Unsupported` (mmap ENOSYS)
+
+The correct approach for `callisto-moon` remains the current exec-seam design: shell out to the host's `git` binary via `warpgate_pdk::exec_command`. A hybrid (native gix-ref reads for lightweight lookups + host exec for commit data) is technically possible but adds complexity for minimal gain. The mmap blocker will not be resolved without WASI gaining mmap support or gix-odb gaining an opt-in read-fallback path, neither of which is imminent.
+
+### File Locations
+
+- Probe crate: `/tmp/gix-wasm-probe/` (standalone, not tracked)
+- Spike documentation: `/Users/gabe/Projects/callisto/crates/callisto-moon/examples/gix_wasm_spike.rs`
+- Feature gate: `gix-spike` feature in `/Users/gabe/Projects/callisto/crates/callisto-moon/Cargo.toml`
+
+No new files were created and nothing was committed.</result>
+<usage><subagent_tokens>40025</subagent_tokens><tool_uses>20</tool_uses><duration_ms>205912</duration_ms></usage>
+</task-notification>
