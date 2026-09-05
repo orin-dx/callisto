@@ -1,0 +1,62 @@
+<task-notification>
+<task-id>a92431205960b2a57</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/bb531e8d-c394-4e47-a8ae-e4a9ceeca6d2/tasks/a92431205960b2a57.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement TASK-8 (precondition check on platform_writes)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>```json
+{
+  "task_id": "TASK-8",
+  "status": "done",
+  "steps_completed": [
+    "Confirmed TASK-1 (5eb5937) and TASK-7 (a309ff7) present, tree clean before start",
+    "Read AC-012, AC-012b, AC-013 exact text from SPEC-TRACK2-PLATFORM-MANIFEST-WRITES.json",
+    "Confirmed GraphError::UnexpectedManifestVersion field shape { path, expected_from, expected_to, found } in error.rs:157-162",
+    "Wrote failing tests platform_write_drift_returns_unexpected_manifest_version_and_leaves_manifest_untouched and platform_write_idempotent_retry_when_already_at_target_succeeds_without_rewrite",
+    "Confirmed RED: drift test failed as expected (got Ok instead of Err); idempotent test passed trivially pre-fix (matches plan's documented expectation)",
+    "Implemented three-way current==from/current==target/else precondition branch in platform_writes loop (apply.rs:244-262)",
+    "Confirmed GREEN: both new tests pass, plus pre-existing apply_version_plan_executes_platform_writes_and_optional_dep_updates test (AC-013 regression proof) still passes unmodified",
+    "Ran cargo fmt -p callisto-graph and cargo clippy -p callisto-graph --all-targets -- -D warnings: clean",
+    "Ran full apply.rs test module (30/30 pass)",
+    "Committed apply.rs only (4726863)"
+  ],
+  "test_result": "pass",
+  "commit_sha": "4726863",
+  "criteria_evidence": [
+    {
+      "criterion_id": "AC-012",
+      "test_file": "crates/callisto-graph/src/apply.rs",
+      "test_line": 2332,
+      "implementation_file": "crates/callisto-graph/src/apply.rs",
+      "implementation_line": 256
+    },
+    {
+      "criterion_id": "AC-012b",
+      "test_file": "crates/callisto-graph/src/apply.rs",
+      "test_line": 2384,
+      "implementation_file": "crates/callisto-graph/src/apply.rs",
+      "implementation_line": 249
+    },
+    {
+      "criterion_id": "AC-013",
+      "test_file": "crates/callisto-graph/src/apply.rs",
+      "test_line": 2264,
+      "implementation_file": "crates/callisto-graph/src/apply.rs",
+      "implementation_line": 251
+    }
+  ],
+  "concerns": "cargo test -p callisto-graph --lib (full suite) shows one unrelated failure: commands::version::tests::probe_cargo_platform_sibling_discovery, an intentionally-panicking WIP debug probe test in crates/callisto-graph/src/commands/version.rs (57 uncommitted lines), which is TASK-3's concurrently-running scope and explicitly off-limits to this task. Verified apply.rs's own test module (cargo test -p callisto-graph --lib apply::) passes 30/30 with zero failures, so this task introduces no regression. Not fixed or touched per instructions.",
+  "reasoning": "Task scope was precisely the three-way precondition branch in the platform_writes dispatch loop, mirroring the sibling bump loops already in apply.rs. Verified spec text directly from disk rather than trusting the plan's paraphrase (they matched exactly). Followed TDD: RED confirmed only for the drift case (the idempotent case was documented to pass trivially pre-fix, and it did, exactly as the plan predicted). No precision_tests were supplied for this task. Did not touch commands/version.rs despite the concurrent agent's WIP causing a full-suite test failure there."
+}
+```
+
+**Summary**
+
+Implemented TASK-8 (apply.rs Fix 2) via TDD in `/Users/gabe/Projects/callisto/crates/callisto-graph/src/apply.rs`. Added a three-way precondition check to the `platform_writes` dispatch loop (lines 244-262): `current == pw.version` → idempotent no-op but still staged (AC-012b); `current == pw.from` → normal write (AC-013, proven by the pre-existing unmodified regression test); else → `Err(GraphError::UnexpectedManifestVersion { path, expected_from, expected_to, found })` with the manifest left untouched (AC-012).
+
+Two new tests added at apply.rs:2332 and apply.rs:2384. Confirmed genuine RED for the drift case before implementing. All 30 apply.rs tests pass, fmt/clippy clean, committed as `4726863`.
+
+One note: the full crate test suite has one unrelated failing test (`commands::version::tests::probe_cargo_platform_sibling_discovery`) caused by uncommitted WIP debug code in `commands/version.rs` belonging to the concurrently-running TASK-3 agent — that file was explicitly out of scope for this task, so it was left untouched. `apply.rs`'s own test module is fully green.</result>
+<usage><subagent_tokens>70939</subagent_tokens><tool_uses>21</tool_uses><duration_ms>289149</duration_ms></usage>
+</task-notification>
