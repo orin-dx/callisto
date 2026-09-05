@@ -1,0 +1,1 @@
+We generally relly on leaning to the native tool for publishing so I'm reticent to put too much specific things in there but we do need something that helps guide or address the issue
