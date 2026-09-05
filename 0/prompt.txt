@@ -1,0 +1,62 @@
+<task-notification>
+<task-id>a9a2b67d050697a51</task-id>
+<tool-use-id>toolu_01SCHpT7FPXVLTaEFYuFKF81</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/0c4c4622-1ed8-4f2c-80e6-f0890a2dad72/tasks/a9a2b67d050697a51.output</output-file>
+<status>completed</status>
+<summary>Agent "Investigate lockfile staleness gap across ecosystems" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Now I have all the evidence needed. Here is the report.
+
+## Report: Lock-Staleness Gap Between `callisto version` and `callisto publish --locked`
+
+### Cargo
+
+**Confirmed mechanism, precisely:**
+
+- `refresh_lockfiles` defaults to `false`. It's a bare boolean CLI flag with no `default_value`, `crates/callisto-cli/src/cli.rs:118-121`:
+  ```rust
+  pub struct VersionArgs {
+      /// Regenerate lockfiles after applying the version bumps.
+      #[arg(long)]
+      pub refresh_lockfiles: bool,
+  ```
+  This maps 1:1 into `ApplyOptions.refresh_lockfiles` at `crates/callisto-cli/src/commands/version.rs:28` and `ApplyOptions` itself derives `Default` with the field defaulting `false` (`crates/callisto-graph/src/apply.rs:14-17`). Note: the doc comment on that field (line 15-16) is stale — it claims the flag is "not yet consulted" — but the actual `apply_version_plan` body does consult it and does run `cargo update --workspace` / `uv lock` / `poetry lock --no-update` when true (`crates/callisto-graph/src/apply.rs:362-414`).
+- The GitHub Action (`.github/actions/callisto-action/action.yml:7-10, 116-117`) defaults `version_command` to the literal string `"callisto version"` — no `--refresh-lockfiles` — and runs it verbatim via `"${_version_cmd[@]}"`. So the shipped default composite Action reproduces the exact default-off behavior.
+- `cargo_publish` (`crates/callisto-graph/src/commands/publish_client.rs:274-281`) unconditionally appends `--locked` — both the registry and no-registry branches include it, with no CLI flag or config knob to disable it:
+  ```rust
+  let output = if let Some(reg) = registry {
+      self.run("cargo", &amp;["publish", "-p", package.name(), "--locked", "--registry", reg])?
+  } else {
+      self.run("cargo", &amp;["publish", "-p", package.name(), "--locked"])?
+  };
+  ```
+
+**Precise failure condition.** `cargo publish --locked` requires that a fresh resolve computed from the current manifests exactly match what's recorded in `Cargo.lock`; if not, it errors ("the lock file needs to be updated but --locked was passed to prevent this") rather than silently updating it. Cargo.lock carries a `[[package]]` entry with the *current resolved version* for every workspace member, including the one being published. Callisto's version bump (`VersionWriteTarget::CargoWorkspacePackage`, staged via `apply.rs`) rewrites the package's own `[package].version` on disk, but — with `refresh_lockfiles: false` — never touches `Cargo.lock`. That alone (own-version mismatch between manifest and lock) is sufficient to trip `--locked`; it does not require the cascade path at all. Separately and additionally, callisto's cascade logic (`crates/callisto-graph/src/cascade.rs`, `cascade_action` → `rewrite: true` when a dependent's range `DoesNotCover` the bump → `DepWriteTarget::CargoWorkspaceDependency`) rewrites sibling workspace-path-dependency version requirements, which can also desync the lock's resolved graph. Both are real, but the *own-version* mismatch is the simpler, always-present trigger for any bumped package.
+
+**No existing diagnostic.** Searched `status.rs`, `validate.rs`, `plan_publish.rs` (both `callisto-cli` and `callisto-graph` variants) and the full `DiagnosticCode` enum (`crates/callisto-model/src/diagnostic.rs`, ~20 variants: `EmptyChangeset`, `UnknownPackage`, `RangeNotRoundTrippable`, `GraphEdgeDisagreement`, `PublishTargetNotImplemented`, etc.) — none mention lockfiles, `Cargo.lock`, or `--locked`. `--locked` appears in the codebase only at the two `cargo publish` call sites in `publish_client.rs`. There is no warning anywhere upstream of the actual `cargo publish --locked` invocation.
+
+### npm / pnpm / yarn
+
+Callisto's npm path (`build_npm_publish_command`, `publish_client.rs:347-410`) builds `npm publish --workspace &lt;name&gt;`, `pnpm publish --filter &lt;name&gt; --no-git-checks`, `yarn workspace &lt;name&gt; npm publish`, or `bun publish` — none pass any lockfile-verification flag (`--frozen-lockfile`, `--locked`, or equivalent). The `--no-git-checks` on pnpm is explicitly there to bypass pnpm's dirty-tree refusal, not a lockfile check.
+
+Confidence: **high** that this class of failure doesn't exist for npm/pnpm/yarn publish, based on general knowledge of these tools: `npm publish`/`pnpm publish`/`yarn npm publish` pack and upload from `package.json` + the `files` field; they don't re-resolve or diff against `package-lock.json`/`pnpm-lock.yaml` as part of publishing (that check exists only for `npm ci` / `pnpm install --frozen-lockfile`, i.e. install-time, not publish-time). So even if callisto never refreshes `package-lock.json` after a version bump, there's no npm-side command in this pipeline that would fail because of it.
+
+Callisto's own lockfile-refresh logic in `apply.rs` (lines 362-414) only handles Cargo (`cargo update --workspace`) and PyPI (`uv lock` / `poetry lock --no-update`) — there is no npm/pnpm branch at all, refresh_lockfiles or not. So even opting in to `--refresh-lockfiles` today does nothing for npm lockfiles (this is itself a separate, smaller gap, but consistent with the fact that npm publish doesn't need it).
+
+### PyPI
+
+`pypi_publish` (`publish_client.rs:477-528`) runs `python -m build --sdist --wheel --outdir dist/` then `twine upload --skip-existing ... dist/&lt;name&gt;-&lt;version&gt;*`. Neither command touches `poetry.lock`/`uv.lock` — `python -m build` reads `pyproject.toml`'s build-system/metadata only, and `twine upload` just uploads already-built artifacts by filename glob. Confidence: **high**, grounded directly in what callisto's own code invokes — there's no lock-consuming step in this path at all, so a stale `poetry.lock`/`uv.lock` cannot make `callisto publish` fail for PyPI packages, structurally, independent of ecosystem tool semantics.
+
+### Root-cause classification
+
+**(b) — a general pattern in principle, but only Cargo's publish path opts into strict lock verification today.** All three ecosystems share the same upstream condition (callisto's default `refresh_lockfiles: false` means lockfiles go stale relative to bumped manifests), but only Cargo's publish step (`--locked`) turns that staleness into a hard failure, because `cargo publish` is the only one of the three that re-resolves the dependency graph against a lockfile as an integrity check before packaging. npm/pnpm/yarn publish and Python's build+twine path are structurally decoupled from lockfile state at publish time — not because callisto treats them more leniently, but because none of those upstream tools consume a lockfile during publish the way Cargo does. So this isn't "Cargo-specific in the sense of an arbitrary flag choice callisto made" (option a) — it's that `--locked` is the one ecosystem-native strictness check in this pipeline, and callisto's version step doesn't account for it.
+
+### Realistic fix shapes (evidence-based, not invented)
+
+1. **Change `refresh_lockfiles`'s default to `true`** — smallest change, directly closes the gap for Cargo (and PyPI, which already has refresh logic wired in `apply.rs`), at the cost of `cargo update --workspace` running by default (flagged in `docs/00-design.md:714` as "can be slow"). This is a one-line flag default change plus updating the Action's default `version_command`, or just changing the CLI default so the Action's unmodified `"callisto version"` default picks it up.
+2. **Add a new diagnostic** (extending the existing `DiagnosticCode` enum pattern already used in `validate.rs`/`status.rs`) that checks, for Cargo packages, whether `Cargo.lock`'s recorded version for a bumped workspace member matches the newly-written `Cargo.toml` version — surfaced in `callisto status`/`callisto validate`/`plan_publish` output before a user hits the failure at actual `cargo publish --locked` time. This is the shape the codebase already uses for other pre-publish gotchas (`RangeNotRoundTrippable`, `GraphEdgeDisagreement`) so it's structurally consistent with existing patterns, but nothing like it exists today — it would be new code.
+3. **Do nothing to defaults, but improve the Action/CLI docs and error surface**: since `--locked`'s failure message from cargo itself is fairly explicit ("lock file needs to be updated but --locked was passed"), a lower-effort option is a targeted `RegistryError` wrapper in `classify_cargo_output` (`publish_client.rs:675-695`) that detects this specific cargo error text and rewrites it into a message pointing at `callisto version --refresh-lockfiles`, rather than preventing the failure. Weakest option — reactive, not preventive — but requires no default-behavior change.
+
+Files referenced: `crates/callisto-cli/src/cli.rs:118-121`, `crates/callisto-cli/src/commands/version.rs:28`, `crates/callisto-graph/src/apply.rs:14-22,362-414`, `crates/callisto-graph/src/commands/publish_client.rs:274-281,347-410,477-528`, `crates/callisto-graph/src/cascade.rs` (cascade_action/rewrite), `crates/callisto-model/src/diagnostic.rs:94-176`, `.github/actions/callisto-action/action.yml:7-10,116-117,180-187`, `ARCHITECTURE.md:395-405`.</result>
+<usage><subagent_tokens>98313</subagent_tokens><tool_uses>24</tool_uses><duration_ms>133788</duration_ms></usage>
+</task-notification>
