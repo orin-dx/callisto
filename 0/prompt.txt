@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>a99904fb0d966e69e</task-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a99904fb0d966e69e.output</output-file>
+<status>failed</status>
+<summary>Agent "Implement TASK-33 (AC-16 regression test)" failed: Agent terminated early due to an API error: You've hit your weekly limit · resets Aug 17 at 2pm (Europe/Paris)</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+</task-notification>
