@@ -1,0 +1,39 @@
+<task-notification>
+<task-id>a5e1e031d2627af0f</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/tasks/a5e1e031d2627af0f.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement T04: rewrites-loop persist wiring" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Task T04 committed cleanly, scope limited to `crates/callisto-graph/src/apply.rs`. No precision tests were supplied for this task.
+
+```json
+{
+  "task_id": "T04",
+  "status": "done",
+  "steps_completed": [
+    "Confirmed T02's self-delegation guard present at crates/callisto-manifests/src/cargo.rs:306 (ManifestError::InvariantViolation) before proceeding",
+    "Read AC-008 and AC-009 from .claude/specs/SPEC-MANIFEST-PERSIST-001.json on disk",
+    "Added test apply_persists_rewrites_loop_update_dependency_spec_to_disk to crates/callisto-graph/src/apply.rs's mod tests, per plan's exact test code",
+    "Ran the new test alone (waived red phase, per plan): passed immediately via update_dependency_spec's pre-existing internal self-persist, as expected",
+    "Made the implementation edit: added handle.persist(permit)?; immediately after handle.update_dependency_spec(...)?; in the rewrites loop",
+    "Re-ran apply::tests (8 tests) — all green",
+    "Ran full cargo test -p callisto-graph — all suites green",
+    "cargo fmt -p callisto-graph to satisfy pre-commit format-check (first commit attempt was rejected by the hook)",
+    "Re-verified apply::tests green after formatting",
+    "Staged only crates/callisto-graph/src/apply.rs and committed with the plan's exact commit message"
+  ],
+  "test_result": "pass",
+  "commit_sha": "01d9c38",
+  "concerns": "This task's red phase was explicitly waived per the plan (task is listed in red_phase_waived_tasks): the new test passed before the implementation edit was made, via update_dependency_spec's still-present internal self-persist call, exactly as the plan predicted. This is disclosed in AC-008/AC-009 as expected, not a broken-test signal. First commit attempt failed the format-check pre-commit hook (unformatted assert! call); fixed with cargo fmt -p callisto-graph and recommitted as a fresh commit (no amend), since the failed attempt never created a commit object.",
+  "reasoning": "T02 guard confirmed present via grep before starting. Spec AC-008/AC-009 read directly from .claude/specs/SPEC-MANIFEST-PERSIST-001.json. Test and implementation added exactly per plan text, scoped strictly to apply.rs's rewrites loop as instructed — no manifest ecosystem files touched, no T05a/stripping work started. Full crate test suite (unit + all integration test binaries + doctests) passed with zero failures after the change, confirming no regressions from adding the explicit persist() call."
+}
+```
+
+Relevant files:
+- `/Users/gabe/Projects/callisto/crates/callisto-graph/src/apply.rs` — rewrites loop (line ~121: `handle.persist(permit)?;` added) and new test `apply_persists_rewrites_loop_update_dependency_spec_to_disk` in `mod tests`
+- `/Users/gabe/Projects/callisto/crates/callisto-manifests/src/cargo.rs:306` — T02's pre-existing self-delegation guard, confirmed present
+- `/Users/gabe/Projects/callisto/.claude/specs/SPEC-MANIFEST-PERSIST-001.json` — AC-008/AC-009 read from disk
+- `/Users/gabe/Projects/callisto/.claude/plans/manifest-persist-001-plan.json` — source of task T04</result>
+<usage><subagent_tokens>67546</subagent_tokens><tool_uses>27</tool_uses><duration_ms>281700</duration_ms></usage>
+</task-notification>
