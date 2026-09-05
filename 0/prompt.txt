@@ -1,0 +1,1 @@
+We want to support symlinks inside the repo and guarding too much outside seems bad. It’s up to the user to make appropriate symlinks right?
