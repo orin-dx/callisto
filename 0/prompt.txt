@@ -1,0 +1,6 @@
+<task-notification>
+<task-id>bcwbi44e8</task-id>
+<summary>Monitor event: "PR #5 CI checks on release-pipeline-and-matrix-hardening"</summary>
+<event>Code Coverage &amp; Test Report: pass</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
