@@ -1,0 +1,3 @@
+I think it should default to false since it's not super common. Folks who are building software that want the extra assurane will turn it on.
+
+Can we do a quick manual fix for 0.6 and tackle the verified commit config?
