@@ -1,0 +1,1 @@
+Do another very thorough round of bug hunting and code analysis focusing on architecture, best practices, maintainability, DX, performance. Also consider test coverage with black box tests that cover the edge cases and error cases. I feel like you're sill missing things. Find gaps, analyse patterns and come up with a comprehensive plan
