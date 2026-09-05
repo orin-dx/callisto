@@ -1,0 +1,1 @@
+Check the callisto matrix investigation result (silent-empty diagnostic gap, nativeMatrix timing/docs gap). Present the findings and a recommended fix scope to the user, matching the precision/rigor of the lockfile-staleness recommendation earlier in this conversation.
