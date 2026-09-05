@@ -1,0 +1,32 @@
+<task-notification>
+<task-id>ae558c8acd7791e34</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/bb531e8d-c394-4e47-a8ae-e4a9ceeca6d2/tasks/ae558c8acd7791e34.output</output-file>
+<status>completed</status>
+<summary>Agent "Exit-gate Track 1 spec (retry)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>**Verdict: FAIL** (retry_count 3 — the next fail escalates to human review)
+
+Written to `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/verdict-track1-retry2.json`
+
+I read the spec fresh and re-verified every api_surface and acceptance-criteria claim against live source. Four of the five requested checks came back clean; the fifth did not, and one new defect surfaced.
+
+**Confirmed accurate (a–d):**
+- Linked-group block is at `cascade.rs:314-380` inside the `while changed` loop, and the new Fixed-group block's description mirrors its structure correctly (member collection, `max_sev` union, equality-gated `out.targets`/`reasons`/`worklist`/`changed = true` at 366-378). The cited `fixed_group_target` 5-arg and `pre_mutation_checks` 6-arg signatures match `groups.rs` exactly.
+- `CascadeInput` has exactly 8 fields, none named `tags`; the 7 test literals (698, 779, 850, 947, 1074, 1157, 1237) are all inside the `#[cfg(test)]` module starting at 543.
+- `plan_snapshot` never calls `ws.tags()`; `ws.tags()` is genuinely fallible via `TagIndex::build`, so AC-014 is well-grounded.
+- `GroupCheckOutcome.new_members` is written at `groups.rs:85` and read nowhere in the workspace.
+
+**Blockers:**
+
+1. **`purpose` still mandates the removed dedup.** Clause (3) ends with "*and deduplicate same-group duplicate spellings so a PackageId reachable under two spellings within one group appears exactly once in that group's resolved members*" — directly contradicting `scope` ("no dedup"), `non_goals[8]`, and the `GroupTable::resolve` api_surface entry ("resolve() does not deduplicate it"). The AC-010c edit missed the most load-bearing field in the document.
+
+2. **`revision_note` still carries the retracted `.dedup()` directive** as a concrete instruction ("after the existing `.sort()` calls at lines 164/195" — those `.sort()` calls do exist, so it reads as actionable), plus a dangling `AC-010c` id that resolves to nothing. `reasoning` mirrors it.
+
+3. **AC-003 repeats its own loophole one directory out.** It enumerates a closed set of sites and then asserts `cargo test -p callisto-graph --no-run` compiles cleanly "in any of these three files" — but `crates/callisto-graph/tests/cascade_tests.rs` is compiled by that command and holds **six more** `CascadeInput` literals (lines 48, 141, 196, 258, 324, 411) that break the instant `tags` is added. `CascadeInput` is re-exported at `lib.rs:38`, so this is a public-API break consumed as `callisto_graph::cascade::CascadeInput`. Secondarily, "or a populated TagIndex where that specific test's Fixed-group scenario requires real tag data" is a judgment call — I verified none of the 13 pre-existing literals constructs a Fixed group (only `linked`/`linked_of` at 225 and 301, `GroupTable::default()` elsewhere), so all 13 can take `TagIndex::empty()` and the spec should say so.
+
+4. **`ws.root` passed where `&amp;Path` is required**, in both the `NapiTargetsIndex::load` and `pre_mutation_checks` sketches. `Workspace.root` is `pub root: PathBuf` (`lib.rs:54`) behind a `&amp;Workspace`, so this is a move-out-of-shared-reference error — in the same sentence that claims to state "the real six-argument signature (`root: &amp;Path`)". This is the third revision in which a borrow detail in that entry was wrong.
+
+Blockers 1 and 2 are one defect in two fields. Blocker 3 is the substantive one — a red build, not a wording nit.</result>
+<usage><subagent_tokens>85263</subagent_tokens><tool_uses>23</tool_uses><duration_ms>344998</duration_ms></usage>
+</task-notification>
