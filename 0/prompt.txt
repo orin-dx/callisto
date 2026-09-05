@@ -1,0 +1,1 @@
+I think trying to run too many things in parallel is causing us more grief that it's worth. Fixing should be more parellel because you're getting yourself confused. Or am I wrong?
