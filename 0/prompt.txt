@@ -1,0 +1,1 @@
+Let's make sure that we appropriate read the docs, test, and feel confident about our work. What goes in callisto CLI vs GH actions
