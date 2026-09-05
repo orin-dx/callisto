@@ -1,0 +1,12 @@
+<task-notification>
+<task-id>w08vr56yl</task-id>
+<tool-use-id>toolu_019Xd9uJYVE42pQQePd4WcA1</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a7b3643b-af0c-4790-a38d-870e88a7dd3e/tasks/w08vr56yl.output</output-file>
+<status>completed</status>
+<summary>Dynamic workflow "Fix publish order bug, package manager detection, doc gaps, and T17/T18 layer violations" completed</summary>
+<result>{"phase1_branches":["worktree-wf_3662a662-2be-1","worktree-wf_3662a662-2be-2","worktree-wf_3662a662-2be-3"],"phase2_branches":["worktree-wf_3662a662-2be-5","worktree-wf_3662a662-2be-6"],"completed":["Bug1","Bug2","DocGap1","DocGap2","T17","T18"],"ci_passed":false,"ci_failures":["just layer-check: recipe 'layer-check' does not exist in the justfile (exit code 1)"]}</result>
+<diagnostics>Per-agent results: /Users/gabe/.claude/projects/-Users-gabe-Projects-callisto/575b7a46-37b7-42f0-9db7-b2c329b2abab/subagents/workflows/wf_3662a662-2be/journal.jsonl — one {"type":"result",...} line per completed agent with its full return value.
+If the result above is empty or unexpected, Read this file BEFORE diagnosing — do not assume agents returned non-empty results.
+To re-run with edited post-processing: Workflow({scriptPath: '/Users/gabe/.claude/projects/-Users-gabe-Projects-callisto/575b7a46-37b7-42f0-9db7-b2c329b2abab/workflows/scripts/callisto-comprehensive-fix-wf_3662a662-2be.js', resumeFromRunId: 'wf_3662a662-2be'}) — agents whose (prompt, opts) are unchanged replay from cache.</diagnostics>
+<usage><agent_count>8</agent_count><agents_done>8</agents_done><agents_error>0</agents_error><agents_skipped>0</agents_skipped><agents_empty_result>0</agents_empty_result><subagent_tokens>465899</subagent_tokens><tool_uses>271</tool_uses><duration_ms>2466882</duration_ms></usage>
+</task-notification>
