@@ -1,0 +1,56 @@
+<task-notification>
+<task-id>a795b833a31fa8064</task-id>
+<tool-use-id>toolu_01HmKb5jKruKojVqLUCTjSyu</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/bb531e8d-c394-4e47-a8ae-e4a9ceeca6d2/tasks/a795b833a31fa8064.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement T12 (AC-011 non-conflict regression)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Task complete. Summary:
+
+**T12 — Pin AC-011: non-conflicting group membership resolves Ok**
+
+- Read AC-011 and AC-012 directly from `/Users/gabe/Projects/callisto/.claude/specs/SPEC-TRACK1-FIXED-GROUP-CASCADE-CORRECTNESS.json` before writing the test.
+- Confirmed baseline: `cargo test -p callisto-graph --test config_resolve_tests` was green (4 tests) before any edit.
+- Added `non_conflicting_group_membership_resolves_ok` to `/Users/gabe/Projects/callisto/crates/callisto-graph/tests/config_resolve_tests.rs` (test starts at line 209, per the plan's exact spec).
+- Ran the new test in isolation: it passed immediately. This confirms the plan's own note — T10's existing `ConflictingGroupMembership` logic only fires when the same `PackageId` is claimed under two *different* group names, so a single-group membership case was already correctly handled. No production code change was required; this is a pure regression pin, verified by actually running it rather than assumed.
+- Ran `cargo fmt -p callisto-graph` (no diff), `cargo clippy -p callisto-graph --all-targets -- -D warnings` (clean), and the full crate suite `cargo test -p callisto-graph` (361 unit tests + all integration suites green, including all 5 tests in `config_resolve_tests.rs` — the 4 pre-existing ones unmodified, satisfying AC-012).
+- Committed: `a7e5526` — `test(graph): pin AC-011 non-conflicting group membership resolves Ok`.
+
+```json
+{
+  "task_id": "T12",
+  "status": "done",
+  "steps_completed": [
+    "Read AC-011/AC-012 from spec file on disk",
+    "Confirmed pre-edit baseline: 4/4 tests green in config_resolve_tests.rs",
+    "Appended non_conflicting_group_membership_resolves_ok test",
+    "Ran new test in isolation, confirmed pass (verified no production code change was needed, per plan's explicit instruction)",
+    "cargo fmt -p callisto-graph (no changes)",
+    "cargo clippy -p callisto-graph --all-targets -- -D warnings (clean)",
+    "cargo test -p callisto-graph full suite (361 unit + all integration tests green, no regressions, AC-012 confirmed)",
+    "Committed a7e5526"
+  ],
+  "test_result": "pass",
+  "commit_sha": "a7e5526",
+  "concerns": "This task's own plan step explicitly instructed running the test once to confirm it passes immediately rather than following a strict red-then-green cycle, because T10's implementation already covers this case and no production code change is in scope. This was verified by actually running the test (not assumed), matching the plan's documented expectation — reported here for transparency since it deviates from the canonical red-first TDD sequence.",
+  "criteria_evidence": [
+    {
+      "criterion_id": "AC-011",
+      "test_file": "crates/callisto-graph/tests/config_resolve_tests.rs",
+      "test_line": 209,
+      "implementation_file": "crates/callisto-graph/src/config/groups.rs",
+      "implementation_line": 135
+    },
+    {
+      "criterion_id": "AC-012",
+      "test_file": "crates/callisto-graph/tests/config_resolve_tests.rs",
+      "test_line": 61,
+      "implementation_file": "crates/callisto-graph/src/config/groups.rs",
+      "implementation_line": 135
+    }
+  ],
+  "reasoning": "AC-011 required a passing test proving that non-conflicting group membership resolves Ok without constructing ConflictingGroupMembership. AC-012 required all pre-existing tests in the file to remain green unmodified. Both were confirmed by running the full crate suite post-change with zero failures and zero regressions."
+}
+```</result>
+<usage><subagent_tokens>52971</subagent_tokens><tool_uses>16</tool_uses><duration_ms>126679</duration_ms></usage>
+</task-notification>
