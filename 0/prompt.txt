@@ -1,0 +1,5 @@
+<task-notification>
+<task-id>b4l9y5cay</task-id>
+<summary>Monitor event: "wait for cargo test process 34383 to exit"</summary>
+<event>[Monitor timed out — re-arm if needed.]</event>
+</task-notification>
