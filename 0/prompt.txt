@@ -1,0 +1,54 @@
+<task-notification>
+<task-id>afd9ed8f355c19c19</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/bb531e8d-c394-4e47-a8ae-e4a9ceeca6d2/tasks/afd9ed8f355c19c19.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement T06 (pre_mutation_checks wiring)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>```json
+{
+  "task_id": "T06",
+  "status": "done",
+  "steps_completed": [
+    "Read AC-007, AC-008, AC-009, AC-013 acceptance criteria text directly from SPEC-TRACK1-FIXED-GROUP-CASCADE-CORRECTNESS.json on disk before writing any test",
+    "RED: added #[cfg(test)] mod tests to crates/callisto-graph/src/commands/version.rs with version_rejects_divergent_fixed_group_via_real_call_path; ran it and confirmed it failed with the expected panic message (plan_version returned Ok(..) because pre_mutation_checks was never called)",
+    "Implement: inserted NapiTargetsIndex::load(&amp;ws.config.groups, &amp;ws.root)? and crate::groups::pre_mutation_checks(&amp;ws.graph, &amp;ws.config.groups, &amp;base_versions, tags, &amp;napi, &amp;ws.root)? before run_cascade(input)?",
+    "Implement: changed 'let mut diagnostics = outcome.diagnostics;' to also extend with group_check.diagnostics",
+    "GREEN: re-ran the test, confirmed it passes",
+    "Ran cargo fmt -p callisto-graph and cargo clippy -p callisto-graph --all-targets -- -D warnings clean",
+    "Ran full cargo test -p callisto-graph suite: all tests pass, no regressions",
+    "Committed the change"
+  ],
+  "test_result": "pass",
+  "commit_sha": "ec801f3",
+  "concerns": null,
+  "criteria_evidence": [
+    {
+      "criterion_id": "AC-007",
+      "test_file": "crates/callisto-graph/src/commands/version.rs",
+      "test_line": 388,
+      "implementation_file": "crates/callisto-graph/src/commands/version.rs",
+      "implementation_line": 84
+    },
+    {
+      "criterion_id": "AC-009",
+      "test_file": "crates/callisto-graph/src/commands/version.rs",
+      "test_line": 386,
+      "implementation_file": "crates/callisto-graph/src/commands/version.rs",
+      "implementation_line": 83
+    },
+    {
+      "criterion_id": "AC-013",
+      "test_file": "crates/callisto-graph/src/commands/version.rs",
+      "test_line": 352,
+      "implementation_file": "crates/callisto-graph/src/commands/version.rs",
+      "implementation_line": 83
+    }
+  ],
+  "reasoning": "Task T06 covers_criteria is AC-007, AC-009, AC-013 (AC-008 is not in this task's covers_criteria list, though its text was reviewed for context on the diagnostics-merge implementation step which was also completed as specified). Followed the plan's exact RED test content, exact implementation insertion points, and exact commit message. tags is &amp;TagIndex (a reference, reused by value in both CascadeInput and pre_mutation_checks with no move conflict). NapiTargetsIndex::load returns Result&lt;Self, ManifestError&gt; and GraphError has #[from] ManifestError so ? propagates cleanly. Only the diverging (FixedGroupDivergent) sub-case of AC-007 has a dedicated test in this task; the GroupGrammarMismatch sub-case of AC-007 was not separately tested here per the plan's exact task steps -- that risk is inherited from the plan itself, not introduced by this execution."
+}
+```
+
+Summary: Task T06 wired `pre_mutation_checks` into `plan_version`'s real call path in `/Users/gabe/Projects/callisto/crates/callisto-graph/src/commands/version.rs`. TDD cycle: wrote the exact test specified in the plan (RED — confirmed failure with `Ok(...)` before the fix), implemented the `NapiTargetsIndex::load` + `pre_mutation_checks` call before `run_cascade`, merged `group_check.diagnostics` into the plan's diagnostics (GREEN — confirmed pass), ran `cargo fmt`, `cargo clippy -D warnings` (clean), and the full `cargo test -p callisto-graph` suite (all passing, no regressions). Committed as `ec801f3`.</result>
+<usage><subagent_tokens>67115</subagent_tokens><tool_uses>25</tool_uses><duration_ms>492986</duration_ms></usage>
+</task-notification>
