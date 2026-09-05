@@ -1,0 +1,1 @@
+what branch and worktree do we have? I can ask codex to read again
