@@ -1,0 +1,33 @@
+<task-notification>
+<task-id>a77587afd6786a5dd</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a77587afd6786a5dd.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement TASK-19 (AC-13 consolidated regression test)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Committed successfully at `dd90a76`, hooks passed cleanly.
+
+## Summary
+
+**task_id:** TASK-19
+**status:** done
+**test_result:** pass
+**commit_sha:** dd90a76
+
+**Steps completed:**
+1. Verified all 14 prior commits (0971005–1590c3b) present on `crates/callisto-graph/src/locate/ignore_walk.rs`, tree clean.
+2. Read AC-13's exact text (and its constituent AC-03/04/06/06b/08/10/10b/10d/11c/16/16b/17) from `/Users/gabe/Projects/callisto/.claude/specs/SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json` on disk.
+3. Cross-checked the plan's `failing_test` code against AC-13's spec text — confirmed all 12 required blocks are present (unlike TASK-12, no fixture was missing here; the note field's claim that AC-10 was already added by the amendment checked out).
+4. Added the test `ac13_npm_pnpm_workspace_membership_regression_group` at `crates/callisto-graph/src/locate/ignore_walk.rs:905`.
+5. Ran the test — passed immediately (regression-proof pattern, no red step, consistent with TASK-07–18).
+6. Adversarially verified it isn't vacuous: temporarily broke the hybrid-root exemption in `NpmMembership::admits` (`crates/callisto-graph/src/locate/membership.rs:230-232`, appended `&amp;&amp; false`), reran — test correctly failed on the AC-16 assertion (`ignore_walk.rs:1039`). Restored the code, reran — green again.
+7. Fixed `clippy::cmp_owned` violations (`PathBuf::from(...)` → `Path::new(...)` on RHS of `==`) per the known gotcha for this plan.
+8. Ran `cargo fmt -p callisto-graph`, `cargo clippy -p callisto-graph --all-targets -- -D warnings` (clean), and the full `cargo test -p callisto-graph --lib` (291 passed, 0 failed).
+9. Committed with message matching the plan's `commit_message`.
+
+**criteria_evidence:**
+- AC-13: test_file `crates/callisto-graph/src/locate/ignore_walk.rs`, test_line 905; implementation_file `crates/callisto-graph/src/locate/ignore_walk.rs`, implementation_line 39 (`IgnoreWalkLocator::projects`, which wires `NpmMembership::admits` at `crates/callisto-graph/src/locate/membership.rs:230`).
+
+**concerns:** None. This task required no implementation change (behavior already landed in prior tasks); the adversarial mutation test confirms the regression group is a genuine, non-vacuous safety net.</result>
+<usage><subagent_tokens>69880</subagent_tokens><tool_uses>22</tool_uses><duration_ms>485426</duration_ms></usage>
+</task-notification>
