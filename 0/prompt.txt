@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>b949o6p2s</task-id>
+<summary>Monitor event: "watch PR #5 CI checks until all complete"</summary>
+<event>Code Coverage &amp; Test Report: SUCCESS
+Validate Changesets &amp; Workspace Status: QUEUED</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
