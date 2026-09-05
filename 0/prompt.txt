@@ -1,0 +1,24 @@
+<task-notification>
+<task-id>a6fc9a632600510f9</task-id>
+<tool-use-id>toolu_01RgZd5eAoisFawZgZtnANgs</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a6fc9a632600510f9.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix Track 3b1 AC-F6 ownership gap" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>The spec is valid JSON, correctly amended, and self-consistent. File already written in place at the same path.
+
+Summary of changes made to `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/spec-track3b1-identity-promotion-core.json` (SPEC-TRACK3B1-IDENTITY-PROMOTION-CORE):
+
+1. **non_goals entry (the AC-F6 deferral)**: Amended to state that SPEC-TRACK3B2's own scope (matrix.rs/publish.rs collision-safety only) does not cover AC-F6, and that this spec now owns reconciling it directly — a one-paragraph edit to track-f-resolution-extraction.json's AC-F6 criterion text, updating the pinned call-site string from `resolve_package_config(&amp;id, cfg);` to `resolve_package_config(&amp;id, &amp;cfg_with_local_promotions)?;`, with explicit confirmation that `crates/callisto-graph/tests/per_package_config_test.rs` (grep-verified to contain no direct `resolve_package_config` call and no promoted-collision fixture) passes unmodified.
+
+2. **New non_goals entry (awareness note)**: Quotes track-e-specificity.json's actual non_goals sentence verbatim ("walk.rs returns DuplicatePackage for this case...") and flags it as stale rationale once this spec lands, since disjoint-ecosystem-set collisions now promote instead of erroring. Judged as awareness-only (not a formal closing task) because it's non_goals rationale rather than a pinned testable criterion, and because verifying track-e's own diagnostic-pass behavior under promotion is untested by this spec and belongs to that sibling spec's own scope.
+
+3. **Scope section**: Added a new paragraph naming the AC-F6 reconciliation as this spec's own final closing task, performed after AC-01–AC-24 land.
+
+4. **New AC-25**: Testable criterion confirming the exact substring change in track-f-resolution-extraction.json's AC-F6 and the unmodified pass of `per_package_config_test.rs`.
+
+5. **revision_note** and **reasoning**: Updated to describe round-6's fix and the verification performed (read non_goals fresh, read AC-F6 verbatim via the sibling spec file, read track-e-specificity.json's non_goals array verbatim, grepped the test file), with prior rounds' history preserved below.
+
+All claims were verified against real source: `.claude/specs/track-f-resolution-extraction.json`'s AC-F6 text, `.claude/specs/track-e-specificity.json`'s non_goals array, and `crates/callisto-graph/tests/per_package_config_test.rs` (grep confirms no `resolve_package_config` reference and no promoted-collision fixture).</result>
+<usage><subagent_tokens>91780</subagent_tokens><tool_uses>13</tool_uses><duration_ms>123707</duration_ms></usage>
+</task-notification>
