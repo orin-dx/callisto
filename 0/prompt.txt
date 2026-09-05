@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bg1sivsw5</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/b90cda92-db13-4c63-8d7f-c9fa7d9196ab/tasks/bg1sivsw5.output</output-file>
+<status>completed</status>
+<summary>Background command "Compile-check callisto-cli with the new flag" completed (exit code 0)</summary>
+</task-notification>
