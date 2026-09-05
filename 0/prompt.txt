@@ -1,0 +1,239 @@
+This is codex's understanding and proposal:
+
+Yes. I understand the process now, and my earlier proposal needed one important correction: it described a target architecture, but did
+  not yet express how Callisto requires that architecture to be discovered, specified, challenged, implemented, and independently proven.
+
+  Your process is:
+
+  Trace research → Canon accepted spec → Vector challenged plan
+  → Lambda TDD + mutation tests + review → independent exit gate
+  → Axiom gate before the next artifact/PR stage
+
+  More precisely:
+
+  - Accepted SPEC-* files are normative. Semantic-model files describe verified current behavior; plans and handoffs do not override
+    specs.
+
+  - trace produces evidence and a falsifiable recommendation before a design commitment.
+  - canon drafts, verifies, audits, and exit-gates a spec. A passing spec is persisted and committed before planning.
+  - vector turns that spec into exact, batched TDD tasks and has a challenger test task order, scope, and criterion coverage.
+  - lambda implements each batch red → green → commit, mutation-tests it, reviews it, and runs an independent final exit gate against the
+    on-disk spec.
+
+  - A detected architecture mismatch is not “worked around”: implementation stops and returns through canon/architect / spec correction,
+    then amended planning and challenge.
+
+  That is exactly the process I would follow if asked to implement this. The current “Claude is stuck” report is actually the process
+  working correctly: it found architecture escalations rather than forcing a locally convenient implementation.
+
+  ## Revised architectural recommendation
+
+  Do not make 001A the digest implementation spec. Make the first accepted release spec a narrow architecture contract:
+
+  Release execution is an immutable intent, validated capability, append-safe receipt, and pure reconciliation model.
+
+  The durable state should be:
+
+  ReleaseIntentV1 ──validate against live Workspace──> ValidatedReleaseIntent
+          │                                                  │
+          │                                              ApplyPermit
+          │                                                  │
+          └──────────────────────────────────────────> ReleaseReceiptV1
+                                                             │
+                                               pure, non-mutating reconciliation
+                                                             │
+                                               ReconciledReleasePlanV1
+
+  This aligns with existing Callisto semantics:
+
+  - callisto-model owns domain values, JSON contracts, diagnostics, atomic persistence primitives, and capability concepts.
+  - callisto-graph owns workspace/config discovery, dependency ordering, and validation against observed state.
+  - callisto-vcs owns source/tag observations and Git mutation.
+  - CLI and GitHub Actions are adapters; they must not recreate release policy in shell/JQ.
+
+  It also extends an existing Callisto safety pattern rather than inventing a parallel one: ApplyPermit makes side effects
+  unrepresentable in dry-run mode (crates/callisto-model/src/permit.rs:1).
+
+  ## Rust shape I would aim for
+
+  ### Model: durable values only
+
+  callisto-model should hold serializable, forge-neutral values such as:
+
+  - ReleaseIntentV1
+  - ReleaseOperationId
+  - ReleaseOperation
+  - ArtifactDigest
+  - SourceIdentity
+  - ReleaseReceiptV1
+  - OperationOutcome
+  - ReconciledReleasePlanV1
+
+  ReleaseOperationId must be exact: ecosystem-qualified package, registry key, version, and role. It must not use PackageId::matches,
+  because that method deliberately implements wildcard-like bare-name matching across ecosystems (crates/callisto-model/src/
+  identity.rs:13).
+
+  Avoid a generic trait for every concept. Traits belong at real substitutable boundaries, as with the existing RegistryClient,
+  CommandRunner, RateLimitPolicy, and TimeProvider. The intent builder and reconciliation logic should initially be concrete graph
+  functions, not dyn abstractions invented ahead of a second implementation.
+
+  ### Graph: validation capability and semantic snapshot
+
+  callisto-graph should construct the intent from Workspace and expose an opaque:
+
+  pub struct ValidatedReleaseIntent { /* private fields */ }
+
+  Only graph validation can construct it. It should not be Serialize, Clone, or externally forgeable. Actual publication/tagging requires
+  both:
+
+  &ValidatedReleaseIntent
+  &ApplyPermit
+
+  That is better than typestate for persisted artifacts. Typestate is excellent for an in-memory transition capability; it is the wrong
+  tool for JSON that must survive a CI job boundary.
+
+  This also avoids the dependency cycle Claude found. Workspace uses graph-specific discovery/config state, caches, and non-thread-safe
+  interior mutability (crates/callisto-graph/src/lib.rs:53); callisto-model must not learn how to scan it.
+
+  ### Serialization and evolution
+
+  For a durable, untrusted artifact:
+
+  - Dispatch explicitly on schema_version; reject unsupported versions.
+  - Use #[serde(deny_unknown_fields)] on each versioned document shape.
+  - Do not hash an incidental serde_json rendering of existing PublishPlan, whose optional fields are omitted by serialization.
+  - Create a dedicated, fully explicit canonical projection for hashing.
+  - Use BTreeMap/explicit comparators and exact sorting rules. Never rely on derived enum order where the wire ordering is part of the
+    digest contract.
+
+  - Make the intent’s schema closed, but keep public Rust error enums #[non_exhaustive] where Callisto already treats external consumers
+    as forward-compatible. Rust’s #[non_exhaustive] specifically prevents downstream code from assuming an API is complete (Rust
+    Reference (https://doc.rust-lang.org/reference/attributes/type_system.html)).
+
+  For cross-tool verification, use JCS/RFC 8785 canonical JSON, not olpc-cjson. The latter may produce non-valid JSON according to its
+  own documentation; that is unacceptable for a portable release artifact. serde_json_canonicalizer
+  (https://docs.rs/crate/serde_json_canonicalizer/latest) is a reasonable candidate if the cross-language requirement is confirmed. RFC
+  8785 (https://www.rfc-editor.org/rfc/rfc8785.html) should be the normative format reference.
+
+  ## Security decisions that must be in the architecture spec
+
+  1. Registry endpoints are not durable intent data.
+
+     Existing plans serialize raw registry/index strings (crates/callisto-model/src/plan.rs:59). That can retain URL userinfo or token-
+     bearing query strings. A scan for known environment secrets is defence-in-depth, not a safety property.
+
+     Persist RegistryKey, resolve the endpoint only during validated execution, and reject/redact credential-bearing URLs structurally.
+
+  2. Paths in new durable release types must be validated workspace-relative values.
+
+     Existing model code has a workspace_relative validator, but plan entries still carry raw PathBufs. New release envelopes should use
+     a validated wrapper rather than raw paths. This prevents artifact-controlled traversal before a package directory is joined to the
+     workspace root.
+
+  3. Receipt outcomes must be total.
+
+     Every intended operation must have exactly one terminal outcome: succeeded, already-satisfied, failed, or explicitly blocked/skipped
+     with a typed cause. Absence of a failure cannot mean success.
+
+     The current PublishReport only has Published, AlreadyPublished, and Failed, while current downstream filtering treats “not failed”
+     as eligible (crates/callisto-model/src/report.rs:53). That is precisely why interruption safety needs a receipt model, not extra
+     enum variants pasted into the old report.
+
+  4. Human diagnostics and machine receipts must be separate.
+
+     Use typed, stable OperationFailureKind in durable JSON. Keep sanitized messages optional and bounded. Render user-facing failures
+     through miette at the CLI boundary, with Callisto’s normal stable error codes, help, and related diagnostics. miette already
+     supports derived diagnostics, source labels, help, and related errors (documentation
+     (https://docs.rs/miette/latest/miette/derive.Diagnostic.html)).
+
+     Do not serialize arbitrary miette::Report values or raw subprocess stderr as durable domain truth.
+
+  5. GitHub approval is an adapter control, not release truth.
+
+     GitHub Environment protection requires job scope, so the plan/execute job split is necessary for GitHub’s hardened profile. But the
+     core should express source identity and evidence without depending on GitHub types.
+
+     The execution job checks out the bound source, validates the intent, then receives credentials. The workflow should not permit
+     credentials before validation. A failed tag or release must fail the job; existing action handling does not consistently guarantee
+     that (.github/actions/callisto-action/action.yml:212).
+
+  ## Rayon, async, and performance
+
+  I considered Rayon specifically. I would not add it to this release track.
+
+  - Publication must remain sequential where dependency order, rate limits, idempotency, and receipt persistence matter.
+  - Workspace currently contains RefCell, OnceCell, cached Git access, and generic runner/resolver types without Send + Sync bounds.
+    Parallelizing it would require a nontrivial ownership/concurrency redesign, not a one-line .par_iter().
+
+  - Rayon reductions/searches can have intentionally unspecified execution order; that is hostile to reproducible diagnostics and
+    canonical durable output unless results are explicitly collected and sorted (Rayon docs
+    (https://docs.rs/rayon/latest/rayon/iter/trait.ParallelIterator.html)).
+
+  - Current graph work has already invested in deferred reads and caches. Profile first.
+
+  A future, separately scoped performance spec could consider Rayon only for isolated, read-only, CPU-bound work—for example parsing
+  already-collected independent manifests—after proving deterministic collection into ordered structures. It should never parallelize
+  release mutation or receipt transitions.
+
+  Likewise, do not introduce Tokio into the core release flow. The workspace’s Tokio use is Moon/WASM-specific. The CLI release engine is
+  primarily synchronous subprocess and filesystem orchestration; forcing an async runtime into it would add complexity without
+  demonstrated throughput benefit.
+
+  ## How I would restructure the specs
+
+  Before changing implementation specs, run trace and canon/architect for one foundational contract. It should settle, with no TBDs:
+
+  1. Intent / validation capability / receipt / reconciliation boundaries.
+  2. Exact release-operation identity and prerequisite graph.
+  3. Source identity profiles: Git commit, clean-tree policy, and future hermetic-content profile.
+  4. Registry-key resolution and no-secret durable-data invariant.
+  5. Canonical form, digest algorithm, and schema evolution.
+  6. Empty intent, interruption, retry, and reconciliation semantics.
+  7. Which actions are valid in a forge-neutral local execution versus a GitHub-hardened execution profile.
+
+  Then amend the existing split:
+
+  - 001A: model contract plus graph-built semantic snapshot.
+  - 001B: validated execution and total receipt semantics.
+  - 001C: GitHub plan/execute adapter topology.
+  - 002: source/evidence policy and consumers.
+  - 003: GitHub permissions, SHA-pinned actions, environment, and failure propagation.
+  - 004: advisory reproducibility as a separate supply-chain concern.
+  - 006: after deciding whether prerelease is workspace-global shaping or explicit release-set authority.
+
+  For 004, keep cargo-deny as the audit authority. Configure and record one advisory database checkout, then run cargo-deny against that
+  exact checkout with fetching disabled; do not add a separate RustSec-based audit engine. cargo-deny supports both a configured advisory
+  DB path and no-fetch operation (configuration (https://embarkstudios.github.io/cargo-deny/checks/advisories/cfg.html)).
+
+  ## The implementation and validation plan
+
+  Once the foundational spec is accepted, I would follow your pipeline exactly:
+
+  1. trace research report, including current-model citations, external crate/API checks, and explicit rejected alternatives.
+  2. canon draft → verify → audit → exit gate. Persist and commit the accepted spec.
+  3. vector plan grouped by crate boundary:
+      - model types and serialization tests;
+      - graph snapshot/validation tests;
+      - receipt/reconciliation tests;
+      - CLI adapter tests;
+      - GitHub workflow fixture/static tests.
+
+  4. lambda one subsystem batch at a time, every task red/green/commit.
+  5. Mutation testing must target:
+      - omitted receipt operation;
+      - changed source identity;
+      - registry-key substitution;
+      - stale semantic input;
+      - interrupted publish before/after each operation;
+      - false “already published” / skipped classification;
+      - tag/release attempted without full prerequisite success.
+
+  6. Independent lambda exit gate against the accepted spec, followed by an Axiom PR gate.
+  7. If any batch reveals another dependency-layer conflict or an unrepresentable invariant, halt and route it back through canon/
+     architect; do not “finish the ticket” with an unsafe local patch.
+
+  My conclusion for Claude: land 005 once its actual CI invocation and cross-glob mutation test are present. Keep 001A/B/C, 002, 003,
+  004, and 006 out of implementation until the foundation above has passed Canon. The current blockers are not a failure of drafting—they
+  are the evidence that the repository’s process has correctly reached the architecture boundary.
+
+What do you think of it? Did it miss anything? Anythig to add?
