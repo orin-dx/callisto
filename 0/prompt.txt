@@ -1,0 +1,36 @@
+<task-notification>
+<task-id>a4868995c42ce8c61</task-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a4868995c42ce8c61.output</output-file>
+<status>completed</status>
+<summary>Agent "Review Track 3a TASK-03a and TASK-03b" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Now compiling the final review.
+
+**Summary of what I checked:** read both commits' full diffs (`git show`), read the full resulting `membership.rs` file, cross-referenced against TASK-03a and TASK-03b in the plan JSON verbatim (implementation code, test code, notes), confirmed no other files were touched, confirmed the new code is genuinely unreachable outside `#[cfg(test)]` (grepped for external callers — none), and actually ran `cargo test -p callisto-graph --lib membership::` (8/8 passed) and `cargo clippy -p callisto-graph --all-targets -- -D warnings` (clean) against an isolated worktree checked out exactly at `af2e6975c14782c5fc4546d2db11e9f10b97a575`, not against the working tree (which has an uncommitted TASK-03c addition from a concurrent agent that I did not let leak into this verdict).
+
+**Findings:**
+
+1. Scope adherence — both commits match their plan tasks almost exactly, line for line, including doc comments, struct shape, and test fixtures.
+2. One minor deviation: TASK-03a's plan explicitly instructed removing `#[allow(dead_code)]` from `build_globset` "now that `admits()` is its first real caller." That removal never happened — `build_globset` still carries the attribute in both commits. Functionally harmless (clippy is clean either way since the whole chain is still unreachable from any live root until later sub-tasks wire it up), but it is a literal spec deviation, not license-covered by the parent's given context (which covers *additions* of `#[allow(dead_code)]`, not a specified *removal* that was skipped).
+3. `.expect()`/`.unwrap()`-style panics in TASK-03a (`read_cargo_membership`'s TOML-parse, workspace-table, members-key, array/string extraction) are genuinely intentional per the task's own note and confirmed still exactly matching the documented naive-first-pass design in the post-03b state — the ones 03b promised to fix (non-array/non-string members/exclude) are fixed; the ones 03d/03e are slated to fix (workspace-absent, TOML-unparseable, members-key-absent) are still present, exactly as designed. Not a hazard-taxonomy violation given the explicit staged-hardening design.
+4. `parse_toml_string_array`'s `?`-chain in TASK-03b is correct: bare string, table, or any non-string entry all safely fall back to `None` → `absent`-equivalent behavior, matching AC-09/AC-09b.
+5. Tests are real-behavior tests (assert on `admits()` outcomes through the public-ish surface), not implementation-detail checks — good test quality, consistent with the plan's own fixtures.
+6. Sibling gaps: none within scope. The Npm/pnpm equivalents (`read_npm_membership`, `read_pnpm_packages`) don't exist yet — they're separate, later, explicitly-scoped tasks (04a+), not siblings that should have been touched here. No other Cargo-membership-shaped code elsewhere in the crate that needed hardening in tandem.
+
+```json
+{
+  "status": "approved",
+  "issues": [
+    {
+      "file": "crates/callisto-graph/src/locate/membership.rs",
+      "line": 12,
+      "description": "TASK-03a's plan explicitly says to remove #[allow(dead_code)] from build_globset since admits() becomes its first real (non-test) caller in this task. The attribute was never removed and is still present in both commits. Clippy is clean regardless (the whole call chain remains unreachable from any live root until later wiring tasks), so this is not a functional defect, just a literal task-spec deviation left uncorrected across two commits.",
+      "severity": "suggestion"
+    }
+  ],
+  "sibling_gaps": [],
+  "reasoning": "Verified both commits diff-for-diff against plan TASK-03a/03b implementation and test code -- near-exact match. Confirmed via git worktree checkout at af2e697 (isolated from the working tree's uncommitted TASK-03c addition) that cargo test --lib membership:: passes 8/8 and cargo clippy --all-targets -D warnings is clean, validating the #[allow(dead_code)] staging claim empirically rather than by inference. Confirmed via grep that CargoMembership/read_cargo_membership/build_globset have no callers outside membership.rs, so the dead_code allowances are genuinely required at this stage, consistent with the parent's stated context. The .expect()/.unwrap() panics in read_cargo_membership match TASK-03a's own documented naive-first-pass design and are correctly incrementally hardened by 03b (array/string shape) while workspace-absent/TOML-unparseable/members-key-absent panics remain, exactly as TASK-03d/03e are slated to fix -- not a hazard violation given the explicit staged design. One literal scope deviation found: TASK-03a's plan text instructs removing #[allow(dead_code)] from build_globset, which never happened; downgraded to suggestion since it has no functional or gate impact. No sibling gaps: Npm/pnpm equivalents are explicitly out of scope for these two tasks (separate 04x tasks), and no other Cargo-membership-shaped code exists elsewhere in the crate."
+}
+```</result>
+<usage><subagent_tokens>98637</subagent_tokens><tool_uses>33</tool_uses><duration_ms>794064</duration_ms></usage>
+</task-notification>
