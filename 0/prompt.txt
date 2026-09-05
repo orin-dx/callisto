@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>biwilg7nu</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/bb531e8d-c394-4e47-a8ae-e4a9ceeca6d2/tasks/biwilg7nu.output</output-file>
+<status>killed</status>
+<summary>Background command "Re-verify all three crates after formatting" was stopped</summary>
+</task-notification>
