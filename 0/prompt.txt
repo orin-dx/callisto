@@ -1,0 +1,23 @@
+<task-notification>
+<task-id>a425bab352128ca56</task-id>
+<tool-use-id>toolu_011JtMHBLfCaXPX6GSCU6Qva</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a425bab352128ca56.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix Track 3a spec gaps" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Valid JSON, all 20 criteria present. The spec file at `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/spec-track3a-workspace-membership.json` has been overwritten with the corrected spec.
+
+Summary of what was done — all 8 canon-auditor findings applied, nothing else touched:
+
+1. **Glob semantics** — new `api_surface` entry pins `globset::GlobBuilder` with `literal_separator(true)` semantics; verified via `grep globset Cargo.toml crates/callisto-graph/Cargo.toml` that globset is already a workspace dependency (`globset = "0.4"` at root, `{ workspace = true }` in callisto-graph) — explicitly stated no new dependency is needed for glob matching.
+2. **AC-09b** added — malformed (bare-string) `exclude` falls back to excluding nothing, while a well-formed `members` filter still applies; api_surface rule updated to state this explicitly.
+3. **AC-09c** added — malformed/non-array `package.json` `"workspaces"` field (bare string or array with non-string entries) falls back to AC-06's no-filter behavior.
+4. **AC-11b** added — a pnpm-workspace.yaml that parses as valid YAML but has a missing or wrong-shaped `packages:` value falls back to AC-11's absent-filter behavior.
+5. **AC-10b / AC-10c** added — empty-list cases for pnpm (`packages: []`) and Cargo (`members = []`); AC-12 and AC-13 regression criteria extended to cover them.
+6. **AC-15** added, plus a third `api_surface` entry — `[workspace]` table present with no `members` key is treated as an absent table (admits everyone), distinct from an empty `members = []`; AC-12 extended with the literal `[workspace]\nexclude = [...]` fixture.
+7. **AC-07** extended — the root `[package]`-declared crate is exempt from `exclude` filtering too, not just from the members-glob requirement.
+8. **Scope** extended with a cross-spec note citing `.claude/specs/track-g-matrix-napi-maturin.json` AC-010/AC-010b's exact silent-drop control-flow citations (confirmed by reading that file), requiring this spec's insertion to preserve that behavior and flagging track-g's line citations for re-verification post-landing.
+
+`AC-14` was also extended to add regression-test coverage for AC-09b, AC-09c, and AC-11b, and `revision_note` was rewritten to describe all 8 changes with rationale.</result>
+<usage><subagent_tokens>71550</subagent_tokens><tool_uses>19</tool_uses><duration_ms>177261</duration_ms></usage>
+</task-notification>
