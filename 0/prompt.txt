@@ -1,0 +1,43 @@
+<task-notification>
+<task-id>a8dd9eccd200821e8</task-id>
+<tool-use-id>toolu_01FD5YL21FHNQq5ui3QN98By</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/bb531e8d-c394-4e47-a8ae-e4a9ceeca6d2/tasks/a8dd9eccd200821e8.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement T01 (CascadeInput.tags field)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Summary
+
+Task T01 executed via TDD and committed.
+
+**Files touched:** `/Users/gabe/Projects/callisto/crates/callisto-graph/src/cascade.rs`
+
+**RED phase:** Added the `use crate::tags::TagIndex;` import and the `pub tags: &amp;'a TagIndex,` field to `CascadeInput` alone, then confirmed `cargo check -p callisto-graph --lib --tests --message-format=short 2&gt;&amp;1 | grep 'cascade.rs'` produced exactly 7 `E0063` missing-field errors at lines 700, 781, 852, 949, 1076, 1159, 1239 — matching the plan's predicted locations (shifted +2 from the original estimates due to the new import/field lines).
+
+**GREEN phase:** Added `tags: &amp;TagIndex::empty(),` immediately after each of the 7 `pre: ...,` lines in the `#[cfg(test)] mod tests` literals. Re-ran the same grep — zero matches, confirming all 7 cascade.rs-internal errors resolved. The only remaining compile errors in the crate are in `commands/snapshot.rs:53` and `commands/version.rs:70` (out of scope for T01, explicitly deferred to T02/T03 per the plan).
+
+**Commit:** `bb9d3aaa4f66fbb19425b82a9e9de8077214d8a6` — `fix(graph): add tags field to CascadeInput and update cascade.rs test literals`. `cargo fmt -p callisto-graph` produced no changes; the pre-commit format-check hook passed cleanly.
+
+```json
+{
+  "task_id": "T01",
+  "status": "done",
+  "steps_completed": [
+    "Verified live code against spec api_surface (CascadeInput struct location, TagIndex::empty() signature, tags module path)",
+    "RED: confirmed baseline grep empty before field added",
+    "Added tags field + TagIndex import to CascadeInput only",
+    "RED: confirmed 7 missing-field errors in cascade.rs at expected lines",
+    "Added tags: &amp;TagIndex::empty() to all 7 test literals",
+    "GREEN: confirmed zero cascade.rs errors remain",
+    "Confirmed only T02/T03-scoped files (snapshot.rs, version.rs) still fail, as expected",
+    "cargo fmt -p callisto-graph (no changes needed)",
+    "Committed"
+  ],
+  "test_result": "pass",
+  "commit_sha": "bb9d3aaa4f66fbb19425b82a9e9de8077214d8a6",
+  "concerns": null,
+  "criteria_evidence": [],
+  "reasoning": "T01's covers_criteria is an empty array in the plan, so no spec acceptance criteria apply to this task -- it is pure struct-plumbing to unblock later tasks. No precision_tests were supplied. The 'test' proven red-then-green here is the compile-time exhaustiveness check on CascadeInput's 7 pre-existing literals in cascade.rs itself, exactly as the plan's steps specify."
+}
+```</result>
+<usage><subagent_tokens>55111</subagent_tokens><tool_uses>19</tool_uses><duration_ms>267106</duration_ms></usage>
+</task-notification>
