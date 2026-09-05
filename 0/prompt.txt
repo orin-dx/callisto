@@ -1,0 +1,1 @@
+Checkout from latest origin/main or can it be stale? I still don't see how a workflow change can make it into the release PR if callisto doesn't write one. If we're checking out a fresh main it already has the workflow change merged in and the PR would have no diff with it
