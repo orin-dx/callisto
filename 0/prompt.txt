@@ -1,0 +1,6 @@
+<task-notification>
+<task-id>bcwf1b0f7</task-id>
+<summary>Monitor event: "just ci live progress with step timestamps"</summary>
+<event>[+1368s]         PASS [   0.016s] (  77/1065) callisto-cli::dry_run_invariant_tests pre_exit_without_pre_json_returns_io_error</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
