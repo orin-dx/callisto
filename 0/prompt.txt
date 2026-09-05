@@ -1,0 +1,8 @@
+<task-notification>
+<task-id>bcwf1b0f7</task-id>
+<summary>Monitor event: "just ci live progress with step timestamps"</summary>
+<event>[+1374s]         PASS [   0.013s] ( 416/1065) callisto-graph commands::publish_client::tests::pypi_publish_generic_error
+[+1374s]         PASS [   0.012s] ( 425/1065) callisto-graph commands::status::tests::test_resolve_pending_changesets_ambiguous_bare_name_errors
+[+1374s]         PASS [   0.017s] ( 430/1065) callisto-graph commands::validate::tests::staged_diff_failure_redacts_credential_from_error</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
