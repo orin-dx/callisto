@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bajq7d3bs</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/b90cda92-db13-4c63-8d7f-c9fa7d9196ab/tasks/bajq7d3bs.output</output-file>
+<status>completed</status>
+<summary>Background command "Compile-check callisto-graph after conflict resolution" completed (exit code 0)</summary>
+</task-notification>
