@@ -1,0 +1,20 @@
+<task-notification>
+<task-id>a92059da577604e01</task-id>
+<tool-use-id>toolu_01RH64U49ydCyMw2oeUxjNyX</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a92059da577604e01.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix Track 3b1 core spec, round 4" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>The JSON is valid, all 26 criteria present in order, spec_file_path unchanged (not set, per instructions).
+
+Summary of the round-3 correction applied to `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/spec-track3b1-identity-promotion-core.json`:
+
+1. **AC-21 rewritten** — replaced the self-contradictory fixture. `aaa/tri` is now a genuine Case D path (Cargo.toml + package.json both named "tri", claiming set `{Cargo, Npm}`); `bbb/tri` is Pypi-only (`{Pypi}`, disjoint from aaa/tri, so aaa/bbb promote first via branch (i)); `ccc/tri` is Npm-only (`{Npm}`), which collides with aaa/tri's retained `{Cargo, Npm}` set (not bbb/tri's `{Pypi}`). This makes the fixture flip Ok→Err specifically when the round-2 retype (retained `BTreeSet&lt;Ecosystem&gt;` per member) is present versus absent — a naive single-ecosystem re-derivation from aaa/tri's `Prefixed{Cargo,"tri"}` id would wrongly see `{Cargo}` as disjoint from `{Npm}` and incorrectly promote.
+
+2. **AC-23 added** — exercises the aggregate.rs:211 call site: after `Workspace::load` populates `ResolvedConfig.promoted_siblings` (via lib.rs:109-110), calling `aggregate()` with an unprefixed `[[package]]` rule matching a promoted pair returns `Err(GraphError::AmbiguousName)`, proving the `?` at aggregate.rs:211 and the ResolvedConfig field population actually work — distinct from AC-19, which only covers the walk.rs:175 build-local overlay.
+
+3. **AC-24 added** — positive-path criterion: two ecosystem-prefixed `[[package]]` rules (`cargo:native-core` → changeset, `npm:native-core` → auto) each correctly apply to their own promoted sibling via Pass 1, never triggering the new Pass-2 ambiguity check.
+
+All source citations (walk.rs, aggregate.rs, lib.rs, config/resolve.rs, error.rs, identity.rs) were re-verified against current code this session before being cited. `revision_note` and `reasoning` were updated to describe exactly what changed, why, and the verification performed, including a note that one detail in the original finding's suggested AC-21 fixture ("bbb/tri Npm-only, disjoint from aaa/tri") was internally inconsistent given aaa/tri's new Case-D set, and was corrected to Pypi-only to preserve the intended branch-(i)-then-branch-(ii) mechanics.</result>
+<usage><subagent_tokens>107249</subagent_tokens><tool_uses>14</tool_uses><duration_ms>208181</duration_ms></usage>
+</task-notification>
