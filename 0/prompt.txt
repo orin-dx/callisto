@@ -1,0 +1,21 @@
+<task-notification>
+<task-id>a404e593b6e65a8df</task-id>
+<tool-use-id>toolu_01Dh7brrBkKPT41AznDi14QF</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/tasks/a404e593b6e65a8df.output</output-file>
+<status>completed</status>
+<summary>Agent "Review T01b commit" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All 96 tests pass, matching the expected npm.rs (29→30) and python.rs (30→31) growth. This is a clean, mechanically-verified checkpoint.
+
+```json
+{
+  "status": "approved",
+  "issues": [],
+  "sibling_gaps": [],
+  "reasoning": "Reviewed commit 5a31bae in full (git show), confirmed diff touches only crates/callisto-manifests/src/npm.rs (+16) and crates/callisto-manifests/src/python.rs (+28), both additive test-only changes, no production code touched, no other test modified. Loaded shared/references/rust-hazards.md (from the plugin marketplace path, since no repo-local copy exists) and checked all 10 taxonomies against the new code: T3 (.unwrap()) appears throughout both tests but the hazards doc explicitly marks test code as an accepted false-positive; no T1/T2/T4/T5/T6/T7/T8/T9/T10 patterns present. Sibling gaps: enumerated crates/callisto-manifests/src/*.rs (atomic.rs, cargo.rs, common.rs, lib.rs, npm.rs, python.rs) -- cargo.rs, npm.rs, python.rs are the only Manifest implementors and cargo.rs already got its persist() test in T01a (7883c3b, the parent commit); atomic.rs/common.rs/lib.rs are infra, not manifest types. Complete set covered, no gap. Test quality: initially flagged python.rs's use of a raw ManifestDecl struct literal (bypassing ManifestDecl::new()'s workspace_relative + role/format validation) as a possible shortcut versus cargo.rs's use of ManifestDecl::new(). Investigated further by reading the plan file (manifest-persist-001-plan.json), which contains an explicit 'test_construction_conventions' field documenting that python.rs's OWN pre-existing test module already uses the ManifestDecl struct-literal form throughout (confirmed via grep: ~18 pre-existing occurrences of 'let decl = ManifestDecl {' in python.rs, none using ::new()), because python.rs has no open_manifest-style helper. This is intentional per-file convention matching, not an inconsistency or weakened check -- withdrawn as a finding. npm.rs's test correctly reuses the pre-existing open_manifest(&amp;dir, content) helper exactly as its sibling tests do. Ran `cargo test -p callisto-manifests --lib`: 96 passed, 0 failed, matching the plan's expected_pass counts (npm.rs 29-&gt;30, python.rs 30-&gt;31). Diff content is byte-identical to the plan's T01b failing_test block. This is a low-risk, fully mechanical checkpoint with nothing further to surface."
+}
+```
+
+Files reviewed: `/Users/gabe/Projects/callisto/crates/callisto-manifests/src/npm.rs`, `/Users/gabe/Projects/callisto/crates/callisto-manifests/src/python.rs`, `/Users/gabe/Projects/callisto/crates/callisto-manifests/src/cargo.rs` (parent commit's test, for comparison), `/Users/gabe/Projects/callisto/crates/callisto-model/src/package.rs` (ManifestDecl definition/validation), `/Users/gabe/Projects/callisto/.claude/plans/manifest-persist-001-plan.json` (T01b task spec).</result>
+<usage><subagent_tokens>62488</subagent_tokens><tool_uses>15</tool_uses><duration_ms>157716</duration_ms></usage>
+</task-notification>
