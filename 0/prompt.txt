@@ -1,0 +1,24 @@
+context:
+
+Confirmed — it was fixed on crates.io but the CI action doesn't know that. callisto-cli@0.5.0 was published to crates.io at 2026-08-27T02:58, hours before the CI run that still failed at 21:05. The dependency conflict was presumably resolved in that publish. But setup-callisto/action.yml (in orin-dx/callisto) never tries crates.io — it only:
+
+1. checks if it's building callisto's own monorepo locally,
+2. tries downloading a GitHub Release binary tarball (which doesn't exist — no assets attached to any release),
+3. falls back to cargo install --git https://github.com/orin-dx/callisto.git callisto-cli (which hits the yanked bisync dependency on main).
+
+It never runs cargo install callisto-cli against the published crates.io package, which is the one place that's actually known-good. That's the bug — in orin-dx/callisto's setup-callisto action, not in michi.
+
+Fix: change that fallback branch (and ideally make it the primary path, ahead of the git-source fallback) to cargo install callisto-cli --locked --root "$CALLISTO_BIN_DIR/.." --quiet pulling from crates.io. Since you maintain orin-dx/callisto too, want me to make that change there and open a PR?
+
+✻ Churned for 35s · done 2:25 PM
+
+❯ Oh, so what you're saying is that callisto's binary is not published so we fail
+
+Right — two separate gaps, both in orin-dx/callisto:
+
+1. No GitHub Release binary assets exist. Releases are cut (tags like callisto-cli@0.5.0) but nothing ever attaches callisto-macos-aarch64.tar.gz / callisto-linux-amd64.tar.gz etc. to them. So step 2 of the action (download prebuilt binary) always misses.
+2. The git-source fallback is broken, separately, by the yanked bisync dep on main.
+
+The action falls through both failing paths and never tries the one thing that would work: cargo install callisto-cli from crates.io, where 0.5.0 is already published and installable. That's the actual bug — the setup action doesn't know callisto ships via crates.io, so it fails even though a good install path exists.
+
+Want me to fix the setup-callisto action to install from crates.io (either as the fallback in place of the broken git install, or as the primary path ahead of the GitHub-release
