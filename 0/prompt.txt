@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>blvhbc8ai</task-id>
+<tool-use-id>toolu_01Qtg5VviycWU7XW4ySWLRcB</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a7b3643b-af0c-4790-a38d-870e88a7dd3e/tasks/blvhbc8ai.output</output-file>
+<status>completed</status>
+<summary>Background command "just ci 2&gt;&amp;1 | tail -15" completed (exit code 0)</summary>
+</task-notification>
