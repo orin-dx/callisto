@@ -1,0 +1,28 @@
+<task-notification>
+<task-id>a0bfbff13f23340f7</task-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/bb531e8d-c394-4e47-a8ae-e4a9ceeca6d2/tasks/a0bfbff13f23340f7.output</output-file>
+<status>completed</status>
+<summary>Agent "Draft Track 1 spec (fixed-group cascade correctness)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Note: claude-sonnet-5[1m] (the safety classifier) was unavailable (timed out) when reviewing this subagent's work. Please carefully verify the subagent's actions and output before acting on them.
+
+The spec draft is complete. The drafting agent verified every code-location claim in the requirement against the actual current code and corrected several inaccuracies along the way:
+
+**Corrections found during verification:**
+- `fixed_group_target` has **zero** pre-existing unit tests (only `pre_mutation_checks` does) — the requirement's claim that both were "already unit-tested" was wrong.
+- `version.rs`'s `plan_version` does **not** already have `TagIndex`/`NapiTargetsIndex` bound in scope as the requirement assumed — `ws.tags()?` is currently called inline unbound, and no `NapiTargetsIndex` is constructed anywhere in that function today. Both now need new local bindings.
+- `CascadeInput` construction sites and line numbers (`version.rs:70`, `snapshot.rs:53`) were confirmed exact; `apply.rs` confirmed to construct neither.
+- `raise()`'s per-sibling fixed-group loop is **shared code** between the version and snapshot call paths, so the bug-1 fix necessarily applies to both commands — while `pre_mutation_checks` wiring is version.rs-only, with an explicit, stated reason (snapshot assigns every package an identical synthetic version, so there's nothing for the divergence check to catch).
+- `GraphError::ConflictingGroupMembership`'s exact field shape confirmed as `{ package: PackageId, groups: Vec&lt;GroupName&gt; }`.
+
+**Key spec decisions made explicit (not left ambiguous):**
+- AC-006 + a dedicated non-goal state precisely why `pre_mutation_checks` is *not* wired into `snapshot.rs`, with the technical reason spelled out.
+- AC-004/AC-005 separate "the shared-target fix applies to snapshot's call path too" from "but it doesn't change snapshot's observable output" — two distinct, both-necessary criteria.
+- 13 acceptance criteria total, 2 marked `is_error_case: true` (the divergence-abort case, the conflicting-membership case), covering all three bugs through their real call paths per the requirement's explicit demand.
+
+The spec@1 JSON is in the notification above (id `SPEC-TRACK1-FIXED-GROUP-CASCADE-CORRECTNESS`), and a working copy is saved at:
+`/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/spec-track1-draft.json`
+
+This has **not yet** gone through canon's verify/audit/exit-gate pipeline, and `spec_file_path` has not been set (per this session's established process, that happens after the gate, before handing off to `vector` for implementation planning). Let me know if you'd like me to run the canon gate on it now, or if you want to review/adjust the draft first.</result>
+<usage><subagent_tokens>42673</subagent_tokens><tool_uses>2</tool_uses><duration_ms>722631</duration_ms></usage>
+</task-notification>
