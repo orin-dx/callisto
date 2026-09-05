@@ -1,0 +1,3 @@
+Let's do a full architectural and code evaluation looking for bugs, performance, issues, gaps in the spec or corner/error cases missed. Look for improvements to the codebase in terms of best practices, how long our files are, which functions are where, length of functions,reusability, maintainability, etc.
+
+Do the entire evaluation, synthetize the findings together and break them up into a plan that can be addressed with agent teams and workflows using the best model an accounting for token cost. Show me the findings and the plan
