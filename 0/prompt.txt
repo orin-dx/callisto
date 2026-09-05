@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bji2qtias</task-id>
+<tool-use-id>toolu_01RmuiSBVr3tJYmwwEWtbYfJ</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/e9efeaba-9875-4c8b-ad83-aa1c06f21756/tasks/bji2qtias.output</output-file>
+<status>failed</status>
+<summary>Background command "Clippy check and full workspace test suite" failed with exit code 1</summary>
+</task-notification>
