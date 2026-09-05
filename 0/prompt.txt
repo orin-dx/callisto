@@ -1,0 +1,24 @@
+<task-notification>
+<task-id>bdvlsc8t8</task-id>
+<summary>Monitor event: "wait for full callisto-cli lib suite"</summary>
+<event>test runner::tests::run_with_timeout_caps_accumulated_stderr_with_no_newlines_and_still_drains_the_pipe ... ok
+test runner::tests::run_with_timeout_kills_slow_process_and_returns_timed_out ... ok
+{
+"schemaVersion": 1,
+"snapshotTag": "0.0.0-canary-d87acd0",
+"bumps": [
+{
+"package": "pkg-a",
+"from": "0.1.0",
+"to": "0.0.0-canary-d87acd0",
+"severity": "patch"
+}
+]
+}
+test commands::snapshot::tests::handle_without_dry_run_applies_the_snapshot_for_real ... ok
+test runner::tests::run_with_timeout_bounds_reader_join_when_descendant_holds_pipe_open ... ok
+test runner::tests::run_with_timeout_warns_on_timeout_branch_when_descendant_holds_pipe_open ... ok
+test result: ok. 89 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.98s
+[exited with code 0]</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
