@@ -1,0 +1,41 @@
+<task-notification>
+<task-id>a0cb7d3379a754ea7</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a0cb7d3379a754ea7.output</output-file>
+<status>completed</status>
+<summary>Agent "Re-audit Track 3a spec, round 4" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I ran the full 5-dimension audit fresh, reading the spec, `tags.rs`, `ignore_walk.rs`, and cross-checking every other spec in `.claude/specs/`.
+
+Verification performed:
+- **tags.rs citation**: Read `/Users/gabe/Projects/callisto/crates/callisto-graph/src/tags.rs` directly. The rationale comment at lines 38-42 and the test `test_last_tag_for_propagates_malformed_glob_error` at line 409 confirm `matching_tags()` propagates a malformed-glob `Err` to the caller — exactly the whole-operation-fails posture the spec now describes as a deliberate divergence. The citation is accurate.
+- **AC-05b/AC-06b fixtures**: Confirmed distinct from AC-05/AC-06 — AC-05/AC-06 exercise "manifest file present, relevant field absent"; AC-05b/AC-06b exercise "manifest file entirely absent." Both are genuinely different code paths (file-exists check vs. field-parse), and AC-12/AC-13 were correctly extended to include them with concrete fixtures.
+- **AC-09f fixture claim**: Compiled a throwaway crate against `globset::GlobBuilder` and confirmed `"crates/[unterminated"` does in fact fail to compile (`unclosed character class`), validating the fixture actually exercises the malformed-glob path it claims to.
+- **Scope overlap**: Checked every other spec (`track-g-matrix-napi-maturin.json`, `SPEC-APPLY-BATCH-002.json`, `SPEC-MANIFEST-PERSIST-001.json`, `track-b/e/f`, `callisto-matrix.md`). track-g's AC-010/AC-010b cite the same `ignore_walk.rs` silent-drop lines this spec's non_goals item 11 flags for re-verification — already correctly handled, no new conflict. No competing YAML-dependency proposals. `SPEC-APPLY-BATCH-002`'s one `ignore_walk` mention is an unrelated citation of `to_workspace_relative`, not membership filtering.
+- **Untestable/vague language**: none found — no TBDs, no "handled appropriately," no implementation-only criteria; every AC is externally observable (`projects()` return value contents).
+
+One genuine gap surfaced on fresh reading: the glob-matching-semantics `api_surface` entry states the narrowest-scope-skip-on-glob-compile-failure rule applies generally to "a Cargo members or exclude entry, an npm 'workspaces' entry, or a pnpm packages: entry," but AC-09f (the only fixture-backed proof of this rule) exercises only the Cargo case. No acceptance criterion or AC-14 fixture proves an npm `"workspaces"` array or pnpm `packages:` list with one malformed glob entry among well-formed ones still admits the well-formed entries. This is a real, implementable-wrong gap (an implementer could special-case the skip-logic to Cargo only and nothing would catch it), not a cosmetic one.
+
+```json
+{
+  "issues": [
+    {
+      "criterion_id": "AC-09f",
+      "type": "missing-error-case",
+      "description": "The glob-matching-semantics api_surface entry asserts the narrowest-scope-skip-on-glob-compile-failure rule applies to every ecosystem's membership-declaration lists ('a Cargo members or exclude entry, an npm \"workspaces\" entry, or a pnpm packages: entry'), but the only acceptance criterion and regression fixture proving this behavior (AC-09f, folded into AC-14) tests exclusively the Cargo members case. No criterion exercises a package.json \"workspaces\" array or a pnpm-workspace.yaml packages: list containing one syntactically invalid glob string alongside a well-formed one. An implementer could apply narrowest-scope-skip only to Cargo and propagate-error-or-fall-back-to-absent for npm/pnpm per-entry failures instead, and no test in this spec would catch the deviation.",
+      "suggested_fix": "Add AC-09g: \"Given a root package.json declaring {\\\"workspaces\\\": [\\\"packages/kept-example\\\", \\\"packages/[unterminated\\\"]} (one well-formed glob, one syntactically invalid glob for globset::GlobBuilder), and packages/kept-example/package.json containing a valid \\\"name\\\" field, calling IgnoreWalkLocator::new(root).projects() includes packages/kept-example (the well-formed entry is honored) and does not panic or error the whole walk because of the invalid entry — the invalid glob string is treated as never-matching while sibling well-formed entries in the same 'workspaces' array are matched normally, mirroring AC-09f's Cargo-side behavior for the npm case.\" Add AC-09h: \"Given a pnpm-workspace.yaml declaring `packages:\\n  - \\\"packages/kept-example\\\"\\n  - \\\"packages/[unterminated\\\"` (one well-formed glob, one syntactically invalid glob), and packages/kept-example/package.json containing a valid \\\"name\\\" field, calling projects() includes packages/kept-example and does not panic or error the whole walk because of the invalid entry — mirroring AC-09f/AC-09g for the pnpm case.\" Extend AC-14's criterion text and regression-fixture list to name AC-09g and AC-09h with these exact fixtures, alongside the existing AC-09f Cargo fixture."
+    }
+  ],
+  "overall": "fail",
+  "reasoning": "Fourth post-split round. Both round-3 findings are now genuinely fixed and independently verified against real code: the tags.rs citation is accurate (confirmed lines 38-42 and the test at line 409 by reading the file directly), and AC-05b/AC-06b are real, distinct fixtures (file-absent vs. field-absent) correctly folded into AC-12/AC-13. AC-09f's fixture was independently compiled and confirmed to actually trigger a globset compile failure as claimed. No scope overlap, no vague/untestable criteria, no TBDs found across a fresh full-spec read and a cross-check against every other spec in .claude/specs/. One genuine, non-cosmetic gap surfaced: the general per-entry-glob-failure rule is stated to cover npm/pnpm lists but is only fixture-tested for Cargo, leaving a real untested code path an implementer could get wrong. This is a smaller, narrower gap than any prior round's findings (a same-pattern extension of already-established AC-09f, not a new defect class), so it should be a fast fifth-round fix, but per the standard applied throughout this cycle (every criterion must be provably testable and complete for the exact code path it claims to govern), a claim covering three ecosystems with a fixture for only one is incomplete and cannot pass on the strength of the fixed ecosystem alone."
+}
+```
+
+Files consulted (all absolute paths):
+- `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/spec-track3a-workspace-membership.json`
+- `/Users/gabe/Projects/callisto/crates/callisto-graph/src/tags.rs`
+- `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs`
+- `/Users/gabe/Projects/callisto/.claude/specs/track-g-matrix-napi-maturin.json`
+- `/Users/gabe/Projects/callisto/.claude/specs/SPEC-APPLY-BATCH-002.json`</result>
+<usage><subagent_tokens>82377</subagent_tokens><tool_uses>22</tool_uses><duration_ms>158964</duration_ms></usage>
+</task-notification>
