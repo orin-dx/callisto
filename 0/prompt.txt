@@ -1,0 +1,10 @@
+<task-notification>
+<task-id>abb6a93150a9bf4bf</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/bb531e8d-c394-4e47-a8ae-e4a9ceeca6d2/tasks/abb6a93150a9bf4bf.output</output-file>
+<status>completed</status>
+<summary>Agent "Mutation test Track 1 touched files" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Waiting for the cargo-mutants background run to complete (this can take several minutes for baseline build + mutant compilation/testing). I'll report back once the Monitor notification arrives with results.</result>
+<usage><subagent_tokens>43014</subagent_tokens><tool_uses>7</tool_uses><duration_ms>151739</duration_ms></usage>
+</task-notification>
