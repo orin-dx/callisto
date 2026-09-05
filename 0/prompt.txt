@@ -1,0 +1,54 @@
+<task-notification>
+<task-id>ab630de9f49358820</task-id>
+<tool-use-id>toolu_01MUuKxUN1GpV9btfNJDy2oG</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/ab630de9f49358820.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement TASK-05 (Cargo membership wiring)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All confirmed green, clippy clean, formatting clean, committed at `0971005`.
+
+```json
+{
+  "task_id": "TASK-05",
+  "status": "done",
+  "steps_completed": [
+    "Read AC-01 and AC-02 directly from .claude/specs/SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json (confirmed they match the plan's paraphrased failing_test)",
+    "Confirmed baseline test suite green (275 passed) before any change",
+    "Confirmed CargoMembership/admits/read_cargo_membership API shape and pub(crate) visibility in membership.rs",
+    "Wrote failing test ac01_ac02_excludes_scratch_example_and_includes_kept_example_via_cargo_workspace_exclude in crates/callisto-graph/src/locate/ignore_walk.rs",
+    "Ran test, confirmed RED (failure matched expected_failure_output exactly)",
+    "Added `use crate::locate::membership;`, computed cargo_membership once before the walker loop, gated the Cargo push with cargo_membership.admits(&amp;rel, is_root)",
+    "Ran test, confirmed GREEN; ran full callisto-graph suite (276 passed, 0 failed)",
+    "Removed #[allow(dead_code)] from the Cargo-side membership API (build_globset, CargoMembership, admits, parse_toml_string_array, absent_cargo_membership, read_cargo_membership) now that it has a real caller; left Npm-side allow(dead_code) untouched since npm wiring is a separate task",
+    "Ran cargo clippy -p callisto-graph --all-targets -- -D warnings: clean",
+    "Fixed clippy::cmp_owned findings in the new test (Path::new instead of PathBuf::from for comparisons)",
+    "Committed; pre-commit hook caught a format-check violation on first attempt, ran cargo fmt -p callisto-graph, re-staged, created a new commit (did not amend)"
+  ],
+  "test_result": "pass",
+  "commit_sha": "0971005",
+  "criteria_evidence": [
+    {
+      "criterion_id": "AC-01",
+      "test_file": "crates/callisto-graph/src/locate/ignore_walk.rs",
+      "test_line": 285,
+      "implementation_file": "crates/callisto-graph/src/locate/ignore_walk.rs",
+      "implementation_line": 83
+    },
+    {
+      "criterion_id": "AC-02",
+      "test_file": "crates/callisto-graph/src/locate/ignore_walk.rs",
+      "test_line": 326,
+      "implementation_file": "crates/callisto-graph/src/locate/ignore_walk.rs",
+      "implementation_line": 83
+    }
+  ],
+  "concerns": null,
+  "reasoning": "Plan's prose matched observed reality this time (unlike the noted TASK-03e/04b/04f pattern) — the spec's AC-01/AC-02 text matched the plan's paraphrase verbatim in substance, the failing_test code compiled and failed exactly as expected_failure_output predicted, and the implementation code block worked with only clippy/fmt polish needed (Path::new vs PathBuf::from for comparisons, and a fmt reflow of the fn signature). No precision_tests were supplied for this single-task invocation. No spec contradiction encountered. Left NpmMembership's #[allow(dead_code)] attributes in place since npm wiring is out of this task's scope (a later task per the plan's title pattern)."
+}
+```
+
+Files touched:
+- `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs` — new test (line 285) and implementation wiring (line 83)
+- `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs` — removed obsolete `#[allow(dead_code)]` from the six Cargo-side items now reachable via the new caller</result>
+<usage><subagent_tokens>73185</subagent_tokens><tool_uses>32</tool_uses><duration_ms>376549</duration_ms></usage>
+</task-notification>
