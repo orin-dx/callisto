@@ -1,0 +1,3 @@
+Do we have the highest confidence on our fixes or should we check on them?
+
+Should we look for other similar bugs? What strategies should we  employ to find novel bugs?
