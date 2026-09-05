@@ -1,0 +1,1 @@
+How did we miss these gaps? What patterns do we see? Are they a result of gaps in the architecture? Something else?
