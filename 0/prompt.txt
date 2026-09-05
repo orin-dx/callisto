@@ -1,0 +1,58 @@
+<task-notification>
+<task-id>ac28c1c00db32aafe</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/bb531e8d-c394-4e47-a8ae-e4a9ceeca6d2/tasks/ac28c1c00db32aafe.output</output-file>
+<status>completed</status>
+<summary>Agent "Exit-gate Track 2 spec" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## VERDICT: FAIL (retry_count 1)
+
+Verdict file: `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/verdict-track2-retry1.json`
+
+```json
+{
+  "verdict": "fail",
+  "confidence": "high",
+  "artifact_type": "spec@1",
+  "retry_count": 1,
+  "verdict_summary": "SPEC-TRACK2-PLATFORM-MANIFEST-WRITES fails the exit gate. Four blockers: AC-009/AC-010 assert an npm lockfile refresh apply.rs does not implement; AC-002 leaves OpenContext unspecified so its own Cargo/maturin case is undefined; AC-005 and AC-011 assert on non-observable state. Fix and resubmit."
+}
+```
+
+### Blocker 1 — AC-009 and AC-010 assert a refresh that does not exist (disqualifying on its own)
+
+`apply.rs:353-407` has exactly two refresh branches: `active_ecosystems.contains(&amp;Ecosystem::Cargo)` (line 356, `cargo update --workspace`) and `Ecosystem::Pypi` (line 372, `uv lock` / `poetry lock --no-update`). **There is no `Ecosystem::Npm` branch anywhere.** No npm refresh subprocess is ever run and no npm entry ever enters `refresh_results`.
+
+What npm actually gets today is *staging only*: the table at `apply.rs:411-421` maps package-lock.json, pnpm-lock.yaml, yarn.lock, bun.lockb to `Ecosystem::Npm`, and `apply.rs:423-431` pushes each that exists on disk into `modified_paths`. That table is **not** filtered by the detected npm workspace kind, so AC-009's "matching the detected npm workspace kind" also misdescribes the mechanism.
+
+AC-009's clause "exactly as it already is for an ordinary plan.bumps-only plan touching an npm manifest" is therefore false. The implementer must choose between (a) implementing only the `active_ecosystems` extension the scope authorizes — leaving the "refreshed" clause permanently unsatisfiable — or (b) inventing an npm refresh command the spec never names, which is outside the stated scope. Required change: split refresh from staging, assert `ApplyOutcome.staged` contains the npm lockfiles present at root and `ApplyOutcome.lockfile_refresh_results` contains no npm entry; same rewrite for AC-010. If an npm refresh is genuinely wanted it needs its own spec — it is a third distinct change on top of this track's two fixes.
+
+### Blocker 2 — AC-002 stops one step short of making its own motivating case work
+
+The auditor's `ManifestRole::Canonical` fix is correct as far as it goes — I confirmed `apply.rs:247` and `apply.rs:257` both use it, and `package.rs:104-106` really does reject Platform-role + CargoToml. But:
+
+- `ManifestDecl::new` does not open anything (`package.rs:88-113`); it validates a path/role/format triple. The opener is `callisto_manifests::open(&amp;decl, &amp;ctx)` (`lib.rs:155`), requiring an `OpenContext { workspace_root, cargo_workspace, npm_workspace_kind }` (`lib.rs:103-108`). AC-002 as written is not a runnable sequence.
+- AC-002 never says what `cargo_workspace` plan_version passes, and that choice flips the outcome for the exact scenario AC-002 cites. `CargoToml::open` sets `inherited_version = true` on `version.workspace = true` (`cargo.rs:47-52`), and `current_version()` then returns `Err(ManifestError::WorkspaceInherited)` unless `ctx.cargo_workspace` carries a resolved version (`cargo.rs:178-189`). So with `cargo_workspace: None`, a maturin platform crate inheriting its version fails the whole plan_version run — the opposite of "opens successfully". Passing the ManifestDecl gate is necessary but not sufficient, and the criterion stops at the necessary half.
+
+Fix: name `open()` and pin the context to apply.rs's own derivation (`apply.rs:118-130`), then add AC-002b fixing the inherited-version outcome (or declare it an error case and add the non_goal).
+
+### Blocker 3 — AC-005 "empty for that group" has no observable truth value
+
+`VersionPlan` (`plan.rs:14-26`) has no per-group partition; neither `PlatformWrite` (45-49) nor `OptionalDepUpdate` (51-55) carries group attribution. Rewrite to scope the workspace, not the group.
+
+### Blocker 4 — AC-011 asserts on `active_ecosystems`, a function-local binding
+
+`apply.rs:325-349` is local state no test can inspect. The observable equivalents are `ApplyOutcome.lockfile_refresh_results` (set at `apply.rs:406`) and `ApplyOutcome.staged` (assigned at `apply.rs:469`).
+
+### What the spec earned (verified, not assumed)
+
+- **Stale AC-ID cross-references: your corrections landed and the document is now internally consistent.** I checked every reference — `AC-009, AC-010, AC-011` for lockfile logic, `AC-008` for the malformed-manifest path, `AC-012, AC-012b, AC-013` for the precondition check, plus the non_goals citations. Every referenced ID exists and points at the right criterion.
+- **The idempotent-retry claim is genuine, not invented.** The three-way branch exists twice: `apply.rs:146-161` (`current == target_version` → skip; `== bump.from` → write; else → `UnexpectedManifestVersion`) and `apply.rs:181-214`. Both also `modified_paths.push` in the already-at-target branch, so AC-012b mirrors the pattern precisely. AC-012/012b/013 are sound; `GraphError::UnexpectedManifestVersion { path, expected_from, expected_to, found }` confirmed at `error.rs:157-162`.
+- Fix 1's dormant-bug premise holds (`active_ecosystems` iterates only `plan.bumps`); `version.rs:262-263` really are `Vec::new()`; pr_body.rs:16-27 and snapshot.rs non_goals are both accurate.
+- No TBDs anywhere; schema-conformant; scope is one planning cycle (unless Blocker 1 is resolved by adding an npm refresh branch, which must be split out).
+
+### Non-blocking nits for the drafter
+
+`reasoning` cites `config/groups.rs:28-34` (actual: enum 25-33, variant 27-32); non_goals cites snapshot.rs 131-143 (actual ~129-141, file is git-modified); `reasoning` places OpenContext/open in callisto-graph when they are defined in callisto-manifests. Also unrelated to the spec: the doc comments at `apply.rs:18` and `apply.rs:29` claim `lockfile_refresh_results` is "currently always None", which `apply.rs:405-407` contradicts.</result>
+<usage><subagent_tokens>90290</subagent_tokens><tool_uses>29</tool_uses><duration_ms>443032</duration_ms></usage>
+</task-notification>
