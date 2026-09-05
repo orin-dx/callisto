@@ -1,0 +1,31 @@
+<task-notification>
+<task-id>ad872a76320bd5028</task-id>
+<tool-use-id>toolu_01EhG5yMkyv7eMYufhHFPtvQ</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/c0ad64b2-6440-4937-8328-8d9fd9db278c/tasks/ad872a76320bd5028.output</output-file>
+<status>completed</status>
+<summary>Agent "Check README/ARCHITECTURE accuracy for release" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## README.md / ARCHITECTURE.md audit
+
+**Checked**: `.changeset/release-pipeline-and-matrix-hardening.md` for context; cross-referenced both docs against `crates/callisto-cli/src/cli.rs` (real command list), `crates/callisto-cli/src/render/mod.rs` (real text output), and every crate's `Cargo.toml` `license` field.
+
+### README.md — 2 concrete errors found
+
+1. **Quick Start sample output is fabricated, not real** (lines 43-53). The shown `callisto status`/`callisto version` output doesn't match what the code actually prints.
+   - Real `render_status` (mod.rs:24-39): `  {name} {version} (pending: {severity})` — no `-&gt;` target version, no changeset filename, no `[cascade: X]` annotation.
+   - Real `render_version` (mod.rs:42-53): `  {name} {from} → {to}` — no "Updated N package manifests", no "Appended changelog entries", no "Consumed N changeset" lines.
+   - This is the first thing a new user sees. Needs to be replaced with real captured output, not aspirational prose.
+
+2. **License table error** (line 230): lists `callisto-vcs` as `AGPL-3.0`. Its real `Cargo.toml` says `license = "MIT OR Apache-2.0"` — confirmed, and ARCHITECTURE.md's own table (line 125) already has this crate correct. This is a license-compliance-relevant error, worth fixing before release. Every other crate's license row in README's table checks out against its real `Cargo.toml`.
+
+Everything else checked out: `callisto matrix` is documented (Key Capabilities section), install instructions, badges, and links look fine, no broken references found. README isn't meant to be an exhaustive command reference (it covers init/add/status/version/compose-pr-body/matrix, not pre/validate/snapshot/plan-publish/publish/tag/completions/schema) — that's a scoping choice, not staleness, so not flagged as an error.
+
+### ARCHITECTURE.md — accurate, no changes needed
+
+- Crate list/count (10), Layer 1/2 licensing invariant, and the `callisto-vcs` license are all correct and already match code.
+- `callisto matrix` is documented with an explicit `[partially implemented]` status callout (§12) that accurately describes what's live (napi/maturin/npm/PyPI) vs. planned (Java, .NET, `publish-target` subcommand) — this is honest, not a stale claim.
+- Nothing in the changeset's Breaking Changes contradicts anything ARCHITECTURE.md claims (it doesn't describe `CascadeInput`'s exact fields, `Manifest::persist`'s pre-change signature, or JSON report field names in enough detail to be wrong).
+
+Did not deep-read docs/00-design.md or docs/01-spec.md (out of scope) — no red flags noticed in passing.</result>
+<usage><subagent_tokens>344526</subagent_tokens><tool_uses>10</tool_uses><duration_ms>68652</duration_ms></usage>
+</task-notification>
