@@ -1,0 +1,49 @@
+<task-notification>
+<task-id>aafb3eb617774e034</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/aafb3eb617774e034.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement TASK-26 (AC-10 regression test)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Committed cleanly as `24740e2`.
+
+## Summary
+
+**task_id:** TASK-26
+**status:** done
+**test_result:** pass
+**commit_sha:** 24740e2
+
+**steps_completed:**
+1. Verified all 21 prior commits present on `ignore_walk.rs`, tree clean.
+2. Read TASK-26 from the plan and AC-10 (plus AC-10b/AC-10c/AC-06/AC-16 for context) directly from `/Users/gabe/Projects/callisto/.claude/specs/SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json`.
+3. Found AC-10's exact text has two distinct halves the plan's single provided test didn't fully cover: (a) empty `workspaces: []` excludes everything except a hybrid root (AC-16 exemption), and (b) explicitly distinguished from an absent `workspaces` field (AC-06), not conflated with it.
+4. Wrote three standalone tests in `crates/callisto-graph/src/locate/ignore_walk.rs`, mirroring the established pnpm-analog split (`ac10b_...`):
+   - `ac10_empty_npm_workspaces_array_admits_zero_npm_entries` (line 633)
+   - `ac10_empty_npm_workspaces_array_still_admits_hybrid_root` (line 658)
+   - `ac10_empty_workspaces_array_distinguished_from_absent_workspaces_field` (line 695)
+5. Ran the tests — all passed immediately (no red step), matching the TASK-07 through TASK-25 regression-proof pattern (behavior already wired via `NpmMembership::admits`).
+6. Adversarially verified non-vacuousness: temporarily changed `NpmMembership::admits` in `crates/callisto-graph/src/locate/membership.rs` (line 230) to always return `true`; all three new tests failed as expected; reverted.
+7. Confirmed `membership.rs` returned to a clean diff (`git status` showed only `ignore_walk.rs` modified).
+8. Ran full suite: `cargo test -p callisto-graph --lib` → 306 passed, 0 failed.
+9. `cargo fmt -p callisto-graph` — no changes needed after formatting.
+10. `cargo clippy -p callisto-graph --all-targets -- -D warnings` — clean.
+11. Committed as `24740e2`.
+
+**criteria_evidence:**
+```json
+[
+  {
+    "criterion_id": "AC-10",
+    "test_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs",
+    "test_line": 633,
+    "implementation_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs",
+    "implementation_line": 230
+  }
+]
+```
+(Additional corroborating test lines: 658 for the hybrid-root exemption half, 695 for the distinguished-from-absent half; wiring call site is `ignore_walk.rs:106`.)
+
+**concerns:** None. No precision_tests were supplied for this task.</result>
+<usage><subagent_tokens>68722</subagent_tokens><tool_uses>25</tool_uses><duration_ms>409764</duration_ms></usage>
+</task-notification>
