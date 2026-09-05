@@ -1,0 +1,41 @@
+<task-notification>
+<task-id>ad87c0e7ad4067d0b</task-id>
+<tool-use-id>toolu_01Wv8WjcdzpNpc1Tpux7Pi9K</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/ad87c0e7ad4067d0b.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement TASK-24 (AC-09g regression test)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>The implementation for this criterion is the pre-existing `build_globset` function at membership.rs:12 (no new code was needed — verified adversarially to genuinely exercise this exact function).
+
+```json
+{
+  "task_id": "TASK-24",
+  "status": "done",
+  "steps_completed": [
+    "confirmed 19 prior commits present on ignore_walk.rs and tree clean before starting",
+    "read AC-09g exact acceptance criterion text from SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json on disk",
+    "confirmed plan's fixture matches spec text exactly (no missing clauses)",
+    "wrote failing_test code from plan into crates/callisto-graph/src/locate/ignore_walk.rs",
+    "ran the test: passed immediately with no implementation change (regression-proof pattern, consistent with TASK-07..TASK-23 precedent)",
+    "adversarially verified non-vacuousness: temporarily broke build_globset's per-entry skip logic in membership.rs (replaced if-let-Ok skip with .expect() that panics on compile failure), reran test, confirmed it failed with a panic pointing at the invalid glob entry",
+    "restored build_globset to original code",
+    "reran full test suite (302 tests) and cargo clippy -p callisto-graph --all-targets -- -D warnings: both clean",
+    "committed test-only change"
+  ],
+  "test_result": "pass",
+  "commit_sha": "2400039",
+  "criteria_evidence": [
+    {
+      "criterion_id": "AC-09g",
+      "test_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs",
+      "test_line": 1323,
+      "implementation_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs",
+      "implementation_line": 12
+    }
+  ],
+  "concerns": null,
+  "reasoning": "Task matched the established regression-proof pattern from TASK-07 through TASK-23: the plan's failing_test passed immediately with zero implementation change because build_globset's per-entry-skip-on-compile-failure behavior (membership.rs line 12-20) was already proven in isolation by an earlier task and wired through the npm branch by earlier tasks (0971005/d812cac wiring commits, both already on branch). Per the task instructions, I adversarially verified this wasn't a vacuous pass by breaking the skip logic (forcing .expect() instead of if-let-Ok) and confirming the test failed with a panic at the exact invalid-glob entry, then restored the original code exactly (git diff on membership.rs was empty after restore). No implementation changes were committed -- only the new test in ignore_walk.rs. Full suite (302 tests) and clippy -D warnings both clean before commit."
+}
+```</result>
+<usage><subagent_tokens>51064</subagent_tokens><tool_uses>17</tool_uses><duration_ms>319653</duration_ms></usage>
+</task-notification>
