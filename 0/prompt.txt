@@ -1,0 +1,5 @@
+<task-notification>
+<task-type>artifact-watch-lifecycle</task-type>
+<summary>Stopped watching Artifact: "How Callisto Ships Software" (connection lost)</summary>
+<event>Watch on https://claude.ai/code/artifact/5e800024-c0d6-4198-94f8-7bf095402acb ended — the live connection kept failing and reconnecting has stopped. This session will no longer hear when it is republished; watch it again if you still need that.</event>
+</task-notification>
