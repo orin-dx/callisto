@@ -1,0 +1,11 @@
+<task-notification>
+<task-id>bubrtddyz</task-id>
+<tool-use-id>toolu_01XKRzuykrvq65yH2Yz2rY7H</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a33915af-5e86-4584-9bde-f732d973cf9f/tasks/bubrtddyz.output</output-file>
+<status>completed</status>
+<summary>Background command "until out=$(gh run view 33792198378 --repo orin-dx/callisto --json jobs -q '.jobs[] | select(.name=="Create or update the Callisto release PR") | .status + " " + (.conclusion // "pending")' 2&gt;&amp;1) &amp;&amp; [[ "$out" == *completed* ]]; do
+  sleep 15
+done
+echo "RESULT: $out"
+gh run view 33792198378 --repo orin-dx/callisto --log --job "$(gh run view 33792198378 --repo orin-dx/callisto --json jobs -q '.jobs[] | select(.name=="Create or update the Callisto release PR") | .databaseId')" 2&gt;&amp;1 | tail -60" completed (exit code 0)</summary>
+</task-notification>
