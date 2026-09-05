@@ -1,0 +1,1 @@
+Let's address all of the fixes needed after the CI runs, I think we should figure out the rust cli binaries for the next PR. commit the claude change and then test again only once it's done.
