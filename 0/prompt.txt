@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bvc9t5mxr</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8a85b651-0c9a-44fa-9e0a-ac694c4409e1/tasks/bvc9t5mxr.output</output-file>
+<status>completed</status>
+<summary>Background command "cargo llvm-cov -p callisto-cli --ignore-filename-regex '_pdk\.rs' --json --summary-only 2&gt;/tmp/llvm_cov_stderr.log &gt; /tmp/cli_cov.json; echo "exit=$?"" completed (exit code 0)</summary>
+</task-notification>
