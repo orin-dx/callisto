@@ -1,0 +1,31 @@
+<task-notification>
+<task-id>a9dfb2441a27b6cf9</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/tasks/a9dfb2441a27b6cf9.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement T08: strip persist from PackageJson::update_dependency_spec" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Task T08 complete.
+
+```json
+{
+  "task_id": "T08",
+  "status": "done",
+  "steps_completed": [
+    "Read T08 from plan file and AC-003/AC-005/AC-006/AC-020 from spec file",
+    "Verified update_dependency_spec_does_not_mutate_overrides_when_primary_section_missing returns Err(DependencyNotFound) at npm.rs line ~316-322 before reaching the old persist() call at line 340, confirming plan's analysis that no persist() insertion was needed",
+    "Wrote failing test update_dependency_spec_does_not_touch_disk_until_persist_called",
+    "Confirmed red: assertion failure showing disk was mutated before persist() call, matching plan's expected_failure",
+    "Renamed permit to _permit in update_dependency_spec signature; replaced self.persist(permit) with Ok(())",
+    "Confirmed green: full npm::tests module 32 passed, 0 failed, including update_dependency_spec_does_not_mutate_overrides_when_primary_section_missing and all co-mutation tests unmodified",
+    "Ran full callisto-manifests lib test suite: 101 passed, 0 failed",
+    "Committed with plan's exact commit message"
+  ],
+  "test_result": "pass",
+  "commit_sha": "63e6d64791286a3ed6226cfbfc153885bdce11b8",
+  "concerns": null,
+  "reasoning": "Diff scope strictly limited to crates/callisto-manifests/src/npm.rs (verified via git diff --stat before commit): one new test function plus the two-line implementation change (parameter rename + persist-&gt;Ok(()) swap). No other files touched. write_version, update_optional_dependencies, cargo.rs, python.rs, apply.rs untouched. Pre-commit format-check hook ran clean."
+}
+```</result>
+<usage><subagent_tokens>50438</subagent_tokens><tool_uses>17</tool_uses><duration_ms>107487</duration_ms></usage>
+</task-notification>
