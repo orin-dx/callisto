@@ -1,0 +1,24 @@
+<task-notification>
+<task-id>ac1ca55237307ee9a</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/ac1ca55237307ee9a.output</output-file>
+<status>completed</status>
+<summary>Agent "Review CommitInference GitAccess threading fix" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Verdict: Safe to commit.
+
+**1. `infer.rs` shape correct.** Read the full file: `use callisto_model::CommandRunner` was correctly removed (grep confirms `CommandRunner` appears nowhere else in the file); `use std::path::PathBuf` is correctly retained (still needed for `InferenceWindowSpec.pathspecs: &amp;'a [PathBuf]`). `CommitInference` is now `pub struct CommitInference;` — zero fields, no generic, no lifetime — with no leftover `runner`/`root` references. The old function-local `use callisto_vcs::GitAccess;` inside `infer()` was correctly dropped in favor of the new file-top import (used by the trait signature and both impls). `infer_severity(git, &amp;input)` correctly uses the passed-in reference instead of a freshly discovered one.
+
+**2. `aggregate()` signature unchanged.** Confirmed via `git show HEAD:.../aggregate.rs` that `git: &amp;GitAccess&lt;'_&gt;` was already a parameter of `aggregate()` before this diff, with an existing doc comment explaining it's `Workspace`-shared. The diff only threads that existing parameter one level deeper (`inference.infer(pkg, window)` → `inference.infer(pkg, git, window)`) — no new parameter was added to `aggregate()` itself.
+
+**3. All 5 mock impls updated correctly.** Found exactly 5 `impl SeverityInference for` blocks (lines 792, 1338, 1407, 1530, 1604) and verified each in place: `_git: &amp;GitAccess&lt;'_&gt;` inserted in the correct position (between `pkg` and `window`), correct type, none missed or mistyped.
+
+**4/5. Tests and clippy, independently run and green:**
+- `cargo test -p callisto-graph --features inference` — all suites pass; `cargo test -p callisto-graph --features inference --lib aggregate::` shows all 22 `aggregate::tests` passing.
+- `cargo test -p callisto-graph --lib` (default features) — 245/245 passed.
+- `cargo clippy -p callisto-graph --all-targets --features inference -- -D warnings` — exit 0, no issues.
+- `cargo clippy -p callisto-graph --all-targets -- -D warnings` — exit 0, no issues.
+
+**6. Sibling-gap check.** No missed production call sites in `callisto-graph`, `callisto-cli`, or `callisto-moon` (`GitAccess::discover` not found in the latter two crates' `src/`). One pre-existing, already-documented instance remains: `tags.rs::last_tag_for` (line 89) still discovers fresh per call — but its own doc comment already flags this and points multi-package callers to `TagIndex::build`'s batched fetch instead. Not a newly introduced gap; worth noting as a known follow-up, not fixed here.</result>
+<usage><subagent_tokens>67795</subagent_tokens><tool_uses>21</tool_uses><duration_ms>248226</duration_ms></usage>
+</task-notification>
