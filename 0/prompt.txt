@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bnp85dhrj</task-id>
+<tool-use-id>toolu_01Nf6MGfqXKojnKfLJxJ4n3q</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/f21fbbf3-d9f7-4109-9c36-8de0a6e308fd/tasks/bnp85dhrj.output</output-file>
+<status>killed</status>
+<summary>Background command "just ci 2&gt;&amp;1 | tail -150" was stopped</summary>
+</task-notification>
