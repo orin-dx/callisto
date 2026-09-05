@@ -1,0 +1,1 @@
+That means we can allow force push from our action to the branch by specific name right? That is a config that each user would need to make but should be ok?
