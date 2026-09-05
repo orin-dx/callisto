@@ -1,0 +1,5 @@
+<task-notification>
+<task-id>b8fqfdwjv</task-id>
+<summary>Monitor event: "wait for fresh RED confirmation"</summary>
+<event>[Monitor timed out — re-arm if needed.]</event>
+</task-notification>
