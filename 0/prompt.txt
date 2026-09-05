@@ -1,0 +1,16 @@
+<task-notification>
+<task-id>bcwf1b0f7</task-id>
+<summary>Monitor event: "just ci live progress with step timestamps"</summary>
+<event>[+1377s]         PASS [   0.008s] ( 586/1065) callisto-graph matrix::tests::parse_package_json_malformed_json_is_error
+[+1377s]         PASS [   0.008s] ( 587/1065) callisto-graph matrix::tests::parse_pyproject_toml_malformed_toml_is_error
+[+1377s]         PASS [   0.008s] ( 588/1065) callisto-graph matrix::tests::read_engines_node_non_string_value_is_error
+[+1377s]         PASS [   0.007s] ( 589/1065) callisto-graph matrix::tests::read_maturin_targets_non_array_value_is_error
+[+1377s]         PASS [   0.008s] ( 594/1065) callisto-graph matrix::tests::read_napi_targets_non_array_value_is_error
+[+1377s]         PASS [   0.008s] ( 595/1065) callisto-graph matrix::tests::read_requires_python_non_string_value_is_error
+[+1377s]         PASS [   0.008s] ( 599/1065) callisto-graph matrix::tests::select_platform_target_source_conflicting_sources_errors
+[+1377s]         PASS [   0.008s] ( 609/1065) callisto-graph tags::tests::test_last_tag_for_propagates_command_runner_error
+[+1377s]         PASS [   0.008s] ( 610/1065) callisto-graph tags::tests::test_last_tag_for_propagates_malformed_glob_error
+[+1377s]         PASS [   0.008s] ( 615/1065) callisto-graph tags::tests::test_tag_index_build_propagates_command_runner_error
+[+1377s]         PASS [   0.017s] ( 628/1065) callisto-graph walk::tests::case_d_colliding_with_third_disjoint_ecosystem_still_errors</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
