@@ -1,0 +1,35 @@
+<task-notification>
+<task-id>a5e56e8e162d257c2</task-id>
+<tool-use-id>toolu_01C9KNpu9tsxKX7J5jqqvyWX</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/tasks/a5e56e8e162d257c2.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement T05a: strip persist from CargoToml::write_version" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Final verification complete: green.
+
+```json
+{
+  "task_id": "T05a",
+  "status": "done",
+  "steps_completed": [
+    "Read T05a task object from .claude/plans/manifest-persist-001-plan.json",
+    "Read AC-002, AC-005, AC-006, AC-020, AC-015 from .claude/specs/SPEC-MANIFEST-PERSIST-001.json",
+    "Located write_version by function name/anchor text in crates/callisto-manifests/src/cargo.rs (not by stale line numbers)",
+    "Wrote failing test write_version_does_not_touch_disk_until_persist_called",
+    "Confirmed red phase: assertion failure matched plan's expected_failure exactly (left/right content mismatch)",
+    "Stripped self.persist(permit) calls from both branches of CargoToml::write_version, renamed permit to _permit, both branches now return Ok(())",
+    "Repaired 5 pre-existing tests by inserting manifest.persist(&amp;permit()).unwrap() before their post-write disk reads: parses_cargo_toml_and_updates_version, preserves_bom_on_write_round_trip, preserves_tab_indentation_cargo_toml, test_cargo_decor_comment_preservation, write_version_pins_explicitly_on_workspace_inheriting_member",
+    "Ran cargo build -p callisto-manifests: clean, no warnings",
+    "Ran cargo test -p callisto-manifests --lib cargo::tests: 24 passed, 0 failed",
+    "Committed with plan's exact commit message; pre-commit fmt hook auto-formatted one line, re-verified tests green, re-committed"
+  ],
+  "test_result": "pass",
+  "commit_sha": "615f66cc2e5925762484e3f1299fcd137de2c921",
+  "concerns": null,
+  "reasoning": "Task executed as specified. Only crates/callisto-manifests/src/cargo.rs was modified (git show --stat confirms single file, 42 insertions/3 deletions). Red phase was genuinely observed before any implementation edit — the assertion failure text matched the plan's expected_failure verbatim. verify_command (cargo test -p callisto-manifests --lib cargo::tests) shows 0 failed across all 24 tests in the module, satisfying AC-015's zero-failing-tests requirement. No T05b work (the new assertion in write_version_pins_explicitly_on_workspace_inheriting_member) was added, staying strictly in scope. npm.rs, python.rs, apply.rs untouched."
+}
+```
+
+Files touched: `/Users/gabe/Projects/callisto/crates/callisto-manifests/src/cargo.rs` (production edit to `write_version`, plus 5 test repairs and the new `write_version_does_not_touch_disk_until_persist_called` test). Commit `615f66cc2e5925762484e3f1299fcd137de2c921` on `main`.</result>
+<usage><subagent_tokens>64736</subagent_tokens><tool_uses>33</tool_uses><duration_ms>164959</duration_ms></usage>
+</task-notification>
