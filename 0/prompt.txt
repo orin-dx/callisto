@@ -1,0 +1,50 @@
+What do you think??
+
+All three blockers on SPEC-007-github-release-binary-assets.json have been resolved and applied directly to the spec on     
+  disk.                                                                                                                       
+  ──────                                                                                                                      
+  ### 1. Design Decision: artifact_path Validation                                                                            
+                                                                                                                              
+  **Decision: Validate artifact_path via path.rs:25-70**.                                                                     
+                                                                                                                              
+  • Rationale:
+      • Exfiltration Prevention: Leaving artifact_path unvalidated would allow path traversal or absolute paths
+      (/etc/ssh/ssh_host_rsa_key, ../../secrets.pem) to be uploaded verbatim as public GitHub Release assets in CI.           
+      • Codebase Invariant: Every user-authored path in callisto.toml ([changesets].dir, [[package]] changelog, [[package-    
+      set]] changelog) is validated through callisto_model::workspace_relative.
+      • Action Environment Alignment: Action runner scripts execute from the repository root; enforcing workspace-relative    
+      paths guarantees reliable disk resolution across platforms.
+  • Spec Changes:
+      • Updated api_surface for SPEC-007-github-release-binary-assets.json:20-23 and
+      SPEC-007-github-release-binary-assets.json:40-43 to specify validation via workspace_relative.
+      • Updated SPEC-007-github-release-binary-assets.json:60 to reflect lexical path normalization without re-sorting.       
+      • Added SPEC-007-github-release-binary-assets.json:73 (is_error_case: true) requiring absolute and root-escaping path-  
+      traversal inputs to fail config resolution before any publish step executes.
+  
+  ──────
+  ### 2. Missing Acceptance Criteria: [[package-set]] Asset Declarations
+  
+  • Added SPEC-007-github-release-binary-assets.json:74 (is_error_case: false): Mirrors AC-001 for [[package-set]] pattern    
+  blocks (match = "crates/*"), verifying github-release-assets resolution into PackageConfig when no overriding [[package]]   
+  rule is present.
+  • Added SPEC-007-github-release-binary-assets.json:75 (is_error_case: false): Verifies that an explicit [[package]] asset   
+  declaration takes precedence over a matching [[package-set]] fallback declaration.
+  • Updated SPEC-007-github-release-binary-assets.json:57 & api_surface: Explicitly covers error rewrapping for both          
+  [[package]] and [[package-set]] blocks.
+  ──────
+  ### 3. Mechanical Citation Fixes
+  
+  • parse_github_release_assets error rewrap: Corrected to cite resolve.rs:231 with rewrapping at lines 397-403 for           
+  [[package]] ("[[package]] github-release-assets: {key}") and lines 467-473 for [[package-set]] ("[[package-set]] github-    
+  release-assets: {key}").
+  • Scope Item (5) line range: Fixed the ReleaseEntry doc block citation in 01-spec.md:1740-1770 from lines 1740-1763 to lines
+  1740-1770.
+  ──────
+  ### Exit-Gate Review Verdict: PASSED
+  
+   Gate Check                      │ Status           │ Verification Detail
+  ─────────────────────────────────┼──────────────────┼───────────────────────────────────────────────────────────────────────
+   JSON Syntax & Structure         │ Passed           │ Validated via jq .
+   Acceptance Criteria Testability │ Passed           │ 19 criteria (AC-001–AC-020), all testable with explicit is_error_case
+   Code Citations & Line Numbers   │ Passed           │ Verified against resolve.rs, raw.rs, plan.rs, and 01-spec.md
+   Completeness & Ambiguity        │ Passed           │ Zero TBDs, TODOs, or untracked edge cases
