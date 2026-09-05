@@ -1,0 +1,58 @@
+Base directory for this skill: /Users/gabe/.claude/plugins/cache/orin-dx-agent-plugins/vector/1.0.1/skills/vector
+
+# Vector Planning Skill
+
+<overview>
+Vector decomposes a spec@1 into a sequenced, bite-sized plan@1 that a developer or agent can execute without making any design decisions. Every task is independently testable, time-bounded, and fully specified down to exact code and commit messages.
+</overview>
+
+---
+
+<sub_skills>
+
+### vector/plan
+Invoke vector-planner to decompose a spec@1 into an ordered sequence of implementation tasks. Each task includes exact file paths, a failing test, minimal implementation, expected test output, and a commit message.
+
+### vector/estimate
+Invoke vector-estimator to assign effort estimates (in minutes) to each task in a plan@1, identify parallelizable tasks, and surface blocking dependencies.
+
+### vector/challenge
+Invoke vector-challenger to adversarially review a plan@1 for missing tasks, wrong ordering, under-specified steps, over-sized tasks, and missing error handling.
+
+### vector/decompose
+Decompose a large or ambiguous task into smaller, dependency-ordered sub-tasks before planning. Use when a single task in the plan would exceed 15 minutes or require the implementer to make a design choice.
+
+</sub_skills>
+
+---
+
+<artifact_contracts>
+
+**Consumes**: `spec@1`
+**Produces**: `plan@1`
+
+</artifact_contracts>
+
+---
+
+<tdd_requirement>
+
+Every task in a plan@1 follows this exact sequence:
+
+1. Write the failing test
+2. Run the test — confirm it fails with the expected error
+3. Write the minimal implementation to make the test pass
+4. Run the test — confirm it passes
+5. Commit with the conventional commit message
+
+A task that starts with implementation before a failing test violates this requirement.
+
+</tdd_requirement>
+
+---
+
+<no_placeholders_rule>
+
+Every step must show exact code. "Implement the feature", "add appropriate error handling", and "write tests as needed" are not steps — they are abdications. If the exact code is not known, it must be derived from the spec and documented as a concrete choice, not deferred as a TBD.
+
+</no_placeholders_rule>
