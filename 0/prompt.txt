@@ -1,0 +1,25 @@
+<task-notification>
+<task-id>a0e0f41c3cf5d63d6</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/0c4c4622-1ed8-4f2c-80e6-f0890a2dad72/tasks/a0e0f41c3cf5d63d6.output</output-file>
+<status>completed</status>
+<summary>Agent "Review location_matches root-pathspec fix" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Review: PASS
+
+**1-2. Fix correctness.** `location_matches` now short-circuits `spec.as_path() == Path::new(".")` before the prefix/equality checks. This only fires when a pathspec is *exactly* `.` — it's a per-spec disjunct inside `.any()`, not a global bypass, so a non-trivial pathspec like `"crates/pkg-a"` is completely unaffected; it still goes through `changed_path == spec || changed_path.starts_with(spec)` as before. Confirmed by the still-passing `test_commits_since_with_pathspec_filters_by_changed_path` / `..._excludes_unrelated_paths` tests, which exercise real prefix filtering with non-dot pathspecs.
+
+**3. Provenance of `"."`.** Traced every producer of pathspecs reaching `commits_since_with_pathspec`/`commits_since`: the only path is `aggregate::aggregate` → `crate::changed::package_paths(pkg)` (crates/callisto-graph/src/changed.rs:9-21), which inserts `PathBuf::from(".")` exactly when a manifest's parent directory is empty (root-level manifest). `fetch_commits` (callisto-conventional/src/window.rs) and `InferenceWindowSpec` just forward whatever `aggregate.rs` supplies — no other caller constructs a literal `.` PathBuf as a pathspec anywhere in the workspace (grepped all `PathBuf::from(".")` occurrences; the rest are `ShellGit::new(&amp;runner, PathBuf::from("."))` root-dir args or unrelated test fixture paths, not pathspecs). No ambiguity found.
+
+**4. Test validity.** `test_commits_since_with_pathspec_root_sentinel_matches_root_level_files` builds a real temp git repo via `init_repo`/`run_git`, makes two real commits touching root-level `Cargo.toml`, discovers it with `GitRepository::discover`, and calls the real `commits_since_with_pathspec(None, &amp;[PathBuf::from(".")])` — which internally exercises `change_matches_pathspecs` → `location_matches`. No mocking; it's the real code path.
+
+**5. Test/lint runs (all executed, read-only).**
+- `cargo test -p callisto-vcs --lib`: 39 passed, 0 failed.
+- `cargo test -p callisto-cli --lib --features inference`: 49 passed, 0 failed, including `version_uses_real_commit_inference_when_feature_enabled`.
+- `cargo clippy -p callisto-vcs --all-targets --tests -- -D warnings`: clean (Finished, zero warnings).
+
+**6. Sibling-gap check.** `crates/callisto-vcs/src/shell.rs`'s `ShellGit::commits_since` (lines 150-179) builds `--` `&lt;pathspec&gt;` args and shells out directly to the real `git log` binary — it does no Rust-side path comparison at all, so it's immune to this bug class by construction. No other pathspec-matching code exists in the workspace.
+
+No overreach, no missed producers, no sibling gaps. Recommend merging as-is into PR #13.</result>
+<usage><subagent_tokens>63135</subagent_tokens><tool_uses>14</tool_uses><duration_ms>59244</duration_ms></usage>
+</task-notification>
