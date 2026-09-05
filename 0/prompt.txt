@@ -1,0 +1,5 @@
+<task-notification>
+<task-id>bah0u04ay</task-id>
+<summary>Monitor event: "wait for clippy on probe_git wiring"</summary>
+<event>[Monitor timed out — re-arm if needed.]</event>
+</task-notification>
