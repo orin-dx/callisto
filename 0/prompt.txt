@@ -1,0 +1,43 @@
+<task-notification>
+<task-id>a8fd38dd3f839ca71</task-id>
+<tool-use-id>toolu_01RBYgC5BBtLpJWQfK8QqpXb</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a8fd38dd3f839ca71.output</output-file>
+<status>completed</status>
+<summary>Agent "Final audit of Track 3a amendment" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I performed a fresh, full read of the spec file (all 34 acceptance criteria, all `api_surface` entries, `scope`, `non_goals`, and `revision_note`) and did the requested two-part check.
+
+**Part (a) — verifying the round-2 fix to AC-13.**
+
+I read AC-13's body directly. The inserted AC-10 fixture reads:
+
+&gt; "...a root package.json with \"workspaces\": [] (present, empty array, no \"name\" field) alongside at least one other package.json elsewhere in the tree (asserting AC-10's zero-Npm-entries behavior: projects() returns zero Npm-ecosystem entries because the root package has no name field and is therefore not an AC-16-style hybrid-exempt member); a pnpm-workspace.yaml declaring `packages: []`..."
+
+This is a grammatically clean semicolon-delimited list item, structurally identical to its siblings, and it sits correctly before the existing AC-10b sentence. It also genuinely proves AC-10's claim: by explicitly specifying "no name field," it isolates AC-10's pure zero-entries assertion from the AC-16 hybrid-exempt carve-out (which is separately and correctly proven by AC-10d's own fixture later in the same body). I cross-checked AC-13's full header list (12 IDs) against its body programmatically — every ID now has a corresponding `asserting AC-XX` fixture. Fix (a) is correct and complete.
+
+**Part (b) — fresh 5-dimension sweep of all 34 criteria.**
+
+I verified structurally: no duplicate/orphan criterion IDs (34 unique), full coverage of all criteria across the three regression-fixture groups (AC-12/AC-13/AC-14) with every header ID backed by a body fixture, no vague/untestable language (`appropriately`, `correctly`, `robust`, etc. — none found), and consistent malformed-input/error-case coverage across all three ecosystems (Cargo, npm, pnpm) with symmetric fallback rules.
+
+I found one genuine, narrow, mechanical defect:
+
+**AC-17 contains a literal embedded newline character**, unlike every one of its 33 siblings (AC-04, AC-08, AC-10b, and AC-13's own restatement of the AC-17 fixture), which all represent YAML source text via the literal two-character escape `\n` inside backticks (e.g. `` `packages:\n  - "packages/*"` `` rendering as literal text). AC-17's JSON source instead has an actual `\n` escape decoding to a real newline character mid-sentence, splitting the criterion into two lines: `...and declares packages:` / `  - "packages/*" (a glob that does not itself match ".")`. This breaks the spec's own stated convention (the `reasoning` field notes fixture literals are meant to be "restated in full... verbatim") and would corrupt the criterion if quoted or copied into a test docstring or report.
+
+```json
+{
+  "issues": [
+    {
+      "criterion_id": "AC-17",
+      "type": "incomplete",
+      "description": "AC-17's criterion text contains an actual embedded newline character (JSON escape \\n decoding to a real line break) between 'declares packages:' and '  - \"packages/*\"', unlike every sibling fixture in this document (AC-04, AC-08, AC-10b, and AC-13's own restatement of this same AC-17 fixture), which all use the literal two-character sequence backslash+n inside backticks to denote YAML source text without breaking the JSON string itself. This is a leftover editing slip from when AC-17 was added in round 11 that was never corrected to match the established convention, and it causes the criterion to render as two broken lines wherever it is displayed or quoted verbatim (which this spec's own reasoning field states is the intended use of fixture literals).",
+      "suggested_fix": "Given a root package.json declaring \"name\": \"root-package\" and a sibling pnpm-workspace.yaml that exists, parses successfully, and declares `packages:\\n  - \"packages/*\"` (a glob that does not itself match \".\"), calling IgnoreWalkLocator::new(root).projects() returns an entry with path == \".\" and ecosystem == Ecosystem::Npm for the root's own package, in addition to any entries discovered under packages/* — the root package's identity, declared in package.json's \"name\" field, is never silently dropped merely because the governing pnpm-workspace.yaml's packages: list contains no entry matching \".\", exactly analogous to AC-07's Cargo exemption and AC-16's npm-workspaces-governed exemption, extended to the pnpm-governed case."
+    }
+  ],
+  "overall": "fail",
+  "reasoning": "AC-13's round-2 fix is verified correct: grammatically sound insertion, structurally consistent with siblings, and it genuinely proves AC-10's zero-entries claim in isolation from AC-16's hybrid-exempt carve-out (which AC-10d proves separately). Full fresh sweep of all 34 criteria found the coverage groups (AC-12/AC-13/AC-14) complete and internally consistent (every header ID has a body fixture, verified programmatically), no vague/untestable language, symmetric error-case handling across Cargo/npm/pnpm, and no new scope-overlap gaps beyond the two already flagged in non_goals. One concrete, narrow, mechanical defect found: AC-17 has a real embedded newline character where every sibling criterion uses the escaped literal-text convention, breaking the sentence when rendered or quoted verbatim. This is exactly the class of small, concrete, directly-verifiable issue the prior two rounds also caught, so it is reported rather than waved through despite the spec's accumulated scrutiny."
+}
+```
+
+The spec file at `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/spec-track3a-workspace-membership-v2.json` is not clean — one fix (`AC-17`'s embedded newline, criterion index 30, byte offset 149 within its `criterion` string) is needed before this can pass.</result>
+<usage><subagent_tokens>83544</subagent_tokens><tool_uses>10</tool_uses><duration_ms>184965</duration_ms></usage>
+</task-notification>
