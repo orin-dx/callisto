@@ -1,0 +1,46 @@
+<task-notification>
+<task-id>a3b6b1774ff25dddd</task-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/bb531e8d-c394-4e47-a8ae-e4a9ceeca6d2/tasks/a3b6b1774ff25dddd.output</output-file>
+<status>completed</status>
+<summary>Agent "Exit-gate Track 1 implementation" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Verdict: PASS
+
+```json
+{
+  "verdict": "pass",
+  "confidence": "high",
+  "blockers": [],
+  "verdict_summary": "All 16 acceptance criteria implemented and covered by real-call-path tests. 975 workspace tests pass; clippy, fmt, doc, wasm clean. cargo-mutants completed: zero survivors in changed code, 8/8 mutants in the new Fixed-group block killed. Gap: GroupTable::from_groups lacks resolve's conflict check.",
+  "artifact_type": "changeset@1",
+  "retry_count": 0
+}
+```
+
+Schema-validated against `/Users/gabe/.claude/plugins/marketplaces/orin-dx-agent-plugins/shared/schemas/verdict@1.json`.
+
+### The mutation-testing report I was given was wrong
+
+I was told lambda-mutator's run "did not complete" and to record it as `tool_unavailable`. That was false. The `cargo-mutants` process (PID 11538) was **still alive and running**, correctly scoped to exactly the four changed files. I let it finish rather than record a gap that didn't exist. It completed all 113 outcomes:
+
+**42 caught, 32 timeout, 10 unviable, 28 survivors — and all 28 survivors are in pre-existing untouched code**: `cascade_action` (9, explicitly Track 9's scope per the spec's non_goals), `caret_covers` (8), `coverage` (1), and pre-existing `solve_cascade` regions at lines 195-336 (10). **Zero survivors in the new Fixed-group block, version.rs, snapshot.rs, or config/groups.rs.**
+
+I checked that this wasn't vacuous — "no survivors" is worthless if no mutants were generated. **8 mutants were generated inside the new block (lines 384-434) and all 8 were detected.** The strongest evidence: mutants at lines 333 and 336 in the *pre-existing* Linked-group block **survived**, while their exact structural analogues at 404 and 407 in the new mirrored block **did not**. The new tests are strictly stronger than the code they were modeled on. The manual break-it-and-check verification is corroborated, not merely accepted.
+
+### Two traps I had to avoid
+
+**The exit code lied.** My first `cargo test ... | tail -60` returned exit 0 — but a pipeline returns *its last command's* status, so that 0 came from `tail`, not `cargo`. It was not evidence of anything. Re-run with `pipefail`: 361 lib tests + 22 suites, 0 failed, **0 ignored**. Same issue recurred on clippy and the workspace run, so I re-ran each capturing the true status directly: clippy exit 0 with zero warning lines, workspace **975 passed / 0 failed** across 54 suites, fmt/doc/wasm all exit 0.
+
+**Pointers are not proof.** Rather than confirm the evidence pointers resolved, I checked whether the code at each location does what the criterion requires. The AC-001 test is genuinely *discriminating*: pre-fix it yields A=2.1.0/B=0.2.0 and fails on B. AC-012's "no assertions altered" I verified mechanically — the entire 12-commit range is **844 insertions and exactly one deletion**, and that deletion is `ws.tags()?,`, the inline-arg replacement AC-009 mandates. I also confirmed the AC-005 test isn't vacuous: if its packages weren't discovered, `Workspace::load` would fail on `MissingGroupMember` before the assertion loop.
+
+### Gaps recorded (none blocking)
+
+1. **Sibling gap:** `GroupTable::from_groups` (`/Users/gabe/Projects/callisto/crates/callisto-graph/src/config/groups.rs:259-289`) is a third, `pub`, re-exported membership-building path with **no conflict check**. Test-only today, so not a spec violation — the spec scoped the fix to `resolve` — but it can construct a `GroupTable` violating the invariant `resolve` now enforces.
+2. **Newly-reachable pre-existing defect:** `fixed_group_target` hardcodes `SemVerVersioning`. The spec non-goals this, but wiring the block in changes its blast radius. In `plan_version` a mixed-grammar group is caught by `pre_mutation_checks` first; `plan_snapshot` deliberately does *not* call that check (AC-006), so a homogeneous all-PEP440 fixed group can now reach `SemVerVersioning.bump` and return `Err` — a failure path in `plan_snapshot` that did not exist before.
+3. **Semver-breaking public API:** `CascadeInput` gained a required field and is re-exported from publishable `callisto-graph`. No in-workspace breakage (only two production construction sites, both updated), but external consumers break.
+4. **Not run:** `moon run :audit` and the coverage-threshold gate.
+5. **Test-robustness nits:** the AC-005 test asserts a version *prefix* rather than equality to one shared version and has no non-emptiness guard; the AC-014 test asserts only `is_err()` without pinning the variant, so an unrelated failure would satisfy it.
+
+One caveat on my own method: my parallel clippy/test runs contended for CPU during the mutation run, so the 32 timeouts are less crisply attributable than the caught/survived buckets. This does not affect the survivor count, which is what the verdict rests on.</result>
+<usage><subagent_tokens>138714</subagent_tokens><tool_uses>80</tool_uses><duration_ms>3905205</duration_ms></usage>
+</task-notification>
