@@ -1,0 +1,46 @@
+<task-notification>
+<task-id>a25d2006aeffa1c69</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/tasks/a25d2006aeffa1c69.output</output-file>
+<status>completed</status>
+<summary>Agent "Read-only review of probe_git removal decision" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Review: deletion of `probe_git`/`locate::git.rs`
+
+I read the diff directly (`git diff`), independently verified every claim in the reasoning, and ran build/clippy/test myself rather than trusting reported numbers.
+
+### Verification results
+
+**1. Was deletion the right call, or should probe_git have been wired in?**
+I could not find a smaller/cleaner wiring point than the one already considered and rejected. Grep of every `GitAccess::discover` and `GitRepository::discover` call site confirms there are 10 independent call sites across `crates/callisto-graph/src/{changed.rs,tags.rs,aggregate.rs (x2),infer.rs,commands/tag.rs,commands/publish.rs,commands/snapshot.rs}` and `crates/callisto-conventional/src/window.rs` — no funnel point exists. `Workspace::load` (`crates/callisto-graph/src/lib.rs:86`) does not touch git at all today; the `tags: OnceCell&lt;TagIndex&gt;` field and its accompanying test `workspace_load_does_not_build_tag_index_until_tags_is_called` (which I ran and confirmed passes) is direct, executable evidence for the stated lazy-cost philosophy — adding an eager git-version probe to `Workspace::load` would contradict a philosophy the codebase already enforces with a test. `GitAccess::discover`'s doc comment literally says "Never fails" and returns `Self` (not `Result`) — verified by reading `crates/callisto-vcs/src/access.rs:44-52`. Making it fallible is a real signature-breaking change across 8+ call sites, not a mechanical wire-in. Agree with the deletion.
+
+**2. "No version-gated flag" claim** — independently verified by reading `crates/callisto-vcs/src/shell.rs`. All git invocations are: `rev-parse HEAD`, `tag --list`, `rev-parse --verify --quiet &lt;rev&gt;`, `log --no-merges --format=...`, `tag [-a] &lt;name&gt; [-m &lt;msg&gt;] &lt;sha&gt;`, `tag -f &lt;name&gt; &lt;sha&gt;`. None of these require anything close to 2.20 — `--format=` on `log`, `rev-parse --verify --quiet`, and `tag -f` are all long-ancient git features. Claim holds.
+
+**3. `check_moon_version` precedent** — read `crates/callisto-moon/src/extension.rs:16-33` in full. Confirmed: has an explicit doc comment explaining deliberate non-wiring (moon negotiates version compatibility out-of-band), has its own passing test (`test_moon_version_check`), and zero production callers. Genuine parallel to `check_git_version`, which likewise has zero production callers now and its own test (`parses_git_version`, exec.rs:128-133). Precedent is accurate.
+
+**4. No breakage** — ran myself:
+- `cargo build --workspace --all-targets` — clean, no errors.
+- `cargo clippy -p callisto-graph --all-targets -- -D warnings` — clean.
+- `cargo test -p callisto-graph` — all suites pass (18+3+1+3+5+2 tests, 0 failures).
+- Grepped the whole workspace for `probe_git`, `locate::git`, `mod git` — the only hit is an unrelated `pub mod git;` in `crates/callisto-fixtures/src/lib.rs` (a fixtures crate for git test doubles, not this module). No dangling references.
+
+**5. Scope check** — `git diff -- crates/callisto-model/src/exec.rs` returns empty. `check_git_version`, `CommandError::IncompatibleVersion`, and `REQUIRED_GIT` are byte-for-byte untouched, and grepping the whole workspace for those three symbols outside `exec.rs` returns nothing — confirms they have no other production caller either (consistent, not a red flag, given the check_moon_version precedent).
+
+### Findings
+
+No must_fix or suggestion issues. No sibling gaps — the module is fully removed (both the file and its two references in `mod.rs`), there is no partial deletion leaving a dangling re-export or orphaned test.
+
+```json
+{
+  "status": "approved",
+  "issues": [],
+  "sibling_gaps": [],
+  "reasoning": "Deletion is the correct call, not a corner cut. Verified independently: (1) no funnel point exists for wiring — 10 independent GitAccess::discover/GitRepository::discover call sites, confirmed by grep; (2) GitAccess::discover is documented 'Never fails' and returns Self not Result, so wiring a fallible probe there is a real breaking-change project, not a mechanical fix; (3) Workspace::load's existing lazy-cost philosophy is enforced by a passing test (workspace_load_does_not_build_tag_index_until_tags_is_called), so eager wiring there would violate an already-tested invariant; (4) grepped all git invocations in shell.rs myself — none require &gt;=2.20, the floor is unconnected to any real capability; (5) check_moon_version precedent verified by reading extension.rs in full — same shape (doc-commented deliberate non-wiring, standalone test, zero production callers); (6) cargo build/clippy/test all run fresh and pass; (7) exec.rs diff is empty, confirming check_git_version/IncompatibleVersion/REQUIRED_GIT untouched and, per grep, still have zero other callers, which is consistent with the moon precedent rather than a red flag. No must_fix issues, no sibling gaps."
+}
+```
+
+**Files reviewed:** `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/git.rs` (deleted), `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/mod.rs`, `/Users/gabe/Projects/callisto/crates/callisto-model/src/exec.rs`, `/Users/gabe/Projects/callisto/crates/callisto-vcs/src/access.rs`, `/Users/gabe/Projects/callisto/crates/callisto-vcs/src/shell.rs`, `/Users/gabe/Projects/callisto/crates/callisto-moon/src/extension.rs`, `/Users/gabe/Projects/callisto/crates/callisto-graph/src/lib.rs`.
+
+No concerns. This was a genuine judgment call correctly resolved toward deletion, with the reasoning independently falsifiable and holding up under adversarial check.</result>
+<usage><subagent_tokens>62368</subagent_tokens><tool_uses>18</tool_uses><duration_ms>333550</duration_ms></usage>
+</task-notification>
