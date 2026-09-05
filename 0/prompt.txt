@@ -1,0 +1,52 @@
+<task-notification>
+<task-id>a01713645a79c3c81</task-id>
+<tool-use-id>toolu_01Qg65NUnNr3js8As65i4V5q</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/b90cda92-db13-4c63-8d7f-c9fa7d9196ab/tasks/a01713645a79c3c81.output</output-file>
+<status>completed</status>
+<summary>Agent "Exit-gate SPEC-007" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>**Verdict: FAIL**
+
+```json
+{
+  "verdict": "fail",
+  "confidence": "high",
+  "artifact_type": "spec@1",
+  "retry_count": 1,
+  "verdict_summary": "Three of four prior fixes landed; AC-002's ConfigError pin is wrong against the real enum shape. Five blockers: AC-002 field contradiction, undefined RawGitHubReleaseAsset, AC-006/007/008 missing release-eligibility precondition, scope items (4)/(5) with no criteria, AC-012 untestable clause.",
+  "blockers": [
+    {
+      "criterion": "AC-002",
+      "location": "spec acceptance_criteria AC-002; crates/callisto-graph/src/error.rs:254; crates/callisto-graph/src/config/resolve.rs:167-171,397-403",
+      "finding": "AC-002 requires `key` to name \"both the malformed field and the `callisto.toml` path\". The real variant is `ConfigError::UnknownKey { path: PathBuf, key: String }`, and the established construction the spec claims to mirror sets `path: callisto_toml` and `key: \"[[package]] publish-to: {key}\"` — the manifest path lives in `path`, never inside `key`. An implementer must guess which reading to satisfy. Separately, AC-002 asserts a single variant for three distinct malformations (missing key, empty string, non-string type); a non-string value fails during TOML deserialization into the raw type, before `parse_github_release_assets` can run, so the criterion is unsatisfiable as written for that third case. Required change: rewrite AC-002 as `Err(ConfigError::UnknownKey { path, key })` with `path == &lt;the callisto.toml path&gt;` and `key == \"[[package]] github-release-assets: &lt;field&gt;\"`, and either restrict the criterion to missing-key and empty-string cases or state that the raw type deserializes each field as `Option&lt;toml::Value&gt;` so wrong types reach the parse function."
+    },
+    {
+      "criterion": "api_surface: parse_github_release_assets",
+      "location": "spec api_surface entry 4",
+      "finding": "The signature `parse_github_release_assets(raw: &amp;[RawGitHubReleaseAsset], manifest_path: &amp;Path)` names a type `RawGitHubReleaseAsset` that is defined nowhere in the spec — no crate, no file, no fields, no derives. This type determines whether AC-002's malformation cases are detectable at all (see prior blocker), so it cannot be left to the implementer. Required change: add an api_surface entry defining `RawGitHubReleaseAsset` — its file (`crates/callisto-graph/src/config/resolve.rs`), its derives, and its three fields with exact types chosen so missing/empty/wrong-typed values all survive to the parse function rather than aborting in serde."
+    },
+    {
+      "criterion": "AC-006, AC-007, AC-008",
+      "location": "spec acceptance_criteria AC-006/AC-007/AC-008 vs api_surface entry 5; crates/callisto-graph/src/commands/publish.rs:296-319,517-520",
+      "finding": "The api_surface entry for `GraphError::MissingGitHubReleaseAssets` scopes the error to \"a release-eligible package\". AC-006 and AC-007 state it unconditionally: any package with `publish-to = [\"github-release\"]` and no assets makes \"the run fail outright\". These are different features. The `PublishTarget` dispatch match runs only inside `if is_release` (publish.rs:296), so a package with no pending bump whose version matches its last tag never reaches dispatch. Implemented per AC-006's literal text, every `plan-publish` run in a repo aborts as soon as one package declares github-release without assets, even when that package is not releasing. Required change: add the precondition to AC-006, AC-007 and AC-008 — e.g. \"Given a package that is release-eligible (`is_release == true`: it has a version bump in the plan, or its current version does not match its last tag) and is configured with ...\" — and add a new criterion asserting the negative: a package with `publish-to = [\"github-release\"]`, no assets, and `is_release == false` produces no error and no `ReleaseEntry`."
+    },
+    {
+      "criterion": "scope items (4) and (5)",
+      "location": "spec `scope` field",
+      "finding": "The auditor's third fix added the schema-guard-test and docs.md work to `scope` prose only; no acceptance criterion gates either. Every other scope layer has criteria (layer 1 → AC-001/AC-009, layer 2 → AC-003..AC-008, layer 3 → AC-010..AC-012/AC-014), so a planner has nothing to attach a task to for (4) and (5) and they will be dropped. The scope string also still opens with \"Three layers.\" before enumerating five items — evidence the fix was appended without reconciling. Required change: (a) change \"Three layers.\" to \"Five items across three code layers plus test and docs updates.\"; (b) add AC-015 asserting `ac13_report_struct_field_shapes_are_unchanged` expects `ReleaseEntry` props == {assets, changelogSection, isPrerelease, package, sha, tagName} with required unchanged at {isPrerelease, package, sha, tagName} (verified: `#[serde(default)]` keeps `assets` out of `required`, and the test asserts no top-level `definitions` key set, so the new `GitHubReleaseAsset` definition breaks nothing else); (c) add AC-016 asserting `docs/01-spec.md`'s `ReleaseEntry` doc block documents `assets: Vec&lt;GitHubReleaseAsset&gt;` and that the decision table gains a row 25 after line 2675 with row 24's text byte-identical."
+    },
+    {
+      "criterion": "AC-012",
+      "location": "spec acceptance_criteria AC-012",
+      "finding": "The clause \"or one whose `assets` resolves empty under a hypothetical bypass of AC-006/AC-007's hard error\" describes a scenario the spec elsewhere makes unreachable, and \"hypothetical bypass\" is not a state a tester can set up from the Rust side. The action-layer harness consumes hand-written `PLAN_JSON` (`.github/actions/callisto-action/tests/test_github_release_creation.sh`), so the real testable statement is about the JSON, not about a bypassed error. Required change: replace the criterion's given-clause with \"Given a `PublishPlan` JSON whose `ReleaseEntry` has no `assets` key, and a second whose `assets` is `[]`, ...\" and drop the bypass clause entirely."
+    }
+  ],
+  "reasoning": "Re-verified all four prior fixes against disk. AC-014 landed correctly and is consistent with api_surface entry 6's `|| { echo ...; exit 1; }` wrapper. Scope (4)/(5) landed as prose but without criteria. The non_goals trim landed — all twelve entries are single-fact. AC-002's pin landed but pins to the wrong field decomposition. No TBD/TODO/??? strings anywhere (grep exit 1). Verified against source: ReleaseEntry at plan.rs:110-120 matches; PlatformTargetKind has exactly Napi/Maturin (matrix.rs:49-54); has_dispatchable_target and the release-eligibility gate at publish.rs:317/517-519 are described accurately; the GitHubRelease arm's PublishTargetNotImplemented push is at publish.rs:359-374; action.yml's release loop at 213-234 and the SPEC-006 `gh run download || { ...; exit 1; }` pattern at 177 are both accurate; docs row 24 is exactly at line 2675. Scope fits one planning cycle — comparable to SPEC-005/006, coherent single feature, no split needed. Non-blocking note for the drafter: scope writes the upload as `gh release upload \"$TAG\" \"$ARTIFACT_PATH\"#\"$ASSET_NAME\"` while api_surface entry 6 writes `\"$ASSET_PATH#$ASSET_NAME\"` — functionally equivalent, but pick one variable name."
+}
+```
+
+**What I verified beyond the four reported fixes** (all accurate as stated in the spec): `ReleaseEntry` shape at `/Users/gabe/Projects/callisto/crates/callisto-model/src/plan.rs:110-120`; `PlatformTargetKind`'s two variants at `/Users/gabe/Projects/callisto/crates/callisto-model/src/matrix.rs:49-54`; `has_dispatchable_target` and the release-eligibility gate at `/Users/gabe/Projects/callisto/crates/callisto-graph/src/commands/publish.rs:317` and `:517-519`; the `PublishTargetNotImplemented` arm at `:359-374`; `action.yml:213-234` and the SPEC-006 failure pattern at `:177`; docs row 24 at `/Users/gabe/Projects/callisto/docs/01-spec.md:2675`. A real shell harness exists at `/Users/gabe/Projects/callisto/.github/actions/callisto-action/tests/test_github_release_creation.sh`, so AC-010/011/012/014 are mechanically testable.
+
+The fix that did not land correctly is AC-002 — it now pins a variant, but pins the wrong field decomposition against `ConfigError::UnknownKey { path, key }`.</result>
+<usage><subagent_tokens>67434</subagent_tokens><tool_uses>16</tool_uses><duration_ms>241975</duration_ms></usage>
+</task-notification>
