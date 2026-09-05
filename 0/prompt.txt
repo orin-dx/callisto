@@ -1,0 +1,20 @@
+<task-notification>
+<task-id>a9cdf364d1f6819ee</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a9cdf364d1f6819ee.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix Track 3a spec gap, round 8" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Both round-7 canon-auditor fixes have been applied to SPEC-TRACK3A-WORKSPACE-MEMBERSHIP and the file overwritten at the same path:
+
+`/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/spec-track3a-workspace-membership.json`
+
+Changes made (nothing else touched):
+
+1. **Missing-error-case (Cargo exclude glob-compile-failure untested)**: Added `AC-09i` (is_error_case: true) with the exact fixture specified — `members = ["crates/*"]`, `exclude = ["crates/scratch-example", "crates/[unterminated"]`, proving crates/scratch-example is excluded, crates/kept-example is included, and the invalid exclude entry never-matches without panicking or erroring the walk. Extended `AC-14`'s criterion-group list and fixture prose to name AC-09i alongside AC-09f/g/h. Updated the glob-matching-semantics `api_surface` entry's citation to `(see AC-09f for Cargo members, AC-09i for Cargo exclude, AC-09g for npm workspaces, AC-09h for pnpm packages)`.
+
+2. **Incomplete (pnpm negation-prefix syntax unaddressed)**: Added the specified `non_goals` entry documenting that `!`-prefixed `packages:` entries are passed to `globset::GlobBuilder` unmodified, are functionally inert (no real path begins with `!`), and that pnpm's negation semantics are out of scope, tracked as a follow-up — matching the treatment already given to Yarn Berry object-form and Python monorepo mechanisms.
+
+`revision_note` was updated to describe this eighth correction round (both findings, with rationale), with all prior round history preserved beneath it as before. The JSON was validated as parseable (29 acceptance criteria, AC-09i confirmed present).</result>
+<usage><subagent_tokens>83230</subagent_tokens><tool_uses>9</tool_uses><duration_ms>60367</duration_ms></usage>
+</task-notification>
