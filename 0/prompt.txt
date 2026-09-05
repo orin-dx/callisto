@@ -1,0 +1,3 @@
+For #1 we need a simple config and unique naming patterns. I was thinking the name in the config and the publish method are unique enough to match right?
+
+I need more details on decision 2 to help here. Seems like the GH action should be mostly calling the cli and acting on it right? less parsing?
