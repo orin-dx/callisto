@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bydsh7qv6</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/bb531e8d-c394-4e47-a8ae-e4a9ceeca6d2/tasks/bydsh7qv6.output</output-file>
+<status>completed</status>
+<summary>Background command "Full callisto-cli suite, fmt, clippy for T2" completed (exit code 0)</summary>
+</task-notification>
