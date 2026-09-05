@@ -1,0 +1,32 @@
+<task-notification>
+<task-id>bugzkbkzt</task-id>
+<summary>Monitor event: "wait for full callisto-cli lib test suite green"</summary>
+<event>test runner::tests::run_with_timeout_stderr_is_fully_captured_after_streaming ... ok
+test runner::tests::run_with_timeout_returns_output_for_fast_process ... ok
+test runner::tests::run_with_timeout_kills_slow_process_and_returns_timed_out ... ok
+test runner::tests::run_with_timeout_still_streams_stderr_live ... ok
+test runner::tests::run_with_timeout_caps_accumulated_stderr_with_no_newlines_and_still_drains_the_pipe ... ok
+Version Plan (schema v1):
+pkg-alpha 1.0.0 → 1.1.0
+test commands::version::tests::version_text_output_includes_package_name_and_versions ... ok
+test commands::version::tests::handle_dry_run_text_output_carries_the_dry_run_marker_and_writes_nothing ... ok
+test commands::version::tests::version_json_output_is_valid_json_with_expected_structure ... ok
+{
+"schemaVersion": 1,
+"snapshotTag": "0.0.0-canary-6e14ab5",
+"bumps": [
+{
+"package": "pkg-a",
+"from": "0.1.0",
+"to": "0.0.0-canary-6e14ab5",
+"severity": "patch"
+}
+]
+}
+test commands::snapshot::tests::handle_without_dry_run_applies_the_snapshot_for_real ... ok
+test runner::tests::run_with_timeout_bounds_reader_join_when_descendant_holds_pipe_open ... ok
+test runner::tests::run_with_timeout_warns_on_timeout_branch_when_descendant_holds_pipe_open ... ok
+test result: ok. 80 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.96s
+[exited with code 0]</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
