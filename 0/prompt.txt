@@ -1,0 +1,67 @@
+<task-notification>
+<task-id>ae0db0cc60f418148</task-id>
+<tool-use-id>toolu_012ecZ4DxE3ocF9NF3hCxAdD</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/bb531e8d-c394-4e47-a8ae-e4a9ceeca6d2/tasks/ae0db0cc60f418148.output</output-file>
+<status>completed</status>
+<summary>Agent "Verify Track 9 spec grounding" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All the load-bearing claims in the spec's `reasoning` and `api_surface` check out against live code: `edge.to.name().to_string()` at cascade.rs:277 inside `if d.rewrite` (line 259), the `eco` binding at line 260 computed from `edge.from.ecosystem()`, `native_name(&amp;self, id: &amp;PackageId, eco: Ecosystem) -&gt; Option&lt;&amp;str&gt;` at identity.rs:493, and both real `CascadeInput` construction sites confirmed at version.rs:73 and snapshot.rs:54. The Workspace-field deviation is also verified: `ManifestWalkResolver::identity()` exists at resolver.rs:41, and `graph.identity()` is already called live in lib.rs:109 and :116 for `GroupTable::resolve` and `promoted_siblings` — so the drafter's correction (using `ws.graph.identity()` instead of adding a duplicate `Workspace.identity` field) is a legitimate, evidence-based deviation that still delivers the observable outcome the requirement's done_when items (4) and (5) care about (CascadeInput gains the field; it's populated from the graph's already-computed IdentityIndex without a trait-bound change).
+
+Now producing the verification report for the 7 acceptance criteria against requirement@1 (no research-report@1 was supplied for this task).
+
+```json
+{
+  "supported": [
+    {
+      "criterion_id": "AC-001",
+      "evidence": "done_when[0]: 'Given a dual-identity package D and a dependent package whose manifest is in a DIFFERENT ecosystem than one of D's registrations, declaring an out-of-range dependency spec on D that solve_cascade decides to rewrite, the resulting RewriteKey.name equals D's native name AS REGISTERED for the dependent manifest's own ecosystem (looked up via IdentityIndex::native_name), not D's PackageId::name().'",
+      "source": "requirement@1"
+    },
+    {
+      "criterion_id": "AC-002",
+      "evidence": "done_when[1]: 'This holds through the real, live call path: crate::cascade::run_cascade / solve_cascade, not just an isolated call to IdentityIndex::native_name directly.'",
+      "source": "requirement@1"
+    },
+    {
+      "criterion_id": "AC-003",
+      "evidence": "done_when[2]: 'Given a target package for which IdentityIndex::native_name(id, eco) returns None for the dependent manifest's ecosystem (the common, non-dual-identity case), the rewrite key falls back to PackageId::name() exactly as today -- this must be a pure, zero-regression fallback for every existing non-dual-identity workspace.'",
+      "source": "requirement@1"
+    },
+    {
+      "criterion_id": "AC-004",
+      "evidence": "done_when[5]: 'Given an ordinary, real dependency-spec rewrite scenario with no dual-identity package involved anywhere in the workspace (the common case, exercised by this repo's existing cascade/rewrite test suite), the rewrite key, the resulting manifest write, and every existing test's assertions are byte-for-byte unchanged from before this fix -- a genuine, verified regression-proof, not an assumption.'",
+      "source": "requirement@1"
+    },
+    {
+      "criterion_id": "AC-005",
+      "evidence": "done_when[3]: 'CascadeInput gains an `identity: &amp;IdentityIndex` field. Both real construction sites are updated to supply it: commands/version.rs and commands/snapshot.rs.' The 'compile fails if omitted' framing and the specific accessor mechanism (ws.graph.identity() rather than a new Workspace field) are the spec's own verified-against-code deviation from done_when[4] (see reasoning field), not an unsupported addition -- the observable requirement (both sites supply the field) is still directly cited.",
+      "source": "requirement@1"
+    },
+    {
+      "criterion_id": "AC-006",
+      "evidence": "done_when[6]: 'The specific failing scenario named in the bug report -- a real Cargo+npm co-located dual-identity package with a cross-ecosystem dependent whose spec needs rewriting -- is proven, end-to-end through apply_version_plan (not just solve_cascade in isolation), to succeed (no Err(ManifestError::DependencyNotFound)) and to write the CORRECT manifest key after this fix, where it previously failed.' Also supported by the statement field describing the same failure mode (Err(ManifestError::DependencyNotFound), aborting apply_version_plan).",
+      "source": "requirement@1"
+    }
+  ],
+  "unsupported": [
+    {
+      "criterion_id": "AC-007",
+      "note": "No passage in requirement@1 mentions PackageId::Bare, panic/unwrap-safety, or a distinct code path for bare (untagged) package identifiers. The requirement's done_when items only describe the dual-identity-registered case (done_when[0]) and the 'returns None' fallback case (done_when[2]), which is general over 'target package' without singling out PackageId::Bare as a special sub-case requiring its own non-panic guarantee. This criterion appears to be the drafter's own defensive addition -- plausible given native_name's Option-returning signature and the existing Bare variant in the codebase, but there is no direct citation for it in the requirement. Per the judgment standard, plausibility from domain knowledge is not evidence, so this is classified unsupported rather than inferred as in-scope."
+    }
+  ],
+  "overfitted": [],
+  "reasoning": "No research-report@1 was provided as an input artifact for this verification task -- only requirement@1 was supplied, so all citations are checked against requirement@1 only. AC-001 through AC-006 map close to 1:1 onto the requirement's six done_when bullets in order, each citing a specific, non-paraphrased clause. AC-005 required extra scrutiny because the spec's own reasoning field documents a deliberate deviation from done_when[4] ('Workspace gains an identity: IdentityIndex field... populated at Workspace::load time'): the spec instead threads ws.graph.identity() directly at both call sites with no new Workspace field. I independently verified this against live code -- ManifestWalkResolver::identity() exists at resolver.rs:41 (pub fn identity(&amp;self) -&gt; &amp;IdentityIndex), and Workspace::load already calls graph.identity() at lib.rs:109 and lib.rs:116 for GroupTable::resolve and promoted_siblings, confirming Workspace::load is non-generic over D (ManifestWalkResolver concrete) as the spec claims. This means the deviation is evidence-based and correct on the facts, and AC-005 as written ('CascadeInput gains a required identity field... supplied via ws.graph.identity()... compile fails if omitted') still tests the OBSERVABLE outcome the requirement's done_when[3]-[4] jointly care about: CascadeInput has the field, both real sites populate it from the graph's live IdentityIndex, with no duplicate/stale copy. So AC-005 is classified supported rather than overfitted, since the requirement's own done_when items describe an internal mechanism (a new Workspace field) that turned out to be unnecessary given code already present -- the criterion doesn't narrow the requirement's observable commitment, it corrects a redundant implementation detail the requirement assumed without having seen the code. AC-007 is the one criterion with no textual basis anywhere in requirement@1 -- the 'statement', 'why', and all six done_when bullets discuss the dual-identity/non-dual-identity binary but never mention PackageId::Bare or panic-safety as a requirement concern. It is well-intentioned and consistent with defensive coding norms, but per the judgment standard I did not credit plausibility as evidence and instead classified it unsupported. I looked for whether AC-007 might be overfitted (narrower than something the requirement supports) rather than purely unsupported (no basis at all) -- but there is no requirement clause about Bare/untagged packages to narrow, so unsupported is the correct bucket rather than overfitted. No criterion was classified overfitted: none of the six requirement-grounded criteria narrow scope below what their cited done_when bullet supports -- AC-003's None-registration framing matches done_when[2]'s scope exactly, and AC-004's 'byte-for-byte unchanged... zero assertion changes' matches done_when[5]'s own 'byte-for-byte unchanged' language verbatim, not narrower."
+}
+```
+
+Key files referenced during verification (all absolute paths):
+- `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/spec-track9-draft.json` (spec@1 under test)
+- `/Users/gabe/Projects/callisto/crates/callisto-graph/src/cascade.rs` (lines 259-277: `if d.rewrite`, `eco` binding, `RewriteKey` construction with `edge.to.name().to_string()`)
+- `/Users/gabe/Projects/callisto/crates/callisto-graph/src/identity.rs:493` (`native_name` signature)
+- `/Users/gabe/Projects/callisto/crates/callisto-graph/src/resolver.rs:41` (`ManifestWalkResolver::identity()`)
+- `/Users/gabe/Projects/callisto/crates/callisto-graph/src/lib.rs:109,116` (existing `graph.identity()` call sites in `Workspace::load`)
+- `/Users/gabe/Projects/callisto/crates/callisto-graph/src/commands/version.rs:73`, `/Users/gabe/Projects/callisto/crates/callisto-graph/src/commands/snapshot.rs:54` (`CascadeInput` construction sites)
+
+One finding worth flagging to the drafter/auditor: AC-007 (the `PackageId::Bare` no-panic criterion) has no citation anywhere in requirement@1 — it's a reasonable defensive addition but not requirement-grounded, so it's classified unsupported rather than supported or overfitted.</result>
+<usage><subagent_tokens>46751</subagent_tokens><tool_uses>3</tool_uses><duration_ms>44372</duration_ms></usage>
+</task-notification>
