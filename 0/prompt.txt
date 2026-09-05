@@ -1,0 +1,1 @@
+Run `gh pr checks 27`. If all green, report to the user that PR #27's CI is fixed and fully passing. If any job failed, fetch the failure log via `gh run view <run-id> --job <job-id> --log-failed` and diagnose/fix it by reading the actual error. If still pending, wait another couple minutes.
