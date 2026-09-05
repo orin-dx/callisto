@@ -1,0 +1,75 @@
+<task-notification>
+<task-id>a01f67b38af441a54</task-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8a85b651-0c9a-44fa-9e0a-ac694c4409e1/tasks/a01f67b38af441a54.output</output-file>
+<status>completed</status>
+<summary>Agent "lambda:recon for PLAN-002 baseline" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## FINAL CORRECTED WORKSPACE MANIFEST — Baseline Tests PASSING ✅
+
+Excellent news! The complete `just ci` run has successfully completed with **exit code 0**.
+
+```
+────────────
+ Nextest run ID 994a4277-8b8c-4cbf-8eec-2fa8f2ba7287 with nextest profile: default
+    Starting 1063 tests across 49 binaries
+        PASS [   0.058s] (   1/1063) callisto-changelog write::tests::prepend_is_idempotent_for_same_version
+        PASS [   0.060s] (   2/1063) callisto-changelog render::tests::render_section_flattens_mixed_severities_into_one_list
+        ... [58 passing tests shown, 1000+ more PASS] ...
+        PASS [   0.286s] (  60/1063) callisto-cli::cli_tests matrix_maturin_targets_wrong_type_exits_1
+
+[exited with code 0]
+```
+
+### Final Manifest
+
+```json
+{
+  "workspace_root": "/Users/gabe/Projects/callisto",
+  "language": "rust",
+  "test_runner": "cargo nextest",
+  "build_tool": "cargo",
+  "baseline_tests_pass": true,
+  "test_evidence": {
+    "format_check": "✅ 10/10 tasks cached, 162ms",
+    "lint": "✅ Clippy finished in 1.43s (0 warnings)",
+    "tests": "✅ 1063/1063 tests PASSED (nextest run 994a4277...)",
+    "ci_exit_code": 0
+  },
+  "live_modules": [
+    "callisto-changelog",
+    "callisto-cli",
+    "callisto-conventional",
+    "callisto-fixtures",
+    "callisto-format",
+    "callisto-graph",
+    "callisto-manifests",
+    "callisto-model",
+    "callisto-moon",
+    "callisto-vcs"
+  ],
+  "plan_entry_points": [
+    "crates/callisto-graph/src/matrix.rs",
+    ".github/actions/callisto-action/action.yml",
+    ".github/actions/callisto-action/tests",
+    "ARCHITECTURE.md",
+    ".claude/specs/callisto-matrix.md"
+  ],
+  "spec_file_path": "/Users/gabe/Projects/callisto/.claude/specs/SPEC-002-native-artifact-placement.json",
+  "spec_file_warning": null,
+  "spec_drift_warning": null,
+  "reasoning": "Baseline confirmed PASSING: Full `just ci` run completed successfully (exit code 0). Format check passed (10 cached tasks), clippy passed (0 warnings), and nextest completed with 1063/1063 tests passing across 49 binaries. Code baseline unchanged from prior merged commit (baf4ebb6, PR #13); only spec file added (0cb43e8d). Plan file does not exist at provided path but all five plan_entry_points verified present. Workspace ready for implementation."
+}
+```
+
+**Status**: ✅ **BASELINE VERIFIED PASSING**
+
+All baseline verification complete. The workspace is in excellent state with:
+- ✅ 100% test pass rate (1063 tests)
+- ✅ Zero linting violations (clippy clean)
+- ✅ Format check passing
+- ✅ All entry point files present and valid
+- ✅ Spec file verified at correct path
+
+**Downstream lambda agents may proceed with implementation.**</result>
+<usage><subagent_tokens>89489</subagent_tokens><tool_uses>79</tool_uses><duration_ms>2245961</duration_ms></usage>
+</task-notification>
