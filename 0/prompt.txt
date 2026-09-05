@@ -1,0 +1,25 @@
+<task-notification>
+<task-id>ac90b3e5f3fe307d8</task-id>
+<tool-use-id>toolu_01PMKGYwZ9KP1Qien4F54utS</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/ac90b3e5f3fe307d8.output</output-file>
+<status>completed</status>
+<summary>Agent "Re-verify docs/01-spec.md CommitInference fixes" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Verification complete. All five items check out.
+
+**1. Edit context/wording:** Both edits read cleanly. Line 9257 (`let inference = NoInference;      // hardcoded as of this writing -- see §CLI.6.3.1`) sits naturally in the `version` pseudocode block and matches the surrounding style of other inline comments. Line 9440 (`` `load_workspace` → `NoInference` (hardcoded, same as `version`; see §CLI.6.3.1) → ``) flows correctly into the following `→ compose_pr_body(&amp;ws, &amp;inference, …)` step — the `&amp;inference` reference downstream is still coherent since `NoInference` is the value being bound. No awkwardness in either case.
+
+**2. Source re-verification (independent):** Confirmed directly.
+- `crates/callisto-cli/src/commands/version.rs:19` — `let inference = NoInference;` (also present in two test fns, lines 144/208)
+- `crates/callisto-cli/src/commands/compose_pr_body.rs:31` — `let inference = NoInference;`
+- `grep 'cfg(feature = "inference")'` on both files returned **no matches** — no gating anywhere in either file.
+
+**3. `select_inference` occurrences:** Only 3 remain in the whole file, all at lines 9279/9285/9290 — entirely inside the §CLI.6.3.1 block (§CLI.6.3.1 spans 9271–9304, ending before `#### CLI.6.4` at 9306). All three are within the explicitly marked "INTENDED... not implemented" hypothetical, correctly labeled. No stray real-code-presenting occurrence elsewhere.
+
+**4. Fence balance:** `grep -c '^```' docs/01-spec.md` = **402** — matches baseline, even/unbalanced check passes.
+
+**5. Broad sanity pass:** Reviewed the full diff including the earlier §G.6.4 changes (trait gains `git: &amp;GitAccess` param + `Send + Sync`, `CommitInference` becomes stateless, new honesty paragraph about it never being constructed in production). Internally consistent, no contradictions found.
+
+No issues found. Diff is clean and ready.</result>
+<usage><subagent_tokens>49203</subagent_tokens><tool_uses>12</tool_uses><duration_ms>50177</duration_ms></usage>
+</task-notification>
