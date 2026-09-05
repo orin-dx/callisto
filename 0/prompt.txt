@@ -1,0 +1,178 @@
+<task-notification>
+<task-id>a992e6fefac2f390a</task-id>
+<tool-use-id>toolu_01U63q7E5SQM5W2Ai2q554FM</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/0c4c4622-1ed8-4f2c-80e6-f0890a2dad72/tasks/a992e6fefac2f390a.output</output-file>
+<status>completed</status>
+<summary>Agent "Extract findings for matrix distribution research" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>```json
+{
+  "findings": [
+    {
+      "claim": "PlatformTargetKind enum has exactly two variants, Napi and Maturin; a DotnetAot variant is deliberately omitted and is enforced by a unit test that asserts deserializing kind:\"dotnet-aot\" fails.",
+      "evidence": "pub enum PlatformTargetKind { Napi, Maturin } with doc comment 'Deliberately omits a DotnetAot variant; out of scope for this spec.' plus test platform_target_kind_rejects_unknown_dotnet_aot_variant",
+      "source": "crates/callisto-model/src/matrix.rs:48-54,125-134",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "PlatformTarget carries only a Rust target-triple identity (triple, platform, arch, abi, host_runner, use_cross, artifact_name, package_dir, package_name) — there is no RID field and no generic 'binary kind' field that could represent a non-napi/maturin native artifact (e.g. a bare Rust CLI binary or a Go binary).",
+      "evidence": "pub struct PlatformTarget { pub triple: String, pub platform: String, pub arch: String, pub abi: Option&lt;String&gt;, pub host_runner: String, pub use_cross: bool, pub artifact_name: String, pub package_dir: String, pub package_name: String }",
+      "source": "crates/callisto-model/src/matrix.rs:56-71",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "artifact_name_for_triple is unconditionally \"native-{triple}\" for every recognised triple — the artifact naming convention is hardcoded to the napi/maturin identity shape, not parameterized by ecosystem or package kind.",
+      "evidence": "pub(crate) fn artifact_name_for_triple(triple: &amp;str) -&gt; String { format!(\"native-{triple}\") } plus AC-013 test pinning this literal",
+      "source": "crates/callisto-graph/src/matrix.rs:36-40,718-729",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "The matrix module's per-triple hostRunner/useCross table recognizes exactly 18 Rust target triples, hardcoded as a match statement (not read from any config) — this table has no entries for e.g. Go's GOOS/GOARCH combinations, and no generic 'CLI binary triple' table distinct from the napi/maturin one.",
+      "evidence": "triple_host_runner_use_cross match covers 18 named triples (aarch64-apple-darwin ... wasm32-unknown-unknown), each returning a hardcoded (hostRunner, useCross) pair; table-driven test triple_host_runner_use_cross_matches_all_18_triples pins the count",
+      "source": "crates/callisto-graph/src/matrix.rs:12-34,686-716",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "PublishTarget enum (the type that drives what plan_publish/publish dispatch to) has exactly these variants: CratesIo, Npm{registry,access}, Pypi{index}, NuGet{source}, GitHubRelease, None. It is #[non_exhaustive]. There is no Homebrew, HomebrewTap, or generic 'binary release' variant.",
+      "evidence": "pub enum PublishTarget { CratesIo, Npm {..}, Pypi {..}, NuGet {..}, GitHubRelease, None }",
+      "source": "crates/callisto-model/src/ecosystem.rs:65-90",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "In plan_publish's per-package dispatch, PublishTarget::NuGet and PublishTarget::GitHubRelease both push a Warning-severity Diagnostic with code PublishTargetNotImplemented and message '...this target will not be published' — they do NOT cause a hard failure/non-zero exit and are not silently dropped either; they are a soft warning. This contradicts ACTIVE.md's claim (in the prompt's own supplied context) that these were fixed 'from silent-no-op to loud-fail via E119' — the actual code path is warn-and-skip, not a hard error/loud-fail.",
+      "evidence": "callisto_model::PublishTarget::NuGet { .. } =&gt; { diagnostics.push(Diagnostic { code: PublishTargetNotImplemented, severity: DiagnosticSeverity::Warning, message: \"...NuGet publishing is not yet implemented; this target will not be published\", .. }) } — identical shape for GitHubRelease",
+      "source": "crates/callisto-graph/src/commands/publish.rs:343-374",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "The GitHubRelease PublishTarget variant is explicitly documented as a plan-shape label only, with no execution capability — callisto itself never creates a GitHub Release, by design (§9.5 removed octocrab/reqwest/GitHub-release creation from the dependency tree entirely).",
+      "evidence": "\"GitHubRelease, // orphaned by §9.5's scope cut: creating a GitHub Release is a registry-publish-shaped action, and §9.5 removed octocrab/reqwest/GitHub-release creation from callisto's dependency tree entirely. ... callisto itself never creates one\"",
+      "source": "docs/00-design.md:362-368 (§5.1 PublishTarget definition)",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "docs/00-design.md contains an internal contradiction about whether callisto executes real publishes at all. The document's own top-level summary (§0, revision-3 framing) states callisto 'runs cargo publish, npm publish, and twine upload via callisto publish (shelling out to each ecosystem's own tool)'. But §9's opening states 'Callisto is a versioning coordinator, not a release orchestrator ... it does not run the actual publish' and describes plan-publish/tags as the only outputs. §11.1 then reconciles this by describing 'callisto publish' as a real execution step that does shell out to cargo/npm/twine in dispatch order — matching the top-of-doc summary and the confirmed code in publish_client.rs, not the flat 'does not run the actual publish' framing at the start of §9.",
+      "evidence": "Top: 'Callisto manages both versioning and publishing... runs cargo publish, npm publish, and twine upload via callisto publish' (line 12-15). §9 opening: 'Callisto is a versioning coordinator, not a release orchestrator... it does not run the actual publish' (line 823-826). §11.1: '\"callisto publish\" is the execution step... then delegates to each ecosystem's own CLI'",
+      "source": "docs/00-design.md:12-15, 823-829, 1026-1066",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "§9.5 of docs/00-design.md explicitly states the prior design's GitHub-release-creation orchestration (via octocrab/reqwest/tokio) was removed from scope entirely — callisto deliberately does not build a GitHub Release artifact-upload capability of its own.",
+      "evidence": "\"The prior revision specified a 7-phase orchestration pipeline... an on-failure: aggregate | abort policy, and octocrab/reqwest/tokio in the CLI's core dependency tree for GitHub release creation. All of that is removed.\"",
+      "source": "docs/00-design.md:954-965",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "callisto's own §00-design.md scope table (§2.2) never lists a native-binary/cargo-dist-style CLI distribution case, nor Homebrew, at all — the polyglot cases enumerated (A-F) are all about registry-published Cargo/npm/PyPI packages and napi platform-package coordination, never about distributing callisto's own or any package's prebuilt binary as a GitHub Release asset or via a package manager tap.",
+      "evidence": "Cases A-F table covers Cargo workspace, npm workspace, dual-publish, napi single/composite packages only; Ecosystem priority table lists Cargo/npm/napi/Python/Go/Maven/NuGet/Deno-JSR/Ruby/C — no 'binary distribution', 'GitHub Release asset', or 'Homebrew' row anywhere",
+      "source": "docs/00-design.md:126-190",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "Go ecosystem support is explicitly 'real, tractable... demand-gated' specifically because Go publishing needs no registry backend — Go is versioned via git tags only, and callisto's model for it is version-bump/tag-driven, not binary-build/publish. Go's own doc (05-go-engine-spec.md) covers only tag conventions and go.work/lockfile handling — nothing about building or distributing Go binaries.",
+      "evidence": "\"Go modules | Real, tractable (git-tag-only publish, no registry backend needed), demand-gated.\" and the entire content of 05-go-engine-spec.md is tag conventions + go.work discovery + go.sum staging, no build/binary/distribution content",
+      "source": "docs/00-design.md:158; docs/05-go-engine-spec.md:1-29",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "callisto-matrix.md (the design doc that shipped the napi/maturin matrix feature) explicitly designed but never implemented an artifact-placement step (§6.2, a `gh run download --name X --dir Y` loop keyed by artifactName/packageDir) and a callisto-build-action composite action (§7) that would dispatch napi build/maturin-action/dotnet publish per target kind and upload artifacts. Both are still absent from the codebase per this session's prior investigation.",
+      "evidence": "§6.2's 'Artifact routing — placement before publish' contract and full gh run download loop; §7's per-kind (napi/maturin/dotnet-aot) build dispatch YAML blocks and upload-artifact steps",
+      "source": ".claude/specs/callisto-matrix.md:295-403",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "The same design doc's non-goals section (§8) explicitly rules Go out of the matrix subcommand's scope: 'Go's cross-compilation story (GOOS/GOARCH env vars) does not follow a manifest-declared target list pattern, and Go does not produce language-native binary modules in the napi/maturin/dotnet-aot sense.'",
+      "evidence": "\"5. Matrix subcommand for Go. Go's cross-compilation story (GOOS/GOARCH env vars) does not follow a manifest-declared target list pattern, and Go does not produce language-native binary modules in the napi/maturin/dotnet-aot sense.\"",
+      "source": ".claude/specs/callisto-matrix.md:435-437",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "The shipped spec that actually built `callisto matrix` (SPEC-004 / track-g-matrix-napi-maturin.json) explicitly non-goals out dotnet-aot entirely (no RID table, no .NET/XML parsing, no PlatformTarget.rid field) as deferred follow-up work, and treats the callisto-build-action composite action as optional/not required for spec completion.",
+      "evidence": "non_goals[0]: \"dotnet-aot target kind: no .NET RID table... Deferred to a follow-up track\"; non_goals[3]: \"Creating the callisto-build-action composite action itself is optional for this spec\"",
+      "source": ".claude/specs/track-g-matrix-napi-maturin.json:6-10",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "ARCHITECTURE.md §12 explicitly flags a `callisto publish-target` subcommand (referenced in its example GitHub Actions workflow as the per-target build/publish dispatcher: `callisto publish-target --package ... --target ...`) as unimplemented and 'planned for a future release,' alongside Java (JNI) and .NET native-AOT target discovery.",
+      "evidence": "\"&gt; Status: napi-rs and maturin platform-target discovery... are implemented... Java (JNI) target discovery, .NET native-AOT target discovery, and the `callisto publish-target` subcommand described later in this section remain unimplemented and are planned for a future release.\" followed by the workflow example's `run: callisto publish-target --package ... --target ...` step",
+      "source": "ARCHITECTURE.md:445-447,486-494",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "ARCHITECTURE.md §13 positions callisto as build-system-agnostic and hermetic (Bazel/Buck2/Nix/GitLab CI), emitting only JSON/text to stdout with zero network calls — reinforcing that callisto's architectural identity is a coordination/planning CLI, not an artifact builder or uploader, consistent with docs/00-design.md §9's coordinator framing.",
+      "evidence": "\"Zero Network / API Lock-in: callisto status, callisto plan-publish, and callisto matrix operate entirely on local workspace files and write to stdout/JSON.\"",
+      "source": "ARCHITECTURE.md:540-544",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "docs/06-publishing.md (the full publishing-authentication doc) covers only npm/Cargo/PyPI credential setup patterns. It contains no mention of GitHub Release asset publishing, Homebrew, or prebuilt-binary distribution of any kind.",
+      "evidence": "Full document content: npm auth Patterns A/B, Cargo CARGO_REGISTRY_TOKEN, PyPI TWINE_USERNAME/TWINE_PASSWORD, and one combined workflow example — no other publish target discussed",
+      "source": "docs/06-publishing.md:1-187",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "docs/release-paradigms.md (the three release-paradigm doc) frames every paradigm purely around when/how `callisto-action` with `publish: \"true\"` runs (branching model, trigger). It never discusses per-platform binary builds, artifact matrices, or non-registry distribution channels — all three example workflows are single-job (no build-matrix job) release flows.",
+      "evidence": "All three paradigm workflow YAMLs consist of a verify job and a release job calling callisto-action directly with npm/cargo secrets — no matrix job, no artifact upload/download steps anywhere in the document",
+      "source": "docs/release-paradigms.md:1-190",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "CLAUDE.md (project instructions) states no explicit scope philosophy about native-artifact distribution, Homebrew, or GitHub Release binaries — its 'Key Architectural Invariants' section covers safe-Rust, format-preservation, atomic writes, layer isolation (AGPL/MIT), and no-emoji docs only.",
+      "evidence": "Quick Reference / Key Architectural Invariants list: unsafe_code=forbid, format-preservation CST editors, atomic_write, Layer 1 crate licensing, no-emoji docs — nothing about publish targets or distribution",
+      "source": "CLAUDE.md (project root)",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "The maintainer's own memory/ACTIVE.md notes an unresolved, confirmed-live limitation directly adjacent to this question: walk.rs's platform-manifest discovery (the mechanism that finds/binds a napi platform sibling manifest to its owner package) is strictly npm-only and directory-scoped — no Cargo/maturin equivalent exists, and two platform siblings under one owner can never both be disk-discovered. This is a structural gap in the existing napi coordination model that any new native-binary/multi-target model would need to either reuse-and-extend or bypass.",
+      "evidence": "\"walk.rs's platform-manifest discovery being npm-only (no Cargo/maturin support, and directory-scoped even for npm) is a real, confirmed limitation surfaced twice by this track — worth its own future track if maturin/multi-platform-per-owner support is ever needed for real.\"",
+      "source": ".claude/plans/ACTIVE.md:153 (Track 2 entry)",
+      "confidence": "confirmed"
+    },
+    {
+      "claim": "goreleaser's architecture separates build (per-target-triple compilation via GOOS/GOARCH matrix or a build hook), archive (packaging into tar.gz/zip per platform), release (creating the GitHub/GitLab Release and uploading archives + checksums), and a distinct 'announce'/'blob'/downstream-publisher stage that includes a native Homebrew 'brews' config block — which generates a Homebrew formula file and pushes it to a configured separate tap repository (owner/repo, typically named homebrew-&lt;tool&gt;), referencing the release's tagged tarball URL and its computed SHA256 checksum. All stages read/write a shared, versioned dist manifest (artifacts.json) so later stages consume exactly what earlier stages produced, and the entire pipeline is declared in one goreleaser.yaml.",
+      "evidence": "General knowledge of goreleaser's documented pipeline stages (before/build/archive/checksum/sign/release/announce and the `brews:` config block) — not verified against any file in this repo",
+      "source": "general knowledge",
+      "confidence": "likely"
+    },
+    {
+      "claim": "cargo-dist is Rust-specific and follows a broadly similar separation to goreleaser (build-target-matrix as its own CI-job-generation concern, distinct from the 'installer'/distribution-sink concern), generating GitHub Actions workflow YAML itself (unlike callisto matrix, which deliberately only emits JSON and leaves YAML authorship to the caller) that builds each target on its natively-appropriate runner, uploads artifacts, and creates a GitHub Release with per-platform tarballs/zips plus install scripts (shell installer, PowerShell installer, npm wrapper package). cargo-dist has (or had, as of recent versions) a Homebrew tap-publishing installer target that generates and pushes a formula to a configured tap repo, structurally analogous to goreleaser's brews block, though its user base and maturity are smaller than goreleaser's.",
+      "evidence": "General recollection of cargo-dist's documented feature set (dist-workspace.toml config, installers: shell/powershell/npm/homebrew, GitHub Actions workflow generation) — not verified against any file in this repo, and the exact current state of Homebrew support (stability, config surface) is not something I can confirm with certainty from memory alone",
+      "source": "general knowledge",
+      "confidence": "assumed"
+    },
+    {
+      "claim": "napi-rs's own official project template CI convention builds each platform's .node file on a per-triple matrix job (using napi build --platform --release, optionally under a cross-compilation Docker image for musl/ARM/Android targets), uploads each as a named CI artifact, then a separate downstream job downloads all artifacts, moves each into its corresponding platform-stub npm package directory (the exact 'artifact placement' step callisto-matrix.md's abandoned §6.2 was modeling), and finally runs npm publish across the platform packages before the main package. This is the same shape callisto-matrix.md's §6/§7 explicitly designed against, and the confirmed facts state callisto has the publish-side half (ManifestRole::Platform, ordered publish) correct but has never implemented the build-side artifact-placement half that closes this loop.",
+      "evidence": "General recollection of the @napi-rs/cli project template's .github/workflows/CI.yml structure (build matrix job → upload-artifact → a 'Move artifacts' step via @napi-rs/cli's own `napi artifacts` command → publish job) — not verified against any file in this repo",
+      "source": "general knowledge",
+      "confidence": "likely"
+    }
+  ],
+  "sources_read": [
+    "crates/callisto-model/src/matrix.rs",
+    "crates/callisto-model/src/ecosystem.rs",
+    "crates/callisto-graph/src/matrix.rs",
+    "crates/callisto-graph/src/commands/publish.rs",
+    "crates/callisto-graph/src/commands/publish_client.rs (read in full, including test sections through EOF)",
+    ".claude/specs/callisto-matrix.md",
+    "docs/06-publishing.md",
+    "docs/release-paradigms.md",
+    "docs/05-go-engine-spec.md",
+    "docs/00-design.md (read through §14 config-format start, line ~1370; sections beyond §14 not reached but §0-§13 cover all publish/distribution/scope content per the source map's stated focus)",
+    ".claude/plans/ACTIVE.md",
+    ".claude/specs/track-g-matrix-napi-maturin.json",
+    "ARCHITECTURE.md (§12 and §13, targeted via grep for matrix/publish/distribution/artifact/binary/release/native headers)",
+    "CLAUDE.md (project root, provided in system context)"
+  ],
+  "reasoning": "The single most load-bearing discovery is the internal contradiction inside docs/00-design.md itself: its top-of-document revision-3 summary flatly states callisto 'runs cargo publish, npm publish, and twine upload,' while §9's own opening paragraph says the opposite ('it does not run the actual publish'), before §11.1 resolves the tension by describing 'callisto publish' as a real execution step — matching the top summary and the confirmed SubprocessRegistryClient code, not §9's flat coordinator-only framing. A spec writer reading only §9 in isolation would draw a materially wrong conclusion about whether callisto already executes registry publishes at all, let alone whether it could execute artifact builds/placement — worth flagging loudly since it directly bears on how much new 'execution' surface a distribution-model design is allowed to add.\n\nSecond, ACTIVE.md's own supplied context in the prompt claims PublishTarget::NuGet/GitHubRelease were 'fixed from silent-no-op to loud-fail via E119' — reading publish.rs directly shows this is not accurate: both variants push a Warning diagnostic and are skipped, never a hard error/non-zero exit, and no E119 code appears anywhere in the read source. This matters because the maintainer's Homebrew/cargo-dist scenario would presumably want GitHubRelease-shaped publishing to actually work or fail loudly, not silently warn-and-continue as it does today.\n\nThird, everything in-repo (docs/00-design.md §2.2, §5.1's PublishTarget definition, the callisto-matrix.md non-goals, and track-g's spec non-goals) converges on the same posture: callisto has deliberately scoped OUT any generic native-binary/GitHub-Release-asset/Homebrew distribution model. The GitHubRelease variant is explicitly called 'orphaned by §9.5's scope cut' and 'a plan-shape label with no corresponding execution capability.' The matrix/PlatformTarget type system is hardcoded to the napi/maturin triple+artifact-name shape (no rid field, no generic binary-kind field, artifact naming literally hardcoded to 'native-{triple}'), so extending it to a bare-Rust-CLI-binary-per-platform case or a Go binary case is not a config change — it requires new enum variants and likely a new report shape, not merely populating existing fields differently.\n\nNo direct contradiction was found between docs/06-publishing.md / docs/release-paradigms.md and the maintainer's ask — those docs simply never address the topic at all (silence, not a stated boundary), which itself is a relevant negative finding: there is no existing doc anywhere in the repo that states a considered position on cargo-dist-style or Homebrew-tap distribution, positive or negative, apart from the Go/dotnet exclusions already covered under the matrix feature's non-goals.\n\nExternal-knowledge findings (goreleaser/cargo-dist/napi-rs CI conventions) are marked likely/assumed since they rely on my general training knowledge rather than anything fetched in this session — flagged explicitly per the task's instructions rather than presented with false certainty."
+}
+```
+
+Key files/paths for the downstream synthesizer:
+- `/Users/gabe/Projects/callisto/docs/00-design.md` (internal contradiction at lines 12-15 vs 823-829 vs 1026-1066)
+- `/Users/gabe/Projects/callisto/crates/callisto-graph/src/commands/publish.rs:343-374` (NuGet/GitHubRelease actual dispatch behavior)
+- `/Users/gabe/Projects/callisto/crates/callisto-model/src/ecosystem.rs:65-90` (PublishTarget enum, no Homebrew/binary variant)
+- `/Users/gabe/Projects/callisto/crates/callisto-model/src/matrix.rs:48-71` (PlatformTargetKind/PlatformTarget, hardcoded to napi/maturin shape)
+- `/Users/gabe/Projects/callisto/ARCHITECTURE.md:445-494` (unimplemented `callisto publish-target` subcommand)
+- `/Users/gabe/Projects/callisto/.claude/specs/callisto-matrix.md:295-437` (abandoned artifact-placement §6.2 and build-action §7 design, Go explicitly excluded)</result>
+<usage><subagent_tokens>213578</subagent_tokens><tool_uses>15</tool_uses><duration_ms>124963</duration_ms></usage>
+</task-notification>
