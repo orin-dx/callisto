@@ -1,0 +1,93 @@
+<task-notification>
+<task-id>ad375bd8290d55dab</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/bb531e8d-c394-4e47-a8ae-e4a9ceeca6d2/tasks/ad375bd8290d55dab.output</output-file>
+<status>completed</status>
+<summary>Agent "Audit Track 2 platform_writes dispatch for collision/data-loss bugs" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Audit Verdict: `platform_writes`/`optional_dep_updates` dispatch loops in `apply_version_plan` (commit `2d53001`)
+
+### Context that changes the risk calculus
+
+Before the specific findings: `plan.platform_writes` and `plan.optional_dep_updates` are **never populated with real data anywhere in the codebase today**. The only real producer of a `VersionPlan`, `plan_version` in `crates/callisto-graph/src/commands/version.rs:246-258`, hardcodes:
+```rust
+platform_writes: Vec::new(),
+optional_dep_updates: Vec::new(),
+```
+Same for `commands/snapshot.rs:132-133` and `commands/pr_body.rs:282-283/303-304`. The only place these fields are ever populated with non-empty data is the one new test added in `2d53001` (`apply.rs:2240`). So **this is currently dead code in production** — the loops added in `2d53001` cannot execute with real content via any CLI command today. This matters: it means nothing below is exploitable *yet*, but it's exactly the kind of gap that becomes live the moment someone wires a producer (e.g. a future "platform package" cascade step) into `platform_writes`/`optional_dep_updates` without re-auditing `apply_version_plan`.
+
+### 1. Data-loss/clobber risk from the two independent open→persist cycles
+
+**Not real, given today's structure — verified by tracing `open()`.** `crates/callisto-manifests/src/lib.rs:155-181` (`open()`) does no caching: every call does `CargoToml::open`/`PackageJson::open`/`PyprojectToml::open`, each of which reads the file fresh from disk (confirmed no in-memory cache, no shared mutable state across calls — only a test-observability `AtomicUsize` counter). `apply_version_plan` is fully synchronous, single-threaded, with no deferred/lazy writes — `classify_manifest_writes`'s batched loop (`apply.rs:140-179`), the excluded-bump loop (`181-215`), the excluded-rewrite loop (`217-242`), then `platform_writes` (`244-252`), then `optional_dep_updates` (`254-262`) run strictly in that order, each `persist()` (`callisto-manifests` `atomic_write`) completing before the next loop's `open()` runs. So if the same manifest path appeared in both a batched write and `platform_writes`, the second `open()` would read the first loop's already-persisted bytes — no clobber. The `classify_manifest_writes` invariant (open-once-per-batch) exists to prevent multiple writes *within a single classify group* interleaving on one handle; it says nothing about, and is not violated by, two temporally-sequential open/persist cycles on the same file, because re-opening always re-reads truth from disk.
+
+### 2. Unsafe interleaving relative to batched writes
+
+None found. There is no threading, no async, no reordering of `plan.platform_writes` vs `plan.bumps` — the four loops execute in fixed source order every time. This part of the original architectural worry is not present in the current code.
+
+### 3. Partial-failure behavior
+
+Consistent with (not worse than) the rest of `apply_version_plan` — none of the loops in this function have transactional/rollback semantics; every one (`classify_manifest_writes`'s batched loop, the excluded-bump loop, the excluded-rewrite loop, and now `platform_writes`/`optional_dep_updates`) propagates the first error via `?` and returns early, leaving whatever was already `persist()`ed on disk and skipping git staging entirely (the staging code at `apply.rs:433-470` never runs on early return). This is the established, accepted design in this file (see the `apply_is_idempotent_when_manifest_already_at_target_version` test at `apply.rs:934` — recovery is via re-running `apply_version_plan`, not rollback). One real divergence: the sibling bump loops validate a precondition (`current == bump.from` / `current == bump.to`, else `GraphError::UnexpectedManifestVersion`) before writing, giving crash-recovery detection of "is disk in the state I expect." The new `platform_writes` loop has no `from` field on `PlatformWrite` at all and unconditionally calls `write_version` every time regardless of current on-disk content — it can silently overwrite a manifest version that drifted from the plan's expectation (e.g. a manual edit made between plan computation and apply) with no error, whereas every sibling loop in this same function would catch that and refuse. This is a genuine but currently-dormant (only reachable once the field is wired up) weakening of an established invariant — worth a Medium finding, not urgent given the dead-code status.
+
+### 4. Missing input validation / error-case coverage
+
+- `ManifestFormat::from_path` (`crates/callisto-model/src/package.rs:216-234`) only recognizes a fixed allow-list of filenames (`Cargo.toml`, `package.json`, `pyproject.toml`, `setup.cfg`, `go.mod`, `pom.xml`, `deno.json(c)`); anything else — malformed path, no filename, or a lockfile-named path — returns `Err(UnknownManifestFormat)`, propagated cleanly via `?`. Not silent.
+- `open()` only actually constructs handles for `CargoToml`/`PackageJson`/`PyprojectToml`; every other recognized format hits the `other =&gt;` arm and returns `Err(ReadOnlyFormat)`. Also visible, not silent.
+- The `Manifest` trait (`callisto-manifests/src/lib.rs:26-63`) requires `write_version` and `update_optional_dependencies` as non-default methods on every implementor — so "manifest format doesn't support this operation" cannot happen for any openable format today; this specific worry from the task brief doesn't materialize given the trait's design.
+- `npm.rs`'s `update_optional_dependencies` (`npm.rs:353-373`) auto-creates the `optionalDependencies` section if missing and inserts/overwrites unconditionally for every `(name, version)` pair — it never errors on an unknown/new dependency name (unlike `update_dependency_spec`, which does error via `DependencyNotFound`). This is a real asymmetry but is arguably intentional (adding a brand-new optional dep is exactly what a platform-package flow needs) — flagged as undertested, not a bug.
+- All of the above are genuinely untested for `platform_writes`/`optional_dep_updates` specifically (only the one happy-path test exists) but none is a live silent-wrong-data-written bug given the trait/format guarantees already in place.
+
+### 5. Does `modified_paths`/staging correctly reflect what happened
+
+Yes for the paths themselves — in both new loops, `modified_paths.push(...)` is the last statement, reached only after `write_version?` and `persist?` both returned `Ok`. No partial-failure-then-staged scenario for the manifest paths.
+
+**However, a real bug exists one layer up:** the `active_ecosystems` computation (`apply.rs:325-349`) that drives both lockfile *refresh* (`354-408`) and lockfile *staging* (`412-431`) is derived **exclusively from `plan.bumps`** — it never inspects `plan.platform_writes` or `plan.optional_dep_updates`. Concretely: a plan containing only `platform_writes`/`optional_dep_updates` entries (exactly the shape of the new happy-path test, which has no `bumps` at all) produces an empty `active_ecosystems` set, so:
+- `opts.refresh_lockfiles: true` will never trigger `npm`/`cargo`/`uv`/`poetry` lockfile regeneration for these writes, and
+- the corresponding lockfile (`package-lock.json`, `pnpm-lock.yaml`, `Cargo.lock`, etc.) will never be added to `modified_paths`/`staged` even if it exists on disk and is now stale relative to the optionalDependencies change just written.
+
+This is a confirmed, code-traced correctness gap in the new feature (Silent Fallback / Spec Drift class) — currently dormant only because nothing populates these plan fields yet.
+
+---
+
+### Findings summary
+
+**[Medium] `platform_writes`/`optional_dep_updates` are excluded from `active_ecosystems`, so their writes never trigger lockfile refresh or lockfile staging**
+- Status: CONFIRMED (code-traced, currently dormant — no production producer populates these fields yet)
+- Location: `crates/callisto-graph/src/apply.rs:244-262` (the new loops) vs. `apply.rs:325-349` (`active_ecosystems`, sourced only from `plan.bumps`)
+- Root cause: `active_ecosystems` is computed before/independent of the new loops and never consults `pw.manifest`/`opt.manifest`'s ecosystem.
+- Failing scenario: a `VersionPlan` with only `optional_dep_updates` touching `package.json`'s `optionalDependencies`, `refresh_lockfiles: true`, and a real `pnpm-lock.yaml` on disk — `pnpm-lock.yaml` is neither regenerated nor staged, silently drifting from `package.json`.
+- Verification strategy: a test asserting `outcome.staged` includes the ecosystem lockfile when only `platform_writes`/`optional_dep_updates` are set (no `bumps`) — fails today, would pass once `active_ecosystems` also folds in these two fields' manifest paths.
+
+**[Medium] `platform_writes` loop has no precondition/invariant check, unlike every sibling write loop in the same function**
+- Status: CONFIRMED (code-traced, currently dormant)
+- Location: `crates/callisto-graph/src/apply.rs:244-252`; contrast with `apply.rs:146-161` and `192-205`, both of which check `current == expected` and raise `GraphError::UnexpectedManifestVersion` on drift.
+- Root cause: `PlatformWrite` carries no `from`/expected-current field; the loop calls `handle.write_version(&amp;pw.version, permit)?` unconditionally.
+- Failing scenario: a platform manifest's on-disk version was hand-edited (or already correctly bumped by a previous partial run to a *different* value than the plan expects) between plan computation and apply — the loop silently overwrites it with the plan's `pw.version`, with no error and no way for the caller to detect drift, whereas an identical scenario in the batched/bump loops would correctly fail closed.
+- Verification strategy: write a test with a platform manifest at an unexpected version and assert this either errors or is intentionally documented as "always authoritative" — currently neither is true; it's just silently unconditional.
+
+**[Low] `update_optional_dependencies` (npm) has no missing-dependency validation, unlike `update_dependency_spec`**
+- Status: PLAUSIBLE / by-design ambiguity, not confirmed as a bug
+- Location: `crates/callisto-manifests/src/npm.rs:353-373`
+- Note: likely intentional (adding new optional deps is the whole point), but undertested for the new call site — worth a regression test locking in the intended behavior explicitly rather than leaving it implicit.
+
+**[Testing gap, not a bug] Only one happy-path test exists for `platform_writes`/`optional_dep_updates`**
+- No coverage for: precondition/UnexpectedManifestVersion-style drift, `open()`/`from_path` failure paths, partial-failure mid-loop (first entry persists, second errors), or the `active_ecosystems`/lockfile-staging gap above.
+
+### Is the sequential-execution safety real or illusory?
+
+**Real**, for the specific "stale-handle-clobber" concern the task asked about — `open()`'s unconditional fresh-disk-read plus strictly sequential, single-threaded execution genuinely prevents the two-independent-cycles-race scenario `classify_manifest_writes` was built to guard against. There is no live data-loss/clobber bug here today.
+
+### Ship-readiness
+
+Safe enough to leave as-is with a follow-up hardening task — **but only because the feature is currently unreachable dead code** (no producer populates `platform_writes`/`optional_dep_updates`). Nothing here needs an immediate fix for today's `main`. However, before any future work wires a real producer into these fields, the two Medium findings above (lockfile-staging blind spot, missing precondition check) should be fixed first — otherwise the feature will ship with a real, user-visible stale-lockfile bug and a silently-unconditional-overwrite behavior inconsistent with the rest of the function's crash-safety story.
+
+### Relevant files
+- `/Users/gabe/Projects/callisto/crates/callisto-graph/src/apply.rs` (lines 138-262 the classify/dispatch loops in question; 321-349 `active_ecosystems`; 2240-2296 the one new test)
+- `/Users/gabe/Projects/callisto/crates/callisto-graph/src/plan.rs` (lines 14-53, `VersionPlan`/`PlatformWrite`/`OptionalDepUpdate` definitions)
+- `/Users/gabe/Projects/callisto/crates/callisto-graph/src/commands/version.rs` (lines 246-258, real plan producer — always empties these fields)
+- `/Users/gabe/Projects/callisto/crates/callisto-manifests/src/lib.rs` (lines 26-63 `Manifest` trait, 154-181 `open()`)
+- `/Users/gabe/Projects/callisto/crates/callisto-manifests/src/npm.rs` (lines 260-264 `write_version`, 353-373 `update_optional_dependencies`)
+- `/Users/gabe/Projects/callisto/crates/callisto-model/src/package.rs` (lines 216-234 `ManifestFormat::from_path`)
+
+No findings from this session were logged to the FINDINGS.md ledger (per its instructions, only the parent/orchestrating agent maintains that file); the two Medium findings above are new and not previously recorded there.</result>
+<usage><subagent_tokens>82350</subagent_tokens><tool_uses>22</tool_uses><duration_ms>503229</duration_ms></usage>
+</task-notification>
