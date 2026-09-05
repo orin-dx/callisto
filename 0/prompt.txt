@@ -1,0 +1,20 @@
+<task-notification>
+<task-id>a2c469f4f04b2915f</task-id>
+<tool-use-id>toolu_01FXteu8hwb7p6q1dhMymV1g</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/bb531e8d-c394-4e47-a8ae-e4a9ceeca6d2/tasks/a2c469f4f04b2915f.output</output-file>
+<status>completed</status>
+<summary>Agent "Exit-gate Track 1 spec (retry 3)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>**Verdict: FAIL** (spec@1, retry_count 3 — escalation threshold). Verdict JSON: `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/verdict-track1-retry3.json`
+
+Of the four claimed fixes, three landed cleanly and one landed only half-way. I re-read every api_surface claim against the live code; two spec-vs-code contradictions remain.
+
+**Blocker 1 — AC-007 names a version grammar that does not exist.** "(e.g. one SemVer, one CalVer)". `callisto_model::VersionGrammar` (`/Users/gabe/Projects/callisto/crates/callisto-model/src/version.rs:13-19`) has exactly `SemVer`, `Pep440`, `Maven`, and Maven is annotated "declared, not implemented". The fixture as written cannot be built, and vector will mechanically turn this criterion into fixture code. The only pair actually reachable through `plan_version` is SemVer vs Pep440: base versions come from `ws.base_versions()` → `callisto_manifests::open`, which handles only CargoToml, PackageJson, PyprojectToml (`crates/callisto-manifests/src/lib.rs:168-180`), and the pypi feature is on by default (`crates/callisto-manifests/Cargo.toml:14`). Fix: state a Cargo.toml member (SemVer) plus a pyproject.toml member (Pep440), both tagged.
+
+**Blocker 2 — the retry-2 borrow fix only half landed.** All three sketches in the plan_version api_surface entry now read `&amp;ws.root`, but AC-009 — the normative criterion — still says pre_mutation_checks receives "`&amp;ws.graph` and `ws.root`". The parameter is `root: &amp;Path` (`crates/callisto-graph/src/groups.rs:18-25`) and `Workspace.root` is `pub root: PathBuf` behind `&amp;Workspace` (`crates/callisto-graph/src/lib.rs:54`), so `ws.root` is both a type mismatch and a move out of borrowed content. The spec now contradicts itself between its two layers. Fix: `&amp;ws.root` in AC-009 only; the bare occurrence in `revision_note` is historical narrative and needs no edit.
+
+**Confirmed clean** (so no rework is wasted there): purpose no longer mandates the retracted dedup; the retraction is documented in both revision_note and reasoning with no live `.dedup()`/AC-010c mandate anywhere; AC-003's thirteen literal line numbers are exact, there is no fourteenth construction site in the workspace, and I read every group construction feeding them — `cascade.rs:678,759` and `cascade_tests.rs:229,302` are `GroupKind::Linked`, the other nine are `GroupTable::default()`, so the `TagIndex::empty()` claim holds. Also re-verified against source: CascadeInput's 8 fields, the Linked block at 314-379, raise()'s loop at 464-478, bump_target's Pep440 dispatch at 398-401, fixed_group_target's five-arg signature and SemVer hardcoding at groups.rs:137, pre_mutation_checks's six-arg signature, resolve()'s unchecked inserts at 149/180, all three GraphError variants' field shapes, `#[from] ManifestError` making `NapiTargetsIndex::load(...)?` legal in plan_version, AC-007b's package.json path convention and error shapes, AC-014's premise that snapshot.rs never calls `ws.tags()` today, and AC-012's premise that `crates/callisto-graph/tests/config_resolve_tests.rs` exists with conflict-free fixtures.
+
+One non-blocking note for whoever reviews: AC-011's clause "ConflictingGroupMembership is not constructed anywhere during that resolve() call" is not externally observable, but it is redundant with the criterion's testable `Ok(..)` assertion, so I did not raise it as a blocker.</result>
+<usage><subagent_tokens>118372</subagent_tokens><tool_uses>37</tool_uses><duration_ms>762300</duration_ms></usage>
+</task-notification>
