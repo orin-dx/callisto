@@ -1,0 +1,35 @@
+<task-notification>
+<task-id>a352adb4b623e538d</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a352adb4b623e538d.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement TASK-07 (AC-05 regression test)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Committed successfully as `8c6de26`.
+
+## Summary
+
+**task_id**: TASK-07
+
+**status**: done
+
+**steps_completed**:
+1. Verified baseline: `git log` confirmed TASK-05 (`0971005`) and TASK-06 (`d812cac`) already landed on the branch, tree was clean.
+2. Read AC-05's exact acceptance criterion text from `.claude/specs/SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json` (line 56-58) before writing the test.
+3. Added `ac05_admits_all_cargo_candidates_when_root_has_no_workspace_table` to `crates/callisto-graph/src/locate/ignore_walk.rs` (test module), asserting root package and `crates/child` are both admitted when Cargo.toml has `[package]` but no `[workspace]` table.
+4. Ran the test — it passed immediately with no implementation change (verified by actually running it, not by trusting the plan's "no red step" note). Confirmed this is legitimate: the fallback logic already exists at `crates/callisto-graph/src/locate/membership.rs:93` (`let Some(workspace) = doc.get("workspace") else { ... }`), implemented in already-committed TASK-03d/TASK-05.
+5. Ran `cargo fmt -p callisto-graph` and `cargo clippy -p callisto-graph --all-targets -- -D warnings` — clean.
+6. Committed as `8c6de26`.
+
+**test_result**: pass
+
+**precision_tests_absorbed**: none supplied for this task
+
+**commit_sha**: `8c6de26`
+
+**criteria_evidence**:
+- AC-05: test_file `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs`, test_line 366; implementation_file `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs`, implementation_line 93
+
+**concerns**: None. This task genuinely required no new implementation — the plan's characterization as a "regression-proof" was verified correct by actually running the test before writing any implementation, matching the established pattern of prior tasks in this plan (03c, 03e) where honest non-red steps are explicitly called out rather than fabricated as red.</result>
+<usage><subagent_tokens>83889</subagent_tokens><tool_uses>17</tool_uses><duration_ms>524933</duration_ms></usage>
+</task-notification>
