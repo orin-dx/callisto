@@ -1,0 +1,22 @@
+Codex has setup some new specs and started building some of it. Can you please read and review the specs as well as the first phase?
+
+• Implemented and committed the first code batch:
+
+  f3f8f4c3 feat(model): add durable release identity and digests
+
+  It adds:
+
+  - opaque ecosystem-qualified ReleasePackageId;
+  - strict ArtifactDigest, SemanticInputDigest, and IntentDigest types;
+  - SHA-256 artifact hashing;
+  - versioned, domain-separated, length-prefixed canonical transcript primitives;
+  - fixed-vector, serialization, malformed-input, ordering, and domain-separation tests.
+
+  The independently gated foundation spec is committed as:
+
+  fb42f03 docs(spec): define durable release execution foundation
+
+  just fmt, just fmt-check, and just lint pass. New model tests pass. Full just test still reaches an unrelated pre-existing CLI snapshot
+  failure caused by git rev-parse HEAD in an unborn temporary repository.
+
+Provide a report
