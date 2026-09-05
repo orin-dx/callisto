@@ -1,0 +1,6 @@
+<task-notification>
+<task-id>boi0l37gu</task-id>
+<summary>Monitor event: "PR #9 CI checks (docs-cleanup-agents-readme)"</summary>
+<event>Code Formatting (Moon &amp; Just): pass</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
