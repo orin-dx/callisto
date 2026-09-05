@@ -1,0 +1,1 @@
+Use playwright to check the artifact: https://claude.ai/code/artifact/5e800024-c0d6-4198-94f8-7bf095402acb?via=auto_preview because it's super low quality. The charts look terrible, some are so small they are unreadable, some of the text is unreadable and you don't spend enough time explaining callisto and the overall architecture and features.
