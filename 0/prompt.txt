@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bzardoilm</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/e9efeaba-9875-4c8b-ad83-aa1c06f21756/tasks/bzardoilm.output</output-file>
+<status>completed</status>
+<summary>Background command "Cross-compile check against Windows target" completed (exit code 0)</summary>
+</task-notification>
