@@ -1,0 +1,71 @@
+<task-notification>
+<task-id>ae6100ae9691448b1</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/08ccaac1-3846-4134-8b06-140e5b9c22f2/tasks/ae6100ae9691448b1.output</output-file>
+<status>completed</status>
+<summary>Agent "Audit Track 5 spec" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Confirms the Executive Summary table (explicitly out of scope, lines 99–124) contains its own `Some(callisto_model::BumpReason::Cascade { via, .. })`, `PeerEscalation`, `FixedGroupUnion`, `LinkedGroupUnion` match arms that survive this track untouched — which is the basis for the AC-001 self-contradiction finding below.
+
+```json
+{
+  "issues": [
+    {
+      "criterion_id": "AC-001",
+      "type": "untestable",
+      "description": "The verification step 'grep -c 'BumpReason::Cascade\\|BumpReason::PeerEscalation\\|BumpReason::FixedGroupUnion\\|BumpReason::LinkedGroupUnion' crates/callisto-graph/src/commands/pr_body.rs returning 0' directly contradicts this spec's own scope and non_goals. Verified live in pr_body.rs lines 99-124: the Executive Summary table's `reason_str` match already contains its own arms for `Some(callisto_model::BumpReason::Cascade { via, .. })`, `PeerEscalation { via, .. }`, `FixedGroupUnion { group }`, and `LinkedGroupUnion { group }` -- one line each (lines 103, 106, 109, 112). The spec's own non_goals explicitly states 'pr_body.rs's Executive Summary table ... is unchanged by this track.' Since that table is preserved verbatim, the grep will return 4 (one match per variant name), never 0, no matter how correctly AC-001's deletion of the collapsible-details block (lines 184-216) is implemented. As written, this criterion can never pass and will force an implementer to either violate the non_goal by mangling the Summary table's variant names, or fail an unpassable grep check.",
+      "suggested_fix": "Replace the grep target with a string unique to the deleted collapsible-details construction, not the enum variant name shared with the (intentionally preserved) Executive Summary table. The deleted block at pr_body.rs:184-216 produces these literal Markdown fragments, none of which appear in the Summary table's one-line labels: 'Automatic dependency cascade triggered by', 'Peer dependency escalation triggered by', 'Fixed group synchronization for group', 'Linked group version alignment for group'. Revise the verification clause to: '-- verified by `grep -c 'Automatic dependency cascade triggered by\\|Peer dependency escalation triggered by\\|Fixed group synchronization for group\\|Linked group version alignment for group' crates/callisto-graph/src/commands/pr_body.rs` returning 0, and by confirming (via a code read, not grep) that the only remaining references to `BumpReason::Cascade`, `BumpReason::PeerEscalation`, `BumpReason::FixedGroupUnion`, `BumpReason::LinkedGroupUnion` in the file are the pre-existing Executive Summary table match arms at lines 99-124, which this track's non_goals leaves untouched.'"
+    },
+    {
+      "criterion_id": "AC-002",
+      "type": "missing-error-case",
+      "description": "The criterion's universal claim -- 'that package's &lt;details&gt; block ... still contains a non-empty #### Release Reason section (the pre-existing per-BumpReason descriptive text is preserved for this case)' -- is false for 3 of the 8 live `BumpReason` variants (`Inference`, `PreRelease`, `NewGroupMember`, confirmed at crates/callisto-model/src/report.rs:256-286). Verified live in pr_body.rs: the pre-existing match at lines 178-216 has an explicit arm only for `Changeset`, `Cascade`, `PeerEscalation`, `FixedGroupUnion`, `LinkedGroupUnion` -- everything else falls to the catch-all `_ =&gt; {}` at line 216, which pushes nothing. Since line 176 unconditionally pushes the `#### Release Reason` heading before the match runs, a package whose bump reason is `Inference`, `PreRelease`, or `NewGroupMember` AND has no matching `changelog_writes` entry today already renders an empty `#### Release Reason` heading with no following content -- the exact defect AC-002 says must not happen. The stated test method only exercises `BumpReason::Cascade`, which happens to have pre-existing text, so it cannot catch this gap; an implementer could satisfy the literal test and ship a spec violation for the other three variants (which this same track newly starts constructing via AC-003/AC-004, making them reachable in practice).",
+      "suggested_fix": "Narrow or extend AC-002 explicitly: 'For a bump whose package has no entry in VersionPlan.changelog_writes, that package's &lt;details&gt; block still contains a non-empty #### Release Reason section for every value of BumpReason, including Inference, PreRelease, and NewGroupMember, which pr_body.rs's pre-existing match (lines 178-216) does not currently handle (they fall to the `_ =&gt; {}` catch-all and render an empty heading). This track must add fallback text for these three variants, e.g.: `BumpReason::Inference { commits, .. } =&gt; format!(\"- Inferred from {} commit(s) since the last release.\\n\\n\", commits)`, `BumpReason::PreRelease { tag } =&gt; format!(\"- Pre-release finalization (tag `{}`).\\n\\n\", tag)`, `BumpReason::NewGroupMember { group } =&gt; format!(\"- New member of group `{}`.\\n\\n\", group.as_str())`. Test method: extend the existing unit test (or add three more) so each of Inference, PreRelease, and NewGroupMember is asserted to produce non-empty content after `#### Release Reason` when changelog_writes is empty, not just Cascade.'"
+    },
+    {
+      "criterion_id": "AC-007",
+      "type": "incomplete",
+      "description": "AC-007 describes two distinct fallback behaviors for a package whose matching ChangelogWrite.input.entries is empty: (a) fall back to the AC-002 pre-existing per-BumpReason text when a reason is available, or (b) fall back to the literal line '_No changelog entries available._' when no reason is available either (bump.reason is None). The stated test method only constructs and asserts path (a) -- 'a hand-constructed VersionPlan whose matching ChangelogWrite.input.entries is an empty Vec' with an implied reason present, asserting 'the fallback text for that package.' No test method is given for path (b), so an implementer could ship a version where a reasonless, entryless package silently renders an empty (or missing) Release Reason section and still pass every stated test.",
+      "suggested_fix": "Add a second scenario to AC-007's test method: 'and a second unit test constructs a VersionPlan with one PlannedBump whose reason is None and whose matching ChangelogWrite.input.entries is an empty Vec, calls render_pr_body_from_plan, and asserts report.body contains the literal line `_No changelog entries available._` inside that package's &lt;details&gt; block.'"
+    },
+    {
+      "criterion_id": "AC-007",
+      "type": "ambiguous",
+      "description": "The phrase 'tested by calling render_pr_body_from_plan's per-package rendering path directly' admits two readings: (1) call the existing public function `render_pr_body_from_plan` with a specially constructed VersionPlan (which is what the rest of the sentence describes and what every other AC's test method does), or (2) extract/refactor a new internal 'per-package rendering' function and call that directly, bypassing render_pr_body_from_plan entirely. Reading (2) would require introducing new internal API surface not mentioned anywhere else in scope or non_goals.",
+      "suggested_fix": "Replace 'tested by calling render_pr_body_from_plan's per-package rendering path directly with a hand-constructed VersionPlan' with 'tested by calling the existing public function render_pr_body_from_plan (no new function is introduced) with a hand-constructed VersionPlan', removing 'per-package rendering path directly' entirely."
+    },
+    {
+      "criterion_id": "AC-003",
+      "type": "ambiguous",
+      "description": "ChangelogEntry (crates/callisto-changelog/src/input.rs:11-15) requires both a `severity: Severity` and a `source: ChangeSource` field -- `source` alone cannot be constructed as a bare ChangelogEntry. AC-003 specifies only the `source` (a ChangeSource::Commit with sha/subject) and never states what `severity` value the synthesized entry must carry. Two implementers could legitimately choose different values (e.g. the package's resolved bump severity, or Severity::None, or the inference-computed severity before pre-major remapping) and both would satisfy the stated test method, which asserts only `sha == sha_recent` and `subject == \"feat: recent\"` -- it never inspects the entry's severity field. Since render_section likely groups/headers changelog entries by severity, this silently affects which section heading the entry appears under.",
+      "suggested_fix": "Add to AC-003: 'the ChangelogEntry's severity field equals the package's resolved bump severity for this run (outcome.severities.get(id), i.e. the same severity value used to construct the corresponding PlannedBump).' Extend the test method: 'and asserts the entry's severity equals Severity::Minor (the fixture's InferenceOutcome.severity / the package's resolved bump severity).'"
+    },
+    {
+      "criterion_id": "AC-004",
+      "type": "ambiguous",
+      "description": "Same gap as AC-003: ChangeSource::NewGroupMember { group } must be wrapped in a ChangelogEntry { severity, source }, and AC-004 never specifies what severity value that entry carries. The stated test method asserts only that entries contains a ChangeSource::NewGroupMember{group} match -- it never checks severity, so any severity value passes.",
+      "suggested_fix": "Add to AC-004: 'the ChangelogEntry's severity field equals the package's resolved bump severity for this run (outcome.severities.get(id), i.e. the same severity value used for the package's PlannedBump).' Extend the test method to assert the NewGroupMember entry's severity matches the fixture's driven bump severity."
+    }
+  ],
+  "overall": "fail",
+  "reasoning": "File:line and type/field citations were re-verified directly against live code and are almost entirely accurate (pr_body.rs match arms at 178-216, aggregate.rs Inference construction at 223-236, version.rs if/else at 148-215 and group_check consumption at 219, ChangelogInput/ChangeSource variants in input.rs, BumpReason variants and their field shapes in report.rs, GroupCheckOutcome.new_members in groups.rs:14/85, commits_since ordering in shell.rs:141-174, agg.changelog_inputs populated only from changesets in aggregate.rs) -- this drafter did real verification work, unlike the invented-API failure class this track was warned about. The blocking issue is AC-001's grep-based verification step, which is mechanically guaranteed to fail forever because it greps for enum variant names that the spec's own non_goals correctly preserves elsewhere in the same file (the Executive Summary table). That is a hard blocker: no implementation can pass AC-001 as literally written. AC-002 and AC-007 have real coverage gaps where the criterion's prose claims more than its test method verifies, both concretely reachable given this track's own additions (AC-003/AC-004 newly make Inference/NewGroupMember-reasoned, no-changelog-file packages reachable). AC-003/AC-004 leave the synthesized entry's required `severity` field completely unconstrained and untested. None of these are cosmetic -- each would let a technically-passing implementation diverge from the intended behavior in an observable way (wrong changelog grouping, empty rendered sections, an unpassable CI check)."
+}
+```
+
+**Files inspected to verify citations** (all under `/Users/gabe/Projects/callisto`):
+- `crates/callisto-graph/src/commands/pr_body.rs`
+- `crates/callisto-graph/src/commands/version.rs`
+- `crates/callisto-graph/src/aggregate.rs`
+- `crates/callisto-graph/src/cascade.rs`
+- `crates/callisto-graph/src/groups.rs`
+- `crates/callisto-graph/src/infer.rs`
+- `crates/callisto-graph/src/plan.rs`
+- `crates/callisto-changelog/src/input.rs`, `render.rs`, `error.rs`
+- `crates/callisto-model/src/report.rs`
+- `crates/callisto-vcs/src/shell.rs`, `access.rs`, `lib.rs`
+- `crates/callisto-conventional/src/infer.rs`
+- `.claude/specs/SPEC-TRACK4-RELEASE-PIPELINE-CONTRACT-CORRECTNESS.json`, `SPEC-TRACK9-CASCADE-REWRITE-KEY-CORRECTNESS.json` (no scope overlap found with either)
+
+Bottom line: the citations and type/field names in this spec are unusually well-grounded (a real improvement over what caused Track 4/9's repeated exit-gate rounds), but AC-001's own verification grep is self-contradicting against the spec's stated non_goals and can never pass — that's the hard blocker. AC-002, AC-007, AC-003, and AC-004 have real under-specification gaps (missing fallback coverage, unconstrained `severity` field) that a test-writer could satisfy without matching the intended behavior.</result>
+<usage><subagent_tokens>84922</subagent_tokens><tool_uses>27</tool_uses><duration_ms>242189</duration_ms></usage>
+</task-notification>
