@@ -1,0 +1,37 @@
+<task-notification>
+<task-id>ab940edc04c6c5ee4</task-id>
+<tool-use-id>toolu_018yPs3RjyEG1XShZCZ61Hhk</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/tasks/ab940edc04c6c5ee4.output</output-file>
+<status>completed</status>
+<summary>Agent "Review T06 commit" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Clean. Now let's finalize the review.
+
+## Review: commit 1ea7f2a (T06 — Strip internal persist from `CargoToml::update_dependency_spec`)
+
+**Most important check — the assertion-correction claim: VERIFIED CORRECT.**
+
+I independently traced the code path. For a bare-string dependency (`helper = "1.0.0"`), `update_dependency_spec` hits the `item.as_value_mut()` → `value.is_str()` branch (crates/callisto-manifests/src/cargo.rs:345-350), which does `*value = new_val;` — an in-place replacement of the *value* under the original key `helper`. It never creates or touches a literal `"version"` key in this branch (that only happens in the inline-table and full-table branches, lines 351-360 and 361-369). So `helper = "1.0.0"` correctly becomes `helper = "^1.1.0"`, not `version = "^1.1.0"`.
+
+Notably, the plan JSON itself is internally inconsistent: its `failing_test.implementation` field asserted `updated.contains("version = \"^1.1.0\"")`, but its own `expected_failure` string (the RED-phase disk snapshot) shows `helper = \"^1.1.0\"` on disk — contradicting the plan's own final assertion. The implementer's correction to `helper = "^1.1.0"` matches the RED-phase evidence and the actual toml_edit behavior. I ran the test directly (`cargo test -p callisto-manifests --lib cargo::tests::update_dependency_spec_does_not_touch_disk_until_persist_called`) — it passes and is genuinely meaningful (fails if the value doesn't land under `helper`). This is not a papered-over bug; the plan's supplied assertion was the actual defect, correctly caught and fixed.
+
+**Scope adherence**: Diff touches only `crates/callisto-manifests/src/cargo.rs`, +48/-1. `update_optional_dependencies` and the workspace-delegation branch (`ws_res.write_dependency(name, new, permit)`, cargo.rs:314-315) are untouched. `permit` parameter correctly retained (not renamed to `_permit`) since it's genuinely used by the delegation branch.
+
+**Non-negotiables (rust-hazards.md)**: No new `unwrap`/`expect` outside tests, no `map_err(|_|`, no discarded results, no unsafe. Clean `cargo clippy -p callisto-manifests --lib -- -D warnings`.
+
+**Sibling gaps within the method**: Read the full method body (cargo.rs:288-378). Confirmed only one persist call site existed pre-change, now `Ok(())`. All three mutation sub-branches (bare-string value, inline-table, full-table) fall through to the single shared return — no scattered persist calls were missed.
+
+**Caller-side check (adjacent, not in scope for this task)**: The one production caller, `crates/callisto-graph/src/apply.rs:115-119`, already calls `handle.persist(permit)?` immediately after `update_dependency_spec`, so this change introduces no silent-no-write regression there.
+
+**Test quality**: All three repaired tests (`test_cargo_inline_table_dependency_update`, `update_dependency_spec_preserves_decor_on_full_table_version`, `test_cargo_dependency_version_update_decor_preservation`) have `manifest.persist(&amp;permit()).unwrap();` inserted immediately before their `fs::read_to_string` reads — correct position. Their `version = "^1.1.0"` assertions are correct for those fixtures since they use inline-table/full-table forms where a literal `version` key genuinely exists. Full `cargo test -p callisto-manifests --lib cargo::tests` run: 25 passed, 0 failed, matching the plan's expected count exactly.
+
+```json
+{
+  "status": "approved",
+  "issues": [],
+  "sibling_gaps": [],
+  "reasoning": "Independently re-derived toml_edit's bare-string rewrite behavior from source (cargo.rs:345-350) and confirmed by running the actual test: helper = \"1.0.0\" -&gt; helper = \"^1.1.0\" under the original key, never under a literal 'version' key. The plan's own failing_test had an internally inconsistent assertion (contradicted by its own expected_failure RED-phase snapshot); the implementer's correction matches ground truth, not a coverup. Verified single persist call site removed with no scattered siblings inside the method. Verified the one production caller (apply.rs:115-119) already persists explicitly post-call, so no functional regression. Ran full cargo.rs test module (25/25 pass) and clippy -D warnings (clean). Diff scope matches task exactly: cargo.rs only, non-delegating branch only, 3 named tests repaired."
+}
+```</result>
+<usage><subagent_tokens>61203</subagent_tokens><tool_uses>16</tool_uses><duration_ms>286550</duration_ms></usage>
+</task-notification>
