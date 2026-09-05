@@ -1,0 +1,57 @@
+<task-notification>
+<task-id>ae132688a124c912f</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/ae132688a124c912f.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement TASK-17 (AC-10b regression test)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Committed successfully as `98cb1e2`. Task complete.
+
+## Summary
+
+**TASK-17: Regression-proof AC-10b (pnpm empty packages list excludes everything)**
+
+- Confirmed pre-state: all 12 prior commits (0971005…c98ae29) present on `crates/callisto-graph/src/locate/ignore_walk.rs`, tree clean before starting.
+- Read AC-10b's exact text from `.claude/specs/SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json` on disk. The spec text includes an explicit hybrid-root exemption clause the plan's single fixture did not cover, so I added a second test to fully prove the criterion as written, per the established pattern from TASK-12/14.
+- Wrote two tests in `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs`:
+  - `ac10b_pnpm_empty_packages_list_admits_zero_npm_entries` (line 817) — matches the plan's fixture exactly.
+  - `ac10b_pnpm_empty_packages_list_still_admits_hybrid_root` (line 842) — new, covers the spec's hybrid-root carve-out that the plan's fixture omitted.
+- Both passed immediately (no red step) against the existing implementation — same pattern as TASK-07 through TASK-16.
+- Adversarially verified non-vacuousness by temporarily mutating `NpmMembership::admits` in `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs`:
+  - Removed the `hybrid_root` short-circuit → the hybrid-root test failed as expected.
+  - Made the empty-globset case fall through to admit-all → both tests failed as expected.
+  - Restored the original code (verified `git diff` on membership.rs was empty afterward).
+- Full `callisto-graph` lib suite: 289 passed, 0 failed. `cargo fmt` and `cargo clippy -p callisto-graph --all-targets -- -D warnings` both clean.
+- Committed as `98cb1e2`.
+
+```json
+{
+  "task_id": "TASK-17",
+  "status": "done",
+  "steps_completed": [
+    "confirmed prior 12 commits present and tree clean",
+    "read AC-10b acceptance criterion text directly from spec file on disk",
+    "identified plan fixture omitted spec's hybrid-root exemption clause and added a second test to cover it",
+    "wrote both tests (red-step check: passed immediately, consistent with prior regression-proof tasks in this range)",
+    "adversarially verified non-vacuousness by breaking hybrid_root short-circuit and empty-globset behavior in membership.rs, confirming each test failed appropriately, then restored original code",
+    "ran full callisto-graph lib test suite (289 passed)",
+    "ran cargo fmt -p callisto-graph and cargo clippy -p callisto-graph --all-targets -- -D warnings (clean)",
+    "committed"
+  ],
+  "test_result": "pass",
+  "commit_sha": "98cb1e2",
+  "criteria_evidence": [
+    {
+      "criterion_id": "AC-10b",
+      "test_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs",
+      "test_line": 817,
+      "implementation_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs",
+      "implementation_line": 230
+    }
+  ],
+  "concerns": "No genuine red step occurred (consistent with TASK-07 through TASK-16 in this plan); non-vacuousness was verified via adversarial mutation instead, per the task's own instructions. The plan's original fixture only covered the zero-npm-entries half of AC-10b; I added a second test (ac10b_pnpm_empty_packages_list_still_admits_hybrid_root, line 842) to cover the hybrid-root exemption clause explicitly named in the spec's criterion text, which the plan's fixture omitted.",
+  "reasoning": "Spec AC-10b text explicitly carves out an AC-17-style hybrid-root exemption from its zero-entries claim. The plan's single fixture (no root package.json) never exercises that carve-out, so a literal reading of the plan alone would under-prove the criterion. Added a second fixture with a root package.json declaring 'name' to prove the exemption holds. Verified both tests are meaningful via targeted mutation of NpmMembership::admits before committing."
+}
+```</result>
+<usage><subagent_tokens>85136</subagent_tokens><tool_uses>23</tool_uses><duration_ms>505568</duration_ms></usage>
+</task-notification>
