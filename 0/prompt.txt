@@ -1,0 +1,3 @@
+Can we make sure that the test command in CI tests everything? Do we need to run test + coverage in the GH action for ci?
+
+for local dev CI should not need to run coverage, just tests. We can run coverage separately
