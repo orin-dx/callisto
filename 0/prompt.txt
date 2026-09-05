@@ -1,0 +1,22 @@
+<task-notification>
+<task-id>a64d935335c817337</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a64d935335c817337.output</output-file>
+<status>completed</status>
+<summary>Agent "Re-submit Track 3b1 to exit-gate" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Verdict: **FAIL** (retry_count 2, 5 blockers). Written to `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/verdict-track3b1-identity-promotion-core-retry2.json`.
+
+I re-traced the core mechanism from source rather than from the audit trail. What the trail got right checks out: resolve_human's new prefixed branch genuinely makes AC-01 reachable and leaves AC-03/AC-06 unaffected; AC-19 and AC-23 are now genuinely non-contradictory (AC-19's config carries the bare rule at build time so `Workspace::load` cannot succeed; AC-23's fixture has no `[[package]]` rules so load succeeds and the cloned config reaches aggregate.rs:211); `claiming_ecosystems`'s population point (walk.rs:78, filtering `list` by `id.name() == primary_id.name()`) is reachable and yields the right sets for AC-08/AC-13/AC-21; branch (ii)'s ORDERING STATEMENT is itself correct. Every line citation in the spec is accurate, there are no TBDs, and `is_error_case` is consistent across all 25 criteria.
+
+Three new defects, two of them decisive:
+
+1. **AC-13 is unsatisfiable, and the fix regresses napi drift.** `GroupTable::resolve` tries `index.resolve_human(name, &amp;[])` *first* and only falls through to `index.platform.get(name)` in the `else if` (config/groups.rs:150). Once `prefixed` is populated "mirroring the population of index.native (walk.rs:121-123)" — which keys on each manifest's *own* declared name — the candidates loop at identity.rs:267-272 finds exactly one entry for `"@myorg/native-core-linux-x64-gnu"`, so identity.rs:274-276 returns `Ok(owner_id)` and groups.rs pushes `GroupMember::Package`, never `GroupMember::PlatformManifest`. AC-13's assertion can never hold. Worse, this fires for *every* platform manifest, promoted or not, and napi.rs:77-83 filters group members on `GroupMemberKind::PlatformManifest` — drift diagnostics silently vanish. config/groups.rs is out of scope, so the implementer cannot patch it there. The spec must restrict `prefixed` population to entries where `id.name() == primary_id.name()`.
+
+2. **Branch (i)'s stale-key rewrite has no recoverable data source for the first-seen path.** At walk.rs:126 the only retained state is `existing_path`, `existing_decls` (ManifestDecl is path/role/format — no name), and `claiming_ecosystems[existing_path]` (ecosystems, no names). index.native keys are `(Ecosystem, manifest-declared name)`. Location (3)'s wording ("one per its own ecosystem") reads as pairing `existing_decls`' ecosystems with the colliding bare name — run that on AC-13's fixture and it rewrites `(Npm, "native-core")`, which belongs to the *other* colliding path, while leaving `(Npm, "@myorg/...")` pointed at a stale `Bare` id that is no longer a packages-map key. No criterion in AC-01..AC-25 detects it.
+
+3. **Branch (ii)'s lookup placement self-contradicts.** ALREADY-PROMOTED-NAME DETECTION says the lookup runs "immediately before package_manifest_decls.insert" (walk.rs:126); the GUARD says it must be found "before this path's own walk.rs:80-82 insertion" and the ORDERING STATEMENT requires `primary_id` reassignment before walk.rs:84. The first placement makes branch (ii)'s mandated skip-on-insertion unimplementable.
+
+Plus two lower-severity testability defects: AC-22's "or any equivalent verbatim claim ... in any wording" clause is a judgment call inside a criterion that claims to be purely mechanical, and AC-01's expected value is self-referential ("the PackageId that IdentityIndex resolved") so a test derives its expectation from the code under test — it should name `PackageId::Bare("foo")` outright.</result>
+<usage><subagent_tokens>130746</subagent_tokens><tool_uses>32</tool_uses><duration_ms>571263</duration_ms></usage>
+</task-notification>
