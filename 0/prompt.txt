@@ -1,0 +1,34 @@
+<task-notification>
+<task-id>aa150106b6cfa082c</task-id>
+<tool-use-id>toolu_01Rwby7hS1SvZkL1LfXSVLo5</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/bb531e8d-c394-4e47-a8ae-e4a9ceeca6d2/tasks/aa150106b6cfa082c.output</output-file>
+<status>completed</status>
+<summary>Agent "Re-exit-gate Track 4 spec (round 4 retry)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result># Verdict: FAIL (retry_count 3 — escalate to human before a fifth round)
+
+Verdict JSON: `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/verdict-track4-r4.json`
+
+## All three prior blockers verified fixed against live code
+
+- **BLK-01** — `crates/callisto-model/src/diagnostic.rs:76-79` confirms `pub enum DiagnosticSeverity { Warning, Error }`. Spec now says Warning throughout; no residual `Info` anywhere.
+- **BLK-02** — `crates/callisto-model/src/plan.rs:116-117` confirms the `skip_serializing_if` attribute sits on line 116, directly above the field. The spec's line citation is exact, and all five affected ACs now say "absent... not present as null".
+- **BLK-03** — The stub-runner fixture is real and already-established. `crates/callisto-graph/src/aggregate.rs:680` (`FakeRevParseRunner`) asserts the args `["rev-parse", "--verify", "--quiet", "&lt;tag&gt;^{commit}"]` verbatim; `crates/callisto-graph/tests/tags_laziness_test.rs` builds a full `Workspace` over a stub runner in a tempdir with no git repo, deterministically forcing the `CommandRunner` fallback. Constructible.
+
+## Two new blockers found in the fresh pass
+
+**1 (critical) — the changelog read path ignores `Package.changelog`.** The spec mandates deriving `{pkg_dir}/CHANGELOG.md` from `pkg.manifests.first().path.parent()`. But `Package.changelog: Option&lt;PathBuf&gt;` (`package.rs:17`) is the already-resolved changelog path, always `Some`, and user-overridable — `walk.rs:388-392` sets it to `rel_path.join(override_path)` when a `[[package]]` rule specifies `changelog = "..."`. It is exactly what the **write** side uses (`version.rs:148`). The override is a supported, tested feature: `per_package_config_test.rs:63-99` asserts a configured package resolves to `RELEASES.md`, explicitly not `CHANGELOG.md`.
+
+Implementing the spec as written means `callisto version` writes to `RELEASES.md` while `plan_publish` reads `CHANGELOG.md`, finds nothing, and emits a spurious `ChangelogSectionNotFound` — reintroducing the exact "silently reporting a missing changelog excerpt" defect the spec's purpose statement says it exists to eliminate. Affects AC-10, AC-10b, AC-11, AC-12, AC-12c, the `extract_section` api_surface entry, and the `scope` field.
+
+**2 (major) — AC-12b is unconstructible and specifies wrong behavior.** Its fixture ("a publishable package with zero manifests") cannot exist: packages are built from `package_manifest_decls` (`walk.rs:322`), every entry carrying a non-empty `decls` — the same unconstructible-fixture class as the prior round's BLK-03. Meanwhile the empty-`pkg_dir` state *is* reachable, via a root-level manifest (`Path::new("Cargo.toml").parent()` is `Some("")`), a configuration actively tested at `walk.rs:798-812`. For those packages the root `CHANGELOG.md` is legitimately their own changelog, but AC-12b mandates not reading it — which would blank `changelogSection` for every single-crate and hybrid-root workspace, including this repo's own shape.
+
+Both blockers share one root cause and one fix: switch to `Package.changelog` (in scope at the `ReleaseEntry` site — `publish.rs:423-428` is in the same `for pkg` loop as the pkg_dir code at `publish.rs:289-298`). That resolves the override bug and dissolves AC-12b's empty-directory case entirely.
+
+## On escalation
+
+The `verdict@1` schema admits only `pass|fail` with `additionalProperties: false`, so `escalate` is not representable — the verdict field is `fail` and the escalation is carried in `verdict_summary`. I recommend human review before a fifth round. Not because the blockers are unfixable — both are precisely actionable — but because the pattern has not converged: four rounds have each surfaced a *different* criterion contradicting live code. That recurrence points at a process defect (criteria composed without reading the implementation) rather than something a fifth patch cycle fixes.
+
+Non-blocking note: AC-03 and AC-09 are absent from the criteria list. Numbering gaps are not a gate condition and AC-04 appears to absorb the exit-0 case, but downstream planning shouldn't read the gaps as missing input.</result>
+<usage><subagent_tokens>82918</subagent_tokens><tool_uses>28</tool_uses><duration_ms>330962</duration_ms></usage>
+</task-notification>
