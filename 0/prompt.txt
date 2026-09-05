@@ -1,0 +1,1 @@
+What can we setup in the claude.md for this project or anything else to prevent us from this foot gun problem?
