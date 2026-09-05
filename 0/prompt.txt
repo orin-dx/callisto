@@ -1,0 +1,11 @@
+<task-notification>
+<task-id>bphva0v6n</task-id>
+<tool-use-id>toolu_015r8y5u2k6ab9VE5XUVFrGf</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/c0ad64b2-6440-4937-8328-8d9fd9db278c/tasks/bphva0v6n.output</output-file>
+<status>completed</status>
+<summary>Background command "cd /Users/gabe/Projects/callisto
+rm .changeset/release-pipeline-and-matrix-hardening.md
+rtk ls .changeset/
+echo "=== callisto status --check (verify pending changesets detected) ==="
+cargo run -q -p callisto-cli --bin callisto -- status --format json 2&gt;&amp;1 | tail -40" completed (exit code 0)</summary>
+</task-notification>
