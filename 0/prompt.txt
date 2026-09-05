@@ -1,0 +1,77 @@
+<task-notification>
+<task-id>ac51f537d076f5d28</task-id>
+<tool-use-id>toolu_011JrHpkXfp7v1hUQoochkRY</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/bb531e8d-c394-4e47-a8ae-e4a9ceeca6d2/tasks/ac51f537d076f5d28.output</output-file>
+<status>completed</status>
+<summary>Agent "Re-exit-gate Track 4 spec (round 3)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All citations verified against live code. Here is the binding verdict.
+
+```json
+{
+  "artifact_type": "spec@1",
+  "artifact_id": "SPEC-TRACK4-RELEASE-PIPELINE-CONTRACT-CORRECTNESS",
+  "verdict": "fail",
+  "confidence": "high",
+  "retry_count": 3,
+  "verdict_summary": "FAIL. DiagnosticSeverity has only Warning and Error -- there is no Info tier anywhere in the workspace. AC-10b/AC-11/AC-12 mandate Info-severity diagnostics, making them unimplementable, and AC-13 forbids the enum change they would require.",
+  "blockers": [
+    {
+      "id": "BLK-01",
+      "criterion_id": "AC-11, AC-12, AC-10b, AC-13, api_surface[extract_section]",
+      "severity": "critical",
+      "description": "`DiagnosticSeverity` (crates/callisto-model/src/diagnostic.rs:74-79) declares exactly two variants: `Warning` and `Error`. There is no `Info` tier. A workspace-wide grep for `Severity::Info` returns zero hits -- Info is not a real, under-used tier, it does not exist. AC-11, AC-12, and AC-10b each require emitting `DiagnosticCode::ChangelogSectionNotFound` 'at Info severity', and the api_surface entry for `extract_section` repeats the claim. As written these three criteria cannot be implemented. Worse, they are mutually inconsistent with AC-13, which asserts 'The sole schema-domain addition is one new `DiagnosticCode` enum variant' -- adding `Info` would be a second, independent schema-domain change. It is also a materially different kind of change: `DiagnosticCode` carries `#[non_exhaustive]` (diagnostic.rs:97) with a doc comment explicitly justifying additive variants as non-breaking; `DiagnosticSeverity` (diagnostic.rs:74) carries no such attribute, so adding a variant to it is a breaking wire-format and API expansion that the spec's own non_goals do not authorize. An Info tier would additionally force an unspecified decision at crates/callisto-cli/src/commands/status.rs:46-49, where `has_errors` filters on `Error` or (`--strict` &amp;&amp; `Warning`) -- whether Info escalates under `--strict` is undefined by the spec.",
+      "required_change": "Pick one and make it explicit throughout. (a) Preferred, smallest: change AC-11, AC-12, AC-10b, and the api_surface `extract_section` description to specify `DiagnosticSeverity::Warning` for `ChangelogSectionNotFound`, matching every other soft/advisory diagnostic in the codebase (e.g. crates/callisto-graph/src/crosscheck.rs:38, aggregate.rs:241, publish.rs:267) and matching AC-12c's already-correct `ChangelogReadError` Warning severity. AC-13 then stands unchanged. (b) If an Info tier is genuinely wanted, add an explicit new acceptance criterion for it: it must state that `DiagnosticSeverity` gains an `Info` variant serializing to `\"info\"`, that `#[non_exhaustive]` is added to `DiagnosticSeverity` (or state explicitly why it is not), and that `status.rs:46-49`'s `has_errors` predicate treats Info as non-failing under both plain and `--strict` mode. AC-13 must then be rewritten to permit two schema-domain additions rather than asserting one, and the non_goals entry claiming no SCHEMA_VERSION change must be re-justified against a non-additive enum change."
+    },
+    {
+      "id": "BLK-02",
+      "criterion_id": "AC-10b, AC-11, AC-12, AC-12b",
+      "severity": "major",
+      "description": "All four criteria instruct the tester to confirm that `changelogSection` is `null` in the `--format json` output. `ReleaseEntry.changelog_section` is declared at crates/callisto-model/src/plan.rs:116-117 as `#[serde(default, skip_serializing_if = \"Option::is_none\")] pub changelog_section: Option&lt;String&gt;`. When the value is `None` the key is omitted from the serialized object entirely -- the string `null` never appears in the output for this field under any circumstance. The stated verification procedure is therefore a false statement about the artifact under test, and an implementer writing the assertion must make a judgment call about whether an absent key satisfies 'is null'.",
+      "required_change": "In AC-10b, AC-11, AC-12, and AC-12b, replace each occurrence of 'confirming `changelogSection` is `null`' with 'confirming the `changelogSection` key is absent from that release entry in the JSON output (the field carries `skip_serializing_if = \"Option::is_none\"` at crates/callisto-model/src/plan.rs:116, so `None` is omitted rather than emitted as `null`)'. Alternatively, if emitting an explicit `null` is desired, that is a serialization-behavior change requiring its own acceptance criterion -- and it would contradict AC-13's presence/absence-of-field clause, so option one is the correct fix."
+    },
+    {
+      "id": "BLK-03",
+      "criterion_id": "AC-06b, AC-06d",
+      "severity": "major",
+      "description": "Both criteria state their verification as 'running `callisto tag` [/ `callisto tag --dry-run`] against a fixture where a tag exists per `contains_tag` but its ref cannot be resolved to a commit'. That fixture is not constructible at the CLI level. `contains_tag` (crates/callisto-graph/src/tags.rs:164-166) tests membership in `TagIndex::all_tags`, which is built from `GitDataSource::list_tags` (crates/callisto-graph/src/lib.rs:156). Against a real repository driven by `CliCommandRunner`, any tag returned by `list_tags` will also resolve under `resolve_commit`, whose shell implementation runs `git rev-parse --verify --quiet &lt;refname&gt;^{commit}` (crates/callisto-vcs/src/shell.rs:109-124). The divergent state the criteria require can only be produced through a stubbed `CommandRunner`, which the criteria never name. An implementer reading AC-06b as written would have to stop and ask how to build the fixture.",
+      "required_change": "Rewrite AC-06b's and AC-06d's verification clauses to name the actual seam. For example: 'Verifiable at the `callisto-graph` level by constructing a `Workspace` over a stub `CommandRunner` whose tag-listing invocation reports the tag `pkg@1.0.0` (so `contains_tag` returns true) while its `git rev-parse --verify --quiet pkg@1.0.0^{commit}` invocation exits non-zero (so `GitDataSource::resolve_commit` returns `Ok(None)`) -- and separately one whose runner returns a `VcsError` -- then calling `create_tags_with_options` with `permit: Some(..)` (AC-06b) and `permit: None` (AC-06d) and asserting each returns `Err(GraphError)` and produces no `TagReport`.' Keep the observable proposition unchanged; only the fixture construction needs to be stated."
+    }
+  ],
+  "verified_clean": [
+    "tag.rs citations are accurate: dry-run path with no existence check at tag.rs:53-80 (unconditional `release.sha` push at 74-78); apply path `contains_tag` gate at tag.rs:82 with unconditional `release.sha` push at tag.rs:113-117; `ws.git_access()` at tag.rs:48.",
+    "AC-06c's premise holds. `GitDataSource::resolve_commit` (crates/callisto-vcs/src/access.rs:79-86) is a pure read requiring no `ApplyPermit`, and the dry-run branch already calls `ws.tags()?` at tag.rs:55, so both the existence check and the sha lookup are reachable in dry-run without mutating git state.",
+    "The corrected non_goals justification for the floating-major alias is true. `git.create_floating_major` at tag.rs:102 is gated only on `opts.floating_major` and a successful version parse -- there is no `already_existed`-style gate -- so `release.sha` is the deterministic post-apply target. The claim is now accurate for both modes.",
+    "action.yml is as described: `-eq 0` sets HAS_CHANGESETS=true at line 90, exit 2 at line 92, and the else arm's bare `exit $STATUS_EXIT` at line 96 would exit 0 on a 0 status. AC-04's rewrite correctly closes the exit-0 fall-through and correctly requires HAS_CHANGESETS never be read while unset.",
+    "AC-05's citation is exact: crates/callisto-cli/src/main.rs:19-21 currently claims '0 when no errors and (no --check OR at least one pending changeset)', contradicting `check_exit_code_raw` (crates/callisto-cli/src/commands/status.rs:18-28) and its call site at status.rs:53-54.",
+    "AC-10's rewrite matches reality: `extract_section` (crates/callisto-changelog/src/write.rs:102) returns `None` for an empty trimmed section at write.rs:131-136, and AC-10b correctly covers that case.",
+    "`DiagnosticCode::ChangelogSectionNotFound` exists at diagnostic.rs:144, is documented as reserved, and a workspace grep confirms zero emission sites -- reusing it is sound. `ChangelogReadError` at Warning severity (AC-12c) is a real, widely-used tier.",
+    "AC-13's premise that no report struct field changes is correct for `DiagnosticCode` alone: `Diagnostic.code` (diagnostic.rs:60) already holds the enum, so a new variant touches no struct field. `callisto schema` exists (crates/callisto-cli/src/cli.rs:71-78), so AC-13's verification method is real. This holds only under BLK-01 option (a).",
+    "The second `changelog_section: None` at crates/callisto-cli/src/commands/publish.rs:361 is inside a `#[cfg(test)]` module, not a production construction site -- no sibling gap. The only live site is crates/callisto-graph/src/commands/publish.rs:427, correctly scoped.",
+    "`pkg_dir` resolution at crates/callisto-graph/src/commands/publish.rs:290-298 matches the spec's description, including the legitimately-empty case that AC-12b covers.",
+    "No TBDs anywhere in the document. Scope (four localized fixes) fits a single planning cycle."
+  ],
+  "reasoning": "Three of the six prior blockers are genuinely closed and I verified each against live code rather than the summary: the dry-run bypass is now covered by AC-06c/AC-06d with a correct api_surface description, the floating-major non_goals justification is now a true statement about tag.rs:102's unconditional call, and AC-04 correctly closes the exit-0 passthrough. The AC-10/AC-10b rewrite correctly matches extract_section's empty-content-returns-None behavior at write.rs:131-136. But fix #5 -- making AC-11/AC-12 explicit about emitting a diagnostic -- introduced a fatal defect by specifying a severity tier that does not exist. The user's own question flagged exactly the right thing to check: Info is not a real tier in this codebase, it was invented. DiagnosticSeverity has two variants and zero Info usages workspace-wide. That alone makes three criteria unimplementable and puts them in direct contradiction with AC-13. Two secondary defects: the null-vs-omitted serialization mismatch makes four verification procedures literally false about the output, and AC-06b/AC-06d describe a fixture that cannot exist at the CLI level they name. No conditional pass is available here -- BLK-01 is not a clarity nit, it is a criterion that cannot be satisfied as written. This is the third submission; retry_count is now 3. A fourth fail would exceed the threshold and must escalate to human review rather than another gate cycle, so the next revision should close all three blockers together."
+}
+```
+
+Key points for the drafter:
+
+**The decisive finding is BLK-01, and it is the exact thing you asked me to check.** `Info` is not a real severity tier in this codebase — it is invented. `crates/callisto-model/src/diagnostic.rs:74-79`:
+
+```rust
+pub enum DiagnosticSeverity {
+    Warning,
+    Error,
+}
+```
+
+A workspace-wide grep for `Severity::Info` returns zero hits. Every soft/advisory diagnostic in the codebase uses `Warning` (crosscheck.rs:38, aggregate.rs:241, publish.rs:267, tag.rs:252). The fix is almost certainly to change AC-10b/AC-11/AC-12 to `Warning`, which also keeps AC-13 true as written and matches AC-12c's already-correct choice.
+
+**Your other two questions both check out clean.** AC-06c's premise holds — `resolve_commit` at `/Users/gabe/Projects/callisto/crates/callisto-vcs/src/access.rs:79` takes no `ApplyPermit` and performs no writes, and the dry-run branch already calls `ws.tags()?` at `tag.rs:55`, so both the existence check and the lookup are reachable in preview mode without touching a ref. And the `DiagnosticCode` addition genuinely touches no report struct — `Diagnostic.code` at `diagnostic.rs:60` already holds the enum, and `#[non_exhaustive]` at `diagnostic.rs:97` is real. That last point holds *only* if you take the Warning option; adding `Info` to `DiagnosticSeverity` would be a second schema change to an enum that is **not** `#[non_exhaustive]`.
+
+Relevant files: `/Users/gabe/Projects/callisto/crates/callisto-model/src/diagnostic.rs`, `/Users/gabe/Projects/callisto/crates/callisto-model/src/plan.rs`, `/Users/gabe/Projects/callisto/crates/callisto-graph/src/commands/tag.rs`, `/Users/gabe/Projects/callisto/crates/callisto-graph/src/commands/publish.rs`, `/Users/gabe/Projects/callisto/crates/callisto-graph/src/tags.rs`, `/Users/gabe/Projects/callisto/crates/callisto-vcs/src/access.rs`, `/Users/gabe/Projects/callisto/crates/callisto-vcs/src/shell.rs`, `/Users/gabe/Projects/callisto/crates/callisto-cli/src/commands/status.rs`, `/Users/gabe/Projects/callisto/crates/callisto-cli/src/main.rs`, `/Users/gabe/Projects/callisto/crates/callisto-changelog/src/write.rs`, `/Users/gabe/Projects/callisto/.github/actions/callisto-action/action.yml`.
+
+One process note: `shared/schemas/verdict@1.json` does not exist in this workspace — there is no `shared/` directory at the repo root. I conformed to the field set described in the exit-gate contract (verdict, confidence, blockers, verdict_summary, artifact_type, retry_count) rather than to a schema file I could not read, so field names may need reconciling if that schema lives elsewhere.</result>
+<usage><subagent_tokens>71815</subagent_tokens><tool_uses>19</tool_uses><duration_ms>243548</duration_ms></usage>
+</task-notification>
