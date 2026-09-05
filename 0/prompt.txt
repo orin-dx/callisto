@@ -1,0 +1,1 @@
+Anything further we can enhance in the specs? Let’s do research, validate and consider what crates we can use
