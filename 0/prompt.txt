@@ -1,0 +1,49 @@
+<task-notification>
+<task-id>afda38c55a139599d</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/bb531e8d-c394-4e47-a8ae-e4a9ceeca6d2/tasks/afda38c55a139599d.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement T11 (AC-010b cross-kind conflict test)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>The unified conflict-check implementation (T10, already landed) lives at `crates/callisto-graph/src/config/groups.rs:143` (the shared `claimed_by` map declaration), with the cross-group check applied in both the fixed loop (lines 149-157) and the linked loop (lines 190-198) — line 190 is the check point most directly proven by this task's linked-group-side test.
+
+## Summary
+
+Task T11 executed via TDD (regression-pin variant, as specified by the plan): read AC-010b from the spec file directly, confirmed its exact text (cross-kind conflict detection: Fixed member under one spelling + Linked member under another spelling, resolved to the same PackageId, must error naming both groups). Added the test `conflicting_membership_across_fixed_and_linked_groups_is_rejected` to `/Users/gabe/Projects/callisto/crates/callisto-graph/tests/config_resolve_tests.rs` (line 166). Per the plan's own design, T10's already-landed `claimed_by: BTreeMap&lt;PackageId, GroupName&gt;` in `GroupTable::resolve` (`crates/callisto-graph/src/config/groups.rs`) is shared across both the Fixed and Linked resolution loops, so this is a genuine regression-pin, not new-behavior TDD — I verified this by reading the implementation before writing the test, then ran the test once and it passed immediately with zero production code changes, exactly as the plan predicted. No precision tests were supplied for this task.
+
+One deviation from the plan's literal test code was required: the plan's `other =&gt; panic!("... got: {other:?}")` catch-all doesn't compile because `Workspace` doesn't implement `Debug`, so `Result&lt;Workspace, GraphError&gt;` can't be formatted with `{:?}`. I fixed this by splitting into separate `Err(other)` / `Ok(_)` match arms (matching the exact pattern already used in T10's adjacent test in the same file), which compiles and preserves the same diagnostic intent.
+
+Ran fmt (via `rustfmt --check` scoped to my file, since `cargo fmt -p callisto-graph` also reported an unrelated pending diff in `commands/version.rs` owned by the concurrent T06 agent — left untouched) and `cargo clippy -p callisto-graph --test config_resolve_tests -- -D warnings`, both clean. Committed only my file: `6d6ef3f`, `version.rs` remains unstaged for T06.
+
+```json
+{
+  "task_id": "T11",
+  "status": "done",
+  "steps_completed": [
+    "Read AC-010b text from spec_file_path",
+    "Verified T10's unified claimed_by map at config/groups.rs before writing test",
+    "Appended conflicting_membership_across_fixed_and_linked_groups_is_rejected to config_resolve_tests.rs",
+    "Fixed a plan-supplied compile error (Workspace has no Debug impl) by matching T10's existing Err/Ok arm pattern",
+    "Ran the new test alone: passed on first run (regression-pin of already-correct T10 behavior)",
+    "Ran full config_resolve_tests.rs file: 4/4 passed",
+    "Ran rustfmt --check on the modified file only: clean",
+    "Ran cargo clippy -p callisto-graph --test config_resolve_tests -- -D warnings: clean",
+    "Committed only crates/callisto-graph/tests/config_resolve_tests.rs, left version.rs (T06's file) untouched"
+  ],
+  "test_result": "pass",
+  "commit_sha": "6d6ef3f",
+  "concerns": "This task's plan step describes a RED/GREEN cycle but explicitly documents the expected outcome as an immediate pass because T10 already implements the unified cross-kind claimed_by map -- this is a regression-pin test, not new-behavior TDD, consistent with the plan's own reasoning field. No implementation code was written for AC-010b in this task; it was already correct from T10.",
+  "criteria_evidence": [
+    {
+      "criterion_id": "AC-010b",
+      "test_file": "crates/callisto-graph/tests/config_resolve_tests.rs",
+      "test_line": 166,
+      "implementation_file": "crates/callisto-graph/src/config/groups.rs",
+      "implementation_line": 143
+    }
+  ],
+  "reasoning": "AC-010b requires the conflict check to span Fixed and Linked group kinds via one shared claim map, not two separately-scoped maps. T10's resolve() already declares claimed_by once and checks/inserts into it from both the fixed and linked member-resolution loops (lines 143, 149-157, 190-198), so a Fixed group member and a Linked group member resolving to the same PackageId under different spellings already trigger ConflictingGroupMembership. Verified this by reading the source before writing the test, then ran the test to confirm actual behavior rather than assuming the plan's claim was correct."
+}
+```</result>
+<usage><subagent_tokens>76333</subagent_tokens><tool_uses>20</tool_uses><duration_ms>204048</duration_ms></usage>
+</task-notification>
