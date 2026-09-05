@@ -1,0 +1,23 @@
+<task-notification>
+<task-id>a3c0d786108bc0092</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a3c0d786108bc0092.output</output-file>
+<status>completed</status>
+<summary>Agent "Redraft Track 3b core promotion mechanism spec" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>The spec is valid JSON and written to disk. Summary of what I did:
+
+I read the failing spec SPEC-TRACK3B-IDENTITY-RESOLUTION in full (all 209 lines), then independently re-verified every code citation this session by reading the actual current source: `crates/callisto-graph/src/identity.rs`, `walk.rs`, `lib.rs`, `config/resolve.rs`, `aggregate.rs`, `error.rs`, `crates/callisto-model/src/identity.rs`, `config/groups.rs`, and `docs/01-spec.md` around §G.4 (lines 5945-6090, including the exact serde-intent quote at 6075-6076). All line numbers in the failing spec's final revision matched the current code exactly — no drift.
+
+Produced `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/spec-track3b1-identity-promotion-core.json`:
+
+- **id**: SPEC-TRACK3B1-IDENTITY-PROMOTION-CORE, 20 acceptance criteria, 7 api_surface entries.
+- **api_surface leads with a "Data structures and their lifecycle" entry** (6 numbered items: local `package_manifest_decls`, `IdentityIndex`, build-local `promoted_siblings` map, `ResolvedConfig.promoted_siblings` field, `ResolvedConfig::with_promoted_siblings` method, and the two `resolve_package_config` call sites with exactly which state each reads and when) — every other entry and every timing-sensitive acceptance criterion (AC-13, AC-19, AC-20) references this table by item number instead of re-deriving timing inline, which is the structural fix the task asked for.
+- Kept the three validated design decisions as-is (set-disjointness predicate, four-location stale-key rewrite, N&gt;2 already-promoted-name detection with order-independence, two-source resolve_package_config mechanism) — re-verified, not redesigned.
+- **scope** explicitly excludes matrix.rs, commands/matrix.rs, commands/publish.rs, callisto-model/matrix.rs, and all three sibling-spec doc files, naming SPEC-TRACK3B2 as the follow-on owner.
+- **non_goals** rules out parameter-threading through resolve_package_config/aggregate(), Case D identity changes, PackageId::matches() changes, and editing sibling spec files (deferred, not dropped).
+- Acceptance criteria cover: IdentityIndex.prefixed population (AC-01–03, AC-16), 2-path and N&gt;2-path promotion plus Case D disjointness (AC-04–11, AC-17), resolve_native_with_fallback no-cross-ecosystem-fallback (AC-12, AC-14–15, AC-18), and resolve_package_config ambiguity detection with correct call-site timing (AC-19–20).
+
+Validated as parseable JSON with `python3 -m json.load`.</result>
+<usage><subagent_tokens>154649</subagent_tokens><tool_uses>19</tool_uses><duration_ms>243059</duration_ms></usage>
+</task-notification>
