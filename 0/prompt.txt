@@ -1,0 +1,59 @@
+<task-notification>
+<task-id>afbfc297b3f2d9763</task-id>
+<tool-use-id>toolu_01Q3c8nVqtD4SrD1VAnaguRU</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/afbfc297b3f2d9763.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement TASK-09 (AC-07 regression test)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Committed successfully as `58ae93d`, tree clean.
+
+## Summary
+
+**TASK-09** — "Regression-proof: AC-07 (hybrid root package exempt from members and exclude)" — completed.
+
+Verified starting state: all four prerequisite commits (0971005, d812cac, 8c6de26, 498f27c) present on `crates/callisto-graph/src/locate/ignore_walk.rs`, tree clean before starting.
+
+Read AC-07's exact acceptance criterion text from `/Users/gabe/Projects/callisto/.claude/specs/SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json` on disk — it matched the plan's fixture.
+
+Added the test `ac07_includes_root_package_as_implicit_member_even_when_exclude_would_match_it` to `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs` (test body at line 426). It passed immediately with no red step, as the plan predicted (the hybrid-root exemption already exists in `CargoMembership::admits` at `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs:43-46`).
+
+Since there was no red step, adversarially verified the test isn't vacuous: temporarily removed the `if is_root &amp;&amp; self.hybrid_root { return true; }` exemption (membership.rs:44-46), reran the test — it failed with `root package must never be silently dropped, got: [ProjectRoot { id: Bare("child"), path: "crates/child", ecosystem: Cargo }]`, confirming the root entry disappeared exactly as expected. Restored the original code (git diff on membership.rs confirmed clean afterward).
+
+Ran full suite (`cargo test -p callisto-graph --lib`): 280 passed, 0 failed. `cargo fmt -p callisto-graph` made no changes beyond the test addition. `cargo clippy -p callisto-graph --all-targets -- -D warnings` clean.
+
+No lambda-mutator precision_tests were supplied for this invocation, so none were absorbed.
+
+Committed as `58ae93d` with message `test(graph): pin AC-07 hybrid-root implicit-member behavior`.
+
+```json
+{
+  "task_id": "TASK-09",
+  "status": "done",
+  "steps_completed": [
+    "verified prerequisite commits and clean tree",
+    "read AC-07 criterion text from spec file on disk",
+    "wrote test (matched no-red prediction)",
+    "ran test — passed immediately, no red step observed",
+    "adversarially broke hybrid_root exemption in membership.rs, reran test, confirmed failure",
+    "restored membership.rs, confirmed diff clean",
+    "ran full test suite: 280 passed",
+    "cargo fmt + clippy clean",
+    "committed"
+  ],
+  "test_result": "pass",
+  "commit_sha": "58ae93d",
+  "criteria_evidence": [
+    {
+      "criterion_id": "AC-07",
+      "test_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs",
+      "test_line": 426,
+      "implementation_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs",
+      "implementation_line": 44
+    }
+  ],
+  "concerns": null,
+  "reasoning": "No implementation change needed; exemption logic already existed from TASK-03c/05. Adversarial mutation of membership.rs:44-46 confirmed the test genuinely exercises the exemption path rather than being vacuous."
+}
+```</result>
+<usage><subagent_tokens>52219</subagent_tokens><tool_uses>19</tool_uses><duration_ms>323366</duration_ms></usage>
+</task-notification>
