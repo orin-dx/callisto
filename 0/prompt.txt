@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bcwbi44e8</task-id>
+<tool-use-id>toolu_01NvVYso97h1T8HY75mLZXim</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/c0ad64b2-6440-4937-8328-8d9fd9db278c/tasks/bcwbi44e8.output</output-file>
+<status>completed</status>
+<summary>Monitor "PR #5 CI checks on release-pipeline-and-matrix-hardening" stream ended</summary>
+</task-notification>
