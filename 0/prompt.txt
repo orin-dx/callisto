@@ -1,0 +1,30 @@
+<task-notification>
+<task-id>ae5b5a78006f4bae1</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/bb531e8d-c394-4e47-a8ae-e4a9ceeca6d2/tasks/ae5b5a78006f4bae1.output</output-file>
+<status>completed</status>
+<summary>Agent "Exit-gate Track 9 spec" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Verdict: FAIL (retry_count 1, confidence high)
+
+Verdict written to `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/verdict-track9-retry1.json`
+
+### All three claimed fixes landed and are internally consistent
+
+1. **Workspace.identity** is a genuine owned field, coherent across purpose, api_surface, AC-005, non_goals[5]. Independently confirmed legal: `crates/callisto-graph/src/lib.rs:98` opens `impl&lt;'a, R: CommandRunner&gt; Workspace&lt;'a, R, ManifestWalkResolver&gt;` — genuinely not generic over `D` — and `graph.identity()` is already called there at lines 109 and 116.
+2. **AC-007** now asserts a concrete observable outcome instead of the unfalsifiable "no panic" framing.
+3. **CascadeInput.identity** now specifies direct `.native` insertion; confirmed that is the only construction mechanism anywhere in the repo (no builder exists).
+
+**No stale `ws.graph.identity()` claims remain.** All three occurrences are framed as non-compiling or attempted-then-corrected. The bare `graph.identity()` in non_goals[5] refers to `Workspace::load`'s own body, where it genuinely is callable — true, not stale.
+
+**The auditor's compile-error finding is confirmed real.** `plan_version&lt;R, D, I&gt;` (`commands/version.rs:24`) and `plan_snapshot&lt;R, D&gt;` (`commands/snapshot.rs:9`) are both generic over `D`; `identity()` is inherent on `ManifestWalkResolver` (`resolver.rs:41`) and the `DependencyResolver` trait (`callisto-model/src/discovery.rs:36-43`) declares only `packages`/`dependencies_of`/`dependents_of`/`diagnostics`. Also verified: the rewrite site and `eco` binding at `cascade.rs:259-283`, the 8+6=14 CascadeInput literal count (all 8 in cascade.rs fall after `mod tests` at :603), `native` genuinely populated per-ecosystem during walk, and no TBDs.
+
+### Two blockers
+
+**1. Scope omits 18 hand-constructed `Workspace` struct literals across 6 unnamed test files.** `Workspace` derives no `Default` and its literals use no rest pattern — `tests/graph_tests.rs:35-43` spells out all 7 fields — and `lib.rs:83-85` documents `pub` on `tags`/`git` expressly so tests hand-construct them. Sites: `validate_command_tests.rs:112,180`; `snapshot_tests.rs:70,132,183,255`; `matrix_tests.rs:63,101`; `graph_tests.rs:35`; `tags_tests.rs:62,172,333,494`; `publish_tests.rs:167,679,742,974,1342`. All 18 stop compiling the moment the field is added. The spec handled the identical hazard for `CascadeInput` with file names, a grep-confirmed count, and per-case fill values, and gave the equally-broad `Workspace` field none of that. Fix is scope enumeration plus the fill value (`identity: IdentityIndex::default()`) — AC-005's `cargo test --no-run` already catches the breakage, so no new criterion is needed.
+
+**2. AC-004 is unsatisfiable as written and contradicts AC-005.** Its exception clause is exclusive — "unmodified except for the mechanical addition of the new `identity` field to each CascadeInput struct literal" — but the crate cannot compile unless the 18 `Workspace` literals are also edited. The state AC-004 describes is unreachable, and at that state AC-005's required `cargo test -p callisto-graph --no-run` fails. Fix is rewording the exception clause to name both mechanical edits; the byte-for-byte invariance assertion itself is correct and should stand.
+
+Both are mechanical and need no new information from the requirement. AC-002 is weak (a test-methodology constraint, and `run_cascade` is a one-line passthrough to `solve_cascade`) but is precise and binary, so I did not fail on it.</result>
+<usage><subagent_tokens>73523</subagent_tokens><tool_uses>23</tool_uses><duration_ms>350159</duration_ms></usage>
+</task-notification>
