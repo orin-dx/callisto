@@ -1,0 +1,20 @@
+<task-notification>
+<task-id>a69e56c263ee5d4b9</task-id>
+<tool-use-id>toolu_01T46wRFNyowkQ26hYoBkW3T</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a69e56c263ee5d4b9.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix Track 3b1 branch-(ii) ordering issues" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>JSON is valid. Both fixes from canon-auditor's round-5 finding have been applied to the spec at:
+
+`/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/spec-track3b1-identity-promotion-core.json` (SPEC-TRACK3B1-IDENTITY-PROMOTION-CORE)
+
+Both fixes were made inside the `ManifestWalkResolver::build` api_surface entry, after re-reading `crates/callisto-graph/src/walk.rs` and confirming all cited line numbers are still accurate (decls loop 84-124, index.platform write 115-118, index.native write 121-123, index.bare insertion 80-82, `package_manifest_decls.insert` collision point 126-128 — no drift since the prior round).
+
+**Fix 1 (ordering ambiguity for branch (ii)):** Added an explicit ORDERING STATEMENT to the GUARD section's branch (ii) paragraph, immediately after the existing skip-on-insertion sentence: when the already-promoted-name lookup finds an existing group and the disjointness check passes, `primary_id` must be reassigned in place from its pre-promotion Bare value to the Prefixed value *before* the decls loop (walk.rs:84-124) runs — so index.native and index.platform are correct on their first and only write, and only package_manifest_decls (location (4)) needs an insert action (a normal first-time insert, not a rewrite). Also added a sentence at the top of the STALE-KEY REWRITE section clarifying its four-location checklist describes branch (i) exclusively, with branch (ii) covered separately by the new ordering statement.
+
+**Fix 2 (contradiction on location (1)):** Rewrote STALE-KEY REWRITE location (1) to state both branches non-contradictorily: branch (i) requires explicit write-then-remove of index.bare; branch (ii) requires the entry to never be written in the first place (skip-on-insertion), so "left unwritten" is correct and required for branch (ii), not a violation — framed as two required implementations of the same invariant, not interchangeable options.
+
+`revision_note` was updated with a ROUND-5 entry describing both fixes and their rationale, preserving the prior round-4 revision history beneath it. No acceptance criteria, non_goals, or other api_surface entries were touched.</result>
+<usage><subagent_tokens>88750</subagent_tokens><tool_uses>8</tool_uses><duration_ms>91141</duration_ms></usage>
+</task-notification>
