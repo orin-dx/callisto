@@ -1,0 +1,1 @@
+Are we considering the conversation about the dangers of parallel word on the same codebase?
