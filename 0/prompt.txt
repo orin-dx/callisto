@@ -1,0 +1,24 @@
+<task-notification>
+<task-id>ab3db4cbd11e913ed</task-id>
+<tool-use-id>toolu_01VxEibi15W22Wtq4fDKn9tL</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/tasks/ab3db4cbd11e913ed.output</output-file>
+<status>completed</status>
+<summary>Agent "Third revision of apply-batch spec" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All checks pass. The spec is valid JSON, all seven findings are addressed, and the final end-to-end re-verification against source turned up no additional errors.
+
+Summary of what was fixed in this third and final revision round, all reverified directly against source at `/Users/gabe/Projects/callisto`:
+
+1. **`write_version` carve-out removed** — Confirmed by reading `crates/callisto-manifests/src/cargo.rs` lines 198–240 that both persist calls (line 215's `return self.persist(permit);` inside the inherited-version branch, and line 239's trailing `self.persist(permit)`) call `self.persist` (writing `self.absolute`, the handle's own file), never a `WorkspaceCargoResolver`. Removed the incorrect carve-out from `non_goals[2]` and `scope`, keeping only the genuine `update_dependency_spec` workspace-inherited-dependency carve-out (cargo.rs lines 303–306).
+2. **AC-002** now carries the one real exclusion (the `update_dependency_spec` workspace-inherited branch persists the root, not the handle). AC-001 needed no change — it never had a write_version exclusion.
+3. **Re-export claim deleted** — Confirmed `crates/callisto-graph/Cargo.toml` already depends directly on `callisto-model`, and `apply.rs` already imports from it. Removed the false re-export rationale and path from the `write_call_count`/`reset_write_call_count` api_surface entries; tests now call `callisto_model::atomic::write_call_count()` directly.
+4. **AC-004 and AC-011** gained an explicit precondition (empty `changelog_writes`, `None` `pre_state_update`) so the counter assertions aren't polluted by the changelog (`callisto-changelog/src/write.rs:94`) or pre.json (`apply.rs:165`) `atomic_write` calls.
+5. **`#[serial]` rationale corrected** in AC-004/006/008/011 — stated as two jointly-required conditions (sole-file isolation + mandatory per-test `#[serial]`), contrasted with `manifest_cache_test.rs`'s single-test case.
+6. **Execution order specified** in the `apply_version_plan` api_surface entry: grouped units persist before `WorkspaceCargoResolver`-backed entries (verified `WorkspaceCargoResolver::load` re-reads from disk every call). Added new **AC-016** covering the same-root-Cargo.toml-via-both-paths scenario.
+7. **`modified_paths` push order** explicitly pinned to the existing scan-pass push sites (apply.rs lines 96, 101, 120, 125), stating byte-for-byte identical order/count is preserved.
+
+The final full re-read also re-verified npm.rs, python.rs, `WorkspaceCargoResolver`, `GraphError::Manifest`, `atomic_write`'s body, and the existing apply.rs 6-test module — no additional drift found beyond the seven listed findings.
+
+File updated in place: `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/SPEC-APPLY-BATCH-001.json`</result>
+<usage><subagent_tokens>130234</subagent_tokens><tool_uses>37</tool_uses><duration_ms>382720</duration_ms></usage>
+</task-notification>
