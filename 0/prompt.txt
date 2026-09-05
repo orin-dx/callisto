@@ -1,0 +1,27 @@
+<task-notification>
+<task-id>a96aabbc11da7df91</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a7b3643b-af0c-4790-a38d-870e88a7dd3e/tasks/a96aabbc11da7df91.output</output-file>
+<status>completed</status>
+<summary>Agent "Lambda T3b — negative-case regression tests" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Commit succeeded with SHA `c0fdc96`. The formatter ran and made minor whitespace adjustments (collapsing some multi-line `fs::write` calls), all clean.
+
+```json
+{
+  "task_id": "T3b",
+  "status": "done",
+  "steps_completed": [
+    "Appended 5 negative-case tests (AC-6, AC-7, AC-8, AC-9a, AC-9b) to crates/callisto-graph/tests/cross_ecosystem_diagnostic_test.rs",
+    "Ran all 6 tests in cross_ecosystem_diagnostic_test — all passed immediately (no red phase, as expected)",
+    "Ran full callisto-graph suite — 217 tests passed, 0 failures",
+    "Committed with exact message from plan"
+  ],
+  "test_result": "pass",
+  "commit_sha": "c0fdc96",
+  "concerns": null,
+  "reasoning": "T3b is a pure negative-case regression task with no red phase. The 5 appended tests verify that T3a's diagnostic pass does not emit false positives: single-ecosystem bare rules (AC-6), prefixed rules even on multi-ecosystem packages (AC-7), package-set rules (AC-8), empty cfg.packages (AC-9a), and empty packages map (AC-9b) all produce zero BareRuleMatchesMultipleEcosystems diagnostics. All 6 tests (1 from T3a + 5 from T3b) passed on first run, confirming T3a has no false-positive regressions. The formatter reformatted a few fs::write call sites but made no semantic changes."
+}
+```</result>
+<usage><subagent_tokens>47422</subagent_tokens><tool_uses>6</tool_uses><duration_ms>93030</duration_ms></usage>
+</task-notification>
