@@ -1,0 +1,5 @@
+<task-notification>
+<task-id>b37vqs5pl</task-id>
+<summary>Monitor event: "wait for validate.rs full test suite (blxo0u1pm) to finish"</summary>
+<event>[Monitor timed out — re-arm if needed.]</event>
+</task-notification>
