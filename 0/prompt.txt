@@ -1,0 +1,1 @@
+We should do a runtime audit and review and also consider performances taking what we got from the static review and validating against it also. Find further runtime gaps and issues and performance issues.
