@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>b27apdk6g</task-id>
+<tool-use-id>toolu_01HoNWmrqRzqPkx6VX3WrcrN</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/tasks/b27apdk6g.output</output-file>
+<status>completed</status>
+<summary>Monitor "wait for detached `just coverage` full-workspace run to finish" stream ended</summary>
+</task-notification>
