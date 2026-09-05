@@ -1,0 +1,45 @@
+<task-notification>
+<task-id>a80408ee8e6a51c1d</task-id>
+<tool-use-id>toolu_01G5Y6rtrK9QBD7TUb9kfood</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/tasks/a80408ee8e6a51c1d.output</output-file>
+<status>completed</status>
+<summary>Agent "Review T09 commit" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All 33 tests pass. Everything checks out. Here is the review.
+
+**Files read in full:** `/Users/gabe/Projects/callisto/crates/callisto-manifests/src/npm.rs` (entire file, 1364 lines); diff of commit 6cc7dc4; cross-checked `/Users/gabe/Projects/callisto/crates/callisto-manifests/src/cargo.rs` and `/Users/gabe/Projects/callisto/crates/callisto-manifests/src/python.rs` for sibling `update_optional_dependencies` implementations; hazards reference at `/Users/gabe/Projects/agent-plugins/shared/references/rust-hazards.md` (the repo has no local `shared/references/rust-hazards.md` copy — it resolves via the plugin path).
+
+Findings:
+
+1. **Scope adherence** — confirmed. `git show --stat` shows only `crates/callisto-manifests/src/npm.rs` changed (+25/-2): the `permit` → `_permit` rename, `self.persist(permit)` → `Ok(())`, and one new test. No stray edits.
+
+2. **Non-negotiable violations (rust-hazards.md)** — none found.
+   - T1 (Discarded Parameters) technically matches `_permit: &amp;ApplyPermit`, but this is the same established pattern already used in `write_version` (npm.rs:250) and `update_dependency_spec` (npm.rs:288) — the parameter exists to satisfy the `Manifest` trait signature (npm.rs:56 in lib.rs), not because a caller-supplied value is silently dropped. False positive, consistent with prior sibling tasks.
+   - T8 (False-Success Mutation) does not apply: the function unconditionally performs the in-memory mutation (`section.insert(...)` for every update) before returning `Ok(())` — there is no early-return no-op path masquerading as success.
+   - No unwrap/expect/panic, no `map_err(|_|`, no unchecked arithmetic, no `unsafe` introduced.
+
+3. **Completeness check** — confirmed clean.
+   - `grep -n "self\.persist(" crates/callisto-manifests/src/npm.rs` returns zero matches anywhere in the file, including inside `persist()`'s own body (which correctly calls `crate::atomic::atomic_write` directly, not `self.persist`).
+   - All three `PackageJson` mutators (`write_version` line 250, `update_dependency_spec` line 283, `update_optional_dependencies` line 343) now take `_permit` and return `Ok(())`/errors without an internal persist call.
+   - `PackageJson::persist()` (npm.rs:131–166) is byte-for-byte untouched by this commit — still takes `permit: &amp;ApplyPermit` (not underscored) and routes through `atomic_write`, as expected for the T01a-established persist method.
+
+4. **Test quality** — genuinely meaningful, not a rubber-stamp test.
+   - Fixture seeds `optionalDependencies: { fsevents: "1.0.0" }`.
+   - Asserts disk content is byte-identical to the original after calling `update_optional_dependencies` alone (proves no internal persist).
+   - Calls `manifest.persist(&amp;permit())` explicitly, then asserts the file now contains `"fsevents": "2.0.0"`.
+   - This is the same shape as the sibling tests for `write_version` and `update_dependency_spec`, and it is this method's only coverage, so the two-phase assertion (unchanged-then-changed) is the correct minimum bar.
+
+**Production caller check** — `grep -rn "update_optional_dependencies" --include="*.rs" .` (excluding target/) shows call sites only in: the trait declaration (`lib.rs:56`), the three `Manifest` impls (`npm.rs:343`, `cargo.rs:377`, `python.rs:419`), and test modules in `npm.rs` and `python.rs`. No production/non-test caller exists anywhere in the workspace. This confirms the "zero production callers" claim from earlier reviews of this track still holds, so stripping the internal persist in npm.rs introduces no live regression risk.
+
+**Sibling gaps** — none within scope. `cargo.rs::update_optional_dependencies` never had a persist call to strip (it unconditionally returns `ManifestError::UnsupportedOperation`). `python.rs::update_optional_dependencies` calls `atomic_write` directly rather than `self.persist(permit)` (a different pattern, not part of the "self.persist" stripping track), and is out of scope for T09 which is npm.rs-only. `cargo.rs` still has two live `self.persist(permit)` calls (lines 646, 710) but those belong to different mutators in a different file and are presumably handled by other tasks in the 25-task plan — not a gap introduced or missed by this commit.
+
+```json
+{
+  "status": "approved",
+  "issues": [],
+  "sibling_gaps": [],
+  "reasoning": "Diff is scoped exactly to npm.rs (rename + one-line body swap + one test). Hazards reference checked; the only surface match (T1 discarded parameter) is a false positive consistent with two prior sibling methods in the same file that already made the same trait-mandated rename. Grepped the entire npm.rs for any remaining self.persist( call outside persist()'s own body: zero matches, confirming the milestone claim that npm.rs's three PackageJson mutators are now fully stripped. persist() itself (T01a) is untouched. Test fixture and assertions are meaningful: unchanged-on-disk before persist, correctly updated after. Workspace-wide grep confirms update_optional_dependencies has zero production callers (only trait decl, three impls, and test modules), so this change carries no live regression risk. cargo.rs's own two remaining self.persist(permit) calls and python.rs's direct atomic_write pattern are pre-existing, out of this task's file scope, and not sibling gaps introduced by this commit. cargo test -p callisto-manifests --lib npm:: passes 33/33."
+}
+```</result>
+<usage><subagent_tokens>77589</subagent_tokens><tool_uses>13</tool_uses><duration_ms>179819</duration_ms></usage>
+</task-notification>
