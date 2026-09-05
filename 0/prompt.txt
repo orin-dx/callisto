@@ -1,0 +1,23 @@
+<task-notification>
+<task-id>aee8cfd50c3acc47d</task-id>
+<tool-use-id>toolu_01PEQztnndooJmLAVoo9NsJ7</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/89183b76-c115-4b79-8a50-972c752d566d/tasks/aee8cfd50c3acc47d.output</output-file>
+<status>completed</status>
+<summary>Agent "Research git signature verification crates" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Directive: research crate candidates for SPEC-RELEASE-SOURCE-PROVENANCE-002's future adapter (SignaturePolicy type + adapter evidence), no implementation.
+
+**1. gix (v0.86, in use via crates/callisto-vcs/Cargo.toml) — reads, does not verify.**
+Signatures live as an extra header on the raw commit object (`gpgsig` for GPG, `gpgsig-sha256` variant seen in some tooling; SSH signing also uses the `gpgsig` header, format-tagged internally). gix exposes raw commit headers/bytes but does not parse or verify signature content itself — confirmed still true at this version (git-oxide project notes state they "won't break, but also don't do anything with" extra signature headers). So gix gives you: raw signature bytes + the signed payload (commit sans signature). It gives you nothing for cryptographic verification — that's entirely on you or an adapter crate. This matches the spec's non_goals: verification must live outside core domain crates.
+
+**2. Verification crate survey, by mechanism:**
+- **GPG-signed commits**: `sequoia-openpgp` — actively maintained, Sovereign Tech Fund-funded, hit a stable 1.0 (`sq` CLI) this cycle, supports current RFC9580. Heavier dependency (own crypto backend, sizable). `rpgp`/`pgp` — smaller, less clearly funded, has open issues trailing into 2026 but no clear staleness signal either way. **Recommendation if GPG support is ever built: sequoia-openpgp** for correctness/maintenance confidence, but it's a genuinely heavy dependency (pulls in its own crypto stack) — must live in an adapter crate, never callisto-model/callisto-vcs, exactly per this spec's non_goals.
+- **SSH-signed commits**: `ssh-key` crate supports the `sshsig` format (same format `ssh-keygen -Y verify` uses) with Ed25519/RSA/P-256 verification gated behind feature flags (no crypto enabled by default — opt-in per algorithm). Pure Rust, moderate weight, feature-gateable to keep it lean. Alternative: shell out to `ssh-keygen -Y verify` directly — avoids any crate dependency entirely, trading a subprocess call for zero new Rust dependencies. Given this repo already shells out to `git`/`gh`/`npm` elsewhere (established pattern per commands/publish.rs), shelling to `ssh-keygen -Y verify` is arguably the lower-friction choice over `ssh-key`.
+- **Sigstore/keyless attestation**: `sigstore` crate (sigstore/sigstore-rust) — actively developed (release ~1 month old as of search, repo updated within days), but explicitly pre-1.0/experimental with an unstable API. Usable for a future adapter but should be pinned tightly and treated as more volatile than sequoia-openpgp.
+
+**3. GitHub-specific adapter recommendation: skip signature-verification crates entirely.**
+GitHub already computes and exposes `verification.verified`/`verification.reason` per commit via REST (`GET /repos/{owner}/{repo}/commits/{sha}`) and GraphQL. For the GitHub adapter specifically, shelling to `gh api repos/{owner}/{repo}/commits/{sha}` (or the equivalent GraphQL query) and reading that field is sufficient — it offloads all GPG/SSH/Sigstore verification to GitHub's own trust store, matches this repo's existing `gh`-shelling pattern, and needs zero new Rust dependencies. A local crate-based verifier (sequoia-openpgp / ssh-key / sigstore) would only be needed for a non-GitHub adapter, or to double-check GitHub's verdict independently — out of scope for a first adapter implementation.
+
+**Bottom line for AC-004/AC-005 as currently spec'd**: no crate choice needs to be locked into this spec — it correctly only requires the policy type to exist. When an adapter is eventually built, GitHub-first via `gh api` is the lowest-friction path; `sequoia-openpgp` and `ssh-key`/`ssh-keygen -Y verify` are the fallback options for GPG/SSH verification outside GitHub's own attestation; `sigstore` crate is viable but should be treated as less stable than the others.</result>
+<usage><subagent_tokens>178132</subagent_tokens><tool_uses>6</tool_uses><duration_ms>40261</duration_ms></usage>
+</task-notification>
