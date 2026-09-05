@@ -1,0 +1,5 @@
+<task-notification>
+<task-id>bxfwcc296</task-id>
+<summary>Monitor event: "wait for full callisto-graph lib suite"</summary>
+<event>[Monitor timed out — re-arm if needed.]</event>
+</task-notification>
