@@ -1,0 +1,25 @@
+Base directory for this skill: /Users/gabe/.claude/plugins/cache/orin-dx-agent-plugins/delta/2.1.3/skills/pr
+
+# Delta — PR
+
+<overview>
+Produces a PR title and body from a diff plus optional linked spec/requirement, then opens the PR. Delegates the narrative to `pr-narrator`; opening the PR is a visible external action and always requires explicit confirmation before the `gh pr create` call fires.
+</overview>
+
+<dispatch>
+| Agent | Model / Effort | Delegate When |
+| :--- | :--- | :--- |
+| **pr-narrator** | sonnet / medium | A PR needs a title and body a reviewer with zero context can act on. |
+</dispatch>
+
+<references>
+`shared/references/github.md` — PR template, label conventions, `gh` commands, and the voice standard for this artifact (summary bullets first, test plan as a checklist).
+</references>
+
+<io>
+**Consumes**: git diff, optionally linked `spec@1` or `requirement@1`
+**Produces**: opened PR (title, body, labels). Confirm the drafted title/body with the user before running `gh pr create` — this is a shared-visibility action, not a local one.
+</io>
+
+
+ARGUMENTS: just create the PR, ci will run there
