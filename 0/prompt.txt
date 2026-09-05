@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bls7hqn8t</task-id>
+<tool-use-id>toolu_01SEBghhYREbEMJLw2ocw7cL</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a7b3643b-af0c-4790-a38d-870e88a7dd3e/tasks/bls7hqn8t.output</output-file>
+<status>completed</status>
+<summary>Background command "Rerun CI after formatting fix" completed (exit code 0)</summary>
+</task-notification>
