@@ -1,0 +1,35 @@
+<task-notification>
+<task-id>a96072cd85d6d6f17</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8a85b651-0c9a-44fa-9e0a-ac694c4409e1/tasks/a96072cd85d6d6f17.output</output-file>
+<status>completed</status>
+<summary>Agent "Final lambda:exit-gate re-verification for SPEC-002" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>**Interim status — verdict withheld pending three running jobs.**
+
+All static verification against the spec on disk is complete. Here is what I have confirmed so far, and the one thing that already changed the shape of this gate pass.
+
+**The stale-string sweep you asked for — my first two passes were invalid.** I ran `rg` without `--hidden`, which silently skipped `.github/` and `.claude/` entirely — the two directories holding most of the touched files. Re-run with `--hidden`, `.github/` is clean: zero triple-shaped artifact strings anywhere in `action.yml` or the four test scripts. Stale references to the superseded `native-{triple}` format survive in five files, none of them touched by this changeset and none named by any of AC-001 through AC-011:
+
+- `/Users/gabe/Projects/callisto/docs/01-spec.md:8557` — prose asserting ``artifactName` is always `"native-" + triple``
+- `/Users/gabe/Projects/callisto/docs/00-design.md:2113` — example `MatrixReport` JSON with `"artifactName": "native-aarch64-apple-darwin"`
+- `/Users/gabe/Projects/callisto/.claude/specs/track-g-matrix-napi-maturin.json:129` — a superseded spec's AC still asserting the old format verbatim
+- `.claude/plans/PLAN-002.json:57` and `.claude/plans/track-g-matrix-napi-maturin.plan.json` — historical plan records
+
+The never-shipped intermediate `{package_name}-{triple}` format appears nowhere outside SPEC-002's own `non_goals[17]`, where it is named deliberately. `native-mod-darwin-arm64` in `render/mod.rs:541` and `matrix.rs:794` is not stale — `native-mod` is the fixture's package name, so the string is correctly shaped under the final format.
+
+**AC-001 through AC-011 all verified as implemented** by reading the code, not the pointers. `artifact_name_for_package_platform` (matrix.rs:42-52) matches the spec signature and both format arms; `build_platform_target` (matrix.rs:143) passes `triple_to_role`-destructured platform/arch/abi, not the raw triple. The action.yml placement loop (lines 168-178) matches the api_surface description exactly — process substitution, `DIR="."` normalization, explicit `mkdir -p`, `$GITHUB_RUN_ID` pin, error message naming both artifact and DIR — and sits inside the `INPUT_PUBLISH` guard, before `plan-publish`. ARCHITECTURE.md §12 and callisto-matrix.md §4/§6.1/§6.2 satisfy AC-007 through AC-011; the §12 diff (50512a2c) touches only the code block, leaving the status note byte-identical as AC-007 requires.
+
+**All four shell scripts pass for real:** `test_native_artifact_placement.sh` (AC-003/010, 004, 005, 006), `test_native_matrix_dedup.sh` (AC-002), `test_github_release_creation.sh`, `test_status_check_branching.sh` — all exit 0.
+
+**Two gaps found that are not AC failures but that I will carry into the verdict:**
+
+1. *The recorded mutation run is stale.* `mutants.out/` is timestamped 25 Aug 10:53-10:55, predating both `d86e6c35` (11:16) and `87682d58` (16:26). Its `caught.txt` names `artifact_name_for_package_triple` — a function that no longer exists. The final code's `match abi { Some/None }` branch has never been mutation-tested. Since cargo-mutants 27.1.0 is installed, "unavailable" does not apply, so I am re-running it scoped to `matrix.rs` rather than recording an unclosable gap.
+
+2. *No test covers the guard placement.* AC-003 explicitly requires the loop be inside the `INPUT_PUBLISH` guard "not merely somewhere after NATIVE_MATRIX computation," and AC-004's second clause depends on it. `test_native_artifact_placement.sh` extracts the loop body between the `::group::`/`::endgroup::` markers and runs it in isolation — so if someone moved the loop outside the guard, every test would still pass. `rg 'INPUT_PUBLISH' .github/actions/callisto-action/tests/` returns nothing. Implementation verified by direct read; the gap is regression protection only.
+
+Unrelated to SPEC-002: `Cargo.lock` is uncommitted with a 0.4.0→0.4.1 bump, and `.claude/plans/PLAN-002.json` is untracked.
+
+Still running: `cargo nextest -p callisto-graph --lib matrix::`, `cargo nextest -p callisto-cli --lib render`, and the scoped cargo-mutants re-run. All three are queued behind the concurrent `just ci` on the cargo build lock. I will issue the binding verdict once they report — a pass is not defensible until I have seen the Rust suites green and the mutation gate re-established against the current code.</result>
+<usage><subagent_tokens>103439</subagent_tokens><tool_uses>53</tool_uses><duration_ms>920032</duration_ms></usage>
+</task-notification>
