@@ -1,0 +1,21 @@
+<task-notification>
+<task-id>a7d7759792debfa51</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/tasks/a7d7759792debfa51.output</output-file>
+<status>completed</status>
+<summary>Agent "Second revision of Spec A" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Summary
+
+Revised the spec at `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/spec-manifest-persist-001.json` (revision round 2), fixing all 6 gate findings after independently reading every cited file:
+
+1. **AC-008 data-loss disclosure** — read `crates/callisto-graph/src/cascade.rs:220-260` (`solve_cascade`) and confirmed inherited edges never produce `DepWriteTarget::Manifest`. Added **AC-017** (tests the cross-module invariant in `cascade.rs`'s own test module) and **AC-018** (defensive guard in `CargoToml::update_dependency_spec` returning a new `ManifestError::InvariantViolation` variant, added to `crates/callisto-model/src/error.rs`, propagating via `GraphError`'s existing `#[from]` conversion — no `GraphError` change needed). Added two `api_surface` entries and expanded `scope` accordingly.
+2. **AC-009 defective verification** — read `crates/callisto-graph/src/apply.rs`'s test module and confirmed all 4 named tests can't catch a dropped `persist()`. Rewrote AC-009 to require a new primary test with real `write_version` execution plus an independent from-disk read-back; demoted the 4 existing tests to secondary regression checks. Read `manifest_cache_test.rs:71-85` and moved the `open_call_count()` test to its own new integration-test file (it can't safely live in `apply.rs`'s own module, since sibling tests there also call `open()` in the same process and would defeat `#[serial]` isolation).
+3. **AC-005 contradiction** — reworded to scope "no atomic_write calls" to these methods' own control flow only, explicitly excluding delegation to `WorkspaceCargoResolver` and the externally-invoked `persist()`.
+4. **AC-011 unfalsifiable** — read `crates/callisto-model/src/atomic.rs`, confirmed the failure point is `NamedTempFile::new_in(parent)`; rewrote with a concrete read-only-parent-directory injection and exact error-propagation chain.
+5. **Missing rewrites-loop error case** — added **AC-011b**, symmetric to AC-011.
+6. **`any_updated` dead-variable risk** — read `crates/callisto-manifests/src/python.rs:430-483`, added **AC-019** specifying its removal plus an `api_surface` entry.
+
+Did a final end-to-end JSON/consistency pass (fixed a JSON control-character bug introduced by literal newlines in the `reasoning` field along the way) — file now parses cleanly with 20 acceptance criteria and 5 api_surface entries, no duplicate IDs.</result>
+<usage><subagent_tokens>115358</subagent_tokens><tool_uses>38</tool_uses><duration_ms>334679</duration_ms></usage>
+</task-notification>
