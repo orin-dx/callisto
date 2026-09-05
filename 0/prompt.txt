@@ -1,0 +1,1 @@
+We only need coverage in the GH action. Locally we don’t right?
