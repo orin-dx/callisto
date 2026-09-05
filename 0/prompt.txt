@@ -1,0 +1,25 @@
+<task-notification>
+<task-id>a0c498229986a70b4</task-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a0c498229986a70b4.output</output-file>
+<status>completed</status>
+<summary>Agent "Re-audit Track 3b1 core spec, round 2" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>The audit is done. Verdict: **overall: fail**. This is a genuine finding, not nitpicking — the auditor traced real source line-by-line and caught two instances of the exact defect class that sank the predecessor spec four times: prose that asserts a mechanism without the mechanism actually having the data to do it.
+
+**Round 1's six claimed fixes all check out** — every cited line number matches, the `resolve_native` zero-production-caller claim is grep-confirmed, AC-22's `walk.rs` comment citation and safety argument are factually correct.
+
+**Four new issues surfaced by the fresh cross-check:**
+
+1. **`incomplete` (spec-level)** — `promoted_siblings` is typed `BTreeMap&lt;String, Vec&lt;PackageId&gt;&gt;`, but a `PackageId::Prefixed` only encodes one ecosystem. For a Case D member (multi-ecosystem, e.g. Cargo+Npm) already in a promoted group, the ALREADY-PROMOTED-NAME DETECTION branch has no way to recover that member's full claiming-ecosystem set — only its single primary ecosystem survives. No AC exercises a Case D member inside an N&gt;2 group, so this is invisible to the spec's own tests despite the prose claiming the general "every existing member" case. Suggested fix: retype to `BTreeMap&lt;String, Vec&lt;(PackageId, BTreeSet&lt;Ecosystem&gt;)&gt;&gt;` and update the detection paragraph, `with_promoted_siblings`, and the `AmbiguousName` candidate projection accordingly, plus a new AC for the Case D/N&gt;2 combination.
+
+2. **`incomplete` (spec-level)** — The STALE-KEY REWRITE step depends on collision-detection code at `walk.rs:126-128` that the spec cites as unmodified, but that code discards the first-seen path's own `ManifestDecl`s via `_` in the `insert` match before promotion is decided. As written, an implementer can't recover the first path's decls at rewrite time. Suggested fix: explicitly change the discard pattern to bind `existing_decls` and specify exactly which decls source feeds which promoted entry.
+
+3. **`missing-error-case`, AC-04** — Follows directly from #2: AC-04/07/09 assert only packages-map count and `id` values, never `.manifests` content, so an implementation with bug #2 would still pass every stated criterion. Suggested fix text provided to require asserting each promoted entry's `.manifests` matches its own path exclusively.
+
+4. **`ambiguous`, AC-16/AC-17** — Both are tagged `is_error_case: true` but bundle non-error assertions (AC-01/02, AC-04/05/07/09/11) together with error assertions (AC-03, AC-06/08/10) in one criterion, which is ambiguous for any downstream consumer filtering by that flag. Suggested fix: split each into separate error/non-error criteria.
+
+Scope check confirmed clean: no overlap with `SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json` (read directly), and no missing coverage flagged for the excluded `matrix.rs`/`commands/*`/sibling-doc files, per your scope instruction.
+
+Full JSON is in the completed subagent's output; files it read are listed above. Since overall is `fail`, this spec needs another revision round on items 1–2 (the mechanism-can't-produce-outcome gaps) before it's audit-clean — those are the same defect class that killed the predecessor four times, just relocated to the promoted-siblings data model and the stale-key rewrite.</result>
+<usage><subagent_tokens>35404</subagent_tokens><tool_uses>2</tool_uses><duration_ms>404815</duration_ms></usage>
+</task-notification>
