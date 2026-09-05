@@ -1,0 +1,1 @@
+We're not testing if we're running the test against a stub we generate then right? What's the point of that????? WTF
