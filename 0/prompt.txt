@@ -1,0 +1,8 @@
+<task-notification>
+<task-id>bcwf1b0f7</task-id>
+<summary>Monitor event: "just ci live progress with step timestamps"</summary>
+<event>[+1374s]         PASS [   0.016s] ( 284/1065) callisto-graph apply::tests::bumps_loop_write_version_error_leaves_manifest_untouched_and_skips_persist
+[+1374s]         PASS [   0.017s] ( 294/1065) callisto-graph apply::tests::git_add_staging_failure_redacts_credential_from_error
+[+1374s]         PASS [   0.025s] ( 301/1065) callisto-graph apply::tests::rewrites_loop_update_dependency_spec_error_leaves_manifest_untouched_and_skips_persist</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
