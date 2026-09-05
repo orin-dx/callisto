@@ -1,0 +1,5 @@
+<task-notification>
+<task-id>bcsp3ey1m</task-id>
+<summary>Monitor event: "watch cli+model test log for real progress and completion"</summary>
+<event>[Monitor timed out — re-arm if needed.]</event>
+</task-notification>
