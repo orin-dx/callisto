@@ -1,0 +1,24 @@
+<task-notification>
+<task-id>acfee8fec46cb2a22</task-id>
+<tool-use-id>toolu_019sAbGHGJMfh6hXohX5bv5f</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/08ccaac1-3846-4134-8b06-140e5b9c22f2/tasks/acfee8fec46cb2a22.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix ComposePrBodyReport field mismatches" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Task complete. Summary:
+
+**Findings (re-verified against live code and live doc):**
+1. `docs/01-spec.md` §M.12.5 documents `ComposePrBodyReport.body: String`; the struct at `crates/callisto-model/src/report.rs` had `pr_body: String` — a real wire-key mismatch (`prBody` vs `body`). Fixed via rename.
+2. The doc also documents `metadata: PrBodyMetadata` (labels / managed_labels / overflow). Investigated `crates/callisto-graph/src/commands/pr_body.rs` and all consumers (callisto-cli, callisto-moon — moon has no direct reference at all): only `labels` ("labels callisto wants applied now") has a real data source (`opts.labels`). `managed_labels` requires round-tripping previously-applied labels from the existing PR body — no such parsing exists anywhere. `overflow` requires detecting a body that exceeds GitHub's size limit and pushing to a notes branch — no size-limit/notes-branch logic exists anywhere in the codebase (confirmed via grep for "overflow", "notes branch", size-limit constants). Since 2 of 3 subfields have zero backing computation, I did not add the `metadata` field — that would require fabricating placeholder data for `managedLabels`/`overflow`. This is documented explicitly, not silently dropped, per the resolved-decision precedent for this session.
+
+**TDD cycle:**
+- Red: added `compose_pr_body_report_json_uses_body_key_not_pr_body` test in `crates/callisto-model/src/report.rs` (function at line 498, assertion at line 504) — confirmed failing via compile error (`E0560: no field named 'body'`) before any implementation change.
+- Green: renamed the field (`crates/callisto-model/src/report.rs:463`), updated all construction sites (`crates/callisto-graph/src/commands/pr_body.rs`, two `Ok(ComposePrBodyReport{...})` sites) and all consumption sites (`crates/callisto-cli/src/render/mod.rs:167`, plus test assertions in `crates/callisto-cli/tests/lifecycle_e2e_tests.rs` and `crates/callisto-graph/tests/graph_tests.rs`).
+
+**Verification:** `cargo test` green on `callisto-model` (93 passed), `callisto-graph`, `callisto-cli`, and `callisto-moon` (built + tested, no direct field references). `cargo fmt --check` clean on all touched crates. `cargo clippy --all-targets -- -D warnings` clean on `callisto-model`, `callisto-graph`, `callisto-cli`. No `SCHEMA_VERSION` bump, per the resolved constraint.
+
+**Commit:** `d6714eec` — `fix(model): rename ComposePrBodyReport.pr_body to body per spec`, scoped to exactly the 5 files touched by `ComposePrBodyReport` (no other report types included).
+
+No blockers — the metadata gap is documented as an explicit deferral in both the struct's doc comment and the commit message, not a silent omission, matching the pre-authorized "partial, honest fix" outcome.</result>
+<usage><subagent_tokens>85874</subagent_tokens><tool_uses>49</tool_uses><duration_ms>1195894</duration_ms></usage>
+</task-notification>
