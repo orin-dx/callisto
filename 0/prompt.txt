@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bf9r93xcp</task-id>
+<tool-use-id>toolu_01D9vEym9ysqWVppevBUtfvn</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/c0ad64b2-6440-4937-8328-8d9fd9db278c/tasks/bf9r93xcp.output</output-file>
+<status>completed</status>
+<summary>Monitor "wait for clippy compile (pid 48453) to finish" stream ended</summary>
+</task-notification>
