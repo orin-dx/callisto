@@ -1,0 +1,5 @@
+<task-notification>
+<task-id>boi53uhwq</task-id>
+<summary>Monitor event: "wait through trycmd_tests to final completion"</summary>
+<event>[Monitor timed out — re-arm if needed.]</event>
+</task-notification>
