@@ -1,0 +1,63 @@
+<task-notification>
+<task-id>a0e27c69c3a54f511</task-id>
+<tool-use-id>toolu_01JypsVmtLhrWuh2PsH9xRuA</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/0c4c4622-1ed8-4f2c-80e6-f0890a2dad72/tasks/a0e27c69c3a54f511.output</output-file>
+<status>completed</status>
+<summary>Agent "Assess full napi-rs pipeline DX gap" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Findings: Is the binary-placement step a real gap, or is "fix the docs + 2 bugs" sufficient?
+
+**Bottom line up front: this is a real, load-bearing gap (verdict 4a), and it is not merely undiscovered — the repo's own design spec explicitly designed the fix for it, and that half of the design was never implemented.** Fixing the two known bugs (silent-empty matrix, `nativeMatrix` unset-vs-`[]`, and the nonexistent `callisto publish-target` reference) is necessary but nowhere near sufficient. There is a second, larger hole in the middle of the pipeline that neither of those two fixes touches.
+
+### 1. napi-rs convention and callisto's model of it
+
+General napi-rs knowledge (not repo-verified): a napi-rs project publishes N platform-stub npm packages (`pkg-linux-x64-gnu`, `pkg-darwin-arm64`, …), each just a `.node` binary + a minimal `package.json` carrying `os`/`cpu` fields, plus one main package with `optionalDependencies` on all of them.
+
+Callisto's model of this **is correct**, confirmed in-repo:
+- `detect_npm_role` (`crates/callisto-graph/src/walk.rs:561-613`) classifies a `package.json` with non-empty `os`+`cpu` arrays as `ManifestRole::Platform`, and even infers the Linux libc ABI (`gnu`/`musl`/`gnueabihf`) from the package-name suffix since npm's own `os`/`cpu` fields have no ABI concept (`walk.rs:596-613`).
+- In `crates/callisto-graph/src/commands/publish.rs:395-489`, packages carrying a `Platform` manifest role are routed into a distinct `npm_platform_packages: Vec&lt;NpmPublish&gt;` list, separate from `npm_main_packages: Vec&lt;NpmMainPublish&gt;` (which additionally tracks `depends_on_platforms` for the main package's platform deps).
+- At execution time (`publish_client.rs:679-707`), platform packages are published *before* main packages (`plan.npm_platform_packages` loop precedes `plan.npm_main_packages`), which is the correct ordering for `optionalDependencies` resolution.
+- Critically, the actual publish mechanism is generic and ecosystem-standard: `build_npm_publish_command` (`publish_client.rs:347-410`) runs `npm publish --workspace &lt;name&gt;` (or the pnpm/yarn/bun equivalent) against whatever is currently on disk in that workspace member's directory. There is **no branching on `Platform`-ness** in the command-building layer at all — a platform package is published exactly like any other npm package, which is correct per convention, but it also means correctness depends entirely on the `.node` binary already being physically present in that directory before this command runs.
+
+### 2. The missing link — binary placement
+
+I grepped `matrix.rs`, `publish_client.rs`, `publish.rs`, and all of `callisto-cli/src/` for `artifact`, `stage`, `copy`, `.node`, `fs::copy`, `fs::rename` — **there is zero code anywhere in this repo that copies, moves, or stages a build artifact into a package directory.** `callisto publish` only ever invokes the underlying package manager's `publish` against the directory's current disk contents.
+
+Is this "shallow, everything you need is already there" or "a real gap"? The `PlatformTarget` struct (`crates/callisto-model/src/matrix.rs:56-71`) does give a consumer the two pieces of addressing info needed — `artifact_name` (`"native-" + triple`, from `matrix.rs:36-39`) and `package_dir` (workspace-root-relative). So a consumer *can* write the glue (`gh run download --name &lt;artifactName&gt; --dir &lt;packageDir&gt;`), but callisto supplies zero of the mechanism itself — no subcommand, no library function, nothing that performs the copy.
+
+### 3. What this repo's own consumers/docs actually show
+
+This is the most damning evidence, and it settles the "is this really unaddressed" question: **the repo's own internal design spec already designed this exact step and it was never built.**
+
+`.claude/specs/callisto-matrix.md` (status: "PLANNED, Phase 3/v0.5", dated 2026-08-09) §6.2 "Artifact routing — placement before publish" (lines 295-318) explicitly specifies:
+&gt; "Before `callisto publish` runs, the orchestrating step downloads each artifact by `artifactName` and places it into `packageDir`."
+
+...with a concrete `gh run download --name "$ARTIFACT" --dir "$DIR"` snippet, and §7 designs a full `callisto-build-action` composite action (napi/maturin/dotnet-aot dispatch, `napi build --platform --release`, `actions/upload-artifact@v4`).
+
+**None of this was implemented.** `.github/actions/` contains only `callisto-action`, `callisto-validate`, `setup-callisto`, `setup-callisto-wasm` — no `callisto-build-action` exists. `ARCHITECTURE.md`'s §12 example workflow (lines 476-494) doesn't even attempt this pattern — it shows a `build` job that calls a single nonexistent `callisto publish-target --package X --target Y` command with no upload/download/placement step at all. And in the actually-shipped `.github/actions/callisto-action/action.yml`, the `nativeMatrix` output is computed and then **`callisto publish` runs in the very same linear bash step, immediately after** (lines 164-183) — there's no `needs:`-gated downstream build job in this action's own structure, meaning the action as shipped cannot even support the fan-out-build-then-publish pattern its own `nativeMatrix` output implies exists. `nativeMatrix` is produced but consumed nowhere in this repo's own `callisto-ci.yml` or `callisto-release.yml` either.
+
+So: nothing in the shipped repo addresses binary placement, even informally — but the maintainers had already scoped and designed it once, as required (not optional) work, and it fell out before shipping.
+
+### 4. Severity classification: **(a) — real, load-bearing gap**
+
+This is not (b) a shallow/documentation-only gap, and not (c) napi-rs's own job. On (c): napi-rs's own CLI (`@napi-rs/cli`) does have `napi build --platform` (per the spec's own §7.2 snippet) and — general napi-rs knowledge, not verified in this repo — `napi-rs`'s official template does provide a `napi-rs` `.node` output step, but the "download artifact / place into the correct sibling package directory / run publish" orchestration across N parallel CI jobs is CI-glue that napi-rs's own CLI does not own either; it's genuinely the kind of thing a release-engineering tool like callisto would be expected to close, given callisto already computes exactly the `artifactName`→`packageDir` mapping needed to do it. The repo's own spec agreed with this framing (it scoped the placement step as in-scope, §6.2, not as a non-goal — see §8's five explicit non-goals, none of which mention artifact placement).
+
+Practically: today, a consumer following `ARCHITECTURE.md`'s only example, or using `callisto-action` as shipped, gets a matrix (once the silent-empty bug is fixed) and a `nativeMatrix` action output, but **no path from "N platform jobs each produced a `.node` file" to "those files are sitting in the right platform-stub package directories when `callisto publish` runs."** That has to be hand-built by every consumer from scratch, informed only by field names in the JSON schema, with no example anywhere in the repo of a working end-to-end flow. That's a substantial DX gap in the core pipeline, not a doc nit.
+
+### 5. Extending to Java/JNI and .NET native-AOT
+
+The `PlatformTargetKind` enum (`crates/callisto-model/src/matrix.rs:49-54`) currently has only `Napi` and `Maturin` — its own doc comment says "Deliberately omits a DotnetAot variant; out of scope for this spec," and `PlatformTarget` explicitly has "No `rid` field (napi/maturin only, no dotnet-aot)" (`matrix.rs:56-58`). `RuntimeEcosystem` likewise only has `Npm`/`Python`, with Java's `&lt;java.version&gt;` reader marked Phase 4/unimplemented. So the shipped abstraction already narrowed scope relative to the original spec draft, which had designed a three-way `napi`/`maturin`/`dotnet-aot` kind dispatch (spec §7.2-7.4).
+
+The shape is reasonable for extension: adding a `Kind::Java` or `Kind::DotnetAot` variant plus an optional `rid`-style field is additive, not a rework of the core `PlatformTargetGroup`/`PlatformTarget` types. But the **manifest-reading half will very plausibly reproduce the same "silent-empty, no diagnostic" pattern** each readers already do (`NapiTargetsField::Absent` / maturin's `Option&lt;Vec&lt;String&gt;&gt;` absent case both currently just produce an empty group with no warning — the exact shape of confirmed gap #1). And the **binary-placement half will have to be built from scratch again** for each new ecosystem's build/upload/download/place sequence (per §7's per-kind dispatch design), *unless* callisto first builds one ecosystem-agnostic "download `artifactName` into `packageDir`" primitive now, since that operation is already kind-independent in the data model. Today no such primitive exists in any form, so as it stands, yes — Java and .NET-AOT support would re-derive both halves of this gap-set independently rather than inheriting a fix.
+
+### Key files (all read-only, no edits made)
+- `crates/callisto-graph/src/walk.rs:551-626` — `detect_npm_role`
+- `crates/callisto-graph/src/commands/publish.rs:395-489` — platform vs. main npm publish routing
+- `crates/callisto-graph/src/commands/publish_client.rs:332-410, 679-707` — publish execution, no artifact staging
+- `crates/callisto-model/src/matrix.rs:39-71` — `PlatformTargetGroup`/`PlatformTarget`/`PlatformTargetKind` (no Dotnet variant, no `rid`)
+- `crates/callisto-graph/src/matrix.rs:1-140` — triple table, `artifact_name_for_triple`, `build_platform_target`
+- `.claude/specs/callisto-matrix.md:295-438` — original design's §6.2 (artifact placement) and §7 (`callisto-build-action`), never implemented
+- `.github/actions/callisto-action/action.yml:50-52, 157-183` — `nativeMatrix` output produced and immediately followed by `callisto publish` in the same step, no consumer job anywhere in-repo
+- `ARCHITECTURE.md:445-494` — the sole documented example, referencing the nonexistent `callisto publish-target` and showing no build/upload/download/place sequence at all</result>
+<usage><subagent_tokens>85192</subagent_tokens><tool_uses>33</tool_uses><duration_ms>197312</duration_ms></usage>
+</task-notification>
