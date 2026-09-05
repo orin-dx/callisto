@@ -1,0 +1,28 @@
+<task-notification>
+<task-id>ae6a3786f0213c772</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/ae6a3786f0213c772.output</output-file>
+<status>completed</status>
+<summary>Agent "Re-submit Track 3a to exit-gate" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Verdict: PASS (high confidence)
+
+Verdict artifact written to `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/verdict-track3a-workspace-membership.json` (schema-validated against `/Users/gabe/.claude/plugins/marketplaces/orin-dx-agent-plugins/shared/schemas/verdict@1.json`; `artifact_type: "spec@1"`, `retry_count: 2`, no blockers array).
+
+Spec read fresh from disk. I re-derived each prior blocker against the current text rather than accepting the drafter's account.
+
+**Blocker 1 (AC-09 self-contradiction) — resolved.** The clause `and does not silently admit every candidate as if no membership filter existed` is gone. Against AC-14's fixture (`members = "crates/*"` + `tools/outside/Cargo.toml`), the criterion now mandates exactly one outcome, and api_surface entry 1's "treated as an absent declaration ... (no membership filter applied)" agrees. The contradiction cannot be reconstructed.
+
+**Blocker 2 (three-way no-members-key inconsistency) — resolved.** Arm (d) now exists. Re-derived against AC-15's fixture: `crates/kept` satisfies (d) and is admitted; `crates/foo` matches the exclude glob so (d) fails and (a)/(b)/(c) don't apply, so it's dropped — exactly AC-15's assertion. Entry 1's supplementary sentence and entry 3 now carry identical exclude-honoring wording. I also checked arm (d) for leakage: it requires "no members key at all", so it does not fire for AC-01, AC-10c, or AC-09b, and AC-07's root package survives via arm (c) independently.
+
+**Blocker 3 (AC-09f unsatisfiable given) — resolved.** `crates/kept-example/Cargo.toml` now exists in the given; only the invalid-glob-shaped path is asserted absent.
+
+**Blocker 4 (8 vacuous AC-14 fixtures) — resolved.** Checked all 8 individually. Each now asserts a concrete non-empty outcome that admit-nothing and whole-walk-error implementations both fail. AC-09 and AC-09c additionally discriminate the "misread bare string as a literal single-entry glob" reading; AC-11d discriminates the genuinely tempting zero-documents-as-empty-list reading.
+
+**Fresh checks:** zero hits for TBD/TODO/FIXME/"as appropriate"/"reasonable"/"should behave"/placeholder across the document. 30 criteria, 17 with `is_error_case: true`, covering the full failure-mode cross-product (whole-file parse failure, parses-but-wrong-shape, zero-document YAML, per-entry glob-compile failure on all four lists, empty-vs-absent, and the malformed-pnpm/precedence interaction) — no gap found. Scope unchanged: one filter step in `IgnoreWalkLocator::projects()` in `crates/callisto-graph/src/locate/ignore_walk.rs` plus one dependency line. Round 10 added one enumeration arm and fixture prose; it widened no mechanism. Not failing on scope, not recommending a split.
+
+Five non-blocking notes are recorded in `reasoning` (not forwarded downstream). The two worth relaying: AC-14's AC-11b fixture proves the filter isn't admit-nothing but doesn't discriminate coerce-to-single-glob, because `packages/kept` matches `packages/*` — adding `tools/outside/package.json` would restore symmetry with AC-09c; and malformed-members-plus-well-formed-exclude is the one input combination no criterion pins. Neither violates a gate condition — the first is an "at least one" test that a stronger test doesn't preclude, the second is an uncovered input rather than an ambiguous criterion — so neither was withheld as a conditional pass.
+
+Cleared for vector.</result>
+<usage><subagent_tokens>87358</subagent_tokens><tool_uses>8</tool_uses><duration_ms>307103</duration_ms></usage>
+</task-notification>
