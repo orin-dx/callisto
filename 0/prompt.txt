@@ -1,0 +1,21 @@
+<task-notification>
+<task-id>a27d8fc299285f6ae</task-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8a85b651-0c9a-44fa-9e0a-ac694c4409e1/tasks/a27d8fc299285f6ae.output</output-file>
+<status>completed</status>
+<summary>Agent "Draft changesets for track-9 branch" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I created a single changeset for this branch. Here's the reasoning and where things landed.
+
+**Why one changeset, not four**: the diff's judgment rule 1 (shared `linked_spec`) dominates. Every code-touching commit — the `action.yml` placement loop, its three new test scripts, and all three `artifactName` behavior changes in `matrix.rs` (collision fix, napi-rs format, scoped-package sanitization) — traces to SPEC-006, which was scoped from the start as one coherent capability: "artifact names that stay unique... closing the gap between callisto matrix's output and a working end-to-end release." Splitting the naming fix from the placement loop it enables would fragment one spec's delivery for no consumer-facing reason.
+
+**Classification**: `consumer_impact: new-capability`, `semver_impact: minor` (this repo's pre-1.0 lockstep convention: new capability = minor, consistent with `callisto-matrix-command.md` precedent). No `breaking_changes` entry — SPEC-006's own non_goals explicitly document `artifactName` as an opaque CI-internal correlation token with "no config override provided" and "never published or user-facing," and the sanctioned consumption pattern (dynamic `${{ matrix.target.artifactName }}` dereferencing) never hardcodes the string format, so no documented external contract broke.
+
+**Topics excluded, with reasoning** (per the "Skip changesets for" list — pure docs / internal refactors with no behavior change):
+- `CLAUDE.md` workflow-guardrail additions (dev-workflow notes for AI-agent contributors, no crate effect)
+- `Cargo.lock` 0.4.0→0.4.1 sync (pure lockfile hygiene matching already-committed `Cargo.toml` versions, no dependency-graph change)
+- `--refresh-lockfiles` doc addition in `ARCHITECTURE.md` (documents a flag that already shipped before this branch; no code change)
+- The rest of `.claude/specs/*.json`, `.claude/plans/PLAN-006.json`, and the ARCHITECTURE.md/`callisto-matrix.md` example-workflow corrections — internal process artifacts and doc-only fixes to an already-broken example, folded into the single changeset's `files_changed` as supporting evidence rather than a separate topic since they document the same SPEC-006 capability.
+
+File written: `/Users/gabe/Projects/callisto/.changeset/native-artifact-placement.md` (frontmatter `callisto-graph: minor`, `callisto-cli: minor`; body matches this repo's real bullet-list, no-implementation-detail house style per `callisto-matrix-command.md`/`release-pipeline-contract.md` precedent).</result>
+<usage><subagent_tokens>88470</subagent_tokens><tool_uses>18</tool_uses><duration_ms>481821</duration_ms></usage>
+</task-notification>
