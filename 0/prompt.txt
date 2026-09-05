@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bn1oxz3vj</task-id>
+<tool-use-id>toolu_01Tm3goe6AnENs6JCm3xFg6m</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/bb531e8d-c394-4e47-a8ae-e4a9ceeca6d2/tasks/bn1oxz3vj.output</output-file>
+<status>completed</status>
+<summary>Background command "Full callisto-cli suite after schema guard fix" completed (exit code 0)</summary>
+</task-notification>
