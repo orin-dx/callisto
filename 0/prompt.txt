@@ -1,0 +1,5 @@
+<task-notification>
+<task-id>boul486tc</task-id>
+<summary>Monitor event: "wait out shared build-lock contention from concurrent ttys007 session"</summary>
+<event>[Monitor timed out — re-arm if needed.]</event>
+</task-notification>
