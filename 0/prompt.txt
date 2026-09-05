@@ -1,0 +1,22 @@
+<task-notification>
+<task-id>a4091553f763e6fa5</task-id>
+<tool-use-id>toolu_01EPeEQLNkoAVzyvaNFfuv4S</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/bb531e8d-c394-4e47-a8ae-e4a9ceeca6d2/tasks/a4091553f763e6fa5.output</output-file>
+<status>completed</status>
+<summary>Agent "Redraft Track 1 spec after exit-gate fail" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>The corrected spec@1 JSON is valid and written to `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/spec-track1-draft.json`.
+
+Summary of what changed, grounded against the actual source I re-read (`crates/callisto-graph/src/cascade.rs`, `crates/callisto-graph/src/groups.rs`, `crates/callisto-graph/src/config/groups.rs`, `crates/callisto-graph/src/commands/version.rs`, `crates/callisto-graph/src/commands/snapshot.rs`):
+
+- **BLK-01**: Bug 1's fix is now scoped to a new Fixed-group convergence block inside `solve_cascade`'s `while changed` loop (mirroring the real Linked-group block at cascade.rs:314-379), not `raise()`'s per-sibling loop. AC-001/AC-002 rewritten so the scenario reaches the seed path (`input.seed`, line 198) rather than requiring `raise()` to fire. Added two non_goals: `raise()`'s loop is left unmodified (its target output is superseded, not removed), and this doesn't fix fixed_group_target's SemVer-only hardcoding.
+- **BLK-02**: AC-004 now asserts directly on `run_cascade`'s `CascadeOutcome.targets`, since `plan_snapshot` discards cascade targets entirely (confirmed at snapshot.rs:82-94).
+- **BLK-03**: Added `.dedup()` after the existing `.sort()` calls (confirmed at config/groups.rs:164, 195) to the `GroupTable::resolve` api_surface entry, and carved an explicit exception into non_goals item 4.
+- **BLK-04**: Fixed the `fixed_group_target` call sketch to its real 5-arg signature (confirmed at groups.rs:97-103).
+- **BLK-05**: AC-001 now has concrete fixture values (`base_versions = {A: 2.0.0, B: 0.1.0}`, tags present/absent, both seeded Minor → both `2.1.0`) and a new non_goal documents the PEP440/SemVer hardcoding gap in `fixed_group_target` (groups.rs:137) vs. `bump_target`'s grammar dispatch (cascade.rs:398-401).
+- **BLK-06**: AC-005 restated against actual returned `VersionPlan.bumps`/`SnapshotReport.bumps` values, dropping the unobservable `snapshot_versions` local and the unrunnable before/after framing.
+- **BLK-07**: `plan_version` api_surface entry now lists `pre_mutation_checks`'s real 6 arguments (confirmed at groups.rs:18-25) and corrects the `ws.tags()` borrow note (`ws.tags()` already returns `&amp;TagIndex`).
+
+`revision_note` in the spec documents all seven fixes with citations; `spec_file_path` was left unset per instructions (orchestrator owns it).</result>
+<usage><subagent_tokens>103926</subagent_tokens><tool_uses>15</tool_uses><duration_ms>325832</duration_ms></usage>
+</task-notification>
