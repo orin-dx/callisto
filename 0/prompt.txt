@@ -1,0 +1,9 @@
+<task-notification>
+<task-id>bpfo0dex1</task-id>
+<tool-use-id>toolu_01Cx1MLxbA9CJxEvtXb9UHiD</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8a85b651-0c9a-44fa-9e0a-ac694c4409e1/tasks/bpfo0dex1.output</output-file>
+<status>completed</status>
+<summary>Background command "kill -9 59574 59572 2&gt;&amp;1
+sleep 1
+cargo test -p callisto-cli --lib -- workspace:: 2&gt;&amp;1 | tail -50" completed (exit code 0)</summary>
+</task-notification>
