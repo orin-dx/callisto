@@ -1,0 +1,1 @@
+Can you save a file of the current important context so we can pickup in a fresh session with a prompt to get us started? This session has built a massive context and it's time to switch up
