@@ -1,0 +1,25 @@
+The user just ran /insights to generate a usage report analyzing their Claude Code sessions.
+
+Here is the full insights data:
+{}
+
+Report URL: file:///Users/gabe/.claude/usage-data/report-2026-08-16-200316.html
+HTML file: /Users/gabe/.claude/usage-data/report-2026-08-16-200316.html
+Facets directory: /Users/gabe/.claude/usage-data/facets
+
+At-a-glance summary (for your context only — the user has not seen any output yet):
+# Claude Code Insights
+
+23 sessions total · 16 analyzed · 730 messages · 367h · 37 commits
+2026-07-07 to 2026-08-15
+
+_No insights generated_
+
+Output the text between <message> tags verbatim as your entire response. Do not omit any line:
+
+<message>
+Your shareable insights report is ready:
+file:///Users/gabe/.claude/usage-data/report-2026-08-16-200316.html
+
+Want to dig into any section or try one of the suggestions?
+</message>
