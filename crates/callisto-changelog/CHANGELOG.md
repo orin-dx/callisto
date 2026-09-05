@@ -1,9 +1,5 @@
 # callisto-changelog
 
-## 0.6.0
-
-- Released together with the `workspace` fixed group.
-
 ## 0.5.0
 
 - Released together with the `workspace` fixed group.
