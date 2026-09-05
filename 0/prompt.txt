@@ -1,0 +1,53 @@
+<task-notification>
+<task-id>a78d5edb76f31aa6c</task-id>
+<tool-use-id>toolu_01DXweetYae32vrmQS2ybj73</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a78d5edb76f31aa6c.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement TASK-11 (AC-15 regression test)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Summary
+
+TASK-11 (AC-15: `[workspace]` with exclude only, no members key) executed and committed.
+
+**Verification steps taken:**
+1. Confirmed all 6 prior commits (TASK-05 through TASK-10) present on `ignore_walk.rs` and tree was clean before starting.
+2. Read AC-15's exact acceptance criterion text from `/Users/gabe/Projects/callisto/.claude/specs/SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json` (line 171-174) — it matched the plan's paraphrase and fixture exactly.
+3. Confirmed via code inspection that `crates/callisto-graph/src/locate/membership.rs:83-113` (`read_cargo_membership`) already handles members-key-absence correctly: `workspace.get("members")` returns `None` naturally, which flows through `.and_then(parse_toml_string_array)` to `None`, meaning `CargoMembership.admits()` falls to `None =&gt; true` — admitting all non-excluded candidates, per AC-15.
+4. Added the integration test `ac15_workspace_table_with_exclude_only_and_no_members_key_admits_non_excluded` to `crates/callisto-graph/src/locate/ignore_walk.rs` (line 486). Ran it — it passed immediately (no red step), matching the plan's honest characterization.
+5. **Adversarially verified non-vacuity** (since no red step occurred): temporarily mutated `membership.rs` so members-absent fell back to an empty (excludes-everything) list instead of `None`, reran the test, confirmed it failed (`non-excluded crate must appear, got: []`), then restored the correct code and reconfirmed green.
+6. Ran `cargo fmt -p callisto-graph`, `cargo clippy -p callisto-graph --all-targets -- -D warnings` (clean), and the full `cargo test -p callisto-graph --lib` (282 passed, 0 failed).
+7. Committed as `1e0dc69` — commit hook's format-check passed on first try, no amend needed.
+
+No implementation code changed — only the test file.
+
+```json
+{
+  "task_id": "TASK-11",
+  "status": "done",
+  "steps_completed": [
+    "verified TASK-05..TASK-10 present and tree clean",
+    "read AC-15 exact text from spec file on disk",
+    "inspected read_cargo_membership implementation to confirm members-absent already falls back to admit-all via None",
+    "wrote integration test ac15_workspace_table_with_exclude_only_and_no_members_key_admits_non_excluded in ignore_walk.rs",
+    "ran test, confirmed green immediately (honest non-red step)",
+    "adversarially mutated members-absent fallback to excludes-everything, confirmed test then failed, restored correct code",
+    "ran cargo fmt, cargo clippy -D warnings (clean), full cargo test -p callisto-graph --lib (282 passed)",
+    "committed 1e0dc69"
+  ],
+  "test_result": "pass",
+  "commit_sha": "1e0dc69",
+  "concerns": null,
+  "criteria_evidence": [
+    {
+      "criterion_id": "AC-15",
+      "test_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs",
+      "test_line": 486,
+      "implementation_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs",
+      "implementation_line": 83
+    }
+  ],
+  "reasoning": "Plan and TASK-03e's note both correctly predicted no red step: workspace.get(\"members\") on an absent key naturally yields None via toml_edit's API, and .and_then(parse_toml_string_array) on None is None without panicking (this was already true since TASK-03d). Unit-level test for this exact fallback (read_cargo_membership_honors_exclude_when_no_members_key_present, membership.rs:201) predates this task via TASK-03e; TASK-05 wired cargo_membership.admits() into IgnoreWalkLocator::projects(). This task's job was purely to add the integration-level regression-proof at the ignore_walk.rs/IgnoreWalkLocator level, which I did, verified green, and adversarially confirmed non-vacuous by breaking then restoring the underlying fallback."
+}
+```</result>
+<usage><subagent_tokens>83977</subagent_tokens><tool_uses>22</tool_uses><duration_ms>403786</duration_ms></usage>
+</task-notification>
