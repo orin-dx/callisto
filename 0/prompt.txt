@@ -1,0 +1,92 @@
+<task-notification>
+<task-id>a74f4df0302970c01</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/tasks/a74f4df0302970c01.output</output-file>
+<status>completed</status>
+<summary>Agent "Verify spec is grounded in requirement" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Verification Findings
+
+I checked each of spec@1's 14 acceptance criteria against requirement@1 (no research-report@1 was supplied for this spec). I also cross-checked AC-010's factual claim about apply.rs test names against `/Users/gabe/Projects/callisto/crates/callisto-graph/src/apply.rs` — all six named tests (`cargo_only_bump_does_not_stage_python_lockfile`, `refresh_lockfiles_calls_cargo_update_workspace_when_cargo_bumped`, `refresh_lockfiles_false_does_not_call_cargo_update`, `apply_is_idempotent_when_manifest_already_at_target_version`, `apply_returns_error_when_manifest_has_unexpected_version`, `apply_stages_changeset_path_even_when_file_already_deleted`) exist at the lines the spec's reasoning implies. That confirms factual accuracy but not requirement traceability — the requirement never names these tests, so it doesn't establish AC-010's specific scope.
+
+```json
+{
+  "supported": [
+    {
+      "criterion_id": "AC-001",
+      "evidence": "done_when[1]: \"The Manifest trait's write_version/update_dependency_spec/update_optional_dependencies methods perform only in-memory mutation and never call persist internally.\"",
+      "source": "requirement@1"
+    },
+    {
+      "criterion_id": "AC-002",
+      "evidence": "done_when[2]: \"A new Manifest::persist(&amp;mut self, permit: &amp;ApplyPermit) -&gt; Result&lt;(), ManifestError&gt; trait method exists and is the only way to flush a manifest handle's in-memory state to disk.\" combined with done_when[4] (all mutations reflected after one persist call).",
+      "source": "requirement@1"
+    },
+    {
+      "criterion_id": "AC-004",
+      "evidence": "statement: \"apply_version_plan must open, mutate, and persist each target manifest file at most once ... regardless of how many bumps/rewrites in the plan target that file\"; done_when[0] restates this as the N-distinct-bumps case.",
+      "source": "requirement@1"
+    },
+    {
+      "criterion_id": "AC-005",
+      "evidence": "done_when[4]: \"When multiple mutations target the same file and all succeed, the file reflects all of them after exactly one persist call.\"",
+      "source": "requirement@1"
+    },
+    {
+      "criterion_id": "AC-006",
+      "evidence": "statement explicitly groups \"bumps/rewrites\" together as the unit that must not cause repeated opens/persists; the why section's example (\"An app crate depending on 5 siblings that bump together\") describes exactly a multi-entry-one-file scenario the fix must collapse.",
+      "source": "requirement@1"
+    },
+    {
+      "criterion_id": "AC-007",
+      "evidence": "done_when[5]: \"When multiple mutations target the same file and one fails validation (e.g. UnexpectedManifestVersion) partway through applying them in-memory, the file on disk is left completely unmodified for that path.\"",
+      "source": "requirement@1"
+    },
+    {
+      "criterion_id": "AC-008",
+      "evidence": "done_when[5] (same as AC-007) — no persist call for the failed group's path is the direct entailment of \"left completely unmodified.\"",
+      "source": "requirement@1"
+    },
+    {
+      "criterion_id": "AC-009",
+      "evidence": "out_of_scope[3]: \"Cross-file atomicity (a failure on file B after file A already persisted successfully) -- unchanged from today's behavior; only per-file atomicity improves.\"",
+      "source": "requirement@1"
+    },
+    {
+      "criterion_id": "AC-011",
+      "evidence": "\"at most once\" in the statement and done_when[0] permits a zero-persist outcome for the idempotent no-op case; done_when[3] (\"Every existing behavioral guarantee ... is unchanged for a plan where every bump/rewrite targets a distinct file\") supports preserving the existing skip-write/staged behavior.",
+      "source": "requirement@1"
+    },
+    {
+      "criterion_id": "AC-012",
+      "evidence": "done_when[3]: \"Every existing behavioral guarantee of apply_version_plan (format preservation, version-mismatch detection via UnexpectedManifestVersion, dependency-not-found errors) is unchanged...\" — the general clause covers CargoToml's existing UnsupportedOperation behavior as an existing guarantee, though the parenthetical does not name it specifically.",
+      "source": "requirement@1"
+    },
+    {
+      "criterion_id": "AC-013",
+      "evidence": "done_when[6]: \"All ~28 existing test call sites of write_version/update_dependency_spec/update_optional_dependencies in cargo.rs/npm.rs/python.rs's own test modules are updated (adding an explicit .persist() call where the test reads the file back from disk) and continue to pass.\"",
+      "source": "requirement@1"
+    },
+    {
+      "criterion_id": "AC-014",
+      "evidence": "done_when[7]: \"just ci passes with all phases green after the change.\"",
+      "source": "requirement@1"
+    }
+  ],
+  "unsupported": [
+    {
+      "criterion_id": "AC-003",
+      "note": "No passage in requirement@1 discusses calling persist() on a handle with zero prior mutations, its no-op semantics, or that it must return Ok rather than being disallowed/irrelevant. This is a design decision by the spec drafter for the invented Manifest::persist API, not something the requirement specifies or implies must be tested as its own criterion."
+    },
+    {
+      "criterion_id": "AC-010",
+      "note": "Requirement never names or enumerates specific apply.rs unit tests. done_when[3] supports the general idea that existing behavioral guarantees are unchanged, but the specific list of exactly six named tests (cargo_only_bump_does_not_stage_python_lockfile, refresh_lockfiles_calls_cargo_update_workspace_when_cargo_bumped, refresh_lockfiles_false_does_not_call_cargo_update, apply_is_idempotent_when_manifest_already_at_target_version, apply_returns_error_when_manifest_has_unexpected_version, apply_stages_changeset_path_even_when_file_already_deleted) as the required regression set is the drafter's own enumeration, not traceable to a requirement passage. (Confirmed the six tests do exist in apply.rs by direct file read — factually accurate, but factual accuracy is not the same as requirement grounding.)"
+    }
+  ],
+  "overfitted": []
+}
+```
+
+reasoning (scratchpad, not for downstream forwarding): No research-report@1 was provided alongside requirement@1 for this spec, so all evidence citations are against the requirement JSON only. Most of the 14 criteria trace cleanly to specific `done_when` or `out_of_scope` entries — this is a well-grounded spec overall. The two unsupported items share a common failure mode: the spec drafter introduced new API surface (Manifest::persist, write_call_count/open_call_count counters) and then wrote acceptance criteria testing edge-case behaviors of that *invented* surface (AC-003's zero-mutation persist no-op) or invented enumerated specificity not present in the source (AC-010's six named test IDs) without the requirement actually calling for those specific checks. Both are plausible, reasonable engineering practice — but plausibility is exactly the trap the judgment section warns against; neither has a direct citation. I did not find any criterion that was overfitted in the strict sense (narrower than the requirement, excluding valid cases the requirement implies should be covered) — the closest candidate, AC-007's restriction to two named error types (UnexpectedManifestVersion, DependencyNotFound), tracks the requirement's own "e.g." example and doesn't claim exhaustiveness, so I did not classify it as overfitted. AC-012 was a close call (parenthetical list in done_when[3] doesn't name UnsupportedOperation specifically) but the enclosing general clause "every existing behavioral guarantee... is unchanged" is broad enough to support it as-written; flagged as a judgment call in the evidence text so the auditor/exit-gate can weigh it themselves.</result>
+<usage><subagent_tokens>48688</subagent_tokens><tool_uses>2</tool_uses><duration_ms>87635</duration_ms></usage>
+</task-notification>
