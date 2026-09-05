@@ -1,0 +1,39 @@
+<task-notification>
+<task-id>a2af5b84493bed04c</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a2af5b84493bed04c.output</output-file>
+<status>completed</status>
+<summary>Agent "Re-submit Track 3a amendment to exit-gate" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>**Verdict: PASS** (confidence: high). Written to `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/verdict-track3a-v2.json`.
+
+```json
+{
+  "verdict": "pass",
+  "confidence": "high",
+  "artifact_type": "spec@1",
+  "retry_count": 1,
+  "verdict_summary": "PASS. All 34 criteria are testable with concrete fixtures and assertions; no TBDs anywhere; 19 error cases flagged is_error_case:true covering malformed TOML/JSON/YAML, per-entry glob failures, empty lists, and hybrid-root interactions; scope is one file plus one dependency. Cleared for planning."
+}
+```
+
+I read the spec fresh from disk (81,548 bytes, 34 criteria) and verified independently rather than trusting the summary.
+
+**The four conditions, each checked mechanically:**
+
+1. **Testable propositions** — every criterion states a literal fixture (actual manifest content, not a description of one) and a concrete assertion on `projects()` output: entry present/absent at a named path, `ecosystem == Ecosystem::Cargo|Npm`, exact entry counts. A raw-text grep for vague-language markers returned one hit — `appropriate` — inside `api_surface` entry 2's rationale for diverging from `tags.rs`'s error-propagating posture, directly after the precise rule it justifies. Not an implementable-vagueness defect.
+2. **No TBDs** — zero hits for TBD/TODO/FIXME/XXX/"to be determined". The two genuinely open questions are parked in `non_goals` with their consequences spelled out (pnpm `!`-negation entries declared inert; nameless-root exemption excluded with the fallback stated) rather than left dangling.
+3. **Error cases** — 19 of 34 carry `is_error_case: true`, all real degenerate-input cases, and no `is_error_case: false` criterion is actually an error case.
+4. **Scope** — one production file (`/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs`, 274 lines) plus one Cargo.toml line. `globset` is already a dependency (line 32 of the crate manifest), so `yaml-rust2` is the sole addition.
+
+**Grounding checks against real code, all confirmed:** `to_workspace_relative` returns `PathBuf::from(".")` for the root (lines 153-154), making the `path == "."` assertions in AC-07/16/17 achievable; the npm arm requires a `"name"` field to emit at all (line 97) — which is exactly the precondition AC-16/AC-17 build on, and which makes AC-10's no-name fixture correctly yield zero entries; the `Ok`-only match arms cited in non_goal 5 exist verbatim at lines 73 and 96.
+
+**All four amendment findings verified closed, not merely claimed:** AC-16b/AC-10d/AC-17 exist with correct flags and carve-outs; I programmatically diffed each group criterion's header ID list against the fixtures actually supplied in its body (AC-12/13/14 all complete, union covers all 31 non-group criteria with no orphans and no dangling IDs); the only literal newline in the document is in `revision_note`, which is metadata; AC-09/09b now carry the non-string-entry clause, and `SPEC-TRACK3B-IDENTITY-RESOLUTION` appears zero times.
+
+**Adversarial combination sweep** — I tried to construct a case where an implementer must guess and could not. Malformed members + valid exclude is settled by `api_surface` plus AC-09b's explicit "never causes every candidate to be admitted" sentence. Hybrid root + wrong-shape (non-`Err`) pnpm YAML is settled by arm (c)'s enumeration "*whether because the file is absent, fails to parse, or lacks a valid packages: sequence*" combined with arm (d)'s "*regardless of whether arm (b) or arm (c) governs*" — so a separate criterion there would be redundant, not missing. Empty `packages: []` cannot be confused with AC-11b's shape failure because AC-10b states the outcome explicitly. Nested non-root manifests: every survival arm is defined exclusively over the root manifest, so root-only consultation is determinate rather than a silence.
+
+Three cosmetic observations I deliberately did **not** raise as blockers (none affects whether a test can be written or what it asserts): a stray `". and a further separate..."` punctuation artifact in AC-12; AC-10b's fixture not pinning the root package.json state the way AC-10's now does (still determinate — the fixture creates no root package.json, and a nameless root is dropped at line 97 regardless); and non_goal 9 describing a nameless-root state that cannot arise for that same reason.
+
+`retry_count` is 1 — this is the first *exit-gate* submission of v2; the four amendment rounds were pre-gate auditor rounds, so the escalate-at-3 rule is not triggered. No condition was relaxed; this is an unconditional pass.</result>
+<usage><subagent_tokens>82865</subagent_tokens><tool_uses>16</tool_uses><duration_ms>356688</duration_ms></usage>
+</task-notification>
