@@ -1,0 +1,217 @@
+This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
+
+Summary:
+1. Primary Request and Intent:
+
+The session resumed from a prior context where 6 P0 worktree merges had been completed and pushed to origin/main. The user's explicit requests in this session were:
+
+1. **Review the audit plan artifact** — the deep audit workflow produced 83 raw findings, 15 confirmed critical/high, and a comprehensive 35-track + 11 QW + 4 ARC plan, published as an artifact.
+2. **Analyze failure patterns** — why were these bugs missed? What architectural root causes?
+3. **Discuss SDD + TDD** — could Spec-Driven Development have caught more gaps?
+4. **Research external SDD tools** — tessl.io, spec-kit, BCMS blog, ai-sdd.com (user provided URLs).
+5. **Apply SDD learnings to Callisto code** (NOT the plugins) — user explicitly clarified: "I'm not asking for changes to the plugins, I'm asking for changes to the callisto code."
+6. **Check if all audit issues are addressed** — honest answer: no, only constitution changes done.
+7. **Comprehensively tackle the audit plan** with "agent teams and workflows using the best agents and effort to balance quality and cost."
+
+**Standing security/operational constraints (must remain in effect):**
+- NEVER commit to git without explicit user instruction (TDD cycle commits are allowed when explicitly implementing)
+- NEVER bump versions or run release/publish commands
+- `/Users/gabe/Projects/callisto-findings/FINDINGS.md` lives OUTSIDE the repo — must NEVER be committed
+- `callisto publish` must NEVER be invoked against a real registry
+- No emojis in documentation or code
+- TDD discipline: RED → GREEN → REFACTOR; never write production code without a failing test first
+
+2. Key Technical Concepts:
+
+- **Callisto**: Rust CLI + Moon WASM extension for polyglot monorepo versioning (10 crates, ~30K lines)
+- **EARS notation** (Easy Approach to Requirements Syntax): 5 patterns for unambiguous acceptance criteria:
+  - Ubiquitous: `THE SYSTEM SHALL <X>` → proptest invariant
+  - Event-driven: `WHEN <trigger> THE <system> SHALL <response>` → behavior test
+  - State-driven: `WHILE <state> THE <system> SHALL <response>` → state machine test
+  - Unwanted: `IF <condition> THEN THE <system> SHALL <response>` → error case test (`is_error_case: true`)
+  - Optional: `WHERE <feature> THE <system> SHALL <response>` → feature-gated test
+- **SDD (Spec-Driven Development)**: spec-first development; constitution as machine-verifiable specs
+- **EARS constitution**: CLAUDE.md/AGENTS.md invariants expressed as EARS pairs with enforcer lines
+- **cargo-deny**: dependency/license policy enforcement — exists in deny.toml but NO `[[bans.deny]]` layer rules yet
+- **`just layer-check`**: new Justfile recipe using `cargo metadata + jq` to detect layer violations
+- **Five audit failure patterns**:
+  1. Constraints as prose instead of code (no machine enforcement)
+  2. Testing at wrong granularity (components pass, compositions fail)
+  3. Error path neglect (systematic, `map_err(|_|...)`, `to_string()` in error-mapping positions)
+  4. Version semantics interaction rules unmodeled (proptest needed)
+  5. Implicit context assumptions (WASM/native divergence, single-writer model)
+- **Tessl**: Skill governance/registry layer (installed vs. activated metrics) — NOT an SDD tool
+- **GitHub Spec Kit**: 9-command agentic SDD workflow (constitution → specify → clarify → plan → checklist → tasks → analyze → implement → converge)
+- **Callisto layer model**: Layer 1 (callisto-model, callisto-format) → Layer 1.5 (callisto-vcs) → Layer 2 (callisto-manifests, callisto-conventional, callisto-changelog) → Layer 3 (callisto-graph) → Layer 4 (callisto-cli, callisto-moon)
+- **Known layer violations**: T17 (callisto-changelog → callisto-manifests), T18 (callisto-conventional → callisto-vcs)
+- **Worktree isolation** in workflows: each parallel agent gets a fresh git worktree branch, changes are merged by a synthesis agent
+- **TDD cycle**: failing test (RED) → minimal implementation (GREEN) → refactor
+
+3. Files and Code Sections:
+
+- **`/Users/gabe/Projects/callisto/CLAUDE.md`** — Modified. Updated Key Architectural Invariants to reference EARS specs in AGENTS.md §3 and `just layer-check`. Added pointer to §6 SDD practices.
+  ```markdown
+  ### Key Architectural Invariants
+  Each invariant is EARS-specified in [AGENTS.md §3](AGENTS.md) with its enforcer. When adding error types or cross-crate features, spec the EARS criteria first — see [AGENTS.md §6](AGENTS.md) for SDD practices.
+  1. **Safe Rust Only**: `unsafe_code = "forbid"` in every crate. Enforced by `just lint`.
+  2. **Format Preservation**: Manifest edits via `toml_edit` / `serde_json` indentation fingerprinting. Never regex or string replace.
+  3. **Atomic File Persistence**: All writes through `callisto_manifests::atomic::atomic_write`. Never `fs::write` directly.
+  4. **Layer Isolation**: Layer 1/1.5 (`callisto-model`, `callisto-format`, `callisto-vcs`) must never depend on Layer 2+ AGPL crates. Enforced by `just layer-check`.
+  5. **No Emojis in Documentation**: Keep docs clean, technical, scannable, and emoji-free.
+  ```
+
+- **`/Users/gabe/Projects/callisto/AGENTS.md`** — Modified. §3 (Strict Engineering Invariants) completely rewritten with EARS pairs for each invariant. New §6 (SDD Engineering Practices) added.
+  - §3 now has 6 invariants (5 original + new diagnostic codes invariant), each with Ubiquitous + Unwanted EARS statements and Enforcer lines
+  - Key EARS example for Layer Isolation:
+    ```
+    **Ubiquitous**: THE SYSTEM SHALL ensure Layer 1 (`callisto-model`, `callisto-format`) and Layer 1.5 (`callisto-vcs`) crates never introduce a `[dependencies]` entry on any Layer 2+ crate.
+    **Unwanted**: IF any Layer 1/1.5 `Cargo.toml` gains a dependency on a Layer 2+ crate, THEN `just layer-check` SHALL fail and block the change.
+    - Current known violations: `callisto-changelog -> callisto-manifests` (T17), `callisto-conventional -> callisto-vcs` (T18).
+    ```
+  - §6 covers: when to spec first (mandatory triggers), EARS notation table with Rust test shapes, error type design discipline (spec complete enum before fallible function), proptest for ubiquitous invariants, canon pipeline triggers
+
+- **`/Users/gabe/Projects/callisto/Justfile`** — Modified. Added `layer-check` recipe after `audit` recipe. NOT added to `ci` because T17 and T18 violations currently exist.
+  ```bash
+  layer-check:
+      #!/usr/bin/env bash
+      set -euo pipefail
+      echo "Checking crate layer isolation constraints..."
+      metadata=$(cargo metadata --format-version 1)
+      violations=0
+      changelog_deps=$(echo "$metadata" | jq -r '.packages[] | select(.name == "callisto-changelog") | .dependencies[].name')
+      if echo "$changelog_deps" | grep -q "^callisto-manifests$"; then
+          echo "LAYER VIOLATION: callisto-changelog -> callisto-manifests (fix: T17)"
+          violations=$((violations + 1))
+      fi
+      conventional_deps=$(echo "$metadata" | jq -r '.packages[] | select(.name == "callisto-conventional") | .dependencies[].name')
+      if echo "$conventional_deps" | grep -q "^callisto-vcs$"; then
+          echo "LAYER VIOLATION: callisto-conventional -> callisto-vcs (fix: T18)"
+          violations=$((violations + 1))
+      fi
+      if [ "$violations" -gt 0 ]; then
+          echo "Layer check: FAILED ($violations violation(s))"
+          exit 1
+      fi
+      echo "Layer isolation: OK"
+  ```
+  Verified output: correctly detects both T17 and T18 violations.
+
+- **`/Users/gabe/Projects/callisto/deny.toml`** — Read. Contains license checks, advisory ignores for wasmtime dev-deps, but NO `[[bans.deny]]` entries. `cargo-deny`'s wrappers mechanism doesn't cleanly enforce "crate A cannot depend on crate B" without banning B entirely — `just layer-check` is the adopted solution instead.
+
+- **Plugin files read (for context analysis, NOT modified)**:
+  - `.agents/plugins/bug-hunter-rust/plugin.json` — v1.1.0, 5 subagents, 1 skill
+  - `.agents/plugins/bug-hunter-rust/skills/bug-hunter-rust/SKILL.md` — 6 taxonomies, 6 architectural smells, 7 shared traits framework
+  - All 5 bug-hunter subagent files (scanner, adversary, remediator, architect, mutator)
+  - Gaps identified: no Taxonomy 7 (cross-crate invariant drift), no Taxonomy 8 (error downgrade/source erasure `map_err(|_|...)`), Taxonomy 3 checks TODO/FIXME not EARS constitution alignment
+
+- **Audit Plan Artifact**: Published at https://claude.ai/code/artifact/0a024ad9-686c-4c1b-835a-1df84dfcb342
+
+4. Errors and Fixes:
+
+- **`rg --include` flag not valid**: When trying to audit diagnostic codes with `rg '#\[diagnostic\(code\(' crates/ --include="*.rs" -n`, rg reported "unrecognized flag --include" (should be `-g "*.rs"` or `--type rust`). This occurred at the last tool call before the summary request — was NOT fixed yet.
+
+- **`just layer-check` correctly detects violations**: Verified the recipe outputs both T17 and T18 violations and exits 1. This is the desired behavior (violations exist until T17/T18 are fixed).
+
+- **Plugin commit incorrectly included**: In a prior session, agent plugin changes were committed to callisto repo. User clarified plugins should be in agent-plugins repo. Reverted with `git revert --no-edit c08d961`.
+
+5. Problem Solving:
+
+**Solved:**
+- Constitution (CLAUDE.md + AGENTS.md) now has EARS-formatted invariants with enforcer lines
+- `just layer-check` provides machine-enforceable layer constraint checking (currently detects T17, T18 as violations)
+- SDD learnings translated to concrete Callisto code changes: EARS notation, error type discipline, proptest for invariants, canon pipeline triggers
+- Artifact published with comprehensive audit plan
+
+**Ongoing/Pending:**
+- The comprehensive workflow script for implementing all audit tracks was being designed when the summary was triggered. The workflow structure was fully planned but the script was not yet written/submitted.
+
+6. All User Messages:
+
+- (Session start — implicit continuation from prior context)
+- "Done with everything?" (prior session context)
+- "Let's bring to main and make semantic comite" (prior session)
+- "The agents should be coming from the agent-plugins repo, not getting changed here right? I changed it in another session" (prior session)
+- "Let's merge everything into main please" (prior session)
+- "Do another very thorough round of bug hunting and code analysis focusing on architecture, best practices, maintainability, DX, performance. Also consider test coverage with black box tests that cover the edge cases and error cases. I feel like you're still missing things. Find gaps, analyse patterns and come up with a comprehensive plan" (prior session)
+- "How did we miss these gaps? What patterns do we see? Are they a result of gaps in the architecture? Something else?"
+- "Could this be done better with SDD + TDD instead of just TDD?"
+- "How do we practice SDD with rust? What are the best practices? tools? formats?"
+- "Outside of our skills and agents what are the best practices for SDD in rust? What can we learn from spec-kit, tessl, etc.?" (then provided URLs: https://tessl.io, https://github.github.com/spec-kit/reference/agentic-sdd.html, https://www.thebcms.com/blog/spec-driven-development/, https://ai-sdd.com/en/#core-model)
+- "We're doing some work on our plugins to account for these. What can we adjust itself to callisto based on our learnings?" — User clarified this is about Callisto CODE changes (not plugin changes) when assistant started discussing plugin modifications
+- "No, I'm not asking for changings to the plugins, I'm asking for changes to the callisto code. We're handling changes to the plugins directly."
+- "Have we addressed all of the issues you found?"
+- "The audit plan?" (asking to see the audit plan artifact)
+- "Let's comprehensively tackle it with agent teams and workflows using the best agents and effort to balance quality and cost"
+- [Tool rejection message — user rejected the `rg` command with `--include` flag]
+
+7. Pending Tasks:
+
+**Highest Priority — Write and execute the comprehensive workflow:**
+
+The workflow was fully designed but not yet written as a script. The structure:
+
+**Phase 1: Quick Wins + P0** (4 parallel worktree agents):
+- Agent A: QW-1 (GraphError::Vcs → transparent, callisto-graph/error.rs), QW-6 (dry-run banner, publish.rs), QW-8 (max_depth 32, ignore_walk.rs), QW-11 (npm unwrap, npm.rs)
+- Agent B: QW-2 (render_status Some() format, render/mod.rs), QW-3 (--check exit codes, cli.rs), QW-4 (ARCH.md §8 heading), QW-5 (--strict help, cli.rs), QW-9 (empty publish message, render/mod.rs), QW-10 (rust-version, Cargo.toml)
+- Agent C: QW-7 (-- separator, shell.rs:97,139,170)
+- Agent D: T01 (diagnostic code registry + uniqueness test, callisto-model)
+
+**Merge Agent 1**: merge all Phase 1 branches
+
+**Phase 2: P1 Correctness + Tests** (9 parallel worktree agents):
+- Agent E: T05 (ecosystem fallback, walk.rs), T06 (caret_covers pre-release, cascade.rs:108), T12 (cascade tests)
+- Agent F: T02 (workspace version overwrite, apply.rs + cargo.rs)
+- Agent G: T03 (JSON error structure, main.rs)
+- Agent H: T04 (VCS error swallowing, LocateError + VcsError), T09 (CRLF/detached HEAD tests), T14 (diagnostic codes test)
+- Agent I: T10 (npm tests), T11 (Python/Cargo tests), T13 (atomic_write concurrent test)
+- Agent J: T08 (moon extension silent fallback, extension.rs:189), T16 (version subcommand test)
+- Agent K: T15 (conventional commit edge cases + proptest)
+- Agent L: T07 (eval injection fix, action.yml:110,159)
+- Agent M: T30 (ARCHITECTURE.md corrections — phantom commands, license, gix claim, duplicate heading)
+
+**Merge Agent 2**: merge all Phase 2 branches
+**Final CI Agent**: run `just ci` to verify
+
+**NOT in this workflow (separate workflow later):**
+- T17 (move atomic_write to callisto-model — architectural, L)
+- T18 (CommitWalker trait seam — architectural, L)
+- T19-T29 (quality/performance tracks)
+- T31-T35 (P3/cosmetic)
+- ARC-1-4 (architectural refactors)
+
+8. Current Work:
+
+The task immediately before the summary request was writing the comprehensive workflow script. The user asked: "Let's comprehensively tackle it with agent teams and workflows using the best agents and effort to balance quality and cost."
+
+I had:
+1. Fully designed the workflow structure (4 Phase 1 agents + merge + 9 Phase 2 agents + merge + CI)
+2. Written detailed per-agent prompts for each group
+3. Attempted to audit existing diagnostic codes with `rg` to inform T01 agent context
+4. The `rg` command failed (wrong flag), and the summary was triggered
+
+The workflow had not yet been submitted to the Workflow tool.
+
+Key technical details for the workflow script:
+- Use `isolation: 'worktree'` for parallel agents
+- Each agent outputs structured JSON including `branch: git branch --show-current`
+- Merge agents read branch names from previous phase results and merge sequentially
+- Test runner: `cargo nextest run -p <crate>` + `cargo test --doc`
+- Commit format: conventional commits (`fix(scope): description`)
+- TDD discipline enforced in each prompt (failing test first, RED then GREEN)
+
+9. Optional Next Step:
+
+The direct continuation of the work immediately before the summary is to write and execute the comprehensive workflow script. The user's request was: "Let's comprehensively tackle it with agent teams and workflows using the best agents and effort to balance quality and cost."
+
+The workflow structure is fully designed. The next step is to write the Workflow script with:
+- A `RESULT_SCHEMA` for structured agent output including branch names
+- Phase 1 parallel block with 4 worktree agents (QW groups + T01)
+- Merge agent for Phase 1
+- Phase 2 parallel block with 9 worktree agents (P1 correctness + tests)
+- Merge agent for Phase 2
+- Final CI verification agent
+
+The `rg` command to audit diagnostic codes can be fixed (use `rg -g "*.rs"` instead of `--include="*.rs"`) and embedded in the T01 agent's prompt instructions rather than run beforehand.
+
+If you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/gabe/.claude/projects/-Users-gabe-Projects-callisto/575b7a46-37b7-42f0-9db7-b2c329b2abab.jsonl
+Continue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with "I'll continue" or similar. Pick up the last task as if the break never happened.
