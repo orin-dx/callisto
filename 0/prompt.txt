@@ -1,0 +1,177 @@
+This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
+
+Summary:
+1. Primary Request and Intent:
+
+The session continued from a prior context. The user's primary requests in chronological order:
+- **Deep adversarial audit**: After expressing strong frustration ("I'm calling bullshit in all of this"), the user demanded a comprehensive, adversarial evaluation of the complete publishing pipeline (Rust crates, npm, Python), focusing on correctness, performance, and DX/UX
+- **Validate prior workflow fixes**: "Less meaningful but do validate it please. Quadruple check" — validate the 5 worktree branches from workflow w08vr56yl (Bug1, Bug2, DocGap1, DocGap2, T17, T18)
+- **Are all P0–P2 bugs fixed?** (mid-turn) — explicit question about audit coverage
+- **"Bring them together comprehensively and correctly"** — after validation, user wanted the fixes synthesized properly
+- **Parallel vs sequential discussion**: User pushed back on oversimplification of "parallel across files is fine" — "Even in separate files they might be related or used/referred, no? You're oversimplifying it way too much I think."
+- **Compact and plan**: "Let's compact first and keep everything we need to proceed with all of the fixes. We should consider everything comprehensively and semantically. Consider the patterns the fixes show us and how we should address them as whole as well as individually."
+- **Approved Phase 0**: User said "yes" to starting the phased fix sequence
+
+**Standing security/operational constraints (MUST REMAIN IN EFFECT):**
+- NEVER commit to git without explicit user instruction
+- NEVER bump versions or run release/publish commands
+- `/Users/gabe/Projects/callisto-findings/FINDINGS.md` lives OUTSIDE the repo — must NEVER be committed
+- `callisto publish` must NEVER be invoked against a real registry
+- No emojis in documentation or code
+- TDD discipline: RED → GREEN → REFACTOR; never write production code without a failing test first
+
+2. Key Technical Concepts:
+
+- **Callisto**: Rust CLI + Moon WASM extension for polyglot monorepo versioning (10 crates)
+- **Crate layer model**: Layer 1 (callisto-model, callisto-format) → Layer 1.5 (callisto-vcs) → Layer 2 (callisto-manifests, callisto-conventional, callisto-changelog) → Layer 3 (callisto-graph) → Layer 4 (callisto-cli, callisto-moon)
+- **PublishOrchestrator**: In `crates/callisto-graph/src/commands/publish.rs` — manages publish lifecycle via `execute()`
+- **SubprocessRegistryClient**: In `crates/callisto-graph/src/commands/publish_client.rs` — shells out to cargo/npm/twine. Has a single `cwd` field (workspace root), no per-package directory override
+- **load_plan**: Method on `SubprocessRegistryClient` that populates `npm_meta`, `cargo_registry`, `pypi_index` hashmaps from the PublishPlan. Has ZERO call sites in production code
+- **ManifestRole::Platform**: Enum variant that should classify napi-rs platform packages. `walk.rs:90` always uses `ManifestRole::Canonical` — Platform is never assigned anywhere
+- **Three root patterns**:
+  1. Scaffolding built, wiring never connected (load_plan, ManifestRole::Platform, --refresh-lockfiles, RegistryError::Network)
+  2. Text-substring classification for structured semantics ("429" false positive triggering infinite rate-limit loop)
+  3. Single-cwd blocking per-package operations (B1, B2, bun cwd all share this root cause)
+- **Semantic coupling**: The key insight — bugs are coupled through shared traits (CommandRunner, RegistryClient, CommitWalker), shared data flow (plan → load_plan → execute → publish), and activation dependencies (fixes making dead code live simultaneously)
+- **EARS notation** for acceptance criteria
+- **TDD**: RED → GREEN → REFACTOR
+
+3. Files and Code Sections:
+
+- **`crates/callisto-graph/src/commands/publish.rs`**
+  - `plan_publish` function: builds PublishPlan. `ManifestRole::Platform` check at lines 93-96 is always false because walk.rs never assigns it. `plan_version(...).ok()` at line 30 silently swallows errors. `diagnostics: Vec::new()` hardcoded at line 209.
+  - `PublishOrchestrator::execute()`: iterates rust_crates (284) → npm_platform_packages (292) → npm_main_packages (300) → pypi (308) — order is correct (Bug1 fixed)
+  - `publish_with_retry()` at line 354: bare `loop` with no attempt counter; 600s ceiling is per-retry not cumulative (infinite loop bug)
+  - `attempt_publish()` at line 329: collapses all RegistryError variants to `Failed { error: string }` losing structured error type in JSON
+
+- **`crates/callisto-graph/src/commands/publish_client.rs`**
+  - `SubprocessRegistryClient::load_plan` at lines 75-98: populates metadata maps. Never called from production code — ZERO call sites.
+  - `build_npm_publish_command` at line 193: detects pnpm-lock.yaml → pnpm, yarn.lock → yarn, bun.lockb → bun. Bun branch at line 241 emits bare `["publish"]` with no package selector and no cwd change — publishes workspace root instead of named package. Missing `bun.lock` (text format, bun >= 1.1.1).
+  - `pypi_publish` at line 326: constructs `dist/<normalized>-<version>*` glob, runs from workspace root (`self.cwd`). No preceding `python -m build`. In monorepos, dist/ is at `<pkg>/dist/`, not workspace root.
+  - `detect_rate_limit` at line 441: matches bare `"429"` substring. Cargo prints `(429.1KiB compressed)` in packaging output — false positive triggers infinite retry loop.
+  - `classify_npm_publish_output` at line 492: only matches `epublishconflict`, `previously published`, `cannot publish over` — misses private registry (Verdaccio, GitHub Packages) 409 responses.
+  - `npm_is_published` at line 160: exit-0 with empty stdout treated as `Err(RegistryError::Other(...))` blocking publish entirely for unpublished packages.
+
+- **`crates/callisto-cli/src/commands/publish.rs`**
+  - `handle()` at line 64: `SubprocessRegistryClient::new(CliCommandRunner, ws.root.clone())` constructed and passed directly to orchestrator. `load_plan` never called. This is the PUB-001 fix location — needs `client.load_plan(&plan)` before orchestrator construction.
+  - Dry-run path at line 57: calls `write_json(&mut std::io::stdout(), &plan)` (PublishPlan) vs real path calls `write_json(&mut std::io::stdout(), &report)` (PublishReport) — no type discriminator in JSON output.
+
+- **`crates/callisto-cli/src/runner.rs`**
+  - Line 10-16: `std::process::Command::output()` with no timeout. `CommandRunner` trait has no timeout parameter. Network stall hangs forever.
+
+- **`crates/callisto-graph/src/walk.rs`**
+  - Line 90: `ManifestDecl::new(manifest_rel, ManifestRole::Canonical, fmt)` — always Canonical. No code path anywhere assigns ManifestRole::Platform. `triple_to_role` in napi.rs exists but has zero call sites.
+
+- **`crates/callisto-graph/src/apply.rs`**
+  - Line 49: takes `_opts: &ApplyOptions` — completely unused. `--refresh-lockfiles` flag is a documented no-op. Meanwhile `cargo publish --locked` always passed in publish_client.rs:145. After `callisto version` bumps versions, Cargo.lock is stale → cargo publish fails.
+
+- **`crates/callisto-graph/src/napi.rs`**
+  - `NapiTargetsIndex::load` inserts empty Vec, never reads root. `triple_to_role` and `role_to_triple` have zero call sites. `napi_drift` can never emit diagnostics. Entire module is dead code re-exported as public API.
+
+- **`.github/workflows/callisto-release.yml`**
+  - Line 70: sets `NPM_TOKEN` as env var. No `npm config set //registry.npmjs.org/:_authToken $NPM_TOKEN` step. npm doesn't read NPM_TOKEN directly — reads .npmrc only. All npm publishes fail ENEEDAUTH.
+  - Line 58: `id-token: write` granted with no OIDC flow implemented.
+
+- **`docs/06-publishing.md`**
+  - Line 117: Documents `TWINE_API_TOKEN` which does not exist in twine. Should be `TWINE_USERNAME=__token__` and `TWINE_PASSWORD=pypi-<token>`.
+
+- **`crates/callisto-cli/src/render/mod.rs`**
+  - Lines 56-70: `render_publish` computes `total_packages` but only iterates `report.releases` (git tags). Never renders rust_crates, npm_platform_packages, npm_main_packages, or pypi_packages. `--dry-run` shows only tag lines.
+
+- **`crates/callisto-model/src/plan.rs`**
+  - `PypiPublish`, `NpmPublish`, `NpmMainPublish` structs: missing `package_dir: PathBuf` field — this is the Phase 0 structural prerequisite.
+
+- **Memory files written (outside repo)**:
+  - `/Users/gabe/.claude/projects/-Users-gabe-Projects-callisto/memory/project_publish_pipeline_audit.md` — full audit state, 38 bugs, patterns, phased fix sequence
+  - `/Users/gabe/.claude/projects/-Users-gabe-Projects-callisto/memory/feedback_parallel_fixing.md` — don't use parallel agents for semantically coupled fixes
+  - `/Users/gabe/.claude/projects/-Users-gabe-Projects-callisto/memory/MEMORY.md` — updated index
+
+- **`/Users/gabe/Projects/callisto-findings/PUBLISH_AUDIT.md`** (outside repo)
+  - Full adversarial audit findings with file:line evidence and fix guidance for all 38 confirmed bugs
+
+4. Errors and fixes:
+
+- **Presenting findings to a file without telling the user**: After the audit workflow completed, the assistant wrote findings to PUBLISH_AUDIT.md without first presenting them in conversation. User said "Did you skip the synthesis like it didn't matter?? wtf". Fix: immediately presented all findings in conversation text.
+
+- **Misreading worktree diffs**: When validating worktrees using `git diff main..HEAD`, the direction showed main's newer commits as "deletions" from the worktree perspective (because worktrees branched from older base). Initially misinterpreted as agents deleting tests. Fix: realized all 5 branches were already merged to main — verified by checking `git log main` which showed all merge commits. Validated fixes directly against current main file contents instead.
+
+- **Oversimplifying parallel vs sequential**: Initially claimed "parallel OK across different files, sequential within same files." User pushed back: "Even in separate files they might be related or used/referred, no? You're oversimplifying it way too much." Corrected to: semantic coupling through shared traits, data flow, and activation dependencies is the real constraint — not file boundaries.
+
+- **Prior workflow w08vr56yl CI failure**: The workflow reported `just layer-check: recipe 'layer-check' does not exist in the justfile`. This was because the justfile had changed on main (the recipe was added in a prior session). The worktrees were branched from older main. All fixes still landed correctly via merge.
+
+5. Problem Solving:
+
+**Solved:**
+- Ran 6-agent adversarial audit (5 investigators + 1 Opus cross-checker): found 38 confirmed bugs, 1 false alarm
+- Validated all 5 prior workflow branches — T17, T18 correctly fixed; Bug1 correct; Bug2 partially correct (bun cwd broken); DocGap1+2 landed
+- Identified three root patterns explaining all 38 bugs
+- Established semantic fix dependency order in 4 phases
+- Saved comprehensive memory for future sessions
+
+**Ongoing — Not yet started:**
+- Phase 0 fixes: add `package_dir` to plan types, CommandRunner timeout, ManifestRole::Platform wiring
+- Phase 1 fixes: PUB-001 (load_plan), --refresh-lockfiles, B1+B2 (python build + dist path), rate-limit/retry, bun cwd, scoped npm access
+- Phase 2 fixes: AUTH-001 workflow, TWINE docs, pre-flight checks, dry-run output
+- Phase 3 fixes: dead code cleanup, end-to-end tests
+
+6. All user messages:
+
+- "Less meaningful but do validate it please. Quadruple check"
+- "Are all p0-p2 bugs fixed?" (mid-turn, sent while tool calls running)
+- "Bring them together comprehensively and correctly" (mid-turn, sent while tool calls running)
+- "Did you skip the synthesis like it didn't matter?? wtf" (mid-turn, sent while writing PUBLISH_AUDIT.md)
+- "I think trying to run too many things in parallel is causing us more grief that it's worth. Fixing should be more parellel because you're getting yourself confused. Or am I wrong?"
+- "Even in separate files they might be related or used/reffered, no? You're oversimplifying it way too much I think."
+- "Exactly! Let's compact first and keep everything we need to proceed with all of the fixes. We should consider everything comprehensively and semantically. Consider the patterns the fixes show us and how we should adress them as whole as well as individually."
+- "yes" (approving to start on Phase 0)
+- "CRITICAL: Respond with TEXT ONLY. Do NOT call any tools." [current summary request]
+
+7. Pending Tasks:
+
+**Phase 0 — Structural prerequisites (user approved with "yes")**:
+1. Add `package_dir: PathBuf` to `PypiPublish`, `NpmPublish`, `NpmMainPublish` in `crates/callisto-model/src/plan.rs` and thread through `SubprocessRegistryClient` — prerequisite for B1, B2, bun cwd
+2. Add timeout to `CommandRunner` trait in `crates/callisto-model/src/exec.rs` — trait change; all implementors must update before new subprocess calls added
+3. Wire `ManifestRole::Platform` in `crates/callisto-graph/src/walk.rs` — call `triple_to_role` to detect napi platform packages by name convention
+
+**Phase 1 — Core pipeline** (after Phase 0):
+4. PUB-001: call `client.load_plan(&plan)` in `cli/commands/publish.rs:64` — activates all per-package metadata; test every metadata path after
+5. `--refresh-lockfiles` + `--locked`: implement `_opts` in `apply.rs:49`; make `--locked` conditional in `publish_client.rs:145`
+6. B1 + B2 together: `python -m build` step + per-package dist path (both require Phase 0's `package_dir`)
+7. Rate-limit "429" false positive + retry cap: fix `detect_rate_limit` at `publish_client.rs:441`; add retry counter to loop at `publish.rs:354`
+8. Bun cwd fix: run bun from package dir, add `bun.lock` detection
+9. Scoped npm access: default `NpmAccess::Public` for `@scoped` packages at `publish.rs:127`
+
+**Phase 2 — Auth and DX**:
+10. AUTH-001: add `npm config set` step in `.github/workflows/callisto-release.yml`
+11. AUTH-002: fix `TWINE_API_TOKEN` → `TWINE_USERNAME/__token__` in `docs/06-publishing.md:117`
+12. AUTH-003: pre-flight credential check in `cli/commands/publish.rs`
+13. F-006 + npm-view: private registry conflict detection; exit-0-empty-stdout → Ok(false)
+14. PUB-003: dry-run renders all four package lists in `render/mod.rs`
+
+**Phase 3 — Dead code + schema**:
+15. napi.rs: remove or mark explicitly unimplemented
+16. `RegistryError::Network`: construct from CommandError::Io or delete
+17. `diagnostics`: populate from real error paths
+18. End-to-end test: plan → load_plan → RegistryClient::publish → captured argv
+
+8. Current Work:
+
+User approved "yes" to begin Phase 0 of the publish pipeline fix sequence. The conversation immediately transitioned to the summary request.
+
+Phase 0 was about to begin with three sequential fixes (not parallel, due to semantic coupling):
+1. **Add `package_dir: PathBuf` to plan types** in `crates/callisto-model/src/plan.rs` (structs: `PypiPublish`, `NpmPublish`, `NpmMainPublish`) and thread through `SubprocessRegistryClient::cwd` — this is the structural prerequisite for B1 (python build), B2 (dist path), and F-001 (bun wrong cwd). All three bugs share the same root: no per-package directory.
+2. **CommandRunner timeout** — trait change in `crates/callisto-model/src/exec.rs` affecting all implementors
+3. **Wire ManifestRole::Platform** in `crates/callisto-graph/src/walk.rs:90` — change from always-Canonical to calling `triple_to_role` for npm packages
+
+No code had been written yet when the summary was requested.
+
+9. Optional Next Step:
+
+The user explicitly approved "yes" to start Phase 0. The next step is to begin implementing Phase 0 fixes sequentially:
+
+Start with **adding `package_dir: PathBuf` to plan types** in `crates/callisto-model/src/plan.rs`, following TDD discipline (RED → GREEN → REFACTOR). This must come before the CommandRunner timeout and Platform wiring because it's the structural foundation that both B1+B2 and the bun cwd fix depend on.
+
+User's exact words approving this: "yes" in response to "Ready to start on Phase 0?" after the phased fix sequence was laid out with the full semantic dependency order.
+
+If you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/gabe/.claude/projects/-Users-gabe-Projects-callisto/575b7a46-37b7-42f0-9db7-b2c329b2abab.jsonl
+Continue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with "I'll continue" or similar. Pick up the last task as if the break never happened.
