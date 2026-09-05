@@ -1,6 +1,6 @@
 [package]
 name = "callisto-graph"
-version = "0.5.0"
+version = "0.6.0"
 edition.workspace = true
 license = "AGPL-3.0-only"
 description = "Callisto Release Engine — Dependency DAG solver and topological cascade release planner."
@@ -18,12 +18,12 @@ inference = ["dep:callisto-conventional"]
 
 [dependencies]
 tempfile = { workspace = true }
-callisto-model = { path = "../callisto-model", version = "0.5.0" }
-callisto-vcs = { path = "../callisto-vcs", version = "0.5.0" }
-callisto-manifests = { path = "../callisto-manifests", version = "0.5.0" }
-callisto-format = { path = "../callisto-format", version = "0.5.0" }
-callisto-changelog = { path = "../callisto-changelog", version = "0.5.0" }
-callisto-conventional = { path = "../callisto-conventional", version = "0.5.0", optional = true }
+callisto-model = { path = "../callisto-model", version = "0.6.0" }
+callisto-vcs = { path = "../callisto-vcs", version = "0.6.0" }
+callisto-manifests = { path = "../callisto-manifests", version = "0.6.0" }
+callisto-format = { path = "../callisto-format", version = "0.6.0" }
+callisto-changelog = { path = "../callisto-changelog", version = "0.6.0" }
+callisto-conventional = { path = "../callisto-conventional", version = "0.6.0", optional = true }
 dunce = { workspace = true }
 ignore = { workspace = true }
 toml = { workspace = true }
