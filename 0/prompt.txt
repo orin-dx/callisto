@@ -1,0 +1,23 @@
+<task-notification>
+<task-id>aa1f46a9d9f60563b</task-id>
+<tool-use-id>toolu_01YHaZBtH8kySZ2NUBBWPJ9S</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/aa1f46a9d9f60563b.output</output-file>
+<status>completed</status>
+<summary>Agent "Draft Track 3b2 downstream-consumer spec" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I've drafted SPEC-TRACK3B2-CONSUMER-COLLISION-SAFETY, grounded entirely in code read this session (no inheritance from prior conversation context).
+
+**File written:** `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/spec-track3b2-consumer-collision-safety.json`
+
+Key things verified directly against current code this session, not assumed from the prompt:
+
+- `crates/callisto-graph/src/matrix.rs:476,483` — `build_matrix_report` inserts keyed by bare `pkg.name`, no collision detection.
+- `crates/callisto-graph/src/commands/matrix.rs:23,32-37` — `MatrixOptions.package`'s existence check and filter both match `p.id.name() == name`, bare-name only.
+- `crates/callisto-graph/src/commands/publish.rs:437-462` — `PublishOptions.only`'s filter (`keep` closure + 5 `.retain()` calls across `rust_crates`/`npm_main_packages`/`npm_platform_packages`/`pypi_packages`/`releases`), all bare-name matching.
+- `crates/callisto-model/src/plan.rs:44-137` — confirmed `CratePublish`/`NpmPublish`/`NpmMainPublish`/`PypiPublish` carry only `name: String`, no `PackageId` field (but `ReleaseEntry.package: PackageId` does), which shapes the fix design (resolve once via `resolve_target_package`, scope by ecosystem, don't widen the plan schema).
+- `crates/callisto-model/src/identity.rs:84-91,148-186` and `crates/callisto-graph/src/aggregate.rs:153-162` — confirmed `PackageId::display_name()`, `resolve_unique`, `matches()`, and the `resolve_target_package`/`GraphError::AmbiguousName` pattern all **already exist and are tested** (`aggregate.rs:997-1090`) — a correction to the task prompt's framing, which I noted explicitly in `reasoning`: the real SPEC-TRACK3B1 dependency isn't that these primitives are missing, it's that no workspace can produce two same-bare-name registered packages until walk.rs's promotion logic replaces its current `DuplicatePackage` rejection.
+- `.claude/specs/track-g-matrix-napi-maturin.json` — read in full; found AC-006 and AC-009 (genuine testable criteria, not just prose) pin `PackageId::name()` and explicitly exclude `display_name()`, which this spec's rekey invalidates. Added AC-14 as a closing task to edit those two fields, mirroring SPEC-TRACK3B1's own AC-F6 pattern for track-f. Left track-g's `MatrixReport` api_surface prose (the `DuplicatePackage`-justification sentence) as an awareness-note non-goal only, since it's not a testable criterion — same treatment SPEC-TRACK3B1 gave track-e's analogous stale prose.
+
+The spec has 15 acceptance criteria (AC-01–AC-15) covering the BTreeMap rekey, `--package` ambiguity, `--only` ambiguity (including the `releases` list), regression cases for unpromoted packages, doc-comment corrections in four locations, the track-g reconciliation, and existing-test-suite regression coverage.</result>
+<usage><subagent_tokens>156591</subagent_tokens><tool_uses>14</tool_uses><duration_ms>244363</duration_ms></usage>
+</task-notification>
