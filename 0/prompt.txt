@@ -1,0 +1,8 @@
+<task-notification>
+<task-id>a1fda04f2eaa74e7f</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/bb531e8d-c394-4e47-a8ae-e4a9ceeca6d2/tasks/a1fda04f2eaa74e7f.output</output-file>
+<status>failed</status>
+<summary>Agent "Audit Track 2 platform_writes dispatch for collision/data-loss bugs" failed: Agent stalled: no progress for 600s (stream watchdog did not recover)</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+</task-notification>
