@@ -1,0 +1,224 @@
+This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
+
+Summary:
+1. Primary Request and Intent:
+
+The session continues from a prior conversation where the user approved ("yes") to begin Phase 0 of a four-phase publish pipeline fix sequence for the Callisto Rust CLI tool. Mid-turn, the user sent: "Progress through each phase, loop and validate each phase as they finish before heading to the next one." The overall task is to fix 38 confirmed bugs in the publish pipeline (callisto-graph, callisto-model, callisto-cli crates) following strict TDD discipline (RED → GREEN → REFACTOR), with Phase 0 being three structural prerequisites:
+1. Add `package_dir: PathBuf` to plan types so per-package directories are threaded through the client
+2. Add timeout to `CommandRunner::run_with_timeout` (non-breaking: default impl)
+3. Wire `ManifestRole::Platform` in `walk.rs` so napi platform packages are correctly classified
+
+**Security/operational constraints (must remain in effect):**
+- NEVER commit to git without explicit user instruction
+- NEVER bump versions or run release/publish commands
+- `/Users/gabe/Projects/callisto-findings/FINDINGS.md` lives OUTSIDE the repo — must NEVER be committed
+- `callisto publish` must NEVER be invoked against a real registry
+- No emojis in documentation or code
+- TDD discipline: RED → GREEN → REFACTOR; never write production code without a failing test first
+
+2. Key Technical Concepts:
+- Callisto: Rust CLI + Moon WASM extension for polyglot monorepo versioning (10 crates)
+- `PublishOrchestrator` / `SubprocessRegistryClient` in `callisto-graph/src/commands/publish.rs` and `publish_client.rs`
+- `CommandRunner` trait in `callisto-model/src/exec.rs` with 32 implementations across the workspace
+- `ManifestRole::Platform` in `callisto-model` — enum variant for napi platform packages, never previously assigned in walk.rs
+- `load_plan` method on `SubprocessRegistryClient` — zero call sites in production (PUB-001 not yet fixed)
+- TDD: RED (compile failure or test failure) → GREEN (implementation) → REFACTOR
+- `package_dir: PathBuf` — new field added to `PypiPublish`, `NpmPublish`, `NpmMainPublish` in plan types
+- `run_with_timeout` — new default-implementation method on `CommandRunner` trait (doesn't break 32 existing implementors)
+- bun publish — runs from package directory (not workspace root) unlike pnpm/yarn/npm
+- twine upload — must run from package directory for correct `dist/` resolution in monorepos
+- `ManifestDecl` path is relative to workspace root; parent() gives the package directory
+- `napi.rs`'s `triple_to_role` function exists but has zero call sites (dead code)
+- `detect_npm_role()` — planned function to detect platform packages by reading `os`/`cpu` from package.json
+
+3. Files and Code Sections:
+
+- **`crates/callisto-model/src/plan.rs`** — Added `use std::path::PathBuf;` and `pub package_dir: PathBuf` field to `NpmPublish`, `NpmMainPublish`, and `PypiPublish` structs. This is the structural prerequisite for Fix 1 (bun cwd, pypi dist path) and the foundation for Fix 3.
+  ```rust
+  // NpmPublish now has:
+  pub package_dir: PathBuf,  // new field
+  // Same for NpmMainPublish and PypiPublish
+  ```
+
+- **`crates/callisto-model/src/exec.rs`** — Added `use std::time::Duration;`, `CommandError::TimedOut { program: String, seconds: u64 }` variant, and `run_with_timeout` defaulted method on the `CommandRunner` trait:
+  ```rust
+  fn run_with_timeout(
+      &self,
+      program: &str,
+      args: &[&str],
+      cwd: &Path,
+      _timeout: Duration,
+  ) -> Result<CommandOutput, CommandError> {
+      self.run(program, args, cwd)  // default: ignore timeout
+  }
+  
+  #[error("`{program}` timed out after {seconds}s")]
+  #[diagnostic(code(E025), help("..."))]
+  TimedOut { program: String, seconds: u64 },
+  ```
+
+- **`crates/callisto-cli/src/runner.rs`** — Overrode `run_with_timeout` in `CliCommandRunner` with real spawn+poll implementation. Added tests:
+  ```rust
+  fn run_with_timeout(&self, program: &str, args: &[&str], cwd: &Path, timeout: Duration) -> Result<CommandOutput, CommandError> {
+      let mut child = Command::new(program).args(args).current_dir(cwd)
+          .stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn()?;
+      
+      let stdout_handle = child.stdout.take().unwrap();
+      let stderr_handle = child.stderr.take().unwrap();
+      let stdout_thread = thread::spawn(move || { let mut buf = String::new(); drop(BufReader::new(stdout_handle).read_to_string(&mut buf)); buf });
+      let stderr_thread = thread::spawn(move || { let mut buf = String::new(); drop(BufReader::new(stderr_handle).read_to_string(&mut buf)); buf });
+      
+      let deadline = Instant::now() + timeout;
+      let status = loop {
+          match child.try_wait()? {
+              Some(s) => break s,
+              None => {
+                  if Instant::now() >= deadline {
+                      drop(child.kill()); drop(child.wait());
+                      drop(stdout_thread.join()); drop(stderr_thread.join());
+                      return Err(CommandError::TimedOut { program: program.to_string(), seconds: timeout.as_secs() });
+                  }
+                  thread::sleep(Duration::from_millis(50));
+              }
+          }
+      };
+      // collect stdout/stderr, return CommandOutput
+  }
+  
+  // Tests:
+  #[test]
+  fn run_with_timeout_kills_slow_process_and_returns_timed_out() {
+      let runner = CliCommandRunner;
+      let err = runner.run_with_timeout("sleep", &["1"], Path::new("."), Duration::from_millis(100)).unwrap_err();
+      assert!(matches!(err, CommandError::TimedOut { .. }));
+  }
+  #[test]
+  fn run_with_timeout_returns_output_for_fast_process() {
+      let runner = CliCommandRunner;
+      let out = runner.run_with_timeout("true", &[], Path::new("."), Duration::from_secs(5)).unwrap();
+      assert!(out.success());
+  }
+  ```
+
+- **`crates/callisto-graph/src/commands/publish_client.rs`** — Major changes:
+  - Added `npm_pkg_dir: HashMap<String, PathBuf>` and `pypi_pkg_dir: HashMap<String, PathBuf>` fields
+  - Updated `new()` to initialize these
+  - Updated `load_plan()` to populate them from plan entries
+  - Added `run_in(&self, program, args, cwd: &Path)` helper that calls `runner.run_with_timeout` with 300s timeout
+  - Changed `run(&self, program, args)` to call `run_in` with `self.cwd`
+  - Updated `npm_publish()` to use package_dir for bun: `if program == "bun" { self.cwd.join(&self.npm_pkg_dir[name]) } else { self.cwd.clone() }`
+  - Updated `pypi_publish()` to use `pkg_cwd` from `pypi_pkg_dir`
+  - Added RED→GREEN tests: `CwdCapturingRunner`, `pypi_publish_uses_package_dir_as_cwd`, `bun_publish_uses_package_dir_as_cwd`
+
+- **`crates/callisto-graph/src/commands/publish.rs`** — Updated `plan_publish` to compute `pkg_dir`:
+  ```rust
+  let pkg_dir = pkg.manifests.first()
+      .and_then(|m| m.path.parent())
+      .map(|p| p.to_path_buf())
+      .unwrap_or_default();
+  // then: package_dir: pkg_dir.clone() in NpmPublish, NpmMainPublish
+  // and: package_dir: pkg_dir in PypiPublish
+  ```
+  Updated test helpers `pypi_publish_entry` and inline construction sites to add `package_dir: std::path::PathBuf::new()`.
+
+- **`crates/callisto-graph/tests/publish_tests.rs`** — Added import `use callisto_graph::locate::IgnoreWalkLocator;` in preparation for the Fix 3 RED test (platform package detection). The RED test was being written when the summary was requested.
+
+4. Errors and fixes:
+- **`--test-threads` wrong flag**: Used `cargo test -p callisto-graph --test-threads=1` which is wrong; fixed by using `cargo test -p callisto-graph` (thread count goes after `--`).
+- **`let _ = join_handle.join()` — Rust 2024 error**: "non-binding let on a type that has a destructor" (6 occurrences in runner.rs). Fixed with `drop(join_handle.join())` instead. Same for `drop(child.kill())`, `drop(child.wait())`.
+- **`let _ = BufReader::new(...).read_to_string(...)` — same Rust 2024 error**: Fixed with `drop(BufReader::new(...).read_to_string(&mut buf))`.
+
+5. Problem Solving:
+- **Fix 1 (package_dir)**: SOLVED. RED tests confirmed (compile failure). Implementation threaded `package_dir` through plan types, `load_plan()`, and both `npm_publish` (bun branch) and `pypi_publish` to use correct per-package cwd. All 112 tests pass.
+- **Fix 2 (timeout)**: SOLVED. Non-breaking default implementation added to trait. `CliCommandRunner` overrides with real spawn+poll timeout. `SubprocessRegistryClient::run_in` now uses 300s timeout. Both timeout tests pass.
+- **Fix 3 (ManifestRole::Platform wiring)**: IN PROGRESS. RED test being written. Will implement `detect_npm_role()` in `walk.rs` that reads `package.json` for `os`/`cpu` fields, and replaces the always-Canonical assignment.
+
+6. All user messages:
+- "Progress through each phase, loop and validate each phase as they finish before heading to the next one" (sent mid-turn while Fix 1 was being implemented)
+- "CRITICAL: Respond with TEXT ONLY. Do NOT call any tools." (current summary request)
+
+7. Pending Tasks:
+
+**Phase 0 Fix 3 (partially started — RED test import added):**
+- Write RED test in `publish_tests.rs`: npm package with `os`/`cpu` in `package.json` should appear in `npm_platform_packages` after `plan_publish` (currently goes into `npm_main_packages` because `ManifestRole::Canonical` is always assigned in `walk.rs:90`)
+- Implement `detect_npm_role(abs_path: &Path) -> ManifestRole` in `walk.rs` that reads raw JSON, checks `os`/`cpu` fields, extracts triple from name suffix using `crate::napi::triple_to_role`
+- Update `walk.rs:90` to use `detect_npm_role` for npm ecosystem instead of always using `ManifestRole::Canonical`
+- Run CI to validate Phase 0 complete
+
+**Phase 1 (after Phase 0 CI passes):**
+- PUB-001: call `client.load_plan(&plan)` in `crates/callisto-cli/src/commands/publish.rs:64`
+- `--refresh-lockfiles` + `--locked`: implement `_opts` in `apply.rs:49`; make `--locked` conditional in `publish_client.rs:145`
+- B1 + B2: `python -m build` step + per-package dist path (both require Phase 0's `package_dir`)
+- Rate-limit "429" false positive + retry cap: fix `detect_rate_limit` at `publish_client.rs:441`; add retry counter
+- Bun cwd (already fixed in Fix 1 — this may be done)
+- Scoped npm access: default `NpmAccess::Public` for `@scoped` packages
+
+**Phase 2 (Auth and DX):**
+- AUTH-001: add `npm config set` step in `.github/workflows/callisto-release.yml`
+- AUTH-002: fix `TWINE_API_TOKEN` → `TWINE_USERNAME/__token__` in `docs/06-publishing.md:117`
+- AUTH-003: pre-flight credential check
+- F-006 + npm-view: private registry conflict detection; exit-0-empty-stdout → Ok(false)
+- PUB-003: dry-run renders all four package lists in `render/mod.rs`
+
+**Phase 3 (Dead code + schema):**
+- napi.rs: remove or mark as unimplemented
+- `RegistryError::Network`: construct or delete
+- `diagnostics`: populate from real error paths
+- End-to-end test for the full plan → load_plan → publish flow
+
+8. Current Work:
+
+Phase 0 Fix 3 was being implemented. The last action was adding `use callisto_graph::locate::IgnoreWalkLocator;` to `crates/callisto-graph/tests/publish_tests.rs` in preparation for the RED test. The test was about to be written that would fail because `walk.rs:90` always assigns `ManifestRole::Canonical` regardless of whether the npm package has `os`/`cpu` fields.
+
+The planned RED test:
+```rust
+#[test]
+fn platform_npm_package_goes_into_npm_platform_packages() {
+    use callisto_graph::commands::{plan_publish, PublishOptions};
+    
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    
+    std::fs::write(root.join("package.json"), r#"{
+        "name": "my-pkg-linux-x64-gnu",
+        "version": "1.0.0",
+        "os": ["linux"],
+        "cpu": ["x64"]
+    }"#).unwrap();
+    
+    init_git_repo(root);  // already defined in publish_tests.rs
+    
+    let runner = DummyRunner;
+    let locator = IgnoreWalkLocator::new(root);
+    let ws = callisto_graph::Workspace::load(root.to_path_buf(), &locator, &runner).unwrap();
+    
+    let plan = plan_publish(&ws, &PublishOptions::default()).unwrap();
+    
+    assert_eq!(plan.npm_main_packages.len(), 0,
+        "platform package must not be in npm_main_packages");
+    assert_eq!(plan.npm_platform_packages.len(), 1,
+        "platform package must be in npm_platform_packages");
+}
+```
+
+9. Optional Next Step:
+
+Continue Phase 0 Fix 3 exactly where it was left off: write the RED test for `ManifestRole::Platform` detection in `crates/callisto-graph/tests/publish_tests.rs`, then implement `detect_npm_role()` in `crates/callisto-graph/src/walk.rs` at line 90 (changing the always-Canonical assignment for npm packages to check the package.json for `os`/`cpu` fields). The user said: "Progress through each phase, loop and validate each phase as they finish before heading to the next one" — so after the test passes, run full CI (`just ci` or `cargo test -p callisto-graph`) before proceeding to Phase 1.
+
+The exact change needed in `walk.rs:90`:
+```rust
+// BEFORE:
+if let Ok(decl) = ManifestDecl::new(manifest_rel, ManifestRole::Canonical, fmt) {
+
+// AFTER (for npm ecosystem):
+let role = if *eco == Ecosystem::Npm {
+    let abs_path = root.join(&manifest_rel);
+    detect_npm_role(&abs_path)
+} else {
+    ManifestRole::Canonical
+};
+if let Ok(decl) = ManifestDecl::new(manifest_rel, role, fmt) {
+```
+
+If you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/gabe/.claude/projects/-Users-gabe-Projects-callisto/575b7a46-37b7-42f0-9db7-b2c329b2abab.jsonl
+Continue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with "I'll continue" or similar. Pick up the last task as if the break never happened.
