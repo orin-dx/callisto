@@ -1,0 +1,11 @@
+<task-notification>
+<task-id>bcwf1b0f7</task-id>
+<summary>Monitor event: "just ci live progress with step timestamps"</summary>
+<event>[+1367s]         PASS [   0.013s] (  21/1065) callisto-cli commands::pre::tests::stage_pre_json_failure_redacts_credential_from_error
+[+1367s]         PASS [   0.010s] (  33/1065) callisto-cli error::tests::format_error_json_other_has_stable_envelope
+[+1367s]         PASS [   0.011s] (  34/1065) callisto-cli error::tests::format_error_json_not_a_tty_includes_code_and_help
+[+1367s]         PASS [   0.010s] (  36/1065) callisto-cli error::tests::format_error_json_structure_is_consistent_across_variants
+[+1367s]         PASS [   0.021s] (  39/1065) callisto-cli error::tests::format_error_json_io_error_includes_code_and_help
+[+1367s]         PASS [   0.010s] (  42/1065) callisto-cli render::tests::render_publish_report_failed_includes_error_kind</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
