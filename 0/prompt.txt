@@ -1,0 +1,5 @@
+I mean this error:
+
+graph:clarify-requirement(Clarify Tier 1 requirement gaps)
+Initializing…
+Error: Agent type 'graph:clarify-requirement' not found. Available agents: axiom:exit-gate, axiom:recon, axiom:verifier, bug-hunter, canon:architect, canon:auditor, canon:drafter, canon:drift-checker, canon:exit-gate, canon:verifier, claude, claude-code-guide, delta:changeset-analyzer, delta:commit-analyzer, delta:pr-narrator, delta:release-summarizer, delta:review-preprocessor, Explore, general-purpose, graph:auditor, graph:clarifier, graph:intake, graph:prioritizer, lambda:exit-gate, lambda:implementer, lambda:mutator, lambda:recon, lambda:reviewer, Plan, proof:adversary, proof:boundary-tracer, proof:exit-gate, proof:recon, proof:scanner, statusline-setup, trace:reader, trace:recon, trace:risk-assessor, trace:synthesizer, vector:challenger, vector:estimator, vector:planner
