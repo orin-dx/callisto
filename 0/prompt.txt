@@ -1,0 +1,27 @@
+<task-notification>
+<task-id>a2fa342ad75e5c2f2</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a2fa342ad75e5c2f2.output</output-file>
+<status>completed</status>
+<summary>Agent "Review docs/01-spec.md GraphError completion" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Verification Results
+
+**1. UnexpectedManifestVersion** — Fields accurate (path, expected_from, expected_to, found — names/types/order all match real source). **Two discrepancies found:**
+- Message text drops "cannot apply version plan: " prefix and "— safe to retry" suffix present in real source, unlike its 4 sibling additions which reproduce the real `#[error(...)]` string verbatim (mod line-wrap).
+- **Prose factual error**: the new comment claims "`found` being `expected_to` already... is the routine 'already applied, safe to retry' case." This is false. Real call sites (crates/callisto-graph/src/apply.rs:145-156, 189-200) take a separate early branch (`if current == target_version { skip }`) whenever found would equal expected_to — the error is only ever constructed in the third branch, where found is guaranteed to differ from **both** expected_from and expected_to. The described scenario can never occur when this error fires.
+- The `{found}`/`.render()` substitution itself is fine: `Version::render()` (version.rs:259-261) and `Version`'s `Display` (version.rs:152-155) both return `self.raw` — provably identical output.
+
+**2. PreJson** and **3. PreJsonRead** — Fields and message text exact matches to real source. Doc-comment claims verified accurate against crates/callisto-graph/src/commands/version.rs:29-37 (read succeeds → parse fails → PreJson; read itself fails → PreJsonRead). §8 citation valid (established pattern, e.g. lines 2677, 3267-3268).
+
+**4. PublishTargetEcosystemMismatch** — Fields accurate. **Message discrepancy**: doc uses `{target_ecosystem}` and `{package_ecosystems:?}`, but `Ecosystem` (crates/callisto-model/src/ecosystem.rs) derives only `Debug`, no `Display` — real source explicitly calls `.prefix()` and joins with `, ` wrapped in backticks. Unlike the Version case, this substitution changes actual output (e.g. real: `` `cargo, npm` `` vs doc Debug-format: `[Cargo, Npm]`). Doc-comment claims verified accurate against walk.rs:216-241 (near-verbatim match to the real inline comment there).
+
+**5. UntrustedNpmRegistry** — Fields and message exact match. Claims verified accurate against commands/publish.rs:44-62.
+
+**E-code style inconsistency (all 5)**: every new comment appends "E1xx." inline; no pre-existing coded variant's doc comment does this (grep confirms zero prior occurrences).
+
+**Intro count claim**: **False as stated.** "All 19" should be 20 — `ParseChangeset` (docs/01-spec.md:2501-2502) is a coded variant sitting among the wrappers, correctly reproduced but omitted from the tally. Both doc and real source agree on the same 20 names; only the prose number is wrong.
+
+**Fence balance**: 402 — matches baseline. **New citations**: none introduce errors (§7.6 step 1, §8 both pre-established and valid).</result>
+<usage><subagent_tokens>93133</subagent_tokens><tool_uses>17</tool_uses><duration_ms>291363</duration_ms></usage>
+</task-notification>
