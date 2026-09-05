@@ -1,0 +1,1 @@
+Check on the Track 8 migration fork's progress. If it has completed, review its report: confirm commit SHAs, which files were touched vs skipped, and that all touched crates pass tests. If everything checks out, report a summary to the user. If issues surfaced, address them.
