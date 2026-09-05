@@ -1,0 +1,39 @@
+<task-notification>
+<task-id>ae250d1b6240e08a7</task-id>
+<tool-use-id>toolu_01U4MTwmw6zZa99rQRCEmQp9</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/tasks/ae250d1b6240e08a7.output</output-file>
+<status>completed</status>
+<summary>Agent "Review T12 commit" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Review: commit c83c78a (T12 — strip internal atomic_write/any_updated from PyprojectToml::update_optional_dependencies)
+
+**Scope adherence**: Confirmed via `git show c83c78a --name-only` — the commit touches exactly one file, `crates/callisto-manifests/src/python.rs`. No scope creep.
+
+**Non-negotiable violations** (checked against `/Users/gabe/Projects/agent-plugins/shared/references/rust-hazards.md`, T1–T10): none found in the diff.
+- T1 (Discarded Parameters) — `_permit` rename is the intentional, documented pattern this whole track establishes (params 2 lines above in `write_version` already use the same `_permit` convention); not a violation.
+- T8 (False-Success Mutation) — the bare `Ok(())` replacing the conditional write is exactly correct here: `update_optional_dependencies` mutates only the in-memory `self.document`, and the trait contract (established by sibling `write_version`/`update_dependency_spec`, and the crate's `persist()` split) is that in-memory-only methods return `Ok(())` unconditionally while `persist()` is the single write boundary. Confirmed via `persist()` at python.rs:79 which itself calls `atomic_write` unconditionally.
+- No `unwrap()`/`expect()`/`panic!` introduced in production code by this diff. (Two pre-existing `.unwrap()` calls at lines 330/459 predate this commit, are guarded by an upstream `contains('[')` check, and are unmodified by this diff — not in scope for this review.)
+- No `map_err(|_|`, `.to_string()` error erosion, or new arithmetic introduced.
+
+**Critical verification — mutation logic identity**: Diffed `c83c78a^:...python.rs` against current. The entire loop body from `for group_key in &amp;group_keys` through `arr.replace(idx, new_req);` is byte-identical before and after. The only line removed from inside the loop is `any_updated = true;` immediately after `arr.replace(idx, new_req);` — a pure tracking-variable removal with zero effect on which entries get mutated. `any_updated` had exactly one other use site: gating the `if any_updated { atomic_write(...) }` block, which was deleted in its entirety. No copy-paste mistake occurred.
+
+**Final-sweep independent verification** (redone independently, not trusted from any report):
+- `grep -n "self\.persist(permit)"` across cargo.rs/npm.rs/python.rs → only `cargo.rs:646` and `cargo.rs:710`, both inside `persist()` method bodies themselves (fine).
+- `grep -n "atomic_write"` → hits only in `persist()` method bodies (cargo.rs:109, cargo.rs:715, npm.rs:160, python.rs:81) plus the one non-underscored `permit` at `cargo.rs:293` inside `update_dependency_spec`, which delegates to `WorkspaceCargoResolver::write_dependency(name, new, permit)` at line 315 — verified this is the explicitly-carved-out workspace-inherited-dependency delegation path per the plan's non_goals, not a leftover internal write.
+- Zero remaining internal `atomic_write` calls or non-underscored `permit` params in any `write_version`/`update_dependency_spec`/`update_optional_dependencies` body outside the two documented exceptions.
+- `grep -n "any_updated\|any_changed\|did_update\|was_updated"` across the whole crate → zero matches. No leftover tracking variables anywhere.
+
+**Test quality**: The repaired `update_optional_dependencies_actually_writes_to_document` test correctly adds `manifest.persist(&amp;permit()).unwrap();` before asserting the disk content — without it the assertion would now fail since the method no longer writes internally. The new test `update_optional_dependencies_does_not_touch_disk_until_persist_called` asserts `fs::read_to_string` is byte-identical to the original content immediately after calling `update_optional_dependencies` (before `persist()`), then asserts the write happens only after `persist()` — directly exercising the exact invariant this task establishes. Both are meaningfully positioned in the `#[cfg(test)]` module alongside their sibling `write_version_does_not_touch_disk_until_persist_called` and `update_dependency_spec_does_not_touch_disk_until_persist_called` tests, matching the established test-naming convention for this track.
+
+Ran `cargo test -p callisto-manifests --lib python::` — all 35 tests pass. Ran `cargo clippy -p callisto-manifests --lib -- -D warnings` — clean, 0 warnings (confirms the stated motivation, avoiding an unused-assignment lint, is satisfied).
+
+```json
+{
+  "status": "approved",
+  "issues": [],
+  "sibling_gaps": [],
+  "reasoning": "rust-hazards.md was found at the plugin path as instructed (not in-repo). All T1-T10 taxonomies checked against the diff with no violations. Mutation-loop byte-diff confirms any_updated removal changed nothing about which entries get mutated -- the only line removed from inside the loop was the tracking-variable assignment itself, immediately after arr.replace(idx, new_req). Final sweep across cargo.rs/npm.rs/python.rs independently re-run (not trusted from implementer report): zero non-underscored persist(permit) calls and zero internal atomic_write calls outside persist() method bodies and the one documented WorkspaceCargoResolver delegation carve-out in cargo.rs update_dependency_spec. Zero any_updated-style tracking variables remain anywhere in the crate, confirming this was genuinely the final stripping task. Tests pass (35/35), clippy clean under -D warnings. Both new/repaired tests are correctly positioned and assert the actual invariant (no write before persist, write present after persist)."
+}
+```</result>
+<usage><subagent_tokens>55740</subagent_tokens><tool_uses>11</tool_uses><duration_ms>88174</duration_ms></usage>
+</task-notification>
