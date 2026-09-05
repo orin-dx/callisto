@@ -1,0 +1,5 @@
+<task-notification>
+<task-id>bk3004zz1</task-id>
+<summary>Monitor event: "wait for the fresh RED test run to finish"</summary>
+<event>[Monitor timed out — re-arm if needed.]</event>
+</task-notification>
