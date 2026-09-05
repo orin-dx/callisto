@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>btv4g5ptm</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/bb531e8d-c394-4e47-a8ae-e4a9ceeca6d2/tasks/btv4g5ptm.output</output-file>
+<status>failed</status>
+<summary>Background command "Get exact current status schema shape" failed with exit code 1</summary>
+</task-notification>
