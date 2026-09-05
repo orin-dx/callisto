@@ -1,0 +1,1 @@
+The first part, your assumption is incorrect. The way callisto should work is the highest bump should win-out when there are multipel changesets that are in a fixed group. Isn't that right? Isn't that in the spec? Check changelogs and knope to be sure.
