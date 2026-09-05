@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bny01cobk</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/b90cda92-db13-4c63-8d7f-c9fa7d9196ab/tasks/bny01cobk.output</output-file>
+<status>completed</status>
+<summary>Background command "Run cli_tests (trycmd) to verify the help.trycmd fixture update" completed (exit code 0)</summary>
+</task-notification>
