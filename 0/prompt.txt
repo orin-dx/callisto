@@ -1,0 +1,6 @@
+<task-notification>
+<task-id>bk3k6at28</task-id>
+<summary>Monitor event: "final just ci run before PR, persistent to avoid premature timeout-kill"</summary>
+<event>[+176s]      Summary [  85.725s] 1065 tests run: 1065 passed, 0 skipped</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
