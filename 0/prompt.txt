@@ -1,0 +1,65 @@
+<task-notification>
+<task-id>a9a4712f56044756d</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/0c4c4622-1ed8-4f2c-80e6-f0890a2dad72/tasks/a9a4712f56044756d.output</output-file>
+<status>completed</status>
+<summary>Agent "Map sources for publish-tool requirements research" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I'll now create the research agenda. Based on the project structure and your explicit guidance, here's the focused mapping:
+
+```json
+{
+  "question": "What are the actual, current, official requirements/preconditions/gotchas for each native publish tool callisto shells out to (or might shell out to), that a spec for callisto's publish/distribution model needs to be grounded in?",
+  "internal_sources": [
+    "/Users/gabe/Projects/callisto/crates/callisto-graph/src/commands/publish_client.rs",
+    "/Users/gabe/Projects/callisto/crates/callisto-model/src/ecosystem.rs",
+    "/Users/gabe/Projects/callisto/docs/06-publishing.md"
+  ],
+  "external_keywords": [
+    "gh release create",
+    "gh release upload",
+    "GitHub Releases API documentation",
+    "GitHub Releases preconditions and requirements",
+    "pnpm publish",
+    "pnpm publish workspace",
+    "npm registry authentication and 2FA",
+    "npm publish provenance attestation",
+    "cargo publish",
+    "cargo publish --locked semantics",
+    "crates.io publishing requirements",
+    "Cargo Book Publishing on crates.io",
+    "PyPI twine upload",
+    "twine authentication and requirements",
+    "dotnet nuget push",
+    "NuGet publishing requirements",
+    "NuGet API key authentication"
+  ],
+  "existing_implementations": [
+    "cargo publish (fully implemented)",
+    "npm publish via pnpm (fully implemented)",
+    "npm publish via yarn/bun (parser support exists, shell invocation ready)",
+    "python -m build + twine upload (PyPI, fully implemented)",
+    "GitHub Releases / gh CLI (stubbed with warn-and-skip, now prioritized for real implementation)"
+  ],
+  "scope": "external",
+  "reasoning": "The internal sources establish the baseline: what flags/args callisto currently passes to each tool and which targets are stubbed vs. live. This baseline is essential for the reader to assess where official requirements diverge from current practice. However, the actual research target is entirely external—official CLI documentation and publishing guides for each ecosystem. The user explicitly stated external sources are the whole point of this pass. Scope is external because the spec-grounding facts live in official docs (CLI flags, registry requirements, preconditions, 2FA/provenance requirements) that are maintained outside the callisto repo. GitHub Releases and pnpm are the priority focus (recent PR recommendation + workspace-specific semantics); PyPI/NuGet included if scope allows since they're already live or stubbed targets."
+}
+```
+
+**How to execute this agenda:**
+
+1. **Read internal sources first** to understand the current baseline (what flags/args are currently used, which targets are live):
+   - `/Users/gabe/Projects/callisto/crates/callisto-graph/src/commands/publish_client.rs` → trace the actual `Command::new()` invocations for each tool
+   - `/Users/gabe/Projects/callisto/crates/callisto-model/src/ecosystem.rs` → see PublishTarget enum shape and current variants
+   - `/Users/gabe/Projects/callisto/docs/06-publishing.md` → understand what callisto's own docs claim about publishing flow
+
+2. **Search external sources** for official requirements using the keywords (prioritize GitHub Releases and pnpm, include PyPI/twine/NuGet if time permits):
+   - GitHub CLI: https://cli.github.com/manual/gh_release_create, https://cli.github.com/manual/gh_release_upload
+   - GitHub Releases API: https://docs.github.com/en/rest/releases
+   - pnpm: https://pnpm.io/cli/publish
+   - cargo/crates.io: https://doc.rust-lang.org/cargo/commands/cargo-publish.html, https://doc.rust-lang.org/cargo/reference/manifest.html (for --locked semantics)
+   - npm/PyPI/NuGet docs as needed
+
+3. **Compare baselines to official docs** — what flags does callisto use now that official docs don't mention or recommend? What preconditions (e.g., "release must exist before upload", "locked Cargo.lock required", "workspace publish coordination") are missing from callisto's current implementation?</result>
+<usage><subagent_tokens>30911</subagent_tokens><tool_uses>1</tool_uses><duration_ms>27345</duration_ms></usage>
+</task-notification>
