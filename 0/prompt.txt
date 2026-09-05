@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>b0wiauq3o</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/08ccaac1-3846-4134-8b06-140e5b9c22f2/tasks/b0wiauq3o.output</output-file>
+<status>completed</status>
+<summary>Monitor "wait for cargo test -p callisto-graph (bz6kbnq7n) to finish" stream ended</summary>
+</task-notification>
