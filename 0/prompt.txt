@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>b6ru9hx83</task-id>
+<tool-use-id>toolu_017weooimDN6vStyS1dZvxg5</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/08ccaac1-3846-4134-8b06-140e5b9c22f2/tasks/b6ru9hx83.output</output-file>
+<status>completed</status>
+<summary>Background command "cargo test -p callisto-graph 2&gt;&amp;1 | tee /private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/t3_full.log | tail -5" completed (exit code 0)</summary>
+</task-notification>
