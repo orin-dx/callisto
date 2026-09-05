@@ -1,0 +1,1 @@
+How come we didn’t address all of the bugs? I asked you to fix all in semantic batches, validating against the specs, expectations, test coverage, black box testing, best practices, performance, UX and DX
