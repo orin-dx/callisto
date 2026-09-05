@@ -1,0 +1,24 @@
+<task-notification>
+<task-id>af8b7b6dd9e97f84e</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/af8b7b6dd9e97f84e.output</output-file>
+<status>completed</status>
+<summary>Agent "Review docs/01-spec.md CommitInference drift fix" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Verified all six items directly against source. Summary:
+
+**1. §G.6.4 code block (line 6839-6902) vs `crates/callisto-graph/src/infer.rs`:** Matches. Trait now has `Send + Sync` bound, `infer` takes `git: &amp;callisto_vcs::GitAccess&lt;'_&gt;`, `CommitInference` is a zero-field non-generic struct, `impl SeverityInference for CommitInference` (no `&lt;'a&gt;`). All confirmed against real source.
+
+On the inline-path question: real source uses `use callisto_vcs::GitAccess;` + bare `GitAccess&lt;'_&gt;`, while the doc writes `callisto_vcs::GitAccess&lt;'_&gt;` inline. This is **not a discrepancy** with the doc's own convention. Evidence: (a) real `error.rs` itself fully-qualifies `callisto_model::TagTemplateError`/`VersionParseError` inline in enum variants despite importing both via `use` at the top — so this codebase's own style already spells out cross-crate types even when a bare name is available; (b) `GitAccess`'s defining section is §V.6 (line ~11220), which comes *after* G.6.4 (line 6839) in document order, so this is the reader's first encounter with the type — spelling it out is the doc's established forward-reference practice, unlike `Package`/`GraphError`/`CommitSha`, which are already-established glossary types used bare throughout.
+
+**2. `NoInference` hardcoding:** Confirmed. `commands/version.rs:19` and `commands/compose_pr_body.rs:31` both do `let inference = NoInference;` unconditionally, no `#[cfg(feature = "inference")]` anywhere in either file. Grepped all of `callisto-cli/src` and the rest of the workspace: no `select_inference` function and no `CommitInference` construction exists anywhere outside `infer.rs` itself (and its unit tests).
+
+**3. Cargo.toml feature forwarding:** Confirmed — `callisto-cli/Cargo.toml` has `inference = ["callisto-graph/inference"]`.
+
+**4. Rewritten §CLI.6.3.1:** Landed and reads clearly, no internal self-contradiction. One pre-existing (not part of this diff) tension worth noting: the unmodified §CLI.6.3 code block just above (line 9257) still shows `let inference = select_inference(&amp;ws);` presented as real handler flow — mildly in tension with 6.3.1's "never existed in real code," but that block wasn't touched by this diff.
+
+**5. Fence balance:** `grep -c '^```' docs/01-spec.md` = 402 (even, unbroken).
+
+**6. New claims scan:** All new claims (§G.14 milestone table row, "ONE call site" for `apply_pre_major`, "never constructed anywhere in production") independently verified as accurate — no invented references found.</result>
+<usage><subagent_tokens>70814</subagent_tokens><tool_uses>29</tool_uses><duration_ms>186472</duration_ms></usage>
+</task-notification>
