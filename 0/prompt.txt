@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bdyl4yy2f</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/tasks/bdyl4yy2f.output</output-file>
+<status>killed</status>
+<summary>Background command "just coverage 2&gt;&amp;1 | tail -40" was stopped</summary>
+</task-notification>
