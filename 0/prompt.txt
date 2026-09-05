@@ -1,0 +1,1 @@
+What do we need to meaninful 100% coverage of actual features? We want to make sure we have coverage of the happy path, error cases and edge cases. We test as a black box, not the specific implementation and no meaninless tests
