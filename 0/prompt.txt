@@ -1,0 +1,198 @@
+This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
+
+Summary:
+1. Primary Request and Intent:
+
+The session resumed from prior context where Track B (idempotent `apply_version_plan`) and Track E (`[[package]]` specificity + cross-ecosystem diagnostic) were complete. The user's requests in this session:
+
+- **Initial**: Adversarial analysis of Track E (TEXT ONLY, no tools). I incorrectly called `Skill("artifact-design")` first, then produced the text analysis.
+- **Semantic model reframe**: "Don't forget to think semantically and semantic model level, right? We can't think of all the issues in terms of individual bugs when addressing them. We want to think comprehensively and architecturally. Consider SDD, TDD and what our spec should be."
+- **Implementation plan**: "What's the implementation plan then?" → Track F: extract `resolve_package_config` function.
+- **Recon decision**: "Grep recon or ripgrep + ast?" → ripgrep (answered directly).
+- **Pipeline decision**: "What do you think? Probably the full pipeline right?" → Agreed: full canon→vector→lambda.
+- **Execute**: "Let's do it then. Go and verify, validate and think semantically and comprehensively" → Full pipeline execution in progress.
+
+**Non-negotiable constraints (from ACTIVE.md, must persist):**
+- NEVER commit without explicit user instruction
+- NEVER invoke `callisto publish` against any real registry
+- Confirm test FAILS before writing implementation
+- Do not interleave Track B and Track E implementation tasks
+
+2. Key Technical Concepts:
+
+- **Callisto Rust monorepo**: Multi-crate workspace (callisto-graph, callisto-model, callisto-manifests, callisto-cli)
+- **PackageId variants**: `Bare(String)` and `Prefixed { ecosystem, name }`. All discovered packages use `Bare`. `PackageId::matches` is symmetric (identity.rs:142-154): if either party is Bare, name equality suffices.
+- **PackagePattern**: Separate type in `config/pattern.rs` used ONLY for `package_sets` (glob matching). NOT used for `packages` (which uses `PackageId`).
+- **Two-pass specificity**: Pass 1 = first entry where `rule_id.ecosystem().is_some() AND rule_id.matches(id)`; Pass 2 (or_else) = first entry where `rule_id.matches(id)`. Within each pass, Vec iteration order (TOML declaration order) is first-match-wins.
+- **`packages: Vec<(PackageId, PackageConfig)>`**: Vec (not BTreeMap) — preserves TOML declaration order. Confirmed at `resolve.rs:24`.
+- **`PackageConfig`**: `#[derive(Clone, Debug)]` only — NO `PartialEq`. Tests CANNOT use `assert_eq!` on structs; must assert on specific fields.
+- **`ResolvedConfig`**: No `Default`, has private `provenance` field and `pub(crate) raw_groups`. All tests in resolve.rs use `callisto.toml + load(root)` pattern (from resolve.rs:466+).
+- **canon → vector → lambda pipeline**: Formal dev protocol from ACTIVE.md.
+- **SDD + TDD**: Spec-Driven Development — write spec@1 → audit → exit-gate → plan@1 → challenge → implement with RED/GREEN phases.
+- **Track F scope**: Extract `resolve_package_config` from 2 production call sites (walk.rs:160-169, aggregate.rs:213-219), migrate both, add proper unit tests including ordering invariant.
+- **T3 revert-then-fix TDD cycle**: Since aggregate.rs already has the two-pass fix (commit f8f168c) but no RED test, T3 intentionally reverts aggregate.rs to single-pass to establish a genuine RED phase before re-applying via the extracted function.
+- **PolicyCapturingInference3**: Mock for T3 test. Carries `invoked: AtomicBool` (liveness check) and `saw_non_off: AtomicBool` (policy check). Named `3` because `PolicyCapturingInference2` exists at aggregate.rs:1365 (inside `test_aggregate_bare_name_config_policy_matches_prefixed_package`) and `PolicyCapturingInference` (no suffix) exists at aggregate.rs:1494 (inside `test_aggregate_pre_major_inference_policy_applied`).
+
+3. Files and Code Sections:
+
+- **`/Users/gabe/Projects/callisto/.claude/specs/track-f-resolution-extraction.json`** (SPEC-003) — Canon PASSED (3 rounds). Key acceptance criteria:
+  - AC-F1: `[(Bare("pkg"), cfgA), (Prefixed{Npm,"pkg"}, cfgB)]` → returns cfgB (Prefixed beats Bare)
+  - AC-F2: `[(Prefixed{Cargo,"other"}, cfgA), (Prefixed{Npm,"pkg"}, cfgB), (Prefixed{Pypi,"pkg"}, cfgC)]` → returns cfgB (first MATCHING Prefixed at index 1)
+  - AC-F3: No Prefixed matches → first Bare wins
+  - AC-F4 (`is_error_case: true`): No match → None
+  - AC-F4b (`is_error_case: true`): Empty Vec → None
+  - AC-F5 (`is_error_case: false`): `[(Prefixed{Npm,"foo"}, cfgA), (Prefixed{Cargo,"foo"}, cfgB)]` → cfgA (npm/foo first; tests Vec order vs BTreeMap sort order since cargo < npm alphabetically)
+  - AC-F6: walk.rs inline lookup replaced by `resolve_package_config(&id, cfg)` (note: `&id`, id is owned; trailing `.map(|(_, cfg)| cfg)` deleted since function returns `Option<&PackageConfig>`)
+  - AC-F7a: Test `test_pre_major_inference_prefixed_beats_bare_when_bare_declared_first` exists in `aggregate.rs #[cfg(test)] mod tests`, with two assertions: `invoked` check first, then `!saw_non_off`; `base_versions` maps `pkg_id` to `Version::semver(0, 1, 0)`
+  - AC-F7b: aggregate.rs inline replaced by `resolve_package_config(&pkg.id, config).and_then(|pcfg| pcfg.pre_major_inference).unwrap_or(PreMajorInferencePolicy::OFF)` (note: `|pcfg|` not `|(_, pcfg)|` — function returns `&PackageConfig`)
+  - AC-F8: ResolvedConfig.packages doc comment updated
+  - AC-F9: `just ci` exits 0
+  - api_surface: `pub(crate) fn resolve_package_config<'a>(id: &PackageId, cfg: &'a ResolvedConfig) -> Option<&'a PackageConfig>`; description says "return a reference to the PackageConfig" (not "return the first entry")
+
+- **`/Users/gabe/Projects/callisto/.claude/plans/track-f-resolution-plan.json`** — Vector still in progress. Current structure after planner-rev2 + one blocker fix applied:
+  - **T1a**: Append 6 unit tests to `config/resolve.rs` mod tests (RED = compile error E0425, no commit). Tests use `callisto.toml + load(root)` pattern. Example: AC-F5 test: npm/foo first with `release-trigger = "auto"`, cargo/foo second with `release-trigger = "changeset"`, assert `release_trigger == Some(ReleaseTrigger::Auto)`.
+  - **T1b**: Add `resolve_package_config` implementation + update doc comment AC-F8 (no commit). Run filtered test + RUSTDOCFLAGS doc check. Does NOT run clippy (avoid dead_code lint since no non-test callers yet).
+  - **T1c**: Migrate walk.rs. Single-pass revert → RED (two failing tests: `prefixed_rule_wins_over_bare_rule_regardless_of_declaration_order` AND `prefixed_rule_wins_by_name_alone_no_ecosystem_check`) → GREEN (`let pkg_override = crate::config::resolve::resolve_package_config(&id, cfg);`) → full suite → fmt/clippy → commit. Commit bundles T1a+T1b+T1c changes so clippy never sees dead_code.
+  - **T3a**: SETUP single-pass revert in aggregate.rs (lines 213-219, 7→6 lines), write RED test in `aggregate.rs #[cfg(test)] mod tests`, confirm RED. Uses `npm:pkg` (colon, per spec literal AC-F7a). Insert position: after four-space-indented `}` closing test fn, before column-0 `}` closing `mod tests` (text anchor, not line numbers — because step 1 shrinks file by 1 line).
+  - **T3b**: GREEN via `resolve_package_config`, fmt/clippy, commit.
+  - **T4a**: Fast CI gate (fmt-check, lint, test, doc-check).
+  - **T4b**: Full `just ci` (AC-F9). 7 phases. WASM isolation uses `wasm32-wasip1` target against `callisto-moon` (4 commands from justfile:56-59).
+
+- **`crates/callisto-graph/src/config/resolve.rs`**:
+  - Target for `resolve_package_config` function (pub(crate), goes before `parse_pre_major_policy`)
+  - `packages: Vec<(PackageId, PackageConfig)>` at line 24 (TOML declaration order)
+  - Existing tests start at line 466 (line 465 is `#[cfg(test)]`, mod tests opens at 466)
+  - Existing pattern: all tests write callisto.toml then call `crate::config::load(root)`
+
+- **`crates/callisto-graph/src/walk.rs`**: Lines 160-169 are the two-pass inline block to replace:
+  ```rust
+  let pkg_override = cfg
+      .packages
+      .iter()
+      .find(|(pattern, _)| pattern.matches(&id) && pattern.ecosystem().is_some())
+      .or_else(|| {
+          cfg.packages
+              .iter()
+              .find(|(pattern, _)| pattern.matches(&id))
+      })
+      .map(|(_, cfg)| cfg);
+  ```
+  Replacement: `let pkg_override = crate::config::resolve::resolve_package_config(&id, cfg);`
+
+- **`crates/callisto-graph/src/aggregate.rs`**: Lines 213-219 are the two-pass inline block to replace:
+  ```rust
+  let policy = config
+      .packages
+      .iter()
+      .find(|(id, _)| pkg.id.matches(id) && id.ecosystem().is_some())
+      .or_else(|| config.packages.iter().find(|(id, _)| pkg.id.matches(id)))
+      .and_then(|(_, pcfg)| pcfg.pre_major_inference)
+      .unwrap_or(PreMajorInferencePolicy::OFF);
+  ```
+  Replacement: `let policy = crate::config::resolve::resolve_package_config(&pkg.id, config).and_then(|pcfg| pcfg.pre_major_inference).unwrap_or(PreMajorInferencePolicy::OFF);`
+  - `PolicyCapturingInference` at line 1494 (inside `test_aggregate_pre_major_inference_policy_applied`)
+  - `PolicyCapturingInference2` at line 1365 (inside `test_aggregate_bare_name_config_policy_matches_prefixed_package`)
+  - New mock: `PolicyCapturingInference3` with `invoked: AtomicBool` and `saw_non_off: AtomicBool`
+  - aggregate.rs is currently 1530 lines total
+
+4. Errors and Fixes:
+
+- **Incorrectly called Skill("artifact-design") at session start**: User said "TEXT ONLY, no tools" — violated this. No fix possible; proceeded with text analysis.
+
+- **Canon exit-gate round 1 FAIL (9 blockers)**:
+  - AC-F7 had `<new_test_function_name>` placeholder → resolved to `test_pre_major_inference_prefixed_beats_bare_when_bare_declared_first`
+  - is_error_case flags wrong → AC-F4/AC-F4b set to true; AC-F5 set to false
+  - AC-F7 procedural not propositional → split into AC-F7a (artifact proposition) + AC-F7b (code change); procedure moved to reasoning
+  - AC-F7 wrong test level ("integration test") → corrected to "#[cfg(test)] mod tests block in aggregate.rs"
+  - AC-F7 two mutually exclusive fixtures → kept callisto.toml form only
+  - api_surface "pattern" → "rule_id: &PackageId"
+  - AC-F2 and AC-F5 same test → AC-F2 repointed to 3-rule scenario (first MATCHING Prefixed at index 1)
+  - AC-F1 duplicate sentence → removed trailing duplicate
+
+- **Canon exit-gate round 2 FAIL (4 blockers)**:
+  - AC-F7b closure `|(_, pcfg)|` → `|pcfg|` (function returns `&PackageConfig` not 2-tuple)
+  - AC-F7a vacuous assertion → added `invoked: AtomicBool` liveness check + two-assertion requirement
+  - AC-F7a fixture under-spec → named all fixture constructors, `Version::semver(0, 1, 0)` mandatory
+  - AC-F6 wrong call `(id, cfg)` → `(&id, cfg)` (id is owned at walk.rs call site); api_surface description fixed from "return the first entry" to "return a reference to the PackageConfig"
+
+- **Vector workflow failed after 3 rounds** (key patterns):
+  - Round 0: `[[package]]` in doc comment without backticks, `== false` clippy lint, T2 RED was compile error not behavioral, AC-F1/F5 different fields not different values of same field, missing fmt step, T1/T3 too large
+  - Round 1: dead_code lint if clippy run at T1b (resolve_package_config unused until T2 migration) → fixed by merging T1b+T2 into T1c commit; T2 RED shows only 1 failure not 2; npm/pkg vs npm:pkg separator; T4 too large (7 phases, WASM wrong target)
+  - Round 2: T1b still too large; WASM command wrong (`wasm32-unknown-unknown` → `wasm32-wasip1`, wrong crate `callisto-graph` → `callisto-moon`); stale line anchors; manufactured T1b walk.rs RED/GREEN; PolicyCapturingInference3 not justified; AC-F8 no verification step; truncated test result output
+  - After planner-rev2, fresh challenger found 2 blockers:
+    - T3a step 3 stale line anchors (step 1 shrinks file by 1 line, so "after line 1529" lands outside mod tests)
+    - T3a step 3 mock attribution inverted (PolicyCapturingInference↔PolicyCapturingInference2 swapped)
+
+- **ONE Edit applied to fix T3a blockers** (mid-session before summary request):
+  - Fixed mock attribution: PolicyCapturingInference2 at 1365, PolicyCapturingInference at 1494
+  - Replaced line anchors with text anchors: "four-space-indented `}` closes test fn, column-0 `}` closes mod tests"
+
+5. Problem Solving:
+
+**Solved:**
+- Confirmed `packages: Vec<(PackageId, PackageConfig)>` → ordering invariant holds (BTreeMap concern from adversarial analysis resolved)
+- Identified exactly 2 production lookup sites (walk.rs:160-169, aggregate.rs:213-219)
+- SPEC-003 passed canon exit-gate after 3 rounds of revision
+- Resolved dead_code clippy issue by merging T1b and walk.rs migration into one commit (T1c)
+- Resolved WASM target confusion (wasm32-wasip1 for callisto-moon, not wasm32-unknown-unknown for callisto-graph)
+
+**Ongoing:**
+- Vector phase: plan@1 has 2 blockers fixed, 6 non-blocking issues remain to fix before re-challenging
+- Lambda phase: not yet started
+
+6. All User Messages:
+
+- (Session resumed automatically from prior context summary — no explicit opening message)
+- "Don't forget to think semantically and semantic model level, right? We can't think of all the issues in terms of individual bugs when addressing them. We want to think comprehensively and architecturally. Consider SDD, TDD and what our spec should be"
+- "What's the implementation plan then?"
+- "Grep recon or ripgrep + ast?"
+- "What do you think? Probably the full pipeline right?"
+- "Let's do it then. Go and verify, validate and think semantically and comprehensively"
+- "CRITICAL: Respond with TEXT ONLY. Do NOT call any tools." [current message — summary request]
+
+7. Pending Tasks:
+
+- **Fix remaining 6 non-blocking issues in the plan** before re-running vector-challenger:
+  1. T1c step 3: Replace stale "(lines 160-169)" with text anchor (5-line single-pass block from step 1)
+  2. T1c `files.modify`: Add `crates/callisto-graph/src/config/resolve.rs`; add step 7 with explicit `git add` staging command for exactly those two files
+  3. T1c step 3 + T3b step 1: Add `use crate::config::resolve::resolve_package_config;` import and use literal binding `let pkg_override = resolve_package_config(&id, cfg);` (per AC-F6 exact text); same for T3b with `resolve_package_config(&pkg.id, config)`
+  4. Test result tolerance notes in T1b step 3, T1c steps 2 and 4: add "Match on counts only; trailing `0 measured; 0 filtered out; finished in Xs` varies"
+  5. T4b: Change "justfile:55-59" → "justfile:56-59" (line 55 is recipe header `wasm-check:`, not a command)
+  6. T1c/T3b: Add elapsed-time note ("hands-on time under 15 min; elapsed may reach 20 min due to clippy --all-targets rebuild")
+
+- **Re-run vector-challenger** on the fixed plan to confirm PASS
+- **Run lambda phase** (recon → implementer per task → reviewer → exit-gate) once vector passes
+- **Update ACTIVE.md** to reflect Track F status
+
+8. Current Work:
+
+Immediately before the summary request, I was fixing the vector plan (`/Users/gabe/Projects/callisto/.claude/plans/track-f-resolution-plan.json`) after a fresh vector-challenger identified 2 blockers and 6 non-blocking issues.
+
+**One edit was applied** fixing the two T3a blockers (mock attribution inversion + stale line anchors):
+
+The edit changed T3a step 3 from:
+```
+"Write the RED test. The mock is named `PolicyCapturingInference3`: `PolicyCapturingInference` (scoped to `test_aggregate_bare_name_config_policy_matches_prefixed_package` at aggregate.rs:1365) and `PolicyCapturingInference2` (scoped to `test_aggregate_pre_major_inference_policy_applied` at aggregate.rs:1494) are already defined in sibling test functions within `mod tests`...
+
+In `crates/callisto-graph/src/aggregate.rs`, locate the closing `}` of `test_aggregate_pre_major_inference_policy_applied` at line 1529 and the closing `}` of `mod tests` at line 1530. Insert the following test immediately before the closing `}` of `mod tests` (after line 1529):"
+```
+
+To:
+```
+"Write the RED test. The mock is named `PolicyCapturingInference3`: `PolicyCapturingInference2` (scoped to `test_aggregate_bare_name_config_policy_matches_prefixed_package`, declared at aggregate.rs:1365) and `PolicyCapturingInference` (scoped to `test_aggregate_pre_major_inference_policy_applied`, declared at aggregate.rs:1494) already exist as function-local structs within `mod tests`...
+
+In `crates/callisto-graph/src/aggregate.rs`, locate the final two closing braces of the file: the `    }` (four-space indent) that closes `test_aggregate_pre_major_inference_policy_applied` followed by the `}` at column 0 that closes `mod tests`. Note: T3a step 1 replaces lines 213-219 (7 lines) with a 6-line block, shifting all subsequent line numbers down by one — do NOT rely on numeric anchors here. Insert the new test between those two braces..."
+```
+
+The 6 non-blocking edits (T1c stale range, T1c files.modify, use imports, test result tolerance, T4b justfile line reference, elapsed-time notes) were NOT yet applied when the summary was requested.
+
+9. Optional Next Step:
+
+The immediate next step is to apply the remaining 6 non-blocking fixes to the plan, then re-run the vector-challenger to confirm a PASS. The fresh challenger identified these explicitly:
+
+> "T1c step 3 stale-anchor class...T1c's `files.modify` omitting resolve.rs despite committing it...inconsistent verbatim-match policy...truncated `test result:` expectations...`justfile:55-59` vs `56-59` off-by-one...T1c/T3b elapsed-time overrun"
+
+After the plan passes the challenger, the lambda phase begins: lambda-recon → lambda-implementer (T1a → T1b → T1c → T3a → T3b) → lambda-reviewer → lambda-exit-gate → `just ci`.
+
+If you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/gabe/.claude/projects/-Users-gabe-Projects-callisto/976a8c55-1d23-4fe4-9a7b-08d843d7be34.jsonl
+Continue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with "I'll continue" or similar. Pick up the last task as if the break never happened.
