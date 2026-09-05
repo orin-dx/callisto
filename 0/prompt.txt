@@ -1,0 +1,28 @@
+<task-notification>
+<task-id>a6e36546e9b65b30f</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a6e36546e9b65b30f.output</output-file>
+<status>completed</status>
+<summary>Agent "Exit-gate Track 3b-e spec" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result># Verdict: FAIL
+
+Verdict artifact (schema-validated against `verdict@1`): `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/verdict-track3-identity-hardening.json`
+
+The canon-auditor's clean pass was not wrong about what it checked — it was checking the spec on its own terms. I checked the spec against the codebase, and that is where it comes apart.
+
+**What genuinely passes.** No TBDs anywhere (grepped for TBD, to-be-determined, as-appropriate, should-behave, reasonable, properly, robust — zero hits). Error cases are properly flagged: ten criteria carry `is_error_case: true` and they cover the real boundaries. And the line citations are accurate, which is rarer than it should be — `walk.rs:80-83`, `resolver.rs:37-39`, `groups.rs:147/178` (both genuinely pass `&amp;[]`, so AC-10b's claim that the sibling branch never fires is correct), `identity.rs:252-298`. I traced AC-10b's resolution path through `resolve_human`'s first branch to confirm `PackageId::parse("native-core")` wouldn't short-circuit past the `AmbiguousName` arm once both ids are `Prefixed`. It doesn't. That criterion is sound.
+
+**Six blockers.** The two that matter most:
+
+*Scope — mandatory split.* Two subsystems sharing no file, no symbol, no data source. `ignore_walk.rs` membership filtering (AC-01..06, 19..21) and `identity.rs`/`walk.rs` identity resolution (AC-07..18). Neither is a precondition for the other. Split into `SPEC-TRACK3A-WORKSPACE-MEMBERSHIP` (DW1+DW2) and `SPEC-TRACK3B-IDENTITY-RESOLUTION` (DW3+DW4+DW6), with AC-22 split along the same seam.
+
+*Undeclared dependency.* AC-04 and AC-21 require parsing `pnpm-workspace.yaml`, but there is no YAML parser in this workspace — `grep -rn yaml crates/*/Cargo.toml Cargo.toml` returns nothing, and the sole existing reference (`locate/root.rs:46`) is a bare `.exists()` check that never opens the file. Those two criteria quietly require a new third-party dependency, which is a licensing decision under CLAUDE.md invariant 4. It also leaves AC-21's "fails to parse as valid YAML" without fixed meaning: a hand-rolled `packages:` scanner never fails to parse.
+
+The other four: a hybrid `[package]` + `[workspace]` root manifest would be silently dropped from discovery under the stated rule (Callisto's own root is virtual, so no existing test catches it); npm/pnpm precedence when both markers are present is undefined; AC-22 is indeterminate on four counts (DW2 has no fixture instruction, "AC-10 through AC-14" is ambiguous because AC-10b/AC-10c sit out of array order, "verbatim" is unsatisfiable by one test for a five-criterion DW, and AC-19/20/21 belong to no DW while DW5 is never defined); and the api_surface flags the stale `index.bare` cleanup as "easily missed" while omitting its exact twin at `walk.rs:121-123`, where `index.native` is populated with the pre-promotion `Bare` id — an implementer following the note literally will fail AC-11.
+
+One item I deliberately did *not* treat as a blocker: AC-17's "or an equivalent non-fallback path" is implementation latitude wrapped around a testable assertion (no `DepEdge`), which is legitimate.
+
+I set `retry_count: 1` — the two prior fail rounds were canon-auditor audits, not exit-gate passes, so this is the gate's first look. Override if you track a cumulative count; at 3 this escalates rather than failing again.</result>
+<usage><subagent_tokens>80201</subagent_tokens><tool_uses>15</tool_uses><duration_ms>320926</duration_ms></usage>
+</task-notification>
