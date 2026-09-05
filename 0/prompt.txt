@@ -1,0 +1,5 @@
+<task-notification>
+<task-type>artifact-watch-lifecycle</task-type>
+<summary>Stopped watching Artifact: "Publish Pipeline Manifest" (connection lost)</summary>
+<event>Watch on https://claude.ai/code/artifact/785f00ac-80d1-42e0-b37e-19def4fec349 ended — the live connection kept failing and reconnecting has stopped. This session will no longer hear when it is republished; watch it again if you still need that.</event>
+</task-notification>
