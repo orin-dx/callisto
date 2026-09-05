@@ -1,0 +1,45 @@
+<task-notification>
+<task-id>ab81a72918cc19bdb</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/tasks/ab81a72918cc19bdb.output</output-file>
+<status>completed</status>
+<summary>Agent "Read-only review of pre_cursor test coverage (post-reversal)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>No changes to the eight consumer files — confirming the revert is fully clean (zero diff outside `pre_cursor.rs`).
+
+## Review Summary
+
+**Status: no concerns on what was done; one process/scope observation to flag.**
+
+### 1. Test correctness — verified, all sound
+I traced every mock and assertion against the real (unchanged) implementation:
+- `CommandRunner` trait signature (`fn run(&amp;self, program: &amp;str, args: &amp;[&amp;str], cwd: &amp;Path) -&gt; Result&lt;CommandOutput, CommandError&gt;`), `CommandOutput::success()` (`exit_code == Some(0)`), `CommandOutput::stdout_trimmed()`, `ConventionalError::Command(#[from] CommandError)`, `MalformedPreCursorRef`/`PreCursorAdvanceFailed` field shapes, `CommitSha::parse`, `PackageId::parse`/`display_name` — all match the tests exactly (`crates/callisto-model/src/exec.rs`, `crates/callisto-model/src/identity.rs`, `crates/callisto-conventional/src/error.rs`).
+- The asserted git args (`["rev-parse", "--verify", "--quiet", ref_name]`, `["update-ref", ref_name, sha]`) match `pre_cursor.rs:14` and `:44` verbatim.
+- Ran the tests directly: `cargo test -p callisto-conventional pre_cursor` → 12/12 pass.
+- Coverage is genuinely meaningful, not decorative: success/none/empty-despite-success/malformed/propagated-error paths for `resolve_pre_cursor`, success/failure for `advance_pre_cursor`, plus ref-name shape for bare/ecosystem-prefixed/scoped-npm package IDs. This is the same `CannedRunner`/`AssertingRunner` mock pattern already used elsewhere in the crate (`FakeGitLogRunner` in `window.rs`).
+- No hazard-taxonomy violations in the diff (`shared/references/rust-hazards.md` at `/Users/gabe/Projects/agent-plugins/shared/references/rust-hazards.md`): no `unwrap_or`/silent fallbacks, no `map_err(|_|` source erasure, no discarded params, no panics outside test code, additive-only test module.
+
+### 2. Revert completeness — confirmed complete
+`git diff --stat` shows exactly one file changed: `crates/callisto-conventional/src/pre_cursor.rs`, +217/-0. I independently confirmed zero diff on all eight consumer sites named in the task (`crates/callisto-graph/src/tags.rs`, `plan.rs`, `commands/version.rs`, `commands/pr_body.rs` ×2, `commands/snapshot.rs`, `crates/callisto-conventional/src/error.rs`, `lib.rs`) — `TagIndex.pre_cursor` is still hardcoded to `None` at construction (`tags.rs:125`), `pre_cursor_updates` is still `Vec::new()`/`vec![]` at all four sites, both `ConventionalError` variants and the `pub mod pre_cursor` export are intact. Nothing left half-reverted.
+
+### 3. Scope call — correctly drawn
+`cargo build --workspace --all-targets`, `cargo clippy -p callisto-conventional --all-targets -- -D warnings`, and `cargo fmt -p callisto-conventional -- --check` all pass clean. I read `docs/01-spec.md` around line 6531 and `docs/00-design.md` lines 755-800 directly — the characterization is accurate, not exaggerated: the pre-cursor ref is genuinely specified as a separate `refs/callisto/pre-cursor/&lt;PackageId&gt;` namespace (design.md:770-786), `since` resolution for Auto-trigger packages in pre-mode is specified to prefer `tags.pre_cursor(P)` (spec.md:6531), and the write/advance timing is specified as "alongside the manifest write (same mutation phase, §7.6)." None of that exists in `aggregate.rs` (`since` at line 212 is unconditional, no pre-mode branch), `tags.rs::build` (no `cfg(feature = "inference")` gate, despite that exact pattern already existing in `infer.rs`/`error.rs` in the same crate), or `apply.rs`.
+
+Pushing back on whether even piece (a) — the `TagIndex::build` feature gate — should have been done here: I don't think so. Populating `pre_cursor` in `TagIndex::build` in isolation is inert today (nothing reads it), so it's individually safe, but it's not a self-contained unit of the spec — it's one wire of a four-wire circuit (populate → prefer-in-since → plan → apply-and-advance) whose correctness can only be judged as a whole (idempotency across repeated `version` runs). Landing wire (a) alone under a "minimal fix" TDD directive, with no test able to observe its effect end-to-end, would itself be a step toward the "half-wired" state this task exists to close. Correctly scoping this as a canon→vector→lambda-sized follow-up rather than freehand-implementing a 4-file, correctness-critical wiring change inside a "close one coverage gap" session is the right call.
+
+This is a confirmed real gap relative to spec (Auto-trigger inference is not idempotent across repeated `version` invocations during an active pre-release cycle), worth tracking explicitly as a follow-up item, not something this review is treating as resolved.
+
+```json
+{
+  "status": "approved",
+  "issues": [],
+  "sibling_gaps": [
+    "crates/callisto-graph/src/tags.rs:125 — TagIndex::build hardcodes pre_cursor to None for every package; spec (docs/01-spec.md:6531, docs/00-design.md:768-786) requires TagIndex::build to call resolve_pre_cursor under the `inference` feature, matching the cfg(feature = \"inference\") gate pattern already used in crates/callisto-graph/src/infer.rs and error.rs in the same crate. Out of scope for this task (pure test-coverage closure) but a real, spec-confirmed gap.",
+    "crates/callisto-graph/src/aggregate.rs:212 — since resolution is unconditional (last_tag only); spec requires preferring tags.pre_cursor(P) for ReleaseTrigger::Auto packages during an active pre-release cycle. Same follow-up scope as above.",
+    "crates/callisto-graph/src/commands/version.rs:255, crates/callisto-graph/src/commands/pr_body.rs:288,309, crates/callisto-graph/src/commands/snapshot.rs:133 — VersionPlan.pre_cursor_updates hardcoded to Vec::new()/vec![] at every construction site; apply.rs never consumes it or calls advance_pre_cursor. Same follow-up scope."
+  ],
+  "reasoning": "Verified the diff is exactly +217/-0 in pre_cursor.rs, additive test-only. Cross-checked every mock type/method/field used in the new tests (CommandRunner, CommandOutput, CommandError, ConventionalError variants, CommitSha, PackageId) against actual definitions in callisto-model and callisto-conventional/src/error.rs -- all match. Ran cargo test -p callisto-conventional pre_cursor: 12/12 pass. Ran cargo build --workspace --all-targets, cargo clippy -p callisto-conventional --all-targets -- -D warnings, cargo fmt -p callisto-conventional -- --check: all clean. Confirmed via git diff --stat and targeted diffs on all 8 consumer files that the earlier bad deletion was fully reverted with zero residual drift. Read docs/01-spec.md:6510-6545 and docs/00-design.md:755-800 directly and confirmed the wiring-point characterization in the task prompt is accurate, not exaggerated. Concluded the scope line (tests only, flag the 4-wire wiring gap as a follow-up) is correctly drawn because the four wiring points are only jointly testable/correct (idempotency is an emergent property across all four), so landing any single wire alone under a minimal-fix directive would not close the gap and could look done when it isn't. No blocking issues found in the actual diff under review. Sibling gaps (the four downstream hardcode sites) are pre-existing and explicitly out of scope, listed for exit-gate visibility, not as blockers on this task's deliverable."
+}
+```</result>
+<usage><subagent_tokens>61256</subagent_tokens><tool_uses>20</tool_uses><duration_ms>228155</duration_ms></usage>
+</task-notification>
