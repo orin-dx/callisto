@@ -1,0 +1,5 @@
+<task-notification>
+<task-id>bu26mm56y</task-id>
+<summary>Monitor event: "wait for cli+model full suite to actually finish"</summary>
+<event>[Monitor timed out — re-arm if needed.]</event>
+</task-notification>
