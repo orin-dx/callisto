@@ -1,0 +1,5 @@
+<task-notification>
+<task-id>bznpb4h2e</task-id>
+<summary>Monitor event: "continue waiting for clippy to finish"</summary>
+<event>[Monitor timed out — re-arm if needed.]</event>
+</task-notification>
