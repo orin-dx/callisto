@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bwmt0kh6t</task-id>
+<tool-use-id>toolu_01Uw8Rj4Rq96ou7U7bQ8MXQo</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/e9efeaba-9875-4c8b-ad83-aa1c06f21756/tasks/bwmt0kh6t.output</output-file>
+<status>completed</status>
+<summary>Background command "Run full test suites for all touched crates" completed (exit code 0)</summary>
+</task-notification>
