@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>blrxxoew4</task-id>
+<tool-use-id>toolu_01Tey1SQCFgqDhzeqDpEg1Dc</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/bb531e8d-c394-4e47-a8ae-e4a9ceeca6d2/tasks/blrxxoew4.output</output-file>
+<status>completed</status>
+<summary>Background command "Full workspace test as final Track 4 integration check" completed (exit code 0)</summary>
+</task-notification>
