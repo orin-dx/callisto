@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bxg4mq049</task-id>
+<tool-use-id>toolu_01RbjKMJN4tveR9waqvv5Wht</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/c0ad64b2-6440-4937-8328-8d9fd9db278c/tasks/bxg4mq049.output</output-file>
+<status>completed</status>
+<summary>Monitor "wait for shell.rs test compile (bh13v65ar) to finish" stream ended</summary>
+</task-notification>
