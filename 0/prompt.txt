@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bpg3n6b7z</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/c0ad64b2-6440-4937-8328-8d9fd9db278c/tasks/bpg3n6b7z.output</output-file>
+<status>completed</status>
+<summary>Monitor "PR #5 CI checks after changeset-split commit" stream ended</summary>
+</task-notification>
