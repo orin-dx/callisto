@@ -1,0 +1,41 @@
+<task-notification>
+<task-id>a95c408507bbf19c4</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a95c408507bbf19c4.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement TASK-28 (AC-11b regression test)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Committed successfully at `9fffca3`.
+
+```json
+{
+  "task_id": "TASK-28",
+  "status": "done",
+  "steps_completed": [
+    "Confirmed 23 prior commits (0971005..f93e5aa) present on ignore_walk.rs and clean tree",
+    "Read AC-11b exact text from SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json",
+    "Identified spec's AC-11b covers FOUR malformed shapes, not the plan's three: missing key, wrong scalar type, mapping value ({foo: bar}), and non-string sequence element",
+    "Wrote test ac11b_pnpm_packages_wrong_shape_falls_back_to_absent_filter in ignore_walk.rs, adding the mapping-value case the plan's fixture omitted",
+    "Ran test: passed immediately (no red step, consistent with TASK-07..27 pattern)",
+    "Adversarially verified non-vacuousness: mutated read_pnpm_packages in membership.rs to fall through to admit-nothing instead of None/admit-all fallback, confirmed test failed with clear assertion message, then reverted mutation exactly",
+    "Ran full callisto-graph --lib suite: 308 passed, 0 failed",
+    "Ran cargo fmt -p callisto-graph and cargo clippy -p callisto-graph --all-targets -- -D warnings: clean",
+    "Committed test-only change"
+  ],
+  "test_result": "pass",
+  "commit_sha": "9fffca3",
+  "criteria_evidence": [
+    {
+      "criterion_id": "AC-11b",
+      "test_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs",
+      "test_line": 1614,
+      "implementation_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs",
+      "implementation_line": 273
+    }
+  ],
+  "concerns": "The plan's failing_test fixture for TASK-28 covered only 3 of the 4 malformed shapes named in the spec's AC-11b text (missing key, wrong scalar type, non-string sequence element) but omitted the mapping-value example (packages: {foo: bar}) that the spec explicitly lists. I added that fourth case to the test so the criterion's exact text is fully proven — this matches the pattern noted in TASK-12/14/17/20/21/23/27 where the plan under-delivered relative to the spec.",
+  "reasoning": "Verified via git log that all 23 prior commits were present. Read spec text directly rather than trusting plan paraphrase, found the mapping-value shape missing from the plan's fixture, and added it. The implementation function read_pnpm_packages() at membership.rs:273-282 already handles all four shapes via the single `doc[\"packages\"].as_vec()?` early-return (covers missing/scalar/mapping) plus `item.as_str()?` (covers non-string sequence elements) -- no implementation change was needed, consistent with the TASK-07 regression-proofing pattern. Adversarial mutation test confirmed the test is not vacuous: breaking the fallback caused a real, specific assertion failure."
+}
+```</result>
+<usage><subagent_tokens>58958</subagent_tokens><tool_uses>20</tool_uses><duration_ms>361372</duration_ms></usage>
+</task-notification>
