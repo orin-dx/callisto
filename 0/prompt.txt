@@ -1,0 +1,1 @@
+Continue Track 7 remediation: check the background cargo test output for test_aggregate_scopes_inference_pathspecs_to_package_directory, confirm it fails as expected (red), then proceed with the minimal fix in aggregate.rs, get it green, review, then move to findings 1 and 2 per the plan.
