@@ -1,0 +1,259 @@
+This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
+
+Summary:
+1. Primary Request and Intent:
+
+The session continued a prior context-exhausted conversation. The mandate was fixing confirmed bugs from a comprehensive publish pipeline audit of the Callisto codebase (Rust CLI + Moon WASM extension for polyglot monorepo versioning). In this segment:
+
+- Continue fixing HIGH-severity bugs found by background bug-hunt agents
+- Research how Changesets and Knope handle `[[package-set]]` semantics and crash-safe apply
+- Plan and execute implementation of `[[package-set]]` and idempotent `apply_version_plan`
+- Write the plan to disk to survive context compaction
+
+**Security/Operational Constraints (MUST REMAIN IN EFFECT):**
+- NEVER commit to git without explicit user instruction
+- NEVER bump versions or run release/publish commands
+- `/Users/gabe/Projects/callisto-findings/` lives OUTSIDE the repo — must NEVER be committed
+- `callisto publish` must NEVER be invoked against a real registry
+- No emojis in documentation or code
+- TDD discipline: RED → GREEN → REFACTOR; never write production code without a failing test first
+- Sequential fix constraint: fixes for semantically coupled publish pipeline must be sequential, validate after each
+
+2. Key Technical Concepts:
+
+- **Callisto**: Rust CLI + Moon WASM extension for polyglot monorepo versioning (10 crates)
+- **ResolvedConfig**: Config struct built from `callisto.toml`; has `packages: Vec<(PackageId, PackageConfig)>` for `[[package]]` overrides; missing `package_sets` for `[[package-set]]`
+- **ManifestWalkResolver::build**: Builds the workspace graph; applies `pkg_override` from `cfg.packages` to each package; never falls back to `cfg.package_sets`
+- **`[[package-set]]` semantics**: Bulk config-override mechanism (NOT version synchronization). Same fields as `[[package]]` but applies to ALL matching packages. Priority: `[[package]]` > `[[package-set]]`. (Derived from Changesets/Knope research.)
+- **Changesets `linked` vs `fixed`**: `linked` = only packages already releasing get unified, non-releasing NOT pulled in. `fixed` = ALL members pulled in even without changesets. The `applyLinks` function in `packages/assemble-release-plan/src/apply-links.ts` implements this.
+- **Crash-safe apply**: Both Changesets and Knope write manifests BEFORE deleting changesets; neither writes a lock/plan file; neither is idempotent. Correct fix for Callisto: use `PlannedBump.from`/`PlannedBump.to` to check current manifest version before writing.
+- **PlannedBump**: Has `from: Version` and `to: Version` — sufficient for idempotency guard
+- **Version::compare()**: Returns `Result<Ordering, GrammarMismatch>`; use this NOT `==` (derived PartialEq compares raw strings, "1.0" != "1.0.0")
+- **parse_publish_target()**: New function mapping strings ("crates-io", "npm", "pypi", "none", etc.) to `PublishTarget` enum values
+- **`#[serde(deny_unknown_fields)]`**: Added to all `callisto.toml`-parsing Raw* structs (NOT to RawMoon* structs which parse moon.yml)
+- **BTreeMap::insert return value**: Returns `Some(old)` on collision — used to detect duplicate PackageId
+- **Conservative round_trip policy**: Compound Cargo ranges with `<`/`<=` upper bounds now return `None` rather than producing impossible constraints
+
+3. Files and Code Sections:
+
+- **`crates/callisto-graph/src/config/resolve.rs`**
+  - Added `parse_publish_target()` function mapping registry key strings to `PublishTarget` values
+  - Changed `publish_to: None` hardcode to actual parsing of `raw_pkg.publish_to`
+  - Changed `[registries] kind` match: added `Some("pypi") => Ecosystem::Pypi`, `Some("npm") | None => Ecosystem::Npm`, `Some(other) => Err(UnknownKey)`
+  - Added inline tests: `test_registry_kind_pypi_resolves_to_pypi_ecosystem`, `test_registry_kind_unknown_is_rejected`, `test_package_override_publish_to_is_parsed_not_discarded`, `test_typo_in_callisto_toml_is_rejected_not_silently_ignored`
+  - **Currently in progress**: Added RED test `test_package_set_is_parsed_into_resolved_config` — fails with compile error because `package_sets` field doesn't exist yet on `ResolvedConfig`
+
+- **`crates/callisto-graph/src/config/raw.rs`**
+  - Added `#[serde(deny_unknown_fields)]` to: `RawConfig`, `RawInitConfig`, `RawChangesetsConfig`, `RawCascadeConfig`, `RawValidationConfig`, `RawRegistryConfig`, `RawPackageConfig`, `RawPackageSetConfig`
+  - NOT added to: `RawMoonYml`, `RawMoonExtensions`, `RawMoonCallistoConfig` (parse moon.yml)
+
+- **`crates/callisto-graph/src/walk.rs`**
+  - Added publish_to override application:
+    ```rust
+    if let Some(override_targets) = pkg_override.and_then(|o| o.publish_to.as_deref()) {
+        publish_to = override_targets.to_vec();
+    }
+    ```
+  - Added duplicate PackageId detection:
+    ```rust
+    if let Some((existing_path, _)) =
+        package_manifest_decls.insert(primary_id.clone(), (rel_path.clone(), decls))
+    {
+        return Err(GraphError::DuplicatePackage {
+            id: primary_id,
+            paths: vec![existing_path, rel_path],
+        });
+    }
+    ```
+
+- **`crates/callisto-manifests/src/python.rs`**
+  - Fixed `write_version` to check if `[project].version` exists before using `[project]` branch:
+    ```rust
+    let has_project_version = self
+        .document
+        .get("project")
+        .and_then(|p| p.get("version"))
+        .is_some();
+
+    if has_project_version {
+        if let Some(proj) = self.document.get_mut("project") {
+            set_with_decor(proj, "version");
+        }
+    } else if let Some(poetry) = self...
+    ```
+  - Test: `write_version_uses_poetry_section_when_project_table_has_no_version_field`
+
+- **`crates/callisto-manifests/src/cargo.rs`**
+  - Fixed `round_trip` compound range: return `None` for any `<`/`<=` clause:
+    ```rust
+    } else if prefix.starts_with('<') {
+        return None;
+    }
+    ```
+  - Tests: `round_trip_compound_range_crossing_upper_bound_returns_none`, `round_trip_compound_range_within_upper_bound_is_rewritten`
+
+- **`crates/callisto-graph/tests/publish_tests.rs`**
+  - Added `package_override_publish_to_none_excludes_package_from_plan` (PUB-014)
+  - Added `scoped_npm_package_with_restricted_access_produces_restricted_access_in_plan` (PUB-013, from prior segment)
+
+- **`crates/callisto-graph/tests/version_tests.rs`**
+  - Added `duplicate_package_name_is_rejected_with_an_error`
+
+- **`crates/callisto-cli/tests/cli_tests.rs`**
+  - Fixed fixture: changed `std::fs::write(root.join("callisto.toml"), "[workspace]\n")` to `std::fs::write(root.join("callisto.toml"), "")` because `deny_unknown_fields` correctly rejected the invalid `[workspace]` section
+
+- **Plan file** (scratchpad, not in repo):
+  `/private/tmp/claude-501/-Users-gabe-Projects-callisto/575b7a46-37b7-42f0-9db7-b2c329b2abab/scratchpad/plan_package_set_and_idempotent_apply.md`
+
+4. Errors and Fixes:
+
+- **`indoc` not available in callisto-manifests**: Used when writing Python test. Fixed by replacing `indoc::indoc! {r#"..."#}` with a plain string literal using `\n` escapes.
+
+- **`deny_unknown_fields` broke CLI integration test**: Test fixture used `"[workspace]\n"` as callisto.toml content (invalid section). Fixed by changing fixture to empty string `""`.
+
+- **`Workspace<'_, NoopRunner>` doesn't implement Debug**: Needed for `result.unwrap_err()` in version_tests. Fixed by using `match result { Ok(_) => panic!(...), Err(e) => assert!(...) }` instead of `unwrap_err()`.
+
+- **`indoc` crate not in scope**: See above.
+
+- **`package_sets` field doesn't exist on `ResolvedConfig`**: This is the current in-progress RED state. The test correctly fails with a compile error. The next step is to add the field and implement parsing.
+
+5. Problem Solving:
+
+**Solved (6 bugs, all TDD RED→GREEN):**
+1. Registries `kind = "pypi"` → wrong `Ecosystem::Npm` (resolve.rs)
+2. Python `write_version` inserts into wrong TOML section for Poetry+PEP621 projects (python.rs)
+3. Cargo compound-range rewrite produces impossible constraint (cargo.rs)
+4. `[[package]] publish-to` never parsed (resolve.rs) + never applied (walk.rs)
+5. Duplicate `PackageId` silently drops one package (walk.rs)
+6. `RawConfig` missing `#[serde(deny_unknown_fields)]` (raw.rs)
+
+**In progress:**
+- `[[package-set]]` implementation: RED test written, failing correctly (compile error on missing field)
+
+**Not yet started:**
+- Idempotent `apply_version_plan` (crash-safe double-bump prevention)
+
+6. All User Messages:
+
+- "I feel like you're getting lazy in trying to find high quality bugs that are critical or high. Consider this a high bounty job" (prior session, in summary)
+- "Run the bug hunt over all areas now" (prior session, in summary)
+- "Shall we do another across the entire codebase now?" (prior session, in summary)
+- "Think very careful and learn from changesets and knope on this. What do their algorithms do about these cases?"
+- "THink very carefully, plann extensively for tests, docs, etc. Then execute the plan. Write it down to survive compaction of the context window."
+- [Current message: summary request — TEXT ONLY response]
+
+7. Pending Tasks:
+
+**Part A: `[[package-set]]` (in progress, RED test already written)**
+
+A-1: `resolve.rs` — add `package_sets: Vec<(PackageId, PackageConfig)>` to `ResolvedConfig`; parse `raw.package_set` identically to `raw.package`; include in `Ok(ResolvedConfig { ... })` return. [RED test written, needs GREEN implementation]
+
+A-2: `walk.rs` — add `set_override` as fallback when `pkg_override` is None:
+```rust
+let set_override = if pkg_override.is_none() {
+    cfg.package_sets
+        .iter()
+        .find(|(pattern, _)| pattern.matches(&id))
+        .map(|(_, cfg)| cfg)
+} else {
+    None
+};
+let active_override = pkg_override.or(set_override);
+```
+Replace all uses of `pkg_override` with `active_override` in the override application block. [RED test needed, then GREEN]
+
+A-3: Integration test — `[[package-set]]` applies to all matching packages (publish_tests.rs). [RED then GREEN]
+
+A-4: Integration test — `[[package]]` takes priority over `[[package-set]]`. [RED then GREEN]
+
+**Part B: Idempotent `apply_version_plan` (not started)**
+
+B-1: `error.rs` — add `UnexpectedManifestVersion { path, expected_from, expected_to, found }` variant
+
+B-2: `cargo.rs` — check if `WorkspaceCargoResolver` needs a `workspace_version()` method; add if missing
+
+B-3: `apply.rs` — add idempotency guard to manifest write loop:
+- `current == to` → push to modified_paths, continue (skip write)
+- `current == from` → write (normal)
+- else → Err(UnexpectedManifestVersion)
+
+B-4: `apply.rs` — add same guard to CargoWorkspacePackage arm
+
+B-5: `apply.rs` — fix changeset path always-push bug:
+```rust
+for cs_path in &plan.consumed_changesets {
+    let full = root.join(cs_path);
+    if full.exists() {
+        fs::remove_file(&full).map_err(...)?;
+    }
+    modified_paths.push(cs_path.clone()); // Always push, not just if exists
+}
+```
+
+B-6: Tests B-1 through B-4 as specified in plan
+
+B-7: Full `just ci` run
+
+8. Current Work:
+
+Executing Part A Step 1 of the written plan. The RED test was added to `resolve.rs`:
+
+```rust
+#[test]
+fn test_package_set_is_parsed_into_resolved_config() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path();
+    fs::write(
+        root.join("callisto.toml"),
+        "[[package-set]]\nmatch = \"pkg-*\"\npublish-to = [\"none\"]\nrelease-trigger = \"auto\"\n",
+    )
+    .expect("write callisto.toml");
+
+    let config = load(root).expect("load should succeed");
+    assert_eq!(
+        config.package_sets.len(),
+        1,
+        "one [[package-set]] rule expected; got: {:?}",
+        config.package_sets
+    );
+    let (pattern, pkg_cfg) = &config.package_sets[0];
+    assert!(
+        pattern.matches(&callisto_model::PackageId::parse("pkg-a").unwrap()),
+        "pattern 'pkg-*' must match 'pkg-a'"
+    );
+    assert_eq!(
+        pkg_cfg.publish_to,
+        Some(vec![callisto_model::PublishTarget::None]),
+        "publish-to = [\"none\"] must be parsed"
+    );
+    assert_eq!(
+        pkg_cfg.release_trigger,
+        Some(callisto_model::ReleaseTrigger::Auto),
+        "release-trigger = \"auto\" must be parsed"
+    );
+}
+```
+
+The test was run and failed with:
+```
+error[E0609]: no field `package_sets` on type `ResolvedConfig`
+   --> crates/callisto-graph/src/config/resolve.rs:457:42
+```
+
+This is the correct RED state. The implementation (GREEN) has not been written yet.
+
+9. Optional Next Step:
+
+Implement the GREEN phase for Part A Step 1. Add `package_sets` field to `ResolvedConfig` and wire up parsing of `raw.package_set` in `resolve.rs`, then run the test to confirm GREEN.
+
+Specifically, in `resolve.rs`:
+1. Add to `ResolvedConfig` struct: `pub package_sets: Vec<(PackageId, PackageConfig)>,`
+2. After the existing `packages` loop, add an identical loop over `raw.package_set` that populates `package_sets`
+3. Add `package_sets` to the `Ok(ResolvedConfig { ... })` return value
+
+Then run: `cargo test -p callisto-graph --lib config::resolve::tests::test_package_set_is_parsed`
+
+The plan file at `/private/tmp/claude-501/-Users-gabe-Projects-callisto/575b7a46-37b7-42f0-9db7-b2c329b2abab/scratchpad/plan_package_set_and_idempotent_apply.md` contains the full implementation order and all test specifications.
+
+If you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/gabe/.claude/projects/-Users-gabe-Projects-callisto/575b7a46-37b7-42f0-9db7-b2c329b2abab.jsonl
+Continue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with "I'll continue" or similar. Pick up the last task as if the break never happened.
