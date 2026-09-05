@@ -1,0 +1,16 @@
+<task-notification>
+<task-id>a3853ca960d89bf8b</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a3853ca960d89bf8b.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix Track 3b2 spec, round 4" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Both round-4 canon-auditor issues have been applied to the spec at `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/spec-track3b2-consumer-collision-safety.json`, verified against the real source at `/Users/gabe/Projects/callisto/crates/callisto-graph/src/commands/publish.rs`:
+
+1. **Mechanism fix (decisive)** — Replaced the unimplementable "filter the side Vec&lt;PackageId&gt; by index/name correlation" instruction in both the scope section's publish.rs CORRECTION paragraph and the `PublishOptions::only` api_surface entry with a mechanically exact zip-retain-unzip pattern: five parallel per-list id vectors (`rust_crate_ids`/`npm_main_ids`/`npm_platform_ids`/`pypi_ids`/`release_ids`) pushed alongside each entry at its push site in the dispatch loop (publish.rs:206-431, confirmed against real code), then each of the five `.retain()` calls (publish.rs:437-462) replaced by zipping entries with their id vector, retaining on the zipped tuples with the unchanged entry-only predicate, and unzipping — giving exact index-for-index correlation by construction. Also updated the related non_goals entry's stale "side Vec&lt;PackageId&gt;" reference for terminology consistency.
+
+2. **AC-07 fix (moderate)** — Replaced the unobservable/inaccurate closing clause ("neither sibling appears in any of the five lists... since the function returns Err before any list is built" — which contradicts the spec's own scope section stating the lists ARE built internally before the check) with a purely externally-observable Err-vs-Ok proposition: the call returns `Err(GraphError::AmbiguousName{name, candidates})` and no `Ok(PublishPlan)` is ever returned for this input, exactly per the auditor's specified wording.
+
+Confirmed no other criterion depended on the disproven "before any list is built" claim (full-file search found no other references). `revision_note` was updated with a ROUND 4 entry documenting both fixes and citing the criteria affected (AC-07, and the scope/api_surface prose). The file was validated as well-formed JSON with all 19 acceptance criteria intact, and overwritten in place at the same path.</result>
+<usage><subagent_tokens>100247</subagent_tokens><tool_uses>20</tool_uses><duration_ms>209383</duration_ms></usage>
+</task-notification>
