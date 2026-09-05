@@ -1,0 +1,38 @@
+<task-notification>
+<task-id>a643fda34bc13dd41</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a643fda34bc13dd41.output</output-file>
+<status>completed</status>
+<summary>Agent "Review docs/01-spec.md verbatim message fix" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Verification Results
+
+**All 11 rewritten `#[error(...)]` messages verified byte-for-byte against real source in `crates/callisto-graph/src/error.rs`:**
+
+1. **Cycle** (line 92) — "dependency cycle detected: {}" + `.map(\|i\| i.display_name())...join(" -&gt; ")` — exact match.
+2. **UnknownPackage** (line 75) — "package `{id}` was not found in the workspace" — exact match.
+3. **DuplicatePackage** (line 64) — "package `{id}` is defined at multiple paths: {}" + map closure — exact match.
+4. **AmbiguousName** (line 82) — "name `{name}` is ambiguous in this workspace; candidates: {}" + `.map(\|c\| c.display_name())` — exact match.
+5. **SplitIdentity** (line 71) — "package at `{path}` declares conflicting identities: {}" + `.map(\|i\| i.display_name())` — exact match.
+6. **GrammarMismatch** (lines 134-136) — "version dependency edge from `{from}` to `{to}` involves incompatible grammars: {source}" — exact match (line-wrap only).
+7. **GroupGrammarMismatch** (line 116) — "group `{group}` members use incompatible versioning grammars: {}" + `format!("{}={:?}", id.display_name(), v.grammar())` — exact match.
+8. **FixedGroupDivergent** (line 106) — message text "fixed group `{group}` members have divergent on-disk versions: {}" matches; unchanged map-closure line still uses established `{id}`/`{v}` ↔ `.display_name()`/`.render()` convention — accurate.
+9. **ConflictingGroupMembership** (line 127) — "package `{package}` is listed in multiple conflicting groups: {}" + `.map(\|g\| g.as_str())` — exact match.
+10. **OnDiskVersionDrift** (line 144) — text "on-disk versions changed since plan was generated for `{package}`: expected {}, found {}" matches; doc's `{expected}`/`{found}` correctly stand in for real source's `.expected.render()`/`.found.render()` per the established Version/.render() convention.
+11. **CascadeNotConverged** (line 99) — "cascade failed to converge after {iterations} iterations" — exact match.
+
+**GroupName.as_str() check:** Confirmed — `identity.rs:274-278` defines an inherent `pub fn as_str(&amp;self) -&gt; &amp;str { &amp;self.0 }` (no `.0.as_str()` needed), and real source's `ConflictingGroupMembership` (line 127) itself calls `g.as_str()` directly — matches doc exactly.
+
+**PackageId Display ↔ display_name() equivalence:** Confirmed — `identity.rs:201-205`: `impl fmt::Display for PackageId { fn fmt(...) { f.write_str(&amp;self.display_name()) } }` — literally delegates to `display_name()`.
+
+**Doc-comment meta-claims:**
+- SplitIdentity — accurate. Old (removed) text contained "a dual-published package must resolve to exactly one"; real source's actual message has no such framing.
+- OnDiskVersionDrift — accurate. Old (removed) text contained "re-run `callisto version`"; real source's message never carries that advice.
+
+**Intro paragraph completeness:** Spot-checked MissingGroupMember, WorkspaceVersionConflict, UnexpectedManifestVersion, ParseChangeset, and Command against real source (lines 123, 164, 151, 29, 61) — all exact matches, confirming the "all coded variants exact" claim isn't a hidden overclaim.
+
+**Fence balance:** `grep -c '^```' docs/01-spec.md` = 402 (even, unbroken). Confirmed.
+
+No discrepancies found anywhere in this diff.</result>
+<usage><subagent_tokens>57097</subagent_tokens><tool_uses>11</tool_uses><duration_ms>81714</duration_ms></usage>
+</task-notification>
