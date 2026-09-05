@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bvjz3lss6</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/bb531e8d-c394-4e47-a8ae-e4a9ceeca6d2/tasks/bvjz3lss6.output</output-file>
+<status>completed</status>
+<summary>Background command "Full regression check across the whole Track 9 sequence" completed (exit code 0)</summary>
+</task-notification>
