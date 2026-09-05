@@ -1,0 +1,9 @@
+<task-notification>
+<task-id>ae4b409ae04c45337</task-id>
+<tool-use-id>toolu_01VSqdrbAJroFke8huvAhWRZ</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/bb531e8d-c394-4e47-a8ae-e4a9ceeca6d2/tasks/ae4b409ae04c45337.output</output-file>
+<status>failed</status>
+<summary>Agent "Re-exit-gate Track 4 spec (round 4)" failed: Agent stalled: no progress for 600s (stream watchdog did not recover)</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Now let me verify the three prior blockers against live code.</result>
+</task-notification>
