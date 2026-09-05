@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bbj4ingnn</task-id>
+<summary>Monitor event: "wait for cargo test process 34383 to finally exit"</summary>
+<event>Blocking waiting for file lock on build directory
+[exited with code 0]</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
