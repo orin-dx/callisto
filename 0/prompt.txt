@@ -1,0 +1,27 @@
+<task-notification>
+<task-id>ac4516a32103f41b4</task-id>
+<tool-use-id>toolu_01LDfzdWsbtS6ptiYtoHGdhk</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/89183b76-c115-4b79-8a50-972c752d566d/tasks/ac4516a32103f41b4.output</output-file>
+<status>completed</status>
+<summary>Agent "Research GitHub API tooling for environment verification" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>**Task**: Research GitHub API shape for environment protection_rules, SHA-pin-check tooling, and gh-CLI-vs-octocrab for SPEC-GITHUB-RELEASE-HARDENING-003 AC-004/AC-003/AC-004b.
+
+**1. `protection_rules` shape — confirmed via live `gh api` calls against real repos, not docs (GitHub's own reference page omits the object shape):**
+
+- No protection at all → `protection_rules: []` (verified: `cli/cli`, `actions/checkout`, `npm/cli`, `denoland/deno`).
+- **Critical finding: a non-empty array does NOT mean a human-review gate exists.** `rust-lang/rust`'s `bors` environment has `protection_rules: [{"type": "branch_policy"}]` — non-empty, zero human approval required. Environments can carry `branch_policy` and `wait_timer` rule types with no reviewers at all.
+- Only `required_reviewers` entries gate on human approval, e.g. `pypa/pip`'s `PyPI` environment: `[{"type":"branch_policy"}, {"type":"required_reviewers","reviewers":[{"type":"Team","reviewer":{...}}]}]`.
+
+**The spec's AC-004 as currently worded ("fails if `protection_rules` array is empty") is insufficiently strict** — it would pass an environment protected only by `branch_policy`, which restricts *which branch* can deploy but never requires anyone to click approve. AC-004 should instead assert the array contains at least one entry with `"type": "required_reviewers"` and a non-empty `reviewers` list, not merely "array non-empty." Recommend feeding this correction back into the spec.
+
+**2. SHA-pin enforcement tooling** — `step-security/github-actions-ensure-sha-pinned-actions` is the maintained option: explicitly published as a "secure drop-in replacement for zgosalvez/github-actions-ensure-sha-pinned-actions," which appears to have accumulated unaddressed open issues. StepSecurity actively maintains a broader security-tooling suite (harden-runner, etc.), making the replacement the safer long-term dependency. Either action must itself be pinned to a commit SHA to avoid the exact circular-trust problem AC-003 targets — check its own pin before adopting.
+
+**3. `gh api` vs `octocrab`**: stay with `gh api`. This is GitHub Actions YAML/workflow tooling, not a Rust runtime concern — `callisto-action`'s composite action already shells out via `gh` CLI (confirmed in action.yml) for every GitHub interaction. Introducing `octocrab` here would mean compiling and shipping a Rust binary into a bash-based composite action step for a single API call `gh api` already does in one line — no justification to cross that boundary for this narrow check.
+
+Sources:
+- [step-security/github-actions-ensure-sha-pinned-actions](https://github.com/step-security/github-actions-ensure-sha-pinned-actions)
+- [zgosalvez/github-actions-ensure-sha-pinned-actions](https://github.com/zgosalvez/github-actions-ensure-sha-pinned-actions)
+- Live `gh api repos/{owner}/{repo}/environments` responses (cli/cli, actions/checkout, npm/cli, denoland/deno, rust-lang/rust, pypa/pip, vercel/next.js)</result>
+<usage><subagent_tokens>181496</subagent_tokens><tool_uses>7</tool_uses><duration_ms>55123</duration_ms></usage>
+</task-notification>
