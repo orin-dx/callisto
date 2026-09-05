@@ -1,0 +1,31 @@
+<task-notification>
+<task-id>a83bcbb376f6bf3d7</task-id>
+<tool-use-id>toolu_014J7h2hWfucUovykvvSgY2B</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/tasks/a83bcbb376f6bf3d7.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement T05b: AC-002 regression lock" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Task T05b complete.
+
+```json
+{
+  "task_id": "T05b",
+  "status": "done",
+  "steps_completed": [
+    "Read AC-002 from spec_file_path (.claude/specs/SPEC-MANIFEST-PERSIST-001.json)",
+    "Located write_version_pins_explicitly_on_workspace_inheriting_member by function name/anchor text in crates/callisto-manifests/src/cargo.rs",
+    "Inserted regression-lock assertion between write_version() and T05a's persist() call",
+    "Ran targeted test: passed immediately (waived red phase per plan)",
+    "Ran full cargo::tests module: 24 passed, 0 failed",
+    "Committed with plan's exact commit message"
+  ],
+  "test_result": "pass",
+  "commit_sha": "37efdd610d51bac0888962c71bdd7af08eb7917f",
+  "concerns": null,
+  "reasoning": "This is an explicitly red-phase-waived, purely additive task per the plan. T05a already made the asserted property true. Verified via spec read that AC-002 requires exactly this: write_version alone doesn't touch disk until persist() is called, on the workspace-inherited-version branch. Inserted the assertion at the precise anchor (after write_version(), before T05a's persist()), confirmed it passes on first run, confirmed the whole module stays at 24 passed/0 failed as the plan predicted, and committed only cargo.rs -- no other files touched, no T06 work started."
+}
+```
+
+Relevant file: `/Users/gabe/Projects/callisto/crates/callisto-manifests/src/cargo.rs` (lines ~1331-1343, inside `write_version_pins_explicitly_on_workspace_inheriting_member`).</result>
+<usage><subagent_tokens>43343</subagent_tokens><tool_uses>10</tool_uses><duration_ms>55369</duration_ms></usage>
+</task-notification>
