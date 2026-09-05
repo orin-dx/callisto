@@ -1,0 +1,21 @@
+<task-notification>
+<task-id>bto2dhxz7</task-id>
+<task-id>b6m0f9wyr</task-id>
+<task-id>bzt3g5fru</task-id>
+<task-id>bhorcrpja</task-id>
+<task-id>bzhuwclza</task-id>
+<task-id>bpym4givd</task-id>
+<task-id>b8fqfdwjv</task-id>
+<task-id>bu0mn1jzr</task-id>
+<task-id>bq2xtv552</task-id>
+<task-id>b4oobm0ak</task-id>
+<task-id>bu26mm56y</task-id>
+<task-id>bcsp3ey1m</task-id>
+<task-id>btrmpcn2r</task-id>
+<task-id>boi53uhwq</task-id>
+<task-id>bah0u04ay</task-id>
+<task-id>bznpb4h2e</task-id>
+<task-id>__orphan_summary__:shell</task-id>
+<status>stopped</status>
+<summary>16 background shell command task(s) from the previous session have no completion record. They may have been stopped (via the UI, Monitor timeout, or agent teardown — these leave no transcript marker), or they may have been running when the previous Claude Code process exited. They have been marked stopped. Task ids: bto2dhxz7, b6m0f9wyr, bzt3g5fru, bhorcrpja, bzhuwclza, bpym4givd, b8fqfdwjv, bu0mn1jzr, bq2xtv552, b4oobm0ak, bu26mm56y, bcsp3ey1m, btrmpcn2r, boi53uhwq, bah0u04ay, bznpb4h2e. Task ids in this notification beginning with "__orphan_summary" are internal scan markers, not tasks.</summary>
+</task-notification>
