@@ -1,0 +1,22 @@
+<task-notification>
+<task-id>afcf6ec3e27ab8097</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/0c4c4622-1ed8-4f2c-80e6-f0890a2dad72/tasks/afcf6ec3e27ab8097.output</output-file>
+<status>completed</status>
+<summary>Agent "Review hermetic init_repo fix" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Verdict: PASS
+
+**1. Diff reviewed.** `crates/callisto-fixtures/src/git.rs`: `init_repo` now runs `git init -q -b main`, sets `user.email`/`user.name`, then `git config commit.gpgsign false` and `git config tag.gpgsign false` (no `--global`, so these write to the new repo's local `.git/config`). A new test module adds `init_repo_is_hermetic_against_ambient_commit_signing_config`.
+
+**2. Local config precedence — verified empirically, not just by reading the diff.** I ran a standalone experiment in a scratch temp dir (outside this repo, no mutation): created a repo with `git init -b main` + local `commit.gpgsign=false`/`tag.gpgsign=false`, then committed with `GIT_CONFIG_GLOBAL` pointed at a poisoned config (`commit.gpgsign=true`, `tag.gpgsign=true`, `gpg.program=/nonexistent-gpg-xyz-binary`). **Commit succeeded** — local config wins, matching git's documented precedence order (system &lt; global &lt; local). A control run (same poisoned global, no local override) **failed** with `fatal: cannot exec '/nonexistent-gpg-xyz-binary'`, confirming the poisoning mechanism actually forces a signing attempt when local config isn't set. This validates the fix generally, not just via this one test's plumbing.
+
+**3. `-b main` safety.** Searched the whole workspace (`rg` for `master`, `defaultBranch`, `init_repo`) — no test depends on `init_repo`'s previous ambient/`init.defaultBranch`-derived name or expects `master`. The only other `defaultBranch` reference is an unrelated comment in `crates/callisto-vcs/src/lib.rs`, which has its own independent local `init_repo` duplicate (not the shared fixture) that already pins `-b main` itself — out of this diff's scope, no conflict.
+
+**4. New test soundness.** `GIT_CONFIG_GLOBAL` is a real git env var that fully substitutes the global-config lookup (confirmed by my experiment above — it does not merge with or fall back to the real `~/.gitconfig`), so it never touches the developer's actual global config. The poisoned path (`/nonexistent-gpg-xyz-binary`) is arbitrary and effectively impossible to collide with a real binary. Measured run time locally: `0.05s` for the whole 8-test suite including this test — consistent with "fails/succeeds fast via cannot-exec," not a hang.
+
+**5. Callers checked.** Only `crates/callisto-conventional/src/window.rs` and `crates/callisto-graph/src/aggregate.rs` import `callisto_fixtures::git::{init_repo, ...}`. Neither references `master`/branch names or overrides gpgsign config — no conflict.
+
+**6. Suite results.** `cargo test -p callisto-fixtures`: 8/8 passed (0.05s). `cargo clippy -p callisto-fixtures --all-targets --tests -- -D warnings`: clean.</result>
+<usage><subagent_tokens>52005</subagent_tokens><tool_uses>12</tool_uses><duration_ms>104177</duration_ms></usage>
+</task-notification>
