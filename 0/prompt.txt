@@ -1,0 +1,24 @@
+<task-notification>
+<task-id>a27a9e59439bd8fd5</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/tasks/a27a9e59439bd8fd5.output</output-file>
+<status>completed</status>
+<summary>Agent "Fourth revision of apply-batch spec" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Both old contradictory phrases are gone from the live spec fields (only the historical reasoning text retains the old quotes as record, which is expected). Final verification complete.
+
+## Summary
+
+I revised `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/SPEC-APPLY-BATCH-001.json` for all three findings, verifying every claim against actual source in `crates/callisto-manifests/src/cargo.rs`, `npm.rs`, `python.rs`, and `crates/callisto-graph/src/apply.rs`.
+
+**Finding 1 (AC-001 staleness):** Confirmed both sub-cases against source — `iter_dependencies()` resolves inherited deps via `self.inheritance`, an `Arc` snapshotted once at `open()` (cargo.rs line 97) and never refreshed, so the resolver's write is never observable there; and when the handle's own path equals `workspace_root.join("Cargo.toml")`, `CargoToml::absolute` (line 28) and `WorkspaceCargoResolver::absolute_path` resolve to the same file, so the resolver's write does mutate that handle's own file/mtime. Appended the matching exclusion to AC-001.
+
+**Finding 2 (group-persist trigger / data-loss regression):** Changed `Manifest::update_dependency_spec`'s signature to `Result&lt;bool, ManifestError&gt;` (`true` iff `self`'s own document was mutated). Confirmed `npm.rs` has no delegation branch (always `Ok(true)` on success). On full re-read of `python.rs`, I found an additional case the raw finding text didn't anticipate: `update_dependency_spec`'s `match new { ... _ =&gt; return Ok(()) }` (line 300-304) is a genuine no-mutation early return for four of `DepSpec`'s six variants — this must return `Ok(false)`, not `Ok(true)`. Defined a mechanical `group_dirty` rule in the `apply_version_plan` api_surface entry, replaced the old contradictory persist-trigger language, updated `non_goals[2]`, and added **AC-017** asserting the concrete previously-broken scenario now works. Updated **AC-013** to require the ~28 test call sites' `Ok(())` pattern-matches be adjusted for the new `Result&lt;bool, _&gt;` type.
+
+**Finding 3 (AC-002 wording):** Rewrote as an explicit two-case statement (differing path = harmless no-op persist; same path = would revert the resolver's write) and cross-referenced `group_dirty` as the preventing mechanism.
+
+**Full re-read confirmation:** AC-012 (`update_optional_dependencies`) is an unrelated method with an unchanged signature — no edit needed. Found and fixed one other stale reference in the `apply_version_plan` entry that called the delegation outcome "opaque to apply_version_plan," which is no longer true now that the bool return is read into `group_dirty`.
+
+The spec is valid JSON with acceptance criteria AC-001 through AC-017.</result>
+<usage><subagent_tokens>105223</subagent_tokens><tool_uses>23</tool_uses><duration_ms>226146</duration_ms></usage>
+</task-notification>
