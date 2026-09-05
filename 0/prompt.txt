@@ -1,0 +1,46 @@
+<task-notification>
+<task-id>a96072cd85d6d6f17</task-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8a85b651-0c9a-44fa-9e0a-ac694c4409e1/tasks/a96072cd85d6d6f17.output</output-file>
+<status>completed</status>
+<summary>Agent "Final lambda:exit-gate re-verification for SPEC-002" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## verdict@1
+
+```json
+{
+  "verdict": "pass",
+  "confidence": "high",
+  "artifact_type": "implementation",
+  "retry_count": 0,
+  "verdict_summary": "AC-001..AC-011 all implemented and verified against code read from scratch. 28+9 Rust tests pass, 4/4 action scripts exit 0, mutation re-run clean (60 mutants, 0 survivors). Two non-blocking gaps recorded: no test pins the INPUT_PUBLISH guard placement; stale native-{triple} strings survive in 5 untouched docs.",
+  "blockers": [],
+  "reasoning": "Spec read from disk at .claude/specs/SPEC-002-native-artifact-placement.json, not from context. Each criterion checked by reading the named location rather than trusting a pointer. Mutation evidence on disk was stale (mutants.out/ dated 25 Aug 10:53, naming the deleted artifact_name_for_package_triple) and was re-established by a fresh scoped run."
+}
+```
+
+## What earned the pass
+
+**All 11 criteria implemented.** `artifact_name_for_package_platform` (`/Users/gabe/Projects/callisto/crates/callisto-graph/src/matrix.rs:42-52`) matches the spec signature and both format arms; `build_platform_target:143` passes `triple_to_role`-destructured platform/arch/abi rather than the raw triple. The placement loop (`/Users/gabe/Projects/callisto/.github/actions/callisto-action/action.yml:168-178`) matches the api_surface description exactly — process substitution, `DIR="."` normalization, explicit `mkdir -p`, `$GITHUB_RUN_ID` pin, error naming both artifact and DIR — and sits inside the `INPUT_PUBLISH` guard ahead of `plan-publish`. ARCHITECTURE.md §12 satisfies AC-007/008/009; the §12 diff (`50512a2c`) touches only the code block, leaving the status note byte-identical as AC-007 requires. callisto-matrix.md §4/§6.1/§6.2 satisfy AC-011.
+
+**Everything ran for real.** `callisto-graph --lib matrix::` 28/28 passed; `callisto-cli --lib render` 9/9 passed; all four action scripts exit 0.
+
+**Mutation gate.** The recorded run was stale — timestamped before both `d86e6c35` and `87682d58`, with `caught.txt` naming a function that no longer exists, meaning the current `match abi` branch had never been mutation-tested. cargo-mutants 27.1.0 is installed, so "unavailable" did not apply; I re-ran it scoped to `matrix.rs`: **60 mutants, 46 caught, 14 unviable, zero survivors.** Note that `/Users/gabe/Projects/callisto/mutants.out/` still holds the misleading stale run.
+
+## Two gaps recorded, neither blocking
+
+**Guard placement is untested.** AC-003 explicitly requires the loop be inside the `INPUT_PUBLISH` guard "not merely somewhere after NATIVE_MATRIX computation," and AC-004's second clause depends on it. `test_native_artifact_placement.sh` extracts the loop body between the `::group::`/`::endgroup::` markers and runs it in isolation, so moving the loop outside the guard would break no test; `rg 'INPUT_PUBLISH'` across the tests directory returns nothing. Implementation verified by direct read — the gap is regression protection only.
+
+**Stale-format sweep.** `.github/` is clean: zero triple-shaped artifact strings in `action.yml` or any test script. Worth flagging that my first two sweeps were invalid — I omitted `--hidden`, which silently skipped `.github/` and `.claude/`, the two directories holding most of the touched files; the finding only holds because I re-ran it. The superseded `native-{triple}` format survives in five untouched files, none named by any criterion:
+
+- `/Users/gabe/Projects/callisto/docs/01-spec.md:8557` — prose asserting `artifactName` is always `"native-" + triple`
+- `/Users/gabe/Projects/callisto/docs/00-design.md:2113` — example JSON with `"artifactName": "native-aarch64-apple-darwin"`
+- `/Users/gabe/Projects/callisto/.claude/specs/track-g-matrix-napi-maturin.json:129` — a superseded spec's criterion asserting the old format verbatim
+- `.claude/plans/PLAN-002.json:57` and `.claude/plans/track-g-matrix-napi-maturin.plan.json` — historical records
+
+The never-shipped intermediate `{package_name}-{triple}` appears nowhere outside SPEC-002's own `non_goals[17]`, where it is named deliberately. `native-mod-darwin-arm64` in `render/mod.rs:541` and `matrix.rs:794` is correct, not stale — `native-mod` is the fixture's package name.
+
+The two `docs/` files are live design docs now asserting a format the code cannot emit, and the Track-G criterion directly contradicts SPEC-002 — a future drift check against Track G will fire on it. SPEC-002's `non_goals[17]` disclaims the old format as a contract, so none of these is an AC failure, but all four are worth a follow-up cleanup commit.
+
+Unrelated to this spec: `Cargo.lock` carries an uncommitted 0.4.0→0.4.1 bump and `.claude/plans/PLAN-002.json` is untracked. The whole-workspace `just ci` running elsewhere is still the outstanding regression check — my two nextest runs initially sat 22 minutes on its build lock, so I killed them and re-ran against an isolated `CARGO_TARGET_DIR` (the exit-144s in the notifications were my kills, not failures).</result>
+<usage><subagent_tokens>120436</subagent_tokens><tool_uses>62</tool_uses><duration_ms>1545332</duration_ms></usage>
+</task-notification>
