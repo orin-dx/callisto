@@ -1,0 +1,20 @@
+<task-notification>
+<task-id>aafb598601842bde6</task-id>
+<tool-use-id>toolu_01WtF5Qok8rG5U9LGL8a6vCb</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/aafb598601842bde6.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix Track 3b1 core spec, round 3" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>JSON is valid, 24 criteria, no duplicate IDs. The spec at `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/spec-track3b1-identity-promotion-core.json` has been rewritten in place with all 4 canon-auditor round-2 findings applied:
+
+1. **`promoted_siblings` retype** — both the build-local map (Data-structures item 3) and `ResolvedConfig.promoted_siblings` (item 4) changed from `BTreeMap&lt;String, Vec&lt;PackageId&gt;&gt;` to `BTreeMap&lt;String, Vec&lt;(PackageId, BTreeSet&lt;Ecosystem&gt;)&gt;&gt;`, with matching updates to `with_promoted_siblings`'s signature, the LOCAL PROMOTION BOOKKEEPING and ALREADY-PROMOTED-NAME DETECTION prose, item 4's population logic in `Workspace::load`, and `resolve_package_config`'s `AmbiguousName` candidate construction (verified `GraphError::AmbiguousName.candidates` is `Vec&lt;PackageId&gt;` at `error.rs:87-90`, so only the `PackageId` half is projected out). Added AC-21's final sentence to explicitly exercise this retype (Case D member's retained set vs. re-derivation from a bare id).
+
+2. **Discarded decls fix** — verified `walk.rs:126-128` currently reads `if let Some((existing_path, _)) = package_manifest_decls.insert(...)`; spec now requires `(existing_path, existing_decls)` and specifies `existing_decls` feeds the first-seen path's rewritten entry while the current path's own in-scope `decls` feeds its own entry (Data-structures item 1 and the STALE-KEY REWRITE location (4) paragraph).
+
+3. **AC-04, AC-07, AC-09 extended** — each now asserts the promoted package's `.manifests` field (verified `Package.manifests: Vec&lt;ManifestDecl&gt;` at `callisto-model/src/package.rs:16`) contains exactly its own path's manifest(s), not the colliding path's.
+
+4. **AC-16/AC-17 split** — into AC-16a (`false`)/AC-16b (`true`) and AC-17a (`false`)/AC-17b (`true`), preserving every fixture and assertion from the originals. Grepped the document and confirmed no other criterion referenced the old IDs, so no further cross-reference edits were needed.
+
+`revision_note` documents all four changes with citations; `reasoning` records the source verification performed this session (walk.rs, package.rs, error.rs). The corrected spec@1 JSON is complete and written to the same file path.</result>
+<usage><subagent_tokens>106914</subagent_tokens><tool_uses>12</tool_uses><duration_ms>303067</duration_ms></usage>
+</task-notification>
