@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>b6g9h7kit</task-id>
+<tool-use-id>toolu_0143CsGvsLiGGcvv8XxfXh8q</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/c0ad64b2-6440-4937-8328-8d9fd9db278c/tasks/b6g9h7kit.output</output-file>
+<status>completed</status>
+<summary>Background command "git push 2&gt;&amp;1 | tee /private/tmp/claude-501/-Users-gabe-Projects-callisto/c0ad64b2-6440-4937-8328-8d9fd9db278c/scratchpad/push5.log | tail -20" completed (exit code 0)</summary>
+</task-notification>
