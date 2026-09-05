@@ -1,0 +1,36 @@
+<task-notification>
+<task-id>ae609d57f60ade341</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/tasks/ae609d57f60ade341.output</output-file>
+<status>completed</status>
+<summary>Agent "Exit gate retry 4 for Spec A" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I verified both edits against the actual code, then re-read the whole document and spot-checked every load-bearing code reference in it.
+
+```json
+{
+  "verdict": "pass",
+  "confidence": "high",
+  "artifact_type": "spec@1",
+  "retry_count": 4,
+  "verdict_summary": "Both retry-3 blockers verified fixed against real code: scope now places the AC-009/011/011b tests in callisto-graph's apply.rs test module (dependency direction confirmed), and api_surface[4] shows _permit per AC-020. Full re-read found no new inconsistency. All four conditions hold.",
+  "reasoning": "Blocker 1 fixed and premise independently confirmed: crates/callisto-graph/Cargo.toml declares callisto-manifests as a path dependency; crates/callisto-manifests/Cargo.toml declares no callisto-graph dep in either [dependencies] or [dev-dependencies], so the apply_version_plan-calling tests genuinely cannot live in an ecosystem module. Scope now lists apply.rs's own #[cfg(test)] module and narrows the ecosystem-module clause to persist-insertion plus the AC-018 guard test. Exhaustive grep of every '#[cfg(test)]' mention in the spec confirms each test location named by any AC (cascade.rs for AC-017, apply.rs unit module for AC-009 primary + AC-011/011b, tests/apply_persist_open_count_test.rs for AC-009(c), cargo/npm/python modules for AC-015 and AC-018) has a matching scope entry. Blocker 2 fixed: api_surface[4] signature reads _permit; consistent with AC-020's 7-method list and AC-006's rename exemption; no other api_surface entry is stale (persist genuinely uses permit; CargoToml::update_dependency_spec correctly keeps permit since cargo.rs:306 passes it to ws_res.write_dependency). Appended justification verified exact: python.rs:416 updates.is_empty(), python.rs:456 updates.iter().find. Fresh full read, code-verified: cargo.rs:79-87 open rejection, 199-216 inherited branch, persist at exactly 215 and 239, delegation at exactly 303-307; npm.rs persist at exactly 253/340/362; python.rs inline atomic_write at exactly 212/379/480 and no persist method; apply.rs rewrites loop exactly 107-128; cascade.rs edge.inherited -&gt; CargoWorkspaceDependency else Manifest; atomic.rs create_dir_all(50) then NamedTempFile::new_in(52) confirming AC-011's injection point; GraphError::Manifest(#[from]) at error.rs:19; ManifestError is #[non_exhaustive] with exactly the 10 variants listed. AC-018 is mechanically achievable: abs_path = ctx.workspace_root.join(rel_path) with no canonicalization, and inheritance() cannot error on a missing [workspace.dependencies] table. AC-009's characterization of the 4 existing tests verified exactly (one writes: vec![], two hit the current==bump.to skip branch, one hits the error branch). Exactly 3 Manifest implementors repo-wide, so the new required trait method breaks nothing outside scope; only production mutator callers outside the crate are apply.rs:87 and :114, both covered. Non-blocking notes: api_surface[3] claims E030-E053 are all assigned but E034 is free (E027 is still correctly the lowest free code, so the instruction is unaffected); the reasoning field says all 6 apply.rs tests use writes: vec![] when 3 do not, but AC-009's forwarded criterion text states the correct breakdown and reasoning is never forwarded; AC-011's chmod 0o555 is a no-op under root, an implementation risk the planner should note, not a spec defect. Escalation clause not triggered: it applies only in place of issuing another fail, and there are no persistent blockers."
+}
+```
+
+## What I checked and found
+
+**Edit 1 (scope) — landed correctly and genuinely resolves the defect.** The premise holds: `/Users/gabe/Projects/callisto/crates/callisto-graph/Cargo.toml` declares `callisto-manifests` as a path dependency, and `/Users/gabe/Projects/callisto/crates/callisto-manifests/Cargo.toml` declares no `callisto-graph` dependency in either section. The AC-009/AC-011/AC-011b tests call `apply_version_plan`, so they cannot live in an ecosystem module — and scope now puts them in `crates/callisto-graph/src/apply.rs`'s own test module. I grepped every `#[cfg(test)]` mention in the spec: all nine map to a scope entry, with no AC demanding a test in an unlisted module.
+
+**Edit 2 (api_surface[4]) — landed correctly.** Signature reads `_permit: &amp;ApplyPermit`, matching AC-020's 7-method list and AC-006's explicit rename exemption. The appended justification is factually exact against `crates/callisto-manifests/src/python.rs` (line 416 `updates.is_empty()`, line 456 `updates.iter().find`). No other `api_surface` entry is stale — `CargoToml::update_dependency_spec` correctly keeps `permit` because `crates/callisto-manifests/src/cargo.rs:306` passes it to `ws_res.write_dependency`.
+
+**Hand-edit downstream sweep — clean.** Line references are not approximate, they're exact: `self.persist(permit)` at cargo.rs:215 and :239, delegation branch at cargo.rs:303-307, npm.rs persist at :253/:340/:362, python.rs inline `atomic_write` at :212/:379/:480, rewrites loop at apply.rs:107-128. Three checks that could have sunk it and didn't: `abs_path = ctx.workspace_root.join(&amp;rel_path)` with no canonicalization, so AC-018's guard condition is actually reachable; `inheritance()` returns `Ok` on a missing `[workspace.dependencies]` table, so AC-018's `.unwrap()` is safe; and exactly three `impl Manifest for` sites exist repo-wide, so the new required trait method breaks no unlisted implementor.
+
+**Three non-blocking inaccuracies**, none of which touches a gate condition or would force a follow-up question:
+- `api_surface[3]` claims E030-E053 are all assigned; E034 is actually free. E027 is still correctly the lowest free code, so the instruction is unaffected.
+- The `reasoning` field says all 6 apply.rs tests use `writes: vec![]`; three use `writes: vec![VersionWriteTarget::Manifest(...)]`. AC-009's forwarded text states the correct breakdown, and `reasoning` is never forwarded downstream.
+- AC-011's `chmod 0o555` is a no-op under root. Worth flagging to the planner as an implementation risk; the criterion's required outcome is stated exactly, so it remains testable.
+
+The spec is ready for planning.</result>
+<usage><subagent_tokens>100569</subagent_tokens><tool_uses>26</tool_uses><duration_ms>437047</duration_ms></usage>
+</task-notification>
