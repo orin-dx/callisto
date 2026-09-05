@@ -1,0 +1,22 @@
+<task-notification>
+<task-id>b3teqklvv</task-id>
+<summary>Monitor event: "wait for full lib suite green"</summary>
+<event>{
+"schemaVersion": 1,
+"snapshotTag": "0.0.0-canary-7ac6c55",
+"bumps": [
+{
+"package": "pkg-a",
+"from": "0.1.0",
+"to": "0.0.0-canary-7ac6c55",
+"severity": "patch"
+}
+]
+}
+test commands::snapshot::tests::handle_without_dry_run_applies_the_snapshot_for_real ... ok
+test runner::tests::run_with_timeout_bounds_reader_join_when_descendant_holds_pipe_open ... ok
+test runner::tests::run_with_timeout_warns_on_timeout_branch_when_descendant_holds_pipe_open ... ok
+test result: ok. 87 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.96s
+[exited with code 0]</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
