@@ -1,0 +1,1 @@
+Now let's think through the contradictions and try to reconcile the best way to move forward. What is the correct implementation, why and how we'll achieve it. We can clean up and align the specs once we decide
