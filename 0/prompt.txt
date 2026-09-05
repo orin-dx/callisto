@@ -1,0 +1,203 @@
+This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
+
+Summary:
+1. Primary Request and Intent:
+
+The session resumed mid-implementation from a prior context with two standing tasks (Gate B branchy-history fix and Track C moon schema fix) plus 6 P0 worktree fixes from a prior workflow. The user directed:
+
+1. **Merge the 6 P0 worktrees** into main (user said "Yes, we should merge the worktrees when done")
+2. **Run just ci** to verify the full suite passes
+3. **Make semantic commits** — "Let's bring to main and make semantic comite"
+4. **Revert agent plugin changes** — mid-turn user flagged: "The agents should be coming from the agent-plugins repo, not getting changed here right? I changed it in another session"
+5. **Push to origin/main** — "Let's merge everything into main please"
+6. **Deep comprehensive audit** — "Do another very thorough round of bug hunting and code analysis focusing on architecture, best practices, maintainability, DX, performance. Also consider test coverage with black box tests that cover the edge cases and error cases. I feel like you're still missing things. Find gaps, analyse patterns and come up with a comprehensive plan"
+
+**Standing security/operational constraints (verbatim, must remain in effect):**
+- NEVER commit to git without explicit user instruction (TDD cycle commits are allowed when explicitly implementing)
+- NEVER bump versions or run release/publish commands
+- `/Users/gabe/Projects/callisto-findings/FINDINGS.md` lives OUTSIDE the repo — must NEVER be committed
+- `callisto publish` must NEVER be invoked against a real registry
+- No emojis in documentation
+- TDD discipline: RED → GREEN → REFACTOR; never write production code without a failing test first
+
+2. Key Technical Concepts:
+
+- **Callisto**: Rust CLI + Moon WASM extension for polyglot monorepo versioning (10 crates, ~30K lines)
+- **Git worktrees**: 6 worktrees from a prior workflow, each containing a P0 fix but all containing an unintended reversion of version.rs (Gate A PEP 440 fixes)
+- **File-specific cherry-pick**: Used `git checkout <branch> -- <specific_files>` instead of `git merge` to pull only intended changes from each worktree, excluding version.rs (and locator.rs from wf-1)
+- **WASM PDK path namespace mismatch**: In the moon WASM sandbox, `workspace_root` = `/workspace/` (virtual) but moon emits `root` as host-absolute paths. Fix: use `source` (workspace-relative) + `workspace_root.join(source)` throughout locator.rs
+- **OnceLock WASM binary caching**: The sandbox integration tests use a `OnceLock` to only build the WASM binary once per process. Stale binary must be deleted to pick up source changes
+- **Conventional commits / semantic commits**: All 8 commits follow `type(scope): message` format
+- **Gate A fixes** (`a255328`): `is_prerelease()` with `!v.is_post()` guard + VersionReq normalization — must be preserved in version.rs
+- **Deep audit taxonomy**: 8 audit dimensions — architecture, errors, test coverage, performance, DX, correctness, security, maintainability
+- **Duplicate diagnostic codes**: Multiple error types share the same `#[diagnostic(code(...))]` numbers (E020/E021, E048/E049)
+- **Silent workspace version overwrite (P0 bug)**: When multiple cargo packages use `version.workspace = true` and are assigned different target versions, the last writer silently wins
+- **eval injection in GitHub Actions (P1 security)**: `eval "$INPUT_VERSION_COMMAND"` and `eval "$INPUT_PUBLISH"` allow arbitrary shell execution
+- **Layer violations**: callisto-changelog (Layer 1) imports callisto-manifests (Layer 2) via `atomic_write`; callisto-conventional directly depends on callisto-vcs concrete types
+- **caret_covers pre-release bug**: `caret_covers` doesn't check `is_pre_release()`, so a stable caret spec incorrectly covers pre-release bumps, suppressing cascade propagation
+
+3. Files and Code Sections:
+
+- **`crates/callisto-vcs/src/lib.rs`**
+  - Gate B fix: HashSet exclusion set replacing break-on-SHA revwalk
+  - Format fix: wrapped two long lines in the Gate B test
+  - Key: `run_git(root, &["-c", "tag.gpgSign=false", "tag", "-a", "-m", "v1", "v1"],);` and merge args wrapped into an array literal
+
+- **`crates/callisto-moon/src/locator.rs`** (Track C + WASM path fix)
+  - Schema: `MoonProjectGraph { data: HashMap<String, MoonProject> }`, `MoonProject { id, root, source, dependencies }`, `MoonDependency { id, scope, via }`
+  - Critical fix to `projects()`:
+    ```rust
+    // Use source (workspace-relative) not root (host-absolute)
+    let rel_path = PathBuf::from(&project.source);
+    let abs_path = self.workspace_root.join(&rel_path);
+    ```
+  - Critical fix to `declared_edges()`:
+    ```rust
+    let abs_from = self.workspace_root.join(&project.source);
+    // ...
+    let abs_to = self.workspace_root.join(&to_project.source);
+    ```
+
+- **`crates/callisto-moon/tests/moon_wasm_sandbox.rs`** (T00)
+  - Updated `write_fake_moon_binary` to emit real moon schema:
+    ```sh
+    root=$(pwd)
+    printf '{"data":{"0":{"id":"pkg-a","root":"%s","source":".","dependencies":[]}}}\\n' "$root"
+    ```
+  - Previously emitted `{"projects":[{"root":".","depends_on":[]}]}`
+
+- **`crates/callisto-graph/src/commands/publish_client.rs`** (T01)
+  - 315 insertions: threads npm dist-tag, PyPI index, Cargo registry through RegistryClient boundary
+
+- **`crates/callisto-graph/src/commands/publish.rs`** (T01)
+  - 7 insertions: updated to carry full plan struct rather than narrowing at trait boundary
+
+- **`crates/callisto-model/src/plan.rs`** (T01)
+  - 28 insertions: plan struct changes to support registry threading
+
+- **`crates/callisto-manifests/src/python.rs`** (T02)
+  - 177 insertions: eliminated silent-Ok in `update_dependency_spec` — now returns `Err` when dependency not found
+
+- **`crates/callisto-graph/src/aggregate.rs`** (T03)
+  - 165 insertions: honored `_pre` parameter and fixed bare-name config matching against prefixed IDs
+
+- **`.github/actions/callisto-action/action.yml`** (T04)
+  - 21 insertions: corrected publish control-flow ordering (guard runs before publish step)
+
+- **`crates/callisto-conventional/src/commit.rs`** (T05)
+  - 42 insertions: fixed BREAKING CHANGE footer parser to scan all footers, not stop at first match
+
+- **`crates/callisto-model/src/version.rs`** — NOT modified; Gate A fixes (`!v.is_post()` guard) preserved intact
+
+4. Errors and Fixes:
+
+- **All 6 worktrees revert version.rs**: Every worktree (not just 3 as previously thought) contained reversions of the Gate A fix. Solution: cherry-pick only specific intended files using `git checkout <worktree-branch> -- <file>`, explicitly skipping version.rs in all cases and locator.rs from wf-1 (which had an inferior locator.rs implementation).
+
+- **wf-1 also modified locator.rs with incompatible changes**: wf-1's locator.rs used `source: Option<String>` for `MoonDependency` (wrong — real moon schema uses `via`). Solution: excluded locator.rs from the wf-1 cherry-pick and used main's version.
+
+- **Format check failure in callisto-vcs/src/lib.rs**: Two long lines in the Gate B test failed rustfmt. Fixed by wrapping into multi-line array literal format.
+
+- **WASM sandbox tests failing with "outside workspace root"**: The `projects()` method used `project.root` (host-absolute path from moon's JSON) for abs_path construction. In the WASM sandbox, `workspace_root = /workspace/` but `root` = `/private/var/folders/.../T/.tmp...`. Fix: switched to `workspace_root.join(&project.source)` throughout locator.rs.
+
+- **Stale WASM binary not rebuilt**: The `OnceLock` in `resolve_wasm_file()` skips building if the binary exists and is >100 bytes. After changing locator.rs, the old compiled binary was still used. Fixed by: `rm -f target/wasm32-wasip1/debug/callisto_moon.wasm`.
+
+- **Push rejected - remote had new commits**: `git push origin main` rejected because another session pushed `f40d87b chore(release): version packages (#4)`. Fixed with `git pull --rebase origin main` then re-pushed successfully.
+
+- **Agent plugin commit needed reverting**: After committing the bug-hunter plugin updates, user clarified the plugins should be in the `agent-plugins` repo, not callisto. Reverted with `git revert --no-edit c08d961`, creating `7439407`.
+
+5. Problem Solving:
+
+**Solved:**
+- Worktree merge strategy: file-specific cherry-picks avoided the version.rs reversion problem entirely
+- WASM path namespace: switching to source-relative paths makes locator work in both native and WASM contexts
+- WASM binary cache: explicit deletion forces rebuild with updated source
+- All 13 WASM sandbox tests + all 30 VCS tests pass; `just ci` exits 0
+- 8 commits on main with correct semantic messages, pushed to `origin/main` at `a1fd78a`
+
+**New findings from deep audit (83 raw → 70 to plan):**
+- P0: Silent workspace version overwrite (multiple workspace-inherited packages with different target versions; last writer wins)
+- P0: Duplicate diagnostic error codes (E020/E021 shared between VersionParseError and CommandError; E048/E049 shared between ParseError and WriteError variants)
+- P1 Security: GitHub Actions eval injection
+- P1 Correctness: caret_covers doesn't exclude pre-release versions
+- P1 Architecture: callisto-changelog → callisto-manifests layer violation (atomic_write needs to move to callisto-model)
+- P1 Architecture: callisto-conventional directly imports callisto-vcs (needs CommitWalker trait seam)
+- Multiple DX issues: --dry-run accepted silently on read-only commands, no --verbose, publish has no confirmation prompt, Some(...) debug format leaking in render_status
+
+6. All User Messages:
+
+- (Session start - implicit continuation, resuming worktree merge task from prior context)
+- "Done with everything?" — asked if all work was complete after Gate B/Track C and P0 worktree merges
+- "Let's bring to main and make semantic comite" — requested committing all changes with conventional commit messages
+- Mid-turn (while worktree removal was running): "The agents should be coming from the agent-plugins repo, not getting changed here right? I changed it in another session" — flagged that `.agents/plugins/bug-hunter-rust/` changes should NOT be in the callisto repo
+- "Let's merge everything into main please" — requested pushing to origin/main
+- "Do another very thorough round of bug hunting and code analysis focusing on architecture, best practices, maintainability, DX, performance. Also consider test coverage with black box tests that cover the edge cases and error cases. I feel like you're still missing things. Find gaps, analyse patterns and come up with a comprehensive plan"
+
+7. Pending Tasks:
+
+The comprehensive audit plan is documented but NOT implemented. Tasks by priority:
+
+**P0 (data loss / silent wrong behavior):**
+- T01: Fix duplicate diagnostic error codes (create error_codes.rs registry, remap colliding codes, add uniqueness test)
+- T02: Fix silent workspace version overwrite in apply_version_plan (group by workspace root, validate versions match before writing, write once)
+
+**P1 (correctness bugs + critical test gaps):**
+- T03: JSON error serialization loses structure (SerializableDiagnostic struct preserving code/help/causes)
+- T04: VCS error swallowing and double-wrapping (LocateError::MoonFailed preserving source, VcsError::Git help text, GraphError::Vcs transparent)
+- T05: Silent ecosystem fallback + silent edge drop in walk.rs
+- T06: caret_covers includes pre-release versions (cascade.rs:108)
+- T07: GitHub Actions eval security (action.yml:110, 159)
+- T08: Moon extension unrecognized subcommand silent fallback (extension.rs:189)
+- T09-T16: Test coverage tracks (VCS CRLF, npm manifests, Python/Cargo manifests, cascade edge cases, atomic write concurrency, VCS diagnostic codes, conventional commit edge cases, moon version subcommand)
+- T17: Move atomic_write to callisto-model (fix layer violation)
+- T18: CommitWalker trait seam for callisto-conventional (remove callisto-vcs dependency)
+
+**P2 (quality, DX, performance):**
+- T19: Add missing diagnostic codes and help text to graph/locate errors
+- T20: Put OPEN_CALL_COUNT behind feature flag
+- T21: Make manifest_cache and tags pub(crate) not pub
+- T22/QW-7: Add -- separator before user-supplied git revisions
+- T23: atomic_write permission preservation (0600 → preserve target permissions)
+- T24: --dry-run warning on read-only commands + --verbose flag
+- T25: callisto publish safety (confirmation prompt / --yes flag)
+- T26: bump_target error message uses package name as path
+- T27: Git revwalk excluded SHA caching (currently rebuilt per package)
+- T28: Apply phase manifest re-read reduction
+- T29: Cascade performance (dependents_of clones + convergence bound)
+
+**P3 (cosmetic, docs):**
+- T30: ARCHITECTURE.md corrections (license table wrong for callisto-vcs, phantom commands callisto matrix/publish-target, duplicate §8 heading)
+- T31-T35: Doc comments, stub feature flags, dead test fixtures, minor perf wins, proptest coverage
+
+**Quick Wins (each <30 min):**
+- QW-1: GraphError::Vcs → #[error(transparent)] (error.rs:55)
+- QW-2: render_status Debug format → match on Some(s) (render/mod.rs:31)
+- QW-3: Document --check exit codes in CLI help (cli.rs:102)
+- QW-4: Fix duplicate §8 in ARCHITECTURE.md:504
+- QW-5: Fix --strict help text (cli.rs:155)
+- QW-6: Normalize dry-run banner phrasing
+- QW-7: Add -- separator in ShellGit (shell.rs:97, 139, 170)
+- QW-8: Add .max_depth(Some(32)) to IgnoreWalkLocator (ignore_walk.rs:40)
+- QW-9: Fix empty publish output message
+- QW-10: Add rust-version to workspace Cargo.toml
+- QW-11: Fix infallible .unwrap() in npm.rs:150
+
+**Architectural Improvements:**
+- ARC-1: aggregate.rs decomposition (1529 lines → groups.rs + changesets.rs + thin orchestrator)
+- ARC-2: publish_client.rs ecosystem dispatch (cargo_client.rs, npm_client.rs, pypi_client.rs)
+- ARC-3: plan_publish() decomposition
+- ARC-4: Layer compliance enforcement via CI (cargo-deny rules or xtask)
+
+8. Current Work:
+
+The deep audit workflow completed successfully with 30 agents, producing 83 total findings, 15 confirmed critical/high, and a comprehensive plan with 11 quick wins + 35 implementation tracks + 4 architectural improvements. The workflow returned the full plan as text. The plan has been received and is now the primary reference for next steps.
+
+The `just ci` suite is green on `origin/main` at commit `a1fd78a`. Working tree is clean (only `.claude/settings.json`, `.entire/`, `.gemini/` as untracked — not ours to commit).
+
+9. Optional Next Step:
+
+The user's most recent explicit request was: "Do another very thorough round of bug hunting and code analysis focusing on architecture, best practices, maintainability, DX, performance. Also consider test coverage with black box tests that cover the edge cases and error cases. I feel like you're still missing things. Find gaps, analyse patterns and come up with a comprehensive plan"
+
+The plan has been delivered. The next natural step would be to ask the user which tracks they want to implement first (or confirm starting with P0 tracks T01 and T02, or the Quick Wins), since the plan alone was what was requested and implementation requires explicit user direction per the standing constraint "NEVER commit to git without explicit user instruction."
+
+If you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/gabe/.claude/projects/-Users-gabe-Projects-callisto/575b7a46-37b7-42f0-9db7-b2c329b2abab.jsonl
+Continue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with "I'll continue" or similar. Pick up the last task as if the break never happened.
