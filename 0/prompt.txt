@@ -1,0 +1,3 @@
+Can you create a report and artifact like the last one explaining all of the changes in the context of how callisto works and our architecture. Keep in context the entire space of release engineering. Consider this like a presentation on callisto and then presenting the changes we made in the last few PRs. Help me understand what we're doing, use graphs/charts/mermaid diagrams. Use succinct, perfessional, scanable language and structure. Avoid wordy prose, AI slop/word salad/filler words.
+
+Consider UX and design best practices in designing the report/artifact.
