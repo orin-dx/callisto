@@ -1,0 +1,57 @@
+<task-notification>
+<task-id>a1b2dcb302a41c686</task-id>
+<tool-use-id>toolu_01UtFu2ybcEcy2VwZvR7UAbH</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8a85b651-0c9a-44fa-9e0a-ac694c4409e1/tasks/a1b2dcb302a41c686.output</output-file>
+<status>completed</status>
+<summary>Agent "Audit coverage gaps: format, manifests, changelog" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Given the depth already achieved and my scope (3 crates), writing the final consolidated report now.
+
+## Coverage Gap Audit: callisto-format, callisto-manifests, callisto-changelog
+
+Directive: audit real test-coverage gaps in these three crates, black-box only, happy/error/edge case framing, excluding dead code and trivial glue.
+
+### callisto-changelog
+
+**render.rs** — 5 real gaps, all happy-path: only the `Changeset { summary, .. }` and `GroupUnion::Fixed` variants of `ChangeSource` are ever rendered in tests. Untested: `ChangeSource::Commit` (line 37-39), `ChangeSource::PeerEscalation` (43-49), `ChangeSource::GroupUnion { kind: Linked }` (53), `ChangeSource::NewGroupMember` (57-59), and the `to: None` → "## Unreleased" heading branch (19). Each renders genuinely different output — none are dead code.
+
+**write.rs** — 5 real gaps in `prepend()`: `create_dir_all` failure (28-31, error case — testable via a read-only parent dir on Unix), `read_to_string` failure on an existing file (35-37, error case), the header-matches-but-single-`\n` branch (69-75, edge case — distinct from the tested double-`\n\n` and mismatched-header cases), the mismatched-header branch when `rendered` lacks a trailing newline (83, edge case), and `atomic_write` failure propagation (94-96, error case).
+
+### callisto-format
+
+**bump.rs** — well-tested overall (extensive rstest matrices already exist). Real gaps: `versioning_for(SemVer)`'s own dispatch call is never exercised directly (43, happy path, low priority), `SemVerVersioning::bump()`'s grammar-mismatch error (56-59, error case — the SemVer-side twin of an already-tested Pep440 case), `bump_prerelease` called with `Severity::None` for both SemVer (115) and Pep440 (230) (edge case, untested on both), prerelease-counter overflow at `u64::MAX` for both dotted/undotted SemVer forms and Pep440 (130-142, 251-254 — error case, low priority/obscure), and SemVer's `bump_prerelease` producing an internally-invalid version string via a caller-supplied `tag` containing invalid SemVer characters (148-150, error case — genuinely reachable since `tag` is used verbatim, unlike Pep440's version which maps `tag` through a safe fixed letter set first).
+Excluded as dead/unreachable: both `Severity::None =&gt; current.clone()` match arms inside `SemVerVersioning::bump` (92, 101 — early-returned before reached), both `unreachable!("handled above")` arms in Pep440's bump (207, 214), and `grammar()` trait accessors on both structs (50-52, 157-159 — one-line constant returns). Pep440's equivalent "computed version reparse fails" path (263-265, 284-286, 301-303) is likely also unreachable in practice — `pep440_prerelease_letter` only ever produces known-safe letters or the hardcoded `.dev` fallback, and `render_pep440`'s input is built from validated `u64` components — flagged but not confirmed independently testable via the public API.
+
+**changeset/mod.rs** — `Changeset::to_markdown()` convenience wrapper untested (41-43, happy path, trivial delegation, low priority). More importantly: `promote_line_error`'s entire match (195-203) shows zero coverage despite descriptively-named tests existing elsewhere (`unclosed_quote_is_an_error`, etc.) — worth double-checking whether those tests call `parse_entry_line` directly rather than going through the public `parse_changeset()` entry point, since if so, the line-number-attachment behavior itself is untested black-box even though the underlying parse logic is. `write_changeset`'s `NameContainsQuote` error (218) is untested (error case).
+
+**pre.rs** — the most significant finding in this crate: **`PreState::exiting()` and `"mode": "exit"` are completely untested end-to-end** (30-33) — all 3 existing tests only construct/parse `"pre"`-mode state; the exit-mode transition, the only public way out of pre-release mode, has zero coverage. Real gap, happy path, high priority. Also: `parse_pre_json` on non-object JSON (49-50), unrecognized `mode` string (60-62), and an `initialVersions` entry that's valid JSON but not a valid SemVer/Pep440 version (87-90) — all real error cases.
+
+### callisto-manifests
+
+**lib.rs** — the `Manifest` trait's default `publish_targets()`/`is_publishable()` methods (39-54) are never exercised via any concrete manifest in this crate's own tests — three real branches (Cargo→CratesIo, Npm→Npm{..}, other→None), happy path. `open()`'s lockfile-role rejection (147-151) and unimplemented-format rejection (161-165) are untested error cases. `round_trip()`'s Pypi dispatch arm and its `_ =&gt; None` fallback (177-178) are untested (happy path + edge case).
+
+**cargo.rs** — by far the largest gap (157 lines), and it has one dominant, clear theme: **Cargo workspace inheritance (`version.workspace = true`, `dep.workspace = true`) is almost entirely untested end-to-end**, on both the read and write sides:
+- `CargoToml::current_version()`'s inherited-version resolution, both the success path and the "inherited but no version available" error (176-181) — untested.
+- `CargoToml::iter_dependencies()`'s inherited-dependency resolution, both "found in workspace" and two distinct "inherited but unresolved" edge cases (259-266) — untested.
+- `CargoToml::write_version()`'s inherited-version-write branch, including its own missing-`[package]`-table error (213-215) — untested.
+- `CargoToml::update_dependency_spec()`'s inherited-dependency delegation to `WorkspaceCargoResolver`, including the self-referential "this manifest IS the workspace root" invariant guard (293-312) — untested.
+- `WorkspaceInheritance::inherited()` itself (505-511) — never called by any test.
+- `WorkspaceCargoResolver::load()`'s relative-path branch and read/parse failures (534-550), `workspace_version()`'s both branches (592-609), `write_version()` (612-644) and `write_dependency()` (646-708) — essentially the entire write side of workspace-level dependency/version editing is untested.
+
+This is a coherent, high-priority finding, not scattered noise: whoever wrote the inherited-version detection logic (`open()`, line 47-52) clearly designed for this feature, but no test exercises what happens when a member Cargo.toml actually uses it.
+
+Secondary, more scattered real gaps in `cargo.rs`: `is_publishable()`'s no-`[package]`-table case (138) and array-form `publish = [...]` registry restriction (143-146, real, distinct Cargo feature); both ecosystems' `publish_targets()` branches unexercised directly (153); `update_dependency_spec`'s `DepKind::Peer` rejection (293-298, error case — meaningful cross-ecosystem correctness check, Cargo has no peer-dependency concept); Dev/Build dependency-kind updates untested (317-319, only Runtime/Optional appear covered); `parse_cargo_dep_item`'s full-table (`[dependencies.x]`) syntax form vs. the tested inline-table form (401-406, edge case, real distinct TOML syntax); the fallback-to-`Opaque` case for an unrecognized dependency-item shape (409-411); `round_trip()`'s comma-joined multi-clause upper-bound validation logic (`&lt;`/`&lt;=` boundary-exceeded check, 418-460 area) — significant, correctness-critical logic (prevents generating a self-contradictory version range) that's untested; wildcard-suffix decline (461-463); `render_at_precision`'s 1-component and 2-component precision-preserving cases (491-492, only 3-component tested).
+Excluded as trivial: `path()`, `ecosystem()`, `role()` accessors (127-133, 159-161 — one-line constant/field returns).
+
+### Summary
+
+Real gaps found: ~40 across the three crates. Excluded as dead/trivial: ~8 (Pep440's two `unreachable!()`-marked arms, several one-line trait accessor methods, `Changeset::to_markdown()`'s trivial delegation).
+
+Priority order:
+1. **cargo.rs's Cargo workspace-inheritance gap** — the single largest, most coherent, highest-value gap across all three crates. A real, commonly-used feature with essentially no test coverage on read or write.
+2. **pre.rs's exit-mode gap** — a core state transition with zero coverage.
+3. **cargo.rs's `round_trip()` upper-bound/comma-clause logic** — correctness-critical, currently unverified.
+4. **changeset/mod.rs's `promote_line_error` black-box gap** — worth confirming whether existing tests actually exercise the public entry point or bypass it.
+5. Everything else (error-path/edge-case gaps in write.rs, lib.rs's `publish_targets()`, cargo.rs's Peer-kind rejection, Dev/Build dependency updates, full-table dependency syntax) — real but lower-impact, straightforward to add once 1-3 are addressed.</result>
+<usage><subagent_tokens>693667</subagent_tokens><tool_uses>14</tool_uses><duration_ms>268679</duration_ms></usage>
+</task-notification>
