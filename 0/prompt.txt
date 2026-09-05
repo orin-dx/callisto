@@ -1,0 +1,6 @@
+<task-notification>
+<task-id>bbvt3c8li</task-id>
+<summary>Monitor event: "wait for T4 clippy (b2rurh0gf) to finish"</summary>
+<event>DONE</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
