@@ -1,0 +1,38 @@
+<task-notification>
+<task-id>acfd7f1f82603c14f</task-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/acfd7f1f82603c14f.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement Track 3a TASK-03c" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>TASK-03c is complete and committed.
+
+Summary:
+- Read TASK-03c from the plan file at `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/plan-track3a-v2.json`.
+- `covers_criteria` was empty, so no spec acceptance criteria needed to be read/proven.
+- Verified against the actual code in `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs` that the task's "honest non-red" claim was true: `admits()` already short-circuits `if is_root &amp;&amp; self.hybrid_root { return true; }` before the exclude check (was already committed in TASK-03a), and `hybrid_root` was already computed as `doc.get("package").is_some() &amp;&amp; doc.get("workspace").is_some()`. No test previously exercised a root whose own exclude glob matches `"."`.
+- Added the specified test `read_cargo_membership_detects_hybrid_root_and_exempts_it_from_exclude` verbatim to `crates/callisto-graph/src/locate/membership.rs` (in `cargo_membership_tests`).
+- Ran it: `cargo test -p callisto-graph read_cargo_membership_detects_hybrid_root_and_exempts_it_from_exclude` — passed immediately (`1 passed; 0 failed`), matching the task's documented expectation exactly (no implementation change required, no false red claimed).
+- Ran `cargo fmt -p callisto-graph` and `cargo clippy -p callisto-graph --all-targets -- -D warnings` — both clean.
+- Committed only the test file: `344b93dbfd5f592f49cdbf6bd08d1dbe9db87348` — "test(graph): pin hybrid-root exclude-exemption behavior (AC-07)".
+
+```json
+{
+  "task_id": "TASK-03c",
+  "status": "done",
+  "steps_completed": [
+    "read_plan_task",
+    "verified_honest_non_red_claim_against_actual_code",
+    "wrote_test_verbatim",
+    "ran_test_passed_as_documented",
+    "cargo_fmt",
+    "cargo_clippy_-D_warnings_clean",
+    "committed"
+  ],
+  "test_result": "pass",
+  "commit_sha": "344b93dbfd5f592f49cdbf6bd08d1dbe9db87348",
+  "concerns": "This task's own definition is an explicitly documented 'honest non-red' step: the fixture is new but the code path (admits()'s is_root/hybrid_root short-circuit) was already correctly implemented in TASK-03a, so no red phase occurred. I independently verified this claim was true by reading crates/callisto-graph/src/locate/membership.rs before writing the test, rather than trusting the task note, and confirmed it is not a case of writing a test after the fact to mask missing coverage -- the implementation genuinely predates this test and is unchanged.",
+  "reasoning": "covers_criteria was empty in the plan, so no criteria_evidence to record. No precision_tests were supplied. Verified the task's central claim (no red phase needed) against the real committed code rather than accepting it on faith, per the contradiction-check requirement -- claim held up. Only the test file was modified; implementation files touched: none."
+}
+```</result>
+<usage><subagent_tokens>58525</subagent_tokens><tool_uses>19</tool_uses><duration_ms>790180</duration_ms></usage>
+</task-notification>
