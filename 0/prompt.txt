@@ -1,0 +1,60 @@
+<task-notification>
+<task-id>a509238f42d46991f</task-id>
+<tool-use-id>toolu_01RCVtg93pvwsK5MCaMyJ3nC</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/0c4c4622-1ed8-4f2c-80e6-f0890a2dad72/tasks/a509238f42d46991f.output</output-file>
+<status>completed</status>
+<summary>Agent "Audit non-git subprocess calls for hermeticity gaps" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Summary
+
+I did **not** edit any files — this was pure research. Full inventory below, followed by real risks, the `CommandRunner` abstraction usage assessment, and recommended fixes.
+
+## Full inventory: non-git subprocess call sites
+
+**Production code — all real ecosystem-CLI shell-outs go through the injected `CommandRunner` trait (`crates/callisto-model/src/exec.rs:11`), never a bare `Command::new` for npm/pip/cargo/twine:**
+
+| File:line | Tool(s) | Path | Notes |
+|---|---|---|---|
+| `crates/callisto-graph/src/commands/publish_client.rs:280,295,297,439,505,525` | `cargo`, `npm`/`pnpm`/`yarn`/`bun`, `python -m build`, `twine` | production, via `self.run`/`run_in`/`run_quiet` → `CommandRunner` | Real publish path. Package-manager choice auto-detected from lockfiles in workspace root (`pnpm-lock.yaml`, `yarn.lock`, `bun.lock(b)`). |
+| `crates/callisto-graph/src/apply.rs:367,396` | `cargo update`, `uv lock`/`poetry lock` | production, via `runner.run` | Lockfile refresh, gated behind `opts.refresh_lockfiles`. |
+| `crates/callisto-cli/src/runner.rs:16-71` (`CliCommandRunner`) | any program (real `Command::new(program)`) | production — the concrete `CommandRunner` impl | This is the one place a real OS subprocess is actually spawned in the CLI binary. |
+| `crates/callisto-moon/src/runner.rs:5-93` (`MoonCommandRunner`) | any program, via `warpgate_pdk` host exec seam | production (wasm/pdk feature) | Uses `warpgate_pdk::command_exists`/`exec_command`, not `std::process::Command` directly (WASI has no native process spawn). |
+
+**Test code — fakes used (hermetic, no real subprocess):**
+`callisto-graph/src/commands/publish_client.rs` tests (`ScriptedRunner`, `QuietTrackingRunner`, `OrderedCallCapture`, `CapturingRunner`, `ProgramCapturingRunner`, `CwdCapturingRunner`), `apply.rs` tests (`NoopRunner`, `RecordingRunner`), and every other `CommandRunner` test-double listed in the grep below all supply canned `CommandOutput`s — none of them spawn a real `npm`/`cargo`/`twine`/`python` process.
+
+**Test code — real subprocess, but only the CLI's own compiled binary (self-invocation, not an ambient external tool):**
+`crates/callisto-cli/tests/{cli_tests.rs, dry_run_invariant_tests.rs, schema_guard_test.rs}` — all `Command::new(bin)` / `Command::new(env!("CARGO_BIN_EXE_callisto"))`. No test in this suite ever drives the real (non-dry-run) `publish` subcommand, so none of these ever reach `CliCommandRunner`'s real npm/cargo/twine/python invocation.
+
+**Test code — real subprocess to an actual external tool, NOT going through `CommandRunner`:**
+
+| File:line | Tool | What it depends on |
+|---|---|---|
+| `crates/callisto-moon/tests/moon_wasm_sandbox.rs:51-71` | `cargo rustc --target wasm32-wasip1 ...` | PATH-resolved `cargo`, explicitly `env_remove`s `RUSTFLAGS`/`CARGO_ENCODED_RUSTFLAGS`/`CARGO_LLVM_COV*` first — already defensive. |
+| `crates/callisto-moon/tests/moon_wasm_sandbox.rs:272-285` | `which which` | PATH-resolved `which`; used only to locate the real `which` binary for a "which-only PATH" fixture. |
+| `crates/callisto-moon/tests/moon_wasm_sandbox.rs:300-308` | `git` | Same file also builds real git fixtures (out of scope per your instructions, noted below). |
+| `crates/callisto-cli/src/runner.rs` `#[cfg(test)]` block (lines ~286-643) | `sh`, `sleep`, `true`, `head`, `printf` | POSIX built-ins invoked via `sh -c "&lt;literal&gt;"` — does not source `.bashrc`/`.zshrc` (non-interactive `sh -c` doesn't read rc files), so not ambient-config-sensitive. |
+
+## Real risks found
+
+1. **None in the npm/pip/cargo/twine publish path.** Every real ecosystem-CLI invocation is behind `CommandRunner`, and every unit test for that path uses a scripted fake — confirmed by reading `publish_client.rs` in full. No test hits a real registry, no test depends on `~/.npmrc`, `~/.pypirc`, `CARGO_HOME`, or auth env vars. The one place that reads ambient env (`known_credential_env_values(std::env::vars())` in `redact_stderr`, `publish_client.rs:653`) is redaction logic, and its own test (`cargo_publish_error_redacts_url_userinfo_from_stderr`, line 954) explicitly notes it must work "regardless of which credential env vars happen to be set in the test process" — the authors already designed around this.
+
+2. **Locale-dependent output classification (low-severity, production, plausible not confirmed).** `classify_cargo_output`/`classify_npm_publish_output`/`classify_twine_output`/`npm_is_published`/`detect_rate_limit`/`detect_auth_failure` (`publish_client.rs:607-763`) all do case-lowered English substring matching (`"already exists"`, `"rate limit"`, `"not logged in"`, `"forbidden"`, etc.) against real subprocess stdout/stderr, and the subprocess is spawned without forcing `LANG=C`/`LC_ALL=C`. If the operator's real publish machine has a non-English locale that changes npm/cargo/twine's message text, classification could misfire (e.g. treat a genuine already-published/rate-limit condition as an unclassified `Other` error). In practice cargo and npm don't localize their CLI error text today and twine's is minimally localized, so likelihood is low — flagging as plausible, not confirmed, since I can't observe real subprocess output from code alone.
+
+3. **`moon_wasm_sandbox.rs` git commits lack a signing guard, unlike its own tag calls (git — out of scope per your framing, noted only because it's the identical bug class in a file you haven't touched yet).** The file already disables tag signing per-call (`&amp;["-c", "tag.gpgSign=false", "tag", ...]`, lines 407 and 679) but its `git commit -q -m "..."` calls (lines 404, 676, inside the shared `run_git` helper at line 300-308) do **not** pass `-c commit.gpgsign=false` or set `GIT_CONFIG_*` env isolation. On a machine with `commit.gpgsign=true` set globally, these `#[tokio::test(flavor = "multi_thread")]` tests would hang the same way the original bug report described (no TTY under nextest). This is a separate, unfixed instance of the exact defect class this session is already fixing elsewhere — I'm not touching it since you scoped git out, but you'll likely want it in the same pass.
+
+## CommandRunner abstraction usage gap
+
+**None found for the ecosystem-publish tools you asked about.** Every test that exercises `cargo publish`/`npm publish`/`twine upload`/`python -m build`/`cargo update`/`poetry lock`/`uv lock` production logic supplies a fake `CommandRunner` (`ScriptedRunner`, `RecordingRunner`, `NoopRunner`, etc.) rather than shelling out for real. I found no test call site where a mock was available but a real subprocess was used instead, for these tools.
+
+The one real gap is `moon_wasm_sandbox.rs`'s direct `Command::new("cargo")`/`Command::new("which")`/`Command::new("git")` calls (listed above) — but these are legitimate: `cargo rustc` is building the actual wasm test artifact (there's no abstraction for that, it has to be a real build), and `which`/`git` there are building a real end-to-end fixture repo/PATH-shim specifically to test `MoonCommandRunner`'s real exec seam against a genuine host environment — using a fake `CommandRunner` there would defeat the test's entire purpose (it's testing the real seam, not application logic layered on top of it). So this isn't a case of "should have used the mock but didn't" — it's justified real-subprocess use, apart from the missing `commit.gpgsign` guard noted above.
+
+## Recommended fix shape
+
+Only one item rises to "worth a concrete fix," and it's the git one you asked me to flag only incidentally:
+
+- **`crates/callisto-moon/tests/moon_wasm_sandbox.rs`, `run_git` helper (line 300-308)**: add `-c commit.gpgsign=false` to every `git commit` invocation it makes (lines 404 and 676 currently read `run_git(&amp;root, &amp;["commit", "-q", "-m", "initial commit"]).await;`), matching the pattern already used for `tag.gpgSign=false` at lines 407/679. Minimal, one-line change per call site (or bake it into `run_git` itself by always prepending `-c commit.gpgsign=false` alongside the existing per-command overrides, so future `git commit` calls in this file inherit it automatically).
+
+No other files need changes. Nothing else in the non-git subprocess surface (npm, npx, pip, python, cargo-as-subprocess, poetry, twine, maturin, node, which, sh) depends on ambient machine state in a way that's a live hermeticity bug, and no test suite would fail confusingly on a machine missing npm/python/cargo — none of the test suites actually invoke those tools for real.</result>
+<usage><subagent_tokens>141737</subagent_tokens><tool_uses>27</tool_uses><duration_ms>225244</duration_ms></usage>
+</task-notification>
