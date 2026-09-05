@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bcwf1b0f7</task-id>
+<summary>Monitor event: "just ci live progress with step timestamps"</summary>
+<event>[+1380s]         PASS [   1.782s] ( 736/1065) callisto-graph::publish_tests plan_publish_leaves_changelog_section_none_and_emits_read_error_for_invalid_utf8
+[+1380s]         PASS [   0.008s] ( 739/1065) callisto-graph::snapshot_tests test_snapshot_sha_resolution_failure_is_surfaced_error</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
