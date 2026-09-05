@@ -1,0 +1,38 @@
+<task-notification>
+<task-id>ab3614fdb75a6df13</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/bb531e8d-c394-4e47-a8ae-e4a9ceeca6d2/tasks/ab3614fdb75a6df13.output</output-file>
+<status>completed</status>
+<summary>Agent "Exit-gate Track 2 spec (retry 2)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## VERDICT: FAIL (retry_count 2)
+
+Verdict written to `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/verdict-track2-retry2.json`
+
+### The four prior blockers: all genuinely fixed, all substantively correct
+
+I re-verified each independently rather than trusting the summary.
+
+**Blocker 1 (AC-009/AC-010 npm refresh) — fixed, and the strengthened claim holds.** You asked me to check whether "no npm refresh exists" is true for *every* npm lockfile filename. It is, by construction: the refresh block at `apply.rs:354-408` has exactly two branches, `Ecosystem::Cargo` (357) and `Ecosystem::Pypi` (373). There is no `Ecosystem::Npm` arm anywhere — grep across all 2299 lines returns only lines 128/135 (OpenContext), 414-417 (staging table), and test code. So the claim is filename-independent; all four of `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`, `bun.lockb` are equally never refreshed. The staging table at `412-422` has no workspace-kind filter, exactly as AC-009 now states.
+
+**Blocker 2 (AC-002 OpenContext) — fixed.** `apply.rs:118-136` is exactly the cited pattern. AC-002 now names `callisto_manifests::open` and binds to those lines.
+
+**Blockers 3 and 4 (AC-005, AC-011) — fixed.** `VersionPlan` carries no group attribution (`plan.rs:14-26`, `45-55`); `lockfile_refresh_results` and `staged` are the real public fields (`apply.rs:406`, `469`).
+
+### Why it still fails: three blockers, all on the AC-002 / AC-002b pair
+
+**1. AC-002b asserts on a non-observable internal call.** Its proposition is that `current_version()` returns `Ok(..)` rather than `Err(ManifestError::WorkspaceInherited)`. That's a `Manifest`-trait call inside `plan_version`; its `Result` never reaches a caller. The spec's own non_goals item 13 binds tests to `plan_version`/`apply_version_plan` as entry points — so AC-002b asserts something its own mandated entry point cannot evaluate. This is the identical defect class I failed AC-011 for one round ago, reintroduced by the edit that fixed AC-011. It also never states what `PlatformWrite.from` must equal — the one value the criterion exists to pin.
+
+The underlying behavior is real and worth a criterion: `cargo.rs:79-87` errors only when `uses_inheritance &amp;&amp; ctx.cargo_workspace.is_none()`, `cargo.rs:178-189` returns `Ok(v.clone())` when inheritance carries a version, and `WorkspaceInheritance.version` comes from `[workspace.package] version` (`cargo.rs:580-587`). So AC-002b's *scenario* resolves correctly — only its *phrasing* is unusable. Exact replacement text supplied.
+
+**2. AC-002's headline sentence is false in AC-002b's scenario.** It says `from` "equals the version string currently declared in the platform manifest file at path P." When P declares `version.workspace = true` there is no version string in P at all — `cargo.rs:191-199`'s `[package].version` lookup is never reached on that branch. AC-002 and AC-002b give contradictory accounts of where `from` originates. The later mechanism clause resolves it in the intended direction, but a tester applying AC-002 literally to the AC-002b fixture would mark it failed.
+
+**3. AC-002b cites a nonexistent file.** `crates/callisto-graph/src/cargo.rs` does not exist — that directory has no `cargo.rs`. The correct path is `crates/callisto-manifests/src/cargo.rs`, where lines 47-52 are exactly the `inherited_version` detection described.
+
+### Note on one thing I flagged then withdrew
+
+The `purpose` field still says the lockfile is "refreshed/staged like any other bump," which the summary said was corrected only in `api_surface`. I nearly raised it as a residual instance of blocker 1, then withdrew: the purpose covers both napi-rs (npm) and maturin (Cargo) packages, and for a Cargo platform manifest the lockfile genuinely *is* refreshed via `cargo update --workspace`. Across both ecosystems the phrase is loose but not false.
+
+Scope remains one planning cycle — the AC-009 rewrite removed the only scope-explosion path. All three blockers are single-edit fixes with exact replacement text; no follow-up question needed. Next fail would be retry_count 3; escalation triggers above that.</result>
+<usage><subagent_tokens>94953</subagent_tokens><tool_uses>26</tool_uses><duration_ms>365390</duration_ms></usage>
+</task-notification>
