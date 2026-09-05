@@ -1,0 +1,8 @@
+<task-notification>
+<task-id>bm5nr0m33</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8a85b651-0c9a-44fa-9e0a-ac694c4409e1/tasks/bm5nr0m33.output</output-file>
+<status>completed</status>
+<summary>Background command "cd /Users/gabe/Projects/callisto
+cargo test -p callisto-manifests --lib cargo::tests::round_trip 2&gt;&amp;1 | tail -25" completed (exit code 0)</summary>
+</task-notification>
