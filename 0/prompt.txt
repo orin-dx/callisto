@@ -1,0 +1,38 @@
+<task-notification>
+<task-id>aafd53715ce98e59a</task-id>
+<tool-use-id>toolu_01GQb6iUHEE9JaWqv6UuQw9Z</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/tasks/aafd53715ce98e59a.output</output-file>
+<status>completed</status>
+<summary>Agent "Exit gate retry 4 for apply-batch spec" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>**Verdict: FAIL — and at retry_count 4, this is an ESCALATE.** The spec does not enter planning.
+
+Verdict artifact: `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/VERDICT-SPEC-APPLY-BATCH-001-retry4.json`
+
+One disclosure up front: your output contract says retry_count &gt; 3 SHALL set verdict to `"escalate"`, but `shared/schemas/verdict@1.json` constrains `verdict` to the enum `["pass","fail"]` with `additionalProperties: false`. I emitted `"fail"` to keep the artifact schema-valid and carried the escalation in `verdict_summary`. Treat it as escalate.
+
+## Answers to your five questions
+
+**1. Does group_dirty close the hole? Partially — and it introduces a new regression.** Your exact scenario (delegating rewrite alone in its group) does work: `Ok(false)`, group_dirty stays false, no persist, resolver write survives. The drafter's claim is true as far as it goes. But the sibling case is broken. Root `Cargo.toml` that is `[package]` + `[workspace]`, plan = version bump **plus** the workspace-inherited rewrite, same path, same group:
+
+- bump mutates the handle's in-memory doc → `group_dirty = true`
+- rewrite hits `cargo.rs:303`, loads a resolver **from disk**, writes `[workspace.dependencies]`, persists the root file, returns `Ok(false)` — group_dirty stays true
+- group ends, group_dirty is true → `H.persist()` → `CargoToml::persist` (cargo.rs:102-113) atomic_writes `self.absolute`, the *same file*, from a document that never contained the resolver's change
+
+The serde rewrite is silently lost. Critically, **this plan is correct today** — pre-batching, the rewrite opens a fresh handle after the bump already persisted. So this is a regression the track introduces, not the "unchanged, redundant behavior" `non_goals[2]` claims. AC-017 passes while this fails, so AC-017 is not sufficient coverage. Recommended fix (buildable from existing public API): partition each group's rewrites using the already-public `DependencyEntry.inherited` flag, persist the group first, run delegating rewrites last — the same ordering idea the spec already adopted for `CargoWorkspacePackage` entries, just never applied intra-group.
+
+**2. python.rs — the drafter is right.** Read 293-383 in full. `_ =&gt; return Ok(())` at line 303 covers exactly 4 of 6 `DepSpec` variants (verified against `dependency.rs:24-31`), it is the only no-mutation early return, both mutating branches set `updated = true`, and the `!updated` check is an `Err` path. No additional branches. No blocker here.
+
+**3. cargo.rs — the drafter did not check this, and it's wrong.** The api_surface says the trailing return becomes `Ok(true)` because "the mutation above it, lines 309-364, always touches `self.document`". False. Lines 336-363 have two fall-throughs with no `else`: an `Item::Value` that is neither string nor inline table (`foo = 1`), and an item that is neither Value nor Table (`[[dependencies.foo]]`). Both reach line 365 having mutated nothing, and both are reachable — `parse_cargo_dep_item` (381-401) surfaces exactly these shapes as `DepSpec::Opaque` dependency entries. Fix: `let mut mutated = false`, set it in each of the three mutating arms, `Ok(mutated)`. npm.rs was also read in full and is correct as specified.
+
+**4. The 28-call-site inventory is insufficient.** The counts themselves are exactly right (8/11/9, verified per-file against each `mod tests` line). But the workspace re-grep found a fourth, non-test call site nobody mentioned: `crates/callisto-manifests/src/lib.rs:94`, the `ManifestCstEditor` blanket impl, whose `update_dependency_cst` returns `Result&lt;(), ManifestError&gt;` and whose entire body is the `update_dependency_spec` call. The signature change makes it a type error — the crate won't compile, so AC-014 is unsatisfiable. And `non_goals[5]` says "No change to ManifestCstEditor," so the spec mandates a change it simultaneously forbids.
+
+**5. Fresh sweep.** Clean on: no TBDs anywhere; `atomic_write`'s body matches AC-015's line-by-line claims; apply.rs has exactly 6 non-`#[serial]` tests; `manifest_cache_test.rs` has exactly one `#[serial]` test; `apply_batch_test.rs` doesn't exist; `apply.rs:55-57` uses `WorkspaceCargoResolver::load` not `open()`, so AC-004's "exactly 1" isn't inflated; only three `impl Manifest for`; adding `persist` doesn't break the `Arc&lt;dyn Manifest&gt;` cache.
+
+**On scope (condition 4): I'm flagging it.** Five crates, a breaking public trait signature change, a new required trait method, a consequential second public trait change, I/O stripped from seven method bodies, Layer-1 instrumentation, a ground-up apply_version_plan restructure, 28 test edits, and a new concurrency-sensitive test file. Four rounds have each fixed the reported defect and introduced a new one adjacent to it — that pattern is itself the evidence. Split at the manifest-layer/batching seam; the verdict names both halves and which ACs go where.
+
+Two of the four standard conditions fail (testable criteria, single planning cycle) independent of the correctness blockers.
+
+Worth preserving through the escalation: the retry-3 diagnosis was genuine and the bool-return contract is the right primitive. What's under-powered is the trigger built on it — a boolean OR over a group cannot express "a delegated write to this same file already landed." That needs ordering, not a richer flag.</result>
+<usage><subagent_tokens>106608</subagent_tokens><tool_uses>22</tool_uses><duration_ms>417563</duration_ms></usage>
+</task-notification>
