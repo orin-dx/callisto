@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>b8py719cn</task-id>
+<tool-use-id>toolu_01Wy4vsjB11SjPNYB3DDbYCd</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/c0ad64b2-6440-4937-8328-8d9fd9db278c/tasks/b8py719cn.output</output-file>
+<status>killed</status>
+<summary>Background command "cargo test -p callisto-vcs -p callisto-graph -p callisto-cli 2&gt;&amp;1 | tee /private/tmp/claude-501/-Users-gabe-Projects-callisto/c0ad64b2-6440-4937-8328-8d9fd9db278c/scratchpad/final_full2.log | tail -10" was stopped</summary>
+</task-notification>
