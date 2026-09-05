@@ -1,0 +1,9 @@
+<task-notification>
+<task-id>bcwf1b0f7</task-id>
+<summary>Monitor event: "just ci live progress with step timestamps"</summary>
+<event>[+1382s]         PASS [   0.011s] ( 960/1065) callisto-model report::tests::failed_attempt_json_contains_error_kind_discriminator
+[+1382s]         PASS [   0.016s] (1001/1065) callisto-moon extension::tests::build_extension_output_returns_error_response_on_serialize_failure
+[+1382s]         PASS [   0.021s] (1015/1065) callisto-vcs access::tests::test_commits_since_ref_not_found_error_propagates_through_shell_fallback
+[+1382s]         PASS [   0.013s] (1027/1065) callisto-vcs shell::tests::test_list_tags_errors_on_failed_git_invocation</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
