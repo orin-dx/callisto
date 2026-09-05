@@ -1,0 +1,24 @@
+<task-notification>
+<task-id>a8e5018b63e0fd679</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/0c4c4622-1ed8-4f2c-80e6-f0890a2dad72/tasks/a8e5018b63e0fd679.output</output-file>
+<status>completed</status>
+<summary>Agent "Convert Tier 1 need to requirement@1" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>```json
+{
+  "id": "REQ-001",
+  "statement": "Callisto must provide a reference mechanism and pattern for placing CI-built native binary artifacts (napi-rs .node files, maturin equivalents) into their corresponding platform-stub package directories before `callisto publish` runs.",
+  "stakeholder": "The maintainer of callisto (also a consumer via downstream projects like \"michi\"), and by extension any callisto consumer building napi-rs or maturin native packages who needs a working end-to-end release pipeline.",
+  "why": "callisto matrix already resolves each native build target to artifactName/hostRunner/useCross/packageDir, and the publish-side platform-stub modeling and ordering are already correct, but nothing in callisto or the shipped callisto-action actually moves a per-platform build's artifact into the right package directory before publish. Every consumer has to hand-build this glue themselves from just the JSON field names, with no working reference anywhere in callisto's own docs — confirmed by a real downstream project (michi) hitting exactly this gap this session. The mechanism was already designed once (.claude/specs/callisto-matrix.md §6.2) but never built, and ARCHITECTURE.md's only example workflow (§12) is broken (references a nonexistent `callisto publish-target` subcommand) and stops before showing placement or publish at all.",
+  "done_when": [
+    "A documented, working end-to-end example exists showing a matrix-driven per-platform CI build job uploading its artifact, an orchestrating step downloading each named artifact and placing it into its package's packageDir, and callisto publish subsequently succeeding against those populated package directories.",
+    "The placement step is implemented as GitHub-platform-specific orchestration (e.g. using `gh run download` or an equivalent artifact-fetch primitive) living outside callisto's core Rust CLI, consistent with the CLI's hermetic/zero-network-call boundary.",
+    "ARCHITECTURE.md's §12 example workflow no longer references the nonexistent `callisto publish-target` subcommand and is extended to cover artifact placement and the publish step, not just the build step.",
+    "A consumer following the documented pattern can go from N per-platform build jobs producing artifacts to those artifacts sitting in the correct platform-stub package directories, with no custom glue code beyond invoking the documented steps."
+  ],
+  "reasoning": "id: no existing REQ-NNN files found in the repo (searched for requirement/REQ paths), so defaulted to REQ-001. statement/why/done_when inferred directly from the raw need's clearly stated gap, prior design doc (§6.2), and the michi downstream evidence. Left out_of_scope empty per role — the raw need already lists explicit maintainer-confirmed exclusions (Java/JNI, .NET native-AOT target kinds; prebuilt Rust CLI binaries as GitHub Release assets/'Tier 2'; Homebrew tap generation; Go binary distribution) that the clarifier should populate into out_of_scope verbatim. Also flagging for the clarifier: the raw need marks §7's callisto-build-action (dispatching the actual napi/maturin build) as optional/secondary versus §6.2's placement step as load-bearing/must-have — this distinction may need to become an explicit out_of_scope or a done_when caveat. Could not infer a firm priority/urgency level or an exact acceptance mechanism (e.g., whether the reference implementation must ship as a reusable composite action vs. a documented bash snippet) from the text, so done_when criteria are phrased at the level of observable outcome rather than prescribing that implementation choice."
+}
+```</result>
+<usage><subagent_tokens>45817</subagent_tokens><tool_uses>1</tool_uses><duration_ms>35147</duration_ms></usage>
+</task-notification>
