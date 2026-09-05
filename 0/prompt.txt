@@ -1,0 +1,55 @@
+<task-notification>
+<task-id>ac9f7c744ace9c035</task-id>
+<tool-use-id>toolu_01CztDYCwU2yQoDGPLPwvA6M</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/bb531e8d-c394-4e47-a8ae-e4a9ceeca6d2/tasks/ac9f7c744ace9c035.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement TASK-4 (AC-008 error propagation)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Committed successfully as `b5a9123`. The pre-existing modified spec file (from the parallel TASK-3 canon-correction workflow) was correctly left untouched and unstaged.
+
+## Summary
+
+**TASK-4**: plan_version platform_writes: AC-008 error propagation on unreadable platform manifest
+
+- Read AC-008 directly from `.claude/specs/SPEC-TRACK2-PLATFORM-MANIFEST-WRITES.json` on disk — confirmed it has two disjuncts: missing-file and malformed-content, both requiring `Err(GraphError)`, no panic, no partial `VersionPlan`.
+- Confirmed tree was clean and TASK-2 (`431feb9`) was HEAD-1 for `commands/version.rs` before starting.
+- Wrote both tests required by the review-extended `test.description`: `plan_version_returns_err_when_platform_manifest_missing_from_disk_at_plan_time` and `plan_version_returns_err_when_platform_manifest_content_is_malformed`, using the Case D hybrid-root fixture convention from TASK-2's landed tests.
+- Since TASK-2 already implements full `?`-based propagation, the tests passed immediately on first run — this is a test-only regression-pinning task by design (no `implementation.steps` in the plan). To verify this wasn't a vacuous pass, I temporarily swallowed the error at each propagation point (`ManifestFormat::from_path`, `ManifestDecl::new`, `open`, `current_version`) and confirmed both tests genuinely fail (red), then restored the real implementation byte-for-byte and confirmed green again.
+- `cargo fmt -p callisto-graph`, `cargo clippy -p callisto-graph --all-targets -- -D warnings` clean.
+- Full suite: `cargo test -p callisto-graph --lib` → 371 passed, 0 failed.
+- Committed as `b5a9123`.
+
+```json
+{
+  "task_id": "TASK-4",
+  "status": "done",
+  "steps_completed": [
+    "confirmed clean tree at TASK-2 HEAD (431feb9) via git log/status",
+    "read AC-008 acceptance criterion text directly from spec file on disk",
+    "reviewed TASK-2's landed Case D hybrid-root fixture convention for consistency",
+    "wrote plan_version_returns_err_when_platform_manifest_missing_from_disk_at_plan_time",
+    "wrote plan_version_returns_err_when_platform_manifest_content_is_malformed (per review-extended test.description)",
+    "verified red: temporarily swallowed each ?-propagation site, confirmed both tests fail",
+    "restored real implementation byte-for-byte, confirmed both tests green",
+    "ran cargo fmt -p callisto-graph",
+    "ran cargo clippy -p callisto-graph --all-targets -- -D warnings (clean)",
+    "ran full cargo test -p callisto-graph --lib (371 passed, 0 failed)",
+    "committed"
+  ],
+  "test_result": "pass",
+  "commit_sha": "b5a9123",
+  "criteria_evidence": [
+    {
+      "criterion_id": "AC-008",
+      "test_file": "crates/callisto-graph/src/commands/version.rs",
+      "test_line": 853,
+      "implementation_file": "crates/callisto-graph/src/commands/version.rs",
+      "implementation_line": 291
+    }
+  ],
+  "concerns": "This task adds no new implementation code by design (depends_on TASK-2, which already implements the full ?-based propagation chain). Genuine red/green TDD was demonstrated indirectly: instead of a red phase preceding implementation, I temporarily broke each error-propagation site to confirm the new tests would fail if the propagation regressed, then restored the shipped implementation unchanged. This matches the plan's own expected_failure note for this task.",
+  "reasoning": "Verified via manual mutation that both tests are non-vacuous: swallowing the error at from_path/ManifestDecl::new/open/current_version caused both new tests to fail with the plan's Ok(VersionPlan{...platform_writes: []...}) printed, proving the tests genuinely exercise the ? propagation and not some unrelated early return."
+}
+```</result>
+<usage><subagent_tokens>76383</subagent_tokens><tool_uses>20</tool_uses><duration_ms>297437</duration_ms></usage>
+</task-notification>
