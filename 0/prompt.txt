@@ -1,0 +1,3 @@
+I think overall we don't publish, we rely on the appropriate tools (cargo, pnpm, etc) so we should fix the docs, right?
+
+I think homebrew is a separate concern. Maybe we build an assistant tool later but don't worry about it.
