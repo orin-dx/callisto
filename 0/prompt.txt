@@ -1,0 +1,5 @@
+<task-notification>
+<task-id>b4oobm0ak</task-id>
+<summary>Monitor event: "wait for callisto-cli+callisto-model full test suite"</summary>
+<event>[Monitor timed out — re-arm if needed.]</event>
+</task-notification>
