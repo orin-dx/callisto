@@ -1,0 +1,24 @@
+<task-notification>
+<task-id>abcdd439d019d1cef</task-id>
+<tool-use-id>toolu_01VnB5SwnXBEkxVCEfVj2pGa</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/abcdd439d019d1cef.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix Track 3b2 exit-gate blockers" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>The JSON is valid and structurally intact. The file has been overwritten in place at the same path.
+
+## Summary
+
+Read the spec, `crates/callisto-cli/src/cli.rs`, `crates/callisto-graph/src/commands/publish.rs`, `crates/callisto-graph/src/matrix.rs`, `crates/callisto-graph/src/config/resolve.rs`, and SPEC-TRACK3B1's AC-21, then applied all 4 blockers to `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/spec-track3b2-consumer-collision-safety.json` (overwritten in place):
+
+1. **Blocker 1 (decisive)**: Rewrote AC-07, AC-08, AC-09, AC-10, AC-11, AC-17, AC-18, AC-19 from CLI `--only` invocations to direct `plan_publish(&amp;ws, &amp;PublishOptions { only: vec![...] })` library calls asserting `Ok(PublishPlan)`/`Err(GraphError::...)` — one consistent observation level, matching the rest of the spec.
+
+2. **Blocker 2 (decisive)**: Rewrote AC-01's fixture (and AC-02's) with explicit per-path manifest/declared-name detail so the two promoted siblings' claiming-ecosystem sets for "native-core" are genuinely disjoint ({Cargo} vs {Npm}), verified against SPEC-TRACK3B1 AC-21's promotion precondition. Confirmed AC-04/AC-05 needed no edits since they only reference "the AC-01 fixture" by name.
+
+3. **Blocker 3 (decisive)**: Rewrote the scope section's publish.rs CORRECTION paragraph and the `PublishOptions::only` api_surface entry to source surviving identities from each entry's own real `pkg.id` via a side `Vec&lt;PackageId&gt;` captured during the dispatch loop, not re-derived from the list's fixed ecosystem. Verified and stated explicitly that `releases` is a behavior-preserving fifth source. Added a new non_goal deferring the divergent registry-target-ecosystem-vs-PackageId-ecosystem case, since fully fixing it would require also changing the `.retain()` step, not just the eligibility check.
+
+4. **Blocker 4 (secondary)**: Added a non_goal explicitly deferring the CLI `--help` text updates for `--package` on `matrix`/`plan-publish`/`publish` (cli.rs:111, 182, 190-191), with rationale tied to blocker 1's single-observation-level decision.
+
+`revision_note` was updated with a full account of all four fixes. All other fields (`purpose`, `id`, `linked_requirement`, unrelated non_goals/criteria) were left untouched. Verified no stale `--only` CLI references or stale reconstruction-formula text remain anywhere in the file.</result>
+<usage><subagent_tokens>102616</subagent_tokens><tool_uses>23</tool_uses><duration_ms>313385</duration_ms></usage>
+</task-notification>
