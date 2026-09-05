@@ -1,0 +1,1 @@
+Check canon:auditor's result (agent a5bcc7328694a4e84). If it found issues, apply the specific fixes it prescribed to the spec@1 directly (don't re-dispatch drafter for mechanical fixes you can apply yourself from the auditor's exact rewrites). Then dispatch canon:exit-gate on the corrected spec for the definitive pass/fail. Report the final spec and gate verdict to the user.
