@@ -1,0 +1,12 @@
+<task-notification>
+<task-id>a25ede94cc126b3cb</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/bb531e8d-c394-4e47-a8ae-e4a9ceeca6d2/tasks/a25ede94cc126b3cb.output</output-file>
+<status>completed</status>
+<summary>Agent "Correct Track 2 spec AC-002b contradiction" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I've dispatched the correction to canon:drafter (running in correction mode) to revise AC-002b in `/Users/gabe/Projects/callisto/.claude/specs/SPEC-TRACK2-PLATFORM-MANIFEST-WRITES.json`. It's evaluating the (a) narrow-to-tested-code vs (b) convert-to-non_goal tradeoff, fixing the dependent false assumption in non_goals item 6, and checking AC-002/api_surface for the same unstated Cargo-discovery assumption, while leaving AC-007 and the rest of the criteria untouched.
+
+I'll report back with the full corrected spec object and revision_note once the agent completes — this will arrive as a notification in a later turn, not something I can predict now.</result>
+<usage><subagent_tokens>52816</subagent_tokens><tool_uses>3</tool_uses><duration_ms>61724</duration_ms></usage>
+</task-notification>

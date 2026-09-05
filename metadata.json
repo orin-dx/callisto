@@ -1,0 +1,32 @@
+{
+  "cli_version": "0.10.6-nightly.202609040625.7c63555a3",
+  "checkpoint_id": "7b4c4037f37e",
+  "strategy": "import",
+  "commit_sha": "d1a57926f0306345966c09a12d71f77a3a0547a5",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 6,
+    "cache_creation_tokens": 3360,
+    "cache_read_tokens": 2132087,
+    "output_tokens": 1878,
+    "api_call_count": 3,
+    "subagent_tokens": {
+      "input_tokens": 16,
+      "cache_creation_tokens": 48938,
+      "cache_read_tokens": 348511,
+      "output_tokens": 8602,
+      "api_call_count": 8
+    }
+  },
+  "imported": true
+}
