@@ -1,0 +1,16 @@
+<task-notification>
+<task-id>aaef77f6ade47a832</task-id>
+<tool-use-id>toolu_01Qy8s8sL1UKNwge7N5UJsJF</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/89183b76-c115-4b79-8a50-972c752d566d/tasks/aaef77f6ade47a832.output</output-file>
+<status>completed</status>
+<summary>Agent "Research rustsec crate for advisory db revision" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>`rustsec` crate does expose the advisory-db revision natively — RESEARCH FINDING for AC-001, no implementation done.
+
+1. **`rustsec` crate (0.33.0, docs.rs) exposes it directly.** `Database::latest_commit()` (requires the `git` feature) returns `Option&lt;&amp;Commit&gt;`, where `Commit { commit_id: CommitHash, timestamp: OffsetDateTime, author: String, summary: String, signature: Option&lt;Signature&gt; }`. `commit_id` is literally the SHA-1 of the advisory-db HEAD. This is a materially better path than the spec's current `git rev-parse HEAD` shell-out: cargo-deny and cargo-audit are both built on `rustsec`, so a small internal tool using `rustsec` as a library dependency could fetch the db and report `commit_id`+`timestamp` natively, in-process, with no subprocess/path-guessing involved. Recommend updating AC-001's workaround language to prefer this over shelling out to git against an internal cache path.
+
+2. **cargo-deny CLI itself still has no revision-reporting flag or JSON field** (checked `cargo-deny 0.19.9`, the version installed/pinned here — `cargo deny --help` / `cargo deny check --help`: no `--revision`, no such field in `-f json` output). Not checked against cargo-deny's latest released version specifically, but the CLI's help surface hasn't grown a revision flag as of 0.19.9. So the CLI-level gap in the spec's premise stands — the fix is at the `rustsec` library layer, not the cargo-deny binary.
+
+3. **`git rev-parse HEAD` against the real local clone confirmed working** (fallback if the rustsec-crate approach isn't adopted): `~/.cargo/advisory-dbs/advisory-db-3157b0e258782691/` → HEAD `b331df68b3ed0e99594d259040bdcb9de3c7c8a4`, remote `https://github.com/RustSec/advisory-db`. The path is **not deterministic/guessable from a plain script**: `advisory-dbs/&lt;hash&gt;/` — the hash suffix is cargo-deny/rustsec's own derived digest of the db source URL, not documented as stable API, and depends on `CARGO_HOME` (defaults to `~/.cargo` but is overridable via env var). A CI script would need to glob `$CARGO_HOME/advisory-dbs/*/` rather than hardcode the hash — fragile and username/environment-dependent. This reinforces that the `rustsec`-crate-native approach (finding #1) is the more robust fix for AC-001, since it doesn't need to locate the cache directory at all.</result>
+<usage><subagent_tokens>177468</subagent_tokens><tool_uses>6</tool_uses><duration_ms>49807</duration_ms></usage>
+</task-notification>
