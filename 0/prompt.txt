@@ -1,0 +1,53 @@
+<task-notification>
+<task-id>a3323eabe0294ecf4</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/0c4c4622-1ed8-4f2c-80e6-f0890a2dad72/tasks/a3323eabe0294ecf4.output</output-file>
+<status>completed</status>
+<summary>Agent "Map research sources for matrix distribution model" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Now I'll map the research agenda. Based on the question and the context you provided, I need to identify which sources address the distribution-model design space.
+
+```json
+{
+  "question": "What should callisto's native-artifact / multi-target distribution model be?",
+  "internal_sources": [
+    "/Users/gabe/Projects/callisto/crates/callisto-model/src/matrix.rs",
+    "/Users/gabe/Projects/callisto/crates/callisto-model/src/ecosystem.rs",
+    "/Users/gabe/Projects/callisto/crates/callisto-graph/src/matrix.rs",
+    "/Users/gabe/Projects/callisto/crates/callisto-graph/src/commands/publish.rs",
+    "/Users/gabe/Projects/callisto/crates/callisto-graph/src/commands/publish_client.rs",
+    "/Users/gabe/Projects/callisto/.claude/specs/callisto-matrix.md",
+    "/Users/gabe/Projects/callisto/.claude/specs/track-g-matrix-napi-maturin.json",
+    "/Users/gabe/Projects/callisto/docs/00-design.md",
+    "/Users/gabe/Projects/callisto/docs/06-publishing.md",
+    "/Users/gabe/Projects/callisto/docs/release-paradigms.md",
+    "/Users/gabe/Projects/callisto/ARCHITECTURE.md",
+    "/Users/gabe/Projects/callisto/.claude/plans/ACTIVE.md"
+  ],
+  "external_keywords": [
+    "goreleaser distribution architecture",
+    "goreleaser Homebrew tap integration",
+    "goreleaser artifact placement and release sink patterns",
+    "cargo-dist binary packaging and versioned asset model",
+    "cargo-dist GitHub Release integration",
+    "cargo-dist platform-specific artifact routing",
+    "napi-rs multi-platform build conventions",
+    "napi-rs platform-stub package ordering",
+    "Homebrew formula syntax and checksummed tarball references",
+    "GitHub Release API asset upload and per-platform binaries",
+    "build-system-agnostic binary distribution patterns"
+  ],
+  "existing_implementations": [
+    "PlatformTargetKind enum (Napi/Maturin variants only — explicitly excludes DotnetAot)",
+    "PublishTarget enum (Cargo/Npm/PyPi/NuGet/GitHubRelease variants)",
+    "Matrix auto-discovery from Cargo.toml/pyproject.toml/package.json manifests",
+    "Publish command platform-before-main ordering for napi/maturin",
+    "ManifestRole::Platform for platform-stub npm package differentiation",
+    "Artifact-placement gap: no mechanism to copy built binaries into platform-stub directories before publish"
+  ],
+  "scope": "both",
+  "reasoning": "Internal sources establish the current state: matrix discovers native targets, PublishTarget models output channels, but artifact placement is missing and PlatformTargetKind is incomplete (Napi/Maturin only). The maintainer now wants to support CLI binaries (cargo-dist pattern) and Homebrew taps (goreleaser pattern) — both outside current scope. External prior art is essential: goreleaser solves Homebrew integration at scale; cargo-dist is the reference Rust CLI distribution model; napi-rs conventions anchor polyglot platform-build correctness. This research must ground the decision in proven patterns from mature tools."
+}
+```</result>
+<usage><subagent_tokens>34192</subagent_tokens><tool_uses>5</tool_uses><duration_ms>84212</duration_ms></usage>
+</task-notification>
