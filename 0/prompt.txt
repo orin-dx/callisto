@@ -1,0 +1,112 @@
+This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
+
+Summary:
+1. Primary Request and Intent:
+   - Continue and complete Track 7 (git revwalk bounding) and Track 8 (git fixture hermeticity) release-engineering remediation tracks in the callisto repo, following the project's established canon→vector→lambda pipeline conventions documented in `.claude/plans/ACTIVE.md`.
+   - Properly diagnose (not guess) why CI/builds were behaving abnormally, and fix the root cause.
+   - Actually stack/rebase PRs #13 and #14 rather than just sequentially merging, per explicit user correction.
+   - Investigate and respond to real-world feedback from a downstream consumer ("michi") about two gaps: (a) `callisto version`/`callisto publish` lockfile-staleness inconsistency, (b) `callisto matrix`'s silent-failure and missing-artifact-placement gaps.
+   - Do NOT over-engineer solutions — user repeatedly emphasized "lean on native tools" and resistance to bespoke config surfaces; solutions should reuse existing mechanisms/conventions where possible.
+   - Conduct deep, evidence-based research (using the `trace` skill with multi-agent pipelines, "most appropriate models & effort for quality while minimizing cost/token usage") into what callisto's native-artifact distribution model should be, covering napi/maturin, Rust CLI binaries via GitHub Release, and Go binaries via Homebrew — with explicit scope decisions from the user along the way (Homebrew deferred, Go out of scope, Tier 1 prioritized).
+   - Verify architectural boundaries (CLI vs. GitHub Action) against real code, not assumption.
+   - Run Tier 1 (native artifact placement) through the full formal spec pipeline (`graph:intake` → `graph:clarifier` → `canon:drafter` → `canon:auditor` → `canon:exit-gate`) to produce a rigorously verified `spec@1`, then through `vector:planner` to produce an implementation `plan@1`.
+   - Think carefully about artifact-naming design (drawing on npm/crates.io conventions) rather than accepting a superficial fix.
+
+2. Key Technical Concepts:
+   - Rust workspace conventions: `unsafe_code = "forbid"`, `cargo nextest`, `moon`/`just` task runners, TDD (red→green→review→commit per finding).
+   - gix (`gitoxide`) revwalk bounding via `with_hidden()`.
+   - `cargo publish --locked` semantics (officially: fails on lock-file-update-needs, not "Cargo.toml changes alone" — genuinely ambiguous interaction with a package's own version bump, unresolved).
+   - GitHub Actions composite actions (`action.yml`), `gh` CLI (`gh run download`, `gh release create`/`upload`), process substitution vs. pipes for subshell-exit-safety.
+   - `callisto matrix`'s `PlatformTarget`/`PlatformTargetKind`/`PlatformTargetGroup` data model (napi-rs/maturin native build target auto-discovery).
+   - `PublishTarget` enum (`CratesIo`, `Npm`, `Pypi`, `NuGet`, `GitHubRelease`, `None`, `#[non_exhaustive]`).
+   - The canon/vector/lambda spec-driven-development pipeline: `requirement@1` → `spec@1` (via `canon:drafter`/`canon:auditor`/`canon:exit-gate`) → `plan@1` (via `vector:planner`/`vector:challenger`) → implementation (via `lambda:*`).
+   - The `trace` research pipeline: `trace:recon` → `trace:reader` → `trace:synthesizer` → `trace:risk-assessor`, each a separate sequential `Agent` dispatch with model/effort tuned per stage (haiku for recon, sonnet for the rest).
+   - Empirical verification discipline: testing real `gh` CLI behavior against a live GitHub repo/run rather than trusting doc text or agent inference.
+   - Recovery technique for interrupted/duplicate subagent dispatches: read raw `.output` JSONL transcript files directly (via Python, scanning for the last `assistant`-role message with real `text` content) rather than trusting `ListAgents`/`TaskOutput`'s "completed" status, which can be stale after a session interruption.
+   - Git hermeticity: `commit.gpgsign`/`tag.gpgsign`/`init.defaultBranch` isolation via local (not global) `git config`, `GIT_CONFIG_GLOBAL` env var for hermetic testing.
+
+3. Files and Code Sections:
+   - **`crates/callisto-vcs/src/lib.rs`**: `commits_since_with_pathspec` rebuilt using gix `with_hidden()`; `location_matches` fixed to special-case `"."` pathspec matching everything (root-level sentinel).
+   - **`crates/callisto-graph/src/tags.rs`**: `select_from_tags_cached` added, caching glob compilation by template string; `GLOB_COMPILE_COUNT` counter made `pub`.
+   - **`crates/callisto-graph/src/aggregate.rs`**: pathspec construction changed to `crate::changed::package_paths(pkg)`.
+   - **`crates/callisto-fixtures/src/git.rs`**: canonical `init_repo` hardened with `-b main`, `commit.gpgsign=false`, `tag.gpgsign=false`; new test using `GIT_CONFIG_GLOBAL` poisoning technique.
+   - **`.claude/plans/ACTIVE.md`**: updated with full Track 7 and Track 8 entries (findings, fixes, commits, measured numbers).
+   - **`crates/callisto-model/src/ecosystem.rs:65-90`**: `PublishTarget` enum definition (read/verified, not modified).
+   - **`crates/callisto-graph/src/commands/publish.rs:343-374`**: confirmed `NuGet`/`GitHubRelease` push `Warning` diagnostic and are skipped (not hard-fail as an old note claimed).
+   - **`crates/callisto-graph/src/commands/publish_client.rs`**: read extensively to confirm real cargo/npm/pnpm/twine invocation flags (`--locked`, `--no-git-checks`, `--skip-existing`, etc.).
+   - **`.github/actions/callisto-action/action.yml`**: read/analyzed in full — `NATIVE_MATRIX` computation (line ~164), `INPUT_PUBLISH` guard (line ~167), existing `gh release create` for per-tag releases (line ~218), existing `git push origin --tags` (line ~197), existing process-substitution pattern for releases loop (line ~219).
+   - **`crates/callisto-model/src/matrix.rs`**: `PlatformTarget` struct (fields: `triple`, `platform`, `arch`, `abi`, `host_runner`, `use_cross`, `artifact_name`, `package_dir`, `package_name` — `#[serde(rename_all = "camelCase")]`); `PlatformTargetKind` (Napi/Maturin only, not `#[non_exhaustive]`).
+   - **`crates/callisto-graph/src/matrix.rs`**: `artifact_name_for_triple(triple) -> String` (returns `"native-{triple}"`, line 38-40) — identified as the root cause of a collision bug, to be replaced with `artifact_name_for_package_triple(package_name, triple)`; `build_platform_target` (line 126-142, already receives `package_name` param); existing test `build_platform_target_combines_role_and_ci_table` (line ~742) needs updating.
+   - **`crates/callisto-graph/src/commands/matrix.rs:34-39`**: traced `dir_rel` computation — confirmed `packageDir` can be empty string for root-level packages.
+   - **`ARCHITECTURE.md` §12** (lines ~445-495): confirmed broken example referencing nonexistent `callisto publish-target` and nonexistent `matrix.os`/`matrix.package`/`matrix.target` fields.
+   - **`.claude/specs/callisto-matrix.md` §6.2/§7/§8**: the abandoned original design for artifact placement (`gh run download` snippet) and `callisto-build-action`, referenced/formalized by SPEC-002.
+   - **`.claude/specs/SPEC-002-native-artifact-placement.json`** (NEW, saved): final passed spec, purpose/scope/non_goals/api_surface/11 acceptance criteria (AC-001 through AC-011), `linked_requirement: REQ-001`. Full content captured in the v4 draft shown in-conversation.
+   - **Memory files created**: `feedback_diagnose_dont_guess_environment_issues.md`, `project_git_fixture_hermeticity_gap.md`, `feedback_recover_stale_agent_results.md`, all indexed in `MEMORY.md`.
+
+4. Errors and fixes:
+   - **Wrong agent name `graph:clarify-requirement`**: corrected to `graph:clarifier` after the Agent tool returned an error listing valid names.
+   - **`$(cat ...)` literal string in an Agent prompt**: doesn't execute shell substitution; agent had tool access so likely self-recovered by reading the file directly, but this was a real mistake I flagged and worked around on retry.
+   - **AC-004 (packageDir missing → fail) was factually wrong**: empirically disproven via a live `gh run download` test against a real repo/artifact — `gh run download` auto-creates missing nested directories (exit 0). User did not flag this; I caught it myself before the auditor round even completed by testing empirically per the "diagnose don't guess" discipline established earlier in the session.
+   - **Several acceptance criteria described unreachable states**: `canon:exit-gate` retry 1 found AC-004(old, invalid JSON)/AC-005(old, missing/null fields) were structurally impossible given the in-step design + Rust's non-`Option` types — converted to non_goals rather than deleted silently, with exact reasoning.
+   - **`packageDir=""` initially miscategorized as unreachable by the gate, then confirmed real by me**: traced `commands/matrix.rs:34-39` directly, found root-level manifests produce empty-string `packageDir`; empirically confirmed `mkdir -p ""` fails (exit 1) — required explicit `.`-normalization rather than deletion. Gate independently re-confirmed this trace as correct in retry 2.
+   - **Artifact-name collision bug**: `canon:exit-gate` retry 2 found `artifact_name_for_triple` ignores `package_name`, causing two packages sharing a triple to collide via `unique_by(.artifactName)` and silently drop placement. This was NOT something I or the drafter caught initially — it was the gate's own finding, later resolved via the user's own design question steering toward reusing `package_name` (already-unique, already-configurable) rather than inventing new config.
+   - **Stale/duplicate agent dispatch results after session interruptions**: repeatedly, `ListAgents`/`TaskOutput` reported agents as "completed" with a final message that was actually a mid-flight placeholder ("I'll report back once it completes"). Fixed by reading raw `.output` JSONL transcripts directly (Python script extracting last real `assistant` text) and/or checking `ListAgents` for a genuine live duplicate to wait on instead of re-dispatching. This happened multiple times across the `graph:clarifier`, `canon:auditor`, and `canon:exit-gate` (all 3 retries) stages, and once for `vector:planner`.
+   - **User explicit correction**: "I had as you to stack them but you didn't" — I had proposed merging #13 first then rebasing #14 (functionally equivalent but not literal "stacking"); user wanted the conflict actually resolved via rebase, which I then did.
+
+5. Problem Solving:
+   - Solved: Track 7 and Track 8 fully shipped (PRs #13 merged, #14 rebased/green, likely merged though not explicitly confirmed in transcript).
+   - Solved: root-caused the nextest/gpgsign CI slowness via rigorous empirical testing after user rejected an unverified guess.
+   - Solved: SPEC-002 fully passed `canon:exit-gate` after 3 retries, converging on a well-grounded, empirically-verified spec covering artifact placement + the artifact-naming collision fix.
+   - Solved: PLAN-002 produced with 5 concrete, TDD-structured tasks.
+   - **Ongoing/unresolved**: the `cargo publish --locked` exact interaction with a package's own version bump (vs. only dependency-graph changes) — flagged twice as needing empirical verification, never actually tested. This affects whether the earlier lockfile-staleness recommendation (augmenting the Action's default `version_command` with `--refresh-lockfiles`) is even correctly targeted — this was never implemented, only recommended.
+   - **Not yet decided**: whether Tier 2 (Rust CLI binaries → GitHub Release) is in scope under the user's "lean on native tools" framing — I asked this directly and it was not explicitly re-answered before the conversation moved to Tier 1's spec work.
+   - **Not yet done**: `vector:challenger` has not been run on PLAN-002 (mandatory next step per this project's Pipeline Protocol before `lambda` implementation begins).
+   - **Not yet done**: no new branch created for the SPEC-002/PLAN-002 (Tier 1 matrix artifact placement) work — it was drafted while sitting on the already-shipped `track-8-git-fixture-hermeticity` branch.
+
+6. All user messages (genuine human messages only, excluding my own ScheduleWakeup-triggered continuation prompts that replay as user-role turns):
+   - "Let's make sure our beaches are stacked" (likely "bases are covered" — asked for thoroughness before merging PRs)
+   - "What's next?"
+   - "Show me the overall plan, what's done, what's left"
+   - "If we stack the PRs we can get it all done right?"
+   - "Let's fix #14's merge conflict: https://github.com/orin-dx/callisto/pull/14\n\nI had as you to stack them but you didn't"
+   - "pickup the work" (following a `/plugin` local command)
+   - "We ran into an issue with publishing michi that we should look into and think broadly about: [detailed lockfile-staleness report from the michi agent — `callisto version` never refreshes `Cargo.lock` by default but `callisto publish` always runs `cargo publish --locked`]. This came from the michi agent. What is our stance on this? What should it be? What about npm/pnpm, python, etc?"
+   - "We generally relly on leaning to the native tool for publishing so I'm reticent to put too much specific things in there but we do need something that helps guide or address the issue"
+   - "On the lock file is that something we document or augment the GH action with?"
+   - "Some more context on matrix: [detailed michi feedback on silent-empty matrix output and nativeMatrix/ARCHITECTURE.md doc gaps]"
+   - "Yes, let's address it in the most appropriate way and document what to do mindful of when overriding"
+   - "Is that the comphrenehsive fix for matrix? Does it provide the best UX/DX for matrix? Specially in the NAPI use-case we have right now? What about the future?"
+   - "We need to think through our spec for matrix and do a proper evaluation, research, and spec proposal here. What do we need to be able to provide to publish multi-language packages with native dependencies. Say if we're also publishing rust binaries to GH for example too. Or go binaries that will go into a brew setup"
+   - "Do deep analysis, thinking and research on the subject using agent teams with the most appropriate models & effort for quality while minimizing cost/token usage please" (mid-turn message)
+   - "Just to be clear, we're publishing the crate to crates.io but the binary to GH right?"
+   - "Let's make sure that we appropriately read the docs, test, and feel confident about our work. What goes in callisto CLI vs GH actions"
+   - "Do we have a full spec now?" (mid-turn message)
+   - "Run Tier 1 through canon:draft-spec now"
+   - "Yes" (confirming to fold the artifact-naming collision fix into SPEC-002's scope)
+   - "Think of the existing pattern for NPM packages or crates. How are the published binaries named? Should it be over rideable in the config?"
+   - "Go" (confirming to proceed to `vector:planner`)
+
+7. Pending Tasks:
+   - Run `vector:challenger` on PLAN-002 (mandatory per this project's Pipeline Protocol before implementation).
+   - Create a dedicated branch for the Tier 1 matrix-artifact-placement work (currently sitting uncommitted on the unrelated, already-shipped `track-8-git-fixture-hermeticity` branch).
+   - Execute PLAN-002's 5 tasks via `lambda:recon` → `lambda:implementer` (one task at a time, TDD) → `lambda:reviewer` → `lambda:exit-gate`, per this project's established process.
+   - Resolve the still-open question of whether Tier 2 (Rust CLI binaries → GitHub Release) is in scope going forward (asked, not yet answered by user).
+   - Decide whether/how to implement the lockfile-staleness fix (augmenting `action.yml`'s default `version_command` with `--refresh-lockfiles` + docs) — recommended but never actioned.
+   - Empirically verify `cargo publish --locked`'s exact behavior on a package's own version bump (flagged twice as unresolved).
+   - Confirm PR #14's actual merge status (last confirmed state: green/mergeable after rebase; no explicit merge action taken by me or confirmed by user in this transcript).
+
+8. Current Work:
+   Immediately before this summary request, `vector:planner` had just completed and returned **PLAN-002** (full JSON plan for SPEC-002), covering 5 tasks:
+   - `RUST-1`: rename `artifact_name_for_triple` → `artifact_name_for_package_triple(package_name, triple)` in `crates/callisto-graph/src/matrix.rs`, update `build_platform_target`'s call site, update the existing test `build_platform_target_combines_role_and_ci_table`, add two new tests (`artifact_name_for_package_triple_embeds_package_name_and_triple`, `build_matrix_report_same_triple_two_packages_have_distinct_artifact_names`). Covers AC-001. Test command: `cargo test -p callisto-graph --lib matrix::tests`.
+   - `ACTION-1`: insert a native-artifact placement loop into `.github/actions/callisto-action/action.yml` inside the `INPUT_PUBLISH` guard, using process substitution and explicit `mkdir -p`/`.`-normalization; new test harness `.github/actions/callisto-action/tests/test_native_artifact_placement.sh` (extract-and-stub pattern matching existing harness precedent). Covers AC-003/004/005/006/010.
+   - `ACTION-2`: new regression test `.github/actions/callisto-action/tests/test_native_matrix_dedup.sh` proving `unique_by(.artifactName)` retains both packages once artifactName is package-qualified. Covers AC-002.
+   - `DOC-1`: fix `ARCHITECTURE.md` §12's example workflow (remove `callisto publish-target`, use real `PlatformTarget` field names, show full build→place→publish flow). Covers AC-007/008/009.
+   - `DOC-2`: update `.claude/specs/callisto-matrix.md` §6.2's snippet (pin `$GITHUB_RUN_ID`, add `mkdir -p`, add cross-reference note about callisto-action's automatic handling). Covers AC-011.
+
+   The plan's `reasoning` field explains task sequencing (Rust first since ACTION-2's fixtures assume the post-fix artifact-name format; docs tasks independent). No `vector:challenger` review has been run yet. No implementation has begun. The last text I sent to the user was the full PLAN-002 report (verbatim, as returned by the `vector:planner` agent) — no summary/next-step framing had been added yet when the summarization request interrupted.
+
+9. Optional Next Step:
+   Per this project's established Pipeline Protocol (`.claude/plans/ACTIVE.md`: "5. `vector:vector-challenger` — must pass before continuing"), and consistent with the user's own "Go" instruction to proceed with the planning pipeline, the next step is to dispatch `vector:challenger` to adversarially review PLAN-002 before any implementation begins — checking for missing acceptance-criteria coverage, wrong task ordering, over/under-specified steps, poor batching across compilation boundaries, and orphaned criteria. This should happen before reporting the plan to the user as "ready," matching the same rigor applied to SPEC-002's 3 exit-gate retries. I should also flag to the user, before or alongside this, that a dedicated branch needs to be created for this work (currently unbranched on top of the already-merged `track-8-git-fixture-hermeticity` branch) — this was not yet raised with the user and should be surfaced rather than assumed.
+
+If you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/gabe/.claude/projects/-Users-gabe-Projects-callisto/f21fbbf3-d9f7-4109-9c36-8de0a6e308fd.jsonl
+Continue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with "I'll continue" or similar. Pick up the last task as if the break never happened.
