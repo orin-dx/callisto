@@ -1,0 +1,12 @@
+{
+  "tool_use_id": "toolu_012REVAxCYy9C1tVQDcqyRKh",
+  "agent_id": "a701f9f2aee38f006",
+  "subagent_type": "courier:pr-narrator",
+  "task_description": "Draft PR title and body",
+  "files": [
+    "crates/callisto-vcs/src/access.rs",
+    "crates/callisto-vcs/src/shell.rs"
+  ],
+  "started_at": "2026-09-04T18:26:09.722605-07:00",
+  "completed_at": "2026-09-04T18:26:09.722883-07:00"
+}
