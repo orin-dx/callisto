@@ -1,0 +1,39 @@
+<task-notification>
+<task-id>a5fb2dc50bcfbad7f</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a5fb2dc50bcfbad7f.output</output-file>
+<status>completed</status>
+<summary>Agent "Re-submit Track 3b2 to exit-gate" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result># VERDICT: PASS
+
+`SPEC-TRACK3B2-CONSUMER-COLLISION-SAFETY` — `artifact_type: spec@1`, `retry_count: 2`, confidence **high**.
+
+Verdict file: `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/verdict-track3b2-consumer-collision-safety-retry2.json`
+
+I read the spec fresh from disk and re-derived both flagged areas from source rather than checking that citations resolve.
+
+## Area (a) — CLI vs library observation level
+
+- `cli.rs:109-115`: `MatrixArgs.package` is `#[arg(long)]` → the flag really is `--package`. `cli.rs:17-20`: `format` is `#[arg(long, global = true, ...)]`, so `callisto matrix --format json` is valid clap (confirmed by the existing parse test at `cli.rs:283-293`). `cli.rs:177-193`: both publish-side fields are `#[arg(long = "package")]`. The phantom `--only` flag appears nowhere in the spec.
+- Matrix criteria (AC-01..06, AC-16) assert only CLI-observable state, and the error text they name is real: `AmbiguousName` renders `candidates` via `display_name()` (`error.rs:82-90`), so AC-04's asserted `cargo/native-core, npm/native-core` is exact; `UnknownPackage` prints `` `{id}` `` and `PackageId: Display` delegates to `display_name()` (`identity.rs:201-205`), so AC-06/AC-16's named strings are genuinely printed.
+- Publish criteria are pure library calls. `PublishOptions` has exactly one field and derives `Default` (`publish.rs:11-17`), so `PublishOptions { only: vec![...] }` compiles as written, and `plan_publish`'s real signature (`publish.rs:64-67`) matches the spec verbatim. No mixing survives.
+
+## Area (b) — zip-retain-unzip, hand-traced
+
+All five push sites sit inside the one `for id in &amp;topo_ids` loop under `if is_release` (`rust_crates.push` at 301, the npm if/else, pypi, and `releases.push` at 423 inside the `has_dispatchable_target` gate), so a parallel `Vec&lt;PackageId&gt;` is length-equal by construction and `into_iter().zip(..).collect() → retain → unzip → reassign` compiles against the `let mut` bindings. The round-4 defect is genuinely closed — no post-hoc index or name correlation survives in the text.
+
+AC-19 traced end to end: `Prefixed{Npm,"shared-lib"}.matches(Prefixed{Cargo,"shared-lib"})` is false per `identity.rs:148-160`, the Npm sibling contributes to no list (empty `publish_to` fails the releases gate's `!publish_to.is_empty()`), so the check returns exactly `Err(UnknownPackage { id: Prefixed{Npm,"shared-lib"} })` — the value asserted. A raw name-membership test would return `Ok`, so the criterion does discriminate the right mechanism from the wrong one. Also verified the `release_ids` behavior-preservation claim: `has_dispatchable_target` is set only in the three arms that also set a `publishes_*` flag.
+
+## Also confirmed
+
+- **Fixtures are valid.** `walk.rs:64-132` groups by path and registers one package per path, so AC-01's differently-named co-located manifests do not register separately — "exactly two keys" is correct, and the claiming sets are truly `{Cargo}` / `{Npm}`, satisfying SPEC-TRACK3B1 AC-21 (read directly). AC-02's added `pyproject.toml` carries no `[tool.maturin].targets`, and `matrix.rs:300-316` fires the same-directory hard error only when both are present.
+- **Ordering dependency** is stated three times with a rationale verified correct against `walk.rs:126-132`'s unconditional `DuplicatePackage`.
+- **AC-14's target** exists with the quoted text; both objects have only `id`/`criterion`/`is_error_case`, making the byte-identical clause checkable.
+- Zero TBDs; six error criteria carry `is_error_case: true` covering every distinct error behavior; scope fits one cycle.
+
+Two soft spots were examined and cleared on the merits, not waived: AC-09's list disjunction is determinate for the fixture (`detect_npm_role` → Canonical, both readings true), and the `UnknownPackage` branch bundled into AC-06/AC-10 is separately covered by AC-16 and AC-18 with `is_error_case: true`. One cosmetic imprecision (scope says id vectors are pushed "during the same dispatch loop at publish.rs:206-411" while `releases.push` is at 423) is non-blocking — the same paragraph names 423 explicitly and the instruction is "at the exact same push site."
+
+Cleared for `vector`.</result>
+<usage><subagent_tokens>120945</subagent_tokens><tool_uses>23</tool_uses><duration_ms>485709</duration_ms></usage>
+</task-notification>
