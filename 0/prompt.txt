@@ -1,0 +1,1 @@
+If you switch thw workflow to opus do we eat the cost of all of the context from all 123 agents being laoded into opus though?? That is expensive
