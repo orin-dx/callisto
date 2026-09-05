@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>boi0l37gu</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/c0ad64b2-6440-4937-8328-8d9fd9db278c/tasks/boi0l37gu.output</output-file>
+<status>completed</status>
+<summary>Monitor "PR #9 CI checks (docs-cleanup-agents-readme)" stream ended</summary>
+</task-notification>
