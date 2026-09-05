@@ -1,0 +1,9 @@
+<task-notification>
+<task-id>ab17ffad1b8f12470</task-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/b90cda92-db13-4c63-8d7f-c9fa7d9196ab/tasks/ab17ffad1b8f12470.output</output-file>
+<status>completed</status>
+<summary>Agent "Third-pass review of amended PLAN-007" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>This background task's output is superseded — I already re-ran a scoped equivalent of this grep and completed the full review. No further action needed.</result>
+<usage><subagent_tokens>88485</subagent_tokens><tool_uses>15</tool_uses><duration_ms>432684</duration_ms></usage>
+</task-notification>
