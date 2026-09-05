@@ -1,0 +1,1 @@
+Let's make a full pass looking for literals that should be (or are constants), for magic numbers, for stubbed content, for gaps. Let's make sure we clean md files with outdated information and udpate what needs updating before moving on please.
