@@ -1,0 +1,28 @@
+<task-notification>
+<task-id>af1e4628618353110</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/89183b76-c115-4b79-8a50-972c752d566d/tasks/af1e4628618353110.output</output-file>
+<status>completed</status>
+<summary>Agent "Research canonical JSON/hashing crates" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>**Task:** Research canonical-JSON + hashing crates for SPEC-RELEASE-PLAN-DURABILITY-001 AC-001 (config_digest/input_digest).
+
+**1. RFC 8785 JCS crates found on crates.io:**
+- **`olpc-cjson`** (0.1.x) — a `serde_json::Formatter` used by AWS's `tough` (TUF) crate. Operates directly on any `Serialize` type via `serde_json::to_writer(&amp;mut buf, value)` with the custom formatter — no need to go through `serde_json::Value` first. Sorts map keys, fixed number formatting. Reasonably battle-tested (production use in `tough`), but it's OLPC-style canonical JSON, not strictly RFC 8785 (control chars 0x00–0x1f printed literally, technically invalid JSON output — irrelevant here since output is only ever hashed, never re-parsed as JSON elsewhere).
+- **`serde_json_canonicalizer`** — implements RFC 8785 JCS specifically. Newer, less production history than olpc-cjson/tough.
+- **`vr-jcs`**, **`canon-json`**, **`json-syntax`** (canonicalization feature) — smaller/newer, less evidence of adoption.
+
+None has the crates.io download/maintenance profile of a de facto standard; this is a thin-ecosystem niche.
+
+**2. Existing workspace dependencies (checked Cargo.toml/Cargo.lock):**
+- `serde_json = "1"` with `features = ["preserve_order"]` is already a direct workspace dependency (v1.0.151 locked), used across callisto-cli/format/manifests/graph/moon/model.
+- `sha2` is **not** a direct workspace dependency — it's only present transitively (two versions in the lock: 0.10.9 and 0.11.0, pulled in by other deps). Adding it directly needs a version pin.
+
+**3. Recommendation:**
+- Canonicalization: **`olpc-cjson`**, used as a `serde_json::Formatter` directly against the plan/envelope structs (`PublishPlan`, `CratePublish`, etc. in `crates/callisto-model/src/plan.rs`) via `serde_json::Serializer::with_formatter` — avoids an intermediate `Value` and avoids fighting the workspace's `preserve_order` feature (which makes `Value`'s map insertion-ordered, not sorted; irrelevant if serializing the typed struct straight through the formatter). If strict RFC 8785 compliance is desired instead, `serde_json_canonicalizer` is the alternative, at the cost of less production mileage.
+- Hashing: **`sha2 = "0.11"`** (latest stable, matches the newer of the two versions already transitively present) — add as a direct workspace dependency in `Cargo.toml`, not pulled in incidentally.
+
+**4. Gotcha re: `#[serde(default, skip_serializing_if = "Option::is_none")]`:**
+Any serde-Formatter-based canonicalizer (olpc-cjson included) only ever sees what `Serialize` emits — a field skipped via `skip_serializing_if` never reaches the formatter, so it's indistinguishable from a field that was never in the struct at all. That satisfies AC-001's "omitted field treated identically to a field that was never present" by construction. But it does **not** by itself guarantee "omitted == explicit null": if any `Option&lt;T&gt;` field were ever serialized as `Some(Value::Null)` rather than `None`, the formatter would emit `"field":null`, which is a different byte sequence than omission. This holds safely today only because callisto's `Option` fields are genuine `None`/`Some(T)` — no field is typed to allow an explicit-null variant. Worth a one-line implementation note (not a spec change): the guarantee depends on no future plan field being given a `Serialize` impl that can produce `Value::Null` from a `Some`.</result>
+<usage><subagent_tokens>177154</subagent_tokens><tool_uses>5</tool_uses><duration_ms>41193</duration_ms></usage>
+</task-notification>
