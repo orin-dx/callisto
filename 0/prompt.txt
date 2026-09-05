@@ -1,0 +1,54 @@
+<task-notification>
+<task-id>ad4f6a93a99aa4467</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/bb531e8d-c394-4e47-a8ae-e4a9ceeca6d2/tasks/ad4f6a93a99aa4467.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement T07 (AC-007 grammar-mismatch variant)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>This confirms the real implementation location for the GroupGrammarMismatch branch, wired into plan_version at version.rs:84.
+
+## Summary
+
+Task T07 executed via TDD/regression-pin cycle as specified.
+
+**Findings before writing the test:** Read AC-007 directly from `/Users/gabe/Projects/callisto/.claude/specs/SPEC-TRACK1-FIXED-GROUP-CASCADE-CORRECTNESS.json`. Confirmed it has two sub-cases: values-divergence (already pinned by T06) and grammar-mismatch (Cargo.toml/SemVer member paired with pyproject.toml/Pep440 member, both tagged) — matching the plan task's exact instructions.
+
+**Test added:** `version_rejects_grammar_mismatched_fixed_group_via_real_call_path` at `crates/callisto-graph/src/commands/version.rs:399` (assertion at line 442), appended as a sibling to T06's test in the existing `mod tests` block.
+
+Per the plan's own instructions, this was a regression-pin, not fresh-feature TDD: T06 wired `pre_mutation_checks` into `plan_version`'s real call path, and the grammar-mismatch branch inside `pre_mutation_checks` (crates/callisto-graph/src/groups.rs:67) was pre-existing, unmodified logic. I ran the test once before making any other changes to verify this empirically rather than assume it — it passed immediately on the first run, confirming no red phase was possible or expected (implementation already existed). No production code was touched, matching the plan's explicit "no production code changes" step.
+
+Ran `cargo fmt -p callisto-graph`, `cargo clippy -p callisto-graph --all-targets -- -D warnings` (clean), and the full `cargo test -p callisto-graph` suite (all passing, no regressions) before committing.
+
+Commit: `88755f1` — "test(graph): pin AC-007 grammar-mismatch fixed-group divergence via plan_version"
+
+```json
+{
+  "task_id": "T07",
+  "status": "done",
+  "steps_completed": [
+    "Read AC-007 from spec file on disk",
+    "Added sibling test to existing mod tests block in version.rs",
+    "Ran test once to confirm fixture correctness (passed immediately, confirming pre-existing implementation coverage, not a red-phase violation)",
+    "Confirmed no production code changes needed per task instructions",
+    "Ran cargo fmt -p callisto-graph",
+    "Ran cargo clippy -p callisto-graph --all-targets -- -D warnings (clean)",
+    "Ran full cargo test -p callisto-graph suite (all green)",
+    "Committed"
+  ],
+  "test_result": "pass",
+  "commit_sha": "88755f1",
+  "concerns": "This task was a regression-pin for already-implemented logic (per T06 wiring pre_mutation_checks into plan_version), so no red phase was observed for new implementation code — the test passed on first run as the plan itself predicted. This matches the task's explicit instructions and was verified empirically rather than assumed.",
+  "criteria_evidence": [
+    {
+      "criterion_id": "AC-007",
+      "test_file": "crates/callisto-graph/src/commands/version.rs",
+      "test_line": 399,
+      "implementation_file": "crates/callisto-graph/src/groups.rs",
+      "implementation_line": 67
+    }
+  ],
+  "reasoning": "AC-007 covers both divergence sub-cases; T06 already proved the values-divergence branch. This task proves the grammar-mismatch branch specifically, via the real plan_version call path (wired at version.rs:84 -&gt; groups::pre_mutation_checks -&gt; groups.rs:67 GroupGrammarMismatch)."
+}
+```</result>
+<usage><subagent_tokens>55099</subagent_tokens><tool_uses>20</tool_uses><duration_ms>379284</duration_ms></usage>
+</task-notification>
