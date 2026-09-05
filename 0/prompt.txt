@@ -1,0 +1,24 @@
+<task-notification>
+<task-id>a005a0a530d8803c6</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a005a0a530d8803c6.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix Track 3b1 exit-gate blockers" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>The spec has been revised and written to `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/spec-track3b1-identity-promotion-core.json`, overwriting the previous version. All five round-4 blockers were verified against real current source (identity.rs, callisto-model/src/identity.rs, walk.rs, lib.rs, config/resolve.rs, aggregate.rs, callisto-model/src/package.rs, error.rs) before wording was committed.
+
+Summary of what changed:
+
+1. **AC-01 unsatisfiable (critical)** — Confirmed the resolve_human loop at identity.rs:267-272 compares a bare name against the still-prefixed lookup string and can never match. Rewrote the `IdentityIndex.prefixed` api_surface entry to specify a new first-checked branch in `resolve_human`: parse the lookup string, and if it's `Prefixed{ecosystem, name}`, look up `self.prefixed.get(&amp;(ecosystem, name))` directly and return the stored value. Verified AC-01/AC-02/AC-03/AC-06 all remain correctly satisfiable/unaffected — no criterion text changes needed, only the mechanism description.
+
+2. **AC-19/AC-23 contradiction (critical)** — Confirmed `Workspace::load` calls `build` with `?` (lib.rs:107), so AC-19's build-time failure and AC-23's load-success precondition can't share the same fixture. Kept AC-19 unchanged (build-time check design) and rewrote AC-23 to use a fixture with no `[[package]]` rules at load time, then exercises `aggregate.rs:211`'s ambiguity branch directly by cloning the loaded config and pushing a rule onto its already-`pub` `packages` field (test-only construction, not parameter-threading).
+
+3. **Promotion predicate data gap (critical)** — Confirmed `ManifestDecl` has no `name` field (callisto-model/src/package.rs:82-86), so the first-seen colliding path's claiming-ecosystem set is unrecoverable at collision time. Added a new Data-structures-and-lifecycle item 3, `claiming_ecosystems: BTreeMap&lt;PathBuf, BTreeSet&lt;Ecosystem&gt;&gt;`, populated for every path up front; renumbered all subsequent items (old 3/4/5/6(a/b) → new 4/5/6/7(a/b)) and every cross-reference throughout the document, verified via full-document scan.
+
+4. **AC-22 untestable / second stale-comment instance (moderate)** — Found the same false "always PackageId::Bare" claim at walk.rs:160-164 in addition to walk.rs:284-288. Split AC-22 into a mechanical, grep-confirmable assertion covering both locations, and moved the "must accurately explain" requirement into a new COMMENT ACCURACY paragraph in the ManifestWalkResolver::build api_surface entry as implementer guidance.
+
+5. **False "Bare never appears" justification (moderate)** — Corrected the promoted_siblings derivation rationale: a Case D package is excluded because its multiple `prefixed` entries share one identical `PackageId` (distinct-id count of 1), not because "Bare never appears" (which is false — `prefixed` is not promoted-only).
+
+Also fixed two implementation-detail errors discovered while verifying AC-23 (`PackageConfig` has no `Default` impl; `aggregate()` requires a `git` parameter not previously mentioned).</result>
+<usage><subagent_tokens>184069</subagent_tokens><tool_uses>67</tool_uses><duration_ms>764215</duration_ms></usage>
+</task-notification>
