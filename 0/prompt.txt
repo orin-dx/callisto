@@ -1,0 +1,21 @@
+<task-notification>
+<task-id>a62326ed4b363d714</task-id>
+<tool-use-id>toolu_01Ssk455DhhEJx6nchcAJHAG</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/bb531e8d-c394-4e47-a8ae-e4a9ceeca6d2/tasks/a62326ed4b363d714.output</output-file>
+<status>completed</status>
+<summary>Agent "Correct Track 2 spec AC-002b contradiction (retry)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>The correction is complete. The spec file at `/Users/gabe/Projects/callisto/.claude/specs/SPEC-TRACK2-PLATFORM-MANIFEST-WRITES.json` has been revised in place. Summary of what changed and why:
+
+**Decision: option (a)** — narrowed AC-002b rather than converting it to a non-goal, because the OpenContext/workspace-inheritance resolution logic (AC-002's format-agnostic machinery) is real work this track owns and can prove today; discarding the whole criterion to a non-goal would have thrown away a legitimate, currently-provable guarantee along with the genuinely out-of-scope discovery gap.
+
+**Changes made:**
+1. **AC-002b** rewritten to explicitly state that real, disk-discovered Cargo platform-manifest classification does not work today (citing walk.rs:199's `Ecosystem::Npm`-only gate), and to scope the criterion to a fixture-constructed `GroupMember::PlatformManifest` fed directly into `plan_version` — proving the OpenContext resolution logic is format-agnostic without depending on discovery that doesn't exist yet.
+2. **New non_goals entry added** explicitly naming "extending walk.rs's Ecosystem::Npm gate to Ecosystem::Cargo" as deferred, out-of-scope future work, clarifying that this track's machinery will work once that separate feature ships.
+3. **reasoning** field appended with a point (9) documenting the correction rationale.
+4. **revision_note** added per the correction-mode contract, citing AC-002b, the contradiction evidence (walk.rs:199, the empirical pipeline run), the chosen option and why, and confirming AC-007 and the AC-001-derived criteria (AC-003–AC-007b) needed no change since they were always npm-scoped.
+5. `spec_file_path` left unchanged, as required in correction mode.
+
+Full corrected spec@1 JSON is shown above (read back from disk to confirm it's valid and persisted). No other criteria, api_surface entries, or the scope/purpose fields needed changes.</result>
+<usage><subagent_tokens>66405</subagent_tokens><tool_uses>7</tool_uses><duration_ms>96649</duration_ms></usage>
+</task-notification>
