@@ -1,0 +1,52 @@
+<task-notification>
+<task-id>a7a7fc331bfeafd71</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a7a7fc331bfeafd71.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement TASK-13 (AC-04 regression test)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Commit succeeded: `d465ede`.
+
+## Summary
+
+**TASK-13** completed: "Regression-proof: AC-04 (pnpm-workspace.yaml drives npm filtering when no workspaces field)"
+
+- Confirmed all 8 prior commits (0971005..37fcada) present on `ignore_walk.rs` and tree was clean before starting.
+- Read AC-04's exact text from `/Users/gabe/Projects/callisto/.claude/specs/SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json` on disk (not the plan's paraphrase) — matched the plan's fixture (pnpm-workspace.yaml with `packages/*`, `packages/kept` matching, `tools/outside` not matching, no root workspaces field).
+- Added `ac04_pnpm_workspace_yaml_governs_npm_membership_when_no_workspaces_field` at `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs:367`, following the file's established `Path::new(...)` comparison style to avoid `clippy::cmp_owned`.
+- Ran the test first: it passed immediately (no red step), matching the plan's prediction that this is a genuine regression-proof already implemented by TASK-04b/TASK-06.
+- Adversarially verified non-vacuousness: temporarily forced `read_pnpm_packages` in `/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs:273` to always return `None`, reran the test, confirmed it failed with a clear assertion message (`tools/outside` was wrongly discovered), then restored the original implementation.
+- Full suite: `cargo test -p callisto-graph --lib` → 284 passed, 0 failed. `cargo clippy -p callisto-graph --all-targets -- -D warnings` clean.
+- Committed only `ignore_walk.rs` (no implementation change needed) as `d465ede`.
+
+```json
+{
+  "task_id": "TASK-13",
+  "status": "done",
+  "steps_completed": [
+    "verified 8 prior commits present and tree clean",
+    "read AC-04 exact criterion text from spec file on disk",
+    "wrote test ac04_pnpm_workspace_yaml_governs_npm_membership_when_no_workspaces_field",
+    "ran test: passed immediately (no red step, consistent with regression-proof pattern)",
+    "adversarial vacuity check: broke read_pnpm_packages to return None, confirmed test fails, restored",
+    "ran full cargo test -p callisto-graph --lib: 284 passed",
+    "ran cargo fmt -p callisto-graph and cargo clippy -p callisto-graph --all-targets -- -D warnings: clean",
+    "committed"
+  ],
+  "test_result": "pass",
+  "commit_sha": "d465ede",
+  "criteria_evidence": [
+    {
+      "criterion_id": "AC-04",
+      "test_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/ignore_walk.rs",
+      "test_line": 367,
+      "implementation_file": "/Users/gabe/Projects/callisto/crates/callisto-graph/src/locate/membership.rs",
+      "implementation_line": 255
+    }
+  ],
+  "concerns": null,
+  "reasoning": "No implementation change was needed since TASK-04b/TASK-06 already implemented the pnpm-workspace.yaml precedence path and wired it into IgnoreWalkLocator. Verified this honestly via an adversarial break-then-restore of read_pnpm_packages rather than assuming the plan's non-red claim was correct."
+}
+```</result>
+<usage><subagent_tokens>83525</subagent_tokens><tool_uses>23</tool_uses><duration_ms>346742</duration_ms></usage>
+</task-notification>
