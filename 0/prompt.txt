@@ -1,0 +1,38 @@
+<task-notification>
+<task-id>a14b64821da0d6da1</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/5e79b5c6-5688-4728-8d81-ff2c106a0e2e/tasks/a14b64821da0d6da1.output</output-file>
+<status>completed</status>
+<summary>Agent "Final Track 3b1 exit-gate submission" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Verdict: ESCALATE
+
+**File:** `/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/scratchpad/verdict-track3b1-identity-promotion-core-retry4.json`
+
+`verdict: "escalate"`, `artifact_type: "spec@1"`, `retry_count: 4`, `confidence: high`. Escalation is triggered by protocol (retry_count 4 &gt; 3), not by a defect.
+
+### Honest answer to the question you actually asked
+
+**Yes — this spec is in genuinely good shape. If the process continued, I would expect it to pass a 5th submission.** I did not find a fifth defect, and I looked.
+
+I read the spec fresh from disk (155KB, 25 criteria, 7 api_surface entries) and hand-verified every falsifiable claim it makes about the codebase. **Every single source citation is correct** — not approximately, exactly. `walk.rs:115-118` for the `index.platform.insert`, `identity.rs:267-272` for the candidates loop, `resolve.rs:126-133` for `PackageConfig`, `error.rs:87-90` for `AmbiguousName`, `aggregate.rs:164-176` for the signature. I checked roughly 35 line-range citations across 9 files and found zero that were wrong or stale.
+
+The four gate conditions:
+- **Testable criteria** — pass. A regex sweep for vague-language markers across all 25 criteria returned zero hits. Several criteria (AC-04, AC-07, AC-09, AC-21, AC-24) explicitly name a wrong implementation that would pass a weaker reading, which is stronger than the bar requires.
+- **No TBDs** — pass. Zero matches document-wide.
+- **Error cases flagged** — pass. 13 criteria carry `is_error_case: true`, consistently assigned; the AC-16/AC-17 a/b splits fixed the one place a compound criterion mixed flags.
+- **Scope** — pass, but arguably. See below.
+
+I also re-verified the three items the last round fixed, independently: AC-22's backtick-corrected substring matches exactly once at `walk.rs:161` (the correction was necessary — the un-backticked form matches zero times); both of AC-25's stale substrings are genuinely present in `track-f-resolution-extraction.json`'s AC-F6 today, so the round-9 addition of substring (b) was a real catch; and stale-key rewrite location (5) is now fully specified with a correct branch (i)/branch (ii) split.
+
+Beyond re-checking, I ran four fresh adversarial traces — whether the new `resolve_human` first branch breaks AC-01/03/06 (it doesn't; traced all three end-to-end), whether removing the block at `identity.rs:257-261` is safe (it is; the one behavior change is a strict improvement no criterion forbids), whether AC-20 item (5) holds against the six real test call sites (it does), and whether the Pass-2-only ambiguity check leaves a gap (it doesn't). All clean.
+
+### Two things a human should specifically know
+
+**1. Scope is the one genuinely arguable condition.** 25 criteria, 5 production files, three new build-local data structures, a new public struct field and method, a return-type change touching 2 call sites and 6 tests, and ~12 new fixtures. I judged it as passing because it's one indivisible mechanism — AC-23 is unsatisfiable unless the whole chain lands together, so any split produces a half-state that fails its own criteria. If you disagree, the only clean seam is AC-01/02/03/16a/16b (index.prefixed population + resolve_human fix) as slice one, everything else as slice two.
+
+**2. The deployment-ordering constraint is real, correct, and unenforced by any acceptance criterion.** Shipping this without SPEC-TRACK3B2 makes `callisto matrix` and `callisto publish` silently coalesce two now-legally-distinct promoted packages under one report key. I verified the premise: `track-g-matrix-napi-maturin.json` does contain the exact justifying sentence the spec quotes, and this spec's own AC-04/07/09/21 make it false. The spec documents this correctly and scopes it out defensibly — but passing all 25 criteria is explicitly *not* evidence of production safety, SPEC-TRACK3B2 is not yet drafted, and nothing mechanical blocks the deploy. Confirm a real release gate exists outside the spec before approving.
+
+One schema note: `shared/schemas/verdict@1.json` constrains `verdict` to `[pass, fail]`. I emitted `escalate` per your escalation protocol — a deliberate, protocol-directed deviation, recorded in the verdict's `reasoning` field.</result>
+<usage><subagent_tokens>110305</subagent_tokens><tool_uses>25</tool_uses><duration_ms>372122</duration_ms></usage>
+</task-notification>
