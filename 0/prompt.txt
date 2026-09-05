@@ -1,0 +1,58 @@
+Base directory for this skill: /Users/gabe/.claude/plugins/cache/orin-dx-agent-plugins/trace/1.2.4/skills/trace
+
+# Trace Research Skill
+
+<overview>
+Trace builds a documented evidence base before committing to a solution direction. It separates what is known from what is assumed, surfaces contradictions, and delivers a recommendation a spec writer can act on directly.
+
+One skill, one pipeline — not a menu of separately-invokable modes. `recon` maps sources (internal specs/docs/code, dependency manifests, external references), `reader` reads only what the map points at, `synthesizer` resolves the findings into one report, `risk-assessor` reviews the resulting approach. The pipeline narrows itself to what's asked: a question answerable from internal sources alone gets `scope: internal` from recon and never touches external search; a request for risk review of an already-decided approach can hand `risk-assessor` that approach directly.
+</overview>
+
+---
+
+<language_agnostic_note>
+Recon detects the workspace language from manifest files present (Cargo.toml → Rust, package.json → Node/TypeScript, pyproject.toml → Python, etc.), then loads the appropriate shared/references search heuristics for that ecosystem. The skill is not language-specific.
+</language_agnostic_note>
+
+---
+
+<subagent_dispatch_matrix>
+
+| Agent | Role | Model / Effort | Delegate When |
+| :--- | :--- | :--- | :--- |
+| **recon** | Source mapper | haiku / low | Start every research task here. Maps internal sources, external keywords, and existing implementations. |
+| **reader** | Evidence extractor | sonnet / medium | Given the source map, reads each source and extracts findings with citations and confidence levels. |
+| **synthesizer** | Recommendation producer | sonnet / medium | Given findings, synthesizes a research-report@1 with a falsifiable recommendation and confidence level. |
+| **risk-assessor** | Risk prioritizer | sonnet / medium | Given a proposed approach or research-report@1, identifies and prioritizes technical risks with mitigations. |
+
+</subagent_dispatch_matrix>
+
+---
+
+<output>
+All research concludes in a `research-report@1` (schema: `shared/schemas/research-report@1.json`). The report distinguishes:
+- **confirmed** — read directly from source
+- **likely** — strong inference from evidence
+- **assumed** — unverified, flagged explicitly
+
+The recommendation is falsifiable: a spec or plan written from it will not be surprised by implementation reality.
+</output>
+
+
+ARGUMENTS: Research question: What should callisto's native-artifact / multi-target distribution model be?
+
+Context: callisto is a Rust-based, polyglot (Cargo/npm/PyPI) release-engineering CLI at /Users/gabe/Projects/callisto. It has a `matrix` feature (crates/callisto-graph/src/matrix.rs, crates/callisto-model/src/matrix.rs) that auto-discovers native build targets (napi-rs platform triples, maturin targets) from manifests and resolves each to hostRunner/useCross/artifactName for a GitHub Actions job matrix. We already know, from prior investigation this session:
+- The napi-rs/maturin publish-side modeling (platform-stub npm packages via ManifestRole::Platform, ordered publish of platform-before-main packages) is already correct in callisto-graph/src/commands/publish.rs and publish_client.rs.
+- There is NO artifact-placement mechanism anywhere: nothing copies a built binary from a CI build job into the correct platform-stub package directory before `callisto publish` runs. This was scoped once in `.claude/specs/callisto-matrix.md` §6.2 ("artifact routing — placement before publish", a `gh run download --name X --dir Y` pattern) and §7 (a proposed `callisto-build-action` driving `napi build --platform --release`), but never implemented.
+- `crates/callisto-model/src/matrix.rs`'s `PlatformTargetKind` enum currently only has `Napi`/`Maturin` variants; its own doc comment says it deliberately omits a `DotnetAot` variant as "out of scope for this spec."
+- Separately, callisto already has a `PublishTarget` enum (used in `callisto.toml`'s `publish-to` config, referenced in `crates/callisto-graph/src/commands/publish_client.rs`/`publish.rs`) that includes at least `Cargo`/`Npm`/`PyPi` and, per an earlier audit finding referenced in `.claude/plans/ACTIVE.md`'s "Post-Track-G" entry, also `NuGet` and `GitHubRelease` variants — the audit found `GitHubRelease` and `NuGet` were "silently no-opping the real publish" at the time (bug #2 in that entry, since fixed to at least fail loud via E119 rather than silently no-op — verify current real behavior, don't trust the historical note as still-accurate).
+
+The maintainer now wants to think much more broadly than napi/maturin-in-npm/PyPI. Concretely, they raised two additional scenarios callisto doesn't clearly support today: (1) publishing prebuilt Rust CLI binaries as GitHub Release assets per platform (the "cargo-dist" problem — build once per target triple, attach as release assets, not published to crates.io as a library), and (2) publishing Go (or any language's) prebuilt binaries into a Homebrew tap (a formula file, typically referencing a versioned tarball URL + checksum per platform, hosted in a separate `homebrew-*` tap repo) — a distribution channel that isn't even a package registry in the traditional sense.
+
+Research goals:
+1. What do the best existing tools in this exact space already do well, and what's their core abstraction? Specifically: goreleaser (the de facto standard for "build N platform binaries → GitHub Release assets → Homebrew tap formula update → other package managers", used heavily in the Go ecosystem but language-agnostic in practice), cargo-dist (the Rust-ecosystem-native equivalent — cross-compiled CLI binaries → GitHub Release + installers + Homebrew), and napi-rs's own official project template/conventions for its own build-matrix-to-npm-publish flow (to compare against what callisto already models). For each, identify: how do they separate "what to build, for which target" from "where the built artifact gets distributed"? Is there a shared conceptual split between a build/target matrix and a set of distribution channels/sinks, or do they conflate them?
+2. What is callisto's current `PublishTarget` enum's actual full variant set today (read the real code, not the historical audit note) and what does each variant currently do at publish time — which are real, which are still stubs/no-ops, which don't exist at all (confirm whether `GitHubRelease`-as-a-target for prebuilt CLI binaries, as opposed to source-tag-release-notes which callisto already does via `callisto tag`/`gh release create`, is even the same code path or a totally different concept)?
+3. Is there a clean, minimal generalization of callisto's existing `PlatformTargetKind`/`PlatformTarget` (native library cross-compilation matrix) plus `PublishTarget` (where a package's artifacts go) that would cover: napi/maturin platform packages (current), prebuilt Rust/Go/any-language CLI binaraies as GitHub Release assets, and Homebrew tap formula generation+update — without turning callisto into a full goreleaser reimplementation? Or is Homebrew-tap-formula-generation specifically a large enough feature (a new artifact TYPE: a generated/templated formula file pushed to a *different* repo than the one being released) that it's a poor fit for callisto's current single-repo-workspace model, and worth flagging as an explicit non-goal rather than something to build?
+4. What's the honest scope boundary callisto should draw, given its own stated design philosophy in this repo (search docs/00-design.md, docs/01-spec.md, ARCHITECTURE.md, and CLAUDE.md for any explicit statement of what callisto is/isn't trying to be — e.g. is there language anywhere about "callisto orchestrates, it doesn't replace native tools" or similar, given this session already established a "lean on native tool" preference from the maintainer)?
+
+Produce a research-report@1 with an explicit, falsifiable recommendation and confidence level, clearly distinguishing confirmed internal facts (with file:line) from external prior-art knowledge (goreleaser/cargo-dist/napi-rs conventions) from inference. This report will directly feed a canon:draft-spec pass for a real spec, so surface open questions the spec author will need answered rather than silently picking an answer where genuine ambiguity exists.
