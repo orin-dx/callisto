@@ -1,0 +1,34 @@
+<task-notification>
+<task-id>a5e12541e564305d0</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/ae412d01-e061-4047-918b-0d1df3d4d118/tasks/a5e12541e564305d0.output</output-file>
+<status>completed</status>
+<summary>Agent "Review T11 commit" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Good, `write_version` at line 176 already uses `_permit` and no atomic_write — matches expectation.
+
+## Review Findings
+
+**Note on hazards reference**: `shared/references/rust-hazards.md` does not exist anywhere in this repository or filesystem (verified with `find`). I proceeded using the project's own documented non-negotiables (CLAUDE.md: `unsafe_code = "forbid"`, atomic persistence via `atomic_write`, CST-preserving edits) plus standard Rust idiom checks (clippy, unused-param conventions), since the referenced file could not be loaded. This should be flagged to whoever owns the skill-reference path.
+
+**What I verified:**
+- Diff touches only `crates/callisto-manifests/src/python.rs`, exactly `update_dependency_spec`, its 1 repaired test, and 2 new tests — matches task description.
+- `cargo test -p callisto-manifests --lib python::` — 34/34 pass, including all 4 call sites of `update_dependency_spec` in the test module.
+- `cargo clippy -p callisto-manifests --lib -- -D warnings` — clean, no warnings.
+- Independently confirmed the central claim: diffed pre-commit (`a92341d^`) vs post-commit (`a92341d`) versions of `update_dependency_spec` at `crates/callisto-manifests/src/python.rs:305-308`. The `_ =&gt; return Ok(())` arm of the `match new { ... }` is byte-identical in both versions and returns before `updated` is ever set, before `self.document` is mutated, and before the removed `atomic_write` call site (which sat at the very end of the function) was ever reached. The "already green, never reached the removed call" claim is genuine, not accidentally masking a regression.
+- Sibling-gap check: grepped all `update_dependency_spec(` call sites in the test module (lines 1015, 1049, 1087, 1233). Only line 1015 (`updates_pep621_dependencies_array`) reads disk afterward and needed the `persist()` insertion — confirmed present. The other three (`update_dependency_spec_does_not_touch_disk_until_persist_called`, `update_dependency_spec_returns_err_when_dep_not_found`, and the new `update_dependency_spec_non_range_variant_is_ok_and_persist_is_a_no_op`) either check error paths without reading disk or already call `persist()` themselves.
+- Checked the plan file (`.claude/plans/manifest-persist-001-plan.json`): `PyprojectToml::update_optional_dependencies` (line ~479, still contains `atomic_write`) is explicitly T12, a separate future task — not a missed sibling within T11's scope.
+- `_permit` rename is consistent with the already-merged `write_version` (line 176), which uses the identical pattern.
+
+```json
+{
+  "status": "approved",
+  "issues": [],
+  "sibling_gaps": [],
+  "reasoning": "Scope is exactly the named function plus its 3 tests. Both new tests assert meaningful invariants (disk untouched until persist(), and persist() of an untouched document reproduces identical bytes) rather than trivial return-value checks. The repaired test's persist() call is correctly positioned between the mutation call and the disk read. The central verification claim (non-Range/non-Exact early return was and remains unreachable to the removed atomic_write call) was independently confirmed via diff of pre/post commit source, not taken on faith. No other test in the module reads disk after calling update_dependency_spec without already having a persist() call. PyprojectToml::update_optional_dependencies still has atomic_write but that's explicitly T12 in the plan, not a gap in T11's scope. Full test suite for the module passes (34/34) and clippy is clean. Only caveat: shared/references/rust-hazards.md does not exist in this filesystem, so hazard-taxonomy checking fell back to project-documented invariants (CLAUDE.md) and standard clippy/idiom review rather than the specified reference document."
+}
+```
+
+Files relevant to this review: `/Users/gabe/Projects/callisto/crates/callisto-manifests/src/python.rs` (lines 176, 296-380, 987-1103, 1204-1240), `/Users/gabe/Projects/callisto/.claude/plans/manifest-persist-001-plan.json`.</result>
+<usage><subagent_tokens>53626</subagent_tokens><tool_uses>24</tool_uses><duration_ms>118505</duration_ms></usage>
+</task-notification>
