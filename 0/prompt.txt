@@ -1,0 +1,5 @@
+<task-notification>
+<task-id>bcwf1b0f7</task-id>
+<summary>Monitor event: "just ci live progress with step timestamps"</summary>
+<event>[4 events suppressed — output rate too high. Consider using TaskStop to restart this monitor with a more selective filter.]</event>
+</task-notification>
