@@ -1,0 +1,72 @@
+Continue the callisto release-engineering remediation plan at `.claude/plans/ACTIVE.md` — read it
+first for full history and conventions. Every track through Phase 3 is done (Track 3a/3b1, 1, 2, 9,
+4, 6-mechanical, 5). This session picks up **Track 7 — git revwalk bounding & redundant I/O**, the
+next item in Phase 4 of the plan file loaded at session start (`.claude/plans/shimmying-giggling-hickey.md`
+if still present, or ask the user for it — otherwise the scope below is self-contained).
+
+Tier: **lighter TDD loop, one finding per commit** (red test confirmed failing → minimal fix → green
+→ independent read-only review agent, explicitly told not to run destructive git commands → full
+`just ci` → commit). Do not batch unrelated findings into one commit. This matches how Track 9 and
+Track 6-mechanical were done — see ACTIVE.md for the exact precedent.
+
+## Findings, verified live in code as of 2026-08-23 (re-verify before trusting further — code may
+have moved)
+
+**1. Unbounded double revwalk — `crates/callisto-vcs/src/lib.rs:312`,
+`commits_since_with_pathspec`.** Confirmed still doing two full, unbounded `rev_walk(...).all()`
+calls: one from HEAD, one from `since`, then building a `HashSet` of the `since`-reachable side and
+filtering by exclusion. This walks the *entire* repo history every time regardless of how close
+`since` is to HEAD. Original audit measured ~2.05s vs ~13ms (100 packages/50k commits) — over 99%
+wasted work. `gix` exposes a real bounded-walk API (stop the HEAD walk once every commit reachable
+from `since` has been excluded, rather than walking to the repo's first commit) — use it instead of
+the two-full-walks-then-exclude approach.
+
+Important: a separate correctness bug in this exact function (a `break` vs `continue` bug losing
+commits from branchy history — see the comment already in the function and commit `7e3391bc`) is
+**already fixed**. Don't re-litigate it — but the bounded-walk rewrite must preserve that fix's
+invariant (topological walk can visit `since` before emitting all in-queue commits on branches that
+diverged before it), which is exactly why the original audit flagged this as needing an independent
+review + before/after re-measurement pass rather than a naive bound. Get a second pair of eyes
+(review agent) specifically on this invariant before merging.
+
+**2. Per-package glob-matcher recompile — `crates/callisto-graph/src/tags.rs`, `matching_tags`
+(called from `select_from_tags`, called once per package in `TagIndex::build`'s loop).** The tag
+*list fetch* itself was already deduplicated in a prior session (`fetch_all_tags` is called once for
+the whole build, not per package — see the comment at `tags.rs:111-118`). What's still live: every
+call to `matching_tags` compiles a fresh `globset::Glob::new(...).compile_matcher()` and does a full
+linear scan of the shared tag list, once per package. At 1000 packages / 41k tags the original audit
+measured ~640ms wasted here. Fix: compile each package's glob matcher once (or cache by template
+string, since multiple packages may share a template) rather than per package per build.
+
+**3. Commit-inference pathspec bug — `crates/callisto-graph/src/aggregate.rs:177`.** Confirmed:
+pathspecs passed to inference are built from `pkg.manifests.iter().map(|m| m.path.clone())` — the
+manifest *file* path (e.g. `crates/foo/Cargo.toml`), not the package's source *directory*. This means
+commit-based inference only ever matches commits that touch the manifest file itself, never real
+source changes under the package directory — making the `inference` feature a near-total no-op for
+its actual purpose. Fix the pathspec to cover the package's directory (mirroring how
+`commits_since_with_pathspec`'s other callers scope pathspecs), regardless of whether `inference`
+becomes default-on (that's a separate, deliberately-unresolved product decision — don't touch feature
+defaults as part of this fix).
+
+## Not yet re-verified this session — check before acting, may be stale
+
+- Workspace-root `Cargo.toml` read up to 3× per command; npm/cargo manifests re-read 2-3× per graph
+  build (redundant I/O, smaller than findings 1-2
+- Explicitly out of scope regardless: Cargo workspace-inherited dependency rewrites bypassing
+  write-batching is a known, deliberately-deferrede Spec A/Spec B in
+  ACTIVE.md) — don't re-plan it, just don't touch it.
+
+## Process
+
+1. Re-verify each finding against current code before starting (line numbers drift).
+2. One finding, one red test, one fix, one commit e (1 and 2 are
+   independent of each other; 3 is independent of both).
+3. For finding 1 specifically: get an independent -history invariant
+   before considering it done, and re-measure before/after (packages/commits/tags counts matching
+   the original audit's methodology if possible, sl number, not a guess).
+4. `just ci` must pass clean before any commit.
+5. Update `.claude/plans/ACTIVE.md` with Track 7'sng the existing
+   Track 9 / Track 6-mechanical entry format (what was found, what was fixed, commits, measured
+   before/after where applicable).
+
+Let's make sure we have a clear branch from latest main
