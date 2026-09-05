@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bqlnwtytd</task-id>
+<tool-use-id>toolu_01RKZZ6EUMUZEhmkC1dbKdat</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/b90cda92-db13-4c63-8d7f-c9fa7d9196ab/tasks/bqlnwtytd.output</output-file>
+<status>completed</status>
+<summary>Background command "Compile-check callisto-cli all targets" completed (exit code 0)</summary>
+</task-notification>
