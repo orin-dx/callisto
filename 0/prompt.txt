@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>b25p3uaht</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/c0ad64b2-6440-4937-8328-8d9fd9db278c/tasks/b25p3uaht.output</output-file>
+<status>completed</status>
+<summary>Background command "rtk git push origin release-pipeline-and-matrix-hardening" completed (exit code 0)</summary>
+</task-notification>
