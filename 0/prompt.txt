@@ -1,0 +1,59 @@
+Some context from a preliminary review by codex:
+
+Claude is still refining specs, not yet implementing code/workflows in this checkout: the only current changes are the six spec JSON
+  files. They parse successfully, but I would pause implementation until these are reconciled.
+
+  ### Critical — 001/002/003 now contradict each other
+
+  - Status: CONFIRMED
+  - Location: SPEC-RELEASE-PLAN-DURABILITY-001:10,25; SPEC-RELEASE-SOURCE-PROVENANCE-002:4; SPEC-GITHUB-RELEASE-HARDENING-003:13,38
+  - Issue: 001 explicitly forbids the plan-job → execution-job split and accepts a same-shell plan file. 003 requires exactly that split,
+    and 002 says its SHA check becomes meaningful once 001’s split ships.
+
+  - Impact: implementation order and trust boundary are undefined. Same-job disk handoff does not protect reviewed intent from later
+    shell/action code.
+
+  - Recommendation: retain the architecture in PR #36: 001 owns the split and immutable artifact-ID/digest handoff; 002/003 depend on it.
+
+  ### High — stale-plan validation can publish a newly recomputed plan
+
+  - Status: CONFIRMED
+  - Location: SPEC-RELEASE-PLAN-DURABILITY-001:20,35
+  - Issue: AC-002 says a supplied plan mismatch blocks mutation; AC-005 then says validation failure falls back to full recomputation. In
+    an apply command, that permits publishing a different, unreviewed plan.
+
+  - Recommendation: on an explicit durable-plan apply, mismatch must be terminal before credentials/mutation. Fresh recomputation is
+    valid only for read-only reconciliation or an explicitly new planning run.
+
+  ### High — supply-chain record may not describe the audit that ran
+
+  - Status: CONFIRMED
+  - Location: SPEC-SUPPLY-CHAIN-REPRODUCIBILITY-004:15,40
+  - Issue: it records the revision from a new rustsec::Database::fetch() call, then runs cargo-deny separately. Nothing requires cargo-
+    deny to consume that same database checkout, so the recorded SHA can differ from the data actually audited.
+
+  - Recommendation: make one advisory-db checkout authoritative and have cargo-deny audit that exact checkout, or obtain the revision
+    directly from the database cargo-deny actually used.
+
+  ### Medium — provenance policy can become dead data
+
+  - Status: CONFIRMED
+  - Location: SPEC-RELEASE-SOURCE-PROVENANCE-002:29,34
+  - Issue: SignaturePolicy has a shape, but no required placement in the plan/config or enforcement point. A serializable unused type
+    would satisfy the letter while adding no protection.
+
+  - Recommendation: place a ProvenancePolicy in the plan’s resolved policy context; require execution to enforce it before mutation and
+    include verification evidence in the release report.
+
+  ### Medium — the requirements-authority problem has reappeared
+
+  - Status: CONFIRMED
+  - Location: all six current specs retain linked_requirement: REQ-*
+  - Issue: there are still no backing requirement files. Claude’s branch has not incorporated the authority/index decision in PR #36
+    (https://github.com/orin-dx/callisto/pull/36).
+
+  - Recommendation: merge or rebase onto #36 before continuing, rather than maintaining two incompatible “source of truth” revisions.
+
+  The strong parts are the concrete environment-review check, action SHA pin verification, and the much more specific lane-policy work.
+  But the three high-priority issues above should be corrected first; otherwise implementation will encode contradictory security
+  semantics.
