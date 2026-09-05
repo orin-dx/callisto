@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>b488la452</task-id>
+<summary>Monitor event: "PR #11 CI checks (fix-publish-order-dev-deps)"</summary>
+<event>Clippy Lints (Moon &amp; Just): pass
+Security &amp; Advisory Audit (Moon &amp; Just): pass</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
