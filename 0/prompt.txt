@@ -1,0 +1,5 @@
+<task-notification>
+<task-id>btrmpcn2r</task-id>
+<summary>Monitor event: "continue watching cli+model test to actual completion"</summary>
+<event>[Monitor timed out — re-arm if needed.]</event>
+</task-notification>
