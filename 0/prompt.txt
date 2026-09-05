@@ -1,0 +1,14 @@
+<task-notification>
+<task-id>bh1cugz14</task-id>
+<summary>Monitor event: "watch PR #5 CI checks until all complete"</summary>
+<event>Validate Changesets &amp; Workspace Status: SUCCESS
+ALL CHECKS TERMINAL
+Validate Changesets &amp; Workspace Status: SUCCESS
+Clippy Lints (Moon &amp; Just): SUCCESS
+Test Suite &amp; WASM Check (ubuntu-latest): SUCCESS
+Test Suite &amp; WASM Check (macos-latest): SUCCESS
+Code Coverage &amp; Test Report: SUCCESS
+Code Formatting (Moon &amp; Just): SUCCESS
+Security &amp; Advisory Audit (Moon &amp; Just): SUCCESS</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
