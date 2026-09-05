@@ -1,0 +1,49 @@
+<task-notification>
+<task-id>a96072cd85d6d6f17</task-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8a85b651-0c9a-44fa-9e0a-ac694c4409e1/tasks/a96072cd85d6d6f17.output</output-file>
+<status>completed</status>
+<summary>Agent "Final lambda:exit-gate re-verification for SPEC-002" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Stale watchers cleared. The verdict stands as issued — all evidence is now in.
+
+## verdict@1 — PASS
+
+```json
+{
+  "verdict": "pass",
+  "confidence": "high",
+  "artifact_type": "implementation",
+  "retry_count": 0,
+  "verdict_summary": "AC-001..AC-011 all implemented and verified against code read from scratch. 28+9 Rust tests pass, 4/4 action scripts exit 0, mutation re-run clean (60 mutants, 0 survivors). Two non-blocking gaps: no test pins the INPUT_PUBLISH guard placement; stale native-{triple} strings survive in 5 untouched docs.",
+  "blockers": []
+}
+```
+
+**Final evidence, all run for real on branch `track-9-matrix-artifact-placement` at `17d4212`:**
+
+| Check | Result |
+|---|---|
+| `callisto-graph --lib matrix::` | 28/28 passed |
+| `callisto-cli --lib render` | 9/9 passed |
+| 4 action shell scripts | all exit 0 |
+| cargo-mutants on `matrix.rs` | 60 tested, 46 caught, 14 unviable, **0 survivors** |
+
+The four AC-001 tests all pin the final format explicitly: `artifact_name_for_package_platform_embeds_package_name_and_platform_arch_abi` (both abi arms), `build_platform_target_combines_role_and_ci_table` (call site), and `build_matrix_report_same_triple_two_packages_have_distinct_artifact_names` (the `pkg-a-darwin-arm64`/`pkg-b-darwin-arm64` collision case).
+
+**Two things the parent should carry forward.**
+
+*The mutation evidence on disk was stale and would have been misleading.* `/Users/gabe/Projects/callisto/mutants.out/` is dated 25 Aug 10:53 — before both `d86e6c35` and `87682d58` — and its `caught.txt` names `artifact_name_for_package_triple`, a function that no longer exists. Had I accepted it, the `match abi` branch introduced by the final format change would have passed the gate with zero mutation coverage. The fresh scoped run in `scratchpad/mut` supersedes it; the root `mutants.out/` should be deleted or regenerated so the next reader isn't misled.
+
+*The stale-string answer you asked for.* `.github/` is clean — zero triple-shaped artifact strings in `action.yml` or any test script, and no trace of either superseded format in any touched file. Worth knowing that my first two sweeps were wrong: I ran `rg` without `--hidden`, which silently skips `.github/` and `.claude/` — precisely where the touched files live — so those passes proved nothing. The corrected sweep found the old `native-{triple}` format surviving in five files, none named by any criterion:
+
+- `/Users/gabe/Projects/callisto/docs/01-spec.md:8557` and `/Users/gabe/Projects/callisto/docs/00-design.md:2113` — live design docs asserting a format the code can no longer emit
+- `/Users/gabe/Projects/callisto/.claude/specs/track-g-matrix-napi-maturin.json:129` — a superseded spec criterion that now directly contradicts SPEC-002; a future drift check against Track G will fire on it
+- `.claude/plans/PLAN-002.json:57` and `.claude/plans/track-g-matrix-napi-maturin.plan.json` — historical records, lower priority
+
+SPEC-002's `non_goals[17]` disclaims the old format as a contract, so none of these fails a criterion — but the first three deserve a follow-up cleanup commit.
+
+Also unfixed and untested: AC-003's requirement that the loop sit *inside* the `INPUT_PUBLISH` guard has no regression test, because `test_native_artifact_placement.sh` extracts the loop body between the `::group::` markers and runs it detached from its surroundings. Moving the loop outside the guard would break nothing. Cheapest fix is a fifth assertion grepping `action.yml` for the guard line appearing above the `::group::Placing Native Build Artifacts` marker.
+
+Unrelated to this spec: `Cargo.lock` carries an uncommitted 0.4.0→0.4.1 bump and `.claude/plans/PLAN-002.json` is untracked. Whole-workspace regression coverage still rests on the `just ci` running elsewhere — my scoped runs deliberately used an isolated `CARGO_TARGET_DIR` after the first attempts deadlocked 22 minutes on its build lock.</result>
+<usage><subagent_tokens>124352</subagent_tokens><tool_uses>69</tool_uses><duration_ms>1654955</duration_ms></usage>
+</task-notification>
