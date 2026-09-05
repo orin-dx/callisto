@@ -1,0 +1,1 @@
+Can you give me a report of what you found, friendly, succinct and to the point, No wordy prose, no AI slop. Don't forget I'm a Ruby noob and that I want to get a better handle on how we're achitecting our code. Give more context than less, err on halpping me understand where it all fits in the scope of the codebase
