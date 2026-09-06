@@ -237,6 +237,16 @@ pub enum GraphError {
     )]
     ReleaseIntentStale,
 
+    #[error("fixed/linked group `{group}` did not converge to one target version in the merged release commit: {}", .members.iter().map(|(id, v)| format!("{}={}", id.display_name(), v.render())).collect::<Vec<_>>().join(", "))]
+    #[diagnostic(
+        code(E155),
+        help("A cascade-authorized group must land every member on the same target version; regenerate the release PR instead of hand-editing manifests.")
+    )]
+    ReleaseCommitCascadeDivergent {
+        group: GroupName,
+        members: Vec<(PackageId, callisto_model::Version)>,
+    },
+
     #[error("artifact manifest is not authorized by this release intent: {source}")]
     #[diagnostic(
         code(E136),

@@ -365,3 +365,205 @@ fn release_plan_rejects_a_commit_that_is_not_checked_out_and_writes_nothing() {
         "a stale release commit must not produce an intent that could later be executed; current release commit was {release_commit}"
     );
 }
+
+/// Builds a two-package workspace where both packages belong to the same
+/// fixed group, mirroring this repository's own `[[fixed-group]] name =
+/// "workspace"` configuration -- a shape `release_commit_fixture` above
+/// (deliberately one ungrouped package) never exercises. `solve_cascade`
+/// converges every fixed-group member to one shared target the moment any
+/// member bumps (Track 1), so a changeset naming only `crate-a` legitimately
+/// bumps `crate-b` too, with no changeset ever naming it directly.
+fn fixed_group_release_commit_fixture() -> (TempDir, String) {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    git(root, &["init", "-b", "main"]);
+    git(root, &["config", "user.name", "Callisto Test"]);
+    git(root, &["config", "user.email", "test@example.invalid"]);
+    git(root, &["config", "commit.gpgsign", "false"]);
+    git(root, &["config", "tag.gpgsign", "false"]);
+    git(
+        root,
+        &["remote", "add", "origin", "https://github.com/example/fixed-group.git"],
+    );
+
+    fs::write(
+        root.join("Cargo.toml"),
+        "[workspace]\nmembers = [\"crates/a\", \"crates/b\"]\nresolver = \"2\"\n",
+    )
+    .unwrap();
+    for (name, dir_name) in [("crate-a", "a"), ("crate-b", "b")] {
+        fs::create_dir_all(root.join(format!("crates/{dir_name}/src"))).unwrap();
+        fs::write(
+            root.join(format!("crates/{dir_name}/Cargo.toml")),
+            format!("[package]\nname = \"{name}\"\nversion = \"0.1.0\"\nedition = \"2021\"\n"),
+        )
+        .unwrap();
+        fs::write(root.join(format!("crates/{dir_name}/src/lib.rs")), "\n").unwrap();
+    }
+    git(root, &["add", "."]);
+    git(root, &["commit", "-m", "initial workspace"]);
+
+    let init = callisto(root, &["init", "--yes"]);
+    assert!(
+        init.status.success(),
+        "init failed: {}",
+        String::from_utf8_lossy(&init.stderr)
+    );
+    let config_path = root.join("callisto.toml");
+    let config = fs::read_to_string(&config_path).unwrap();
+    fs::write(
+        config_path,
+        format!(
+            "{config}\n\
+            [[package]]\nmatch = \"cargo/crate-a\"\npublish-to = [\"crates-io\", \"github-release\"]\n\n\
+            [[package]]\nmatch = \"cargo/crate-b\"\npublish-to = [\"crates-io\", \"github-release\"]\n\n\
+            [[fixed-group]]\nname = \"demo\"\nmembers = [\"crate-a\", \"crate-b\"]\n"
+        ),
+    )
+    .unwrap();
+    git(root, &["add", "."]);
+    git(root, &["commit", "-m", "configure callisto"]);
+
+    // `fixed_group_target` aligns a group's converged version to an already-
+    // released member's base version; with zero prior tags anywhere in the
+    // group it falls back to a 0.0.0 baseline instead, which for a 0.1.0 ->
+    // minor bump coincidentally re-lands on 0.1.0 and looks like a no-op --
+    // a real, separate, untested gap in the zero-history case that the real
+    // `callisto` repository's own always-previously-released fixed group
+    // never exercises. Seed both members with a prior tag so this fixture
+    // matches that same already-released condition rather than tripping
+    // over a second, unrelated bug while testing this one.
+    git(root, &["tag", "crate-a@0.1.0"]);
+    git(root, &["tag", "crate-b@0.1.0"]);
+
+    let add = callisto(
+        root,
+        &[
+            "add",
+            "--package",
+            "crate-a:minor",
+            "--summary",
+            "Ship a change to crate-a",
+        ],
+    );
+    assert!(
+        add.status.success(),
+        "add failed: {}",
+        String::from_utf8_lossy(&add.stderr)
+    );
+    git(root, &["add", "."]);
+    git(root, &["commit", "-m", "add release changeset"]);
+
+    let version = callisto(root, &["version"]);
+    assert!(
+        version.status.success(),
+        "version failed: {}",
+        String::from_utf8_lossy(&version.stderr)
+    );
+    let bumped_b = fs::read_to_string(root.join("crates/b/Cargo.toml")).unwrap();
+    assert!(
+        bumped_b.contains("0.2.0"),
+        "the fixture assumes plan_version's own cascade converges crate-b onto crate-a's target; got: {bumped_b}"
+    );
+
+    for entry in fs::read_dir(root.join(".changeset")).unwrap() {
+        let path = entry.unwrap().path();
+        if path.file_name().is_some_and(|name| name != "README.md")
+            && path.extension().is_some_and(|extension| extension == "md")
+        {
+            fs::remove_file(path).unwrap();
+        }
+    }
+    git(root, &["add", "-A"]);
+    git(root, &["commit", "-m", "release crate-a and crate-b 0.2.0"]);
+    let release_commit = git(root, &["rev-parse", "HEAD"]);
+    git(root, &["checkout", "--detach", &release_commit]);
+    (dir, release_commit)
+}
+
+#[test]
+fn fixed_group_sibling_bump_with_no_direct_changeset_is_authorized() {
+    let (dir, release_commit) = fixed_group_release_commit_fixture();
+    let root = dir.path();
+    let external = tempfile::tempdir().unwrap();
+    let intent = plan_intent_no_entry_assertions(root, external.path(), &release_commit);
+
+    let value: serde_json::Value = serde_json::from_slice(&fs::read(&intent).unwrap()).unwrap();
+    let entries = value["decision"]["entries"].as_array().unwrap();
+    assert_eq!(entries.len(), 2, "both fixed-group members must appear: {value}");
+
+    let by_package = |name: &str| entries.iter().find(|e| e["package"] == name).unwrap();
+    let a = by_package("cargo/crate-a");
+    let b = by_package("cargo/crate-b");
+    assert_eq!(a["targetVersion"], "0.2.0");
+    assert_eq!(b["targetVersion"], "0.2.0");
+    assert_eq!(a["reasons"][0]["kind"], "changeset");
+    assert_eq!(
+        b["reasons"][0]["kind"], "fixedGroup",
+        "crate-b was never named by a changeset -- it must be recorded as a fixed-group cascade, not silently dropped or misattributed: {value}"
+    );
+    assert_eq!(b["reasons"][0]["groupId"], "demo");
+}
+
+#[test]
+fn fixed_group_members_diverging_on_target_version_are_rejected() {
+    let (dir, _release_commit) = fixed_group_release_commit_fixture();
+    let root = dir.path();
+
+    // Simulate a tampered/corrupted merge commit: crate-b's manifest is
+    // hand-edited to a version its fixed-group sibling did not converge to.
+    // `plan_version` can never produce this shape on its own; a real release
+    // must still fail closed if it somehow reaches the repository looking
+    // like this, rather than silently trusting whatever the diff contains.
+    let manifest = root.join("crates/b/Cargo.toml");
+    let contents = fs::read_to_string(&manifest).unwrap();
+    fs::write(&manifest, contents.replace("0.2.0", "0.3.0")).unwrap();
+    git(root, &["add", "-A"]);
+    git(root, &["commit", "--amend", "--no-edit"]);
+    let tampered_commit = git(root, &["rev-parse", "HEAD"]);
+    git(root, &["checkout", "--detach", &tampered_commit]);
+
+    let out = root.join("must-not-exist.json");
+    let result = callisto(
+        root,
+        &[
+            "release",
+            "plan",
+            "--from-release-commit",
+            &tampered_commit,
+            "--out",
+            out.to_str().unwrap(),
+        ],
+    );
+    assert!(
+        !result.status.success(),
+        "divergent fixed-group targets must be rejected, not silently published: {}",
+        String::from_utf8_lossy(&result.stdout)
+    );
+    assert!(!out.exists());
+}
+
+fn plan_intent_no_entry_assertions(root: &Path, external: &Path, release_commit: &str) -> std::path::PathBuf {
+    let intent = external.join("release-intent.json");
+    let plan = callisto(
+        root,
+        &[
+            "release",
+            "plan",
+            "--from-release-commit",
+            release_commit,
+            "--out",
+            intent.to_str().unwrap(),
+        ],
+    );
+    assert!(
+        plan.status.success(),
+        "release plan failed: {}\nrelease-commit delta:\n{}",
+        String::from_utf8_lossy(&plan.stderr),
+        git(
+            root,
+            &["diff-tree", "--no-commit-id", "--name-status", "-r", "HEAD^", "HEAD",],
+        )
+    );
+    intent
+}
