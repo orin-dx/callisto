@@ -6,7 +6,7 @@
   "depends_on": [
     "SPEC-RELEASE-EXECUTION-012"
   ],
-  "purpose": "Expose the durable release architecture through a clear CLI and portable CI contract, and migrate Callisto's GitHub Actions release workflow to an artifact-bound, Environment-gated execution job without preserving legacy mutation bypasses.",
+  "purpose": "Expose the release architecture through a clear CLI and portable CI contract, and migrate Callisto's GitHub Actions release workflow to an artifact-bound, Environment-gated execution job without preserving legacy mutation bypasses.",
   "scope": "The release CLI command family, legacy-command transition, user-facing state-path and artifact inputs, GitHub Actions plan/build/execute topology, managed release-PR continuity, workflow permissions and action pinning, and documentation needed to operate the new flow. Provider-neutral planning, capability validation, state, and effects are owned by predecessor specs and consumed here.",
   "non_goals": [
     "Making GitHub Actions the only supported CI provider or moving core release authority into workflow shell scripts.",
@@ -22,7 +22,7 @@
   "acceptance_criteria": [
     {
       "id": "AC-001",
-      "criterion": "Callisto exposes `release plan`, `release inspect`, `release execute`, and `release reconcile` as explicitly named commands or an equally explicit namespaced interface with the four contracts above. `release plan` requires repeated exact qualified package selections or one named documented configuration-selection mode and embeds the resulting decision in the intent. `release execute` requires an explicit durable intent file path; it never searches the checkout, falls back to a default plan, accepts an inline JSON authority string, accepts a new selection, or recomputes a plan after validation fails. It accepts an explicit artifact-manifest path when the intent declares binary slots, and an optional explicit state path; omitting the latter uses SPEC-RELEASE-EXECUTION-012's outside-checkout default. Parse, trust, binding, capability, artifact, attestation, or state validation failures exit non-zero before credentials or mutating adapters are reached.",
+      "criterion": "Callisto exposes `release plan`, `release inspect`, `release execute`, and `release reconcile` as explicitly named commands or an equally explicit namespaced interface with the four contracts above. `release plan` requires repeated exact qualified package selections or one named documented configuration-selection mode and embeds the resulting decision in the intent. `release execute` requires an explicit intent file path; it never searches the checkout, falls back to a default plan, accepts an inline JSON authority string, accepts a new selection, or recomputes a plan after validation fails. It accepts an explicit artifact-manifest path when the intent declares binary slots, and an optional explicit state path; omitting the latter uses SPEC-RELEASE-EXECUTION-012's outside-checkout default. Parse, trust, binding, capability, artifact, attestation, or state validation failures exit non-zero before credentials or mutating adapters are reached.",
       "is_error_case": true
     },
     {
