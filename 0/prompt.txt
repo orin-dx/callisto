@@ -1,0 +1,181 @@
+I had another completely unrelated agent making changes. I'm so sorry....here's what happened:
+
+• The regression is exactly one incompatible command in the pinned action:
+
+  gh api --paginate … --slurp --jq …
+
+  Current GitHub CLI rejects --slurp together with --jq. The safe fix is to remove that combination and aggregate paginated JSON with
+  the already-available jq process instead. I’m checking the action’s existing test coverage and validating the replacement against
+  the installed gh before touching the dirty Callisto checkout.
+
+• Ran 2 commands · ctrl + t to view transcript
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• The existing regression test is the second failure: its fake gh api returns a canned value without asserting flags, so it certified
+  an invocation that the real CLI refuses. I’ll prepare the fix in an isolated local worktree at the exact failing revision—no changes
+  to your dirty Callisto checkout and no push.
+
+• Ran rtk git worktree add --detach /private/tmp/callisto-release-action-fix c1adbf37269f99fe924b89608efbe507781195f6
+  └ FAILED: git worktree add --detach /private/tmp/callisto-release-action-fix c1adbf37269f99fe924b89608efbe507781195f6
+    fatal: invalid reference: c1adbf37269f99fe924b89608efbe507781195f6
+
+
+• Ran rtk git clone --quiet https://github.com/orin-dx/callisto.git /private/tmp/callisto-release-action-fix && rtk git -C
+  │ /private/tmp/callisto-release-action-fix checkout --quiet c1adbf37269f99fe924b89608efbe507781195f6
+  └
+
+• Edited 2 files (+12 -1)
+  └ /private/tmp/callisto-release-action-fix/.github/actions/callisto-action/scripts/create-or-update-release-pr.sh (+4 -1)
+    74
+    75 -label_exists=$(gh api --paginate "/repos/${GITHUB_REPOSITORY}/labels?per_page=100" --slurp --jq 'any(.[][]; .name == env.INPUT
+        _PR_LABEL)')
+    75 +# `gh api` rejects --slurp together with --jq. `gh label list` owns its own
+    76 +# pagination, so this query works across current GitHub CLI releases without
+    77 +# mixing incompatible output modes.
+    78 +label_exists=$(gh label list --limit 1000 --json name --jq 'any(.[]; .name == env.INPUT_PR_LABEL)')
+    79  if [[ "$label_exists" != true ]]; then
+
+  └ /private/tmp/callisto-release-action-fix/.github/actions/callisto-action/tests/test_release_pr_contract.sh (+8 -0)
+     35    if [[ "$1" == api ]]; then echo "$LABEL_EXISTS"; return 0; fi
+     36 +  if [[ "$1 $2" == 'label list' ]]; then echo "$LABEL_EXISTS"; return 0; fi
+     37    if [[ "$1 $2" == 'pr create' ]]; then echo 'https://github.com/orin-dx/callisto/pull/99'; return 0; fi
+        ⋮
+  … Diff preview limited (ctrl + t to view transcript).
+
+• Ran rtk bash .github/actions/callisto-action/tests/test_release_pr_contract.sh && rtk git diff --check && rtk git diff -- .github/
+  │ actions/callisto-action/scripts/create-or-update-release-pr.sh .github/actions/callisto-action/tests/test_release_pr_contract.sh
+  └ PASS: rejects ambiguous release PR state
+    PASS: rejects foreign and malformed managed-branch lookalikes
+    … +6 lines (ctrl + t to view transcript)
+    FAIL: label lookup must not combine gh api --slurp with --jq
+    PASS: label-creation errors are not hidden
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• The first regression assertion caught a subtle issue in my test itself: its broad string check matched the explanatory comment, not
+  a command. I’m tightening it to detect the actual gh api --paginate invocation, then rerunning.
+
+• Edited /private/tmp/callisto-release-action-fix/.github/actions/callisto-action/tests/test_release_pr_contract.sh (+1 -1)
+    167  script_contents="$(<"$script")"
+    168 -if [[ "$script_contents" == *'gh api'*'--slurp'*'--jq'* ]]; then
+    168 +if [[ "$script_contents" == *'gh api --paginate'*'--slurp'*'--jq'* ]]; then
+    169    echo 'FAIL: label lookup must not combine gh api --slurp with --jq'
+
+• Ran rtk bash .github/actions/callisto-action/tests/test_release_pr_contract.sh && rtk git diff --check && rtk git diff --stat
+  └ PASS: rejects ambiguous release PR state
+    PASS: rejects foreign and malformed managed-branch lookalikes
+    … +10 lines (ctrl + t to view transcript)
+     .github/actions/callisto-action/tests/test_release_pr_contract.sh | 8 ++++++++
+     2 files changed, 12 insertions(+), 1 deletion(-)
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• You were right to call this out. I missed a real compatibility failure and the existing test falsely passed because it mocked gh api
+  without validating its flags.
+
+  Root cause: the release action combines incompatible GitHub CLI flags:
+
+  gh api --paginate … --slurp --jq …
+
+  gh 2.99.0 rejects that combination. I prepared and tested a local-only fix in an isolated worktree:
+
+  - replace it with gh label list --limit 1000 --json name --jq …
+  - add a regression assertion preventing gh api --paginate from combining --slurp and --jq
+
+  The action contract test now passes. Nothing was changed in your dirty Callisto checkout, committed, or pushed. The patch is ready
+  at /private/tmp/callisto-release-action-fix.
+
+─ Worked for 3m 23s ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+› Please create a PR
+
+
+• I’ll turn the tested isolated fix into a focused Callisto PR: branch from the failing action revision, commit only the script and
+  its regression test, push it, and open it against main.
+
+• Ran 5 commands · ctrl + t to view transcript
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• Created Callisto PR #45 (https://github.com/orin-dx/callisto/pull/45).
+
+  It fixes the incompatible gh api --slurp --jq label lookup and adds a regression guard. The release-action contract test passed
+  before opening it.
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+› Shouldn't create or update be a decision that comes from callisto in some way? how does changesets and knope do this?
+
+
+• Yes—the decision should be explicit and owned by Callisto’s release-planning layer, not rediscovered ad hoc by a shell action
+  through GitHub queries. I’ll compare the official Changesets and Knope models, then map the right boundary for Callisto.
+
+• Searching the web
+
+• Searched the web for site:github.com/changesets/action create or update version pull request action source ...
+
+• Searching the web
+
+• Searched the web for Knope release PR GitHub action create update pull request docs ...
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• Yes. The “create / update / rotate / supersede” decision belongs in Callisto’s release-PR domain—not scattered through a Bash
+  action.
+
+  But it cannot be made from release artifacts alone: whether to create or update depends on external facts such as open PRs, branch
+  heads, base SHA, labels, and permissions. The right split is:
+
+  Callisto release plan + GitHub snapshot
+                   │
+                   ▼
+         callisto release-pr decide
+                   │
+                   ▼
+    { create | update | rotate | supersede | noop,
+      reason, expected state, intended mutations }
+                   │
+                   ▼
+   GitHub Action executes exactly that decision
+
+  The action should only:
+
+  - authenticate and collect the GitHub snapshot;
+  - invoke Callisto;
+  - execute the returned mutation request;
+  - re-check expected state before mutation to handle races;
+  - emit the decision/report.
+
+  Callisto should own:
+
+  - managed-branch identity and naming;
+  - which PRs are eligible;
+  - ambiguity handling;
+  - branch rotation policy;
+  - idempotency/fingerprint rules;
+  - create vs update vs supersede semantics;
+  - a typed JSON release-pr-plan and release-pr-report.
+
+  Changesets has the same conceptual ownership, but packages it inside its action: it keeps a version PR current and exposes its PR
+  number as an output. Its GitHub integration uses an API-oriented action implementation rather than a shell workflow rediscovering
+  policy. Changesets action (https://github.com/changesets/action/blob/main/version/README.md), Changesets automation model
+  (https://github.com/changesets/changesets/blob/main/docs/automating-changesets.md)
+
+  Knope is even clearer: PrepareRelease computes and stages the release changes, then an explicit CreatePullRequest workflow step
+  creates the PR using configured forge information. That is a domain workflow, not incidental shell branching. Knope release-preview
+  recipe (https://knope.tech/recipes/1-preview-releases-with-pull-requests/)
+
+  PR #45 fixes today’s concrete CLI compatibility incident. We should follow it with a proper Callisto release-PR decision model, so
+  the action becomes an executor rather than a second, fragile release engine.
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+› No, let's do this properly instead of putting out a half-assed solution there
+
+
+• Agreed. PR #45 is only a symptom patch; it preserves the wrong ownership boundary. I’ll close it as superseded, then replace it with
+  a properly scoped Callisto change: typed release-PR discovery input, deterministic decision output, and a thin GitHub executor.
