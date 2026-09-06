@@ -1,5 +1,22 @@
 # callisto-model
 
+## 0.6.0
+
+- **Add `callisto filter-plan` and the primitives it's built on**
+  
+  New `callisto filter-plan --plan <plan> --report <report>` filters a publish plan down to what a publish report confirms actually succeeded, dropping anything that failed. Lets a release pipeline run `plan-publish` -> `publish` -> `tag`/`gh release create` as separate steps and have the last two operate on what actually shipped, instead of the pre-publish plan.
+  
+  Built on two new, additive primitives: `PublishPlan::is_empty()`, and `CreatedTag.isFloatingMajor` (distinguishes a floating major-version alias from an immutable per-version release tag in `callisto tag`'s output). Both are backward-compatible — no existing command's behavior changes.
+- Fix `release-pr decide` emitting snake_case field names (`pull_request_number`, `expected_branch`, `replacement_branch`) inside its JSON `action` payload instead of camelCase. `#[serde(rename_all = "camelCase")]` on an internally-tagged enum only renames the variant tag, not fields inside variants; the executor script reads `.action.pullRequestNumber` via `jq`, got `null`, and ran `gh pr view null`, breaking every release run past an existing managed PR.
+- Add Callisto-owned release PR decisions with forge snapshot verification
+- **Update the managed release PR to use GitHub's forge commit API instead of a local Git push**
+  
+  `ReleasePrSnapshotV1`, `ReleasePrActionV1`, and `ReleasePrDecisionV1` are replaced by schema-version-2 equivalents: `ReleasePrSnapshotV2`, `ReleasePrActionV2`, and `ReleasePrDecisionV2`. `ReleasePrPullRequestV1`'s `workflow_delta_from_base: bool` is replaced by `ReleasePrPullRequestV2`'s `head_commit: CommitSha`. `ReleasePrActionV2` drops the `Supersede` variant entirely -- there is no replacement, and no runtime fallback to it -- in favor of `Noop`, `Create`, and `Update` variants that name a deterministic staging branch. A new `ReleasePrCommitPlanV1` type builds the typed `createCommitOnBranch` payload from a Git index diff, refusing (with new error codes E149-E154) any `.github/workflows/*` path, non-regular-file Git modes, renames/copies/type-changes, and oversized payloads.
+  
+  This is consumer-facing: on a public GitHub repository, the built-in `GITHUB_TOKEN` cannot write `.github/workflows/*` through either the Git push protocol or `createCommitOnBranch`'s own file changes, which previously forced a SHA-suffixed replacement branch and PR (visible churn) whenever a workflow file drifted on the base branch. The new approach never writes that path at all, so the replacement branch behavior is gone and updates land on one stable branch. A branch already replaced under the old behavior remains a valid, ordinary managed branch and keeps being updated in place.
+  
+  Removing the v1 `ReleasePr*` types and the `Supersede` variant is a breaking change for any library consumer of `callisto-model`; this ships as a minor bump since the crate is pre-1.0.
+
 ## 0.5.0
 
 - Released together with the `workspace` fixed group.

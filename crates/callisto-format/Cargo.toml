@@ -1,6 +1,6 @@
 [package]
 name = "callisto-format"
-version = "0.5.0"
+version = "0.6.0"
 edition.workspace = true
 license = "MIT OR Apache-2.0"
 description = "Callisto Release Engine — Byte-exact changeset markdown and pre.json parser/writer."
@@ -11,7 +11,7 @@ readme = "README.md"
 workspace = true
 
 [dependencies]
-callisto-model = { path = "../callisto-model", version = "0.5.0" }
+callisto-model = { path = "../callisto-model", version = "0.6.0" }
 pep440_rs.workspace = true
 serde.workspace = true
 serde_json.workspace = true

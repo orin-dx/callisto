@@ -1,5 +1,23 @@
 # callisto-cli
 
+## 0.6.0
+
+- **Add `callisto filter-plan` and the primitives it's built on**
+  
+  New `callisto filter-plan --plan <plan> --report <report>` filters a publish plan down to what a publish report confirms actually succeeded, dropping anything that failed. Lets a release pipeline run `plan-publish` -> `publish` -> `tag`/`gh release create` as separate steps and have the last two operate on what actually shipped, instead of the pre-publish plan.
+  
+  Built on two new, additive primitives: `PublishPlan::is_empty()`, and `CreatedTag.isFloatingMajor` (distinguishes a floating major-version alias from an immutable per-version release tag in `callisto tag`'s output). Both are backward-compatible — no existing command's behavior changes.
+- Add Callisto-owned release PR decisions with forge snapshot verification
+- **Fix: credential redaction now covers the live-streamed CI log, not just the captured error**
+  
+  `callisto publish` streams a registry command's stderr to the terminal in real time as it runs, separately from the captured copy redacted afterward for the final error message. A credential embedded in that stderr (e.g. a private registry URL with basic auth) was previously redacted only in the captured copy -- the live stream, which a CI log persists, was not. Both are now redacted identically; the captured copy stays raw internally so error classification (rate-limit, auth-failure detection) still works on the exact upstream text.
+- **Add `callisto release-pr commit-plan`**
+  
+  A new read-only `callisto release-pr commit-plan --base-commit <sha> --message <msg> [--out <file>]` subcommand renders a `ReleasePrCommitPlanV1` as JSON from the current Git index diff against `<sha>`. It is the building block the release action now uses to stage a release-PR update through GitHub's `createCommitOnBranch` commit API instead of a local `git push`, so the built-in `GITHUB_TOKEN` never needs `.github/workflows/*` write permission on any ref. This removes the SHA-suffixed-replacement-branch churn the prior local-push fallback caused whenever a workflow file changed on the base branch.
+- **Add `--skip-publish-precheck` to skip the redundant already-published registry check**
+  
+  `callisto publish` previously called the registry's `is_published` check before every publish attempt, even though a fresh publish always returns false there and a conflicting publish is already correctly classified as `AlreadyPublished` from the publish call itself. Pass `--skip-publish-precheck` to skip that extra round-trip; the default behavior is unchanged.
+
 ## 0.5.0
 
 - # Native artifact placement for CI-built platform binaries

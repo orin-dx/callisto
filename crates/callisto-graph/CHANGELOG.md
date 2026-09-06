@@ -1,5 +1,28 @@
 # callisto-graph
 
+## 0.6.0
+
+- **Add `callisto filter-plan` and the primitives it's built on**
+  
+  New `callisto filter-plan --plan <plan> --report <report>` filters a publish plan down to what a publish report confirms actually succeeded, dropping anything that failed. Lets a release pipeline run `plan-publish` -> `publish` -> `tag`/`gh release create` as separate steps and have the last two operate on what actually shipped, instead of the pre-publish plan.
+  
+  Built on two new, additive primitives: `PublishPlan::is_empty()`, and `CreatedTag.isFloatingMajor` (distinguishes a floating major-version alias from an immutable per-version release tag in `callisto tag`'s output). Both are backward-compatible — no existing command's behavior changes.
+- **Fix: skip an npm main package when its platform dependency fails to publish**
+  
+  Previously an npm main package would still publish even when a declared platform dependency (`optionalDependencies`) failed in the same run, shipping a version that referenced an unpublished package. The dependency-failure check is scoped to the npm ecosystem, so a same-named Cargo crate failure can no longer false-positive-match an unrelated npm platform dependency.
+- **Fix: `--package` ecosystem collisions and unvalidated platform dependencies**
+  
+  - `--package` now resolves names by ecosystem-aware identity instead of bare string. A Cargo crate and an npm package sharing a name no longer both match one `--package` request; a genuinely ambiguous bare name now errors instead of silently including both (qualify it with `npm:name` to disambiguate).
+  - `depends_on_platforms` is now validated against the final plan. A main npm package whose platform dependency is missing — misconfigured, or excluded by `--package` — now fails the plan instead of publishing a broken `optionalDependencies` reference.
+  - `--package` naming a real package with nothing pending now returns a precise reason (not a release candidate, or no dispatchable publish target) instead of the generic "unknown package" message.
+- **Fix: a dev-only publish cycle no longer un-orders unrelated dev-dependencies**
+  
+  `publish_order` previously dropped dev-dependency ordering for the entire publish batch the moment any one legitimate dev-only cycle existed (e.g. two crates mutually dev-depending on each other for cross-integration tests). The exclusion is now scoped to just the cyclic pair — every other dev-dependency ordering in the same batch is still honored.
+- **Add `--skip-publish-precheck` to skip the redundant already-published registry check**
+  
+  `callisto publish` previously called the registry's `is_published` check before every publish attempt, even though a fresh publish always returns false there and a conflicting publish is already correctly classified as `AlreadyPublished` from the publish call itself. Pass `--skip-publish-precheck` to skip that extra round-trip; the default behavior is unchanged.
+- Released together with the `workspace` fixed group.
+
 ## 0.5.0
 
 - # Native artifact placement for CI-built platform binaries
