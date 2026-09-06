@@ -1,0 +1,1 @@
+We should run the same across the entire CI, fix all the issues you found and push up
