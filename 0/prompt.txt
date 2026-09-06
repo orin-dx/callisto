@@ -1,0 +1,1 @@
+resolve the conflicts and remove any unecessary scripts
