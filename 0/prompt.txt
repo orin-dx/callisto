@@ -1,0 +1,1 @@
+Are you 100% confident on the work that you did and the quality of the infrastructure and tests? Are we appropriatelly testing things across our platforms? How did we miss this before?
