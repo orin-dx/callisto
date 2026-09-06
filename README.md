@@ -137,7 +137,7 @@ sequenceDiagram
   CLI->>Git: create tags, move floating alias
 ```
 
-`callisto-action` (the bundled GitHub Action) now creates or updates only the version PR. The repository durable workflow performs plan/build/attested execute after that PR merges; see [`docs/06-publishing.md`](docs/06-publishing.md).
+`callisto-action` (the bundled GitHub Action) now creates or updates only the version PR. The repository release workflow performs plan/build/attested execute after that PR merges; see [`docs/06-publishing.md`](docs/06-publishing.md).
 
 ---
 
@@ -193,7 +193,7 @@ jobs:
         uses: orin-dx/callisto-action@v1
         with:
           branch: changeset-release/main
-          # The durable repository workflow performs publication after merge.
+          # The release workflow performs publication after merge.
 ```
 
 ### 3. Bypassing Heavy CI Workflows on Release PRs

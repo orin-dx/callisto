@@ -1,4 +1,4 @@
-name: Durable release
+name: Release
 
 on:
   push:
@@ -9,7 +9,7 @@ on:
 permissions: {}
 
 concurrency:
-  group: durable-release-${{ github.ref }}
+  group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:

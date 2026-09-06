@@ -359,7 +359,7 @@ pub trait DependencyResolver: Send + Sync {
 
 ## 9. GitHub Actions Orchestration (`callisto-action`)
 
-Callisto includes a built-in composite action ([`.github/actions/callisto-action/action.yml`](.github/actions/callisto-action/action.yml)) that creates or updates a reviewed version PR. The repository durable workflow owns the post-merge plan, build, attestation, and protected execute stages; see [`docs/06-publishing.md`](docs/06-publishing.md).
+Callisto includes a built-in composite action ([`.github/actions/callisto-action/action.yml`](.github/actions/callisto-action/action.yml)) that creates or updates a reviewed version PR. The repository release workflow owns the post-merge plan, build, attestation, and protected execute stages; see [`docs/06-publishing.md`](docs/06-publishing.md).
 
 ```mermaid
 %%{init: {'theme': 'base', 'themeVariables': {'lineColor': '#64748b', 'edgeLabelBackground': '#f8fafc', 'fontFamily': 'ui-sans-serif, system-ui, sans-serif'}}}%%
@@ -412,7 +412,7 @@ sequenceDiagram
 ### Lockfile Staleness (`--refresh-lockfiles`)
 
 `callisto version` bumps manifest versions (`Cargo.toml`, `package.json`, `pyproject.toml`) but
-does not regenerate lockfiles by default. The durable release executor publishes Cargo packages
+does not regenerate lockfiles by default. The release executor publishes Cargo packages
 with `cargo publish --locked`, which fails if `Cargo.lock` is stale relative to the bumped `Cargo.toml` versions --
 this can happen when bumping an interdependent Cargo package changes what a workspace member's
 own `Cargo.lock` entry should say.
@@ -562,7 +562,7 @@ jobs:
           name: ${{ matrix.target.artifactName }}
           path: ${{ matrix.target.packageDir }}/*.node
 
-  # The durable release workflow consumes these binaries only through its
+  # The release workflow consumes these binaries only through its
   # intent-bound artifact manifest and verified GitHub attestations. Do not
   # pass registry credentials or a publish command to callisto-action.
 ```
