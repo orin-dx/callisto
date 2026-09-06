@@ -1,6 +1,6 @@
 [package]
 name = "callisto-conventional"
-version = "0.5.0"
+version = "0.6.0"
 edition.workspace = true
 license = "AGPL-3.0-only"
 description = "Callisto Release Engine — Conventional Commits parser and bump analyzer."
@@ -8,14 +8,14 @@ repository.workspace = true
 readme = "README.md"
 
 [dependencies]
-callisto-model = { path = "../callisto-model", version = "0.5.0" }
+callisto-model = { path = "../callisto-model", version = "0.6.0" }
 thiserror = { workspace = true }
 
 [dev-dependencies]
 # Test-only. Production code here reaches history exclusively through
 # `callisto_model::CommitWalker`; this dependency exists so the test suite can
 # drive that seam with the real gix/shell backend as an integration check.
-callisto-vcs = { path = "../callisto-vcs", version = "0.5.0" }
+callisto-vcs = { path = "../callisto-vcs", version = "0.6.0" }
 callisto-fixtures = { path = "../callisto-fixtures" }
 proptest.workspace = true
 tempfile.workspace = true
