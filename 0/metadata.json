@@ -1,0 +1,918 @@
+{
+  "cli_version": "0.10.6-nightly.202609040625.7c63555a3",
+  "checkpoint_id": "01M1T3MQ3J9C2MATQGKHVZD3M4",
+  "session_id": "a33915af-5e86-4584-9bde-f732d973cf9f",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-06T00:59:38.398741Z",
+  "branch": "chore/wording-cleanup",
+  "checkpoints_count": 11,
+  "save_step_count": 51,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5",
+  "turn_id": "ee20dd6b2e21",
+  "checkpoint_transcript_start": 3321,
+  "transcript_lines_at_start": 3321,
+  "compact_transcript_start": 409,
+  "token_usage": {
+    "input_tokens": 80,
+    "cache_creation_tokens": 732350,
+    "cache_read_tokens": 26691956,
+    "output_tokens": 41732,
+    "api_call_count": 40,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-courier:pr-2026-09-05T01:25:15.866953Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "courier:pr"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "8913128b5c55",
+      "timestamp": "2026-09-05T01:25:15.866953Z",
+      "native": {
+        "command": "/courier:pr"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/courier:pr",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_014sNpywnuApW884PZfwb2og",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "fewer-permission-prompts"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "065bcd5cccd8",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 2701,
+        "end": 2702,
+        "entry_ids": [
+          "c5a0d0c0-5f67-4166-9ca7-4c3870d01e72"
+        ],
+        "tool_use_id": "toolu_014sNpywnuApW884PZfwb2og"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_014sNpywnuApW884PZfwb2og"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: fewer-permission-prompts",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_011JZUU3Mp6DugBuddPX9UZ3",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "artifact-design"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "ee20dd6b2e21",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 3615,
+        "end": 3616,
+        "entry_ids": [
+          "da02b5a3-832f-41c7-a384-b085dcf420a0"
+        ],
+        "tool_use_id": "toolu_011JZUU3Mp6DugBuddPX9UZ3"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_011JZUU3Mp6DugBuddPX9UZ3"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: artifact-design",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 51
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 2291,
+      "user_lines_removed": 1,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".opencode/plugins/entire.ts": 269,
+        ".playwright-mcp/console-2026-08-29T15-59-57-136Z.log": 11,
+        ".playwright-mcp/console-2026-08-29T16-01-28-866Z.log": 3,
+        ".playwright-mcp/page-2026-08-29T15-59-57-414Z.yml": 4,
+        ".playwright-mcp/page-2026-08-29T16-01-29-130Z.yml": 300,
+        ".playwright-mcp/page-2026-08-29T16-01-55-533Z.yml": 347,
+        ".playwright-mcp/page-2026-08-29T16-07-25-102Z.yml": 462,
+        ".playwright-mcp/page-2026-08-29T16-08-10-779Z.yml": 462,
+        "crates/callisto-vcs/src/access.rs": 73,
+        "crates/callisto-vcs/src/shell.rs": 245,
+        "err.log": 2
+      },
+      "user_removed_per_file": {
+        "crates/callisto-vcs/src/shell.rs": 1
+      }
+    },
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 382,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1909,
+      "agent_lines_removed": 1,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".opencode/plugins/entire.ts": 269
+      }
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 382,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1909,
+      "agent_lines_removed": 1,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".opencode/plugins/entire.ts": 269
+      }
+    },
+    {
+      "checkpoint_number": 4,
+      "user_lines_added": 382,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1909,
+      "agent_lines_removed": 1,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".opencode/plugins/entire.ts": 269
+      }
+    },
+    {
+      "checkpoint_number": 5,
+      "user_lines_added": 382,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1909,
+      "agent_lines_removed": 1,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".opencode/plugins/entire.ts": 269
+      }
+    },
+    {
+      "checkpoint_number": 6,
+      "user_lines_added": 382,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1909,
+      "agent_lines_removed": 1,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".opencode/plugins/entire.ts": 269
+      }
+    },
+    {
+      "checkpoint_number": 7,
+      "user_lines_added": 382,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1909,
+      "agent_lines_removed": 1,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".opencode/plugins/entire.ts": 269
+      }
+    },
+    {
+      "checkpoint_number": 8,
+      "user_lines_added": 382,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1909,
+      "agent_lines_removed": 1,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".opencode/plugins/entire.ts": 269
+      }
+    },
+    {
+      "checkpoint_number": 9,
+      "user_lines_added": 382,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1909,
+      "agent_lines_removed": 1,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".opencode/plugins/entire.ts": 269
+      }
+    },
+    {
+      "checkpoint_number": 10,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 11,
+      "user_lines_added": 382,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1909,
+      "agent_lines_removed": 1,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".opencode/plugins/entire.ts": 269
+      }
+    },
+    {
+      "checkpoint_number": 12,
+      "user_lines_added": 382,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1909,
+      "agent_lines_removed": 1,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".opencode/plugins/entire.ts": 269
+      }
+    },
+    {
+      "checkpoint_number": 13,
+      "user_lines_added": 382,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1909,
+      "agent_lines_removed": 1,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".opencode/plugins/entire.ts": 269
+      }
+    },
+    {
+      "checkpoint_number": 14,
+      "user_lines_added": 382,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1909,
+      "agent_lines_removed": 1,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".opencode/plugins/entire.ts": 269
+      }
+    },
+    {
+      "checkpoint_number": 15,
+      "user_lines_added": 382,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1909,
+      "agent_lines_removed": 1,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".opencode/plugins/entire.ts": 269
+      }
+    },
+    {
+      "checkpoint_number": 16,
+      "user_lines_added": 382,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1909,
+      "agent_lines_removed": 1,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".opencode/plugins/entire.ts": 269
+      }
+    },
+    {
+      "checkpoint_number": 17,
+      "user_lines_added": 382,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1909,
+      "agent_lines_removed": 1,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".opencode/plugins/entire.ts": 269
+      }
+    },
+    {
+      "checkpoint_number": 18,
+      "user_lines_added": 382,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1909,
+      "agent_lines_removed": 1,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".opencode/plugins/entire.ts": 269
+      }
+    },
+    {
+      "checkpoint_number": 19,
+      "user_lines_added": 382,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1909,
+      "agent_lines_removed": 1,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".opencode/plugins/entire.ts": 269
+      }
+    },
+    {
+      "checkpoint_number": 20,
+      "user_lines_added": 382,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1909,
+      "agent_lines_removed": 1,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".opencode/plugins/entire.ts": 269
+      }
+    },
+    {
+      "checkpoint_number": 21,
+      "user_lines_added": 382,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1909,
+      "agent_lines_removed": 1,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".opencode/plugins/entire.ts": 269
+      }
+    },
+    {
+      "checkpoint_number": 22,
+      "user_lines_added": 383,
+      "user_lines_removed": 10,
+      "agent_lines_added": 1909,
+      "agent_lines_removed": 1,
+      "user_added_per_file": {
+        ".claude/settings.json": 1,
+        ".claude/settings.local.json": 11,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".opencode/plugins/entire.ts": 269
+      },
+      "user_removed_per_file": {
+        ".claude/settings.json": 10
+      }
+    },
+    {
+      "checkpoint_number": 23,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 24,
+      "user_lines_added": 383,
+      "user_lines_removed": 10,
+      "agent_lines_added": 1909,
+      "agent_lines_removed": 1,
+      "user_added_per_file": {
+        ".claude/settings.json": 1,
+        ".claude/settings.local.json": 11,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".opencode/plugins/entire.ts": 269
+      },
+      "user_removed_per_file": {
+        ".claude/settings.json": 10
+      }
+    },
+    {
+      "checkpoint_number": 25,
+      "user_lines_added": 396,
+      "user_lines_removed": 10,
+      "agent_lines_added": 1909,
+      "agent_lines_removed": 1,
+      "user_added_per_file": {
+        ".claude/settings.json": 14,
+        ".claude/settings.local.json": 11,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".opencode/plugins/entire.ts": 269
+      },
+      "user_removed_per_file": {
+        ".claude/settings.json": 10
+      }
+    },
+    {
+      "checkpoint_number": 26,
+      "user_lines_added": 396,
+      "user_lines_removed": 10,
+      "agent_lines_added": 1909,
+      "agent_lines_removed": 1,
+      "user_added_per_file": {
+        ".claude/settings.json": 14,
+        ".claude/settings.local.json": 11,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".opencode/plugins/entire.ts": 269
+      },
+      "user_removed_per_file": {
+        ".claude/settings.json": 10
+      }
+    },
+    {
+      "checkpoint_number": 27,
+      "user_lines_added": 396,
+      "user_lines_removed": 10,
+      "agent_lines_added": 1909,
+      "agent_lines_removed": 1,
+      "user_added_per_file": {
+        ".claude/settings.json": 14,
+        ".claude/settings.local.json": 11,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".opencode/plugins/entire.ts": 269
+      },
+      "user_removed_per_file": {
+        ".claude/settings.json": 10
+      }
+    },
+    {
+      "checkpoint_number": 28,
+      "user_lines_added": 396,
+      "user_lines_removed": 10,
+      "agent_lines_added": 1909,
+      "agent_lines_removed": 1,
+      "user_added_per_file": {
+        ".claude/settings.json": 14,
+        ".claude/settings.local.json": 11,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".opencode/plugins/entire.ts": 269
+      },
+      "user_removed_per_file": {
+        ".claude/settings.json": 10
+      }
+    },
+    {
+      "checkpoint_number": 29,
+      "user_lines_added": 396,
+      "user_lines_removed": 10,
+      "agent_lines_added": 1909,
+      "agent_lines_removed": 1,
+      "user_added_per_file": {
+        ".claude/settings.json": 14,
+        ".claude/settings.local.json": 11,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".opencode/plugins/entire.ts": 269
+      },
+      "user_removed_per_file": {
+        ".claude/settings.json": 10
+      }
+    },
+    {
+      "checkpoint_number": 30,
+      "user_lines_added": 396,
+      "user_lines_removed": 10,
+      "agent_lines_added": 1909,
+      "agent_lines_removed": 1,
+      "user_added_per_file": {
+        ".claude/settings.json": 14,
+        ".claude/settings.local.json": 11,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".opencode/plugins/entire.ts": 269
+      },
+      "user_removed_per_file": {
+        ".claude/settings.json": 10
+      }
+    },
+    {
+      "checkpoint_number": 31,
+      "user_lines_added": 396,
+      "user_lines_removed": 10,
+      "agent_lines_added": 1909,
+      "agent_lines_removed": 1,
+      "user_added_per_file": {
+        ".claude/settings.json": 14,
+        ".claude/settings.local.json": 11,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".opencode/plugins/entire.ts": 269
+      },
+      "user_removed_per_file": {
+        ".claude/settings.json": 10
+      }
+    },
+    {
+      "checkpoint_number": 32,
+      "user_lines_added": 396,
+      "user_lines_removed": 10,
+      "agent_lines_added": 1909,
+      "agent_lines_removed": 1,
+      "user_added_per_file": {
+        ".claude/settings.json": 14,
+        ".claude/settings.local.json": 11,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".opencode/plugins/entire.ts": 269
+      },
+      "user_removed_per_file": {
+        ".claude/settings.json": 10
+      }
+    },
+    {
+      "checkpoint_number": 33,
+      "user_lines_added": 396,
+      "user_lines_removed": 10,
+      "agent_lines_added": 1909,
+      "agent_lines_removed": 1,
+      "user_added_per_file": {
+        ".claude/settings.json": 14,
+        ".claude/settings.local.json": 11,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".opencode/plugins/entire.ts": 269
+      },
+      "user_removed_per_file": {
+        ".claude/settings.json": 10
+      }
+    },
+    {
+      "checkpoint_number": 34,
+      "user_lines_added": 396,
+      "user_lines_removed": 10,
+      "agent_lines_added": 1909,
+      "agent_lines_removed": 1,
+      "user_added_per_file": {
+        ".claude/settings.json": 14,
+        ".claude/settings.local.json": 11,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".opencode/plugins/entire.ts": 269
+      },
+      "user_removed_per_file": {
+        ".claude/settings.json": 10
+      }
+    },
+    {
+      "checkpoint_number": 35,
+      "user_lines_added": 396,
+      "user_lines_removed": 10,
+      "agent_lines_added": 1909,
+      "agent_lines_removed": 1,
+      "user_added_per_file": {
+        ".claude/settings.json": 14,
+        ".claude/settings.local.json": 11,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".opencode/plugins/entire.ts": 269
+      },
+      "user_removed_per_file": {
+        ".claude/settings.json": 10
+      }
+    },
+    {
+      "checkpoint_number": 36,
+      "user_lines_added": 396,
+      "user_lines_removed": 10,
+      "agent_lines_added": 1909,
+      "agent_lines_removed": 1,
+      "user_added_per_file": {
+        ".claude/settings.json": 14,
+        ".claude/settings.local.json": 11,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".opencode/plugins/entire.ts": 269
+      },
+      "user_removed_per_file": {
+        ".claude/settings.json": 10
+      }
+    },
+    {
+      "checkpoint_number": 37,
+      "user_lines_added": 396,
+      "user_lines_removed": 10,
+      "agent_lines_added": 1909,
+      "agent_lines_removed": 1,
+      "user_added_per_file": {
+        ".claude/settings.json": 14,
+        ".claude/settings.local.json": 11,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".opencode/plugins/entire.ts": 269
+      },
+      "user_removed_per_file": {
+        ".claude/settings.json": 10
+      }
+    },
+    {
+      "checkpoint_number": 38,
+      "user_lines_added": 396,
+      "user_lines_removed": 10,
+      "agent_lines_added": 1909,
+      "agent_lines_removed": 1,
+      "user_added_per_file": {
+        ".claude/settings.json": 14,
+        ".claude/settings.local.json": 11,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".opencode/plugins/entire.ts": 269
+      },
+      "user_removed_per_file": {
+        ".claude/settings.json": 10
+      }
+    },
+    {
+      "checkpoint_number": 39,
+      "user_lines_added": 396,
+      "user_lines_removed": 10,
+      "agent_lines_added": 1909,
+      "agent_lines_removed": 1,
+      "user_added_per_file": {
+        ".claude/settings.json": 14,
+        ".claude/settings.local.json": 11,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".opencode/plugins/entire.ts": 269
+      },
+      "user_removed_per_file": {
+        ".claude/settings.json": 10
+      }
+    },
+    {
+      "checkpoint_number": 40,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 41,
+      "user_lines_added": 396,
+      "user_lines_removed": 10,
+      "agent_lines_added": 1909,
+      "agent_lines_removed": 1,
+      "user_added_per_file": {
+        ".claude/settings.json": 14,
+        ".claude/settings.local.json": 11,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".opencode/plugins/entire.ts": 269
+      },
+      "user_removed_per_file": {
+        ".claude/settings.json": 10
+      }
+    },
+    {
+      "checkpoint_number": 42,
+      "user_lines_added": 396,
+      "user_lines_removed": 10,
+      "agent_lines_added": 1909,
+      "agent_lines_removed": 1,
+      "user_added_per_file": {
+        ".claude/settings.json": 14,
+        ".claude/settings.local.json": 11,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".opencode/plugins/entire.ts": 269
+      },
+      "user_removed_per_file": {
+        ".claude/settings.json": 10
+      }
+    },
+    {
+      "checkpoint_number": 43,
+      "user_lines_added": 484,
+      "user_lines_removed": 10,
+      "agent_lines_added": 1909,
+      "agent_lines_removed": 1,
+      "user_added_per_file": {
+        ".agents/skills/entire-search/SKILL.md": 22,
+        ".claude/settings.json": 14,
+        ".claude/settings.local.json": 11,
+        ".claude/skills/entire-search/SKILL.md": 22,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".gemini/skills/entire-search/SKILL.md": 22,
+        ".opencode/plugins/entire.ts": 269,
+        ".opencode/skills/entire-search/SKILL.md": 22
+      },
+      "user_removed_per_file": {
+        ".claude/settings.json": 10
+      }
+    },
+    {
+      "checkpoint_number": 44,
+      "user_lines_added": 484,
+      "user_lines_removed": 10,
+      "agent_lines_added": 1909,
+      "agent_lines_removed": 1,
+      "user_added_per_file": {
+        ".agents/skills/entire-search/SKILL.md": 22,
+        ".claude/settings.json": 14,
+        ".claude/settings.local.json": 11,
+        ".claude/skills/entire-search/SKILL.md": 22,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".gemini/skills/entire-search/SKILL.md": 22,
+        ".opencode/plugins/entire.ts": 269,
+        ".opencode/skills/entire-search/SKILL.md": 22
+      },
+      "user_removed_per_file": {
+        ".claude/settings.json": 10
+      }
+    },
+    {
+      "checkpoint_number": 45,
+      "user_lines_added": 484,
+      "user_lines_removed": 10,
+      "agent_lines_added": 1909,
+      "agent_lines_removed": 1,
+      "user_added_per_file": {
+        ".agents/skills/entire-search/SKILL.md": 22,
+        ".claude/settings.json": 14,
+        ".claude/settings.local.json": 11,
+        ".claude/skills/entire-search/SKILL.md": 22,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".gemini/skills/entire-search/SKILL.md": 22,
+        ".opencode/plugins/entire.ts": 269,
+        ".opencode/skills/entire-search/SKILL.md": 22
+      },
+      "user_removed_per_file": {
+        ".claude/settings.json": 10
+      }
+    },
+    {
+      "checkpoint_number": 46,
+      "user_lines_added": 484,
+      "user_lines_removed": 10,
+      "agent_lines_added": 1909,
+      "agent_lines_removed": 1,
+      "user_added_per_file": {
+        ".agents/skills/entire-search/SKILL.md": 22,
+        ".claude/settings.json": 14,
+        ".claude/settings.local.json": 11,
+        ".claude/skills/entire-search/SKILL.md": 22,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".gemini/skills/entire-search/SKILL.md": 22,
+        ".opencode/plugins/entire.ts": 269,
+        ".opencode/skills/entire-search/SKILL.md": 22
+      },
+      "user_removed_per_file": {
+        ".claude/settings.json": 10
+      }
+    },
+    {
+      "checkpoint_number": 47,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 48,
+      "user_lines_added": 462,
+      "user_lines_removed": 10,
+      "agent_lines_added": 1931,
+      "agent_lines_removed": 1,
+      "user_added_per_file": {
+        ".claude/settings.json": 14,
+        ".claude/settings.local.json": 11,
+        ".claude/skills/entire-search/SKILL.md": 22,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".gemini/skills/entire-search/SKILL.md": 22,
+        ".opencode/plugins/entire.ts": 269,
+        ".opencode/skills/entire-search/SKILL.md": 22
+      },
+      "user_removed_per_file": {
+        ".claude/settings.json": 10
+      }
+    },
+    {
+      "checkpoint_number": 49,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 50,
+      "user_lines_added": 462,
+      "user_lines_removed": 10,
+      "agent_lines_added": 1931,
+      "agent_lines_removed": 1,
+      "user_added_per_file": {
+        ".claude/settings.json": 14,
+        ".claude/settings.local.json": 11,
+        ".claude/skills/entire-search/SKILL.md": 22,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".gemini/skills/entire-search/SKILL.md": 22,
+        ".opencode/plugins/entire.ts": 269,
+        ".opencode/skills/entire-search/SKILL.md": 22
+      },
+      "user_removed_per_file": {
+        ".claude/settings.json": 10
+      }
+    },
+    {
+      "checkpoint_number": 51,
+      "user_lines_added": 462,
+      "user_lines_removed": 10,
+      "agent_lines_added": 1931,
+      "agent_lines_removed": 1,
+      "user_added_per_file": {
+        ".claude/settings.json": 14,
+        ".claude/settings.local.json": 11,
+        ".claude/skills/entire-search/SKILL.md": 22,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".gemini/skills/entire-search/SKILL.md": 22,
+        ".opencode/plugins/entire.ts": 269,
+        ".opencode/skills/entire-search/SKILL.md": 22
+      },
+      "user_removed_per_file": {
+        ".claude/settings.json": 10
+      }
+    },
+    {
+      "checkpoint_number": 52,
+      "user_lines_added": 462,
+      "user_lines_removed": 10,
+      "agent_lines_added": 1931,
+      "agent_lines_removed": 1,
+      "user_added_per_file": {
+        ".claude/settings.json": 14,
+        ".claude/settings.local.json": 11,
+        ".claude/skills/entire-search/SKILL.md": 22,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".gemini/skills/entire-search/SKILL.md": 22,
+        ".opencode/plugins/entire.ts": 269,
+        ".opencode/skills/entire-search/SKILL.md": 22
+      },
+      "user_removed_per_file": {
+        ".claude/settings.json": 10
+      }
+    }
+  ]
+}

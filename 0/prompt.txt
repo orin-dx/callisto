@@ -1,0 +1,439 @@
+codex did a lot of work in the recent PRs but now release is not working: https://github.com/orin-dx/callisto/actions/runs/33711966075/job/100515577416
+
+Can you help me fix this. YOu might want to check PRs merged in the last week for more context
+
+---
+
+Are we sure this is the only issue?
+
+---
+
+We're not testing if we're running the test against a stub we generate then right? What's the point of that????? WTF
+
+---
+
+Are there other places in our testing strategy where we faked tests and we don't really test things? Do we have mocked implementations? Mocked tests that don't actually test functionality? Fake integration tests?
+
+---
+
+merged
+
+---
+
+<task-notification>
+<task-id>bubrtddyz</task-id>
+<tool-use-id>toolu_01XKRzuykrvq65yH2Yz2rY7H</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a33915af-5e86-4584-9bde-f732d973cf9f/tasks/bubrtddyz.output</output-file>
+<status>completed</status>
+<summary>Background command "until out=$(gh run view 33792198378 --repo orin-dx/callisto --json jobs -q '.jobs[] | select(.name=="Create or update the Callisto release PR") | .status + " " + (.conclusion // "pending")' 2&gt;&amp;1) &amp;&amp; [[ "$out" == *completed* ]]; do
+  sleep 15
+done
+echo "RESULT: $out"
+gh run view 33792198378 --repo orin-dx/callisto --log --job "$(gh run view 33792198378 --repo orin-dx/callisto --json jobs -q '.jobs[] | select(.name=="Create or update the Callisto release PR") | .databaseId')" 2&gt;&amp;1 | tail -60" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+Seems like this passed, how does the PR look? Everything working now? Shall we try the merge and see how things go?
+
+---
+
+Why did we close PR 28 and open a new one vs just update??? WTF
+
+---
+
+I thought we said release Pr should not have workflow changes right? WTF
+
+---
+
+Are you getting yourself confused?
+
+---
+
+But those were merged in another PR so we should have been able to just rebase the release branch and it should not have included the workflow, right?
+
+---
+
+We talked about this. You agreed with me and now you're disagreeing?
+
+---
+
+You're not making sense. If main already has the workflow changes because they were merged in another PR and we rebase the release PR it should not contain the workflow change.
+
+Are you saying callisto makes workflow changes in repos using it? That is worrisome
+
+---
+
+We should run that detection AFTER rebasing though. I suspect you're doing it before
+
+---
+
+The workflow delta need to be computed accounting for the rebase then, no?
+
+---
+
+Checkout, rebase and then do anything callisto. Isn't that what knope and changesets do?
+
+---
+
+Checkout from latest origin/main or can it be stale? I still don't see how a workflow change can make it into the release PR if callisto doesn't write one. If we're checking out a fresh main it already has the workflow change merged in and the PR would have no diff with it
+
+---
+
+That means we can allow force push from our action to the branch by specific name right? That is a config that each user would need to make but should be ok?
+
+---
+
+I don't want to add a PAT, that is more complicated and this might explain why changeset and knope do rebases. I feel like this won't be a problem if we rebase, right?
+
+---
+
+This is not a problem for changesets and knope. I guarantee you that it does not create a new PR every time so you're dumb and wrong or you're purposely being lazy and lying to me. Which one is it?
+
+---
+
+Let's think through this problem deeply, ensure that we understand it. Take into account our overall architecture, semantic models and scope out what the change would look like. What spec do we have to update? Make a plan and present it.
+
+---
+
+<task-notification>
+<task-id>a761114264b6176d8</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a33915af-5e86-4584-9bde-f732d973cf9f/tasks/a761114264b6176d8.output</output-file>
+<status>completed</status>
+<summary>Agent "Design API-commit release-PR executor" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I have everything needed. Two facts I found during exploration change the framing of the request, so I lead with them.
+
+## Findings that reshape the problem
+
+1. **Spike question (a) is already answered empirically.** Release run `33679599559` on this repo (2026-09-02T20:43, head `3da710fe`) failed with the exact rejection:
+   `! [remote rejected] callisto/version-packages -&gt; callisto/version-packages (refusing to allow a GitHub App to create or update workflow '.github/workflows/callisto-ci.yml' without 'workflows' permission)`.
+   Raw `git push` of a regenerated branch is rejected. Only question (b), the API path, needs a spike.
+2. **Live state confirms other constraints.** PR #48's head commit `e823dd73` is `verification.verified: false, reason: unsigned` (author `github-actions[bot]`). No rulesets exist on `main` or `callisto/version-packages` (`/rules/branches/...` returns `[]`). The repo allows merge, squash, and rebase merges. `callisto version` already stages its own writes via `git add`/`git rm --cached` (`crates/callisto-graph/src/apply.rs` ~440-470), so the Git index after `version` is the authoritative change set. Current release payload is small: all CHANGELOGs total ~47 KB; a full plan is ~150-200 KB base64.
+
+## Recommendations per design question
+
+### Q1: Where to build the createCommitOnBranch payload -&gt; (B) Rust `callisto release-pr commit-plan`
+
+Rationale:
+- Spec 014 architecture.execution says the shell "does not independently choose" anything and AC-004 forbids caller-controlled jq filtering. Deciding which paths are additions vs deletions, what to do with mode changes, renames, `.github/workflows/` paths, non-UTF-8 paths, and size limits is file-semantics policy; it belongs in typed Rust with unit tests, not in `git status --porcelain` parsing in bash (which cannot handle paths with spaces/newlines/quotes robustly).
+- createCommitOnBranch cannot express modes (100755, 120000 symlink, 160000 submodule) or renames/type changes. A Rust builder can fail closed with typed miette errors; bash would silently strip the executable bit.
+- Payload bytes must be read from the worktree as raw bytes (`std::fs::read`), not via `CommandRunner` whose `CommandOutput.stdout` is `String` (lossy UTF-8; see `crates/callisto-cli/src/runner.rs:39`). CRLF and binary files round-trip only if bytes are never decoded.
+- Testability: pure `ReleasePrCommitPlanV1::from_changes(...)` in `callisto-model` is unit-testable; the Git observation goes through `CommandRunner` and is testable with the recording runner pattern already used in `crates/callisto-vcs/src/shell.rs` tests.
+- Provider neutrality: the plan is `{baseCommit, message, additions[{path, contentsBase64}], deletions[{path}]}`; the shell does one mechanical jq mapping to GraphQL `FileChanges`. That mapping is covered by the real-binary contract test (the exact class of bug that shipped before).
+
+Layering: plan types + builder + base64 in `callisto-model` (add `base64 = "0.22"`, MIT/Apache-2.0, already in `Cargo.lock`); raw-diff parsing and worktree reads in `callisto-vcs` (`ShellGit`, permissive); CLI wiring in `callisto-cli`.
+
+Add a byte-fidelity invariant that makes the encoding question moot: the executor computes `local_tree=$(git write-tree)` after staging and, after createCommitOnBranch, compares it with `gh api repos/.../git/commits/&lt;new_sha&gt; --jq .tree.sha`. Equal tree OIDs prove the API commit is byte-identical to what Git would have committed (modes, CRLF, binary, everything). Fail before moving the real branch if they differ.
+
+### Q2: Executor sequence and race safety
+
+Snapshot gains `headCommit` per PR (`gh pr list --json headRefOid`) and drops `workflowDeltaFromBase` (which also removes the per-PR `git fetch` + `git diff` loop). Callisto names the staging branch in the decision so the shell never invents a branch name.
+
+Sequence (`create-or-update-release-pr.sh`):
+1. `base_commit=$(git rev-parse HEAD)`; `snapshot=$(release_pr_snapshot)`.
+2. `decision=$(callisto --format json release-pr decide ...)`; branch on `kind` (noop|create|update). Read `.action.branch`, `.action.stagingBranch`, `.action.expectedHeadCommit` (update only), `.action.pullRequestNumber`.
+3. Compose body (unchanged).
+4. `$INPUT_VERSION_COMMAND`; `git add -A` (parity for custom version commands).
+5. `callisto --format json release-pr commit-plan --base-commit "$base_commit" --message "$INPUT_COMMIT_MESSAGE" --out "$RUNNER_TEMP/release-pr-commit-plan.json"` (replaces the `git status --porcelain` emptiness check: empty plan is a typed error).
+6. `local_tree=$(git write-tree)`.
+7. Register `trap` that deletes the staging ref (`gh api -X DELETE .../git/refs/heads/&lt;staging&gt;`, tolerate 422/404 with a `::warning::`).
+8. Verify #1 (`release-pr verify`) with a fresh snapshot.
+9. Staging ref at base: `gh api -X PATCH .../git/refs/heads/&lt;staging&gt; -f sha=$base_commit -F force=true`, falling back to `POST .../git/refs` when the PATCH returns 422 (ref missing).
+10. `new_sha=$(gh api graphql --input body.json --jq .data.createCommitOnBranch.commit.oid)` where `body.json` is built by jq from the plan: `expectedHeadOid: .baseCommit`, `branch: {repositoryNameWithOwner, branchName: &lt;staging&gt;}`, `fileChanges: {additions: [.additions[] | {path, contents: .contentsBase64}], deletions: .deletions}`.
+11. `remote_tree=$(gh api .../git/commits/$new_sha --jq .tree.sha)`; require `== $local_tree`.
+12. Verify #2 with a fresh snapshot (the `headCommit` field makes this the compare-and-swap surrogate for the PR head).
+13. Move the real branch: update -&gt; `PATCH .../git/refs/heads/&lt;branch&gt; -f sha=$new_sha -F force=true`; create -&gt; `POST .../git/refs`, falling back to PATCH-force if it already exists (an orphan from a failed prior run; no PR exists on it by construction). Then GET the ref and require `.object.sha == $new_sha` (detects a lost race after the fact; fail loudly).
+14. Verify #3, label, `gh pr create` / `gh pr edit` (unchanged).
+15. Trap deletes staging branch (also runs on failure). Run to completion; report but do not fail on cleanup failure since the next run force-updates the deterministic staging name anyway.
+
+Staging branch name: deterministic, derived by Callisto: `format!("{release_branch}--staging")`. Deterministic beats random because leftover refs from crashed runs are reclaimed rather than accumulating, and the workflow's `concurrency` group (`durable-release-${{ github.ref }}`, `cancel-in-progress: false`) already serializes runs. `managed_branch_shape` today returns `MalformedManagedBranch` for `--staging` (suffix is not 40-hex), so a PR opened from it already fails closed; add an explicit `ReleasePrDecisionError::StagingBranchPullRequest { number }` so the diagnostic is clear. Also update the `release-candidate` job regex? Not needed: `--staging` does not match `--[0-9a-f]{40}`.
+
+Race safety honesty: REST `updateRef` has no CAS. The window between verify #2 and step 13 is milliseconds; the workflow concurrency group excludes the only automated racer; the post-move GET catches a human push in that window. That is acceptable and should be stated in the spec as the residual.
+
+### Q3: Model changes -&gt; remove Supersede and workflowDeltaFromBase; bump to V2 types; no runtime fallback
+
+- Remove, do not reserve. A "fall back to supersede on 403" would make the shell branch on an HTTP status to choose an operation, which is exactly the policy-in-shell the spec forbids, and it keeps the branch-fetch/diff machinery alive for a path the spike either proves unnecessary or proves the whole plan dead. If NO-GO, nothing ships; the current code stays.
+- Schema honesty: `ReleasePrSnapshotV1` is `deny_unknown_fields` and consumed by binaries that can be installed independently of the action script (`setup-callisto` with `source: auto` downloads the latest release), so field changes must be a real version bump. Introduce `ReleasePrPullRequestV2 { number, head_repository, head_branch, head_commit: CommitSha }`, `ReleasePrSnapshotV2` (schema 2), `ReleasePrActionV2 { Noop{reason}, Create{branch, staging_branch}, Update{pull_request_number, branch, expected_head_commit, staging_branch} }`, `ReleasePrDecisionV2` (schema 2), and delete the V1 types. Old action script + new binary fails closed with "unsupported release PR snapshot schema version"; new script + old binary fails the same way. Keep `#[non_exhaustive]`, `deny_unknown_fields`, the `Wire` schema-version check, and the `rename_all_fields = "camelCase"` fix.
+- Keep `managed_branch_shape` accepting `canonical--&lt;40hex&gt;` so PR #48 stays managed and is updated in place (AC "retained replacement"). Keep the `release-candidate` regex unchanged.
+- New `ReleasePrCommitPlanV1` (schema 1) with `ReleasePrFileAdditionV1 { path, contents_base64 }`, `ReleasePrFileDeletionV1 { path }`, `total_content_bytes`; input `StagedChangeV1 { path, kind: Added|Modified|Deleted|Renamed|Copied|TypeChanged|Unmerged, new_mode: Option&lt;u32&gt;, contents: Option&lt;Vec&lt;u8&gt;&gt; }`. Errors (new codes; E141-E148 are taken, `DIAGNOSTIC_CODE_SOURCE_FILES` in `crates/callisto-model/src/lib.rs` already scans `release_pr.rs` for uniqueness): `EmptyCommitPlan` (E149), `UnsupportedFileMode { path, mode }` (E150), `UnsupportedChangeKind { path, kind }` (E151), `CommitPlanTooLarge { bytes, limit }` (E152), `ForbiddenCommitPlanPath { path }` (E153: rejects `.github/workflows/`, `.git/`, `..`, absolute, non-UTF-8 -- the plan must never carry workflow content), `StagingBranchPullRequest { number }` (E154).
+
+### Q4: Phase 0 spike
+
+Where: an org-owned scratch repo (`orin-dx/callisto-relpr-spike`) so org-level token and ruleset policy match; never on this repo's live managed branch. One `workflow_dispatch` workflow with a `case` input, `permissions: contents: write, pull-requests: write`, `persist-credentials: false` (API path needs no git credentials; case A/B set the token explicitly). Setup by hand: main contains `spike.yml` + `dummy.yml`; branch `managed` cut from main with a `VERSION` file, PR opened; then push a change to `dummy.yml` on main so workflows diverge.
+
+Cases (each records outcome to the job summary):
+- A. Raw `git push --force-with-lease` of regenerated branch (control; expect rejection matching run 33679599559).
+- B. `git push --force origin &lt;main sha&gt;:refs/heads/managed` (git-only alternative; expect rejection, cheap to confirm).
+- C. Temp ref at main sha -&gt; createCommitOnBranch(expectedHeadOid=main) with `VERSION` addition + one deletion + a CRLF file + a small PNG -&gt; `updateRef(force)` real branch -&gt; delete temp. Record: HTTP outcomes, PR still open, PR files list is exactly the intended files, `commit.verification.verified`, and tree OID equality vs a local `git write-tree`.
+- D. Case C with a stale `expectedHeadOid` (expect `createCommitOnBranch` error -&gt; CAS confirmed).
+- E. Size probes: additions of 1, 8, 32 MiB text; record the first failure and error text.
+- F. Run C twice with no workspace change to confirm idempotent re-runs do not auto-close the PR.
+
+GO: C succeeds with default token while workflows have diverged, PR stays open and updated in place, tree OIDs equal, D errors, E limit &gt;= 4 MiB, verified == true. NO-GO: C rejected with the workflows-permission error or the PR auto-closes -&gt; stop; keep supersede; record the evidence in spec 013's revision note.
+
+### Q5: Artifacts to change
+
+- `.claude/specs/SPEC-RELEASE-PR-DECISION-014.json`: architecture.execution (materialize via forge API from a Callisto commit plan; staging branch; tree check); AC-002 drop "unless its observed workflow delta requires supersede"; AC-003 replace supersede with commit-plan contract (parent is the snapshot base commit, no workflow paths, typed refusals, retained `--sha` branches); AC-004 test list (create, update, retained replacement, noop, stale snapshot, moved head before ref move, tree mismatch, staging cleanup on failure); new AC-006 for `commit-plan`; revision_note.
+- `.claude/specs/SPEC-RELEASE-INTERFACES-013.json` AC-004 line 40: replace the SHA-suffixed fallback sentences with "updates the managed branch through the forge commit API so the built-in token never pushes workflow content; historical SHA-suffixed branches remain trusted"; keep "recomputes rather than rebasing" and "requires no elevated token"; revision_note.
+- New `.claude/plans/PLAN-RELEASE-PR-API-COMMIT-015.json` (PLAN-014 is complete/gated); Phase 0 is step T00.
+- Docs: `docs/06-publishing.md` lines 15-25 (remove supersede/PAT paragraph; describe API commit, signed commits, no `workflows` scope); `ARCHITECTURE.md` §9 input matrix rows for `setup_git_user`, `release_branch`, `github_token`; README release snippet comment if it mentions pushes (lines 161-195 do not, leave).
+- Action: `action.yml` `setup_git_user` kept but documented as vestigial (unknown inputs only warn, but removing it is a consumer-visible change; drop in a later breaking release); `github_token` description; workflow `version-pr` checkout can flip to `persist-credentials: false` (no git push remains) and drop the zizmor ignore; update `.github/tests/verify-release-workflow-contract.sh` `require_line` accordingly.
+- Tests: rewrite `test_release_pr_contract.sh` stub `gh` to handle `api` calls and record them; extend `test_release_pr_decide_binary_contract.sh` to exercise `commit-plan` against a temp git repo and the script's jq mapping; Rust unit tests listed below; `crates/callisto-cli/tests/cmd/help.trycmd` only if the `release-pr` one-liner changes.
+- Changesets: `callisto-model: minor` (V2 schema, Supersede removed), `callisto-cli: minor` (`release-pr commit-plan`).
+
+### Q6: Risks and edge cases
+- Payload size limit unknown: measured in spike E; `MAX_COMMIT_PLAN_BYTES` constant set from the result; today's payload is ~200 KB.
+- PR auto-close: never point the real branch at base; only the staging branch equals base, and it has no PR. Spike F checks reruns.
+- `release-candidate` `verification.verified` check is on the merge commit on `main`, not the PR head; unaffected. Bonus: the PR head becomes GitHub-signed. Note rebase-merge would drop that signature; the existing check already requires a verified merge commit, unchanged.
+- Rulesets: none today; a future rule on `callisto/version-packages` requiring linear history or blocking force pushes would break `updateRef(force)` exactly as it broke `git push --force` (Aug 6 "pre-receive hook declined" runs). Document.
+- Forks: snapshot still rejects foreign head repositories; API calls target `$GITHUB_REPOSITORY` only.
+- `gh` availability: already required by the current script; add an explicit `command -v gh` check with a clear error.
+- Staging cleanup failure: warn, do not fail; deterministic name means the next run reclaims it.
+- Idempotent reruns: create a fresh commit each run (same as today's force push); acceptable.
+- `commit-plan` reads worktree bytes after `git add -A`; if a custom `version_command` leaves index and worktree divergent, the tree check catches it.
+- Custom `version_command` that touches `.github/workflows/` now fails closed (E153) instead of being force-pushed; this is intended and documented.
+
+## Ordered implementation plan
+
+**Phase 0 (spike, GO/NO-GO gate)**: scratch repo workflow as in Q4; record results in PLAN-015 `evidence`. Nothing below starts until GO.
+
+**Phase 1: model (`crates/callisto-model/src/release_pr.rs`, `Cargo.toml` + workspace `Cargo.toml` for `base64`)**
+- Replace V1 types with `ReleasePrPullRequestV2`, `ReleasePrSnapshotV2`, `ReleasePrActionV2`, `ReleasePrDecisionV2::{derive, verify_snapshot}`; `derive` sets `staging_branch` and `expected_head_commit`; reject staging-branch PRs.
+- Add `StagedChangeV1`, `StagedChangeKindV1`, `ReleasePrCommitPlanV1::from_changes`, `MAX_COMMIT_PLAN_BYTES`, `ReleasePrCommitPlanError` (E149-E153), `StagingBranchPullRequest` (E154).
+- Tests: `derives_update_with_staging_branch_and_expected_head`, `derives_create_with_staging_branch`, `derive_rejects_pull_request_on_staging_branch`, `verify_snapshot_rejects_moved_head_commit`, `snapshot_v2_rejects_v1_wire_and_unknown_fields`, `action_v2_fields_serialize_as_camel_case`, `commit_plan_rejects_empty_change_set`, `commit_plan_rejects_non_regular_modes`, `commit_plan_rejects_rename_copy_type_change`, `commit_plan_rejects_workflow_and_unsafe_paths`, `commit_plan_rejects_oversized_payload`, `commit_plan_base64_round_trips_crlf_and_binary_bytes`, `commit_plan_serializes_camel_case_and_schema_version`.
+- Verify: `cargo test -p callisto-model`, `just lint`, `just wasm-check` (model is wasm-built).
+
+**Phase 2: VCS observation (`crates/callisto-vcs/src/shell.rs` or new `staged.rs`)**
+- `ShellGit::staged_changes_since(&amp;self, base: &amp;CommitSha) -&gt; Result&lt;Vec&lt;StagedChangeV1&gt;, VcsError&gt;` running `git diff --cached --raw -z --no-renames &lt;base&gt;`, parsing modes/status, reading A/M bytes with `std::fs::read`.
+- Tests: `parse_raw_diff_z_parses_modes_status_and_odd_paths`, `staged_changes_since_reads_worktree_bytes_and_marks_deletions` (temp repo).
+
+**Phase 3: CLI (`crates/callisto-cli/src/cli.rs`, `commands/release_pr.rs`)**
+- `ReleasePrArgs::CommitPlan(ReleasePrCommitPlanArgs { base_commit, message, out: Option&lt;PathBuf&gt; })`; `commit_plan()` writes with `atomic_write` when `--out` is given, else stdout JSON; update `render_decision` for V2.
+- Tests: `cli_parses_release_pr_commit_plan`; new `crates/callisto-cli/tests/release_pr_commit_plan_tests.rs`: `commit_plan_reproduces_git_write_tree` (apply plan into a fresh worktree from base and compare `git write-tree`), `commit_plan_fails_closed_on_executable_bit`; refresh `help.trycmd` if needed.
+
+**Phase 4: action + workflow**
+- Rewrite `create-or-update-release-pr.sh` per Q2; `action.yml` input docs; `callisto-release.yml` checkout `persist-credentials: false`; `verify-release-workflow-contract.sh` line update.
+- `test_release_pr_contract.sh`: stub `gh api` (record method/path/`--input` presence), cases: create, update, retained `--sha` branch update, noop, stale snapshot before staging (no `gh api` writes), moved head before ref move (verify #2 fails: staging created, real branch untouched, staging deleted), tree mismatch, cleanup-on-failure; keep the `INPUT_RELEASE_BRANCH` single-reference guard and add "no `git push` in script" guard.
+- `test_release_pr_decide_binary_contract.sh`: V2 snapshot with `headCommit`; assert `.action.stagingBranch`, `.action.expectedHeadCommit`; temp git repo `commit-plan` run asserting the exact jq mapping and base64 of a known file.
+
+**Phase 5: specs, docs, changesets, exit gate** as in Q5; final check: run the real workflow on `main` and confirm PR #48 is updated in place with a verified commit and no new PR.
+
+## Open questions for the maintainer
+1. Scratch repo for the spike: org-owned `orin-dx/...` (recommended) or personal?
+2. Accept flipping `version-pr` checkout to `persist-credentials: false` in the same change, or keep it for one release?
+3. Keep `setup_git_user` as an accepted no-op input for now, or remove it immediately (consumers get a warning only)?
+4. Is a hard cap constant (from spike E) acceptable, or do you want a `--max-bytes` escape hatch?
+
+### Critical Files for Implementation
+- /tmp/callisto-relpr-debug/crates/callisto-model/src/release_pr.rs
+- /tmp/callisto-relpr-debug/.github/actions/callisto-action/scripts/create-or-update-release-pr.sh
+- /tmp/callisto-relpr-debug/crates/callisto-cli/src/commands/release_pr.rs
+- /tmp/callisto-relpr-debug/crates/callisto-vcs/src/shell.rs
+- /tmp/callisto-relpr-debug/.github/actions/callisto-action/tests/test_release_pr_decide_binary_contract.sh</result>
+<usage><subagent_tokens>140707</subagent_tokens><tool_uses>40</tool_uses><duration_ms>17902329</duration_ms></usage>
+</task-notification>
+
+---
+
+I KNEW I WAS RIGHT! You argued with me for two days that pushing would not work, wtf
+
+---
+
+We should not complicate things when unecessary, let's cleanup the unecessary work and fix this with the simple git workflow pushing. That should work right?
+
+---
+
+I don't see a ruleset or branch restriction that stops this. What's different between the two repos?
+
+---
+
+continue with phase 1
+
+---
+
+Let's work through the phases leveraging our plugins, agent teams using the most appropriate models and effort.
+
+---
+
+Why do I have to keep approving these bash commands? Are you not running things using our proper workflows???
+
+---
+
+<task-notification>
+<task-id>a9fbbb92dec1d3c44</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a33915af-5e86-4584-9bde-f732d973cf9f/tasks/a9fbbb92dec1d3c44.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement Phases 2-4: VCS, CLI, action script" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Task: implement Phases 2-4 of the release-PR API-commit plan (VCS, CLI, action script) on branch `feat/release-pr-api-commit`, building on Phase 1 (`b1c8c1be`).
+
+**Commits:**
+- `65816649` — Phase 2 (VCS): `ShellGit::staged_changes_since`, exposed via `GitAccess`. `cargo test -p callisto-vcs`: 47 passed. Clippy/fmt clean.
+- `3416dd78` — Phase 3 (CLI): `release_pr.rs` moved onto V2 types, new `release-pr commit-plan` subcommand. `cargo test -p callisto-cli`: 103 passed (incl. new `commit_plan_reproduces_git_write_tree`, `commit_plan_fails_closed_on_executable_bit`, dispatch-arm coverage). `cargo build --workspace` green. Clippy/fmt clean.
+- `67e20b9b` — Phase 4 (action + workflow): script rewritten to commit via forge API instead of `git push`; `action.yml`, `callisto-release.yml` (`persist-credentials: false`), `verify-release-workflow-contract.sh` updated; both action test suites rewritten for the new sequence/V2 shape. `bash test_release_pr_contract.sh` and `test_release_pr_decide_binary_contract.sh`: all cases pass.
+
+**Combined verification:** `just ci-fast` (fmt-check, lint, test, audit, doc-check, wasm-check across the whole workspace) — exit 0, no errors, no test failures (scanned full log for `error[`/`FAIL:`/`panicked` — none besides pre-existing unrelated wasmtime advisory warnings already ignored in `deny.toml`).
+
+Scope note: did not touch `.claude/specs/`, `.claude/plans/`, `docs/`, `ARCHITECTURE.md`, or `.changeset/` — that's the parallel specs/docs agent's work in the other worktree, to be merged separately.</result>
+<usage><subagent_tokens>694467</subagent_tokens><tool_uses>110</tool_uses><duration_ms>2782773</duration_ms></usage>
+</task-notification>
+
+---
+
+/courier:pr yes create a PR
+
+---
+
+<task-notification>
+<task-id>a701f9f2aee38f006</task-id>
+<tool-use-id>toolu_012REVAxCYy9C1tVQDcqyRKh</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a33915af-5e86-4584-9bde-f732d973cf9f/tasks/a701f9f2aee38f006.output</output-file>
+<status>completed</status>
+<summary>Agent "Draft PR title and body" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I have everything needed. Producing the final structured output.
+
+```json
+{
+  "title": "feat(release-pr): commit release PR via forge API, not git push",
+  "body": "## Summary\n- Replace the release-PR executor's local `git push` (which the built-in `GITHUB_TOKEN` cannot use to write `.github/workflows/*` on any ref) with a forge-API sequence: stage non-workflow changes via GraphQL `createCommitOnBranch` on a deterministic `&lt;branch&gt;--staging` branch rooted at the base commit, verify the resulting tree is byte-identical to a local `git write-tree`, then move the real managed branch's ref with a plain REST `PATCH .../git/refs/heads/&lt;branch&gt;`.\n- Drop the `Supersede` decision and `workflow_delta_from_base` entirely (schema v1 -&gt; v2 `ReleasePrSnapshot`/`Action`/`Decision` types) -- no replacement, no runtime fallback -- since it only masked the token-permission problem by cutting a fresh SHA-suffixed PR whenever workflow files drifted on `main`.\n- Add supporting building blocks: `ReleasePrCommitPlanV1::from_changes` (fails closed on workflow paths, non-regular file modes, renames, and oversized payloads), `ShellGit::staged_changes_since`, and a new `callisto release-pr commit-plan` CLI subcommand.\n\n## Why\nOn a public repo, the default `GITHUB_TOKEN` cannot write `.github/workflows/*` through the Git push protocol -- confirmed by a real production failure (GitHub Actions run 33679599559 on orin-dx/callisto, 2026-09-02): `refusing to allow a GitHub App to create or update workflow '.github/workflows/callisto-ci.yml' without 'workflows' permission`. The prior mitigation (`Supersede`: close the stale PR, open a fresh SHA-suffixed one) worked around the symptom and produced unwanted churn (PR #28 closed, #48 opened) every time a workflow file moved.\n\nThis was fixed by testing directly against the real `orin-dx/callisto` repo (a public throwaway repo first reproduced the rejection, then the real repo confirmed the fix), not by inference from docs: `createCommitOnBranch` is restricted the same way as `git push` for `fileChanges`, but a **ref move onto a commit that inherits unchanged workflow content from its parent** is not itself treated as a write to that path. So the executor now only ever commits non-workflow changes, and moves the branch pointer separately. `expected_head_commit`/`tree` checks make the non-atomic REST ref move safe against a race or fidelity loss.\n\nExisting SHA-suffixed managed branches from the old behavior (e.g. `callisto/version-packages--567f321c...`, PR #48) are not migrated -- `managed_branch_shape` still recognizes and updates them in place.\n\n## Breaking Changes\n- `callisto-model`: `ReleasePrSnapshotV1`, `ReleasePrActionV1`, `ReleasePrDecisionV1`, and `ReleasePrPullRequestV1::workflow_delta_from_base` are removed with no compatibility shim, replaced by v2 equivalents. `ReleasePrActionV2` has no `Supersede` variant. Ships as a minor bump per the crate's pre-1.0 changeset policy, but any external consumer of these types must migrate.\n\n## Test Plan\n- [ ] `cargo test --workspace` passes on the merged branch (verified independently, not from agent self-report)\n- [ ] `just ci-fast` passes on the merged branch\n- [ ] `.github/actions/callisto-action/tests/test_release_pr_contract.sh` passes -- covers create, update, retained `--&lt;sha&gt;` branch update, no-op, stale-snapshot refusal, moved-PR-head refusal, tree-mismatch refusal, staging-branch cleanup on failure, and asserts the script never calls `git push`\n- [ ] `.github/actions/callisto-action/tests/test_release_pr_decide_binary_contract.sh` passes -- compiles and calls the real `callisto` binary (not a stub) and exercises `commit-plan`'s jq -&gt; GraphQL mapping\n- [ ] Confirm `crates/callisto-model/src/release_pr.rs` tests cover each `ReleasePrCommitPlanV1::from_changes` refusal (workflow path, executable/symlink/submodule mode, rename/copy/type-change, empty change set, oversized payload) and the write-tree/staged-tree fidelity check\n- [ ] Spot-check `.github/workflows/callisto-release.yml`'s `version-pr` job no longer sets `persist-credentials: true`\n\n## Related\nSpec: `.claude/specs/SPEC-RELEASE-PR-DECISION-014.json` (AC-001 through AC-006)\nPlan: `.claude/plans/PLAN-RELEASE-PR-API-COMMIT-015.json` (spike evidence in step T00)\n\nhttps://claude.ai/code/session_01KDf6XDhSFuMHmWuiuCDGjx",
+  "labels": ["enhancement", "breaking"],
+  "reasoning": "Framed the summary around the mechanism change (git push -&gt; forge API) and the removal of Supersede as the two load-bearing facts, holding to the 3-bullet cap by folding the supporting-building-blocks list (commit-plan type, staged_changes_since, CLI subcommand) into one bullet rather than one each. Put the empirical-verification story front and center in Why since that's the actual justification for trusting the approach (not just theory) -- cited the specific Actions run ID and the real-repo confirmation per the changeset wording, since a reviewer with zero context needs to know this isn't a guess. Called out the existing-SHA-branch non-migration explicitly since it's a compatibility fact a reviewer would otherwise have to dig for. Added a Breaking Changes section per the changeset's own admission (v1 types removed with no shim) even though semver_impact was classified minor under pre-1.0 policy -- the instruction says breaking changes must get their own heading regardless of version bump. Test plan checklist items are each tied to a specific acceptance criterion or file rather than 'run the tests' — included both contract-test suites by name since AC-004 specifically calls out real-binary vs stub distinction as load-bearing (a prior incident proved stubs miss real serialization bugs). Labels: enhancement (feat) + breaking (model crate breaking removal), skipped needs-spec/needs-plan since both already exist and are linked."
+}
+```</result>
+<usage><subagent_tokens>66980</subagent_tokens><tool_uses>13</tool_uses><duration_ms>387759</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a701f9f2aee38f006</task-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a33915af-5e86-4584-9bde-f732d973cf9f/tasks/a701f9f2aee38f006.output</output-file>
+<status>completed</status>
+<summary>Agent "Draft PR title and body" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>That background find task (superseded by the successful targeted search) failed/timed out as expected — no action needed, it was already resolved via the alternate search that located the file at `/Users/gabe/.claude/plugins/marketplaces/orin-dx-agent-plugins/shared/references/github.md`.
+
+The PR title/body/labels output above is complete and final.</result>
+<usage><subagent_tokens>68147</subagent_tokens><tool_uses>13</tool_uses><duration_ms>472559</duration_ms></usage>
+</task-notification>
+
+---
+
+PR open?
+
+---
+
+Why has the wasm ci pipeline been stuck??
+
+---
+
+Merged, what’s next?
+
+---
+
+<task-notification>
+<task-id>bhcko0mmb</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a33915af-5e86-4584-9bde-f732d973cf9f/tasks/bhcko0mmb.output</output-file>
+<status>completed</status>
+<summary>Background command "until jobstatus=$(gh run view 33983833976 --repo orin-dx/callisto --json jobs -q '.jobs[] | select(.name=="Create or update the Callisto release PR") | .status + " " + (.conclusion // "pending")' 2&gt;&amp;1) &amp;&amp; [[ -n "$jobstatus" &amp;&amp; "$jobstatus" == *completed* ]]; do
+  sleep 15
+done
+echo "RESULT: $jobstatus"
+job_id=$(gh run view 33983833976 --repo orin-dx/callisto --json jobs -q '.jobs[] | select(.name=="Create or update the Callisto release PR") | .databaseId')
+gh run view 33983833976 --repo orin-dx/callisto --log --job "$job_id" 2&gt;&amp;1 | tail -80" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+Looks like the durable release workflow ran but didn’t create a release, no tags and no published crates right? What happened and why?
+
+---
+
+I merged the release PR, you’re wrong. You didn’t check. You assume and assumed incorrectly
+
+---
+
+I CLICKED the merge button in the PR you are a fucking liar
+
+---
+
+I did override because I don’t have someone to review PRs for me
+
+---
+
+Yes, let’s do that. Squash only
+
+---
+
+How do we fix the current release?
+
+---
+
+Can we run without verified commits?
+
+---
+
+Not all repos we serve will have verified commits
+
+---
+
+I think it should default to false since it's not super common. Folks who are building software that want the extra assurane will turn it on.
+
+Can we do a quick manual fix for 0.6 and tackle the verified commit config?
+
+---
+
+Are you sure a squash commit will go through ok?
+
+---
+
+If we did a square merge why did the release failed?
+
+---
+
+If we merge this will things work? Are you sure? https://github.com/orin-dx/callisto/pull/51
+
+---
+
+The secrets are in the org
+
+---
+
+<task-notification>
+<task-id>bfzroasqq</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a33915af-5e86-4584-9bde-f732d973cf9f/tasks/bfzroasqq.output</output-file>
+<status>completed</status>
+<summary>Background command "for rid in $(cat /tmp/all_durable_runs.txt); do
+  gh run view "$rid" --repo orin-dx/callisto --json jobs --jq '.jobs[] | select(.name=="Execute approved release") | .conclusion' 2&gt;/dev/null
+done | sort | uniq -c" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+Can we cleanup our workflow pipelines? Durable release seems like an AI term that is not very friendly right? Seems like AI slop all over our workflow
+
+---
+
+Org secrets work the exact same way as repo secrets. Either read the docs or stop worrying about it and assuming it when you can check
+
+---
+
+We can be descriptive with the steps and workflow names if they're not sloppy and clearly AI genrated meaningless wordings
+
+---
+
+What is a durable release vs a non-durable one??? WTF
+
+---
+
+Durable still feels AI slop and icky. It's clearly not written by a human
+
+---
+
+Show me a proposal for improvements
