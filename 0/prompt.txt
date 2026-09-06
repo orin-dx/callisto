@@ -1,0 +1,25 @@
+From claude: PR #39 — two separate, real CI failures. Nothing flaky, both reproducible from the logs.
+
+1. Test Suite & WASM Check fails on both ubuntu-latest and macos-latest — CI workflow bug, not a code bug
+
+cargo nextest run --workspace --profile ci
+error: no such command: `nextest`
+
+The test job in .github/workflows/callisto-ci.yml runs just test-ci, which invokes cargo nextest run directly — but that job never installs cargo-nextest. Every other job that needs a cargo subcommand tool has the matching install step (coverage installs cargo-llvm-cov via taiki-e/install-action, security installs cargo-deny the same way) — the test job is simply missing that same step for nextest. This branch's rewrite of callisto-ci.yml (introducing the test-ci recipe + JUnit artifact upload) dropped it. Both matrix jobs fail identically, immediately, before running a single test.
+
+This is why my own review yesterday showed 1246/1246 tests passing clean: I ran just test locally, which uses the older recipe (cargo nextest run --workspace || moon run :test, with a fallback) against a machine that already has cargo-nextest installed globally. CI's test-ci recipe has no such fallback and the runner starts with nothing installed.
+
+2. Code Coverage & Test Report fails on a real test — separate root cause, not yet confirmed
+
+test merged_release_commit_executes_exactly_once_through_real_cli ... FAILED
+release execute failed: fatal: Needed a single revision
+{"schemaVersion":1,"error":{"code":"E124","message":"release intent no longer matches the current workspace snapshot", ...}}
+
+This is crates/callisto-cli/tests/durable_release_e2e_tests.rs. The test builds a real temp Git repo (release_commit_fixture(): init → 3 commits including a fake origin remote pointing at hcore-crate.git → callisto add/version), then callscallisto release execute against it directly. Git itself throws fatal: Needed a single revision — some git plumbing call inside the release-authority code can't resolve a ref it expects ectly surfaces that as a fail-closed E124 rather thancrashing or proceeding.
+
+I didn't chase this to the exact line since you asked for a report only, but one plausible cause worth someone checking directly: the fixture adds an origin remote but never actually fetchorigin/main (or similar remote-tracking) ref existslocally — if the merged-release-commit delta logic (SPEC-008's "parent-to-commit delta" authority) resolves against a remote-tracking
+ref rather than HEAD^/HEAD~1, that would produce exactpothesis, not a confirmed diagnosis.
+
+Important caveat: since the test job (matrix, nextest-h to run any tests, I can't tell from these logs alonewhether this same test would also fail there once nextest is installed, or whether it's specific to the coverage job's execution context (it runs cargo test --all-features directly, ncking once #1 is fixed.
+
+Not failing: formatting, clippy, and security audit are all green — my earlier deny.toml fix (PR #38) is already reflected here.
