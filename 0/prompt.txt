@@ -1,0 +1,1 @@
+Callisto needs to work correctly with minimal config out of the box
