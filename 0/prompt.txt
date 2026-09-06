@@ -1,0 +1,1 @@
+How would that work for our users? Seems like you're not thinking about this before. Prior versions of callisto were updating the release branch and the PR
