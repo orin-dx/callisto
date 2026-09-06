@@ -155,12 +155,62 @@ pub fn derive_release_commit_decision<R: CommandRunner, D: DependencyResolver>(
         }
     }
 
+    // A changeset only ever names a bare package; it cannot select a whole
+    // fixed/linked group, yet `solve_cascade` sweeps every group member to
+    // the same converged target the moment one member bumps (Track 1). A
+    // changeset-selected package's group siblings are therefore just as
+    // authorized as the package itself -- expanding `selected` here, rather
+    // than treating an unnamed sibling's version change as unreviewed, is
+    // what makes this function agree with the decision `plan_version`
+    // actually produced instead of a narrower one nothing ever generates.
+    let groups = &workspace.config.groups;
+    let mut triggered_groups = std::collections::BTreeSet::new();
+    for package in workspace.graph.packages() {
+        let is_selected = package.canonical_manifests().any(|manifest| {
+            ReleasePackageId::new(manifest.ecosystem(), package.id.name()).is_ok_and(|id| selected.contains(&id))
+        });
+        if !is_selected {
+            continue;
+        }
+        if let Some(group) = groups.fixed_of.get(&package.id) {
+            triggered_groups.insert(group.clone());
+        }
+        if let Some(group) = groups.linked_of.get(&package.id) {
+            triggered_groups.insert(group.clone());
+        }
+    }
+    let mut authorized = selected.clone();
+    if !triggered_groups.is_empty() {
+        for package in workspace.graph.packages() {
+            let in_triggered_group = groups
+                .fixed_of
+                .get(&package.id)
+                .is_some_and(|group| triggered_groups.contains(group))
+                || groups
+                    .linked_of
+                    .get(&package.id)
+                    .is_some_and(|group| triggered_groups.contains(group));
+            if !in_triggered_group {
+                continue;
+            }
+            for manifest in package.canonical_manifests() {
+                let id = ReleasePackageId::new(manifest.ecosystem(), package.id.name())
+                    .map_err(|_error| GraphError::ReleaseIntentStale)?;
+                authorized.insert(id);
+            }
+        }
+    }
+
     let changed_paths = changed
         .iter()
         .filter_map(|(status, path)| matches!(status.as_str(), "A" | "M").then_some(path.as_str()))
         .collect::<std::collections::BTreeSet<_>>();
     let mut entries = Vec::new();
     let mut observed = std::collections::BTreeSet::new();
+    let mut group_targets: std::collections::BTreeMap<
+        &callisto_model::GroupName,
+        Vec<(callisto_model::PackageId, Version)>,
+    > = std::collections::BTreeMap::new();
     for package in workspace.graph.packages() {
         let package_ids = package
             .canonical_manifests()
@@ -169,8 +219,8 @@ pub fn derive_release_commit_decision<R: CommandRunner, D: DependencyResolver>(
                     .map_err(|_error| GraphError::ReleaseIntentStale)
             })
             .collect::<Result<Vec<_>, _>>()?;
-        let package_is_selected = package_ids.iter().any(|id| selected.contains(id));
-        if package_is_selected {
+        let package_is_authorized = package_ids.iter().any(|id| authorized.contains(id));
+        if package_is_authorized {
             let changelog = package.changelog.as_ref().ok_or(GraphError::ReleaseIntentStale)?;
             if !changed_paths.contains(changelog.to_string_lossy().as_ref()) {
                 return Err(GraphError::ReleaseIntentStale);
@@ -189,26 +239,68 @@ pub fn derive_release_commit_decision<R: CommandRunner, D: DependencyResolver>(
                 manifest.ecosystem(),
             )?;
             let changed_version = before != after;
-            if selected.contains(&id) {
+            if authorized.contains(&id) {
                 if !changed_version || !changed_paths.contains(path.as_ref()) {
                     return Err(GraphError::ReleaseIntentStale);
                 }
                 observed.insert(id.clone());
+                let reason = if selected.contains(&id) {
+                    ReleaseInclusionReason::Changeset
+                } else if let Some(group) = groups.fixed_of.get(&package.id) {
+                    ReleaseInclusionReason::FixedGroup {
+                        group_id: group.as_str().to_string(),
+                    }
+                } else if let Some(group) = groups.linked_of.get(&package.id) {
+                    ReleaseInclusionReason::LinkedGroup {
+                        group_id: group.as_str().to_string(),
+                    }
+                } else {
+                    // Unreachable: `authorized` only ever gains an id via
+                    // `selected` itself or via a `fixed_of`/`linked_of` hit
+                    // above, so one of the three arms above always matches.
+                    return Err(GraphError::ReleaseIntentStale);
+                };
+                if let Some(group) = groups
+                    .fixed_of
+                    .get(&package.id)
+                    .or_else(|| groups.linked_of.get(&package.id))
+                {
+                    if triggered_groups.contains(group) {
+                        group_targets
+                            .entry(group)
+                            .or_default()
+                            .push((package.id.clone(), after.clone()));
+                    }
+                }
                 entries.push(ReleaseDecisionEntry {
                     package: id,
                     target_version: after,
-                    reasons: vec![ReleaseInclusionReason::Changeset],
+                    reasons: vec![reason],
                 });
             } else if changed_version {
-                // A changed version without a consumed changeset is an
-                // unreviewed extra release.  Group/cascade expansion must be
-                // encoded by the release-PR generator before this boundary is
-                // widened; failing closed prevents a silent broader publish.
+                // A changed version without a consumed changeset or a
+                // triggered group cascade is an unreviewed extra release.
+                // Dependency-driven `Cascade` and `PreReleasePolicy` bumps
+                // remain unsupported here and still fail closed -- this
+                // function only re-derives the two cascade shapes
+                // (`FixedGroup`, `LinkedGroup`) that always converge every
+                // member to one shared target, which is independently
+                // checkable from the diff alone without re-running the full
+                // dependency-graph cascade solver.
                 return Err(GraphError::ReleaseIntentStale);
             }
         }
     }
-    if observed != selected {
+    for (group, members) in &group_targets {
+        let first = &members[0].1;
+        if members[1..].iter().any(|(_, version)| version != first) {
+            return Err(GraphError::ReleaseCommitCascadeDivergent {
+                group: (*group).clone(),
+                members: members.clone(),
+            });
+        }
+    }
+    if observed != authorized {
         return Err(GraphError::ReleaseIntentStale);
     }
     ReleaseDecisionV1::new(entries).map_err(|_error| GraphError::ReleaseIntentStale)

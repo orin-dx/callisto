@@ -255,7 +255,12 @@ impl DecisionDigest {
 /// This is intentionally a model value: graph derives it, but every later
 /// process can validate the exact approved roster without importing graph.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase", tag = "kind", deny_unknown_fields)]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "kind",
+    deny_unknown_fields
+)]
 #[non_exhaustive]
 pub enum ReleaseInclusionReason {
     Changeset,
@@ -1834,6 +1839,45 @@ pub enum ReleaseReceiptError {
 mod tests {
     use super::*;
     use crate::Ecosystem;
+
+    /// `rename_all` on an internally-tagged enum only renames the `kind`
+    /// discriminant, never fields inside a variant -- the exact gap that
+    /// shipped `ReleasePrActionV1`'s snake_case `pull_request_number` to
+    /// production (see `.changeset/fix-release-pr-action-camel-case.md`).
+    /// `ReleaseInclusionReason` had the identical gap.
+    #[test]
+    fn inclusion_reason_variant_fields_serialize_as_camel_case() {
+        let fixed = ReleaseInclusionReason::FixedGroup {
+            group_id: "workspace".to_string(),
+        };
+        let value = serde_json::to_value(&fixed).unwrap();
+        assert_eq!(value["kind"], "fixedGroup");
+        assert_eq!(value["groupId"], "workspace");
+        assert!(value.get("group_id").is_none());
+
+        let linked = ReleaseInclusionReason::LinkedGroup {
+            group_id: "demo".to_string(),
+        };
+        let value = serde_json::to_value(&linked).unwrap();
+        assert_eq!(value["kind"], "linkedGroup");
+        assert_eq!(value["groupId"], "demo");
+
+        let cascade = ReleaseInclusionReason::Cascade {
+            from: ReleasePackageId::new(Ecosystem::Cargo, "upstream").unwrap(),
+            edge_kind: "peer".to_string(),
+        };
+        let value = serde_json::to_value(&cascade).unwrap();
+        assert_eq!(value["kind"], "cascade");
+        assert_eq!(value["edgeKind"], "peer");
+        assert!(value.get("edge_kind").is_none());
+
+        let policy = ReleaseInclusionReason::PreReleasePolicy {
+            policy_id: "beta".to_string(),
+        };
+        let value = serde_json::to_value(&policy).unwrap();
+        assert_eq!(value["kind"], "preReleasePolicy");
+        assert_eq!(value["policyId"], "beta");
+    }
 
     fn registry_binding(key: &str) -> RegistryBindingId {
         RegistryBindingId::new(
