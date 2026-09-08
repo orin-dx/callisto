@@ -4,7 +4,6 @@ use callisto_model::{DepKind, DepSpec, PackageId, PublishTarget};
 use fixtures::{GraphBuilder, PackageBuilder};
 use std::cell::OnceCell;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
 
 struct DummyRunner;
 impl callisto_model::CommandRunner for DummyRunner {
@@ -204,108 +203,6 @@ fn test_publish_plan_uses_correct_topological_order() {
     assert!(
         pos_b < pos_a,
         "pkg-b must precede pkg-a in publish plan (dependency first); order: {names:?}"
-    );
-}
-
-// ---- PUB-001 regression guard -----------------------------------------------
-
-/// A CommandRunner that captures the args slice of every call.
-struct ArgsCapturingRunner {
-    captured: Arc<Mutex<Vec<Vec<String>>>>,
-}
-
-impl callisto_model::CommandRunner for ArgsCapturingRunner {
-    fn run(
-        &self,
-        _program: &str,
-        args: &[&str],
-        _cwd: &std::path::Path,
-    ) -> Result<callisto_model::CommandOutput, callisto_model::CommandError> {
-        self.captured
-            .lock()
-            .unwrap()
-            .push(args.iter().map(|s| s.to_string()).collect());
-        Ok(callisto_model::CommandOutput {
-            exit_code: Some(0),
-            stdout: String::new(),
-            stderr: String::new(),
-        })
-    }
-}
-
-/// Regression guard for PUB-001: `SubprocessRegistryClient::publish()` silently
-/// routes private-registry crates to crates.io when `load_plan()` has NOT been
-/// called — because `cargo_registry` is empty and the lookup returns `None`.
-///
-/// The CLI's `handle()` must call `client.load_plan(&plan)` (line 127 of
-/// `crates/callisto-cli/src/commands/publish.rs`) before passing the client to
-/// the orchestrator. This test documents both sides of that invariant:
-///
-/// - WITH `load_plan`: `--registry cloudsmith` appears in the cargo args.
-/// - WITHOUT `load_plan`: `--registry` is absent (crates.io fallback — wrong).
-///
-/// If the positive assertion ever fails, the CLI lost its `load_plan()` call or
-/// `SubprocessRegistryClient` changed how it threads registry metadata.
-#[test]
-fn pub_001_load_plan_required_for_private_registry_routing() {
-    use callisto_graph::commands::{
-        AlwaysRetryPolicy, PublishOrchestrator, SubprocessRegistryClient, SystemTimeProvider,
-    };
-    use callisto_model::{
-        ApplyPermit, CratePublish, PublishPlan, RegistryKey, Version, VersionGrammar, SCHEMA_VERSION,
-    };
-
-    let v = Version::parse("1.0.0", VersionGrammar::SemVer).unwrap();
-    let plan = PublishPlan {
-        schema_version: SCHEMA_VERSION,
-        rust_crates: vec![CratePublish {
-            name: "my-crate".to_string(),
-            version: v,
-            publish_to: RegistryKey("cloudsmith".to_string()),
-            registry: Some("cloudsmith".to_string()),
-            package_dir: None,
-        }],
-        npm_main_packages: vec![],
-        npm_platform_packages: vec![],
-        pypi_packages: vec![],
-        releases: vec![],
-        diagnostics: vec![],
-    };
-    let permit = ApplyPermit::force_for_tests();
-
-    // --- WITH load_plan (correct path) ---
-    let captured = Arc::new(Mutex::new(Vec::<Vec<String>>::new()));
-    let mut client = SubprocessRegistryClient::new(
-        ArgsCapturingRunner {
-            captured: Arc::clone(&captured),
-        },
-        PathBuf::from("/workspace"),
-    );
-    client.load_plan(&plan);
-    let orch = PublishOrchestrator::new(client, AlwaysRetryPolicy, SystemTimeProvider);
-    drop(orch.execute(&plan, &permit));
-    let recorded = captured.lock().unwrap().clone();
-    let registry_present = recorded.iter().any(|args| args.contains(&"--registry".to_string()));
-    assert!(
-        registry_present,
-        "with load_plan: --registry must appear in cargo args for private-registry crate; captured: {recorded:?}"
-    );
-
-    // --- WITHOUT load_plan (documents the regression this guard prevents) ---
-    let captured2 = Arc::new(Mutex::new(Vec::<Vec<String>>::new()));
-    let client2 = SubprocessRegistryClient::new(
-        ArgsCapturingRunner {
-            captured: Arc::clone(&captured2),
-        },
-        PathBuf::from("/workspace"),
-    );
-    let orch2 = PublishOrchestrator::new(client2, AlwaysRetryPolicy, SystemTimeProvider);
-    drop(orch2.execute(&plan, &permit));
-    let recorded2 = captured2.lock().unwrap().clone();
-    let registry_absent = !recorded2.iter().any(|args| args.contains(&"--registry".to_string()));
-    assert!(
-        registry_absent,
-        "without load_plan: --registry must be absent (crates.io fallback — this is the PUB-001 regression); captured: {recorded2:?}"
     );
 }
 

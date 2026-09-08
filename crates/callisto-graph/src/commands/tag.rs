@@ -1,5 +1,5 @@
 use callisto_model::{ApplyPermit, CommandRunner, CreatedTag, PublishPlan, TagReport, SCHEMA_VERSION};
-use callisto_vcs::{GitDataSource, VcsError};
+use callisto_vcs::{GitDataSource, TagSignPolicy, VcsError};
 
 use crate::error::GraphError;
 use crate::resolver::DependencyResolver;
@@ -110,7 +110,13 @@ pub fn create_tags_with_options<R: CommandRunner, D: DependencyResolver>(
             }
         } else {
             let msg = format!("Release {}", tag_str);
-            git.create_tag(tag_str, &release.sha, Some(&msg), permit)?;
+            git.create_tag(
+                tag_str,
+                &release.sha,
+                Some(&msg),
+                TagSignPolicy::RespectRepoConfig,
+                permit,
+            )?;
             release.sha.clone()
         };
 
