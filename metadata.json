@@ -3,25 +3,9 @@
   "checkpoint_id": "01M1ZC0SAX3YRQ4GQ305WMBMPY",
   "strategy": "manual-commit",
   "branch": "fix/release-decision-persist-and-verify",
-  "checkpoints_count": 28,
+  "checkpoints_count": 4,
   "files_touched": [
-    ".changeset/release-decision-persist-and-verify.md",
-    ".github/actions/callisto-action/action.yml",
-    ".github/actions/callisto-action/scripts/create-or-update-release-pr.sh",
-    ".github/actions/callisto-action/tests/test_release_pr_contract.sh",
-    ".github/workflows/callisto-release.yml",
-    "Cargo.lock",
-    "crates/callisto-cli/src/cli.rs",
-    "crates/callisto-cli/src/commands/release.rs",
-    "crates/callisto-cli/src/commands/version.rs",
-    "crates/callisto-cli/tests/changelog_tests.rs",
-    "crates/callisto-cli/tests/dry_run_invariant_tests.rs",
-    "crates/callisto-cli/tests/durable_release_e2e_tests.rs",
-    "crates/callisto-cli/tests/lifecycle_e2e_tests.rs",
-    "crates/callisto-cli/tests/pre_mode_tests.rs",
-    "crates/callisto-cli/tests/strict_flag_tests.rs",
-    "crates/callisto-graph/src/commands/release_decision.rs",
-    "crates/callisto-model/src/release.rs"
+    "crates/callisto-cli/tests/durable_release_e2e_tests.rs"
   ],
   "sessions": [
     {
@@ -33,17 +17,17 @@
     }
   ],
   "token_usage": {
-    "input_tokens": 5487,
-    "cache_creation_tokens": 11094208,
-    "cache_read_tokens": 329646328,
-    "output_tokens": 592013,
-    "api_call_count": 782,
+    "input_tokens": 5525,
+    "cache_creation_tokens": 11115829,
+    "cache_read_tokens": 336662005,
+    "output_tokens": 601028,
+    "api_call_count": 801,
     "subagent_tokens": {
-      "input_tokens": 68,
-      "cache_creation_tokens": 51619,
-      "cache_read_tokens": 301306,
-      "output_tokens": 765,
-      "api_call_count": 8
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
     }
   }
 }

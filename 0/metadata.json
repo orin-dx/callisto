@@ -3,45 +3,29 @@
   "checkpoint_id": "01M1ZC0SAX3YRQ4GQ305WMBMPY",
   "session_id": "a33915af-5e86-4584-9bde-f732d973cf9f",
   "strategy": "manual-commit",
-  "created_at": "2026-09-08T02:02:16.228967Z",
+  "created_at": "2026-09-08T02:36:07.426575Z",
   "branch": "fix/release-decision-persist-and-verify",
-  "checkpoints_count": 28,
-  "save_step_count": 27,
+  "checkpoints_count": 4,
+  "save_step_count": 5,
   "files_touched": [
-    ".changeset/release-decision-persist-and-verify.md",
-    ".github/actions/callisto-action/action.yml",
-    ".github/actions/callisto-action/scripts/create-or-update-release-pr.sh",
-    ".github/actions/callisto-action/tests/test_release_pr_contract.sh",
-    ".github/workflows/callisto-release.yml",
-    "Cargo.lock",
-    "crates/callisto-cli/src/cli.rs",
-    "crates/callisto-cli/src/commands/release.rs",
-    "crates/callisto-cli/src/commands/version.rs",
-    "crates/callisto-cli/tests/changelog_tests.rs",
-    "crates/callisto-cli/tests/dry_run_invariant_tests.rs",
-    "crates/callisto-cli/tests/durable_release_e2e_tests.rs",
-    "crates/callisto-cli/tests/lifecycle_e2e_tests.rs",
-    "crates/callisto-cli/tests/pre_mode_tests.rs",
-    "crates/callisto-cli/tests/strict_flag_tests.rs",
-    "crates/callisto-graph/src/commands/release_decision.rs",
-    "crates/callisto-model/src/release.rs"
+    "crates/callisto-cli/tests/durable_release_e2e_tests.rs"
   ],
   "agent": "Claude Code",
   "model": "claude-sonnet-5",
-  "turn_id": "23f8b31cd19e",
+  "turn_id": "b0895900c1cd",
   "compact_transcript_start": 0,
   "token_usage": {
-    "input_tokens": 5487,
-    "cache_creation_tokens": 11094208,
-    "cache_read_tokens": 329646328,
-    "output_tokens": 592013,
-    "api_call_count": 782,
+    "input_tokens": 5525,
+    "cache_creation_tokens": 11115829,
+    "cache_read_tokens": 336662005,
+    "output_tokens": 601028,
+    "api_call_count": 801,
     "subagent_tokens": {
-      "input_tokens": 68,
-      "cache_creation_tokens": 51619,
-      "cache_read_tokens": 301306,
-      "output_tokens": 765,
-      "api_call_count": 8
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
     }
   },
   "skill_events_version": 1,
@@ -163,67 +147,35 @@
     }
   ],
   "session_metrics": {
-    "turn_count": 92
+    "turn_count": 96
   },
   "initial_attribution": {
-    "calculated_at": "2026-09-08T02:02:15.864243Z",
-    "agent_lines": 0,
+    "calculated_at": "2026-09-08T02:36:07.048822Z",
+    "agent_lines": 131,
     "agent_removed": 0,
-    "human_added": 182,
-    "human_modified": 363,
+    "human_added": 242,
+    "human_modified": 2,
     "human_removed": 0,
-    "total_committed": 223,
-    "total_lines_changed": 545,
-    "agent_percentage": 0,
+    "total_committed": 375,
+    "total_lines_changed": 466,
+    "agent_percentage": 28.11158798283262,
     "metric_version": 2
   },
   "prompt_attributions": [
     {
       "checkpoint_number": 2,
-      "user_lines_added": 654,
-      "user_lines_removed": 356,
-      "agent_lines_added": 1613,
-      "agent_lines_removed": 0,
-      "user_added_per_file": {
-        ".claude/settings.json": 13,
-        ".claude/settings.local.json": 11,
-        ".claude/skills/entire-search/SKILL.md": 22,
-        ".codex/agents/bug-hunter.toml": 3,
-        ".codex/hooks.json": 99,
-        ".gemini/skills/entire-search/SKILL.md": 22,
-        ".github/actions/callisto-action/action.yml": 6,
-        ".github/actions/callisto-action/scripts/create-or-update-release-pr.sh": 1,
-        ".github/actions/callisto-action/tests/test_release_pr_contract.sh": 1,
-        ".github/workflows/callisto-release.yml": 1,
-        ".opencode/plugins/entire.ts": 269,
-        ".opencode/skills/entire-search/SKILL.md": 22,
-        "Cargo.lock": 10,
-        "crates/callisto-cli/src/cli.rs": 22,
-        "crates/callisto-cli/src/commands/release.rs": 5,
-        "crates/callisto-cli/src/commands/version.rs": 19,
-        "crates/callisto-cli/tests/durable_release_e2e_tests.rs": 63,
-        "crates/callisto-graph/src/commands/release_decision.rs": 65
-      },
-      "user_removed_per_file": {
-        ".github/actions/callisto-action/action.yml": 1,
-        ".github/workflows/callisto-release.yml": 1,
-        "Cargo.lock": 10,
-        "crates/callisto-cli/src/cli.rs": 1,
-        "crates/callisto-cli/src/commands/release.rs": 1,
-        "crates/callisto-cli/src/commands/version.rs": 2,
-        "crates/callisto-cli/tests/durable_release_e2e_tests.rs": 176,
-        "crates/callisto-graph/src/commands/release_decision.rs": 164
-      }
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
     },
     {
       "checkpoint_number": 3,
-      "user_lines_added": 462,
+      "user_lines_added": 448,
       "user_lines_removed": 0,
-      "agent_lines_added": 1888,
-      "agent_lines_removed": 92,
+      "agent_lines_added": 1742,
+      "agent_lines_removed": 0,
       "user_added_per_file": {
-        ".claude/scheduled_tasks.lock": 1,
-        ".claude/settings.json": 13,
         ".claude/settings.local.json": 11,
         ".claude/skills/entire-search/SKILL.md": 22,
         ".codex/agents/bug-hunter.toml": 3,
@@ -235,13 +187,11 @@
     },
     {
       "checkpoint_number": 4,
-      "user_lines_added": 462,
+      "user_lines_added": 448,
       "user_lines_removed": 0,
-      "agent_lines_added": 1888,
-      "agent_lines_removed": 92,
+      "agent_lines_added": 1746,
+      "agent_lines_removed": 0,
       "user_added_per_file": {
-        ".claude/scheduled_tasks.lock": 1,
-        ".claude/settings.json": 13,
         ".claude/settings.local.json": 11,
         ".claude/skills/entire-search/SKILL.md": 22,
         ".codex/agents/bug-hunter.toml": 3,
@@ -253,417 +203,27 @@
     },
     {
       "checkpoint_number": 5,
-      "user_lines_added": 477,
+      "user_lines_added": 448,
       "user_lines_removed": 0,
-      "agent_lines_added": 1913,
-      "agent_lines_removed": 92,
+      "agent_lines_added": 1746,
+      "agent_lines_removed": 0,
       "user_added_per_file": {
-        ".claude/scheduled_tasks.lock": 1,
-        ".claude/settings.json": 13,
         ".claude/settings.local.json": 11,
         ".claude/skills/entire-search/SKILL.md": 22,
         ".codex/agents/bug-hunter.toml": 3,
         ".codex/hooks.json": 99,
         ".gemini/skills/entire-search/SKILL.md": 22,
         ".opencode/plugins/entire.ts": 269,
-        ".opencode/skills/entire-search/SKILL.md": 22,
-        "crates/callisto-cli/.callisto/release-decision.json": 15
+        ".opencode/skills/entire-search/SKILL.md": 22
       }
     },
     {
       "checkpoint_number": 6,
-      "user_lines_added": 462,
+      "user_lines_added": 448,
       "user_lines_removed": 0,
-      "agent_lines_added": 1919,
-      "agent_lines_removed": 92,
+      "agent_lines_added": 1746,
+      "agent_lines_removed": 0,
       "user_added_per_file": {
-        ".claude/scheduled_tasks.lock": 1,
-        ".claude/settings.json": 13,
-        ".claude/settings.local.json": 11,
-        ".claude/skills/entire-search/SKILL.md": 22,
-        ".codex/agents/bug-hunter.toml": 3,
-        ".codex/hooks.json": 99,
-        ".gemini/skills/entire-search/SKILL.md": 22,
-        ".opencode/plugins/entire.ts": 269,
-        ".opencode/skills/entire-search/SKILL.md": 22
-      }
-    },
-    {
-      "checkpoint_number": 7,
-      "user_lines_added": 462,
-      "user_lines_removed": 0,
-      "agent_lines_added": 1919,
-      "agent_lines_removed": 92,
-      "user_added_per_file": {
-        ".claude/scheduled_tasks.lock": 1,
-        ".claude/settings.json": 13,
-        ".claude/settings.local.json": 11,
-        ".claude/skills/entire-search/SKILL.md": 22,
-        ".codex/agents/bug-hunter.toml": 3,
-        ".codex/hooks.json": 99,
-        ".gemini/skills/entire-search/SKILL.md": 22,
-        ".opencode/plugins/entire.ts": 269,
-        ".opencode/skills/entire-search/SKILL.md": 22
-      }
-    },
-    {
-      "checkpoint_number": 8,
-      "user_lines_added": 462,
-      "user_lines_removed": 0,
-      "agent_lines_added": 1919,
-      "agent_lines_removed": 92,
-      "user_added_per_file": {
-        ".claude/scheduled_tasks.lock": 1,
-        ".claude/settings.json": 13,
-        ".claude/settings.local.json": 11,
-        ".claude/skills/entire-search/SKILL.md": 22,
-        ".codex/agents/bug-hunter.toml": 3,
-        ".codex/hooks.json": 99,
-        ".gemini/skills/entire-search/SKILL.md": 22,
-        ".opencode/plugins/entire.ts": 269,
-        ".opencode/skills/entire-search/SKILL.md": 22
-      }
-    },
-    {
-      "checkpoint_number": 9,
-      "user_lines_added": 462,
-      "user_lines_removed": 0,
-      "agent_lines_added": 1919,
-      "agent_lines_removed": 92,
-      "user_added_per_file": {
-        ".claude/scheduled_tasks.lock": 1,
-        ".claude/settings.json": 13,
-        ".claude/settings.local.json": 11,
-        ".claude/skills/entire-search/SKILL.md": 22,
-        ".codex/agents/bug-hunter.toml": 3,
-        ".codex/hooks.json": 99,
-        ".gemini/skills/entire-search/SKILL.md": 22,
-        ".opencode/plugins/entire.ts": 269,
-        ".opencode/skills/entire-search/SKILL.md": 22
-      }
-    },
-    {
-      "checkpoint_number": 10,
-      "user_lines_added": 462,
-      "user_lines_removed": 0,
-      "agent_lines_added": 1919,
-      "agent_lines_removed": 92,
-      "user_added_per_file": {
-        ".claude/scheduled_tasks.lock": 1,
-        ".claude/settings.json": 13,
-        ".claude/settings.local.json": 11,
-        ".claude/skills/entire-search/SKILL.md": 22,
-        ".codex/agents/bug-hunter.toml": 3,
-        ".codex/hooks.json": 99,
-        ".gemini/skills/entire-search/SKILL.md": 22,
-        ".opencode/plugins/entire.ts": 269,
-        ".opencode/skills/entire-search/SKILL.md": 22
-      }
-    },
-    {
-      "checkpoint_number": 11,
-      "user_lines_added": 462,
-      "user_lines_removed": 0,
-      "agent_lines_added": 1922,
-      "agent_lines_removed": 92,
-      "user_added_per_file": {
-        ".claude/scheduled_tasks.lock": 1,
-        ".claude/settings.json": 13,
-        ".claude/settings.local.json": 11,
-        ".claude/skills/entire-search/SKILL.md": 22,
-        ".codex/agents/bug-hunter.toml": 3,
-        ".codex/hooks.json": 99,
-        ".gemini/skills/entire-search/SKILL.md": 22,
-        ".opencode/plugins/entire.ts": 269,
-        ".opencode/skills/entire-search/SKILL.md": 22
-      }
-    },
-    {
-      "checkpoint_number": 12,
-      "user_lines_added": 462,
-      "user_lines_removed": 0,
-      "agent_lines_added": 1922,
-      "agent_lines_removed": 92,
-      "user_added_per_file": {
-        ".claude/scheduled_tasks.lock": 1,
-        ".claude/settings.json": 13,
-        ".claude/settings.local.json": 11,
-        ".claude/skills/entire-search/SKILL.md": 22,
-        ".codex/agents/bug-hunter.toml": 3,
-        ".codex/hooks.json": 99,
-        ".gemini/skills/entire-search/SKILL.md": 22,
-        ".opencode/plugins/entire.ts": 269,
-        ".opencode/skills/entire-search/SKILL.md": 22
-      }
-    },
-    {
-      "checkpoint_number": 13,
-      "user_lines_added": 462,
-      "user_lines_removed": 0,
-      "agent_lines_added": 1922,
-      "agent_lines_removed": 92,
-      "user_added_per_file": {
-        ".claude/scheduled_tasks.lock": 1,
-        ".claude/settings.json": 13,
-        ".claude/settings.local.json": 11,
-        ".claude/skills/entire-search/SKILL.md": 22,
-        ".codex/agents/bug-hunter.toml": 3,
-        ".codex/hooks.json": 99,
-        ".gemini/skills/entire-search/SKILL.md": 22,
-        ".opencode/plugins/entire.ts": 269,
-        ".opencode/skills/entire-search/SKILL.md": 22
-      }
-    },
-    {
-      "checkpoint_number": 14,
-      "user_lines_added": 461,
-      "user_lines_removed": 0,
-      "agent_lines_added": 1922,
-      "agent_lines_removed": 92,
-      "user_added_per_file": {
-        ".claude/settings.json": 13,
-        ".claude/settings.local.json": 11,
-        ".claude/skills/entire-search/SKILL.md": 22,
-        ".codex/agents/bug-hunter.toml": 3,
-        ".codex/hooks.json": 99,
-        ".gemini/skills/entire-search/SKILL.md": 22,
-        ".opencode/plugins/entire.ts": 269,
-        ".opencode/skills/entire-search/SKILL.md": 22
-      }
-    },
-    {
-      "checkpoint_number": 15,
-      "user_lines_added": 461,
-      "user_lines_removed": 0,
-      "agent_lines_added": 1922,
-      "agent_lines_removed": 92,
-      "user_added_per_file": {
-        ".claude/settings.json": 13,
-        ".claude/settings.local.json": 11,
-        ".claude/skills/entire-search/SKILL.md": 22,
-        ".codex/agents/bug-hunter.toml": 3,
-        ".codex/hooks.json": 99,
-        ".gemini/skills/entire-search/SKILL.md": 22,
-        ".opencode/plugins/entire.ts": 269,
-        ".opencode/skills/entire-search/SKILL.md": 22
-      }
-    },
-    {
-      "checkpoint_number": 16,
-      "user_lines_added": 461,
-      "user_lines_removed": 0,
-      "agent_lines_added": 1922,
-      "agent_lines_removed": 92,
-      "user_added_per_file": {
-        ".claude/settings.json": 13,
-        ".claude/settings.local.json": 11,
-        ".claude/skills/entire-search/SKILL.md": 22,
-        ".codex/agents/bug-hunter.toml": 3,
-        ".codex/hooks.json": 99,
-        ".gemini/skills/entire-search/SKILL.md": 22,
-        ".opencode/plugins/entire.ts": 269,
-        ".opencode/skills/entire-search/SKILL.md": 22
-      }
-    },
-    {
-      "checkpoint_number": 17,
-      "user_lines_added": 461,
-      "user_lines_removed": 0,
-      "agent_lines_added": 1922,
-      "agent_lines_removed": 92,
-      "user_added_per_file": {
-        ".claude/settings.json": 13,
-        ".claude/settings.local.json": 11,
-        ".claude/skills/entire-search/SKILL.md": 22,
-        ".codex/agents/bug-hunter.toml": 3,
-        ".codex/hooks.json": 99,
-        ".gemini/skills/entire-search/SKILL.md": 22,
-        ".opencode/plugins/entire.ts": 269,
-        ".opencode/skills/entire-search/SKILL.md": 22
-      }
-    },
-    {
-      "checkpoint_number": 18,
-      "user_lines_added": 462,
-      "user_lines_removed": 7,
-      "agent_lines_added": 1930,
-      "agent_lines_removed": 92,
-      "user_added_per_file": {
-        ".claude/settings.json": 13,
-        ".claude/settings.local.json": 11,
-        ".claude/skills/entire-search/SKILL.md": 22,
-        ".codex/agents/bug-hunter.toml": 3,
-        ".codex/hooks.json": 99,
-        ".gemini/skills/entire-search/SKILL.md": 22,
-        ".github/workflows/callisto-release.yml": 1,
-        ".opencode/plugins/entire.ts": 269,
-        ".opencode/skills/entire-search/SKILL.md": 22
-      },
-      "user_removed_per_file": {
-        ".github/workflows/callisto-release.yml": 7
-      }
-    },
-    {
-      "checkpoint_number": 19,
-      "user_lines_added": 461,
-      "user_lines_removed": 0,
-      "agent_lines_added": 1924,
-      "agent_lines_removed": 92,
-      "user_added_per_file": {
-        ".claude/settings.json": 13,
-        ".claude/settings.local.json": 11,
-        ".claude/skills/entire-search/SKILL.md": 22,
-        ".codex/agents/bug-hunter.toml": 3,
-        ".codex/hooks.json": 99,
-        ".gemini/skills/entire-search/SKILL.md": 22,
-        ".opencode/plugins/entire.ts": 269,
-        ".opencode/skills/entire-search/SKILL.md": 22
-      }
-    },
-    {
-      "checkpoint_number": 20,
-      "user_lines_added": 461,
-      "user_lines_removed": 0,
-      "agent_lines_added": 1922,
-      "agent_lines_removed": 92,
-      "user_added_per_file": {
-        ".claude/settings.json": 13,
-        ".claude/settings.local.json": 11,
-        ".claude/skills/entire-search/SKILL.md": 22,
-        ".codex/agents/bug-hunter.toml": 3,
-        ".codex/hooks.json": 99,
-        ".gemini/skills/entire-search/SKILL.md": 22,
-        ".opencode/plugins/entire.ts": 269,
-        ".opencode/skills/entire-search/SKILL.md": 22
-      }
-    },
-    {
-      "checkpoint_number": 21,
-      "user_lines_added": 461,
-      "user_lines_removed": 0,
-      "agent_lines_added": 1922,
-      "agent_lines_removed": 92,
-      "user_added_per_file": {
-        ".claude/settings.json": 13,
-        ".claude/settings.local.json": 11,
-        ".claude/skills/entire-search/SKILL.md": 22,
-        ".codex/agents/bug-hunter.toml": 3,
-        ".codex/hooks.json": 99,
-        ".gemini/skills/entire-search/SKILL.md": 22,
-        ".opencode/plugins/entire.ts": 269,
-        ".opencode/skills/entire-search/SKILL.md": 22
-      }
-    },
-    {
-      "checkpoint_number": 22,
-      "user_lines_added": 461,
-      "user_lines_removed": 0,
-      "agent_lines_added": 1922,
-      "agent_lines_removed": 92,
-      "user_added_per_file": {
-        ".claude/settings.json": 13,
-        ".claude/settings.local.json": 11,
-        ".claude/skills/entire-search/SKILL.md": 22,
-        ".codex/agents/bug-hunter.toml": 3,
-        ".codex/hooks.json": 99,
-        ".gemini/skills/entire-search/SKILL.md": 22,
-        ".opencode/plugins/entire.ts": 269,
-        ".opencode/skills/entire-search/SKILL.md": 22
-      }
-    },
-    {
-      "checkpoint_number": 23,
-      "user_lines_added": 461,
-      "user_lines_removed": 0,
-      "agent_lines_added": 1922,
-      "agent_lines_removed": 92,
-      "user_added_per_file": {
-        ".claude/settings.json": 13,
-        ".claude/settings.local.json": 11,
-        ".claude/skills/entire-search/SKILL.md": 22,
-        ".codex/agents/bug-hunter.toml": 3,
-        ".codex/hooks.json": 99,
-        ".gemini/skills/entire-search/SKILL.md": 22,
-        ".opencode/plugins/entire.ts": 269,
-        ".opencode/skills/entire-search/SKILL.md": 22
-      }
-    },
-    {
-      "checkpoint_number": 24,
-      "user_lines_added": 461,
-      "user_lines_removed": 0,
-      "agent_lines_added": 1922,
-      "agent_lines_removed": 92,
-      "user_added_per_file": {
-        ".claude/settings.json": 13,
-        ".claude/settings.local.json": 11,
-        ".claude/skills/entire-search/SKILL.md": 22,
-        ".codex/agents/bug-hunter.toml": 3,
-        ".codex/hooks.json": 99,
-        ".gemini/skills/entire-search/SKILL.md": 22,
-        ".opencode/plugins/entire.ts": 269,
-        ".opencode/skills/entire-search/SKILL.md": 22
-      }
-    },
-    {
-      "checkpoint_number": 25,
-      "user_lines_added": 461,
-      "user_lines_removed": 0,
-      "agent_lines_added": 1922,
-      "agent_lines_removed": 92,
-      "user_added_per_file": {
-        ".claude/settings.json": 13,
-        ".claude/settings.local.json": 11,
-        ".claude/skills/entire-search/SKILL.md": 22,
-        ".codex/agents/bug-hunter.toml": 3,
-        ".codex/hooks.json": 99,
-        ".gemini/skills/entire-search/SKILL.md": 22,
-        ".opencode/plugins/entire.ts": 269,
-        ".opencode/skills/entire-search/SKILL.md": 22
-      }
-    },
-    {
-      "checkpoint_number": 26,
-      "user_lines_added": 461,
-      "user_lines_removed": 0,
-      "agent_lines_added": 1922,
-      "agent_lines_removed": 92,
-      "user_added_per_file": {
-        ".claude/settings.json": 13,
-        ".claude/settings.local.json": 11,
-        ".claude/skills/entire-search/SKILL.md": 22,
-        ".codex/agents/bug-hunter.toml": 3,
-        ".codex/hooks.json": 99,
-        ".gemini/skills/entire-search/SKILL.md": 22,
-        ".opencode/plugins/entire.ts": 269,
-        ".opencode/skills/entire-search/SKILL.md": 22
-      }
-    },
-    {
-      "checkpoint_number": 27,
-      "user_lines_added": 461,
-      "user_lines_removed": 0,
-      "agent_lines_added": 1922,
-      "agent_lines_removed": 92,
-      "user_added_per_file": {
-        ".claude/settings.json": 13,
-        ".claude/settings.local.json": 11,
-        ".claude/skills/entire-search/SKILL.md": 22,
-        ".codex/agents/bug-hunter.toml": 3,
-        ".codex/hooks.json": 99,
-        ".gemini/skills/entire-search/SKILL.md": 22,
-        ".opencode/plugins/entire.ts": 269,
-        ".opencode/skills/entire-search/SKILL.md": 22
-      }
-    },
-    {
-      "checkpoint_number": 28,
-      "user_lines_added": 461,
-      "user_lines_removed": 0,
-      "agent_lines_added": 1922,
-      "agent_lines_removed": 92,
-      "user_added_per_file": {
-        ".claude/settings.json": 13,
         ".claude/settings.local.json": 11,
         ".claude/skills/entire-search/SKILL.md": 22,
         ".codex/agents/bug-hunter.toml": 3,
