@@ -1,0 +1,13 @@
+{
+  "tool_use_id": "toolu_01D8u8dbeYm1L2aAxTs6ftSp",
+  "subagent_type": "general-purpose",
+  "task_description": "Stand down duplicate agent",
+  "files": [
+    ".changeset/release-commit-cascade-authorization.md",
+    ".changeset/release-decision-group-consistency.md",
+    ".changeset/release-decision-persist-and-verify.md"
+  ],
+  "started_at": "2026-09-08T12:03:52.478144-07:00",
+  "completed_at": "2026-09-08T12:03:52.478403-07:00",
+  "transcript_unavailable_reason": "transcript path unresolvable"
+}

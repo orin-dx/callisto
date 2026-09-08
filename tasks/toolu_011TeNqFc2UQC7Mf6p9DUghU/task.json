@@ -1,0 +1,13 @@
+{
+  "tool_use_id": "toolu_011TeNqFc2UQC7Mf6p9DUghU",
+  "subagent_type": "general-purpose",
+  "task_description": "Update: base branch merged, retarget PR to main",
+  "files": [
+    ".changeset/release-commit-cascade-authorization.md",
+    ".changeset/release-decision-group-consistency.md",
+    ".changeset/release-decision-persist-and-verify.md"
+  ],
+  "started_at": "2026-09-08T12:01:04.149137-07:00",
+  "completed_at": "2026-09-08T12:01:04.149354-07:00",
+  "transcript_unavailable_reason": "transcript path unresolvable"
+}
