@@ -53,6 +53,7 @@ fn test_full_polyglot_workspace_release_lifecycle() {
             strict: false,
             strict_graph: false,
             allow_empty_changesets: false,
+            emit_decision: None,
         },
         &global,
     );
@@ -122,6 +123,7 @@ edition = "2021"
             strict: false,
             strict_graph: false,
             allow_empty_changesets: false,
+            emit_decision: None,
         },
         &global,
     )
@@ -197,6 +199,7 @@ fn test_compose_pr_body_before_version_and_subpkg_changelog() {
             strict: false,
             strict_graph: false,
             allow_empty_changesets: false,
+            emit_decision: None,
         },
         &global,
     )
@@ -253,6 +256,7 @@ fn test_dry_run_flag_preserves_disk_state() {
             strict: false,
             strict_graph: false,
             allow_empty_changesets: false,
+            emit_decision: None,
         },
         &global_dry,
     );
