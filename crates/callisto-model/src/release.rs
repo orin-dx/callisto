@@ -316,6 +316,7 @@ impl ReleaseDecisionV1 {
     pub const SCHEMA_VERSION: u8 = 1;
 
     /// Creates a canonical decision or rejects an ambiguous release roster.
+    #[allow(clippy::result_large_err)]
     pub fn new(mut entries: Vec<ReleaseDecisionEntry>) -> Result<Self, ReleaseDecisionError> {
         if entries.is_empty() {
             return Err(ReleaseDecisionError::EmptyRoster);
