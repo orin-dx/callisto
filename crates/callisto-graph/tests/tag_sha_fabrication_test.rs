@@ -92,7 +92,7 @@ fn assert_non_repo(root: &Path) {
 fn release_entry(tag_name: &str, sha: &str) -> ReleaseEntry {
     ReleaseEntry {
         package: PackageId::parse("pkg").unwrap(),
-        tag_name: TagName(tag_name.to_string()),
+        tag_name: TagName::parse(tag_name).unwrap(),
         sha: CommitSha::parse(sha).unwrap(),
         changelog_section: None,
         is_prerelease: false,

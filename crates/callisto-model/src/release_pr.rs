@@ -19,14 +19,14 @@ use base64::Engine as _;
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize};
 
-use crate::CommitSha;
+use crate::{CommitSha, GitHubRepository};
 
 /// Explicit identity and presentation configuration for one managed release PR.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ReleasePrConfigV1 {
     pub schema_version: u8,
-    pub repository: String,
+    pub repository: GitHubRepository,
     pub base_branch: String,
     pub release_branch: String,
 }
@@ -35,11 +35,10 @@ impl ReleasePrConfigV1 {
     pub const SCHEMA_VERSION: u8 = 1;
 
     pub fn new(
-        repository: String,
+        repository: GitHubRepository,
         base_branch: String,
         release_branch: String,
     ) -> Result<Self, ReleasePrDecisionError> {
-        validate_repository(&repository)?;
         validate_branch("base branch", &base_branch)?;
         validate_branch("managed release branch", &release_branch)?;
         Ok(Self {
@@ -66,7 +65,7 @@ impl<'de> Deserialize<'de> for ReleasePrConfigV1 {
         #[serde(rename_all = "camelCase", deny_unknown_fields)]
         struct Wire {
             schema_version: u8,
-            repository: String,
+            repository: GitHubRepository,
             base_branch: String,
             release_branch: String,
         }
@@ -85,7 +84,7 @@ impl<'de> Deserialize<'de> for ReleasePrConfigV1 {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ReleasePrSnapshotV2 {
     pub schema_version: u8,
-    pub repository: String,
+    pub repository: GitHubRepository,
     pub base_branch: String,
     pub base_commit: CommitSha,
     pub open_pull_requests: Vec<ReleasePrPullRequestV2>,
@@ -95,12 +94,11 @@ impl ReleasePrSnapshotV2 {
     pub const SCHEMA_VERSION: u8 = 2;
 
     pub fn new(
-        repository: String,
+        repository: GitHubRepository,
         base_branch: String,
         base_commit: CommitSha,
         mut open_pull_requests: Vec<ReleasePrPullRequestV2>,
     ) -> Result<Self, ReleasePrDecisionError> {
-        validate_repository(&repository)?;
         validate_branch("base branch", &base_branch)?;
         let mut numbers = open_pull_requests.iter().map(|pr| pr.number).collect::<Vec<_>>();
         numbers.sort_unstable();
@@ -127,7 +125,7 @@ impl<'de> Deserialize<'de> for ReleasePrSnapshotV2 {
         #[serde(rename_all = "camelCase", deny_unknown_fields)]
         struct Wire {
             schema_version: u8,
-            repository: String,
+            repository: GitHubRepository,
             base_branch: String,
             base_commit: CommitSha,
             open_pull_requests: Vec<ReleasePrPullRequestV2>,
@@ -153,7 +151,7 @@ impl<'de> Deserialize<'de> for ReleasePrSnapshotV2 {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ReleasePrPullRequestV2 {
     pub number: u64,
-    pub head_repository: String,
+    pub head_repository: GitHubRepository,
     pub head_branch: String,
     /// The pull request's current head commit. Re-observed and compared on
     /// every `verify_snapshot` call so a moved head is caught before the
@@ -332,7 +330,7 @@ pub enum ReleasePrDecisionError {
         code(E145),
         help("Do not treat a fork branch as Callisto-managed; close or rename the lookalike before retrying.")
     )]
-    ForeignManagedPullRequest { number: u64, repository: String },
+    ForeignManagedPullRequest { number: u64, repository: GitHubRepository },
     #[error("found {count} open managed release PRs")]
     #[diagnostic(
         code(E146),
@@ -389,25 +387,6 @@ pub enum ReleasePrDecisionError {
         help("The `<release-branch>--staging` branch is reserved for the executor's own commit staging; close or rename a pull request opened against it before retrying.")
     )]
     StagingBranchPullRequest { number: u64 },
-}
-
-fn validate_repository(repository: &str) -> Result<(), ReleasePrDecisionError> {
-    let mut parts = repository.split('/');
-    let valid = matches!((parts.next(), parts.next(), parts.next()), (Some(owner), Some(name), None) if valid_repo_part(owner) && valid_repo_part(name));
-    if valid {
-        Ok(())
-    } else {
-        Err(ReleasePrDecisionError::InvalidRepository {
-            repository: repository.to_string(),
-        })
-    }
-}
-
-fn valid_repo_part(part: &str) -> bool {
-    !part.is_empty()
-        && part
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
 }
 
 fn validate_branch(kind: &'static str, branch: &str) -> Result<(), ReleasePrDecisionError> {
@@ -659,9 +638,13 @@ mod tests {
         CommitSha::parse("fedcba9876543210fedcba9876543210fedcba98").unwrap()
     }
 
+    fn repository() -> GitHubRepository {
+        GitHubRepository::parse("orin-dx/callisto").unwrap()
+    }
+
     fn config() -> ReleasePrConfigV1 {
         ReleasePrConfigV1::new(
-            "orin-dx/callisto".to_string(),
+            repository(),
             "main".to_string(),
             "callisto/version-packages".to_string(),
         )
@@ -669,13 +652,13 @@ mod tests {
     }
 
     fn snapshot(prs: Vec<ReleasePrPullRequestV2>) -> ReleasePrSnapshotV2 {
-        ReleasePrSnapshotV2::new("orin-dx/callisto".to_string(), "main".to_string(), sha(), prs).unwrap()
+        ReleasePrSnapshotV2::new(repository(), "main".to_string(), sha(), prs).unwrap()
     }
 
     fn pr(number: u64, branch: &str) -> ReleasePrPullRequestV2 {
         ReleasePrPullRequestV2 {
             number,
-            head_repository: "orin-dx/callisto".to_string(),
+            head_repository: repository(),
             head_branch: branch.to_string(),
             head_commit: other_sha(),
         }
@@ -771,7 +754,7 @@ mod tests {
         ));
 
         let mut foreign = pr(1, "callisto/version-packages");
-        foreign.head_repository = "fork/callisto".to_string();
+        foreign.head_repository = GitHubRepository::parse("fork/callisto").unwrap();
         assert!(matches!(
             ReleasePrDecisionV2::derive(true, &config(), &snapshot(vec![foreign])),
             Err(ReleasePrDecisionError::ForeignManagedPullRequest { .. })

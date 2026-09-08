@@ -77,17 +77,24 @@ impl TagTemplate {
     }
 
     pub fn render(&self, version: &Version) -> TagName {
-        TagName(format!("{}{}{}", self.prefix, version.render(), self.suffix))
+        // Unchecked: `prefix`/`suffix` already passed `is_valid_git_ref_name`
+        // against a `1.0.0` stand-in at `TagTemplate::parse` time (rejecting
+        // a leading `-`, control characters, `..`, `@{`, and per-component
+        // `.lock` suffixes on that literal). `version.render()` is
+        // Callisto's own trusted SemVer/PEP 440 rendering, never
+        // attacker-controlled text, and its first character is always a
+        // digit -- never `-` or a control character. That probe cannot rule
+        // out every conceivable rendered version (for example, build
+        // metadata literally ending in `.lock`), but it does rule out the
+        // flag-injection-relevant leading-`-` and control-character cases
+        // `TagName::parse` exists to catch.
+        TagName::new_unchecked(format!("{}{}{}", self.prefix, version.render(), self.suffix))
     }
 
     pub fn render_floating_major(&self, version: &Version) -> Option<TagName> {
         let major = version.major()?;
         let rendered = format!("{}{}{}", self.prefix, major, self.suffix);
-        if is_valid_git_ref_name(&rendered) {
-            Some(TagName(rendered))
-        } else {
-            None
-        }
+        TagName::parse(&rendered).ok()
     }
 
     pub fn glob(&self) -> String {
@@ -160,12 +167,33 @@ fn is_valid_git_ref_name(s: &str) -> bool {
 use schemars::JsonSchema;
 
 /// Rendered Git tag name.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, JsonSchema)]
 #[schemars(with = "String")]
-#[serde(transparent)]
-pub struct TagName(pub String);
+pub struct TagName(String);
 
 impl TagName {
+    /// Parses a Git tag name, rejecting anything `git check-ref-format`
+    /// would reject (control characters, `..`, `@{`, a `.lock`-suffixed or
+    /// leading-`.` component, reserved characters, and the rest of
+    /// [`is_valid_git_ref_name`]) plus a leading `-`, which is a legal Git
+    /// ref character but would be read as a flag by any CLI argument
+    /// parser (`git`, `gh`, ...) a tag name is later passed to bare.
+    pub fn parse(s: &str) -> Result<Self, TagNameError> {
+        if is_valid_git_ref_name(s) {
+            Ok(Self(s.to_string()))
+        } else {
+            Err(TagNameError::InvalidGitRefName { name: s.to_string() })
+        }
+    }
+
+    /// Constructs a tag name without validating it against
+    /// [`is_valid_git_ref_name`]. Restricted to call sites that can prove
+    /// their input is already safe -- see the call site's own comment for
+    /// its specific justification. Prefer [`TagName::parse`] everywhere else.
+    pub fn new_unchecked(name: String) -> Self {
+        Self(name)
+    }
+
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -175,6 +203,33 @@ impl fmt::Display for TagName {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.0)
     }
+}
+
+impl Serialize for TagName {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&self.0)
+    }
+}
+
+impl<'de> Deserialize<'de> for TagName {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let raw = String::deserialize(deserializer)?;
+        TagName::parse(&raw).map_err(serde::de::Error::custom)
+    }
+}
+
+/// Errors produced while parsing a [`TagName`].
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
+pub enum TagNameError {
+    #[error("`{name}` is not a valid Git tag name")]
+    InvalidGitRefName { name: String },
 }
 
 /// Resolved most recent release tag.
@@ -208,7 +263,13 @@ pub fn select_last_tag<'a>(
         match Version::parse(extracted, grammar) {
             Ok(ver) => {
                 let tag = LastTag {
-                    name: TagName(candidate.to_string()),
+                    // Unchecked: `candidate` matched `template`'s
+                    // already-validated prefix/suffix (see
+                    // `TagTemplate::render`'s justification) surrounding
+                    // `extracted`, which just parsed successfully as a
+                    // `grammar` version -- the same trusted, non-`-`-leading
+                    // charset as `Version::render()`.
+                    name: TagName::new_unchecked(candidate.to_string()),
                     version: ver,
                 };
                 match &chosen {
@@ -394,6 +455,41 @@ mod tests {
                 "'{ch}' must be rejected, got accepted for {candidate:?}"
             );
         }
+    }
+
+    #[test]
+    fn tag_name_parse_accepts_a_normal_tag() {
+        let tag = TagName::parse("v1.2.3").unwrap();
+        assert_eq!(tag.as_str(), "v1.2.3");
+        assert_eq!(tag.to_string(), "v1.2.3");
+    }
+
+    #[test]
+    fn tag_name_parse_rejects_leading_hyphen_and_control_characters() {
+        // A leading `-` is a legal Git ref character, but every caller in
+        // this codebase eventually passes a rendered tag name as a bare
+        // positional to `git`/`gh`, whose argument parsers read a
+        // leading-`-` positional as a flag -- reject it here so a malformed
+        // or adversarial tag name can never be read as one.
+        assert!(matches!(
+            TagName::parse("-f1.0.0"),
+            Err(TagNameError::InvalidGitRefName { .. })
+        ));
+        assert!(matches!(
+            TagName::parse("v1\t2"),
+            Err(TagNameError::InvalidGitRefName { .. })
+        ));
+        assert!(TagName::parse("v1.2.3").is_ok());
+    }
+
+    #[test]
+    fn tag_name_serializes_and_deserializes_through_parse() {
+        let tag = TagName::parse("v1.2.3").unwrap();
+        let json = serde_json::to_string(&tag).unwrap();
+        assert_eq!(json, "\"v1.2.3\"");
+        let round_tripped: TagName = serde_json::from_str(&json).unwrap();
+        assert_eq!(round_tripped, tag);
+        assert!(serde_json::from_str::<TagName>("\"-f1.0.0\"").is_err());
     }
 
     // No test targets select_last_tag's grammar-mismatch Err branch

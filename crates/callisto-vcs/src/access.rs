@@ -263,7 +263,7 @@ mod tests {
 
         let tags = git.list_tags(None).unwrap();
         assert_eq!(
-            tags.into_iter().map(|t| t.0).collect::<Vec<_>>(),
+            tags.into_iter().map(|t| t.as_str().to_string()).collect::<Vec<_>>(),
             vec!["v1.0.0".to_string()]
         );
 
@@ -288,7 +288,7 @@ mod tests {
 
         let tags = git.list_tags(None).unwrap();
         assert_eq!(
-            tags.into_iter().map(|t| t.0).collect::<Vec<_>>(),
+            tags.into_iter().map(|t| t.as_str().to_string()).collect::<Vec<_>>(),
             vec!["pkg-a@1.0.0".to_string()]
         );
         assert_eq!(runner.calls.load(Ordering::SeqCst), 1);
