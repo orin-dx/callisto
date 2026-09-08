@@ -1,0 +1,390 @@
+{
+  "cli_version": "0.10.6-nightly.202609040625.7c63555a3",
+  "checkpoint_id": "01M213E7DJ80DRVRTZX3EKZ64S",
+  "session_id": "a33915af-5e86-4584-9bde-f732d973cf9f",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-08T18:10:46.276908Z",
+  "branch": "refactor/redaction-glob-dedup",
+  "checkpoints_count": 1,
+  "save_step_count": 6,
+  "files_touched": [
+    "crates/callisto-vcs/src/shell.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5",
+  "turn_id": "27eace8d7550",
+  "checkpoint_transcript_start": 10257,
+  "transcript_lines_at_start": 10257,
+  "compact_transcript_start": 1231,
+  "token_usage": {
+    "input_tokens": 2,
+    "cache_creation_tokens": 1664,
+    "cache_read_tokens": 722661,
+    "output_tokens": 629,
+    "api_call_count": 1,
+    "subagent_tokens": {
+      "input_tokens": 468,
+      "cache_creation_tokens": 349701,
+      "cache_read_tokens": 89794879,
+      "output_tokens": 21359,
+      "api_call_count": 234
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-courier:pr-2026-09-05T01:25:15.866953Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "courier:pr"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "8913128b5c55",
+      "timestamp": "2026-09-05T01:25:15.866953Z",
+      "native": {
+        "command": "/courier:pr"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/courier:pr",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_014sNpywnuApW884PZfwb2og",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "fewer-permission-prompts"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "065bcd5cccd8",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 2701,
+        "end": 2702,
+        "entry_ids": [
+          "c5a0d0c0-5f67-4166-9ca7-4c3870d01e72"
+        ],
+        "tool_use_id": "toolu_014sNpywnuApW884PZfwb2og"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_014sNpywnuApW884PZfwb2og"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: fewer-permission-prompts",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_011JZUU3Mp6DugBuddPX9UZ3",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "artifact-design"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "ee20dd6b2e21",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 3615,
+        "end": 3616,
+        "entry_ids": [
+          "da02b5a3-832f-41c7-a384-b085dcf420a0"
+        ],
+        "tool_use_id": "toolu_011JZUU3Mp6DugBuddPX9UZ3"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_011JZUU3Mp6DugBuddPX9UZ3"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: artifact-design",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_0112Drzw8pwS3SHA5Ztz4Zyx",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "courier:commit"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "23f8b31cd19e",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 7536,
+        "end": 7537,
+        "entry_ids": [
+          "a6e892ef-0e0e-44a8-8e61-8a864f19b9b3"
+        ],
+        "tool_use_id": "toolu_0112Drzw8pwS3SHA5Ztz4Zyx"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0112Drzw8pwS3SHA5Ztz4Zyx"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: courier:commit",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01CaU6Foi3LpjnJAn53TUiMC",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "courier:pr"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "b0895900c1cd",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 7810,
+        "end": 7811,
+        "entry_ids": [
+          "c72c48ef-d540-4671-b5d0-a203afbbf9d2"
+        ],
+        "tool_use_id": "toolu_01CaU6Foi3LpjnJAn53TUiMC"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01CaU6Foi3LpjnJAn53TUiMC"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: courier:pr",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "prompt-skill-claude-code-courier:pr-2026-09-08T14:24:36.710005Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "courier:pr"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "cac2a54307eb",
+      "timestamp": "2026-09-08T14:24:36.710005Z",
+      "native": {
+        "command": "/courier:pr"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/courier:pr",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01QuLE2FHXNy4c6Wvx67c2nc",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "1f014a8a4a9a",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 7952,
+        "end": 7953,
+        "entry_ids": [
+          "050bf3bb-86b5-4f7c-affc-09877cc2f18d"
+        ],
+        "tool_use_id": "toolu_01QuLE2FHXNy4c6Wvx67c2nc"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01QuLE2FHXNy4c6Wvx67c2nc"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 139
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-08T18:10:45.76609Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 73,
+    "human_modified": 32,
+    "human_removed": 0,
+    "total_committed": 73,
+    "total_lines_changed": 326,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 2185,
+      "user_lines_removed": 181,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".agents/skills/entire-search/SKILL.md": 22,
+        ".claude/settings.local.json": 11,
+        ".claude/skills/entire-search/SKILL.md": 22,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".gemini/skills/entire-search/SKILL.md": 22,
+        ".opencode/plugins/entire.ts": 269,
+        ".opencode/skills/entire-search/SKILL.md": 22,
+        ".playwright-mcp/console-2026-08-29T15-59-57-136Z.log": 11,
+        ".playwright-mcp/console-2026-08-29T16-01-28-866Z.log": 3,
+        ".playwright-mcp/page-2026-08-29T15-59-57-414Z.yml": 4,
+        ".playwright-mcp/page-2026-08-29T16-01-29-130Z.yml": 300,
+        ".playwright-mcp/page-2026-08-29T16-01-55-533Z.yml": 347,
+        ".playwright-mcp/page-2026-08-29T16-07-25-102Z.yml": 462,
+        ".playwright-mcp/page-2026-08-29T16-08-10-779Z.yml": 462,
+        "crates/callisto-graph/src/aggregate.rs": 15,
+        "crates/callisto-graph/src/cascade.rs": 78,
+        "crates/callisto-graph/src/config/groups.rs": 26,
+        "crates/callisto-graph/src/groups.rs": 5,
+        "err.log": 2
+      },
+      "user_removed_per_file": {
+        "crates/callisto-graph/src/aggregate.rs": 50,
+        "crates/callisto-graph/src/cascade.rs": 77,
+        "crates/callisto-graph/src/config/groups.rs": 1,
+        "crates/callisto-graph/src/groups.rs": 53
+      }
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 2061,
+      "user_lines_removed": 8,
+      "agent_lines_added": 134,
+      "agent_lines_removed": 191,
+      "user_added_per_file": {
+        ".agents/skills/entire-search/SKILL.md": 22,
+        ".claude/settings.local.json": 11,
+        ".claude/skills/entire-search/SKILL.md": 22,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".gemini/skills/entire-search/SKILL.md": 22,
+        ".opencode/plugins/entire.ts": 269,
+        ".opencode/skills/entire-search/SKILL.md": 22,
+        ".playwright-mcp/console-2026-08-29T15-59-57-136Z.log": 11,
+        ".playwright-mcp/console-2026-08-29T16-01-28-866Z.log": 3,
+        ".playwright-mcp/page-2026-08-29T15-59-57-414Z.yml": 4,
+        ".playwright-mcp/page-2026-08-29T16-01-29-130Z.yml": 300,
+        ".playwright-mcp/page-2026-08-29T16-01-55-533Z.yml": 347,
+        ".playwright-mcp/page-2026-08-29T16-07-25-102Z.yml": 462,
+        ".playwright-mcp/page-2026-08-29T16-08-10-779Z.yml": 462,
+        "err.log": 2
+      },
+      "user_removed_per_file": {
+        "crates/callisto-graph/src/cascade.rs": 8
+      }
+    },
+    {
+      "checkpoint_number": 4,
+      "user_lines_added": 2061,
+      "user_lines_removed": 0,
+      "agent_lines_added": 134,
+      "agent_lines_removed": 199,
+      "user_added_per_file": {
+        ".agents/skills/entire-search/SKILL.md": 22,
+        ".claude/settings.local.json": 11,
+        ".claude/skills/entire-search/SKILL.md": 22,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".gemini/skills/entire-search/SKILL.md": 22,
+        ".opencode/plugins/entire.ts": 269,
+        ".opencode/skills/entire-search/SKILL.md": 22,
+        ".playwright-mcp/console-2026-08-29T15-59-57-136Z.log": 11,
+        ".playwright-mcp/console-2026-08-29T16-01-28-866Z.log": 3,
+        ".playwright-mcp/page-2026-08-29T15-59-57-414Z.yml": 4,
+        ".playwright-mcp/page-2026-08-29T16-01-29-130Z.yml": 300,
+        ".playwright-mcp/page-2026-08-29T16-01-55-533Z.yml": 347,
+        ".playwright-mcp/page-2026-08-29T16-07-25-102Z.yml": 462,
+        ".playwright-mcp/page-2026-08-29T16-08-10-779Z.yml": 462,
+        "err.log": 2
+      }
+    },
+    {
+      "checkpoint_number": 5,
+      "user_lines_added": 2061,
+      "user_lines_removed": 0,
+      "agent_lines_added": 134,
+      "agent_lines_removed": 199,
+      "user_added_per_file": {
+        ".agents/skills/entire-search/SKILL.md": 22,
+        ".claude/settings.local.json": 11,
+        ".claude/skills/entire-search/SKILL.md": 22,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".gemini/skills/entire-search/SKILL.md": 22,
+        ".opencode/plugins/entire.ts": 269,
+        ".opencode/skills/entire-search/SKILL.md": 22,
+        ".playwright-mcp/console-2026-08-29T15-59-57-136Z.log": 11,
+        ".playwright-mcp/console-2026-08-29T16-01-28-866Z.log": 3,
+        ".playwright-mcp/page-2026-08-29T15-59-57-414Z.yml": 4,
+        ".playwright-mcp/page-2026-08-29T16-01-29-130Z.yml": 300,
+        ".playwright-mcp/page-2026-08-29T16-01-55-533Z.yml": 347,
+        ".playwright-mcp/page-2026-08-29T16-07-25-102Z.yml": 462,
+        ".playwright-mcp/page-2026-08-29T16-08-10-779Z.yml": 462,
+        "err.log": 2
+      }
+    },
+    {
+      "checkpoint_number": 6,
+      "user_lines_added": 2061,
+      "user_lines_removed": 0,
+      "agent_lines_added": 134,
+      "agent_lines_removed": 199,
+      "user_added_per_file": {
+        ".agents/skills/entire-search/SKILL.md": 22,
+        ".claude/settings.local.json": 11,
+        ".claude/skills/entire-search/SKILL.md": 22,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".gemini/skills/entire-search/SKILL.md": 22,
+        ".opencode/plugins/entire.ts": 269,
+        ".opencode/skills/entire-search/SKILL.md": 22,
+        ".playwright-mcp/console-2026-08-29T15-59-57-136Z.log": 11,
+        ".playwright-mcp/console-2026-08-29T16-01-28-866Z.log": 3,
+        ".playwright-mcp/page-2026-08-29T15-59-57-414Z.yml": 4,
+        ".playwright-mcp/page-2026-08-29T16-01-29-130Z.yml": 300,
+        ".playwright-mcp/page-2026-08-29T16-01-55-533Z.yml": 347,
+        ".playwright-mcp/page-2026-08-29T16-07-25-102Z.yml": 462,
+        ".playwright-mcp/page-2026-08-29T16-08-10-779Z.yml": 462,
+        "err.log": 2
+      }
+    }
+  ]
+}
