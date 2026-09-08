@@ -144,6 +144,37 @@
         "label": "Skill: courier:commit",
         "default_collapsed": true
       }
+    },
+    {
+      "id": "claude-skill-toolu_01CaU6Foi3LpjnJAn53TUiMC",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "courier:pr"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "b0895900c1cd",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 7810,
+        "end": 7811,
+        "entry_ids": [
+          "c72c48ef-d540-4671-b5d0-a203afbbf9d2"
+        ],
+        "tool_use_id": "toolu_01CaU6Foi3LpjnJAn53TUiMC"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01CaU6Foi3LpjnJAn53TUiMC"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: courier:pr",
+        "default_collapsed": true
+      }
     }
   ],
   "session_metrics": {
