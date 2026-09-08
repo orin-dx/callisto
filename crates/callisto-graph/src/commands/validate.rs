@@ -25,7 +25,7 @@ pub fn validate<R: CommandRunner, D: DependencyResolver>(
         if !out.success() {
             return Err(GraphError::Command(callisto_model::CommandError::Io {
                 program: "git".to_string(),
-                message: crate::apply::redact_git_stderr(&out.stderr),
+                message: out.redacted_stderr(),
             }));
         }
         let files: Vec<String> = out
@@ -49,7 +49,7 @@ pub fn validate<R: CommandRunner, D: DependencyResolver>(
         if !out.success() {
             return Err(GraphError::Command(callisto_model::CommandError::Io {
                 program: "git".to_string(),
-                message: crate::apply::redact_git_stderr(&out.stderr),
+                message: out.redacted_stderr(),
             }));
         }
         let files: Vec<String> = out

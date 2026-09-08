@@ -1,5 +1,18 @@
 {
   "permissions": {
+    "allow": [
+      "Bash(cargo test *)",
+      "Bash(just ci)",
+      "Bash(cargo build *)",
+      "Bash(cargo clippy *)",
+      "Bash(just test)",
+      "Bash(cargo nextest *)",
+      "Bash(just lint)",
+      "Bash(cargo check *)",
+      "Bash(just fmt-check)",
+      "Bash(just audit)",
+      "Bash(just doc-check)"
+    ],
     "deny": [
       "Read(./.entire/metadata/**)"
     ]
