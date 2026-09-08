@@ -86,6 +86,27 @@ pub fn compile_tag_glob(pattern: &str) -> Result<globset::GlobMatcher, VcsError>
         })
 }
 
+/// Whether [`GitDataSource::create_tag`] should let the ambient Git signing
+/// configuration (`tag.gpgSign`/`commit.gpgsign`) apply, or force an
+/// unsigned tag regardless of it.
+///
+/// Only [`ShellGit`]'s backend is affected: it shells out to the real `git`
+/// binary, which consults process-visible Git config for signing.
+/// [`GitRepository`]'s native `gix` backend constructs the tag object
+/// directly and never signs either way, so both variants behave identically
+/// there.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TagSignPolicy {
+    /// Let the repository's own Git config decide -- the right default for
+    /// a human-run `callisto tag`.
+    RespectRepoConfig,
+    /// Always pass `--no-sign`, regardless of `tag.gpgSign`/`commit.gpgsign`.
+    /// Some CI contexts set those globally (for commit signing) with no
+    /// tag-signing key available; the durable release executor uses this to
+    /// avoid failing there.
+    ForceUnsigned,
+}
+
 /// Unified git-data access surface covering every operation callisto's
 /// release-graph logic needs, independent of *how* the data is sourced.
 ///
@@ -138,6 +159,9 @@ pub trait GitDataSource {
     /// when `Some`, lightweight when `None`. Fails if a ref of that name
     /// already exists.
     ///
+    /// `sign` controls whether the ambient Git signing configuration is
+    /// allowed to apply -- see [`TagSignPolicy`].
+    ///
     /// Writes a git ref, so it requires an [`ApplyPermit`]; a dry run has
     /// none to give and therefore cannot call this at all.
     fn create_tag(
@@ -145,6 +169,7 @@ pub trait GitDataSource {
         name: &str,
         target_sha: &CommitSha,
         message: Option<&str>,
+        sign: TagSignPolicy,
         permit: &ApplyPermit,
     ) -> Result<(), VcsError>;
 
@@ -415,11 +440,16 @@ impl GitRepository {
         }
     }
 
+    /// `sign` is accepted for interface parity with [`ShellGit::create_tag`]
+    /// but has no effect here: this constructs the tag object directly via
+    /// `gix`, which never shells out to `git` and so never consults
+    /// `tag.gpgSign`/`commit.gpgsign` in the first place.
     pub fn create_tag(
         &self,
         name: &str,
         target_sha: &CommitSha,
         message: Option<&str>,
+        _sign: TagSignPolicy,
         _permit: &ApplyPermit,
     ) -> Result<(), VcsError> {
         #[cfg(not(target_arch = "wasm32"))]
@@ -625,9 +655,10 @@ impl GitDataSource for GitRepository {
         name: &str,
         target_sha: &CommitSha,
         message: Option<&str>,
+        sign: TagSignPolicy,
         permit: &ApplyPermit,
     ) -> Result<(), VcsError> {
-        self.create_tag(name, target_sha, message, permit)
+        self.create_tag(name, target_sha, message, sign, permit)
     }
 
     fn create_floating_major(

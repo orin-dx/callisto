@@ -681,7 +681,7 @@ mod tests {
 
     /// Security regression: the live-streamed stderr copy must be redacted
     /// the same way the captured/returned copy already is (see
-    /// `publish_client::redact_stderr`), but the *captured* copy handed
+    /// `CommandOutput::redacted_stderr`), but the *captured* copy handed
     /// back in `CommandOutput` must remain completely raw -- classifiers
     /// like `extract_retry_after_duration`/`detect_auth_failure` need to
     /// match exact upstream text. Calls the private `run_with_timeout_impl`
