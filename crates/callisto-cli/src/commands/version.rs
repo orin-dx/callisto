@@ -12,6 +12,12 @@ use crate::runner::CliCommandRunner;
 use crate::workspace::{load_workspace, select_inference};
 
 pub fn handle(args: VersionArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
+    if global.dry_run && args.emit_decision.is_some() {
+        return Err(CliError::Other(
+            "--emit-decision writes a file; remove --dry-run or drop --emit-decision".to_string(),
+        ));
+    }
+
     let runner = CliCommandRunner;
     let ws = load_workspace(global, &runner)?;
 
@@ -24,13 +30,30 @@ pub fn handle(args: VersionArgs, global: &GlobalArgs) -> Result<ExitCode, CliErr
 
     let plan = callisto_graph::commands::plan_version(&ws, &inference, &opts)?;
 
+    let permit = ApplyPermit::granted_unless_dry_run(global.dry_run);
+
+    if let (Some(path), Some(permit)) = (args.emit_decision.as_deref(), permit.as_ref()) {
+        let decision = callisto_graph::commands::derive_release_decision(&ws, &plan)?;
+        let content = serde_json::to_string_pretty(&decision).expect("release decision serializes") + "\n";
+        // Relative to the workspace root, not the process's actual working
+        // directory: this file must land inside the tree `--cwd` points at so
+        // `git add -A` picks it up alongside the manifest and changelog
+        // edits, and so its path matches what `--decision` later reads back
+        // via `git show <commit>:<path>` (always workspace-root-relative).
+        let full_path = ws.root.join(path);
+        callisto_model::atomic::atomic_write(&full_path, &content, permit).map_err(|source| CliError::Io {
+            source,
+            path: Some(full_path),
+        })?;
+    }
+
     let apply_opts = ApplyOptions {
         refresh_lockfiles: args.refresh_lockfiles,
         transient: false,
     };
 
-    let outcome = match ApplyPermit::granted_unless_dry_run(global.dry_run) {
-        Some(permit) => apply_version_plan(&ws.root, &plan, &runner, &apply_opts, &permit)?,
+    let outcome = match permit.as_ref() {
+        Some(permit) => apply_version_plan(&ws.root, &plan, &runner, &apply_opts, permit)?,
         None => ApplyOutcome::default(),
     };
     let report = plan.to_report(outcome.lockfile_refresh_results);
@@ -364,6 +387,7 @@ mod tests {
             strict_graph: false,
             allow_empty_changesets: true,
             refresh_lockfiles: false,
+            emit_decision: None,
         };
         let result = super::handle(args, &global);
         assert!(result.is_ok(), "expected Ok, got: {result:?}");
