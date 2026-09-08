@@ -140,7 +140,7 @@ jobs:
       - name: Derive and hash intent
         run: |
           set -euo pipefail
-          callisto release plan --from-release-commit "$GITHUB_SHA" --out release-intent.json
+          callisto release plan --from-release-commit "$GITHUB_SHA" --decision .callisto/release-decision.json --out release-intent.json
           shasum -a 256 release-intent.json > release-intent.json.sha256
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

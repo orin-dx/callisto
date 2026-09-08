@@ -49,7 +49,11 @@ fn plan(args: ReleasePlanArgs, global: &GlobalArgs) -> Result<ExitCode, CliError
         Some(raw) => {
             let commit = callisto_model::CommitSha::parse(raw)
                 .map_err(|error| CliError::Other(format!("invalid merged release commit `{raw}`: {error}")))?;
-            derive_release_commit_decision(&workspace, &commit)?
+            let decision_path = args
+                .decision
+                .as_deref()
+                .expect("clap requires --decision alongside --from-release-commit");
+            derive_release_commit_decision(&workspace, &commit, decision_path)?
         }
         None => {
             let selections = args

@@ -117,6 +117,7 @@ STUBS
     PR_CREATE_URL="${PR_CREATE_URL:-https://github.com/orin-dx/callisto/pull/99}" \
     BASE_SHA='0123456789abcdef0123456789abcdef01234567' GITHUB_OUTPUT="$output_file" \
     INPUT_VERSION_COMMAND='callisto version' \
+    INPUT_DECISION_PATH='.callisto/release-decision.json' \
     INPUT_COMMIT_MESSAGE='chore(release): version packages' \
     INPUT_TITLE='chore(release): version packages' \
     INPUT_PR_LABEL='callisto: release' \

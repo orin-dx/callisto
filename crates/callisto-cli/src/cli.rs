@@ -137,6 +137,18 @@ pub struct VersionArgs {
     /// Allow versioning to proceed even if no changesets are pending.
     #[arg(long)]
     pub allow_empty_changesets: bool,
+    /// Writes the exact release decision this version plan authorizes --
+    /// package, target version, and inclusion reason (changeset, fixed
+    /// group, linked group, dependency cascade, or pre-release policy) --
+    /// to the given path, alongside the manifest and changelog edits.
+    ///
+    /// A merged release PR's commit carrying this file is later the sole
+    /// authority `release plan --from-release-commit` verifies against: no
+    /// re-derivation of cascade or group policy happens at that boundary,
+    /// only confirmation that the committed diff matches exactly what this
+    /// command already decided, once, here.
+    #[arg(long, value_name = "PATH")]
+    pub emit_decision: Option<std::path::PathBuf>,
 }
 
 /// Subcommands for managing prerelease mode.
@@ -320,9 +332,18 @@ pub struct ReleasePlanArgs {
         long,
         value_name = "SHA",
         conflicts_with = "packages",
-        required_unless_present = "packages"
+        required_unless_present = "packages",
+        requires = "decision"
     )]
     pub from_release_commit: Option<String>,
+    /// Exact release-decision JSON path committed alongside the manifest and
+    /// changelog edits in the merge commit (written by `callisto version
+    /// --emit-decision`). Required with --from-release-commit: this function
+    /// verifies the committed diff matches this file exactly rather than
+    /// re-deriving changeset, fixed-group, linked-group, cascade, or
+    /// pre-release-policy inclusion from scratch.
+    #[arg(long, value_name = "FILE")]
+    pub decision: Option<PathBuf>,
     /// Explicit path where the immutable intent JSON will be atomically written.
     #[arg(long, value_name = "FILE")]
     pub out: PathBuf,
@@ -438,6 +459,18 @@ mod tests {
             "plan",
             "--from-release-commit",
             "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "--out",
+            "intent.json",
+        ])
+        .is_err());
+        assert!(Cli::try_parse_from([
+            "callisto",
+            "release",
+            "plan",
+            "--from-release-commit",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "--decision",
+            "release-decision.json",
             "--out",
             "intent.json",
         ])
