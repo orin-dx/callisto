@@ -2,9 +2,13 @@ name: 'Callisto Release-PR Action'
 description: 'Creates or updates a Callisto release PR; durable execution belongs to the repository workflow'
 inputs:
   version_command:
-    description: 'Version command; defaults to callisto version'
+    description: 'Version command; defaults to callisto version. `--emit-decision <decision_path>` is always appended, so a replacement command must also accept it (typically by wrapping `callisto version` itself).'
     required: false
     default: 'callisto version'
+  decision_path:
+    description: 'Path, relative to cwd, where the version command records the exact release decision this PR carries. Committed alongside the manifest and changelog edits; `callisto release plan --from-release-commit` verifies the merged commit against this file rather than re-deriving release policy.'
+    required: false
+    default: '.callisto/release-decision.json'
   commit_message:
     description: 'Release-PR commit message'
     required: false
@@ -65,6 +69,7 @@ runs:
       shell: bash
       env:
         INPUT_VERSION_COMMAND: ${{ inputs.version_command }}
+        INPUT_DECISION_PATH: ${{ inputs.decision_path }}
         INPUT_COMMIT_MESSAGE: ${{ inputs.commit_message }}
         INPUT_TITLE: ${{ inputs.title }}
         INPUT_PR_LABEL: ${{ inputs.pr_label }}

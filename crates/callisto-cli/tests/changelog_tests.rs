@@ -40,6 +40,7 @@ fn test_changelog_content_uses_real_changeset_summary() {
             strict: false,
             strict_graph: false,
             allow_empty_changesets: false,
+            emit_decision: None,
         },
         &global,
     )
@@ -103,6 +104,7 @@ fn test_changelog_content_includes_all_changeset_summaries() {
             strict: false,
             strict_graph: false,
             allow_empty_changesets: false,
+            emit_decision: None,
         },
         &global,
     )

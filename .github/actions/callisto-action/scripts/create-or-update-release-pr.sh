@@ -81,6 +81,7 @@ else
 fi
 
 read -ra command <<< "$INPUT_VERSION_COMMAND"
+command+=(--emit-decision "$INPUT_DECISION_PATH")
 "${command[@]}"
 git add -A
 test -n "$(git status --porcelain)" || { echo '::error::pending changesets produced no release-PR delta'; exit 1; }

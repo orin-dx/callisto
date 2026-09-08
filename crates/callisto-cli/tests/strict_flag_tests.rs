@@ -125,6 +125,7 @@ fn test_version_strict_no_changesets_exits_nonzero() {
         strict_graph: false,
         allow_empty_changesets: false,
         refresh_lockfiles: false,
+        emit_decision: None,
     };
 
     let result = commands::version::handle(args, &global);
@@ -152,6 +153,7 @@ fn test_version_no_strict_no_changesets_succeeds() {
         strict_graph: false,
         allow_empty_changesets: false,
         refresh_lockfiles: false,
+        emit_decision: None,
     };
 
     let result = commands::version::handle(args, &global);
