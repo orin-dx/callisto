@@ -1,6 +1,8 @@
 use std::path::Path;
 use std::time::Duration;
 
+use crate::registry::{known_credential_env_values, redact_known_secrets};
+
 /// The minimum `git` version callisto supports, as a [`semver::VersionReq`] grammar string
 /// consumed directly by [`check_git_version`] — the single place this floor is defined, so
 /// the requirement used for the actual comparison and the one rendered in
@@ -68,6 +70,22 @@ impl CommandOutput {
 
     pub fn stdout_lines(&self) -> impl Iterator<Item = &str> {
         self.stdout.lines().map(|l| l.trim()).filter(|l| !l.is_empty())
+    }
+
+    /// Redacts known registry/VCS credential env-var values and any URL
+    /// userinfo component from this command's raw stderr before it's
+    /// embedded in a caller's user-facing error -- a failing subprocess
+    /// invocation can surface an authenticated remote URL (e.g. GitHub
+    /// Actions' `https://x-access-token:TOKEN@github.com/...`) verbatim in
+    /// its own error output, and that text flows into `--format json` and
+    /// miette diagnostic output downstream.
+    ///
+    /// The single shared definition of "how do we redact a subprocess's
+    /// stderr in this workspace" -- composes [`redact_known_secrets`] and
+    /// [`known_credential_env_values`] once here instead of each caller
+    /// reimplementing the same one-line composition locally.
+    pub fn redacted_stderr(&self) -> String {
+        redact_known_secrets(&self.stderr, &known_credential_env_values(std::env::vars()))
     }
 }
 
@@ -225,5 +243,22 @@ mod tests {
     fn rejects_unparseable_version_string() {
         assert!(check_git_version("git version unknown").is_err());
         assert!(check_git_version("").is_err());
+    }
+
+    /// A leaking authenticated remote URL in a subprocess's stderr (the
+    /// realistic GitHub Actions shape: `https://x-access-token:TOKEN@github.com/...`)
+    /// must not survive `CommandOutput::redacted_stderr` -- this is the
+    /// single shared implementation every crate-level `redact_*_stderr`
+    /// call site now delegates to instead of reimplementing.
+    #[test]
+    fn redacted_stderr_strips_authenticated_remote_url_userinfo() {
+        let output = CommandOutput {
+            exit_code: Some(128),
+            stdout: String::new(),
+            stderr: "fatal: unable to access 'https://x-access-token:ghs_leaked_secret@github.com/org/repo.git/': The requested URL returned error: 403".to_string(),
+        };
+        let redacted = output.redacted_stderr();
+        assert!(!redacted.contains("ghs_leaked_secret"), "got: {redacted}");
+        assert!(redacted.contains("[REDACTED]"), "got: {redacted}");
     }
 }

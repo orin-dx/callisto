@@ -450,7 +450,7 @@ pub fn apply_version_plan<R: CommandRunner>(
                 return Err(GraphError::Command(CommandError::Failed {
                     program: "git".to_string(),
                     exit_code: output.exit_code,
-                    stderr: redact_git_stderr(&output.stderr),
+                    stderr: output.redacted_stderr(),
                 }));
             }
         }
@@ -466,7 +466,7 @@ pub fn apply_version_plan<R: CommandRunner>(
                 return Err(GraphError::Command(CommandError::Failed {
                     program: "git".to_string(),
                     exit_code: output.exit_code,
-                    stderr: redact_git_stderr(&output.stderr),
+                    stderr: output.redacted_stderr(),
                 }));
             }
         }
@@ -475,40 +475,6 @@ pub fn apply_version_plan<R: CommandRunner>(
     }
 
     Ok(outcome)
-}
-
-/// Redacts known registry/VCS credential env-var values and any URL userinfo
-/// component from raw `git` subprocess stderr before it is embedded in a
-/// [`GraphError`] -- a failing `git` invocation (this module's `git add`/
-/// `git rm --cached` staging calls, `commands::validate`'s `git diff`) can
-/// surface an authenticated remote URL (e.g. GitHub Actions'
-/// `https://x-access-token:TOKEN@github.com/...`) verbatim in its own error
-/// output, and that text flows into `--format json` and miette diagnostic
-/// output downstream. Shared crate-wide (`pub(crate)`) rather than
-/// duplicated per call site, matching a single definition of "how do we
-/// redact git stderr in this crate."
-pub(crate) fn redact_git_stderr(text: &str) -> String {
-    callisto_model::redact_known_secrets(text, &callisto_model::known_credential_env_values(std::env::vars()))
-}
-
-/// A `git` stderr containing a GitHub Actions authenticated remote URL must
-/// have its userinfo stripped before reaching a `GraphError` -- proving the
-/// helper both `git add`/`git rm --cached` staging failures route through
-/// actually redacts, not just that the underlying primitive can.
-#[cfg(test)]
-mod redact_git_stderr_tests {
-    use super::redact_git_stderr;
-
-    #[test]
-    fn strips_authenticated_remote_url_userinfo() {
-        let stderr = "fatal: unable to access 'https://x-access-token:ghs_supersecret123@github.com/org/repo.git/': The requested URL returned error: 403";
-        let redacted = redact_git_stderr(stderr);
-        assert!(
-            !redacted.contains("ghs_supersecret123"),
-            "token must not survive redaction, got: {redacted}"
-        );
-        assert!(redacted.contains("[REDACTED]"));
-    }
 }
 
 #[cfg(test)]

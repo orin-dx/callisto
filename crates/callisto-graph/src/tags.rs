@@ -1,9 +1,7 @@
 use std::collections::BTreeMap;
-use std::path::Path;
 
 use callisto_model::{
-    select_last_tag, CommandRunner, CommitSha, Diagnostic, LastTag, LastTagSelection, PackageId, TagTemplate,
-    VersionGrammar,
+    select_last_tag, CommitSha, Diagnostic, LastTag, LastTagSelection, PackageId, TagTemplate, VersionGrammar,
 };
 use callisto_vcs::{GitAccess, GitDataSource};
 
@@ -30,23 +28,19 @@ fn fetch_all_tags(git: &GitAccess<'_>) -> Result<Vec<String>, GraphError> {
 
 /// Filters `all_tags` down to those matching `template`'s glob.
 ///
-/// Uses the same `globset::Glob` matching
-/// `callisto_vcs::GitRepository::list_tags` applies internally, kept in
-/// sync so tag selection is byte-identical whether `all_tags` came from
-/// gix or the `CommandRunner` fallback in [`fetch_all_tags`]. Includes
-/// error behavior: a `template.glob()` that fails to compile surfaces as
+/// Compiles the glob via [`callisto_vcs::compile_tag_glob`] -- the same
+/// shared helper both `GitDataSource` backends (`GitRepository::list_tags`,
+/// `ShellGit::list_tags`) use internally -- so tag selection is
+/// byte-identical whether `all_tags` came from gix or the `CommandRunner`
+/// fallback in [`fetch_all_tags`]. Includes error behavior: a
+/// `template.glob()` that fails to compile surfaces as
 /// `Err(GraphError::Vcs(VcsError::InvalidGlob))` -- matching every tag is
 /// the unsafe alternative, since a malformed template must never silently
 /// make "last tag" resolution pick an unrelated package's tag.
 fn matching_tags<'a>(all_tags: &'a [String], template: &TagTemplate) -> Result<Vec<&'a str>, GraphError> {
     let glob = template.glob();
     GLOB_COMPILE_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-    let matcher = globset::Glob::new(&glob).map(|g| g.compile_matcher()).map_err(|e| {
-        GraphError::Vcs(callisto_vcs::VcsError::InvalidGlob {
-            pattern: glob.clone(),
-            message: e.to_string(),
-        })
-    })?;
+    let matcher = callisto_vcs::compile_tag_glob(&glob).map_err(GraphError::Vcs)?;
 
     Ok(all_tags
         .iter()
@@ -80,23 +74,13 @@ pub fn glob_compile_count() -> usize {
 }
 
 /// Selects the highest-versioned tag matching `template` out of a full tag
-/// list previously obtained via [`fetch_all_tags`].
-fn select_from_tags(
-    all_tags: &[String],
-    template: &TagTemplate,
-    grammar: VersionGrammar,
-) -> Result<LastTagSelection, GraphError> {
-    let candidates = matching_tags(all_tags, template)?;
-    select_last_tag(template, grammar, candidates).map_err(GraphError::from)
-}
-
-/// Like [`select_from_tags`], but reuses a `cache` of already-compiled/
-/// already-scanned candidates keyed by `template.glob()` -- a
-/// `[[package-set]]` rule with a fixed (non-`{name}`) `tag-template` string
-/// applies the identical template to every matching package, so without
-/// this cache `TagIndex::build`'s per-package loop would recompile the same
-/// `globset::Glob` and rescan the full tag list once per package sharing
-/// that template, instead of once per distinct template.
+/// list previously obtained via [`fetch_all_tags`], reusing a `cache` of
+/// already-compiled/already-scanned candidates keyed by `template.glob()`
+/// -- a `[[package-set]]` rule with a fixed (non-`{name}`) `tag-template`
+/// string applies the identical template to every matching package, so
+/// without this cache `TagIndex::build`'s per-package loop would recompile
+/// the same `globset::Glob` and rescan the full tag list once per package
+/// sharing that template, instead of once per distinct template.
 fn select_from_tags_cached<'a>(
     all_tags: &'a [String],
     template: &TagTemplate,
@@ -113,25 +97,6 @@ fn select_from_tags_cached<'a>(
         }
     };
     select_last_tag(template, grammar, candidates).map_err(GraphError::from)
-}
-
-/// Resolves the last release tag matching a single package's `template`.
-///
-/// Kept for API compatibility with existing callers, and safe to use
-/// standalone. Note that this re-fetches the full tag list (gix discovery
-/// or a `CommandRunner` round-trip) on every call; callers resolving tags
-/// for many packages at once -- notably [`TagIndex::build`] -- fetch the
-/// list once and reuse it across packages rather than calling this
-/// function in a loop.
-pub fn last_tag_for<R: CommandRunner>(
-    runner: &R,
-    root: &Path,
-    template: &TagTemplate,
-    grammar: VersionGrammar,
-) -> Result<LastTagSelection, GraphError> {
-    let git = GitAccess::discover(root, runner);
-    let all_tags = fetch_all_tags(&git)?;
-    select_from_tags(&all_tags, template, grammar)
 }
 
 pub struct TagIndex {
@@ -224,9 +189,12 @@ impl TagIndex {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    use callisto_model::{CommandError, CommandOutput, DepEdge, ManifestDecl, ManifestFormat, ManifestRole, Package};
+    use callisto_model::{
+        CommandError, CommandOutput, CommandRunner, DepEdge, ManifestDecl, ManifestFormat, ManifestRole, Package,
+    };
 
     fn make_pkg(name: &str) -> Package {
         let manifest = ManifestDecl::new("Cargo.toml", ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap();
@@ -260,8 +228,8 @@ mod tests {
 
     /// A `CommandRunner` double that never touches a real `git` binary: it
     /// answers `git tag --list` with a canned tag list and counts every
-    /// invocation. Used both to prove `last_tag_for`/`TagIndex::build`
-    /// succeed with gix unavailable (mirroring the wasm32 code path, where
+    /// invocation. Used both to prove `TagIndex::build` succeeds with gix
+    /// unavailable (mirroring the wasm32 code path, where
     /// `GitRepository::discover` always fails), and to count how many
     /// `CommandRunner` round-trips a `TagIndex::build` call costs.
     struct FakeGitTagRunner {
@@ -303,29 +271,6 @@ mod tests {
             "test fixture must not be discoverable as a Git repo"
         );
         dir
-    }
-
-    /// Spec: `last_tag_for` must not hard-fail when gix is unavailable
-    /// (reproduces the wasm32 crash natively) -- it must fall back to the
-    /// `CommandRunner` and still select the right tag.
-    #[test]
-    fn test_last_tag_for_succeeds_without_gix() {
-        let dir = non_repo_dir();
-        let runner = FakeGitTagRunner::new(vec![
-            "pkg-a@1.0.0".to_string(),
-            "pkg-a@1.2.0".to_string(),
-            "unrelated-tag".to_string(),
-        ]);
-        let tmpl = TagTemplate::parse("pkg-a@{version}").unwrap();
-
-        let sel = last_tag_for(&runner, dir.path(), &tmpl, VersionGrammar::SemVer)
-            .expect("last_tag_for must succeed via the CommandRunner fallback when gix cannot discover a repo");
-
-        assert_eq!(
-            sel.chosen.map(|t| t.version.render().to_string()),
-            Some("1.2.0".to_string())
-        );
-        assert_eq!(runner.calls.load(Ordering::SeqCst), 1);
     }
 
     /// Spec: `TagIndex::build` must not hard-fail when gix is unavailable
@@ -429,36 +374,6 @@ mod tests {
         );
     }
 
-    /// Spec: the malformed-glob error must propagate all the way up
-    /// through `select_from_tags`/`last_tag_for`, not just the internal
-    /// `matching_tags` helper.
-    #[test]
-    fn test_last_tag_for_propagates_malformed_glob_error() {
-        let dir = non_repo_dir();
-        let runner = FakeGitTagRunner::new(vec!["pkg-a@1.0.0".to_string()]);
-        let tmpl = TagTemplate::parse("pkg-a@{version}{oops").unwrap();
-
-        let result = last_tag_for(&runner, dir.path(), &tmpl, VersionGrammar::SemVer);
-
-        assert!(
-            matches!(result, Err(GraphError::Vcs(callisto_vcs::VcsError::InvalidGlob { .. }))),
-            "last_tag_for must propagate the malformed-glob error, got {result:?}"
-        );
-    }
-
-    /// Spec: `TagIndex::build`/`last_tag_for` against a repo with zero tags
-    /// at all must resolve cleanly to `None`, never panic.
-    #[test]
-    fn test_last_tag_for_with_zero_tags_returns_none() {
-        let dir = non_repo_dir();
-        let runner = FakeGitTagRunner::new(vec![]);
-        let tmpl = TagTemplate::parse("pkg-a@{version}").unwrap();
-
-        let sel = last_tag_for(&runner, dir.path(), &tmpl, VersionGrammar::SemVer).unwrap();
-
-        assert!(sel.chosen.is_none());
-    }
-
     #[test]
     fn test_tag_index_build_with_zero_tags_returns_none_for_every_package() {
         let dir = non_repo_dir();
@@ -528,28 +443,6 @@ mod tests {
         }
     }
 
-    /// Spec: when gix is unavailable and the `CommandRunner` fallback
-    /// itself returns `Err`, `fetch_all_tags` (exercised via
-    /// `last_tag_for`) must propagate that error rather than panicking or
-    /// silently swallowing it into an empty tag list. Now routed through
-    /// `GitAccess`/`GitDataSource`, so the error arrives wrapped as
-    /// `GraphError::Vcs(VcsError::Command(_))` rather than the direct
-    /// `GraphError::Command(_)` the old hand-rolled shell-out produced --
-    /// same propagation guarantee, new (centralized) shape.
-    #[test]
-    fn test_last_tag_for_propagates_command_runner_error() {
-        let dir = non_repo_dir();
-        let runner = FailingRunner;
-        let tmpl = TagTemplate::parse("pkg-a@{version}").unwrap();
-
-        let result = last_tag_for(&runner, dir.path(), &tmpl, VersionGrammar::SemVer);
-
-        assert!(
-            matches!(result, Err(GraphError::Vcs(callisto_vcs::VcsError::Command(_)))),
-            "last_tag_for must propagate the CommandRunner error, got {result:?}"
-        );
-    }
-
     /// Spec: `TagIndex::build` must use `pkg.tag_template` when it is set
     /// instead of always defaulting to `{name}@{version}`. A package with
     /// `tag_template: Some(TagTemplate::parse("v{version}"))` must resolve
@@ -610,9 +503,10 @@ mod tests {
     // hazard `OPEN_CALL_COUNT`/`PERSIST_CALL_COUNT` are isolated from --
     // see `tests/apply_persist_open_count_test.rs`).
 
-    /// Spec: same as above, but for `TagIndex::build` -- a `CommandRunner`
-    /// failure on the fallback path must propagate up through the whole
-    /// build, not be swallowed per-package.
+    /// Spec: when gix is unavailable and the `CommandRunner` fallback
+    /// itself returns `Err`, `TagIndex::build` must propagate that error up
+    /// through the whole build rather than panicking or silently swallowing
+    /// it into an empty tag list per-package.
     #[test]
     fn test_tag_index_build_propagates_command_runner_error() {
         let dir = non_repo_dir();
