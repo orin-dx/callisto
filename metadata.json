@@ -1,0 +1,37 @@
+{
+  "cli_version": "0.10.7-nightly.202609080625.78a655db4",
+  "checkpoint_id": "01M21BPAV1YR6AKGVG8C86RY3N",
+  "strategy": "manual-commit",
+  "branch": "fix/derive-twice-plan-values",
+  "checkpoints_count": 10,
+  "files_touched": [
+    "crates/callisto-cli/src/commands/plan_publish.rs",
+    "crates/callisto-cli/src/commands/publish.rs",
+    "crates/callisto-cli/src/commands/status.rs",
+    "crates/callisto-graph/src/commands/tag.rs",
+    "crates/callisto-graph/src/commands/validate.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 108,
+    "cache_creation_tokens": 45246,
+    "cache_read_tokens": 45749528,
+    "output_tokens": 20759,
+    "api_call_count": 54,
+    "subagent_tokens": {
+      "input_tokens": 260,
+      "cache_creation_tokens": 277187,
+      "cache_read_tokens": 45394146,
+      "output_tokens": 56963,
+      "api_call_count": 130
+    }
+  }
+}
