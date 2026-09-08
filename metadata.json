@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.10.7-nightly.202609080625.78a655db4",
+  "checkpoint_id": "01M21E9J8AV9QB10FXSPRKGJCY",
+  "strategy": "manual-commit",
+  "branch": "refactor/typed-github-and-tag-identity",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "crates/callisto-graph/src/tags.rs",
+    "crates/callisto-vcs/src/access.rs",
+    "crates/callisto-vcs/src/shell.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 6371,
+    "cache_creation_tokens": 11999511,
+    "cache_read_tokens": 621896937,
+    "output_tokens": 829429,
+    "api_call_count": 1224
+  }
+}
