@@ -1115,7 +1115,7 @@ mod tests {
         let mut plan = create_test_plan();
         plan.releases.push(callisto_model::ReleaseEntry {
             package: PackageId::Bare("test-crate".to_string()),
-            tag_name: callisto_model::TagName("test-crate@1.0.0".to_string()),
+            tag_name: callisto_model::TagName::parse("test-crate@1.0.0").unwrap(),
             sha: callisto_model::CommitSha::parse(&"a".repeat(40)).unwrap(),
             changelog_section: None,
             is_prerelease: false,
@@ -1144,7 +1144,7 @@ mod tests {
         let mut plan = create_test_plan();
         plan.releases.push(callisto_model::ReleaseEntry {
             package: PackageId::Bare("test-crate".to_string()),
-            tag_name: callisto_model::TagName("test-crate@1.0.0".to_string()),
+            tag_name: callisto_model::TagName::parse("test-crate@1.0.0").unwrap(),
             sha: callisto_model::CommitSha::parse(&"a".repeat(40)).unwrap(),
             changelog_section: None,
             is_prerelease: false,
@@ -1185,7 +1185,7 @@ mod tests {
                 ecosystem: Ecosystem::Npm,
                 name: "test-crate".to_string(),
             },
-            tag_name: callisto_model::TagName("npm-test-crate@1.0.0".to_string()),
+            tag_name: callisto_model::TagName::parse("npm-test-crate@1.0.0").unwrap(),
             sha: callisto_model::CommitSha::parse(&"a".repeat(40)).unwrap(),
             changelog_section: None,
             is_prerelease: false,

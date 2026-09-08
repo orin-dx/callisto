@@ -10,9 +10,10 @@ use std::path::Path;
 
 use callisto_model::{
     ApplyPermit, CanonicalTranscript, CommandOutput, CommandRunner, CommitSha, DepKind, Ecosystem,
-    ExecutionTrustProfileV1, NpmAccess, OperationOutcome, PublishOutcome, PublishTarget, RegistryBindingDigest,
-    RegistryBindingId, RegistryKey, ReleaseDecisionV1, ReleaseInputSnapshotV1, ReleaseIntentV1, ReleaseOperation,
-    ReleaseOperationId, ReleasePackageId, ReleasePackageInputV1, SemanticInputDigest, SourceIdentity, TagName, Version,
+    ExecutionTrustProfileV1, GitHubRepository, NpmAccess, OperationOutcome, PublishOutcome, PublishTarget,
+    RegistryBindingDigest, RegistryBindingId, RegistryKey, ReleaseDecisionV1, ReleaseInputSnapshotV1, ReleaseIntentV1,
+    ReleaseOperation, ReleaseOperationId, ReleasePackageId, ReleasePackageInputV1, SemanticInputDigest, SourceIdentity,
+    TagName, Version,
 };
 use callisto_vcs::{
     access::{GitCommitTrustEvidence, GitHeadDisposition},
@@ -64,7 +65,7 @@ struct PreparedRegistryBinding {
 struct PreparedGitRemote {
     endpoint: String,
     identity: SemanticInputDigest,
-    github_repository: Option<String>,
+    github_repository: Option<GitHubRepository>,
 }
 
 /// Graph-private inputs prepared from the same fresh observation as an intent.
@@ -459,9 +460,10 @@ impl ValidatedReleaseIntent<'_> {
         let remote = self.checked_git_remote()?;
         let repository = remote
             .github_repository
-            .as_deref()
-            .ok_or(GraphError::ReleaseIntentStale)?;
-        match self.observed_forge_release_target(tag, repository)? {
+            .as_ref()
+            .ok_or(GraphError::ReleaseIntentStale)?
+            .as_slug();
+        match self.observed_forge_release_target(tag, &repository)? {
             ForgeReleaseObservation::Exact => return Ok(OperationOutcome::AlreadySatisfied),
             ForgeReleaseObservation::Conflict => return Err(GraphError::ReleaseIntentStale),
             ForgeReleaseObservation::Missing => {}
@@ -473,14 +475,14 @@ impl ValidatedReleaseIntent<'_> {
                 "create",
                 tag.as_str(),
                 "--repo",
-                repository,
+                repository.as_str(),
                 "--verify-tag",
                 "--generate-notes",
             ],
             &self.prepared.root,
         )?;
         if created.exit_code == Some(0)
-            && self.observed_forge_release_target(tag, repository)? == ForgeReleaseObservation::Exact
+            && self.observed_forge_release_target(tag, &repository)? == ForgeReleaseObservation::Exact
         {
             Ok(OperationOutcome::Published)
         } else {
@@ -1182,10 +1184,21 @@ fn canonical_git_remote(raw: &str) -> Result<PreparedGitRemote, GraphError> {
     );
     transcript.push_str("gitRemote.owner", owner);
     transcript.push_str("gitRemote.repository", repository);
+    let github_repository = if host == "github.com" {
+        Some(
+            GitHubRepository::parse(&format!("{owner}/{repository}")).map_err(|_error| {
+                GraphError::UnsafeGitRemote {
+                    reason: "GitHub owner or repository name is invalid",
+                }
+            })?,
+        )
+    } else {
+        None
+    };
     Ok(PreparedGitRemote {
         endpoint,
         identity: SemanticInputDigest::from_transcript(&transcript),
-        github_repository: (host == "github.com").then(|| format!("{owner}/{repository}")),
+        github_repository,
     })
 }
 
@@ -1316,7 +1329,10 @@ mod tests {
     fn git_remote_binding_normalizes_credential_free_ssh_and_rejects_credentialed_https() {
         let ssh = canonical_git_remote("git@GitHub.com:example/release-fixture.git").unwrap();
         assert_eq!(ssh.endpoint, "ssh://git@github.com/example/release-fixture.git");
-        assert_eq!(ssh.github_repository.as_deref(), Some("example/release-fixture"));
+        assert_eq!(
+            ssh.github_repository.as_ref().map(GitHubRepository::as_slug),
+            Some("example/release-fixture".to_string())
+        );
         assert!(canonical_git_remote("https://token@github.com/example/release-fixture.git").is_err());
     }
 

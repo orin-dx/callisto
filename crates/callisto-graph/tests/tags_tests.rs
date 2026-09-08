@@ -9,7 +9,7 @@ fn test_tag_dry_run_does_not_create_git_tags() {
     use callisto_model::{CommandOutput, CommitSha, PackageId, PublishPlan, ReleaseEntry, TagName, SCHEMA_VERSION};
 
     let pkg_id = PackageId::parse("callisto-cli").unwrap();
-    let tag_name = TagName("callisto-cli@0.2.0".to_string());
+    let tag_name = TagName::parse("callisto-cli@0.2.0").unwrap();
     let sha = CommitSha::parse("a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0").unwrap();
 
     let plan = PublishPlan {
@@ -93,7 +93,7 @@ fn test_create_tags_without_gix_falls_back_to_command_runner() {
     use std::sync::Mutex;
 
     let pkg_id = PackageId::parse("callisto-cli").unwrap();
-    let tag_name = TagName("callisto-cli@1.0.0".to_string());
+    let tag_name = TagName::parse("callisto-cli@1.0.0").unwrap();
     let sha = CommitSha::parse("a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0").unwrap();
 
     let plan = PublishPlan {
@@ -245,7 +245,7 @@ fn test_create_tags_without_gix_skips_creation_for_existing_tag() {
     use std::sync::Mutex;
 
     let pkg_id = PackageId::parse("callisto-cli").unwrap();
-    let tag_name = TagName("callisto-cli@1.0.0".to_string());
+    let tag_name = TagName::parse("callisto-cli@1.0.0").unwrap();
     let sha = CommitSha::parse("a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0").unwrap();
 
     let plan = PublishPlan {
@@ -377,14 +377,14 @@ fn test_create_tags_checks_existence_against_cached_tag_index_not_per_release() 
         releases: vec![
             ReleaseEntry {
                 package: pkg_a.clone(),
-                tag_name: TagName("pkg-a@1.0.0".to_string()),
+                tag_name: TagName::parse("pkg-a@1.0.0").unwrap(),
                 sha: sha.clone(),
                 changelog_section: None,
                 is_prerelease: false,
             },
             ReleaseEntry {
                 package: pkg_b.clone(),
-                tag_name: TagName("pkg-b@2.0.0".to_string()),
+                tag_name: TagName::parse("pkg-b@2.0.0").unwrap(),
                 sha,
                 changelog_section: None,
                 is_prerelease: false,

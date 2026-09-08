@@ -212,7 +212,7 @@ mod tests {
         let mut plan = empty_plan();
         plan.releases.push(ReleaseEntry {
             package: crate::PackageId::Bare("pkg".to_string()),
-            tag_name: crate::TagName("pkg@1.0.0".to_string()),
+            tag_name: crate::TagName::parse("pkg@1.0.0").unwrap(),
             sha: crate::CommitSha::parse("a".repeat(40).as_str()).unwrap(),
             changelog_section: None,
             is_prerelease: false,

@@ -632,7 +632,7 @@ mod tag_report_tests {
     use super::*;
 
     fn tag_name() -> TagName {
-        TagName("pkg-a@1.0.0".to_string())
+        TagName::parse("pkg-a@1.0.0").unwrap()
     }
 
     fn sha() -> CommitSha {

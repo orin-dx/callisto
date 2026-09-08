@@ -166,7 +166,7 @@ mod tests {
             pypi_packages: vec![],
             releases: vec![ReleaseEntry {
                 package: PackageId::Bare("my-lib".to_string()),
-                tag_name: TagName("my-lib@1.0.0".to_string()),
+                tag_name: TagName::parse("my-lib@1.0.0").unwrap(),
                 sha,
                 changelog_section: None,
                 is_prerelease: false,
