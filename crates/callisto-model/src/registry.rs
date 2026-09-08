@@ -132,10 +132,8 @@ pub fn redact_known_secrets(text: &str, secrets: &[String]) -> String {
 /// leak shapes.
 ///
 /// Takes the snapshot as a parameter (callers pass `std::env::vars()`)
-/// rather than reading the environment directly -- same
-/// `env: impl Fn(&str) -> Result<String, VarError>` pattern
-/// `callisto-cli`'s `check_credentials` uses, for the same reason:
-/// deterministic, no process-env mutation in tests.
+/// rather than reading the environment directly -- deterministic, no
+/// process-env mutation in tests.
 pub fn known_credential_env_values(vars: impl Iterator<Item = (String, String)>) -> Vec<String> {
     vars.filter(|(key, value)| {
         !value.is_empty()

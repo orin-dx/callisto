@@ -34,15 +34,6 @@ pub fn log_line(format: OutputFormat, line: &str) {
     }
 }
 
-/// Trait implemented by CLI report structures to guarantee clean JSON stream splitting and diagnostic card formatting.
-pub trait ReportPresenter: Serialize {
-    fn present_json<W: io::Write>(&self, w: &mut W) -> io::Result<()> {
-        write_json(w, self)
-    }
-
-    fn present_human(&self) -> String;
-}
-
 #[cfg(test)]
 mod tests {
     use callisto_model::{Diagnostic, Report};
@@ -67,12 +58,6 @@ mod tests {
         }
     }
 
-    impl ReportPresenter for FakeReport {
-        fn present_human(&self) -> String {
-            format!("value={}", self.value)
-        }
-    }
-
     #[test]
     fn write_json_serializes_pretty_with_trailing_newline() {
         let mut buf = Vec::new();
@@ -89,19 +74,6 @@ mod tests {
         let text = String::from_utf8(buf).unwrap();
         assert!(text.contains("\"command\": \"fake-report\""), "got:\n{text}");
         assert!(text.contains("\"value\": 7"), "got:\n{text}");
-    }
-
-    #[test]
-    fn present_json_default_impl_delegates_to_write_json() {
-        let mut buf = Vec::new();
-        FakeReport { value: 1 }.present_json(&mut buf).unwrap();
-        let text = String::from_utf8(buf).unwrap();
-        assert!(text.contains("\"value\": 1"), "got:\n{text}");
-    }
-
-    #[test]
-    fn present_human_renders_the_report_value() {
-        assert_eq!(FakeReport { value: 9 }.present_human(), "value=9");
     }
 
     #[test]

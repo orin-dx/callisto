@@ -112,34 +112,3 @@ pub struct RawPackageSetConfig {
     #[serde(rename = "pre-major-inference")]
     pub pre_major_inference: Option<String>,
 }
-
-#[derive(Clone, Debug, Deserialize)]
-pub struct RawMoonYml {
-    pub extensions: Option<RawMoonExtensions>,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-pub struct RawMoonExtensions {
-    pub callisto: Option<RawMoonCallistoConfig>,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-pub struct RawMoonCallistoConfig {
-    #[serde(rename = "package-name")]
-    pub package_name: Option<String>,
-    #[serde(rename = "release-trigger")]
-    pub release_trigger: Option<String>,
-    #[serde(rename = "publish-to")]
-    pub publish_to: Option<Vec<String>>,
-    #[serde(rename = "tag-template")]
-    pub tag_template: Option<String>,
-    /// Package-root-relative; intended to follow the same forward-slash-only portability
-    /// rule as `[changesets].dir` (see its doc comment) and to be rejected the same way if
-    /// absolute or containing `..` components (`ConfigError::InvalidChangelogPath`, E113) —
-    /// but nothing in this crate actually deserializes a `moon.yml` file into
-    /// `RawMoonCallistoConfig` today, so none of that is enforced in practice; this
-    /// documents the intended contract for whenever that wiring exists, not current behavior.
-    pub changelog: Option<String>,
-    #[serde(rename = "pre-major-inference")]
-    pub pre_major_inference: Option<String>,
-}
