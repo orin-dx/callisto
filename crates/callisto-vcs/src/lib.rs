@@ -300,7 +300,15 @@ impl GitRepository {
                         continue;
                     }
                 }
-                tags.push(TagName(name));
+                // A ref name Git itself created is always a legal ref, but
+                // "legal Git ref" does not imply "safe to hand to a CLI
+                // parser as a bare positional" (a leading `-` is legal but
+                // reads as a flag) -- skip anything `TagName::parse` would
+                // reject rather than propagate an unsafe name into "last
+                // tag" resolution.
+                if let Ok(tag) = TagName::parse(&name) {
+                    tags.push(tag);
+                }
             }
 
             Ok(tags)

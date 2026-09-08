@@ -23,7 +23,7 @@ use crate::resolver::DependencyResolver;
 /// round-trip.
 fn fetch_all_tags(git: &GitAccess<'_>) -> Result<Vec<String>, GraphError> {
     let tags = git.list_tags(None)?;
-    Ok(tags.into_iter().map(|t| t.0).collect())
+    Ok(tags.into_iter().map(|t| t.as_str().to_string()).collect())
 }
 
 /// Filters `all_tags` down to those matching `template`'s glob.

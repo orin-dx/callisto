@@ -681,7 +681,7 @@ mod tests {
             schema_version: callisto_model::SCHEMA_VERSION,
             tags: vec![CreatedTag {
                 package: pkg("crate-a"),
-                tag_name: TagName("crate-a@1.0.0".to_string()),
+                tag_name: TagName::parse("crate-a@1.0.0").unwrap(),
                 sha: CommitSha::parse(&"a".repeat(40)).unwrap(),
                 already_existed: false,
                 is_floating_major: false,

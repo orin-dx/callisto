@@ -134,7 +134,8 @@ fn verify_github_attestation<R: CommandRunner>(
     runner: &R,
 ) -> Result<(), GraphError> {
     let policy = &entry.slot.attestation_policy;
-    let workflow = format!("{}/{}", policy.repository, policy.workflow_path);
+    let repository_slug = policy.repository.as_slug();
+    let workflow = format!("{repository_slug}/{}", policy.workflow_path);
     let path_argument = path.to_string_lossy();
     let source_commit = manifest.source_commit.as_str();
     let args = [
@@ -142,7 +143,7 @@ fn verify_github_attestation<R: CommandRunner>(
         "verify",
         path_argument.as_ref(),
         "--repo",
-        policy.repository.as_str(),
+        repository_slug.as_str(),
         "--signer-workflow",
         workflow.as_str(),
         "--signer-digest",
@@ -178,7 +179,7 @@ mod tests {
 
     use callisto_model::{
         ArtifactDigest, ArtifactManifestEntryV1, ArtifactSlotId, CommandError, CommandOutput, Ecosystem,
-        GitHubArtifactAttestationV1, ReleaseIntentV1, ReleasePackageId, Version, VersionGrammar,
+        GitHubArtifactAttestationV1, GitHubRepository, ReleaseIntentV1, ReleasePackageId, Version, VersionGrammar,
     };
     use tempfile::tempdir;
 
@@ -259,7 +260,7 @@ mod tests {
             Version::parse("1.0.0", VersionGrammar::SemVer).unwrap(),
             "linux-x64",
             asset_name,
-            "owner/repository",
+            GitHubRepository::parse("owner/repository").unwrap(),
             ".github/workflows/release.yml",
             callisto_model::CommitSha::parse("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb").unwrap(),
         )

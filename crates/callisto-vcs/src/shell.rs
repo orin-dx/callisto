@@ -345,7 +345,10 @@ impl GitDataSource for ShellGit<'_> {
 
         Ok(all
             .filter(|t| matcher.as_ref().is_none_or(|m| m.is_match(t)))
-            .map(TagName)
+            // See the `gix` backend's identical comment in lib.rs: a ref
+            // Git itself created is always a legal ref, but not necessarily
+            // safe to hand to a CLI parser as a bare positional.
+            .filter_map(|t| TagName::parse(&t).ok())
             .collect())
     }
 
@@ -661,7 +664,7 @@ mod tests {
         let tags = git.list_tags(Some("pkg-a@*")).unwrap();
 
         assert_eq!(
-            tags.into_iter().map(|t| t.0).collect::<Vec<_>>(),
+            tags.into_iter().map(|t| t.as_str().to_string()).collect::<Vec<_>>(),
             vec!["pkg-a@1.0.0".to_string()]
         );
         // Exactly one shell call, and it must not bake the glob into the

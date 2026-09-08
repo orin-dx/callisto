@@ -8,8 +8,8 @@ use std::process::ExitCode;
 
 use callisto_graph::commands::{status, StatusOptions};
 use callisto_model::{
-    ApplyPermit, CommitSha, ReleasePrActionV2, ReleasePrCommitPlanV1, ReleasePrConfigV1, ReleasePrDecisionV2,
-    ReleasePrSnapshotV2,
+    ApplyPermit, CommitSha, GitHubRepository, ReleasePrActionV2, ReleasePrCommitPlanV1, ReleasePrConfigV1,
+    ReleasePrDecisionError, ReleasePrDecisionV2, ReleasePrSnapshotV2,
 };
 use callisto_vcs::GitAccess;
 
@@ -49,7 +49,11 @@ fn verify(args: ReleasePrVerifyArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
 fn decide(args: ReleasePrDecideArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
     let snapshot: ReleasePrSnapshotV2 = serde_json::from_str(&read_json_arg(&args.snapshot)?)
         .map_err(|error| CliError::Other(format!("invalid release PR snapshot: {error}")))?;
-    let config = ReleasePrConfigV1::new(args.repository, args.base_branch, args.release_branch)?;
+    let repository =
+        GitHubRepository::parse(&args.repository).map_err(|_error| ReleasePrDecisionError::InvalidRepository {
+            repository: args.repository.clone(),
+        })?;
+    let config = ReleasePrConfigV1::new(repository, args.base_branch, args.release_branch)?;
 
     let runner = CliCommandRunner;
     let workspace = load_workspace(global, &runner)?;
