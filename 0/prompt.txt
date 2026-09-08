@@ -951,3 +951,13 @@ To re-run with edited post-processing: Workflow({scriptPath: '/Users/gabe/.claud
 <status>completed</status>
 <summary>Background command "cargo test -p callisto-graph --lib release_decision 2&gt;&amp;1 | tail -40" completed (exit code 0)</summary>
 </task-notification>
+
+---
+
+<task-notification>
+<task-id>b6q8yr1ru</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8f8eb6fc-22cd-45a0-a0c3-707f9385dbc8/tasks/b6q8yr1ru.output</output-file>
+<status>completed</status>
+<summary>Background command "cargo clippy -p callisto-graph --all-targets --quiet -- -D warnings 2&gt;&amp;1 | tail -60" completed (exit code 0)</summary>
+</task-notification>
