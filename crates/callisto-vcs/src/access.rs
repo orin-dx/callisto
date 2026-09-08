@@ -158,14 +158,15 @@ impl GitDataSource for GitAccess<'_> {
         name: &str,
         target_sha: &CommitSha,
         message: Option<&str>,
+        sign: crate::TagSignPolicy,
         permit: &ApplyPermit,
     ) -> Result<(), VcsError> {
         if let Some(repo) = &self.native {
             // Authoritative: a genuine gix failure must not be masked by
             // silently retrying through the shell.
-            return repo.create_tag(name, target_sha, message, permit);
+            return repo.create_tag(name, target_sha, message, sign, permit);
         }
-        self.shell.create_tag(name, target_sha, message, permit)
+        self.shell.create_tag(name, target_sha, message, sign, permit)
     }
 
     fn create_floating_major(
@@ -321,7 +322,13 @@ mod tests {
         // "dup" already exists, so gix's `PreviousValue::MustNotExist`
         // create_tag call must fail -- and that failure must propagate
         // as-is (proven by PoisonedRunner not being invoked/panicking).
-        let result = git.create_tag("dup", &head_sha, Some("dup release"), &permit());
+        let result = git.create_tag(
+            "dup",
+            &head_sha,
+            Some("dup release"),
+            crate::TagSignPolicy::RespectRepoConfig,
+            &permit(),
+        );
         assert!(result.is_err(), "creating an already-existing tag must fail");
     }
 

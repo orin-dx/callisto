@@ -414,21 +414,21 @@ impl GitDataSource for ShellGit<'_> {
         name: &str,
         target_sha: &CommitSha,
         message: Option<&str>,
+        sign: crate::TagSignPolicy,
         _permit: &ApplyPermit,
     ) -> Result<(), VcsError> {
         // `--` marks the end of option parsing so `name` (validated
         // upstream by `is_valid_git_ref_name`, but defended here too) can
         // never be misread as a `git tag` flag even if it started with `-`.
-        let output = match message {
-            Some(msg) => self.runner.run(
-                "git",
-                &["tag", "-a", "-m", msg, "--", name, target_sha.as_str()],
-                &self.root,
-            )?,
-            None => self
-                .runner
-                .run("git", &["tag", "--", name, target_sha.as_str()], &self.root)?,
-        };
+        let mut args: Vec<&str> = vec!["tag"];
+        if let Some(msg) = message {
+            args.extend(["-a", "-m", msg]);
+        }
+        if matches!(sign, crate::TagSignPolicy::ForceUnsigned) {
+            args.push("--no-sign");
+        }
+        args.extend(["--", name, target_sha.as_str()]);
+        let output = self.runner.run("git", &args, &self.root)?;
         if !output.success() {
             return Err(VcsError::Git(format!(
                 "`git tag` failed in `{}`: {}",
@@ -846,8 +846,14 @@ mod tests {
         let git = ShellGit::new(&runner, PathBuf::from("."));
         let sha = CommitSha::parse(&"d".repeat(40)).unwrap();
 
-        git.create_tag("pkg-a@1.0.0", &sha, Some("Release pkg-a@1.0.0"), &permit())
-            .unwrap();
+        git.create_tag(
+            "pkg-a@1.0.0",
+            &sha,
+            Some("Release pkg-a@1.0.0"),
+            crate::TagSignPolicy::RespectRepoConfig,
+            &permit(),
+        )
+        .unwrap();
 
         let calls = runner.calls.lock().unwrap();
         assert_eq!(
@@ -873,10 +879,55 @@ mod tests {
         let git = ShellGit::new(&runner, PathBuf::from("."));
         let sha = CommitSha::parse(&"e".repeat(40)).unwrap();
 
-        git.create_tag("pkg-a@1.0.0", &sha, None, &permit()).unwrap();
+        git.create_tag(
+            "pkg-a@1.0.0",
+            &sha,
+            None,
+            crate::TagSignPolicy::RespectRepoConfig,
+            &permit(),
+        )
+        .unwrap();
 
         let calls = runner.calls.lock().unwrap();
         assert_eq!(calls[0], vec!["tag", "--", "pkg-a@1.0.0", sha.as_str()]);
+    }
+
+    /// `ForceUnsigned` must add `--no-sign` before the `--` argv separator,
+    /// alongside it rather than instead of it -- both safety properties
+    /// (the durable release executor's CI-signing workaround and the
+    /// flag-injection guard) must hold together.
+    #[test]
+    fn test_create_tag_force_unsigned_adds_no_sign_before_separator() {
+        let runner = FakeRunner {
+            calls: Mutex::new(Vec::new()),
+            response: Box::new(|_args| Ok(ok(""))),
+        };
+        let git = ShellGit::new(&runner, PathBuf::from("."));
+        let sha = CommitSha::parse(&"a".repeat(40)).unwrap();
+
+        git.create_tag(
+            "pkg-a@1.0.0",
+            &sha,
+            Some("Release pkg-a@1.0.0"),
+            crate::TagSignPolicy::ForceUnsigned,
+            &permit(),
+        )
+        .unwrap();
+
+        let calls = runner.calls.lock().unwrap();
+        assert_eq!(
+            calls[0],
+            vec![
+                "tag",
+                "-a",
+                "-m",
+                "Release pkg-a@1.0.0",
+                "--no-sign",
+                "--",
+                "pkg-a@1.0.0",
+                sha.as_str(),
+            ]
+        );
     }
 
     #[test]
@@ -971,7 +1022,9 @@ mod tests {
         };
         let git = ShellGit::new(&runner, PathBuf::from("."));
         let sha = CommitSha::parse(&"a".repeat(40)).unwrap();
-        let err = git.create_tag("v1.0.0", &sha, None, &permit()).expect_err("must fail");
+        let err = git
+            .create_tag("v1.0.0", &sha, None, crate::TagSignPolicy::RespectRepoConfig, &permit())
+            .expect_err("must fail");
         let rendered = format!("{err}");
         assert!(!rendered.contains("ghs_leaked_secret"), "got: {rendered}");
         assert!(rendered.contains("[REDACTED]"), "got: {rendered}");

@@ -9,17 +9,18 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use callisto_model::{
-    ApplyPermit, CanonicalTranscript, CommandRunner, CommitSha, DepKind, Ecosystem, ExecutionTrustProfileV1, NpmAccess,
-    OperationOutcome, PublishOutcome, PublishTarget, RegistryBindingDigest, RegistryBindingId, RegistryKey,
-    ReleaseDecisionV1, ReleaseInputSnapshotV1, ReleaseIntentV1, ReleaseOperation, ReleaseOperationId, ReleasePackageId,
-    ReleasePackageInputV1, SemanticInputDigest, SourceIdentity, TagName, Version,
+    ApplyPermit, CanonicalTranscript, CommandOutput, CommandRunner, CommitSha, DepKind, Ecosystem,
+    ExecutionTrustProfileV1, NpmAccess, OperationOutcome, PublishOutcome, PublishTarget, RegistryBindingDigest,
+    RegistryBindingId, RegistryKey, ReleaseDecisionV1, ReleaseInputSnapshotV1, ReleaseIntentV1, ReleaseOperation,
+    ReleaseOperationId, ReleasePackageId, ReleasePackageInputV1, SemanticInputDigest, SourceIdentity, TagName, Version,
 };
 use callisto_vcs::{
     access::{GitCommitTrustEvidence, GitHeadDisposition},
     release_lock::ReleaseWorkspaceLock,
+    GitAccess, GitDataSource, TagSignPolicy,
 };
 
-use crate::{commands::publish_client, DependencyResolver, GraphError, ProjectLocator, Workspace};
+use crate::{commands::registry_argv, DependencyResolver, GraphError, ProjectLocator, Workspace};
 
 /// The invocation data for one effect. This is deliberately graph-private:
 /// callers can inspect the serializable intent, but cannot substitute a new
@@ -279,7 +280,7 @@ impl ValidatedReleaseIntent<'_> {
                 name,
                 target,
                 annotation,
-            } => self.dispatch_tag(name, target, annotation),
+            } => self.dispatch_tag(permit, name, target, annotation),
             PreparedOperation::ForgeRelease { tag } => self.dispatch_forge_release(tag),
         }
     }
@@ -301,80 +302,57 @@ impl ValidatedReleaseIntent<'_> {
         else {
             return Err(GraphError::ReleaseIntentStale);
         };
-        let cwd = self.prepared.root.join(package_dir);
         let output = match id.package.ecosystem() {
             Ecosystem::Cargo => {
-                let manifest = cwd.join("Cargo.toml");
-                let manifest = manifest.to_string_lossy();
-                let mut args = vec!["publish", "--manifest-path", manifest.as_ref()];
-                if registry.key.as_str() != RegistryKey::CRATES_IO {
-                    args.extend(["--registry", registry.key.as_str()]);
-                }
-                self.runner.run("cargo", &args, &self.prepared.root)?
+                let registry_key = (registry.key.as_str() != RegistryKey::CRATES_IO).then(|| registry.key.as_str());
+                let argv = registry_argv::cargo_publish_argv(
+                    &self.prepared.root,
+                    package_dir,
+                    package_name,
+                    version,
+                    registry_key,
+                )?;
+                self.run_argv(&argv)?
             }
             Ecosystem::Npm => {
                 if self.npm_version_is_published(package_name, version, registry.endpoint.as_deref())? {
                     return Ok(OperationOutcome::AlreadySatisfied);
                 }
-                let mut args = vec!["publish"];
-                if let Some(endpoint) = registry.endpoint.as_deref() {
-                    args.extend(["--registry", endpoint]);
-                }
-                if let Some(access) = npm_access {
-                    args.extend([
-                        "--access",
-                        match access {
-                            NpmAccess::Public => "public",
-                            NpmAccess::Restricted => "restricted",
-                        },
-                    ]);
-                }
-                if let Some(tag) = npm_tag {
-                    args.extend(["--tag", tag]);
-                }
-                self.runner.run("npm", &args, &cwd)?
+                let package_manager = registry_argv::detect_npm_package_manager(&self.prepared.root);
+                let argv = registry_argv::npm_publish_argv(
+                    &self.prepared.root,
+                    package_dir,
+                    package_name,
+                    package_manager,
+                    npm_tag.as_deref(),
+                    *npm_access,
+                    registry.endpoint.as_deref(),
+                );
+                self.run_argv(&argv)?
             }
             Ecosystem::Pypi => {
-                // Never upload from the workspace's mutable `dist/` directory.
-                // The temporary directory is created for this exact operation
-                // and dropped immediately afterwards, excluding stale files.
-                let output_dir = tempfile::tempdir().map_err(|error| GraphError::ReleaseInputRead {
-                    path: cwd.clone(),
-                    message: error.to_string(),
-                })?;
-                let output_path = output_dir.path().to_string_lossy();
-                let built = self
-                    .runner
-                    .run("python", &["-m", "build", "--outdir", output_path.as_ref()], &cwd)?;
+                let steps = registry_argv::pypi_publish_argv(
+                    &self.prepared.root,
+                    package_dir,
+                    package_name,
+                    version,
+                    registry.endpoint.as_deref(),
+                );
+                let [build, upload] = steps.as_slice() else {
+                    return Err(GraphError::ReleaseIntentStale);
+                };
+                let built = self.run_argv(build)?;
                 if built.exit_code != Some(0) {
                     return Err(GraphError::ReleaseIntentStale);
                 }
-                let files = std::fs::read_dir(output_dir.path())
-                    .map_err(|error| GraphError::ReleaseInputRead {
-                        path: output_dir.path().to_path_buf(),
-                        message: error.to_string(),
-                    })?
-                    .filter_map(Result::ok)
-                    .map(|entry| entry.path())
-                    .filter(|path| path.is_file())
-                    .collect::<Vec<_>>();
-                if files.is_empty() {
-                    return Err(GraphError::ReleaseIntentStale);
-                }
-                let mut args = vec!["upload", "--skip-existing"];
-                if let Some(endpoint) = registry.endpoint.as_deref() {
-                    args.extend(["--repository-url", endpoint]);
-                }
-                let files = files.iter().map(|path| path.to_string_lossy()).collect::<Vec<_>>();
-                args.extend(files.iter().map(std::convert::AsRef::as_ref));
-                self.runner.run("twine", &args, &cwd)?
+                self.run_argv(upload)?
             }
             _ => return Err(GraphError::ReleaseIntentStale),
         };
         let outcome = match id.package.ecosystem() {
-            Ecosystem::Cargo => publish_client::classify_cargo_output(&output),
-            Ecosystem::Npm => publish_client::classify_npm_publish_output(&output),
-            Ecosystem::Pypi => publish_client::classify_twine_output(&output),
+            Ecosystem::Cargo => registry_argv::classify_cargo_output(&output),
+            Ecosystem::Npm => registry_argv::classify_npm_publish_output(&output),
+            Ecosystem::Pypi => registry_argv::classify_twine_output(&output),
             _ => return Err(GraphError::ReleaseIntentStale),
         }
         .map_err(|_error| GraphError::ReleaseIntentStale)?;
@@ -391,6 +369,15 @@ impl ValidatedReleaseIntent<'_> {
             PublishOutcome::Published => OperationOutcome::Published,
             PublishOutcome::AlreadyPublished => OperationOutcome::AlreadySatisfied,
         })
+    }
+
+    /// Runs a [`registry_argv::Argv`] built by the pure argv layer. This is
+    /// the only place `dispatch_registry` touches [`CommandRunner`] --
+    /// everything about *what* to run (program, args, cwd) was already
+    /// decided by `registry_argv`.
+    fn run_argv(&self, argv: &registry_argv::Argv) -> Result<CommandOutput, GraphError> {
+        let args: Vec<&str> = argv.args.iter().map(String::as_str).collect();
+        Ok(self.runner.run(&argv.program, &args, &argv.cwd)?)
     }
 
     fn npm_version_is_published(
@@ -423,6 +410,7 @@ impl ValidatedReleaseIntent<'_> {
 
     fn dispatch_tag(
         &self,
+        permit: &ApplyPermit,
         name: &TagName,
         target: &CommitSha,
         annotation: &str,
@@ -434,22 +422,21 @@ impl ValidatedReleaseIntent<'_> {
                 Err(GraphError::ReleaseIntentStale)
             };
         }
-        let created = self.runner.run(
-            "git",
-            &[
-                "tag",
-                "--no-sign",
-                "-a",
-                name.as_str(),
-                target.as_str(),
-                "-m",
-                annotation,
-            ],
-            &self.prepared.root,
-        )?;
-        if created.exit_code != Some(0) {
-            return Err(GraphError::ReleaseIntentStale);
-        }
+        // Delegates to `GitAccess::create_tag` rather than inlining `git
+        // tag` argv, so this inherits its `--` end-of-options separator
+        // (defends `name` against being misread as a flag) on top of the
+        // `--no-sign` this durable path has always needed (this repo's CI
+        // sets `tag.gpgSign`/`commit.gpgsign` globally in some contexts,
+        // with no tag-signing key available here).
+        let git = GitAccess::discover(&self.prepared.root, self.runner);
+        git.create_tag(
+            name.as_str(),
+            target,
+            Some(annotation),
+            TagSignPolicy::ForceUnsigned,
+            permit,
+        )
+        .map_err(|_error| GraphError::ReleaseIntentStale)?;
         let pushed = self.runner.run(
             "git",
             &["push", self.checked_git_remote()?.endpoint.as_str(), name.as_str()],
