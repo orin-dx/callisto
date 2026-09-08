@@ -110,6 +110,70 @@ pub fn cargo_package_name(doc: &toml_edit::DocumentMut) -> Option<&str> {
     doc.get("package").and_then(|p| p.get("name")).and_then(|n| n.as_str())
 }
 
+/// Sets `table[key]` to a scalar string value, preserving the existing
+/// entry's decor (comments/whitespace) when `table[key]` is already a
+/// plain value; otherwise inserts a fresh `key = "value"` entry with no
+/// decor to preserve. Shared by the member-manifest
+/// ([`CargoToml::write_version`]) and workspace-root
+/// ([`WorkspaceCargoResolver::write_version`]) version-write paths, which
+/// were previously two copies of this exact dance.
+fn set_scalar_preserving_decor(table: &mut toml_edit::Table, key: &str, new_value: &str) {
+    if let Some(item) = table.get_mut(key) {
+        if let Some(val) = item.as_value_mut() {
+            let decor = val.decor().clone();
+            let mut new_val = toml_edit::Value::from(new_value);
+            *new_val.decor_mut() = decor;
+            *val = new_val;
+            return;
+        }
+    }
+    table.insert(key, toml_edit::value(new_value));
+}
+
+/// Rewrites a dependency entry's `version` to `new_str`, preserving decor
+/// across the three shapes Cargo allows for a dependency value: a bare
+/// version string, an inline table with a `version` key, or a full
+/// `[dependencies.name]` table with a `version` key. `Err(())` for any
+/// other shape -- callers map that to their own
+/// `ManifestError::UnrecognizedDependencyValue` (which needs a `path` this
+/// function has no access to). Shared by the member-manifest
+/// ([`CargoToml::update_dependency_spec`]) and workspace-root
+/// ([`WorkspaceCargoResolver::write_dependency`]) dependency-write paths,
+/// which were previously two copies of this exact three-shape dance,
+/// differing only in which path they report on error.
+fn set_dependency_version(item: &mut toml_edit::Item, new_str: String) -> Result<(), ()> {
+    if let Some(value) = item.as_value_mut() {
+        if value.is_str() {
+            let decor = value.decor().clone();
+            let mut new_val = toml_edit::Value::from(new_str);
+            *new_val.decor_mut() = decor;
+            *value = new_val;
+        } else if let Some(inline) = value.as_inline_table_mut() {
+            if let Some(existing_ver) = inline.get_mut("version") {
+                let decor = existing_ver.decor().clone();
+                let mut new_val = toml_edit::Value::from(new_str);
+                *new_val.decor_mut() = decor;
+                *existing_ver = new_val;
+            } else {
+                inline.insert("version", toml_edit::Value::from(new_str));
+            }
+        } else {
+            return Err(());
+        }
+    } else if let Some(tbl) = item.as_table_mut() {
+        let decor = tbl.get("version").and_then(|i| i.as_value()).map(|v| v.decor().clone());
+        tbl.insert("version", toml_edit::value(new_str));
+        if let Some(decor) = decor {
+            if let Some(new_item) = tbl.get_mut("version").and_then(|i| i.as_value_mut()) {
+                *new_item.decor_mut() = decor;
+            }
+        }
+    } else {
+        return Err(());
+    }
+    Ok(())
+}
+
 /// [`crate::read_identity`]'s `Cargo.toml` implementation: parses `source`
 /// and extracts `[package].name` plus a [`crate::VersionSource`] for
 /// `[package].version` -- `InheritedFromWorkspace` when it's
@@ -254,18 +318,7 @@ impl Manifest for CargoToml {
                 field: "package",
             })?;
 
-        if let Some(item) = pkg.get_mut("version") {
-            if let Some(val) = item.as_value_mut() {
-                let decor = val.decor().clone();
-                let mut new_val = toml_edit::Value::from(v.render());
-                *new_val.decor_mut() = decor;
-                *val = new_val;
-            } else {
-                pkg.insert("version", toml_edit::value(v.render()));
-            }
-        } else {
-            pkg.insert("version", toml_edit::value(v.render()));
-        }
+        set_scalar_preserving_decor(pkg, "version", v.render());
         Ok(())
     }
 
@@ -364,41 +417,10 @@ impl Manifest for CargoToml {
 
         let new_str = new.render();
 
-        if let Some(value) = item.as_value_mut() {
-            if value.is_str() {
-                let decor = value.decor().clone();
-                let mut new_val = toml_edit::Value::from(new_str);
-                *new_val.decor_mut() = decor;
-                *value = new_val;
-            } else if let Some(inline) = value.as_inline_table_mut() {
-                if let Some(existing_ver) = inline.get_mut("version") {
-                    let decor = existing_ver.decor().clone();
-                    let mut new_val = toml_edit::Value::from(new_str);
-                    *new_val.decor_mut() = decor;
-                    *existing_ver = new_val;
-                } else {
-                    inline.insert("version", toml_edit::Value::from(new_str));
-                }
-            } else {
-                return Err(ManifestError::UnrecognizedDependencyValue {
-                    path: self.path.clone(),
-                    name: name.to_string(),
-                });
-            }
-        } else if let Some(tbl) = item.as_table_mut() {
-            let decor = tbl.get("version").and_then(|i| i.as_value()).map(|v| v.decor().clone());
-            tbl.insert("version", toml_edit::value(new_str));
-            if let Some(decor) = decor {
-                if let Some(new_item) = tbl.get_mut("version").and_then(|i| i.as_value_mut()) {
-                    *new_item.decor_mut() = decor;
-                }
-            }
-        } else {
-            return Err(ManifestError::UnrecognizedDependencyValue {
-                path: self.path.clone(),
-                name: name.to_string(),
-            });
-        }
+        set_dependency_version(item, new_str).map_err(|()| ManifestError::UnrecognizedDependencyValue {
+            path: self.path.clone(),
+            name: name.to_string(),
+        })?;
 
         Ok(())
     }
@@ -655,18 +677,7 @@ impl WorkspaceCargoResolver {
                 field: "workspace.package",
             })?;
 
-        if let Some(item) = pkg.get_mut("version") {
-            if let Some(val) = item.as_value_mut() {
-                let decor = val.decor().clone();
-                let mut new_val = toml_edit::Value::from(v.render());
-                *new_val.decor_mut() = decor;
-                *val = new_val;
-            } else {
-                pkg.insert("version", toml_edit::value(v.render()));
-            }
-        } else {
-            pkg.insert("version", toml_edit::value(v.render()));
-        }
+        set_scalar_preserving_decor(pkg, "version", v.render());
         self.persist(permit)
     }
 
@@ -696,40 +707,10 @@ impl WorkspaceCargoResolver {
         })?;
 
         let new_str = new.render();
-        if let Some(value) = item.as_value_mut() {
-            if value.is_str() {
-                let decor = value.decor().clone();
-                let mut new_val = toml_edit::Value::from(new_str);
-                *new_val.decor_mut() = decor;
-                *value = new_val;
-            } else if let Some(inline) = value.as_inline_table_mut() {
-                let decor = inline.get("version").map(|v| v.decor().clone());
-                inline.insert("version", toml_edit::Value::from(new_str));
-                if let Some(decor) = decor {
-                    if let Some(new_value) = inline.get_mut("version") {
-                        *new_value.decor_mut() = decor;
-                    }
-                }
-            } else {
-                return Err(ManifestError::UnrecognizedDependencyValue {
-                    path: self.root_path.clone(),
-                    name: name.to_string(),
-                });
-            }
-        } else if let Some(tbl) = item.as_table_mut() {
-            let decor = tbl.get("version").and_then(|i| i.as_value()).map(|v| v.decor().clone());
-            tbl.insert("version", toml_edit::value(new_str));
-            if let Some(decor) = decor {
-                if let Some(new_item) = tbl.get_mut("version").and_then(|i| i.as_value_mut()) {
-                    *new_item.decor_mut() = decor;
-                }
-            }
-        } else {
-            return Err(ManifestError::UnrecognizedDependencyValue {
-                path: self.root_path.clone(),
-                name: name.to_string(),
-            });
-        }
+        set_dependency_version(item, new_str).map_err(|()| ManifestError::UnrecognizedDependencyValue {
+            path: self.root_path.clone(),
+            name: name.to_string(),
+        })?;
 
         self.persist(permit)
     }
