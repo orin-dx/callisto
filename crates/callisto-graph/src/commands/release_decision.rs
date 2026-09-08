@@ -92,23 +92,34 @@ pub fn derive_selected_release_decision<R: callisto_model::CommandRunner, D: Dep
     ReleaseDecisionV1::new(entries).map_err(|_error| GraphError::ReleaseIntentStale)
 }
 
-/// Derives the release roster from a merged release commit already checked out
-/// at `release_commit`.
+/// Verifies the release roster a merged release commit claims, against a
+/// release-decision file committed alongside it at `decision_path`.
 ///
-/// This is intentionally *not* a second call to [`crate::commands::plan_version`].
-/// The release PR has already used its pending changesets to calculate and
-/// apply the version plan.  At merge time those changesets are gone, and the
-/// immutable merge commit is the authority.  We therefore require that it
-/// deletes its consumed changesets, and the canonical manifest versions and
-/// configured changelogs form exactly the resulting roster.
+/// This is intentionally *not* a second computation of changeset, fixed-group,
+/// linked-group, cascade, or pre-release-policy inclusion. `plan_version`
+/// (via [`derive_release_decision`]) already computed that once, correctly,
+/// when the release PR was generated -- and `callisto version --emit-decision`
+/// commits its exact output alongside the manifest and changelog edits.
+/// Re-deriving that policy a second time here, from raw git diffs, is exactly
+/// the kind of duplicated logic that drifts: an earlier version of this
+/// function did just that, understood only a direct changeset match, and
+/// rejected every real release in this repository once a fixed-group cascade
+/// (a case its reimplementation never learned) touched an unnamed sibling.
+///
+/// Instead, this function reads the committed decision back and confirms the
+/// commit's actual diff matches it exactly -- no more, no less.
+/// [`ReleaseDecisionV1`]'s own deserializer already rejects a decision whose
+/// entries don't match its content digest, so a hand-edited or corrupted
+/// decision file fails before this function's own diff cross-check runs.
 ///
 /// The caller must check out the exact merge commit in detached HEAD state
-/// before creating an intent.  GitHub-specific PR/approval provenance belongs
+/// before creating an intent. GitHub-specific PR/approval provenance belongs
 /// in the workflow boundary; this graph function verifies the local,
 /// provider-neutral commit delta only.
 pub fn derive_release_commit_decision<R: CommandRunner, D: DependencyResolver>(
     workspace: &Workspace<'_, R, D>,
     release_commit: &CommitSha,
+    decision_path: &std::path::Path,
 ) -> Result<ReleaseDecisionV1, GraphError> {
     let head = git_stdout(workspace.runner, &workspace.root, &["rev-parse", "HEAD"])?;
     let head = CommitSha::parse(&head).map_err(|_error| GraphError::ReleaseIntentStale)?;
@@ -134,32 +145,50 @@ pub fn derive_release_commit_decision<R: CommandRunner, D: DependencyResolver>(
         ],
     )?;
     let changed = parse_name_status(&changed)?;
-    let changeset_dir = workspace.config.changesets_dir.to_string_lossy().replace('\\', "/");
-    let changeset_prefix = format!("{}/", changeset_dir.trim_end_matches('/'));
-    let deleted_changesets = changed
+
+    // The decision must be freshly authored as part of *this* commit, not a
+    // stale leftover an earlier release already committed and this one never
+    // touched -- otherwise a commit that changes nothing real could still
+    // carry forward a prior, unrelated decision's authority.
+    let decision_path_str = decision_path.to_string_lossy().replace('\\', "/");
+    let decision_freshly_written = changed
         .iter()
-        .filter_map(|(status, path)| {
-            (status == "D" && path.starts_with(&changeset_prefix) && path.ends_with(".md")).then_some(path)
-        })
-        .collect::<Vec<_>>();
-    if deleted_changesets.is_empty() {
+        .any(|(status, path)| path == &decision_path_str && matches!(status.as_str(), "A" | "M"));
+    if !decision_freshly_written {
         return Err(GraphError::ReleaseIntentStale);
     }
 
-    let mut selected = std::collections::BTreeSet::new();
-    for path in deleted_changesets {
-        let source = git_file(workspace.runner, &workspace.root, &parent, path)?;
-        let changeset = callisto_format::parse_changeset(&source).map_err(|_error| GraphError::ReleaseIntentStale)?;
-        for entry in changeset.entries {
-            selected.extend(resolve_changeset_entry(workspace, &entry.name)?);
-        }
+    // A cheap, independent sanity check that this commit is a real version
+    // application and not just a hand-crafted decision file: some real
+    // changeset was actually consumed. The decision's own entries, not this
+    // changeset's content, remain the sole authority verified below.
+    let changeset_dir = workspace.config.changesets_dir.to_string_lossy().replace('\\', "/");
+    let changeset_prefix = format!("{}/", changeset_dir.trim_end_matches('/'));
+    let consumed_a_changeset = changed
+        .iter()
+        .any(|(status, path)| status == "D" && path.starts_with(&changeset_prefix) && path.ends_with(".md"));
+    if !consumed_a_changeset {
+        return Err(GraphError::ReleaseIntentStale);
     }
+
+    let decision_source = git_file(
+        workspace.runner,
+        &workspace.root,
+        release_commit.as_str(),
+        &decision_path_str,
+    )?;
+    let decision: ReleaseDecisionV1 =
+        serde_json::from_str(&decision_source).map_err(|_error| GraphError::ReleaseIntentStale)?;
+    let claimed = decision
+        .entries
+        .iter()
+        .map(|entry| (entry.package.clone(), entry.target_version.clone()))
+        .collect::<std::collections::BTreeMap<_, _>>();
 
     let changed_paths = changed
         .iter()
         .filter_map(|(status, path)| matches!(status.as_str(), "A" | "M").then_some(path.as_str()))
         .collect::<std::collections::BTreeSet<_>>();
-    let mut entries = Vec::new();
     let mut observed = std::collections::BTreeSet::new();
     for package in workspace.graph.packages() {
         let package_ids = package
@@ -169,8 +198,8 @@ pub fn derive_release_commit_decision<R: CommandRunner, D: DependencyResolver>(
                     .map_err(|_error| GraphError::ReleaseIntentStale)
             })
             .collect::<Result<Vec<_>, _>>()?;
-        let package_is_selected = package_ids.iter().any(|id| selected.contains(id));
-        if package_is_selected {
+        let package_is_claimed = package_ids.iter().any(|id| claimed.contains_key(id));
+        if package_is_claimed {
             let changelog = package.changelog.as_ref().ok_or(GraphError::ReleaseIntentStale)?;
             if !changed_paths.contains(changelog.to_string_lossy().as_ref()) {
                 return Err(GraphError::ReleaseIntentStale);
@@ -189,29 +218,29 @@ pub fn derive_release_commit_decision<R: CommandRunner, D: DependencyResolver>(
                 manifest.ecosystem(),
             )?;
             let changed_version = before != after;
-            if selected.contains(&id) {
-                if !changed_version || !changed_paths.contains(path.as_ref()) {
-                    return Err(GraphError::ReleaseIntentStale);
+            match claimed.get(&id) {
+                Some(target_version) => {
+                    if !changed_version || &after != target_version || !changed_paths.contains(path.as_ref()) {
+                        return Err(GraphError::ReleaseIntentStale);
+                    }
+                    observed.insert(id);
                 }
-                observed.insert(id.clone());
-                entries.push(ReleaseDecisionEntry {
-                    package: id,
-                    target_version: after,
-                    reasons: vec![ReleaseInclusionReason::Changeset],
-                });
-            } else if changed_version {
-                // A changed version without a consumed changeset is an
-                // unreviewed extra release.  Group/cascade expansion must be
-                // encoded by the release-PR generator before this boundary is
-                // widened; failing closed prevents a silent broader publish.
-                return Err(GraphError::ReleaseIntentStale);
+                None => {
+                    if changed_version {
+                        // A changed version the committed decision never
+                        // claimed is not this commit's authority -- fail
+                        // closed rather than trust a partial match.
+                        return Err(GraphError::ReleaseIntentStale);
+                    }
+                }
             }
         }
     }
-    if observed != selected {
+    if observed.len() != claimed.len() {
         return Err(GraphError::ReleaseIntentStale);
     }
-    ReleaseDecisionV1::new(entries).map_err(|_error| GraphError::ReleaseIntentStale)
+
+    Ok(decision)
 }
 
 fn git_stdout<R: CommandRunner>(runner: &R, root: &std::path::Path, args: &[&str]) -> Result<String, GraphError> {
@@ -254,10 +283,13 @@ fn manifest_version_at<R: CommandRunner>(
 ) -> Result<Version, GraphError> {
     let source = git_file(runner, root, commit, path)?;
     let version = match ecosystem {
-        Ecosystem::Cargo => source
-            .parse::<toml_edit::DocumentMut>()
-            .ok()
-            .and_then(|document| document["package"]["version"].as_str().map(str::to_owned)),
+        Ecosystem::Cargo => source.parse::<toml_edit::DocumentMut>().ok().and_then(|document| {
+            document
+                .get("package")
+                .and_then(|package| package.get("version"))
+                .and_then(|v| v.as_str())
+                .map(str::to_owned)
+        }),
         Ecosystem::Npm => serde_json::from_str::<serde_json::Value>(&source)
             .ok()
             .and_then(|document| {
@@ -267,46 +299,23 @@ fn manifest_version_at<R: CommandRunner>(
                     .map(str::to_owned)
             }),
         Ecosystem::Pypi => source.parse::<toml_edit::DocumentMut>().ok().and_then(|document| {
-            document["project"]["version"]
-                .as_str()
-                .or_else(|| document["tool"]["poetry"]["version"].as_str())
+            document
+                .get("project")
+                .and_then(|project| project.get("version"))
+                .and_then(|v| v.as_str())
+                .or_else(|| {
+                    document
+                        .get("tool")
+                        .and_then(|tool| tool.get("poetry"))
+                        .and_then(|poetry| poetry.get("version"))
+                        .and_then(|v| v.as_str())
+                })
                 .map(str::to_owned)
         }),
         _ => None,
     }
     .ok_or(GraphError::ReleaseIntentStale)?;
     Version::parse(&version, ecosystem.version_grammar()).map_err(|_error| GraphError::ReleaseIntentStale)
-}
-
-fn resolve_changeset_entry<R: CommandRunner, D: DependencyResolver>(
-    workspace: &Workspace<'_, R, D>,
-    raw: &str,
-) -> Result<Vec<ReleasePackageId>, GraphError> {
-    if raw.contains('/') {
-        let id = ReleasePackageId::parse(raw).map_err(|_error| GraphError::ReleaseIntentStale)?;
-        let known = workspace.graph.packages().any(|package| {
-            package
-                .canonical_manifests()
-                .any(|manifest| manifest.ecosystem() == id.ecosystem() && package.id.name() == id.name())
-        });
-        return known.then_some(vec![id]).ok_or(GraphError::ReleaseIntentStale);
-    }
-
-    let packages = workspace
-        .graph
-        .packages()
-        .filter(|package| package.id.name() == raw)
-        .collect::<Vec<_>>();
-    if packages.len() != 1 {
-        return Err(GraphError::ReleaseIntentStale);
-    }
-    packages[0]
-        .canonical_manifests()
-        .map(|manifest| {
-            ReleasePackageId::new(manifest.ecosystem(), packages[0].id.name())
-                .map_err(|_error| GraphError::ReleaseIntentStale)
-        })
-        .collect()
 }
 
 fn reason_from_bump(
@@ -387,5 +396,73 @@ mod tests {
         );
         assert!(parse_name_status("R100\told\tnew\n").is_err());
         assert!(parse_name_status("M Cargo.toml\n").is_err());
+    }
+
+    struct FixedBlobRunner(&'static str);
+
+    impl CommandRunner for FixedBlobRunner {
+        fn run(
+            &self,
+            _program: &str,
+            _args: &[&str],
+            _cwd: &std::path::Path,
+        ) -> Result<callisto_model::CommandOutput, callisto_model::CommandError> {
+            Ok(callisto_model::CommandOutput {
+                exit_code: Some(0),
+                stdout: self.0.to_string(),
+                stderr: String::new(),
+            })
+        }
+    }
+
+    // toml_edit's `Index` impl panics on a missing table ("index not found")
+    // rather than returning None -- manifest_version_at previously used it
+    // directly (`document["project"]["version"]`), so a Poetry-only
+    // pyproject.toml, a PEP 621 `dynamic = ["version"]` package, or a
+    // `Cargo.toml` with no `[package]` table would abort release-commit
+    // verification with a panic instead of failing closed.
+    #[test]
+    fn manifest_version_at_fails_closed_instead_of_panicking_on_missing_tables() {
+        let cases: &[(&str, Ecosystem)] = &[
+            ("[project]\nname = \"x\"\ndynamic = [\"version\"]\n", Ecosystem::Pypi),
+            ("[workspace]\nmembers = [\"a\"]\n", Ecosystem::Cargo),
+        ];
+        for (source, ecosystem) in cases {
+            let runner = FixedBlobRunner(source);
+            let result = manifest_version_at(&runner, std::path::Path::new("."), "deadbeef", "Cargo.toml", *ecosystem);
+            assert!(
+                matches!(result, Err(GraphError::ReleaseIntentStale)),
+                "expected a clean ReleaseIntentStale rejection (not a panic) for {ecosystem:?}, got {result:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn manifest_version_at_still_resolves_poetry_fallback_and_normal_cargo() {
+        let poetry = FixedBlobRunner("[tool.poetry]\nname = \"x\"\nversion = \"1.0.0\"\n");
+        assert_eq!(
+            manifest_version_at(
+                &poetry,
+                std::path::Path::new("."),
+                "deadbeef",
+                "pyproject.toml",
+                Ecosystem::Pypi
+            )
+            .unwrap(),
+            Version::parse("1.0.0", Ecosystem::Pypi.version_grammar()).unwrap()
+        );
+
+        let cargo = FixedBlobRunner("[package]\nname = \"x\"\nversion = \"1.2.3\"\n");
+        assert_eq!(
+            manifest_version_at(
+                &cargo,
+                std::path::Path::new("."),
+                "deadbeef",
+                "Cargo.toml",
+                Ecosystem::Cargo
+            )
+            .unwrap(),
+            Version::semver(1, 2, 3)
+        );
     }
 }
