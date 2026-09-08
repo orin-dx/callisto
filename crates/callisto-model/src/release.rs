@@ -321,6 +321,7 @@ impl ReleaseDecisionV1 {
     pub const SCHEMA_VERSION: u8 = 1;
 
     /// Creates a canonical decision or rejects an ambiguous release roster.
+    #[allow(clippy::result_large_err)]
     pub fn new(mut entries: Vec<ReleaseDecisionEntry>) -> Result<Self, ReleaseDecisionError> {
         if entries.is_empty() {
             return Err(ReleaseDecisionError::EmptyRoster);
@@ -338,6 +339,39 @@ impl ReleaseDecisionV1 {
         if entries.windows(2).any(|pair| pair[0].package == pair[1].package) {
             return Err(ReleaseDecisionError::DuplicatePackage);
         }
+
+        // A fixed or linked group always converges every member to one
+        // shared target version -- `solve_cascade` guarantees this when a
+        // decision is derived from a version plan. Entries tag their own
+        // group membership via `FixedGroup`/`LinkedGroup` reasons, so this
+        // invariant is checkable from the decision's own content alone, with
+        // no `GroupTable`/workspace-config access needed. Rejecting a
+        // violation here means it also applies to a decision deserialized
+        // from a committed release-decision file (`Deserialize` calls
+        // `new()`), not just one freshly derived from a plan.
+        let mut group_targets: BTreeMap<&str, &Version> = BTreeMap::new();
+        for entry in &entries {
+            for reason in &entry.reasons {
+                let group_id = match reason {
+                    ReleaseInclusionReason::FixedGroup { group_id }
+                    | ReleaseInclusionReason::LinkedGroup { group_id } => group_id.as_str(),
+                    _ => continue,
+                };
+                match group_targets.get(group_id) {
+                    Some(existing) if **existing != entry.target_version => {
+                        return Err(ReleaseDecisionError::DivergentGroupTarget {
+                            group_id: group_id.to_string(),
+                            left: (*existing).clone(),
+                            right: entry.target_version.clone(),
+                        });
+                    }
+                    _ => {
+                        group_targets.insert(group_id, &entry.target_version);
+                    }
+                }
+            }
+        }
+
         let digest = decision_digest(&entries);
         Ok(Self {
             schema_version: Self::SCHEMA_VERSION,
@@ -372,6 +406,12 @@ pub enum ReleaseDecisionError {
     DuplicatePackage,
     #[error("release decision entry for {package} has no inclusion reason")]
     MissingReason { package: ReleasePackageId },
+    #[error("release decision claims divergent target versions for group `{group_id}`: {left} vs {right}")]
+    DivergentGroupTarget {
+        group_id: String,
+        left: Version,
+        right: Version,
+    },
 }
 
 impl SemanticInputDigest {
@@ -1948,6 +1988,123 @@ mod tests {
     fn release_package_id_deserialization_rejects_a_bare_identity() {
         let parsed = serde_json::from_str::<ReleasePackageId>(r#""shared""#);
         assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn decision_rejects_divergent_target_versions_within_a_fixed_group() {
+        let a = ReleasePackageId::parse("cargo/crate-a").unwrap();
+        let b = ReleasePackageId::parse("cargo/crate-b").unwrap();
+        let entries = vec![
+            ReleaseDecisionEntry {
+                package: a,
+                target_version: Version::semver(1, 1, 0),
+                reasons: vec![ReleaseInclusionReason::FixedGroup {
+                    group_id: "demo".to_string(),
+                }],
+            },
+            ReleaseDecisionEntry {
+                package: b,
+                target_version: Version::semver(1, 2, 0),
+                reasons: vec![ReleaseInclusionReason::FixedGroup {
+                    group_id: "demo".to_string(),
+                }],
+            },
+        ];
+        assert!(matches!(
+            ReleaseDecisionV1::new(entries),
+            Err(ReleaseDecisionError::DivergentGroupTarget { group_id, .. }) if group_id == "demo"
+        ));
+    }
+
+    #[test]
+    fn decision_rejects_divergent_target_versions_within_a_linked_group() {
+        let a = ReleasePackageId::parse("cargo/crate-a").unwrap();
+        let b = ReleasePackageId::parse("npm/crate-b").unwrap();
+        let entries = vec![
+            ReleaseDecisionEntry {
+                package: a,
+                target_version: Version::semver(2, 0, 0),
+                reasons: vec![ReleaseInclusionReason::LinkedGroup {
+                    group_id: "linked-demo".to_string(),
+                }],
+            },
+            ReleaseDecisionEntry {
+                package: b,
+                target_version: Version::semver(2, 0, 1),
+                reasons: vec![ReleaseInclusionReason::LinkedGroup {
+                    group_id: "linked-demo".to_string(),
+                }],
+            },
+        ];
+        assert!(matches!(
+            ReleaseDecisionV1::new(entries),
+            Err(ReleaseDecisionError::DivergentGroupTarget { group_id, .. }) if group_id == "linked-demo"
+        ));
+    }
+
+    #[test]
+    fn decision_accepts_agreeing_target_versions_within_a_fixed_group() {
+        let a = ReleasePackageId::parse("cargo/crate-a").unwrap();
+        let b = ReleasePackageId::parse("cargo/crate-b").unwrap();
+        let entries = vec![
+            ReleaseDecisionEntry {
+                package: a,
+                target_version: Version::semver(1, 1, 0),
+                reasons: vec![ReleaseInclusionReason::FixedGroup {
+                    group_id: "demo".to_string(),
+                }],
+            },
+            ReleaseDecisionEntry {
+                package: b,
+                target_version: Version::semver(1, 1, 0),
+                reasons: vec![ReleaseInclusionReason::FixedGroup {
+                    group_id: "demo".to_string(),
+                }],
+            },
+        ];
+        assert!(ReleaseDecisionV1::new(entries).is_ok());
+    }
+
+    /// The digest-validating `Deserialize` impl calls `new()` internally, so
+    /// a hand-crafted (but internally digest-consistent) decision claiming
+    /// divergent group targets must be rejected the same way a freshly
+    /// derived one is -- this is the path a merge-commit verifier reading a
+    /// committed decision file actually exercises, not just direct
+    /// `ReleaseDecisionV1::new()` calls from a version plan.
+    #[test]
+    fn decision_deserialization_rejects_divergent_group_targets_even_with_a_self_consistent_digest() {
+        let a = ReleasePackageId::parse("cargo/crate-a").unwrap();
+        let b = ReleasePackageId::parse("cargo/crate-b").unwrap();
+        let entries = vec![
+            ReleaseDecisionEntry {
+                package: a,
+                target_version: Version::semver(1, 1, 0),
+                reasons: vec![ReleaseInclusionReason::FixedGroup {
+                    group_id: "demo".to_string(),
+                }],
+            },
+            ReleaseDecisionEntry {
+                package: b,
+                target_version: Version::semver(1, 2, 0),
+                reasons: vec![ReleaseInclusionReason::FixedGroup {
+                    group_id: "demo".to_string(),
+                }],
+            },
+        ];
+        // Hand-compute a digest matching this exact (invalid) entry set, so
+        // the failure below is provably the group-divergence check and not
+        // just the pre-existing digest-mismatch guard.
+        let digest = decision_digest(&entries);
+        let wire = serde_json::json!({
+            "schemaVersion": ReleaseDecisionV1::SCHEMA_VERSION,
+            "entries": entries,
+            "digest": digest,
+        });
+        let result: Result<ReleaseDecisionV1, _> = serde_json::from_value(wire);
+        assert!(
+            result.is_err(),
+            "expected divergent group targets to be rejected on deserialize"
+        );
     }
 
     #[test]
