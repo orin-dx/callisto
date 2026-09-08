@@ -282,39 +282,22 @@ fn manifest_version_at<R: CommandRunner>(
     ecosystem: Ecosystem,
 ) -> Result<Version, GraphError> {
     let source = git_file(runner, root, commit, path)?;
-    let version = match ecosystem {
-        Ecosystem::Cargo => source.parse::<toml_edit::DocumentMut>().ok().and_then(|document| {
-            document
-                .get("package")
-                .and_then(|package| package.get("version"))
-                .and_then(|v| v.as_str())
-                .map(str::to_owned)
-        }),
-        Ecosystem::Npm => serde_json::from_str::<serde_json::Value>(&source)
-            .ok()
-            .and_then(|document| {
-                document
-                    .get("version")
-                    .and_then(serde_json::Value::as_str)
-                    .map(str::to_owned)
-            }),
-        Ecosystem::Pypi => source.parse::<toml_edit::DocumentMut>().ok().and_then(|document| {
-            document
-                .get("project")
-                .and_then(|project| project.get("version"))
-                .and_then(|v| v.as_str())
-                .or_else(|| {
-                    document
-                        .get("tool")
-                        .and_then(|tool| tool.get("poetry"))
-                        .and_then(|poetry| poetry.get("version"))
-                        .and_then(|v| v.as_str())
-                })
-                .map(str::to_owned)
-        }),
-        _ => None,
-    }
-    .ok_or(GraphError::ReleaseIntentStale)?;
+    let format = ecosystem
+        .canonical_manifest_format()
+        .ok_or(GraphError::ReleaseIntentStale)?;
+    // A malformed blob, a version-less manifest (e.g. a Cargo workspace
+    // root with no [package] table, or a `dynamic = ["version"]` PEP 621
+    // package), or a Cargo `version.workspace = true` inheritance (which
+    // `read_identity` deliberately never resolves, having no workspace
+    // context for a historical git blob) all fail closed here rather than
+    // panicking or fabricating a version.
+    let version = callisto_manifests::read_identity(format, &source, std::path::Path::new(path))
+        .ok()
+        .and_then(|identity| match identity.version {
+            Some(callisto_manifests::VersionSource::Literal(v)) => Some(v),
+            _ => None,
+        })
+        .ok_or(GraphError::ReleaseIntentStale)?;
     Version::parse(&version, ecosystem.version_grammar()).map_err(|_error| GraphError::ReleaseIntentStale)
 }
 

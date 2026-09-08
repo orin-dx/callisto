@@ -53,6 +53,21 @@ impl<'a, R: CommandRunner> MoonProjectLocator<'a, R> {
     }
 }
 
+/// The first `Ecosystem::CANONICAL` ecosystem whose canonical manifest
+/// exists at `abs_path`, in `Ecosystem::CANONICAL`'s declared order (Cargo,
+/// then Npm, then Pypi). Used where a project needs exactly one ecosystem
+/// (e.g. `declared_edges`'s from/to resolution) -- unlike `projects()`,
+/// which deliberately enumerates every canonical ecosystem present, since a
+/// single project directory can be dual-published (e.g. Cargo + npm).
+fn detect_single_ecosystem(abs_path: &Path) -> Option<Ecosystem> {
+    Ecosystem::CANONICAL.into_iter().find(|eco| {
+        let format = eco
+            .canonical_manifest_format()
+            .expect("CANONICAL ecosystems always have a canonical manifest format");
+        abs_path.join(format.file_name()).exists()
+    })
+}
+
 /// Matches the real `moon project-graph --json` output shape.
 /// Unknown top-level fields (e.g. `graph`) are silently ignored.
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -122,33 +137,22 @@ impl<'a, R: CommandRunner> ProjectLocator for MoonProjectLocator<'a, R> {
                 });
             }
 
-            let has_cargo = abs_path.join("Cargo.toml").exists();
-            let has_npm = abs_path.join("package.json").exists();
-            let has_pypi = abs_path.join("pyproject.toml").exists();
-
-            if has_cargo {
-                let id = self.resolve_id(&abs_path, Ecosystem::Cargo)?;
-                roots.push(ProjectRoot {
-                    id,
-                    path: rel_path.clone(),
-                    ecosystem: Ecosystem::Cargo,
-                });
-            }
-            if has_npm {
-                let id = self.resolve_id(&abs_path, Ecosystem::Npm)?;
-                roots.push(ProjectRoot {
-                    id,
-                    path: rel_path.clone(),
-                    ecosystem: Ecosystem::Npm,
-                });
-            }
-            if has_pypi {
-                let id = self.resolve_id(&abs_path, Ecosystem::Pypi)?;
-                roots.push(ProjectRoot {
-                    id,
-                    path: rel_path,
-                    ecosystem: Ecosystem::Pypi,
-                });
+            // Every canonical ecosystem present is reported -- a single
+            // project directory can be dual-published (e.g. Cargo + npm),
+            // unlike `declared_edges`'s single-ecosystem-per-project lookup
+            // below, which only needs one identity per edge endpoint.
+            for ecosystem in Ecosystem::CANONICAL {
+                let format = ecosystem
+                    .canonical_manifest_format()
+                    .expect("CANONICAL ecosystems always have a canonical manifest format");
+                if abs_path.join(format.file_name()).exists() {
+                    let id = self.resolve_id(&abs_path, ecosystem)?;
+                    roots.push(ProjectRoot {
+                        id,
+                        path: rel_path.clone(),
+                        ecosystem,
+                    });
+                }
             }
         }
 
@@ -166,13 +170,7 @@ impl<'a, R: CommandRunner> ProjectLocator for MoonProjectLocator<'a, R> {
         for project in graph.data.values() {
             let abs_from = self.workspace_root.join(&project.source);
 
-            let from_eco = if abs_from.join("Cargo.toml").exists() {
-                Ecosystem::Cargo
-            } else if abs_from.join("package.json").exists() {
-                Ecosystem::Npm
-            } else if abs_from.join("pyproject.toml").exists() {
-                Ecosystem::Pypi
-            } else {
+            let Some(from_eco) = detect_single_ecosystem(&abs_from) else {
                 continue;
             };
 
@@ -183,13 +181,7 @@ impl<'a, R: CommandRunner> ProjectLocator for MoonProjectLocator<'a, R> {
 
                 let abs_to = self.workspace_root.join(&to_project.source);
 
-                let to_eco = if abs_to.join("Cargo.toml").exists() {
-                    Ecosystem::Cargo
-                } else if abs_to.join("package.json").exists() {
-                    Ecosystem::Npm
-                } else if abs_to.join("pyproject.toml").exists() {
-                    Ecosystem::Pypi
-                } else {
+                let Some(to_eco) = detect_single_ecosystem(&abs_to) else {
                     continue;
                 };
 

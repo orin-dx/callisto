@@ -94,54 +94,36 @@ pub struct RawGroup {
 impl GroupTable {
     pub(crate) fn validate_syntactic(raw: &RawGroupTable) -> Result<(), ConfigError> {
         let mut seen_names = BTreeSet::new();
-
-        for g in &raw.fixed {
-            if !seen_names.insert(&g.name) {
-                return Err(ConfigError::DuplicateGroupName { group: g.name.clone() });
-            }
-            if g.members.is_empty() {
-                return Err(ConfigError::EmptyGroup { group: g.name.clone() });
-            }
-        }
-
-        for g in &raw.linked {
-            if !seen_names.insert(&g.name) {
-                return Err(ConfigError::DuplicateGroupName { group: g.name.clone() });
-            }
-            if g.members.is_empty() {
-                return Err(ConfigError::EmptyGroup { group: g.name.clone() });
-            }
-        }
-
-        let mut fixed_members = BTreeMap::new();
-        for g in &raw.fixed {
-            for m in &g.members {
-                if let Some(other) = fixed_members.insert(m.as_str(), &g.name) {
-                    return Err(ConfigError::ConflictingGroupNames {
-                        group: g.name.clone(),
-                        other: (*other).clone(),
-                        member: m.clone(),
-                    });
+        for group_list in [&raw.fixed, &raw.linked] {
+            for g in group_list {
+                if !seen_names.insert(&g.name) {
+                    return Err(ConfigError::DuplicateGroupName { group: g.name.clone() });
+                }
+                if g.members.is_empty() {
+                    return Err(ConfigError::EmptyGroup { group: g.name.clone() });
                 }
             }
         }
 
-        let mut linked_members = BTreeMap::new();
-        for g in &raw.linked {
-            for m in &g.members {
-                if let Some(other) = linked_members.insert(m.as_str(), &g.name) {
-                    return Err(ConfigError::ConflictingGroupNames {
-                        group: g.name.clone(),
-                        other: (*other).clone(),
-                        member: m.clone(),
-                    });
-                }
-                if let Some(other_fixed) = fixed_members.get(m.as_str()) {
-                    return Err(ConfigError::ConflictingGroupNames {
-                        group: g.name.clone(),
-                        other: (*other_fixed).clone(),
-                        member: m.clone(),
-                    });
+        // One map, populated fixed-then-linked (declaration order, not file
+        // order): a fixed group's members are checked only against other
+        // fixed groups seen so far (linked hasn't been touched yet at that
+        // point), while a linked group's members are checked against BOTH
+        // linked-so-far AND the now-fully-populated fixed map -- exactly the
+        // asymmetric cross-check the two-separate-maps version encoded, but
+        // as a natural consequence of processing order instead of a second
+        // explicit lookup.
+        let mut claimed: BTreeMap<&str, &GroupName> = BTreeMap::new();
+        for group_list in [&raw.fixed, &raw.linked] {
+            for g in group_list {
+                for m in &g.members {
+                    if let Some(other) = claimed.insert(m.as_str(), &g.name) {
+                        return Err(ConfigError::ConflictingGroupNames {
+                            group: g.name.clone(),
+                            other: other.clone(),
+                            member: m.clone(),
+                        });
+                    }
                 }
             }
         }
@@ -156,86 +138,55 @@ impl GroupTable {
         let mut linked_of = BTreeMap::new();
         let mut claimed_by: BTreeMap<PackageId, GroupName> = BTreeMap::new();
 
-        for rg in &raw.fixed {
-            let mut members = Vec::new();
-            for name in &rg.members {
-                if let Ok(id) = index.resolve_human(name, &[]) {
-                    if let Some(other) = claimed_by.get(&id) {
-                        if other != &rg.name {
-                            return Err(GraphError::ConflictingGroupMembership {
-                                package: id.clone(),
-                                groups: vec![other.clone(), rg.name.clone()],
-                            });
+        // One resolution loop parameterized on `GroupKind`, writing into
+        // whichever kind's own output maps -- `claimed_by` is shared across
+        // both passes exactly as before, so a package claimed by a fixed
+        // group still conflicts if a linked group (or a second fixed group)
+        // also claims it.
+        for (kind, raw_groups, groups, membership) in [
+            (GroupKind::Fixed, &raw.fixed, &mut fixed, &mut fixed_of),
+            (GroupKind::Linked, &raw.linked, &mut linked, &mut linked_of),
+        ] {
+            for rg in raw_groups {
+                let mut members = Vec::new();
+                for name in &rg.members {
+                    if let Ok(id) = index.resolve_human(name, &[]) {
+                        if let Some(other) = claimed_by.get(&id) {
+                            if other != &rg.name {
+                                return Err(GraphError::ConflictingGroupMembership {
+                                    package: id.clone(),
+                                    groups: vec![other.clone(), rg.name.clone()],
+                                });
+                            }
+                        } else {
+                            claimed_by.insert(id.clone(), rg.name.clone());
                         }
+                        members.push(GroupMember::Package(id.clone()));
+                        membership.insert(id, rg.name.clone());
+                    } else if let Some((owner, path, role)) = index.platform.get(name) {
+                        members.push(GroupMember::PlatformManifest {
+                            owner: owner.clone(),
+                            role: role.clone(),
+                            path: path.clone(),
+                            name: name.clone(),
+                        });
                     } else {
-                        claimed_by.insert(id.clone(), rg.name.clone());
+                        return Err(GraphError::MissingGroupMember {
+                            group: rg.name.clone(),
+                            member: name.clone(),
+                        });
                     }
-                    members.push(GroupMember::Package(id.clone()));
-                    fixed_of.insert(id, rg.name.clone());
-                } else if let Some((owner, path, role)) = index.platform.get(name) {
-                    members.push(GroupMember::PlatformManifest {
-                        owner: owner.clone(),
-                        role: role.clone(),
-                        path: path.clone(),
-                        name: name.clone(),
-                    });
-                } else {
-                    return Err(GraphError::MissingGroupMember {
-                        group: rg.name.clone(),
-                        member: name.clone(),
-                    });
                 }
+                members.sort();
+                groups.insert(
+                    rg.name.clone(),
+                    GroupDef {
+                        name: rg.name.clone(),
+                        kind,
+                        members,
+                    },
+                );
             }
-            members.sort();
-            fixed.insert(
-                rg.name.clone(),
-                GroupDef {
-                    name: rg.name.clone(),
-                    kind: GroupKind::Fixed,
-                    members,
-                },
-            );
-        }
-
-        for rg in &raw.linked {
-            let mut members = Vec::new();
-            for name in &rg.members {
-                if let Ok(id) = index.resolve_human(name, &[]) {
-                    if let Some(other) = claimed_by.get(&id) {
-                        if other != &rg.name {
-                            return Err(GraphError::ConflictingGroupMembership {
-                                package: id.clone(),
-                                groups: vec![other.clone(), rg.name.clone()],
-                            });
-                        }
-                    } else {
-                        claimed_by.insert(id.clone(), rg.name.clone());
-                    }
-                    members.push(GroupMember::Package(id.clone()));
-                    linked_of.insert(id, rg.name.clone());
-                } else if let Some((owner, path, role)) = index.platform.get(name) {
-                    members.push(GroupMember::PlatformManifest {
-                        owner: owner.clone(),
-                        role: role.clone(),
-                        path: path.clone(),
-                        name: name.clone(),
-                    });
-                } else {
-                    return Err(GraphError::MissingGroupMember {
-                        group: rg.name.clone(),
-                        member: name.clone(),
-                    });
-                }
-            }
-            members.sort();
-            linked.insert(
-                rg.name.clone(),
-                GroupDef {
-                    name: rg.name.clone(),
-                    kind: GroupKind::Linked,
-                    members,
-                },
-            );
         }
 
         Ok(GroupTable {
@@ -299,6 +250,112 @@ impl GroupTable {
             linked: l_map,
             fixed_of: f_of,
             linked_of: l_of,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn raw_group(name: &str, members: &[&str]) -> RawGroup {
+        RawGroup {
+            name: GroupName(name.to_string()),
+            members: members.iter().map(|s| s.to_string()).collect(),
+        }
+    }
+
+    #[test]
+    fn validate_syntactic_accepts_disjoint_fixed_and_linked_groups() {
+        let raw = RawGroupTable {
+            fixed: vec![raw_group("fixed-a", &["pkg-a", "pkg-b"])],
+            linked: vec![raw_group("linked-a", &["pkg-c", "pkg-d"])],
+        };
+        assert!(GroupTable::validate_syntactic(&raw).is_ok());
+    }
+
+    #[test]
+    fn validate_syntactic_rejects_duplicate_name_within_fixed() {
+        let raw = RawGroupTable {
+            fixed: vec![raw_group("dup", &["pkg-a"]), raw_group("dup", &["pkg-b"])],
+            linked: vec![],
+        };
+        let err = GroupTable::validate_syntactic(&raw).unwrap_err();
+        assert!(matches!(err, ConfigError::DuplicateGroupName { group } if group.as_str() == "dup"));
+    }
+
+    /// A fixed group and a linked group sharing the same name must also be
+    /// rejected -- the duplicate-name check spans both kinds via one shared
+    /// `seen_names` set, not just within a single kind.
+    #[test]
+    fn validate_syntactic_rejects_duplicate_name_across_fixed_and_linked() {
+        let raw = RawGroupTable {
+            fixed: vec![raw_group("dup", &["pkg-a"])],
+            linked: vec![raw_group("dup", &["pkg-b"])],
+        };
+        let err = GroupTable::validate_syntactic(&raw).unwrap_err();
+        assert!(matches!(err, ConfigError::DuplicateGroupName { group } if group.as_str() == "dup"));
+    }
+
+    #[test]
+    fn validate_syntactic_rejects_empty_fixed_group() {
+        let raw = RawGroupTable {
+            fixed: vec![raw_group("empty", &[])],
+            linked: vec![],
+        };
+        let err = GroupTable::validate_syntactic(&raw).unwrap_err();
+        assert!(matches!(err, ConfigError::EmptyGroup { group } if group.as_str() == "empty"));
+    }
+
+    #[test]
+    fn validate_syntactic_rejects_empty_linked_group() {
+        let raw = RawGroupTable {
+            fixed: vec![],
+            linked: vec![raw_group("empty", &[])],
+        };
+        let err = GroupTable::validate_syntactic(&raw).unwrap_err();
+        assert!(matches!(err, ConfigError::EmptyGroup { group } if group.as_str() == "empty"));
+    }
+
+    #[test]
+    fn validate_syntactic_rejects_conflicting_member_within_fixed() {
+        let raw = RawGroupTable {
+            fixed: vec![raw_group("a", &["shared"]), raw_group("b", &["shared"])],
+            linked: vec![],
+        };
+        let err = GroupTable::validate_syntactic(&raw).unwrap_err();
+        assert!(matches!(err, ConfigError::ConflictingGroupNames { member, .. } if member == "shared"));
+    }
+
+    #[test]
+    fn validate_syntactic_rejects_conflicting_member_within_linked() {
+        let raw = RawGroupTable {
+            fixed: vec![],
+            linked: vec![raw_group("a", &["shared"]), raw_group("b", &["shared"])],
+        };
+        let err = GroupTable::validate_syntactic(&raw).unwrap_err();
+        assert!(matches!(err, ConfigError::ConflictingGroupNames { member, .. } if member == "shared"));
+    }
+
+    /// The cross-kind check is one-directional: a linked group's member
+    /// conflicting with an already-declared fixed group's member must be
+    /// rejected (this is the asymmetric behavior `validate_syntactic`'s
+    /// single shared `claimed` map -- populated fixed-then-linked --
+    /// reproduces from the original two-separate-maps version).
+    #[test]
+    fn validate_syntactic_rejects_linked_member_already_claimed_by_fixed() {
+        let raw = RawGroupTable {
+            fixed: vec![raw_group("fixed-a", &["shared"])],
+            linked: vec![raw_group("linked-a", &["shared"])],
+        };
+        let err = GroupTable::validate_syntactic(&raw).unwrap_err();
+        match err {
+            ConfigError::ConflictingGroupNames { group, other, member } => {
+                assert_eq!(group.as_str(), "linked-a");
+                assert_eq!(other.as_str(), "fixed-a");
+                assert_eq!(member, "shared");
+            }
+            other => panic!("expected ConflictingGroupNames, got {other:?}"),
         }
     }
 }

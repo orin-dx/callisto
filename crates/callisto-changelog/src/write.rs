@@ -56,35 +56,28 @@ pub fn prepend(
         return Ok(());
     }
 
-    let mut new_content = String::new();
-    if let Some(rest) = normalised.strip_prefix(&format!("# {display_name}\n\n")) {
-        new_content.push_str(&format!("# {display_name}\n\n"));
-        new_content.push_str(rendered);
-        if !rendered.ends_with('\n') {
-            new_content.push('\n');
-        }
-        new_content.push('\n');
-        new_content.push_str(rest);
+    // All three header shapes (blank line after the H1, no blank line, or no
+    // matching H1 at all -- e.g. a casing change, HTML anchor, or package
+    // rename) splice the new entry in identically; only what counts as
+    // "the rest of the file to keep" differs, so compute just that here.
+    let rest: &str = if let Some(rest) = normalised.strip_prefix(&format!("# {display_name}\n\n")) {
+        rest
     } else if let Some(rest) = normalised.strip_prefix(&format!("# {display_name}\n")) {
-        new_content.push_str(&format!("# {display_name}\n\n"));
-        new_content.push_str(rendered);
-        if !rendered.ends_with('\n') {
-            new_content.push('\n');
-        }
-        new_content.push('\n');
-        new_content.push_str(rest);
+        rest
     } else {
-        // The existing header didn't match display_name (e.g. casing change,
-        // HTML anchor, or package rename). Always emit the correct H1 first so
-        // the output is well-formed: H1 → new entry → existing body.
-        new_content.push_str(&format!("# {display_name}\n\n"));
-        new_content.push_str(rendered);
-        if !rendered.ends_with('\n') {
-            new_content.push('\n');
-        }
+        // No matching H1 found: emit the correct H1 first so the output is
+        // well-formed, keeping the entire existing content as the body.
+        &normalised
+    };
+
+    let mut new_content = String::new();
+    new_content.push_str(&format!("# {display_name}\n\n"));
+    new_content.push_str(rendered);
+    if !rendered.ends_with('\n') {
         new_content.push('\n');
-        new_content.push_str(&normalised);
     }
+    new_content.push('\n');
+    new_content.push_str(rest);
 
     if had_crlf {
         new_content = new_content.replace('\n', "\r\n");

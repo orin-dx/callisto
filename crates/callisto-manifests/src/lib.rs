@@ -15,8 +15,58 @@ pub mod npm;
 pub mod python;
 
 pub use cargo::{cargo_package_name, CargoToml, InheritedDep, WorkspaceCargoResolver, WorkspaceInheritance};
-pub use npm::{detect_npm_workspace_kind, npm_package_name, PackageJson};
-pub use python::{python_package_name, PyprojectToml};
+pub use npm::{detect_npm_workspace_kind, npm_package_name, read_napi_targets, PackageJson};
+pub use python::{python_package_name, PyprojectToml, Requirement};
+
+/// Package identity extracted directly from manifest source text via
+/// [`read_identity`], without going through the full `Manifest::open`
+/// lifecycle (workspace-inheritance context, on-disk path resolution,
+/// atomic-write machinery). For callers that already hold a manifest's
+/// content as a string -- a `git show` blob, a walker's pre-read buffer --
+/// and only need the package's name and/or where its version comes from.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ManifestIdentity {
+    pub name: Option<String>,
+    pub version: Option<VersionSource>,
+}
+
+/// Where a manifest's version declaration comes from. Distinct from a raw
+/// `Option<String>` so Cargo's `version.workspace = true` is a real,
+/// distinguishable case instead of being silently collapsed into "no
+/// version present". [`read_identity`] never resolves the inherited value
+/// (it has no workspace context) -- callers needing the resolved version
+/// go through `Manifest::current_version` instead.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum VersionSource {
+    Literal(String),
+    InheritedFromWorkspace,
+}
+
+/// Extracts a package's name and version source directly from `source`,
+/// the raw text of a manifest matching `format`. Pure and I/O-free.
+///
+/// Replaces hand-parsing `Cargo.toml`/`package.json`/`pyproject.toml` at
+/// call sites that already hold manifest content as a string rather than a
+/// path `open()` can read from disk (audit pattern B) -- e.g. a `git show`
+/// blob, or a directory-walker's pre-read buffer.
+///
+/// `path` is used only to build accurate `ManifestError::Parse` locations
+/// on a parse failure; it need not exist on disk. Only the three
+/// canonical-identity formats ([`Ecosystem::CANONICAL`]) are supported --
+/// any other format returns `Err(ManifestError::ReadOnlyFormat)`.
+pub fn read_identity(format: ManifestFormat, source: &str, path: &Path) -> Result<ManifestIdentity, ManifestError> {
+    match format {
+        ManifestFormat::CargoToml => cargo::identity_from_source(source, path),
+        ManifestFormat::PackageJson => npm::identity_from_source(source, path),
+        ManifestFormat::PyprojectToml => python::identity_from_source(source, path),
+        other => Err(ManifestError::ReadOnlyFormat {
+            path: path.to_path_buf(),
+            format: other,
+            reason: "read_identity only supports the three canonical-identity manifest formats \
+                     (Cargo.toml, package.json, pyproject.toml)",
+        }),
+    }
+}
 
 /// Trait implemented by per-ecosystem manifest editors.
 pub trait Manifest: Send + Sync {
@@ -180,5 +230,110 @@ mod tests {
         assert_eq!(manifest.role(), ManifestRole::Canonical);
         assert_eq!(manifest.package_name().unwrap(), "demo-pkg");
         assert_eq!(manifest.current_version().unwrap().render(), "1.2.3");
+    }
+}
+
+#[cfg(test)]
+mod identity_tests {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn read_identity_extracts_cargo_name_and_literal_version() {
+        let identity = read_identity(
+            ManifestFormat::CargoToml,
+            "[package]\nname = \"my-crate\"\nversion = \"1.2.3\"\n",
+            Path::new("Cargo.toml"),
+        )
+        .unwrap();
+        assert_eq!(identity.name.as_deref(), Some("my-crate"));
+        assert_eq!(identity.version, Some(VersionSource::Literal("1.2.3".to_string())));
+    }
+
+    #[test]
+    fn read_identity_detects_cargo_inherited_version() {
+        let identity = read_identity(
+            ManifestFormat::CargoToml,
+            "[package]\nname = \"my-crate\"\nversion.workspace = true\n",
+            Path::new("Cargo.toml"),
+        )
+        .unwrap();
+        assert_eq!(identity.name.as_deref(), Some("my-crate"));
+        assert_eq!(identity.version, Some(VersionSource::InheritedFromWorkspace));
+    }
+
+    #[test]
+    fn read_identity_extracts_npm_name_and_version() {
+        let identity = read_identity(
+            ManifestFormat::PackageJson,
+            r#"{"name":"my-pkg","version":"1.0.0"}"#,
+            Path::new("package.json"),
+        )
+        .unwrap();
+        assert_eq!(identity.name.as_deref(), Some("my-pkg"));
+        assert_eq!(identity.version, Some(VersionSource::Literal("1.0.0".to_string())));
+    }
+
+    #[test]
+    fn read_identity_extracts_pypi_name_via_flit_fallback() {
+        let identity = read_identity(
+            ManifestFormat::PyprojectToml,
+            "[tool.flit.metadata]\nmodule = \"my_flit_lib\"\n",
+            Path::new("pyproject.toml"),
+        )
+        .unwrap();
+        assert_eq!(identity.name.as_deref(), Some("my_flit_lib"));
+        assert_eq!(identity.version, None);
+    }
+
+    #[test]
+    fn read_identity_extracts_pypi_version_via_poetry_fallback() {
+        let identity = read_identity(
+            ManifestFormat::PyprojectToml,
+            "[tool.poetry]\nname = \"my-lib\"\nversion = \"2.0.0\"\n",
+            Path::new("pyproject.toml"),
+        )
+        .unwrap();
+        assert_eq!(identity.version, Some(VersionSource::Literal("2.0.0".to_string())));
+    }
+
+    #[test]
+    fn read_identity_rejects_non_canonical_format() {
+        let err = read_identity(ManifestFormat::GoMod, "module foo\n", Path::new("go.mod")).unwrap_err();
+        assert!(matches!(err, ManifestError::ReadOnlyFormat { .. }));
+    }
+
+    #[test]
+    fn read_identity_returns_parse_error_on_malformed_source() {
+        let err = read_identity(ManifestFormat::CargoToml, "not valid = [ toml", Path::new("Cargo.toml")).unwrap_err();
+        assert!(matches!(err, ManifestError::Parse { .. }));
+    }
+
+    #[test]
+    fn read_napi_targets_absent_when_no_napi_key() {
+        let val: serde_json::Value = serde_json::json!({"name": "pkg"});
+        let result = read_napi_targets(Path::new("package.json"), &val).unwrap();
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn read_napi_targets_present_array() {
+        let val: serde_json::Value = serde_json::json!({"napi": {"targets": ["x86_64-apple-darwin"]}});
+        let result = read_napi_targets(Path::new("package.json"), &val).unwrap();
+        assert_eq!(result, Some(vec!["x86_64-apple-darwin".to_string()]));
+    }
+
+    #[test]
+    fn read_napi_targets_errors_on_non_array() {
+        let val: serde_json::Value = serde_json::json!({"napi": {"targets": "not-an-array"}});
+        let result = read_napi_targets(Path::new("package.json"), &val);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn read_napi_targets_errors_on_non_string_entries() {
+        let val: serde_json::Value = serde_json::json!({"napi": {"targets": ["x64", 42]}});
+        let result = read_napi_targets(Path::new("package.json"), &val);
+        assert!(result.is_err());
     }
 }

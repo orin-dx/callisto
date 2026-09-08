@@ -71,77 +71,38 @@ impl ProjectLocator for IgnoreWalkLocator {
                 continue;
             }
 
-            let cargo_toml = path.join("Cargo.toml");
-            if cargo_toml.exists() {
-                if let Ok(content) = fs::read_to_string(&cargo_toml) {
-                    if content.contains("[package]") {
-                        if let Ok(doc) = content.parse::<toml_edit::DocumentMut>() {
-                            if let Some(name) = doc.get("package").and_then(|p| p.get("name")).and_then(|n| n.as_str())
-                            {
-                                let rel = to_workspace_relative(path, &self.root)?;
-                                let is_root = rel == Path::new(".");
-                                if cargo_membership.admits(&rel, is_root) {
-                                    let id =
-                                        PackageId::parse(name).unwrap_or_else(|_| PackageId::Bare(name.to_string()));
-                                    results.push(ProjectRoot {
-                                        id,
-                                        path: rel,
-                                        ecosystem: Ecosystem::Cargo,
-                                    });
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+            for ecosystem in Ecosystem::CANONICAL {
+                // Every `Ecosystem::CANONICAL` member has a canonical
+                // manifest format by construction -- see its doc comment.
+                let format = ecosystem
+                    .canonical_manifest_format()
+                    .expect("CANONICAL ecosystems always have a canonical manifest format");
+                let manifest_path = path.join(format.file_name());
+                let Ok(content) = fs::read_to_string(&manifest_path) else {
+                    continue;
+                };
+                let Ok(identity) = callisto_manifests::read_identity(format, &content, &manifest_path) else {
+                    continue;
+                };
+                let Some(name) = identity.name else {
+                    continue;
+                };
 
-            let pkg_json = path.join("package.json");
-            if pkg_json.exists() {
-                if let Ok(content) = fs::read_to_string(&pkg_json) {
-                    if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
-                        if let Some(name) = val.get("name").and_then(|n| n.as_str()) {
-                            let rel = to_workspace_relative(path, &self.root)?;
-                            let is_root = rel == Path::new(".");
-                            if npm_membership.admits(&rel, is_root) {
-                                let id = PackageId::parse(name).unwrap_or_else(|_| PackageId::Bare(name.to_string()));
-                                results.push(ProjectRoot {
-                                    id,
-                                    path: rel,
-                                    ecosystem: Ecosystem::Npm,
-                                });
-                            }
-                        }
-                    }
-                }
-            }
-
-            let pyproject_toml = path.join("pyproject.toml");
-            if pyproject_toml.exists() {
-                if let Ok(content) = fs::read_to_string(&pyproject_toml) {
-                    if let Ok(doc) = content.parse::<toml_edit::DocumentMut>() {
-                        let name = doc
-                            .get("project")
-                            .and_then(|p| p.get("name"))
-                            .and_then(|n| n.as_str())
-                            .or_else(|| {
-                                doc.get("tool")
-                                    .and_then(|t| t.get("poetry"))
-                                    .and_then(|p| p.get("name"))
-                                    .and_then(|n| n.as_str())
-                            });
-                        if let Some(n) = name {
-                            let rel = to_workspace_relative(path, &self.root)?;
-                            let is_root = rel == Path::new(".");
-                            if python_membership.admits(&rel, is_root) {
-                                let id = PackageId::parse(n).unwrap_or_else(|_| PackageId::Bare(n.to_string()));
-                                results.push(ProjectRoot {
-                                    id,
-                                    path: rel,
-                                    ecosystem: Ecosystem::Pypi,
-                                });
-                            }
-                        }
-                    }
+                let rel = to_workspace_relative(path, &self.root)?;
+                let is_root = rel == Path::new(".");
+                let admitted = match ecosystem {
+                    Ecosystem::Cargo => cargo_membership.admits(&rel, is_root),
+                    Ecosystem::Npm => npm_membership.admits(&rel, is_root),
+                    Ecosystem::Pypi => python_membership.admits(&rel, is_root),
+                    _ => false,
+                };
+                if admitted {
+                    let id = PackageId::parse(&name).unwrap_or_else(|_| PackageId::Bare(name.clone()));
+                    results.push(ProjectRoot {
+                        id,
+                        path: rel,
+                        ecosystem,
+                    });
                 }
             }
         }
@@ -274,6 +235,33 @@ mod tests {
         assert!(
             projects.iter().any(|p| p.path == Path::new("packages/kept")),
             "non-excluded Python package must still be discovered, got: {projects:?}"
+        );
+    }
+
+    /// Regression: before routing name extraction through the shared
+    /// `callisto_manifests::read_identity` (which falls back through PEP
+    /// 621 -> Poetry -> Flit, matching `python_package_name`), this walker's
+    /// own hand-rolled pyproject.toml parsing only checked `project.name`
+    /// and `tool.poetry.name`, silently failing to discover a Flit-based
+    /// Python package. Closing this gap is a side effect of removing the
+    /// duplication (audit pattern B).
+    #[test]
+    fn discovers_flit_based_python_package_via_shared_identity_reader() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        std::fs::write(
+            root.join("pyproject.toml"),
+            "[tool.flit.metadata]\nmodule = \"my_flit_lib\"\n",
+        )
+        .unwrap();
+
+        let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+
+        assert!(
+            projects
+                .iter()
+                .any(|p| p.id == PackageId::Bare("my_flit_lib".to_string()) && p.ecosystem == Ecosystem::Pypi),
+            "Flit-based package must be discovered via [tool.flit.metadata].module, got: {projects:?}"
         );
     }
 

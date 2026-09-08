@@ -178,7 +178,7 @@ impl ManifestFormat {
         )
     }
 
-    pub fn file_name(&self) -> &'static str {
+    pub const fn file_name(&self) -> &'static str {
         match self {
             ManifestFormat::CargoToml => "Cargo.toml",
             ManifestFormat::PackageJson => "package.json",

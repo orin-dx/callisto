@@ -1,3 +1,4 @@
+use callisto_model::ManifestFormat;
 use globset::{GlobBuilder, GlobSet, GlobSetBuilder};
 use std::path::Path;
 
@@ -28,16 +29,20 @@ mod tests {
     }
 }
 
-/// Cargo `[workspace]` members/exclude membership filter, computed once per
-/// `IgnoreWalkLocator::projects()` call from the workspace root's
-/// `Cargo.toml`.
-pub(crate) struct CargoMembership {
+/// Workspace-membership filter shared by Cargo's `[workspace]` and uv's
+/// `[tool.uv.workspace]` -- both use the identical members/exclude
+/// glob-array shape, including a root manifest that is itself both a
+/// package/project and a workspace root (hybrid root). `NpmMembership`
+/// deliberately does NOT go through this type: npm's shape genuinely
+/// differs (JSON not TOML, no `exclude` concept, and a pnpm-workspace.yaml
+/// fallback with its own precedence rules).
+pub(crate) struct Membership {
     members: Option<GlobSet>,
     exclude: GlobSet,
     hybrid_root: bool,
 }
 
-impl CargoMembership {
+impl Membership {
     /// `rel` must be a workspace-relative, forward-slash-normalized path.
     /// `is_root` is true exactly when `rel == Path::new(".")`.
     pub(crate) fn admits(&self, rel: &Path, is_root: bool) -> bool {
@@ -50,6 +55,14 @@ impl CargoMembership {
         match &self.members {
             None => true,
             Some(members) => members.is_match(rel),
+        }
+    }
+
+    fn absent() -> Self {
+        Membership {
+            members: None,
+            exclude: GlobSet::empty(),
+            hybrid_root: false,
         }
     }
 }
@@ -66,32 +79,59 @@ fn parse_toml_string_array(item: &toml_edit::Item) -> Option<Vec<String>> {
     Some(out)
 }
 
-fn absent_cargo_membership() -> CargoMembership {
-    CargoMembership {
-        members: None,
-        exclude: GlobSet::empty(),
-        hybrid_root: false,
-    }
+/// Describes where an ecosystem's workspace-membership table lives inside
+/// its root manifest, so [`read_membership`] can walk to it generically
+/// instead of each ecosystem hand-rolling the same members/exclude/
+/// hybrid-root logic around a different table path.
+pub(crate) struct MembershipSpec {
+    /// The root manifest's file name, e.g. `Cargo.toml`.
+    manifest_file_name: &'static str,
+    /// Nested table keys leading to the workspace table, walked in order
+    /// from the document root, e.g. `["workspace"]` for Cargo or
+    /// `["tool", "uv", "workspace"]` for uv-based Python.
+    table_path: &'static [&'static str],
+    /// Top-level key whose co-presence with the workspace table marks a
+    /// hybrid root, e.g. `"package"` for Cargo or `"project"` for Python.
+    owner_key: &'static str,
 }
 
-/// NAIVE first pass: only handles (1) Cargo.toml file entirely absent, and
-/// (2) a well-formed [workspace] with members/exclude arrays of strings.
-/// Every other shape (workspace table absent, TOML unparseable, members/
-/// exclude present but not an array-of-strings, members key absent) is
-/// NOT yet handled safely -- this deliberately panics or misbehaves on
-/// those inputs today; TASK-03b/03c/03d/03e replace these naive lines.
-pub(crate) fn read_cargo_membership(root: &Path) -> CargoMembership {
-    let content = match std::fs::read_to_string(root.join("Cargo.toml")) {
+pub(crate) const CARGO_MEMBERSHIP_SPEC: MembershipSpec = MembershipSpec {
+    manifest_file_name: ManifestFormat::CargoToml.file_name(),
+    table_path: &["workspace"],
+    owner_key: "package",
+};
+
+pub(crate) const PYTHON_MEMBERSHIP_SPEC: MembershipSpec = MembershipSpec {
+    manifest_file_name: ManifestFormat::PyprojectToml.file_name(),
+    table_path: &["tool", "uv", "workspace"],
+    owner_key: "project",
+};
+
+/// NAIVE first pass: only handles (1) the manifest file entirely absent, and
+/// (2) a well-formed workspace table with members/exclude arrays of
+/// strings. Every other shape (workspace table absent, TOML unparseable,
+/// members/exclude present but not an array-of-strings, members key
+/// absent) falls back to an absent-filter (admit-all) result -- see the
+/// `cargo_membership_tests`/`python_membership_tests` modules for the
+/// exact fallback matrix this is pinned against.
+pub(crate) fn read_membership(root: &Path, spec: &MembershipSpec) -> Membership {
+    let content = match std::fs::read_to_string(root.join(spec.manifest_file_name)) {
         Ok(c) => c,
-        Err(_) => return absent_cargo_membership(),
+        Err(_) => return Membership::absent(),
     };
     let doc = match content.parse::<toml_edit::DocumentMut>() {
         Ok(d) => d,
-        Err(_) => return absent_cargo_membership(),
+        Err(_) => return Membership::absent(),
     };
-    let hybrid_root = doc.get("package").is_some() && doc.get("workspace").is_some();
-    let Some(workspace) = doc.get("workspace") else {
-        return CargoMembership {
+
+    let mut cursor: Option<&toml_edit::Item> = doc.get(spec.table_path[0]);
+    for key in &spec.table_path[1..] {
+        cursor = cursor.and_then(|c| c.get(*key));
+    }
+
+    let hybrid_root = doc.get(spec.owner_key).is_some() && cursor.is_some();
+    let Some(workspace) = cursor else {
+        return Membership {
             members: None,
             exclude: GlobSet::empty(),
             hybrid_root,
@@ -106,11 +146,19 @@ pub(crate) fn read_cargo_membership(root: &Path) -> CargoMembership {
         .and_then(parse_toml_string_array)
         .map(|v| build_globset(&v))
         .unwrap_or_else(GlobSet::empty);
-    CargoMembership {
+    Membership {
         members,
         exclude,
         hybrid_root,
     }
+}
+
+pub(crate) fn read_cargo_membership(root: &Path) -> Membership {
+    read_membership(root, &CARGO_MEMBERSHIP_SPEC)
+}
+
+pub(crate) fn read_python_membership(root: &Path) -> Membership {
+    read_membership(root, &PYTHON_MEMBERSHIP_SPEC)
 }
 
 #[cfg(test)]
@@ -239,7 +287,7 @@ impl NpmMembership {
 /// sibling pnpm-workspace.yaml) governs the rest of npm membership -- see
 /// AC-16/AC-16b/AC-17/AC-10d.
 fn package_json_declares_name(root: &Path) -> bool {
-    let Ok(content) = std::fs::read_to_string(root.join("package.json")) else {
+    let Ok(content) = std::fs::read_to_string(root.join(ManifestFormat::PackageJson.file_name())) else {
         return false;
     };
     let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) else {
@@ -282,7 +330,7 @@ fn read_pnpm_packages(root: &Path) -> Option<Vec<String>> {
 /// entries all safely fall back to `None` (a plain `?`-chain), which causes
 /// `read_npm_membership` to admit-all.
 fn read_package_json_workspaces(root: &Path) -> Option<Vec<String>> {
-    let content = std::fs::read_to_string(root.join("package.json")).ok()?;
+    let content = std::fs::read_to_string(root.join(ManifestFormat::PackageJson.file_name())).ok()?;
     let val: serde_json::Value = serde_json::from_str(&content).ok()?;
     let field = val.get("workspaces")?;
     let arr = field.as_array()?;
@@ -499,85 +547,6 @@ mod ac09e_probe {
         std::fs::write(dir.path().join("pnpm-workspace.yaml"), "packages:\n  - \"a\"\n  - 42\n").unwrap();
         let m = read_npm_membership(dir.path());
         assert!(m.admits(std::path::Path::new("packages/anything"), false));
-    }
-}
-
-/// `uv` `[tool.uv.workspace]` members/exclude membership filter, computed
-/// once per `IgnoreWalkLocator::projects()` call from the workspace root's
-/// `pyproject.toml`. Mirrors `CargoMembership` exactly -- `uv` workspaces
-/// use the identical members/exclude glob-array shape as Cargo's
-/// `[workspace]` table, including a root `pyproject.toml` that is itself
-/// both a `[project]` and a `[tool.uv.workspace]` (hybrid root).
-pub(crate) struct PythonMembership {
-    members: Option<GlobSet>,
-    exclude: GlobSet,
-    hybrid_root: bool,
-}
-
-impl PythonMembership {
-    /// `rel` must be a workspace-relative, forward-slash-normalized path.
-    /// `is_root` is true exactly when `rel == Path::new(".")`.
-    pub(crate) fn admits(&self, rel: &Path, is_root: bool) -> bool {
-        if is_root && self.hybrid_root {
-            return true;
-        }
-        if self.exclude.is_match(rel) {
-            return false;
-        }
-        match &self.members {
-            None => true,
-            Some(members) => members.is_match(rel),
-        }
-    }
-}
-
-fn absent_python_membership() -> PythonMembership {
-    PythonMembership {
-        members: None,
-        exclude: GlobSet::empty(),
-        hybrid_root: false,
-    }
-}
-
-pub(crate) fn read_python_membership(root: &Path) -> PythonMembership {
-    let content = match std::fs::read_to_string(root.join("pyproject.toml")) {
-        Ok(c) => c,
-        Err(_) => return absent_python_membership(),
-    };
-    let doc = match content.parse::<toml_edit::DocumentMut>() {
-        Ok(d) => d,
-        Err(_) => return absent_python_membership(),
-    };
-    let hybrid_root = doc.get("project").is_some()
-        && doc
-            .get("tool")
-            .and_then(|t| t.get("uv"))
-            .and_then(|u| u.get("workspace"))
-            .is_some();
-    let Some(workspace) = doc
-        .get("tool")
-        .and_then(|t| t.get("uv"))
-        .and_then(|u| u.get("workspace"))
-    else {
-        return PythonMembership {
-            members: None,
-            exclude: GlobSet::empty(),
-            hybrid_root,
-        };
-    };
-    let members = workspace
-        .get("members")
-        .and_then(parse_toml_string_array)
-        .map(|v| build_globset(&v));
-    let exclude = workspace
-        .get("exclude")
-        .and_then(parse_toml_string_array)
-        .map(|v| build_globset(&v))
-        .unwrap_or_else(GlobSet::empty);
-    PythonMembership {
-        members,
-        exclude,
-        hybrid_root,
     }
 }
 
