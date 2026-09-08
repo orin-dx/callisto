@@ -160,18 +160,6 @@ impl PackageId {
     }
 }
 
-/// Trait for package identity resolution across ecosystem boundaries.
-pub trait PackageIdentityResolver {
-    /// Returns true if two package IDs refer to the same logical package.
-    fn matches_id(&self, other: &PackageId) -> bool;
-}
-
-impl PackageIdentityResolver for PackageId {
-    fn matches_id(&self, other: &PackageId) -> bool {
-        self.matches(other)
-    }
-}
-
 impl fmt::Display for PackageId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.display_name())

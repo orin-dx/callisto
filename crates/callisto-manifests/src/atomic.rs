@@ -5,7 +5,7 @@
 //! depending on this crate. `callisto_manifests::atomic::atomic_write` remains
 //! valid and resolves to the same function.
 
-pub use callisto_model::atomic::{atomic_write, ChangesetStorage};
+pub use callisto_model::atomic::atomic_write;
 
 #[cfg(test)]
 mod tests {

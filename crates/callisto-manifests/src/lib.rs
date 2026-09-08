@@ -8,7 +8,6 @@ use callisto_model::{
 };
 
 pub mod atomic;
-pub use atomic::ChangesetStorage;
 
 pub mod cargo;
 mod common;
@@ -57,36 +56,6 @@ pub trait Manifest: Send + Sync {
         updates: &[(String, Version)],
         permit: &ApplyPermit,
     ) -> Result<(), ManifestError>;
-}
-
-/// Trait for Concrete Syntax Tree (CST) manifest editors that preserve formatting, comments, and key order.
-pub trait ManifestCstEditor {
-    fn update_version_cst(&mut self, new_version: &Version, permit: &ApplyPermit) -> Result<(), ManifestError>;
-    fn update_dependency_cst(
-        &mut self,
-        name: &str,
-        kind: callisto_model::DepKind,
-        new_spec: DepSpec,
-        permit: &ApplyPermit,
-    ) -> Result<(), ManifestError>;
-}
-
-impl<T: Manifest + ?Sized> ManifestCstEditor for T {
-    fn update_version_cst(&mut self, new_version: &Version, permit: &ApplyPermit) -> Result<(), ManifestError> {
-        self.write_version(new_version, permit)?;
-        self.persist(permit)
-    }
-
-    fn update_dependency_cst(
-        &mut self,
-        name: &str,
-        kind: callisto_model::DepKind,
-        new_spec: DepSpec,
-        permit: &ApplyPermit,
-    ) -> Result<(), ManifestError> {
-        self.update_dependency_spec(name, kind, new_spec, permit)?;
-        self.persist(permit)
-    }
 }
 
 /// Context passed to open() to supply workspace-wide inheritance facts.
@@ -211,76 +180,5 @@ mod tests {
         assert_eq!(manifest.role(), ManifestRole::Canonical);
         assert_eq!(manifest.package_name().unwrap(), "demo-pkg");
         assert_eq!(manifest.current_version().unwrap().render(), "1.2.3");
-    }
-
-    #[test]
-    fn update_version_cst_persists_to_disk() {
-        let dir = tempdir().unwrap();
-        fs::write(
-            dir.path().join("pyproject.toml"),
-            "[project]\nname = \"demo-pkg\"\nversion = \"1.2.3\"\n",
-        )
-        .unwrap();
-
-        let decl = ManifestDecl {
-            path: PathBuf::from("pyproject.toml"),
-            role: ManifestRole::Canonical,
-            format: ManifestFormat::PyprojectToml,
-        };
-        let ctx = OpenContext {
-            workspace_root: dir.path(),
-            cargo_workspace: None,
-            npm_workspace_kind: None,
-        };
-
-        let mut manifest = open(&decl, &ctx).unwrap();
-        let permit = callisto_model::ApplyPermit::force_for_tests();
-        let new_version = Version::parse("1.3.0", callisto_model::VersionGrammar::Pep440).unwrap();
-        manifest.update_version_cst(&new_version, &permit).unwrap();
-
-        let on_disk = fs::read_to_string(dir.path().join("pyproject.toml")).unwrap();
-        assert!(
-            on_disk.contains("1.3.0"),
-            "update_version_cst must persist the mutation to disk; got:\n{on_disk}"
-        );
-    }
-
-    #[test]
-    fn update_dependency_cst_persists_to_disk() {
-        let dir = tempdir().unwrap();
-        fs::write(
-            dir.path().join("pyproject.toml"),
-            "[project]\nname = \"demo-pkg\"\nversion = \"1.2.3\"\ndependencies = [\n    \"my-lib>=0.3.0\",\n]\n",
-        )
-        .unwrap();
-
-        let decl = ManifestDecl {
-            path: PathBuf::from("pyproject.toml"),
-            role: ManifestRole::Canonical,
-            format: ManifestFormat::PyprojectToml,
-        };
-        let ctx = OpenContext {
-            workspace_root: dir.path(),
-            cargo_workspace: None,
-            npm_workspace_kind: None,
-        };
-
-        let mut manifest = open(&decl, &ctx).unwrap();
-        let permit = callisto_model::ApplyPermit::force_for_tests();
-        let req = callisto_model::VersionReq::parse(">=0.3.2", Ecosystem::Pypi).unwrap();
-        manifest
-            .update_dependency_cst(
-                "my-lib",
-                callisto_model::DepKind::Runtime,
-                DepSpec::Range(req, ">=0.3.2".to_string()),
-                &permit,
-            )
-            .unwrap();
-
-        let on_disk = fs::read_to_string(dir.path().join("pyproject.toml")).unwrap();
-        assert!(
-            on_disk.contains("my-lib>=0.3.2"),
-            "update_dependency_cst must persist the mutation to disk; got:\n{on_disk}"
-        );
     }
 }
