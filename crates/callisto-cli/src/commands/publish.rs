@@ -1,13 +1,10 @@
 use std::process::ExitCode;
 
-use callisto_graph::commands::{plan_publish, PublishOptions};
-
 use crate::cli::{GlobalArgs, OutputFormat, PublishArgs};
+use crate::commands::plan_publish::build_plan;
 use crate::error::CliError;
 use crate::output::write_report_json;
 use crate::render;
-use crate::runner::CliCommandRunner;
-use crate::workspace::load_workspace;
 
 /// Writes the dry-run text notice for the publish command to the given
 /// writer. When the plan contains no publishable packages, emits a clear
@@ -39,11 +36,7 @@ pub(crate) fn write_dry_run_text<W: std::io::Write>(
 /// a registry client. Production publication moves to `release execute` once
 /// its exact provider adapters are available.
 pub fn handle(args: PublishArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
-    let runner = CliCommandRunner;
-    let ws = load_workspace(global, &runner)?;
-
-    let opts = PublishOptions { only: args.only };
-    let plan = plan_publish(&ws, &opts)?;
+    let plan = build_plan(global, args.only)?;
 
     match global.format {
         OutputFormat::Json => write_report_json(&mut std::io::stdout(), &plan)?,

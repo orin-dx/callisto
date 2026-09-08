@@ -16,8 +16,7 @@ use crate::workspace::load_workspace;
 /// - `1` when there are packages with pending changesets (maps to `ExitCode::FAILURE`).
 /// - `2` when no changesets are pending (sentinel for CI scripts).
 pub(crate) fn check_exit_code_raw(report: &StatusReport) -> u8 {
-    let has_pending = report.packages.iter().any(|p| !p.pending_changesets.is_empty());
-    if has_pending {
+    if report.has_changesets {
         1
     } else {
         2

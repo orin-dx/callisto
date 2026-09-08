@@ -9,12 +9,18 @@ use crate::render;
 use crate::runner::CliCommandRunner;
 use crate::workspace::load_workspace;
 
-pub fn handle(args: PlanPublishArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
+/// Loads the workspace and builds the publish plan -- the pipeline `publish`
+/// and `plan-publish` share in full; they differ only in how they render the
+/// result (and `publish` adds a dry-run banner and deprecation notice).
+pub(crate) fn build_plan(global: &GlobalArgs, only: Vec<String>) -> Result<callisto_model::PublishPlan, CliError> {
     let runner = CliCommandRunner;
     let ws = load_workspace(global, &runner)?;
+    let opts = PublishOptions { only };
+    Ok(callisto_graph::commands::plan_publish(&ws, &opts)?)
+}
 
-    let opts = PublishOptions { only: args.only };
-    let report = callisto_graph::commands::plan_publish(&ws, &opts)?;
+pub fn handle(args: PlanPublishArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
+    let report = build_plan(global, args.only)?;
 
     match global.format {
         OutputFormat::Json => write_report_json(&mut std::io::stdout(), &report)?,
