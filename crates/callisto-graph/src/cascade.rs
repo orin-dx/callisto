@@ -152,14 +152,6 @@ pub struct CascadeOutcome {
     pub iterations: usize,
 }
 
-/// Trait mirror of [`solve_cascade`]'s signature — no implementation exists in this crate
-/// today (the free function is called directly by every current caller); kept as a seam for
-/// a future test double the same way [`DependencyResolver`] is, rather than a live extension
-/// point.
-pub trait CascadeSolver<D: DependencyResolver> {
-    fn solve_cascade(&self, input: CascadeInput<'_, D>) -> Result<CascadeOutcome, GraphError>;
-}
-
 pub fn run_cascade<D: DependencyResolver>(input: CascadeInput<'_, D>) -> Result<CascadeOutcome, GraphError> {
     solve_cascade(input)
 }
@@ -302,62 +294,75 @@ pub fn solve_cascade<D: DependencyResolver>(input: CascadeInput<'_, D>) -> Resul
 
         // Spec §G.6.7: Linked group release severity propagation
         for g in input.groups.linked.values() {
-            let member_ids: Vec<PackageId> = g
-                .members(crate::config::GroupMemberKind::Package)
-                .filter_map(|m| match m {
-                    crate::config::GroupMember::Package(ref id) => Some(id.clone()),
-                    _ => None,
-                })
-                .collect();
+            let max_sev = g.max_severity(&out.severities);
+            if max_sev == Severity::None {
+                continue;
+            }
 
-            let mut max_sev = Severity::None;
-            for id in &member_ids {
-                if let Some(&sev) = out.severities.get(id) {
-                    max_sev = max_sev.max(sev);
+            // A member absent from `input.base` was removed from the
+            // workspace but is still listed in the group config. Skip it
+            // rather than let `bump_target` below hit `MissingField` --
+            // mirrors the guard `aggregate::union_fixed`/`union_linked`
+            // already apply before cascade convergence ever starts.
+            let mut live_members = Vec::new();
+            for id in g.package_members() {
+                if !input.base.contains_key(id) {
+                    out.diagnostics.push(Diagnostic {
+                        code: DiagnosticCode::UnknownPackage,
+                        severity: DiagnosticSeverity::Warning,
+                        message: format!(
+                            "Linked group `{}` references package `{}` which is not in the \
+                             workspace; the stale group member is skipped. Remove it from \
+                             callisto.toml to silence this warning.",
+                            g.name,
+                            id.display_name()
+                        ),
+                        package: Some(id.clone()),
+                        path: None,
+                        governed_by: Some(ConfigKey::LINKED_GROUP),
+                        escalated_by: None,
+                    });
+                    continue;
+                }
+                live_members.push(id.clone());
+                let cur_sev = out.severities.get(id).copied().unwrap_or(Severity::None);
+                if max_sev > cur_sev {
+                    out.severities.insert(id.clone(), max_sev);
                 }
             }
 
-            if max_sev > Severity::None {
-                for id in &member_ids {
-                    let cur_sev = out.severities.get(id).copied().unwrap_or(Severity::None);
-                    if max_sev > cur_sev {
-                        out.severities.insert(id.clone(), max_sev);
-                    }
-                }
-
-                let mut winner: Option<Version> = None;
-                for id in &member_ids {
-                    let candidate = bump_target(id, max_sev, &input)?;
-                    winner = Some(match winner {
-                        None => candidate,
-                        Some(best) => {
-                            let cmp = Version::compare(&candidate, &best).map_err(|_grammar_mismatch| {
-                                GraphError::GroupGrammarMismatch {
-                                    group: g.name.clone(),
-                                    members: member_ids
-                                        .iter()
-                                        .filter_map(|m| out.targets.get(m).map(|v| (m.clone(), v.clone())))
-                                        .collect(),
-                                }
-                            })?;
-                            if cmp.is_gt() {
-                                candidate
-                            } else {
-                                best
+            let mut winner: Option<Version> = None;
+            for id in &live_members {
+                let candidate = bump_target(id, max_sev, &input)?;
+                winner = Some(match winner {
+                    None => candidate,
+                    Some(best) => {
+                        let cmp = Version::compare(&candidate, &best).map_err(|_grammar_mismatch| {
+                            GraphError::GroupGrammarMismatch {
+                                group: g.name.clone(),
+                                members: live_members
+                                    .iter()
+                                    .filter_map(|m| out.targets.get(m).map(|v| (m.clone(), v.clone())))
+                                    .collect(),
                             }
+                        })?;
+                        if cmp.is_gt() {
+                            candidate
+                        } else {
+                            best
                         }
-                    });
-                }
-                let winner = winner.expect("linked group has at least one member");
-
-                for id in member_ids {
-                    if out.targets.get(&id) != Some(&winner) {
-                        out.targets.insert(id.clone(), winner.clone());
-                        out.reasons
-                            .insert(id.clone(), BumpReason::LinkedGroupUnion { group: g.name.clone() });
-                        worklist.insert(id.clone());
-                        changed = true;
                     }
+                });
+            }
+            let Some(winner) = winner else { continue };
+
+            for id in live_members {
+                if out.targets.get(&id) != Some(&winner) {
+                    out.targets.insert(id.clone(), winner.clone());
+                    out.reasons
+                        .insert(id.clone(), BumpReason::LinkedGroupUnion { group: g.name.clone() });
+                    worklist.insert(id.clone());
+                    changed = true;
                 }
             }
         }
@@ -367,39 +372,27 @@ pub fn solve_cascade<D: DependencyResolver>(input: CascadeInput<'_, D>) -> Resul
         // fixed_group_target instead of taking the max of independently
         // bumped per-member candidates.
         for g in input.groups.fixed.values() {
-            let member_ids: Vec<PackageId> = g
-                .members(crate::config::GroupMemberKind::Package)
-                .filter_map(|m| match m {
-                    crate::config::GroupMember::Package(ref id) => Some(id.clone()),
-                    _ => None,
-                })
-                .collect();
+            let max_sev = g.max_severity(&out.severities);
+            if max_sev == Severity::None {
+                continue;
+            }
 
-            let mut max_sev = Severity::None;
-            for id in &member_ids {
-                if let Some(&sev) = out.severities.get(id) {
-                    max_sev = max_sev.max(sev);
+            for id in g.package_members() {
+                let cur_sev = out.severities.get(id).copied().unwrap_or(Severity::None);
+                if max_sev > cur_sev {
+                    out.severities.insert(id.clone(), max_sev);
                 }
             }
 
-            if max_sev > Severity::None {
-                for id in &member_ids {
-                    let cur_sev = out.severities.get(id).copied().unwrap_or(Severity::None);
-                    if max_sev > cur_sev {
-                        out.severities.insert(id.clone(), max_sev);
-                    }
-                }
+            let winner = crate::groups::fixed_group_target(g, input.base, max_sev, input.tags)?;
 
-                let winner = crate::groups::fixed_group_target(g, input.base, &out.severities, input.tags, input.pre)?;
-
-                for id in member_ids {
-                    if out.targets.get(&id) != Some(&winner) {
-                        out.targets.insert(id.clone(), winner.clone());
-                        out.reasons
-                            .insert(id.clone(), BumpReason::FixedGroupUnion { group: g.name.clone() });
-                        worklist.insert(id.clone());
-                        changed = true;
-                    }
+            for id in g.package_members().cloned().collect::<Vec<_>>() {
+                if out.targets.get(&id) != Some(&winner) {
+                    out.targets.insert(id.clone(), winner.clone());
+                    out.reasons
+                        .insert(id.clone(), BumpReason::FixedGroupUnion { group: g.name.clone() });
+                    worklist.insert(id.clone());
+                    changed = true;
                 }
             }
         }

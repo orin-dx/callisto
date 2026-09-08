@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use crate::config::groups::{GroupDef, GroupMember, GroupMemberKind, GroupTable};
+use crate::config::groups::{GroupDef, GroupTable};
 use crate::error::GraphError;
 use crate::napi::{napi_drift, NapiTargetsIndex};
 use crate::resolver::DependencyResolver;
@@ -27,31 +27,15 @@ pub fn pre_mutation_checks<D: DependencyResolver>(
 
     for g in groups.fixed.values() {
         let released: Vec<PackageId> = g
-            .members(GroupMemberKind::Package)
-            .filter_map(|m| match m {
-                GroupMember::Package(ref id) => {
-                    if tags.last_tag(id).is_some() {
-                        Some(id.clone())
-                    } else {
-                        None
-                    }
-                }
-                _ => None,
-            })
+            .package_members()
+            .filter(|id| tags.last_tag(id).is_some())
+            .cloned()
             .collect();
 
         let fresh: Vec<PackageId> = g
-            .members(GroupMemberKind::Package)
-            .filter_map(|m| match m {
-                GroupMember::Package(ref id) => {
-                    if tags.last_tag(id).is_none() {
-                        Some(id.clone())
-                    } else {
-                        None
-                    }
-                }
-                _ => None,
-            })
+            .package_members()
+            .filter(|id| tags.last_tag(id).is_none())
+            .cloned()
             .collect();
 
         let pairs: Vec<(PackageId, Version)> = released
@@ -97,34 +81,14 @@ pub fn pre_mutation_checks<D: DependencyResolver>(
 pub fn fixed_group_target(
     g: &GroupDef,
     base: &BTreeMap<PackageId, Version>,
-    severities: &BTreeMap<PackageId, Severity>,
+    max_sev: Severity,
     tags: &TagIndex,
-    _pre: Option<&callisto_format::PreState>,
 ) -> Result<Version, GraphError> {
     let released: Vec<PackageId> = g
-        .members(GroupMemberKind::Package)
-        .filter_map(|m| match m {
-            GroupMember::Package(ref id) => {
-                if tags.last_tag(id).is_some() {
-                    Some(id.clone())
-                } else {
-                    None
-                }
-            }
-            _ => None,
-        })
+        .package_members()
+        .filter(|id| tags.last_tag(id).is_some())
+        .cloned()
         .collect();
-
-    let mut max_sev = Severity::None;
-    for m in g.members(GroupMemberKind::Package) {
-        if let GroupMember::Package(ref id) = m {
-            if let Some(&s) = severities.get(id) {
-                if s > max_sev {
-                    max_sev = s;
-                }
-            }
-        }
-    }
 
     let aligned_base = if !released.is_empty() {
         base.get(&released[0])

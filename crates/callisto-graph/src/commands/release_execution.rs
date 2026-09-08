@@ -7,8 +7,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use callisto_model::{
-    ApplyPermit, ArtifactManifestV1, OperationOutcome, OperationState, ReleaseExecutionStateV1, ReleaseIntentV1,
-    ReleaseOperationId,
+    ApplyPermit, ArtifactManifestV1, OperationState, ReleaseExecutionStateV1, ReleaseIntentV1, ReleaseOperationId,
 };
 
 use crate::{
@@ -18,58 +17,26 @@ use crate::{
 
 use super::release::ValidatedReleaseIntent;
 
-/// The sole effect-dispatch seam for durable release execution.
-///
-/// Implementations receive the opaque capability rather than package paths,
-/// endpoints, tags, or provider configuration. They can therefore select
-/// only an operation already prepared during fresh validation.
-pub trait ReleaseEffectAdapter {
-    fn dispatch(
-        &mut self,
-        capability: &ValidatedReleaseIntent<'_>,
-        permit: &ApplyPermit,
-        operation: &ReleaseOperationId,
-    ) -> Result<OperationOutcome, GraphError>;
-}
-
-/// Production adapter whose authority is entirely held by
-/// [`ValidatedReleaseIntent`].
-#[derive(Debug, Default)]
-pub struct PreparedReleaseEffectAdapter;
-
-impl ReleaseEffectAdapter for PreparedReleaseEffectAdapter {
-    fn dispatch(
-        &mut self,
-        capability: &ValidatedReleaseIntent<'_>,
-        permit: &ApplyPermit,
-        operation: &ReleaseOperationId,
-    ) -> Result<OperationOutcome, GraphError> {
-        capability.dispatch_prepared(permit, operation)
-    }
-}
-
 /// Executes eligible operations one at a time with crash-safe state updates.
 ///
-/// `Attempting` is persisted before adapter dispatch. If dispatch returns an
-/// error, the state deliberately remains `Attempting`: recovery must observe
-/// the exact remote identity rather than guessing whether an effect occurred.
-pub fn execute_release<W: ReleaseStateWriter, A: ReleaseEffectAdapter>(
+/// `Attempting` is persisted before dispatch. If dispatch returns an error,
+/// the state deliberately remains `Attempting`: recovery must observe the
+/// exact remote identity rather than guessing whether an effect occurred.
+pub fn execute_release<W: ReleaseStateWriter>(
     capability: &ValidatedReleaseIntent<'_>,
     store: &ReleaseStateStore<W>,
     permit: &ApplyPermit,
-    adapter: &mut A,
 ) -> Result<ReleaseExecutionStateV1, GraphError> {
-    execute_release_with_artifacts(capability, store, permit, None, adapter)
+    execute_release_with_artifacts(capability, store, permit, None)
 }
 
 /// Executes a release after requiring the exact artifact manifest whenever
 /// the intent declares compiled-binary slots.
-pub fn execute_release_with_artifacts<W: ReleaseStateWriter, A: ReleaseEffectAdapter>(
+pub fn execute_release_with_artifacts<W: ReleaseStateWriter>(
     capability: &ValidatedReleaseIntent<'_>,
     store: &ReleaseStateStore<W>,
     permit: &ApplyPermit,
     artifacts: Option<&ArtifactManifestV1>,
-    adapter: &mut A,
 ) -> Result<ReleaseExecutionStateV1, GraphError> {
     let intent = capability.intent();
     match (intent.artifact_slots.is_empty(), artifacts) {
@@ -90,7 +57,7 @@ pub fn execute_release_with_artifacts<W: ReleaseStateWriter, A: ReleaseEffectAda
             .map_err(|source| GraphError::ReleaseExecutionState { source })?;
         store.save(intent, &state, permit)?;
 
-        let outcome = adapter.dispatch(capability, permit, &operation)?;
+        let outcome = capability.dispatch_prepared(permit, &operation)?;
         state
             .mark_terminal(&operation, outcome)
             .map_err(|source| GraphError::ReleaseExecutionState { source })?;
