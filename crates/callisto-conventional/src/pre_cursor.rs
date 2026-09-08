@@ -8,17 +8,6 @@ pub fn pre_cursor_ref_name(package: &PackageId) -> String {
     format!("refs/callisto/pre-cursor/{}", package.display_name())
 }
 
-/// Redacts known registry/VCS credential env-var values and any URL
-/// userinfo component from raw `git` subprocess stderr before it is
-/// embedded in a [`ConventionalError`] -- a failing `git` invocation can
-/// surface an authenticated remote URL (e.g. GitHub Actions'
-/// `https://x-access-token:TOKEN@github.com/...`) verbatim in its own
-/// error output, and that text flows into `--format json` and miette
-/// diagnostic output downstream.
-fn redact_git_stderr(text: String) -> String {
-    callisto_model::redact_known_secrets(&text, &callisto_model::known_credential_env_values(std::env::vars()))
-}
-
 pub fn resolve_pre_cursor(
     runner: &dyn CommandRunner,
     cwd: &Path,
@@ -39,7 +28,7 @@ pub fn resolve_pre_cursor(
     let sha = CommitSha::parse(sha_str).map_err(|_err| ConventionalError::MalformedPreCursorRef {
         cwd: cwd.to_path_buf(),
         ref_name,
-        stderr: redact_git_stderr(output.stderr),
+        stderr: output.redacted_stderr(),
     })?;
 
     Ok(Some(sha))
@@ -59,7 +48,7 @@ pub fn advance_pre_cursor(
             cwd: cwd.to_path_buf(),
             ref_name,
             sha: sha.as_str().to_string(),
-            stderr: redact_git_stderr(output.stderr),
+            stderr: output.redacted_stderr(),
         });
     }
 

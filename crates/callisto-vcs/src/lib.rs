@@ -68,10 +68,22 @@ impl From<VcsError> for CommitWalkError {
 /// there is exactly one definition of a commit's shape in the workspace.
 pub type GitCommit = CommitRecord;
 
-/// Trait for Git VCS operations.
-pub trait GitVcsProvider {
-    fn head_sha(&self) -> Result<CommitSha, VcsError>;
-    fn list_tags(&self, glob_pattern: Option<&str>) -> Result<Vec<TagName>, VcsError>;
+/// Compiles `pattern` into a [`globset::GlobMatcher`], surfacing a malformed
+/// pattern as [`VcsError::InvalidGlob`] rather than letting it silently
+/// disable filtering -- which would match every tag, a real correctness
+/// risk for release tagging (a malformed tag template could make "last tag"
+/// resolution pick an unrelated package's tag). The single shared
+/// definition of "how do we compile a tag glob" across both
+/// [`GitDataSource`] backends ([`GitRepository::list_tags`],
+/// [`ShellGit::list_tags`]) and `callisto-graph`'s `tags::matching_tags`,
+/// so all three filter tag names with byte-identical semantics.
+pub fn compile_tag_glob(pattern: &str) -> Result<globset::GlobMatcher, VcsError> {
+    globset::Glob::new(pattern)
+        .map(|g| g.compile_matcher())
+        .map_err(|e| VcsError::InvalidGlob {
+            pattern: pattern.to_string(),
+            message: e.to_string(),
+        })
 }
 
 /// Unified git-data access surface covering every operation callisto's
@@ -254,16 +266,7 @@ impl GitRepository {
             // unrelated package's tag). Surface it as an error instead;
             // `None` (no pattern requested at all) still means "match
             // everything".
-            let matcher = glob_pattern
-                .map(|p| {
-                    globset::Glob::new(p)
-                        .map(|g| g.compile_matcher())
-                        .map_err(|e| VcsError::InvalidGlob {
-                            pattern: p.to_string(),
-                            message: e.to_string(),
-                        })
-                })
-                .transpose()?;
+            let matcher = glob_pattern.map(compile_tag_glob).transpose()?;
 
             for r in tag_refs.flatten() {
                 let name = r.name().shorten().to_string();
@@ -577,16 +580,6 @@ fn location_matches(location: &gix::bstr::BStr, pathspecs: &[PathBuf]) -> bool {
     pathspecs.iter().any(|spec| {
         spec.as_path() == Path::new(".") || changed_path == spec.as_path() || changed_path.starts_with(spec)
     })
-}
-
-impl GitVcsProvider for GitRepository {
-    fn head_sha(&self) -> Result<CommitSha, VcsError> {
-        self.head_sha()
-    }
-
-    fn list_tags(&self, glob_pattern: Option<&str>) -> Result<Vec<TagName>, VcsError> {
-        self.list_tags(glob_pattern)
-    }
 }
 
 /// Native (`gix`) implementation of [`GitDataSource`].
