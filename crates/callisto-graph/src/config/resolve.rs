@@ -228,6 +228,69 @@ pub fn parse_pre_major_policy(s: &str) -> Result<PreMajorInferencePolicy, Config
     }
 }
 
+/// Parses the five override fields shared by `[[package]]` and
+/// `[[package-set]]` blocks (release-trigger, tag-template, changelog,
+/// pre-major-inference, publish-to) into a `PackageConfig`.
+///
+/// `RawPackageConfig` and `RawPackageSetConfig` are field-identical raw
+/// shapes (see `config::raw`) -- only the pattern type that parses `match`
+/// (`PackageId` vs `PackagePattern`, handled by each caller before calling
+/// this) and `error_prefix` (naming which block a `publish-to` error came
+/// from) differ between the two call sites this factors out of.
+#[allow(clippy::too_many_arguments)]
+fn parse_package_config_fields(
+    callisto_toml: &Path,
+    error_prefix: &str,
+    pattern_display: &str,
+    release_trigger: Option<&str>,
+    tag_template: Option<&str>,
+    changelog: Option<&str>,
+    pre_major_inference: Option<&str>,
+    publish_to: Option<&[String]>,
+) -> Result<PackageConfig, ConfigError> {
+    let release_trigger = release_trigger.map(parse_release_trigger).transpose()?;
+
+    let tag_template = tag_template
+        .map(TagTemplate::parse)
+        .transpose()
+        .map_err(ConfigError::Tag)?;
+
+    let changelog = changelog
+        .map(|s| {
+            callisto_model::workspace_relative(s).map_err(|_err| ConfigError::InvalidChangelogPath {
+                pattern: pattern_display.to_string(),
+                value: s.to_string(),
+            })
+        })
+        .transpose()?;
+
+    let pre_major_inference = pre_major_inference.map(parse_pre_major_policy).transpose()?;
+
+    let publish_to = publish_to
+        .map(|targets| {
+            targets
+                .iter()
+                .map(|s| parse_publish_target(s))
+                .collect::<Result<Vec<_>, _>>()
+        })
+        .transpose()
+        .map_err(|e| match e {
+            ConfigError::UnknownKey { key, .. } => ConfigError::UnknownKey {
+                path: callisto_toml.to_path_buf(),
+                key: format!("{error_prefix} publish-to: {key}"),
+            },
+            other => other,
+        })?;
+
+    Ok(PackageConfig {
+        release_trigger,
+        publish_to,
+        tag_template,
+        changelog,
+        pre_major_inference,
+    })
+}
+
 pub fn load(root: &Path) -> Result<ResolvedConfig, ConfigError> {
     let callisto_toml = root.join("callisto.toml");
     let raw = if callisto_toml.exists() {
@@ -354,64 +417,18 @@ pub fn load(root: &Path) -> Result<ResolvedConfig, ConfigError> {
             key: format!("[[package]] match = {:?}: {e}", raw_pkg.pattern),
         })?;
 
-        let release_trigger = raw_pkg
-            .release_trigger
-            .as_deref()
-            .map(parse_release_trigger)
-            .transpose()?;
+        let cfg = parse_package_config_fields(
+            &callisto_toml,
+            "[[package]]",
+            &raw_pkg.pattern,
+            raw_pkg.release_trigger.as_deref(),
+            raw_pkg.tag_template.as_deref(),
+            raw_pkg.changelog.as_deref(),
+            raw_pkg.pre_major_inference.as_deref(),
+            raw_pkg.publish_to.as_deref(),
+        )?;
 
-        let tag_template = raw_pkg
-            .tag_template
-            .as_deref()
-            .map(TagTemplate::parse)
-            .transpose()
-            .map_err(ConfigError::Tag)?;
-
-        let changelog = raw_pkg
-            .changelog
-            .as_deref()
-            .map(|s| {
-                callisto_model::workspace_relative(s).map_err(|_err| ConfigError::InvalidChangelogPath {
-                    pattern: raw_pkg.pattern.clone(),
-                    value: s.to_string(),
-                })
-            })
-            .transpose()?;
-
-        let pre_major_inference = raw_pkg
-            .pre_major_inference
-            .as_deref()
-            .map(parse_pre_major_policy)
-            .transpose()?;
-
-        let publish_to = raw_pkg
-            .publish_to
-            .as_deref()
-            .map(|targets| {
-                targets
-                    .iter()
-                    .map(|s| parse_publish_target(s))
-                    .collect::<Result<Vec<_>, _>>()
-            })
-            .transpose()
-            .map_err(|e| match e {
-                ConfigError::UnknownKey { key, .. } => ConfigError::UnknownKey {
-                    path: callisto_toml.clone(),
-                    key: format!("[[package]] publish-to: {key}"),
-                },
-                other => other,
-            })?;
-
-        packages.push((
-            pattern,
-            PackageConfig {
-                release_trigger,
-                publish_to,
-                tag_template,
-                changelog,
-                pre_major_inference,
-            },
-        ));
+        packages.push((pattern, cfg));
     }
 
     // Resolve [[package-set]] blocks into bulk config-override rules.
@@ -424,64 +441,18 @@ pub fn load(root: &Path) -> Result<ResolvedConfig, ConfigError> {
             key: format!("[[package-set]] match = {:?}: {e}", raw_pkg.pattern),
         })?;
 
-        let release_trigger = raw_pkg
-            .release_trigger
-            .as_deref()
-            .map(parse_release_trigger)
-            .transpose()?;
+        let cfg = parse_package_config_fields(
+            &callisto_toml,
+            "[[package-set]]",
+            &raw_pkg.pattern,
+            raw_pkg.release_trigger.as_deref(),
+            raw_pkg.tag_template.as_deref(),
+            raw_pkg.changelog.as_deref(),
+            raw_pkg.pre_major_inference.as_deref(),
+            raw_pkg.publish_to.as_deref(),
+        )?;
 
-        let tag_template = raw_pkg
-            .tag_template
-            .as_deref()
-            .map(TagTemplate::parse)
-            .transpose()
-            .map_err(ConfigError::Tag)?;
-
-        let changelog = raw_pkg
-            .changelog
-            .as_deref()
-            .map(|s| {
-                callisto_model::workspace_relative(s).map_err(|_err| ConfigError::InvalidChangelogPath {
-                    pattern: raw_pkg.pattern.clone(),
-                    value: s.to_string(),
-                })
-            })
-            .transpose()?;
-
-        let pre_major_inference = raw_pkg
-            .pre_major_inference
-            .as_deref()
-            .map(parse_pre_major_policy)
-            .transpose()?;
-
-        let publish_to = raw_pkg
-            .publish_to
-            .as_deref()
-            .map(|targets| {
-                targets
-                    .iter()
-                    .map(|s| parse_publish_target(s))
-                    .collect::<Result<Vec<_>, _>>()
-            })
-            .transpose()
-            .map_err(|e| match e {
-                ConfigError::UnknownKey { key, .. } => ConfigError::UnknownKey {
-                    path: callisto_toml.clone(),
-                    key: format!("[[package-set]] publish-to: {key}"),
-                },
-                other => other,
-            })?;
-
-        package_sets.push((
-            pattern,
-            PackageConfig {
-                release_trigger,
-                publish_to,
-                tag_template,
-                changelog,
-                pre_major_inference,
-            },
-        ));
+        package_sets.push((pattern, cfg));
     }
 
     Ok(ResolvedConfig {
