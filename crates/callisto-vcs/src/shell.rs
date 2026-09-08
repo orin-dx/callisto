@@ -43,17 +43,6 @@ const RELEASE_IGNORED_ALLOWLIST: &[&str] = &[
     "lcov.info",
 ];
 
-/// Redacts known registry/VCS credential env-var values and any URL
-/// userinfo component from raw `git` subprocess stderr before it is
-/// embedded in a [`VcsError`] -- a failing `git` invocation can surface an
-/// authenticated remote URL (e.g. GitHub Actions'
-/// `https://x-access-token:TOKEN@github.com/...`) verbatim in its own
-/// error output, and that text flows into `--format json` and miette
-/// diagnostic output downstream.
-fn redact_git_stderr(text: &str) -> String {
-    callisto_model::redact_known_secrets(text, &callisto_model::known_credential_env_values(std::env::vars()))
-}
-
 /// Shells `git` subcommands via a [`CommandRunner`] to implement
 /// [`GitDataSource`]. See the module docs for the consolidation this
 /// replaces.
@@ -85,7 +74,7 @@ impl<'r> ShellGit<'r> {
             return Err(VcsError::Git(format!(
                 "`git diff --cached --raw` against `{}` failed: {}",
                 base.as_str(),
-                redact_git_stderr(&output.stderr)
+                output.redacted_stderr()
             )));
         }
 
@@ -311,20 +300,6 @@ fn is_release_ignored_path_allowed(path: &Path) -> bool {
     })
 }
 
-/// Compiles `glob` into a [`globset::GlobMatcher`], surfacing a malformed
-/// pattern as [`VcsError::InvalidGlob`] rather than letting it silently
-/// disable filtering (which would match every tag -- see
-/// `GitRepository::list_tags`'s own doc comment for why that's a real
-/// correctness risk for release tagging).
-fn compile_glob(glob: &str) -> Result<globset::GlobMatcher, VcsError> {
-    globset::Glob::new(glob)
-        .map(|g| g.compile_matcher())
-        .map_err(|e| VcsError::InvalidGlob {
-            pattern: glob.to_string(),
-            message: e.to_string(),
-        })
-}
-
 impl GitDataSource for ShellGit<'_> {
     fn head_sha(&self) -> Result<CommitSha, VcsError> {
         let output = self.runner.run("git", &["rev-parse", "HEAD"], &self.root)?;
@@ -332,7 +307,7 @@ impl GitDataSource for ShellGit<'_> {
             return Err(VcsError::Git(format!(
                 "`git rev-parse HEAD` failed in `{}`: {}",
                 self.root.display(),
-                redact_git_stderr(&output.stderr)
+                output.redacted_stderr()
             )));
         }
         let sha_str = output.stdout_trimmed();
@@ -360,13 +335,13 @@ impl GitDataSource for ShellGit<'_> {
                 return Err(VcsError::Git(format!(
                     "`git tag --list` failed in `{}`: {}",
                     self.root.display(),
-                    redact_git_stderr(&output.stderr)
+                    output.redacted_stderr()
                 )));
             }
         }
         let all = output.stdout_lines().map(|s| s.to_string());
 
-        let matcher = glob.map(compile_glob).transpose()?;
+        let matcher = glob.map(crate::compile_tag_glob).transpose()?;
 
         Ok(all
             .filter(|t| matcher.as_ref().is_none_or(|m| m.is_match(t)))
@@ -427,7 +402,7 @@ impl GitDataSource for ShellGit<'_> {
             return Err(VcsError::Git(format!(
                 "`git log` failed in `{}`: {}",
                 self.root.display(),
-                redact_git_stderr(&output.stderr)
+                output.redacted_stderr()
             )));
         }
 
@@ -458,7 +433,7 @@ impl GitDataSource for ShellGit<'_> {
             return Err(VcsError::Git(format!(
                 "`git tag` failed in `{}`: {}",
                 self.root.display(),
-                redact_git_stderr(&output.stderr)
+                output.redacted_stderr()
             )));
         }
         Ok(())
@@ -477,7 +452,7 @@ impl GitDataSource for ShellGit<'_> {
             return Err(VcsError::Git(format!(
                 "`git tag -f` failed in `{}`: {}",
                 self.root.display(),
-                redact_git_stderr(&output.stderr)
+                output.redacted_stderr()
             )));
         }
         Ok(())

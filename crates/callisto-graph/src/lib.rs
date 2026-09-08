@@ -47,7 +47,7 @@ pub use locate::{find_workspace_root, IgnoreWalkLocator, LocateError, ProjectLoc
 pub use napi::{napi_drift, role_to_triple, triple_to_role, NapiTargetsIndex};
 pub use plan::{PlannedBump, VersionPlan, VersionWriteTarget};
 pub use resolver::{DependencyResolver, ManifestWalkResolver};
-pub use tags::{last_tag_for, TagIndex};
+pub use tags::TagIndex;
 pub use toposort::toposort_impl;
 
 pub struct Workspace<'a, R: CommandRunner, D: DependencyResolver = ManifestWalkResolver> {

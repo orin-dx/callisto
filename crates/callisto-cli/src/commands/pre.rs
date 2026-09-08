@@ -16,16 +16,6 @@ use crate::workspace::load_workspace;
 /// the user would find rather than an absolute path.
 const PRE_JSON_REL: &str = ".changeset/pre.json";
 
-/// Redacts known registry/VCS credential env-var values and any URL
-/// userinfo component from raw `git` subprocess stderr before it is
-/// embedded in a [`CliError`] -- a failing `git` invocation can surface an
-/// authenticated remote URL (e.g. GitHub Actions'
-/// `https://x-access-token:TOKEN@github.com/...`) verbatim in its own
-/// error output, and that text flows into `--format json` output downstream.
-fn redact_git_stderr(text: &str) -> String {
-    callisto_model::redact_known_secrets(text, &callisto_model::known_credential_env_values(std::env::vars()))
-}
-
 /// Stages `.changeset/pre.json` via `git add`, called by `pre enter` on a
 /// real (non-dry-run) write so the new file is included in the next commit.
 /// Extracted from [`handle`] so it's directly testable with a fake
@@ -39,7 +29,7 @@ fn stage_pre_json(runner: &dyn CommandRunner, root: &Path) -> Result<(), CliErro
         return Err(CliError::Other(format!(
             "git add .changeset/pre.json failed (exit {:?}): {}",
             output.exit_code,
-            redact_git_stderr(&output.stderr)
+            output.redacted_stderr()
         )));
     }
     Ok(())

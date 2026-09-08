@@ -134,9 +134,7 @@ pub fn render_validate<W: io::Write>(report: &ValidateReport, w: &mut W) -> io::
         writeln!(w, "Validation passed.")?;
     } else {
         writeln!(w, "Validation failed with diagnostics:")?;
-        for diag in &report.diagnostics {
-            writeln!(w, "  [{:?}] {}", diag.severity, diag.message)?;
-        }
+        render_diagnostics(&report.diagnostics, w)?;
     }
     Ok(())
 }
