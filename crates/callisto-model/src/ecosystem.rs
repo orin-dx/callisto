@@ -1,7 +1,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::{NpmAccess, RegistryKey, VersionGrammar};
+use crate::{ManifestFormat, NpmAccess, RegistryKey, VersionGrammar};
 
 /// Ecosystem supported by callisto.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema)]
@@ -20,6 +20,27 @@ pub enum Ecosystem {
 }
 
 impl Ecosystem {
+    /// The three ecosystems package *identity discovery* treats as
+    /// canonical -- each has exactly one manifest format
+    /// ([`Ecosystem::canonical_manifest_format`]) that carries a package's
+    /// name and (usually) version. Deliberately excludes the other,
+    /// demand-gated ecosystems in this enum (Go, Maven, NuGet, ...), which
+    /// either have no canonical-identity manifest wired up yet or aren't
+    /// part of this duplication (see audit pattern B).
+    pub const CANONICAL: [Ecosystem; 3] = [Ecosystem::Cargo, Ecosystem::Npm, Ecosystem::Pypi];
+
+    /// The manifest format that carries this ecosystem's package identity
+    /// (name and version), for the [`Self::CANONICAL`] ecosystems only.
+    /// `None` for every other ecosystem in this enum.
+    pub fn canonical_manifest_format(&self) -> Option<ManifestFormat> {
+        match self {
+            Ecosystem::Cargo => Some(ManifestFormat::CargoToml),
+            Ecosystem::Npm => Some(ManifestFormat::PackageJson),
+            Ecosystem::Pypi => Some(ManifestFormat::PyprojectToml),
+            _ => None,
+        }
+    }
+
     pub fn prefix(&self) -> &'static str {
         match self {
             Ecosystem::Cargo => "cargo",
@@ -168,6 +189,32 @@ mod tests {
         assert!(Ecosystem::Cargo.is_implemented());
         assert!(Ecosystem::Npm.is_implemented());
         assert!(Ecosystem::Pypi.is_implemented());
+    }
+
+    #[test]
+    fn canonical_ecosystems_each_have_a_canonical_manifest_format() {
+        assert_eq!(Ecosystem::CANONICAL.len(), 3);
+        assert_eq!(
+            Ecosystem::Cargo.canonical_manifest_format(),
+            Some(ManifestFormat::CargoToml)
+        );
+        assert_eq!(
+            Ecosystem::Npm.canonical_manifest_format(),
+            Some(ManifestFormat::PackageJson)
+        );
+        assert_eq!(
+            Ecosystem::Pypi.canonical_manifest_format(),
+            Some(ManifestFormat::PyprojectToml)
+        );
+    }
+
+    #[test]
+    fn non_canonical_ecosystems_have_no_canonical_manifest_format() {
+        assert_eq!(Ecosystem::Go.canonical_manifest_format(), None);
+        assert_eq!(Ecosystem::Maven.canonical_manifest_format(), None);
+        assert_eq!(Ecosystem::NuGet.canonical_manifest_format(), None);
+        assert_eq!(Ecosystem::Deno.canonical_manifest_format(), None);
+        assert_eq!(Ecosystem::Jsr.canonical_manifest_format(), None);
     }
 
     #[test]

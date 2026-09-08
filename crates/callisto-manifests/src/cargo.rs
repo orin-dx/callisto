@@ -110,6 +110,33 @@ pub fn cargo_package_name(doc: &toml_edit::DocumentMut) -> Option<&str> {
     doc.get("package").and_then(|p| p.get("name")).and_then(|n| n.as_str())
 }
 
+/// [`crate::read_identity`]'s `Cargo.toml` implementation: parses `source`
+/// and extracts `[package].name` plus a [`crate::VersionSource`] for
+/// `[package].version` -- `InheritedFromWorkspace` when it's
+/// `version.workspace = true`, `Literal` when it's a bare string, `None`
+/// when the field or the whole `[package]` table is absent.
+pub(crate) fn identity_from_source(source: &str, path: &Path) -> Result<crate::ManifestIdentity, ManifestError> {
+    let clean = source.strip_prefix('\u{FEFF}').unwrap_or(source);
+    let doc: toml_edit::DocumentMut = clean.parse().map_err(|e: toml_edit::TomlError| ManifestError::Parse {
+        path: path.to_path_buf(),
+        format: ManifestFormat::CargoToml,
+        message: e.to_string(),
+    })?;
+
+    let name = cargo_package_name(&doc).map(str::to_string);
+    let version = doc.get("package").and_then(|p| p.get("version")).and_then(|v| {
+        if let Some(s) = v.as_str() {
+            Some(crate::VersionSource::Literal(s.to_string()))
+        } else if v.get("workspace").and_then(|w| w.as_bool()) == Some(true) {
+            Some(crate::VersionSource::InheritedFromWorkspace)
+        } else {
+            None
+        }
+    });
+
+    Ok(crate::ManifestIdentity { name, version })
+}
+
 impl Manifest for CargoToml {
     fn persist(&mut self, permit: &ApplyPermit) -> Result<(), ManifestError> {
         let mut text = self.document.to_string();

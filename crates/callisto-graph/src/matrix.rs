@@ -106,36 +106,15 @@ pub(crate) fn parse_package_json(pkg_json_path: &Path) -> Result<Option<serde_js
 /// Extracts `napi.targets` from an already-parsed `package.json` value (see
 /// `parse_package_json`). A missing `napi` key or missing `napi.targets` key
 /// is `Absent` (AC-003: no platformTargets entry). A present `napi.targets`
-/// that is not a JSON array of strings is a hard error (AC-010c) -- unlike
-/// `NapiTargetsIndex::load`, which silently drops non-array values.
+/// that is not a JSON array of strings is a hard error (AC-010c) -- strict
+/// policy, propagating `callisto_manifests::read_napi_targets`'s error
+/// as-is; unlike `NapiTargetsIndex::load`, which `.ok()`s the same shared
+/// reader to silently drop non-array values instead.
 pub(crate) fn read_napi_targets(pkg_json_path: &Path, val: &serde_json::Value) -> Result<NapiTargetsField, GraphError> {
-    let Some(napi) = val.get("napi") else {
-        return Ok(NapiTargetsField::Absent);
-    };
-    let Some(targets) = napi.get("targets") else {
-        return Ok(NapiTargetsField::Absent);
-    };
-
-    let arr = targets.as_array().ok_or_else(|| {
-        GraphError::Manifest(ManifestError::Parse {
-            path: pkg_json_path.to_path_buf(),
-            format: ManifestFormat::PackageJson,
-            message: "napi.targets must be a JSON array of strings".to_string(),
-        })
-    })?;
-
-    let mut out = Vec::with_capacity(arr.len());
-    for item in arr {
-        let s = item.as_str().ok_or_else(|| {
-            GraphError::Manifest(ManifestError::Parse {
-                path: pkg_json_path.to_path_buf(),
-                format: ManifestFormat::PackageJson,
-                message: "napi.targets entries must all be strings".to_string(),
-            })
-        })?;
-        out.push(s.to_string());
+    match callisto_manifests::read_napi_targets(pkg_json_path, val).map_err(GraphError::Manifest)? {
+        Some(triples) => Ok(NapiTargetsField::Present(triples)),
+        None => Ok(NapiTargetsField::Absent),
     }
-    Ok(NapiTargetsField::Present(out))
 }
 
 /// Builds a PlatformTarget for `triple`, combining `triple_to_role`'s

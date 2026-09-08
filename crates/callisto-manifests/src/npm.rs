@@ -131,6 +131,62 @@ pub fn npm_package_name(doc: &serde_json::Map<String, serde_json::Value>) -> Opt
     doc.get("name").and_then(|n| n.as_str())
 }
 
+/// [`crate::read_identity`]'s `package.json` implementation: parses
+/// `source` and extracts `name` plus a [`crate::VersionSource::Literal`]
+/// for `version` (npm has no workspace-inherited-version concept, unlike
+/// Cargo).
+pub(crate) fn identity_from_source(source: &str, path: &Path) -> Result<crate::ManifestIdentity, ManifestError> {
+    let clean = source.strip_prefix('\u{FEFF}').unwrap_or(source);
+    let doc: Map<String, Value> = serde_json::from_str(clean).map_err(|e| ManifestError::Parse {
+        path: path.to_path_buf(),
+        format: ManifestFormat::PackageJson,
+        message: e.to_string(),
+    })?;
+
+    let name = npm_package_name(&doc).map(str::to_string);
+    let version = doc
+        .get("version")
+        .and_then(|v| v.as_str())
+        .map(|s| crate::VersionSource::Literal(s.to_string()));
+
+    Ok(crate::ManifestIdentity { name, version })
+}
+
+/// Reads `napi.targets` from an already-parsed `package.json` value.
+/// `Ok(None)` when `napi` or `napi.targets` is absent -- not every napi
+/// package.json declares platform targets. `Err` when `napi.targets` is
+/// present but is not a JSON array of strings.
+///
+/// The single implementation both `NapiTargetsIndex::load` (lenient: `.ok()`
+/// this, treating a malformed value the same as absent) and
+/// `matrix::read_napi_targets` (strict: propagates the error) build their
+/// differing policies on top of -- see each call site for which it chooses.
+pub fn read_napi_targets(path: &Path, val: &Value) -> Result<Option<Vec<String>>, ManifestError> {
+    let Some(napi) = val.get("napi") else {
+        return Ok(None);
+    };
+    let Some(targets) = napi.get("targets") else {
+        return Ok(None);
+    };
+
+    let arr = targets.as_array().ok_or_else(|| ManifestError::Parse {
+        path: path.to_path_buf(),
+        format: ManifestFormat::PackageJson,
+        message: "napi.targets must be a JSON array of strings".to_string(),
+    })?;
+
+    let mut out = Vec::with_capacity(arr.len());
+    for item in arr {
+        let s = item.as_str().ok_or_else(|| ManifestError::Parse {
+            path: path.to_path_buf(),
+            format: ManifestFormat::PackageJson,
+            message: "napi.targets entries must all be strings".to_string(),
+        })?;
+        out.push(s.to_string());
+    }
+    Ok(Some(out))
+}
+
 impl Manifest for PackageJson {
     fn persist(&mut self, permit: &ApplyPermit) -> Result<(), ManifestError> {
         let indent_str = match self.fingerprint.indent {

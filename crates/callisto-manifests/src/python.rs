@@ -100,6 +100,38 @@ pub fn python_package_name(doc: &toml_edit::DocumentMut) -> Option<&str> {
         })
 }
 
+/// [`crate::read_identity`]'s `pyproject.toml` implementation: parses
+/// `source` and extracts a package name (PEP 621, falling back to Poetry
+/// then Flit -- see [`python_package_name`]) plus a
+/// [`crate::VersionSource::Literal`] version (PEP 621 `project.version`,
+/// falling back to Poetry's `tool.poetry.version`). Python has no
+/// workspace-inherited-version concept analogous to Cargo's, and a Flit or
+/// PEP 621 `dynamic = ["version"]` package has no static version to report
+/// at all, so both fall through to `None`.
+pub(crate) fn identity_from_source(source: &str, path: &Path) -> Result<crate::ManifestIdentity, ManifestError> {
+    let clean = source.strip_prefix('\u{FEFF}').unwrap_or(source);
+    let doc: toml_edit::DocumentMut = clean.parse().map_err(|e: toml_edit::TomlError| ManifestError::Parse {
+        path: path.to_path_buf(),
+        format: ManifestFormat::PyprojectToml,
+        message: e.to_string(),
+    })?;
+
+    let name = python_package_name(&doc).map(str::to_string);
+    let version = doc
+        .get("project")
+        .and_then(|p| p.get("version"))
+        .and_then(|v| v.as_str())
+        .or_else(|| {
+            doc.get("tool")
+                .and_then(|t| t.get("poetry"))
+                .and_then(|p| p.get("version"))
+                .and_then(|v| v.as_str())
+        })
+        .map(|s| crate::VersionSource::Literal(s.to_string()));
+
+    Ok(crate::ManifestIdentity { name, version })
+}
+
 impl Manifest for PyprojectToml {
     fn persist(&mut self, permit: &ApplyPermit) -> Result<(), ManifestError> {
         let content = self.render();

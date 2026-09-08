@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use callisto_model::{Ecosystem, ManifestFormat, ManifestRole, PackageId};
+use callisto_model::{Ecosystem, ManifestRole, PackageId};
 
 use crate::error::GraphError;
 
@@ -18,77 +18,28 @@ impl IdentityResolver {
 
     pub fn resolve(&self, project_root: &Path, ecosystem: Ecosystem) -> Result<PackageId, GraphError> {
         let abs = self.workspace_root.join(project_root);
-        let name = match ecosystem {
-            Ecosystem::Cargo => {
-                let cargo_toml = abs.join("Cargo.toml");
-                let content =
-                    std::fs::read_to_string(&cargo_toml).map_err(|e| callisto_model::ManifestError::Read {
-                        path: project_root.join("Cargo.toml"),
-                        message: e.to_string(),
-                    })?;
-                let doc: toml_edit::DocumentMut =
-                    content
-                        .parse()
-                        .map_err(|e: toml_edit::TomlError| callisto_model::ManifestError::Parse {
-                            path: project_root.join("Cargo.toml"),
-                            format: ManifestFormat::CargoToml,
-                            message: e.to_string(),
-                        })?;
-                callisto_manifests::cargo_package_name(&doc)
-                    .ok_or_else(|| callisto_model::ManifestError::MissingField {
-                        path: project_root.join("Cargo.toml"),
-                        field: "package.name",
-                    })?
-                    .to_string()
-            }
-            Ecosystem::Npm => {
-                let pkg_json = abs.join("package.json");
-                let content = std::fs::read_to_string(&pkg_json).map_err(|e| callisto_model::ManifestError::Read {
-                    path: project_root.join("package.json"),
-                    message: e.to_string(),
-                })?;
-                let doc: serde_json::Map<String, serde_json::Value> =
-                    serde_json::from_str(&content).map_err(|e| callisto_model::ManifestError::Parse {
-                        path: project_root.join("package.json"),
-                        format: ManifestFormat::PackageJson,
-                        message: e.to_string(),
-                    })?;
-                callisto_manifests::npm_package_name(&doc)
-                    .ok_or_else(|| callisto_model::ManifestError::MissingField {
-                        path: project_root.join("package.json"),
-                        field: "name",
-                    })?
-                    .to_string()
-            }
-            Ecosystem::Pypi => {
-                let pyproject_toml = abs.join("pyproject.toml");
-                let content =
-                    std::fs::read_to_string(&pyproject_toml).map_err(|e| callisto_model::ManifestError::Read {
-                        path: project_root.join("pyproject.toml"),
-                        message: e.to_string(),
-                    })?;
-                let doc: toml_edit::DocumentMut =
-                    content
-                        .parse()
-                        .map_err(|e: toml_edit::TomlError| callisto_model::ManifestError::Parse {
-                            path: project_root.join("pyproject.toml"),
-                            format: ManifestFormat::PyprojectToml,
-                            message: e.to_string(),
-                        })?;
-                callisto_manifests::python_package_name(&doc)
-                    .ok_or_else(|| callisto_model::ManifestError::MissingField {
-                        path: project_root.join("pyproject.toml"),
-                        field: "project.name / tool.poetry.name / tool.flit.metadata.module",
-                    })?
-                    .to_string()
-            }
-            _ => {
-                return Err(GraphError::AmbiguousName {
-                    name: "unsupported ecosystem".to_string(),
-                    candidates: Vec::new(),
-                });
-            }
+        let Some(format) = ecosystem.canonical_manifest_format() else {
+            return Err(GraphError::AmbiguousName {
+                name: "unsupported ecosystem".to_string(),
+                candidates: Vec::new(),
+            });
         };
+
+        let manifest_rel = project_root.join(format.file_name());
+        let manifest_abs = abs.join(format.file_name());
+        let content = std::fs::read_to_string(&manifest_abs).map_err(|e| callisto_model::ManifestError::Read {
+            path: manifest_rel.clone(),
+            message: e.to_string(),
+        })?;
+        let identity = callisto_manifests::read_identity(format, &content, &manifest_rel)?;
+        let name = identity.name.ok_or(callisto_model::ManifestError::MissingField {
+            path: manifest_rel,
+            field: match ecosystem {
+                Ecosystem::Cargo => "package.name",
+                Ecosystem::Npm => "name",
+                _ => "project.name / tool.poetry.name / tool.flit.metadata.module",
+            },
+        })?;
 
         PackageId::parse(&name).map_err(|_err| GraphError::AmbiguousName {
             name: name.clone(),

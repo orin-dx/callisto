@@ -44,13 +44,15 @@ impl NapiTargetsIndex {
                     message: e.to_string(),
                 })?;
 
-            // Only insert when the "napi" key is present.
-            if let Some(targets) = val
-                .get("napi")
-                .and_then(|n| n.get("targets"))
-                .and_then(|t| t.as_array())
+            // Lenient policy: a malformed `napi.targets` (non-array, or an
+            // array with non-string entries) is treated the same as absent,
+            // not as a hard error -- unlike matrix::read_napi_targets, which
+            // propagates the same shared parser's error instead. See
+            // callisto_manifests::read_napi_targets's doc comment.
+            if let Some(triples) = callisto_manifests::read_napi_targets(&pkg_json_path, &val)
+                .ok()
+                .flatten()
             {
-                let triples: Vec<String> = targets.iter().filter_map(|v| v.as_str().map(str::to_string)).collect();
                 declared.insert(g.name.clone(), triples);
             }
         }
