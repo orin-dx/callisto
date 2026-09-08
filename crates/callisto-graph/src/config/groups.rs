@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
-use callisto_model::{GroupKind, GroupName, ManifestRole, PackageId};
+use callisto_model::{GroupKind, GroupName, ManifestRole, PackageId, Severity};
 use serde::Deserialize;
 
 use crate::error::{ConfigError, GraphError};
@@ -51,6 +51,31 @@ impl GroupMember {
 impl GroupDef {
     pub fn members(&self, kind: GroupMemberKind) -> impl Iterator<Item = &GroupMember> {
         self.members.iter().filter(move |m| m.kind() == kind)
+    }
+
+    /// Package members only, as bare identities -- the shape every
+    /// severity/target computation over a group actually needs.
+    pub fn package_members(&self) -> impl Iterator<Item = &PackageId> {
+        self.members(GroupMemberKind::Package).filter_map(|m| match m {
+            GroupMember::Package(id) => Some(id),
+            GroupMember::PlatformManifest { .. } => None,
+        })
+    }
+
+    /// Highest severity among this group's package members that have an
+    /// entry in `severities`, or `Severity::None` if none do. The single
+    /// definition of "max severity across a group" -- previously re-derived
+    /// independently in `aggregate::union_fixed`/`union_linked`, in two
+    /// inline blocks in `cascade::solve_cascade`, and again inside
+    /// `groups::fixed_group_target`. Having four independent copies let one
+    /// of them (cascade's Linked-group block) diverge and skip the
+    /// stale-member guard the others had, reaching a `MissingField` crash
+    /// for a group member removed from the workspace.
+    pub fn max_severity(&self, severities: &BTreeMap<PackageId, Severity>) -> Severity {
+        self.package_members()
+            .filter_map(|id| severities.get(id).copied())
+            .max()
+            .unwrap_or(Severity::None)
     }
 }
 

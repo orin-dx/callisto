@@ -366,28 +366,12 @@ pub(crate) fn union_fixed(
 ) -> bool {
     let mut changed = false;
     for g in groups.fixed.values() {
-        let pkg_members: Vec<PackageId> = g
-            .members(crate::config::GroupMemberKind::Package)
-            .filter_map(|m| match m {
-                crate::config::GroupMember::Package(ref id) => Some(id.clone()),
-                _ => None,
-            })
-            .collect();
-
-        let mut target = Severity::None;
-        for m in &pkg_members {
-            if let Some(&s) = agg.severities.get(m) {
-                if s > target {
-                    target = s;
-                }
-            }
-        }
-
+        let target = g.max_severity(&agg.severities);
         if target == Severity::None {
             continue;
         }
 
-        for m in pkg_members {
+        for m in g.package_members().cloned().collect::<Vec<_>>() {
             let cur = agg.severities.get(&m).copied().unwrap_or(Severity::None);
             if target > cur {
                 // Guard against stale group members: a package listed in the
@@ -432,42 +416,23 @@ pub(crate) fn union_linked(
 ) -> bool {
     let mut changed = false;
     for g in groups.linked.values() {
-        let named: Vec<PackageId> = g
-            .members(crate::config::GroupMemberKind::Package)
-            .filter_map(|m| match m {
-                crate::config::GroupMember::Package(ref id) => {
-                    if agg.named_by.contains_key(id) {
-                        Some(id.clone())
-                    } else {
-                        None
-                    }
-                }
-                _ => None,
-            })
-            .collect();
-
-        if named.is_empty() {
+        let named_any = g.package_members().any(|id| agg.named_by.contains_key(id));
+        if !named_any {
             continue;
         }
 
-        let mut target_sev = Severity::None;
-        for m in &named {
-            if let Some(&s) = agg.severities.get(m) {
-                if s > target_sev {
-                    target_sev = s;
-                }
-            }
-        }
+        // Unlike `union_fixed`'s max_severity (over every member), a linked
+        // group's target severity comes only from members a changeset or
+        // inference actually named -- an unnamed sibling's stale leftover
+        // severity from an earlier fixed-point round must not count.
+        let target_sev = g
+            .package_members()
+            .filter(|id| agg.named_by.contains_key(*id))
+            .filter_map(|id| agg.severities.get(id).copied())
+            .max()
+            .unwrap_or(Severity::None);
 
-        let all_members: Vec<PackageId> = g
-            .members(crate::config::GroupMemberKind::Package)
-            .filter_map(|m| match m {
-                crate::config::GroupMember::Package(ref id) => Some(id.clone()),
-                _ => None,
-            })
-            .collect();
-
-        for m in all_members {
+        for m in g.package_members().cloned().collect::<Vec<_>>() {
             let cur = agg.severities.get(&m).copied().unwrap_or(Severity::None);
             if target_sev > cur {
                 // Guard against stale linked-group members, same rationale as
