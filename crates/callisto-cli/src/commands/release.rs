@@ -11,7 +11,7 @@ use std::process::ExitCode;
 use callisto_graph::commands::{
     build_release_intent, derive_release_commit_decision, derive_selected_release_decision,
     execute_release_with_artifacts, reconcile_release_execution, validate_release_intent_with_state_directory,
-    verify_artifact_manifest, PreparedReleaseEffectAdapter, ReleaseStateStore, VersionOptions,
+    verify_artifact_manifest, ReleaseStateStore, VersionOptions,
 };
 use callisto_graph::locate::IgnoreWalkLocator;
 use callisto_model::{
@@ -171,8 +171,7 @@ fn execute(args: ReleaseExecuteArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
                 .to_string(),
         )
     })?;
-    let mut adapter = PreparedReleaseEffectAdapter;
-    let state = execute_release_with_artifacts(&capability, &store, &permit, manifest.as_ref(), &mut adapter)?;
+    let state = execute_release_with_artifacts(&capability, &store, &permit, manifest.as_ref())?;
     match global.format {
         OutputFormat::Json => write_json(&mut std::io::stdout(), &state)?,
         OutputFormat::Text => println!("Release execution state saved to {}", store.path().display()),

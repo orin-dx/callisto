@@ -12,22 +12,6 @@ use std::path::Path;
 use crate::ApplyPermit;
 use tempfile::NamedTempFile;
 
-/// Trait for durable changeset and manifest storage operations.
-pub trait ChangesetStorage {
-    /// Writes content atomically with parent and grandparent directory journal flushing.
-    ///
-    /// # Errors
-    ///
-    /// Returns `Err` on any I/O failure: directory creation, temp-file creation, write, sync, or persist.
-    fn atomic_write_durable(&self, content: &str, permit: &ApplyPermit) -> io::Result<()>;
-}
-
-impl ChangesetStorage for Path {
-    fn atomic_write_durable(&self, content: &str, permit: &ApplyPermit) -> io::Result<()> {
-        atomic_write(self, content, permit)
-    }
-}
-
 /// Durably replaces `path`'s contents with `content`.
 ///
 /// The [`ApplyPermit`] is unused at runtime and exists purely as a compile-time
@@ -131,20 +115,5 @@ mod tests {
             .map(|e| e.unwrap().file_name())
             .collect();
         assert_eq!(entries, vec![std::ffi::OsString::from("report.json")]);
-    }
-
-    /// `ChangesetStorage` is the method-call spelling of the same primitive;
-    /// it must land the identical bytes at the identical path.
-    #[test]
-    fn changeset_storage_trait_writes_through_to_atomic_write() {
-        let dir = tempdir().unwrap();
-        let target = dir.path().join("CHANGELOG.md");
-
-        target
-            .as_path()
-            .atomic_write_durable("# pkg\n", &ApplyPermit::force_for_tests())
-            .unwrap();
-
-        assert_eq!(std::fs::read_to_string(&target).unwrap(), "# pkg\n");
     }
 }
