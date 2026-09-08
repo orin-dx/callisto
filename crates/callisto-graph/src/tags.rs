@@ -374,6 +374,30 @@ mod tests {
         );
     }
 
+    /// Spec: the malformed-glob error must propagate all the way up through
+    /// `TagIndex::build`, not just the internal `matching_tags` helper.
+    /// Previously covered via `last_tag_for`'s own test (deleted alongside
+    /// `last_tag_for` as dead production code) -- that test exercised this
+    /// exact `select_from_tags_cached`/`matching_tags` path from the other
+    /// (now-removed) public entry point, so this replaces it against the
+    /// surviving one.
+    #[test]
+    fn test_tag_index_build_propagates_malformed_glob_error() {
+        let dir = non_repo_dir();
+        let runner = FakeGitTagRunner::new(vec!["pkg-a@1.0.0".to_string()]);
+        let mut pkg = make_pkg("pkg-a");
+        pkg.tag_template = Some(TagTemplate::parse("pkg-a@{version}{oops").unwrap());
+        let graph = FixedGraph { pkgs: vec![pkg] };
+        let cfg = crate::config::load(dir.path()).unwrap();
+        let git = GitAccess::discover(dir.path(), &runner);
+
+        match TagIndex::build(&git, &graph, &cfg) {
+            Err(GraphError::Vcs(callisto_vcs::VcsError::InvalidGlob { .. })) => {}
+            Err(other) => panic!("expected InvalidGlob, got a different GraphError: {other:?}"),
+            Ok(_) => panic!("TagIndex::build must propagate the malformed-glob error, got Ok"),
+        }
+    }
+
     #[test]
     fn test_tag_index_build_with_zero_tags_returns_none_for_every_package() {
         let dir = non_repo_dir();
