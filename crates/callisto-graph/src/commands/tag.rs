@@ -10,6 +10,37 @@ pub struct TagOptions {
     pub floating_major: bool,
 }
 
+/// Computes the floating-major tag name and existence check for `release`,
+/// or `None` if this package's template can't produce one (no version could
+/// be extracted/parsed, or the template renders no floating-major form).
+/// Shared by both the preview and write branches of
+/// [`create_tags_with_options`] so a future change to template rendering or
+/// version-grammar resolution can't make the preview disagree with what
+/// actually gets tagged.
+fn plan_floating_major<R: CommandRunner, D: DependencyResolver>(
+    ws: &Workspace<'_, R, D>,
+    release: &callisto_model::ReleaseEntry,
+) -> Result<Option<(callisto_model::TagName, bool)>, GraphError> {
+    let tmpl = ws.tags()?.template(&release.package);
+    let Some(v_str) = tmpl.extract_version_str(release.tag_name.as_str()) else {
+        return Ok(None);
+    };
+    let grammar = ws
+        .graph
+        .packages()
+        .find(|p| p.id == release.package)
+        .and_then(|p| p.version_grammar().ok())
+        .unwrap_or(callisto_model::VersionGrammar::SemVer);
+    let Ok(ver) = callisto_model::Version::parse(v_str, grammar) else {
+        return Ok(None);
+    };
+    let Some(major_tag) = tmpl.render_floating_major(&ver) else {
+        return Ok(None);
+    };
+    let already_existed = ws.tags()?.contains_tag(major_tag.as_str());
+    Ok(Some((major_tag, already_existed)))
+}
+
 pub fn create_tags<R: CommandRunner, D: DependencyResolver>(
     ws: &Workspace<'_, R, D>,
     plan: &PublishPlan,
@@ -50,26 +81,14 @@ pub fn create_tags_with_options<R: CommandRunner, D: DependencyResolver>(
 
         let Some(permit) = permit else {
             if opts.floating_major {
-                let tmpl = ws.tags()?.template(&release.package);
-                if let Some(v_str) = tmpl.extract_version_str(release.tag_name.as_str()) {
-                    let grammar = ws
-                        .graph
-                        .packages()
-                        .find(|p| p.id == release.package)
-                        .and_then(|p| p.version_grammar().ok())
-                        .unwrap_or(callisto_model::VersionGrammar::SemVer);
-                    if let Ok(ver) = callisto_model::Version::parse(v_str, grammar) {
-                        if let Some(major_tag) = tmpl.render_floating_major(&ver) {
-                            let major_already_existed = ws.tags()?.contains_tag(major_tag.as_str());
-                            tags.push(CreatedTag {
-                                package: release.package.clone(),
-                                tag_name: major_tag,
-                                sha: release.sha.clone(),
-                                already_existed: major_already_existed,
-                                is_floating_major: true,
-                            });
-                        }
-                    }
+                if let Some((major_tag, already_existed)) = plan_floating_major(ws, release)? {
+                    tags.push(CreatedTag {
+                        package: release.package.clone(),
+                        tag_name: major_tag,
+                        sha: release.sha.clone(),
+                        already_existed,
+                        is_floating_major: true,
+                    });
                 }
             }
 
@@ -115,29 +134,15 @@ pub fn create_tags_with_options<R: CommandRunner, D: DependencyResolver>(
         };
 
         if opts.floating_major {
-            let tmpl = ws.tags()?.template(&release.package);
-            let ver_str = tmpl.extract_version_str(release.tag_name.as_str());
-            let grammar = ws
-                .graph
-                .packages()
-                .find(|p| p.id == release.package)
-                .and_then(|p| p.version_grammar().ok())
-                .unwrap_or(callisto_model::VersionGrammar::SemVer);
-
-            if let Some(v_str) = ver_str {
-                if let Ok(ver) = callisto_model::Version::parse(v_str, grammar) {
-                    if let Some(major_tag) = tmpl.render_floating_major(&ver) {
-                        let major_already_existed = ws.tags()?.contains_tag(major_tag.as_str());
-                        git.create_floating_major(major_tag.as_str(), &release.sha, permit)?;
-                        tags.push(CreatedTag {
-                            package: release.package.clone(),
-                            tag_name: major_tag,
-                            sha: release.sha.clone(),
-                            already_existed: major_already_existed,
-                            is_floating_major: true,
-                        });
-                    }
-                }
+            if let Some((major_tag, already_existed)) = plan_floating_major(ws, release)? {
+                git.create_floating_major(major_tag.as_str(), &release.sha, permit)?;
+                tags.push(CreatedTag {
+                    package: release.package.clone(),
+                    tag_name: major_tag,
+                    sha: release.sha.clone(),
+                    already_existed,
+                    is_floating_major: true,
+                });
             }
         }
 

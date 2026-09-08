@@ -1,9 +1,37 @@
 use callisto_model::{CommandRunner, ValidateReport, SCHEMA_VERSION};
 
+use crate::aggregate::LoadedChangeset;
 use crate::commands::escalate;
 use crate::error::GraphError;
 use crate::resolver::DependencyResolver;
 use crate::Workspace;
+
+/// Runs a `git diff --name-only`-shaped command and filters `loaded` down to
+/// changesets whose path matches one of the changed files. Shared by the
+/// `--staged` and `--since` branches of [`validate`], which differ only in
+/// the git args they pass.
+fn changesets_touched_by<R: CommandRunner, D: DependencyResolver>(
+    ws: &Workspace<'_, R, D>,
+    args: &[&str],
+    loaded: Vec<LoadedChangeset>,
+) -> Result<Vec<LoadedChangeset>, GraphError> {
+    let out = ws.runner.run("git", args, &ws.root)?;
+    if !out.success() {
+        return Err(GraphError::Command(callisto_model::CommandError::Io {
+            program: "git".to_string(),
+            message: out.redacted_stderr(),
+        }));
+    }
+    let files: Vec<String> = out
+        .stdout_trimmed()
+        .lines()
+        .map(|l| l.trim_matches('"').to_string())
+        .collect();
+    Ok(loaded
+        .into_iter()
+        .filter(|cs| files.iter().any(|f| cs.path.ends_with(f)))
+        .collect())
+}
 
 #[derive(Clone, Debug, Default)]
 pub struct ValidateOptions {
@@ -21,22 +49,7 @@ pub fn validate<R: CommandRunner, D: DependencyResolver>(
     let loaded = crate::load_changesets(&ws.root, &ws.config)?;
 
     let target_changesets: Vec<_> = if opts.staged {
-        let out = ws.runner.run("git", &["diff", "--cached", "--name-only"], &ws.root)?;
-        if !out.success() {
-            return Err(GraphError::Command(callisto_model::CommandError::Io {
-                program: "git".to_string(),
-                message: out.redacted_stderr(),
-            }));
-        }
-        let files: Vec<String> = out
-            .stdout_trimmed()
-            .lines()
-            .map(|l| l.trim_matches('"').to_string())
-            .collect();
-        loaded
-            .into_iter()
-            .filter(|cs| files.iter().any(|f| cs.path.ends_with(f)))
-            .collect()
+        changesets_touched_by(ws, &["diff", "--cached", "--name-only"], loaded)?
     } else if let Some(ref since) = opts.since {
         if since.starts_with('-') {
             return Err(GraphError::Command(callisto_model::CommandError::Io {
@@ -45,22 +58,7 @@ pub fn validate<R: CommandRunner, D: DependencyResolver>(
             }));
         }
         let range = format!("{since}..HEAD");
-        let out = ws.runner.run("git", &["diff", "--name-only", &range, "--"], &ws.root)?;
-        if !out.success() {
-            return Err(GraphError::Command(callisto_model::CommandError::Io {
-                program: "git".to_string(),
-                message: out.redacted_stderr(),
-            }));
-        }
-        let files: Vec<String> = out
-            .stdout_trimmed()
-            .lines()
-            .map(|l| l.trim_matches('"').to_string())
-            .collect();
-        loaded
-            .into_iter()
-            .filter(|cs| files.iter().any(|f| cs.path.ends_with(f)))
-            .collect()
+        changesets_touched_by(ws, &["diff", "--name-only", &range, "--"], loaded)?
     } else {
         loaded
     };
