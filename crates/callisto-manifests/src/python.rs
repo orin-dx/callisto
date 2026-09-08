@@ -132,6 +132,110 @@ pub(crate) fn identity_from_source(source: &str, path: &Path) -> Result<crate::M
     Ok(crate::ManifestIdentity { name, version })
 }
 
+/// A parsed PEP 508 dependency specifier, e.g.
+/// `"requests[security,socks]>=2.0; python_version >= '3.8'"`.
+///
+/// Previously decomposed independently at three call sites in this module
+/// (`iter_dependencies`, `update_dependency_spec`,
+/// `update_optional_dependencies`), each hand-rolling the same
+/// marker-split / operator-split / extras-split sequence -- this type is
+/// the single implementation all three now share.
+///
+/// `render` produces a normalized textual form (no space around `[...]`,
+/// extras comma-joined with no interior space, no space between the
+/// name/extras and the version spec, and a single `;` directly before the
+/// marker with no extra whitespace). This is not necessarily byte-identical
+/// to arbitrary input formatting, but `Requirement::parse(&r.render())`
+/// always reproduces a `Requirement` equal to `r` when `r` itself came from
+/// `parse` -- see the `requirement_parse_render_parse_is_idempotent`
+/// property test.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Requirement {
+    pub name: String,
+    pub extras: Vec<String>,
+    /// The version-constraint clause(s) verbatim (e.g. `">=1.0,<2.0"` or
+    /// `"==1.2.3"`) -- `None` when the requirement carries no version
+    /// constraint at all (a bare name, optionally with extras/marker).
+    pub spec: Option<String>,
+    /// The marker expression (without the leading `;` or surrounding
+    /// whitespace), e.g. `"python_version >= '3.8'"` -- `None` when absent.
+    pub marker: Option<String>,
+}
+
+impl Requirement {
+    /// Parses a single PEP 508 requirement string. Returns `None` when no
+    /// package name can be extracted (e.g. an empty string, or a string
+    /// that is entirely a marker/version clause with nothing before it).
+    pub fn parse(s: &str) -> Option<Self> {
+        let s = s.trim();
+
+        let mut halves = s.splitn(2, ';');
+        let spec_part = halves.next().unwrap_or("").trim();
+        let marker = halves
+            .next()
+            .map(str::trim)
+            .filter(|m| !m.is_empty())
+            .map(str::to_string);
+
+        let op_idx = spec_part.find(['<', '>', '=', '!', '~']);
+        let (pkg_part, spec) = match op_idx {
+            Some(idx) => (spec_part[..idx].trim(), Some(spec_part[idx..].trim().to_string())),
+            None => (spec_part, None),
+        };
+
+        let (name, extras) = match pkg_part.find('[') {
+            Some(idx) => {
+                let name = pkg_part[..idx].trim().to_string();
+                let extras_str = pkg_part[idx..].trim_start_matches('[').trim_end_matches(']');
+                let extras = extras_str
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|e| !e.is_empty())
+                    .map(str::to_string)
+                    .collect();
+                (name, extras)
+            }
+            None => (pkg_part.trim().to_string(), Vec::new()),
+        };
+
+        if name.is_empty() {
+            return None;
+        }
+
+        Some(Requirement {
+            name,
+            extras,
+            spec,
+            marker,
+        })
+    }
+
+    /// Renders back to PEP 508 text -- see the struct's doc comment for the
+    /// normalization this applies relative to arbitrary input formatting.
+    pub fn render(&self) -> String {
+        let mut out = self.name.clone();
+        if !self.extras.is_empty() {
+            out.push('[');
+            out.push_str(&self.extras.join(","));
+            out.push(']');
+        }
+        if let Some(spec) = &self.spec {
+            out.push_str(spec);
+        }
+        if let Some(marker) = &self.marker {
+            out.push(';');
+            out.push_str(marker);
+        }
+        out
+    }
+}
+
+impl std::fmt::Display for Requirement {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.render())
+    }
+}
+
 impl Manifest for PyprojectToml {
     fn persist(&mut self, permit: &ApplyPermit) -> Result<(), ManifestError> {
         let content = self.render();
@@ -251,22 +355,15 @@ impl Manifest for PyprojectToml {
         {
             for item in deps {
                 if let Some(full_req_str) = item.as_str() {
-                    let spec_part = full_req_str.split(';').next().unwrap_or(full_req_str).trim();
-                    let op_idx = spec_part.find(&['<', '>', '=', '!', '~'][..]);
-                    let (pkg_part, req_str) = match op_idx {
-                        Some(idx) => (&spec_part[..idx], &spec_part[idx..]),
-                        None => (spec_part, "*"),
-                    };
-                    let pkg_name = pkg_part.split('[').next().unwrap_or(pkg_part).trim();
-
-                    if !pkg_name.is_empty() {
-                        let parsed_req_str = if req_str == "*" { ">=0.0.0" } else { req_str };
+                    if let Some(req) = Requirement::parse(full_req_str) {
+                        let req_str = req.spec.clone().unwrap_or_else(|| "*".to_string());
+                        let parsed_req_str = req.spec.as_deref().unwrap_or(">=0.0.0");
                         if let Ok(spec) = VersionReq::parse(parsed_req_str, Ecosystem::Pypi) {
                             entries.push(DependencyEntry {
-                                name: pkg_name.to_string(),
+                                name: req.name.clone(),
                                 inherited: false,
                                 kind: DepKind::Runtime,
-                                spec: DepSpec::Range(spec, req_str.to_string()),
+                                spec: DepSpec::Range(spec, req_str),
                             });
                         }
                     }
@@ -334,30 +431,22 @@ impl Manifest for PyprojectToml {
         {
             for idx in 0..deps.len() {
                 if let Some(full_req) = deps.get(idx).and_then(|item| item.as_str()) {
-                    let spec_part = full_req.split(';').next().unwrap_or(full_req).trim();
-                    let op_idx = spec_part.find(&['<', '>', '=', '!', '~'][..]);
-                    let pkg_part = match op_idx {
-                        Some(i) => &spec_part[..i],
-                        None => spec_part,
+                    let Some(req) = Requirement::parse(full_req) else {
+                        continue;
                     };
-                    let pkg_name = pkg_part.split('[').next().unwrap_or(pkg_part).trim();
-                    if normalize_pypi_package_name(pkg_name) == normalize_pypi_package_name(name) {
-                        let extras = if pkg_part.contains('[') {
-                            &pkg_part[pkg_part.find('[').unwrap()..]
-                        } else {
-                            ""
-                        };
-                        let marker = if full_req.contains(';') {
-                            format!(";{}", full_req.split(';').nth(1).unwrap_or(""))
-                        } else {
-                            String::new()
-                        };
+                    if normalize_pypi_package_name(&req.name) == normalize_pypi_package_name(name) {
                         let formatted_spec = if new_spec_str.starts_with(['<', '>', '=', '!', '~']) {
                             new_spec_str.clone()
                         } else {
                             format!(">={new_spec_str}")
                         };
-                        deps.replace(idx, format!("{pkg_name}{extras}{formatted_spec}{marker}"));
+                        let new_req = Requirement {
+                            name: req.name.clone(),
+                            extras: req.extras.clone(),
+                            spec: Some(formatted_spec),
+                            marker: req.marker.clone(),
+                        };
+                        deps.replace(idx, new_req.render());
                         updated = true;
                         break;
                     }
@@ -457,31 +546,20 @@ impl Manifest for PyprojectToml {
                 let Some(full_req) = arr.get(idx).and_then(|item| item.as_str()) else {
                     continue;
                 };
-                let full_req = full_req.to_string();
-                let spec_part = full_req.split(';').next().unwrap_or(&full_req).trim();
-                let op_idx = spec_part.find(&['<', '>', '=', '!', '~'][..]);
-                let pkg_part = match op_idx {
-                    Some(i) => &spec_part[..i],
-                    None => spec_part,
+                let Some(req) = Requirement::parse(full_req) else {
+                    continue;
                 };
-                let pkg_name = pkg_part.split('[').next().unwrap_or(pkg_part).trim();
 
                 if let Some((_dep_name, new_ver)) = updates.iter().find(|(dep_name, _)| {
-                    normalize_pypi_package_name(dep_name) == normalize_pypi_package_name(pkg_name)
+                    normalize_pypi_package_name(dep_name) == normalize_pypi_package_name(&req.name)
                 }) {
-                    let extras = if pkg_part.contains('[') {
-                        &pkg_part[pkg_part.find('[').unwrap()..]
-                    } else {
-                        ""
+                    let new_req = Requirement {
+                        name: req.name.clone(),
+                        extras: req.extras.clone(),
+                        spec: Some(format!(">={}", new_ver.render())),
+                        marker: req.marker.clone(),
                     };
-                    let marker = if full_req.contains(';') {
-                        format!(";{}", full_req.split(';').nth(1).unwrap_or(""))
-                    } else {
-                        String::new()
-                    };
-                    let rendered_ver = new_ver.render();
-                    let new_req = format!("{pkg_name}{extras}>={rendered_ver}{marker}");
-                    arr.replace(idx, new_req);
+                    arr.replace(idx, new_req.render());
                 }
             }
         }
@@ -598,6 +676,7 @@ mod tests {
     }
     use super::*;
     use callisto_model::ManifestFormat;
+    use proptest::prelude::*;
     use tempfile::tempdir;
 
     #[test]
@@ -1668,5 +1747,64 @@ exclude = ["tests/"]
             after, content,
             "persist() with no prior mutation must reproduce the file unchanged"
         );
+    }
+
+    #[test]
+    fn requirement_parse_extracts_name_extras_spec_and_marker() {
+        let req = Requirement::parse("requests[security,socks]>=2.28.0; os_name == 'posix'").unwrap();
+        assert_eq!(req.name, "requests");
+        assert_eq!(req.extras, vec!["security".to_string(), "socks".to_string()]);
+        assert_eq!(req.spec.as_deref(), Some(">=2.28.0"));
+        assert_eq!(req.marker.as_deref(), Some("os_name == 'posix'"));
+    }
+
+    #[test]
+    fn requirement_parse_bare_name_has_no_extras_spec_or_marker() {
+        let req = Requirement::parse("urllib3").unwrap();
+        assert_eq!(req.name, "urllib3");
+        assert!(req.extras.is_empty());
+        assert_eq!(req.spec, None);
+        assert_eq!(req.marker, None);
+    }
+
+    #[test]
+    fn requirement_parse_rejects_empty_name() {
+        assert!(Requirement::parse("").is_none());
+        assert!(Requirement::parse(">=1.0.0").is_none());
+    }
+
+    #[test]
+    fn requirement_render_round_trips_name_extras_spec_marker() {
+        let req = Requirement {
+            name: "requests".to_string(),
+            extras: vec!["security".to_string(), "socks".to_string()],
+            spec: Some(">=2.28.0".to_string()),
+            marker: Some("os_name == 'posix'".to_string()),
+        };
+        assert_eq!(req.render(), "requests[security,socks]>=2.28.0;os_name == 'posix'");
+        assert_eq!(Requirement::parse(&req.render()).unwrap(), req);
+    }
+
+    #[test]
+    fn requirement_parse_handles_dashed_and_dotted_names() {
+        let req = Requirement::parse("sphinx-rtd-theme>=4.0.0").unwrap();
+        assert_eq!(req.name, "sphinx-rtd-theme");
+        assert_eq!(req.spec.as_deref(), Some(">=4.0.0"));
+    }
+
+    proptest! {
+        /// Parsing an arbitrary string may or may not yield a `Requirement`
+        /// (most random strings have no extractable package name), but
+        /// whenever it does, rendering that result and parsing it again
+        /// must reproduce an equal `Requirement` -- the shared parser
+        /// reaches a stable, idempotent canonical form after one pass.
+        #[test]
+        fn requirement_parse_render_parse_is_idempotent(s in ".*") {
+            if let Some(req) = Requirement::parse(&s) {
+                let rendered = req.render();
+                let reparsed = Requirement::parse(&rendered);
+                prop_assert_eq!(reparsed, Some(req));
+            }
+        }
     }
 }
