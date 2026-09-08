@@ -283,10 +283,13 @@ fn manifest_version_at<R: CommandRunner>(
 ) -> Result<Version, GraphError> {
     let source = git_file(runner, root, commit, path)?;
     let version = match ecosystem {
-        Ecosystem::Cargo => source
-            .parse::<toml_edit::DocumentMut>()
-            .ok()
-            .and_then(|document| document["package"]["version"].as_str().map(str::to_owned)),
+        Ecosystem::Cargo => source.parse::<toml_edit::DocumentMut>().ok().and_then(|document| {
+            document
+                .get("package")
+                .and_then(|package| package.get("version"))
+                .and_then(|v| v.as_str())
+                .map(str::to_owned)
+        }),
         Ecosystem::Npm => serde_json::from_str::<serde_json::Value>(&source)
             .ok()
             .and_then(|document| {
@@ -296,9 +299,17 @@ fn manifest_version_at<R: CommandRunner>(
                     .map(str::to_owned)
             }),
         Ecosystem::Pypi => source.parse::<toml_edit::DocumentMut>().ok().and_then(|document| {
-            document["project"]["version"]
-                .as_str()
-                .or_else(|| document["tool"]["poetry"]["version"].as_str())
+            document
+                .get("project")
+                .and_then(|project| project.get("version"))
+                .and_then(|v| v.as_str())
+                .or_else(|| {
+                    document
+                        .get("tool")
+                        .and_then(|tool| tool.get("poetry"))
+                        .and_then(|poetry| poetry.get("version"))
+                        .and_then(|v| v.as_str())
+                })
                 .map(str::to_owned)
         }),
         _ => None,
@@ -385,5 +396,73 @@ mod tests {
         );
         assert!(parse_name_status("R100\told\tnew\n").is_err());
         assert!(parse_name_status("M Cargo.toml\n").is_err());
+    }
+
+    struct FixedBlobRunner(&'static str);
+
+    impl CommandRunner for FixedBlobRunner {
+        fn run(
+            &self,
+            _program: &str,
+            _args: &[&str],
+            _cwd: &std::path::Path,
+        ) -> Result<callisto_model::CommandOutput, callisto_model::CommandError> {
+            Ok(callisto_model::CommandOutput {
+                exit_code: Some(0),
+                stdout: self.0.to_string(),
+                stderr: String::new(),
+            })
+        }
+    }
+
+    // toml_edit's `Index` impl panics on a missing table ("index not found")
+    // rather than returning None -- manifest_version_at previously used it
+    // directly (`document["project"]["version"]`), so a Poetry-only
+    // pyproject.toml, a PEP 621 `dynamic = ["version"]` package, or a
+    // `Cargo.toml` with no `[package]` table would abort release-commit
+    // verification with a panic instead of failing closed.
+    #[test]
+    fn manifest_version_at_fails_closed_instead_of_panicking_on_missing_tables() {
+        let cases: &[(&str, Ecosystem)] = &[
+            ("[project]\nname = \"x\"\ndynamic = [\"version\"]\n", Ecosystem::Pypi),
+            ("[workspace]\nmembers = [\"a\"]\n", Ecosystem::Cargo),
+        ];
+        for (source, ecosystem) in cases {
+            let runner = FixedBlobRunner(source);
+            let result = manifest_version_at(&runner, std::path::Path::new("."), "deadbeef", "Cargo.toml", *ecosystem);
+            assert!(
+                matches!(result, Err(GraphError::ReleaseIntentStale)),
+                "expected a clean ReleaseIntentStale rejection (not a panic) for {ecosystem:?}, got {result:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn manifest_version_at_still_resolves_poetry_fallback_and_normal_cargo() {
+        let poetry = FixedBlobRunner("[tool.poetry]\nname = \"x\"\nversion = \"1.0.0\"\n");
+        assert_eq!(
+            manifest_version_at(
+                &poetry,
+                std::path::Path::new("."),
+                "deadbeef",
+                "pyproject.toml",
+                Ecosystem::Pypi
+            )
+            .unwrap(),
+            Version::parse("1.0.0", Ecosystem::Pypi.version_grammar()).unwrap()
+        );
+
+        let cargo = FixedBlobRunner("[package]\nname = \"x\"\nversion = \"1.2.3\"\n");
+        assert_eq!(
+            manifest_version_at(
+                &cargo,
+                std::path::Path::new("."),
+                "deadbeef",
+                "Cargo.toml",
+                Ecosystem::Cargo
+            )
+            .unwrap(),
+            Version::semver(1, 2, 3)
+        );
     }
 }
