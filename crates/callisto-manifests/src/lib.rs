@@ -68,6 +68,24 @@ pub fn read_identity(format: ManifestFormat, source: &str, path: &Path) -> Resul
     }
 }
 
+/// The role an npm `package.json` manifest's own content declares itself to
+/// play (e.g. a napi-rs platform package, signaled by `os`+`cpu` constraint
+/// arrays), detected directly from the manifest's already-parsed document.
+///
+/// Distinct from [`ManifestRole`], which reflects the role a [`ManifestDecl`]
+/// was *opened with* (assigned externally by the caller), not what the
+/// manifest content itself declares. [`Manifest::npm_role`] lets a caller
+/// holding an already-open handle (e.g. from a shared cache) recover this
+/// without a second read of the underlying file.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum NpmRole {
+    Platform {
+        platform: String,
+        arch: String,
+        abi: Option<String>,
+    },
+}
+
 /// Trait implemented by per-ecosystem manifest editors.
 pub trait Manifest: Send + Sync {
     fn path(&self) -> &Path;
@@ -106,6 +124,14 @@ pub trait Manifest: Send + Sync {
         updates: &[(String, Version)],
         permit: &ApplyPermit,
     ) -> Result<(), ManifestError>;
+    /// The role this manifest's own content declares itself to play (see
+    /// [`NpmRole`]). `None` for every ecosystem other than npm, and for an
+    /// npm manifest that isn't a platform package. Overridden by
+    /// `PackageJson`, whose implementation derives this from the document
+    /// already parsed at `open()` time -- no second disk read required.
+    fn npm_role(&self) -> Option<NpmRole> {
+        None
+    }
 }
 
 /// Context passed to open() to supply workspace-wide inheritance facts.

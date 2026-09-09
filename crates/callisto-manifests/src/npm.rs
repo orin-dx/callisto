@@ -8,7 +8,7 @@ use callisto_model::{
 use indexmap::IndexMap;
 use serde_json::{Map, Value};
 
-use crate::{Manifest, OpenContext};
+use crate::{Manifest, NpmRole, OpenContext};
 
 pub struct PackageJson {
     path: PathBuf,
@@ -169,6 +169,67 @@ pub fn read_napi_targets(path: &Path, val: &Value) -> Result<Option<Vec<String>>
         out.push(s.to_string());
     }
     Ok(Some(out))
+}
+
+/// Detects whether `doc` (an already-parsed `package.json` document) declares
+/// itself a napi-rs platform package -- `os`+`cpu` constraint arrays both
+/// present and non-empty -- and if so, its platform/arch/abi. Pure and
+/// I/O-free: the single implementation [`PackageJson::npm_role`] builds on,
+/// so platform-role detection is available from an already-open `Manifest`
+/// handle (e.g. one served from `callisto-graph`'s `manifest_cache`) without
+/// a second `fs::read` of the same file.
+fn npm_role_from_doc(doc: &Map<String, Value>) -> Option<NpmRole> {
+    let has_os = doc.get("os").and_then(|v| v.as_array()).is_some_and(|a| !a.is_empty());
+    let has_cpu = doc.get("cpu").and_then(|v| v.as_array()).is_some_and(|a| !a.is_empty());
+
+    if !has_os || !has_cpu {
+        return None;
+    }
+
+    let platform = doc
+        .get("os")
+        .and_then(|v| v.as_array())
+        .and_then(|a| a.first())
+        .and_then(|v| v.as_str())
+        .map(str::to_string)?;
+
+    let arch = doc
+        .get("cpu")
+        .and_then(|v| v.as_array())
+        .and_then(|a| a.first())
+        .and_then(|v| v.as_str())
+        .map(str::to_string)?;
+
+    // npm's standard `os`/`cpu` manifest fields have no libc/ABI concept at
+    // all, so a real disk-discovered Linux napi platform package always
+    // produces `abi: None` here -- but `napi.rs::role_to_triple`'s Linux
+    // match arms all require a concrete ABI, meaning such a package could
+    // never resolve to its triple. napi-rs's own package-generation
+    // convention encodes the ABI in the package *name*'s suffix instead
+    // (e.g. "@scope/pkg-linux-x64-gnu"), so infer it from there when the
+    // platform is linux.
+    let abi = if platform == "linux" {
+        doc.get("name")
+            .and_then(|v| v.as_str())
+            .and_then(napi_linux_abi_from_package_name)
+    } else {
+        None
+    };
+
+    Some(NpmRole::Platform { platform, arch, abi })
+}
+
+/// Infers a Linux napi-rs platform package's libc ABI from its package
+/// name's trailing suffix. Returns `None` when the name has no recognized
+/// suffix -- this infers when the signal is present, it doesn't invent an
+/// ABI that isn't actually there.
+fn napi_linux_abi_from_package_name(name: &str) -> Option<String> {
+    for abi in ["gnueabihf", "gnu", "musl"] {
+        if name.ends_with(&format!("-{abi}")) {
+            return Some(abi.to_string());
+        }
+    }
+    None
 }
 
 impl Manifest for PackageJson {
@@ -405,6 +466,10 @@ impl Manifest for PackageJson {
         }
 
         Ok(())
+    }
+
+    fn npm_role(&self) -> Option<NpmRole> {
+        npm_role_from_doc(&self.doc)
     }
 }
 
@@ -1363,5 +1428,137 @@ mod tests {
             after, content,
             "persist() with no prior mutation must reproduce the file unchanged"
         );
+    }
+
+    // --- npm_role tests (F23: moved from callisto-graph::walk's detect_npm_role) ---
+
+    /// F23 regression: `npm_role()` must derive the platform role from the
+    /// `Manifest` handle's already-parsed document, not a fresh disk read.
+    /// Proven by deleting the underlying file after `open()` and confirming
+    /// `npm_role()` still reports the correct role -- a re-implementation
+    /// that shelled out to a fresh `fs::read` internally would instead
+    /// silently report `None` here.
+    #[test]
+    fn npm_role_does_not_re_read_the_manifest_from_disk() {
+        let dir = tempdir().unwrap();
+        let manifest_path = dir.path().join("package.json");
+        fs::write(
+            &manifest_path,
+            r#"{"name":"@scope/my-lib-linux-x64-gnu","version":"1.0.0","os":["linux"],"cpu":["x64"]}"#,
+        )
+        .unwrap();
+        let manifest = open_manifest(&dir, &fs::read_to_string(&manifest_path).unwrap());
+
+        fs::remove_file(&manifest_path).unwrap();
+
+        let role = manifest.npm_role();
+        assert_eq!(
+            role,
+            Some(NpmRole::Platform {
+                platform: "linux".to_string(),
+                arch: "x64".to_string(),
+                abi: Some("gnu".to_string()),
+            }),
+            "npm_role() must still resolve correctly from the in-memory document \
+             after the underlying file is gone, proving it does no second read"
+        );
+    }
+
+    #[test]
+    fn npm_role_is_none_for_a_plain_non_platform_package() {
+        let dir = tempdir().unwrap();
+        let manifest = open_manifest(&dir, r#"{"name":"plain-pkg","version":"1.0.0"}"#);
+        assert_eq!(manifest.npm_role(), None);
+    }
+
+    #[test]
+    fn npm_role_from_doc_infers_linux_gnu_abi_from_package_name_suffix() {
+        let doc: Map<String, Value> = serde_json::from_str(
+            r#"{"name":"@scope/my-lib-linux-x64-gnu","version":"1.0.0","os":["linux"],"cpu":["x64"]}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            npm_role_from_doc(&doc),
+            Some(NpmRole::Platform {
+                platform: "linux".to_string(),
+                arch: "x64".to_string(),
+                abi: Some("gnu".to_string()),
+            })
+        );
+    }
+
+    #[test]
+    fn npm_role_from_doc_infers_linux_musl_abi_from_package_name_suffix() {
+        let doc: Map<String, Value> = serde_json::from_str(
+            r#"{"name":"@scope/my-lib-linux-arm64-musl","version":"1.0.0","os":["linux"],"cpu":["arm64"]}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            npm_role_from_doc(&doc),
+            Some(NpmRole::Platform {
+                platform: "linux".to_string(),
+                arch: "arm64".to_string(),
+                abi: Some("musl".to_string()),
+            })
+        );
+    }
+
+    #[test]
+    fn npm_role_from_doc_infers_linux_gnueabihf_abi_from_package_name_suffix() {
+        let doc: Map<String, Value> = serde_json::from_str(
+            r#"{"name":"@scope/my-lib-linux-arm-gnueabihf","version":"1.0.0","os":["linux"],"cpu":["arm"]}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            npm_role_from_doc(&doc),
+            Some(NpmRole::Platform {
+                platform: "linux".to_string(),
+                arch: "arm".to_string(),
+                abi: Some("gnueabihf".to_string()),
+            })
+        );
+    }
+
+    /// Non-Linux platforms have no ABI concept -- must not be affected by the
+    /// name-suffix inference at all.
+    #[test]
+    fn npm_role_from_doc_does_not_infer_abi_for_non_linux_platforms() {
+        let doc: Map<String, Value> = serde_json::from_str(
+            r#"{"name":"@scope/my-lib-darwin-arm64-gnu","version":"1.0.0","os":["darwin"],"cpu":["arm64"]}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            npm_role_from_doc(&doc),
+            Some(NpmRole::Platform {
+                platform: "darwin".to_string(),
+                arch: "arm64".to_string(),
+                abi: None,
+            })
+        );
+    }
+
+    /// A Linux platform package whose name has no recognized ABI suffix at
+    /// all stays `abi: None` -- this infers when it can, it doesn't invent an
+    /// ABI that isn't actually signaled anywhere.
+    #[test]
+    fn npm_role_from_doc_leaves_abi_none_when_linux_name_has_no_recognized_suffix() {
+        let doc: Map<String, Value> = serde_json::from_str(
+            r#"{"name":"@scope/my-lib-linux-x64","version":"1.0.0","os":["linux"],"cpu":["x64"]}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            npm_role_from_doc(&doc),
+            Some(NpmRole::Platform {
+                platform: "linux".to_string(),
+                arch: "x64".to_string(),
+                abi: None,
+            })
+        );
+    }
+
+    #[test]
+    fn npm_role_from_doc_returns_none_when_os_or_cpu_missing() {
+        let doc: Map<String, Value> = serde_json::from_str(r#"{"name":"plain-pkg","version":"1.0.0"}"#).unwrap();
+        assert_eq!(npm_role_from_doc(&doc), None);
     }
 }

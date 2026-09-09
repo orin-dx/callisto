@@ -1,9 +1,10 @@
 //! Path-keyed, read-only cache of opened [`Manifest`] handles.
 //!
-//! A single package manifest (e.g. one `Cargo.toml`) is consulted from three
-//! independent read-only sites during a normal command run:
+//! A single package manifest (e.g. one `Cargo.toml`) is consulted from
+//! several independent read-only sites during a normal command run:
 //!
-//! 1. [`crate::walk::ManifestWalkResolver::build`] — once to collect
+//! 1. [`crate::walk::ManifestWalkResolver::build`] — once (for npm manifests)
+//!    to detect [`Manifest::npm_role`], once to collect
 //!    [`Manifest::publish_targets`], once more to collect
 //!    [`Manifest::iter_dependencies`].
 //! 2. [`crate::Workspace::base_versions`] — once to read

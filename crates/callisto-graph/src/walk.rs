@@ -3,8 +3,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use serde_json::Value;
-
 use callisto_manifests::{Manifest, OpenContext};
 use callisto_model::{
     CommandRunner, DepEdge, Diagnostic, DiagnosticCode, DiagnosticSeverity, Ecosystem, ManifestDecl, ManifestFormat,
@@ -157,14 +155,29 @@ impl ManifestWalkResolver {
                     _ => (ManifestFormat::PackageJson, "package.json"),
                 };
                 let manifest_rel = rel_path.join(filename);
-                if let Ok(decl) = ManifestDecl::new(manifest_rel.clone(), ManifestRole::Canonical, fmt) {
-                    decls.push(decl);
+                let canonical_decl = ManifestDecl::new(manifest_rel.clone(), ManifestRole::Canonical, fmt).ok();
+                if let Some(decl) = &canonical_decl {
+                    decls.push(decl.clone());
                 }
                 // For napi platform packages (os + cpu constraints in package.json),
                 // also push a Platform-role decl so plan_publish can route them
-                // into npm_platform_packages instead of npm_main_packages.
+                // into npm_platform_packages instead of npm_main_packages. Reuses
+                // the canonical decl's manifest handle via the shared
+                // `manifest_cache` (`npm_role()`) instead of a second, raw
+                // `fs::read` of the same package.json -- the handle opened here
+                // is the same one `publish_targets`/`iter_dependencies` reuse
+                // further down.
                 if *eco == Ecosystem::Npm {
-                    let role = detect_npm_role(&root.join(&manifest_rel));
+                    let role = canonical_decl
+                        .as_ref()
+                        .and_then(|decl| open_cached(manifest_cache, decl, &ctx).ok())
+                        .and_then(|m| m.npm_role())
+                        .map(|npm_role| match npm_role {
+                            callisto_manifests::NpmRole::Platform { platform, arch, abi } => {
+                                ManifestRole::Platform { platform, arch, abi }
+                            }
+                        })
+                        .unwrap_or(ManifestRole::Canonical);
                     if let ManifestRole::Platform { .. } = role {
                         if let Ok(platform_decl) = ManifestDecl::new(manifest_rel.clone(), role.clone(), fmt) {
                             decls.push(platform_decl);
@@ -532,83 +545,6 @@ impl ManifestWalkResolver {
     }
 }
 
-/// Reads `package.json` at `abs_path` and returns `ManifestRole::Platform`
-/// when the manifest declares both `os` and `cpu` constraint arrays (the napi
-/// platform-package convention). Returns `ManifestRole::Canonical` for all
-/// other npm packages and on any read/parse failure.
-///
-/// Note: this performs a second `fs::read` on each npm `package.json` because
-/// the `manifest_cache` stores `Arc<dyn Manifest>` (which does not expose raw
-/// JSON fields like `os`/`cpu`) rather than a raw `serde_json::Value`. Fixing
-/// the redundancy would require a `Manifest::npm_role()` extension method in
-/// the `callisto-manifests` crate.
-fn detect_npm_role(abs_path: &Path) -> ManifestRole {
-    let Ok(bytes) = std::fs::read(abs_path) else {
-        return ManifestRole::Canonical;
-    };
-    let Ok(Value::Object(map)) = serde_json::from_slice(&bytes) else {
-        return ManifestRole::Canonical;
-    };
-
-    let has_os = map.get("os").and_then(|v| v.as_array()).is_some_and(|a| !a.is_empty());
-    let has_cpu = map.get("cpu").and_then(|v| v.as_array()).is_some_and(|a| !a.is_empty());
-
-    if !has_os || !has_cpu {
-        return ManifestRole::Canonical;
-    }
-
-    let Some(platform) = map
-        .get("os")
-        .and_then(|v| v.as_array())
-        .and_then(|a| a.first())
-        .and_then(|v| v.as_str())
-        .map(str::to_string)
-    else {
-        return ManifestRole::Canonical;
-    };
-
-    let Some(arch) = map
-        .get("cpu")
-        .and_then(|v| v.as_array())
-        .and_then(|a| a.first())
-        .and_then(|v| v.as_str())
-        .map(str::to_string)
-    else {
-        return ManifestRole::Canonical;
-    };
-
-    // npm's standard `os`/`cpu` manifest fields have no libc/ABI concept at
-    // all, so a real disk-discovered Linux napi platform package always
-    // produced `abi: None` here -- but `napi.rs::role_to_triple`'s Linux
-    // match arms all require a concrete ABI, meaning such a package could
-    // never resolve to its triple. napi-rs's own package-generation
-    // convention encodes the ABI in the package *name*'s suffix instead
-    // (e.g. "@scope/pkg-linux-x64-gnu"), so infer it from there when the
-    // platform is linux.
-    let abi = if platform == "linux" {
-        map.get("name")
-            .and_then(|v| v.as_str())
-            .and_then(napi_linux_abi_from_package_name)
-    } else {
-        None
-    };
-
-    ManifestRole::Platform { platform, arch, abi }
-}
-
-/// Infers a Linux napi-rs platform package's libc ABI from its package
-/// name's trailing suffix. Returns `None` when the name has no recognized
-/// suffix -- this infers when the signal is present, it doesn't invent an
-/// ABI that isn't actually there.
-fn napi_linux_abi_from_package_name(name: &str) -> Option<String> {
-    for abi in ["gnueabihf", "gnu", "musl"] {
-        if name.ends_with(&format!("-{abi}")) {
-            return Some(abi.to_string());
-        }
-    }
-    None
-}
-
 /// Explicit ecosystem precedence for primary-ID selection when a single
 /// project directory contains manifests from multiple ecosystems (e.g., both
 /// `Cargo.toml` and `package.json`). Lower value = higher priority.
@@ -849,7 +785,7 @@ mod tests {
     }
 
     /// Real disk-discovered Linux napi platform packages always have
-    /// `abi: None` from `detect_npm_role` (npm's standard `os`/`cpu`
+    /// `abi: None` from raw `os`/`cpu` detection (npm's standard `os`/`cpu`
     /// manifest fields have no libc/ABI concept), but `napi.rs::role_to_triple`'s
     /// Linux match arms all require `Some("gnu")`/`Some("musl")`/
     /// `Some("gnueabihf")` -- so before this fix, `role_to_triple` could
@@ -857,58 +793,89 @@ mod tests {
     /// triple, and `napi_drift` would spuriously report it as a
     /// declared-but-missing group member even though it's genuinely present
     /// on disk with the correct name.
+    ///
+    /// F23: role detection is now sourced from `Manifest::npm_role()` (the
+    /// already-cached handle), not a raw second `fs::read` -- these tests
+    /// drive the real `ManifestWalkResolver::build` path end to end (via
+    /// `Workspace::load`) to prove that wiring, rather than calling a
+    /// standalone `detect_npm_role` function directly (the pure ABI-inference
+    /// logic itself is now unit-tested in `callisto-manifests::npm`).
     #[test]
-    fn detect_npm_role_infers_linux_gnu_abi_from_package_name_suffix() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("package.json");
+    fn build_infers_linux_gnu_abi_from_package_name_suffix_via_npm_role() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("pkg")).unwrap();
         std::fs::write(
-            &path,
+            root.join("pkg/package.json"),
             r#"{"name":"@scope/my-lib-linux-x64-gnu","version":"1.0.0","os":["linux"],"cpu":["x64"]}"#,
         )
         .unwrap();
-
-        let role = detect_npm_role(&path);
+        let locator = crate::locate::IgnoreWalkLocator::new(root);
+        let runner = NoopRunner;
+        let ws = crate::Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace load must succeed");
+        let (_, _, role) = ws
+            .graph
+            .identity()
+            .platform
+            .get("@scope/my-lib-linux-x64-gnu")
+            .expect("platform entry must exist");
 
         assert_eq!(
-            crate::napi::role_to_triple(&role).as_deref(),
+            crate::napi::role_to_triple(role).as_deref(),
             Some("x86_64-unknown-linux-gnu"),
             "expected a resolvable triple, got role: {role:?}"
         );
     }
 
     #[test]
-    fn detect_npm_role_infers_linux_musl_abi_from_package_name_suffix() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("package.json");
+    fn build_infers_linux_musl_abi_from_package_name_suffix_via_npm_role() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("pkg")).unwrap();
         std::fs::write(
-            &path,
+            root.join("pkg/package.json"),
             r#"{"name":"@scope/my-lib-linux-arm64-musl","version":"1.0.0","os":["linux"],"cpu":["arm64"]}"#,
         )
         .unwrap();
-
-        let role = detect_npm_role(&path);
+        let locator = crate::locate::IgnoreWalkLocator::new(root);
+        let runner = NoopRunner;
+        let ws = crate::Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace load must succeed");
+        let (_, _, role) = ws
+            .graph
+            .identity()
+            .platform
+            .get("@scope/my-lib-linux-arm64-musl")
+            .expect("platform entry must exist");
 
         assert_eq!(
-            crate::napi::role_to_triple(&role).as_deref(),
+            crate::napi::role_to_triple(role).as_deref(),
             Some("aarch64-unknown-linux-musl"),
             "expected a resolvable triple, got role: {role:?}"
         );
     }
 
     #[test]
-    fn detect_npm_role_infers_linux_gnueabihf_abi_from_package_name_suffix() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("package.json");
+    fn build_infers_linux_gnueabihf_abi_from_package_name_suffix_via_npm_role() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("pkg")).unwrap();
         std::fs::write(
-            &path,
+            root.join("pkg/package.json"),
             r#"{"name":"@scope/my-lib-linux-arm-gnueabihf","version":"1.0.0","os":["linux"],"cpu":["arm"]}"#,
         )
         .unwrap();
-
-        let role = detect_npm_role(&path);
+        let locator = crate::locate::IgnoreWalkLocator::new(root);
+        let runner = NoopRunner;
+        let ws = crate::Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace load must succeed");
+        let (_, _, role) = ws
+            .graph
+            .identity()
+            .platform
+            .get("@scope/my-lib-linux-arm-gnueabihf")
+            .expect("platform entry must exist");
 
         assert_eq!(
-            crate::napi::role_to_triple(&role).as_deref(),
+            crate::napi::role_to_triple(role).as_deref(),
             Some("armv7-unknown-linux-gnueabihf"),
             "expected a resolvable triple, got role: {role:?}"
         );
@@ -918,19 +885,27 @@ mod tests {
     /// (`abi` is always `None` there) -- must not be affected by the
     /// name-suffix inference at all.
     #[test]
-    fn detect_npm_role_does_not_infer_abi_for_non_linux_platforms() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("package.json");
+    fn build_does_not_infer_abi_for_non_linux_platforms_via_npm_role() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("pkg")).unwrap();
         std::fs::write(
-            &path,
+            root.join("pkg/package.json"),
             r#"{"name":"@scope/my-lib-darwin-arm64-gnu","version":"1.0.0","os":["darwin"],"cpu":["arm64"]}"#,
         )
         .unwrap();
-
-        let role = detect_npm_role(&path);
+        let locator = crate::locate::IgnoreWalkLocator::new(root);
+        let runner = NoopRunner;
+        let ws = crate::Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace load must succeed");
+        let (_, _, role) = ws
+            .graph
+            .identity()
+            .platform
+            .get("@scope/my-lib-darwin-arm64-gnu")
+            .expect("platform entry must exist");
 
         assert_eq!(
-            role,
+            *role,
             ManifestRole::Platform {
                 platform: "darwin".to_string(),
                 arch: "arm64".to_string(),
@@ -940,22 +915,30 @@ mod tests {
     }
 
     /// A Linux platform package whose name has no recognized ABI suffix at
-    /// all stays `abi: None` -- this function infers when it can, it
-    /// doesn't invent an ABI that isn't actually signaled anywhere.
+    /// all stays `abi: None` -- this infers when it can, it doesn't invent an
+    /// ABI that isn't actually signaled anywhere.
     #[test]
-    fn detect_npm_role_leaves_abi_none_when_linux_name_has_no_recognized_suffix() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("package.json");
+    fn build_leaves_abi_none_when_linux_name_has_no_recognized_suffix_via_npm_role() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("pkg")).unwrap();
         std::fs::write(
-            &path,
+            root.join("pkg/package.json"),
             r#"{"name":"@scope/my-lib-linux-x64","version":"1.0.0","os":["linux"],"cpu":["x64"]}"#,
         )
         .unwrap();
-
-        let role = detect_npm_role(&path);
+        let locator = crate::locate::IgnoreWalkLocator::new(root);
+        let runner = NoopRunner;
+        let ws = crate::Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace load must succeed");
+        let (_, _, role) = ws
+            .graph
+            .identity()
+            .platform
+            .get("@scope/my-lib-linux-x64")
+            .expect("platform entry must exist");
 
         assert_eq!(
-            role,
+            *role,
             ManifestRole::Platform {
                 platform: "linux".to_string(),
                 arch: "x64".to_string(),
