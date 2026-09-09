@@ -1825,7 +1825,7 @@ mod tests {
 
         assert_eq!(outcome.severities.get(&pkg_live), Some(&Severity::Minor));
         assert!(
-            outcome.targets.get(&pkg_live).is_some(),
+            outcome.targets.contains_key(&pkg_live),
             "live sibling must still receive a converged target"
         );
 
