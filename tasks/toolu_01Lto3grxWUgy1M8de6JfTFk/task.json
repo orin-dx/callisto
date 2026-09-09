@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01Lto3grxWUgy1M8de6JfTFk",
+  "subagent_type": "ranger:adversary",
+  "task_description": "Verify release_store.rs error message-only downgrade",
+  "files": [
+    ".agents/plugins/bug-hunter-rust/agents/bug-hunter-remediator-rust.md",
+    ".agents/subagents/bug-hunter.md",
+    ".changeset/release-commit-cascade-authorization.md",
+    "AGENTS.md",
+    "CLAUDE.md"
+  ],
+  "started_at": "2026-09-09T15:47:37.929934-07:00",
+  "completed_at": "2026-09-09T15:47:37.931115-07:00",
+  "transcript_unavailable_reason": "transcript path unresolvable"
+}

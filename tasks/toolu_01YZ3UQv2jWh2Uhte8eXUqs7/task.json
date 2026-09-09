@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01YZ3UQv2jWh2Uhte8eXUqs7",
+  "subagent_type": "ranger:adversary",
+  "task_description": "Verify release.rs:810,813 forge-release expects",
+  "files": [
+    ".agents/plugins/bug-hunter-rust/agents/bug-hunter-remediator-rust.md",
+    ".agents/subagents/bug-hunter.md",
+    ".changeset/release-commit-cascade-authorization.md",
+    "AGENTS.md",
+    "CLAUDE.md"
+  ],
+  "started_at": "2026-09-09T15:45:29.830028-07:00",
+  "completed_at": "2026-09-09T15:45:29.830601-07:00",
+  "transcript_unavailable_reason": "transcript path unresolvable"
+}
