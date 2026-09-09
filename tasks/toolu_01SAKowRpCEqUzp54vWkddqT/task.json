@@ -1,0 +1,14 @@
+{
+  "tool_use_id": "toolu_01SAKowRpCEqUzp54vWkddqT",
+  "agent_id": "a10945fcfceb719a5",
+  "subagent_type": "general-purpose",
+  "task_description": "Unify PublishTarget capability dispatch via ecosystem.rs",
+  "files": [
+    ".agents/plugins/bug-hunter-rust/agents/bug-hunter-remediator-rust.md",
+    ".agents/subagents/bug-hunter.md",
+    "AGENTS.md",
+    "CLAUDE.md"
+  ],
+  "started_at": "2026-09-09T15:11:13.287737-07:00",
+  "completed_at": "2026-09-09T15:11:13.288087-07:00"
+}
