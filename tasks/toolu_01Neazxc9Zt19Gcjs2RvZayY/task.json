@@ -1,0 +1,14 @@
+{
+  "tool_use_id": "toolu_01Neazxc9Zt19Gcjs2RvZayY",
+  "agent_id": "ac2a19d343158eb0d",
+  "subagent_type": "general-purpose",
+  "task_description": "Scope architectural fixes for stale-error and dead provenance",
+  "files": [
+    ".agents/plugins/bug-hunter-rust/agents/bug-hunter-remediator-rust.md",
+    ".agents/subagents/bug-hunter.md",
+    "AGENTS.md",
+    "CLAUDE.md"
+  ],
+  "started_at": "2026-09-09T16:31:47.722217-07:00",
+  "completed_at": "2026-09-09T16:31:47.722893-07:00"
+}
