@@ -59,7 +59,7 @@ pub fn render_publish<W: io::Write>(report: &PublishPlan, w: &mut W) -> io::Resu
     for rel in &report.releases {
         writeln!(w, "  Tag: {} (sha: {})", rel.tag_name, rel.sha.as_str())?;
     }
-    if total_packages == 0 && report.releases.is_empty() {
+    if report.is_empty() {
         writeln!(w, "  No packages to publish.")?;
         render_diagnostics(&report.diagnostics, w)?;
         return Ok(());

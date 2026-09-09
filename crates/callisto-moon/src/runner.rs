@@ -29,7 +29,27 @@ impl CommandRunner for MoonCommandRunner {
                 stdout: String::from_utf8_lossy(&output.stdout).to_string(),
                 stderr: String::from_utf8_lossy(&output.stderr).to_string(),
             }),
-            Err(e) => Err(classify_host_failure(program, &e.to_string())),
+            Err(e) => Err(classify_native_io_error(program, &e)),
+        }
+    }
+}
+
+// Native spawn failures carry a real `std::io::Error`, so classification
+// uses `ErrorKind::NotFound` directly (mirroring
+// `callisto_cli::runner::CliCommandRunner::run`) rather than the
+// message-text heuristic below: that heuristic is a fallback for the `pdk`
+// (wasm) path in `runner_pdk.rs`, where host-exec failures carry no
+// `ErrorKind` at all.
+#[cfg(not(feature = "pdk"))]
+fn classify_native_io_error(program: &str, e: &std::io::Error) -> CommandError {
+    if e.kind() == std::io::ErrorKind::NotFound {
+        CommandError::NotFound {
+            program: program.to_string(),
+        }
+    } else {
+        CommandError::Io {
+            program: program.to_string(),
+            message: e.to_string(),
         }
     }
 }
@@ -98,5 +118,48 @@ mod tests {
             .run("callisto-definitely-not-a-real-binary", &[], &cwd)
             .unwrap_err();
         assert!(matches!(err, CommandError::NotFound { .. }));
+    }
+
+    /// Proves the native path classifies via `ErrorKind::NotFound` directly
+    /// rather than sniffing the error's `Display` text: a synthetic
+    /// `io::Error` carrying `ErrorKind::NotFound` but a message that does
+    /// NOT contain "not found" or "no such file" (so it would fail the old
+    /// string-heuristic classification) must still classify as
+    /// `CommandError::NotFound`.
+    #[cfg(not(feature = "pdk"))]
+    #[test]
+    fn classify_native_io_error_uses_error_kind_not_message_text() {
+        let e = std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "totally unrelated wording, e.g. locale-specific",
+        );
+        let err = classify_native_io_error("ghost-cmd", &e);
+        assert_eq!(
+            err,
+            CommandError::NotFound {
+                program: "ghost-cmd".to_string()
+            }
+        );
+    }
+
+    /// Sibling check: a non-`NotFound` `ErrorKind` whose message happens to
+    /// contain "not found" text must still classify as `Io`, not
+    /// `NotFound` -- proving the native path keys off `ErrorKind`, not the
+    /// message.
+    #[cfg(not(feature = "pdk"))]
+    #[test]
+    fn classify_native_io_error_does_not_misclassify_on_message_text_alone() {
+        let e = std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "file not found in a weird phrasing",
+        );
+        let err = classify_native_io_error("git", &e);
+        assert_eq!(
+            err,
+            CommandError::Io {
+                program: "git".to_string(),
+                message: e.to_string(),
+            }
+        );
     }
 }

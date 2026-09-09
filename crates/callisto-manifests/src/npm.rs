@@ -23,8 +23,7 @@ pub struct PackageJson {
 struct FormatFingerprint {
     indent: Indent,
     trailing_newline: bool,
-    line_ending: LineEnding,
-    has_bom: bool,
+    common: crate::common::FormatFingerprint,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -32,12 +31,6 @@ enum Indent {
     Spaces(u8),
     Tabs,
     DefaultTwoSpaces,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum LineEnding {
-    Lf,
-    CrLf,
 }
 
 impl PackageJson {
@@ -50,10 +43,9 @@ impl PackageJson {
             message: e.to_string(),
         })?;
 
-        let has_bom = content.starts_with('\u{FEFF}');
+        let common_fp = crate::common::FormatFingerprint::detect(&content);
         let clean_content = content.strip_prefix('\u{FEFF}').unwrap_or(&content);
-        let mut fingerprint = detect_fingerprint(clean_content);
-        fingerprint.has_bom = has_bom;
+        let fingerprint = detect_fingerprint(clean_content, common_fp);
 
         let doc: Map<String, Value> = serde_json::from_str(clean_content).map_err(|e| ManifestError::Parse {
             path: rel_path.clone(),
@@ -72,13 +64,7 @@ impl PackageJson {
     }
 }
 
-fn detect_fingerprint(content: &str) -> FormatFingerprint {
-    let line_ending = if content.contains("\r\n") {
-        LineEnding::CrLf
-    } else {
-        LineEnding::Lf
-    };
-
+fn detect_fingerprint(content: &str, common: crate::common::FormatFingerprint) -> FormatFingerprint {
     let trailing_newline = content.ends_with('\n');
 
     let mut indent = Indent::DefaultTwoSpaces;
@@ -95,12 +81,10 @@ fn detect_fingerprint(content: &str) -> FormatFingerprint {
         }
     }
 
-    let has_bom = content.starts_with('\u{FEFF}');
     FormatFingerprint {
         indent,
         trailing_newline,
-        line_ending,
-        has_bom,
+        common,
     }
 }
 
@@ -201,10 +185,17 @@ impl Manifest for PackageJson {
         }
 
         let mut out = format_json_pretty(&map, &indent_str)?;
-        if self.fingerprint.line_ending == LineEnding::CrLf {
+        if self.fingerprint.common.line_ending == crate::common::LineEnding::CrLf {
             out = out.replace("\r\n", "\n").replace('\n', "\r\n");
         }
 
+        // Trailing-newline trimming must happen strictly between the
+        // line-ending conversion (above, so a trimmed "\r\n" is measured
+        // correctly) and the BOM prepend (below, so a BOM byte is never
+        // mistaken for part of the trailing newline) -- this ordering
+        // dependency is why npm's own trailing_newline concern can't route
+        // through `common::FormatFingerprint::apply`'s single combined
+        // crlf-then-bom step the way cargo/python's simpler persist paths do.
         if !self.fingerprint.trailing_newline && out.ends_with('\n') {
             if out.ends_with("\r\n") {
                 out.truncate(out.len() - 2);
@@ -213,7 +204,7 @@ impl Manifest for PackageJson {
             }
         }
 
-        if self.fingerprint.has_bom {
+        if self.fingerprint.common.has_bom {
             out = format!("\u{FEFF}{}", out);
         }
 
@@ -1181,6 +1172,52 @@ mod tests {
             updated.contains("\t\"version\""),
             "tab indentation must be preserved after version write"
         );
+    }
+
+    /// Regression lock for the `npm.rs` half of F4's shared-fingerprint
+    /// migration: a `package.json` with CRLF line endings must keep them
+    /// across a `write_version` + `persist` round trip. `npm.rs` previously
+    /// had its own private `LineEnding` detection/reapply logic (now
+    /// migrated onto `crate::common::FormatFingerprint`) but no test ever
+    /// exercised the CRLF branch directly.
+    #[test]
+    fn preserves_crlf_line_endings_on_write() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("package.json");
+        let content = "{\r\n  \"name\": \"crlf-app\",\r\n  \"version\": \"1.0.0\"\r\n}\r\n";
+        fs::write(&path, content).unwrap();
+
+        let decl = ManifestDecl::new("package.json", ManifestRole::Canonical, ManifestFormat::PackageJson).unwrap();
+        let ctx = OpenContext {
+            workspace_root: dir.path(),
+            cargo_workspace: None,
+            npm_workspace_kind: None,
+        };
+
+        let mut pj = PackageJson::open(&decl, &ctx).unwrap();
+        pj.write_version(
+            &callisto_model::Version::parse("1.1.0", callisto_model::VersionGrammar::SemVer).unwrap(),
+            &permit(),
+        )
+        .unwrap();
+        pj.persist(&permit()).unwrap();
+
+        let updated_bytes = fs::read(&path).unwrap();
+        let updated = String::from_utf8(updated_bytes).unwrap();
+
+        assert!(
+            !updated.starts_with('\u{FEFF}'),
+            "expected no BOM to be introduced, got:\n{updated:?}"
+        );
+        assert!(
+            updated.contains("\r\n"),
+            "expected CRLF line endings to survive write, got:\n{updated:?}"
+        );
+        assert!(
+            !updated.replace("\r\n", "").contains('\n'),
+            "expected no bare LF line endings to remain, got:\n{updated:?}"
+        );
+        assert!(updated.contains("\"version\": \"1.1.0\""));
     }
 
     // --- round_trip tests ---------------------------------------------------

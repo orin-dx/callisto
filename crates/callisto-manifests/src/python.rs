@@ -16,14 +16,7 @@ pub struct PyprojectToml {
     absolute: PathBuf,
     role: ManifestRole,
     document: toml_edit::DocumentMut,
-    has_bom: bool,
-    line_ending: LineEnding,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum LineEnding {
-    Lf,
-    CrLf,
+    fingerprint: crate::common::FormatFingerprint,
 }
 
 impl PyprojectToml {
@@ -36,13 +29,8 @@ impl PyprojectToml {
             message: e.to_string(),
         })?;
 
-        let has_bom = content.starts_with('\u{FEFF}');
+        let fingerprint = crate::common::FormatFingerprint::detect(&content);
         let clean_content = content.strip_prefix('\u{FEFF}').unwrap_or(&content);
-        let line_ending = if clean_content.contains("\r\n") {
-            LineEnding::CrLf
-        } else {
-            LineEnding::Lf
-        };
 
         let doc: toml_edit::DocumentMut =
             clean_content
@@ -58,20 +46,12 @@ impl PyprojectToml {
             absolute: abs_path,
             role: decl.role.clone(),
             document: doc,
-            has_bom,
-            line_ending,
+            fingerprint,
         })
     }
 
     fn render(&self) -> String {
-        let mut out = self.document.to_string();
-        if self.line_ending == LineEnding::CrLf {
-            out = out.replace("\r\n", "\n").replace('\n', "\r\n");
-        }
-        if self.has_bom {
-            out = format!("\u{FEFF}{}", out);
-        }
-        out
+        self.fingerprint.apply(&self.document.to_string())
     }
 }
 
@@ -308,34 +288,27 @@ impl Manifest for PyprojectToml {
     fn write_version(&mut self, v: &Version, _permit: &ApplyPermit) -> Result<(), ManifestError> {
         let new_ver = v.render();
 
-        let set_with_decor = |table: &mut toml_edit::Item, key: &str| {
-            if let Some(existing) = table.get_mut(key).and_then(|i| i.as_value_mut()) {
-                let decor = existing.decor().clone();
-                let mut new_val = value(new_ver);
-                if let Some(v_mut) = new_val.as_value_mut() {
-                    *v_mut.decor_mut() = decor;
-                }
-                table[key] = new_val;
-            } else {
-                table[key] = value(new_ver);
-            }
-        };
-
         let has_project_version = self.document.get("project").and_then(|p| p.get("version")).is_some();
 
         if has_project_version {
-            if let Some(proj) = self.document.get_mut("project") {
-                set_with_decor(proj, "version");
+            if let Some(proj) = self.document.get_mut("project").and_then(|p| p.as_table_like_mut()) {
+                crate::common::set_scalar_preserving_decor(proj, "version", new_ver);
             }
-        } else if let Some(poetry) = self.document.get_mut("tool").and_then(|t| t.get_mut("poetry")) {
-            set_with_decor(poetry, "version");
+        } else if let Some(poetry) = self
+            .document
+            .get_mut("tool")
+            .and_then(|t| t.get_mut("poetry"))
+            .and_then(|p| p.as_table_like_mut())
+        {
+            crate::common::set_scalar_preserving_decor(poetry, "version", new_ver);
         } else if let Some(flit) = self
             .document
             .get_mut("tool")
             .and_then(|t| t.get_mut("flit"))
             .and_then(|f| f.get_mut("metadata"))
+            .and_then(|m| m.as_table_like_mut())
         {
-            set_with_decor(flit, "version");
+            crate::common::set_scalar_preserving_decor(flit, "version", new_ver);
         } else {
             self.document["project"]["version"] = value(new_ver);
         }

@@ -15,7 +15,9 @@
 //! `MoonCommandRunner`, so they link and run fine natively under
 //! `--features pdk` and are exercised by real native unit tests there.
 
-use crate::extension::{build_extension_output, format_graph_error_json, resolve_subcommand, ExecuteExtensionOutput};
+use crate::extension::{
+    build_extension_output, error_output, format_graph_error_json, resolve_subcommand, ExecuteExtensionOutput,
+};
 use callisto_graph::locate::LocateError;
 
 #[cfg(feature = "pdk")]
@@ -36,11 +38,7 @@ pub fn execute_extension(input: moon_pdk_api::ExecuteExtensionInput) -> ExecuteE
                 "schemaVersion": callisto_model::SCHEMA_VERSION,
                 "error": { "code": "E_LOCATE", "message": e.to_string() }
             });
-            return ExecuteExtensionOutput {
-                report: json_val.clone(),
-                rendered: e.to_string(),
-                exit_code: 1,
-            };
+            return error_output(json_val, &e);
         }
     };
 
@@ -48,11 +46,7 @@ pub fn execute_extension(input: moon_pdk_api::ExecuteExtensionInput) -> ExecuteE
         Ok(ws) => ws,
         Err(e) => {
             let json_val = format_graph_error_json(&e);
-            return ExecuteExtensionOutput {
-                report: json_val.clone(),
-                rendered: e.to_string(),
-                exit_code: 1,
-            };
+            return error_output(json_val, &e);
         }
     };
 
@@ -65,11 +59,7 @@ pub fn execute_extension(input: moon_pdk_api::ExecuteExtensionInput) -> ExecuteE
                 Ok(report) => build_extension_output(serde_json::to_value(&report), 0),
                 Err(e) => {
                     let json_val = format_graph_error_json(&e);
-                    ExecuteExtensionOutput {
-                        report: json_val.clone(),
-                        rendered: e.to_string(),
-                        exit_code: 1,
-                    }
+                    error_output(json_val, &e)
                 }
             }
         }
@@ -82,11 +72,7 @@ pub fn execute_extension(input: moon_pdk_api::ExecuteExtensionInput) -> ExecuteE
                 }
                 Err(e) => {
                     let json_val = format_graph_error_json(&e);
-                    ExecuteExtensionOutput {
-                        report: json_val.clone(),
-                        rendered: e.to_string(),
-                        exit_code: 1,
-                    }
+                    error_output(json_val, &e)
                 }
             }
         }
@@ -107,11 +93,7 @@ pub fn execute_extension(input: moon_pdk_api::ExecuteExtensionInput) -> ExecuteE
                 }
                 Err(e) => {
                     let json_val = format_graph_error_json(&e);
-                    ExecuteExtensionOutput {
-                        report: json_val.clone(),
-                        rendered: e.to_string(),
-                        exit_code: 1,
-                    }
+                    error_output(json_val, &e)
                 }
             }
         }
