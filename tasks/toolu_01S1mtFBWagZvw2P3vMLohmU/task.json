@@ -1,0 +1,11 @@
+{
+  "tool_use_id": "toolu_01S1mtFBWagZvw2P3vMLohmU",
+  "subagent_type": "ranger:recon",
+  "task_description": "Ranger recon, corrected worktree path",
+  "files": [
+    ".changeset/release-commit-cascade-authorization.md"
+  ],
+  "started_at": "2026-09-08T15:37:12.510711-07:00",
+  "completed_at": "2026-09-08T15:37:12.511232-07:00",
+  "transcript_unavailable_reason": "transcript path unresolvable"
+}

@@ -1,0 +1,11 @@
+{
+  "tool_use_id": "toolu_013g73X1BVxS9UCHkp8dBp6R",
+  "subagent_type": "ranger:scanner",
+  "task_description": "Ranger scanner: moon/fixtures crates",
+  "files": [
+    ".changeset/release-commit-cascade-authorization.md"
+  ],
+  "started_at": "2026-09-08T15:39:07.01924-07:00",
+  "completed_at": "2026-09-08T15:39:07.01966-07:00",
+  "transcript_unavailable_reason": "transcript path unresolvable"
+}

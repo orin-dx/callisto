@@ -1,0 +1,11 @@
+{
+  "tool_use_id": "toolu_01EY6Xpmrvuy6gmzi4gjTwjM",
+  "subagent_type": "ranger:scanner",
+  "task_description": "Ranger scanner: format/conventional/changelog crates",
+  "files": [
+    ".changeset/release-commit-cascade-authorization.md"
+  ],
+  "started_at": "2026-09-08T15:39:04.637309-07:00",
+  "completed_at": "2026-09-08T15:39:04.637578-07:00",
+  "transcript_unavailable_reason": "transcript path unresolvable"
+}

@@ -1,0 +1,11 @@
+{
+  "tool_use_id": "toolu_01FKpqVUreWmkDjutCpwjZW2",
+  "subagent_type": "ranger:scanner",
+  "task_description": "Ranger scanner: callisto-manifests crate",
+  "files": [
+    ".changeset/release-commit-cascade-authorization.md"
+  ],
+  "started_at": "2026-09-08T15:39:02.878262-07:00",
+  "completed_at": "2026-09-08T15:39:02.8785-07:00",
+  "transcript_unavailable_reason": "transcript path unresolvable"
+}

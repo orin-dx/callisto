@@ -1,0 +1,11 @@
+{
+  "tool_use_id": "toolu_01WfSeh2GUh8hzG7ZUvMyrrJ",
+  "subagent_type": "ranger:scanner",
+  "task_description": "Ranger scanner: callisto-graph config/locate/identity",
+  "files": [
+    ".changeset/release-commit-cascade-authorization.md"
+  ],
+  "started_at": "2026-09-08T15:38:56.259393-07:00",
+  "completed_at": "2026-09-08T15:38:56.259658-07:00",
+  "transcript_unavailable_reason": "transcript path unresolvable"
+}

@@ -1,0 +1,11 @@
+{
+  "tool_use_id": "toolu_01Q6dvpECt1maFYSUTeJZdQq",
+  "subagent_type": "ranger:scanner",
+  "task_description": "Ranger scanner: callisto-graph plan/cascade/aggregate",
+  "files": [
+    ".changeset/release-commit-cascade-authorization.md"
+  ],
+  "started_at": "2026-09-08T15:38:54.239634-07:00",
+  "completed_at": "2026-09-08T15:38:54.239866-07:00",
+  "transcript_unavailable_reason": "transcript path unresolvable"
+}

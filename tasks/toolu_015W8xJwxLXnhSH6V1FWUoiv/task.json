@@ -1,0 +1,11 @@
+{
+  "tool_use_id": "toolu_015W8xJwxLXnhSH6V1FWUoiv",
+  "subagent_type": "ranger:scanner",
+  "task_description": "Ranger scanner: callisto-graph release/publish/tag commands",
+  "files": [
+    ".changeset/release-commit-cascade-authorization.md"
+  ],
+  "started_at": "2026-09-08T15:38:51.508426-07:00",
+  "completed_at": "2026-09-08T15:38:51.508648-07:00",
+  "transcript_unavailable_reason": "transcript path unresolvable"
+}
