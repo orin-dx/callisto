@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.10.7-nightly.202609090626.b58e65cd7",
+  "checkpoint_id": "01M23X46KP5MKW0A03CMSNM3TK",
+  "strategy": "manual-commit",
+  "branch": "fix/bisync-yanked-dependency",
+  "checkpoints_count": 5,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 126,
+    "cache_creation_tokens": 682601,
+    "cache_read_tokens": 36559988,
+    "output_tokens": 44725,
+    "api_call_count": 63,
+    "subagent_tokens": {
+      "input_tokens": 500,
+      "cache_creation_tokens": 596578,
+      "cache_read_tokens": 35616130,
+      "output_tokens": 86650,
+      "api_call_count": 250
+    }
+  }
+}
