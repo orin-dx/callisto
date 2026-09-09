@@ -145,6 +145,7 @@ fn snapshot_dry_run_writes_nothing() {
             SnapshotArgs {
                 tag: "canary".to_string(),
                 strict: false,
+                strict_graph: false,
             },
             &global(root, true),
         )
@@ -255,6 +256,7 @@ fn tag_dry_run_writes_nothing() {
                 plan,
                 floating_major: true,
                 strict: false,
+                strict_graph: false,
             },
             &global(root, true),
         )

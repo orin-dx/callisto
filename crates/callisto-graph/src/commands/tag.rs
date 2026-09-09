@@ -1,5 +1,5 @@
 use callisto_model::{ApplyPermit, CommandRunner, CreatedTag, PublishPlan, TagReport, SCHEMA_VERSION};
-use callisto_vcs::{GitDataSource, TagSignPolicy, VcsError};
+use callisto_vcs::{GitAccess, GitDataSource, TagSignPolicy, VcsError};
 
 use crate::error::GraphError;
 use crate::resolver::DependencyResolver;
@@ -39,6 +39,34 @@ fn plan_floating_major<R: CommandRunner, D: DependencyResolver>(
     };
     let already_existed = ws.tags()?.contains_tag(major_tag.as_str());
     Ok(Some((major_tag, already_existed)))
+}
+
+/// Resolves the sha a tag report should carry for `tag_str`: the tag's actual
+/// target if it already exists, or `release.sha` if it doesn't yet exist.
+/// Shared by the preview and write branches of [`create_tags_with_options`]
+/// so a tag that already exists can't be reported with a different sha
+/// depending on which branch resolved it -- mirrors [`plan_floating_major`]'s
+/// role for the floating-major case.
+fn resolve_existing_or_release_sha<R: CommandRunner, D: DependencyResolver>(
+    ws: &Workspace<'_, R, D>,
+    git: &GitAccess<'_>,
+    tag_str: &str,
+    release: &callisto_model::ReleaseEntry,
+) -> Result<(callisto_model::CommitSha, bool), GraphError> {
+    let already_existed = ws.tags()?.contains_tag(tag_str);
+    let sha = if already_existed {
+        match git.resolve_commit(tag_str)? {
+            Some(actual) => actual,
+            None => {
+                return Err(GraphError::Vcs(VcsError::RefNotFound {
+                    ref_name: tag_str.to_string(),
+                }))
+            }
+        }
+    } else {
+        release.sha.clone()
+    };
+    Ok((sha, already_existed))
 }
 
 pub fn create_tags<R: CommandRunner, D: DependencyResolver>(
@@ -92,19 +120,7 @@ pub fn create_tags_with_options<R: CommandRunner, D: DependencyResolver>(
                 }
             }
 
-            let already_existed = ws.tags()?.contains_tag(tag_str);
-            let sha = if already_existed {
-                match git.resolve_commit(tag_str)? {
-                    Some(actual) => actual,
-                    None => {
-                        return Err(GraphError::Vcs(VcsError::RefNotFound {
-                            ref_name: tag_str.to_string(),
-                        }))
-                    }
-                }
-            } else {
-                release.sha.clone()
-            };
+            let (sha, already_existed) = resolve_existing_or_release_sha(ws, git, tag_str, release)?;
 
             tags.push(CreatedTag {
                 package: release.package.clone(),
@@ -116,18 +132,9 @@ pub fn create_tags_with_options<R: CommandRunner, D: DependencyResolver>(
             continue;
         };
 
-        let already_existed = ws.tags()?.contains_tag(tag_str);
+        let (sha, already_existed) = resolve_existing_or_release_sha(ws, git, tag_str, release)?;
 
-        let sha = if already_existed {
-            match git.resolve_commit(tag_str)? {
-                Some(actual) => actual,
-                None => {
-                    return Err(GraphError::Vcs(VcsError::RefNotFound {
-                        ref_name: tag_str.to_string(),
-                    }))
-                }
-            }
-        } else {
+        if !already_existed {
             let msg = format!("Release {}", tag_str);
             git.create_tag(
                 tag_str,
@@ -136,8 +143,7 @@ pub fn create_tags_with_options<R: CommandRunner, D: DependencyResolver>(
                 TagSignPolicy::RespectRepoConfig,
                 permit,
             )?;
-            release.sha.clone()
-        };
+        }
 
         if opts.floating_major {
             if let Some((major_tag, already_existed)) = plan_floating_major(ws, release)? {
