@@ -107,23 +107,7 @@ pub fn apply_version_plan<R: CommandRunner>(
     let mut outcome = ApplyOutcome::default();
     let mut modified_paths = Vec::new();
 
-    let cargo_workspace = if root.join("Cargo.toml").exists() {
-        if let Ok(resolver) = WorkspaceCargoResolver::load(&root.join("Cargo.toml")) {
-            resolver.inheritance().ok().map(std::sync::Arc::new)
-        } else {
-            None
-        }
-    } else {
-        None
-    };
-
-    let npm_workspace_kind = callisto_manifests::detect_npm_workspace_kind(root).ok().flatten();
-
-    let ctx = OpenContext {
-        workspace_root: root,
-        cargo_workspace,
-        npm_workspace_kind,
-    };
+    let ctx = OpenContext::for_workspace_root(root);
 
     let classification = classify_manifest_writes(plan);
 
