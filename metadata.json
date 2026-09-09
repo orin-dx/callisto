@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.10.7-nightly.202609080625.78a655db4",
+  "checkpoint_id": "01M23A7S5F9GJPVPNCGFQHHGMY",
+  "strategy": "manual-commit",
+  "branch": "fix/graph-correctness-batch",
+  "checkpoints_count": 2,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 24,
+    "cache_creation_tokens": 25626,
+    "cache_read_tokens": 4979744,
+    "output_tokens": 6159,
+    "api_call_count": 12
+  }
+}
