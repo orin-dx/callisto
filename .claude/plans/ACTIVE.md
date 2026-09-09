@@ -375,6 +375,14 @@ Confirmed live in PR #16's own release run: `callisto-action`'s tag-push step (`
 
 **Follow-up closed** (2026-08-27): all 9 stale `@0` floating tags manually force-moved to their `@0.5.0` commit and force-pushed to the remote, confirmed via `git ls-remote --tags origin`. `callisto-fixtures` correctly has no `@0` tag (`publish = false`, never released). Future releases self-correct via the #18 fix.
 
+### PLAN-RELEASE-PR-API-COMMIT-015: Release-PR executor retires `git push` — DONE
+
+Spec: `.claude/specs/SPEC-RELEASE-PR-DECISION-014.json`. Plan: `.claude/plans/PLAN-RELEASE-PR-API-COMMIT-015.json` (T00-T05, all complete; plan's own `status` field was left at `in-progress` after the work shipped -- corrected here, this entry is that correction).
+
+Root cause: the built-in `GITHUB_TOKEN` cannot push a ref whose diff touches `.github/workflows/*` on a public repo (confirmed via GitHub Actions run 33679599559). The managed release-PR branch's `git push` therefore broke every time `main`'s own workflow files changed after the branch was cut, and the prior mitigation (closing the stale PR and opening a new SHA-suffixed one) caused real PR churn. Spike (T00) confirmed empirically against the real repo that a GraphQL `createCommitOnBranch` (restricted to non-workflow paths, parented on the current base commit) followed by a plain REST ref move is not treated as a workflow write by GitHub's restriction, unlike `git push` or `createCommitOnBranch`'s own `fileChanges`.
+
+Implementation: `ReleasePrActionV2`/`ReleasePrSnapshotV2`/`ReleasePrCommitPlanV1` (callisto-model, schema v2, `Supersede` removed) (`b1c8c1be`); `ShellGit::staged_changes_since` (callisto-vcs) (`3d4b1aa6`); `callisto release-pr commit-plan` CLI subcommand (`ab4a9f8f`); `create-or-update-release-pr.sh` rewritten to stage via a deterministic staging branch + `createCommitOnBranch`, verify tree equality against `git write-tree`, then move the real branch's ref via REST -- no `git push` anywhere in the script (`98f45f60`); specs/docs updated to describe the forge-commit-API architecture (`a1f1ebcc`). Confirmed live on `main`: no `git push` in the action script, `commit-plan` subcommand present and tested, `staged_changes_since` present and tested.
+
 ### 2026-08-12 workspace audit — CLOSED
 
 All 8 critical/high findings were fixed the same session they were found (see above). The remaining 31 medium/low findings (architecture, modeling, correctness, security, performance, deps, tests, docs) were re-verified against current code via a 31-agent parallel workflow on 2026-08-27: all 31 confirmed FIXED, closed as side effects of the Track 1-9/B/E/F/G/Manifest-Persist work since. 4 spot-checked by hand to confirm the verdicts weren't superficial. Nothing open from this audit. Detail: `project_workspace_audit_2026-08.md` in memory.
