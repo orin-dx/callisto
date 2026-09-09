@@ -216,6 +216,137 @@ impl std::fmt::Display for Requirement {
     }
 }
 
+/// Splits a bare `major[.minor[.patch]]` version core (no pre-release/local
+/// suffix, at most three dotted integer components) into its components.
+/// Returns `None` for anything else -- a caret/tilde/wildcard clause whose
+/// core doesn't fit this shape (e.g. `^1.2.3-beta`) is not normalized here;
+/// the caller falls through to a raw PEP 440 parse attempt (which will fail)
+/// and ultimately an opaque fallback, rather than mis-normalizing it.
+fn parse_version_core(s: &str) -> Option<(u64, Option<u64>, Option<u64>)> {
+    let mut parts = s.split('.');
+    let major: u64 = parts.next()?.parse().ok()?;
+    let minor = parts.next().map(str::parse).transpose().ok()?;
+    let patch = parts.next().map(str::parse).transpose().ok()?;
+    if parts.next().is_some() {
+        return None;
+    }
+    Some((major, minor, patch))
+}
+
+/// Expands a Poetry caret clause's version core (the part after `^`) into an
+/// equivalent PEP 440 range. Caret allows changes that do not modify the
+/// leftmost non-zero component of `major.minor.patch` -- see
+/// <https://python-poetry.org/docs/dependency-specification/#caret-requirements>.
+fn normalize_caret(rest: &str) -> Option<String> {
+    let (major, minor, patch) = parse_version_core(rest)?;
+    let lower = format!("{major}.{}.{}", minor.unwrap_or(0), patch.unwrap_or(0));
+
+    let upper = if major > 0 {
+        format!("{}.0.0", major + 1)
+    } else if let Some(min) = minor {
+        if min > 0 {
+            format!("0.{}.0", min + 1)
+        } else if let Some(pat) = patch {
+            format!("0.0.{}", pat + 1)
+        } else {
+            "0.1.0".to_string()
+        }
+    } else {
+        "1.0.0".to_string()
+    };
+
+    Some(format!(">={lower},<{upper}"))
+}
+
+/// Expands a Poetry tilde clause's version core (the part after `~`) into an
+/// equivalent PEP 440 range. Tilde allows patch-level changes when a minor
+/// version is given, otherwise major-level changes -- see
+/// <https://python-poetry.org/docs/dependency-specification/#tilde-requirements>.
+fn normalize_tilde(rest: &str) -> Option<String> {
+    let (major, minor, patch) = parse_version_core(rest)?;
+    let lower = format!("{major}.{}.{}", minor.unwrap_or(0), patch.unwrap_or(0));
+    let upper = match minor {
+        Some(min) => format!("{major}.{}.0", min + 1),
+        None => format!("{}.0.0", major + 1),
+    };
+    Some(format!(">={lower},<{upper}"))
+}
+
+/// Expands a bare Poetry wildcard clause (`1.*`, `1.2.*`) into an equivalent
+/// PEP 440 range. Does not handle wildcards already attached to an explicit
+/// operator (`==1.2.*`, `!=1.2.*`) -- those are valid PEP 440 as-is and must
+/// not reach this function (see `normalize_poetry_clause`).
+fn normalize_wildcard(clause: &str) -> Option<String> {
+    let core = clause.strip_suffix(".*")?;
+    if core.is_empty() {
+        return None;
+    }
+    let mut parts = core.split('.');
+    let major: u64 = parts.next()?.parse().ok()?;
+    match parts.next() {
+        None => Some(format!(">={major}.0.0,<{}.0.0", major + 1)),
+        Some(minor_str) => {
+            if parts.next().is_some() {
+                return None;
+            }
+            let minor: u64 = minor_str.parse().ok()?;
+            Some(format!(">={major}.{minor}.0,<{major}.{}.0", minor + 1))
+        }
+    }
+}
+
+/// Normalizes a single comma-separated clause of a Poetry version
+/// constraint. Only bare caret/tilde/wildcard clauses are rewritten; a
+/// clause that's already PEP 440-compatible (`>=1.2`, `~=1.2.3`, `==1.2.*`)
+/// passes through unchanged, since Poetry accepts standard PEP 440 syntax
+/// verbatim alongside its own caret/tilde/wildcard extensions.
+fn normalize_poetry_clause(clause: &str) -> String {
+    if clause == "*" {
+        return String::new();
+    }
+    if let Some(rest) = clause.strip_prefix('^') {
+        if let Some(normalized) = normalize_caret(rest) {
+            return normalized;
+        }
+    } else if let Some(rest) = clause.strip_prefix('~') {
+        // Distinguish Poetry's bare tilde ("~1.2.3") from PEP 440's
+        // compatible-release operator ("~=1.2.3"), which is already valid.
+        if !rest.starts_with('=') {
+            if let Some(normalized) = normalize_tilde(rest) {
+                return normalized;
+            }
+        }
+    } else if clause.starts_with(|c: char| c.is_ascii_digit()) && clause.contains('*') {
+        if let Some(normalized) = normalize_wildcard(clause) {
+            return normalized;
+        }
+    }
+    clause.to_string()
+}
+
+/// Normalizes a Poetry-style version constraint -- which allows caret (`^`),
+/// tilde (`~`), and wildcard (`*`) syntax on top of PEP 440, see
+/// <https://python-poetry.org/docs/dependency-specification/#version-constraints>
+/// -- into a comma-joined PEP 440 range string that `pep440_rs` can parse
+/// directly.
+///
+/// Each comma-separated clause is normalized independently, so compound
+/// constraints like `^1.2,!=1.2.5` are handled correctly. A clause this
+/// normalizer doesn't recognize (or can't decompose, e.g. a caret applied to
+/// a pre-release version) passes through unchanged; the subsequent
+/// `VersionReq::parse` attempt then fails on it, and the caller falls back
+/// to an opaque dependency entry rather than silently dropping the
+/// dependency.
+fn normalize_poetry_version_spec(raw: &str) -> String {
+    raw.split(',')
+        .map(str::trim)
+        .filter(|clause| !clause.is_empty())
+        .map(normalize_poetry_clause)
+        .filter(|clause| !clause.is_empty())
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
 impl Manifest for PyprojectToml {
     fn persist(&mut self, permit: &ApplyPermit) -> Result<(), ManifestError> {
         let content = self.render();
@@ -331,15 +462,25 @@ impl Manifest for PyprojectToml {
                     if let Some(req) = Requirement::parse(full_req_str) {
                         let req_str = req.spec.clone().unwrap_or_else(|| "*".to_string());
                         let parsed_req_str = req.spec.as_deref().unwrap_or(">=0.0.0");
-                        if let Ok(spec) = VersionReq::parse(parsed_req_str, Ecosystem::Pypi) {
-                            entries.push(DependencyEntry {
-                                name: req.name.clone(),
-                                inherited: false,
-                                kind: DepKind::Runtime,
-                                spec: DepSpec::Range(spec, req_str),
-                            });
-                        }
+                        let spec = match VersionReq::parse(parsed_req_str, Ecosystem::Pypi) {
+                            Ok(spec) => DepSpec::Range(spec, req_str),
+                            // A PEP 508 clause `pep440_rs` can't parse (exotic
+                            // or malformed syntax) -- keep the dependency
+                            // visible in the graph rather than silently
+                            // dropping it.
+                            Err(_) => DepSpec::Opaque(req_str),
+                        };
+                        entries.push(DependencyEntry {
+                            name: req.name.clone(),
+                            inherited: false,
+                            kind: DepKind::Runtime,
+                            spec,
+                        });
                     }
+                    // else: `Requirement::parse` couldn't extract even a
+                    // package name (e.g. an empty string or a marker-only
+                    // fragment) -- there's no name to key a `DependencyEntry`
+                    // on, so this genuinely can't be represented.
                 }
             }
         }
@@ -356,24 +497,52 @@ impl Manifest for PyprojectToml {
                 if name == "python" {
                     continue;
                 }
+                // `as_table_like()` covers both inline tables
+                // (`foo = { version = "^1.2" }`) and dotted-table syntax
+                // (`[tool.poetry.dependencies.foo]` / `version = "^1.2"`),
+                // which parse to different `toml_edit::Item` variants but
+                // must both be recognized -- previously only the inline-table
+                // variant was handled, so a dotted-table Poetry dependency
+                // silently vanished from the graph entirely.
                 let raw_req = match item {
                     toml_edit::Item::Value(toml_edit::Value::String(s)) => Some(s.value().as_str()),
-                    toml_edit::Item::Value(toml_edit::Value::InlineTable(t)) => {
-                        t.get("version").and_then(|v| v.as_str())
-                    }
-                    _ => None,
+                    _ => item
+                        .as_table_like()
+                        .and_then(|t| t.get("version"))
+                        .and_then(|v| v.as_str()),
                 };
 
-                if let Some(req_str) = raw_req {
-                    if let Ok(spec) = VersionReq::parse(req_str, Ecosystem::Pypi) {
-                        entries.push(DependencyEntry {
-                            name: name.to_string(),
-                            inherited: false,
-                            kind: DepKind::Runtime,
-                            spec: DepSpec::Range(spec, req_str.to_string()),
-                        });
+                let spec = match raw_req {
+                    Some(req_str) => {
+                        // Poetry allows caret/tilde/wildcard syntax on top of
+                        // PEP 440 (e.g. `^1.2`, `~1.2.3`, `1.*`), which
+                        // `pep440_rs` cannot parse directly -- normalize it
+                        // to an equivalent PEP 440 range first.
+                        let normalized = normalize_poetry_version_spec(req_str);
+                        match VersionReq::parse(&normalized, Ecosystem::Pypi) {
+                            Ok(spec) => DepSpec::Range(spec, req_str.to_string()),
+                            // Genuinely unrepresentable (syntax this
+                            // normalizer doesn't cover) -- never silently
+                            // drop the dependency; keep it visible in the
+                            // graph as an opaque spec instead.
+                            Err(_) => DepSpec::Opaque(req_str.to_string()),
+                        }
                     }
-                }
+                    // No `version` key at all -- a path/git/url dependency
+                    // (e.g. `foo = { git = "...", tag = "v1.0" }`) or an
+                    // unrecognized value shape. Still must not silently
+                    // vanish from the graph.
+                    None => {
+                        DepSpec::Opaque("non-versioned dependency (path/git/url or unrecognized shape)".to_string())
+                    }
+                };
+
+                entries.push(DependencyEntry {
+                    name: name.to_string(),
+                    inherited: false,
+                    kind: DepKind::Runtime,
+                    spec,
+                });
             }
         }
 
@@ -1067,6 +1236,331 @@ dependencies = [
         assert_eq!(deps.len(), 2);
         assert_eq!(deps[0].name, "requests");
         assert_eq!(deps[1].name, "urllib3");
+    }
+
+    // -- Poetry caret/tilde/wildcard normalization ---------------------------
+
+    #[test]
+    fn normalize_poetry_caret_full_triple() {
+        assert_eq!(normalize_poetry_version_spec("^1.2.3"), ">=1.2.3,<2.0.0");
+    }
+
+    #[test]
+    fn normalize_poetry_caret_major_minor() {
+        assert_eq!(normalize_poetry_version_spec("^1.2"), ">=1.2.0,<2.0.0");
+    }
+
+    #[test]
+    fn normalize_poetry_caret_major_only() {
+        assert_eq!(normalize_poetry_version_spec("^1"), ">=1.0.0,<2.0.0");
+    }
+
+    #[test]
+    fn normalize_poetry_caret_leading_zero_major_pins_minor() {
+        assert_eq!(normalize_poetry_version_spec("^0.2.3"), ">=0.2.3,<0.3.0");
+    }
+
+    #[test]
+    fn normalize_poetry_caret_leading_zero_major_and_minor_pins_patch() {
+        assert_eq!(normalize_poetry_version_spec("^0.0.3"), ">=0.0.3,<0.0.4");
+    }
+
+    #[test]
+    fn normalize_poetry_caret_zero_major_minor_only() {
+        assert_eq!(normalize_poetry_version_spec("^0.0"), ">=0.0.0,<0.1.0");
+    }
+
+    #[test]
+    fn normalize_poetry_caret_zero_major_only() {
+        assert_eq!(normalize_poetry_version_spec("^0"), ">=0.0.0,<1.0.0");
+    }
+
+    #[test]
+    fn normalize_poetry_tilde_full_triple() {
+        assert_eq!(normalize_poetry_version_spec("~1.2.3"), ">=1.2.3,<1.3.0");
+    }
+
+    #[test]
+    fn normalize_poetry_tilde_major_minor() {
+        assert_eq!(normalize_poetry_version_spec("~1.2"), ">=1.2.0,<1.3.0");
+    }
+
+    #[test]
+    fn normalize_poetry_tilde_major_only() {
+        assert_eq!(normalize_poetry_version_spec("~1"), ">=1.0.0,<2.0.0");
+    }
+
+    #[test]
+    fn normalize_poetry_bare_wildcard_matches_any() {
+        assert_eq!(normalize_poetry_version_spec("*"), "");
+    }
+
+    #[test]
+    fn normalize_poetry_wildcard_major() {
+        assert_eq!(normalize_poetry_version_spec("1.*"), ">=1.0.0,<2.0.0");
+    }
+
+    #[test]
+    fn normalize_poetry_wildcard_major_minor() {
+        assert_eq!(normalize_poetry_version_spec("1.2.*"), ">=1.2.0,<1.3.0");
+    }
+
+    #[test]
+    fn normalize_poetry_leaves_pep440_operator_wildcard_untouched() {
+        // "==1.2.*" is already valid PEP 440 (wildcard equality) -- must not
+        // be mistaken for Poetry's bare wildcard syntax and rewritten.
+        assert_eq!(normalize_poetry_version_spec("==1.2.*"), "==1.2.*");
+    }
+
+    #[test]
+    fn normalize_poetry_leaves_plain_pep440_range_untouched() {
+        assert_eq!(normalize_poetry_version_spec(">=1.2,<1.5"), ">=1.2,<1.5");
+    }
+
+    #[test]
+    fn normalize_poetry_leaves_compatible_release_operator_untouched() {
+        // "~=1.2.3" is PEP 440's own compatible-release operator, distinct
+        // from Poetry's bare tilde "~1.2.3" -- must not be re-normalized.
+        assert_eq!(normalize_poetry_version_spec("~=1.2.3"), "~=1.2.3");
+    }
+
+    #[test]
+    fn normalize_poetry_combines_caret_with_explicit_exclusion() {
+        assert_eq!(normalize_poetry_version_spec("^1.2,!=1.2.5"), ">=1.2.0,<2.0.0,!=1.2.5");
+    }
+
+    #[test]
+    fn all_normalized_poetry_forms_parse_as_valid_pep440() {
+        for raw in [
+            "^1.2.3", "^0.2.3", "^0.0.3", "^0.0", "^0", "~1.2.3", "~1.2", "~1", "*", "1.*", "1.2.*",
+        ] {
+            let normalized = normalize_poetry_version_spec(raw);
+            assert!(
+                VersionReq::parse(&normalized, Ecosystem::Pypi).is_ok(),
+                "expected `{raw}` (normalized to `{normalized}`) to parse as valid PEP 440"
+            );
+        }
+    }
+
+    // -- Poetry caret/tilde/wildcard dependency graph visibility -------------
+
+    fn poetry_manifest_with_dependency(dep_line: &str) -> (tempfile::TempDir, PathBuf) {
+        let dir = tempdir().unwrap();
+        let pyproject_path = dir.path().join("pyproject.toml");
+        let content = format!(
+            "[tool.poetry]\nname = \"my-app\"\nversion = \"0.1.0\"\n\n[tool.poetry.dependencies]\npython = \"^3.9\"\n{dep_line}\n"
+        );
+        fs::write(&pyproject_path, content).unwrap();
+        (dir, pyproject_path)
+    }
+
+    fn open_poetry_manifest(dir: &tempfile::TempDir) -> PyprojectToml {
+        let decl = ManifestDecl {
+            path: PathBuf::from("pyproject.toml"),
+            role: ManifestRole::Canonical,
+            format: ManifestFormat::PyprojectToml,
+        };
+        let ctx = OpenContext {
+            workspace_root: dir.path(),
+            cargo_workspace: None,
+            npm_workspace_kind: None,
+        };
+        PyprojectToml::open(&decl, &ctx).unwrap()
+    }
+
+    #[test]
+    fn poetry_caret_dependency_appears_in_dependency_graph_not_silently_dropped() {
+        let (dir, _path) = poetry_manifest_with_dependency("upstream-lib = \"^1.2.3\"");
+        let manifest = open_poetry_manifest(&dir);
+
+        let deps: Vec<_> = manifest.iter_dependencies().collect();
+        let entry = deps
+            .iter()
+            .find(|e| e.name == "upstream-lib")
+            .expect("poetry caret dependency must appear in the dependency graph, not be silently dropped");
+
+        let DepSpec::Range(req, raw) = &entry.spec else {
+            panic!(
+                "expected a Range spec carrying a usable VersionReq, got {:?}",
+                entry.spec
+            );
+        };
+        assert_eq!(
+            raw, "^1.2.3",
+            "original Poetry spec text should be preserved for display"
+        );
+
+        // The parsed constraint must actually gate the version-bump cascade
+        // correctly, not merely exist: versions inside [1.2.3, 2.0.0) match,
+        // versions outside do not.
+        assert!(req.matches(&make_pep440_version("1.2.3")).unwrap());
+        assert!(req.matches(&make_pep440_version("1.9.9")).unwrap());
+        assert!(!req.matches(&make_pep440_version("1.2.2")).unwrap());
+        assert!(!req.matches(&make_pep440_version("2.0.0")).unwrap());
+    }
+
+    #[test]
+    fn poetry_tilde_dependency_appears_in_dependency_graph() {
+        let (dir, _path) = poetry_manifest_with_dependency("upstream-lib = \"~1.2.3\"");
+        let manifest = open_poetry_manifest(&dir);
+
+        let deps: Vec<_> = manifest.iter_dependencies().collect();
+        let entry = deps
+            .iter()
+            .find(|e| e.name == "upstream-lib")
+            .expect("poetry tilde dependency must appear in the dependency graph");
+
+        let DepSpec::Range(req, _) = &entry.spec else {
+            panic!("expected a Range spec, got {:?}", entry.spec);
+        };
+        assert!(req.matches(&make_pep440_version("1.2.9")).unwrap());
+        assert!(!req.matches(&make_pep440_version("1.3.0")).unwrap());
+    }
+
+    #[test]
+    fn poetry_wildcard_dependency_appears_in_dependency_graph() {
+        let (dir, _path) = poetry_manifest_with_dependency("upstream-lib = \"1.*\"");
+        let manifest = open_poetry_manifest(&dir);
+
+        let deps: Vec<_> = manifest.iter_dependencies().collect();
+        let entry = deps
+            .iter()
+            .find(|e| e.name == "upstream-lib")
+            .expect("poetry wildcard dependency must appear in the dependency graph");
+
+        let DepSpec::Range(req, _) = &entry.spec else {
+            panic!("expected a Range spec, got {:?}", entry.spec);
+        };
+        assert!(req.matches(&make_pep440_version("1.5.0")).unwrap());
+        assert!(!req.matches(&make_pep440_version("2.0.0")).unwrap());
+    }
+
+    #[test]
+    fn poetry_bare_star_dependency_matches_any_version() {
+        let (dir, _path) = poetry_manifest_with_dependency("upstream-lib = \"*\"");
+        let manifest = open_poetry_manifest(&dir);
+
+        let deps: Vec<_> = manifest.iter_dependencies().collect();
+        let entry = deps
+            .iter()
+            .find(|e| e.name == "upstream-lib")
+            .expect("poetry `*` dependency must appear in the dependency graph");
+
+        let DepSpec::Range(req, _) = &entry.spec else {
+            panic!("expected a Range spec, got {:?}", entry.spec);
+        };
+        assert!(req.matches(&make_pep440_version("0.0.1")).unwrap());
+        assert!(req.matches(&make_pep440_version("99.0.0")).unwrap());
+    }
+
+    #[test]
+    fn poetry_inline_table_caret_dependency_appears_in_dependency_graph() {
+        let (dir, _path) =
+            poetry_manifest_with_dependency("upstream-lib = { version = \"^2.0\", extras = [\"speedups\"] }");
+        let manifest = open_poetry_manifest(&dir);
+
+        let deps: Vec<_> = manifest.iter_dependencies().collect();
+        let entry = deps
+            .iter()
+            .find(|e| e.name == "upstream-lib")
+            .expect("poetry inline-table caret dependency must appear in the dependency graph");
+        assert!(matches!(entry.spec, DepSpec::Range(_, _)));
+    }
+
+    #[test]
+    fn poetry_dotted_table_dependency_appears_in_dependency_graph() {
+        // Poetry also accepts dotted-table syntax as an alternative to inline
+        // tables -- this parses to a different `toml_edit::Item` variant
+        // (`Item::Table`, not `Item::Value(Value::InlineTable)`) and was
+        // previously unhandled entirely, silently dropping the dependency.
+        let dir = tempdir().unwrap();
+        let pyproject_path = dir.path().join("pyproject.toml");
+        let content = "[tool.poetry]\nname = \"my-app\"\nversion = \"0.1.0\"\n\n[tool.poetry.dependencies]\npython = \"^3.9\"\n\n[tool.poetry.dependencies.upstream-lib]\nversion = \"^1.5\"\n";
+        fs::write(&pyproject_path, content).unwrap();
+        let manifest = open_poetry_manifest(&dir);
+
+        let deps: Vec<_> = manifest.iter_dependencies().collect();
+        let entry = deps
+            .iter()
+            .find(|e| e.name == "upstream-lib")
+            .expect("poetry dotted-table dependency must appear in the dependency graph, not be silently dropped");
+        let DepSpec::Range(req, _) = &entry.spec else {
+            panic!("expected a Range spec, got {:?}", entry.spec);
+        };
+        assert!(req.matches(&make_pep440_version("1.9.0")).unwrap());
+        assert!(!req.matches(&make_pep440_version("2.0.0")).unwrap());
+    }
+
+    #[test]
+    fn poetry_git_dependency_without_version_appears_as_opaque_not_dropped() {
+        let (dir, _path) = poetry_manifest_with_dependency(
+            "upstream-lib = { git = \"https://example.com/upstream-lib.git\", tag = \"v1.0\" }",
+        );
+        let manifest = open_poetry_manifest(&dir);
+
+        let deps: Vec<_> = manifest.iter_dependencies().collect();
+        let entry = deps
+            .iter()
+            .find(|e| e.name == "upstream-lib")
+            .expect("git dependency with no `version` key must still appear in the dependency graph");
+        assert!(
+            matches!(entry.spec, DepSpec::Opaque(_)),
+            "expected an Opaque spec for a versionless git dependency, got {:?}",
+            entry.spec
+        );
+    }
+
+    #[test]
+    fn poetry_unrepresentable_spec_appears_as_opaque_not_dropped() {
+        // A caret applied to a pre-release version core isn't decomposed by
+        // this normalizer and isn't valid PEP 440 as-is either -- it must
+        // still surface in the graph (as Opaque) rather than vanish.
+        let (dir, _path) = poetry_manifest_with_dependency("upstream-lib = \"^1.2.3-beta\"");
+        let manifest = open_poetry_manifest(&dir);
+
+        let deps: Vec<_> = manifest.iter_dependencies().collect();
+        let entry = deps
+            .iter()
+            .find(|e| e.name == "upstream-lib")
+            .expect("an unrepresentable poetry spec must still appear in the dependency graph");
+        assert!(
+            matches!(entry.spec, DepSpec::Opaque(_)),
+            "expected an Opaque fallback spec, got {:?}",
+            entry.spec
+        );
+    }
+
+    #[test]
+    fn pep621_unparseable_version_spec_appears_as_opaque_not_dropped() {
+        // Sibling gap: the PEP 621 `[project].dependencies` block had the
+        // same silent-drop-on-parse-failure pattern as the Poetry block.
+        let dir = tempdir().unwrap();
+        let pyproject_path = dir.path().join("pyproject.toml");
+        let content = "[project]\nname = \"my-app\"\nversion = \"0.1.0\"\ndependencies = [\n    \"upstream-lib===not-a-real-version!!!\",\n]\n";
+        fs::write(&pyproject_path, content).unwrap();
+
+        let decl = ManifestDecl {
+            path: PathBuf::from("pyproject.toml"),
+            role: ManifestRole::Canonical,
+            format: ManifestFormat::PyprojectToml,
+        };
+        let ctx = OpenContext {
+            workspace_root: dir.path(),
+            cargo_workspace: None,
+            npm_workspace_kind: None,
+        };
+        let manifest = PyprojectToml::open(&decl, &ctx).unwrap();
+
+        let deps: Vec<_> = manifest.iter_dependencies().collect();
+        let entry = deps
+            .iter()
+            .find(|e| e.name == "upstream-lib")
+            .expect("an unparseable PEP 621 spec must still appear in the dependency graph");
+        assert!(
+            matches!(entry.spec, DepSpec::Opaque(_)),
+            "expected an Opaque fallback spec, got {:?}",
+            entry.spec
+        );
     }
 
     #[test]

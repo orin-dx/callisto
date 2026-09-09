@@ -2,22 +2,65 @@ use callisto_model::ManifestFormat;
 use globset::{GlobBuilder, GlobSet, GlobSetBuilder};
 use std::path::Path;
 
-/// Builds a [`GlobSet`] from a list of glob strings, matched with
+/// A [`GlobSet`] pair implementing npm/pnpm/Yarn-style workspace glob
+/// negation. `globset`'s `GlobSetBuilder` has no negation concept of its
+/// own -- a pattern with a leading `!` is just another literal
+/// positive-match glob to it, so `!packages/excluded` compiles into a glob
+/// that matches paths literally starting with the character `!`, which
+/// never matches any real path. That silently no-ops the negation instead
+/// of excluding anything.
+///
+/// A path is admitted only when it matches at least one `positive` pattern
+/// and matches none of the `negative` (`!`-stripped) patterns -- mirroring
+/// how npm/pnpm/Yarn actually resolve workspace globs (later patterns can
+/// negate earlier ones; a leading `!` excludes). A positive-only pattern
+/// list behaves exactly as a plain [`GlobSet`] would. An all-negative list
+/// has an empty positive set, so `is_match` is always `false` -- there is no
+/// positive baseline for the negation to carve an exclusion out of.
+pub(crate) struct NegatableGlobSet {
+    positive: GlobSet,
+    negative: GlobSet,
+}
+
+impl NegatableGlobSet {
+    pub(crate) fn is_match(&self, path: &Path) -> bool {
+        self.positive.is_match(path) && !self.negative.is_match(path)
+    }
+
+    pub(crate) fn empty() -> Self {
+        NegatableGlobSet {
+            positive: GlobSet::empty(),
+            negative: GlobSet::empty(),
+        }
+    }
+}
+
+/// Builds a [`NegatableGlobSet`] from a list of glob strings, matched with
 /// `literal_separator(true)` semantics (`*` does not cross `/`; `**` does)
-/// against forward-slash-normalized, workspace-relative paths.
+/// against forward-slash-normalized, workspace-relative paths. An entry
+/// with a leading `!` is treated as a negative (exclusion) pattern -- see
+/// [`NegatableGlobSet`].
 ///
 /// Per-entry glob-compile-failure rule: an entry that fails to compile is
 /// skipped and treated as never-matching; every other syntactically valid
 /// entry in the same list is still compiled and matched normally. Never
 /// panics, never returns an error.
-pub(crate) fn build_globset(entries: &[String]) -> GlobSet {
-    let mut builder = GlobSetBuilder::new();
+pub(crate) fn build_globset(entries: &[String]) -> NegatableGlobSet {
+    let mut positive = GlobSetBuilder::new();
+    let mut negative = GlobSetBuilder::new();
     for entry in entries {
-        if let Ok(glob) = GlobBuilder::new(entry).literal_separator(true).build() {
+        let (builder, pattern) = match entry.strip_prefix('!') {
+            Some(rest) => (&mut negative, rest),
+            None => (&mut positive, entry.as_str()),
+        };
+        if let Ok(glob) = GlobBuilder::new(pattern).literal_separator(true).build() {
             builder.add(glob);
         }
     }
-    builder.build().unwrap_or_else(|_| GlobSet::empty())
+    NegatableGlobSet {
+        positive: positive.build().unwrap_or_else(|_| GlobSet::empty()),
+        negative: negative.build().unwrap_or_else(|_| GlobSet::empty()),
+    }
 }
 
 #[cfg(test)]
@@ -37,8 +80,8 @@ mod tests {
 /// differs (JSON not TOML, no `exclude` concept, and a pnpm-workspace.yaml
 /// fallback with its own precedence rules).
 pub(crate) struct Membership {
-    members: Option<GlobSet>,
-    exclude: GlobSet,
+    members: Option<NegatableGlobSet>,
+    exclude: NegatableGlobSet,
     hybrid_root: bool,
 }
 
@@ -61,7 +104,7 @@ impl Membership {
     fn absent() -> Self {
         Membership {
             members: None,
-            exclude: GlobSet::empty(),
+            exclude: NegatableGlobSet::empty(),
             hybrid_root: false,
         }
     }
@@ -133,7 +176,7 @@ pub(crate) fn read_membership(root: &Path, spec: &MembershipSpec) -> Membership 
     let Some(workspace) = cursor else {
         return Membership {
             members: None,
-            exclude: GlobSet::empty(),
+            exclude: NegatableGlobSet::empty(),
             hybrid_root,
         };
     };
@@ -145,7 +188,7 @@ pub(crate) fn read_membership(root: &Path, spec: &MembershipSpec) -> Membership 
         .get("exclude")
         .and_then(parse_toml_string_array)
         .map(|v| build_globset(&v))
-        .unwrap_or_else(GlobSet::empty);
+        .unwrap_or_else(NegatableGlobSet::empty);
     Membership {
         members,
         exclude,
@@ -255,6 +298,19 @@ mod cargo_membership_tests {
     }
 
     #[test]
+    fn read_cargo_membership_members_array_honors_negated_pattern() {
+        let dir = tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("Cargo.toml"),
+            "[workspace]\nmembers = [\"crates/*\", \"!crates/excluded-one\"]\n",
+        )
+        .unwrap();
+        let m = read_cargo_membership(dir.path());
+        assert!(m.admits(Path::new("crates/kept"), false));
+        assert!(!m.admits(Path::new("crates/excluded-one"), false));
+    }
+
+    #[test]
     fn read_cargo_membership_empty_members_array_admits_nothing() {
         let dir = tempdir().unwrap();
         std::fs::write(dir.path().join("Cargo.toml"), "[workspace]\nmembers = []\n").unwrap();
@@ -264,7 +320,7 @@ mod cargo_membership_tests {
 }
 
 pub(crate) struct NpmMembership {
-    globs: Option<GlobSet>,
+    globs: Option<NegatableGlobSet>,
     hybrid_root: bool,
 }
 
@@ -473,6 +529,38 @@ mod npm_membership_tests {
     }
 
     #[test]
+    fn read_npm_membership_package_json_workspaces_honors_negated_pattern() {
+        let dir = tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("package.json"),
+            r#"{"workspaces": ["packages/*", "!packages/excluded-one"]}"#,
+        )
+        .unwrap();
+        let m = read_npm_membership(dir.path());
+        assert!(
+            m.admits(Path::new("packages/kept"), false),
+            "a package not named by the negative pattern must remain a workspace member"
+        );
+        assert!(
+            !m.admits(Path::new("packages/excluded-one"), false),
+            "a `!`-prefixed workspaces entry must exclude the package, not be silently ignored"
+        );
+    }
+
+    #[test]
+    fn read_npm_membership_pnpm_packages_honors_negated_pattern() {
+        let dir = tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("pnpm-workspace.yaml"),
+            "packages:\n  - \"packages/*\"\n  - \"!packages/excluded-one\"\n",
+        )
+        .unwrap();
+        let m = read_npm_membership(dir.path());
+        assert!(m.admits(Path::new("packages/kept"), false));
+        assert!(!m.admits(Path::new("packages/excluded-one"), false));
+    }
+
+    #[test]
     fn read_npm_membership_hybrid_root_is_admitted_even_when_workspaces_glob_does_not_match_root() {
         let dir = tempdir().unwrap();
         std::fs::write(
@@ -525,6 +613,52 @@ mod glob_tests {
             double_star.is_match(Path::new("crates/a/b")),
             "** must match zero or more full path segments recursively"
         );
+    }
+
+    #[test]
+    fn build_globset_negated_pattern_excludes_an_otherwise_matching_path() {
+        let entries = vec!["packages/*".to_string(), "!packages/excluded-one".to_string()];
+        let set = build_globset(&entries);
+        assert!(
+            set.is_match(Path::new("packages/kept")),
+            "a package not named by the negative pattern must still match"
+        );
+        assert!(
+            !set.is_match(Path::new("packages/excluded-one")),
+            "a leading `!` must exclude an otherwise-matching path, not be ignored"
+        );
+    }
+
+    #[test]
+    fn build_globset_positive_only_list_is_unaffected_by_negation_support() {
+        // Regression guard: adding negation semantics must not change
+        // behavior for a plain, no-`!` pattern list.
+        let set = build_globset(&["packages/*".to_string()]);
+        assert!(set.is_match(Path::new("packages/a")));
+        assert!(!set.is_match(Path::new("tools/a")));
+    }
+
+    #[test]
+    fn build_globset_all_negative_list_matches_nothing() {
+        // With no positive pattern at all, there's no baseline set for a
+        // negation to carve an exclusion out of -- matches nothing, exactly
+        // like real npm/pnpm/Yarn workspace-glob resolution.
+        let set = build_globset(&["!packages/anything".to_string()]);
+        assert!(!set.is_match(Path::new("packages/anything")));
+        assert!(!set.is_match(Path::new("packages/something-else")));
+    }
+
+    #[test]
+    fn build_globset_negation_applies_across_multiple_positive_patterns() {
+        let entries = vec![
+            "packages/*".to_string(),
+            "tools/*".to_string(),
+            "!packages/excluded-one".to_string(),
+        ];
+        let set = build_globset(&entries);
+        assert!(set.is_match(Path::new("packages/kept")));
+        assert!(set.is_match(Path::new("tools/kept")));
+        assert!(!set.is_match(Path::new("packages/excluded-one")));
     }
 }
 
