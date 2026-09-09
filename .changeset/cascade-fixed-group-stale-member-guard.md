@@ -1,0 +1,5 @@
+---
+callisto-graph: patch
+---
+
+`solve_cascade`'s Fixed-group convergence block now skips a group member absent from the workspace instead of writing it into the cascade outcome unconditionally. If a `[[fixed-group]]` in `callisto.toml` still named a package removed from the workspace, and a live sibling in that group received nonzero severity during cascade convergence, the stale package id was inserted into `CascadeOutcome.severities`/`.targets` with no `input.base` guard -- the Linked-group block right above it already had this guard (from a prior fix), but the Fixed-group block was never updated to match. The stale id then reached `plan_version`'s `pkg_map.get(id).copied().unwrap()` (built only from live graph packages) and panicked, crashing `callisto version` instead of degrading gracefully the way `aggregate::union_fixed` already does for the identical scenario. The Fixed-group block now filters into live members, skips stale ones, and emits an `UnknownPackage` diagnostic (governed by `ConfigKey::FIXED_GROUP`) for each one instead.

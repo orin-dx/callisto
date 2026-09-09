@@ -377,7 +377,34 @@ pub fn solve_cascade<D: DependencyResolver>(input: CascadeInput<'_, D>) -> Resul
                 continue;
             }
 
+            // A member absent from `input.base` was removed from the
+            // workspace but is still listed in the group config. Skip it
+            // rather than let it flow into `out.severities`/`out.targets`,
+            // which `plan_version`'s `pkg_map.get(id).copied().unwrap()`
+            // (built only from live graph packages) would later panic on --
+            // mirrors the guard `aggregate::union_fixed`/`union_linked` and
+            // the Linked-group block above already apply.
+            let mut live_members = Vec::new();
             for id in g.package_members() {
+                if !input.base.contains_key(id) {
+                    out.diagnostics.push(Diagnostic {
+                        code: DiagnosticCode::UnknownPackage,
+                        severity: DiagnosticSeverity::Warning,
+                        message: format!(
+                            "Fixed group `{}` references package `{}` which is not in the \
+                             workspace; the stale group member is skipped. Remove it from \
+                             callisto.toml to silence this warning.",
+                            g.name,
+                            id.display_name()
+                        ),
+                        package: Some(id.clone()),
+                        path: None,
+                        governed_by: Some(ConfigKey::FIXED_GROUP),
+                        escalated_by: None,
+                    });
+                    continue;
+                }
+                live_members.push(id.clone());
                 let cur_sev = out.severities.get(id).copied().unwrap_or(Severity::None);
                 if max_sev > cur_sev {
                     out.severities.insert(id.clone(), max_sev);
@@ -386,7 +413,7 @@ pub fn solve_cascade<D: DependencyResolver>(input: CascadeInput<'_, D>) -> Resul
 
             let winner = crate::groups::fixed_group_target(g, input.base, max_sev, input.tags)?;
 
-            for id in g.package_members().cloned().collect::<Vec<_>>() {
+            for id in live_members {
                 if out.targets.get(&id) != Some(&winner) {
                     out.targets.insert(id.clone(), winner.clone());
                     out.reasons
@@ -1717,5 +1744,107 @@ mod tests {
             "B must converge on the SAME target as A, not its own independently-bumped 0.2.0"
         );
         assert_eq!(target_a, target_b);
+    }
+
+    /// Regression: Track 1 (Fixed-group convergence) must apply the same
+    /// stale-member guard the Linked-group block directly above it already
+    /// has. A fixed group naming a package absent from `input.base`
+    /// (removed from the workspace but still listed in callisto.toml),
+    /// combined with a live sibling receiving nonzero severity, must NOT
+    /// insert the stale id into `out.severities`/`out.targets` -- before
+    /// this fix it did so unconditionally, and the stale id later reaching
+    /// `plan_version`'s `pkg_map.get(id).copied().unwrap()` (built only
+    /// from live graph packages) is what actually panicked `callisto
+    /// version`. An `UnknownPackage` diagnostic governed by
+    /// `ConfigKey::FIXED_GROUP` must be emitted instead, and the live
+    /// sibling must still converge normally.
+    #[test]
+    fn test_fixed_group_skips_stale_member_and_emits_diagnostic() {
+        let pkg_live = PackageId::parse("pkg-live").unwrap();
+        let pkg_stale = PackageId::parse("pkg-stale").unwrap();
+
+        let graph = TwoPackageGraph {
+            packages: vec![bare_package(&pkg_live)],
+        };
+
+        let mut base = BTreeMap::new();
+        base.insert(pkg_live.clone(), Version::semver(1, 0, 0));
+        // pkg_stale intentionally absent from `base`: removed from the
+        // workspace, but still declared as a fixed-group member below.
+
+        let mut seed = BTreeMap::new();
+        seed.insert(pkg_live.clone(), Severity::Minor);
+
+        let mut groups = GroupTable::default();
+        let group_def = GroupDef {
+            name: GroupName("fixed-pair".to_string()),
+            kind: GroupKind::Fixed,
+            members: vec![
+                GroupMember::Package(pkg_live.clone()),
+                GroupMember::Package(pkg_stale.clone()),
+            ],
+        };
+        groups.fixed.insert(group_def.name.clone(), group_def);
+
+        let cfg = CascadeConfig {
+            mode: CascadeMode::OutOfRange,
+            bump_severity: CascadeBumpSeverity::Patch,
+            peer_escalation: true,
+            preserve_npm_ranges: false,
+        };
+
+        let reasons = BTreeMap::new();
+        let named_by = BTreeMap::new();
+
+        let input = CascadeInput {
+            graph: &graph,
+            groups: &groups,
+            cfg: &cfg,
+            seed: &seed,
+            reasons: &reasons,
+            named_by: &named_by,
+            base: &base,
+            pre: None,
+            tags: &TagIndex::empty(),
+            identity: &IdentityIndex::default(),
+        };
+
+        let outcome = run_cascade(input).unwrap();
+
+        assert!(
+            !outcome.severities.contains_key(&pkg_stale),
+            "stale fixed-group member must NOT be inserted into severities (would crash \
+             plan_version's pkg_map.get(id).unwrap()): {:?}",
+            outcome.severities
+        );
+        assert!(
+            !outcome.targets.contains_key(&pkg_stale),
+            "stale fixed-group member must NOT be inserted into targets: {:?}",
+            outcome.targets
+        );
+
+        assert_eq!(outcome.severities.get(&pkg_live), Some(&Severity::Minor));
+        assert!(
+            outcome.targets.get(&pkg_live).is_some(),
+            "live sibling must still receive a converged target"
+        );
+
+        let unknown_diags: Vec<_> = outcome
+            .diagnostics
+            .iter()
+            .filter(|d| d.code == DiagnosticCode::UnknownPackage)
+            .collect();
+        assert!(
+            !unknown_diags.is_empty(),
+            "must emit an UnknownPackage diagnostic for the stale fixed-group member; got: {:?}",
+            outcome.diagnostics
+        );
+        assert!(
+            unknown_diags
+                .iter()
+                .any(|d| d.governed_by == Some(ConfigKey::FIXED_GROUP)),
+            "the UnknownPackage diagnostic must be governed by ConfigKey::FIXED_GROUP; got: {:?}",
+            unknown_diags
+        );
     }
 }
