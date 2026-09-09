@@ -311,3 +311,186 @@ fn batched_group_skipped_bump_still_increments_persist_call_count_by_one() {
         "a skipped bump must not suppress the persist a successful rewrite on the same path requires"
     );
 }
+
+/// Perf-fix proof: a workspace root `Cargo.toml` written exclusively through
+/// `WorkspaceCargoResolver` (a `CargoWorkspacePackage` version bump plus
+/// three `CargoWorkspaceDependency` rewrites, all sharing the same root
+/// manifest, no competing `Manifest`-trait write to that same physical
+/// file) must be loaded and persisted exactly once per `apply_version_plan`
+/// call, not once per write (N=4 here).
+///
+/// `resolver_load_call_count()` is asserted at 2, not 1:
+/// `OpenContext::for_workspace_root` (called unconditionally at the top of
+/// `apply_version_plan` whenever the workspace root has a `Cargo.toml`, to
+/// build the Cargo-inheritance context) accounts for one load; the
+/// resolver-batched loop's own single `WorkspaceCargoResolver::load`
+/// accounts for the other. Neither count scales with the number of
+/// resolver-routed writes -- before this fix, the four writes below would
+/// have produced 1 (incidental) + 4 (one load per write) = 5 loads and 4
+/// persists; after, they produce 2 loads and exactly 1 persist.
+#[test]
+#[serial]
+fn resolver_batched_root_manifest_opens_once_and_persists_once_for_bump_plus_multiple_rewrites() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    std::fs::write(
+        root.join("Cargo.toml"),
+        "[workspace]\nmembers = []\n\n[workspace.package]\nversion = \"1.0.0\"\n\n[workspace.dependencies]\ndep-a = \"1.0.0\"\ndep-b = \"1.0.0\"\ndep-c = \"1.0.0\"\n",
+    )
+    .unwrap();
+
+    let manifest_rel = PathBuf::from("Cargo.toml");
+    let plan = VersionPlan {
+        bumps: vec![PlannedBump {
+            package: PackageId::parse("cargo:workspace-root").unwrap(),
+            from: Version::parse("1.0.0", VersionGrammar::SemVer).unwrap(),
+            to: Version::parse("1.1.0", VersionGrammar::SemVer).unwrap(),
+            severity: Severity::Minor,
+            governed_by: None,
+            reason: None,
+            writes: vec![VersionWriteTarget::CargoWorkspacePackage {
+                root_manifest: manifest_rel.clone(),
+            }],
+        }],
+        rewrites: vec!["dep-a", "dep-b", "dep-c"]
+            .into_iter()
+            .map(|name| SpecRewrite {
+                key: RewriteKey {
+                    target: DepWriteTarget::CargoWorkspaceDependency {
+                        root_manifest: manifest_rel.clone(),
+                    },
+                    name: name.to_string(),
+                    kind: None,
+                },
+                dependency: PackageId::parse(&format!("cargo:{name}")).unwrap(),
+                from: DepSpec::Range(
+                    VersionReq::parse("^1.0.0", Ecosystem::Cargo).unwrap(),
+                    "^1.0.0".to_string(),
+                ),
+                to: DepSpec::Range(
+                    VersionReq::parse("^1.1.0", Ecosystem::Cargo).unwrap(),
+                    "^1.1.0".to_string(),
+                ),
+            })
+            .collect(),
+        ..Default::default()
+    };
+
+    let permit = ApplyPermit::force_for_tests();
+    let opts = ApplyOptions::default();
+    callisto_manifests::reset_resolver_load_call_count();
+    callisto_manifests::reset_resolver_persist_call_count();
+    let outcome =
+        apply_version_plan(root, &plan, &NoopRunner, &opts, &permit).expect("apply_version_plan should succeed");
+
+    assert_eq!(
+        callisto_manifests::resolver_load_call_count(),
+        2,
+        "1 incidental OpenContext::for_workspace_root load + 1 resolver-batched-loop load, \
+         regardless of how many resolver-routed writes (4 here) target the shared root manifest"
+    );
+    assert_eq!(
+        callisto_manifests::resolver_persist_call_count(),
+        1,
+        "N=4 resolver-routed writes (1 bump + 3 rewrites) sharing one root manifest must persist \
+         that manifest exactly once, not N times"
+    );
+
+    let on_disk = std::fs::read_to_string(root.join("Cargo.toml")).unwrap();
+    assert!(on_disk.contains("version = \"1.1.0\""), "got:\n{on_disk}");
+    assert!(on_disk.contains("dep-a = \"^1.1.0\""), "got:\n{on_disk}");
+    assert!(on_disk.contains("dep-b = \"^1.1.0\""), "got:\n{on_disk}");
+    assert!(on_disk.contains("dep-c = \"^1.1.0\""), "got:\n{on_disk}");
+
+    assert_eq!(
+        outcome.staged.iter().filter(|p| **p == manifest_rel).count(),
+        1,
+        "the shared root manifest must appear in staged exactly once, not N times; staged: {:?}",
+        outcome.staged
+    );
+}
+
+/// Contrast case: when the root manifest ALSO receives a `Manifest`-trait
+/// write (the mixed-routing hazard `classification.excluded` guards
+/// against), resolver-routed writes to that same path must NOT be batched
+/// -- each is still loaded and persisted individually, exactly as before
+/// this perf fix.
+#[test]
+#[serial]
+fn mixed_routing_root_manifest_still_persists_resolver_writes_individually() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    std::fs::write(
+        root.join("Cargo.toml"),
+        "[workspace]\nmembers = [\".\"]\n\n[package]\nname = \"root-pkg\"\nversion = \"1.0.0\"\nedition = \"2021\"\n\n[dependencies]\nplain-dep = \"1.0.0\"\n\n[workspace.dependencies]\ndep-a = \"1.0.0\"\ndep-b = \"1.0.0\"\n",
+    )
+    .unwrap();
+
+    let manifest_rel = PathBuf::from("Cargo.toml");
+    let mut rewrites: Vec<SpecRewrite> = vec!["dep-a", "dep-b"]
+        .into_iter()
+        .map(|name| SpecRewrite {
+            key: RewriteKey {
+                target: DepWriteTarget::CargoWorkspaceDependency {
+                    root_manifest: manifest_rel.clone(),
+                },
+                name: name.to_string(),
+                kind: None,
+            },
+            dependency: PackageId::parse(&format!("cargo:{name}")).unwrap(),
+            from: DepSpec::Range(
+                VersionReq::parse("^1.0.0", Ecosystem::Cargo).unwrap(),
+                "^1.0.0".to_string(),
+            ),
+            to: DepSpec::Range(
+                VersionReq::parse("^1.1.0", Ecosystem::Cargo).unwrap(),
+                "^1.1.0".to_string(),
+            ),
+        })
+        .collect();
+    // A plain (non-inherited) `DepWriteTarget::Manifest` rewrite targeting
+    // this SAME physical path is what actually makes this mixed-routing --
+    // `classify_manifest_writes` classifies purely on which write targets a
+    // *plan* contains for a path, not on what the file's on-disk content
+    // could theoretically support.
+    rewrites.push(SpecRewrite {
+        key: RewriteKey {
+            target: DepWriteTarget::Manifest(manifest_rel.clone()),
+            name: "plain-dep".to_string(),
+            kind: Some(DepKind::Runtime),
+        },
+        dependency: PackageId::parse("cargo:plain-dep").unwrap(),
+        from: DepSpec::Range(
+            VersionReq::parse("^1.0.0", Ecosystem::Cargo).unwrap(),
+            "^1.0.0".to_string(),
+        ),
+        to: DepSpec::Range(
+            VersionReq::parse("^1.2.0", Ecosystem::Cargo).unwrap(),
+            "^1.2.0".to_string(),
+        ),
+    });
+    let plan = VersionPlan {
+        rewrites,
+        ..Default::default()
+    };
+
+    let permit = ApplyPermit::force_for_tests();
+    let opts = ApplyOptions::default();
+    callisto_manifests::reset_resolver_load_call_count();
+    callisto_manifests::reset_resolver_persist_call_count();
+    let result = apply_version_plan(root, &plan, &NoopRunner, &opts, &permit);
+    assert!(result.is_ok(), "apply_version_plan should succeed: {result:?}");
+
+    assert_eq!(
+        callisto_manifests::resolver_load_call_count(),
+        3,
+        "1 incidental OpenContext::for_workspace_root load + 2 individual loads (one per \
+         resolver-routed rewrite), since this root manifest is mixed-routed and therefore excluded \
+         from resolver batching entirely"
+    );
+    assert_eq!(
+        callisto_manifests::resolver_persist_call_count(),
+        2,
+        "mixed-routing root manifests must persist each resolver-routed write individually, not batch them"
+    );
+}

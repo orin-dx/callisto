@@ -134,7 +134,10 @@ impl PublishTarget {
     /// The `publish-to` config string this variant parses from, mirroring
     /// `parse_publish_target` in `callisto_graph::config::resolve`. Used to
     /// name the mismatched target in diagnostics/errors without leaking the
-    /// `Debug` representation of the variant's payload.
+    /// `Debug` representation of the variant's payload, and doubles as the
+    /// semantic-fingerprint "kind" string (`target_fingerprint` in
+    /// `callisto_graph::commands::release`) since both need the exact same
+    /// stable, variant-identifying string.
     pub fn config_str(&self) -> &'static str {
         match self {
             PublishTarget::CratesIo => "crates-io",
@@ -143,6 +146,38 @@ impl PublishTarget {
             PublishTarget::NuGet { .. } => "nuget",
             PublishTarget::GitHubRelease => "github-release",
             PublishTarget::None => "none",
+        }
+    }
+
+    /// The operator's explicit registry/index/source override carried by
+    /// this variant's payload, if any -- `Npm.registry`, `Pypi.index`, and
+    /// `NuGet.source` are all "the same field" for this purpose. `CratesIo`,
+    /// `GitHubRelease`, and `None` carry no such override.
+    pub fn registry_override(&self) -> Option<&str> {
+        match self {
+            PublishTarget::Npm { registry, .. } => registry.as_deref(),
+            PublishTarget::Pypi { index } => index.as_deref(),
+            PublishTarget::NuGet { source } => source.as_deref(),
+            PublishTarget::CratesIo | PublishTarget::GitHubRelease | PublishTarget::None => None,
+        }
+    }
+
+    /// Whether this target has a real dispatch implementation today.
+    ///
+    /// `PublishTarget` and `Ecosystem` are not 1:1: `GitHubRelease` is a VCS
+    /// release action with no backing package `Ecosystem` at all, and `None`
+    /// is the "not configured to publish" sentinel, not a real target --
+    /// neither can defer to `Ecosystem::is_implemented()`. Every other
+    /// variant carries a package ecosystem ([`Self::ecosystem`]) and defers
+    /// to that ecosystem's own implementedness.
+    pub fn is_implemented(&self) -> bool {
+        match self {
+            PublishTarget::None => true,
+            PublishTarget::GitHubRelease => false,
+            PublishTarget::CratesIo
+            | PublishTarget::Npm { .. }
+            | PublishTarget::Pypi { .. }
+            | PublishTarget::NuGet { .. } => self.ecosystem().is_some_and(|ecosystem| ecosystem.is_implemented()),
         }
     }
 }
@@ -230,5 +265,58 @@ mod tests {
     fn normalize_pypi_package_name_collapses_mixed_runs() {
         assert_eq!(normalize_pypi_package_name("foo-.-bar"), "foo_bar");
         assert_eq!(normalize_pypi_package_name("foo___bar"), "foo_bar");
+    }
+
+    #[test]
+    fn publish_target_registry_override_extracts_payload_field() {
+        assert_eq!(PublishTarget::CratesIo.registry_override(), None);
+        assert_eq!(
+            PublishTarget::Npm {
+                registry: Some("https://npm.example.com".to_string()),
+                access: None
+            }
+            .registry_override(),
+            Some("https://npm.example.com")
+        );
+        assert_eq!(
+            PublishTarget::Npm {
+                registry: None,
+                access: None
+            }
+            .registry_override(),
+            None
+        );
+        assert_eq!(
+            PublishTarget::Pypi {
+                index: Some("https://pypi.example.com".to_string())
+            }
+            .registry_override(),
+            Some("https://pypi.example.com")
+        );
+        assert_eq!(
+            PublishTarget::NuGet {
+                source: Some("https://nuget.example.com".to_string())
+            }
+            .registry_override(),
+            Some("https://nuget.example.com")
+        );
+        assert_eq!(PublishTarget::GitHubRelease.registry_override(), None);
+        assert_eq!(PublishTarget::None.registry_override(), None);
+    }
+
+    #[test]
+    fn publish_target_is_implemented_matches_dispatchable_variants() {
+        assert!(PublishTarget::CratesIo.is_implemented());
+        assert!(PublishTarget::Npm {
+            registry: None,
+            access: None
+        }
+        .is_implemented());
+        assert!(PublishTarget::Pypi { index: None }.is_implemented());
+        assert!(!PublishTarget::NuGet { source: None }.is_implemented());
+        assert!(!PublishTarget::GitHubRelease.is_implemented());
+        // `None` is vacuously "implemented" -- there is nothing to dispatch,
+        // so it must never trip a `PublishTargetNotImplemented` diagnostic.
+        assert!(PublishTarget::None.is_implemented());
     }
 }

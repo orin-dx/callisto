@@ -39,21 +39,38 @@ pub(crate) struct ManifestWriteGroup {
 #[derive(Debug, Default)]
 pub(crate) struct ManifestWriteClassification {
     pub(crate) batched: BTreeMap<PathBuf, ManifestWriteGroup>,
+    /// Root-manifest paths written exclusively through
+    /// `WorkspaceCargoResolver` (`CargoWorkspacePackage`/
+    /// `CargoWorkspaceDependency` targets), with no competing write to the
+    /// same physical file through the `Manifest` trait's `open()` path.
+    /// Consumed the same way as `batched`, but via `WorkspaceCargoResolver`
+    /// instead of `open()` -- see `apply_version_plan`'s resolver-batched
+    /// loop.
+    pub(crate) resolver_batched: BTreeMap<PathBuf, ManifestWriteGroup>,
+    /// Paths that receive writes through BOTH the `Manifest` trait and
+    /// `WorkspaceCargoResolver` -- the mixed-routing data-loss/ordering
+    /// hazard from SPEC-APPLY-BATCH-002 (see `.claude/plans/ACTIVE.md`).
+    /// Never batched on either side; each write is applied individually,
+    /// strictly in plan order, exactly as before this change.
     pub(crate) excluded: BTreeSet<PathBuf>,
 }
 
 pub(crate) fn classify_manifest_writes(plan: &VersionPlan) -> ManifestWriteClassification {
-    let mut resolver_routed: BTreeSet<PathBuf> = BTreeSet::new();
-    for bump in &plan.bumps {
+    let mut resolver_by_path: BTreeMap<PathBuf, ManifestWriteGroup> = BTreeMap::new();
+    for (idx, bump) in plan.bumps.iter().enumerate() {
         for write in &bump.writes {
             if let VersionWriteTarget::CargoWorkspacePackage { root_manifest } = write {
-                resolver_routed.insert(root_manifest.clone());
+                resolver_by_path.entry(root_manifest.clone()).or_default().bump = Some((idx, bump.to.clone()));
             }
         }
     }
-    for rewrite in &plan.rewrites {
+    for (idx, rewrite) in plan.rewrites.iter().enumerate() {
         if let DepWriteTarget::CargoWorkspaceDependency { root_manifest } = &rewrite.key.target {
-            resolver_routed.insert(root_manifest.clone());
+            resolver_by_path
+                .entry(root_manifest.clone())
+                .or_default()
+                .rewrite_indices
+                .push(idx);
         }
     }
 
@@ -74,14 +91,27 @@ pub(crate) fn classify_manifest_writes(plan: &VersionPlan) -> ManifestWriteClass
     let mut batched = BTreeMap::new();
     let mut excluded = BTreeSet::new();
     for (path, group) in by_path {
-        if resolver_routed.contains(&path) {
+        if resolver_by_path.contains_key(&path) {
             excluded.insert(path);
         } else {
             batched.insert(path, group);
         }
     }
 
-    ManifestWriteClassification { batched, excluded }
+    // Every path in `resolver_by_path` that isn't also mixed-routed
+    // (present in `excluded`) is safe to batch into one
+    // load/mutate*/persist cycle -- it's written exclusively through
+    // WorkspaceCargoResolver, never through the Manifest trait.
+    let resolver_batched: BTreeMap<PathBuf, ManifestWriteGroup> = resolver_by_path
+        .into_iter()
+        .filter(|(path, _)| !excluded.contains(path))
+        .collect();
+
+    ManifestWriteClassification {
+        batched,
+        resolver_batched,
+        excluded,
+    }
 }
 
 /// Writes `plan` to disk and stages the touched paths in git.
@@ -152,6 +182,36 @@ pub fn apply_version_plan<R: CommandRunner>(
         modified_paths.push(path.clone());
     }
 
+    // Root-manifest paths written exclusively through WorkspaceCargoResolver
+    // (no competing Manifest-trait write to the same physical file, i.e. not
+    // in `classification.excluded`): open once, apply the bump (if any) then
+    // every rewrite in memory, and persist exactly once -- mirroring the
+    // `classification.batched` loop above, but via WorkspaceCargoResolver
+    // instead of `open()`. `CargoWorkspacePackage`/`CargoWorkspaceDependency`
+    // writes have never had an idempotency precondition check (unlike
+    // `VersionWriteTarget::Manifest`/`DepWriteTarget::Manifest`), so none is
+    // introduced here -- both continue to write unconditionally.
+    for (root_manifest, group) in &classification.resolver_batched {
+        let mut ws_res = WorkspaceCargoResolver::load(&root.join(root_manifest))?;
+        let mut mutated = false;
+
+        if let Some((_, target_version)) = &group.bump {
+            ws_res.write_version(target_version, permit)?;
+            mutated = true;
+        }
+
+        for rewrite_idx in &group.rewrite_indices {
+            let rewrite = &plan.rewrites[*rewrite_idx];
+            ws_res.write_dependency(&rewrite.key.name, rewrite.to.clone(), permit)?;
+            mutated = true;
+        }
+
+        if mutated {
+            ws_res.persist(permit)?;
+        }
+        modified_paths.push(root_manifest.clone());
+    }
+
     for bump in &plan.bumps {
         for write in &bump.writes {
             match write {
@@ -179,8 +239,13 @@ pub fn apply_version_plan<R: CommandRunner>(
                     modified_paths.push(p.clone());
                 }
                 VersionWriteTarget::CargoWorkspacePackage { root_manifest } => {
+                    if classification.resolver_batched.contains_key(root_manifest) {
+                        // Already applied and persisted by the resolver-batched loop above.
+                        continue;
+                    }
                     let mut ws_res = WorkspaceCargoResolver::load(&root.join(root_manifest))?;
                     ws_res.write_version(&bump.to, permit)?;
+                    ws_res.persist(permit)?;
                     modified_paths.push(root_manifest.clone());
                 }
             }
@@ -206,8 +271,13 @@ pub fn apply_version_plan<R: CommandRunner>(
                 modified_paths.push(p.clone());
             }
             DepWriteTarget::CargoWorkspaceDependency { root_manifest } => {
+                if classification.resolver_batched.contains_key(root_manifest) {
+                    // Already applied and persisted by the resolver-batched loop above.
+                    continue;
+                }
                 let mut ws_res = WorkspaceCargoResolver::load(&root.join(root_manifest))?;
                 ws_res.write_dependency(&rewrite.key.name, rewrite.to.clone(), permit)?;
+                ws_res.persist(permit)?;
                 modified_paths.push(root_manifest.clone());
             }
         }

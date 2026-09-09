@@ -358,7 +358,8 @@ impl Manifest for CargoToml {
                 });
             }
             let mut ws_res = WorkspaceCargoResolver::load(&root_cargo)?;
-            return ws_res.write_dependency(name, new, permit);
+            ws_res.write_dependency(name, new, permit)?;
+            return ws_res.persist(permit);
         }
 
         let section_name = match kind {
@@ -543,6 +544,7 @@ pub struct WorkspaceCargoResolver {
 
 impl WorkspaceCargoResolver {
     pub fn load(root_manifest_path: &Path) -> Result<Self, ManifestError> {
+        crate::record_resolver_load_call();
         let rel_path = if root_manifest_path.is_absolute() {
             root_manifest_path
                 .file_name()
@@ -627,7 +629,13 @@ impl WorkspaceCargoResolver {
             })
     }
 
-    pub fn write_version(&mut self, v: &Version, permit: &ApplyPermit) -> Result<(), ManifestError> {
+    /// Pure in-memory mutation of `[workspace.package] version` -- no disk
+    /// I/O. Mirrors `CargoToml`/`PackageJson`/`PyprojectToml`'s
+    /// `write_version`, which likewise never touches disk; callers must
+    /// call [`Self::persist`] explicitly afterward. `_permit` is accepted
+    /// (unused) purely for call-site symmetry with `persist`, which does
+    /// require one.
+    pub fn write_version(&mut self, v: &Version, _permit: &ApplyPermit) -> Result<(), ManifestError> {
         let ws = self
             .document
             .get_mut("workspace")
@@ -647,10 +655,14 @@ impl WorkspaceCargoResolver {
             })?;
 
         crate::common::set_scalar_preserving_decor(pkg, "version", v.render());
-        self.persist(permit)
+        Ok(())
     }
 
-    pub fn write_dependency(&mut self, name: &str, new: DepSpec, permit: &ApplyPermit) -> Result<(), ManifestError> {
+    /// Pure in-memory mutation of a `[workspace.dependencies]` entry -- no
+    /// disk I/O. See [`Self::write_version`]'s doc for why this no longer
+    /// persists internally; callers must call [`Self::persist`] explicitly
+    /// afterward.
+    pub fn write_dependency(&mut self, name: &str, new: DepSpec, _permit: &ApplyPermit) -> Result<(), ManifestError> {
         let ws = self
             .document
             .get_mut("workspace")
@@ -681,15 +693,22 @@ impl WorkspaceCargoResolver {
             name: name.to_string(),
         })?;
 
-        self.persist(permit)
+        Ok(())
     }
 
-    fn persist(&mut self, permit: &ApplyPermit) -> Result<(), ManifestError> {
+    /// Flushes the in-memory document to disk via
+    /// [`crate::atomic::atomic_write`]. Distinct, explicitly-called step --
+    /// see [`Self::write_version`]/[`Self::write_dependency`]'s docs --
+    /// mirroring the `Manifest` trait's `persist` across `CargoToml`,
+    /// `PackageJson`, and `PyprojectToml`.
+    pub fn persist(&mut self, permit: &ApplyPermit) -> Result<(), ManifestError> {
         let text = self.document.to_string();
         crate::atomic::atomic_write(&self.absolute_path, &text, permit).map_err(|e| ManifestError::Write {
             path: self.root_path.clone(),
             message: e.to_string(),
-        })
+        })?;
+        crate::record_resolver_persist_call();
+        Ok(())
     }
 }
 
@@ -1068,6 +1087,7 @@ path = "../serde"
             "^1.1.0".to_string(),
         );
         resolver.write_dependency("serde", new_spec, &permit()).unwrap();
+        resolver.persist(&permit()).unwrap();
 
         let updated = fs::read_to_string(&manifest_path).unwrap();
         assert!(updated.contains("version = \"^1.1.0\""));
@@ -1095,6 +1115,7 @@ path = "../serde"
             "^1.1.0".to_string(),
         );
         resolver.write_dependency("serde", new_spec, &permit()).unwrap();
+        resolver.persist(&permit()).unwrap();
 
         let updated = fs::read_to_string(&manifest_path).unwrap();
         assert!(updated.contains("^1.1.0"));
@@ -1760,8 +1781,11 @@ edition = "2021"
         assert_eq!(resolver.workspace_version().unwrap(), None);
     }
 
-    /// `WorkspaceCargoResolver::write_version()` writes and persists a new
-    /// `[workspace.package] version` to disk.
+    /// `WorkspaceCargoResolver::write_version()` mutates in memory only --
+    /// an explicit `persist()` call is required to write the new
+    /// `[workspace.package] version` to disk, mirroring `CargoToml`'s
+    /// `write_version`/`persist` split (see
+    /// `write_version_does_not_touch_disk_until_persist_called` above).
     #[test]
     fn workspace_cargo_resolver_write_version_persists_to_disk() {
         let dir = tempdir().unwrap();
@@ -1776,10 +1800,18 @@ edition = "2021"
         let new_ver = Version::parse("2.0.0", VersionGrammar::SemVer).unwrap();
         resolver.write_version(&new_ver, &permit()).unwrap();
 
+        let unchanged = fs::read_to_string(&root_cargo_path).unwrap();
+        assert!(
+            unchanged.contains("version = \"1.0.0\""),
+            "write_version alone must not write to disk, got:\n{unchanged}"
+        );
+
+        resolver.persist(&permit()).unwrap();
+
         let updated = fs::read_to_string(&root_cargo_path).unwrap();
         assert!(
             updated.contains("version = \"2.0.0\""),
-            "workspace root must be updated to 2.0.0 on disk, got:\n{updated}"
+            "workspace root must be updated to 2.0.0 on disk after persist(), got:\n{updated}"
         );
     }
 
