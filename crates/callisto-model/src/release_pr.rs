@@ -70,11 +70,11 @@ impl<'de> Deserialize<'de> for ReleasePrConfigV1 {
             release_branch: String,
         }
         let wire = Wire::deserialize(deserializer)?;
-        if wire.schema_version != Self::SCHEMA_VERSION {
-            return Err(serde::de::Error::custom(
-                "unsupported release PR configuration schema version",
-            ));
-        }
+        crate::release::check_schema_version::<D::Error>(
+            wire.schema_version,
+            Self::SCHEMA_VERSION,
+            "release PR configuration",
+        )?;
         Self::new(wire.repository, wire.base_branch, wire.release_branch).map_err(serde::de::Error::custom)
     }
 }
@@ -131,11 +131,11 @@ impl<'de> Deserialize<'de> for ReleasePrSnapshotV2 {
             open_pull_requests: Vec<ReleasePrPullRequestV2>,
         }
         let wire = Wire::deserialize(deserializer)?;
-        if wire.schema_version != Self::SCHEMA_VERSION {
-            return Err(serde::de::Error::custom(
-                "unsupported release PR snapshot schema version",
-            ));
-        }
+        crate::release::check_schema_version::<D::Error>(
+            wire.schema_version,
+            Self::SCHEMA_VERSION,
+            "release PR snapshot",
+        )?;
         Self::new(
             wire.repository,
             wire.base_branch,
@@ -284,11 +284,11 @@ impl<'de> Deserialize<'de> for ReleasePrDecisionV2 {
             action: ReleasePrActionV2,
         }
         let wire = Wire::deserialize(deserializer)?;
-        if wire.schema_version != Self::SCHEMA_VERSION {
-            return Err(serde::de::Error::custom(
-                "unsupported release PR decision schema version",
-            ));
-        }
+        crate::release::check_schema_version::<D::Error>(
+            wire.schema_version,
+            Self::SCHEMA_VERSION,
+            "release PR decision",
+        )?;
         Ok(Self {
             schema_version: wire.schema_version,
             config: wire.config,
@@ -594,11 +594,11 @@ impl<'de> Deserialize<'de> for ReleasePrCommitPlanV1 {
             total_content_bytes: usize,
         }
         let wire = Wire::deserialize(deserializer)?;
-        if wire.schema_version != Self::SCHEMA_VERSION {
-            return Err(serde::de::Error::custom(
-                "unsupported release PR commit plan schema version",
-            ));
-        }
+        crate::release::check_schema_version::<D::Error>(
+            wire.schema_version,
+            Self::SCHEMA_VERSION,
+            "release PR commit plan",
+        )?;
         Ok(Self {
             schema_version: wire.schema_version,
             base_commit: wire.base_commit,

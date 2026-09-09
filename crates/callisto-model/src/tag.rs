@@ -1,5 +1,3 @@
-use std::fmt;
-
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::{Diagnostic, DiagnosticCode, DiagnosticSeverity, PackageId, Version, VersionGrammar, VersionParseError};
@@ -193,17 +191,9 @@ impl TagName {
     pub fn new_unchecked(name: String) -> Self {
         Self(name)
     }
-
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
 }
 
-impl fmt::Display for TagName {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
-    }
-}
+crate::identity::string_newtype_display!(TagName);
 
 impl Serialize for TagName {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>

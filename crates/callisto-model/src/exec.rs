@@ -49,6 +49,32 @@ pub trait CommandRunner: Send + Sync {
     ) -> Result<CommandOutput, CommandError> {
         self.run_with_timeout(program, args, cwd, timeout)
     }
+
+    /// Like [`Self::run`], but pipes `stdin` to the child process before
+    /// reading its output. Needed for subcommands with a line-oriented
+    /// input protocol -- e.g. `git cat-file --batch`, which reads one
+    /// object identifier per line from stdin and streams each object's
+    /// contents back on stdout, letting many objects be fetched in one
+    /// subprocess round trip instead of one invocation per object.
+    ///
+    /// The default implementation returns [`CommandError::Unsupported`]:
+    /// the great majority of [`CommandRunner`] implementors in this
+    /// workspace (test doubles, `moon`'s own dispatch, etc.) never pipe
+    /// stdin to a child process, so they don't need to implement this --
+    /// only a real subprocess-backed runner used for such a call should
+    /// override it.
+    fn run_with_stdin(
+        &self,
+        program: &str,
+        _args: &[&str],
+        _cwd: &Path,
+        _stdin: &[u8],
+    ) -> Result<CommandOutput, CommandError> {
+        Err(CommandError::Unsupported {
+            program: program.to_string(),
+            reason: "this CommandRunner does not support piping input to the child process".to_string(),
+        })
+    }
 }
 
 /// Output from executing a command.

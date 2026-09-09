@@ -1,4 +1,4 @@
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::Path;
 use std::process::Stdio;
 use std::time::{Duration, Instant};
@@ -83,6 +83,81 @@ impl CommandRunner for CliCommandRunner {
         // below), so there's nothing to redact -- pass an empty secrets
         // list rather than paying for an env scan that can only go unused.
         run_with_timeout_impl(program, args, cwd, timeout, StderrMode::Quiet, Vec::new())
+    }
+
+    fn run_with_stdin(
+        &self,
+        program: &str,
+        args: &[&str],
+        cwd: &Path,
+        stdin: &[u8],
+    ) -> Result<CommandOutput, CommandError> {
+        let mut child = std::process::Command::new(program)
+            .args(args)
+            .current_dir(cwd)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| {
+                if e.kind() == std::io::ErrorKind::NotFound {
+                    CommandError::NotFound {
+                        program: program.to_string(),
+                    }
+                } else {
+                    CommandError::Io {
+                        program: program.to_string(),
+                        message: e.to_string(),
+                    }
+                }
+            })?;
+
+        // Write the payload on its own thread, concurrently with this
+        // thread draining stdout/stderr via `wait_with_output` below.
+        // A protocol like `git cat-file --batch` replies to each stdin
+        // line as it arrives, so writing everything up front on the same
+        // thread that also has to read the reply back could deadlock once
+        // either the stdin or the stdout pipe buffer fills -- exactly the
+        // hazard `run_with_timeout_impl` above uses dedicated reader
+        // threads to avoid, mirrored here for the write side.
+        let mut stdin_pipe = child.stdin.take().expect("stdin was requested as piped");
+        let payload = stdin.to_vec();
+        let writer = std::thread::spawn(move || {
+            // A closed read end (the child exited early, e.g. on a bad
+            // invocation) would otherwise surface as a `BrokenPipe` write
+            // error here; the child's actual exit code/stderr, captured by
+            // `wait_with_output` below, is the caller-facing signal for
+            // that failure, so a write error on this thread is dropped
+            // rather than reported.
+            drop(stdin_pipe.write_all(&payload));
+            drop(stdin_pipe.flush());
+        });
+
+        let output = child.wait_with_output();
+        // The writer thread only writes then drops its handle, so it must
+        // already be finished (or about to finish) by the time the child
+        // has exited and `wait_with_output` has drained its output --
+        // joining here can't block indefinitely.
+        drop(writer.join());
+
+        match output {
+            Ok(o) => {
+                let stderr = String::from_utf8_lossy(&o.stderr).into_owned();
+                if !stderr.is_empty() {
+                    let secrets = known_credential_env_values(std::env::vars());
+                    eprint!("{}", redact_known_secrets(&stderr, &secrets));
+                }
+                Ok(CommandOutput {
+                    exit_code: o.status.code(),
+                    stdout: String::from_utf8_lossy(&o.stdout).into_owned(),
+                    stderr,
+                })
+            }
+            Err(e) => Err(CommandError::Io {
+                program: program.to_string(),
+                message: e.to_string(),
+            }),
+        }
     }
 }
 
@@ -911,5 +986,54 @@ mod tests {
              so no redaction marker should appear either -- proves the short-circuit is \
              actually taken rather than redacting-then-suppressing, got: {stderr}"
         );
+    }
+
+    /// `run_with_stdin` must actually deliver its payload to the child's
+    /// stdin and capture what the child writes back -- the whole point of
+    /// this method existing (e.g. for `git cat-file --batch`, which reads
+    /// its request list from stdin).
+    #[test]
+    fn run_with_stdin_pipes_input_to_child_and_captures_its_output() {
+        let runner = CliCommandRunner;
+        let out = runner
+            .run_with_stdin("cat", &[], Path::new("."), b"hello from stdin")
+            .unwrap();
+        assert!(out.success());
+        assert_eq!(out.stdout, "hello from stdin");
+    }
+
+    /// A payload larger than a typical OS pipe buffer (64KiB on Linux/macOS)
+    /// must not deadlock: writing it all before the child has drained
+    /// enough of its own stdout to unblock the writer would hang forever if
+    /// the write happened on the same thread that's supposed to be reading
+    /// the child's output. `run_with_stdin` writes on a dedicated thread
+    /// concurrently with `wait_with_output` draining stdout/stderr on this
+    /// one -- proven here by completing well within a generous bound
+    /// instead of hanging.
+    #[test]
+    fn run_with_stdin_does_not_deadlock_on_a_payload_larger_than_a_pipe_buffer() {
+        let runner = CliCommandRunner;
+        let payload = vec![b'x'; 4 * 1024 * 1024];
+        let start = Instant::now();
+        let out = runner.run_with_stdin("cat", &[], Path::new("."), &payload).unwrap();
+        let elapsed = start.elapsed();
+
+        assert!(out.success());
+        assert_eq!(out.stdout.len(), payload.len());
+        assert!(
+            elapsed < Duration::from_secs(10),
+            "run_with_stdin must not deadlock on a large payload; took {elapsed:?}"
+        );
+    }
+
+    /// A program that doesn't exist must fail the same way `run` does,
+    /// rather than panicking while trying to set up the stdin pipe.
+    #[test]
+    fn run_with_stdin_reports_not_found_for_a_missing_program() {
+        let runner = CliCommandRunner;
+        let err = runner
+            .run_with_stdin("callisto-definitely-not-a-real-binary", &[], Path::new("."), b"")
+            .unwrap_err();
+        assert!(matches!(err, CommandError::NotFound { .. }), "got: {err:?}");
     }
 }

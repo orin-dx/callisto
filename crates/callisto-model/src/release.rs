@@ -408,6 +408,19 @@ pub struct ReleaseDecisionEntry {
     pub reasons: Vec<ReleaseInclusionReason>,
 }
 
+/// Rejects a wire schema version that doesn't match `expected`, with the
+/// exact "unsupported {type_name} schema version" wording every schema-gated
+/// `Deserialize` impl in this crate uses. Centralizing this comparison means
+/// a schema bump that adds a nested versioned field (as `ReleaseIntentV1`
+/// does for `decision`/`snapshot`) can't forget to gate it the way a
+/// hand-copied check could.
+pub(crate) fn check_schema_version<E: serde::de::Error>(found: u8, expected: u8, type_name: &str) -> Result<(), E> {
+    if found != expected {
+        return Err(E::custom(format!("unsupported {type_name} schema version")));
+    }
+    Ok(())
+}
+
 /// Credential-free, deterministic release authority derived by callisto-graph.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -431,9 +444,7 @@ impl<'de> Deserialize<'de> for ReleaseDecisionV1 {
         D: Deserializer<'de>,
     {
         let wire = ReleaseDecisionV1Wire::deserialize(deserializer)?;
-        if wire.schema_version != Self::SCHEMA_VERSION {
-            return Err(serde::de::Error::custom("unsupported release decision schema version"));
-        }
+        check_schema_version::<D::Error>(wire.schema_version, Self::SCHEMA_VERSION, "release decision")?;
         let decision = Self::new(wire.entries).map_err(serde::de::Error::custom)?;
         if decision.digest != wire.digest {
             return Err(serde::de::Error::custom(
@@ -1286,12 +1297,17 @@ impl<'de> Deserialize<'de> for ReleaseIntentV1 {
         D: Deserializer<'de>,
     {
         let wire = ReleaseIntentV1Wire::deserialize(deserializer)?;
-        if wire.schema_version != Self::SCHEMA_VERSION
-            || wire.decision.schema_version != ReleaseDecisionV1::SCHEMA_VERSION
-            || wire.snapshot.schema_version != ReleaseInputSnapshotV1::SCHEMA_VERSION
-        {
-            return Err(serde::de::Error::custom("unsupported release intent schema version"));
-        }
+        check_schema_version::<D::Error>(wire.schema_version, Self::SCHEMA_VERSION, "release intent")?;
+        check_schema_version::<D::Error>(
+            wire.decision.schema_version,
+            ReleaseDecisionV1::SCHEMA_VERSION,
+            "release intent",
+        )?;
+        check_schema_version::<D::Error>(
+            wire.snapshot.schema_version,
+            ReleaseInputSnapshotV1::SCHEMA_VERSION,
+            "release intent",
+        )?;
         if wire.snapshot.packages.windows(2).any(|pair| pair[0] >= pair[1]) {
             return Err(serde::de::Error::custom("release input packages are not canonical"));
         }
