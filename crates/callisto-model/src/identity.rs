@@ -37,18 +37,7 @@ impl PackageId {
 
         if let Some((prefix, remainder)) = s.split_once(':') {
             if let Some(ecosystem) = Ecosystem::from_prefix(prefix) {
-                if remainder.is_empty() {
-                    return Err(PackageIdParseError::EmptyNameAfterPrefix {
-                        raw: s.to_string(),
-                        prefix: prefix.to_string(),
-                    });
-                }
-                if remainder.starts_with('-') {
-                    return Err(PackageIdParseError::LeadingHyphen { raw: s.to_string() });
-                }
-                if remainder.contains("..") {
-                    return Err(PackageIdParseError::PathTraversal { raw: s.to_string() });
-                }
+                Self::validate_prefixed_remainder(s, prefix, remainder)?;
                 return Ok(PackageId::Prefixed {
                     ecosystem,
                     name: remainder.to_string(),
@@ -58,18 +47,7 @@ impl PackageId {
 
         if let Some((prefix, remainder)) = s.split_once('/') {
             if let Some(ecosystem) = Ecosystem::from_prefix(prefix) {
-                if remainder.is_empty() {
-                    return Err(PackageIdParseError::EmptyNameAfterPrefix {
-                        raw: s.to_string(),
-                        prefix: prefix.to_string(),
-                    });
-                }
-                if remainder.starts_with('-') {
-                    return Err(PackageIdParseError::LeadingHyphen { raw: s.to_string() });
-                }
-                if remainder.contains("..") {
-                    return Err(PackageIdParseError::PathTraversal { raw: s.to_string() });
-                }
+                Self::validate_prefixed_remainder(s, prefix, remainder)?;
                 return Ok(PackageId::Prefixed {
                     ecosystem,
                     name: remainder.to_string(),
@@ -78,6 +56,24 @@ impl PackageId {
         }
 
         Ok(PackageId::Bare(s.to_string()))
+    }
+
+    /// Shared validation for the remainder of an ecosystem-prefixed id (the part
+    /// after the `:` or `/` separator), used by both prefixed forms in [`Self::parse`].
+    fn validate_prefixed_remainder(raw: &str, prefix: &str, remainder: &str) -> Result<(), PackageIdParseError> {
+        if remainder.is_empty() {
+            return Err(PackageIdParseError::EmptyNameAfterPrefix {
+                raw: raw.to_string(),
+                prefix: prefix.to_string(),
+            });
+        }
+        if remainder.starts_with('-') {
+            return Err(PackageIdParseError::LeadingHyphen { raw: raw.to_string() });
+        }
+        if remainder.contains("..") {
+            return Err(PackageIdParseError::PathTraversal { raw: raw.to_string() });
+        }
+        Ok(())
     }
 
     /// Returns the canonical display form: bare names as-is, prefixed ids as `ecosystem/name`.
