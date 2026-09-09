@@ -52,8 +52,8 @@ fn bare_rule_matching_napi_package_emits_one_cross_ecosystem_diagnostic() {
         "[package]\nname = \"my-pkg\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
     )
     .unwrap();
-    // Plain package.json without `os`/`cpu` arrays so detect_npm_role returns
-    // ManifestRole::Canonical (not Platform), giving two canonical ManifestDecls.
+    // Plain package.json without `os`/`cpu` arrays so npm_role() returns
+    // None (not a platform package), giving two canonical ManifestDecls.
     fs::write(pkg_dir.join("package.json"), r#"{"name":"my-pkg","version":"0.1.0"}"#).unwrap();
 
     // Bare [[package]] rule — matches the single packages-map entry whose
