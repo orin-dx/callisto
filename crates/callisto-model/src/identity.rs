@@ -219,23 +219,48 @@ pub enum PackageIdParseError {
     LeadingHyphen { raw: String },
 }
 
-/// A group name for fixed or linked package groups.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema)]
-#[schemars(with = "String")]
-#[serde(transparent)]
-pub struct GroupName(pub String);
+/// Defines the `as_str`/`Display` pair shared by every single-field `String`
+/// newtype in this crate, regardless of how the rest of the type (fields,
+/// derives, serde impls) is shaped.
+macro_rules! string_newtype_display {
+    ($name:ident) => {
+        impl $name {
+            #[doc = concat!("Returns the ", stringify!($name), " as a string slice.")]
+            pub fn as_str(&self) -> &str {
+                &self.0
+            }
+        }
 
-impl GroupName {
-    /// Returns the group name as a string slice.
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
+        impl ::std::fmt::Display for $name {
+            fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+                f.write_str(&self.0)
+            }
+        }
+    };
 }
 
-impl fmt::Display for GroupName {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
-    }
+pub(crate) use string_newtype_display;
+
+/// Defines a plain single-field `String` newtype: the common derive list,
+/// `#[schemars(with = "String")]`, transparent (unvalidated) serde, `as_str`,
+/// and `Display`. For newtypes that validate on construction/deserialize
+/// (e.g. [`TagName`](crate::tag::TagName), [`CommitSha`]), use
+/// [`string_newtype_display!`] instead and hand-write the rest.
+macro_rules! string_newtype {
+    ($(#[$doc:meta])* $name:ident) => {
+        $(#[$doc])*
+        #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema)]
+        #[schemars(with = "String")]
+        #[serde(transparent)]
+        pub struct $name(pub String);
+
+        string_newtype_display!($name);
+    };
+}
+
+string_newtype! {
+    /// A group name for fixed or linked package groups.
+    GroupName
 }
 
 /// Group kind: Fixed vs Linked.
@@ -246,11 +271,10 @@ pub enum GroupKind {
     Linked,
 }
 
-/// Registry key string e.g. "cratesIo", "npm".
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema)]
-#[schemars(with = "String")]
-#[serde(transparent)]
-pub struct RegistryKey(pub String);
+string_newtype! {
+    /// Registry key string e.g. "cratesIo", "npm".
+    RegistryKey
+}
 
 impl RegistryKey {
     /// Well-known registry key for crates.io.
@@ -261,17 +285,6 @@ impl RegistryKey {
     pub const PYPI: &'static str = "pypi";
     /// Well-known registry key for NuGet.
     pub const NUGET: &'static str = "nuget";
-
-    /// Returns the registry key as a string slice.
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl fmt::Display for RegistryKey {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
-    }
 }
 
 /// A 40-character hex Git commit SHA.
