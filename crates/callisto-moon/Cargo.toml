@@ -65,6 +65,10 @@ schematic = { version = "0.19.7", optional = true, default-features = false, fea
 schematic_types = { version = "0.11.5", optional = true }
 
 [dev-dependencies]
+# Process-global test-observability counters (callisto_graph::identity's
+# identity_read_count) are shared across all tests in one binary; #[serial]
+# keeps a counting regression test from racing sibling tests in the same file.
+serial_test.workspace = true
 # Black-box protocol verification: loads the *compiled* callisto-moon.wasm
 # into a real wasmtime-backed extism plugin container (via warpgate) and
 # drives register_extension/execute_extension through the actual Extism

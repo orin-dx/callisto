@@ -1,22 +1,55 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 use callisto_model::{Ecosystem, ManifestRole, PackageId};
 
 use crate::error::GraphError;
 
+/// Test-observability counter: total number of times [`IdentityResolver::resolve`]
+/// has actually read and parsed a manifest from disk (i.e. missed its memo).
+/// Production code never reads this; it exists so callers can write
+/// regression tests asserting that a given `(path, ecosystem)` pair is
+/// resolved (read + parsed) at most once per [`IdentityResolver`] lifetime,
+/// instead of once per caller. Mirrors `callisto_manifests::open_call_count`.
+static IDENTITY_READ_COUNT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// Resets the internal identity-read call counter to zero. Intended for use in test setup.
+pub fn reset_identity_read_count() {
+    IDENTITY_READ_COUNT.store(0, std::sync::atomic::Ordering::SeqCst);
+}
+
+/// Reads the current value of the internal identity-read call counter.
+pub fn identity_read_count() -> usize {
+    IDENTITY_READ_COUNT.load(std::sync::atomic::Ordering::SeqCst)
+}
+
 pub struct IdentityResolver {
     workspace_root: PathBuf,
+    /// Memoizes `resolve`'s result per `(project_root, ecosystem)` so a
+    /// manifest referenced by many dependency edges (e.g. a widely-depended-on
+    /// shared crate) is read and parsed from disk at most once per resolver
+    /// lifetime, rather than once per caller. `MoonProjectLocator` holds a
+    /// single `IdentityResolver` for its whole lifetime, so this memo spans
+    /// both `projects()` and `declared_edges()` -- the two call sites that
+    /// previously re-resolved the same identity independently.
+    memo: Mutex<BTreeMap<(PathBuf, Ecosystem), PackageId>>,
 }
 
 impl IdentityResolver {
     pub fn new(workspace_root: &Path) -> Result<Self, GraphError> {
         Ok(IdentityResolver {
             workspace_root: workspace_root.to_path_buf(),
+            memo: Mutex::new(BTreeMap::new()),
         })
     }
 
     pub fn resolve(&self, project_root: &Path, ecosystem: Ecosystem) -> Result<PackageId, GraphError> {
+        let key = (project_root.to_path_buf(), ecosystem);
+        if let Some(id) = self.memo.lock().unwrap_or_else(|e| e.into_inner()).get(&key) {
+            return Ok(id.clone());
+        }
+
         let abs = self.workspace_root.join(project_root);
         let Some(format) = ecosystem.canonical_manifest_format() else {
             return Err(GraphError::AmbiguousName {
@@ -27,6 +60,7 @@ impl IdentityResolver {
 
         let manifest_rel = project_root.join(format.file_name());
         let manifest_abs = abs.join(format.file_name());
+        IDENTITY_READ_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let content = std::fs::read_to_string(&manifest_abs).map_err(|e| callisto_model::ManifestError::Read {
             path: manifest_rel.clone(),
             message: e.to_string(),
@@ -41,10 +75,16 @@ impl IdentityResolver {
             },
         })?;
 
-        PackageId::parse(&name).map_err(|_err| GraphError::AmbiguousName {
+        let id = PackageId::parse(&name).map_err(|_err| GraphError::AmbiguousName {
             name: name.clone(),
             candidates: Vec::new(),
-        })
+        })?;
+
+        self.memo
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(key, id.clone());
+        Ok(id)
     }
 }
 
@@ -149,6 +189,59 @@ mod tests {
         let resolver = IdentityResolver::new(dir.path()).unwrap();
         let result = resolver.resolve(std::path::Path::new("."), Ecosystem::Cargo);
         assert!(result.is_err());
+    }
+
+    /// F16 regression: a second `resolve` call for the identical
+    /// `(project_root, ecosystem)` pair must be served from the memo, not
+    /// re-read from disk. Proven by deleting the manifest file between the
+    /// two calls -- if the second call fell through to disk, it would error
+    /// (file missing) instead of returning the memoized id.
+    #[test]
+    fn resolve_memoizes_and_does_not_re_read_deleted_manifest() {
+        let dir = tempfile::tempdir().unwrap();
+        let manifest_path = dir.path().join("Cargo.toml");
+        std::fs::write(
+            &manifest_path,
+            "[package]\nname = \"memo-crate\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+        let resolver = IdentityResolver::new(dir.path()).unwrap();
+
+        let first = resolver.resolve(std::path::Path::new("."), Ecosystem::Cargo).unwrap();
+        assert_eq!(first.name(), "memo-crate");
+
+        std::fs::remove_file(&manifest_path).unwrap();
+
+        let second = resolver
+            .resolve(std::path::Path::new("."), Ecosystem::Cargo)
+            .expect("second resolve must be served from the memo, not re-read the (now-deleted) manifest");
+        assert_eq!(second, first);
+    }
+
+    /// F16 regression: distinct `(path, ecosystem)` keys must not collide in
+    /// the memo -- resolving one path/ecosystem pair must not poison the
+    /// cache entry for a different pair.
+    #[test]
+    fn resolve_memo_is_keyed_by_both_path_and_ecosystem() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("a")).unwrap();
+        std::fs::create_dir_all(dir.path().join("b")).unwrap();
+        std::fs::write(
+            dir.path().join("a/Cargo.toml"),
+            "[package]\nname = \"crate-a\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("b/package.json"),
+            r#"{"name":"pkg-b","version":"1.0.0"}"#,
+        )
+        .unwrap();
+        let resolver = IdentityResolver::new(dir.path()).unwrap();
+
+        let a = resolver.resolve(std::path::Path::new("a"), Ecosystem::Cargo).unwrap();
+        let b = resolver.resolve(std::path::Path::new("b"), Ecosystem::Npm).unwrap();
+        assert_eq!(a.name(), "crate-a");
+        assert_eq!(b.name(), "pkg-b");
     }
 
     #[test]
