@@ -13,12 +13,7 @@ pub(crate) fn write_dry_run_text<W: std::io::Write>(
     plan: &callisto_model::PublishPlan,
     w: &mut W,
 ) -> std::io::Result<()> {
-    let is_empty = plan.rust_crates.is_empty()
-        && plan.npm_main_packages.is_empty()
-        && plan.npm_platform_packages.is_empty()
-        && plan.pypi_packages.is_empty()
-        && plan.releases.is_empty();
-    if is_empty {
+    if plan.is_empty() {
         writeln!(w, "Nothing to publish (dry run).")?;
     } else {
         writeln!(
