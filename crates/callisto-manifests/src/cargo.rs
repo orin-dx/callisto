@@ -19,7 +19,7 @@ pub struct CargoToml {
     inherited_deps: HashSet<(DepKind, String)>,
     inherited_version: bool,
     inheritance: Option<Arc<WorkspaceInheritance>>,
-    has_bom: bool,
+    fingerprint: crate::common::FormatFingerprint,
 }
 
 impl CargoToml {
@@ -32,7 +32,7 @@ impl CargoToml {
             message: e.to_string(),
         })?;
 
-        let has_bom = content.starts_with('\u{FEFF}');
+        let fingerprint = crate::common::FormatFingerprint::detect(&content);
         let clean_content = content.strip_prefix('\u{FEFF}').unwrap_or(&content);
 
         let doc: toml_edit::DocumentMut =
@@ -93,7 +93,7 @@ impl CargoToml {
             inherited_deps,
             inherited_version,
             inheritance: ctx.cargo_workspace.clone(),
-            has_bom,
+            fingerprint,
         })
     }
 }
@@ -108,26 +108,6 @@ impl CargoToml {
 /// has no need for, since a package's *name* is never workspace-inherited).
 pub fn cargo_package_name(doc: &toml_edit::DocumentMut) -> Option<&str> {
     doc.get("package").and_then(|p| p.get("name")).and_then(|n| n.as_str())
-}
-
-/// Sets `table[key]` to a scalar string value, preserving the existing
-/// entry's decor (comments/whitespace) when `table[key]` is already a
-/// plain value; otherwise inserts a fresh `key = "value"` entry with no
-/// decor to preserve. Shared by the member-manifest
-/// ([`CargoToml::write_version`]) and workspace-root
-/// ([`WorkspaceCargoResolver::write_version`]) version-write paths, which
-/// were previously two copies of this exact dance.
-fn set_scalar_preserving_decor(table: &mut toml_edit::Table, key: &str, new_value: &str) {
-    if let Some(item) = table.get_mut(key) {
-        if let Some(val) = item.as_value_mut() {
-            let decor = val.decor().clone();
-            let mut new_val = toml_edit::Value::from(new_value);
-            *new_val.decor_mut() = decor;
-            *val = new_val;
-            return;
-        }
-    }
-    table.insert(key, toml_edit::value(new_value));
 }
 
 /// Rewrites a dependency entry's `version` to `new_str`, preserving decor
@@ -203,10 +183,7 @@ pub(crate) fn identity_from_source(source: &str, path: &Path) -> Result<crate::M
 
 impl Manifest for CargoToml {
     fn persist(&mut self, permit: &ApplyPermit) -> Result<(), ManifestError> {
-        let mut text = self.document.to_string();
-        if self.has_bom {
-            text = format!("\u{FEFF}{}", text);
-        }
+        let text = self.fingerprint.apply(&self.document.to_string());
         crate::atomic::atomic_write(&self.absolute, &text, permit).map_err(|e| ManifestError::Write {
             path: self.path.clone(),
             message: e.to_string(),
@@ -237,14 +214,6 @@ impl Manifest for CargoToml {
             }
         }
         true
-    }
-
-    fn publish_targets(&self) -> Vec<callisto_model::PublishTarget> {
-        if !self.is_publishable() {
-            vec![callisto_model::PublishTarget::None]
-        } else {
-            vec![callisto_model::PublishTarget::CratesIo]
-        }
     }
 
     fn role(&self) -> ManifestRole {
@@ -318,7 +287,7 @@ impl Manifest for CargoToml {
                 field: "package",
             })?;
 
-        set_scalar_preserving_decor(pkg, "version", v.render());
+        crate::common::set_scalar_preserving_decor(pkg, "version", v.render());
         Ok(())
     }
 
@@ -677,7 +646,7 @@ impl WorkspaceCargoResolver {
                 field: "workspace.package",
             })?;
 
-        set_scalar_preserving_decor(pkg, "version", v.render());
+        crate::common::set_scalar_preserving_decor(pkg, "version", v.render());
         self.persist(permit)
     }
 
@@ -920,6 +889,55 @@ serde = "1.0"
         assert!(updated.contains("version = \"1.0.1\""));
     }
 
+    /// F4 regression lock: a `Cargo.toml` with CRLF line endings (common on
+    /// Windows / `core.autocrlf=true`) must keep its CRLF line endings
+    /// across a `write_version` + `persist` round trip, not get silently
+    /// rewritten to bare LF. `toml_edit::DocumentMut::to_string()` always
+    /// renders bare-LF text, so `CargoToml` must detect and reapply the
+    /// original line ending itself -- exactly the fingerprinting `npm.rs`
+    /// and `python.rs` already had (and `cargo.rs` previously lacked).
+    #[test]
+    fn preserves_crlf_line_endings_on_write() {
+        let dir = tempdir().unwrap();
+        let manifest_path = dir.path().join("Cargo.toml");
+        fs::write(
+            &manifest_path,
+            callisto_fixtures::corpus::cargo_toml_crlf_no_bom_sample(),
+        )
+        .unwrap();
+
+        let decl = ManifestDecl::new("Cargo.toml", ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap();
+        let ctx = OpenContext {
+            workspace_root: dir.path(),
+            cargo_workspace: None,
+            npm_workspace_kind: None,
+        };
+
+        let mut manifest = CargoToml::open(&decl, &ctx).unwrap();
+        assert_eq!(manifest.package_name().unwrap(), "crlf-crate");
+
+        let new_ver = Version::parse("1.0.1", VersionGrammar::SemVer).unwrap();
+        manifest.write_version(&new_ver, &permit()).unwrap();
+        manifest.persist(&permit()).unwrap();
+
+        let updated_bytes = fs::read(&manifest_path).unwrap();
+        let updated = String::from_utf8(updated_bytes).unwrap();
+
+        assert!(
+            !updated.starts_with('\u{FEFF}'),
+            "expected no BOM to be introduced, got:\n{updated:?}"
+        );
+        assert!(
+            updated.contains("\r\n"),
+            "expected CRLF line endings to survive write, got:\n{updated:?}"
+        );
+        assert!(
+            !updated.replace("\r\n", "").contains('\n'),
+            "expected no bare LF line endings to remain, got:\n{updated:?}"
+        );
+        assert!(updated.contains("version = \"1.0.1\" # release version"));
+    }
+
     #[test]
     fn empty_cargo_toml_returns_parse_error_not_panic() {
         let dir = tempdir().unwrap();
@@ -1134,6 +1152,52 @@ path = "../serde"
 
         let manifest = CargoToml::open(&decl, &ctx).unwrap();
         assert!(!manifest.is_publishable());
+    }
+
+    /// Regression lock for F25: `CargoToml` no longer overrides
+    /// `publish_targets()` -- it falls through to the `Manifest` trait's
+    /// default impl, which dispatches on `ecosystem()` (`Ecosystem::Cargo`
+    /// -> `CratesIo`, or `None` when not publishable). This test pins that
+    /// dispatch still produces the same output the deleted override did.
+    #[test]
+    fn publish_targets_uses_trait_default_dispatch_for_cargo() {
+        let dir = tempdir().unwrap();
+
+        let publishable_path = dir.path().join("publishable").join("Cargo.toml");
+        fs::create_dir_all(publishable_path.parent().unwrap()).unwrap();
+        fs::write(&publishable_path, "[package]\nname = \"dummy\"\nversion = \"0.1.0\"\n").unwrap();
+        let decl = ManifestDecl::new(
+            "publishable/Cargo.toml",
+            ManifestRole::Canonical,
+            ManifestFormat::CargoToml,
+        )
+        .unwrap();
+        let ctx = OpenContext {
+            workspace_root: dir.path(),
+            cargo_workspace: None,
+            npm_workspace_kind: None,
+        };
+        let manifest = CargoToml::open(&decl, &ctx).unwrap();
+        assert_eq!(
+            manifest.publish_targets(),
+            vec![callisto_model::PublishTarget::CratesIo]
+        );
+
+        let unpublishable_path = dir.path().join("unpublishable").join("Cargo.toml");
+        fs::create_dir_all(unpublishable_path.parent().unwrap()).unwrap();
+        fs::write(
+            &unpublishable_path,
+            "[package]\nname = \"dummy\"\nversion = \"0.1.0\"\npublish = false\n",
+        )
+        .unwrap();
+        let decl = ManifestDecl::new(
+            "unpublishable/Cargo.toml",
+            ManifestRole::Canonical,
+            ManifestFormat::CargoToml,
+        )
+        .unwrap();
+        let manifest = CargoToml::open(&decl, &ctx).unwrap();
+        assert_eq!(manifest.publish_targets(), vec![callisto_model::PublishTarget::None]);
     }
 
     #[test]
