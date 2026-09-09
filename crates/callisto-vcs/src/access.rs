@@ -114,43 +114,47 @@ impl<'r> GitAccess<'r> {
     pub fn staged_changes_since(&self, base: &CommitSha) -> Result<Vec<StagedChangeV1>, VcsError> {
         self.shell.staged_changes_since(base)
     }
+
+    /// Shared READ fallback policy (see module doc): try native `gix` first
+    /// if discovered, falling back to the shell on *any* error -- including
+    /// discovery having failed in the first place. Never called by a WRITE
+    /// method, whose authoritative-native-result policy is the opposite of
+    /// this one.
+    fn read_with_fallback<T>(
+        &self,
+        native: impl FnOnce(&GitRepository) -> Result<T, VcsError>,
+        shell: impl FnOnce() -> Result<T, VcsError>,
+    ) -> Result<T, VcsError> {
+        if let Some(repo) = &self.native {
+            if let Ok(value) = native(repo) {
+                return Ok(value);
+            }
+        }
+        shell()
+    }
 }
 
 impl GitDataSource for GitAccess<'_> {
     fn head_sha(&self) -> Result<CommitSha, VcsError> {
-        if let Some(repo) = &self.native {
-            if let Ok(sha) = repo.head_sha() {
-                return Ok(sha);
-            }
-        }
-        self.shell.head_sha()
+        self.read_with_fallback(|repo| repo.head_sha(), || self.shell.head_sha())
     }
 
     fn list_tags(&self, glob: Option<&str>) -> Result<Vec<TagName>, VcsError> {
-        if let Some(repo) = &self.native {
-            if let Ok(tags) = repo.list_tags(glob) {
-                return Ok(tags);
-            }
-        }
-        self.shell.list_tags(glob)
+        self.read_with_fallback(|repo| repo.list_tags(glob), || self.shell.list_tags(glob))
     }
 
     fn resolve_commit(&self, refname: &str) -> Result<Option<CommitSha>, VcsError> {
-        if let Some(repo) = &self.native {
-            if let Ok(sha) = repo.resolve_commit(refname) {
-                return Ok(sha);
-            }
-        }
-        self.shell.resolve_commit(refname)
+        self.read_with_fallback(
+            |repo| repo.resolve_commit(refname),
+            || self.shell.resolve_commit(refname),
+        )
     }
 
     fn commits_since(&self, since_ref: Option<&str>, pathspecs: &[PathBuf]) -> Result<Vec<GitCommit>, VcsError> {
-        if let Some(repo) = &self.native {
-            if let Ok(commits) = repo.commits_since(since_ref, pathspecs) {
-                return Ok(commits);
-            }
-        }
-        self.shell.commits_since(since_ref, pathspecs)
+        self.read_with_fallback(
+            |repo| repo.commits_since(since_ref, pathspecs),
+            || self.shell.commits_since(since_ref, pathspecs),
+        )
     }
 
     fn create_tag(

@@ -186,6 +186,7 @@ fn test_snapshot_strict_clean_graph_succeeds() {
     let args = SnapshotArgs {
         tag: "ci".to_string(),
         strict: true,
+        strict_graph: false,
     };
 
     let result = commands::snapshot::handle(args, &global);
@@ -211,12 +212,34 @@ fn test_snapshot_no_strict_clean_graph_succeeds() {
     let args = SnapshotArgs {
         tag: "ci".to_string(),
         strict: false,
+        strict_graph: false,
     };
 
     let result = commands::snapshot::handle(args, &global);
     assert!(
         result.is_ok(),
         "snapshot without --strict should succeed; got: {result:?}"
+    );
+}
+
+/// `callisto snapshot --strict-graph` (with `--strict` left off) must be
+/// honored as its own real flag on a clean graph, rather than being ignored
+/// because no field ever carried it through to `escalate()`.
+#[test]
+fn test_snapshot_strict_graph_alone_clean_graph_succeeds() {
+    let tmp = TempDir::new().unwrap();
+    let global = make_git_workspace(&tmp);
+
+    let args = SnapshotArgs {
+        tag: "ci".to_string(),
+        strict: false,
+        strict_graph: true,
+    };
+
+    let result = commands::snapshot::handle(args, &global);
+    assert!(
+        result.is_ok(),
+        "snapshot --strict-graph on a clean graph should succeed; got: {result:?}"
     );
 }
 
@@ -247,6 +270,7 @@ fn test_tag_strict_clean_graph_succeeds() {
         plan: plan_json,
         floating_major: false,
         strict: true,
+        strict_graph: false,
     };
 
     let result = commands::tag::handle(args, &global);
@@ -281,8 +305,40 @@ fn test_tag_no_strict_clean_graph_succeeds() {
         plan: plan_json,
         floating_major: false,
         strict: false,
+        strict_graph: false,
     };
 
     let result = commands::tag::handle(args, &global);
     assert!(result.is_ok(), "tag without --strict should succeed; got: {result:?}");
+}
+
+/// `callisto tag --strict-graph` (with `--strict` left off) must be honored
+/// as its own real flag on a clean graph, rather than being ignored because
+/// no field ever carried it through to `escalate()`.
+#[test]
+fn test_tag_strict_graph_alone_clean_graph_succeeds() {
+    let tmp = TempDir::new().unwrap();
+    let global = make_git_workspace(&tmp);
+
+    let plan_json = serde_json::json!({
+        "schemaVersion": 1,
+        "rustCrates": [],
+        "npmPlatformPackages": [],
+        "npmMainPackages": [],
+        "releases": []
+    })
+    .to_string();
+
+    let args = TagArgs {
+        plan: plan_json,
+        floating_major: false,
+        strict: false,
+        strict_graph: true,
+    };
+
+    let result = commands::tag::handle(args, &global);
+    assert!(
+        result.is_ok(),
+        "tag --strict-graph on a clean graph should succeed; got: {result:?}"
+    );
 }
