@@ -42,7 +42,7 @@ jobs:
         run: just lint
 
       - name: Install release verification tools
-        uses: taiki-e/install-action@0758d235715de2f3551eacc980d9ae8fce9342c3 # v2
+        uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b # v2
         with:
           tool: cargo-nextest,ripgrep
 
@@ -53,7 +53,7 @@ jobs:
         run: just wasm-check
 
       - name: Install cargo-deny
-        uses: taiki-e/install-action@0758d235715de2f3551eacc980d9ae8fce9342c3 # v2
+        uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b # v2
         with:
           tool: cargo-deny
 

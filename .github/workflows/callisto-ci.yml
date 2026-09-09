@@ -27,7 +27,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: Install workflow validation tools
-        uses: taiki-e/install-action@0758d235715de2f3551eacc980d9ae8fce9342c3 # v2
+        uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b # v2
         with:
           tool: ripgrep,zizmor@1.30.0
       - name: Lint workflow and action metadata
@@ -102,7 +102,7 @@ jobs:
       - uses: orin-dx/actions/setup-rust@2521888266780dabc7f5fd4c32b02d6ab82849db # v1.1
         with:
           targets: wasm32-wasip1
-      - uses: taiki-e/install-action@0758d235715de2f3551eacc980d9ae8fce9342c3 # v2
+      - uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b # v2
         with:
           tool: cargo-nextest
       - run: just test-ci
@@ -133,7 +133,7 @@ jobs:
         with:
           components: llvm-tools-preview
           targets: wasm32-wasip1
-      - uses: taiki-e/install-action@0758d235715de2f3551eacc980d9ae8fce9342c3 # v2
+      - uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b # v2
         with:
           tool: cargo-llvm-cov
       - run: just wasm-check
@@ -166,7 +166,7 @@ jobs:
       - uses: orin-dx/actions/setup-rust@2521888266780dabc7f5fd4c32b02d6ab82849db # v1.1
         with:
           targets: wasm32-wasip1
-      - uses: taiki-e/install-action@0758d235715de2f3551eacc980d9ae8fce9342c3 # v2
+      - uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b # v2
         with:
           tool: cargo-deny
       - run: just audit
