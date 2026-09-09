@@ -2103,3 +2103,11 @@ Yes, start now
 ---
 
 Anything else we need to fix? Any specs that need implementing in our docs?
+
+---
+
+Is there a way to fix check-api?
+
+---
+
+We should not leave things as draft after implemented BTW
