@@ -118,6 +118,23 @@ pub(crate) fn build_extension_output(
     }
 }
 
+/// Builds a failure [`ExecuteExtensionOutput`] from an already-built error
+/// JSON value and the error whose `Display` rendering becomes `rendered`.
+/// `exit_code` is always `1` -- every call site is a hard failure branch.
+///
+/// Pulled out of `execute_extension` (`extension_pdk.rs`), whose five
+/// failure branches (locator error, `Workspace::load` error, `plan_publish`
+/// error, `validate` error, `status` error) all hand-built this exact struct
+/// literal verbatim.
+#[cfg(any(feature = "pdk", test))]
+pub(crate) fn error_output(json_val: serde_json::Value, e: &impl std::fmt::Display) -> ExecuteExtensionOutput {
+    ExecuteExtensionOutput {
+        rendered: e.to_string(),
+        report: json_val,
+        exit_code: 1,
+    }
+}
+
 /// Resolves the subcommand `execute_extension` should dispatch to: the
 /// first `args` element if present, otherwise `"status"`.
 ///
@@ -329,5 +346,23 @@ mod tests {
 
         assert_eq!(output.exit_code, 1);
         assert_eq!(output.report, value);
+    }
+
+    // --- error_output tests (no pdk feature required) ---
+
+    /// `error_output` always forces `exit_code = 1` and carries the report
+    /// value through unchanged, regardless of what the caller passes.
+    #[test]
+    fn error_output_sets_exit_code_one_and_preserves_report() {
+        let json_val = serde_json::json!({
+            "schemaVersion": callisto_model::SCHEMA_VERSION,
+            "error": { "code": "E_LOCATE", "message": "boom" }
+        });
+
+        let output = error_output(json_val.clone(), &"boom");
+
+        assert_eq!(output.exit_code, 1);
+        assert_eq!(output.report, json_val);
+        assert_eq!(output.rendered, "boom");
     }
 }
