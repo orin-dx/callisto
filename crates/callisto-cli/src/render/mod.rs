@@ -1,5 +1,6 @@
 use std::io;
 
+use callisto_graph::config::ResolvedConfig;
 use callisto_model::{
     ComposePrBodyReport, InitReport, PublishAttemptResult, PublishPlan, PublishReport, SnapshotReport, StatusReport,
     TagReport, ValidateReport, VersionReport,
@@ -8,11 +9,23 @@ use callisto_model::{
 pub mod attribution;
 pub mod diff;
 
-pub fn render_diagnostics<W: io::Write>(diagnostics: &[callisto_model::Diagnostic], w: &mut W) -> io::Result<()> {
+/// `cfg` is `Some` only for report kinds that can actually carry a populated
+/// `governed_by` today (currently just `VersionReport`, via [`render_version`]);
+/// every other caller passes `None` so this stays a no-op for them rather than
+/// forcing every render function to thread a `ResolvedConfig` it has no
+/// governed diagnostic to attribute.
+pub fn render_diagnostics<W: io::Write>(
+    diagnostics: &[callisto_model::Diagnostic],
+    cfg: Option<&ResolvedConfig>,
+    w: &mut W,
+) -> io::Result<()> {
     if !diagnostics.is_empty() {
         writeln!(w, "\nDiagnostics:")?;
         for d in diagnostics {
             writeln!(w, "  [{:?}] {}", d.severity, d.message)?;
+            if let (Some(cfg), Some(key)) = (cfg, d.governed_by.as_ref()) {
+                writeln!(w, "    {}", attribution::attribution_line(key, cfg))?;
+            }
         }
     }
     Ok(())
@@ -33,10 +46,16 @@ pub fn render_status<W: io::Write>(report: &StatusReport, w: &mut W) -> io::Resu
             severity
         )?;
     }
-    render_diagnostics(&report.diagnostics, w)
+    render_diagnostics(&report.diagnostics, None, w)
 }
 
-pub fn render_version<W: io::Write>(report: &VersionReport, w: &mut W) -> io::Result<()> {
+/// `cfg` is the resolved config that produced `report`: §13 invariant 28
+/// requires the attribution line ("governed by ...") beneath any bump or
+/// diagnostic whose default could defensibly have gone the other way, and
+/// only the caller's already-resolved config has the value and provenance
+/// that line needs (`callisto-graph` deliberately carries only the `ConfigKey`
+/// in the report itself; see `render::attribution`).
+pub fn render_version<W: io::Write>(report: &VersionReport, cfg: &ResolvedConfig, w: &mut W) -> io::Result<()> {
     writeln!(w, "Version Plan (schema v{}):", report.schema_version)?;
     for bump in &report.bumps {
         writeln!(
@@ -46,8 +65,11 @@ pub fn render_version<W: io::Write>(report: &VersionReport, w: &mut W) -> io::Re
             bump.from.raw(),
             bump.to.raw()
         )?;
+        if let Some(key) = bump.governed_by.as_ref() {
+            writeln!(w, "    {}", attribution::attribution_line(key, cfg))?;
+        }
     }
-    render_diagnostics(&report.diagnostics, w)
+    render_diagnostics(&report.diagnostics, Some(cfg), w)
 }
 
 pub fn render_publish<W: io::Write>(report: &PublishPlan, w: &mut W) -> io::Result<()> {
@@ -61,11 +83,11 @@ pub fn render_publish<W: io::Write>(report: &PublishPlan, w: &mut W) -> io::Resu
     }
     if report.is_empty() {
         writeln!(w, "  No packages to publish.")?;
-        render_diagnostics(&report.diagnostics, w)?;
+        render_diagnostics(&report.diagnostics, None, w)?;
         return Ok(());
     }
     if total_packages == 0 {
-        render_diagnostics(&report.diagnostics, w)?;
+        render_diagnostics(&report.diagnostics, None, w)?;
         return Ok(());
     }
     if !report.rust_crates.is_empty() {
@@ -92,7 +114,7 @@ pub fn render_publish<W: io::Write>(report: &PublishPlan, w: &mut W) -> io::Resu
             writeln!(w, "    {} {}", pkg.name, pkg.version.raw())?;
         }
     }
-    render_diagnostics(&report.diagnostics, w)?;
+    render_diagnostics(&report.diagnostics, None, w)?;
     Ok(())
 }
 
@@ -112,7 +134,7 @@ pub fn render_publish_report<W: io::Write>(report: &PublishReport, w: &mut W) ->
             status
         )?;
     }
-    render_diagnostics(&report.diagnostics, w)
+    render_diagnostics(&report.diagnostics, None, w)
 }
 
 pub fn render_snapshot<W: io::Write>(report: &SnapshotReport, w: &mut W) -> io::Result<()> {
@@ -134,7 +156,7 @@ pub fn render_validate<W: io::Write>(report: &ValidateReport, w: &mut W) -> io::
         writeln!(w, "Validation passed.")?;
     } else {
         writeln!(w, "Validation failed with diagnostics:")?;
-        render_diagnostics(&report.diagnostics, w)?;
+        render_diagnostics(&report.diagnostics, None, w)?;
     }
     Ok(())
 }
@@ -218,7 +240,7 @@ pub fn render_matrix<W: io::Write>(report: &callisto_model::MatrixReport, w: &mu
         }
     }
 
-    render_diagnostics(&report.diagnostics, w)
+    render_diagnostics(&report.diagnostics, None, w)
 }
 
 #[cfg(test)]
@@ -756,5 +778,66 @@ mod tests {
         let text = String::from_utf8(out).unwrap();
         assert!(text.contains("Drift detected"), "got: {text}");
         assert!(text.contains("--yes"), "got: {text}");
+    }
+
+    /// §13 invariant 28 / §CLI.5.2: `render_version` must call
+    /// `render::attribution` for every bump and diagnostic that carries a
+    /// `governed_by`, and must stay silent for the ones that don't.
+    #[test]
+    fn render_version_prints_attribution_for_governed_bump_and_diagnostic() {
+        use callisto_model::{ConfigKey, Diagnostic, DiagnosticCode, DiagnosticSeverity};
+
+        let tmp = tempfile::tempdir().unwrap();
+        let cfg = callisto_graph::config::load(tmp.path()).unwrap();
+
+        let report = VersionReport {
+            schema_version: callisto_model::SCHEMA_VERSION,
+            bumps: vec![
+                BumpRecord {
+                    package: pkg("crate-a"),
+                    from: v1(),
+                    to: v1(),
+                    severity: Severity::Patch,
+                    governed_by: Some(ConfigKey::CASCADE_BUMP_SEVERITY),
+                    reason: None,
+                },
+                BumpRecord {
+                    package: pkg("crate-b"),
+                    from: v1(),
+                    to: v1(),
+                    severity: Severity::Patch,
+                    governed_by: None,
+                    reason: None,
+                },
+            ],
+            lockfile_refresh_results: None,
+            diagnostics: vec![Diagnostic {
+                code: DiagnosticCode::EmptyChangeset,
+                severity: DiagnosticSeverity::Warning,
+                message: "No pending changesets found in workspace".to_string(),
+                package: None,
+                path: None,
+                escalated_by: None,
+                governed_by: Some(ConfigKey::VALIDATION_ALLOW_EMPTY_CHANGESETS),
+            }],
+        };
+
+        let mut out = Vec::new();
+        render_version(&report, &cfg, &mut out).unwrap();
+        let text = String::from_utf8(out).unwrap();
+
+        assert!(
+            text.contains("crate-a") && text.contains("governed by [cascade].bump-severity = patch (default)"),
+            "governed bump must be followed by its attribution line; got:\n{text}"
+        );
+        assert_eq!(
+            text.matches("governed by [cascade]").count(),
+            1,
+            "the ungoverned crate-b bump must not print an attribution line; got:\n{text}"
+        );
+        assert!(
+            text.contains("governed by [validation].allow-empty-changesets = false (default)"),
+            "governed diagnostic must be followed by its attribution line; got:\n{text}"
+        );
     }
 }

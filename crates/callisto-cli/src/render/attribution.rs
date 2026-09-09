@@ -17,3 +17,43 @@ pub fn attribution_line(key: &ConfigKey, cfg: &ResolvedConfig) -> String {
         ConfigProvenance::Explicit => format!("governed by {formatted_key} = {val}"),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dotted_key_renders_with_table_brackets_and_default_marker() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cfg = callisto_graph::config::load(tmp.path()).unwrap();
+        assert_eq!(
+            attribution_line(&ConfigKey::CASCADE_BUMP_SEVERITY, &cfg),
+            "governed by [cascade].bump-severity = patch (default)"
+        );
+    }
+
+    #[test]
+    fn explicit_toml_value_drops_the_default_marker() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join("callisto.toml"),
+            "[cascade]\nbump-severity = \"minor\"\n",
+        )
+        .unwrap();
+        let cfg = callisto_graph::config::load(tmp.path()).unwrap();
+        assert_eq!(
+            attribution_line(&ConfigKey::CASCADE_BUMP_SEVERITY, &cfg),
+            "governed by [cascade].bump-severity = minor"
+        );
+    }
+
+    #[test]
+    fn key_with_no_dot_renders_bare_with_no_brackets() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cfg = callisto_graph::config::load(tmp.path()).unwrap();
+        assert_eq!(
+            attribution_line(&ConfigKey::RELEASE_TRIGGER, &cfg),
+            "governed by release-trigger = auto (default)"
+        );
+    }
+}
