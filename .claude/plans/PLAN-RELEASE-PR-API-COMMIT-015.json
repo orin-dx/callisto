@@ -2,7 +2,7 @@
   "artifact_type": "plan@1",
   "schema": "plan@1",
   "id": "PLAN-RELEASE-PR-API-COMMIT-015",
-  "status": "in-progress",
+  "status": "complete",
   "goal": "Replace the release-PR executor's local `git push` with a forge-commit-API sequence (commit-plan, deterministic staging branch, tree-equality check, REST ref move) so the built-in GITHUB_TOKEN never needs `.github/workflows/*` write permission on any ref, removing the SHA-suffixed-replacement-branch fallback and the PR churn it caused.",
   "specs": [{"id": "SPEC-RELEASE-PR-DECISION-014", "file": ".claude/specs/SPEC-RELEASE-PR-DECISION-014.json"}],
   "steps": [
@@ -28,34 +28,38 @@
     {
       "id": "T02",
       "kind": "vcs",
+      "status": "complete",
       "depends_on": ["T01"],
       "description": "Add ShellGit::staged_changes_since(base) -> Vec<StagedChangeV1> to callisto-vcs (git diff --cached --raw parsing plus reading worktree bytes), exposed through the GitAccess trait.",
       "verify": ["cargo test -p callisto-vcs", "just fmt-check", "just lint"],
-      "commit": "feat(vcs): add staged_changes_since observation"
+      "commit": "feat(vcs): add ShellGit::staged_changes_since for the commit-plan builder (3d4b1aa6)"
     },
     {
       "id": "T03",
       "kind": "cli",
+      "status": "complete",
       "depends_on": ["T01", "T02"],
       "description": "Add a read-only `callisto release-pr commit-plan --base-commit <sha> --message <msg> [--out <file>]` subcommand to callisto-cli that renders a ReleasePrCommitPlanV1 as JSON.",
       "verify": ["cargo test -p callisto-cli", "just fmt-check", "just lint"],
-      "commit": "feat(cli): add release-pr commit-plan subcommand"
+      "commit": "feat(cli): wire release-pr onto v2 types, add commit-plan subcommand (ab4a9f8f)"
     },
     {
       "id": "T04",
       "kind": "action",
+      "status": "complete",
       "depends_on": ["T03"],
       "description": "Rewrite .github/actions/callisto-action/scripts/create-or-update-release-pr.sh: drop the per-PR git fetch/workflow-diff loop from snapshot collection (now just gh pr list --json number,headRefName,headRepository,headRefOid); sequence becomes decide -> compose PR body -> run version command -> git add -A -> callisto release-pr commit-plan -> compare git write-tree against the API commit's tree SHA -> release-pr verify (before staging, before the real ref move, and before PR writes) -> stage via GraphQL createCommitOnBranch on the deterministic staging branch -> move the real branch's ref via REST PATCH/POST .../git/refs/heads/<branch> -> existing label/PR create-or-edit logic -> a trap that always deletes the staging ref. No `git push` anywhere in the script. Flip callisto-release.yml's version-pr job checkout to persist-credentials: false. Document setup_git_user in action.yml as a kept, backward-compatible no-op.",
       "verify": ["just test-release-action", "just ci"],
-      "commit": "feat(action): execute release-pr updates via forge commit API instead of git push"
+      "commit": "feat(action): commit the release PR through the forge API, not git push (98f45f60)"
     },
     {
       "id": "T05",
       "kind": "docs",
+      "status": "complete",
       "depends_on": ["T01", "T02", "T03", "T04"],
       "description": "Update SPEC-RELEASE-PR-DECISION-014.json and SPEC-RELEASE-INTERFACES-013.json to describe the forge-commit-API architecture and drop Supersede language; add this plan; update docs/06-publishing.md and ARCHITECTURE.md to remove SHA-suffixed-fallback/git-push language; add changesets for callisto-model, callisto-cli, and callisto-vcs.",
       "verify": ["python3 -m json.tool .claude/specs/SPEC-RELEASE-PR-DECISION-014.json", "python3 -m json.tool .claude/specs/SPEC-RELEASE-INTERFACES-013.json"],
-      "commit": "docs(release-pr): document forge-commit-api release-pr executor"
+      "commit": "docs(release-pr): document forge-commit-api release-pr executor (a1f1ebcc)"
     }
   ],
   "final_acceptance": "Do not mark SPEC-RELEASE-PR-DECISION-014 accepted until every acceptance criterion (including AC-006 for the commit-plan contract) has a named passing test, the exact GitHub action contract runs green with no git push, the SHA-suffixed replacement branches created under the prior supersede behavior remain recognized and updatable, and .github/workflows/* is provably never touched by the executor's mutations."
