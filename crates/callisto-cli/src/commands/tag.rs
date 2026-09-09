@@ -1,8 +1,9 @@
 use std::process::ExitCode;
 
-use callisto_model::{DiagnosticSeverity, PublishPlan};
+use callisto_model::PublishPlan;
 
 use crate::cli::{GlobalArgs, OutputFormat, TagArgs};
+use crate::commands::abort_on_crosscheck_failures;
 use crate::error::CliError;
 use crate::output::write_json;
 use crate::runner::CliCommandRunner;
@@ -12,24 +13,9 @@ pub fn handle(args: TagArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
     let runner = CliCommandRunner;
     let ws = load_workspace(global, &runner)?;
 
-    // Under `--strict`, promote graph diagnostics (including crosscheck
-    // failures) to Error severity and abort before creating any tags.
-    if args.strict {
-        let mut diags = ws.graph.diagnostics().to_vec();
-        callisto_graph::commands::escalate(&mut diags, true, true);
-        let has_errors = diags.iter().any(|d| d.severity == DiagnosticSeverity::Error);
-        if has_errors {
-            let messages: Vec<String> = diags
-                .iter()
-                .filter(|d| d.severity == DiagnosticSeverity::Error)
-                .map(|d| d.message.clone())
-                .collect();
-            return Err(CliError::Other(format!(
-                "--strict: workspace graph has crosscheck failures:\n{}",
-                messages.join("\n")
-            )));
-        }
-    }
+    // Promote graph diagnostics (including crosscheck failures) per
+    // `--strict`/`--strict-graph` and abort before creating any tags.
+    abort_on_crosscheck_failures(ws.graph.diagnostics(), args.strict, args.strict_graph)?;
 
     let plan_text = crate::commands::read_json_arg(&args.plan)?;
 
@@ -91,6 +77,7 @@ mod tests {
                 plan: plan_path.to_string_lossy().to_string(),
                 floating_major: false,
                 strict: false,
+                strict_graph: false,
             },
             &global,
         );
@@ -126,6 +113,7 @@ mod tests {
                 plan: missing_plan.to_string_lossy().to_string(),
                 floating_major: false,
                 strict: false,
+                strict_graph: false,
             },
             &global,
         );

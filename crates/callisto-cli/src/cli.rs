@@ -187,6 +187,9 @@ pub struct SnapshotArgs {
     /// error-severity diagnostics.
     #[arg(long)]
     pub strict: bool,
+    /// Treat dependency-graph warnings as errors.
+    #[arg(long)]
+    pub strict_graph: bool,
 }
 
 /// Arguments for the `init` command.
@@ -241,6 +244,9 @@ pub struct TagArgs {
     /// error-severity diagnostics.
     #[arg(long)]
     pub strict: bool,
+    /// Treat dependency-graph warnings as errors.
+    #[arg(long)]
+    pub strict_graph: bool,
 }
 
 /// Arguments for the `filter-plan` command.

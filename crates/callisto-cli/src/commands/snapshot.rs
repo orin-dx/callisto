@@ -1,9 +1,10 @@
 use std::process::ExitCode;
 
 use callisto_graph::apply::{apply_version_plan, ApplyOptions};
-use callisto_model::{ApplyPermit, DiagnosticSeverity};
+use callisto_model::ApplyPermit;
 
 use crate::cli::{GlobalArgs, OutputFormat, SnapshotArgs};
+use crate::commands::abort_on_crosscheck_failures;
 use crate::error::CliError;
 use crate::output::write_json;
 use crate::render;
@@ -14,24 +15,9 @@ pub fn handle(args: SnapshotArgs, global: &GlobalArgs) -> Result<ExitCode, CliEr
     let runner = CliCommandRunner;
     let ws = load_workspace(global, &runner)?;
 
-    // Under `--strict`, promote graph diagnostics (including crosscheck
-    // failures) to Error severity and abort before touching any files.
-    if args.strict {
-        let mut diags = ws.graph.diagnostics().to_vec();
-        callisto_graph::commands::escalate(&mut diags, true, true);
-        let has_errors = diags.iter().any(|d| d.severity == DiagnosticSeverity::Error);
-        if has_errors {
-            let messages: Vec<String> = diags
-                .iter()
-                .filter(|d| d.severity == DiagnosticSeverity::Error)
-                .map(|d| d.message.clone())
-                .collect();
-            return Err(CliError::Other(format!(
-                "--strict: workspace graph has crosscheck failures:\n{}",
-                messages.join("\n")
-            )));
-        }
-    }
+    // Promote graph diagnostics (including crosscheck failures) per
+    // `--strict`/`--strict-graph` and abort before touching any files.
+    abort_on_crosscheck_failures(ws.graph.diagnostics(), args.strict, args.strict_graph)?;
 
     let (plan, report) = callisto_graph::commands::plan_snapshot(&ws, &args.tag)?;
 
@@ -127,6 +113,7 @@ mod tests {
             SnapshotArgs {
                 tag: "canary".to_string(),
                 strict: false,
+                strict_graph: false,
             },
             &global,
         );
