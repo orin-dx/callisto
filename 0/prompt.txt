@@ -1907,3 +1907,37 @@ Note: git commands in this worktree-isolated session are blocked by the `rtk` Pr
 ---
 
 Yes please
+
+---
+
+<task-notification>
+<task-id>afa3a4926727e3fa5</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8f8eb6fc-22cd-45a0-a0c3-707f9385dbc8/tasks/afa3a4926727e3fa5.output</output-file>
+<status>completed</status>
+<summary>Agent "Use PublishPlan::is_empty at both CLI call sites" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Commit succeeded (a pre-commit hook ran format-check, which passed clean). Not pushed, no PR opened, as instructed.
+
+## Summary
+
+Fixed the confirmed duplication finding: two CLI call sites re-derived `PublishPlan` emptiness by hand instead of using the canonical `PublishPlan::is_empty()` from `crates/callisto-model/src/plan.rs`.
+
+**Changes** (in worktree `/Users/gabe/Projects/callisto/.claude/worktrees/agent-afa3a4926727e3fa5`):
+1. `crates/callisto-cli/src/commands/publish.rs` — `write_dry_run_text`: replaced the 5-field hand-listed `&amp;&amp;` check with `plan.is_empty()`.
+2. `crates/callisto-cli/src/render/mod.rs` — `render_publish`: changed the true-emptiness branch condition from `total_packages == 0 &amp;&amp; report.releases.is_empty()` to `report.is_empty()`. Left `total_packages` in place since it's still used for the package-section-skip early return and for per-section counts.
+
+**Equivalence proof** (no behavior change, as required): `total_packages` is a sum of four non-negative lengths, so `total_packages == 0` iff all four package-field `.is_empty()` are true. ANDed with `report.releases.is_empty()`, that's exactly the five-field AND that `PublishPlan::is_empty()` computes — mathematically identical for every input, not just the existing test cases.
+
+**Verification**:
+- `cargo test -p callisto-cli`: all 96+ tests across every test binary pass (including the specifically named `dry_run_text_contains_dry_run_for_empty_plan`, `dry_run_empty_plan_message_is_present_tense`, `dry_run_release_only_plan_is_not_empty`).
+- `cargo clippy -p callisto-cli --all-targets -- -D warnings`: clean.
+- `cargo fmt -p callisto-cli -- --check`: clean.
+- Diff is minimal: 3 files changed, 12 insertions, 7 deletions.
+
+**Changeset**: `.changeset/publish-plan-is-empty-callers.md`, patch-level for `callisto-cli`.
+
+**Commit**: `736c056d64790302775bf7ba6f762232da67ad67` on branch `worktree-agent-afa3a4926727e3fa5` (this worktree's branch, based on `main` at `ae0ceac1`), message `refactor(cli): use PublishPlan::is_empty() at both remaining call sites`, ending with the required `Claude-Session:` trailer. Not pushed; no PR opened.</result>
+<usage><subagent_tokens>79839</subagent_tokens><tool_uses>22</tool_uses><duration_ms>255007</duration_ms></usage>
+<worktree><worktreePath>/Users/gabe/Projects/callisto/.claude/worktrees/agent-afa3a4926727e3fa5</worktreePath><worktreeBranch>worktree-agent-afa3a4926727e3fa5</worktreeBranch></worktree>
+</task-notification>
