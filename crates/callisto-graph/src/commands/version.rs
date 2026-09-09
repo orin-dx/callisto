@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use callisto_changelog::{ChangeSource, ChangelogEntry, ChangelogInput};
-use callisto_manifests::{open, OpenContext, WorkspaceCargoResolver};
+use callisto_manifests::{open, OpenContext};
 use callisto_model::{BumpReason, CommandRunner, GroupKind, ManifestRole, Severity};
 
 use crate::aggregate::aggregate;
@@ -277,21 +277,7 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
     let bump_by_pkg: std::collections::BTreeMap<callisto_model::PackageId, &PlannedBump> =
         bumps.iter().map(|b| (b.package.clone(), b)).collect();
 
-    let cargo_workspace = if ws.root.join("Cargo.toml").exists() {
-        if let Ok(resolver) = WorkspaceCargoResolver::load(&ws.root.join("Cargo.toml")) {
-            resolver.inheritance().ok().map(std::sync::Arc::new)
-        } else {
-            None
-        }
-    } else {
-        None
-    };
-    let npm_workspace_kind = callisto_manifests::detect_npm_workspace_kind(&ws.root).ok().flatten();
-    let open_ctx = OpenContext {
-        workspace_root: &ws.root,
-        cargo_workspace,
-        npm_workspace_kind,
-    };
+    let open_ctx = OpenContext::for_workspace_root(&ws.root);
 
     let mut platform_writes = Vec::new();
     let mut optional_dep_map: std::collections::BTreeMap<std::path::PathBuf, Vec<(String, callisto_model::Version)>> =
@@ -319,7 +305,9 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
                     let owner_fmt = callisto_model::ManifestFormat::from_path(&owner_decl.path)?;
                     let owner_manifest_decl =
                         callisto_model::ManifestDecl::new(owner_decl.path.clone(), ManifestRole::Canonical, owner_fmt)?;
-                    let owner_handle = open(&owner_manifest_decl, &open_ctx)?;
+                    // Cached: owner manifest is shared across every platform target under it.
+                    let owner_handle =
+                        crate::manifest_cache::open_cached(&ws.manifest_cache, &owner_manifest_decl, &open_ctx)?;
                     let has_matching_optional_dep = owner_handle
                         .iter_dependencies()
                         .any(|dep| dep.kind == callisto_model::DepKind::Optional && &dep.name == name);
@@ -1806,6 +1794,106 @@ mod tests {
             write.input.entries[1].source,
             callisto_changelog::ChangeSource::NewGroupMember { .. }
         ));
+    }
+
+    /// Regression: a `[[fixed-group]]` naming a package that has since been
+    /// removed from the workspace, combined with a live sibling receiving a
+    /// changeset-driven severity, must not crash `plan_version`. Before the
+    /// fix, `solve_cascade`'s Fixed-group convergence block (unlike the
+    /// Linked-group block right above it) wrote the stale id into
+    /// `CascadeOutcome.severities`/`.targets` unconditionally, and this
+    /// module's `pkg_map.get(id).copied().unwrap()` then panicked because
+    /// `pkg_map` is built only from live graph packages. The fix mirrors the
+    /// Linked-group guard: skip stale members and emit an `UnknownPackage`
+    /// diagnostic instead, matching what `aggregate::union_fixed` already
+    /// does for the identical scenario.
+    #[test]
+    fn plan_version_skips_stale_fixed_group_member_instead_of_panicking() {
+        use crate::config::{GroupDef, GroupMember, GroupTable};
+        use callisto_model::{GroupKind, GroupName, PackageId};
+
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        git_init_with_commit(root);
+
+        std::fs::create_dir_all(root.join("pkg-live")).unwrap();
+        std::fs::write(
+            root.join("pkg-live").join("Cargo.toml"),
+            "[package]\nname = \"pkg-live\"\nversion = \"1.0.0\"\n",
+        )
+        .unwrap();
+
+        // No `[[fixed-group]]` in callisto.toml -- `pkg-stale` (below) would
+        // fail `GroupTable::resolve`'s `IdentityIndex` lookup at `Workspace::load`
+        // time if declared there. Instead, the stale-referencing GroupTable is
+        // injected directly onto the loaded workspace's config below, isolating
+        // the scenario this bug is actually about: a group config (by whatever
+        // means it reached this state) naming a package absent from
+        // `ws.graph.packages()` / `base_versions()`.
+        std::fs::create_dir_all(root.join(".changeset")).unwrap();
+        std::fs::write(
+            root.join(".changeset/bump.md"),
+            "---\n\"pkg-live\": patch\n---\n\nfix.\n",
+        )
+        .unwrap();
+        commit_all(root, "add packages");
+
+        let locator = IgnoreWalkLocator::new(root);
+        let runner = NoopRunner;
+        let mut ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
+
+        let pkg_live = PackageId::parse("pkg-live").unwrap();
+        let pkg_stale = PackageId::parse("pkg-stale").unwrap();
+        let group_def = GroupDef {
+            name: GroupName("grp".to_string()),
+            kind: GroupKind::Fixed,
+            members: vec![
+                GroupMember::Package(pkg_live.clone()),
+                GroupMember::Package(pkg_stale.clone()),
+            ],
+        };
+        ws.config.groups = GroupTable::from_groups(vec![group_def], vec![]);
+
+        let inference = NoInference;
+        let opts = VersionOptions {
+            strict: false,
+            strict_graph: false,
+            allow_empty_changesets: true,
+        };
+
+        let plan = plan_version(&ws, &inference, &opts)
+            .expect("plan_version must gracefully skip the stale fixed-group member, not error");
+
+        assert!(
+            plan.bumps.iter().all(|b| b.package != pkg_stale),
+            "the stale fixed-group member must never appear in the planned bumps: {:?}",
+            plan.bumps
+        );
+
+        let unknown_diags: Vec<_> = plan
+            .diagnostics
+            .iter()
+            .filter(|d| d.code == callisto_model::DiagnosticCode::UnknownPackage)
+            .collect();
+        assert!(
+            !unknown_diags.is_empty(),
+            "plan_version must emit an UnknownPackage diagnostic for the stale fixed-group \
+             member; got diagnostics: {:?}",
+            plan.diagnostics
+        );
+        assert!(
+            unknown_diags
+                .iter()
+                .any(|d| d.governed_by == Some(callisto_model::ConfigKey::FIXED_GROUP)),
+            "the UnknownPackage diagnostic must be governed by ConfigKey::FIXED_GROUP; got: {:?}",
+            unknown_diags
+        );
+
+        assert!(
+            plan.bumps.iter().any(|b| b.package == pkg_live),
+            "the live sibling pkg-live must still be bumped normally: {:?}",
+            plan.bumps
+        );
     }
 
     /// AC-004 (additive-on-top-of-AC-005 sub-case): same fixed-group

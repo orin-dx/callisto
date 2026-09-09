@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use serde_json::Value;
 
-use callisto_manifests::{detect_npm_workspace_kind, Manifest, OpenContext, WorkspaceCargoResolver};
+use callisto_manifests::{Manifest, OpenContext};
 use callisto_model::{
     CommandRunner, DepEdge, Diagnostic, DiagnosticCode, DiagnosticSeverity, Ecosystem, ManifestDecl, ManifestFormat,
     ManifestRole, Package, PackageId, PublishTarget, ReleaseTrigger,
@@ -78,23 +78,7 @@ impl ManifestWalkResolver {
     ) -> Result<Self, GraphError> {
         let projects = locator.projects()?;
 
-        let cargo_workspace = if root.join("Cargo.toml").exists() {
-            if let Ok(resolver) = WorkspaceCargoResolver::load(&root.join("Cargo.toml")) {
-                resolver.inheritance().ok().map(Arc::new)
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-
-        let npm_workspace_kind = detect_npm_workspace_kind(root).ok().flatten();
-
-        let ctx = OpenContext {
-            workspace_root: root,
-            cargo_workspace,
-            npm_workspace_kind,
-        };
+        let ctx = OpenContext::for_workspace_root(root);
 
         let mut package_manifest_decls: BTreeMap<PackageId, (PathBuf, Vec<ManifestDecl>)> = BTreeMap::new();
         let mut index = IdentityIndex::default();

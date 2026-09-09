@@ -164,21 +164,7 @@ impl<'a, R: CommandRunner, D: DependencyResolver> Workspace<'a, R, D> {
     }
 
     pub fn base_versions(&self) -> Result<BTreeMap<PackageId, Version>, GraphError> {
-        let cargo_workspace = if self.root.join("Cargo.toml").exists() {
-            if let Ok(resolver) = callisto_manifests::WorkspaceCargoResolver::load(&self.root.join("Cargo.toml")) {
-                resolver.inheritance().ok().map(std::sync::Arc::new)
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-        let npm_workspace_kind = callisto_manifests::detect_npm_workspace_kind(&self.root).ok().flatten();
-        let ctx = callisto_manifests::OpenContext {
-            workspace_root: &self.root,
-            cargo_workspace,
-            npm_workspace_kind,
-        };
+        let ctx = callisto_manifests::OpenContext::for_workspace_root(&self.root);
 
         let mut versions = BTreeMap::new();
         for pkg in self.graph.packages() {

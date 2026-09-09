@@ -50,13 +50,18 @@ pub fn changed_since_last_tag<R: CommandRunner>(
     // hyphen-leading tag reaching this far.
     let qualified = format!("refs/tags/{}", last.name.as_str());
 
-    if let Ok(commits) = git.commits_since(Some(&qualified), &[]) {
+    // Scoped identically to the `git diff --quiet` fallback below: an
+    // empty pathspec here would walk every commit in the *whole* repo
+    // since the tag, so any other package's commit would short-circuit
+    // this package as "changed" too.
+    let paths = package_paths(pkg);
+
+    if let Ok(commits) = git.commits_since(Some(&qualified), &paths) {
         if !commits.is_empty() {
             return Ok(true);
         }
     }
 
-    let paths = package_paths(pkg);
     let mut args = vec!["diff", "--quiet", qualified.as_str(), "--"];
     let path_strs: Vec<String> = paths.iter().map(|p| p.display().to_string()).collect();
     for p in &path_strs {
@@ -320,6 +325,96 @@ mod tests {
             runner.diff_calls.load(Ordering::SeqCst),
             2,
             "exactly one git diff per package"
+        );
+    }
+
+    /// Routes `git log`/`git diff` responses by whether the shelled args
+    /// carry a pathspec under `touched_path_prefix`, simulating what real
+    /// `git` does when a pathspec is (or is not) passed: a commit/diff
+    /// "touches" a package only when the pathspec scopes to that package's
+    /// own path. When no `--`-delimited pathspec is present at all (the
+    /// pre-fix bug's `&[]`), the query is repo-wide and therefore always
+    /// sees the touched package's activity, regardless of which package is
+    /// actually being asked about.
+    struct PathScopedRunner {
+        touched_path_prefix: &'static str,
+        diff_calls: AtomicUsize,
+        last_diff_args: std::sync::Mutex<Vec<String>>,
+    }
+
+    impl CommandRunner for PathScopedRunner {
+        fn run(&self, program: &str, args: &[&str], _cwd: &Path) -> Result<CommandOutput, CommandError> {
+            assert_eq!(program, "git");
+            let has_pathspec_marker = args.contains(&"--");
+            let scoped_to_touched = args.iter().any(|a| a.starts_with(self.touched_path_prefix));
+            match args.first() {
+                Some(&"log") => {
+                    let sha = "a".repeat(40);
+                    let stdout = if !has_pathspec_marker || scoped_to_touched {
+                        format!("\u{1e}{sha}\u{1f}feat: something\n")
+                    } else {
+                        String::new()
+                    };
+                    Ok(CommandOutput {
+                        exit_code: Some(0),
+                        stdout,
+                        stderr: String::new(),
+                    })
+                }
+                Some(&"diff") => {
+                    self.diff_calls.fetch_add(1, Ordering::SeqCst);
+                    *self.last_diff_args.lock().unwrap() = args.iter().map(|s| s.to_string()).collect();
+                    Ok(CommandOutput {
+                        exit_code: Some(i32::from(scoped_to_touched)),
+                        stdout: String::new(),
+                        stderr: String::new(),
+                    })
+                }
+                other => panic!("unexpected git subcommand: {other:?}"),
+            }
+        }
+    }
+
+    /// Regression test for the bug where `changed_since_last_tag` called
+    /// `commits_since` with an empty (repo-wide) pathspec instead of
+    /// `package_paths(pkg)`. Only `pkg-a` has commits since its tag that
+    /// touch its own paths; `pkg-b`'s tag is just as stale, but nothing
+    /// under `pkg-b`'s own path changed. Pre-fix, the unscoped
+    /// `commits_since` sees `pkg-a`'s commit and short-circuits `Ok(true)`
+    /// for `pkg-b` too, even though `pkg-b` itself never changed.
+    #[test]
+    fn other_package_unchanged_when_only_sibling_package_has_commits_since_tag() {
+        let dir = non_repo_dir();
+        let pkg_a = make_pkg("pkg-a");
+        let pkg_b = make_pkg("pkg-b");
+        let tags_a = tag_index_with_tag(dir.path(), "pkg-a", "pkg-a@1.0.0");
+        let tags_b = tag_index_with_tag(dir.path(), "pkg-b", "pkg-b@1.0.0");
+        let runner = PathScopedRunner {
+            touched_path_prefix: "pkg-a",
+            diff_calls: AtomicUsize::new(0),
+            last_diff_args: std::sync::Mutex::new(Vec::new()),
+        };
+        let git = GitAccess::discover(dir.path(), &runner);
+
+        let changed_a = changed_since_last_tag(&runner, dir.path(), &pkg_a, &tags_a, &git).unwrap();
+        assert!(changed_a, "pkg-a has commits since its tag touching its own paths");
+
+        let changed_b = changed_since_last_tag(&runner, dir.path(), &pkg_b, &tags_b, &git).unwrap();
+        assert!(
+            !changed_b,
+            "pkg-b has no commits touching its own paths since its tag -- only pkg-a changed \
+             -- so it must report unchanged, not short-circuit true just because *some* other \
+             package in the repo changed"
+        );
+
+        // The path-scoped `diff --quiet` fallback must actually run for
+        // pkg-b, proving the (correctly scoped) `commits_since` came back
+        // empty rather than the check being skipped entirely.
+        assert_eq!(runner.diff_calls.load(Ordering::SeqCst), 1);
+        assert!(
+            runner.last_diff_args.lock().unwrap().iter().any(|a| a == "pkg-b"),
+            "diff --quiet must be scoped to pkg-b's own paths, got: {:?}",
+            runner.last_diff_args.lock().unwrap()
         );
     }
 }

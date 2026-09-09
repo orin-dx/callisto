@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use callisto_model::{CommandRunner, ComposePrBodyReport, SCHEMA_VERSION};
 
 use crate::commands::version::plan_version;
@@ -136,6 +138,10 @@ pub fn render_pr_body_from_plan(
     // 3. Collapsible Package Details
     body.push_str("### 📦 Package Release Details\n\n");
 
+    // PERF: build a map once so each lookup inside the loop is O(1)
+    // instead of O(N) (the previous changelog_writes().find() call).
+    let changelog_write_map: HashMap<_, _> = plan.changelog_writes.iter().map(|w| (&w.input.package, w)).collect();
+
     for bump in &plan.bumps {
         let is_open =
             bump.severity == callisto_model::Severity::Major || bump.severity == callisto_model::Severity::Minor;
@@ -156,7 +162,7 @@ pub fn render_pr_body_from_plan(
             bump.to.render()
         ));
 
-        let matching_write = plan.changelog_writes.iter().find(|w| w.input.package == bump.package);
+        let matching_write = changelog_write_map.get(&bump.package).copied();
 
         let mut rendered = false;
         if let Some(w) = matching_write {

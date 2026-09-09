@@ -115,6 +115,36 @@ pub struct OpenContext<'a> {
     pub npm_workspace_kind: Option<WorkspaceKind>,
 }
 
+impl<'a> OpenContext<'a> {
+    /// Builds an [`OpenContext`] rooted at `root` by resolving Cargo
+    /// workspace inheritance (when `root/Cargo.toml` exists) and detecting
+    /// the npm workspace kind. This is the single reusable constructor for
+    /// the "check Cargo.toml exists, load workspace inheritance, detect npm
+    /// workspace kind" sequence that call sites previously reimplemented
+    /// independently (audit pattern: duplication) -- see
+    /// `callisto-graph`'s `walk`, `lib` (`Workspace::base_versions`),
+    /// `apply`, and `commands::version` modules.
+    pub fn for_workspace_root(root: &'a Path) -> OpenContext<'a> {
+        let cargo_workspace = if root.join("Cargo.toml").exists() {
+            if let Ok(resolver) = WorkspaceCargoResolver::load(&root.join("Cargo.toml")) {
+                resolver.inheritance().ok().map(Arc::new)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        let npm_workspace_kind = detect_npm_workspace_kind(root).ok().flatten();
+
+        OpenContext {
+            workspace_root: root,
+            cargo_workspace,
+            npm_workspace_kind,
+        }
+    }
+}
+
 /// Test-observability counter: total number of times [`open`] has been
 /// invoked. Production code never reads this; it exists so callers (in
 /// particular, callers building a caching layer on top of `open()`) can

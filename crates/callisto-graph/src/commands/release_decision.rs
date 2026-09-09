@@ -5,11 +5,29 @@
 //! exposing a mutation route.
 
 use callisto_model::{
-    BumpReason, CommandRunner, CommitSha, Ecosystem, ReleaseDecisionEntry, ReleaseDecisionV1, ReleaseInclusionReason,
-    ReleasePackageId, Version,
+    BumpReason, CommandRunner, CommitSha, Ecosystem, Package, ReleaseDecisionEntry, ReleaseDecisionV1,
+    ReleaseInclusionReason, ReleasePackageId, Version,
 };
 
 use crate::{DependencyResolver, GraphError, VersionPlan, Workspace};
+
+/// Computes one [`ReleasePackageId`] per canonical manifest, ecosystem-qualified
+/// against `package`'s name.
+///
+/// This is the single derivation of release package identity shared by every
+/// site that computes or verifies release authority: [`derive_release_decision`],
+/// [`derive_release_commit_decision`], and `release::derive_release_inputs`.
+/// Per this module's own established lesson (see the doc comment on
+/// [`derive_release_commit_decision`]), independently reimplementing this
+/// mapping at each call site is exactly the kind of duplicated derivation
+/// that drifts -- so it lives here once instead.
+pub(crate) fn release_package_ids(package: &Package) -> Result<Vec<ReleasePackageId>, GraphError> {
+    package
+        .canonical_manifests()
+        .map(|manifest| ReleasePackageId::new(manifest.ecosystem(), package.id.name()))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_error| GraphError::ReleaseIntentStale)
+}
 
 /// Derives the durable roster from a freshly computed version plan.
 ///
@@ -21,11 +39,7 @@ pub fn derive_release_decision<R: callisto_model::CommandRunner, D: DependencyRe
 ) -> Result<ReleaseDecisionV1, GraphError> {
     let mut package_ids = std::collections::BTreeMap::new();
     for package in workspace.graph.packages() {
-        let ids = package
-            .canonical_manifests()
-            .map(|manifest| ReleasePackageId::new(manifest.ecosystem(), package.id.name()))
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|_error| GraphError::ReleaseIntentStale)?;
+        let ids = release_package_ids(package)?;
         package_ids.insert(package.id.clone(), ids);
     }
 
@@ -191,13 +205,7 @@ pub fn derive_release_commit_decision<R: CommandRunner, D: DependencyResolver>(
         .collect::<std::collections::BTreeSet<_>>();
     let mut observed = std::collections::BTreeSet::new();
     for package in workspace.graph.packages() {
-        let package_ids = package
-            .canonical_manifests()
-            .map(|manifest| {
-                ReleasePackageId::new(manifest.ecosystem(), package.id.name())
-                    .map_err(|_error| GraphError::ReleaseIntentStale)
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+        let package_ids = release_package_ids(package)?;
         let package_is_claimed = package_ids.iter().any(|id| claimed.contains_key(id));
         if package_is_claimed {
             let changelog = package.changelog.as_ref().ok_or(GraphError::ReleaseIntentStale)?;
@@ -205,9 +213,7 @@ pub fn derive_release_commit_decision<R: CommandRunner, D: DependencyResolver>(
                 return Err(GraphError::ReleaseIntentStale);
             }
         }
-        for manifest in package.canonical_manifests() {
-            let id = ReleasePackageId::new(manifest.ecosystem(), package.id.name())
-                .map_err(|_error| GraphError::ReleaseIntentStale)?;
+        for (manifest, id) in package.canonical_manifests().zip(package_ids) {
             let path = manifest.path.to_string_lossy();
             let before = manifest_version_at(workspace.runner, &workspace.root, &parent, &path, manifest.ecosystem())?;
             let after = manifest_version_at(
