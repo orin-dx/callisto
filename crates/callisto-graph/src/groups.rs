@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use crate::config::groups::{GroupDef, GroupTable};
+use crate::config::groups::GroupTable;
 use crate::error::GraphError;
 use crate::napi::{napi_drift, NapiTargetsIndex};
 use crate::resolver::DependencyResolver;
@@ -78,14 +78,24 @@ pub fn pre_mutation_checks<D: DependencyResolver>(
     Ok(outcome)
 }
 
+/// Computes a fixed group's shared alignment target.
+///
+/// `live_members` must already be filtered to package ids present in
+/// `base` (see `solve_cascade`'s Track-1 block) -- a stale group member
+/// (still declared in callisto.toml but no longer in the workspace) has
+/// no entry in `base`, so if it were included here and happened to carry
+/// a release tag, `base.get(&released[0])` would miss and silently fall
+/// back to the `1.0.0` default below, corrupting the alignment base for
+/// every live sibling. Accepting a pre-filtered slice instead of the raw
+/// `GroupDef` makes that corruption unrepresentable at the call site.
 pub fn fixed_group_target(
-    g: &GroupDef,
+    live_members: &[PackageId],
     base: &BTreeMap<PackageId, Version>,
     max_sev: Severity,
     tags: &TagIndex,
 ) -> Result<Version, GraphError> {
-    let released: Vec<PackageId> = g
-        .package_members()
+    let released: Vec<PackageId> = live_members
+        .iter()
         .filter(|id| tags.last_tag(id).is_some())
         .cloned()
         .collect();
