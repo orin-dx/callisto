@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use callisto_changelog::{ChangeSource, ChangelogEntry, ChangelogInput};
-use callisto_manifests::{open, OpenContext, WorkspaceCargoResolver};
+use callisto_manifests::{open, OpenContext};
 use callisto_model::{BumpReason, CommandRunner, GroupKind, ManifestRole, Severity};
 
 use crate::aggregate::aggregate;
@@ -277,21 +277,7 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
     let bump_by_pkg: std::collections::BTreeMap<callisto_model::PackageId, &PlannedBump> =
         bumps.iter().map(|b| (b.package.clone(), b)).collect();
 
-    let cargo_workspace = if ws.root.join("Cargo.toml").exists() {
-        if let Ok(resolver) = WorkspaceCargoResolver::load(&ws.root.join("Cargo.toml")) {
-            resolver.inheritance().ok().map(std::sync::Arc::new)
-        } else {
-            None
-        }
-    } else {
-        None
-    };
-    let npm_workspace_kind = callisto_manifests::detect_npm_workspace_kind(&ws.root).ok().flatten();
-    let open_ctx = OpenContext {
-        workspace_root: &ws.root,
-        cargo_workspace,
-        npm_workspace_kind,
-    };
+    let open_ctx = OpenContext::for_workspace_root(&ws.root);
 
     let mut platform_writes = Vec::new();
     let mut optional_dep_map: std::collections::BTreeMap<std::path::PathBuf, Vec<(String, callisto_model::Version)>> =
@@ -319,7 +305,9 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
                     let owner_fmt = callisto_model::ManifestFormat::from_path(&owner_decl.path)?;
                     let owner_manifest_decl =
                         callisto_model::ManifestDecl::new(owner_decl.path.clone(), ManifestRole::Canonical, owner_fmt)?;
-                    let owner_handle = open(&owner_manifest_decl, &open_ctx)?;
+                    // Cached: owner manifest is shared across every platform target under it.
+                    let owner_handle =
+                        crate::manifest_cache::open_cached(&ws.manifest_cache, &owner_manifest_decl, &open_ctx)?;
                     let has_matching_optional_dep = owner_handle
                         .iter_dependencies()
                         .any(|dep| dep.kind == callisto_model::DepKind::Optional && &dep.name == name);
