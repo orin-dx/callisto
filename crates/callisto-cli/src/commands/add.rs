@@ -30,9 +30,7 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
                 ))
             })?;
 
-            let severity: Severity = sev_str.parse().map_err(|_err| {
-                CliError::Other(format!("Invalid severity `{sev_str}`. Must be patch, minor, or major."))
-            })?;
+            let severity = parse_severity(sev_str)?;
 
             let id =
                 PackageId::parse(name).map_err(|e| CliError::Other(format!("Invalid package name `{name}`: {e}")))?;
@@ -225,6 +223,17 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
     Ok(ExitCode::SUCCESS)
 }
 
+/// Parses a CLI-supplied severity string, reporting every value `Severity`
+/// actually accepts (`none`, `patch`, `minor`, `major`) on failure -- not a
+/// stale subset that omits `none`.
+fn parse_severity(sev_str: &str) -> Result<Severity, CliError> {
+    sev_str.parse().map_err(|_err| {
+        CliError::Other(format!(
+            "Invalid severity `{sev_str}`. Must be none, patch, minor, or major."
+        ))
+    })
+}
+
 /// Validates that a changeset summary string is non-empty and non-whitespace.
 ///
 /// Returns `Ok(trimmed_summary)` on success, or a [`CliError`] with a user-facing message.
@@ -342,6 +351,23 @@ mod tests {
         let result = validate_summary("  important fix  ");
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "important fix");
+    }
+
+    /// Bug 3: the invalid-severity error message must list every value
+    /// `Severity::from_str` actually accepts, including `none` -- not just
+    /// patch/minor/major.
+    #[test]
+    fn parse_severity_rejects_invalid_value_with_accurate_message() {
+        let err = parse_severity("bogus").unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "Invalid severity `bogus`. Must be none, patch, minor, or major."
+        );
+    }
+
+    #[test]
+    fn parse_severity_accepts_none() {
+        assert_eq!(parse_severity("none").unwrap(), Severity::None);
     }
 
     /// Regression test for Bug 1: non-interactive `add --package cargo/foo:patch`

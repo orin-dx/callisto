@@ -92,7 +92,7 @@ pub struct SchemaArgs {
 /// Arguments for the `add` command.
 #[derive(Args, Clone, Debug)]
 pub struct AddArgs {
-    /// Package and severity to include, as `name:severity` (patch, minor, or major); repeatable. Omit to enter the interactive wizard.
+    /// Package and severity to include, as `name:severity` (none, patch, minor, or major); repeatable. Omit to enter the interactive wizard.
     #[arg(long = "package", value_name = "NAME:SEVERITY")]
     pub packages: Vec<String>,
     /// Human-readable summary of the change to record in the changeset.
