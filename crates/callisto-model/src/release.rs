@@ -779,7 +779,13 @@ impl RegistryBindingId {
 }
 
 /// A release operation's explicit role.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, JsonSchema)]
+///
+/// `PartialOrd`/`Ord` are derived rather than hand-maintained: every variant's
+/// field types are already `Ord` (`RegistryBindingId`, `ArtifactSlotId`), so the
+/// derived impl folds in every field of every variant -- including
+/// `ArtifactSlotId::attestation_policy` -- consistently with the derived `Eq`,
+/// and stays correct if a role variant ever gains a field.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase", tag = "kind", deny_unknown_fields)]
 pub enum ReleaseOperationRole {
     RegistryPublish {
@@ -829,22 +835,6 @@ impl<'de> Deserialize<'de> for ReleaseOperationRole {
 }
 
 impl ReleaseOperationRole {
-    fn discriminator(&self) -> u8 {
-        match self {
-            Self::RegistryPublish { .. } => 0,
-            Self::Tag => 1,
-            Self::ForgeRelease => 2,
-            Self::ArtifactUpload { .. } => 3,
-        }
-    }
-
-    fn registry(&self) -> Option<&RegistryBindingId> {
-        match self {
-            Self::RegistryPublish { registry } => Some(registry),
-            Self::Tag | Self::ForgeRelease | Self::ArtifactUpload { .. } => None,
-        }
-    }
-
     fn artifact_slot(&self) -> Option<&ArtifactSlotId> {
         match self {
             Self::ArtifactUpload { slot } => Some(slot),
@@ -936,47 +926,14 @@ impl PartialOrd for ReleaseOperationId {
     }
 }
 
+// Hand-written rather than derived: `Version` has no `Ord` impl (SemVer and PEP 440
+// aren't comparable via a single total order), so this struct can't `#[derive(Ord)]`
+// directly. `role` now delegates to `ReleaseOperationRole`'s own derived `Ord`, which
+// folds in every field of every variant -- including `ArtifactSlotId::attestation_policy`
+// for `ArtifactUpload` -- instead of hand-decomposing it into a lossy sort key.
 impl Ord for ReleaseOperationId {
     fn cmp(&self, other: &Self) -> Ordering {
-        (
-            self.package.ecosystem().prefix(),
-            self.package.name(),
-            self.role.discriminator(),
-            self.version.render(),
-            self.role
-                .registry()
-                .map(|registry| registry.registry_key().as_str())
-                .unwrap_or(""),
-            self.role
-                .registry()
-                .map(|registry| registry.binding_digest().as_str())
-                .unwrap_or(""),
-            self.role
-                .artifact_slot()
-                .map(|slot| format!("{}|{}", slot.platform, slot.asset_name))
-                .unwrap_or_default(),
-        )
-            .cmp(&(
-                other.package.ecosystem().prefix(),
-                other.package.name(),
-                other.role.discriminator(),
-                other.version.render(),
-                other
-                    .role
-                    .registry()
-                    .map(|registry| registry.registry_key().as_str())
-                    .unwrap_or(""),
-                other
-                    .role
-                    .registry()
-                    .map(|registry| registry.binding_digest().as_str())
-                    .unwrap_or(""),
-                other
-                    .role
-                    .artifact_slot()
-                    .map(|slot| format!("{}|{}", slot.platform, slot.asset_name))
-                    .unwrap_or_default(),
-            ))
+        (&self.package, &self.role, self.version.render()).cmp(&(&other.package, &other.role, other.version.render()))
     }
 }
 
@@ -2326,6 +2283,81 @@ mod tests {
         )
         .unwrap();
         manifest.validate_for_intent(&intent).unwrap();
+    }
+
+    /// Two `ArtifactUpload` operations that share package/version/platform/asset_name
+    /// but differ only in `attestation_policy` are distinct `ArtifactSlotId`s and must
+    /// remain distinct `ReleaseOperationId`s under `Ord`, not just `Eq` -- otherwise
+    /// `BTreeSet`/`BTreeMap` keys silently collapse them (the `a.cmp(b) == Equal implies
+    /// a == b` invariant those collections require).
+    #[test]
+    fn artifact_upload_ids_differing_only_by_attestation_policy_stay_distinct_under_ord() {
+        let package = ReleasePackageId::parse("cargo/demo").unwrap();
+        let version = Version::semver(1, 0, 0);
+        let slot_a = ArtifactSlotId::new(
+            package.clone(),
+            version.clone(),
+            "x86_64-unknown-linux-gnu",
+            "demo.tar.gz",
+            GitHubRepository::parse("orin-dx/callisto").unwrap(),
+            ".github/workflows/release.yml",
+            CommitSha::parse(&"a".repeat(40)).unwrap(),
+        )
+        .unwrap();
+        let slot_b = ArtifactSlotId::new(
+            package,
+            version,
+            "x86_64-unknown-linux-gnu",
+            "demo.tar.gz",
+            GitHubRepository::parse("orin-dx/callisto").unwrap(),
+            ".github/workflows/release.yml",
+            CommitSha::parse(&"b".repeat(40)).unwrap(),
+        )
+        .unwrap();
+        assert_ne!(slot_a, slot_b, "the two slots must differ only by attestation_policy");
+
+        let id_a = ReleaseOperationId::artifact_upload(slot_a.clone());
+        let id_b = ReleaseOperationId::artifact_upload(slot_b.clone());
+
+        assert_ne!(id_a, id_b, "distinct attestation policies must stay Eq-distinct");
+        assert_ne!(
+            id_a.cmp(&id_b),
+            Ordering::Equal,
+            "distinct attestation policies must not compare Ord::Equal"
+        );
+
+        let mut ids = BTreeSet::new();
+        assert!(ids.insert(id_a.clone()), "first id must insert");
+        assert!(
+            ids.insert(id_b.clone()),
+            "second id must NOT be displaced by the first in a BTreeSet"
+        );
+        assert_eq!(ids.len(), 2);
+
+        // Exercise the real ReleaseIntentV1::new / validate_operations path: this must
+        // NOT be rejected as a duplicate operation.
+        let op_a = ReleaseOperation::artifact_upload(slot_a.clone(), vec![]).unwrap();
+        let op_b = ReleaseOperation::artifact_upload(slot_b.clone(), vec![]).unwrap();
+        let (first, second) = if op_a.id() <= op_b.id() {
+            (op_a, op_b)
+        } else {
+            (op_b, op_a)
+        };
+        let (first_slot, second_slot) = if first.id() == &id_a {
+            (slot_a, slot_b)
+        } else {
+            (slot_b, slot_a)
+        };
+        let intent = test_intent_with_slots(
+            ReleaseInputSnapshotV1::new(SourceIdentity::git_commit("d".repeat(40)).unwrap(), vec![]),
+            ExecutionTrustProfileV1::GitCommit,
+            vec![first, second],
+            vec![first_slot, second_slot],
+        );
+        assert!(
+            intent.is_ok(),
+            "two artifact uploads differing only by attestation_policy must not collide: {intent:?}"
+        );
     }
 
     #[test]

@@ -135,8 +135,19 @@ impl TagIndex {
         let mut glob_cache: std::collections::HashMap<String, Vec<&str>> = std::collections::HashMap::new();
 
         for pkg in graph.packages() {
-            let default_tmpl = TagTemplate::parse(&format!("{}@{{version}}", pkg.id.display_name()))?;
-            let tmpl = pkg.tag_template.clone().unwrap_or(default_tmpl);
+            // `TagTemplate::default_for` is the single source of truth for a
+            // package's default tag template -- matches `release.rs`'s own
+            // `unwrap_or_else(|| callisto_model::TagTemplate::default_for(&package.id))`.
+            // Deliberately not `TagTemplate::parse(&format!("{name}@{{version}}"))`:
+            // `parse` additionally validates git-ref-name legality, which
+            // `default_for` does not, so the two could previously reject/accept a
+            // package name differently. Using `default_for` here removes that
+            // extra validation from this call site to align with the
+            // already-shipped `release.rs` behavior.
+            let tmpl = pkg
+                .tag_template
+                .clone()
+                .unwrap_or_else(|| TagTemplate::default_for(&pkg.id));
             let sel = select_from_tags_cached(&all_tags, &tmpl, pkg.version_grammar()?, &mut glob_cache)?;
             last.insert(pkg.id.clone(), sel.chosen);
             templates.insert(pkg.id.clone(), tmpl);
@@ -516,6 +527,36 @@ mod tests {
             tags.last_tag(&default_id).map(|t| t.version.render().to_string()),
             Some("4.5.6".to_string()),
             "package with no tag_template must fall back to 'pkg-default@{{version}}'"
+        );
+    }
+
+    /// Spec: for a package with no explicit `tag_template`, `TagIndex::build`
+    /// must resolve the same default template `TagTemplate::default_for`
+    /// would produce -- `release.rs`'s existing tag-name construction already
+    /// calls `default_for` directly via
+    /// `unwrap_or_else(|| callisto_model::TagTemplate::default_for(&package.id))`,
+    /// and `TagIndex::build`'s own default must agree with it byte-for-byte
+    /// rather than re-deriving the same value through a separate
+    /// `TagTemplate::parse(&format!(...))` call that could diverge (e.g. by
+    /// additionally rejecting a package name `default_for` would silently
+    /// accept).
+    #[test]
+    fn tag_index_default_template_matches_tag_template_default_for() {
+        let dir = non_repo_dir();
+        let runner = FakeGitTagRunner::new(vec![]);
+        let graph = FixedGraph {
+            pkgs: vec![make_pkg("pkg-a")],
+        };
+        let cfg = crate::config::load(dir.path()).unwrap();
+        let git = GitAccess::discover(dir.path(), &runner);
+
+        let tags = TagIndex::build(&git, &graph, &cfg).expect("TagIndex::build must succeed");
+
+        let pkg_id = PackageId::parse("pkg-a").unwrap();
+        assert_eq!(
+            tags.template(&pkg_id),
+            &TagTemplate::default_for(&pkg_id),
+            "TagIndex::build's default template must match TagTemplate::default_for exactly"
         );
     }
 
