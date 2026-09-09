@@ -640,13 +640,14 @@ fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
     let mut selected = BTreeMap::new();
     let mut package_ids = BTreeMap::<callisto_model::PackageId, Vec<ReleasePackageId>>::new();
     for package in workspace.graph.packages() {
-        for ecosystem in package
-            .canonical_manifests()
-            .map(|manifest| manifest.ecosystem())
+        // One canonical manifest per ecosystem is the expected shape, but
+        // dedup defensively -- `release_package_ids` maps every canonical
+        // manifest, and two manifests sharing an ecosystem would otherwise
+        // select/push the same identity twice.
+        for id in super::release_decision::release_package_ids(package)?
+            .into_iter()
             .collect::<BTreeSet<_>>()
         {
-            let id =
-                ReleasePackageId::new(ecosystem, package.id.name()).map_err(|_error| GraphError::ReleaseIntentStale)?;
             if let Some(entry) = decision.entries.iter().find(|entry| entry.package == id) {
                 selected.insert(id.clone(), (package, entry.target_version.clone()));
                 package_ids.entry(package.id.clone()).or_default().push(id);
@@ -1270,6 +1271,114 @@ mod tests {
         }])
         .unwrap()
     }
+
+    /// Regression coverage for the callisto-graph derivation-drift finding:
+    /// `derive_release_decision` and this module's `derive_release_inputs`
+    /// each independently mapped a package's canonical manifests to
+    /// `ReleasePackageId`s -- one via a plain per-manifest map, the other via
+    /// a `BTreeSet<Ecosystem>` dedup step -- before both were migrated onto
+    /// `release_decision::release_package_ids`. A dual-identity package (one
+    /// directory, a Cargo manifest and an npm manifest, Case D) is exactly
+    /// the shape that would have silently diverged had the two derivations
+    /// disagreed: this proves the roster `derive_release_decision` computes
+    /// and the snapshot `build_release_intent` derives from it agree on the
+    /// exact same two `ReleasePackageId`s.
+    #[test]
+    fn dual_identity_package_release_ids_agree_between_decision_and_intent_derivation() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("Cargo.toml"),
+            "[package]\nname = \"release-fixture\"\nversion = \"1.2.3\"\nedition = \"2021\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("package.json"),
+            r#"{"name":"release-fixture","version":"1.2.3"}"#,
+        )
+        .unwrap();
+        // publish-to = [] keeps this test scoped to identity derivation --
+        // no tag/registry operations, no git remote requirement.
+        std::fs::write(
+            dir.path().join("callisto.toml"),
+            "[[package]]\nmatch = \"release-fixture\"\npublish-to = []\n",
+        )
+        .unwrap();
+        for args in [
+            ["init", "-q"].as_slice(),
+            ["config", "user.email", "test@example.com"].as_slice(),
+            ["config", "user.name", "Test"].as_slice(),
+            ["config", "commit.gpgsign", "false"].as_slice(),
+            ["add", "."].as_slice(),
+            ["commit", "-q", "-m", "fixture"].as_slice(),
+            ["checkout", "--detach", "-q", "HEAD"].as_slice(),
+        ] {
+            assert!(std::process::Command::new("git")
+                .args(args)
+                .current_dir(dir.path())
+                .status()
+                .unwrap()
+                .success());
+        }
+        let runner = RealGitRunner;
+        let locator = crate::IgnoreWalkLocator::new(dir.path());
+
+        let workspace = Workspace::load(dir.path().to_path_buf(), &locator, &runner).unwrap();
+        let package_id = workspace
+            .graph
+            .packages()
+            .next()
+            .expect("workspace should discover the dual-identity package")
+            .id
+            .clone();
+        assert_eq!(
+            workspace.graph.packages().count(),
+            1,
+            "the Cargo and npm manifest must merge into one Case D package"
+        );
+
+        let plan = crate::VersionPlan {
+            bumps: vec![crate::PlannedBump {
+                package: package_id,
+                from: Version::parse("1.2.3", VersionGrammar::SemVer).unwrap(),
+                to: Version::parse("1.3.0", VersionGrammar::SemVer).unwrap(),
+                severity: callisto_model::Severity::Minor,
+                governed_by: None,
+                reason: None,
+                writes: vec![],
+            }],
+            ..Default::default()
+        };
+        let decision = crate::commands::release_decision::derive_release_decision(&workspace, &plan).unwrap();
+        let decided_ids: BTreeSet<_> = decision.entries.iter().map(|entry| entry.package.clone()).collect();
+        assert_eq!(
+            decided_ids,
+            BTreeSet::from([
+                ReleasePackageId::new(Ecosystem::Cargo, "release-fixture").unwrap(),
+                ReleasePackageId::new(Ecosystem::Npm, "release-fixture").unwrap(),
+            ]),
+            "derive_release_decision must produce exactly the cargo and npm identities for the dual-identity package"
+        );
+
+        let intent = build_release_intent(
+            dir.path(),
+            &locator,
+            &runner,
+            &decision,
+            ExecutionTrustProfileV1::GitCommit,
+        )
+        .unwrap();
+        let intent_ids: BTreeSet<_> = intent
+            .snapshot
+            .packages
+            .iter()
+            .map(|input| input.package.clone())
+            .collect();
+        assert_eq!(
+            intent_ids, decided_ids,
+            "derive_release_inputs must agree with derive_release_decision on release package identity"
+        );
+    }
+
     #[test]
     fn fresh_validation_rejects_manifest_change() {
         let (dir, runner) = fixture();
