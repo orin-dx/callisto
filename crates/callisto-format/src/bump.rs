@@ -71,37 +71,10 @@ impl Versioning for SemVerVersioning {
             raw: current.render().to_string(),
         };
 
-        if current.is_prerelease() {
-            let base = Version::semver(major, minor, patch);
-            let bumped = match severity {
-                Severity::Patch => base,
-                Severity::Minor => {
-                    if patch == 0 {
-                        base
-                    } else {
-                        Version::semver(major, minor.checked_add(1).ok_or_else(overflow)?, 0)
-                    }
-                }
-                Severity::Major => {
-                    if minor == 0 && patch == 0 {
-                        base
-                    } else {
-                        Version::semver(major.checked_add(1).ok_or_else(overflow)?, 0, 0)
-                    }
-                }
-                Severity::None => current.clone(),
-            };
-            return Ok(bumped);
-        }
+        let (new_major, new_minor, new_patch) =
+            bump_release_triple(major, minor, patch, severity, current.is_prerelease(), overflow)?;
 
-        let bumped = match severity {
-            Severity::Major => Version::semver(major.checked_add(1).ok_or_else(overflow)?, 0, 0),
-            Severity::Minor => Version::semver(major, minor.checked_add(1).ok_or_else(overflow)?, 0),
-            Severity::Patch => Version::semver(major, minor, patch.checked_add(1).ok_or_else(overflow)?),
-            Severity::None => current.clone(),
-        };
-
-        Ok(bumped)
+        Ok(Version::semver(new_major, new_minor, new_patch))
     }
 
     fn bump_prerelease(
@@ -116,31 +89,25 @@ impl Versioning for SemVerVersioning {
         }
 
         let release = self.bump(base, severity)?;
+        let overflow = || BumpError::Overflow {
+            raw: current.render().to_string(),
+        };
 
-        let mut counter = 0;
+        let mut counter_suffix = None;
         if current.is_prerelease() {
             let current_raw = current.render();
             if let Some((rel_part, pre_part)) = current_raw.split_once('-') {
                 if rel_part == release.render() {
                     let dotted_prefix = format!("{tag}.");
-                    if let Some(num_str) = pre_part.strip_prefix(&dotted_prefix) {
-                        // Dotted form: e.g. "alpha.3" with tag "alpha" → num_str = "3"
-                        if let Ok(num) = num_str.parse::<u64>() {
-                            counter = num.checked_add(1).ok_or_else(|| BumpError::Overflow {
-                                raw: current.render().to_string(),
-                            })?;
-                        }
-                    } else if let Some(num_str) = pre_part.strip_prefix(tag) {
-                        // Undotted form: e.g. "alpha1" with tag "alpha" → num_str = "1"
-                        if let Ok(num) = num_str.parse::<u64>() {
-                            counter = num.checked_add(1).ok_or_else(|| BumpError::Overflow {
-                                raw: current.render().to_string(),
-                            })?;
-                        }
-                    }
+                    counter_suffix = pre_part
+                        // Dotted form: e.g. "alpha.3" with tag "alpha" → "3"
+                        .strip_prefix(&dotted_prefix)
+                        // Undotted form: e.g. "alpha1" with tag "alpha" → "1"
+                        .or_else(|| pre_part.strip_prefix(tag));
                 }
             }
         }
+        let counter = next_counter(counter_suffix, overflow)?;
 
         let prerelease_str = format!("{}-{tag}.{counter}", release.render());
         let final_version =
@@ -187,33 +154,8 @@ impl Versioning for Pep440Versioning {
             raw: current.render().to_string(),
         };
 
-        let (new_major, new_minor, new_patch) = if finalize_in_place {
-            match severity {
-                Severity::Patch => (major, minor, patch),
-                Severity::Minor => {
-                    if patch == 0 {
-                        (major, minor, patch)
-                    } else {
-                        (major, minor.checked_add(1).ok_or_else(overflow)?, 0)
-                    }
-                }
-                Severity::Major => {
-                    if minor == 0 && patch == 0 {
-                        (major, minor, patch)
-                    } else {
-                        (major.checked_add(1).ok_or_else(overflow)?, 0, 0)
-                    }
-                }
-                Severity::None => unreachable!("handled above"),
-            }
-        } else {
-            match severity {
-                Severity::Major => (major.checked_add(1).ok_or_else(overflow)?, 0, 0),
-                Severity::Minor => (major, minor.checked_add(1).ok_or_else(overflow)?, 0),
-                Severity::Patch => (major, minor, patch.checked_add(1).ok_or_else(overflow)?),
-                Severity::None => unreachable!("handled above"),
-            }
-        };
+        let (new_major, new_minor, new_patch) =
+            bump_release_triple(major, minor, patch, severity, finalize_in_place, overflow)?;
 
         let bumped = pep440_rs::Version::new([new_major, new_minor, new_patch]).with_epoch(epoch);
         render_pep440(bumped)
@@ -238,21 +180,15 @@ impl Versioning for Pep440Versioning {
         // back to a dev-release, the closest "not yet final" concept PEP 440 has.
         let letter = pep440_prerelease_letter(tag);
 
-        let mut counter = 0u64;
+        let overflow = || BumpError::Overflow {
+            raw: current.render().to_string(),
+        };
         let current_raw = current.render();
-        if let Some(rest) = current_raw.strip_prefix(release_str) {
-            let num_str = match letter {
-                Some(letter) => rest.strip_prefix(letter),
-                None => rest.strip_prefix(".dev"),
-            };
-            if let Some(num_str) = num_str {
-                if let Ok(num) = num_str.parse::<u64>() {
-                    counter = num.checked_add(1).ok_or_else(|| BumpError::Overflow {
-                        raw: current.render().to_string(),
-                    })?;
-                }
-            }
-        }
+        let counter_suffix = current_raw.strip_prefix(release_str).and_then(|rest| match letter {
+            Some(letter) => rest.strip_prefix(letter),
+            None => rest.strip_prefix(".dev"),
+        });
+        let counter = next_counter(counter_suffix, overflow)?;
 
         let prerelease_str = match letter {
             Some(letter) => format!("{release_str}{letter}{counter}"),
@@ -301,6 +237,58 @@ fn render_pep440(v: pep440_rs::Version) -> Result<Version, BumpError> {
         raw: rendered,
         message: e.message,
     })
+}
+
+/// Shared major.minor.patch bump arithmetic for SemVer and PEP 440.
+/// `finalize_in_place=true` finalizes an in-place pre/dev tag toward the base
+/// release (advancing the next component up only when the lower one(s) are
+/// already zero); `false` bumps the target component forward normally.
+/// Severity::None is unreachable -- callers return early on it before this.
+fn bump_release_triple(
+    major: u64,
+    minor: u64,
+    patch: u64,
+    severity: Severity,
+    finalize_in_place: bool,
+    overflow: impl Fn() -> BumpError,
+) -> Result<(u64, u64, u64), BumpError> {
+    if finalize_in_place {
+        match severity {
+            Severity::Patch => Ok((major, minor, patch)),
+            Severity::Minor => {
+                if patch == 0 {
+                    Ok((major, minor, patch))
+                } else {
+                    Ok((major, minor.checked_add(1).ok_or_else(overflow)?, 0))
+                }
+            }
+            Severity::Major => {
+                if minor == 0 && patch == 0 {
+                    Ok((major, minor, patch))
+                } else {
+                    Ok((major.checked_add(1).ok_or_else(overflow)?, 0, 0))
+                }
+            }
+            Severity::None => unreachable!("callers return early on Severity::None before reaching this point"),
+        }
+    } else {
+        match severity {
+            Severity::Major => Ok((major.checked_add(1).ok_or_else(overflow)?, 0, 0)),
+            Severity::Minor => Ok((major, minor.checked_add(1).ok_or_else(overflow)?, 0)),
+            Severity::Patch => Ok((major, minor, patch.checked_add(1).ok_or_else(overflow)?)),
+            Severity::None => unreachable!("callers return early on Severity::None before reaching this point"),
+        }
+    }
+}
+
+/// Parses `suffix` (text after a stripped tag/letter prefix) as the existing
+/// prerelease counter and returns it incremented; `None` or non-numeric
+/// means "no matching prefix", so counting starts fresh at 0.
+fn next_counter(suffix: Option<&str>, overflow: impl Fn() -> BumpError) -> Result<u64, BumpError> {
+    match suffix.and_then(|s| s.parse::<u64>().ok()) {
+        Some(num) => num.checked_add(1).ok_or_else(overflow),
+        None => Ok(0),
+    }
 }
 
 pub fn bump_version(current: &Version, severity: Severity) -> Result<Version, BumpError> {

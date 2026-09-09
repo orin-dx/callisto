@@ -215,6 +215,61 @@ pub(crate) fn record_persist_call() {
     PERSIST_CALL_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 }
 
+/// Test-observability counter: total number of times
+/// [`cargo::WorkspaceCargoResolver::load`] has been invoked. Deliberately
+/// NOT folded into `OPEN_CALL_COUNT`: `OpenContext::for_workspace_root`
+/// calls `WorkspaceCargoResolver::load` unconditionally whenever the
+/// workspace root has a `Cargo.toml`, regardless of whether that plan
+/// touches any workspace-inherited field -- merging the two counters would
+/// make nearly every existing `open_call_count()` assertion in this crate
+/// (and `callisto-graph`) spuriously count an unrelated resolver load.
+/// Production code never reads this.
+static RESOLVER_LOAD_CALL_COUNT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// Resets the internal `WorkspaceCargoResolver::load` call counter to zero. Intended for use in test setup.
+pub fn reset_resolver_load_call_count() {
+    RESOLVER_LOAD_CALL_COUNT.store(0, std::sync::atomic::Ordering::SeqCst);
+}
+
+/// Reads the current value of the internal `WorkspaceCargoResolver::load` call counter.
+pub fn resolver_load_call_count() -> usize {
+    RESOLVER_LOAD_CALL_COUNT.load(std::sync::atomic::Ordering::SeqCst)
+}
+
+/// Increments RESOLVER_LOAD_CALL_COUNT by one. Called at the top of
+/// `WorkspaceCargoResolver::load`, mirroring where `open()` increments
+/// `OPEN_CALL_COUNT` -- counts every invocation, including ones that go on
+/// to fail parsing.
+pub(crate) fn record_resolver_load_call() {
+    RESOLVER_LOAD_CALL_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+}
+
+/// Test-observability counter: total number of times
+/// [`cargo::WorkspaceCargoResolver::persist`] has returned `Ok`. Kept
+/// separate from `PERSIST_CALL_COUNT` for the same reason
+/// `RESOLVER_LOAD_CALL_COUNT` is kept separate from `OPEN_CALL_COUNT`:
+/// `PERSIST_CALL_COUNT` is documented and consumed as scoped exclusively to
+/// the `Manifest` trait's three implementors. Production code never reads
+/// this.
+static RESOLVER_PERSIST_CALL_COUNT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// Resets the internal `WorkspaceCargoResolver::persist` call counter to zero. Intended for use in test setup.
+pub fn reset_resolver_persist_call_count() {
+    RESOLVER_PERSIST_CALL_COUNT.store(0, std::sync::atomic::Ordering::SeqCst);
+}
+
+/// Reads the current value of the internal `WorkspaceCargoResolver::persist` call counter.
+pub fn resolver_persist_call_count() -> usize {
+    RESOLVER_PERSIST_CALL_COUNT.load(std::sync::atomic::Ordering::SeqCst)
+}
+
+/// Increments RESOLVER_PERSIST_CALL_COUNT by one. Called by
+/// `WorkspaceCargoResolver::persist` immediately after its own
+/// `atomic_write` returns `Ok`.
+pub(crate) fn record_resolver_persist_call() {
+    RESOLVER_PERSIST_CALL_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+}
+
 /// Opens a manifest file matching `decl.format`.
 pub fn open(decl: &ManifestDecl, ctx: &OpenContext<'_>) -> Result<Box<dyn Manifest>, ManifestError> {
     OPEN_CALL_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);

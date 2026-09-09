@@ -334,12 +334,14 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
             // Single exhaustive dispatch match over every configured target —
             // replaces the old ad-hoc `.any(matches!(...))` membership checks,
             // which silently dropped `PublishTarget::NuGet`/`GitHubRelease` on
-            // the floor with no diagnostic. `PublishTarget` is `#[non_exhaustive]`
-            // (defined in callisto-model), so a wildcard arm is still required
-            // by the compiler even though every current variant is named
-            // explicitly below; the wildcard exists only to catch a future
-            // variant added without a corresponding arm here, not to silently
-            // swallow one of today's variants.
+            // the floor with no diagnostic. The three targets with a real
+            // dispatch implementation get their own arm below; every other
+            // target (today: `NuGet`, `GitHubRelease`; tomorrow: any new
+            // `PublishTarget` variant added without a dispatch arm here) falls
+            // through to `PublishTarget::is_implemented()`, so "does this
+            // target get a `PublishTargetNotImplemented` diagnostic" is
+            // decided in one place (`callisto_model::ecosystem`) instead of
+            // being re-enumerated by name in this match.
             let mut publishes_cargo = false;
             let mut publishes_npm = false;
             let mut publishes_pypi = false;
@@ -376,54 +378,28 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
                         publishes_pypi = true;
                         has_dispatchable_target = true;
                     }
-                    callisto_model::PublishTarget::NuGet { .. } => {
-                        diagnostics.push(callisto_model::Diagnostic {
-                            code: callisto_model::DiagnosticCode::PublishTargetNotImplemented,
-                            severity: callisto_model::DiagnosticSeverity::Warning,
-                            message: format!(
-                                "package `{}` configures publish-to = [\"nuget\"], but NuGet \
-                                 publishing is not yet implemented; this target will not be \
-                                 published",
-                                pkg.id.display_name()
-                            ),
-                            package: Some(pkg.id.clone()),
-                            path: None,
-                            escalated_by: None,
-                            governed_by: None,
-                        });
-                    }
-                    callisto_model::PublishTarget::GitHubRelease => {
-                        diagnostics.push(callisto_model::Diagnostic {
-                            code: callisto_model::DiagnosticCode::PublishTargetNotImplemented,
-                            severity: callisto_model::DiagnosticSeverity::Warning,
-                            message: format!(
-                                "package `{}` configures publish-to = [\"github-release\"], but \
-                                 GitHub Release publishing is not yet implemented; this target \
-                                 will not be published",
-                                pkg.id.display_name()
-                            ),
-                            package: Some(pkg.id.clone()),
-                            path: None,
-                            escalated_by: None,
-                            governed_by: None,
-                        });
-                    }
-                    callisto_model::PublishTarget::None => {}
-                    #[allow(unreachable_patterns)]
-                    _ => {
-                        diagnostics.push(callisto_model::Diagnostic {
-                            code: callisto_model::DiagnosticCode::PublishTargetNotImplemented,
-                            severity: callisto_model::DiagnosticSeverity::Warning,
-                            message: format!(
-                                "package `{}` configures a publish-to target with no \
-                                 implemented dispatch; this target will not be published",
-                                pkg.id.display_name()
-                            ),
-                            package: Some(pkg.id.clone()),
-                            path: None,
-                            escalated_by: None,
-                            governed_by: None,
-                        });
+                    other => {
+                        // `PublishTarget::None` (the "not configured to
+                        // publish" sentinel) reports `is_implemented() ==
+                        // true` -- vacuously, since there's nothing to
+                        // dispatch and it must never earn a diagnostic here.
+                        if !other.is_implemented() {
+                            diagnostics.push(callisto_model::Diagnostic {
+                                code: callisto_model::DiagnosticCode::PublishTargetNotImplemented,
+                                severity: callisto_model::DiagnosticSeverity::Warning,
+                                message: format!(
+                                    "package `{}` configures publish-to = [\"{}\"], but this \
+                                     target is not yet implemented; this target will not be \
+                                     published",
+                                    pkg.id.display_name(),
+                                    other.config_str()
+                                ),
+                                package: Some(pkg.id.clone()),
+                                path: None,
+                                escalated_by: None,
+                                governed_by: None,
+                            });
+                        }
                     }
                 }
             }

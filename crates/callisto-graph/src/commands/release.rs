@@ -975,10 +975,13 @@ fn target_fingerprint<R: CommandRunner, D: DependencyResolver>(
     target: &PublishTarget,
 ) -> Result<SemanticInputDigest, GraphError> {
     let mut transcript = CanonicalTranscript::semantic_input_v1();
+    // Single source of truth for the "kind" string, shared with
+    // `PublishTarget::config_str`'s other diagnostic/config-parsing callers
+    // instead of re-hardcoding these per-variant literals here too.
+    transcript.push_str("target.kind", target.config_str());
     match target {
-        PublishTarget::CratesIo => transcript.push_str("target.kind", "crates-io"),
-        PublishTarget::Npm { registry: _, access } => {
-            transcript.push_str("target.kind", "npm");
+        PublishTarget::CratesIo | PublishTarget::GitHubRelease | PublishTarget::None => {}
+        PublishTarget::Npm { access, .. } => {
             push_registry_binding(&mut transcript, prepared_registry_binding(workspace, target)?.identity)?;
             transcript.push_str(
                 "target.access",
@@ -989,16 +992,9 @@ fn target_fingerprint<R: CommandRunner, D: DependencyResolver>(
                 },
             );
         }
-        PublishTarget::Pypi { index: _ } => {
-            transcript.push_str("target.kind", "pypi");
+        PublishTarget::Pypi { .. } | PublishTarget::NuGet { .. } => {
             push_registry_binding(&mut transcript, prepared_registry_binding(workspace, target)?.identity)?;
         }
-        PublishTarget::NuGet { source: _ } => {
-            transcript.push_str("target.kind", "nuget");
-            push_registry_binding(&mut transcript, prepared_registry_binding(workspace, target)?.identity)?;
-        }
-        PublishTarget::GitHubRelease => transcript.push_str("target.kind", "github-release"),
-        PublishTarget::None => transcript.push_str("target.kind", "none"),
         #[allow(unreachable_patterns)]
         _ => return Err(GraphError::ReleaseIntentStale),
     }
@@ -1018,14 +1014,7 @@ fn prepared_registry_binding<R: CommandRunner, D: DependencyResolver>(
     target: &PublishTarget,
 ) -> Result<PreparedRegistryBinding, GraphError> {
     let key = target.registry_key().ok_or(GraphError::ReleaseIntentStale)?;
-    let explicit = match target {
-        PublishTarget::Npm { registry, .. } => registry.as_deref(),
-        PublishTarget::Pypi { index } => index.as_deref(),
-        PublishTarget::NuGet { source } => source.as_deref(),
-        PublishTarget::CratesIo | PublishTarget::GitHubRelease | PublishTarget::None => None,
-        #[allow(unreachable_patterns)]
-        _ => return Err(GraphError::ReleaseIntentStale),
-    };
+    let explicit = target.registry_override();
     let configured = workspace
         .config
         .registries
