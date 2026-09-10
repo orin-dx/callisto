@@ -23,6 +23,66 @@ use callisto_vcs::{
 
 use crate::{commands::registry_argv, DependencyResolver, GraphError, ProjectLocator, Workspace};
 
+/// Reason carried by [`GraphError::ReleaseIntentStale`] (E124); real reasons are constructible only from this module.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StaleReason {
+    kind: StaleKind,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+enum StaleKind {
+    #[error("the re-observed Git commit trust evidence no longer matches what the intent was validated against")]
+    TrustEvidenceChanged,
+    #[error("the re-observed source identity no longer matches what the intent was validated against")]
+    SourceIdentityChanged,
+    #[error("the re-observed Git push remote no longer matches what the intent was validated against")]
+    GitRemoteChanged,
+    #[error("a fresh derivation from the current workspace no longer matches the intent that was validated")]
+    IntentDiffersFromFreshDerivation,
+    #[error("unclassified (pending error-taxonomy migration)")]
+    LegacyUnclassified,
+}
+
+impl std::fmt::Display for StaleReason {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(&self.kind, formatter)
+    }
+}
+
+impl StaleReason {
+    fn trust_evidence_changed() -> Self {
+        StaleReason {
+            kind: StaleKind::TrustEvidenceChanged,
+        }
+    }
+
+    fn source_identity_changed() -> Self {
+        StaleReason {
+            kind: StaleKind::SourceIdentityChanged,
+        }
+    }
+
+    fn git_remote_changed() -> Self {
+        StaleReason {
+            kind: StaleKind::GitRemoteChanged,
+        }
+    }
+
+    fn intent_differs_from_fresh_derivation() -> Self {
+        StaleReason {
+            kind: StaleKind::IntentDiffersFromFreshDerivation,
+        }
+    }
+
+    /// PR1 migration ratchet; deleted once PR4 classifies every remaining site (SPEC-ARCH-RELEASE-ERROR-TAXONOMY).
+    #[deprecated(note = "PR1 migration ratchet -- report the real failure cause instead; deleted once PR4 lands")]
+    pub(crate) fn legacy_unclassified() -> Self {
+        StaleReason {
+            kind: StaleKind::LegacyUnclassified,
+        }
+    }
+}
+
 /// The invocation data for one effect. This is deliberately graph-private:
 /// callers can inspect the serializable intent, but cannot substitute a new
 /// endpoint, tag target, or package directory at execution time.
@@ -141,7 +201,9 @@ impl ValidatedReleaseIntent<'_> {
         let evidence =
             callisto_vcs::GitAccess::discover(&self.prepared.root, self.runner).observe_git_commit_trust()?;
         if evidence != self.prepared.trust || source_from_trust(&evidence) != self.prepared.source {
-            return Err(GraphError::ReleaseIntentStale);
+            return Err(GraphError::ReleaseIntentStale {
+                reason: StaleReason::trust_evidence_changed(),
+            });
         }
         if self
             .prepared
@@ -149,7 +211,9 @@ impl ValidatedReleaseIntent<'_> {
             .as_ref()
             .is_some_and(|expected| prepared_git_remote(&self.prepared.root, self.runner).as_ref() != Ok(expected))
         {
-            return Err(GraphError::ReleaseIntentStale);
+            return Err(GraphError::ReleaseIntentStale {
+                reason: StaleReason::git_remote_changed(),
+            });
         }
         Ok(())
     }
@@ -171,7 +235,9 @@ pub fn build_release_intent<L: ProjectLocator, R: CommandRunner>(
     // Recheck after all input reads. A concurrent edit or checkout cannot be
     // authorized merely because it happened after the first check.
     if observe_source(&workspace, trust_profile)? != source {
-        return Err(GraphError::ReleaseIntentStale);
+        return Err(GraphError::ReleaseIntentStale {
+            reason: StaleReason::source_identity_changed(),
+        });
     }
     Ok(intent)
 }
@@ -206,14 +272,18 @@ pub fn validate_release_intent_with_state_directory<'a, L: ProjectLocator, R: Co
     let lock = ReleaseWorkspaceLock::acquire(&root, state_directory)?;
     let trust = observe_git_trust(&workspace, received.trust_profile)?;
     if trust != initial_trust {
-        return Err(GraphError::ReleaseIntentStale);
+        return Err(GraphError::ReleaseIntentStale {
+            reason: StaleReason::trust_evidence_changed(),
+        });
     }
     let source = source_from_trust(&trust);
     let (expected, prepared) =
         derive_release_intent_with_prepared(&workspace, &received.decision, source.clone(), received.trust_profile)?;
     let final_trust = observe_git_trust(&workspace, received.trust_profile)?;
     if expected != received || final_trust != trust {
-        return Err(GraphError::ReleaseIntentStale);
+        return Err(GraphError::ReleaseIntentStale {
+            reason: StaleReason::intent_differs_from_fresh_derivation(),
+        });
     }
 
     Ok(ValidatedReleaseIntent {
@@ -249,11 +319,15 @@ fn observe_git_trust<R: CommandRunner, D: DependencyResolver>(
     trust_profile: ExecutionTrustProfileV1,
 ) -> Result<GitCommitTrustEvidence, GraphError> {
     if !matches!(trust_profile, ExecutionTrustProfileV1::GitCommit) {
-        return Err(GraphError::ReleaseIntentStale);
+        return Err(GraphError::ReleaseIntentStale {
+            reason: StaleReason::legacy_unclassified(),
+        });
     }
     let evidence = workspace.git_access().observe_git_commit_trust()?;
     if evidence.canonical_root() != workspace.root || evidence.head_disposition() != GitHeadDisposition::Detached {
-        return Err(GraphError::ReleaseIntentStale);
+        return Err(GraphError::ReleaseIntentStale {
+            reason: StaleReason::legacy_unclassified(),
+        });
     }
     Ok(evidence)
 }
@@ -274,7 +348,9 @@ impl ValidatedReleaseIntent<'_> {
         permit: &ApplyPermit,
         id: &ReleaseOperationId,
     ) -> Result<OperationOutcome, GraphError> {
-        let operation = self.prepared.operations.get(id).ok_or(GraphError::ReleaseIntentStale)?;
+        let operation = self.prepared.operations.get(id).ok_or(GraphError::ReleaseIntentStale {
+            reason: StaleReason::legacy_unclassified(),
+        })?;
         match operation {
             PreparedOperation::RegistryPublish { .. } => self.dispatch_registry(permit, id, operation),
             PreparedOperation::Tag {
@@ -301,7 +377,9 @@ impl ValidatedReleaseIntent<'_> {
             npm_tag,
         } = prepared
         else {
-            return Err(GraphError::ReleaseIntentStale);
+            return Err(GraphError::ReleaseIntentStale {
+                reason: StaleReason::legacy_unclassified(),
+            });
         };
         let output = match id.package.ecosystem() {
             Ecosystem::Cargo => {
@@ -340,23 +418,37 @@ impl ValidatedReleaseIntent<'_> {
                     registry.endpoint.as_deref(),
                 );
                 let [build, upload] = steps.as_slice() else {
-                    return Err(GraphError::ReleaseIntentStale);
+                    return Err(GraphError::ReleaseIntentStale {
+                        reason: StaleReason::legacy_unclassified(),
+                    });
                 };
                 let built = self.run_argv(build)?;
                 if built.exit_code != Some(0) {
-                    return Err(GraphError::ReleaseIntentStale);
+                    return Err(GraphError::ReleaseIntentStale {
+                        reason: StaleReason::legacy_unclassified(),
+                    });
                 }
                 self.run_argv(upload)?
             }
-            _ => return Err(GraphError::ReleaseIntentStale),
+            _ => {
+                return Err(GraphError::ReleaseIntentStale {
+                    reason: StaleReason::legacy_unclassified(),
+                })
+            }
         };
         let outcome = match id.package.ecosystem() {
             Ecosystem::Cargo => registry_argv::classify_cargo_output(&output),
             Ecosystem::Npm => registry_argv::classify_npm_publish_output(&output),
             Ecosystem::Pypi => registry_argv::classify_twine_output(&output),
-            _ => return Err(GraphError::ReleaseIntentStale),
+            _ => {
+                return Err(GraphError::ReleaseIntentStale {
+                    reason: StaleReason::legacy_unclassified(),
+                })
+            }
         }
-        .map_err(|_error| GraphError::ReleaseIntentStale)?;
+        .map_err(|_error| GraphError::ReleaseIntentStale {
+            reason: StaleReason::legacy_unclassified(),
+        })?;
         if matches!(id.package.ecosystem(), Ecosystem::Npm) && matches!(outcome, PublishOutcome::Published) {
             let is_published = self.npm_version_is_published(package_name, version, registry.endpoint.as_deref())?;
             require_registry_confirmation(is_published, package_name, version)?;
@@ -421,7 +513,9 @@ impl ValidatedReleaseIntent<'_> {
         {
             return Ok(false);
         }
-        Err(GraphError::ReleaseIntentStale)
+        Err(GraphError::ReleaseIntentStale {
+            reason: StaleReason::legacy_unclassified(),
+        })
     }
 
     fn dispatch_tag(
@@ -435,7 +529,9 @@ impl ValidatedReleaseIntent<'_> {
             return if observed.target == *target && observed.annotation == annotation {
                 Ok(OperationOutcome::AlreadySatisfied)
             } else {
-                Err(GraphError::ReleaseIntentStale)
+                Err(GraphError::ReleaseIntentStale {
+                    reason: StaleReason::legacy_unclassified(),
+                })
             };
         }
         // Delegates to `GitAccess::create_tag` rather than inlining `git
@@ -452,14 +548,18 @@ impl ValidatedReleaseIntent<'_> {
             TagSignPolicy::ForceUnsigned,
             permit,
         )
-        .map_err(|_error| GraphError::ReleaseIntentStale)?;
+        .map_err(|_error| GraphError::ReleaseIntentStale {
+            reason: StaleReason::legacy_unclassified(),
+        })?;
         let pushed = self.runner.run(
             "git",
             &["push", self.checked_git_remote()?.endpoint.as_str(), name.as_str()],
             &self.prepared.root,
         )?;
         if pushed.exit_code != Some(0) {
-            return Err(GraphError::ReleaseIntentStale);
+            return Err(GraphError::ReleaseIntentStale {
+                reason: StaleReason::legacy_unclassified(),
+            });
         }
         if self
             .observed_tag(name)?
@@ -467,7 +567,9 @@ impl ValidatedReleaseIntent<'_> {
         {
             Ok(OperationOutcome::Published)
         } else {
-            Err(GraphError::ReleaseIntentStale)
+            Err(GraphError::ReleaseIntentStale {
+                reason: StaleReason::legacy_unclassified(),
+            })
         }
     }
 
@@ -476,11 +578,17 @@ impl ValidatedReleaseIntent<'_> {
         let repository = remote
             .github_repository
             .as_ref()
-            .ok_or(GraphError::ReleaseIntentStale)?
+            .ok_or(GraphError::ReleaseIntentStale {
+                reason: StaleReason::legacy_unclassified(),
+            })?
             .as_slug();
         match self.observed_forge_release_target(tag, &repository)? {
             ForgeReleaseObservation::Exact => return Ok(OperationOutcome::AlreadySatisfied),
-            ForgeReleaseObservation::Conflict => return Err(GraphError::ReleaseIntentStale),
+            ForgeReleaseObservation::Conflict => {
+                return Err(GraphError::ReleaseIntentStale {
+                    reason: StaleReason::legacy_unclassified(),
+                })
+            }
             ForgeReleaseObservation::Missing => {}
         }
         let created = self.runner.run(
@@ -501,7 +609,9 @@ impl ValidatedReleaseIntent<'_> {
         {
             Ok(OperationOutcome::Published)
         } else {
-            Err(GraphError::ReleaseIntentStale)
+            Err(GraphError::ReleaseIntentStale {
+                reason: StaleReason::legacy_unclassified(),
+            })
         }
     }
 
@@ -515,7 +625,9 @@ impl ValidatedReleaseIntent<'_> {
         if observed.exit_code != Some(0) {
             return Ok(None);
         }
-        let target = CommitSha::parse(observed.stdout.trim()).map_err(|_error| GraphError::ReleaseIntentStale)?;
+        let target = CommitSha::parse(observed.stdout.trim()).map_err(|_error| GraphError::ReleaseIntentStale {
+            reason: StaleReason::legacy_unclassified(),
+        })?;
         let details = self.runner.run(
             "git",
             &[
@@ -526,7 +638,9 @@ impl ValidatedReleaseIntent<'_> {
             &self.prepared.root,
         )?;
         if details.exit_code != Some(0) {
-            return Err(GraphError::ReleaseIntentStale);
+            return Err(GraphError::ReleaseIntentStale {
+                reason: StaleReason::legacy_unclassified(),
+            });
         }
         let line = details.stdout.trim_end_matches(['\r', '\n']);
         let mut fields = line.split('\0');
@@ -534,9 +648,13 @@ impl ValidatedReleaseIntent<'_> {
         let annotation = fields.next();
         let body = fields.next();
         if object_type != Some("tag") || body.is_none_or(|body| !body.trim().is_empty()) || fields.next().is_some() {
-            return Err(GraphError::ReleaseIntentStale);
+            return Err(GraphError::ReleaseIntentStale {
+                reason: StaleReason::legacy_unclassified(),
+            });
         }
-        let annotation = annotation.ok_or(GraphError::ReleaseIntentStale)?;
+        let annotation = annotation.ok_or(GraphError::ReleaseIntentStale {
+            reason: StaleReason::legacy_unclassified(),
+        })?;
         Ok(Some(ObservedTag {
             target,
             annotation: annotation.to_string(),
@@ -566,12 +684,20 @@ impl ValidatedReleaseIntent<'_> {
             return Ok(ForgeReleaseObservation::Missing);
         }
         if status != 200 || observed.exit_code != Some(0) {
-            return Err(GraphError::ReleaseIntentStale);
+            return Err(GraphError::ReleaseIntentStale {
+                reason: StaleReason::legacy_unclassified(),
+            });
         }
-        let value: serde_json::Value = serde_json::from_str(body).map_err(|_error| GraphError::ReleaseIntentStale)?;
+        let value: serde_json::Value = serde_json::from_str(body).map_err(|_error| GraphError::ReleaseIntentStale {
+            reason: StaleReason::legacy_unclassified(),
+        })?;
         let expected = match &self.prepared.source {
             SourceIdentity::GitCommit { sha } => sha.as_str(),
-            SourceIdentity::HermeticContent { .. } => return Err(GraphError::ReleaseIntentStale),
+            SourceIdentity::HermeticContent { .. } => {
+                return Err(GraphError::ReleaseIntentStale {
+                    reason: StaleReason::legacy_unclassified(),
+                })
+            }
         };
         Ok(
             if value.get("tag_name").and_then(serde_json::Value::as_str) == Some(tag.as_str())
@@ -589,9 +715,13 @@ impl ValidatedReleaseIntent<'_> {
             .prepared
             .git_remote
             .as_ref()
-            .ok_or(GraphError::ReleaseIntentStale)?;
+            .ok_or(GraphError::ReleaseIntentStale {
+                reason: StaleReason::legacy_unclassified(),
+            })?;
         if prepared_git_remote(&self.prepared.root, self.runner)? != *expected {
-            return Err(GraphError::ReleaseIntentStale);
+            return Err(GraphError::ReleaseIntentStale {
+                reason: StaleReason::git_remote_changed(),
+            });
         }
         Ok(expected)
     }
@@ -601,18 +731,26 @@ fn parse_github_api_response(stdout: &str) -> Result<(u16, &str), GraphError> {
     let (headers, body) = stdout
         .rsplit_once("\r\n\r\n")
         .or_else(|| stdout.rsplit_once("\n\n"))
-        .ok_or(GraphError::ReleaseIntentStale)?;
+        .ok_or(GraphError::ReleaseIntentStale {
+            reason: StaleReason::legacy_unclassified(),
+        })?;
     let status_line = headers
         .lines()
         .rev()
         .find(|line| line.trim_end_matches('\r').starts_with("HTTP/"))
-        .ok_or(GraphError::ReleaseIntentStale)?;
+        .ok_or(GraphError::ReleaseIntentStale {
+            reason: StaleReason::legacy_unclassified(),
+        })?;
     let status = status_line
         .split_whitespace()
         .nth(1)
-        .ok_or(GraphError::ReleaseIntentStale)?
+        .ok_or(GraphError::ReleaseIntentStale {
+            reason: StaleReason::legacy_unclassified(),
+        })?
         .parse::<u16>()
-        .map_err(|_error| GraphError::ReleaseIntentStale)?;
+        .map_err(|_error| GraphError::ReleaseIntentStale {
+            reason: StaleReason::legacy_unclassified(),
+        })?;
     Ok((status, body))
 }
 
@@ -623,8 +761,11 @@ fn derive_release_intent<R: CommandRunner, D: DependencyResolver>(
     trust_profile: ExecutionTrustProfileV1,
 ) -> Result<ReleaseIntentV1, GraphError> {
     let (snapshot, operations, _, _) = derive_release_inputs(workspace, decision, source)?;
-    ReleaseIntentV1::new(decision.clone(), snapshot, trust_profile, operations, vec![])
-        .map_err(|_error| GraphError::ReleaseIntentStale)
+    ReleaseIntentV1::new(decision.clone(), snapshot, trust_profile, operations, vec![]).map_err(|_error| {
+        GraphError::ReleaseIntentStale {
+            reason: StaleReason::legacy_unclassified(),
+        }
+    })
 }
 
 fn derive_release_intent_with_prepared<R: CommandRunner, D: DependencyResolver>(
@@ -634,8 +775,12 @@ fn derive_release_intent_with_prepared<R: CommandRunner, D: DependencyResolver>(
     trust_profile: ExecutionTrustProfileV1,
 ) -> Result<(ReleaseIntentV1, PreparedDerivation), GraphError> {
     let (snapshot, operations, prepared, git_remote) = derive_release_inputs(workspace, decision, source)?;
-    let intent = ReleaseIntentV1::new(decision.clone(), snapshot, trust_profile, operations, vec![])
-        .map_err(|_error| GraphError::ReleaseIntentStale)?;
+    let intent =
+        ReleaseIntentV1::new(decision.clone(), snapshot, trust_profile, operations, vec![]).map_err(|_error| {
+            GraphError::ReleaseIntentStale {
+                reason: StaleReason::legacy_unclassified(),
+            }
+        })?;
     Ok((
         intent,
         PreparedDerivation {
@@ -718,18 +863,25 @@ fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
                 let operation = ReleaseOperation::registry_publish(
                     id.clone(),
                     version.clone(),
-                    RegistryBindingId::new(registry_key.as_str(), binding.identity.clone())
-                        .map_err(|_error| GraphError::ReleaseIntentStale)?,
+                    RegistryBindingId::new(registry_key.as_str(), binding.identity.clone()).map_err(|_error| {
+                        GraphError::ReleaseIntentStale {
+                            reason: StaleReason::legacy_unclassified(),
+                        }
+                    })?,
                     Vec::new(),
                 )
-                .map_err(|_error| GraphError::ReleaseIntentStale)?;
+                .map_err(|_error| GraphError::ReleaseIntentStale {
+                    reason: StaleReason::legacy_unclassified(),
+                })?;
                 // A durable registry operation must have one exact endpoint
                 // binding. The model-level operation identity currently has
                 // only a registry key, so reject a second target that would
                 // collapse to the same operation until the typed binding
                 // identity is added there.
                 if prepared.contains_key(operation.id()) {
-                    return Err(GraphError::ReleaseIntentStale);
+                    return Err(GraphError::ReleaseIntentStale {
+                        reason: StaleReason::legacy_unclassified(),
+                    });
                 }
                 prepared.insert(
                     operation.id().clone(),
@@ -780,7 +932,9 @@ fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
         for publish_id in publishes_by_package.get(id).into_iter().flatten() {
             let operation = operations.get(publish_id).expect("publish operation was constructed");
             let replacement = ReleaseOperation::new(operation.id().clone(), prerequisites.iter().cloned().collect())
-                .map_err(|_error| GraphError::ReleaseIntentStale)?;
+                .map_err(|_error| GraphError::ReleaseIntentStale {
+                    reason: StaleReason::legacy_unclassified(),
+                })?;
             operations.insert(publish_id.clone(), replacement);
         }
     }
@@ -798,7 +952,9 @@ fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
             version.clone(),
             publishes_by_package.get(id).cloned().unwrap_or_default(),
         )
-        .map_err(|_error| GraphError::ReleaseIntentStale)?;
+        .map_err(|_error| GraphError::ReleaseIntentStale {
+            reason: StaleReason::legacy_unclassified(),
+        })?;
         let tag_name = package
             .tag_template
             .clone()
@@ -806,7 +962,11 @@ fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
             .render(version);
         let target = match &source {
             SourceIdentity::GitCommit { sha } => sha.clone(),
-            SourceIdentity::HermeticContent { .. } => return Err(GraphError::ReleaseIntentStale),
+            SourceIdentity::HermeticContent { .. } => {
+                return Err(GraphError::ReleaseIntentStale {
+                    reason: StaleReason::legacy_unclassified(),
+                })
+            }
         };
         prepared.insert(
             tag.id().clone(),
@@ -826,11 +986,19 @@ fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
             .any(|target| matches!(target, PublishTarget::GitHubRelease))
         {
             let tag = tag_by_package.get(id).expect("release point has tag").clone();
-            let operation = ReleaseOperation::forge_release(id.clone(), version.clone(), vec![tag])
-                .map_err(|_error| GraphError::ReleaseIntentStale)?;
+            let operation =
+                ReleaseOperation::forge_release(id.clone(), version.clone(), vec![tag]).map_err(|_error| {
+                    GraphError::ReleaseIntentStale {
+                        reason: StaleReason::legacy_unclassified(),
+                    }
+                })?;
             let tag = match prepared.get(operation.prerequisites().first().expect("forge release has tag")) {
                 Some(PreparedOperation::Tag { name, .. }) => name.clone(),
-                _ => return Err(GraphError::ReleaseIntentStale),
+                _ => {
+                    return Err(GraphError::ReleaseIntentStale {
+                        reason: StaleReason::legacy_unclassified(),
+                    })
+                }
             };
             prepared.insert(operation.id().clone(), PreparedOperation::ForgeRelease { tag });
             operations.insert(operation.id().clone(), operation);
@@ -838,7 +1006,9 @@ fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
     }
 
     Ok((
-        ReleaseInputSnapshotV1::new(source, package_inputs).map_err(|_error| GraphError::ReleaseIntentStale)?,
+        ReleaseInputSnapshotV1::new(source, package_inputs).map_err(|_error| GraphError::ReleaseIntentStale {
+            reason: StaleReason::legacy_unclassified(),
+        })?,
         canonical_operation_order(operations)?,
         prepared,
         git_remote,
@@ -889,7 +1059,9 @@ fn package_dir(package: &callisto_model::Package) -> Result<std::path::PathBuf, 
         .next()
         .and_then(|manifest| manifest.path.parent())
         .map(std::path::Path::to_path_buf)
-        .ok_or(GraphError::ReleaseIntentStale)
+        .ok_or(GraphError::ReleaseIntentStale {
+            reason: StaleReason::legacy_unclassified(),
+        })
 }
 
 fn manifest_role_text(role: &callisto_model::ManifestRole) -> String {
@@ -938,7 +1110,9 @@ fn canonical_operation_order(
         }
     }
     if ordered.len() != operations.len() {
-        return Err(GraphError::ReleaseIntentStale);
+        return Err(GraphError::ReleaseIntentStale {
+            reason: StaleReason::legacy_unclassified(),
+        });
     }
     Ok(ordered)
 }
@@ -1011,7 +1185,11 @@ fn target_fingerprint<R: CommandRunner, D: DependencyResolver>(
             push_registry_binding(&mut transcript, prepared_registry_binding(workspace, target)?.identity)?;
         }
         #[allow(unreachable_patterns)]
-        _ => return Err(GraphError::ReleaseIntentStale),
+        _ => {
+            return Err(GraphError::ReleaseIntentStale {
+                reason: StaleReason::legacy_unclassified(),
+            })
+        }
     }
     Ok(SemanticInputDigest::from_transcript(&transcript))
 }
@@ -1028,7 +1206,9 @@ fn prepared_registry_binding<R: CommandRunner, D: DependencyResolver>(
     workspace: &Workspace<'_, R, D>,
     target: &PublishTarget,
 ) -> Result<PreparedRegistryBinding, GraphError> {
-    let key = target.registry_key().ok_or(GraphError::ReleaseIntentStale)?;
+    let key = target.registry_key().ok_or(GraphError::ReleaseIntentStale {
+        reason: StaleReason::legacy_unclassified(),
+    })?;
     let explicit = target.registry_override();
     let configured = workspace
         .config
@@ -1231,7 +1411,7 @@ mod tests {
         assert!(
             !matches!(
                 require_registry_confirmation(false, "left-pad", &version),
-                Err(GraphError::ReleaseIntentStale)
+                Err(GraphError::ReleaseIntentStale { .. })
             ),
             "must not be reported as ReleaseIntentStale -- that help text would be false here"
         );
@@ -1645,7 +1825,7 @@ mod tests {
             .success());
         assert!(matches!(
             validated.dispatch_prepared(&callisto_model::ApplyPermit::force_for_tests(), &tag_id),
-            Err(GraphError::ReleaseIntentStale)
+            Err(GraphError::ReleaseIntentStale { .. })
         ));
     }
 

@@ -186,3 +186,210 @@ fn allowlist_entries_reference_files_that_still_exist() {
         );
     }
 }
+
+// --- SPEC-ARCH-RELEASE-ERROR-TAXONOMY, PR1 -------------------------------
+//
+// Enforcement for the `GraphError::ReleaseIntentStale` (E124) struct-variant
+// migration: staleness must carry a real `StaleReason`, real reasons are
+// constructible only from `commands/release.rs`, and every other prior
+// discard site is a tracked, shrinking migration ratchet rather than a
+// silent, permanent hole.
+
+/// This crate's own `src/` directory, independent of `workspace_root()`
+/// (which points at the whole-workspace root two levels up).
+fn graph_crate_src_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src")
+}
+
+/// Reads `relative` (forward-slash separated, relative to this crate's
+/// `src/`, e.g. `"commands/release.rs"`) with `#[cfg(test)] mod tests { ... }`
+/// blocks stripped.
+fn read_production_source(relative: &str) -> String {
+    let path = graph_crate_src_dir().join(relative);
+    let content = fs::read_to_string(&path).unwrap_or_else(|e| panic!("could not read {path:?}: {e}"));
+    strip_test_modules(&content)
+}
+
+/// `StaleReason`'s four real fresh-re-observation constructors (AC-001).
+/// `legacy_unclassified` is deliberately excluded: it is the migration
+/// ratchet, callable crate-wide by design during PR1-PR4.
+const STALE_REASON_REAL_CONSTRUCTORS: [&str; 4] = [
+    "trust_evidence_changed",
+    "source_identity_changed",
+    "git_remote_changed",
+    "intent_differs_from_fresh_derivation",
+];
+
+/// AC-002: the real fresh-re-observation privacy boundary is the four named
+/// constructors, not the `ReleaseIntentStale` variant name -- that name
+/// legitimately appears crate-wide via the `StaleReason::legacy_unclassified()`
+/// ratchet while PR1-PR4 migrate every non-fresh-reobservation site.
+#[test]
+fn release_intent_stale_is_constructed_only_by_fresh_reobservation() {
+    let release_rs = graph_crate_src_dir().join("commands/release.rs");
+    let mut files = Vec::new();
+    collect_rust_src_files(&graph_crate_src_dir(), &mut files);
+
+    let mut violations = Vec::new();
+    for file in files {
+        if file == release_rs {
+            continue;
+        }
+        let Ok(content) = fs::read_to_string(&file) else {
+            continue;
+        };
+        let production = strip_test_modules(&content);
+        for name in STALE_REASON_REAL_CONSTRUCTORS {
+            if production.contains(name) {
+                violations.push(format!("{}: references `{name}`", file.display()));
+            }
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "StaleReason's real fresh-re-observation constructors must be referenced only from \
+         commands/release.rs; every other production site must use \
+         StaleReason::legacy_unclassified() during the PR1-PR4 migration: {violations:#?}"
+    );
+}
+
+/// AC-001: the four real constructors carry no visibility modifier --
+/// callable only from within `commands/release.rs` itself.
+#[test]
+fn stale_reason_constructors_are_module_private() {
+    let production = read_production_source("commands/release.rs");
+
+    let mut violations = Vec::new();
+    for name in STALE_REASON_REAL_CONSTRUCTORS {
+        let needle = format!("fn {name}");
+        for line in production.lines() {
+            if line.contains(&needle) && line.contains("pub") {
+                violations.push(format!("`{name}` has a visibility modifier: {}", line.trim()));
+            }
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "StaleReason's real constructors must carry no pub/pub(crate)/pub(super) visibility: {violations:#?}"
+    );
+}
+
+/// Files still permitted to discard their `map_err` closure's bound error.
+/// Two distinct categories, both pre-existing and verified by re-reading the
+/// crate rather than assumed:
+/// - The three release-executor files are this spec's own PR1-out-of-scope
+///   sites (PR2 migrates `release_execution.rs`, PR3 `release_decision.rs`,
+///   PR4 `release.rs`) -- shrink these three to nothing by PR4.
+/// - The other five predate this spec entirely and belong to the companion
+///   SPEC-ARCH-ERROR-SOURCE-PRESERVATION-GATE.json, which widens this same
+///   check workspace-wide; not migrated here.
+///
+/// Either way, this test's job is to block a *sixth* (or new PR1-scope)
+/// file from adopting the pattern, not to re-litigate already-tracked ones.
+const MAP_ERR_IGNORE_ALLOWLIST: &[&str] = &[
+    "commands/release.rs",
+    "commands/release_decision.rs",
+    "commands/release_execution.rs",
+    "locate/ignore_walk.rs",
+    "config/resolve.rs",
+    "cascade.rs",
+    "commands/publish.rs",
+    "commands/snapshot.rs",
+];
+
+/// True if `content` contains a `map_err(|_ident| ...)` closure -- one whose
+/// bound error parameter is never used, evading `clippy::map_err_ignore`
+/// (which only matches the bare `|_|` spelling).
+fn contains_map_err_ignore(content: &str) -> bool {
+    let marker = "map_err(|_";
+    let mut search_from = 0;
+    while let Some(relative_pos) = content[search_from..].find(marker) {
+        // `marker` itself ends in the closure parameter's leading `_`.
+        let ident_start = search_from + relative_pos + marker.len() - 1;
+        let rest = &content[ident_start..];
+        let ident_len = rest
+            .char_indices()
+            .take_while(|(_, c)| c.is_alphanumeric() || *c == '_')
+            .count();
+        if rest[ident_len..].starts_with('|') {
+            return true;
+        }
+        search_from = ident_start + ident_len.max(1);
+    }
+    false
+}
+
+/// AC-003 (PR1 scope): zero `map_err(|_ident| ...)` source-discarding
+/// closures anywhere in this crate except the three allowlisted
+/// release-executor files. The allowlist must shrink to empty by PR4
+/// (SPEC-ARCH-RELEASE-ERROR-TAXONOMY.json's `suggested_pr_sequence`); this
+/// test still fails on a fourth, non-allowlisted file adopting the pattern.
+#[test]
+fn release_modules_never_discard_error_sources() {
+    let src_dir = graph_crate_src_dir();
+    let mut files = Vec::new();
+    collect_rust_src_files(&src_dir, &mut files);
+
+    let mut violations = Vec::new();
+    for file in files {
+        let Ok(content) = fs::read_to_string(&file) else {
+            continue;
+        };
+        let production = strip_test_modules(&content);
+        if !contains_map_err_ignore(&production) {
+            continue;
+        }
+        let relative = file
+            .strip_prefix(&src_dir)
+            .unwrap_or(&file)
+            .to_string_lossy()
+            .replace('\\', "/");
+        if !MAP_ERR_IGNORE_ALLOWLIST.contains(&relative.as_str()) {
+            violations.push(relative);
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "found a new map_err(|_ident| ...) source-discarding closure outside the tracked PR1-PR4 \
+         allowlist ({MAP_ERR_IGNORE_ALLOWLIST:?}); report the real error cause instead: {violations:#?}"
+    );
+}
+
+/// AC-015 migration ratchet: exact `StaleReason::legacy_unclassified()` call
+/// counts pinned per file as of PR1. PR2 lowers `release_execution.rs` to 0,
+/// PR3 lowers `release_decision.rs` to 0, PR4 lowers `release.rs` to 0 and
+/// deletes the constructor (and this test) entirely. Update a count here only
+/// when the corresponding PR intentionally lowers it -- never to silence a
+/// failure.
+#[test]
+fn legacy_unclassified_ratchet() {
+    let cases: &[(&str, usize)] = &[
+        ("commands/release.rs", 44),
+        ("commands/release_decision.rs", 42),
+        ("commands/release_execution.rs", 2),
+    ];
+    for (relative, expected) in cases {
+        let production = read_production_source(relative);
+        let actual = production.matches("StaleReason::legacy_unclassified()").count();
+        assert_eq!(
+            actual, *expected,
+            "{relative}: StaleReason::legacy_unclassified() count drifted from the pinned PR1 ratchet"
+        );
+    }
+}
+
+/// AC-014: E124 is the sole owner of "reapprove" guidance -- every other
+/// release-error variant's help text must describe its own real recovery
+/// action instead of copying E124's.
+#[test]
+fn reapprove_guidance_belongs_to_e124_only() {
+    let production = read_production_source("error.rs");
+    let count = production.matches("reapprove").count();
+    assert_eq!(
+        count, 1,
+        "'reapprove' must occur exactly once in error.rs (E124's help text only); found {count}"
+    );
+}

@@ -15,7 +15,7 @@ use crate::{
     GraphError,
 };
 
-use super::release::ValidatedReleaseIntent;
+use super::release::{StaleReason, ValidatedReleaseIntent};
 
 /// Executes eligible operations one at a time with crash-safe state updates.
 ///
@@ -41,10 +41,18 @@ pub fn execute_release_with_artifacts<W: ReleaseStateWriter>(
     let intent = capability.intent();
     match (intent.artifact_slots.is_empty(), artifacts) {
         (true, None) => {}
-        (true, Some(manifest)) | (false, Some(manifest)) => manifest
-            .validate_for_intent(intent)
-            .map_err(|_error| GraphError::ReleaseIntentStale)?,
-        (false, None) => return Err(GraphError::ReleaseIntentStale),
+        (true, Some(manifest)) | (false, Some(manifest)) => {
+            manifest
+                .validate_for_intent(intent)
+                .map_err(|_error| GraphError::ReleaseIntentStale {
+                    reason: StaleReason::legacy_unclassified(),
+                })?
+        }
+        (false, None) => {
+            return Err(GraphError::ReleaseIntentStale {
+                reason: StaleReason::legacy_unclassified(),
+            })
+        }
     }
     let mut state = store.load_or_initialize(intent, permit)?;
     loop {
