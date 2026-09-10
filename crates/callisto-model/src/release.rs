@@ -13,7 +13,24 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use sha2::{Digest, Sha256};
 
-use crate::{CommitSha, Ecosystem, PackageId, RegistryKey, Version};
+use crate::{CommitSha, Ecosystem, PackageId, RegistryKey, Version, VersionGrammar};
+
+/// Sort key for a `Version` field inside a hand-written `Ord` impl.
+///
+/// `(grammar, raw)` is exactly the subset of `Version`'s own derived
+/// `PartialEq`/`Eq` fields needed to keep a containing type's `Ord`
+/// consistent with its `Eq`: `parsed` is a pure function of `(grammar,
+/// raw)` (see `Version::parse`), so it draws no further distinctions once
+/// grammar and raw already agree. `render()` (== `raw`) alone is NOT
+/// enough -- the same literal string parses under more than one grammar
+/// (e.g. `"1.2.3"` is valid SemVer *and* PEP 440), so two `Version`s with
+/// different `grammar` but identical `render()` output would compare
+/// unequal via derived `Eq` yet `Ordering::Equal` via a `render()`-only
+/// `Ord`, violating the invariant `BTreeSet`/`BTreeMap` require:
+/// `a.cmp(b) == Equal` iff `a == b`.
+fn version_ord_key(v: &Version) -> (VersionGrammar, &str) {
+    (v.grammar(), v.render())
+}
 
 /// An exact, ecosystem-qualified package identity for durable release operations.
 ///
@@ -939,12 +956,19 @@ impl PartialOrd for ReleaseOperationId {
 
 // Hand-written rather than derived: `Version` has no `Ord` impl (SemVer and PEP 440
 // aren't comparable via a single total order), so this struct can't `#[derive(Ord)]`
-// directly. `role` now delegates to `ReleaseOperationRole`'s own derived `Ord`, which
+// directly. `role` delegates to `ReleaseOperationRole`'s own derived `Ord`, which
 // folds in every field of every variant -- including `ArtifactSlotId::attestation_policy`
 // for `ArtifactUpload` -- instead of hand-decomposing it into a lossy sort key.
+// `version` goes through `version_ord_key` (grammar + raw), not bare `render()`: two
+// `Version`s under different grammars can render identically (e.g. `"1.2.3"` is valid
+// both as SemVer and PEP 440), which a `render()`-only key would wrongly fold together.
 impl Ord for ReleaseOperationId {
     fn cmp(&self, other: &Self) -> Ordering {
-        (&self.package, &self.role, self.version.render()).cmp(&(&other.package, &other.role, other.version.render()))
+        (&self.package, &self.role, version_ord_key(&self.version)).cmp(&(
+            &other.package,
+            &other.role,
+            version_ord_key(&other.version),
+        ))
     }
 }
 
@@ -1117,11 +1141,15 @@ impl PartialOrd for ArtifactSlotId {
         Some(self.cmp(other))
     }
 }
+// `version` goes through `version_ord_key` (grammar + raw), not bare `render()` --
+// same residual-`.render()` defect as `ReleaseOperationId::cmp` above; see
+// `version_ord_key`'s doc comment for why bare `render()` breaks the
+// `a.cmp(b) == Equal` iff `a == b` invariant `BTreeSet`/`BTreeMap` require.
 impl Ord for ArtifactSlotId {
     fn cmp(&self, other: &Self) -> Ordering {
         (
             &self.package,
-            self.version.render(),
+            version_ord_key(&self.version),
             &self.platform,
             &self.asset_name,
             &self.attestation_policy.repository,
@@ -1130,7 +1158,7 @@ impl Ord for ArtifactSlotId {
         )
             .cmp(&(
                 &other.package,
-                other.version.render(),
+                version_ord_key(&other.version),
                 &other.platform,
                 &other.asset_name,
                 &other.attestation_policy.repository,
@@ -2374,6 +2402,114 @@ mod tests {
             intent.is_ok(),
             "two artifact uploads differing only by attestation_policy must not collide: {intent:?}"
         );
+    }
+
+    /// Residual instance of the same defect class fixed above for
+    /// `attestation_policy`: `ReleaseOperationId::cmp` used to key on
+    /// `version.render()` alone, dropping `version.grammar()`. The same
+    /// literal string parses under more than one grammar -- `"1.2.3"` is
+    /// valid both as SemVer and PEP 440 -- so two `ReleaseOperationId`s
+    /// that are Eq-distinct only by `Version::grammar` collapsed to
+    /// `Ordering::Equal` under the old `render()`-only `Ord`, violating
+    /// the invariant `BTreeSet`/`BTreeMap` require: `a.cmp(b) == Equal`
+    /// iff `a == b`.
+    #[test]
+    fn operation_ids_differing_only_by_version_grammar_stay_distinct_under_ord() {
+        let package = ReleasePackageId::parse("cargo/demo").unwrap();
+        let v_semver = Version::parse("1.2.3", VersionGrammar::SemVer).unwrap();
+        let v_pep440 = Version::parse("1.2.3", VersionGrammar::Pep440).unwrap();
+
+        // Precondition: the identical literal renders identically under both
+        // grammars, but the parsed Versions are NOT the same value -- this is
+        // exactly the collision `version_ord_key` must resolve.
+        assert_eq!(v_semver.render(), v_pep440.render());
+        assert_ne!(
+            v_semver, v_pep440,
+            "SemVer and PEP 440 parses of the identical literal must remain Eq-distinct"
+        );
+
+        let id_a = ReleaseOperationId::tag(package.clone(), v_semver);
+        let id_b = ReleaseOperationId::tag(package, v_pep440);
+
+        assert_ne!(id_a, id_b, "distinct version grammars must stay Eq-distinct");
+        assert_ne!(
+            id_a.cmp(&id_b),
+            Ordering::Equal,
+            "distinct version grammars must not compare Ord::Equal"
+        );
+
+        let mut ids = BTreeSet::new();
+        assert!(ids.insert(id_a.clone()), "first id must insert");
+        assert!(
+            ids.insert(id_b.clone()),
+            "second id must NOT be displaced by the first in a BTreeSet"
+        );
+        assert_eq!(ids.len(), 2, "BTreeSet must not silently collapse distinct-grammar ids");
+
+        // Sanity check the ordinary case still behaves: several distinct
+        // plain SemVer versions of the same package/role must all survive
+        // as separate BTreeSet entries too, not just the grammar-collision
+        // edge case above.
+        let mut ordinary_ids = BTreeSet::new();
+        for raw in ["1.0.0", "1.2.3", "2.0.0", "0.9.9"] {
+            let id = ReleaseOperationId::tag(
+                ReleasePackageId::parse("cargo/demo").unwrap(),
+                Version::parse(raw, VersionGrammar::SemVer).unwrap(),
+            );
+            assert!(
+                ordinary_ids.insert(id),
+                "version {raw} must not collide with a prior entry"
+            );
+        }
+        assert_eq!(ordinary_ids.len(), 4);
+    }
+
+    /// Sibling instance of the same `.render()`-only defect, found in
+    /// `ArtifactSlotId::cmp` (a different type in the same file) while
+    /// auditing `ReleaseOperationId` above. Same construction: two slots
+    /// identical in every field except `version.grammar()`.
+    #[test]
+    fn artifact_slot_ids_differing_only_by_version_grammar_stay_distinct_under_ord() {
+        let package = ReleasePackageId::parse("cargo/demo").unwrap();
+        let v_semver = Version::parse("1.2.3", VersionGrammar::SemVer).unwrap();
+        let v_pep440 = Version::parse("1.2.3", VersionGrammar::Pep440).unwrap();
+        assert_eq!(v_semver.render(), v_pep440.render());
+
+        let slot_a = ArtifactSlotId::new(
+            package.clone(),
+            v_semver,
+            "x86_64-unknown-linux-gnu",
+            "demo.tar.gz",
+            GitHubRepository::parse("orin-dx/callisto").unwrap(),
+            ".github/workflows/release.yml",
+            CommitSha::parse(&"a".repeat(40)).unwrap(),
+        )
+        .unwrap();
+        let slot_b = ArtifactSlotId::new(
+            package,
+            v_pep440,
+            "x86_64-unknown-linux-gnu",
+            "demo.tar.gz",
+            GitHubRepository::parse("orin-dx/callisto").unwrap(),
+            ".github/workflows/release.yml",
+            CommitSha::parse(&"a".repeat(40)).unwrap(),
+        )
+        .unwrap();
+
+        assert_ne!(slot_a, slot_b, "distinct version grammars must stay Eq-distinct");
+        assert_ne!(
+            slot_a.cmp(&slot_b),
+            Ordering::Equal,
+            "distinct version grammars must not compare Ord::Equal"
+        );
+
+        let mut slots = BTreeSet::new();
+        assert!(slots.insert(slot_a), "first slot must insert");
+        assert!(
+            slots.insert(slot_b),
+            "second slot must NOT be displaced by the first in a BTreeSet"
+        );
+        assert_eq!(slots.len(), 2);
     }
 
     #[test]

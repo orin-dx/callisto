@@ -317,6 +317,34 @@ pub enum GraphError {
         help("Resolve the local filesystem error before any remote release effect is attempted.")
     )]
     ReleaseStateWrite { path: PathBuf, message: String },
+
+    #[error("ecosystem `{}` has no canonical manifest format for identity resolution", .ecosystem.prefix())]
+    #[diagnostic(
+        code(E155),
+        help(
+            "Identity resolution only supports Cargo, npm, and PyPI packages \
+             (the ecosystems with an `Ecosystem::canonical_manifest_format`). \
+             Remove this package's identity requirement for the unsupported \
+             ecosystem, or resolve its identity through a different path."
+        )
+    )]
+    UnsupportedIdentityEcosystem { ecosystem: Ecosystem },
+
+    #[error("cannot parse package identifier `{name}` declared in `{}`: {source}", .path.display())]
+    #[diagnostic(
+        code(E156),
+        help(
+            "Fix the `name` field in the manifest so it forms a valid package \
+             identifier: no leading `/`, no leading `-`, no `..` path traversal, \
+             and non-empty."
+        )
+    )]
+    PackageIdentifierParse {
+        path: PathBuf,
+        name: String,
+        #[source]
+        source: callisto_model::PackageIdParseError,
+    },
 }
 
 /// Why a workspace package that a `--package` filter named is nonetheless
