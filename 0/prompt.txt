@@ -2942,3 +2942,7 @@ No sites were left on `legacy_unclassified()` — nothing to report as deferred.
 <usage><subagent_tokens>300722</subagent_tokens><tool_uses>112</tool_uses><duration_ms>1438744</duration_ms></usage>
 <worktree><worktreePath>/Users/gabe/Projects/callisto/.claude/worktrees/agent-a4dc66cd626c0928b</worktreePath><worktreeBranch>worktree-agent-a4dc66cd626c0928b</worktreeBranch></worktree>
 </task-notification>
+
+---
+
+resolve conflicts and update from latest main: https://github.com/orin-dx/callisto/pull/82
