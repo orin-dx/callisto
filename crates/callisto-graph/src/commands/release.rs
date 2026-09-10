@@ -357,21 +357,36 @@ impl ValidatedReleaseIntent<'_> {
             _ => return Err(GraphError::ReleaseIntentStale),
         }
         .map_err(|_error| GraphError::ReleaseIntentStale)?;
-        if matches!(id.package.ecosystem(), Ecosystem::Npm)
-            && matches!(outcome, PublishOutcome::Published)
-            && !self.npm_version_is_published(package_name, version, registry.endpoint.as_deref())?
-        {
-            // A successful client process is not a receipt. The operation
-            // remains Attempting for reconciliation rather than asserting a
-            // release the registry cannot yet prove exists.
-            return Err(GraphError::ReleaseIntentStale);
+        if matches!(id.package.ecosystem(), Ecosystem::Npm) && matches!(outcome, PublishOutcome::Published) {
+            let is_published = self.npm_version_is_published(package_name, version, registry.endpoint.as_deref())?;
+            require_registry_confirmation(is_published, package_name, version)?;
         }
         Ok(match outcome {
             PublishOutcome::Published => OperationOutcome::Published,
             PublishOutcome::AlreadyPublished => OperationOutcome::AlreadySatisfied,
         })
     }
+}
 
+/// A successful npm publish client process is not a receipt: this checks
+/// whether the registry itself has caught up before the operation is
+/// considered done. If it hasn't, the operation must remain `Attempting`
+/// for reconciliation rather than asserting a release the registry cannot
+/// yet prove exists -- and the error reported must say exactly that (a
+/// successful publish awaiting registry propagation), not the unrelated
+/// "no release operation was authorized" claim `GraphError::ReleaseIntentStale`
+/// makes, which would be false here.
+fn require_registry_confirmation(is_published: bool, package: &str, version: &Version) -> Result<(), GraphError> {
+    if is_published {
+        return Ok(());
+    }
+    Err(GraphError::RegistryPublishUnconfirmed {
+        package: package.to_string(),
+        version: version.clone(),
+    })
+}
+
+impl ValidatedReleaseIntent<'_> {
     /// Runs a [`registry_argv::Argv`] built by the pure argv layer. This is
     /// the only place `dispatch_registry` touches [`CommandRunner`] --
     /// everything about *what* to run (program, args, cwd) was already
@@ -1196,6 +1211,37 @@ fn canonical_git_remote(raw: &str) -> Result<PreparedGitRemote, GraphError> {
 mod tests {
     use super::*;
     use callisto_model::{CommandError, CommandOutput, Ecosystem, VersionGrammar};
+
+    /// Regression coverage for the confirmed bug: a successful npm publish
+    /// whose registry hasn't caught up yet must report `RegistryPublishUnconfirmed`
+    /// -- not the unrelated `ReleaseIntentStale`, whose "no release operation
+    /// was authorized" help text is false here (an operation WAS authorized
+    /// and did run).
+    #[test]
+    fn require_registry_confirmation_rejects_unconfirmed_publish_with_its_own_variant() {
+        let version = Version::parse("1.2.3", VersionGrammar::SemVer).unwrap();
+        let err = require_registry_confirmation(false, "left-pad", &version).unwrap_err();
+        match err {
+            GraphError::RegistryPublishUnconfirmed { package, version: v } => {
+                assert_eq!(package, "left-pad");
+                assert_eq!(v, version);
+            }
+            other => panic!("expected RegistryPublishUnconfirmed, got {other:?}"),
+        }
+        assert!(
+            !matches!(
+                require_registry_confirmation(false, "left-pad", &version),
+                Err(GraphError::ReleaseIntentStale)
+            ),
+            "must not be reported as ReleaseIntentStale -- that help text would be false here"
+        );
+    }
+
+    #[test]
+    fn require_registry_confirmation_accepts_a_confirmed_publish() {
+        let version = Version::parse("1.2.3", VersionGrammar::SemVer).unwrap();
+        assert!(require_registry_confirmation(true, "left-pad", &version).is_ok());
+    }
 
     struct RealGitRunner;
     impl CommandRunner for RealGitRunner {

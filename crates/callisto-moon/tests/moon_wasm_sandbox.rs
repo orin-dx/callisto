@@ -96,6 +96,7 @@ fn resolve_wasm_file() {
         // SAFETY: single-threaded `Once` setup that runs before any sandbox
         // is created; no other code in this test binary reads/writes env
         // vars concurrently with this call.
+        #[allow(unsafe_code)]
         unsafe {
             std::env::set_var("WARPGATE_PLUGINS_DIR", &plugins_root);
         }
@@ -210,6 +211,7 @@ impl Drop for PathGuard {
         // guard's entire lifetime, released only after this restore runs),
         // so no other code in this binary can be concurrently
         // reading/writing `PATH` while this executes.
+        #[allow(unsafe_code)]
         unsafe {
             match &self.previous {
                 Some(v) => std::env::set_var("PATH", v),
@@ -231,6 +233,7 @@ async fn prepend_to_path(dir: &Path) -> PathGuard {
     }
     // SAFETY: see `PathGuard::drop` -- serialized via `PATH_MUTEX`, held
     // from here until the returned guard is dropped.
+    #[allow(unsafe_code)]
     unsafe {
         std::env::set_var("PATH", &new_path);
     }
@@ -249,6 +252,7 @@ async fn set_path_to(dirs: &[&Path]) -> PathGuard {
     let joined = std::env::join_paths(dirs.iter().map(|d| d.as_os_str())).expect("failed to join PATH");
     // SAFETY: see `PathGuard::drop` -- serialized via `PATH_MUTEX`, held
     // from here until the returned guard is dropped.
+    #[allow(unsafe_code)]
     unsafe {
         std::env::set_var("PATH", &joined);
     }
