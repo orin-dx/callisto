@@ -5,15 +5,9 @@ pub mod matrix;
 pub mod pr_body;
 pub mod publish;
 pub mod registry_argv;
-// PR1 ratchet: these call the deliberately #[deprecated] StaleReason::legacy_unclassified().
-// release.rs itself reached zero call sites in PR4 (SPEC-ARCH-RELEASE-ERROR-TAXONOMY); the
-// constructor stays defined -- and #[deprecated] -- here until release_decision.rs (PR3) also
-// reaches zero and it can be deleted entirely.
 pub mod release;
 pub mod release_artifacts;
-#[allow(deprecated)]
 pub mod release_decision;
-#[allow(deprecated)]
 pub mod release_execution;
 pub mod release_store;
 pub mod snapshot;

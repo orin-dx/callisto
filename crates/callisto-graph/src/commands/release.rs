@@ -43,8 +43,6 @@ enum StaleKind {
     GitRemoteChanged,
     #[error("a fresh derivation from the current workspace no longer matches the intent that was validated")]
     IntentDiffersFromFreshDerivation,
-    #[error("unclassified (pending error-taxonomy migration)")]
-    LegacyUnclassified,
 }
 
 impl std::fmt::Display for StaleReason {
@@ -75,14 +73,6 @@ impl StaleReason {
     fn intent_differs_from_fresh_derivation() -> Self {
         StaleReason {
             kind: StaleKind::IntentDiffersFromFreshDerivation,
-        }
-    }
-
-    /// PR1 migration ratchet; deleted once PR4 classifies every remaining site (SPEC-ARCH-RELEASE-ERROR-TAXONOMY).
-    #[deprecated(note = "PR1 migration ratchet -- report the real failure cause instead; deleted once PR4 lands")]
-    pub(crate) fn legacy_unclassified() -> Self {
-        StaleReason {
-            kind: StaleKind::LegacyUnclassified,
         }
     }
 }
