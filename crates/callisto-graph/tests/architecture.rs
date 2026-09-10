@@ -187,13 +187,14 @@ fn allowlist_entries_reference_files_that_still_exist() {
     }
 }
 
-// --- SPEC-ARCH-RELEASE-ERROR-TAXONOMY, PR1 -------------------------------
+// --- SPEC-ARCH-RELEASE-ERROR-TAXONOMY (PR1-PR4, complete) ----------------
 //
 // Enforcement for the `GraphError::ReleaseIntentStale` (E124) struct-variant
-// migration: staleness must carry a real `StaleReason`, real reasons are
-// constructible only from `commands/release.rs`, and every other prior
-// discard site is a tracked, shrinking migration ratchet rather than a
-// silent, permanent hole.
+// migration: staleness carries a real `StaleReason`, constructible only
+// from `commands/release.rs`. The `StaleReason::legacy_unclassified()`
+// migration ratchet used during PR1-PR3 reached zero callers across all
+// three release-executor files in PR4 and was deleted, along with the
+// ratchet's own pinned-count test.
 
 /// This crate's own `src/` directory, independent of `workspace_root()`
 /// (which points at the whole-workspace root two levels up).
@@ -210,9 +211,7 @@ fn read_production_source(relative: &str) -> String {
     strip_test_modules(&content)
 }
 
-/// `StaleReason`'s four real fresh-re-observation constructors (AC-001).
-/// `legacy_unclassified` is deliberately excluded: it is the migration
-/// ratchet, callable crate-wide by design during PR1-PR4.
+/// `StaleReason`'s four fresh-re-observation constructors (AC-001).
 const STALE_REASON_REAL_CONSTRUCTORS: [&str; 4] = [
     "trust_evidence_changed",
     "source_identity_changed",
@@ -220,10 +219,10 @@ const STALE_REASON_REAL_CONSTRUCTORS: [&str; 4] = [
     "intent_differs_from_fresh_derivation",
 ];
 
-/// AC-002: the real fresh-re-observation privacy boundary is the four named
-/// constructors, not the `ReleaseIntentStale` variant name -- that name
-/// legitimately appears crate-wide via the `StaleReason::legacy_unclassified()`
-/// ratchet while PR1-PR4 migrate every non-fresh-reobservation site.
+/// AC-002: `GraphError::ReleaseIntentStale` is constructed only via one of
+/// `StaleReason`'s four fresh-re-observation constructors, and only from
+/// `commands/release.rs` -- the SPEC-ARCH-RELEASE-ERROR-TAXONOMY migration
+/// (PR1-PR4) eliminated every other construction site workspace-wide.
 #[test]
 fn release_intent_stale_is_constructed_only_by_fresh_reobservation() {
     let release_rs = graph_crate_src_dir().join("commands/release.rs");
@@ -248,9 +247,8 @@ fn release_intent_stale_is_constructed_only_by_fresh_reobservation() {
 
     assert!(
         violations.is_empty(),
-        "StaleReason's real fresh-re-observation constructors must be referenced only from \
-         commands/release.rs; every other production site must use \
-         StaleReason::legacy_unclassified() during the PR1-PR4 migration: {violations:#?}"
+        "StaleReason's fresh-re-observation constructors must be referenced only from \
+         commands/release.rs: {violations:#?}"
     );
 }
 
@@ -277,20 +275,16 @@ fn stale_reason_constructors_are_module_private() {
 }
 
 /// Files still permitted to discard their `map_err` closure's bound error.
-/// Two distinct categories, both pre-existing and verified by re-reading the
-/// crate rather than assumed:
-/// - The two remaining release-executor files are this spec's own
-///   PR1-out-of-scope sites (`release_execution.rs` was migrated in PR2;
-///   PR3 migrates `release_decision.rs`, PR4 `release.rs`) -- shrink these
-///   two to nothing by PR4.
-/// - The other five predate this spec entirely and belong to the companion
-///   SPEC-ARCH-ERROR-SOURCE-PRESERVATION-GATE.json, which widens this same
-///   check workspace-wide; not migrated here.
+/// All three release-executor files (`release.rs`, `release_decision.rs`,
+/// `release_execution.rs`) completed the SPEC-ARCH-RELEASE-ERROR-TAXONOMY
+/// migration across PR1-PR4 and are no longer allowlisted. The remaining
+/// five predate this spec entirely and belong to the companion
+/// SPEC-ARCH-ERROR-SOURCE-PRESERVATION-GATE.json, which widens this same
+/// check workspace-wide; not migrated here.
 ///
-/// Either way, this test's job is to block a *sixth* (or new PR1-scope)
-/// file from adopting the pattern, not to re-litigate already-tracked ones.
+/// This test's job is to block a new file from adopting the pattern, not to
+/// re-litigate already-tracked ones.
 const MAP_ERR_IGNORE_ALLOWLIST: &[&str] = &[
-    "commands/release.rs",
     "locate/ignore_walk.rs",
     "config/resolve.rs",
     "cascade.rs",
@@ -320,11 +314,10 @@ fn contains_map_err_ignore(content: &str) -> bool {
     false
 }
 
-/// AC-003 (PR1 scope): zero `map_err(|_ident| ...)` source-discarding
-/// closures anywhere in this crate except the three allowlisted
-/// release-executor files. The allowlist must shrink to empty by PR4
-/// (SPEC-ARCH-RELEASE-ERROR-TAXONOMY.json's `suggested_pr_sequence`); this
-/// test still fails on a fourth, non-allowlisted file adopting the pattern.
+/// AC-003: zero `map_err(|_ident| ...)` source-discarding closures anywhere
+/// in this crate except the allowlisted, pre-existing files tracked by
+/// SPEC-ARCH-ERROR-SOURCE-PRESERVATION-GATE.json; this test fails on any
+/// non-allowlisted file adopting the pattern.
 #[test]
 fn release_modules_never_discard_error_sources() {
     let src_dir = graph_crate_src_dir();
@@ -355,35 +348,6 @@ fn release_modules_never_discard_error_sources() {
         "found a new map_err(|_ident| ...) source-discarding closure outside the tracked PR1-PR4 \
          allowlist ({MAP_ERR_IGNORE_ALLOWLIST:?}); report the real error cause instead: {violations:#?}"
     );
-}
-
-/// AC-015 migration ratchet: exact `StaleReason::legacy_unclassified()` call
-/// counts pinned per file. PR1 pinned release.rs=44, release_decision.rs=42,
-/// release_execution.rs=2; PR2 lowered `release_execution.rs` to 0 (this
-/// file's two sites now carry a real `GraphError::ArtifactManifest` /
-/// `ReleasePreconditionUnmet` cause instead). PR3 lowered
-/// `release_decision.rs` to 0 (every site now carries a real
-/// `ReleaseCommand`/`ReleaseCommitVerificationFailed`/`ReleaseDecisionDecode`/
-/// `ReleaseSelectionInvalid`/`ReleasePreconditionUnmet`/`UnsupportedRelease`/
-/// `ReleaseInvariant`/passthrough cause instead). PR4 lowers `release.rs` to
-/// 0 and deletes the constructor (and this test) entirely. Update a count
-/// here only when the corresponding PR intentionally lowers it -- never to
-/// silence a failure.
-#[test]
-fn legacy_unclassified_ratchet() {
-    let cases: &[(&str, usize)] = &[
-        ("commands/release.rs", 44),
-        ("commands/release_decision.rs", 0),
-        ("commands/release_execution.rs", 0),
-    ];
-    for (relative, expected) in cases {
-        let production = read_production_source(relative);
-        let actual = production.matches("StaleReason::legacy_unclassified()").count();
-        assert_eq!(
-            actual, *expected,
-            "{relative}: StaleReason::legacy_unclassified() count drifted from the pinned PR1 ratchet"
-        );
-    }
 }
 
 /// AC-014: E124 is the sole owner of "reapprove" guidance -- every other

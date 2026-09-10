@@ -5,13 +5,9 @@ pub mod matrix;
 pub mod pr_body;
 pub mod publish;
 pub mod registry_argv;
-// PR1 ratchet: these call the deliberately #[deprecated] StaleReason::legacy_unclassified(); deleted with it by PR4.
-#[allow(deprecated)]
 pub mod release;
 pub mod release_artifacts;
-#[allow(deprecated)]
 pub mod release_decision;
-#[allow(deprecated)]
 pub mod release_execution;
 pub mod release_store;
 pub mod snapshot;
