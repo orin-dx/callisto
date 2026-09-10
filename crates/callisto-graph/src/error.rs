@@ -237,6 +237,20 @@ pub enum GraphError {
     )]
     ReleaseIntentStale,
 
+    #[error("npm reported `{package}@{version}` published, but the registry does not yet show it")]
+    #[diagnostic(
+        code(E157),
+        help(
+            "The publish command already ran and npm reported success; this is registry \
+             propagation lag, not an unauthorized or stale operation. Re-run reconciliation \
+             once the registry catches up -- do not regenerate the release intent."
+        )
+    )]
+    RegistryPublishUnconfirmed {
+        package: String,
+        version: callisto_model::Version,
+    },
+
     #[error("artifact manifest is not authorized by this release intent: {source}")]
     #[diagnostic(
         code(E136),

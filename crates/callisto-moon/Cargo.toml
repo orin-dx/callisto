@@ -7,6 +7,33 @@ description = "Callisto Release Engine — Moon WASM PDK plugin for polyglot mon
 repository.workspace = true
 readme = "README.md"
 
+# Not `[lints]\nworkspace = true`: `workspace = true` inherits verbatim or
+# not at all (Cargo does not support partial/per-lint-group inheritance), and
+# this crate's tests/moon_wasm_sandbox.rs mutates process-wide env vars
+# (WARPGATE_PLUGINS_DIR, PATH) under a `Once`/`PATH_MUTEX`-serialized,
+# individually SAFETY-commented `unsafe` block per call -- which the
+# workspace's `unsafe_code = "forbid"` cannot locally allow (forbid, unlike
+# deny, can't be overridden by any in-source attribute, at any nesting
+# depth). This table duplicates `[workspace.lints]` verbatim except
+# unsafe_code, downgraded to "deny" so this crate still keeps "unsafe fails
+# the build by default everywhere," while permitting this one reviewed,
+# narrowly-scoped exception via a local #[allow(unsafe_code)] at each site.
+# Keep in sync with `[workspace.lints]` in the root Cargo.toml.
+[lints.rust]
+unsafe_code = "deny"
+unused_must_use = "deny"
+let_underscore_drop = "deny"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+unwrap_used = "allow"
+expect_used = "allow"
+let_underscore_must_use = "deny"
+let_underscore_untyped = "deny"
+map_err_ignore = "deny"
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+
 # No [lib] crate-type = ["cdylib", ...] here deliberately: declaring cdylib
 # in the manifest makes cargo build a native cdylib artifact too whenever the
 # "pdk" feature is enabled (e.g. `cargo llvm-cov --all-features` on macOS),
