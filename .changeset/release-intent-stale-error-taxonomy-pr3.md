@@ -1,0 +1,18 @@
+---
+callisto-graph: patch
+---
+
+**`release_decision.rs` reports its real failure cause instead of a generic stale-intent error**
+
+PR3 of the 4-PR `SPEC-ARCH-RELEASE-ERROR-TAXONOMY` migration (PR1: #79, PR2: #80). All 42 `StaleReason::legacy_unclassified()` sites in `commands/release_decision.rs` now report a real, specific `GraphError` cause instead of the fieldless "no release operation was authorized" message:
+
+- **Subprocess exits/output** (`git rev-parse`, `diff-tree`, `cat-file --batch`, name-status parsing, the batch cat-file protocol response): `GraphError::ReleaseCommand { program, args, failure }` (E164) -- `CommandFailure::NonZeroExit { exit_code, stderr }` for real non-zero exits, `CommandFailure::MalformedOutput { detail }` for framing/parsing failures (wrong object type, missing separator, size overflow, non-hex sha, missing manifest version, etc). Two local helpers (`command_non_zero_exit`, `command_malformed_output`), scoped to this file only, build these consistently.
+- **Merged-commit verification** (`derive_release_commit_decision`): each of the 8 distinct checks now reports its own `GraphError::ReleaseCommitVerificationFailed { commit, reason }` (E165) variant -- `HeadMismatch`, `DecisionNotWrittenByCommit`, `NoChangesetConsumed`, `ChangelogNotTouched`, `ManifestNotInDiff`, `ManifestVersionMismatch`, `UnclaimedVersionChange`, `ClaimedPackageNotObserved` -- rather than all eight collapsing into the same message. The prior combined `!changed_version || after != target_version || !changed_paths.contains(path)` check is split into two ordered checks (`ManifestNotInDiff` then `ManifestVersionMismatch`) with identical overall pass/fail behavior.
+- **Corrupt committed decision file**: `serde_json::from_str` failure on the decision blob now reports `GraphError::ReleaseDecisionDecode { path, message }` (E166), distinct from every commit-verification mismatch.
+- **A claimed package with no changelog configured**: `GraphError::ReleasePreconditionUnmet { requirement: ChangelogConfigured }` (E170).
+- **Unhandled `BumpReason` variant** (`#[non_exhaustive]`): `GraphError::UnsupportedRelease { feature: BumpReason }` (E168).
+- **Duplicate/out-of-plan `--package` selections** in `derive_selected_release_decision`: `GraphError::ReleaseSelectionInvalid { package, reason }` (E169) naming the offending package (`Duplicate`/`NotInPlan`), rather than a generic failure with no package identified.
+- **Already-typed causes previously discarded by `map_err(|_error| ...)`**: `ReleasePackageId::new`/`ReleaseDecisionV1::new`/`Version::parse` failures now pass their real `#[from]` source through (`ReleasePackageId` E162, `ReleaseDecision` E160, `VersionParse`), instead of being replaced with the generic stale-intent message.
+- **Internal invariants** (a version-plan bump referencing a package absent from the same workspace observation, a cascade/peer-escalation `via` package with no unique release identity, an ecosystem with no canonical manifest format reached from a canonical manifest): `GraphError::ReleaseInvariant { detail }` (E171).
+
+Every prior site was classified; none were left on `legacy_unclassified()`. The crate's `legacy_unclassified_ratchet` architecture test is updated: `release_decision.rs` is now at 0 (was 42), and the file is removed from the `map_err_ignore` evasion allowlist (zero `map_err(|_ident| ...)` discards remain in it). Existing tests pattern-matching the old `ReleaseIntentStale` shape at these sites are updated to the new variants; new regression tests cover the most safety-critical distinctions (`HeadMismatch`, corrupt decision file, `ClaimedPackageNotObserved`, duplicate/not-in-plan selections).
