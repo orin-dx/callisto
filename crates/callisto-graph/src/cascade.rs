@@ -411,7 +411,7 @@ pub fn solve_cascade<D: DependencyResolver>(input: CascadeInput<'_, D>) -> Resul
                 }
             }
 
-            let winner = crate::groups::fixed_group_target(g, input.base, max_sev, input.tags)?;
+            let winner = crate::groups::fixed_group_target(&live_members, input.base, max_sev, input.tags)?;
 
             for id in live_members {
                 if out.targets.get(&id) != Some(&winner) {
@@ -585,6 +585,53 @@ mod tests {
     use callisto_model::{GroupKind, GroupName, Package, ReleaseTrigger, VersionGrammar};
 
     use crate::config::{CascadeBumpSeverity, GroupDef, GroupMember};
+
+    /// Shared fixture: a `CommandRunner` that answers `git tag --list` with a
+    /// fixed tag set, used by tests that need a real `TagIndex::build` (not
+    /// `TagIndex::empty()`) to exercise tag-driven fixed-group alignment.
+    struct FakeGitTagRunner {
+        calls: std::sync::atomic::AtomicUsize,
+        tags: Vec<String>,
+    }
+    impl callisto_model::CommandRunner for FakeGitTagRunner {
+        fn run(
+            &self,
+            program: &str,
+            args: &[&str],
+            _cwd: &std::path::Path,
+        ) -> Result<callisto_model::CommandOutput, callisto_model::CommandError> {
+            assert_eq!(program, "git");
+            assert_eq!(args, ["tag", "--list"]);
+            self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(callisto_model::CommandOutput {
+                exit_code: Some(0),
+                stdout: self.tags.join("\n"),
+                stderr: String::new(),
+            })
+        }
+    }
+
+    /// Shared fixture: `TagIndex::build` requires each package to resolve a
+    /// version grammar via a canonical manifest (`Package::version_grammar`);
+    /// `bare_package`'s empty `manifests` cannot satisfy that, so this
+    /// fixture attaches a canonical Cargo.toml manifest to each package --
+    /// otherwise identical to `bare_package`.
+    fn package_with_canonical_manifest(id: &PackageId) -> Package {
+        let manifest = callisto_model::ManifestDecl::new(
+            "Cargo.toml",
+            callisto_model::ManifestRole::Canonical,
+            callisto_model::ManifestFormat::CargoToml,
+        )
+        .unwrap();
+        Package {
+            id: id.clone(),
+            manifests: vec![manifest],
+            changelog: None,
+            release_trigger: ReleaseTrigger::Changeset,
+            publish_to: Vec::new(),
+            tag_template: None,
+        }
+    }
 
     /// §13 invariant 9 / §7.4 row 5 vs row 4: peer-dependency escalation to
     /// `Severity::Major` must only fire when the upstream (source) severity
@@ -1618,54 +1665,10 @@ mod tests {
     /// input.seed).
     #[test]
     fn test_fixed_group_seeded_siblings_converge_on_shared_target() {
-        use std::sync::atomic::{AtomicUsize, Ordering};
-
-        struct FakeGitTagRunner {
-            calls: AtomicUsize,
-            tags: Vec<String>,
-        }
-        impl callisto_model::CommandRunner for FakeGitTagRunner {
-            fn run(
-                &self,
-                program: &str,
-                args: &[&str],
-                _cwd: &std::path::Path,
-            ) -> Result<callisto_model::CommandOutput, callisto_model::CommandError> {
-                assert_eq!(program, "git");
-                assert_eq!(args, ["tag", "--list"]);
-                self.calls.fetch_add(1, Ordering::SeqCst);
-                Ok(callisto_model::CommandOutput {
-                    exit_code: Some(0),
-                    stdout: self.tags.join("\n"),
-                    stderr: String::new(),
-                })
-            }
-        }
+        use std::sync::atomic::AtomicUsize;
 
         let pkg_a = PackageId::parse("pkg-a").unwrap();
         let pkg_b = PackageId::parse("pkg-b").unwrap();
-
-        // TagIndex::build requires each package to resolve a version
-        // grammar via a canonical manifest (Package::version_grammar);
-        // bare_package's empty `manifests` cannot satisfy that, so this
-        // fixture attaches a canonical Cargo.toml manifest to each package
-        // -- the fixture is otherwise identical to bare_package.
-        fn package_with_canonical_manifest(id: &PackageId) -> Package {
-            let manifest = callisto_model::ManifestDecl::new(
-                "Cargo.toml",
-                callisto_model::ManifestRole::Canonical,
-                callisto_model::ManifestFormat::CargoToml,
-            )
-            .unwrap();
-            Package {
-                id: id.clone(),
-                manifests: vec![manifest],
-                changelog: None,
-                release_trigger: ReleaseTrigger::Changeset,
-                publish_to: Vec::new(),
-                tag_template: None,
-            }
-        }
 
         let graph = TwoPackageGraph {
             packages: vec![
@@ -1845,6 +1848,125 @@ mod tests {
                 .any(|d| d.governed_by == Some(ConfigKey::FIXED_GROUP)),
             "the UnknownPackage diagnostic must be governed by ConfigKey::FIXED_GROUP; got: {:?}",
             unknown_diags
+        );
+    }
+
+    /// Regression: `fixed_group_target` must ignore a stale group member (a
+    /// package no longer present in `input.base`) even when that stale
+    /// member carries a real release tag from before it was removed from
+    /// the workspace. Before this fix, Track 1 passed the raw `GroupDef`
+    /// into `fixed_group_target`, which iterated ALL declared members --
+    /// not just live ones -- when picking `released[0]` as the alignment
+    /// base. With the stale, tagged member declared first, `released[0]`
+    /// resolved to it, `base.get(&released[0])` missed (it's not in
+    /// `base`), and the code silently fell back to the hardcoded `1.0.0`
+    /// default, corrupting the group's alignment target for every live
+    /// sibling. The fix makes `fixed_group_target` take an already-filtered
+    /// `live_members` slice, so a stale member can never occupy
+    /// `released[0]` regardless of declaration order or tag history.
+    #[test]
+    fn test_fixed_group_target_ignores_stale_tagged_member_alignment_base() {
+        use std::sync::atomic::AtomicUsize;
+
+        let pkg_live = PackageId::parse("pkg-live").unwrap();
+        let pkg_stale = PackageId::parse("pkg-stale").unwrap();
+
+        // pkg_stale is declared FIRST in the group's member list so that an
+        // unfiltered iteration over `g.package_members()` (the pre-fix
+        // behavior) would pick it as `released[0]`.
+        let graph = TwoPackageGraph {
+            packages: vec![
+                package_with_canonical_manifest(&pkg_stale),
+                package_with_canonical_manifest(&pkg_live),
+            ],
+        };
+
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        assert!(
+            callisto_vcs::GitRepository::discover(dir).is_err(),
+            "fixture dir must not be a discoverable git repo, forcing the CommandRunner fallback"
+        );
+        // pkg_stale carries a real release tag from before it was removed
+        // from the workspace -- its tag data still exists in git even
+        // though the package is gone from `base`/callisto.toml.
+        let runner = FakeGitTagRunner {
+            calls: AtomicUsize::new(0),
+            tags: vec!["pkg-stale@9.9.9".to_string(), "pkg-live@3.0.0".to_string()],
+        };
+        let git = callisto_vcs::GitAccess::discover(dir, &runner);
+        let cfg_resolved = crate::config::load(dir).unwrap();
+        let tags = crate::tags::TagIndex::build(&git, &graph, &cfg_resolved).unwrap();
+
+        assert!(
+            tags.last_tag(&pkg_stale).is_some(),
+            "stale member must carry a real prior release tag"
+        );
+        assert!(
+            tags.last_tag(&pkg_live).is_some(),
+            "live member must carry a real prior release tag"
+        );
+
+        // pkg_stale is intentionally absent from `base`: removed from the
+        // workspace, but still declared as a fixed-group member below.
+        let mut base = BTreeMap::new();
+        base.insert(pkg_live.clone(), Version::semver(3, 0, 0));
+
+        let mut seed = BTreeMap::new();
+        seed.insert(pkg_live.clone(), Severity::Minor);
+
+        let mut groups = GroupTable::default();
+        let group_def = GroupDef {
+            name: GroupName("fixed-pair".to_string()),
+            kind: GroupKind::Fixed,
+            members: vec![
+                GroupMember::Package(pkg_stale.clone()),
+                GroupMember::Package(pkg_live.clone()),
+            ],
+        };
+        groups.fixed.insert(group_def.name.clone(), group_def);
+
+        let cfg = CascadeConfig {
+            mode: CascadeMode::OutOfRange,
+            bump_severity: CascadeBumpSeverity::Patch,
+            peer_escalation: true,
+            preserve_npm_ranges: false,
+        };
+        let reasons = BTreeMap::new();
+        let named_by = BTreeMap::new();
+
+        let input = CascadeInput {
+            graph: &graph,
+            groups: &groups,
+            cfg: &cfg,
+            seed: &seed,
+            reasons: &reasons,
+            named_by: &named_by,
+            base: &base,
+            pre: None,
+            tags: &tags,
+            identity: &IdentityIndex::default(),
+        };
+
+        let outcome = run_cascade(input).unwrap();
+
+        let target_live = outcome
+            .targets
+            .get(&pkg_live)
+            .expect("live member must receive a converged target");
+
+        assert_eq!(
+            target_live.render(),
+            "3.1.0",
+            "the group's alignment base must come from the LIVE member's own \
+             base version (3.0.0 -> Minor -> 3.1.0), not the corrupted \
+             `1.0.0` fallback produced by picking the stale, unfiltered \
+             member's (missing) slot in `base`"
+        );
+        assert!(
+            !outcome.targets.contains_key(&pkg_stale),
+            "stale fixed-group member must never receive a target: {:?}",
+            outcome.targets
         );
     }
 }
