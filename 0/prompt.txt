@@ -2790,3 +2790,46 @@ Let's do some deep analysis and thinking using agent teams and workflows with th
 ---
 
 Stat the work and create a PR please
+
+---
+
+<task-notification>
+<task-id>aca305367b82154f7</task-id>
+<tool-use-id>toolu_01X1tJ7nyLmDEfP9Focd2t93</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/f31314f3-cb9d-46e5-b69c-b389116eb431/tasks/aca305367b82154f7.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement PR1 of ReleaseIntentStale taxonomy" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>PR1 is implemented, committed, and fully verified. Here's the summary.
+
+**Environment note (important):** The task described this worktree as already on branch `feat/release-intent-stale-taxonomy-pr1` with the spec file in place. On arrival, my assigned worktree (`agent-aca305367b82154f7`) was actually still on a fresh branch off `main` — the described branch and its companion worktree (`.claude/worktrees/error-taxonomy-pr1`) had been deleted (by a concurrent process) partway through my initial investigation. I did not touch that other worktree (the sandbox correctly refused any command that would reach into it). Recovery, using only git operations scoped to my own worktree:
+- The branch's base commit (`64bd118a`, "report registry-publish lag accurately...", i.e. the unmerged E157 PR) was still safely reachable via its still-live branch `fix/registry-publish-lag-and-workspace-lints`, so I recreated `feat/release-intent-stale-taxonomy-pr1` from that exact commit.
+- The spec file turned out to also exist, untracked, in the main checkout (`/Users/gabe/Projects/callisto/.claude/specs/SPEC-ARCH-RELEASE-ERROR-TAXONOMY.json`), so nothing was lost.
+- Separately, I discovered the RTK hook silently filters `find`/`grep` output for hidden directories (e.g. `.claude/`), which initially hid the spec file from a bare `find`. Worked around by invoking `/usr/bin/find`/`/usr/bin/grep` directly for anything that needed complete, trustworthy results (all the site-counting for this task).
+
+**What was implemented (exactly `suggested_pr_sequence[0]`):**
+- `crates/callisto-graph/src/error.rs`: `ReleaseIntentStale` flipped from unit to `{ reason: StaleReason }` (E124 code/help text unchanged, Display gains `: {reason}`). Added 12 new variants E158–E171 (`ReleaseIntent`, `ReleaseOperation`, `ReleaseDecision`, `ReleaseInputSnapshot`, `ReleasePackageId`, `Registry`, `ReleaseCommand`, `ReleaseCommitVerificationFailed`, `ReleaseDecisionDecode`, `ReleaseRemoteConflict`, `UnsupportedRelease`, `ReleaseSelectionInvalid`, `ReleasePreconditionUnmet`, `ReleaseInvariant`) plus their reason enums (`CommandFailure`, `CommitVerificationFailure`, `RemoteConflict`, `UnsupportedReleaseFeature`, `ReleaseSelectionInvalidReason`, `ReleasePreconditionRequirement`), each with a specific `#[diagnostic(code(...), help(...))]` — none copied from E124, and "reapprove" still appears exactly once in the file.
+- `crates/callisto-graph/src/commands/release.rs`: defined `pub struct StaleReason` (private `StaleKind` inner enum) with 4 module-private constructors (`trust_evidence_changed`, `source_identity_changed`, `git_remote_changed`, `intent_differs_from_fresh_derivation`) used at the 6 genuine sites I identified by reading each call site's context (`recheck_trust` ×2, `build_release_intent` ×1, `validate_release_intent_with_state_directory` ×2, `checked_git_remote` ×1), plus a `#[deprecated] pub(crate) fn legacy_unclassified()` ratchet used at the other 44 sites in this file.
+- `crates/callisto-graph/src/commands/release_decision.rs` (42 sites) and `release_execution.rs` (2 sites): all converted to the `legacy_unclassified()` ratchet (zero genuine staleness in either, as expected).
+- `crates/callisto-graph/src/commands/mod.rs`: added `#[allow(deprecated)]` on the three affected `pub mod` declarations, scoping the intentional deprecation warning suppression to exactly the modules that call the ratchet.
+- `crates/callisto-graph/tests/architecture.rs`: added 5 new tests matching the existing file's conventions (`workspace_root()`, `strip_test_modules()`, production-code-only scanning): `release_intent_stale_is_constructed_only_by_fresh_reobservation`, `stale_reason_constructors_are_module_private`, `release_modules_never_discard_error_sources`, `legacy_unclassified_ratchet`, `reapprove_guidance_belongs_to_e124_only`. Note: the `map_err(|_ident|)` allowlist ended up needing 8 entries, not 3 — re-scanning the crate found 5 pre-existing, genuinely out-of-scope evasions (`locate/ignore_walk.rs`, `config/resolve.rs`, `cascade.rs`, `commands/publish.rs`, `commands/snapshot.rs`) that the spec's own `non_goals` field attributes to a separate companion spec (`SPEC-ARCH-ERROR-SOURCE-PRESERVATION-GATE.json`); I allowlisted them too, with a comment distinguishing "this spec's PR2-4 shrink to zero" from "tracked elsewhere," so the test still fails on any *sixth* file adopting the pattern.
+- Updated 3 existing test-module pattern matches (`release.rs` ×2, `release_decision.rs` ×1) from `Err(GraphError::ReleaseIntentStale)` to `Err(GraphError::ReleaseIntentStale { .. })`.
+- Added `.changeset/release-intent-stale-error-taxonomy-pr1.md` (`callisto-graph: minor`).
+
+**Final, independently-verified ratchet counts** (derived by counting my own diff, not the spec's pre-PR78 estimate of 49/44/2):
+- `release.rs`: **44**
+- `release_decision.rs`: **42**
+- `release_execution.rs`: **2**
+
+**Verification (all green):**
+- `cargo test -p callisto-graph` — all targets, 412 lib tests + all integration test files + the 7 architecture tests, 0 failures.
+- `cargo clippy -p callisto-graph --all-targets -- -D warnings` — clean.
+- `cargo fmt -p callisto-graph -- --check` — clean.
+- `cargo build --workspace` — succeeds; confirmed via crate-wide grep that no file outside `callisto-graph` ever referenced `GraphError::ReleaseIntentStale`.
+
+**Commit:** `3bee807c` on branch `feat/release-intent-stale-taxonomy-pr1` (based on `64bd118a`), local only — not pushed, no PR opened, per instructions.
+
+Key files: `crates/callisto-graph/src/error.rs`, `crates/callisto-graph/src/commands/release.rs`, `crates/callisto-graph/src/commands/release_decision.rs`, `crates/callisto-graph/src/commands/release_execution.rs`, `crates/callisto-graph/src/commands/mod.rs`, `crates/callisto-graph/tests/architecture.rs`, `.changeset/release-intent-stale-error-taxonomy-pr1.md`.</result>
+<usage><subagent_tokens>302750</subagent_tokens><tool_uses>124</tool_uses><duration_ms>1533991</duration_ms></usage>
+<worktree><worktreePath>/Users/gabe/Projects/callisto/.claude/worktrees/agent-aca305367b82154f7</worktreePath><worktreeBranch>worktree-agent-aca305367b82154f7</worktreeBranch></worktree>
+</task-notification>
