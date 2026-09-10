@@ -64,7 +64,7 @@ pub fn handle(args: VersionArgs, global: &GlobalArgs) -> Result<ExitCode, CliErr
 
     match global.format {
         OutputFormat::Json => write_json(&mut std::io::stdout(), &report)?,
-        OutputFormat::Text => render::render_version(&report, &mut std::io::stdout())?,
+        OutputFormat::Text => render::render_version(&report, &ws.config, &mut std::io::stdout())?,
     }
 
     // If any diagnostic was escalated to Error (e.g. by --strict), fail.
@@ -197,7 +197,7 @@ mod tests {
 
         // Render text output and verify it contains the key strings.
         let mut text_out = Vec::new();
-        crate::render::render_version(&report, &mut text_out).unwrap();
+        crate::render::render_version(&report, &ws.config, &mut text_out).unwrap();
         let rendered = String::from_utf8(text_out).unwrap();
 
         assert!(
@@ -211,6 +211,60 @@ mod tests {
         assert!(
             rendered.contains("1.1.0"),
             "text output must include to version; got:\n{rendered}"
+        );
+    }
+
+    /// §13 invariant 28: the empty-changeset diagnostic is deliberately
+    /// governed by `validation.allow-empty-changesets` even when nobody set
+    /// it, so an operator seeing the warning knows which key silences it.
+    /// `render_version` must surface that as an attribution line, not just
+    /// the bare diagnostic message.
+    #[test]
+    fn version_text_output_attributes_empty_changeset_diagnostic_to_its_config_key() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        git_init_with_commit(root);
+
+        std::fs::create_dir_all(root.join("pkg-alpha")).unwrap();
+        std::fs::write(
+            root.join("pkg-alpha/Cargo.toml"),
+            "[package]\nname = \"pkg-alpha\"\nversion = \"1.0.0\"\n",
+        )
+        .unwrap();
+        // Deliberately no `.changeset` entries, and no `callisto.toml`
+        // opt-out: this is exactly the "no named default" case §13
+        // invariant 28's attribution exists to explain.
+
+        let locator = IgnoreWalkLocator::new(root);
+        let runner = NoopRunner;
+        let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
+
+        let inference = NoInference;
+        let opts = VersionOptions {
+            strict: false,
+            strict_graph: false,
+            allow_empty_changesets: false,
+        };
+
+        let plan = plan_version(&ws, &inference, &opts).expect("plan_version must succeed");
+        let report = plan.to_report(None);
+
+        assert!(
+            report
+                .diagnostics
+                .iter()
+                .any(|d| d.governed_by == Some(callisto_model::ConfigKey::VALIDATION_ALLOW_EMPTY_CHANGESETS)),
+            "expected the empty-changeset diagnostic to carry governed_by; got: {:?}",
+            report.diagnostics
+        );
+
+        let mut text_out = Vec::new();
+        crate::render::render_version(&report, &ws.config, &mut text_out).unwrap();
+        let rendered = String::from_utf8(text_out).unwrap();
+
+        assert!(
+            rendered.contains("governed by [validation].allow-empty-changesets = false (default)"),
+            "text output must attribute the diagnostic to its config key; got:\n{rendered}"
         );
     }
 
