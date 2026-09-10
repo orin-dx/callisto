@@ -9,7 +9,11 @@ use callisto_model::{
     ReleaseInclusionReason, ReleasePackageId, Version,
 };
 
-use crate::{commands::release::StaleReason, DependencyResolver, GraphError, VersionPlan, Workspace};
+use crate::error::{
+    CommandFailure, CommitVerificationFailure, ReleasePreconditionRequirement, ReleaseSelectionInvalidReason,
+    UnsupportedReleaseFeature,
+};
+use crate::{DependencyResolver, GraphError, VersionPlan, Workspace};
 
 /// Computes one [`ReleasePackageId`] per canonical manifest, ecosystem-qualified
 /// against `package`'s name.
@@ -26,9 +30,7 @@ pub(crate) fn release_package_ids(package: &Package) -> Result<Vec<ReleasePackag
         .canonical_manifests()
         .map(|manifest| ReleasePackageId::new(manifest.ecosystem(), package.id.name()))
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|_error| GraphError::ReleaseIntentStale {
-            reason: StaleReason::legacy_unclassified(),
-        })
+        .map_err(GraphError::from)
 }
 
 /// Derives the durable roster from a freshly computed version plan.
@@ -47,9 +49,18 @@ pub fn derive_release_decision<R: callisto_model::CommandRunner, D: DependencyRe
 
     let mut entries = Vec::new();
     for bump in &plan.bumps {
-        let ids = package_ids.get(&bump.package).ok_or(GraphError::ReleaseIntentStale {
-            reason: StaleReason::legacy_unclassified(),
-        })?;
+        // `plan` is contractually derived from this same workspace
+        // observation (see doc comment above), so every bump's package must
+        // already be a key here -- a miss means the plan/workspace pairing
+        // itself is inconsistent, not a recoverable operator condition.
+        let ids = package_ids
+            .get(&bump.package)
+            .ok_or_else(|| GraphError::ReleaseInvariant {
+                detail: format!(
+                    "version plan references package `{}`, which is absent from this workspace observation",
+                    bump.package.display_name()
+                ),
+            })?;
         for id in ids {
             entries.push(ReleaseDecisionEntry {
                 package: id.clone(),
@@ -58,9 +69,7 @@ pub fn derive_release_decision<R: callisto_model::CommandRunner, D: DependencyRe
             });
         }
     }
-    ReleaseDecisionV1::new(entries).map_err(|_error| GraphError::ReleaseIntentStale {
-        reason: StaleReason::legacy_unclassified(),
-    })
+    ReleaseDecisionV1::new(entries).map_err(GraphError::from)
 }
 
 /// Derives a durable decision for explicit, exact release identities.
@@ -77,19 +86,23 @@ pub fn derive_selected_release_decision<R: callisto_model::CommandRunner, D: Dep
     selections: &[ReleasePackageId],
 ) -> Result<ReleaseDecisionV1, GraphError> {
     let complete = derive_release_decision(workspace, plan)?;
-    let selected = selections.iter().collect::<std::collections::BTreeSet<_>>();
-    if selected.len() != selections.len() {
-        return Err(GraphError::ReleaseIntentStale {
-            reason: StaleReason::legacy_unclassified(),
+
+    let mut seen = std::collections::BTreeSet::new();
+    if let Some(duplicate) = selections.iter().find(|selection| !seen.insert(*selection)) {
+        return Err(GraphError::ReleaseSelectionInvalid {
+            package: duplicate.clone(),
+            reason: ReleaseSelectionInvalidReason::Duplicate,
         });
     }
-    if selected
-        .iter()
-        .any(|selection| !complete.entries.iter().any(|entry| &entry.package == *selection))
-    {
-        return Err(GraphError::ReleaseIntentStale {
-            reason: StaleReason::legacy_unclassified(),
-        });
+
+    let selected = selections.iter().collect::<std::collections::BTreeSet<_>>();
+    for selection in &selected {
+        if !complete.entries.iter().any(|entry| &entry.package == *selection) {
+            return Err(GraphError::ReleaseSelectionInvalid {
+                package: (*selection).clone(),
+                reason: ReleaseSelectionInvalidReason::NotInPlan,
+            });
+        }
     }
 
     let linked_groups = complete
@@ -113,9 +126,7 @@ pub fn derive_selected_release_decision<R: callisto_model::CommandRunner, D: Dep
                 })
         })
         .collect();
-    ReleaseDecisionV1::new(entries).map_err(|_error| GraphError::ReleaseIntentStale {
-        reason: StaleReason::legacy_unclassified(),
-    })
+    ReleaseDecisionV1::new(entries).map_err(GraphError::from)
 }
 
 /// Verifies the release roster a merged release commit claims, against a
@@ -147,36 +158,33 @@ pub fn derive_release_commit_decision<R: CommandRunner, D: DependencyResolver>(
     release_commit: &CommitSha,
     decision_path: &std::path::Path,
 ) -> Result<ReleaseDecisionV1, GraphError> {
-    let head = git_stdout(workspace.runner, &workspace.root, &["rev-parse", "HEAD"])?;
-    let head = CommitSha::parse(&head).map_err(|_error| GraphError::ReleaseIntentStale {
-        reason: StaleReason::legacy_unclassified(),
-    })?;
+    let head_args = ["rev-parse", "HEAD"];
+    let head = git_stdout(workspace.runner, &workspace.root, &head_args)?;
+    let head =
+        CommitSha::parse(&head).map_err(|source| command_malformed_output("git", &head_args, source.to_string()))?;
     if &head != release_commit {
-        return Err(GraphError::ReleaseIntentStale {
-            reason: StaleReason::legacy_unclassified(),
+        return Err(GraphError::ReleaseCommitVerificationFailed {
+            commit: release_commit.clone(),
+            reason: CommitVerificationFailure::HeadMismatch,
         });
     }
 
     let parent_ref = format!("{}^", release_commit.as_str());
-    let parent = git_stdout(workspace.runner, &workspace.root, &["rev-parse", &parent_ref])?;
-    CommitSha::parse(&parent).map_err(|_error| GraphError::ReleaseIntentStale {
-        reason: StaleReason::legacy_unclassified(),
-    })?;
+    let parent_args = ["rev-parse", parent_ref.as_str()];
+    let parent = git_stdout(workspace.runner, &workspace.root, &parent_args)?;
+    CommitSha::parse(&parent).map_err(|source| command_malformed_output("git", &parent_args, source.to_string()))?;
 
-    let changed = git_stdout(
-        workspace.runner,
-        &workspace.root,
-        &[
-            "diff-tree",
-            "--no-commit-id",
-            "--name-status",
-            "-r",
-            "--no-renames",
-            &parent,
-            release_commit.as_str(),
-        ],
-    )?;
-    let changed = parse_name_status(&changed)?;
+    let diff_tree_args = [
+        "diff-tree",
+        "--no-commit-id",
+        "--name-status",
+        "-r",
+        "--no-renames",
+        parent.as_str(),
+        release_commit.as_str(),
+    ];
+    let changed = git_stdout(workspace.runner, &workspace.root, &diff_tree_args)?;
+    let changed = parse_name_status(&changed, &diff_tree_args)?;
 
     // The decision must be freshly authored as part of *this* commit, not a
     // stale leftover an earlier release already committed and this one never
@@ -187,8 +195,9 @@ pub fn derive_release_commit_decision<R: CommandRunner, D: DependencyResolver>(
         .iter()
         .any(|(status, path)| path == &decision_path_str && matches!(status.as_str(), "A" | "M"));
     if !decision_freshly_written {
-        return Err(GraphError::ReleaseIntentStale {
-            reason: StaleReason::legacy_unclassified(),
+        return Err(GraphError::ReleaseCommitVerificationFailed {
+            commit: release_commit.clone(),
+            reason: CommitVerificationFailure::DecisionNotWrittenByCommit,
         });
     }
 
@@ -202,8 +211,9 @@ pub fn derive_release_commit_decision<R: CommandRunner, D: DependencyResolver>(
         .iter()
         .any(|(status, path)| status == "D" && path.starts_with(&changeset_prefix) && path.ends_with(".md"));
     if !consumed_a_changeset {
-        return Err(GraphError::ReleaseIntentStale {
-            reason: StaleReason::legacy_unclassified(),
+        return Err(GraphError::ReleaseCommitVerificationFailed {
+            commit: release_commit.clone(),
+            reason: CommitVerificationFailure::NoChangesetConsumed,
         });
     }
 
@@ -214,8 +224,9 @@ pub fn derive_release_commit_decision<R: CommandRunner, D: DependencyResolver>(
         &decision_path_str,
     )?;
     let decision: ReleaseDecisionV1 =
-        serde_json::from_str(&decision_source).map_err(|_error| GraphError::ReleaseIntentStale {
-            reason: StaleReason::legacy_unclassified(),
+        serde_json::from_str(&decision_source).map_err(|error| GraphError::ReleaseDecisionDecode {
+            path: decision_path.to_path_buf(),
+            message: error.to_string(),
         })?;
     let claimed = decision
         .entries
@@ -261,12 +272,13 @@ pub fn derive_release_commit_decision<R: CommandRunner, D: DependencyResolver>(
         let package_ids = release_package_ids(package)?;
         let package_is_claimed = package_ids.iter().any(|id| claimed.contains_key(id));
         if package_is_claimed {
-            let changelog = package.changelog.as_ref().ok_or(GraphError::ReleaseIntentStale {
-                reason: StaleReason::legacy_unclassified(),
+            let changelog = package.changelog.as_ref().ok_or(GraphError::ReleasePreconditionUnmet {
+                requirement: ReleasePreconditionRequirement::ChangelogConfigured,
             })?;
             if !changed_paths.contains(changelog.to_string_lossy().as_ref()) {
-                return Err(GraphError::ReleaseIntentStale {
-                    reason: StaleReason::legacy_unclassified(),
+                return Err(GraphError::ReleaseCommitVerificationFailed {
+                    commit: release_commit.clone(),
+                    reason: CommitVerificationFailure::ChangelogNotTouched,
                 });
             }
         }
@@ -278,9 +290,16 @@ pub fn derive_release_commit_decision<R: CommandRunner, D: DependencyResolver>(
             let changed_version = before != after;
             match claimed.get(&id) {
                 Some(target_version) => {
-                    if !changed_version || after != target_version || !changed_paths.contains(path.as_ref()) {
-                        return Err(GraphError::ReleaseIntentStale {
-                            reason: StaleReason::legacy_unclassified(),
+                    if !changed_paths.contains(path.as_ref()) {
+                        return Err(GraphError::ReleaseCommitVerificationFailed {
+                            commit: release_commit.clone(),
+                            reason: CommitVerificationFailure::ManifestNotInDiff,
+                        });
+                    }
+                    if !changed_version || after != target_version {
+                        return Err(GraphError::ReleaseCommitVerificationFailed {
+                            commit: release_commit.clone(),
+                            reason: CommitVerificationFailure::ManifestVersionMismatch,
                         });
                     }
                     observed.insert(id);
@@ -290,8 +309,9 @@ pub fn derive_release_commit_decision<R: CommandRunner, D: DependencyResolver>(
                         // A changed version the committed decision never
                         // claimed is not this commit's authority -- fail
                         // closed rather than trust a partial match.
-                        return Err(GraphError::ReleaseIntentStale {
-                            reason: StaleReason::legacy_unclassified(),
+                        return Err(GraphError::ReleaseCommitVerificationFailed {
+                            commit: release_commit.clone(),
+                            reason: CommitVerificationFailure::UnclaimedVersionChange,
                         });
                     }
                 }
@@ -299,35 +319,64 @@ pub fn derive_release_commit_decision<R: CommandRunner, D: DependencyResolver>(
         }
     }
     if observed.len() != claimed.len() {
-        return Err(GraphError::ReleaseIntentStale {
-            reason: StaleReason::legacy_unclassified(),
+        return Err(GraphError::ReleaseCommitVerificationFailed {
+            commit: release_commit.clone(),
+            reason: CommitVerificationFailure::ClaimedPackageNotObserved,
         });
     }
 
     Ok(decision)
 }
 
+/// Builds a [`GraphError::ReleaseCommand`] (E164) for a git invocation that
+/// exited non-zero, carrying its real exit status and stderr instead of
+/// discarding them.
+fn command_non_zero_exit(program: &str, args: &[&str], output: &callisto_model::CommandOutput) -> GraphError {
+    GraphError::ReleaseCommand {
+        program: program.to_string(),
+        args: args.iter().map(|s| s.to_string()).collect(),
+        failure: CommandFailure::NonZeroExit {
+            exit_code: output.exit_code,
+            stderr: output.stderr.clone(),
+        },
+    }
+}
+
+/// Builds a [`GraphError::ReleaseCommand`] (E164) for a git invocation whose
+/// output could not be parsed into the shape this module expects.
+fn command_malformed_output(program: &str, args: &[&str], detail: impl Into<String>) -> GraphError {
+    GraphError::ReleaseCommand {
+        program: program.to_string(),
+        args: args.iter().map(|s| s.to_string()).collect(),
+        failure: CommandFailure::MalformedOutput { detail: detail.into() },
+    }
+}
+
 fn git_stdout<R: CommandRunner>(runner: &R, root: &std::path::Path, args: &[&str]) -> Result<String, GraphError> {
     let output = runner.run("git", args, root)?;
     if !output.success() {
-        return Err(GraphError::ReleaseIntentStale {
-            reason: StaleReason::legacy_unclassified(),
-        });
+        return Err(command_non_zero_exit("git", args, &output));
     }
     Ok(output.stdout_trimmed().to_string())
 }
 
-fn parse_name_status(output: &str) -> Result<Vec<(String, String)>, GraphError> {
+fn parse_name_status(output: &str, args: &[&str]) -> Result<Vec<(String, String)>, GraphError> {
     output
         .lines()
         .map(|line| {
-            let (status, path) = line.split_once('\t').ok_or(GraphError::ReleaseIntentStale {
-                reason: StaleReason::legacy_unclassified(),
+            let (status, path) = line.split_once('\t').ok_or_else(|| {
+                command_malformed_output(
+                    "git",
+                    args,
+                    format!("name-status line missing a tab separator: `{line}`"),
+                )
             })?;
             if !matches!(status, "A" | "M" | "D") || path.is_empty() || path.contains('\0') {
-                return Err(GraphError::ReleaseIntentStale {
-                    reason: StaleReason::legacy_unclassified(),
-                });
+                return Err(command_malformed_output(
+                    "git",
+                    args,
+                    format!("name-status reported an unexpected status/path: `{status}` `{path}`"),
+                ));
             }
             Ok((status.to_string(), path.to_string()))
         })
@@ -350,10 +399,19 @@ fn git_file<R: CommandRunner>(
 /// this module's own tests (via the single-object `manifest_version_at`
 /// helper they define), so both use identical parsing rules.
 fn parse_manifest_version(source: &str, path: &str, ecosystem: Ecosystem) -> Result<Version, GraphError> {
+    // Every canonical manifest this module ever queries comes from
+    // `Package::canonical_manifests()`, which (per `walk.rs`) only ever
+    // constructs a `Canonical`-role declaration for Cargo.toml/package.json/
+    // pyproject.toml -- the three formats whose ecosystem always has a
+    // `canonical_manifest_format`. A miss here means that upstream
+    // invariant broke, not that this particular manifest is unsupported.
     let format = ecosystem
         .canonical_manifest_format()
-        .ok_or(GraphError::ReleaseIntentStale {
-            reason: StaleReason::legacy_unclassified(),
+        .ok_or_else(|| GraphError::ReleaseInvariant {
+            detail: format!(
+                "canonical manifest `{path}` has ecosystem `{}`, which has no canonical manifest format",
+                ecosystem.prefix()
+            ),
         })?;
     // A malformed blob, a version-less manifest (e.g. a Cargo workspace
     // root with no [package] table, or a `dynamic = ["version"]` PEP 621
@@ -367,12 +425,14 @@ fn parse_manifest_version(source: &str, path: &str, ecosystem: Ecosystem) -> Res
             Some(callisto_manifests::VersionSource::Literal(v)) => Some(v),
             _ => None,
         })
-        .ok_or(GraphError::ReleaseIntentStale {
-            reason: StaleReason::legacy_unclassified(),
+        .ok_or_else(|| {
+            command_malformed_output(
+                "git",
+                &["cat-file", "--batch"],
+                format!("manifest `{path}` has no literal declared version"),
+            )
         })?;
-    Version::parse(&version, ecosystem.version_grammar()).map_err(|_error| GraphError::ReleaseIntentStale {
-        reason: StaleReason::legacy_unclassified(),
-    })
+    Version::parse(&version, ecosystem.version_grammar()).map_err(GraphError::from)
 }
 
 /// One object's content as reported by `git cat-file --batch`, for a single
@@ -437,6 +497,8 @@ fn batch_manifest_blobs_at<R: CommandRunner>(
         return Ok(Vec::new());
     }
 
+    const BATCH_ARGS: [&str; 2] = ["cat-file", "--batch"];
+
     let mut stdin = String::new();
     let objects: Vec<String> = paths
         .iter()
@@ -448,22 +510,20 @@ fn batch_manifest_blobs_at<R: CommandRunner>(
         })
         .collect();
 
-    let output = runner
-        .run_with_stdin("git", &["cat-file", "--batch"], root, stdin.as_bytes())
-        .map_err(|_error| GraphError::ReleaseIntentStale {
-            reason: StaleReason::legacy_unclassified(),
-        })?;
+    let output = runner.run_with_stdin("git", &BATCH_ARGS, root, stdin.as_bytes())?;
     if !output.success() {
-        return Err(GraphError::ReleaseIntentStale {
-            reason: StaleReason::legacy_unclassified(),
-        });
+        return Err(command_non_zero_exit("git", &BATCH_ARGS, &output));
     }
 
     let mut rest = output.stdout.as_str();
     let mut results = Vec::with_capacity(objects.len());
     for object in &objects {
-        let (header, after_header) = rest.split_once('\n').ok_or(GraphError::ReleaseIntentStale {
-            reason: StaleReason::legacy_unclassified(),
+        let (header, after_header) = rest.split_once('\n').ok_or_else(|| {
+            command_malformed_output(
+                "git",
+                &BATCH_ARGS,
+                format!("truncated response: missing header line for `{object}`"),
+            )
         })?;
 
         if header == format!("{object} missing") {
@@ -472,55 +532,85 @@ fn batch_manifest_blobs_at<R: CommandRunner>(
             continue;
         }
         if header == format!("{object} ambiguous") {
-            return Err(GraphError::ReleaseIntentStale {
-                reason: StaleReason::legacy_unclassified(),
-            });
+            return Err(command_malformed_output(
+                "git",
+                &BATCH_ARGS,
+                format!("object `{object}` is ambiguous"),
+            ));
         }
 
         let mut fields = header.split(' ');
-        let sha = fields.next().ok_or(GraphError::ReleaseIntentStale {
-            reason: StaleReason::legacy_unclassified(),
+        let sha = fields.next().ok_or_else(|| {
+            command_malformed_output(
+                "git",
+                &BATCH_ARGS,
+                format!("header for `{object}` is missing its sha field: `{header}`"),
+            )
         })?;
-        let object_type = fields.next().ok_or(GraphError::ReleaseIntentStale {
-            reason: StaleReason::legacy_unclassified(),
+        let object_type = fields.next().ok_or_else(|| {
+            command_malformed_output(
+                "git",
+                &BATCH_ARGS,
+                format!("header for `{object}` is missing its type field: `{header}`"),
+            )
         })?;
-        let size_field = fields.next().ok_or(GraphError::ReleaseIntentStale {
-            reason: StaleReason::legacy_unclassified(),
+        let size_field = fields.next().ok_or_else(|| {
+            command_malformed_output(
+                "git",
+                &BATCH_ARGS,
+                format!("header for `{object}` is missing its size field: `{header}`"),
+            )
         })?;
         if fields.next().is_some() {
             // A well-formed header has exactly three space-separated
             // fields; anything else is not a shape this parser understands.
-            return Err(GraphError::ReleaseIntentStale {
-                reason: StaleReason::legacy_unclassified(),
-            });
+            return Err(command_malformed_output(
+                "git",
+                &BATCH_ARGS,
+                format!("header for `{object}` has more than three fields: `{header}`"),
+            ));
         }
         if sha.is_empty() || !sha.chars().all(|c| c.is_ascii_hexdigit()) {
-            return Err(GraphError::ReleaseIntentStale {
-                reason: StaleReason::legacy_unclassified(),
-            });
+            return Err(command_malformed_output(
+                "git",
+                &BATCH_ARGS,
+                format!("header for `{object}` reports a non-hex sha: `{sha}`"),
+            ));
         }
         if object_type != "blob" {
             // Every path requested here is a canonical manifest file, so a
             // resolved object must be a blob; a tree/commit/tag response
             // means the path resolved to something else entirely.
-            return Err(GraphError::ReleaseIntentStale {
-                reason: StaleReason::legacy_unclassified(),
-            });
+            return Err(command_malformed_output(
+                "git",
+                &BATCH_ARGS,
+                format!("object `{object}` resolved to a `{object_type}`, not a blob"),
+            ));
         }
-        let size: usize = size_field.parse().map_err(|_error| GraphError::ReleaseIntentStale {
-            reason: StaleReason::legacy_unclassified(),
+        let size: usize = size_field.parse().map_err(|parse_error| {
+            command_malformed_output(
+                "git",
+                &BATCH_ARGS,
+                format!("header for `{object}` has a non-numeric size `{size_field}`: {parse_error}"),
+            )
         })?;
 
         if size > after_header.len() {
-            return Err(GraphError::ReleaseIntentStale {
-                reason: StaleReason::legacy_unclassified(),
-            });
+            return Err(command_malformed_output(
+                "git",
+                &BATCH_ARGS,
+                format!("object `{object}` declares size {size}, exceeding the remaining response"),
+            ));
         }
         // `.get(..size)` (byte-indexed) rather than raw slicing: if `size`
         // doesn't land on a UTF-8 char boundary this fails closed instead
         // of panicking.
-        let content = after_header.get(..size).ok_or(GraphError::ReleaseIntentStale {
-            reason: StaleReason::legacy_unclassified(),
+        let content = after_header.get(..size).ok_or_else(|| {
+            command_malformed_output(
+                "git",
+                &BATCH_ARGS,
+                format!("object `{object}` declares size {size} that does not land on a UTF-8 boundary"),
+            )
         })?;
         let remainder = &after_header[size..];
         // The protocol always emits exactly one LF right after the
@@ -529,9 +619,11 @@ fn batch_manifest_blobs_at<R: CommandRunner>(
         // reencoded entry) as an explicit error instead of silently
         // parsing the wrong bytes as this entry's content.
         if remainder.as_bytes().first() != Some(&b'\n') {
-            return Err(GraphError::ReleaseIntentStale {
-                reason: StaleReason::legacy_unclassified(),
-            });
+            return Err(command_malformed_output(
+                "git",
+                &BATCH_ARGS,
+                format!("object `{object}` content is not followed by the expected newline separator"),
+            ));
         }
         results.push(BatchBlob::Blob(content.to_string()));
         rest = &remainder[1..];
@@ -541,9 +633,11 @@ fn batch_manifest_blobs_at<R: CommandRunner>(
         // More output than the requested objects account for -- either an
         // extra unexpected reply or a framing desync earlier in the
         // stream. Either way, fail closed rather than ignore it.
-        return Err(GraphError::ReleaseIntentStale {
-            reason: StaleReason::legacy_unclassified(),
-        });
+        return Err(command_malformed_output(
+            "git",
+            &BATCH_ARGS,
+            "response contained more data than the requested objects account for",
+        ));
     }
 
     Ok(results)
@@ -560,9 +654,11 @@ fn resolve_batch_versions(blobs: Vec<BatchBlob>, queries: &[(String, Ecosystem)]
         .zip(queries.iter())
         .map(|(blob, (path, ecosystem))| match blob {
             BatchBlob::Blob(source) => parse_manifest_version(&source, path, *ecosystem),
-            BatchBlob::Missing => Err(GraphError::ReleaseIntentStale {
-                reason: StaleReason::legacy_unclassified(),
-            }),
+            BatchBlob::Missing => Err(command_malformed_output(
+                "git",
+                &["cat-file", "--batch"],
+                format!("canonical manifest `{path}` was reported missing at the queried commit"),
+            )),
         })
         .collect()
 }
@@ -584,11 +680,18 @@ fn reason_from_bump(
         }
         Some(BumpReason::PreRelease { tag }) => Ok(ReleaseInclusionReason::PreReleasePolicy { policy_id: tag.clone() }),
         Some(BumpReason::Cascade { via, dep_kind, .. }) => {
+            // `package_ids` is derived from the same workspace graph `via`
+            // was resolved against, so a miss (or a non-unique release
+            // identity) here means that pairing broke, not that this is a
+            // recoverable operator condition.
             let source = package_ids
                 .get(via)
                 .and_then(|ids| (ids.len() == 1).then(|| ids[0].clone()))
-                .ok_or(GraphError::ReleaseIntentStale {
-                    reason: StaleReason::legacy_unclassified(),
+                .ok_or_else(|| GraphError::ReleaseInvariant {
+                    detail: format!(
+                        "cascade source package `{}` has no unique release package id",
+                        via.display_name()
+                    ),
                 })?;
             Ok(ReleaseInclusionReason::Cascade {
                 from: source,
@@ -599,16 +702,19 @@ fn reason_from_bump(
             let source = package_ids
                 .get(via)
                 .and_then(|ids| (ids.len() == 1).then(|| ids[0].clone()))
-                .ok_or(GraphError::ReleaseIntentStale {
-                    reason: StaleReason::legacy_unclassified(),
+                .ok_or_else(|| GraphError::ReleaseInvariant {
+                    detail: format!(
+                        "peer-escalation source package `{}` has no unique release package id",
+                        via.display_name()
+                    ),
                 })?;
             Ok(ReleaseInclusionReason::Cascade {
                 from: source,
                 edge_kind: "peer".to_string(),
             })
         }
-        Some(_) => Err(GraphError::ReleaseIntentStale {
-            reason: StaleReason::legacy_unclassified(),
+        Some(_) => Err(GraphError::UnsupportedRelease {
+            feature: UnsupportedReleaseFeature::BumpReason,
         }),
     }
 }
@@ -642,15 +748,34 @@ mod tests {
 
     #[test]
     fn release_commit_delta_parser_accepts_only_unambiguous_path_statuses() {
+        let args = ["diff-tree", "--name-status"];
         assert_eq!(
-            parse_name_status("M\tCargo.toml\nD\t.changeset/release.md\n").unwrap(),
+            parse_name_status("M\tCargo.toml\nD\t.changeset/release.md\n", &args).unwrap(),
             vec![
                 ("M".to_string(), "Cargo.toml".to_string()),
                 ("D".to_string(), ".changeset/release.md".to_string()),
             ]
         );
-        assert!(parse_name_status("R100\told\tnew\n").is_err());
-        assert!(parse_name_status("M Cargo.toml\n").is_err());
+        assert!(parse_name_status("R100\told\tnew\n", &args).is_err());
+        assert!(parse_name_status("M Cargo.toml\n", &args).is_err());
+    }
+
+    /// AC-005/AC-007 regression: both malformed name-status lines must
+    /// surface as `GraphError::ReleaseCommand` (E164) with a
+    /// `CommandFailure::MalformedOutput` cause naming the real `git`
+    /// program/args, not the old fieldless `ReleaseIntentStale`.
+    #[test]
+    fn release_commit_delta_parser_reports_malformed_output_not_stale_intent() {
+        let args = ["diff-tree", "--name-status"];
+        let err = parse_name_status("R100\told\tnew\n", &args).unwrap_err();
+        match err {
+            GraphError::ReleaseCommand {
+                program,
+                failure: CommandFailure::MalformedOutput { .. },
+                ..
+            } => assert_eq!(program, "git"),
+            other => panic!("expected ReleaseCommand{{failure: MalformedOutput}}, got {other:?}"),
+        }
     }
 
     struct FixedBlobRunner(&'static str);
@@ -703,8 +828,14 @@ mod tests {
             let runner = FixedBlobRunner(source);
             let result = manifest_version_at(&runner, std::path::Path::new("."), "deadbeef", "Cargo.toml", *ecosystem);
             assert!(
-                matches!(result, Err(GraphError::ReleaseIntentStale { .. })),
-                "expected a clean ReleaseIntentStale rejection (not a panic) for {ecosystem:?}, got {result:?}"
+                matches!(
+                    result,
+                    Err(GraphError::ReleaseCommand {
+                        failure: CommandFailure::MalformedOutput { .. },
+                        ..
+                    })
+                ),
+                "expected a clean ReleaseCommand{{MalformedOutput}} rejection (not a panic) for {ecosystem:?}, got {result:?}"
             );
         }
     }
@@ -871,6 +1002,27 @@ mod tests {
         }
     }
 
+    /// Builds a `Workspace` wired to `runner` and `packages`, matching the
+    /// fixture every `derive_release_commit_decision` test in this module
+    /// shares.
+    fn fixture_workspace<'a>(
+        runner: &'a CountingBatchRunner,
+        packages: Vec<Package>,
+    ) -> Workspace<'a, CountingBatchRunner, FixedManifestGraph> {
+        let config = crate::config::load(std::path::Path::new("/nonexistent-test-root")).unwrap();
+        let graph = FixedManifestGraph { packages };
+        Workspace {
+            root: std::path::PathBuf::from("/nonexistent-test-root"),
+            config,
+            graph,
+            tags: std::cell::OnceCell::new(),
+            git: std::cell::OnceCell::new(),
+            runner,
+            manifest_cache: Default::default(),
+            identity: crate::IdentityIndex::default(),
+        }
+    }
+
     /// AC: for a release commit touching multiple canonical manifests,
     /// `derive_release_commit_decision` issues exactly 2 `git cat-file
     /// --batch` invocations (one per commit) -- not 2*N separate `git show`
@@ -927,18 +1079,7 @@ mod tests {
             batch_calls: std::sync::Mutex::new(0),
         };
 
-        let config = crate::config::load(std::path::Path::new("/nonexistent-test-root")).unwrap();
-        let graph = FixedManifestGraph { packages };
-        let workspace = Workspace {
-            root: std::path::PathBuf::from("/nonexistent-test-root"),
-            config,
-            graph,
-            tags: std::cell::OnceCell::new(),
-            git: std::cell::OnceCell::new(),
-            runner: &runner,
-            manifest_cache: Default::default(),
-            identity: crate::IdentityIndex::default(),
-        };
+        let workspace = fixture_workspace(&runner, packages);
 
         let release_commit = CommitSha::parse(&release_commit_sha).unwrap();
         let decision_path = std::path::Path::new(".callisto/release-decision.json");
@@ -951,5 +1092,229 @@ mod tests {
             "expected exactly 2 `git cat-file --batch` invocations (one per commit) for 3 \
              canonical manifests, not one per manifest per commit"
         );
+    }
+
+    /// AC-007: a merged commit whose actual `HEAD` differs from the commit
+    /// being verified must report `ReleaseCommitVerificationFailed{reason:
+    /// HeadMismatch}`, naming the *verified* commit -- not the fieldless
+    /// `ReleaseIntentStale` every other mismatch used to collapse into.
+    #[test]
+    fn derive_release_commit_decision_reports_head_mismatch_distinctly() {
+        let actual_head = "a".repeat(40);
+        let claimed_commit = "c".repeat(40);
+
+        let runner = CountingBatchRunner {
+            release_commit: actual_head,
+            parent: "b".repeat(40),
+            decision_json: String::new(),
+            name_status: String::new(),
+            blobs: std::collections::BTreeMap::new(),
+            run_calls: std::sync::Mutex::new(Vec::new()),
+            batch_calls: std::sync::Mutex::new(0),
+        };
+        let workspace = fixture_workspace(&runner, vec![]);
+
+        let release_commit = CommitSha::parse(&claimed_commit).unwrap();
+        let decision_path = std::path::Path::new(".callisto/release-decision.json");
+        let err = derive_release_commit_decision(&workspace, &release_commit, decision_path).unwrap_err();
+
+        match err {
+            GraphError::ReleaseCommitVerificationFailed { commit, reason } => {
+                assert_eq!(commit, release_commit);
+                assert_eq!(reason, CommitVerificationFailure::HeadMismatch);
+            }
+            other => panic!("expected ReleaseCommitVerificationFailed{{HeadMismatch}}, got {other:?}"),
+        }
+    }
+
+    /// AC-008: a committed decision file that isn't valid JSON must report
+    /// `ReleaseDecisionDecode` naming the decision path -- distinct from
+    /// every `ReleaseCommitVerificationFailed` mismatch, and distinct from
+    /// the old fieldless `ReleaseIntentStale` both used to share.
+    #[test]
+    fn derive_release_commit_decision_reports_corrupt_decision_file_distinctly() {
+        let release_commit_sha = "a".repeat(40);
+        let parent_sha = "b".repeat(40);
+        let packages = vec![cargo_package("pkg-a")];
+
+        let name_status = [
+            "A\t.callisto/release-decision.json".to_string(),
+            "D\t.changeset/multi-pkg-minor.md".to_string(),
+            "M\tpkg-a/Cargo.toml".to_string(),
+            "M\tpkg-a/CHANGELOG.md".to_string(),
+        ]
+        .join("\n");
+
+        let runner = CountingBatchRunner {
+            release_commit: release_commit_sha.clone(),
+            parent: parent_sha,
+            decision_json: "{ not valid json".to_string(),
+            name_status,
+            blobs: std::collections::BTreeMap::new(),
+            run_calls: std::sync::Mutex::new(Vec::new()),
+            batch_calls: std::sync::Mutex::new(0),
+        };
+        let workspace = fixture_workspace(&runner, packages);
+
+        let release_commit = CommitSha::parse(&release_commit_sha).unwrap();
+        let decision_path = std::path::Path::new(".callisto/release-decision.json");
+        let err = derive_release_commit_decision(&workspace, &release_commit, decision_path).unwrap_err();
+
+        match err {
+            GraphError::ReleaseDecisionDecode { path, .. } => {
+                assert_eq!(path, decision_path);
+            }
+            other => panic!("expected ReleaseDecisionDecode, got {other:?}"),
+        }
+    }
+
+    /// AC-007: a committed decision claiming a release package this
+    /// workspace never observes changing must report
+    /// `ReleaseCommitVerificationFailed{reason: ClaimedPackageNotObserved}`,
+    /// distinct from every other mismatch this function can report.
+    #[test]
+    fn derive_release_commit_decision_reports_claimed_package_not_observed_distinctly() {
+        let release_commit_sha = "a".repeat(40);
+        let parent_sha = "b".repeat(40);
+        let packages = vec![cargo_package("pkg-a")];
+
+        let mut blobs = std::collections::BTreeMap::new();
+        blobs.insert(
+            (parent_sha.clone(), "pkg-a/Cargo.toml".to_string()),
+            cargo_manifest_source("pkg-a", "1.0.0"),
+        );
+        blobs.insert(
+            (release_commit_sha.clone(), "pkg-a/Cargo.toml".to_string()),
+            cargo_manifest_source("pkg-a", "1.1.0"),
+        );
+
+        let entries = vec![
+            ReleaseDecisionEntry {
+                package: ReleasePackageId::new(Ecosystem::Cargo, "pkg-a").unwrap(),
+                target_version: Version::semver(1, 1, 0),
+                reasons: vec![ReleaseInclusionReason::Changeset],
+            },
+            ReleaseDecisionEntry {
+                package: ReleasePackageId::new(Ecosystem::Npm, "pkg-ghost").unwrap(),
+                target_version: Version::semver(1, 0, 0),
+                reasons: vec![ReleaseInclusionReason::Changeset],
+            },
+        ];
+        let decision = ReleaseDecisionV1::new(entries).unwrap();
+        let decision_json = serde_json::to_string(&decision).unwrap();
+
+        let name_status = [
+            "A\t.callisto/release-decision.json".to_string(),
+            "D\t.changeset/multi-pkg-minor.md".to_string(),
+            "M\tpkg-a/Cargo.toml".to_string(),
+            "M\tpkg-a/CHANGELOG.md".to_string(),
+        ]
+        .join("\n");
+
+        let runner = CountingBatchRunner {
+            release_commit: release_commit_sha.clone(),
+            parent: parent_sha,
+            decision_json,
+            name_status,
+            blobs,
+            run_calls: std::sync::Mutex::new(Vec::new()),
+            batch_calls: std::sync::Mutex::new(0),
+        };
+        let workspace = fixture_workspace(&runner, packages);
+
+        let release_commit = CommitSha::parse(&release_commit_sha).unwrap();
+        let decision_path = std::path::Path::new(".callisto/release-decision.json");
+        let err = derive_release_commit_decision(&workspace, &release_commit, decision_path).unwrap_err();
+
+        match err {
+            GraphError::ReleaseCommitVerificationFailed { commit, reason } => {
+                assert_eq!(commit, release_commit);
+                assert_eq!(reason, CommitVerificationFailure::ClaimedPackageNotObserved);
+            }
+            other => panic!("expected ReleaseCommitVerificationFailed{{ClaimedPackageNotObserved}}, got {other:?}"),
+        }
+    }
+
+    /// A plan bumping exactly `package_name` (a `cargo:` package), so
+    /// `derive_release_decision` produces a real, non-empty roster instead
+    /// of failing on `ReleaseDecisionError::EmptyRoster` before the
+    /// selection-validation logic under test ever runs.
+    fn plan_bumping(package_name: &str) -> VersionPlan {
+        VersionPlan {
+            bumps: vec![crate::PlannedBump {
+                package: callisto_model::PackageId::parse(&format!("cargo:{package_name}")).unwrap(),
+                from: Version::semver(1, 0, 0),
+                to: Version::semver(1, 1, 0),
+                severity: callisto_model::Severity::Minor,
+                governed_by: None,
+                reason: Some(BumpReason::Changeset { changesets: vec![] }),
+                writes: vec![],
+            }],
+            ..Default::default()
+        }
+    }
+
+    /// AC-011: a duplicate `--package` selection must report
+    /// `ReleaseSelectionInvalid{reason: Duplicate}` naming the duplicated
+    /// package, not the fieldless `ReleaseIntentStale`.
+    #[test]
+    fn derive_selected_release_decision_reports_duplicate_selection_distinctly() {
+        let package = ReleasePackageId::new(Ecosystem::Cargo, "pkg-a").unwrap();
+        let runner = CountingBatchRunner {
+            release_commit: "a".repeat(40),
+            parent: "b".repeat(40),
+            decision_json: String::new(),
+            name_status: String::new(),
+            blobs: std::collections::BTreeMap::new(),
+            run_calls: std::sync::Mutex::new(Vec::new()),
+            batch_calls: std::sync::Mutex::new(0),
+        };
+        let workspace = fixture_workspace(&runner, vec![cargo_package("pkg-a")]);
+        let plan = plan_bumping("pkg-a");
+
+        let err = derive_selected_release_decision(&workspace, &plan, &[package.clone(), package.clone()]).unwrap_err();
+        match err {
+            GraphError::ReleaseSelectionInvalid {
+                package: reported,
+                reason,
+            } => {
+                assert_eq!(reported, package);
+                assert_eq!(reason, ReleaseSelectionInvalidReason::Duplicate);
+            }
+            other => panic!("expected ReleaseSelectionInvalid{{Duplicate}}, got {other:?}"),
+        }
+    }
+
+    /// AC-011: a `--package` selection outside the computed plan must
+    /// report `ReleaseSelectionInvalid{reason: NotInPlan}` naming the
+    /// offending package.
+    #[test]
+    fn derive_selected_release_decision_reports_selection_not_in_plan_distinctly() {
+        let runner = CountingBatchRunner {
+            release_commit: "a".repeat(40),
+            parent: "b".repeat(40),
+            decision_json: String::new(),
+            name_status: String::new(),
+            blobs: std::collections::BTreeMap::new(),
+            run_calls: std::sync::Mutex::new(Vec::new()),
+            batch_calls: std::sync::Mutex::new(0),
+        };
+        // Two workspace packages, but the plan only bumps pkg-b -- pkg-a is
+        // a real release package id with no entry in the resulting roster.
+        let workspace = fixture_workspace(&runner, vec![cargo_package("pkg-a"), cargo_package("pkg-b")]);
+        let plan = plan_bumping("pkg-b");
+        let not_selected = ReleasePackageId::new(Ecosystem::Cargo, "pkg-a").unwrap();
+
+        let err = derive_selected_release_decision(&workspace, &plan, std::slice::from_ref(&not_selected)).unwrap_err();
+        match err {
+            GraphError::ReleaseSelectionInvalid {
+                package: reported,
+                reason,
+            } => {
+                assert_eq!(reported, not_selected);
+                assert_eq!(reason, ReleaseSelectionInvalidReason::NotInPlan);
+            }
+            other => panic!("expected ReleaseSelectionInvalid{{NotInPlan}}, got {other:?}"),
+        }
     }
 }
