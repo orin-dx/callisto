@@ -15,7 +15,8 @@ use crate::{
     GraphError,
 };
 
-use super::release::{StaleReason, ValidatedReleaseIntent};
+use super::release::ValidatedReleaseIntent;
+use crate::error::ReleasePreconditionRequirement;
 
 /// Executes eligible operations one at a time with crash-safe state updates.
 ///
@@ -39,21 +40,7 @@ pub fn execute_release_with_artifacts<W: ReleaseStateWriter>(
     artifacts: Option<&ArtifactManifestV1>,
 ) -> Result<ReleaseExecutionStateV1, GraphError> {
     let intent = capability.intent();
-    match (intent.artifact_slots.is_empty(), artifacts) {
-        (true, None) => {}
-        (true, Some(manifest)) | (false, Some(manifest)) => {
-            manifest
-                .validate_for_intent(intent)
-                .map_err(|_error| GraphError::ReleaseIntentStale {
-                    reason: StaleReason::legacy_unclassified(),
-                })?
-        }
-        (false, None) => {
-            return Err(GraphError::ReleaseIntentStale {
-                reason: StaleReason::legacy_unclassified(),
-            })
-        }
-    }
+    require_artifact_manifest_matches_intent(intent, artifacts)?;
     let mut state = store.load_or_initialize(intent, permit)?;
     loop {
         let Some(operation) = reconcile_release_execution(intent, &state)?.eligible().first().cloned() else {
@@ -72,6 +59,26 @@ pub fn execute_release_with_artifacts<W: ReleaseStateWriter>(
         store.save(intent, &state, permit)?;
     }
     Ok(state)
+}
+
+/// Requires an exact artifact manifest whenever `intent` declares
+/// compiled-binary artifact slots, and that a provided manifest actually
+/// validates against `intent` when one is supplied regardless of slot
+/// count (a manifest supplied for a slot-less intent must still be a real,
+/// intent-bound manifest, not silently ignored).
+fn require_artifact_manifest_matches_intent(
+    intent: &ReleaseIntentV1,
+    artifacts: Option<&ArtifactManifestV1>,
+) -> Result<(), GraphError> {
+    match (intent.artifact_slots.is_empty(), artifacts) {
+        (true, None) => Ok(()),
+        (true, Some(manifest)) | (false, Some(manifest)) => manifest
+            .validate_for_intent(intent)
+            .map_err(|source| GraphError::ArtifactManifest { source }),
+        (false, None) => Err(GraphError::ReleasePreconditionUnmet {
+            requirement: ReleasePreconditionRequirement::ArtifactManifestProvided,
+        }),
+    }
 }
 
 /// The exact pending operations which are safe for a future executor to
@@ -178,6 +185,123 @@ mod tests {
             vec![],
         )
         .unwrap()
+    }
+
+    fn artifact_slot(package: &ReleasePackageId, version: &Version) -> callisto_model::ArtifactSlotId {
+        callisto_model::ArtifactSlotId::new(
+            package.clone(),
+            version.clone(),
+            "x86_64-unknown-linux-gnu",
+            "demo.tar.gz",
+            callisto_model::GitHubRepository::parse("orin-dx/callisto").unwrap(),
+            ".github/workflows/release.yml",
+            callisto_model::CommitSha::parse(&"b".repeat(40)).unwrap(),
+        )
+        .unwrap()
+    }
+
+    /// An intent that declares exactly one compiled-binary artifact slot.
+    fn intent_with_artifact_slot() -> (ReleaseIntentV1, callisto_model::ArtifactSlotId) {
+        intent_with_artifact_slot_named("demo")
+    }
+
+    fn intent_with_artifact_slot_named(name: &str) -> (ReleaseIntentV1, callisto_model::ArtifactSlotId) {
+        let package = ReleasePackageId::new(Ecosystem::Cargo, name).unwrap();
+        let version = Version::semver(1, 0, 0);
+        let slot = artifact_slot(&package, &version);
+        let upload = ReleaseOperation::artifact_upload(slot.clone(), vec![]).unwrap();
+        let intent = ReleaseIntentV1::new(
+            callisto_model::ReleaseDecisionV1::new(vec![callisto_model::ReleaseDecisionEntry {
+                package: package.clone(),
+                target_version: version.clone(),
+                reasons: vec![callisto_model::ReleaseInclusionReason::ExplicitSelection],
+            }])
+            .unwrap(),
+            ReleaseInputSnapshotV1::new(SourceIdentity::git_commit("a".repeat(40)).unwrap(), vec![]).unwrap(),
+            ExecutionTrustProfileV1::GitCommit,
+            vec![upload],
+            vec![slot.clone()],
+        )
+        .unwrap();
+        (intent, slot)
+    }
+
+    /// A manifest that validates against `intent`.
+    fn matching_artifact_manifest(
+        intent: &ReleaseIntentV1,
+        slot: callisto_model::ArtifactSlotId,
+    ) -> callisto_model::ArtifactManifestV1 {
+        let digest = callisto_model::ArtifactDigest::from_bytes(b"binary");
+        callisto_model::ArtifactManifestV1::new(
+            intent,
+            vec![callisto_model::ArtifactManifestEntryV1 {
+                slot,
+                digest: digest.clone(),
+                byte_length: 6,
+                attestation: callisto_model::GitHubArtifactAttestationV1 {
+                    repository: callisto_model::GitHubRepository::parse("orin-dx/callisto").unwrap(),
+                    workflow_path: ".github/workflows/release.yml".to_string(),
+                    workflow_commit: callisto_model::CommitSha::parse(&"b".repeat(40)).unwrap(),
+                    subject_digest: digest,
+                    source_commit: callisto_model::CommitSha::parse(&"a".repeat(40)).unwrap(),
+                },
+            }],
+        )
+        .unwrap()
+    }
+
+    /// Regression coverage for the confirmed bug: an intent declaring
+    /// artifact slots but given no manifest at all must fail with a real,
+    /// specific precondition -- not the unrelated `ReleaseIntentStale`.
+    #[test]
+    fn require_artifact_manifest_matches_intent_rejects_missing_manifest_for_slotted_intent() {
+        let (intent, _slot) = intent_with_artifact_slot();
+        let err = require_artifact_manifest_matches_intent(&intent, None).unwrap_err();
+        assert!(
+            matches!(
+                err,
+                GraphError::ReleasePreconditionUnmet {
+                    requirement: ReleasePreconditionRequirement::ArtifactManifestProvided
+                }
+            ),
+            "expected ReleasePreconditionUnmet(ArtifactManifestProvided), got {err:?}"
+        );
+    }
+
+    /// Regression coverage: a manifest that fails validation (here, bound to
+    /// a different intent) must surface the real `ArtifactManifestError`
+    /// cause via `GraphError::ArtifactManifest`, not `ReleaseIntentStale`.
+    #[test]
+    fn require_artifact_manifest_matches_intent_rejects_a_manifest_that_fails_validation() {
+        let (intent, slot) = intent_with_artifact_slot();
+        let manifest = matching_artifact_manifest(&intent, slot);
+
+        let (other_intent, _other_slot) = intent_with_artifact_slot_named("other-demo");
+        let err = require_artifact_manifest_matches_intent(&other_intent, Some(&manifest)).unwrap_err();
+        match err {
+            GraphError::ArtifactManifest { source } => {
+                assert_eq!(source, callisto_model::ArtifactManifestError::MismatchedIntent);
+            }
+            other => panic!("expected ArtifactManifest{{source: MismatchedIntent}}, got {other:?}"),
+        }
+    }
+
+    /// A slot-less intent given no manifest must succeed (no behavior
+    /// change from before this PR).
+    #[test]
+    fn require_artifact_manifest_matches_intent_accepts_no_manifest_for_slotless_intent() {
+        let intent = intent();
+        assert!(require_artifact_manifest_matches_intent(&intent, None).is_ok());
+    }
+
+    /// A slot-less intent given a valid, matching manifest must still
+    /// succeed -- a manifest is never silently ignored just because the
+    /// intent declared zero slots.
+    #[test]
+    fn require_artifact_manifest_matches_intent_accepts_a_valid_manifest_for_slotted_intent() {
+        let (intent, slot) = intent_with_artifact_slot();
+        let manifest = matching_artifact_manifest(&intent, slot);
+        assert!(require_artifact_manifest_matches_intent(&intent, Some(&manifest)).is_ok());
     }
 
     #[test]
