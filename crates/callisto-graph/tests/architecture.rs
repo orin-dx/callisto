@@ -279,9 +279,10 @@ fn stale_reason_constructors_are_module_private() {
 /// Files still permitted to discard their `map_err` closure's bound error.
 /// Two distinct categories, both pre-existing and verified by re-reading the
 /// crate rather than assumed:
-/// - The three release-executor files are this spec's own PR1-out-of-scope
-///   sites (PR2 migrates `release_execution.rs`, PR3 `release_decision.rs`,
-///   PR4 `release.rs`) -- shrink these three to nothing by PR4.
+/// - The two remaining release-executor files are this spec's own
+///   PR1-out-of-scope sites (`release_execution.rs` was migrated in PR2;
+///   PR3 migrates `release_decision.rs`, PR4 `release.rs`) -- shrink these
+///   two to nothing by PR4.
 /// - The other five predate this spec entirely and belong to the companion
 ///   SPEC-ARCH-ERROR-SOURCE-PRESERVATION-GATE.json, which widens this same
 ///   check workspace-wide; not migrated here.
@@ -291,7 +292,6 @@ fn stale_reason_constructors_are_module_private() {
 const MAP_ERR_IGNORE_ALLOWLIST: &[&str] = &[
     "commands/release.rs",
     "commands/release_decision.rs",
-    "commands/release_execution.rs",
     "locate/ignore_walk.rs",
     "config/resolve.rs",
     "cascade.rs",
@@ -359,17 +359,19 @@ fn release_modules_never_discard_error_sources() {
 }
 
 /// AC-015 migration ratchet: exact `StaleReason::legacy_unclassified()` call
-/// counts pinned per file as of PR1. PR2 lowers `release_execution.rs` to 0,
-/// PR3 lowers `release_decision.rs` to 0, PR4 lowers `release.rs` to 0 and
-/// deletes the constructor (and this test) entirely. Update a count here only
-/// when the corresponding PR intentionally lowers it -- never to silence a
-/// failure.
+/// counts pinned per file. PR1 pinned release.rs=44, release_decision.rs=42,
+/// release_execution.rs=2; PR2 lowered `release_execution.rs` to 0 (this
+/// file's two sites now carry a real `GraphError::ArtifactManifest` /
+/// `ReleasePreconditionUnmet` cause instead). PR3 lowers
+/// `release_decision.rs` to 0, PR4 lowers `release.rs` to 0 and deletes the
+/// constructor (and this test) entirely. Update a count here only when the
+/// corresponding PR intentionally lowers it -- never to silence a failure.
 #[test]
 fn legacy_unclassified_ratchet() {
     let cases: &[(&str, usize)] = &[
         ("commands/release.rs", 44),
         ("commands/release_decision.rs", 42),
-        ("commands/release_execution.rs", 2),
+        ("commands/release_execution.rs", 0),
     ];
     for (relative, expected) in cases {
         let production = read_production_source(relative);
