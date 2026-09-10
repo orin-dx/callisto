@@ -49,9 +49,7 @@ impl ReleaseWorkspaceLock {
                 .truncate(false)
                 .open(&path)
                 .map_err(|_error| VcsError::Git("could not open release workspace lock".to_string()))?;
-            file.try_lock_exclusive().map_err(|_error| {
-                VcsError::Git("another Callisto release already holds this workspace lock".to_string())
-            })?;
+            file.try_lock_exclusive().map_err(classify_lock_acquire_error)?;
             Ok(Self { file, path })
         }
     }
@@ -69,6 +67,22 @@ impl Drop for ReleaseWorkspaceLock {
     }
     #[cfg(target_arch = "wasm32")]
     fn drop(&mut self) {}
+}
+
+/// Classifies a [`fs2::FileExt::try_lock_exclusive`] failure as either the
+/// expected "another process already holds this lock" contention (matched
+/// against [`fs2::lock_contended_error`]'s `ErrorKind`, the cross-platform
+/// signal fs2 itself uses to identify contention) or a genuine I/O failure
+/// (permission denied, disk full, filesystem lacks locking support, etc.),
+/// which is reported with its real cause instead of being misattributed to
+/// a held lock.
+#[cfg(not(target_arch = "wasm32"))]
+fn classify_lock_acquire_error(error: std::io::Error) -> VcsError {
+    if error.kind() == fs2::lock_contended_error().kind() {
+        VcsError::Git("another Callisto release already holds this workspace lock".to_string())
+    } else {
+        VcsError::Git(format!("could not acquire release workspace lock: {error}"))
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -123,5 +137,41 @@ mod tests {
         drop(first);
         let second = ReleaseWorkspaceLock::acquire(&root, Some(directory.path())).unwrap();
         assert_eq!(second.path(), path);
+    }
+
+    /// A genuinely held lock (the true contention case) must still be
+    /// reported as "another release holds the lock" -- the only case for
+    /// which that message is accurate.
+    #[test]
+    fn actually_held_lock_reports_another_release_holds_it() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().join("workspace-held");
+        std::fs::create_dir(&root).unwrap();
+        let _first = ReleaseWorkspaceLock::acquire(&root, Some(directory.path())).unwrap();
+
+        let err = ReleaseWorkspaceLock::acquire(&root, Some(directory.path())).unwrap_err();
+        let message = err.to_string();
+        assert!(
+            message.contains("another Callisto release already holds this workspace lock"),
+            "expected the true contention message, got: {message}"
+        );
+    }
+
+    /// A non-contention I/O failure (permission denied, disk full, no lock
+    /// support, etc.) must report its own real cause, not be force-fit into
+    /// the "another release holds the lock" message.
+    #[test]
+    fn non_contention_io_error_reports_its_own_cause_not_another_holder() {
+        let permission_error = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "permission denied");
+        let vcs_error = classify_lock_acquire_error(permission_error);
+        let message = vcs_error.to_string();
+        assert!(
+            !message.contains("another Callisto release already holds this workspace lock"),
+            "a permission error must not be misreported as another holder, got: {message}"
+        );
+        assert!(
+            message.contains("permission denied"),
+            "expected the real cause in the message, got: {message}"
+        );
     }
 }

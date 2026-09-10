@@ -52,10 +52,7 @@ impl IdentityResolver {
 
         let abs = self.workspace_root.join(project_root);
         let Some(format) = ecosystem.canonical_manifest_format() else {
-            return Err(GraphError::AmbiguousName {
-                name: "unsupported ecosystem".to_string(),
-                candidates: Vec::new(),
-            });
+            return Err(GraphError::UnsupportedIdentityEcosystem { ecosystem });
         };
 
         let manifest_rel = project_root.join(format.file_name());
@@ -67,7 +64,7 @@ impl IdentityResolver {
         })?;
         let identity = callisto_manifests::read_identity(format, &content, &manifest_rel)?;
         let name = identity.name.ok_or(callisto_model::ManifestError::MissingField {
-            path: manifest_rel,
+            path: manifest_rel.clone(),
             field: match ecosystem {
                 Ecosystem::Cargo => "package.name",
                 Ecosystem::Npm => "name",
@@ -75,9 +72,10 @@ impl IdentityResolver {
             },
         })?;
 
-        let id = PackageId::parse(&name).map_err(|_err| GraphError::AmbiguousName {
+        let id = PackageId::parse(&name).map_err(|err| GraphError::PackageIdentifierParse {
+            path: manifest_rel,
             name: name.clone(),
-            candidates: Vec::new(),
+            source: err,
         })?;
 
         self.memo
@@ -251,6 +249,63 @@ mod tests {
         let resolver = IdentityResolver::new(dir.path()).unwrap();
         let result = resolver.resolve(std::path::Path::new("."), Ecosystem::Cargo);
         assert!(result.is_err());
+    }
+
+    /// Bug 2 (ecosystem branch): resolving an unsupported ecosystem (no
+    /// `canonical_manifest_format`) must report `UnsupportedIdentityEcosystem`,
+    /// not the semantically wrong `AmbiguousName`.
+    #[test]
+    fn resolve_unsupported_ecosystem_reports_its_own_variant_not_ambiguous_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let resolver = IdentityResolver::new(dir.path()).unwrap();
+        let err = resolver
+            .resolve(std::path::Path::new("."), Ecosystem::Go)
+            .expect_err("Go has no canonical manifest format");
+        assert!(
+            matches!(
+                err,
+                GraphError::UnsupportedIdentityEcosystem {
+                    ecosystem: Ecosystem::Go
+                }
+            ),
+            "expected UnsupportedIdentityEcosystem, got {err:?}"
+        );
+        assert!(
+            !matches!(err, GraphError::AmbiguousName { .. }),
+            "must not be force-fit into AmbiguousName"
+        );
+    }
+
+    /// Bug 2 (parse-failure branch): a manifest whose `name` field parses to
+    /// an invalid `PackageId` (e.g. a leading hyphen) must report
+    /// `PackageIdentifierParse` carrying the real `PackageIdParseError`
+    /// cause, not the semantically wrong `AmbiguousName`.
+    #[test]
+    fn resolve_invalid_package_name_reports_its_own_variant_not_ambiguous_name() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("Cargo.toml"),
+            "[package]\nname = \"-bad-name\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+        let resolver = IdentityResolver::new(dir.path()).unwrap();
+        let err = resolver
+            .resolve(std::path::Path::new("."), Ecosystem::Cargo)
+            .expect_err("a leading-hyphen name must fail PackageId::parse");
+        match &err {
+            GraphError::PackageIdentifierParse { name, source, .. } => {
+                assert_eq!(name, "-bad-name");
+                assert!(
+                    matches!(source, callisto_model::PackageIdParseError::LeadingHyphen { .. }),
+                    "expected LeadingHyphen source, got {source:?}"
+                );
+            }
+            other => panic!("expected PackageIdentifierParse, got {other:?}"),
+        }
+        assert!(
+            !matches!(err, GraphError::AmbiguousName { .. }),
+            "must not be force-fit into AmbiguousName"
+        );
     }
 
     #[test]
