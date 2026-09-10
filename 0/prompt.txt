@@ -2841,3 +2841,11 @@ FYI we have merge conflicts: https://github.com/orin-dx/callisto/pull/79
 ---
 
 Should we enable merge queing to avoid this sync branch madness?
+
+---
+
+merged the first PR
+
+---
+
+Keep going
