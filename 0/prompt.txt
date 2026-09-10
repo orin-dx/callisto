@@ -2778,3 +2778,11 @@ Merged it
 ---
 
 What else do we need to fix?
+
+---
+
+Yes please
+
+---
+
+Let's do some deep analysis and thinking using agent teams and workflows with the appropriate model and efforts to maximize our work at the lowest possible token burn for #2 and #3. When done show me the problem, why it matters, the proposal and the outcome
