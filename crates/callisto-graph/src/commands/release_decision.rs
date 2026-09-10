@@ -9,7 +9,7 @@ use callisto_model::{
     ReleaseInclusionReason, ReleasePackageId, Version,
 };
 
-use crate::{DependencyResolver, GraphError, VersionPlan, Workspace};
+use crate::{commands::release::StaleReason, DependencyResolver, GraphError, VersionPlan, Workspace};
 
 /// Computes one [`ReleasePackageId`] per canonical manifest, ecosystem-qualified
 /// against `package`'s name.
@@ -26,7 +26,9 @@ pub(crate) fn release_package_ids(package: &Package) -> Result<Vec<ReleasePackag
         .canonical_manifests()
         .map(|manifest| ReleasePackageId::new(manifest.ecosystem(), package.id.name()))
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|_error| GraphError::ReleaseIntentStale)
+        .map_err(|_error| GraphError::ReleaseIntentStale {
+            reason: StaleReason::legacy_unclassified(),
+        })
 }
 
 /// Derives the durable roster from a freshly computed version plan.
@@ -45,7 +47,9 @@ pub fn derive_release_decision<R: callisto_model::CommandRunner, D: DependencyRe
 
     let mut entries = Vec::new();
     for bump in &plan.bumps {
-        let ids = package_ids.get(&bump.package).ok_or(GraphError::ReleaseIntentStale)?;
+        let ids = package_ids.get(&bump.package).ok_or(GraphError::ReleaseIntentStale {
+            reason: StaleReason::legacy_unclassified(),
+        })?;
         for id in ids {
             entries.push(ReleaseDecisionEntry {
                 package: id.clone(),
@@ -54,7 +58,9 @@ pub fn derive_release_decision<R: callisto_model::CommandRunner, D: DependencyRe
             });
         }
     }
-    ReleaseDecisionV1::new(entries).map_err(|_error| GraphError::ReleaseIntentStale)
+    ReleaseDecisionV1::new(entries).map_err(|_error| GraphError::ReleaseIntentStale {
+        reason: StaleReason::legacy_unclassified(),
+    })
 }
 
 /// Derives a durable decision for explicit, exact release identities.
@@ -73,13 +79,17 @@ pub fn derive_selected_release_decision<R: callisto_model::CommandRunner, D: Dep
     let complete = derive_release_decision(workspace, plan)?;
     let selected = selections.iter().collect::<std::collections::BTreeSet<_>>();
     if selected.len() != selections.len() {
-        return Err(GraphError::ReleaseIntentStale);
+        return Err(GraphError::ReleaseIntentStale {
+            reason: StaleReason::legacy_unclassified(),
+        });
     }
     if selected
         .iter()
         .any(|selection| !complete.entries.iter().any(|entry| &entry.package == *selection))
     {
-        return Err(GraphError::ReleaseIntentStale);
+        return Err(GraphError::ReleaseIntentStale {
+            reason: StaleReason::legacy_unclassified(),
+        });
     }
 
     let linked_groups = complete
@@ -103,7 +113,9 @@ pub fn derive_selected_release_decision<R: callisto_model::CommandRunner, D: Dep
                 })
         })
         .collect();
-    ReleaseDecisionV1::new(entries).map_err(|_error| GraphError::ReleaseIntentStale)
+    ReleaseDecisionV1::new(entries).map_err(|_error| GraphError::ReleaseIntentStale {
+        reason: StaleReason::legacy_unclassified(),
+    })
 }
 
 /// Verifies the release roster a merged release commit claims, against a
@@ -136,14 +148,20 @@ pub fn derive_release_commit_decision<R: CommandRunner, D: DependencyResolver>(
     decision_path: &std::path::Path,
 ) -> Result<ReleaseDecisionV1, GraphError> {
     let head = git_stdout(workspace.runner, &workspace.root, &["rev-parse", "HEAD"])?;
-    let head = CommitSha::parse(&head).map_err(|_error| GraphError::ReleaseIntentStale)?;
+    let head = CommitSha::parse(&head).map_err(|_error| GraphError::ReleaseIntentStale {
+        reason: StaleReason::legacy_unclassified(),
+    })?;
     if &head != release_commit {
-        return Err(GraphError::ReleaseIntentStale);
+        return Err(GraphError::ReleaseIntentStale {
+            reason: StaleReason::legacy_unclassified(),
+        });
     }
 
     let parent_ref = format!("{}^", release_commit.as_str());
     let parent = git_stdout(workspace.runner, &workspace.root, &["rev-parse", &parent_ref])?;
-    CommitSha::parse(&parent).map_err(|_error| GraphError::ReleaseIntentStale)?;
+    CommitSha::parse(&parent).map_err(|_error| GraphError::ReleaseIntentStale {
+        reason: StaleReason::legacy_unclassified(),
+    })?;
 
     let changed = git_stdout(
         workspace.runner,
@@ -169,7 +187,9 @@ pub fn derive_release_commit_decision<R: CommandRunner, D: DependencyResolver>(
         .iter()
         .any(|(status, path)| path == &decision_path_str && matches!(status.as_str(), "A" | "M"));
     if !decision_freshly_written {
-        return Err(GraphError::ReleaseIntentStale);
+        return Err(GraphError::ReleaseIntentStale {
+            reason: StaleReason::legacy_unclassified(),
+        });
     }
 
     // A cheap, independent sanity check that this commit is a real version
@@ -182,7 +202,9 @@ pub fn derive_release_commit_decision<R: CommandRunner, D: DependencyResolver>(
         .iter()
         .any(|(status, path)| status == "D" && path.starts_with(&changeset_prefix) && path.ends_with(".md"));
     if !consumed_a_changeset {
-        return Err(GraphError::ReleaseIntentStale);
+        return Err(GraphError::ReleaseIntentStale {
+            reason: StaleReason::legacy_unclassified(),
+        });
     }
 
     let decision_source = git_file(
@@ -192,7 +214,9 @@ pub fn derive_release_commit_decision<R: CommandRunner, D: DependencyResolver>(
         &decision_path_str,
     )?;
     let decision: ReleaseDecisionV1 =
-        serde_json::from_str(&decision_source).map_err(|_error| GraphError::ReleaseIntentStale)?;
+        serde_json::from_str(&decision_source).map_err(|_error| GraphError::ReleaseIntentStale {
+            reason: StaleReason::legacy_unclassified(),
+        })?;
     let claimed = decision
         .entries
         .iter()
@@ -237,9 +261,13 @@ pub fn derive_release_commit_decision<R: CommandRunner, D: DependencyResolver>(
         let package_ids = release_package_ids(package)?;
         let package_is_claimed = package_ids.iter().any(|id| claimed.contains_key(id));
         if package_is_claimed {
-            let changelog = package.changelog.as_ref().ok_or(GraphError::ReleaseIntentStale)?;
+            let changelog = package.changelog.as_ref().ok_or(GraphError::ReleaseIntentStale {
+                reason: StaleReason::legacy_unclassified(),
+            })?;
             if !changed_paths.contains(changelog.to_string_lossy().as_ref()) {
-                return Err(GraphError::ReleaseIntentStale);
+                return Err(GraphError::ReleaseIntentStale {
+                    reason: StaleReason::legacy_unclassified(),
+                });
             }
         }
         for (manifest, id) in package.canonical_manifests().zip(package_ids) {
@@ -251,7 +279,9 @@ pub fn derive_release_commit_decision<R: CommandRunner, D: DependencyResolver>(
             match claimed.get(&id) {
                 Some(target_version) => {
                     if !changed_version || after != target_version || !changed_paths.contains(path.as_ref()) {
-                        return Err(GraphError::ReleaseIntentStale);
+                        return Err(GraphError::ReleaseIntentStale {
+                            reason: StaleReason::legacy_unclassified(),
+                        });
                     }
                     observed.insert(id);
                 }
@@ -260,14 +290,18 @@ pub fn derive_release_commit_decision<R: CommandRunner, D: DependencyResolver>(
                         // A changed version the committed decision never
                         // claimed is not this commit's authority -- fail
                         // closed rather than trust a partial match.
-                        return Err(GraphError::ReleaseIntentStale);
+                        return Err(GraphError::ReleaseIntentStale {
+                            reason: StaleReason::legacy_unclassified(),
+                        });
                     }
                 }
             }
         }
     }
     if observed.len() != claimed.len() {
-        return Err(GraphError::ReleaseIntentStale);
+        return Err(GraphError::ReleaseIntentStale {
+            reason: StaleReason::legacy_unclassified(),
+        });
     }
 
     Ok(decision)
@@ -276,7 +310,9 @@ pub fn derive_release_commit_decision<R: CommandRunner, D: DependencyResolver>(
 fn git_stdout<R: CommandRunner>(runner: &R, root: &std::path::Path, args: &[&str]) -> Result<String, GraphError> {
     let output = runner.run("git", args, root)?;
     if !output.success() {
-        return Err(GraphError::ReleaseIntentStale);
+        return Err(GraphError::ReleaseIntentStale {
+            reason: StaleReason::legacy_unclassified(),
+        });
     }
     Ok(output.stdout_trimmed().to_string())
 }
@@ -285,9 +321,13 @@ fn parse_name_status(output: &str) -> Result<Vec<(String, String)>, GraphError> 
     output
         .lines()
         .map(|line| {
-            let (status, path) = line.split_once('\t').ok_or(GraphError::ReleaseIntentStale)?;
+            let (status, path) = line.split_once('\t').ok_or(GraphError::ReleaseIntentStale {
+                reason: StaleReason::legacy_unclassified(),
+            })?;
             if !matches!(status, "A" | "M" | "D") || path.is_empty() || path.contains('\0') {
-                return Err(GraphError::ReleaseIntentStale);
+                return Err(GraphError::ReleaseIntentStale {
+                    reason: StaleReason::legacy_unclassified(),
+                });
             }
             Ok((status.to_string(), path.to_string()))
         })
@@ -312,7 +352,9 @@ fn git_file<R: CommandRunner>(
 fn parse_manifest_version(source: &str, path: &str, ecosystem: Ecosystem) -> Result<Version, GraphError> {
     let format = ecosystem
         .canonical_manifest_format()
-        .ok_or(GraphError::ReleaseIntentStale)?;
+        .ok_or(GraphError::ReleaseIntentStale {
+            reason: StaleReason::legacy_unclassified(),
+        })?;
     // A malformed blob, a version-less manifest (e.g. a Cargo workspace
     // root with no [package] table, or a `dynamic = ["version"]` PEP 621
     // package), or a Cargo `version.workspace = true` inheritance (which
@@ -325,8 +367,12 @@ fn parse_manifest_version(source: &str, path: &str, ecosystem: Ecosystem) -> Res
             Some(callisto_manifests::VersionSource::Literal(v)) => Some(v),
             _ => None,
         })
-        .ok_or(GraphError::ReleaseIntentStale)?;
-    Version::parse(&version, ecosystem.version_grammar()).map_err(|_error| GraphError::ReleaseIntentStale)
+        .ok_or(GraphError::ReleaseIntentStale {
+            reason: StaleReason::legacy_unclassified(),
+        })?;
+    Version::parse(&version, ecosystem.version_grammar()).map_err(|_error| GraphError::ReleaseIntentStale {
+        reason: StaleReason::legacy_unclassified(),
+    })
 }
 
 /// One object's content as reported by `git cat-file --batch`, for a single
@@ -404,15 +450,21 @@ fn batch_manifest_blobs_at<R: CommandRunner>(
 
     let output = runner
         .run_with_stdin("git", &["cat-file", "--batch"], root, stdin.as_bytes())
-        .map_err(|_error| GraphError::ReleaseIntentStale)?;
+        .map_err(|_error| GraphError::ReleaseIntentStale {
+            reason: StaleReason::legacy_unclassified(),
+        })?;
     if !output.success() {
-        return Err(GraphError::ReleaseIntentStale);
+        return Err(GraphError::ReleaseIntentStale {
+            reason: StaleReason::legacy_unclassified(),
+        });
     }
 
     let mut rest = output.stdout.as_str();
     let mut results = Vec::with_capacity(objects.len());
     for object in &objects {
-        let (header, after_header) = rest.split_once('\n').ok_or(GraphError::ReleaseIntentStale)?;
+        let (header, after_header) = rest.split_once('\n').ok_or(GraphError::ReleaseIntentStale {
+            reason: StaleReason::legacy_unclassified(),
+        })?;
 
         if header == format!("{object} missing") {
             results.push(BatchBlob::Missing);
@@ -420,36 +472,56 @@ fn batch_manifest_blobs_at<R: CommandRunner>(
             continue;
         }
         if header == format!("{object} ambiguous") {
-            return Err(GraphError::ReleaseIntentStale);
+            return Err(GraphError::ReleaseIntentStale {
+                reason: StaleReason::legacy_unclassified(),
+            });
         }
 
         let mut fields = header.split(' ');
-        let sha = fields.next().ok_or(GraphError::ReleaseIntentStale)?;
-        let object_type = fields.next().ok_or(GraphError::ReleaseIntentStale)?;
-        let size_field = fields.next().ok_or(GraphError::ReleaseIntentStale)?;
+        let sha = fields.next().ok_or(GraphError::ReleaseIntentStale {
+            reason: StaleReason::legacy_unclassified(),
+        })?;
+        let object_type = fields.next().ok_or(GraphError::ReleaseIntentStale {
+            reason: StaleReason::legacy_unclassified(),
+        })?;
+        let size_field = fields.next().ok_or(GraphError::ReleaseIntentStale {
+            reason: StaleReason::legacy_unclassified(),
+        })?;
         if fields.next().is_some() {
             // A well-formed header has exactly three space-separated
             // fields; anything else is not a shape this parser understands.
-            return Err(GraphError::ReleaseIntentStale);
+            return Err(GraphError::ReleaseIntentStale {
+                reason: StaleReason::legacy_unclassified(),
+            });
         }
         if sha.is_empty() || !sha.chars().all(|c| c.is_ascii_hexdigit()) {
-            return Err(GraphError::ReleaseIntentStale);
+            return Err(GraphError::ReleaseIntentStale {
+                reason: StaleReason::legacy_unclassified(),
+            });
         }
         if object_type != "blob" {
             // Every path requested here is a canonical manifest file, so a
             // resolved object must be a blob; a tree/commit/tag response
             // means the path resolved to something else entirely.
-            return Err(GraphError::ReleaseIntentStale);
+            return Err(GraphError::ReleaseIntentStale {
+                reason: StaleReason::legacy_unclassified(),
+            });
         }
-        let size: usize = size_field.parse().map_err(|_error| GraphError::ReleaseIntentStale)?;
+        let size: usize = size_field.parse().map_err(|_error| GraphError::ReleaseIntentStale {
+            reason: StaleReason::legacy_unclassified(),
+        })?;
 
         if size > after_header.len() {
-            return Err(GraphError::ReleaseIntentStale);
+            return Err(GraphError::ReleaseIntentStale {
+                reason: StaleReason::legacy_unclassified(),
+            });
         }
         // `.get(..size)` (byte-indexed) rather than raw slicing: if `size`
         // doesn't land on a UTF-8 char boundary this fails closed instead
         // of panicking.
-        let content = after_header.get(..size).ok_or(GraphError::ReleaseIntentStale)?;
+        let content = after_header.get(..size).ok_or(GraphError::ReleaseIntentStale {
+            reason: StaleReason::legacy_unclassified(),
+        })?;
         let remainder = &after_header[size..];
         // The protocol always emits exactly one LF right after the
         // content, separate from the content itself. Requiring it here
@@ -457,7 +529,9 @@ fn batch_manifest_blobs_at<R: CommandRunner>(
         // reencoded entry) as an explicit error instead of silently
         // parsing the wrong bytes as this entry's content.
         if remainder.as_bytes().first() != Some(&b'\n') {
-            return Err(GraphError::ReleaseIntentStale);
+            return Err(GraphError::ReleaseIntentStale {
+                reason: StaleReason::legacy_unclassified(),
+            });
         }
         results.push(BatchBlob::Blob(content.to_string()));
         rest = &remainder[1..];
@@ -467,7 +541,9 @@ fn batch_manifest_blobs_at<R: CommandRunner>(
         // More output than the requested objects account for -- either an
         // extra unexpected reply or a framing desync earlier in the
         // stream. Either way, fail closed rather than ignore it.
-        return Err(GraphError::ReleaseIntentStale);
+        return Err(GraphError::ReleaseIntentStale {
+            reason: StaleReason::legacy_unclassified(),
+        });
     }
 
     Ok(results)
@@ -484,7 +560,9 @@ fn resolve_batch_versions(blobs: Vec<BatchBlob>, queries: &[(String, Ecosystem)]
         .zip(queries.iter())
         .map(|(blob, (path, ecosystem))| match blob {
             BatchBlob::Blob(source) => parse_manifest_version(&source, path, *ecosystem),
-            BatchBlob::Missing => Err(GraphError::ReleaseIntentStale),
+            BatchBlob::Missing => Err(GraphError::ReleaseIntentStale {
+                reason: StaleReason::legacy_unclassified(),
+            }),
         })
         .collect()
 }
@@ -509,7 +587,9 @@ fn reason_from_bump(
             let source = package_ids
                 .get(via)
                 .and_then(|ids| (ids.len() == 1).then(|| ids[0].clone()))
-                .ok_or(GraphError::ReleaseIntentStale)?;
+                .ok_or(GraphError::ReleaseIntentStale {
+                    reason: StaleReason::legacy_unclassified(),
+                })?;
             Ok(ReleaseInclusionReason::Cascade {
                 from: source,
                 edge_kind: format!("{dep_kind:?}"),
@@ -519,13 +599,17 @@ fn reason_from_bump(
             let source = package_ids
                 .get(via)
                 .and_then(|ids| (ids.len() == 1).then(|| ids[0].clone()))
-                .ok_or(GraphError::ReleaseIntentStale)?;
+                .ok_or(GraphError::ReleaseIntentStale {
+                    reason: StaleReason::legacy_unclassified(),
+                })?;
             Ok(ReleaseInclusionReason::Cascade {
                 from: source,
                 edge_kind: "peer".to_string(),
             })
         }
-        Some(_) => Err(GraphError::ReleaseIntentStale),
+        Some(_) => Err(GraphError::ReleaseIntentStale {
+            reason: StaleReason::legacy_unclassified(),
+        }),
     }
 }
 
@@ -619,7 +703,7 @@ mod tests {
             let runner = FixedBlobRunner(source);
             let result = manifest_version_at(&runner, std::path::Path::new("."), "deadbeef", "Cargo.toml", *ecosystem);
             assert!(
-                matches!(result, Err(GraphError::ReleaseIntentStale)),
+                matches!(result, Err(GraphError::ReleaseIntentStale { .. })),
                 "expected a clean ReleaseIntentStale rejection (not a panic) for {ecosystem:?}, got {result:?}"
             );
         }

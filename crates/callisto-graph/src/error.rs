@@ -6,6 +6,8 @@ use callisto_model::{
 
 pub use crate::locate::LocateError;
 
+use crate::commands::release::StaleReason;
+
 #[derive(Clone, Debug, thiserror::Error, miette::Diagnostic, PartialEq, Eq)]
 #[allow(clippy::result_large_err)]
 #[non_exhaustive]
@@ -230,12 +232,12 @@ pub enum GraphError {
     #[diagnostic(code(E123), help("Rebuild the release intent from the current workspace instead of reusing a selection from another workspace."))]
     ReleasePackageNotSelected { package: callisto_model::ReleasePackageId },
 
-    #[error("release intent no longer matches the current workspace snapshot")]
+    #[error("release intent no longer matches the current workspace snapshot: {reason}")]
     #[diagnostic(
         code(E124),
         help("Regenerate and reapprove the release intent; no release operation was authorized.")
     )]
-    ReleaseIntentStale,
+    ReleaseIntentStale { reason: StaleReason },
 
     #[error("npm reported `{package}@{version}` published, but the registry does not yet show it")]
     #[diagnostic(
@@ -359,6 +361,164 @@ pub enum GraphError {
         #[source]
         source: callisto_model::PackageIdParseError,
     },
+
+    #[error("release intent could not be constructed: {source}")]
+    #[diagnostic(
+        code(E158),
+        help(
+            "Fix the reported release-intent construction problem (for example, an unsupported \
+             execution trust profile) and rebuild the release intent from a valid decision."
+        )
+    )]
+    ReleaseIntent {
+        #[from]
+        source: callisto_model::ReleaseIntentError,
+    },
+
+    #[error("release operation could not be constructed: {source}")]
+    #[diagnostic(
+        code(E159),
+        help(
+            "Fix the reported release-operation construction problem in the source release decision or package graph."
+        )
+    )]
+    ReleaseOperation {
+        #[from]
+        source: callisto_model::ReleaseOperationError,
+    },
+
+    #[error("release decision could not be constructed: {source}")]
+    #[diagnostic(
+        code(E160),
+        help("Fix the reported release-decision problem (for example an empty or duplicate roster) and re-derive it.")
+    )]
+    ReleaseDecision {
+        #[from]
+        source: callisto_model::ReleaseDecisionError,
+    },
+
+    #[error("release input snapshot could not be constructed: {source}")]
+    #[diagnostic(
+        code(E161),
+        help("Fix the reported release-input-snapshot problem (for example a duplicated package) and re-derive it.")
+    )]
+    ReleaseInputSnapshot {
+        #[from]
+        source: callisto_model::ReleaseInputSnapshotError,
+    },
+
+    #[error("release package identifier is invalid: {source}")]
+    #[diagnostic(
+        code(E162),
+        help(
+            "Correct the malformed release package identifier reported here; it must be an exact ecosystem/name pair."
+        )
+    )]
+    ReleasePackageId {
+        #[from]
+        source: callisto_model::ReleasePackageIdParseError,
+    },
+
+    #[error("registry operation for package `{package}` failed: {source}")]
+    #[diagnostic(
+        code(E163),
+        help(
+            "The registry itself rejected or could not complete the operation (authentication, \
+             rate limiting, or a network failure). Resolve the underlying registry condition and \
+             retry; this is not a stale or unauthorized release intent."
+        )
+    )]
+    Registry {
+        package: String,
+        #[source]
+        source: callisto_model::RegistryError,
+    },
+
+    #[error("command `{program}` failed: {failure}")]
+    #[diagnostic(
+        code(E164),
+        help(
+            "Inspect the reported program, arguments, and stderr to diagnose why the release \
+             subprocess failed or produced output that could not be parsed."
+        )
+    )]
+    ReleaseCommand {
+        program: String,
+        args: Vec<String>,
+        #[source]
+        failure: CommandFailure,
+    },
+
+    #[error("release commit verification failed for `{}`: {reason}", .commit.as_str())]
+    #[diagnostic(
+        code(E165),
+        help(
+            "The committed release decision, changelog, or manifest diff does not match what \
+             this commit claims to release. Reconcile the commit's contents with its release \
+             decision instead of regenerating the intent."
+        )
+    )]
+    ReleaseCommitVerificationFailed {
+        commit: callisto_model::CommitSha,
+        #[source]
+        reason: CommitVerificationFailure,
+    },
+
+    #[error("cannot decode committed release decision at `{}`: {message}", .path.display())]
+    #[diagnostic(
+        code(E166),
+        help("Restore the committed release-decision file from a known-good commit; it was not treated as authorizing a release.")
+    )]
+    ReleaseDecisionDecode { path: PathBuf, message: String },
+
+    #[error("remote release state conflicts with this release intent: {conflict}")]
+    #[diagnostic(
+        code(E167),
+        help(
+            "A tag or forge release already exists remotely with content that differs from this \
+             release intent. Reconcile the remote state by hand -- this intent's authorization is \
+             not in question."
+        )
+    )]
+    ReleaseRemoteConflict {
+        #[source]
+        conflict: RemoteConflict,
+    },
+
+    #[error("unsupported release {feature}")]
+    #[diagnostic(
+        code(E168),
+        help("This combination is not implemented for release; adjust the release configuration to use a supported combination.")
+    )]
+    UnsupportedRelease { feature: UnsupportedReleaseFeature },
+
+    #[error("release selection for package `{package}` is invalid: {reason}")]
+    #[diagnostic(
+        code(E169),
+        help("Adjust the release selection so each package appears at most once and matches an entry in the release plan.")
+    )]
+    ReleaseSelectionInvalid {
+        package: callisto_model::ReleasePackageId,
+        reason: ReleaseSelectionInvalidReason,
+    },
+
+    #[error("release precondition unmet: requires {requirement}")]
+    #[diagnostic(
+        code(E170),
+        help("Satisfy the reported precondition (for example a detached HEAD or a configured GitHub remote) before retrying.")
+    )]
+    ReleasePreconditionUnmet {
+        requirement: ReleasePreconditionRequirement,
+    },
+
+    #[error("internal release invariant violated: {detail}")]
+    #[diagnostic(
+        code(E171),
+        help(
+            "This is an internal callisto defect, not an operator action; report it along with the full error detail."
+        )
+    )]
+    ReleaseInvariant { detail: String },
 }
 
 /// Why a workspace package that a `--package` filter named is nonetheless
@@ -371,6 +531,101 @@ pub enum NotInPlanReason {
     NotARelease,
     #[error("it configures no publish target with an implemented dispatch (e.g. only NuGet or GitHub Release)")]
     NoDispatchableTarget,
+}
+
+/// Source of a [`GraphError::ReleaseCommand`] (E164) failure: either the
+/// subprocess exited non-zero, or it exited zero but produced output this
+/// crate could not parse.
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum CommandFailure {
+    #[error("exited with status {exit_code:?}: {stderr}")]
+    NonZeroExit { exit_code: Option<i32>, stderr: String },
+    #[error("produced malformed output: {detail}")]
+    MalformedOutput { detail: String },
+}
+
+/// One distinct disagreement between a merged release commit and the release
+/// decision it claims to satisfy, carried by
+/// [`GraphError::ReleaseCommitVerificationFailed`] (E165).
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum CommitVerificationFailure {
+    #[error("commit does not match the expected HEAD")]
+    HeadMismatch,
+    #[error("the release-decision file was not written by this commit")]
+    DecisionNotWrittenByCommit,
+    #[error("no changeset was consumed by this commit")]
+    NoChangesetConsumed,
+    #[error("the changelog was not touched by this commit")]
+    ChangelogNotTouched,
+    #[error("the manifest is not part of this commit's diff")]
+    ManifestNotInDiff,
+    #[error("the manifest version does not match the claimed version")]
+    ManifestVersionMismatch,
+    #[error("an unclaimed package's version changed in this commit")]
+    UnclaimedVersionChange,
+    #[error("a claimed package was not observed in this commit")]
+    ClaimedPackageNotObserved,
+}
+
+/// A remote Git tag or forge release that already exists with content
+/// differing from what this release intent authorized, carried by
+/// [`GraphError::ReleaseRemoteConflict`] (E167).
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum RemoteConflict {
+    #[error("a tag with this name already exists at a different target commit")]
+    TagTargetDiffers,
+    #[error("a tag was pushed but was not observed on the remote afterward")]
+    TagNotObservedAfterPush,
+    #[error("a forge release with this tag already exists with different attributes")]
+    ForgeReleaseDiffers,
+    #[error("a forge release was created but was not observed afterward")]
+    ForgeReleaseNotObservedAfterCreate,
+    #[error("the forge API returned an unexpected status")]
+    ForgeApiStatus,
+}
+
+/// A release feature with no implemented dispatch for the given
+/// configuration, carried by [`GraphError::UnsupportedRelease`] (E168).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum UnsupportedReleaseFeature {
+    #[error("ecosystem")]
+    Ecosystem,
+    #[error("source identity")]
+    SourceIdentity,
+    #[error("bump reason")]
+    BumpReason,
+    #[error("publish target")]
+    PublishTarget,
+}
+
+/// Why a `--package` release selection is invalid, carried by
+/// [`GraphError::ReleaseSelectionInvalid`] (E169).
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum ReleaseSelectionInvalidReason {
+    #[error("the package is selected more than once")]
+    Duplicate,
+    #[error("the package is not part of this release plan")]
+    NotInPlan,
+    #[error("the package has a duplicate registry target")]
+    DuplicateRegistryTarget,
+}
+
+/// An unmet precondition for a release operation, carried by
+/// [`GraphError::ReleasePreconditionUnmet`] (E170).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum ReleasePreconditionRequirement {
+    #[error("a detached HEAD")]
+    DetachedHead,
+    #[error("the canonical root to match the workspace root")]
+    CanonicalRootMatchesWorkspace,
+    #[error("a git remote prepared during validation")]
+    GitRemotePrepared,
+    #[error("a GitHub remote")]
+    GitHubRemote,
+    #[error("a configured changelog")]
+    ChangelogConfigured,
+    #[error("a provided artifact manifest")]
+    ArtifactManifestProvided,
 }
 
 #[cfg(test)]
