@@ -2368,3 +2368,11 @@ If this event is something the user would act on now, send a PushNotification. R
 <status>completed</status>
 <summary>Monitor "Wait for main CI + release-PR workflow to finish after PR #74 merge" stream ended</summary>
 </task-notification>
+
+---
+
+Does this result in a working callisto for our users?
+
+---
+
+Resume please
