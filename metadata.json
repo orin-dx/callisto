@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.10.7-nightly.202609090626.b58e65cd7",
+  "checkpoint_id": "01M26GQ2SVN7YDYHDN5SB56BJK",
+  "strategy": "manual-commit",
+  "branch": "feat/release-error-taxonomy-pr2",
+  "checkpoints_count": 3,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 108,
+    "cache_creation_tokens": 51645,
+    "cache_read_tokens": 32410401,
+    "output_tokens": 26676,
+    "api_call_count": 54,
+    "subagent_tokens": {
+      "input_tokens": 236,
+      "cache_creation_tokens": 232342,
+      "cache_read_tokens": 24285907,
+      "output_tokens": 99944,
+      "api_call_count": 118
+    }
+  }
+}
