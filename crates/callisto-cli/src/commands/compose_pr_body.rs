@@ -27,7 +27,6 @@ pub fn handle(args: ComposePrBodyArgs, global: &GlobalArgs) -> Result<ExitCode, 
     let inference = select_inference();
     let opts = PrBodyOptions {
         existing_body,
-        labels: args.labels,
         branch: args.branch,
     };
 
@@ -94,7 +93,6 @@ mod tests {
         let result = handle(
             ComposePrBodyArgs {
                 existing_body: None,
-                labels: vec![],
                 branch: None,
             },
             &global,
