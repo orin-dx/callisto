@@ -2982,3 +2982,7 @@ With everything collapsed it becomes invisible though, this is too much
 ---
 
 Think critically about what the point of a release PR is, what should we be hiding, if anything??
+
+---
+
+Yes, add the major-first ordering
