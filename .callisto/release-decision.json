@@ -1,0 +1,101 @@
+{
+  "schemaVersion": 1,
+  "entries": [
+    {
+      "package": "cargo/callisto-changelog",
+      "targetVersion": "0.7.0",
+      "reasons": [
+        {
+          "kind": "fixedGroup",
+          "groupId": "workspace"
+        }
+      ]
+    },
+    {
+      "package": "cargo/callisto-cli",
+      "targetVersion": "0.7.0",
+      "reasons": [
+        {
+          "kind": "changeset"
+        }
+      ]
+    },
+    {
+      "package": "cargo/callisto-conventional",
+      "targetVersion": "0.7.0",
+      "reasons": [
+        {
+          "kind": "fixedGroup",
+          "groupId": "workspace"
+        }
+      ]
+    },
+    {
+      "package": "cargo/callisto-fixtures",
+      "targetVersion": "0.7.0",
+      "reasons": [
+        {
+          "kind": "fixedGroup",
+          "groupId": "workspace"
+        }
+      ]
+    },
+    {
+      "package": "cargo/callisto-format",
+      "targetVersion": "0.7.0",
+      "reasons": [
+        {
+          "kind": "fixedGroup",
+          "groupId": "workspace"
+        }
+      ]
+    },
+    {
+      "package": "cargo/callisto-graph",
+      "targetVersion": "0.7.0",
+      "reasons": [
+        {
+          "kind": "changeset"
+        }
+      ]
+    },
+    {
+      "package": "cargo/callisto-manifests",
+      "targetVersion": "0.7.0",
+      "reasons": [
+        {
+          "kind": "changeset"
+        }
+      ]
+    },
+    {
+      "package": "cargo/callisto-model",
+      "targetVersion": "0.7.0",
+      "reasons": [
+        {
+          "kind": "changeset"
+        }
+      ]
+    },
+    {
+      "package": "cargo/callisto-moon",
+      "targetVersion": "0.7.0",
+      "reasons": [
+        {
+          "kind": "fixedGroup",
+          "groupId": "workspace"
+        }
+      ]
+    },
+    {
+      "package": "cargo/callisto-vcs",
+      "targetVersion": "0.7.0",
+      "reasons": [
+        {
+          "kind": "changeset"
+        }
+      ]
+    }
+  ],
+  "digest": "9091091cd3d16b3e2936bed18b9a72834895325421aa1aa7ed724ceead9e9724"
+}
