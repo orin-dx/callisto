@@ -46,7 +46,6 @@ fn test_compose_pr_body_custom_branch_flag() {
     let inference = NoInference;
     let opts = PrBodyOptions {
         existing_body: None,
-        labels: Vec::new(),
         branch: Some("release/v1.0".to_string()),
     };
 
