@@ -2974,3 +2974,7 @@ Do we propose any mapping/rewriting of changesets to better suite GH PRs and rel
 ---
 
 Yes please
+
+---
+
+With everything collapsed it becomes invisible though, this is too much
