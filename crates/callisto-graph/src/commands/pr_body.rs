@@ -372,10 +372,8 @@ pub fn render_pr_body_from_plan(
         ));
     }
 
-    let outer_open = if has_major { " open" } else { "" };
     body.push_str(&format!(
-        "<details{}>\n<summary><b>{} change(s) across {} package(s)</b></summary>\n\n",
-        outer_open,
+        "**{} change(s) across {} package(s):**\n\n",
         groups.len(),
         plan.bumps.len()
     ));
@@ -412,8 +410,6 @@ pub fn render_pr_body_from_plan(
         }
         body.push_str("\n</details>\n\n");
     }
-
-    body.push_str("</details>\n\n");
 
     // 4. Instructions Footer
     let branch = opts.branch.as_deref().unwrap_or("callisto/version-packages");
@@ -538,24 +534,17 @@ mod tests {
     /// For a plan with exactly one bump and no matching `changelog_writes`
     /// entry (so the sole change group is the package's own fallback
     /// block): confirms that group's body -- between its own `<summary>`
-    /// and its closing `</details>` -- is non-empty. Skips past two
-    /// `</summary>` occurrences: the outer "What's Changing" wrapper's, then
-    /// the one fallback group's own.
+    /// and its closing `</details>` -- is non-empty.
     fn assert_release_reason_has_content(body: &str) {
         let changing_start = body
             .find("### 📦 What's Changing")
             .expect("must contain the What's Changing section");
         let after_heading = &body[changing_start..];
-        let outer_summary_end = after_heading
-            .find("</summary>")
-            .map(|i| i + "</summary>".len())
-            .expect("must contain the outer wrapper's </summary>");
-        let after_outer_summary = &after_heading[outer_summary_end..];
-        let inner_summary_end = after_outer_summary
+        let summary_end = after_heading
             .find("</summary>")
             .map(|i| i + "</summary>".len())
             .expect("must contain the fallback group's own </summary>");
-        let content_area = &after_outer_summary[inner_summary_end..];
+        let content_area = &after_heading[summary_end..];
         let end = content_area.find("</details>").unwrap_or(content_area.len());
         let section = content_area[..end].trim();
         assert!(
@@ -936,23 +925,48 @@ mod tests {
     }
 
     /// The outer "What's Changing" wrapper defaults closed for a routine
-    /// minor/patch-only release, and open when any change group contains a
-    /// major bump -- so a breaking change is never hidden behind an extra
-    /// click by default, while routine releases stay compact.
+    /// "What's Changing" has no outer collapsible: the list of what changed
+    /// (each change's own `<summary>` line) must always be directly visible
+    /// with no click required, even for a routine minor-only release --
+    /// only each change's own *body* text collapses. An earlier revision
+    /// wrapped the whole section in one more collapsible on top of that,
+    /// which made the list itself invisible by default; that wrapper is
+    /// gone.
     #[test]
-    fn outer_wrapper_opens_only_when_a_major_bump_is_present() {
+    fn whats_changing_list_is_never_hidden_behind_an_outer_collapsible() {
+        let plan = plan_with_single_bump(BumpReason::Changeset {
+            changesets: vec!["x".to_string()],
+        });
+        let report = render_pr_body_from_plan(&plan, &PrBodyOptions::default()).unwrap();
+        let changing_start = report
+            .body
+            .find("### 📦 What's Changing")
+            .expect("must contain the What's Changing heading");
+        assert!(
+            !report.body[changing_start..].contains("<details>\n<summary><b>1 change"),
+            "the change list must not be wrapped in its own collapsible; body: {}",
+            report.body
+        );
+        assert!(
+            report.body.contains("**1 change(s) across 1 package(s):**"),
+            "a plain, always-visible count line replaces the old collapsible wrapper; body: {}",
+            report.body
+        );
+    }
+
+    /// Each change's own block still defaults closed for a routine
+    /// minor/patch bump and open when it contains a major bump, so a
+    /// breaking change's detail is never hidden behind an extra click by
+    /// default.
+    #[test]
+    fn individual_change_block_opens_only_when_it_contains_a_major_bump() {
         let minor_only = plan_with_single_bump(BumpReason::Changeset {
             changesets: vec!["x".to_string()],
         });
         let minor_report = render_pr_body_from_plan(&minor_only, &PrBodyOptions::default()).unwrap();
-        let outer_start = minor_report
-            .body
-            .find("<details>\n<summary><b>1 change")
-            .unwrap_or(usize::MAX);
-        assert_ne!(
-            outer_start,
-            usize::MAX,
-            "a minor-only release's outer wrapper must default closed; body: {}",
+        assert!(
+            minor_report.body.contains("<details>\n<summary><b>pkg-a</b>"),
+            "a minor-only change's block must default closed; body: {}",
             minor_report.body
         );
 
@@ -962,8 +976,8 @@ mod tests {
         major_plan.bumps[0].severity = Severity::Major;
         let major_report = render_pr_body_from_plan(&major_plan, &PrBodyOptions::default()).unwrap();
         assert!(
-            major_report.body.contains("<details open>\n<summary><b>1 change"),
-            "a release containing a major bump must default its outer wrapper open; body: {}",
+            major_report.body.contains("<details open>\n<summary><b>pkg-a</b>"),
+            "a change containing a major bump must default its own block open; body: {}",
             major_report.body
         );
     }
