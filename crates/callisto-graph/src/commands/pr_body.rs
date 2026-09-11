@@ -62,7 +62,20 @@ struct ChangeGroup {
 
 impl ChangeGroup {
     fn has_major(&self) -> bool {
-        self.members.iter().any(|(_, severity)| *severity == Severity::Major)
+        self.max_severity() == Severity::Major
+    }
+
+    /// Drives major-first ordering in the change list, matching the summary
+    /// table's own sort exactly rather than a coarser major-vs-not split --
+    /// otherwise a patch-only and a minor-only change could render in
+    /// declaration order relative to each other while the table (correctly)
+    /// puts the minor one first.
+    fn max_severity(&self) -> Severity {
+        self.members
+            .iter()
+            .map(|(_, severity)| *severity)
+            .max()
+            .unwrap_or(Severity::None)
     }
 }
 
@@ -240,13 +253,19 @@ pub fn render_pr_body_from_plan(
     body.push_str("| Package | Ecosystem | Current | Target | Bump | Reason |\n");
     body.push_str("| :--- | :--- | :--- | :--- | :--- | :--- |\n");
 
-    let mut has_major = false;
+    let has_major = plan
+        .bumps
+        .iter()
+        .any(|bump| bump.severity == callisto_model::Severity::Major);
 
-    for bump in &plan.bumps {
-        if bump.severity == callisto_model::Severity::Major {
-            has_major = true;
-        }
+    // Major-first: a reviewer's real question is "is anything breaking,"
+    // and that must be answerable from the top of the table without
+    // scanning every row for a package whose name happens to sort late.
+    // Stable, so ties keep their original (plan) relative order.
+    let mut sorted_bumps: Vec<&crate::plan::PlannedBump> = plan.bumps.iter().collect();
+    sorted_bumps.sort_by_key(|bump| std::cmp::Reverse(bump.severity));
 
+    for bump in &sorted_bumps {
         let eco = bump.package.ecosystem().map(|e| e.prefix()).unwrap_or("core");
 
         let reason_str = match &bump.reason {
@@ -372,15 +391,20 @@ pub fn render_pr_body_from_plan(
         ));
     }
 
-    let outer_open = if has_major { " open" } else { "" };
     body.push_str(&format!(
-        "<details{}>\n<summary><b>{} change(s) across {} package(s)</b></summary>\n\n",
-        outer_open,
+        "**{} change(s) across {} package(s):**\n\n",
         groups.len(),
         plan.bumps.len()
     ));
 
-    for (key, group) in &groups {
+    // Major-first, same rationale as the summary table: a change containing
+    // a breaking bump must be the first thing a reviewer sees, not wherever
+    // it happens to fall by first-encountered-package order. Stable, so
+    // ties keep their original order.
+    let mut sorted_groups: Vec<(&ChangeGroupKey, &ChangeGroup)> = groups.iter().collect();
+    sorted_groups.sort_by_key(|(_, group)| std::cmp::Reverse(group.max_severity()));
+
+    for (key, group) in sorted_groups {
         let inner_open = if group.has_major() { " open" } else { "" };
 
         if group.is_fallback {
@@ -412,8 +436,6 @@ pub fn render_pr_body_from_plan(
         }
         body.push_str("\n</details>\n\n");
     }
-
-    body.push_str("</details>\n\n");
 
     // 4. Instructions Footer
     let branch = opts.branch.as_deref().unwrap_or("callisto/version-packages");
@@ -538,24 +560,17 @@ mod tests {
     /// For a plan with exactly one bump and no matching `changelog_writes`
     /// entry (so the sole change group is the package's own fallback
     /// block): confirms that group's body -- between its own `<summary>`
-    /// and its closing `</details>` -- is non-empty. Skips past two
-    /// `</summary>` occurrences: the outer "What's Changing" wrapper's, then
-    /// the one fallback group's own.
+    /// and its closing `</details>` -- is non-empty.
     fn assert_release_reason_has_content(body: &str) {
         let changing_start = body
             .find("### 📦 What's Changing")
             .expect("must contain the What's Changing section");
         let after_heading = &body[changing_start..];
-        let outer_summary_end = after_heading
-            .find("</summary>")
-            .map(|i| i + "</summary>".len())
-            .expect("must contain the outer wrapper's </summary>");
-        let after_outer_summary = &after_heading[outer_summary_end..];
-        let inner_summary_end = after_outer_summary
+        let summary_end = after_heading
             .find("</summary>")
             .map(|i| i + "</summary>".len())
             .expect("must contain the fallback group's own </summary>");
-        let content_area = &after_outer_summary[inner_summary_end..];
+        let content_area = &after_heading[summary_end..];
         let end = content_area.find("</details>").unwrap_or(content_area.len());
         let section = content_area[..end].trim();
         assert!(
@@ -936,23 +951,48 @@ mod tests {
     }
 
     /// The outer "What's Changing" wrapper defaults closed for a routine
-    /// minor/patch-only release, and open when any change group contains a
-    /// major bump -- so a breaking change is never hidden behind an extra
-    /// click by default, while routine releases stay compact.
+    /// "What's Changing" has no outer collapsible: the list of what changed
+    /// (each change's own `<summary>` line) must always be directly visible
+    /// with no click required, even for a routine minor-only release --
+    /// only each change's own *body* text collapses. An earlier revision
+    /// wrapped the whole section in one more collapsible on top of that,
+    /// which made the list itself invisible by default; that wrapper is
+    /// gone.
     #[test]
-    fn outer_wrapper_opens_only_when_a_major_bump_is_present() {
+    fn whats_changing_list_is_never_hidden_behind_an_outer_collapsible() {
+        let plan = plan_with_single_bump(BumpReason::Changeset {
+            changesets: vec!["x".to_string()],
+        });
+        let report = render_pr_body_from_plan(&plan, &PrBodyOptions::default()).unwrap();
+        let changing_start = report
+            .body
+            .find("### 📦 What's Changing")
+            .expect("must contain the What's Changing heading");
+        assert!(
+            !report.body[changing_start..].contains("<details>\n<summary><b>1 change"),
+            "the change list must not be wrapped in its own collapsible; body: {}",
+            report.body
+        );
+        assert!(
+            report.body.contains("**1 change(s) across 1 package(s):**"),
+            "a plain, always-visible count line replaces the old collapsible wrapper; body: {}",
+            report.body
+        );
+    }
+
+    /// Each change's own block still defaults closed for a routine
+    /// minor/patch bump and open when it contains a major bump, so a
+    /// breaking change's detail is never hidden behind an extra click by
+    /// default.
+    #[test]
+    fn individual_change_block_opens_only_when_it_contains_a_major_bump() {
         let minor_only = plan_with_single_bump(BumpReason::Changeset {
             changesets: vec!["x".to_string()],
         });
         let minor_report = render_pr_body_from_plan(&minor_only, &PrBodyOptions::default()).unwrap();
-        let outer_start = minor_report
-            .body
-            .find("<details>\n<summary><b>1 change")
-            .unwrap_or(usize::MAX);
-        assert_ne!(
-            outer_start,
-            usize::MAX,
-            "a minor-only release's outer wrapper must default closed; body: {}",
+        assert!(
+            minor_report.body.contains("<details>\n<summary><b>pkg-a</b>"),
+            "a minor-only change's block must default closed; body: {}",
             minor_report.body
         );
 
@@ -962,8 +1002,8 @@ mod tests {
         major_plan.bumps[0].severity = Severity::Major;
         let major_report = render_pr_body_from_plan(&major_plan, &PrBodyOptions::default()).unwrap();
         assert!(
-            major_report.body.contains("<details open>\n<summary><b>1 change"),
-            "a release containing a major bump must default its outer wrapper open; body: {}",
+            major_report.body.contains("<details open>\n<summary><b>pkg-a</b>"),
+            "a change containing a major bump must default its own block open; body: {}",
             major_report.body
         );
     }
@@ -1039,6 +1079,72 @@ mod tests {
             !report.body.contains("Suggested PR Label"),
             "the label line duplicates GitHub's own label UI and is never merely \"suggested\" \
              (the caller always applies it); body: {}",
+            report.body
+        );
+    }
+
+    /// A reviewer's real question is "is anything breaking" -- that must be
+    /// answerable from the top of both the summary table and the change
+    /// list, not by scanning past every row whose package name happens to
+    /// sort earlier. `pkg-z` (patch) is declared first and `pkg-a` (major)
+    /// last, deliberately the opposite of alphabetical/plan order, so this
+    /// only passes if severity -- not declaration order -- drives the sort.
+    #[test]
+    fn major_bumps_are_ordered_first_in_the_table_and_change_list() {
+        let make_bump = |name: &str, severity: Severity, changeset: &str| PlannedBump {
+            package: PackageId::parse(name).unwrap(),
+            from: Version::semver(1, 0, 0),
+            to: Version::semver(1, 1, 0),
+            severity,
+            governed_by: None,
+            reason: Some(BumpReason::Changeset {
+                changesets: vec![changeset.to_string()],
+            }),
+            writes: vec![],
+        };
+
+        let plan = VersionPlan {
+            bumps: vec![
+                make_bump("pkg-z", Severity::Patch, "z-fix"),
+                make_bump("pkg-m", Severity::Minor, "m-feature"),
+                make_bump("pkg-a", Severity::Major, "a-breaking"),
+            ],
+            rewrites: vec![],
+            platform_writes: vec![],
+            optional_dep_updates: vec![],
+            changelog_writes: vec![],
+            consumed_changesets: vec![],
+            pre_state_update: None,
+            delete_pre_json: None,
+            pre_cursor_updates: vec![],
+            observed_versions: std::collections::BTreeMap::new(),
+            diagnostics: vec![],
+        };
+
+        let report = render_pr_body_from_plan(&plan, &PrBodyOptions::default()).unwrap();
+
+        let table_a = report.body.find("`pkg-a`").expect("pkg-a must appear in the table");
+        let table_m = report.body.find("`pkg-m`").expect("pkg-m must appear in the table");
+        let table_z = report.body.find("`pkg-z`").expect("pkg-z must appear in the table");
+        assert!(
+            table_a < table_m && table_m < table_z,
+            "table rows must be ordered major, minor, patch regardless of declaration order; body: {}",
+            report.body
+        );
+
+        let changing_start = report.body.find("### 📦 What's Changing").unwrap();
+        let list_a = report.body[changing_start..]
+            .find("a-breaking")
+            .expect("a-breaking must appear in the change list");
+        let list_m = report.body[changing_start..]
+            .find("m-feature")
+            .expect("m-feature must appear in the change list");
+        let list_z = report.body[changing_start..]
+            .find("z-fix")
+            .expect("z-fix must appear in the change list");
+        assert!(
+            list_a < list_m && list_m < list_z,
+            "the change list must also put the major-containing change first; body: {}",
             report.body
         );
     }
