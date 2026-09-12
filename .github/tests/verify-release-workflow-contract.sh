@@ -34,7 +34,9 @@ require_line "$build" '      id-token: write' 'build must mint the Sigstore OIDC
 require_line "$build" '          include-hidden-files: true' 'build must upload .release-handoff -- upload-artifact drops dotfiles by default and "execute" would silently receive nothing'
 
 execute="$(sed -n '/^  execute:$/,$p' "$workflow")"
-require_line "$execute" '          cmp .release-intent/release-intent.json .release-build/.release-handoff/release-intent.json' 'execute must read the handoff file at its actual archived path -- .release-handoff and release-artifacts were sibling upload paths in "build", so the artifact is rooted one level up, not flattened'
+require_line "$execute" '          cmp "$intent_dir/release-intent.json" "$build_dir/.release-handoff/release-intent.json"' 'execute must read the handoff file at its actual archived path -- .release-handoff and release-artifacts were sibling upload paths in "build", so the artifact is rooted one level up, not flattened'
+require_line "$execute" '          path: ${{ runner.temp }}/release-intent' 'execute must download release-intent outside the workspace -- callisto release execute re-checks release trust before every dispatch, which fails closed on any untracked file in the worktree'
+require_line "$execute" '          path: ${{ runner.temp }}/release-build' 'execute must download release-build outside the workspace -- callisto release execute re-checks release trust before every dispatch, which fails closed on any untracked file in the worktree'
 
 ci_workflow=.github/workflows/callisto-ci.yml
 checkout_count=$(rg -n 'uses: actions/checkout@' "$ci_workflow" | wc -l)
