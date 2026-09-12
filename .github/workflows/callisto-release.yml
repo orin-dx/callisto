@@ -234,7 +234,11 @@ jobs:
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
-          persist-credentials: false
+          # Unlike every other job's checkout, this one must persist
+          # credentials: dispatch_tag (callisto-graph) pushes the release tag
+          # with a plain `git push`, which has no other way to authenticate.
+          # This job's own contents: write permission (above) is what backs it.
+          persist-credentials: true
       - uses: $/.github/actions/setup-callisto
         with:
           source: local
