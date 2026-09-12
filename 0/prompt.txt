@@ -2986,3 +2986,15 @@ Think critically about what the point of a release PR is, what should we be hidi
 ---
 
 Yes, add the major-first ordering
+
+---
+
+Release failed AGAIN: https://github.com/orin-dx/callisto/actions/runs/34653013911/job/103440736137
+
+---
+
+WTF
+
+---
+
+Why can't we get this working after weeks and weeks and weeks of bug fixes?
