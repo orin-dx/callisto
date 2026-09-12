@@ -1,0 +1,33 @@
+{
+  "cli_version": "0.10.7-nightly.202609090626.b58e65cd7",
+  "checkpoint_id": "01M2B0XM03V6RSXGDDT37YNW5F",
+  "strategy": "manual-commit",
+  "branch": "fix/release-build-artifact-hidden-files",
+  "checkpoints_count": 6,
+  "files_touched": [
+    ".github/workflows/callisto-release.yml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 132,
+    "cache_creation_tokens": 843060,
+    "cache_read_tokens": 24801699,
+    "output_tokens": 54403,
+    "api_call_count": 66,
+    "subagent_tokens": {
+      "input_tokens": 42,
+      "cache_creation_tokens": 43620,
+      "cache_read_tokens": 145470,
+      "output_tokens": 2002,
+      "api_call_count": 5
+    }
+  }
+}
