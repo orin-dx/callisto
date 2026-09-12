@@ -31,6 +31,10 @@ build="$(job_block build environment-policy)"
 require_line "$build" '      contents: read' 'build must read the intent-bound source tree'
 require_line "$build" '      attestations: write' 'build must create provenance attestations'
 require_line "$build" '      id-token: write' 'build must mint the Sigstore OIDC identity'
+require_line "$build" '          include-hidden-files: true' 'build must upload .release-handoff -- upload-artifact drops dotfiles by default and "execute" would silently receive nothing'
+
+execute="$(sed -n '/^  execute:$/,$p' "$workflow")"
+require_line "$execute" '          cmp .release-intent/release-intent.json .release-build/.release-handoff/release-intent.json' 'execute must read the handoff file at its actual archived path -- .release-handoff and release-artifacts were sibling upload paths in "build", so the artifact is rooted one level up, not flattened'
 
 ci_workflow=.github/workflows/callisto-ci.yml
 checkout_count=$(rg -n 'uses: actions/checkout@' "$ci_workflow" | wc -l)
