@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.10.7-nightly.202609090626.b58e65cd7",
+  "checkpoint_id": "01M2B2W4F7K7KZAFRR26KWAEB5",
+  "strategy": "manual-commit",
+  "branch": "test/release-pipeline-regression-guards",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 78,
+    "cache_creation_tokens": 48526,
+    "cache_read_tokens": 20126259,
+    "output_tokens": 31218,
+    "api_call_count": 39
+  }
+}
