@@ -41,6 +41,9 @@ fi
 
 require_line "$version_pr" '          persist-credentials: false' 'version-pr never git-pushes -- it commits through the forge API -- so it must not persist Git credentials'
 
+execute="$(sed -n '/^  execute:$/,$p' "$workflow")"
+require_line "$execute" '          persist-credentials: true' 'execute pushes the release tag with a plain git push (dispatch_tag) -- unlike every other job it has no other way to authenticate, so it must persist Git credentials'
+
 if rg -U 'run: \|(?s:.*?)\$\{\{ inputs\.' .github/actions/setup-callisto/action.yml .github/actions/setup-callisto-wasm/action.yml > /dev/null; then
   printf 'workflow contract failed: composite-action inputs must enter shell through named environment variables\n' >&2
   exit 1
