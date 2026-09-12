@@ -22,6 +22,7 @@ require_line() {
 version_pr="$(job_block version-pr release-candidate)"
 require_line "$version_pr" '      contents: write' 'version-pr must write the managed branch'
 require_line "$version_pr" '      pull-requests: write' 'version-pr must create or update the release PR'
+require_line "$version_pr" "          version_command: 'callisto version --refresh-lockfiles'" 'this workspace bumps interdependent Cargo packages together -- without --refresh-lockfiles, Cargo.lock goes stale on every version bump and the next plain `cargo build` dirties the release worktree'
 
 release_candidate="$(job_block release-candidate plan)"
 require_line "$release_candidate" '          prs=$(gh api --paginate "/repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/pulls" --jq '\''[.[] | select(.merged_at != null and .base.ref == "main" and (.head.ref == "callisto/version-packages" or (.head.ref | test("^callisto/version-packages--[0-9a-f]{40}$"))))] | length'\'')' 'release-candidate must accept only canonical or SHA-suffixed managed branches'

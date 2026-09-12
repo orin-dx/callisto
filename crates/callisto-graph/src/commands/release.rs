@@ -456,36 +456,50 @@ impl ValidatedReleaseIntent<'_> {
             package: package_name.clone(),
             source,
         })?;
-        // PyPI has the same gap, deliberately deferred: no PyPI package or
-        // credentials here to test a fix against.
-        if matches!(outcome, PublishOutcome::Published) {
+        if matches!(outcome, PublishOutcome::Published)
+            && ecosystem_requires_registry_confirmation(id.package.ecosystem())
+        {
             let is_published = match id.package.ecosystem() {
-                Ecosystem::Npm => Some(poll_until_published(
+                Ecosystem::Npm => poll_until_published(
                     || self.npm_version_is_published(package_name, version, registry.endpoint.as_deref()),
                     REGISTRY_CONFIRMATION_MAX_RETRIES,
                     registry_confirmation_backoff,
                     std::thread::sleep,
-                )?),
+                )?,
                 Ecosystem::Cargo => {
                     let registry_key = (registry.key.as_str() != RegistryKey::CRATES_IO).then(|| registry.key.as_str());
-                    Some(poll_until_published(
+                    poll_until_published(
                         || self.cargo_version_is_published(package_name, version, registry_key),
                         REGISTRY_CONFIRMATION_MAX_RETRIES,
                         registry_confirmation_backoff,
                         std::thread::sleep,
-                    )?)
+                    )?
                 }
-                _ => None,
+                other => {
+                    return Err(GraphError::ReleaseInvariant {
+                        detail: format!(
+                            "ecosystem_requires_registry_confirmation returned true for {other:?}, which has no confirmation check wired"
+                        ),
+                    })
+                }
             };
-            if let Some(is_published) = is_published {
-                require_registry_confirmation(is_published, package_name, version)?;
-            }
+            require_registry_confirmation(is_published, package_name, version)?;
         }
         Ok(match outcome {
             PublishOutcome::Published => OperationOutcome::Published,
             PublishOutcome::AlreadyPublished => OperationOutcome::AlreadySatisfied,
         })
     }
+}
+
+/// Ecosystems whose publish gets confirmed against the registry before the
+/// operation is marked done. Npm and Cargo are checked; PyPI has the
+/// identical propagation-lag gap, deliberately deferred -- no PyPI package
+/// or credentials in this workspace to test a fix against. The single
+/// source of truth `dispatch_registry` actually consults, so a test on this
+/// function directly proves the runtime gate, not a copy of it.
+fn ecosystem_requires_registry_confirmation(ecosystem: Ecosystem) -> bool {
+    matches!(ecosystem, Ecosystem::Npm | Ecosystem::Cargo)
 }
 
 /// A successful publish-client exit isn't a receipt: confirms the registry
@@ -1537,6 +1551,20 @@ mod tests {
     fn require_registry_confirmation_accepts_a_confirmed_publish() {
         let version = Version::parse("1.2.3", VersionGrammar::SemVer).unwrap();
         assert!(require_registry_confirmation(true, "left-pad", &version).is_ok());
+    }
+
+    /// Regression coverage for the confirmed bug: a Cargo publish was never
+    /// confirmed against the registry at all, unlike npm's existing check.
+    /// This is the exact function `dispatch_registry` gates on, so this
+    /// test fails if Cargo's confirmation is ever silently dropped again.
+    #[test]
+    fn ecosystem_requires_registry_confirmation_covers_npm_and_cargo_only() {
+        assert!(ecosystem_requires_registry_confirmation(Ecosystem::Cargo));
+        assert!(ecosystem_requires_registry_confirmation(Ecosystem::Npm));
+        assert!(
+            !ecosystem_requires_registry_confirmation(Ecosystem::Pypi),
+            "PyPI's identical gap is deliberately deferred, not silently fixed"
+        );
     }
 
     #[test]
