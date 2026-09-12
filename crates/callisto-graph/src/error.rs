@@ -239,13 +239,13 @@ pub enum GraphError {
     )]
     ReleaseIntentStale { reason: StaleReason },
 
-    #[error("npm reported `{package}@{version}` published, but the registry does not yet show it")]
+    #[error("registry reported `{package}@{version}` published, but does not yet show it")]
     #[diagnostic(
         code(E157),
         help(
-            "The publish command already ran and npm reported success; this is registry \
-             propagation lag, not an unauthorized or stale operation. Re-run reconciliation \
-             once the registry catches up -- do not regenerate the release intent."
+            "The publish command already ran and the registry client reported success; this is \
+             registry propagation lag, not an unauthorized or stale operation. Re-run \
+             reconciliation once the registry catches up -- do not regenerate the release intent."
         )
     )]
     RegistryPublishUnconfirmed {
