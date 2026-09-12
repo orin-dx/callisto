@@ -3,7 +3,7 @@
   "entries": [
     {
       "package": "cargo/callisto-changelog",
-      "targetVersion": "0.7.1",
+      "targetVersion": "0.7.2",
       "reasons": [
         {
           "kind": "fixedGroup",
@@ -13,7 +13,7 @@
     },
     {
       "package": "cargo/callisto-cli",
-      "targetVersion": "0.7.1",
+      "targetVersion": "0.7.2",
       "reasons": [
         {
           "kind": "fixedGroup",
@@ -23,7 +23,7 @@
     },
     {
       "package": "cargo/callisto-conventional",
-      "targetVersion": "0.7.1",
+      "targetVersion": "0.7.2",
       "reasons": [
         {
           "kind": "fixedGroup",
@@ -33,7 +33,7 @@
     },
     {
       "package": "cargo/callisto-fixtures",
-      "targetVersion": "0.7.1",
+      "targetVersion": "0.7.2",
       "reasons": [
         {
           "kind": "fixedGroup",
@@ -43,7 +43,7 @@
     },
     {
       "package": "cargo/callisto-format",
-      "targetVersion": "0.7.1",
+      "targetVersion": "0.7.2",
       "reasons": [
         {
           "kind": "fixedGroup",
@@ -53,7 +53,7 @@
     },
     {
       "package": "cargo/callisto-graph",
-      "targetVersion": "0.7.1",
+      "targetVersion": "0.7.2",
       "reasons": [
         {
           "kind": "changeset"
@@ -62,7 +62,7 @@
     },
     {
       "package": "cargo/callisto-manifests",
-      "targetVersion": "0.7.1",
+      "targetVersion": "0.7.2",
       "reasons": [
         {
           "kind": "fixedGroup",
@@ -72,7 +72,7 @@
     },
     {
       "package": "cargo/callisto-model",
-      "targetVersion": "0.7.1",
+      "targetVersion": "0.7.2",
       "reasons": [
         {
           "kind": "fixedGroup",
@@ -82,7 +82,7 @@
     },
     {
       "package": "cargo/callisto-moon",
-      "targetVersion": "0.7.1",
+      "targetVersion": "0.7.2",
       "reasons": [
         {
           "kind": "fixedGroup",
@@ -92,7 +92,7 @@
     },
     {
       "package": "cargo/callisto-vcs",
-      "targetVersion": "0.7.1",
+      "targetVersion": "0.7.2",
       "reasons": [
         {
           "kind": "fixedGroup",
@@ -101,5 +101,5 @@
       ]
     }
   ],
-  "digest": "769a6d0e58998f6c9898ca6de98fe653f495fdceea784662ace718931d634f60"
+  "digest": "c94facd3cb22d6437ce57c7bd6282b1b42189537f91d578626c5c1638bcb6510"
 }
