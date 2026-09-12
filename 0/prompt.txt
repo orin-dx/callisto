@@ -3129,3 +3129,11 @@ The docs explicitly state: "project's `.claude/settings.json` grant capability, 
 ---
 
 resolve the conflicts on the second one
+
+---
+
+You still made a mistake: https://github.com/orin-dx/callisto/actions/runs/34698997105/job/103568308112
+
+---
+
+WTF
