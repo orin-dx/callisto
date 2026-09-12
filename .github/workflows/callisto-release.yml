@@ -88,6 +88,10 @@ jobs:
           setup_callisto: 'false'
           branch: main
           release_branch: callisto/version-packages
+          # This workspace bumps interdependent Cargo packages together, so a
+          # bumped member's own Cargo.lock entry goes stale without this --
+          # see ARCHITECTURE.md's "Lockfile Staleness" section.
+          version_command: 'callisto version --refresh-lockfiles'
         env:
           GH_TOKEN: ${{ github.token }}
 
