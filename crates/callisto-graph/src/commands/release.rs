@@ -460,12 +460,20 @@ impl ValidatedReleaseIntent<'_> {
         // credentials here to test a fix against.
         if matches!(outcome, PublishOutcome::Published) {
             let is_published = match id.package.ecosystem() {
-                Ecosystem::Npm => {
-                    Some(self.npm_version_is_published(package_name, version, registry.endpoint.as_deref())?)
-                }
+                Ecosystem::Npm => Some(poll_until_published(
+                    || self.npm_version_is_published(package_name, version, registry.endpoint.as_deref()),
+                    REGISTRY_CONFIRMATION_MAX_RETRIES,
+                    registry_confirmation_backoff,
+                    std::thread::sleep,
+                )?),
                 Ecosystem::Cargo => {
                     let registry_key = (registry.key.as_str() != RegistryKey::CRATES_IO).then(|| registry.key.as_str());
-                    Some(self.cargo_version_is_published(package_name, version, registry_key)?)
+                    Some(poll_until_published(
+                        || self.cargo_version_is_published(package_name, version, registry_key),
+                        REGISTRY_CONFIRMATION_MAX_RETRIES,
+                        registry_confirmation_backoff,
+                        std::thread::sleep,
+                    )?)
                 }
                 _ => None,
             };
@@ -492,6 +500,37 @@ fn require_registry_confirmation(is_published: bool, package: &str, version: &Ve
         package: package.to_string(),
         version: version.clone(),
     })
+}
+
+/// Retries after this many unconfirmed checks: 3 retries (4 checks total).
+const REGISTRY_CONFIRMATION_MAX_RETRIES: u32 = 3;
+
+/// Exponential backoff between confirmation checks: 2s, 4s, 8s (14s worst
+/// case) -- registry index propagation is normally sub-second, so this only
+/// costs time on the rare lagging case, not the common one.
+fn registry_confirmation_backoff(retry: u32) -> std::time::Duration {
+    std::time::Duration::from_secs(2u64.pow(retry + 1))
+}
+
+/// Retries `check` up to `max_retries` more times, sleeping `backoff(retry)`
+/// between attempts, and returns as soon as it reports published. Returns
+/// `Ok(false)` if it never does. `sleep` is injected so tests can verify the
+/// retry count and schedule without a real wall-clock wait.
+fn poll_until_published(
+    mut check: impl FnMut() -> Result<bool, GraphError>,
+    max_retries: u32,
+    backoff: impl Fn(u32) -> std::time::Duration,
+    sleep: impl Fn(std::time::Duration),
+) -> Result<bool, GraphError> {
+    for retry in 0..=max_retries {
+        if check()? {
+            return Ok(true);
+        }
+        if retry < max_retries {
+            sleep(backoff(retry));
+        }
+    }
+    Ok(false)
 }
 
 impl ValidatedReleaseIntent<'_> {
@@ -1467,6 +1506,7 @@ fn canonical_git_remote(raw: &str) -> Result<PreparedGitRemote, GraphError> {
 mod tests {
     use super::*;
     use callisto_model::{CommandError, CommandOutput, Ecosystem, VersionGrammar};
+    use std::time::Duration;
 
     /// Regression coverage for the confirmed bug: a successful npm publish
     /// whose registry hasn't caught up yet must report `RegistryPublishUnconfirmed`
@@ -1497,6 +1537,83 @@ mod tests {
     fn require_registry_confirmation_accepts_a_confirmed_publish() {
         let version = Version::parse("1.2.3", VersionGrammar::SemVer).unwrap();
         assert!(require_registry_confirmation(true, "left-pad", &version).is_ok());
+    }
+
+    #[test]
+    fn poll_until_published_succeeds_immediately_without_sleeping() {
+        let sleeps = std::cell::RefCell::new(Vec::new());
+        let result = poll_until_published(
+            || Ok(true),
+            REGISTRY_CONFIRMATION_MAX_RETRIES,
+            registry_confirmation_backoff,
+            |d| sleeps.borrow_mut().push(d),
+        );
+        assert_eq!(result, Ok(true));
+        assert!(sleeps.borrow().is_empty(), "must not sleep when already published");
+    }
+
+    #[test]
+    fn poll_until_published_succeeds_on_a_later_retry() {
+        let attempts = std::cell::RefCell::new(0);
+        let sleeps = std::cell::RefCell::new(Vec::new());
+        let result = poll_until_published(
+            || {
+                *attempts.borrow_mut() += 1;
+                Ok(*attempts.borrow() == 3)
+            },
+            REGISTRY_CONFIRMATION_MAX_RETRIES,
+            registry_confirmation_backoff,
+            |d| sleeps.borrow_mut().push(d),
+        );
+        assert_eq!(result, Ok(true));
+        assert_eq!(*attempts.borrow(), 3);
+        assert_eq!(
+            *sleeps.borrow(),
+            vec![Duration::from_secs(2), Duration::from_secs(4)],
+            "must sleep with the exponential schedule between the two failed checks"
+        );
+    }
+
+    #[test]
+    fn poll_until_published_gives_up_after_max_retries_with_no_trailing_sleep() {
+        let attempts = std::cell::RefCell::new(0);
+        let sleeps = std::cell::RefCell::new(Vec::new());
+        let result = poll_until_published(
+            || {
+                *attempts.borrow_mut() += 1;
+                Ok(false)
+            },
+            REGISTRY_CONFIRMATION_MAX_RETRIES,
+            registry_confirmation_backoff,
+            |d| sleeps.borrow_mut().push(d),
+        );
+        assert_eq!(result, Ok(false));
+        assert_eq!(*attempts.borrow(), 4, "one initial check plus 3 retries");
+        assert_eq!(
+            *sleeps.borrow(),
+            vec![Duration::from_secs(2), Duration::from_secs(4), Duration::from_secs(8)],
+            "must not sleep again after the final (4th) check fails"
+        );
+    }
+
+    #[test]
+    fn poll_until_published_propagates_a_check_error_without_retrying() {
+        let attempts = std::cell::RefCell::new(0);
+        let version = Version::parse("1.2.3", VersionGrammar::SemVer).unwrap();
+        let result = poll_until_published(
+            || {
+                *attempts.borrow_mut() += 1;
+                Err(GraphError::RegistryPublishUnconfirmed {
+                    package: "left-pad".to_string(),
+                    version: version.clone(),
+                })
+            },
+            REGISTRY_CONFIRMATION_MAX_RETRIES,
+            registry_confirmation_backoff,
+            |_| panic!("must not sleep after a hard error"),
+        );
+        assert!(result.is_err());
+        assert_eq!(*attempts.borrow(), 1, "a check error must not be retried");
     }
 
     struct RealGitRunner;
