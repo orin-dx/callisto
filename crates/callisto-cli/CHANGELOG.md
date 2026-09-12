@@ -1,5 +1,9 @@
 # callisto-cli
 
+## 0.7.1
+
+- Released together with the `workspace` fixed group.
+
 ## 0.7.0
 
 - **Fix three error/diagnostic messages that told the operator the wrong cause**

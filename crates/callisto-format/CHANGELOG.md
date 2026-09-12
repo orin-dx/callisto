@@ -1,5 +1,9 @@
 # callisto-format
 
+## 0.7.1
+
+- Released together with the `workspace` fixed group.
+
 ## 0.7.0
 
 - `SemVerVersioning::bump`/`Pep440Versioning::bump` and `SemVerVersioning::bump_prerelease`/`Pep440Versioning::bump_prerelease` each independently implemented the same major.minor.patch zero-guard bump arithmetic and the same trailing-counter increment-and-reassemble logic, differing only in representation (`Version` vs. a raw `(u64, u64, u64)` triple). This duplication already cost two independent bug-fix commits for the same arithmetic (one on the SemVer copy, one on the PEP 440 copy).
