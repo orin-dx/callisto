@@ -1,5 +1,9 @@
 # callisto-changelog
 
+## 0.7.1
+
+- Released together with the `workspace` fixed group.
+
 ## 0.7.0
 
 - **Parameterize six "one arm per kind" implementations on the value that varied between arms, instead of writing each arm out separately**

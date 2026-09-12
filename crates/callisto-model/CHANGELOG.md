@@ -1,5 +1,9 @@
 # callisto-model
 
+## 0.7.1
+
+- Released together with the `workspace` fixed group.
+
 ## 0.7.0
 
 - **Fix `ReleaseOperationId::Ord` dropping `attestation_policy` for artifact-upload operations**

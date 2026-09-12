@@ -1,5 +1,22 @@
 # callisto-graph
 
+## 0.7.1
+
+- **Confirm a Cargo publish landed on the registry before marking it done**
+  
+  `dispatch_registry` only confirmed npm publishes against the registry after a successful publish call; Cargo went straight from "cargo publish exited 0" to `Published`, with no check that crates.io's index had actually caught up. If a dependent crate's publish ran before that propagation finished, its own `cargo publish --locked` verification build could fail to resolve the dependency, and the failure wouldn't be recognized as recoverable propagation lag.
+  
+  Cargo publishes are now confirmed the same way npm's are: after a successful `cargo publish`, `cargo info <pkg>@<version>` must also confirm the registry shows it before the operation is marked `Published`. If it doesn't yet, the operation stays `Attempting` and reports `RegistryPublishUnconfirmed` -- re-running reconciliation once the registry catches up resolves it, with no need to regenerate the release intent.
+  
+  PyPI's publish path has the same gap and is deliberately left open: this workspace has no PyPI package or credentials to verify a fix against.
+- **Retry the registry-publish confirmation check with backoff instead of failing on the first miss**
+  
+  The registry-publish confirmation added for Cargo and already used for npm checked the registry exactly once. Propagation lag is normally sub-second, but a single check right after a publish could still land inside that window and fail immediately with `RegistryPublishUnconfirmed`, even though a moment later it would have succeeded on its own.
+  
+  The confirmation check now retries up to 3 times (4 checks total) with exponential backoff (2s, 4s, 8s -- 14s worst case) before reporting unconfirmed. Only registry propagation lag is retried this way; a hard error from the check itself is never retried.
+  
+  Lives in `callisto release execute` itself, not the release action's shell script -- the action has no registry-specific logic of its own to retry.
+
 ## 0.7.0
 
 - **Fix three error/diagnostic messages that told the operator the wrong cause**

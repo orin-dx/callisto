@@ -1,5 +1,9 @@
 # callisto-fixtures
 
+## 0.7.1
+
+- Released together with the `workspace` fixed group.
+
 ## 0.7.0
 
 - **Report registry-publish propagation lag with its own error, wire up missing `[lints]` tables**
