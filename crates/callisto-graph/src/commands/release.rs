@@ -456,9 +456,22 @@ impl ValidatedReleaseIntent<'_> {
             package: package_name.clone(),
             source,
         })?;
-        if matches!(id.package.ecosystem(), Ecosystem::Npm) && matches!(outcome, PublishOutcome::Published) {
-            let is_published = self.npm_version_is_published(package_name, version, registry.endpoint.as_deref())?;
-            require_registry_confirmation(is_published, package_name, version)?;
+        // PyPI has the same gap, deliberately deferred: no PyPI package or
+        // credentials here to test a fix against.
+        if matches!(outcome, PublishOutcome::Published) {
+            let is_published = match id.package.ecosystem() {
+                Ecosystem::Npm => {
+                    Some(self.npm_version_is_published(package_name, version, registry.endpoint.as_deref())?)
+                }
+                Ecosystem::Cargo => {
+                    let registry_key = (registry.key.as_str() != RegistryKey::CRATES_IO).then(|| registry.key.as_str());
+                    Some(self.cargo_version_is_published(package_name, version, registry_key)?)
+                }
+                _ => None,
+            };
+            if let Some(is_published) = is_published {
+                require_registry_confirmation(is_published, package_name, version)?;
+            }
         }
         Ok(match outcome {
             PublishOutcome::Published => OperationOutcome::Published,
@@ -467,14 +480,10 @@ impl ValidatedReleaseIntent<'_> {
     }
 }
 
-/// A successful npm publish client process is not a receipt: this checks
-/// whether the registry itself has caught up before the operation is
-/// considered done. If it hasn't, the operation must remain `Attempting`
-/// for reconciliation rather than asserting a release the registry cannot
-/// yet prove exists -- and the error reported must say exactly that (a
-/// successful publish awaiting registry propagation), not the unrelated
-/// "no release operation was authorized" claim `GraphError::ReleaseIntentStale`
-/// makes, which would be false here.
+/// A successful publish-client exit isn't a receipt: confirms the registry
+/// itself has caught up before treating the operation as done. If not, it
+/// stays `Attempting` for reconciliation, reported via its own variant
+/// rather than `ReleaseIntentStale`'s false "no operation was authorized".
 fn require_registry_confirmation(is_published: bool, package: &str, version: &Version) -> Result<(), GraphError> {
     if is_published {
         return Ok(());
@@ -527,6 +536,26 @@ impl ValidatedReleaseIntent<'_> {
                 exit_code: output.exit_code,
                 stderr: output.stderr,
             },
+        })
+    }
+
+    fn cargo_version_is_published(
+        &self,
+        package_name: &str,
+        version: &Version,
+        registry_key: Option<&str>,
+    ) -> Result<bool, GraphError> {
+        let spec = format!("{package_name}@{}", version.render());
+        let mut args = vec!["info", spec.as_str()];
+        if let Some(registry) = registry_key {
+            args.extend(["--registry", registry]);
+        }
+        let output = self
+            .runner
+            .run_quiet("cargo", &args, &self.prepared.root, std::time::Duration::from_secs(300))?;
+        registry_argv::classify_cargo_info_output(&output).map_err(|source| GraphError::Registry {
+            package: package_name.to_string(),
+            source,
         })
     }
 
