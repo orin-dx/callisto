@@ -3024,3 +3024,7 @@ Check on the just ci-fast background task (bnxhqjdd6) in worktree .claude/worktr
 ---
 
 Try to predict where we could go wrong in later phases of the release. Every time we get further but we get stuck because we're not looking forward as we go
+
+---
+
+How can we address the real gap? We should address the low risk too right?
