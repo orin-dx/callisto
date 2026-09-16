@@ -3,8 +3,10 @@
   "checkpoint_id": "01M2N9B2VKMHXG0Q29BWDN14D6",
   "strategy": "manual-commit",
   "branch": "fix/increase-release-artifact-retention",
-  "checkpoints_count": 2,
-  "files_touched": null,
+  "checkpoints_count": 4,
+  "files_touched": [
+    ".github/workflows/callisto-release.yml"
+  ],
   "sessions": [
     {
       "metadata": "/0/metadata.json",
@@ -12,13 +14,27 @@
       "compact_transcript": "/0/transcript.jsonl",
       "content_hash": "/0/content_hash.txt",
       "prompt": "/0/prompt.txt"
+    },
+    {
+      "metadata": "/1/metadata.json",
+      "transcript": "/1/full.jsonl",
+      "compact_transcript": "/1/transcript.jsonl",
+      "content_hash": "/1/content_hash.txt",
+      "prompt": "/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 225893,
-    "cache_creation_tokens": 0,
-    "cache_read_tokens": 8343680,
-    "output_tokens": 27189,
-    "api_call_count": 58
+    "input_tokens": 225955,
+    "cache_creation_tokens": 696033,
+    "cache_read_tokens": 28928850,
+    "output_tokens": 37910,
+    "api_call_count": 89,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
   }
 }
