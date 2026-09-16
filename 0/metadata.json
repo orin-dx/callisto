@@ -1,0 +1,422 @@
+{
+  "cli_version": "0.10.7-nightly.202609160626.21155beb4",
+  "checkpoint_id": "01M2P6HC2F9J3FWZ8GT7JARFPM",
+  "session_id": "01a0aa80-3aab-7313-9603-edf7533a1570",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-16T22:49:14.537422Z",
+  "branch": "fix/rustls-tls-advisory",
+  "checkpoints_count": 16,
+  "save_step_count": 18,
+  "files_touched": [],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "f48e06a6fa48",
+  "checkpoint_transcript_start": 525,
+  "transcript_lines_at_start": 525,
+  "compact_transcript_start": 60,
+  "token_usage": {
+    "input_tokens": 1672615,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 106289024,
+    "output_tokens": 290096,
+    "api_call_count": 925,
+    "subagent_tokens_complete": false
+  },
+  "session_metrics": {
+    "turn_count": 18
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 4466,
+      "user_lines_removed": 2,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".agents/plugins/bug-hunter-rust/agents/bug-hunter-remediator-rust.md": 2,
+        ".agents/skills/entire-search/SKILL.md": 22,
+        ".agents/subagents/bug-hunter.md": 1,
+        ".claude/candidates/candidates-graph-release-publish-tag.json": 2106,
+        ".claude/recon-manifest.json": 280,
+        ".claude/scheduled_tasks.lock": 1,
+        ".claude/settings.local.json": 11,
+        ".claude/skills/entire-search/SKILL.md": 22,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".gemini/skills/entire-search/SKILL.md": 22,
+        ".github/actions/callisto-action/action.yml": 2,
+        ".opencode/plugins/entire.ts": 269,
+        ".opencode/skills/entire-search/SKILL.md": 22,
+        ".playwright-mcp/console-2026-08-29T15-59-57-136Z.log": 11,
+        ".playwright-mcp/console-2026-08-29T16-01-28-866Z.log": 3,
+        ".playwright-mcp/page-2026-08-29T15-59-57-414Z.yml": 4,
+        ".playwright-mcp/page-2026-08-29T16-01-29-130Z.yml": 300,
+        ".playwright-mcp/page-2026-08-29T16-01-55-533Z.yml": 347,
+        ".playwright-mcp/page-2026-08-29T16-07-25-102Z.yml": 462,
+        ".playwright-mcp/page-2026-08-29T16-08-10-779Z.yml": 462,
+        "AGENTS.md": 6,
+        "CLAUDE.md": 7,
+        "err.log": 2
+      },
+      "user_removed_per_file": {
+        ".github/actions/callisto-action/action.yml": 2
+      }
+    },
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 2835,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1631,
+      "agent_lines_removed": 2,
+      "user_added_per_file": {
+        ".claude/candidates/candidates-graph-release-publish-tag.json": 2106,
+        ".claude/recon-manifest.json": 280,
+        ".claude/scheduled_tasks.lock": 1,
+        ".claude/settings.local.json": 11,
+        ".claude/skills/entire-search/SKILL.md": 22,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".gemini/skills/entire-search/SKILL.md": 22,
+        ".opencode/plugins/entire.ts": 269,
+        ".opencode/skills/entire-search/SKILL.md": 22
+      }
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 2835,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1631,
+      "agent_lines_removed": 2,
+      "user_added_per_file": {
+        ".claude/candidates/candidates-graph-release-publish-tag.json": 2106,
+        ".claude/recon-manifest.json": 280,
+        ".claude/scheduled_tasks.lock": 1,
+        ".claude/settings.local.json": 11,
+        ".claude/skills/entire-search/SKILL.md": 22,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".gemini/skills/entire-search/SKILL.md": 22,
+        ".opencode/plugins/entire.ts": 269,
+        ".opencode/skills/entire-search/SKILL.md": 22
+      }
+    },
+    {
+      "checkpoint_number": 4,
+      "user_lines_added": 2835,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1631,
+      "agent_lines_removed": 2,
+      "user_added_per_file": {
+        ".claude/candidates/candidates-graph-release-publish-tag.json": 2106,
+        ".claude/recon-manifest.json": 280,
+        ".claude/scheduled_tasks.lock": 1,
+        ".claude/settings.local.json": 11,
+        ".claude/skills/entire-search/SKILL.md": 22,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".gemini/skills/entire-search/SKILL.md": 22,
+        ".opencode/plugins/entire.ts": 269,
+        ".opencode/skills/entire-search/SKILL.md": 22
+      }
+    },
+    {
+      "checkpoint_number": 5,
+      "user_lines_added": 2835,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1631,
+      "agent_lines_removed": 2,
+      "user_added_per_file": {
+        ".claude/candidates/candidates-graph-release-publish-tag.json": 2106,
+        ".claude/recon-manifest.json": 280,
+        ".claude/scheduled_tasks.lock": 1,
+        ".claude/settings.local.json": 11,
+        ".claude/skills/entire-search/SKILL.md": 22,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".gemini/skills/entire-search/SKILL.md": 22,
+        ".opencode/plugins/entire.ts": 269,
+        ".opencode/skills/entire-search/SKILL.md": 22
+      }
+    },
+    {
+      "checkpoint_number": 6,
+      "user_lines_added": 3270,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1631,
+      "agent_lines_removed": 2,
+      "user_added_per_file": {
+        ".claude/candidates/candidates-graph-release-publish-tag.json": 2106,
+        ".claude/plans/RELEASE-SELF-HOSTING-INCIDENT-2026-09-16.md": 435,
+        ".claude/recon-manifest.json": 280,
+        ".claude/scheduled_tasks.lock": 1,
+        ".claude/settings.local.json": 11,
+        ".claude/skills/entire-search/SKILL.md": 22,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".gemini/skills/entire-search/SKILL.md": 22,
+        ".opencode/plugins/entire.ts": 269,
+        ".opencode/skills/entire-search/SKILL.md": 22
+      }
+    },
+    {
+      "checkpoint_number": 7,
+      "user_lines_added": 3270,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1631,
+      "agent_lines_removed": 2,
+      "user_added_per_file": {
+        ".claude/candidates/candidates-graph-release-publish-tag.json": 2106,
+        ".claude/plans/RELEASE-SELF-HOSTING-INCIDENT-2026-09-16.md": 435,
+        ".claude/recon-manifest.json": 280,
+        ".claude/scheduled_tasks.lock": 1,
+        ".claude/settings.local.json": 11,
+        ".claude/skills/entire-search/SKILL.md": 22,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".gemini/skills/entire-search/SKILL.md": 22,
+        ".opencode/plugins/entire.ts": 269,
+        ".opencode/skills/entire-search/SKILL.md": 22
+      }
+    },
+    {
+      "checkpoint_number": 8,
+      "user_lines_added": 3270,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1631,
+      "agent_lines_removed": 2,
+      "user_added_per_file": {
+        ".claude/candidates/candidates-graph-release-publish-tag.json": 2106,
+        ".claude/plans/RELEASE-SELF-HOSTING-INCIDENT-2026-09-16.md": 435,
+        ".claude/recon-manifest.json": 280,
+        ".claude/scheduled_tasks.lock": 1,
+        ".claude/settings.local.json": 11,
+        ".claude/skills/entire-search/SKILL.md": 22,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".gemini/skills/entire-search/SKILL.md": 22,
+        ".opencode/plugins/entire.ts": 269,
+        ".opencode/skills/entire-search/SKILL.md": 22
+      }
+    },
+    {
+      "checkpoint_number": 9,
+      "user_lines_added": 3270,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1631,
+      "agent_lines_removed": 2,
+      "user_added_per_file": {
+        ".claude/candidates/candidates-graph-release-publish-tag.json": 2106,
+        ".claude/plans/RELEASE-SELF-HOSTING-INCIDENT-2026-09-16.md": 435,
+        ".claude/recon-manifest.json": 280,
+        ".claude/scheduled_tasks.lock": 1,
+        ".claude/settings.local.json": 11,
+        ".claude/skills/entire-search/SKILL.md": 22,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".gemini/skills/entire-search/SKILL.md": 22,
+        ".opencode/plugins/entire.ts": 269,
+        ".opencode/skills/entire-search/SKILL.md": 22
+      }
+    },
+    {
+      "checkpoint_number": 10,
+      "user_lines_added": 3270,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1631,
+      "agent_lines_removed": 2,
+      "user_added_per_file": {
+        ".claude/candidates/candidates-graph-release-publish-tag.json": 2106,
+        ".claude/plans/RELEASE-SELF-HOSTING-INCIDENT-2026-09-16.md": 435,
+        ".claude/recon-manifest.json": 280,
+        ".claude/scheduled_tasks.lock": 1,
+        ".claude/settings.local.json": 11,
+        ".claude/skills/entire-search/SKILL.md": 22,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".gemini/skills/entire-search/SKILL.md": 22,
+        ".opencode/plugins/entire.ts": 269,
+        ".opencode/skills/entire-search/SKILL.md": 22
+      }
+    },
+    {
+      "checkpoint_number": 11,
+      "user_lines_added": 3270,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1631,
+      "agent_lines_removed": 2,
+      "user_added_per_file": {
+        ".claude/candidates/candidates-graph-release-publish-tag.json": 2106,
+        ".claude/plans/RELEASE-SELF-HOSTING-INCIDENT-2026-09-16.md": 435,
+        ".claude/recon-manifest.json": 280,
+        ".claude/scheduled_tasks.lock": 1,
+        ".claude/settings.local.json": 11,
+        ".claude/skills/entire-search/SKILL.md": 22,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".gemini/skills/entire-search/SKILL.md": 22,
+        ".opencode/plugins/entire.ts": 269,
+        ".opencode/skills/entire-search/SKILL.md": 22
+      }
+    },
+    {
+      "checkpoint_number": 12,
+      "user_lines_added": 3270,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1631,
+      "agent_lines_removed": 2,
+      "user_added_per_file": {
+        ".claude/candidates/candidates-graph-release-publish-tag.json": 2106,
+        ".claude/plans/RELEASE-SELF-HOSTING-INCIDENT-2026-09-16.md": 435,
+        ".claude/recon-manifest.json": 280,
+        ".claude/scheduled_tasks.lock": 1,
+        ".claude/settings.local.json": 11,
+        ".claude/skills/entire-search/SKILL.md": 22,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".gemini/skills/entire-search/SKILL.md": 22,
+        ".opencode/plugins/entire.ts": 269,
+        ".opencode/skills/entire-search/SKILL.md": 22
+      }
+    },
+    {
+      "checkpoint_number": 13,
+      "user_lines_added": 3270,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1631,
+      "agent_lines_removed": 2,
+      "user_added_per_file": {
+        ".claude/candidates/candidates-graph-release-publish-tag.json": 2106,
+        ".claude/plans/RELEASE-SELF-HOSTING-INCIDENT-2026-09-16.md": 435,
+        ".claude/recon-manifest.json": 280,
+        ".claude/scheduled_tasks.lock": 1,
+        ".claude/settings.local.json": 11,
+        ".claude/skills/entire-search/SKILL.md": 22,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".gemini/skills/entire-search/SKILL.md": 22,
+        ".opencode/plugins/entire.ts": 269,
+        ".opencode/skills/entire-search/SKILL.md": 22
+      }
+    },
+    {
+      "checkpoint_number": 14,
+      "user_lines_added": 3270,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1631,
+      "agent_lines_removed": 2,
+      "user_added_per_file": {
+        ".claude/candidates/candidates-graph-release-publish-tag.json": 2106,
+        ".claude/plans/RELEASE-SELF-HOSTING-INCIDENT-2026-09-16.md": 435,
+        ".claude/recon-manifest.json": 280,
+        ".claude/scheduled_tasks.lock": 1,
+        ".claude/settings.local.json": 11,
+        ".claude/skills/entire-search/SKILL.md": 22,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".gemini/skills/entire-search/SKILL.md": 22,
+        ".opencode/plugins/entire.ts": 269,
+        ".opencode/skills/entire-search/SKILL.md": 22
+      }
+    },
+    {
+      "checkpoint_number": 15,
+      "user_lines_added": 3270,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1631,
+      "agent_lines_removed": 2,
+      "user_added_per_file": {
+        ".claude/candidates/candidates-graph-release-publish-tag.json": 2106,
+        ".claude/plans/RELEASE-SELF-HOSTING-INCIDENT-2026-09-16.md": 435,
+        ".claude/recon-manifest.json": 280,
+        ".claude/scheduled_tasks.lock": 1,
+        ".claude/settings.local.json": 11,
+        ".claude/skills/entire-search/SKILL.md": 22,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".gemini/skills/entire-search/SKILL.md": 22,
+        ".opencode/plugins/entire.ts": 269,
+        ".opencode/skills/entire-search/SKILL.md": 22
+      }
+    },
+    {
+      "checkpoint_number": 16,
+      "user_lines_added": 3270,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1631,
+      "agent_lines_removed": 2,
+      "user_added_per_file": {
+        ".claude/candidates/candidates-graph-release-publish-tag.json": 2106,
+        ".claude/plans/RELEASE-SELF-HOSTING-INCIDENT-2026-09-16.md": 435,
+        ".claude/recon-manifest.json": 280,
+        ".claude/scheduled_tasks.lock": 1,
+        ".claude/settings.local.json": 11,
+        ".claude/skills/entire-search/SKILL.md": 22,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".gemini/skills/entire-search/SKILL.md": 22,
+        ".opencode/plugins/entire.ts": 269,
+        ".opencode/skills/entire-search/SKILL.md": 22
+      }
+    },
+    {
+      "checkpoint_number": 17,
+      "user_lines_added": 3270,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1631,
+      "agent_lines_removed": 2,
+      "user_added_per_file": {
+        ".claude/candidates/candidates-graph-release-publish-tag.json": 2106,
+        ".claude/plans/RELEASE-SELF-HOSTING-INCIDENT-2026-09-16.md": 435,
+        ".claude/recon-manifest.json": 280,
+        ".claude/scheduled_tasks.lock": 1,
+        ".claude/settings.local.json": 11,
+        ".claude/skills/entire-search/SKILL.md": 22,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".gemini/skills/entire-search/SKILL.md": 22,
+        ".opencode/plugins/entire.ts": 269,
+        ".opencode/skills/entire-search/SKILL.md": 22
+      }
+    },
+    {
+      "checkpoint_number": 18,
+      "user_lines_added": 3270,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1631,
+      "agent_lines_removed": 2,
+      "user_added_per_file": {
+        ".claude/candidates/candidates-graph-release-publish-tag.json": 2106,
+        ".claude/plans/RELEASE-SELF-HOSTING-INCIDENT-2026-09-16.md": 435,
+        ".claude/recon-manifest.json": 280,
+        ".claude/scheduled_tasks.lock": 1,
+        ".claude/settings.local.json": 11,
+        ".claude/skills/entire-search/SKILL.md": 22,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".gemini/skills/entire-search/SKILL.md": 22,
+        ".opencode/plugins/entire.ts": 269,
+        ".opencode/skills/entire-search/SKILL.md": 22
+      }
+    },
+    {
+      "checkpoint_number": 19,
+      "user_lines_added": 3270,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1631,
+      "agent_lines_removed": 2,
+      "user_added_per_file": {
+        ".claude/candidates/candidates-graph-release-publish-tag.json": 2106,
+        ".claude/plans/RELEASE-SELF-HOSTING-INCIDENT-2026-09-16.md": 435,
+        ".claude/recon-manifest.json": 280,
+        ".claude/scheduled_tasks.lock": 1,
+        ".claude/settings.local.json": 11,
+        ".claude/skills/entire-search/SKILL.md": 22,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".gemini/skills/entire-search/SKILL.md": 22,
+        ".opencode/plugins/entire.ts": 269,
+        ".opencode/skills/entire-search/SKILL.md": 22
+      }
+    }
+  ]
+}
