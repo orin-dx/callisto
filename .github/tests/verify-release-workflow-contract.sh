@@ -27,7 +27,7 @@ require_line "$version_pr" "          version_command: 'callisto version --refre
 release_candidate="$(job_block release-candidate plan)"
 require_line "$release_candidate" '          prs=$(gh api --paginate "/repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/pulls" --jq '\''[.[] | select(.merged_at != null and .base.ref == "main" and (.head.ref == "callisto/version-packages" or (.head.ref | test("^callisto/version-packages--[0-9a-f]{40}$"))))] | length'\'')' 'release-candidate must accept only canonical or SHA-suffixed managed branches'
 
-build="$(job_block build environment-policy)"
+build="$(job_block build execute)"
 require_line "$build" '      contents: read' 'build must read the intent-bound source tree'
 require_line "$build" '      attestations: write' 'build must create provenance attestations'
 require_line "$build" '      id-token: write' 'build must mint the Sigstore OIDC identity'

@@ -204,25 +204,9 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  environment-policy:
-    name: Verify release Environment protection
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      actions: read
-    steps:
-      - name: Require release Environment reviewers
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          reviewers=$(gh api "/repos/${GITHUB_REPOSITORY}/environments/release" --jq '.protection_rules // [] | map(select(.type == "required_reviewers")) | length')
-          [[ "$reviewers" != 0 ]] || { echo '::error::GitHub Environment release has no required-reviewers protection rule'; exit 1; }
-
   execute:
     name: Execute approved release
-    needs: environment-policy
+    needs: build
     runs-on: ubuntu-latest
     environment: release
     permissions:

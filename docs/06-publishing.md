@@ -35,11 +35,13 @@ actual delta, builds from that exact commit, and passes the intent between jobs 
 GitHub artifact with a SHA-256 sidecar. It is not committed and it is never recovered from a
 cache. The execute job rechecks the handoff before calling `callisto release execute`.
 
-Create a GitHub Environment named `release` before enabling registry credentials. Configure
-at least one required reviewer and appropriate branch/tag deployment rules in the repository's
-Environment settings. The workflow queries the Environment API and fails if the reviewer rule
-is absent; the `environment: release` job boundary is what prevents registry secrets from being
-available to planning or build jobs.
+Create a GitHub Environment named `release` before enabling registry credentials. The
+`environment: release` job boundary is what prevents registry secrets from being available to
+planning or build jobs -- that scoping is unconditional and does not depend on any Environment
+protection rule. A required-reviewer rule is optional: add one in the Environment settings if a
+release should pause for manual approval before `execute` runs; without one, `execute` runs
+automatically as soon as `build` succeeds. This project runs without one -- there is no second
+maintainer for a reviewer gate to meaningfully protect against.
 
 An administrator must also enable a branch-protection rule or ruleset on `main` that requires
 CODEOWNERS review. [`.github/CODEOWNERS`](../.github/CODEOWNERS) names the real owner for
