@@ -3221,3 +3221,7 @@ Why is it requiring approval? It should not
 ---
 
 Please clear that env rule
+
+---
+
+Check run 34702634375's "Execute approved release" job via `gh run view 34702634375 --json status,conclusion,jobs`. Report final results if completed (success or failure with log detail). If still in_progress, note plainly and check again.
