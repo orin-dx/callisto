@@ -153,7 +153,11 @@ jobs:
             release-intent.json
             release-intent.json.sha256
           if-no-files-found: error
-          retention-days: 1
+          # 1 day was too short: a stuck run needing "execute" re-run days
+          # later (e.g. while a workflow bug gets diagnosed and fixed) loses
+          # this artifact before the fix even lands, forcing a full rerun
+          # instead of just the failed job.
+          retention-days: 7
 
   build:
     name: Build the intent-bound source tree
@@ -202,7 +206,11 @@ jobs:
             .release-handoff
             release-artifacts
           if-no-files-found: error
-          retention-days: 1
+          # 1 day was too short: a stuck run needing "execute" re-run days
+          # later (e.g. while a workflow bug gets diagnosed and fixed) loses
+          # this artifact before the fix even lands, forcing a full rerun
+          # instead of just the failed job.
+          retention-days: 7
 
   environment-policy:
     name: Verify release Environment protection
