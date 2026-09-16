@@ -5,3 +5,7 @@ I need your help in sorting this out so I can get back to using callisto with my
 ---
 
 FYI we should not have an env release check/approval. That will slow us down, specially prior to a v1. WTF
+
+---
+
+No, Claude did that. Show me the updated findings in a format that is easily digestable for claude to see it's fuckup. Think through the proper way to address this and include it in the findings.
