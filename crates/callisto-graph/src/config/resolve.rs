@@ -375,7 +375,7 @@ fn normalize_release_endpoint(
     registry: &str,
     raw: &str,
 ) -> Result<ReleaseRegistryEndpoint, ConfigError> {
-    let parsed = url::Url::parse(raw).map_err(|_| ConfigError::UnsafeReleaseRegistryEndpoint {
+    let parsed = url::Url::parse(raw).map_err(|_parse_error| ConfigError::UnsafeReleaseRegistryEndpoint {
         profile: profile.to_string(),
         registry: registry.to_string(),
     })?;
