@@ -409,6 +409,24 @@ pub(crate) fn classify_cargo_output(output: &CommandOutput) -> Result<PublishOut
     )))
 }
 
+/// Classifies `cargo info <pkg>@<version>` output into whether the registry
+/// confirms that version is published. An ambiguous failure (not a clear
+/// "not found") is surfaced as an error, never read as "not published".
+pub(crate) fn classify_cargo_info_output(output: &CommandOutput) -> Result<bool, RegistryError> {
+    if output.success() {
+        return Ok(true);
+    }
+    let combined = combined_lower(output);
+    if combined.contains("could not find") {
+        return Ok(false);
+    }
+    Err(RegistryError::Other(format!(
+        "cargo info failed (exit {:?}): {}",
+        output.exit_code,
+        output.redacted_stderr().trim()
+    )))
+}
+
 /// Classifies combined `npm publish` (or `pnpm`/`yarn`/`bun` equivalent)
 /// output into a [`PublishOutcome`] or [`RegistryError`].
 pub(crate) fn classify_npm_publish_output(output: &CommandOutput) -> Result<PublishOutcome, RegistryError> {
@@ -782,6 +800,31 @@ mod tests {
             "secret must be redacted from error message, got: {err}"
         );
         std::env::remove_var("CARGO_REGISTRY_TOKEN");
+    }
+
+    #[test]
+    fn classify_cargo_info_output_success_confirms_published() {
+        let out = output(0, "demo\nversion: 1.0.0", "");
+        assert_eq!(classify_cargo_info_output(&out), Ok(true));
+    }
+
+    #[test]
+    fn classify_cargo_info_output_not_found_is_not_yet_published() {
+        let out = output(
+            101,
+            "",
+            "error: could not find `demo@1.0.0` in registry `https://github.com/rust-lang/crates.io-index`",
+        );
+        assert_eq!(classify_cargo_info_output(&out), Ok(false));
+    }
+
+    #[test]
+    fn classify_cargo_info_output_other_failure_is_an_error_not_a_false() {
+        let out = output(1, "", "error: failed to update the registry index: network timeout");
+        match classify_cargo_info_output(&out) {
+            Err(RegistryError::Other(_)) => {}
+            other => panic!("ambiguous failure must not read as 'not published', got {other:?}"),
+        }
     }
 
     #[test]

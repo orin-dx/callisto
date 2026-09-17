@@ -223,9 +223,6 @@ pub struct ComposePrBodyArgs {
     /// Existing PR body text to merge with, or `-` to read it from stdin.
     #[arg(long, value_name = "TEXT|-")]
     pub existing_body: Option<String>,
-    /// Label to attach to the PR body; repeatable.
-    #[arg(long = "label")]
-    pub labels: Vec<String>,
     /// Branch name to reference in the generated PR body.
     #[arg(long)]
     pub branch: Option<String>,

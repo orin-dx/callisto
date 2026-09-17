@@ -75,9 +75,9 @@ esac
 echo 'hasChangesets=true' >> "$GITHUB_OUTPUT"
 if [[ -n "$existing_pr" ]]; then
   existing_body=$(gh pr view "$existing_pr" --json body --jq '.body')
-  body=$(printf '%s' "$existing_body" | callisto compose-pr-body --existing-body - --label "$INPUT_PR_LABEL" --branch "$INPUT_BRANCH" --format text)
+  body=$(printf '%s' "$existing_body" | callisto compose-pr-body --existing-body - --branch "$INPUT_BRANCH" --format text)
 else
-  body=$(callisto compose-pr-body --label "$INPUT_PR_LABEL" --branch "$INPUT_BRANCH" --format text)
+  body=$(callisto compose-pr-body --branch "$INPUT_BRANCH" --format text)
 fi
 
 read -ra command <<< "$INPUT_VERSION_COMMAND"

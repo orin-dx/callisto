@@ -160,7 +160,6 @@ fn test_compose_pr_body_before_version_and_subpkg_changelog() {
         let ws = load_workspace(&global, &runner).unwrap();
         let opts = PrBodyOptions {
             existing_body: None,
-            labels: vec![],
             branch: None,
         };
         let report = callisto_graph::commands::compose_pr_body(&ws, &NoInference, &opts).unwrap();
@@ -179,7 +178,6 @@ fn test_compose_pr_body_before_version_and_subpkg_changelog() {
     let compose_res = commands::compose_pr_body::handle(
         callisto_cli::cli::ComposePrBodyArgs {
             existing_body: None,
-            labels: Vec::new(),
             branch: None,
         },
         &global,
