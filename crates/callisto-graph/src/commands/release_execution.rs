@@ -58,7 +58,29 @@ pub fn execute_release_with_artifacts<W: ReleaseStateWriter>(
             .map_err(|source| GraphError::ReleaseExecutionState { source })?;
         store.save(intent, &state, permit)?;
     }
+    require_terminal_success(intent, &state)?;
     Ok(state)
+}
+
+/// Refuses to report success until every operation has an observed terminal
+/// success state. A quiescent `Attempting` operation is an interrupted effect,
+/// not evidence that the release completed.
+fn require_terminal_success(intent: &ReleaseIntentV1, state: &ReleaseExecutionStateV1) -> Result<(), GraphError> {
+    let count = intent
+        .operations
+        .iter()
+        .filter(|operation| {
+            !matches!(
+                state.operation_state(operation.id()),
+                Some(OperationState::Published | OperationState::AlreadySatisfied)
+            )
+        })
+        .count();
+    if count == 0 {
+        Ok(())
+    } else {
+        Err(GraphError::ReleaseIncomplete { count })
+    }
 }
 
 /// Requires an exact artifact manifest whenever `intent` declares
@@ -374,5 +396,31 @@ mod tests {
         let reconciled = reconcile_release_execution(&intent, &state).unwrap();
         assert_eq!(reconciled.eligible(), &[publish]);
         assert!(!reconciled.eligible().contains(&forge));
+    }
+
+    #[test]
+    fn quiescent_incomplete_state_is_never_successful() {
+        let intent = intent();
+        let mut state = ReleaseExecutionStateV1::pending(&intent);
+        state.mark_attempting(intent.operations[0].id()).unwrap();
+
+        assert!(matches!(
+            require_terminal_success(&intent, &state),
+            Err(GraphError::ReleaseIncomplete { count: 3 })
+        ));
+    }
+
+    #[test]
+    fn every_verified_terminal_success_allows_completion() {
+        let intent = intent();
+        let mut state = ReleaseExecutionStateV1::pending(&intent);
+        for operation in &intent.operations {
+            state.mark_attempting(operation.id()).unwrap();
+            state
+                .mark_terminal(operation.id(), OperationOutcome::AlreadySatisfied)
+                .unwrap();
+        }
+
+        assert!(require_terminal_success(&intent, &state).is_ok());
     }
 }

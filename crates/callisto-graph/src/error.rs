@@ -519,6 +519,13 @@ pub enum GraphError {
         )
     )]
     ReleaseInvariant { detail: String },
+
+    #[error("release execution is incomplete: {count} operation(s) lack verified terminal success")]
+    #[diagnostic(
+        code(E172),
+        help("Use release reconcile to inspect the exact incomplete operations; do not treat this release as successful.")
+    )]
+    ReleaseIncomplete { count: usize },
 }
 
 /// Why a workspace package that a `--package` filter named is nonetheless
