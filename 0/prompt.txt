@@ -98,3 +98,15 @@ Can we close and ammend as necessary?
 ---
 
 go
+
+---
+
+keep going to wrap up the work
+
+---
+
+Done
+
+---
+
+FYI this comment is unecessarily wordy prose and doesn't wrap at 120 char like it should: https://github.com/orin-dx/callisto/pull/96/changes
