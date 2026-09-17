@@ -392,6 +392,20 @@ pub struct ReleaseExecuteArgs {
     /// Explicit durable state path. If omitted, state is stored outside the checkout.
     #[arg(long, value_name = "FILE")]
     pub state: Option<PathBuf>,
+    /// Write the terminal, provider-observed receipt to this explicit path.
+    /// A release is not reported successful until this receipt is written.
+    #[arg(long, value_name = "FILE")]
+    pub receipt: PathBuf,
+    /// Exact current coordinator revision that executed this release.
+    #[arg(long, value_name = "SHA")]
+    pub orchestration_revision: String,
+    /// Credential-free target profile identity recorded in the receipt.
+    #[arg(long, default_value = "production", value_name = "PROFILE")]
+    pub profile: String,
+    /// Record this explicitly selected run as recovery of a historic merged
+    /// release source. It never changes the coordinator revision.
+    #[arg(long)]
+    pub recovery: bool,
 }
 
 /// Arguments for the `completions` command.

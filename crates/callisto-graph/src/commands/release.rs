@@ -13,7 +13,8 @@ use callisto_model::{
     ExecutionTrustProfileV1, GitHubRepository, GitHubRepositoryParseError, NpmAccess, OperationOutcome,
     ProviderObservationV1, PublishOutcome, PublishTarget, RegistryBindingDigest, RegistryBindingId, RegistryKey,
     ReleaseDecisionV1, ReleaseInputSnapshotV1, ReleaseIntentError, ReleaseIntentV1, ReleaseOperation,
-    ReleaseOperationId, ReleasePackageId, ReleasePackageInputV1, SemanticInputDigest, SourceIdentity, TagName, Version,
+    ReleaseOperationId, ReleaseOperationObservationV1, ReleasePackageId, ReleasePackageInputV1, SemanticInputDigest,
+    SourceIdentity, TagName, Version,
 };
 use callisto_vcs::{
     access::{GitCommitTrustEvidence, GitHeadDisposition},
@@ -211,6 +212,30 @@ impl ValidatedReleaseIntent<'_> {
         }
         Ok(())
     }
+}
+
+/// Collects one fresh, exact-provider observation for every operation in the
+/// immutable intent.
+///
+/// A terminal receipt is deliberately built from this result rather than from
+/// local execution state. The caller must reject any non-exact result; this
+/// function preserves the complete roster so receipt construction can prove
+/// that it did not silently omit an operation.
+pub fn observe_release_operations(
+    capability: &ValidatedReleaseIntent<'_>,
+) -> Result<Vec<ReleaseOperationObservationV1>, GraphError> {
+    capability
+        .intent()
+        .operations
+        .iter()
+        .map(|operation| {
+            capability.recheck_trust()?;
+            Ok(ReleaseOperationObservationV1 {
+                operation: operation.id().clone(),
+                observation: capability.observe_prepared(operation.id())?,
+            })
+        })
+        .collect()
 }
 
 /// Builds a release intent from a fresh root-bound observation.

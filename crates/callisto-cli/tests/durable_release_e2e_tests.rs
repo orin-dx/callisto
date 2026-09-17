@@ -380,6 +380,10 @@ fn execute(
             intent.to_str().unwrap(),
             "--state",
             state.to_str().unwrap(),
+            "--receipt",
+            state.with_extension("receipt.json").to_str().unwrap(),
+            "--orchestration-revision",
+            &git(root, &["rev-parse", "HEAD"]),
         ])
         .env("PATH", path)
         .env("CALLISTO_TEST_LOG", log)
@@ -416,6 +420,10 @@ fn merged_release_commit_executes_exactly_once_through_real_cli() {
         state.exists(),
         "durable execution state must be persisted outside implicit memory"
     );
+    assert!(
+        state.with_extension("receipt.json").exists(),
+        "a successful release must persist a provider-observed terminal receipt"
+    );
 
     let second = execute(root, &intent, &state, &bin, &log, &forge_marker, &git_trace);
     assert!(
@@ -423,11 +431,14 @@ fn merged_release_commit_executes_exactly_once_through_real_cli() {
         "a completed release must reconcile without retrying effects: {}",
         String::from_utf8_lossy(&second.stderr)
     );
-    assert_eq!(
-        fs::read_to_string(&log).unwrap(),
-        effects,
-        "a second execute must not republish, retag, or recreate the forge release"
-    );
+    let after_second_execute = fs::read_to_string(&log).unwrap();
+    for effect in ["cargo publish", "git push", "gh release create"] {
+        assert_eq!(
+            after_second_execute.matches(effect).count(),
+            effects.matches(effect).count(),
+            "a second execute may re-observe providers for its receipt, but must not repeat `{effect}`"
+        );
+    }
 }
 
 #[test]

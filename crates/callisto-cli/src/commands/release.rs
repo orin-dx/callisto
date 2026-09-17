@@ -10,13 +10,13 @@ use std::process::ExitCode;
 
 use callisto_graph::commands::{
     build_release_intent, derive_release_commit_decision, derive_selected_release_decision,
-    execute_release_with_artifacts, reconcile_release_execution, validate_release_intent_with_state_directory,
-    verify_artifact_manifest, ReleaseStateStore, VersionOptions,
+    execute_release_with_artifacts, observe_release_operations, reconcile_release_execution,
+    validate_release_intent_with_state_directory, verify_artifact_manifest, ReleaseStateStore, VersionOptions,
 };
 use callisto_graph::locate::IgnoreWalkLocator;
 use callisto_model::{
     ApplyPermit, ArtifactManifestV1, ExecutionTrustProfileV1, ReleaseExecutionStateV1, ReleaseIntentV1,
-    ReleasePackageId,
+    ReleasePackageId, ReleaseProfileId, ReleaseReceiptV1, ReleaseRunKindV1, ReleaseRunProvenanceV1,
 };
 
 use crate::cli::{
@@ -174,9 +174,48 @@ fn execute(args: ReleaseExecuteArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
         )
     })?;
     let state = execute_release_with_artifacts(&capability, &store, &permit, manifest.as_ref())?;
+    let orchestration_revision = callisto_model::CommitSha::parse(&args.orchestration_revision).map_err(|error| {
+        CliError::Other(format!(
+            "invalid orchestration revision `{}`: {error}",
+            args.orchestration_revision
+        ))
+    })?;
+    let profile = ReleaseProfileId::parse(&args.profile)
+        .map_err(|error| CliError::Other(format!("invalid release profile `{}`: {error}", args.profile)))?;
+    let source = match &capability.intent().snapshot.source {
+        callisto_model::SourceIdentity::GitCommit { sha } => sha.clone(),
+        callisto_model::SourceIdentity::HermeticContent { .. } => {
+            return Err(CliError::Other(
+                "release receipts require a Git commit release source".to_owned(),
+            ))
+        }
+    };
+    let provenance = ReleaseRunProvenanceV1::new(
+        if args.recovery {
+            ReleaseRunKindV1::Recovery
+        } else {
+            ReleaseRunKindV1::Initial
+        },
+        orchestration_revision,
+        source,
+        profile,
+        capability.intent().digest().clone(),
+    );
+    let receipt = ReleaseReceiptV1::from_evidence(
+        capability.intent(),
+        &state,
+        provenance,
+        observe_release_operations(&capability)?,
+    )
+    .map_err(|error| CliError::Other(format!("cannot issue terminal release receipt: {error}")))?;
+    write_receipt(&args.receipt, &receipt, &permit)?;
     match global.format {
-        OutputFormat::Json => write_json(&mut std::io::stdout(), &state)?,
-        OutputFormat::Text => println!("Release execution state saved to {}", store.path().display()),
+        OutputFormat::Json => write_json(&mut std::io::stdout(), &receipt)?,
+        OutputFormat::Text => println!(
+            "Release receipt saved to {} (execution state: {})",
+            args.receipt.display(),
+            store.path().display()
+        ),
     }
     Ok(ExitCode::SUCCESS)
 }
@@ -215,4 +254,12 @@ fn write_intent(path: &std::path::Path, intent: &ReleaseIntentV1, permit: &Apply
         path: Some(path.to_path_buf()),
     })?;
     Ok(())
+}
+
+fn write_receipt(path: &std::path::Path, receipt: &ReleaseReceiptV1, permit: &ApplyPermit) -> Result<(), CliError> {
+    let content = serde_json::to_string_pretty(receipt).expect("release receipt serializes") + "\n";
+    callisto_model::atomic::atomic_write(path, &content, permit).map_err(|source| CliError::Io {
+        source,
+        path: Some(path.to_path_buf()),
+    })
 }
