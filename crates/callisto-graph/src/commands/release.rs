@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use callisto_model::{
-    ApplyPermit, CanonicalTranscript, CommandOutput, CommandRunner, CommitSha, DepKind, Ecosystem,
+    ApplyPermit, ArtifactSlotId, CanonicalTranscript, CommandOutput, CommandRunner, CommitSha, DepKind, Ecosystem,
     ExecutionTrustProfileV1, GitHubRepository, GitHubRepositoryParseError, NpmAccess, OperationOutcome,
     ProviderObservationV1, PublishOutcome, PublishTarget, RegistryBindingDigest, RegistryBindingId, RegistryKey,
     ReleaseDecisionV1, ReleaseInputSnapshotV1, ReleaseIntentError, ReleaseIntentV1, ReleaseOperation,
@@ -100,6 +100,19 @@ enum PreparedOperation {
     ForgeRelease {
         tag: TagName,
     },
+    ArtifactUpload {
+        slot: ArtifactSlotId,
+    },
+}
+
+/// Coordinator-owned identity used to bind a product artifact to the exact
+/// workflow revision that built it. This is distinct from a historic release
+/// source during recovery.
+#[derive(Clone, Debug)]
+pub struct ArtifactBuildPolicy {
+    pub repository: GitHubRepository,
+    pub workflow_path: String,
+    pub workflow_commit: CommitSha,
 }
 
 /// Credential-free, canonical registry routing. `endpoint` is populated only
@@ -155,6 +168,7 @@ type DerivedReleaseInputs = (
     Vec<ReleaseOperation>,
     BTreeMap<ReleaseOperationId, PreparedOperation>,
     Option<PreparedGitRemote>,
+    Vec<ArtifactSlotId>,
 );
 
 struct PreparedDerivation {
@@ -249,10 +263,39 @@ pub fn build_release_intent<L: ProjectLocator, R: CommandRunner>(
     let root = canonical_root(root)?;
     let workspace = Workspace::load(root.clone(), locator, runner)?;
     let source = observe_source(&workspace, trust_profile)?;
-    let intent = derive_release_intent(&workspace, decision, source.clone(), trust_profile)?;
+    let intent = derive_release_intent(&workspace, decision, source.clone(), trust_profile, None)?;
 
     // Recheck after all input reads. A concurrent edit or checkout cannot be
     // authorized merely because it happened after the first check.
+    if observe_source(&workspace, trust_profile)? != source {
+        return Err(GraphError::ReleaseIntentStale {
+            reason: StaleReason::source_identity_changed(),
+        });
+    }
+    Ok(intent)
+}
+
+/// Builds an intent whose declared binary slots are bound to the current
+/// coordinator workflow. Callers recovering an old release source must pass
+/// the current coordinator revision here, never substitute the source SHA.
+pub fn build_release_intent_with_artifacts<L: ProjectLocator, R: CommandRunner>(
+    root: &Path,
+    locator: &L,
+    runner: &R,
+    decision: &ReleaseDecisionV1,
+    trust_profile: ExecutionTrustProfileV1,
+    artifact_policy: ArtifactBuildPolicy,
+) -> Result<ReleaseIntentV1, GraphError> {
+    let root = canonical_root(root)?;
+    let workspace = Workspace::load(root.clone(), locator, runner)?;
+    let source = observe_source(&workspace, trust_profile)?;
+    let intent = derive_release_intent(
+        &workspace,
+        decision,
+        source.clone(),
+        trust_profile,
+        Some(&artifact_policy),
+    )?;
     if observe_source(&workspace, trust_profile)? != source {
         return Err(GraphError::ReleaseIntentStale {
             reason: StaleReason::source_identity_changed(),
@@ -296,8 +339,14 @@ pub fn validate_release_intent_with_state_directory<'a, L: ProjectLocator, R: Co
         });
     }
     let source = source_from_trust(&trust);
-    let (expected, prepared) =
-        derive_release_intent_with_prepared(&workspace, &received.decision, source.clone(), received.trust_profile)?;
+    let artifact_policy = artifact_policy_from_intent(&received)?;
+    let (expected, prepared) = derive_release_intent_with_prepared(
+        &workspace,
+        &received.decision,
+        source.clone(),
+        received.trust_profile,
+        artifact_policy.as_ref(),
+    )?;
     let final_trust = observe_git_trust(&workspace, received.trust_profile)?;
     if expected != received || final_trust != trust {
         return Err(GraphError::ReleaseIntentStale {
@@ -385,6 +434,9 @@ impl ValidatedReleaseIntent<'_> {
                 annotation,
             } => self.dispatch_tag(permit, name, target, annotation),
             PreparedOperation::ForgeRelease { tag } => self.dispatch_forge_release(tag),
+            PreparedOperation::ArtifactUpload { .. } => Err(GraphError::UnsupportedRelease {
+                feature: UnsupportedReleaseFeature::PublishTarget,
+            }),
         }
     }
 
@@ -461,6 +513,7 @@ impl ValidatedReleaseIntent<'_> {
                     ForgeReleaseObservation::Conflict => ProviderObservationV1::Conflict,
                 })
             }
+            PreparedOperation::ArtifactUpload { .. } => Ok(ProviderObservationV1::Indeterminate),
         }
     }
 
@@ -985,15 +1038,30 @@ fn derive_release_intent<R: CommandRunner, D: DependencyResolver>(
     decision: &ReleaseDecisionV1,
     source: SourceIdentity,
     trust_profile: ExecutionTrustProfileV1,
+    artifact_policy: Option<&ArtifactBuildPolicy>,
 ) -> Result<ReleaseIntentV1, GraphError> {
-    let (snapshot, operations, _, _) = derive_release_inputs(workspace, decision, source)?;
+    let (snapshot, operations, _, _, slots) = derive_release_inputs(workspace, decision, source, artifact_policy)?;
     Ok(ReleaseIntentV1::new(
         decision.clone(),
         snapshot,
         trust_profile,
         operations,
-        vec![],
+        slots,
     )?)
+}
+
+/// The externally stable product-asset names. Keeping this mapping in the
+/// graph layer makes the durable slot identity and installer contract share a
+/// single release-domain spelling rather than teaching workflow YAML how to
+/// invent filenames.
+fn product_asset_name(target: &str) -> Option<&'static str> {
+    match target {
+        "aarch64-apple-darwin" => Some("callisto-aarch64-apple-darwin.tar.gz"),
+        "x86_64-unknown-linux-gnu" => Some("callisto-x86_64-unknown-linux-gnu.tar.gz"),
+        "x86_64-unknown-linux-musl" => Some("callisto-x86_64-unknown-linux-musl.tar.gz"),
+        "wasm32-wasip1" => Some("callisto-moon.wasm"),
+        _ => None,
+    }
 }
 
 fn derive_release_intent_with_prepared<R: CommandRunner, D: DependencyResolver>(
@@ -1001,9 +1069,11 @@ fn derive_release_intent_with_prepared<R: CommandRunner, D: DependencyResolver>(
     decision: &ReleaseDecisionV1,
     source: SourceIdentity,
     trust_profile: ExecutionTrustProfileV1,
+    artifact_policy: Option<&ArtifactBuildPolicy>,
 ) -> Result<(ReleaseIntentV1, PreparedDerivation), GraphError> {
-    let (snapshot, operations, prepared, git_remote) = derive_release_inputs(workspace, decision, source)?;
-    let intent = ReleaseIntentV1::new(decision.clone(), snapshot, trust_profile, operations, vec![])?;
+    let (snapshot, operations, prepared, git_remote, slots) =
+        derive_release_inputs(workspace, decision, source, artifact_policy)?;
+    let intent = ReleaseIntentV1::new(decision.clone(), snapshot, trust_profile, operations, slots)?;
     Ok((
         intent,
         PreparedDerivation {
@@ -1013,10 +1083,32 @@ fn derive_release_intent_with_prepared<R: CommandRunner, D: DependencyResolver>(
     ))
 }
 
+fn artifact_policy_from_intent(intent: &ReleaseIntentV1) -> Result<Option<ArtifactBuildPolicy>, GraphError> {
+    let Some(first) = intent.artifact_slots.first() else {
+        return Ok(None);
+    };
+    let policy = &first.attestation_policy;
+    if intent
+        .artifact_slots
+        .iter()
+        .any(|slot| slot.attestation_policy != *policy)
+    {
+        return Err(GraphError::ReleaseInvariant {
+            detail: "release intent mixes artifact attestation policies".to_owned(),
+        });
+    }
+    Ok(Some(ArtifactBuildPolicy {
+        repository: policy.repository.clone(),
+        workflow_path: policy.workflow_path.clone(),
+        workflow_commit: policy.workflow_commit.clone(),
+    }))
+}
+
 fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
     workspace: &Workspace<'_, R, D>,
     decision: &ReleaseDecisionV1,
     source: SourceIdentity,
+    artifact_policy: Option<&ArtifactBuildPolicy>,
 ) -> Result<DerivedReleaseInputs, GraphError> {
     let mut package_inputs = Vec::new();
 
@@ -1058,6 +1150,7 @@ fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
     let mut prepared = BTreeMap::<ReleaseOperationId, PreparedOperation>::new();
     let mut publishes_by_package = BTreeMap::<ReleasePackageId, Vec<ReleaseOperationId>>::new();
     let mut tag_by_package = BTreeMap::<ReleasePackageId, ReleaseOperationId>::new();
+    let mut forge_by_package = BTreeMap::<ReleasePackageId, ReleaseOperationId>::new();
 
     // First construct leaves so dependency prerequisites can refer only to
     // exact selected release identities, never PackageId's wildcard matcher.
@@ -1210,7 +1303,42 @@ fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
                 }
             };
             prepared.insert(operation.id().clone(), PreparedOperation::ForgeRelease { tag });
+            forge_by_package.insert(id.clone(), operation.id().clone());
             operations.insert(operation.id().clone(), operation);
+        }
+    }
+
+    let mut artifact_slots = Vec::new();
+    if let (Some(product), Some(policy)) = (&workspace.config.product_release, artifact_policy) {
+        for (id, (package, version)) in &selected {
+            if package.id != product.package {
+                continue;
+            }
+            let forge = forge_by_package.get(id).ok_or_else(|| GraphError::ReleaseInvariant {
+                detail: format!("product package `{id}` has no forge release operation"),
+            })?;
+            for target in &product.artifact_targets {
+                let asset_name = product_asset_name(target).expect("validated product target");
+                let slot = ArtifactSlotId::new(
+                    id.clone(),
+                    version.clone(),
+                    target,
+                    asset_name,
+                    policy.repository.clone(),
+                    policy.workflow_path.clone(),
+                    policy.workflow_commit.clone(),
+                )
+                .map_err(|error| GraphError::ReleaseInvariant {
+                    detail: format!("invalid configured artifact slot: {error}"),
+                })?;
+                let operation = ReleaseOperation::artifact_upload(slot.clone(), vec![forge.clone()])?;
+                prepared.insert(
+                    operation.id().clone(),
+                    PreparedOperation::ArtifactUpload { slot: slot.clone() },
+                );
+                operations.insert(operation.id().clone(), operation);
+                artifact_slots.push(slot);
+            }
         }
     }
 
@@ -1219,6 +1347,7 @@ fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
         canonical_operation_order(operations)?,
         prepared,
         git_remote,
+        artifact_slots,
     ))
 }
 
@@ -1971,6 +2100,24 @@ mod tests {
     }
 
     #[test]
+    fn product_asset_names_are_target_qualified_and_complete() {
+        assert_eq!(
+            product_asset_name("aarch64-apple-darwin"),
+            Some("callisto-aarch64-apple-darwin.tar.gz")
+        );
+        assert_eq!(
+            product_asset_name("x86_64-unknown-linux-gnu"),
+            Some("callisto-x86_64-unknown-linux-gnu.tar.gz")
+        );
+        assert_eq!(
+            product_asset_name("x86_64-unknown-linux-musl"),
+            Some("callisto-x86_64-unknown-linux-musl.tar.gz")
+        );
+        assert_eq!(product_asset_name("wasm32-wasip1"), Some("callisto-moon.wasm"));
+        assert_eq!(product_asset_name("unsupported"), None);
+    }
+
+    #[test]
     fn registry_binding_normalizes_host_and_default_port_without_retaining_url() {
         let explicit = canonical_registry_binding("test", "HTTPS://Registry.Example.Test:443/a/../index").unwrap();
         let implicit = canonical_registry_binding("test", "https://registry.example.test/index").unwrap();
@@ -2171,8 +2318,8 @@ mod tests {
         let root = canonical_root(dir.path()).unwrap();
         let workspace = Workspace::load(root.clone(), &locator, &runner).unwrap();
         let source = observe_source(&workspace, ExecutionTrustProfileV1::GitCommit).unwrap();
-        let (before_snapshot, before_operations, _, _) =
-            derive_release_inputs(&workspace, &decision(), source.clone()).unwrap();
+        let (before_snapshot, before_operations, _, _, _) =
+            derive_release_inputs(&workspace, &decision(), source.clone(), None).unwrap();
 
         std::fs::write(
             root.join("callisto.toml"),
@@ -2180,7 +2327,8 @@ mod tests {
         )
         .unwrap();
         let reread = Workspace::load(root, &locator, &runner).unwrap();
-        let (after_snapshot, after_operations, _, _) = derive_release_inputs(&reread, &decision(), source).unwrap();
+        let (after_snapshot, after_operations, _, _, _) =
+            derive_release_inputs(&reread, &decision(), source, None).unwrap();
 
         assert_eq!(before_snapshot, after_snapshot);
         assert_eq!(before_operations, after_operations);

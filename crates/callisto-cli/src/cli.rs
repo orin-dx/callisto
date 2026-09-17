@@ -326,6 +326,13 @@ pub struct ReleasePlanArgs {
     /// itself may come from a separate, current orchestration checkout.
     #[arg(long, value_name = "DIR")]
     pub source_root: Option<PathBuf>,
+    /// Exact current coordinator revision whose workflow will attest product assets.
+    #[arg(long, value_name = "SHA")]
+    pub orchestration_revision: Option<String>,
+    /// GitHub repository receiving the product release assets, for example
+    /// `orin-dx/callisto`. Required when the workspace declares product assets.
+    #[arg(long, value_name = "OWNER/REPOSITORY", requires = "orchestration_revision")]
+    pub artifact_repository: Option<String>,
     /// Exact qualified package identity, for example `cargo/callisto-cli`. Repeat this flag to select multiple packages. This local/manual mode cannot be combined with --from-release-commit.
     #[arg(
         long = "package",

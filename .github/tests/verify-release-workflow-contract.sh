@@ -43,7 +43,7 @@ require_line "$build" '          subject-path: ${{ runner.temp }}/release-artifa
 plan="$(job_block plan build)"
 require_line "$plan" '          ref: ${{ needs.release-candidate.outputs.orchestration_sha }}' 'planning must use one resolved current orchestration revision'
 require_line "$plan" '          path: release-source' 'planning must check out the explicit release source separately'
-require_line "$plan" '          callisto release plan --source-root "$GITHUB_WORKSPACE/release-source" --from-release-commit "$release_source_sha" --decision "$GITHUB_WORKSPACE/release-source/.callisto/release-decision.json" --out "$handoff_dir/release-intent.json"' 'planning must pass the exact source checkout to the current Callisto coordinator'
+require_line "$plan" '          callisto release plan --source-root "$GITHUB_WORKSPACE/release-source" --orchestration-revision "${{ needs.release-candidate.outputs.orchestration_sha }}" --artifact-repository "$GITHUB_REPOSITORY" --from-release-commit "$release_source_sha" --decision "$GITHUB_WORKSPACE/release-source/.callisto/release-decision.json" --out "$handoff_dir/release-intent.json"' 'planning must bind product artifact slots to the current coordinator and exact source checkout'
 
 execute="$(sed -n '/^  execute:$/,$p' "$workflow")"
 require_line "$execute" '    needs: build' 'PR merge is the release approval; execute must depend directly on the verified build, not a GitHub Environment gate'

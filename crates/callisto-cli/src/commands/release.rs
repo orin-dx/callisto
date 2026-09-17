@@ -9,9 +9,10 @@
 use std::process::ExitCode;
 
 use callisto_graph::commands::{
-    build_release_intent, derive_release_commit_decision, derive_selected_release_decision,
-    execute_release_with_artifacts_in_recovery, observe_release_operations, reconcile_release_execution,
-    validate_release_intent_with_state_directory, verify_artifact_manifest, ReleaseStateStore, VersionOptions,
+    build_release_intent, build_release_intent_with_artifacts, derive_release_commit_decision,
+    derive_selected_release_decision, execute_release_with_artifacts_in_recovery, observe_release_operations,
+    reconcile_release_execution, validate_release_intent_with_state_directory, verify_artifact_manifest,
+    ReleaseStateStore, VersionOptions,
 };
 use callisto_graph::locate::IgnoreWalkLocator;
 use callisto_model::{
@@ -75,13 +76,47 @@ fn plan(args: ReleasePlanArgs, global: &GlobalArgs) -> Result<ExitCode, CliError
         }
     };
     let locator = IgnoreWalkLocator::new(&workspace.root);
-    let intent = build_release_intent(
-        &workspace.root,
-        &locator,
-        &runner,
-        &decision,
-        ExecutionTrustProfileV1::GitCommit,
-    )?;
+    let intent = match (
+        &workspace.config.product_release,
+        &args.orchestration_revision,
+        &args.artifact_repository,
+    ) {
+        (Some(_), Some(revision), Some(repository)) => {
+            let workflow_commit = callisto_model::CommitSha::parse(revision)
+                .map_err(|error| CliError::Other(format!("invalid orchestration revision `{revision}`: {error}")))?;
+            let repository = callisto_model::GitHubRepository::parse(repository)
+                .map_err(|error| CliError::Other(format!("invalid artifact repository `{repository}`: {error}")))?;
+            build_release_intent_with_artifacts(
+                &workspace.root,
+                &locator,
+                &runner,
+                &decision,
+                ExecutionTrustProfileV1::GitCommit,
+                callisto_graph::commands::ArtifactBuildPolicy {
+                    repository,
+                    workflow_path: ".github/workflows/callisto-release.yml".to_owned(),
+                    workflow_commit,
+                },
+            )?
+        }
+        (Some(_), _, _) => {
+            return Err(CliError::Other(
+                "product release planning requires --orchestration-revision and --artifact-repository".to_owned(),
+            ));
+        }
+        (None, None, None) => build_release_intent(
+            &workspace.root,
+            &locator,
+            &runner,
+            &decision,
+            ExecutionTrustProfileV1::GitCommit,
+        )?,
+        (None, _, _) => {
+            return Err(CliError::Other(
+                "--orchestration-revision and --artifact-repository require a configured product release".to_owned(),
+            ));
+        }
+    };
     let permit = ApplyPermit::granted_unless_dry_run(global.dry_run)
         .expect("release plan rejects --dry-run before creating its explicit output");
     write_intent(&args.out, &intent, &permit)?;

@@ -134,7 +134,7 @@ pub struct RegistryConfig {
 }
 
 fn resolve_product_release(raw: RawProductReleaseConfig) -> Result<ProductReleaseConfig, ConfigError> {
-    let package = PackageId::parse(&raw.product_package).map_err(|_| ConfigError::InvalidProductRelease {
+    let package = PackageId::parse(&raw.product_package).map_err(|_error| ConfigError::InvalidProductRelease {
         detail: "product-package must be an ecosystem-qualified package identity".to_owned(),
     })?;
     const TARGETS: [&str; 4] = [

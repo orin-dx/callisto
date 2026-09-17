@@ -169,7 +169,7 @@ jobs:
           release_source_sha="${{ needs.release-candidate.outputs.release_source_sha }}"
           handoff_dir="${RUNNER_TEMP}/release-intent"
           mkdir -p "$handoff_dir"
-          callisto release plan --source-root "$GITHUB_WORKSPACE/release-source" --from-release-commit "$release_source_sha" --decision "$GITHUB_WORKSPACE/release-source/.callisto/release-decision.json" --out "$handoff_dir/release-intent.json"
+          callisto release plan --source-root "$GITHUB_WORKSPACE/release-source" --orchestration-revision "${{ needs.release-candidate.outputs.orchestration_sha }}" --artifact-repository "$GITHUB_REPOSITORY" --from-release-commit "$release_source_sha" --decision "$GITHUB_WORKSPACE/release-source/.callisto/release-decision.json" --out "$handoff_dir/release-intent.json"
           shasum -a 256 "$handoff_dir/release-intent.json" > "$handoff_dir/release-intent.json.sha256"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
