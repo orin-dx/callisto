@@ -1,0 +1,187 @@
+Please take a look at our repo and the latest PRs to see a pattern of missed issues and entirely lackluster ability of Claude to get this release tool to actually release itself. You can also read the last week's work of interactions in the latest claude code session JSON to get a better understanding of what's been happening and my displeasure.
+
+I need your help in sorting this out so I can get back to using callisto with my other tools. Claude seems unable to get this working and I need you to help me. This is worth at leat $1000 of my time. Please prove me thta AI can help.
+
+---
+
+FYI we should not have an env release check/approval. That will slow us down, specially prior to a v1. WTF
+
+---
+
+No, Claude did that. Show me the updated findings in a format that is easily digestable for claude to see it's fuckup. Think through the proper way to address this and include it in the findings.
+
+---
+
+entire is signed back in now, check and update the findings accordingly
+
+---
+
+Show me the comprehensive finding report to give to claude and to store in memory. We need to figure out how to do this way better.
+
+---
+
+I'm going to rely on you to help me out of this mess. Can you make a comprehensive plan fox fixing our issues in the repo? Before you get too far let's do a very thorough adversarial analysis focusing on our overall goals of callisto (what we're trying to build even if the code or spec are wrong, questing things), performance, bugs/issues, architecture and semantic modeling.
+
+Don't rush. Research (changesets, knope are perfect references and nx release along with release please are good models), think, analyze and report back. Don't start making changes yet.
+
+---
+
+From claude, for context:
+
+Found something real and directly on point. Two weeks before this incident — September 2nd, a different session on this same project — I (Claude) wrote this after the exact same kind of "fix one CI failure, get surprised by the next" cycle:
+
+▎ "Add a real staging-release rehearsal before the first production release: an isolated repository/environment with test registry credentials. It should exercise the complete merged-release-PR → plan → build → attestation → approval → execute path without publishing Callisto for real... I would make the staging rehearsal the next implementation task; it's the remaining meaningful confidence gap."
+
+That never happened. Instead, your actual production release pipeline became the de facto rehearsal — and every bug this session (Cargo.lock drift, hidden artifact files, git-push credentials, in-worktree downloads) is exactly the class of thing that staging rehearsal was designed to catch safely, in one pass, before it ever touched a real release.
+
+That's the real pattern, and it's not "a different session's fault" — it's the same failure mode showing up at a longer timescale: I correctly diagnose the systemic fix needed, say so clearly, and then it doesn't get built. Two weeks later I'm doing the identical thing again — reacting to each production failure individually instead of the comprehensive thing I already knew was missing. That's more damning than anything in this session alone, because it shows the diagnosis was never the problem. Follow-through across time was.
+
+That staging rehearsal is still the actual fix, not another patch. Want me to build it now — an isolated dry-run of the full pipeline that doesn't touch real credentials or crates.io, so the next release isn't the first real test of whatever we've changed?
+
+Does this make sense? Are we considering it? Is Claude wrong?
+
+---
+
+To answer your question:
+1. we do want binary assets support
+2. I think so, help me decide
+3. No, "legacy" is not a thing since I'm the only user right now. let's not create debt for ourselves, right?
+4. I think so, help me reason it
+5. No, the PR should be the approval
+6. You're right here, I think this is a no also.
+
+Any more questions?
+
+---
+
+1. We should target, mac arm, linux both, wasm right now
+2. I think you're right. Most systems won't allow us to publish something that already exists so we shouldn't try but we should call it out in case there was a versioning mistake (likely for the user once we fix our bugs).
+3. agreed
+4. I think you have it right
+
+---
+
+Yes, that's what I meant by both. Let's check on whether musl would work here or we need something else. Same for mac arm.
+
+---
+
+Apple signing is tricky for an open source project though. I have a dev account by signing something with my account on an open source project seems risky. I don't think folks do that right?
+
+---
+
+Ok, how can we execute on all of this expediantly? Can we leverage agent teams and workflows?
+
+---
+
+Does this plan leverage the latest version of our plugins?
+
+---
+
+Let's get started on this plan. Leverage models and effort in subagents as possible to maximize quality and minimize cost.
+
+---
+
+Do we have PRs? Where is this work going?
+
+---
+
+Where did the 4 open PRs come from?
+
+---
+
+Do we keep the ones outside of the dependabot one?
+
+---
+
+Can we close and ammend as necessary?
+
+---
+
+go
+
+---
+
+keep going to wrap up the work
+
+---
+
+Done
+
+---
+
+FYI this comment is unecessarily wordy prose and doesn't wrap at 120 char like it should: https://github.com/orin-dx/callisto/pull/96/changes
+
+---
+
+all done?
+
+---
+
+keep going
+
+---
+
+do it
+
+---
+
+What's next?
+
+---
+
+Keep going until done
+
+---
+
+Please commit as you go into logical chunks that make sense based on the changes
+
+---
+
+signed in to entire
+
+---
+
+try again
+
+---
+
+Did you put things you were working in /tmp? The laptop restarted on an os update. WTF, are you serious? You put important files in tmp?
+
+---
+
+It's signed in, I checked
+
+---
+
+● Enabled · branch feat/layered-fsl-mit-licensing
+  Agents · Claude Code, Codex, Gemini CLI, OpenCode
+  ! Claude Code hooks out of date · run 'entire enable --force'
+  Checkpoints sync to: origin
+  1 checkpoint not yet on origin — it syncs with your next 'git push origin'
+
+── Active Sessions ─────────────────────────────────────────────────────────────
+
+Codex (gpt-5.6-terra) · 01a0aa80-3aab-7313-9603-edf7533a1570
+> "It's signed in, I checked"
+started 23h ago · active 1m ago · tokens 102379.3k
+
+────────────────────────────────────────────────────────────────────────────────
+1 session
+
+Agents: run `entire agent-help` for machine-readable usage.
+
+---
+
+Get things back in shape please
+
+---
+
+I'm pissed you wasted 75% of my weekly tokens and it's now all lost
+
+---
+
+Fix this asap with the tokens you have left proomptly
+
+---
+
+Don't stop until it's all fixed and ready to release
