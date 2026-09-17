@@ -1,0 +1,101 @@
+{
+  "cli_version": "0.10.7-nightly.202609170627.0dda4e14f",
+  "checkpoint_id": "01M2RV2AJ1C591ZECTJSN2F1QR",
+  "session_id": "01a0aa80-3aab-7313-9603-edf7533a1570",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-17T23:26:20.114274Z",
+  "branch": "codex/release-recovery",
+  "checkpoints_count": 4,
+  "save_step_count": 5,
+  "files_touched": [
+    "callisto.toml",
+    "crates/callisto-graph/src/config/mod.rs",
+    "crates/callisto-graph/src/config/raw.rs",
+    "crates/callisto-graph/src/config/resolve.rs",
+    "crates/callisto-graph/src/error.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-terra",
+  "turn_id": "94bb608d4971",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 5058128,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 273188096,
+    "output_tokens": 588299,
+    "api_call_count": 2380,
+    "subagent_tokens_complete": false
+  },
+  "session_metrics": {
+    "turn_count": 59
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-17T23:26:19.050629Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 67,
+    "human_modified": 2,
+    "human_removed": 0,
+    "total_committed": 67,
+    "total_lines_changed": 69,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 11,
+      "user_lines_removed": 0,
+      "agent_lines_added": 13,
+      "agent_lines_removed": 13,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11
+      }
+    },
+    {
+      "checkpoint_number": 4,
+      "user_lines_added": 30,
+      "user_lines_removed": 1,
+      "agent_lines_added": 45,
+      "agent_lines_removed": 13,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11,
+        ".idea/callisto.iml": 19
+      },
+      "user_removed_per_file": {
+        ".idea/callisto.iml": 1
+      }
+    },
+    {
+      "checkpoint_number": 5,
+      "user_lines_added": 30,
+      "user_lines_removed": 1,
+      "agent_lines_added": 45,
+      "agent_lines_removed": 13,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11,
+        ".idea/callisto.iml": 19
+      },
+      "user_removed_per_file": {
+        ".idea/callisto.iml": 1
+      }
+    },
+    {
+      "checkpoint_number": 6,
+      "user_lines_added": 11,
+      "user_lines_removed": 0,
+      "agent_lines_added": 13,
+      "agent_lines_removed": 13,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 11
+      }
+    }
+  ]
+}
