@@ -10,9 +10,9 @@ use std::process::ExitCode;
 
 use callisto_graph::commands::{
     build_release_intent, build_release_intent_with_artifacts, derive_release_commit_decision,
-    derive_selected_release_decision, execute_release_with_artifacts_in_recovery, observe_release_operations,
-    reconcile_release_execution, validate_release_intent_with_state_directory, verify_artifact_manifest,
-    ReleaseStateStore, VersionOptions,
+    derive_selected_release_decision, execute_release_with_artifacts_in_recovery,
+    observe_release_operations_with_artifacts, reconcile_release_execution,
+    validate_release_intent_with_state_directory, verify_artifact_manifest, ReleaseStateStore, VersionOptions,
 };
 use callisto_graph::locate::IgnoreWalkLocator;
 use callisto_model::{
@@ -165,12 +165,12 @@ fn execute(args: ReleaseExecuteArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
         .as_deref()
         .map(read_artifact_manifest)
         .transpose()?;
-    match (
+    let verified_artifacts = match (
         intent.artifact_slots.is_empty(),
         manifest.as_ref(),
         args.artifact_dir.as_deref(),
     ) {
-        (true, None, None) => {}
+        (true, None, None) => None,
         (true, _, _) => {
             return Err(CliError::Other(
                 "release intent declares no binary artifact slots; omit --artifact-manifest and --artifact-dir"
@@ -179,7 +179,7 @@ fn execute(args: ReleaseExecuteArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
         }
         (false, Some(manifest), Some(directory)) => {
             let runner = CliCommandRunner;
-            verify_artifact_manifest(&intent, manifest, directory, &runner)?;
+            Some(verify_artifact_manifest(&intent, manifest, directory, &runner)?)
         }
         (false, _, _) => {
             return Err(CliError::Other(
@@ -187,7 +187,7 @@ fn execute(args: ReleaseExecuteArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
                     .to_owned(),
             ));
         }
-    }
+    };
     let runner = CliCommandRunner;
     let source_global = source_global(global, args.source_root.as_deref());
     let root = dunce::canonicalize(&source_global.cwd).map_err(|source| CliError::Io {
@@ -208,8 +208,13 @@ fn execute(args: ReleaseExecuteArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
                 .to_string(),
         )
     })?;
-    let state =
-        execute_release_with_artifacts_in_recovery(&capability, &store, &permit, manifest.as_ref(), args.recovery)?;
+    let state = execute_release_with_artifacts_in_recovery(
+        &capability,
+        &store,
+        &permit,
+        verified_artifacts.as_ref(),
+        args.recovery,
+    )?;
     let orchestration_revision = callisto_model::CommitSha::parse(&args.orchestration_revision).map_err(|error| {
         CliError::Other(format!(
             "invalid orchestration revision `{}`: {error}",
@@ -241,7 +246,7 @@ fn execute(args: ReleaseExecuteArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
         capability.intent(),
         &state,
         provenance,
-        observe_release_operations(&capability)?,
+        observe_release_operations_with_artifacts(&capability, verified_artifacts.as_ref())?,
     )
     .map_err(|error| CliError::Other(format!("cannot issue terminal release receipt: {error}")))?;
     write_receipt(&args.receipt, &receipt, &permit)?;

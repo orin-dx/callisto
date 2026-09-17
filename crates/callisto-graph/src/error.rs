@@ -527,6 +527,16 @@ pub enum GraphError {
     )]
     ReleaseIncomplete { count: usize },
 
+    #[error("artifact repository `{configured}` does not match the prepared GitHub push remote `{remote}`")]
+    #[diagnostic(
+        code(E175),
+        help("Use the repository derived from the trusted Git remote; Callisto will not upload product assets to a caller-selected repository.")
+    )]
+    ReleaseArtifactRepositoryMismatch {
+        configured: callisto_model::GitHubRepository,
+        remote: callisto_model::GitHubRepository,
+    },
+
     #[error(
         "cannot safely resume release operation `{operation:?}` because its provider observation is {observation:?}"
     )]
@@ -613,6 +623,10 @@ pub enum RemoteConflict {
     ForgeReleaseDiffers,
     #[error("a forge release was created but was not observed afterward")]
     ForgeReleaseNotObservedAfterCreate,
+    #[error("a release asset already exists with a different digest or length")]
+    ArtifactDiffers,
+    #[error("an uploaded release asset was not observed afterward")]
+    ArtifactNotObservedAfterUpload,
     #[error("the forge API returned an unexpected status")]
     ForgeApiStatus,
 }
@@ -659,6 +673,8 @@ pub enum ReleasePreconditionRequirement {
     ChangelogConfigured,
     #[error("a provided artifact manifest")]
     ArtifactManifestProvided,
+    #[error("a verified artifact manifest")]
+    VerifiedArtifactManifest,
 }
 
 #[cfg(test)]

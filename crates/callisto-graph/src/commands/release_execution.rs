@@ -7,8 +7,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use callisto_model::{
-    ApplyPermit, ArtifactManifestV1, OperationState, ProviderObservationV1, ReleaseExecutionStateV1, ReleaseIntentV1,
-    ReleaseOperationId,
+    ApplyPermit, OperationState, ProviderObservationV1, ReleaseExecutionStateV1, ReleaseIntentV1, ReleaseOperationId,
 };
 
 use crate::{
@@ -17,6 +16,7 @@ use crate::{
 };
 
 use super::release::ValidatedReleaseIntent;
+use super::release_artifacts::VerifiedArtifactManifest;
 use crate::error::ReleasePreconditionRequirement;
 
 /// Executes eligible operations one at a time with crash-safe state updates.
@@ -38,7 +38,7 @@ pub fn execute_release_with_artifacts<W: ReleaseStateWriter>(
     capability: &ValidatedReleaseIntent<'_>,
     store: &ReleaseStateStore<W>,
     permit: &ApplyPermit,
-    artifacts: Option<&ArtifactManifestV1>,
+    artifacts: Option<&VerifiedArtifactManifest<'_>>,
 ) -> Result<ReleaseExecutionStateV1, GraphError> {
     execute_release_with_artifacts_in_recovery(capability, store, permit, artifacts, false)
 }
@@ -53,11 +53,11 @@ pub fn execute_release_with_artifacts_in_recovery<W: ReleaseStateWriter>(
     capability: &ValidatedReleaseIntent<'_>,
     store: &ReleaseStateStore<W>,
     permit: &ApplyPermit,
-    artifacts: Option<&ArtifactManifestV1>,
+    artifacts: Option<&VerifiedArtifactManifest<'_>>,
     recovery: bool,
 ) -> Result<ReleaseExecutionStateV1, GraphError> {
     let intent = capability.intent();
-    require_artifact_manifest_matches_intent(intent, artifacts)?;
+    require_verified_artifact_manifest(intent, artifacts)?;
     let (mut state, state_was_missing) = match store.load(intent)? {
         Some(state) => (state, false),
         None => {
@@ -67,9 +67,9 @@ pub fn execute_release_with_artifacts_in_recovery<W: ReleaseStateWriter>(
         }
     };
     if recovery && state_was_missing {
-        reconstruct_missing_state(capability, store, permit, &mut state)?;
+        reconstruct_missing_state(capability, store, permit, &mut state, artifacts)?;
     }
-    recover_interrupted_operations(capability, store, permit, &mut state)?;
+    recover_interrupted_operations(capability, store, permit, &mut state, artifacts)?;
     loop {
         let Some(operation) = reconcile_release_execution(intent, &state)?.eligible().first().cloned() else {
             break;
@@ -80,7 +80,7 @@ pub fn execute_release_with_artifacts_in_recovery<W: ReleaseStateWriter>(
             .map_err(|source| GraphError::ReleaseExecutionState { source })?;
         store.save(intent, &state, permit)?;
 
-        let outcome = capability.dispatch_prepared(permit, &operation)?;
+        let outcome = capability.dispatch_prepared(permit, &operation, artifacts)?;
         state
             .mark_terminal(&operation, outcome)
             .map_err(|source| GraphError::ReleaseExecutionState { source })?;
@@ -99,6 +99,7 @@ fn reconstruct_missing_state<W: ReleaseStateWriter>(
     store: &ReleaseStateStore<W>,
     permit: &ApplyPermit,
     state: &mut ReleaseExecutionStateV1,
+    artifacts: Option<&VerifiedArtifactManifest<'_>>,
 ) -> Result<(), GraphError> {
     let pending: Vec<_> = capability
         .intent()
@@ -109,7 +110,7 @@ fn reconstruct_missing_state<W: ReleaseStateWriter>(
         .collect();
     for operation in pending {
         capability.recheck_trust()?;
-        reconstruct_missing_operation(state, &operation, capability.observe_prepared(&operation)?)?;
+        reconstruct_missing_operation(state, &operation, capability.observe_prepared(&operation, artifacts)?)?;
         store.save(capability.intent(), state, permit)?;
     }
     Ok(())
@@ -149,6 +150,7 @@ fn recover_interrupted_operations<W: ReleaseStateWriter>(
     store: &ReleaseStateStore<W>,
     permit: &ApplyPermit,
     state: &mut ReleaseExecutionStateV1,
+    artifacts: Option<&VerifiedArtifactManifest<'_>>,
 ) -> Result<(), GraphError> {
     let attempting: Vec<_> = capability
         .intent()
@@ -159,7 +161,7 @@ fn recover_interrupted_operations<W: ReleaseStateWriter>(
         .collect();
     for operation in attempting {
         capability.recheck_trust()?;
-        recover_interrupted_operation(state, &operation, capability.observe_prepared(&operation)?)?;
+        recover_interrupted_operation(state, &operation, capability.observe_prepared(&operation, artifacts)?)?;
         store.save(capability.intent(), state, permit)?;
     }
     Ok(())
@@ -202,14 +204,31 @@ fn require_terminal_success(intent: &ReleaseIntentV1, state: &ReleaseExecutionSt
     }
 }
 
-/// Requires an exact artifact manifest whenever `intent` declares
-/// compiled-binary artifact slots, and that a provided manifest actually
-/// validates against `intent` when one is supplied regardless of slot
-/// count (a manifest supplied for a slot-less intent must still be a real,
-/// intent-bound manifest, not silently ignored).
+/// Requires the verification capability whenever `intent` declares compiled
+/// binary slots. Its private constructor already proved both manifest binding
+/// and local byte/attestation identity.
+fn require_verified_artifact_manifest(
+    intent: &ReleaseIntentV1,
+    artifacts: Option<&VerifiedArtifactManifest<'_>>,
+) -> Result<(), GraphError> {
+    match (intent.artifact_slots.is_empty(), artifacts) {
+        (true, None) => Ok(()),
+        (true, Some(_)) => Err(GraphError::ReleaseInvariant {
+            detail: "verified artifact manifest supplied for slot-less release intent".to_owned(),
+        }),
+        (false, Some(artifacts)) => require_artifact_manifest_matches_intent(intent, Some(artifacts.manifest())),
+        (false, None) => Err(GraphError::ReleasePreconditionUnmet {
+            requirement: ReleasePreconditionRequirement::VerifiedArtifactManifest,
+        }),
+    }
+}
+
+/// Validates the serializable manifest independently of local byte and
+/// attestation verification. Kept as a focused invariant helper for tests;
+/// production execution requires `VerifiedArtifactManifest` above.
 fn require_artifact_manifest_matches_intent(
     intent: &ReleaseIntentV1,
-    artifacts: Option<&ArtifactManifestV1>,
+    artifacts: Option<&callisto_model::ArtifactManifestV1>,
 ) -> Result<(), GraphError> {
     match (intent.artifact_slots.is_empty(), artifacts) {
         (true, None) => Ok(()),

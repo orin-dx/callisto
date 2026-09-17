@@ -25,11 +25,30 @@ const ATTESTATION_TIMEOUT: Duration = Duration::from_secs(120);
 #[derive(Debug)]
 pub struct VerifiedArtifactManifest<'a> {
     manifest: &'a ArtifactManifestV1,
+    root: PathBuf,
 }
 
 impl<'a> VerifiedArtifactManifest<'a> {
     pub fn manifest(&self) -> &'a ArtifactManifestV1 {
         self.manifest
+    }
+
+    pub(crate) fn path_for(&self, slot: &callisto_model::ArtifactSlotId) -> Result<PathBuf, GraphError> {
+        resolve_asset_path(&self.root, &slot.asset_name)
+    }
+
+    /// Returns the already intent-bound manifest entry for `slot`.
+    pub(crate) fn entry_for(
+        &self,
+        slot: &callisto_model::ArtifactSlotId,
+    ) -> Result<&callisto_model::ArtifactManifestEntryV1, GraphError> {
+        self.manifest
+            .entries
+            .iter()
+            .find(|entry| entry.slot == *slot)
+            .ok_or_else(|| GraphError::ReleaseInvariant {
+                detail: format!("verified artifact manifest has no entry for `{}`", slot.asset_name),
+            })
     }
 }
 
@@ -69,7 +88,7 @@ pub fn verify_artifact_manifest<'a, R: CommandRunner>(
 
         verify_github_attestation(&path, entry, manifest, runner)?;
     }
-    Ok(VerifiedArtifactManifest { manifest })
+    Ok(VerifiedArtifactManifest { manifest, root })
 }
 
 fn canonical_artifact_root(artifact_root: &Path) -> Result<PathBuf, GraphError> {

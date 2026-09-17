@@ -28,6 +28,8 @@ use crate::error::{
 };
 use crate::{commands::registry_argv, DependencyResolver, GraphError, ProjectLocator, Workspace};
 
+use super::release_artifacts::VerifiedArtifactManifest;
+
 /// Reason carried by [`GraphError::ReleaseIntentStale`] (E124); real reasons are constructible only from this module.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StaleReason {
@@ -102,6 +104,7 @@ enum PreparedOperation {
     },
     ArtifactUpload {
         slot: ArtifactSlotId,
+        tag: TagName,
     },
 }
 
@@ -238,6 +241,16 @@ impl ValidatedReleaseIntent<'_> {
 pub fn observe_release_operations(
     capability: &ValidatedReleaseIntent<'_>,
 ) -> Result<Vec<ReleaseOperationObservationV1>, GraphError> {
+    observe_release_operations_with_artifacts(capability, None)
+}
+
+/// Collects provider observations using verified artifact bytes when the
+/// intent declares binary uploads. The verified capability prevents recovery
+/// from accepting a same-named remote asset with different bytes.
+pub fn observe_release_operations_with_artifacts(
+    capability: &ValidatedReleaseIntent<'_>,
+    artifacts: Option<&VerifiedArtifactManifest<'_>>,
+) -> Result<Vec<ReleaseOperationObservationV1>, GraphError> {
     capability
         .intent()
         .operations
@@ -246,7 +259,7 @@ pub fn observe_release_operations(
             capability.recheck_trust()?;
             Ok(ReleaseOperationObservationV1 {
                 operation: operation.id().clone(),
-                observation: capability.observe_prepared(operation.id())?,
+                observation: capability.observe_prepared(operation.id(), artifacts)?,
             })
         })
         .collect()
@@ -418,6 +431,7 @@ impl ValidatedReleaseIntent<'_> {
         &self,
         permit: &ApplyPermit,
         id: &ReleaseOperationId,
+        artifacts: Option<&VerifiedArtifactManifest<'_>>,
     ) -> Result<OperationOutcome, GraphError> {
         let operation = self
             .prepared
@@ -434,9 +448,7 @@ impl ValidatedReleaseIntent<'_> {
                 annotation,
             } => self.dispatch_tag(permit, name, target, annotation),
             PreparedOperation::ForgeRelease { tag } => self.dispatch_forge_release(tag),
-            PreparedOperation::ArtifactUpload { .. } => Err(GraphError::UnsupportedRelease {
-                feature: UnsupportedReleaseFeature::PublishTarget,
-            }),
+            PreparedOperation::ArtifactUpload { slot, tag } => self.dispatch_artifact_upload(slot, tag, artifacts),
         }
     }
 
@@ -446,7 +458,11 @@ impl ValidatedReleaseIntent<'_> {
     /// release name. It is therefore safe to use when a local state file says
     /// an effect was interrupted: remote state decides whether execution may
     /// converge, never a stale runner-local journal.
-    pub(crate) fn observe_prepared(&self, id: &ReleaseOperationId) -> Result<ProviderObservationV1, GraphError> {
+    pub(crate) fn observe_prepared(
+        &self,
+        id: &ReleaseOperationId,
+        artifacts: Option<&VerifiedArtifactManifest<'_>>,
+    ) -> Result<ProviderObservationV1, GraphError> {
         let operation = self
             .prepared
             .operations
@@ -513,7 +529,7 @@ impl ValidatedReleaseIntent<'_> {
                     ForgeReleaseObservation::Conflict => ProviderObservationV1::Conflict,
                 })
             }
-            PreparedOperation::ArtifactUpload { .. } => Ok(ProviderObservationV1::Indeterminate),
+            PreparedOperation::ArtifactUpload { slot, tag } => self.observe_artifact_upload(slot, tag, artifacts),
         }
     }
 
@@ -877,6 +893,135 @@ impl ValidatedReleaseIntent<'_> {
         }
     }
 
+    fn dispatch_artifact_upload(
+        &self,
+        slot: &ArtifactSlotId,
+        tag: &TagName,
+        artifacts: Option<&VerifiedArtifactManifest<'_>>,
+    ) -> Result<OperationOutcome, GraphError> {
+        match self.observe_artifact_upload(slot, tag, artifacts)? {
+            ProviderObservationV1::Exact => return Ok(OperationOutcome::AlreadySatisfied),
+            ProviderObservationV1::Conflict => {
+                return Err(GraphError::ReleaseRemoteConflict {
+                    conflict: RemoteConflict::ArtifactDiffers,
+                })
+            }
+            ProviderObservationV1::Indeterminate => {
+                return Err(GraphError::ReleasePreconditionUnmet {
+                    requirement: ReleasePreconditionRequirement::VerifiedArtifactManifest,
+                })
+            }
+            ProviderObservationV1::Absent => {}
+        }
+        let artifacts = artifacts.ok_or(GraphError::ReleasePreconditionUnmet {
+            requirement: ReleasePreconditionRequirement::VerifiedArtifactManifest,
+        })?;
+        let path = artifacts.path_for(slot)?;
+        let repository = slot.attestation_policy.repository.as_slug();
+        if self.observed_forge_release_target(tag, &repository)? != ForgeReleaseObservation::Exact {
+            return Err(GraphError::ReleaseRemoteConflict {
+                conflict: RemoteConflict::ForgeReleaseDiffers,
+            });
+        }
+        let path_argument = path.to_string_lossy();
+        let args = [
+            "release",
+            "upload",
+            tag.as_str(),
+            path_argument.as_ref(),
+            "--repo",
+            repository.as_str(),
+        ];
+        let uploaded = self.runner.run("gh", &args, &self.prepared.root)?;
+        if !uploaded.success() {
+            return Err(GraphError::ReleaseCommand {
+                program: "gh".to_owned(),
+                args: args.iter().map(ToString::to_string).collect(),
+                failure: CommandFailure::NonZeroExit {
+                    exit_code: uploaded.exit_code,
+                    stderr: uploaded.stderr,
+                },
+            });
+        }
+        match self.observe_artifact_upload(slot, tag, Some(artifacts))? {
+            ProviderObservationV1::Exact => Ok(OperationOutcome::Published),
+            ProviderObservationV1::Conflict => Err(GraphError::ReleaseRemoteConflict {
+                conflict: RemoteConflict::ArtifactDiffers,
+            }),
+            ProviderObservationV1::Absent | ProviderObservationV1::Indeterminate => {
+                Err(GraphError::ReleaseRemoteConflict {
+                    conflict: RemoteConflict::ArtifactNotObservedAfterUpload,
+                })
+            }
+        }
+    }
+
+    fn observe_artifact_upload(
+        &self,
+        slot: &ArtifactSlotId,
+        tag: &TagName,
+        artifacts: Option<&VerifiedArtifactManifest<'_>>,
+    ) -> Result<ProviderObservationV1, GraphError> {
+        let Some(artifacts) = artifacts else {
+            return Ok(ProviderObservationV1::Indeterminate);
+        };
+        let entry = artifacts.entry_for(slot)?;
+        let repository = slot.attestation_policy.repository.as_slug();
+        let endpoint = format!("repos/{repository}/releases/tags/{tag}");
+        let args = [
+            "api",
+            "--include",
+            "--method",
+            "GET",
+            endpoint.as_str(),
+            "--repo",
+            repository.as_str(),
+        ];
+        let observed = self.runner.run("gh", &args, &self.prepared.root)?;
+        let (status, body) = github_api_response("gh", &args, &observed)?;
+        if status == 404 {
+            return Ok(ProviderObservationV1::Absent);
+        }
+        if status != 200 {
+            return Ok(ProviderObservationV1::Conflict);
+        }
+        let release: serde_json::Value = serde_json::from_str(body).map_err(|error| GraphError::ReleaseCommand {
+            program: "gh".to_owned(),
+            args: args.iter().map(ToString::to_string).collect(),
+            failure: CommandFailure::MalformedOutput {
+                detail: error.to_string(),
+            },
+        })?;
+        let assets = release
+            .get("assets")
+            .and_then(serde_json::Value::as_array)
+            .ok_or_else(|| GraphError::ReleaseCommand {
+                program: "gh".to_owned(),
+                args: args.iter().map(ToString::to_string).collect(),
+                failure: CommandFailure::MalformedOutput {
+                    detail: "GitHub release response has no assets array".to_owned(),
+                },
+            })?;
+        let matching: Vec<_> = assets
+            .iter()
+            .filter(|asset| asset.get("name").and_then(serde_json::Value::as_str) == Some(slot.asset_name.as_str()))
+            .collect();
+        match matching.as_slice() {
+            [] => Ok(ProviderObservationV1::Absent),
+            [asset] => {
+                let digest = format!("sha256:{}", entry.digest.as_str());
+                if asset.get("size").and_then(serde_json::Value::as_u64) == Some(entry.byte_length)
+                    && asset.get("digest").and_then(serde_json::Value::as_str) == Some(digest.as_str())
+                {
+                    Ok(ProviderObservationV1::Exact)
+                } else {
+                    Ok(ProviderObservationV1::Conflict)
+                }
+            }
+            _ => Ok(ProviderObservationV1::Conflict),
+        }
+    }
+
     fn observed_tag(&self, name: &TagName) -> Result<Option<ObservedTag>, GraphError> {
         let reference = format!("refs/tags/{name}^{{commit}}");
         let rev_parse_args = ["rev-parse", "--verify", "--quiet", reference.as_str()];
@@ -947,17 +1092,7 @@ impl ValidatedReleaseIntent<'_> {
             repository,
         ];
         let observed = self.runner.run("gh", &api_args, &self.prepared.root)?;
-        if observed.exit_code != Some(0) {
-            return Err(GraphError::ReleaseCommand {
-                program: "gh".to_string(),
-                args: api_args.iter().map(ToString::to_string).collect(),
-                failure: CommandFailure::NonZeroExit {
-                    exit_code: observed.exit_code,
-                    stderr: observed.stderr,
-                },
-            });
-        }
-        let (status, body) = parse_github_api_response("gh", &api_args, &observed.stdout)?;
+        let (status, body) = github_api_response("gh", &api_args, &observed)?;
         if status == 404 {
             return Ok(ForgeReleaseObservation::Missing);
         }
@@ -1031,6 +1166,29 @@ fn parse_github_api_response<'a>(program: &str, args: &[&str], stdout: &'a str) 
         .parse::<u16>()
         .map_err(|error| malformed(format!("HTTP status code is not a valid number: {error}")))?;
     Ok((status, body))
+}
+
+/// `gh api --include` preserves the HTTP response even for a 404 and exits
+/// non-zero. Parse that authoritative response first so absence is not
+/// mistaken for a transport failure; retain the command failure when no
+/// parseable HTTP response was produced.
+fn github_api_response<'a>(
+    program: &str,
+    args: &[&str],
+    output: &'a CommandOutput,
+) -> Result<(u16, &'a str), GraphError> {
+    match parse_github_api_response(program, args, &output.stdout) {
+        Ok(response) => Ok(response),
+        Err(_) if !output.success() => Err(GraphError::ReleaseCommand {
+            program: program.to_owned(),
+            args: args.iter().map(ToString::to_string).collect(),
+            failure: CommandFailure::NonZeroExit {
+                exit_code: output.exit_code,
+                stderr: output.stderr.clone(),
+            },
+        }),
+        Err(error) => Err(error),
+    }
 }
 
 fn derive_release_intent<R: CommandRunner, D: DependencyResolver>(
@@ -1145,6 +1303,20 @@ fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
     let git_remote = requires_git_remote
         .then(|| prepared_git_remote(&workspace.root, workspace.runner))
         .transpose()?;
+    if let Some(policy) = artifact_policy {
+        let remote = git_remote
+            .as_ref()
+            .and_then(|remote| remote.github_repository.as_ref())
+            .ok_or(GraphError::ReleasePreconditionUnmet {
+                requirement: ReleasePreconditionRequirement::GitHubRemote,
+            })?;
+        if remote != &policy.repository {
+            return Err(GraphError::ReleaseArtifactRepositoryMismatch {
+                configured: policy.repository.clone(),
+                remote: remote.clone(),
+            });
+        }
+    }
 
     let mut operations = BTreeMap::<ReleaseOperationId, ReleaseOperation>::new();
     let mut prepared = BTreeMap::<ReleaseOperationId, PreparedOperation>::new();
@@ -1317,6 +1489,14 @@ fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
             let forge = forge_by_package.get(id).ok_or_else(|| GraphError::ReleaseInvariant {
                 detail: format!("product package `{id}` has no forge release operation"),
             })?;
+            let tag = match prepared.get(forge) {
+                Some(PreparedOperation::ForgeRelease { tag }) => tag.clone(),
+                _ => {
+                    return Err(GraphError::ReleaseInvariant {
+                        detail: format!("product forge release `{forge:?}` is not prepared"),
+                    })
+                }
+            };
             for target in &product.artifact_targets {
                 let asset_name = product_asset_name(target).expect("validated product target");
                 let slot = ArtifactSlotId::new(
@@ -1334,7 +1514,10 @@ fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
                 let operation = ReleaseOperation::artifact_upload(slot.clone(), vec![forge.clone()])?;
                 prepared.insert(
                     operation.id().clone(),
-                    PreparedOperation::ArtifactUpload { slot: slot.clone() },
+                    PreparedOperation::ArtifactUpload {
+                        slot: slot.clone(),
+                        tag: tag.clone(),
+                    },
                 );
                 operations.insert(operation.id().clone(), operation);
                 artifact_slots.push(slot);
@@ -2152,6 +2335,17 @@ mod tests {
     }
 
     #[test]
+    fn github_api_response_preserves_a_parseable_not_found_on_nonzero_exit() {
+        let output = CommandOutput {
+            exit_code: Some(1),
+            stdout: "HTTP/2 404\r\ncontent-type: application/json\r\n\r\n{\"message\":\"Not Found\"}".to_owned(),
+            stderr: "gh: Not Found (HTTP 404)".to_owned(),
+        };
+        let (status, _) = github_api_response("gh", &["api"], &output).unwrap();
+        assert_eq!(status, 404);
+    }
+
+    #[test]
     fn prepared_capability_retains_exact_tag_and_registry_inputs() {
         let (dir, runner) = fixture();
         let state_dir = tempfile::tempdir().unwrap();
@@ -2252,7 +2446,7 @@ mod tests {
             .success());
         assert_eq!(
             validated
-                .dispatch_prepared(&callisto_model::ApplyPermit::force_for_tests(), &tag_id)
+                .dispatch_prepared(&callisto_model::ApplyPermit::force_for_tests(), &tag_id, None)
                 .unwrap(),
             OperationOutcome::AlreadySatisfied
         );
@@ -2304,7 +2498,7 @@ mod tests {
             .unwrap()
             .success());
         assert!(matches!(
-            validated.dispatch_prepared(&callisto_model::ApplyPermit::force_for_tests(), &tag_id),
+            validated.dispatch_prepared(&callisto_model::ApplyPermit::force_for_tests(), &tag_id, None),
             Err(GraphError::ReleaseRemoteConflict {
                 conflict: RemoteConflict::TagTargetDiffers
             })
