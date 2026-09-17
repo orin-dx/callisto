@@ -219,18 +219,19 @@ jobs:
           handoff_dir="${RUNNER_TEMP}/release-intent"
           (cd "$handoff_dir" && shasum -a 256 -c release-intent.json.sha256)
           callisto release inspect --input "$handoff_dir/release-intent.json"
+          mkdir -p "${RUNNER_TEMP}/release-artifacts"
           (cd release-source && just build)
       - name: Attest declared binary artifacts
-        if: hashFiles('release-source/release-artifacts/**') != ''
+        if: hashFiles('${{ runner.temp }}/release-artifacts/**') != ''
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-path: release-source/release-artifacts/**
+          subject-path: ${{ runner.temp }}/release-artifacts/**
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-build
           path: |
             ${{ runner.temp }}/release-intent
-            release-source/release-artifacts
+            ${{ runner.temp }}/release-artifacts
           if-no-files-found: error
           retention-days: 1
 
@@ -297,7 +298,7 @@ jobs:
           state_dir="${RUNNER_TEMP}/callisto-release-state/${GITHUB_RUN_ID}"
           mkdir -p "$state_dir"
           args=(--source-root "$GITHUB_WORKSPACE/release-source" --intent "$intent_dir/release-intent.json" --state "$state_dir/execution-state.json")
-          if [[ -f "$build_dir/release-source/release-artifacts/manifest.json" ]]; then
-            args+=(--artifact-manifest "$build_dir/release-source/release-artifacts/manifest.json" --artifact-dir "$build_dir/release-source/release-artifacts")
+          if [[ -f "$build_dir/release-artifacts/manifest.json" ]]; then
+            args+=(--artifact-manifest "$build_dir/release-artifacts/manifest.json" --artifact-dir "$build_dir/release-artifacts")
           fi
           callisto release execute "${args[@]}"

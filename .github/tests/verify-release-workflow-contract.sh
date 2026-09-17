@@ -38,7 +38,7 @@ require_line "$build" '      contents: read' 'build must read the intent-bound s
 require_line "$build" '      attestations: write' 'build must create provenance attestations'
 require_line "$build" '      id-token: write' 'build must mint the Sigstore OIDC identity'
 require_line "$build" '          path: ${{ runner.temp }}/release-intent' 'build must keep release handoff outside either checkout'
-require_line "$build" '          subject-path: release-source/release-artifacts/**' 'build must attest assets produced by the explicit release source'
+require_line "$build" '          subject-path: ${{ runner.temp }}/release-artifacts/**' 'build must attest assets staged outside either checkout'
 
 plan="$(job_block plan build)"
 require_line "$plan" '          ref: ${{ needs.release-candidate.outputs.orchestration_sha }}' 'planning must use one resolved current orchestration revision'
