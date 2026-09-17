@@ -22,7 +22,13 @@ require_line() {
 version_pr="$(job_block version-pr release-candidate)"
 require_line "$version_pr" '      contents: write' 'version-pr must write the managed branch'
 require_line "$version_pr" '      pull-requests: write' 'version-pr must create or update the release PR'
-require_line "$version_pr" "          version_command: 'callisto version --refresh-lockfiles --emit-decision .callisto/release-decision.json'" 'version-pr must commit the exact release decision later consumed by release plan, while refreshing Cargo.lock for coupled Cargo version bumps'
+require_line "$version_pr" "          version_command: 'callisto version --refresh-lockfiles'" 'version-pr must refresh Cargo.lock for coupled Cargo version bumps; the action appends its single authoritative --emit-decision argument'
+
+action=.github/actions/callisto-action/scripts/create-or-update-release-pr.sh
+if ! rg -Fqx 'command+=(--emit-decision "$INPUT_DECISION_PATH")' "$action"; then
+  printf 'release workflow contract failed: release-PR action must append the exact decision path once\n' >&2
+  exit 1
+fi
 
 release_candidate="$(job_block release-candidate plan)"
 require_line "$release_candidate" '          prs=$(gh api --paginate "/repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/pulls" --jq '\''[.[] | select(.merged_at != null and .base.ref == "main" and (.head.ref == "callisto/version-packages" or (.head.ref | test("^callisto/version-packages--[0-9a-f]{40}$"))))] | length'\'')' 'release-candidate must accept only canonical or SHA-suffixed managed branches'
