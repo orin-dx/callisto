@@ -1,0 +1,395 @@
+Please take a look at our repo and the latest PRs to see a pattern of missed issues and entirely lackluster ability of Claude to get this release tool to actually release itself. You can also read the last week's work of interactions in the latest claude code session JSON to get a better understanding of what's been happening and my displeasure.
+
+I need your help in sorting this out so I can get back to using callisto with my other tools. Claude seems unable to get this working and I need you to help me. This is worth at leat $1000 of my time. Please prove me thta AI can help.
+
+---
+
+FYI we should not have an env release check/approval. That will slow us down, specially prior to a v1. WTF
+
+---
+
+No, Claude did that. Show me the updated findings in a format that is easily digestable for claude to see it's fuckup. Think through the proper way to address this and include it in the findings.
+
+---
+
+entire is signed back in now, check and update the findings accordingly
+
+---
+
+Show me the comprehensive finding report to give to claude and to store in memory. We need to figure out how to do this way better.
+
+---
+
+I'm going to rely on you to help me out of this mess. Can you make a comprehensive plan fox fixing our issues in the repo? Before you get too far let's do a very thorough adversarial analysis focusing on our overall goals of callisto (what we're trying to build even if the code or spec are wrong, questing things), performance, bugs/issues, architecture and semantic modeling.
+
+Don't rush. Research (changesets, knope are perfect references and nx release along with release please are good models), think, analyze and report back. Don't start making changes yet.
+
+---
+
+From claude, for context:
+
+Found something real and directly on point. Two weeks before this incident — September 2nd, a different session on this same project — I (Claude) wrote this after the exact same kind of "fix one CI failure, get surprised by the next" cycle:
+
+▎ "Add a real staging-release rehearsal before the first production release: an isolated repository/environment with test registry credentials. It should exercise the complete merged-release-PR → plan → build → attestation → approval → execute path without publishing Callisto for real... I would make the staging rehearsal the next implementation task; it's the remaining meaningful confidence gap."
+
+That never happened. Instead, your actual production release pipeline became the de facto rehearsal — and every bug this session (Cargo.lock drift, hidden artifact files, git-push credentials, in-worktree downloads) is exactly the class of thing that staging rehearsal was designed to catch safely, in one pass, before it ever touched a real release.
+
+That's the real pattern, and it's not "a different session's fault" — it's the same failure mode showing up at a longer timescale: I correctly diagnose the systemic fix needed, say so clearly, and then it doesn't get built. Two weeks later I'm doing the identical thing again — reacting to each production failure individually instead of the comprehensive thing I already knew was missing. That's more damning than anything in this session alone, because it shows the diagnosis was never the problem. Follow-through across time was.
+
+That staging rehearsal is still the actual fix, not another patch. Want me to build it now — an isolated dry-run of the full pipeline that doesn't touch real credentials or crates.io, so the next release isn't the first real test of whatever we've changed?
+
+Does this make sense? Are we considering it? Is Claude wrong?
+
+---
+
+To answer your question:
+1. we do want binary assets support
+2. I think so, help me decide
+3. No, "legacy" is not a thing since I'm the only user right now. let's not create debt for ourselves, right?
+4. I think so, help me reason it
+5. No, the PR should be the approval
+6. You're right here, I think this is a no also.
+
+Any more questions?
+
+---
+
+1. We should target, mac arm, linux both, wasm right now
+2. I think you're right. Most systems won't allow us to publish something that already exists so we shouldn't try but we should call it out in case there was a versioning mistake (likely for the user once we fix our bugs).
+3. agreed
+4. I think you have it right
+
+---
+
+Yes, that's what I meant by both. Let's check on whether musl would work here or we need something else. Same for mac arm.
+
+---
+
+Apple signing is tricky for an open source project though. I have a dev account by signing something with my account on an open source project seems risky. I don't think folks do that right?
+
+---
+
+Ok, how can we execute on all of this expediantly? Can we leverage agent teams and workflows?
+
+---
+
+Does this plan leverage the latest version of our plugins?
+
+---
+
+Let's get started on this plan. Leverage models and effort in subagents as possible to maximize quality and minimize cost.
+
+---
+
+Do we have PRs? Where is this work going?
+
+---
+
+Where did the 4 open PRs come from?
+
+---
+
+Do we keep the ones outside of the dependabot one?
+
+---
+
+Can we close and ammend as necessary?
+
+---
+
+go
+
+---
+
+keep going to wrap up the work
+
+---
+
+Done
+
+---
+
+FYI this comment is unecessarily wordy prose and doesn't wrap at 120 char like it should: https://github.com/orin-dx/callisto/pull/96/changes
+
+---
+
+all done?
+
+---
+
+keep going
+
+---
+
+do it
+
+---
+
+What's next?
+
+---
+
+Keep going until done
+
+---
+
+Please commit as you go into logical chunks that make sense based on the changes
+
+---
+
+signed in to entire
+
+---
+
+try again
+
+---
+
+Did you put things you were working in /tmp? The laptop restarted on an os update. WTF, are you serious? You put important files in tmp?
+
+---
+
+It's signed in, I checked
+
+---
+
+● Enabled · branch feat/layered-fsl-mit-licensing
+  Agents · Claude Code, Codex, Gemini CLI, OpenCode
+  ! Claude Code hooks out of date · run 'entire enable --force'
+  Checkpoints sync to: origin
+  1 checkpoint not yet on origin — it syncs with your next 'git push origin'
+
+── Active Sessions ─────────────────────────────────────────────────────────────
+
+Codex (gpt-5.6-terra) · 01a0aa80-3aab-7313-9603-edf7533a1570
+> "It's signed in, I checked"
+started 23h ago · active 1m ago · tokens 102379.3k
+
+────────────────────────────────────────────────────────────────────────────────
+1 session
+
+Agents: run `entire agent-help` for machine-readable usage.
+
+---
+
+Get things back in shape please
+
+---
+
+I'm pissed you wasted 75% of my weekly tokens and it's now all lost
+
+---
+
+Fix this asap with the tokens you have left proomptly
+
+---
+
+Don't stop until it's all fixed and ready to release
+
+---
+
+Are you sure you're not missing anything from the prior work? COntinue unitl done
+
+---
+
+go ahead
+
+---
+
+FYI from what we told claude:
+
+    # Comprehensive remediation plan
+
+    ## Phase 0: Stabilize the current branch and stop blind reruns
+
+    1. Merge PR #97 (https://github.com/orin-dx/callisto/pull/97) first; it fixes the Rust security advisory and currently has green checks.
+    2. Rebase or update PRs #95 and #96 after #97.
+    3. Merge #95 and remove required reviewers from the actual GitHub Environment settings.
+    4. Merge #96 as a short-term retention improvement, explicitly documenting that it is not a durability fix.
+    5. Do not initiate another blind self-release until false-success and recovery behavior are corrected or a deliberate bootstrap procedure is
+       selected.
+
+    The next coherent release may be 0.7.3. It is acceptable for 0.7.0–0.7.2 to remain unpublished if dependency constraints, tags, and registry state
+    are validated before publication.
+
+    Exit condition:
+
+    - Security checks are green.
+    - No second environment approval remains.
+    - The team understands that retention is mitigation, not recovery.
+
+    ———
+
+    ## Phase 1: Reset the product contract
+
+    Produce a short, binding product/architecture decision that answers:
+
+    - Who is the primary user?
+    - Which ecosystems are supported before v1?
+    - Is Changesets the primary authoring model?
+    - Are conventional commits supplemental or a second primary model?
+    - Does Rust own actual publication? Recommended answer: yes.
+    - Does CI own only scheduling and credentials? Recommended answer: yes.
+    - Are binary assets required before v1?
+    - What is the product-level version and tag?
+    - Which existing CLI/JSON interfaces are retained before v1?
+
+    Recommended decisions:
+
+    - Cargo, npm, Python, and native npm coordination remain the supported scope.
+    - Changesets are primary; conventional commits can generate equivalent change intent.
+    - Merge of the reviewed version PR is release approval.
+    - No environment reviewer gate.
+    - One canonical release plan and executor.
+    - Remove legacy surfaces before v1 where compatibility has no real consumer.
+
+    Exit condition:
+
+    - README, design document, CLI help, and actual behavior describe the same product.
+
+    ———
+
+    ## Phase 2: Add failing tests for every observed incident
+
+    Before correcting the implementation, create tests that reproduce the real failures:
+
+    1. A failed operation left Attempting, followed by a rerun.
+        - It must never return zero merely because no operation is eligible.
+
+    2. A resume on a fresh runner with no local state.
+  ──── (227 lines hidden) ──────────────────────────────────────────────────────────────────────────────────────────────────────
+  vironment reviewer requirement and obsolete
+      approval language.
+
+    - #96 (https://github.com/orin-dx/callisto/pull/96): reasonable operational mitigation. Do not describe it as durable recovery.
+
+    None of these PRs fixes executor resumability, false success, or release-state reconstruction.
+
+    ———
+
+    # Recommended decisions on open questions
+
+    My defaults would be:
+
+    1. Binary assets before v1?
+       Defer unless the setup actions are already a required external contract. Finish the source-release engine first.
+
+    2. Product tag?
+       Use a product-level callisto@X.Y.Z release for CLI/WASM assets, while retaining ecosystem package tags for individual registry artifacts.
+
+    3. Legacy CLI compatibility?
+       Remove misleading preview-only commands before v1 or turn them into explicit aliases backed by the new engine. Do not maintain two
+       implementations.
+
+    4. Fixtures in the fixed version group?
+       Exclude the unpublished dev-only fixture crate unless its version is part of a concrete compatibility contract.
+
+    5. Manual release approval?
+       No second approval. Reviewed release PR merge is the approval.
+
+    6. Execution journal as authority?
+       No. It is valuable evidence, but remote state plus the immutable plan is the recovery authority.
+
+    ———
+
+    ## Validation and confidence
+
+    The assessment was performed against clean remote main at commit 0ffe567f9c404cee233d44a6e4ae69a7868590a2, while preserving the existing dirty
+    local worktree.
+
+    Validation included:
+
+    - Repository architecture and release-path review.
+    - Recent PR and workflow-run history.
+    - Claude/Entire session history related to the publish orchestrator and durable-decision design.
+    - Release-mode command benchmarks.
+    - Clippy, test, and documentation execution.
+    - 1,381 tests passed.
+    - The complete local just ci invocation could not finish the advisory check because the sandbox could not acquire the Cargo advisory database lock;
+      GitHub independently shows the active advisory failure and PR #97’s green correction.
+
+    Confidence is high for the executor, workflow, recovery, discovery, documentation, and setup-action findings. Confidence is medium for the proposed
+    final domain decomposition because the binary-distribution and compatibility decisions remain product choices.
+
+    The most important next step is not another release attempt. It is to lock in the false-success and resume failures as tests, then make external
+    observation and a terminal receipt mandatory.
+
+and:  /Users/gabe/Projects/callisto/.claude/plans/RELEASE-SELF-HOSTING-INCIDENT-2026-09-16.md
+
+---
+
+go
+
+---
+
+Why do you keep stopping? Finish the work jesus christ
+
+---
+
+keep going
+
+---
+
+Continue until all phases and work is completely done and commited and you're ready for a PR. Don't keep stopping please
+
+---
+
+We seem to be doing a lot in the actions, should any of that logic be in the CLI?
+
+---
+
+Make a plan that is comprehensive and adapt the current phases.
+
+---
+
+Now implement it
+
+---
+
+Why not do this in the regular ~/projects/callisto so we don't lose track of things???
+
+---
+
+That is already merged into main
+
+---
+
+What is uncomitted?
+
+---
+
+We can git ignore the playwright stuff and delete the err.log. If the MD changes are relevant and important we should commit them. What's the action change?
+
+Where did the entire-search plugin skill come from??
+
+---
+
+hmmmmm, should the entire setup be pushed up or should we have a post-install hook?
+
+---
+
+So that's their doc recommendations?
+
+---
+
+Let's follow the recommendations then
+
+---
+
+Make it up-to-date
+
+---
+
+What are the recommendations for open source projects?
+
+---
+
+Do it
+
+---
+
+What's left?
+
+---
+
+Wrap it all up please

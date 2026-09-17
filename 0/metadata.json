@@ -1,0 +1,44 @@
+{
+  "cli_version": "0.10.7-nightly.202609170627.0dda4e14f",
+  "checkpoint_id": "01M2RBA95DQTP3NTMTDD7D9FHN",
+  "session_id": "01a0aa80-3aab-7313-9603-edf7533a1570",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-17T18:51:01.503918Z",
+  "branch": "codex/release-recovery",
+  "checkpoints_count": 2,
+  "save_step_count": 1,
+  "files_touched": [],
+  "agent": "Codex",
+  "model": "gpt-5.6-terra",
+  "turn_id": "a2e12a92e01a",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 4168063,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 248286720,
+    "output_tokens": 517104,
+    "api_call_count": 2172
+  },
+  "session_metrics": {
+    "turn_count": 52
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 2855,
+      "user_lines_removed": 26,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/candidates/candidates-graph-release-publish-tag.json": 2106,
+        ".claude/plans/RELEASE-SELF-HOSTING-INCIDENT-2026-09-16.md": 435,
+        ".claude/recon-manifest.json": 280,
+        ".claude/settings.json": 23,
+        ".claude/settings.local.json": 11
+      },
+      "user_removed_per_file": {
+        ".claude/settings.json": 26
+      }
+    }
+  ]
+}
