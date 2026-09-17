@@ -1,0 +1,41 @@
+I'm working on a lot of open source and I don't want prior employers that fired me to be able to use them. How can I prevent this?
+
+---
+
+Stubhub being the first one
+
+---
+
+Don't our other projects using another license than AGPL?
+
+---
+
+Entire should be logged in
+
+---
+
+Should use move to FSL + MIT for callisto too?
+
+---
+
+This is not merely to prevent them but it should be a better combination and choice right?
+
+---
+
+We don't want dual license for all packages. We want MIT for what is trully important to have it MIT and the rest FSL right?
+
+---
+
+Do it
+
+---
+
+Make a PR please
+
+---
+
+And make sure GH is up-to-date along with the crate information. Any docs need updating?
+
+---
+
+yes
