@@ -526,6 +526,20 @@ pub enum GraphError {
         help("Use release reconcile to inspect the exact incomplete operations; do not treat this release as successful.")
     )]
     ReleaseIncomplete { count: usize },
+
+    #[error(
+        "cannot safely resume release operation `{operation:?}` because its provider observation is {observation:?}"
+    )]
+    #[diagnostic(
+        code(E173),
+        help(
+            "Do not retry this effect. Resolve the provider state or add an exact provider observer before resuming the immutable release intent."
+        )
+    )]
+    ReleaseRecoveryUnresolved {
+        operation: callisto_model::ReleaseOperationId,
+        observation: callisto_model::ProviderObservationV1,
+    },
 }
 
 /// Why a workspace package that a `--package` filter named is nonetheless

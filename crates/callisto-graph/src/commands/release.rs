@@ -10,10 +10,10 @@ use std::path::Path;
 
 use callisto_model::{
     ApplyPermit, CanonicalTranscript, CommandOutput, CommandRunner, CommitSha, DepKind, Ecosystem,
-    ExecutionTrustProfileV1, GitHubRepository, GitHubRepositoryParseError, NpmAccess, OperationOutcome, PublishOutcome,
-    PublishTarget, RegistryBindingDigest, RegistryBindingId, RegistryKey, ReleaseDecisionV1, ReleaseInputSnapshotV1,
-    ReleaseIntentError, ReleaseIntentV1, ReleaseOperation, ReleaseOperationId, ReleasePackageId, ReleasePackageInputV1,
-    SemanticInputDigest, SourceIdentity, TagName, Version,
+    ExecutionTrustProfileV1, GitHubRepository, GitHubRepositoryParseError, NpmAccess, OperationOutcome,
+    ProviderObservationV1, PublishOutcome, PublishTarget, RegistryBindingDigest, RegistryBindingId, RegistryKey,
+    ReleaseDecisionV1, ReleaseInputSnapshotV1, ReleaseIntentError, ReleaseIntentV1, ReleaseOperation,
+    ReleaseOperationId, ReleasePackageId, ReleasePackageInputV1, SemanticInputDigest, SourceIdentity, TagName, Version,
 };
 use callisto_vcs::{
     access::{GitCommitTrustEvidence, GitHeadDisposition},
@@ -360,6 +360,82 @@ impl ValidatedReleaseIntent<'_> {
                 annotation,
             } => self.dispatch_tag(permit, name, target, annotation),
             PreparedOperation::ForgeRelease { tag } => self.dispatch_forge_release(tag),
+        }
+    }
+
+    /// Observes the exact provider identity prepared with this capability.
+    ///
+    /// This path accepts no caller-controlled endpoint, package, tag, or
+    /// release name. It is therefore safe to use when a local state file says
+    /// an effect was interrupted: remote state decides whether execution may
+    /// converge, never a stale runner-local journal.
+    pub(crate) fn observe_prepared(&self, id: &ReleaseOperationId) -> Result<ProviderObservationV1, GraphError> {
+        let operation = self
+            .prepared
+            .operations
+            .get(id)
+            .ok_or_else(|| GraphError::ReleaseInvariant {
+                detail: format!("observe_prepared: no prepared operation for `{id:?}`"),
+            })?;
+        match operation {
+            PreparedOperation::RegistryPublish {
+                package_name,
+                version,
+                registry,
+                ..
+            } => match id.package.ecosystem() {
+                Ecosystem::Cargo => {
+                    let registry_key = (registry.key.as_str() != RegistryKey::CRATES_IO).then(|| registry.key.as_str());
+                    Ok(
+                        if self.cargo_version_is_published(package_name, version, registry_key)? {
+                            ProviderObservationV1::Exact
+                        } else {
+                            ProviderObservationV1::Absent
+                        },
+                    )
+                }
+                Ecosystem::Npm => Ok(
+                    if self.npm_version_is_published(package_name, version, registry.endpoint.as_deref())? {
+                        ProviderObservationV1::Exact
+                    } else {
+                        ProviderObservationV1::Absent
+                    },
+                ),
+                // PyPI's upload endpoint is not a query API. Until its
+                // provider adapter can prove an exact version through the
+                // configured index, recovery must fail closed rather than
+                // attempting a second upload.
+                Ecosystem::Pypi => Ok(ProviderObservationV1::Indeterminate),
+                _ => Err(GraphError::UnsupportedRelease {
+                    feature: UnsupportedReleaseFeature::Ecosystem,
+                }),
+            },
+            PreparedOperation::Tag {
+                name,
+                target,
+                annotation,
+            } => Ok(match self.observed_tag(name)? {
+                None => ProviderObservationV1::Absent,
+                Some(observed) if observed.target == *target && observed.annotation == *annotation => {
+                    ProviderObservationV1::Exact
+                }
+                Some(_) => ProviderObservationV1::Conflict,
+            }),
+            PreparedOperation::ForgeRelease { tag } => {
+                let remote = self.checked_git_remote()?;
+                let repository = remote
+                    .github_repository
+                    .as_ref()
+                    .ok_or(GraphError::ReleasePreconditionUnmet {
+                        requirement: ReleasePreconditionRequirement::GitHubRemote,
+                    })?
+                    .as_slug();
+                Ok(match self.observed_forge_release_target(tag, &repository)? {
+                    ForgeReleaseObservation::Missing => ProviderObservationV1::Absent,
+                    ForgeReleaseObservation::Exact => ProviderObservationV1::Exact,
+                    ForgeReleaseObservation::Conflict => ProviderObservationV1::Conflict,
+                })
+            }
         }
     }
 

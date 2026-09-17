@@ -7,7 +7,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use callisto_model::{
-    ApplyPermit, ArtifactManifestV1, OperationState, ReleaseExecutionStateV1, ReleaseIntentV1, ReleaseOperationId,
+    ApplyPermit, ArtifactManifestV1, OperationState, ProviderObservationV1, ReleaseExecutionStateV1, ReleaseIntentV1,
+    ReleaseOperationId,
 };
 
 use crate::{
@@ -42,6 +43,7 @@ pub fn execute_release_with_artifacts<W: ReleaseStateWriter>(
     let intent = capability.intent();
     require_artifact_manifest_matches_intent(intent, artifacts)?;
     let mut state = store.load_or_initialize(intent, permit)?;
+    recover_interrupted_operations(capability, store, permit, &mut state)?;
     loop {
         let Some(operation) = reconcile_release_execution(intent, &state)?.eligible().first().cloned() else {
             break;
@@ -60,6 +62,49 @@ pub fn execute_release_with_artifacts<W: ReleaseStateWriter>(
     }
     require_terminal_success(intent, &state)?;
     Ok(state)
+}
+
+/// Reconciles only persisted `Attempting` operations before a rerun can issue
+/// any effect. `Attempting` is deliberately not downgraded to `Pending`:
+/// after a process crash, an absent or unavailable provider response cannot
+/// prove that a previous request did not take effect. Exact observation is
+/// the sole automatic convergence path.
+fn recover_interrupted_operations<W: ReleaseStateWriter>(
+    capability: &ValidatedReleaseIntent<'_>,
+    store: &ReleaseStateStore<W>,
+    permit: &ApplyPermit,
+    state: &mut ReleaseExecutionStateV1,
+) -> Result<(), GraphError> {
+    let attempting: Vec<_> = capability
+        .intent()
+        .operations
+        .iter()
+        .filter_map(|operation| {
+            (state.operation_state(operation.id()) == Some(OperationState::Attempting)).then(|| operation.id().clone())
+        })
+        .collect();
+    for operation in attempting {
+        capability.recheck_trust()?;
+        recover_interrupted_operation(state, &operation, capability.observe_prepared(&operation)?)?;
+        store.save(capability.intent(), state, permit)?;
+    }
+    Ok(())
+}
+
+fn recover_interrupted_operation(
+    state: &mut ReleaseExecutionStateV1,
+    operation: &ReleaseOperationId,
+    observation: ProviderObservationV1,
+) -> Result<(), GraphError> {
+    if observation != ProviderObservationV1::Exact {
+        return Err(GraphError::ReleaseRecoveryUnresolved {
+            operation: operation.clone(),
+            observation,
+        });
+    }
+    state
+        .mark_terminal(operation, callisto_model::OperationOutcome::AlreadySatisfied)
+        .map_err(|source| GraphError::ReleaseExecutionState { source })
 }
 
 /// Refuses to report success until every operation has an observed terminal
@@ -376,6 +421,31 @@ mod tests {
             .eligible()
             .is_empty());
         assert_eq!(state.operation_state(&tag), Some(OperationState::Pending));
+    }
+
+    #[test]
+    fn interrupted_operation_converges_only_from_an_exact_provider_observation() {
+        let intent = intent();
+        let operation = intent.operations[0].id().clone();
+        let mut state = ReleaseExecutionStateV1::pending(&intent);
+        state.mark_attempting(&operation).unwrap();
+
+        recover_interrupted_operation(&mut state, &operation, ProviderObservationV1::Exact).unwrap();
+        assert_eq!(
+            state.operation_state(&operation),
+            Some(OperationState::AlreadySatisfied)
+        );
+
+        let mut unresolved = ReleaseExecutionStateV1::pending(&intent);
+        unresolved.mark_attempting(&operation).unwrap();
+        assert!(matches!(
+            recover_interrupted_operation(&mut unresolved, &operation, ProviderObservationV1::Absent),
+            Err(GraphError::ReleaseRecoveryUnresolved {
+                observation: ProviderObservationV1::Absent,
+                ..
+            })
+        ));
+        assert_eq!(unresolved.operation_state(&operation), Some(OperationState::Attempting));
     }
 
     #[test]
