@@ -355,3 +355,9 @@ That is already merged into main
 ---
 
 What is uncomitted?
+
+---
+
+We can git ignore the playwright stuff and delete the err.log. If the MD changes are relevant and important we should commit them. What's the action change?
+
+Where did the entire-search plugin skill come from??
