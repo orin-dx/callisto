@@ -41,7 +41,7 @@ require_line "$build" '          path: ${{ runner.temp }}/release-intent' 'build
 require_line "$build" '          subject-path: release-source/release-artifacts/**' 'build must attest assets produced by the explicit release source'
 
 plan="$(job_block plan build)"
-require_line "$plan" '          ref: ${{ github.sha }}' 'planning must use the current orchestration revision'
+require_line "$plan" '          ref: ${{ needs.release-candidate.outputs.orchestration_sha }}' 'planning must use one resolved current orchestration revision'
 require_line "$plan" '          path: release-source' 'planning must check out the explicit release source separately'
 require_line "$plan" '          callisto release plan --source-root "$GITHUB_WORKSPACE/release-source" --from-release-commit "$release_source_sha" --decision "$GITHUB_WORKSPACE/release-source/.callisto/release-decision.json" --out "$handoff_dir/release-intent.json"' 'planning must pass the exact source checkout to the current Callisto coordinator'
 

@@ -114,6 +114,7 @@ jobs:
     outputs:
       is_release_pr: ${{ steps.candidate.outputs.is_release_pr }}
       release_source_sha: ${{ steps.candidate.outputs.release_source_sha }}
+      orchestration_sha: ${{ steps.candidate.outputs.orchestration_sha }}
     steps:
       - id: candidate
         shell: bash
@@ -122,6 +123,7 @@ jobs:
         run: |
           set -euo pipefail
           release_source_sha="${{ inputs.release_source_sha || github.sha }}"
+          orchestration_sha=$(gh api "/repos/${GITHUB_REPOSITORY}/commits/main" --jq '.sha')
           # This only schedules the job. `release plan` verifies the actual
           # parent-to-merge delta; labels and PR metadata are never authority.
           # The GitHub API check is complementary provenance evidence: a
@@ -132,6 +134,7 @@ jobs:
           if [[ "$prs" == 1 && "$verified" == true ]]; then
             echo 'is_release_pr=true' >> "$GITHUB_OUTPUT"
             echo "release_source_sha=$release_source_sha" >> "$GITHUB_OUTPUT"
+            echo "orchestration_sha=$orchestration_sha" >> "$GITHUB_OUTPUT"
           else
             echo 'is_release_pr=false' >> "$GITHUB_OUTPUT"
           fi
@@ -148,7 +151,7 @@ jobs:
         with:
           # The coordinator must be the current workflow revision. Recovery
           # never rebuilds its release engine from historic source.
-          ref: ${{ github.sha }}
+          ref: ${{ needs.release-candidate.outputs.orchestration_sha }}
           fetch-depth: 0
           persist-credentials: false
       - uses: $/.github/actions/setup-callisto
@@ -168,7 +171,7 @@ jobs:
           mkdir -p "$handoff_dir"
           callisto release plan --source-root "$GITHUB_WORKSPACE/release-source" --from-release-commit "$release_source_sha" --decision "$GITHUB_WORKSPACE/release-source/.callisto/release-decision.json" --out "$handoff_dir/release-intent.json"
           shasum -a 256 "$handoff_dir/release-intent.json" > "$handoff_dir/release-intent.json.sha256"
-          jq -n --arg orchestration "$GITHUB_SHA" --arg source "$release_source_sha" \
+          jq -n --arg orchestration "${{ needs.release-candidate.outputs.orchestration_sha }}" --arg source "$release_source_sha" \
             '{orchestrationRevision: $orchestration, releaseSourceRevision: $source}' > "$handoff_dir/release-provenance.json"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -179,7 +182,10 @@ jobs:
 
   build:
     name: Build the intent-bound source tree
-    needs: plan
+    needs: [plan, release-candidate]
+    outputs:
+      orchestration_sha: ${{ needs.release-candidate.outputs.orchestration_sha }}
+      release_source_sha: ${{ needs.release-candidate.outputs.release_source_sha }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -188,7 +194,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ needs.release-candidate.outputs.orchestration_sha }}
           fetch-depth: 0
           persist-credentials: false
       - uses: $/.github/actions/setup-callisto
@@ -239,7 +245,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ needs.build.outputs.orchestration_sha }}
           fetch-depth: 0
           persist-credentials: false
       - uses: $/.github/actions/setup-callisto
@@ -247,7 +253,7 @@ jobs:
           source: local
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.release-candidate.outputs.release_source_sha }}
+          ref: ${{ needs.build.outputs.release_source_sha }}
           path: release-source
           fetch-depth: 0
           # The release-source checkout alone needs Git credentials because
@@ -275,7 +281,7 @@ jobs:
           (cd "$intent_dir" && shasum -a 256 -c release-intent.json.sha256)
           cmp "$intent_dir/release-intent.json" "$build_dir/release-intent/release-intent.json"
           cmp "$intent_dir/release-provenance.json" "$build_dir/release-intent/release-provenance.json"
-          jq -e --arg orchestration "$GITHUB_SHA" --arg source "${{ inputs.release_source_sha || github.sha }}" \
+          jq -e --arg orchestration "${{ needs.build.outputs.orchestration_sha }}" --arg source "${{ needs.build.outputs.release_source_sha }}" \
             '.orchestrationRevision == $orchestration and .releaseSourceRevision == $source' \
             "$intent_dir/release-provenance.json" > /dev/null
       - name: Execute verified release
