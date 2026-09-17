@@ -1,0 +1,41 @@
+{
+  "cli_version": "0.10.7-nightly.202609170627.0dda4e14f",
+  "checkpoint_id": "01M2RCNEAEAJEH509GGGZX0EPN",
+  "session_id": "01a0aa80-3aab-7313-9603-edf7533a1570",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-17T19:14:35.690027Z",
+  "branch": "codex/release-recovery",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "crates/callisto-graph/src/commands/release.rs",
+    "crates/callisto-graph/src/commands/release_execution.rs",
+    "crates/callisto-graph/src/error.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-terra",
+  "turn_id": "f624110d039b",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 4319413,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 253668352,
+    "output_tokens": 536198,
+    "api_call_count": 2231
+  },
+  "session_metrics": {
+    "turn_count": 53
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-17T19:14:34.797679Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 160,
+    "human_modified": 5,
+    "human_removed": 0,
+    "total_committed": 160,
+    "total_lines_changed": 165,
+    "agent_percentage": 0,
+    "metric_version": 2
+  }
+}
