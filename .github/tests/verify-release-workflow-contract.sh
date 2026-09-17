@@ -33,14 +33,21 @@ fi
 release_candidate="$(job_block release-candidate plan)"
 require_line "$release_candidate" '          prs=$(gh api --paginate "/repos/${GITHUB_REPOSITORY}/commits/${release_source_sha}/pulls" --jq '\''[.[] | select(.merged_at != null and .base.ref == "main" and (.head.ref == "callisto/version-packages" or (.head.ref | test("^callisto/version-packages--[0-9a-f]{40}$"))))] | length'\'')' 'release-candidate must validate an explicit source only when it is a merged managed branch'
 
-build="$(job_block build execute)"
-require_line "$build" '      contents: read' 'build must read the intent-bound source tree'
-require_line "$build" '      attestations: write' 'build must create provenance attestations'
-require_line "$build" '      id-token: write' 'build must mint the Sigstore OIDC identity'
-require_line "$build" '          path: ${{ runner.temp }}/release-intent' 'build must keep release handoff outside either checkout'
-require_line "$build" '          subject-path: ${{ runner.temp }}/release-artifacts/**' 'build must attest assets staged outside either checkout'
+build_artifact="$(job_block build-artifact build)"
+require_line "$build_artifact" '      contents: read' 'each target build must read the intent-bound source tree'
+require_line "$build_artifact" '      attestations: write' 'each target build must create provenance attestations'
+require_line "$build_artifact" '      id-token: write' 'each target build must mint the Sigstore OIDC identity'
+require_line "$build_artifact" '          path: ${{ runner.temp }}/release-intent' 'each target build must keep the release handoff outside either checkout'
+require_line "$build_artifact" '          subject-path: ${{ runner.temp }}/release-artifacts/${{ matrix.asset }}' 'each target build must attest its staged artifact bytes'
+require_line "$build_artifact" '            target: aarch64-apple-darwin' 'the product matrix must build macOS ARM64'
+require_line "$build_artifact" '            target: x86_64-unknown-linux-gnu' 'the product matrix must build glibc Linux x86_64'
+require_line "$build_artifact" '            target: x86_64-unknown-linux-musl' 'the product matrix must build musl Linux x86_64'
+require_line "$build_artifact" '            target: wasm32-wasip1' 'the product matrix must build the WASI plugin'
 
-plan="$(job_block plan build)"
+build="$(job_block build execute)"
+require_line "$build" '          callisto release artifact-manifest --intent "${RUNNER_TEMP}/release-intent/release-intent.json" --artifact-dir "${RUNNER_TEMP}/release-artifacts" --out "${RUNNER_TEMP}/release-artifacts/manifest.json"' 'assembly must create the exact four-slot artifact manifest'
+
+plan="$(job_block plan build-artifact)"
 require_line "$plan" '          ref: ${{ needs.release-candidate.outputs.orchestration_sha }}' 'planning must use one resolved current orchestration revision'
 require_line "$plan" '          path: release-source' 'planning must check out the explicit release source separately'
 require_line "$plan" '          callisto release plan --source-root "$GITHUB_WORKSPACE/release-source" --orchestration-revision "${{ needs.release-candidate.outputs.orchestration_sha }}" --artifact-repository "$GITHUB_REPOSITORY" --from-release-commit "$release_source_sha" --decision "$GITHUB_WORKSPACE/release-source/.callisto/release-decision.json" --out "$handoff_dir/release-intent.json"' 'planning must bind product artifact slots to the current coordinator and exact source checkout'

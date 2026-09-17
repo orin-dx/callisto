@@ -16,13 +16,14 @@ use callisto_graph::commands::{
 };
 use callisto_graph::locate::IgnoreWalkLocator;
 use callisto_model::{
-    ApplyPermit, ArtifactManifestV1, ExecutionTrustProfileV1, ReleaseExecutionStateV1, ReleaseIntentV1,
-    ReleasePackageId, ReleaseProfileId, ReleaseReceiptV1, ReleaseRunKindV1, ReleaseRunProvenanceV1,
+    ApplyPermit, ArtifactDigest, ArtifactManifestEntryV1, ArtifactManifestV1, ExecutionTrustProfileV1,
+    GitHubArtifactAttestationV1, ReleaseExecutionStateV1, ReleaseIntentV1, ReleasePackageId, ReleaseProfileId,
+    ReleaseReceiptV1, ReleaseRunKindV1, ReleaseRunProvenanceV1,
 };
 
 use crate::cli::{
-    GlobalArgs, OutputFormat, ReleaseArgs, ReleaseExecuteArgs, ReleaseInspectArgs, ReleasePlanArgs,
-    ReleaseReconcileArgs,
+    GlobalArgs, OutputFormat, ReleaseArgs, ReleaseArtifactManifestArgs, ReleaseExecuteArgs, ReleaseInspectArgs,
+    ReleasePlanArgs, ReleaseReconcileArgs,
 };
 use crate::error::CliError;
 use crate::output::write_json;
@@ -34,8 +35,95 @@ pub fn handle(args: ReleaseArgs, global: &GlobalArgs) -> Result<ExitCode, CliErr
         ReleaseArgs::Plan(args) => plan(args, global),
         ReleaseArgs::Inspect(args) => inspect(args, global),
         ReleaseArgs::Reconcile(args) => reconcile(args, global),
+        ReleaseArgs::ArtifactManifest(args) => artifact_manifest(args, global),
         ReleaseArgs::Execute(args) => execute(args, global),
     }
+}
+
+fn artifact_manifest(args: ReleaseArtifactManifestArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
+    if global.dry_run {
+        return Err(CliError::Other(
+            "release artifact-manifest needs an output file; remove --dry-run because it records build output"
+                .to_owned(),
+        ));
+    }
+    let intent = read_intent(&args.intent)?;
+    if intent.artifact_slots.is_empty() {
+        return Err(CliError::Other(
+            "release intent declares no binary artifact slots; no artifact manifest can be created".to_owned(),
+        ));
+    }
+    let root = args.artifact_dir.canonicalize().map_err(|source| CliError::Io {
+        source,
+        path: Some(args.artifact_dir.clone()),
+    })?;
+    let source_commit = match &intent.snapshot.source {
+        callisto_model::SourceIdentity::GitCommit { sha } => sha.clone(),
+        callisto_model::SourceIdentity::HermeticContent { .. } => {
+            return Err(CliError::Other(
+                "artifact manifests require a Git commit release source".to_owned(),
+            ))
+        }
+    };
+    let mut entries = Vec::with_capacity(intent.artifact_slots.len());
+    for slot in &intent.artifact_slots {
+        let path = root.join(&slot.asset_name);
+        let metadata = std::fs::symlink_metadata(&path).map_err(|source| CliError::Io {
+            source,
+            path: Some(path.clone()),
+        })?;
+        if metadata.file_type().is_symlink() || !metadata.is_file() {
+            return Err(CliError::Other(format!(
+                "artifact `{}` must be a regular file directly in `{}`",
+                slot.asset_name,
+                root.display()
+            )));
+        }
+        let canonical = path.canonicalize().map_err(|source| CliError::Io {
+            source,
+            path: Some(path.clone()),
+        })?;
+        if !canonical.starts_with(&root) {
+            return Err(CliError::Other(format!(
+                "artifact `{}` resolves outside `{}`",
+                slot.asset_name,
+                root.display()
+            )));
+        }
+        let file = std::fs::File::open(&canonical).map_err(|source| CliError::Io {
+            source,
+            path: Some(canonical.clone()),
+        })?;
+        let (digest, byte_length) = ArtifactDigest::from_reader(file).map_err(|source| CliError::Io {
+            source,
+            path: Some(canonical),
+        })?;
+        entries.push(ArtifactManifestEntryV1 {
+            slot: slot.clone(),
+            digest: digest.clone(),
+            byte_length,
+            attestation: GitHubArtifactAttestationV1 {
+                repository: slot.attestation_policy.repository.clone(),
+                workflow_path: slot.attestation_policy.workflow_path.clone(),
+                workflow_commit: slot.attestation_policy.workflow_commit.clone(),
+                subject_digest: digest,
+                source_commit: source_commit.clone(),
+            },
+        });
+    }
+    let manifest = ArtifactManifestV1::new(&intent, entries)
+        .map_err(|error| CliError::Other(format!("cannot create artifact manifest: {error}")))?;
+    let permit = ApplyPermit::granted_unless_dry_run(false).expect("non-dry-run permits writes");
+    let content = serde_json::to_string_pretty(&manifest).expect("artifact manifest serializes") + "\n";
+    callisto_model::atomic::atomic_write(&args.out, &content, &permit).map_err(|source| CliError::Io {
+        source,
+        path: Some(args.out.clone()),
+    })?;
+    match global.format {
+        OutputFormat::Json => write_json(&mut std::io::stdout(), &manifest)?,
+        OutputFormat::Text => println!("Artifact manifest saved to {}", args.out.display()),
+    }
+    Ok(ExitCode::SUCCESS)
 }
 
 fn plan(args: ReleasePlanArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {

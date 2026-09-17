@@ -266,6 +266,8 @@ pub enum ReleaseArgs {
     Inspect(ReleaseInspectArgs),
     /// Report which pending operations are eligible without changing release state.
     Reconcile(ReleaseReconcileArgs),
+    /// Create the exact artifact manifest for a completed intent-bound build.
+    ArtifactManifest(ReleaseArtifactManifestArgs),
     /// Execute a previously approved intent. This is the only durable mutation route.
     Execute(ReleaseExecuteArgs),
 }
@@ -378,6 +380,19 @@ pub struct ReleaseReconcileArgs {
     /// Explicit state path. If omitted, reconciliation reports the initialized state.
     #[arg(long, value_name = "FILE")]
     pub state: Option<PathBuf>,
+}
+
+#[derive(Args, Clone, Debug)]
+pub struct ReleaseArtifactManifestArgs {
+    /// Exact durable release intent that declares the expected artifact slots.
+    #[arg(long, value_name = "FILE")]
+    pub intent: PathBuf,
+    /// Directory containing one regular file for every declared artifact slot.
+    #[arg(long, value_name = "DIR")]
+    pub artifact_dir: PathBuf,
+    /// Explicit path where the artifact manifest will be atomically written.
+    #[arg(long, value_name = "FILE")]
+    pub out: PathBuf,
 }
 
 #[derive(Args, Clone, Debug)]
