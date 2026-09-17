@@ -322,6 +322,10 @@ pub struct ReleasePrCommitPlanArgs {
 
 #[derive(Args, Clone, Debug)]
 pub struct ReleasePlanArgs {
+    /// Read the release source from this checkout while the Callisto binary
+    /// itself may come from a separate, current orchestration checkout.
+    #[arg(long, value_name = "DIR")]
+    pub source_root: Option<PathBuf>,
     /// Exact qualified package identity, for example `cargo/callisto-cli`. Repeat this flag to select multiple packages. This local/manual mode cannot be combined with --from-release-commit.
     #[arg(
         long = "package",
@@ -371,6 +375,10 @@ pub struct ReleaseReconcileArgs {
 
 #[derive(Args, Clone, Debug)]
 pub struct ReleaseExecuteArgs {
+    /// Validate and execute against this exact release-source checkout. The
+    /// current CLI/orchestration checkout is never inferred from this path.
+    #[arg(long, value_name = "DIR")]
+    pub source_root: Option<PathBuf>,
     /// Explicit path to the durable release intent JSON document.
     #[arg(long, value_name = "FILE")]
     pub intent: PathBuf,

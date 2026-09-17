@@ -44,7 +44,8 @@ fn plan(args: ReleasePlanArgs, global: &GlobalArgs) -> Result<ExitCode, CliError
         ));
     }
     let runner = CliCommandRunner;
-    let workspace = load_workspace(global, &runner)?;
+    let source_global = source_global(global, args.source_root.as_deref());
+    let workspace = load_workspace(&source_global, &runner)?;
     let decision = match args.from_release_commit.as_deref() {
         Some(raw) => {
             let commit = callisto_model::CommitSha::parse(raw)
@@ -153,9 +154,10 @@ fn execute(args: ReleaseExecuteArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
         }
     }
     let runner = CliCommandRunner;
-    let root = dunce::canonicalize(&global.cwd).map_err(|source| CliError::Io {
+    let source_global = source_global(global, args.source_root.as_deref());
+    let root = dunce::canonicalize(&source_global.cwd).map_err(|source| CliError::Io {
         source,
-        path: Some(global.cwd.clone()),
+        path: Some(source_global.cwd.clone()),
     })?;
     let locator = IgnoreWalkLocator::new(&root);
     let explicit_state_directory = args.state.as_deref().and_then(std::path::Path::parent);
@@ -177,6 +179,14 @@ fn execute(args: ReleaseExecuteArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
         OutputFormat::Text => println!("Release execution state saved to {}", store.path().display()),
     }
     Ok(ExitCode::SUCCESS)
+}
+
+fn source_global(global: &GlobalArgs, source_root: Option<&std::path::Path>) -> GlobalArgs {
+    let mut source = global.clone();
+    if let Some(root) = source_root {
+        source.cwd = root.to_path_buf();
+    }
+    source
 }
 
 fn read_intent(path: &std::path::Path) -> Result<ReleaseIntentV1, CliError> {
