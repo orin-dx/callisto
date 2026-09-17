@@ -59,11 +59,15 @@ mod tests {
             ("git", vec!["config", "user.name", "Test"]),
             ("git", vec!["config", "user.email", "test@test.dev"]),
         ] {
-            drop(
-                std::process::Command::new(program)
-                    .args(args)
-                    .current_dir(root)
-                    .output(),
+            let output = std::process::Command::new(program)
+                .args(args)
+                .current_dir(root)
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "fixture command `{program}` failed: {}",
+                String::from_utf8_lossy(&output.stderr)
             );
         }
 
@@ -104,6 +108,12 @@ mod tests {
             .success());
         assert!(std::process::Command::new("git")
             .args(["-c", "commit.gpgSign=false", "commit", "-m", "seed", "--allow-empty"])
+            .current_dir(root)
+            .status()
+            .unwrap()
+            .success());
+        assert!(std::process::Command::new("git")
+            .args(["rev-parse", "--verify", "HEAD"])
             .current_dir(root)
             .status()
             .unwrap()
