@@ -71,6 +71,7 @@ jobs:
   version-pr:
     name: Create or update the Callisto release PR
     needs: verify
+    if: github.event_name != 'workflow_dispatch' || inputs.release_source_sha == ''
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -103,7 +104,9 @@ jobs:
   release-candidate:
     name: Identify a merged Callisto release PR
     needs: [verify, version-pr]
-    if: needs.version-pr.outputs.has_pending_changesets == 'false'
+    if: >-
+      always() && needs.verify.result == 'success' &&
+      (inputs.release_source_sha != '' || needs.version-pr.outputs.has_pending_changesets == 'false')
     runs-on: ubuntu-latest
     permissions:
       contents: read
