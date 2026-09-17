@@ -335,3 +335,7 @@ Continue until all phases and work is completely done and commited and you're re
 ---
 
 We seem to be doing a lot in the actions, should any of that logic be in the CLI?
+
+---
+
+Make a plan that is comprehensive and adapt the current phases.
