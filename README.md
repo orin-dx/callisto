@@ -234,7 +234,7 @@ Callisto combines ideas from `@changesets/cli`, `release-please`, and `nx releas
 | npm workspaces | Yes | Yes | Yes | Yes |
 | Cross-ecosystem cascade | Yes | — | Per-ecosystem | — |
 | napi/maturin platform-package coordination | Native | — | — | — |
-| GitHub Release binary assets | Planned | — | Yes | — |
+| GitHub Release binary assets | In implementation | — | Yes | — |
 
 *Cross-ecosystem cascade*: a version bump propagates along real dependency edges — a Cargo crate bump cascades into the npm packages that depend on it, automatically. *Platform-package coordination* is the sharper case: one native crate compiling to N architecture-specific npm/PyPI packages plus one wrapper package depending on all of them — nothing else in this table treats that shape as a first-class case instead of a hand-rolled CI workaround.
 

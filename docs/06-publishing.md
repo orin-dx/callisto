@@ -30,10 +30,10 @@ do not need to migrate anything -- that branch is a normal, continuously-updated
 going forward. An optional App or fine-grained token remains available for repositories that
 want release PR operations attributed to a different identity, but is never required.
 
-After a merge, the workflow derives a transient release intent from the signed merge commit's
-actual delta, builds from that exact commit, and passes the intent between jobs as a same-run
-GitHub artifact with a SHA-256 sidecar. It is not committed and it is never recovered from a
-cache. The execute job rechecks the handoff before calling `callisto release execute`.
+After a merge, the workflow will derive a fresh release run from the exact merged source and
+pass its immutable handoff between jobs. A historical GitHub Actions rerun is never recovery:
+it uses the historical orchestration revision. Recovery must be a new run of current
+orchestration against an explicit merged release source.
 
 The merged, managed release PR is the sole approval boundary. Do not configure a separate
 GitHub Environment reviewer gate for this workflow. Keep registry credentials scoped only to
@@ -44,14 +44,19 @@ CODEOWNERS review. [`.github/CODEOWNERS`](../.github/CODEOWNERS) names the real 
 workflow and action changes, but GitHub does not enforce review merely because that file exists.
 
 Only the `execute` job may receive `CARGO_REGISTRY_TOKEN`, `NPM_TOKEN`, or `TWINE_PASSWORD`.
-Do not put those secrets at workflow scope, in build jobs, or in an action input. Binary releases
-add exact files plus `release-artifacts/manifest.json` to the build handoff; their GitHub build
-attestations are verified by Callisto before upload. Source-only releases do not need that
-manifest.
+Do not put those secrets at workflow scope, in build jobs, or in an action input.
+
+The provider-observed recovery lifecycle and binary asset publishing are being implemented. Until
+that work lands, local execution state and a green workflow are not proof that a release exists.
+Use the release receipt and independent provider checks as the completion evidence.
 
 `callisto-action` is now a compatibility version-PR action only. Its former `publish` and
 `create_github_release` inputs are ignored; it never publishes, tags, downloads artifacts, or
 creates a forge release. The repository durable workflow is the supported release path.
+
+The binding self-release contract, implementation batches, and cutover evidence are in
+[`SPEC-SELF-RELEASE-LIFECYCLE`](specs/SPEC-SELF-RELEASE-LIFECYCLE.json) and its
+[`implementation plan`](projects/SPEC-SELF-RELEASE-LIFECYCLE.json).
 
 ---
 

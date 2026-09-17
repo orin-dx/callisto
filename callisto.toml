@@ -23,24 +23,3 @@ mode = "out-of-range"
 bump-severity = "patch"
 peer-escalation = true
 preserve-npm-ranges = true
-
-# Release destinations stay credential-free. Add this only once the isolated
-# rehearsal forge repository and registry are provisioned; do not point a
-# rehearsal profile at a production registry.
-#
-# [release]
-# production = "production"
-#
-# [[release.profile]]
-# name = "production"
-# forge-repository = "orin-dx/callisto"
-# [[release.profile.registry]]
-# key = "cratesIo"
-# endpoint = "https://crates.io/api/v1/crates/new"
-#
-# [[release.profile]]
-# name = "rehearsal"
-# forge-repository = "orin-dx/callisto-rehearsal"
-# [[release.profile.registry]]
-# key = "cratesIo"
-# endpoint = "https://your-isolated-registry.example/api/v1/crates/new"

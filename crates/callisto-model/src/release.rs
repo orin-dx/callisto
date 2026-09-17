@@ -1639,6 +1639,157 @@ pub enum OperationOutcome {
     Blocked { reason: OperationBlockReason },
 }
 
+/// The lifecycle entry point that produced a release run.
+///
+/// Both modes use the same intent and provider-observation rules. `Recovery`
+/// exists so an operator cannot disguise a merged-but-unpublished release as
+/// a normal versioning run.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum ReleaseRunKindV1 {
+    Initial,
+    Recovery,
+}
+
+/// A normalized, credential-free release profile identity.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, JsonSchema)]
+#[schemars(with = "String")]
+pub struct ReleaseProfileId(String);
+
+impl ReleaseProfileId {
+    pub fn parse(raw: impl AsRef<str>) -> Result<Self, ReleaseRunProvenanceError> {
+        let raw = raw.as_ref();
+        if raw.is_empty()
+            || raw.len() > 128
+            || !raw
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+        {
+            return Err(ReleaseRunProvenanceError::InvalidProfile { raw: raw.to_owned() });
+        }
+        Ok(Self(raw.to_owned()))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl Serialize for ReleaseProfileId {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&self.0)
+    }
+}
+
+impl<'de> Deserialize<'de> for ReleaseProfileId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let raw = String::deserialize(deserializer)?;
+        Self::parse(raw).map_err(serde::de::Error::custom)
+    }
+}
+
+/// Immutable identity for the coordinator and source of one release run.
+///
+/// The revisions are intentionally separate even when equal. A recovery must
+/// prove both the current coordinator it used and the historic merged source
+/// it is releasing; callers must never infer one from the other.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ReleaseRunProvenanceV1 {
+    pub schema_version: u8,
+    pub kind: ReleaseRunKindV1,
+    pub orchestration_revision: CommitSha,
+    pub release_source_revision: CommitSha,
+    pub profile: ReleaseProfileId,
+    pub intent_digest: IntentDigest,
+}
+
+impl ReleaseRunProvenanceV1 {
+    pub const SCHEMA_VERSION: u8 = 1;
+
+    pub fn new(
+        kind: ReleaseRunKindV1,
+        orchestration_revision: CommitSha,
+        release_source_revision: CommitSha,
+        profile: ReleaseProfileId,
+        intent_digest: IntentDigest,
+    ) -> Self {
+        Self {
+            schema_version: Self::SCHEMA_VERSION,
+            kind,
+            orchestration_revision,
+            release_source_revision,
+            profile,
+            intent_digest,
+        }
+    }
+
+    pub fn validate_for_intent(&self, intent: &ReleaseIntentV1) -> Result<(), ReleaseRunProvenanceError> {
+        if self.schema_version != Self::SCHEMA_VERSION {
+            return Err(ReleaseRunProvenanceError::UnsupportedSchema {
+                found: self.schema_version,
+            });
+        }
+        if self.intent_digest != intent.digest {
+            return Err(ReleaseRunProvenanceError::MismatchedIntent);
+        }
+        match &intent.snapshot.source {
+            SourceIdentity::GitCommit { sha } if sha == &self.release_source_revision => Ok(()),
+            SourceIdentity::GitCommit { .. } => Err(ReleaseRunProvenanceError::MismatchedReleaseSource),
+            SourceIdentity::HermeticContent { .. } => Err(ReleaseRunProvenanceError::NonGitReleaseSource),
+        }
+    }
+}
+
+/// The result of observing the exact remote identity of a release operation.
+///
+/// No arbitrary provider response is persisted. Callers may log detailed
+/// diagnostics separately, but durable recovery data contains only the safe,
+/// action-relevant classification.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", tag = "kind", deny_unknown_fields)]
+pub enum ProviderObservationV1 {
+    Absent,
+    Exact,
+    Conflict,
+    Indeterminate,
+}
+
+impl ProviderObservationV1 {
+    pub fn is_terminal_success(self) -> bool {
+        matches!(self, Self::Exact)
+    }
+}
+
+/// One provider observation bound to an exact operation in an immutable intent.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ReleaseOperationObservationV1 {
+    pub operation: ReleaseOperationId,
+    pub observation: ProviderObservationV1,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
+pub enum ReleaseRunProvenanceError {
+    #[error("release profile `{raw}` must be a nonempty ASCII identifier")]
+    InvalidProfile { raw: String },
+    #[error("unsupported release run provenance schema version {found}")]
+    UnsupportedSchema { found: u8 },
+    #[error("release run provenance is bound to a different intent")]
+    MismatchedIntent,
+    #[error("release run provenance source does not match the release intent")]
+    MismatchedReleaseSource,
+    #[error("release run provenance requires a Git commit release source")]
+    NonGitReleaseSource,
+}
+
 /// Crash-safe state for an intent-bound execution. Pending and Attempting are nonterminal.
 #[derive(Clone, Debug, PartialEq, Eq, JsonSchema)]
 #[schemars(with = "ReleaseExecutionStateV1Wire")]
@@ -2646,6 +2797,57 @@ mod tests {
             vec![cycle_publish, tag],
         );
         assert!(matches!(cycle, Err(ReleaseIntentError::Cycle { .. })));
+    }
+
+    #[test]
+    fn release_run_provenance_binds_both_revisions_and_the_exact_intent() {
+        let operation = ReleaseOperation::tag(
+            ReleasePackageId::parse("cargo/callisto-model").unwrap(),
+            Version::semver(1, 2, 3),
+            vec![],
+        )
+        .unwrap();
+        let intent = test_intent(
+            ReleaseInputSnapshotV1::new(SourceIdentity::git_commit("a".repeat(40)).unwrap(), vec![]),
+            ExecutionTrustProfileV1::GitCommit,
+            vec![operation],
+        )
+        .unwrap();
+        let provenance = ReleaseRunProvenanceV1::new(
+            ReleaseRunKindV1::Recovery,
+            CommitSha::parse(&"b".repeat(40)).unwrap(),
+            CommitSha::parse(&"a".repeat(40)).unwrap(),
+            ReleaseProfileId::parse("rehearsal").unwrap(),
+            intent.digest().clone(),
+        );
+
+        assert_ne!(
+            provenance.orchestration_revision, provenance.release_source_revision,
+            "recovery must retain distinct coordinator and release-source identities"
+        );
+        assert!(provenance.validate_for_intent(&intent).is_ok());
+
+        let wrong_source = ReleaseRunProvenanceV1::new(
+            ReleaseRunKindV1::Recovery,
+            CommitSha::parse(&"b".repeat(40)).unwrap(),
+            CommitSha::parse(&"c".repeat(40)).unwrap(),
+            ReleaseProfileId::parse("rehearsal").unwrap(),
+            intent.digest().clone(),
+        );
+        assert!(matches!(
+            wrong_source.validate_for_intent(&intent),
+            Err(ReleaseRunProvenanceError::MismatchedReleaseSource)
+        ));
+    }
+
+    #[test]
+    fn release_run_provenance_and_observation_wire_fail_closed() {
+        assert!(ReleaseProfileId::parse("production/main").is_err());
+        assert!(ReleaseProfileId::parse("").is_err());
+        assert!(ProviderObservationV1::Exact.is_terminal_success());
+        assert!(!ProviderObservationV1::Absent.is_terminal_success());
+        assert!(!ProviderObservationV1::Conflict.is_terminal_success());
+        assert!(!ProviderObservationV1::Indeterminate.is_terminal_success());
     }
 
     #[test]
