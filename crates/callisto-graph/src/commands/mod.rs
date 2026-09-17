@@ -28,7 +28,8 @@ pub use release::{
 pub use release_artifacts::{verify_artifact_manifest, VerifiedArtifactManifest};
 pub use release_decision::{derive_release_commit_decision, derive_release_decision, derive_selected_release_decision};
 pub use release_execution::{
-    execute_release, execute_release_with_artifacts, reconcile_release_execution, ReconciledReleaseExecution,
+    execute_release, execute_release_with_artifacts, execute_release_with_artifacts_in_recovery,
+    reconcile_release_execution, ReconciledReleaseExecution,
 };
 pub use release_store::{AtomicReleaseStateWriter, ReleaseStateStore, ReleaseStateWriter};
 pub use snapshot::plan_snapshot;

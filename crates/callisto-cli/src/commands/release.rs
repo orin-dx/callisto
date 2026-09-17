@@ -10,7 +10,7 @@ use std::process::ExitCode;
 
 use callisto_graph::commands::{
     build_release_intent, derive_release_commit_decision, derive_selected_release_decision,
-    execute_release_with_artifacts, observe_release_operations, reconcile_release_execution,
+    execute_release_with_artifacts_in_recovery, observe_release_operations, reconcile_release_execution,
     validate_release_intent_with_state_directory, verify_artifact_manifest, ReleaseStateStore, VersionOptions,
 };
 use callisto_graph::locate::IgnoreWalkLocator;
@@ -173,7 +173,8 @@ fn execute(args: ReleaseExecuteArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
                 .to_string(),
         )
     })?;
-    let state = execute_release_with_artifacts(&capability, &store, &permit, manifest.as_ref())?;
+    let state =
+        execute_release_with_artifacts_in_recovery(&capability, &store, &permit, manifest.as_ref(), args.recovery)?;
     let orchestration_revision = callisto_model::CommitSha::parse(&args.orchestration_revision).map_err(|error| {
         CliError::Other(format!(
             "invalid orchestration revision `{}`: {error}",

@@ -337,10 +337,16 @@ fn fake_publishers(
     let log = external.join("external-effects.log");
     let git_trace = external.join("git-commands.log");
     let forge_marker = external.join("forge-release-created");
-    let cargo_exit = if fail_cargo_publish { "exit 23" } else { "exit 0" };
+    let cargo_publish = if fail_cargo_publish {
+        "exit 23"
+    } else {
+        ": > \"$CALLISTO_TEST_CARGO_MARKER\"\nexit 0"
+    };
     fs::write(
         bin.join("cargo"),
-        format!("#!/bin/sh\nprintf 'cargo %s\\n' \"$*\" >> \"$CALLISTO_TEST_LOG\"\n{cargo_exit}\n"),
+        format!(
+            "#!/bin/sh\nprintf 'cargo %s\\n' \"$*\" >> \"$CALLISTO_TEST_LOG\"\nif [ \"$1\" = info ]; then\n  if [ -f \"$CALLISTO_TEST_CARGO_MARKER\" ]; then\n    exit 0\n  fi\n  printf 'could not find crate\\n' >&2\n  exit 101\nfi\nif [ \"$1\" = publish ]; then\n  {cargo_publish}\nfi\nexit 0\n"
+        ),
     )
     .unwrap();
     fs::write(
@@ -370,8 +376,38 @@ fn execute(
     forge_marker: &Path,
     git_trace: &Path,
 ) -> Output {
-    let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap());
-    Command::new(env!("CARGO_BIN_EXE_callisto"))
+    execute_with_recovery(
+        root,
+        intent,
+        state,
+        FakePublishers {
+            bin,
+            log,
+            forge_marker,
+            git_trace,
+        },
+        false,
+    )
+}
+
+#[derive(Clone, Copy)]
+struct FakePublishers<'a> {
+    bin: &'a Path,
+    log: &'a Path,
+    forge_marker: &'a Path,
+    git_trace: &'a Path,
+}
+
+fn execute_with_recovery(
+    root: &Path,
+    intent: &Path,
+    state: &Path,
+    publishers: FakePublishers<'_>,
+    recovery: bool,
+) -> Output {
+    let path = format!("{}:{}", publishers.bin.display(), std::env::var("PATH").unwrap());
+    let mut command = Command::new(env!("CARGO_BIN_EXE_callisto"));
+    command
         .args(["--format", "json", "--cwd", root.to_str().unwrap()])
         .args([
             "release",
@@ -384,11 +420,16 @@ fn execute(
             state.with_extension("receipt.json").to_str().unwrap(),
             "--orchestration-revision",
             &git(root, &["rev-parse", "HEAD"]),
-        ])
+        ]);
+    if recovery {
+        command.arg("--recovery");
+    }
+    command
         .env("PATH", path)
-        .env("CALLISTO_TEST_LOG", log)
-        .env("CALLISTO_TEST_GIT_TRACE", git_trace)
-        .env("CALLISTO_TEST_FORGE_MARKER", forge_marker)
+        .env("CALLISTO_TEST_LOG", publishers.log)
+        .env("CALLISTO_TEST_GIT_TRACE", publishers.git_trace)
+        .env("CALLISTO_TEST_FORGE_MARKER", publishers.forge_marker)
+        .env("CALLISTO_TEST_CARGO_MARKER", state.with_extension("cargo-marker"))
         .env("CALLISTO_TEST_REAL_GIT", system_git())
         .output()
         .expect("release execute should run")
@@ -462,6 +503,55 @@ fn failed_publish_persists_indeterminate_attempt_and_never_tags() {
         state_json.contains("attempting"),
         "the executor must preserve an indeterminate attempt for reconciliation instead of inferring success"
     );
+}
+
+#[test]
+fn explicit_recovery_reconstructs_missing_state_from_remote_evidence() {
+    let (dir, release_commit) = release_commit_fixture();
+    let external = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let intent = plan_intent(root, external.path(), &release_commit);
+    let state = external.path().join("release-state.json");
+    let (bin, log, forge_marker, git_trace) = fake_publishers(external.path(), &release_commit, false);
+
+    let first = execute(root, &intent, &state, &bin, &log, &forge_marker, &git_trace);
+    assert!(
+        first.status.success(),
+        "initial execution must establish remote state: {}\n{}\n{}",
+        String::from_utf8_lossy(&first.stderr),
+        fs::read_to_string(&git_trace).unwrap_or_else(|_| "<no git trace>".to_owned()),
+        fs::read_to_string(&log).unwrap_or_else(|_| "<no effect trace>".to_owned()),
+    );
+    fs::remove_file(&state).unwrap();
+    fs::remove_file(state.with_extension("receipt.json")).unwrap();
+    let effects = fs::read_to_string(&log).unwrap();
+
+    let recovered = execute_with_recovery(
+        root,
+        &intent,
+        &state,
+        FakePublishers {
+            bin: &bin,
+            log: &log,
+            forge_marker: &forge_marker,
+            git_trace: &git_trace,
+        },
+        true,
+    );
+    assert!(
+        recovered.status.success(),
+        "explicit recovery must reconstruct a missing local journal from exact provider state: {}",
+        String::from_utf8_lossy(&recovered.stderr)
+    );
+    let after_recovery = fs::read_to_string(&log).unwrap();
+    for effect in ["cargo publish", "git push", "gh release create"] {
+        assert_eq!(
+            after_recovery.matches(effect).count(),
+            effects.matches(effect).count(),
+            "recovery must not repeat `{effect}` after provider reconstruction"
+        );
+    }
+    assert!(state.with_extension("receipt.json").exists());
 }
 
 #[test]

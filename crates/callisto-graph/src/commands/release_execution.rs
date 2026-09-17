@@ -40,9 +40,35 @@ pub fn execute_release_with_artifacts<W: ReleaseStateWriter>(
     permit: &ApplyPermit,
     artifacts: Option<&ArtifactManifestV1>,
 ) -> Result<ReleaseExecutionStateV1, GraphError> {
+    execute_release_with_artifacts_in_recovery(capability, store, permit, artifacts, false)
+}
+
+/// Executes one explicitly selected recovery run.
+///
+/// Unlike a normal execution, recovery may reconstruct a missing local
+/// journal from exact provider observations. The immutable intent remains the
+/// roster authority; no operation is inferred successful from an absent
+/// state file alone.
+pub fn execute_release_with_artifacts_in_recovery<W: ReleaseStateWriter>(
+    capability: &ValidatedReleaseIntent<'_>,
+    store: &ReleaseStateStore<W>,
+    permit: &ApplyPermit,
+    artifacts: Option<&ArtifactManifestV1>,
+    recovery: bool,
+) -> Result<ReleaseExecutionStateV1, GraphError> {
     let intent = capability.intent();
     require_artifact_manifest_matches_intent(intent, artifacts)?;
-    let mut state = store.load_or_initialize(intent, permit)?;
+    let (mut state, state_was_missing) = match store.load(intent)? {
+        Some(state) => (state, false),
+        None => {
+            let state = ReleaseExecutionStateV1::pending(intent);
+            store.save(intent, &state, permit)?;
+            (state, true)
+        }
+    };
+    if recovery && state_was_missing {
+        reconstruct_missing_state(capability, store, permit, &mut state)?;
+    }
     recover_interrupted_operations(capability, store, permit, &mut state)?;
     loop {
         let Some(operation) = reconcile_release_execution(intent, &state)?.eligible().first().cloned() else {
@@ -62,6 +88,55 @@ pub fn execute_release_with_artifacts<W: ReleaseStateWriter>(
     }
     require_terminal_success(intent, &state)?;
     Ok(state)
+}
+
+/// Reconstructs only exact effects after an operator explicitly chose the
+/// recovery lifecycle. `Absent`, `Conflict`, and `Indeterminate` are not
+/// state transitions: the former remains eligible for normal dispatch once
+/// its prerequisites are reconstructed, while the latter two stop recovery.
+fn reconstruct_missing_state<W: ReleaseStateWriter>(
+    capability: &ValidatedReleaseIntent<'_>,
+    store: &ReleaseStateStore<W>,
+    permit: &ApplyPermit,
+    state: &mut ReleaseExecutionStateV1,
+) -> Result<(), GraphError> {
+    let pending: Vec<_> = capability
+        .intent()
+        .operations
+        .iter()
+        .filter(|operation| state.operation_state(operation.id()) == Some(OperationState::Pending))
+        .map(|operation| operation.id().clone())
+        .collect();
+    for operation in pending {
+        capability.recheck_trust()?;
+        reconstruct_missing_operation(state, &operation, capability.observe_prepared(&operation)?)?;
+        store.save(capability.intent(), state, permit)?;
+    }
+    Ok(())
+}
+
+fn reconstruct_missing_operation(
+    state: &mut ReleaseExecutionStateV1,
+    operation: &ReleaseOperationId,
+    observation: ProviderObservationV1,
+) -> Result<(), GraphError> {
+    match observation {
+        ProviderObservationV1::Exact => {
+            state
+                .mark_attempting(operation)
+                .map_err(|source| GraphError::ReleaseExecutionState { source })?;
+            state
+                .mark_terminal(operation, callisto_model::OperationOutcome::AlreadySatisfied)
+                .map_err(|source| GraphError::ReleaseExecutionState { source })
+        }
+        ProviderObservationV1::Absent => Ok(()),
+        ProviderObservationV1::Conflict | ProviderObservationV1::Indeterminate => {
+            Err(GraphError::ReleaseRecoveryUnresolved {
+                operation: Box::new(operation.clone()),
+                observation,
+            })
+        }
+    }
 }
 
 /// Reconciles only persisted `Attempting` operations before a rerun can issue
@@ -445,6 +520,32 @@ mod tests {
             })
         ));
         assert_eq!(unresolved.operation_state(&operation), Some(OperationState::Attempting));
+    }
+
+    #[test]
+    fn missing_state_reconstruction_only_adopts_exact_provider_effects() {
+        let intent = intent();
+        let operation = intent.operations[0].id().clone();
+        let mut state = ReleaseExecutionStateV1::pending(&intent);
+
+        reconstruct_missing_operation(&mut state, &operation, ProviderObservationV1::Exact).unwrap();
+        assert_eq!(
+            state.operation_state(&operation),
+            Some(OperationState::AlreadySatisfied)
+        );
+
+        let mut absent = ReleaseExecutionStateV1::pending(&intent);
+        reconstruct_missing_operation(&mut absent, &operation, ProviderObservationV1::Absent).unwrap();
+        assert_eq!(absent.operation_state(&operation), Some(OperationState::Pending));
+
+        for observation in [ProviderObservationV1::Conflict, ProviderObservationV1::Indeterminate] {
+            let mut unresolved = ReleaseExecutionStateV1::pending(&intent);
+            assert!(matches!(
+                reconstruct_missing_operation(&mut unresolved, &operation, observation),
+                Err(GraphError::ReleaseRecoveryUnresolved { observation: found, .. }) if found == observation
+            ));
+            assert_eq!(unresolved.operation_state(&operation), Some(OperationState::Pending));
+        }
     }
 
     #[test]

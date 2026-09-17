@@ -540,6 +540,18 @@ pub enum GraphError {
         operation: Box<callisto_model::ReleaseOperationId>,
         observation: callisto_model::ProviderObservationV1,
     },
+
+    #[error("registry version already exists for `{package}` at {version}")]
+    #[diagnostic(
+        code(E174),
+        help(
+            "Do not publish this version again. Verify the release history and choose an explicitly selected recovery run only if the immutable intent matches the existing release."
+        )
+    )]
+    ReleaseRegistryVersionExists {
+        package: String,
+        version: callisto_model::Version,
+    },
 }
 
 /// Why a workspace package that a `--package` filter named is nonetheless

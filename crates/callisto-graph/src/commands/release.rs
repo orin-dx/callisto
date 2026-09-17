@@ -486,6 +486,12 @@ impl ValidatedReleaseIntent<'_> {
         let output = match id.package.ecosystem() {
             Ecosystem::Cargo => {
                 let registry_key = (registry.key.as_str() != RegistryKey::CRATES_IO).then(|| registry.key.as_str());
+                if self.cargo_version_is_published(package_name, version, registry_key)? {
+                    return Err(GraphError::ReleaseRegistryVersionExists {
+                        package: package_name.clone(),
+                        version: version.clone(),
+                    });
+                }
                 let argv = registry_argv::cargo_publish_argv(
                     &self.prepared.root,
                     package_dir,
@@ -497,7 +503,10 @@ impl ValidatedReleaseIntent<'_> {
             }
             Ecosystem::Npm => {
                 if self.npm_version_is_published(package_name, version, registry.endpoint.as_deref())? {
-                    return Ok(OperationOutcome::AlreadySatisfied);
+                    return Err(GraphError::ReleaseRegistryVersionExists {
+                        package: package_name.clone(),
+                        version: version.clone(),
+                    });
                 }
                 let package_manager = registry_argv::detect_npm_package_manager(&self.prepared.root);
                 let argv = registry_argv::npm_publish_argv(
