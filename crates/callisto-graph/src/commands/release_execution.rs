@@ -79,9 +79,8 @@ fn recover_interrupted_operations<W: ReleaseStateWriter>(
         .intent()
         .operations
         .iter()
-        .filter_map(|operation| {
-            (state.operation_state(operation.id()) == Some(OperationState::Attempting)).then(|| operation.id().clone())
-        })
+        .filter(|operation| state.operation_state(operation.id()) == Some(OperationState::Attempting))
+        .map(|operation| operation.id().clone())
         .collect();
     for operation in attempting {
         capability.recheck_trust()?;
@@ -98,7 +97,7 @@ fn recover_interrupted_operation(
 ) -> Result<(), GraphError> {
     if observation != ProviderObservationV1::Exact {
         return Err(GraphError::ReleaseRecoveryUnresolved {
-            operation: operation.clone(),
+            operation: Box::new(operation.clone()),
             observation,
         });
     }

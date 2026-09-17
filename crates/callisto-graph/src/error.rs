@@ -537,7 +537,7 @@ pub enum GraphError {
         )
     )]
     ReleaseRecoveryUnresolved {
-        operation: callisto_model::ReleaseOperationId,
+        operation: Box<callisto_model::ReleaseOperationId>,
         observation: callisto_model::ProviderObservationV1,
     },
 }
