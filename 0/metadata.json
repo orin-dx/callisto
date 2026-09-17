@@ -1,0 +1,66 @@
+{
+  "cli_version": "0.10.7-nightly.202609170627.0dda4e14f",
+  "checkpoint_id": "01M2R4TJCYX0EW4JM5P1GTGGF3",
+  "session_id": "01a0aa80-3aab-7313-9603-edf7533a1570",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-17T16:57:35.174767Z",
+  "branch": "codex/release-recovery",
+  "checkpoints_count": 6,
+  "save_step_count": 1,
+  "files_touched": [
+    ".gitignore",
+    "CONTRIBUTING.md"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-terra",
+  "turn_id": "cdfe1c11a7ab",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 3973483,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 247329792,
+    "output_tokens": 514238,
+    "api_call_count": 2166
+  },
+  "session_metrics": {
+    "turn_count": 50
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-17T16:57:34.371841Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 18,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 18,
+    "total_lines_changed": 18,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 3314,
+      "user_lines_removed": 26,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".agents/skills/entire-search/SKILL.md": 22,
+        ".claude/candidates/candidates-graph-release-publish-tag.json": 2106,
+        ".claude/plans/RELEASE-SELF-HOSTING-INCIDENT-2026-09-16.md": 435,
+        ".claude/recon-manifest.json": 280,
+        ".claude/settings.json": 23,
+        ".claude/settings.local.json": 11,
+        ".claude/skills/entire-search/SKILL.md": 22,
+        ".codex/agents/bug-hunter.toml": 3,
+        ".codex/hooks.json": 99,
+        ".gemini/skills/entire-search/SKILL.md": 22,
+        ".opencode/plugins/entire.ts": 269,
+        ".opencode/skills/entire-search/SKILL.md": 22
+      },
+      "user_removed_per_file": {
+        ".claude/settings.json": 26
+      }
+    }
+  ]
+}

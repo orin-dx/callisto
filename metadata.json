@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.10.7-nightly.202609170627.0dda4e14f",
+  "checkpoint_id": "01M2R4TJCYX0EW4JM5P1GTGGF3",
+  "strategy": "manual-commit",
+  "branch": "codex/release-recovery",
+  "checkpoints_count": 6,
+  "files_touched": [
+    ".gitignore",
+    "CONTRIBUTING.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 3973483,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 247329792,
+    "output_tokens": 514238,
+    "api_call_count": 2166
+  }
+}
