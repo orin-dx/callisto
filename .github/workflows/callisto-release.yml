@@ -146,27 +146,34 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.release-candidate.outputs.release_source_sha }}
+          # The coordinator must be the current workflow revision. Recovery
+          # never rebuilds its release engine from historic source.
+          ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
       - uses: $/.github/actions/setup-callisto
         with:
           source: local
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.release-candidate.outputs.release_source_sha }}
+          path: release-source
+          fetch-depth: 0
+          persist-credentials: false
       - name: Derive and hash intent
         run: |
           set -euo pipefail
           release_source_sha="${{ needs.release-candidate.outputs.release_source_sha }}"
-          callisto release plan --from-release-commit "$release_source_sha" --decision .callisto/release-decision.json --out release-intent.json
-          shasum -a 256 release-intent.json > release-intent.json.sha256
+          handoff_dir="${RUNNER_TEMP}/release-intent"
+          mkdir -p "$handoff_dir"
+          callisto release plan --source-root "$GITHUB_WORKSPACE/release-source" --from-release-commit "$release_source_sha" --decision "$GITHUB_WORKSPACE/release-source/.callisto/release-decision.json" --out "$handoff_dir/release-intent.json"
+          shasum -a 256 "$handoff_dir/release-intent.json" > "$handoff_dir/release-intent.json.sha256"
           jq -n --arg orchestration "$GITHUB_SHA" --arg source "$release_source_sha" \
-            '{orchestrationRevision: $orchestration, releaseSourceRevision: $source}' > release-provenance.json
+            '{orchestrationRevision: $orchestration, releaseSourceRevision: $source}' > "$handoff_dir/release-provenance.json"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-intent
-          path: |
-            release-intent.json
-            release-intent.json.sha256
-            release-provenance.json
+          path: ${{ runner.temp }}/release-intent
           if-no-files-found: error
           retention-days: 1
 
@@ -181,41 +188,43 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.release_source_sha || github.sha }}
+          ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
       - uses: $/.github/actions/setup-callisto
         with:
           source: local
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.release-candidate.outputs.release_source_sha }}
+          path: release-source
+          fetch-depth: 0
+          persist-credentials: false
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
         with:
           just-version: '1.58.0'
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: release-intent
-          path: .release-handoff
+          path: ${{ runner.temp }}/release-intent
       - name: Verify handoff and build
         run: |
           set -euo pipefail
-          (cd .release-handoff && shasum -a 256 -c release-intent.json.sha256)
-          callisto release inspect --input .release-handoff/release-intent.json
-          mkdir -p release-artifacts
-          just build
+          handoff_dir="${RUNNER_TEMP}/release-intent"
+          (cd "$handoff_dir" && shasum -a 256 -c release-intent.json.sha256)
+          callisto release inspect --input "$handoff_dir/release-intent.json"
+          (cd release-source && just build)
       - name: Attest declared binary artifacts
-        if: hashFiles('release-artifacts/**') != ''
+        if: hashFiles('release-source/release-artifacts/**') != ''
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-path: release-artifacts/**
+          subject-path: release-source/release-artifacts/**
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-build
-          # include-hidden-files: upload-artifact excludes dotfiles by
-          # default, and .release-handoff is one -- without this it silently
-          # uploads nothing and "execute" downloads an empty artifact.
-          include-hidden-files: true
           path: |
-            .release-handoff
-            release-artifacts
+            ${{ runner.temp }}/release-intent
+            release-source/release-artifacts
           if-no-files-found: error
           retention-days: 1
 
@@ -230,16 +239,20 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.release_source_sha || github.sha }}
+          ref: ${{ github.sha }}
           fetch-depth: 0
-          # Unlike every other job's checkout, this one must persist
-          # credentials: dispatch_tag (callisto-graph) pushes the release tag
-          # with a plain `git push`, which has no other way to authenticate.
-          # This job's own contents: write permission (above) is what backs it.
-          persist-credentials: true
+          persist-credentials: false
       - uses: $/.github/actions/setup-callisto
         with:
           source: local
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.release-candidate.outputs.release_source_sha }}
+          path: release-source
+          fetch-depth: 0
+          # The release-source checkout alone needs Git credentials because
+          # graph-owned tag dispatch pushes from this repository.
+          persist-credentials: true
       # Downloaded outside the workspace (under $RUNNER_TEMP, like
       # setup-callisto's own binary install): callisto release execute
       # re-checks release trust before every dispatch, which requires a
@@ -260,12 +273,8 @@ jobs:
           intent_dir="${RUNNER_TEMP}/release-intent"
           build_dir="${RUNNER_TEMP}/release-build"
           (cd "$intent_dir" && shasum -a 256 -c release-intent.json.sha256)
-          # .release-handoff and release-artifacts were sibling upload paths
-          # in "build", so upload-artifact rooted the archive one level up --
-          # the handoff file lands here nested under .release-handoff/, not
-          # flat at release-intent.json.
-          cmp "$intent_dir/release-intent.json" "$build_dir/.release-handoff/release-intent.json"
-          cmp "$intent_dir/release-provenance.json" "$build_dir/.release-handoff/release-provenance.json"
+          cmp "$intent_dir/release-intent.json" "$build_dir/release-intent/release-intent.json"
+          cmp "$intent_dir/release-provenance.json" "$build_dir/release-intent/release-provenance.json"
           jq -e --arg orchestration "$GITHUB_SHA" --arg source "${{ inputs.release_source_sha || github.sha }}" \
             '.orchestrationRevision == $orchestration and .releaseSourceRevision == $source' \
             "$intent_dir/release-provenance.json" > /dev/null
@@ -281,8 +290,8 @@ jobs:
           build_dir="${RUNNER_TEMP}/release-build"
           state_dir="${RUNNER_TEMP}/callisto-release-state/${GITHUB_RUN_ID}"
           mkdir -p "$state_dir"
-          args=(--intent "$intent_dir/release-intent.json" --state "$state_dir/execution-state.json")
-          if [[ -f "$build_dir/release-artifacts/manifest.json" ]]; then
-            args+=(--artifact-manifest "$build_dir/release-artifacts/manifest.json" --artifact-dir "$build_dir/release-artifacts")
+          args=(--source-root "$GITHUB_WORKSPACE/release-source" --intent "$intent_dir/release-intent.json" --state "$state_dir/execution-state.json")
+          if [[ -f "$build_dir/release-source/release-artifacts/manifest.json" ]]; then
+            args+=(--artifact-manifest "$build_dir/release-source/release-artifacts/manifest.json" --artifact-dir "$build_dir/release-source/release-artifacts")
           fi
           callisto release execute "${args[@]}"

@@ -37,17 +37,22 @@ build="$(job_block build execute)"
 require_line "$build" '      contents: read' 'build must read the intent-bound source tree'
 require_line "$build" '      attestations: write' 'build must create provenance attestations'
 require_line "$build" '      id-token: write' 'build must mint the Sigstore OIDC identity'
-require_line "$build" '          include-hidden-files: true' 'build must upload .release-handoff -- upload-artifact drops dotfiles by default and "execute" would silently receive nothing'
+require_line "$build" '          path: ${{ runner.temp }}/release-intent' 'build must keep release handoff outside either checkout'
+require_line "$build" '          subject-path: release-source/release-artifacts/**' 'build must attest assets produced by the explicit release source'
 
 plan="$(job_block plan build)"
-require_line "$plan" "            '{orchestrationRevision: \$orchestration, releaseSourceRevision: \$source}' > release-provenance.json" 'recovery planning must record separate orchestration and release-source revisions'
+require_line "$plan" '          ref: ${{ github.sha }}' 'planning must use the current orchestration revision'
+require_line "$plan" '          path: release-source' 'planning must check out the explicit release source separately'
+require_line "$plan" '          callisto release plan --source-root "$GITHUB_WORKSPACE/release-source" --from-release-commit "$release_source_sha" --decision "$GITHUB_WORKSPACE/release-source/.callisto/release-decision.json" --out "$handoff_dir/release-intent.json"' 'planning must pass the exact source checkout to the current Callisto coordinator'
 
 execute="$(sed -n '/^  execute:$/,$p' "$workflow")"
 require_line "$execute" '    needs: build' 'PR merge is the release approval; execute must depend directly on the verified build, not a GitHub Environment gate'
-require_line "$execute" '          cmp "$intent_dir/release-intent.json" "$build_dir/.release-handoff/release-intent.json"' 'execute must read the handoff file at its actual archived path -- .release-handoff and release-artifacts were sibling upload paths in "build", so the artifact is rooted one level up, not flattened'
-require_line "$execute" '          cmp "$intent_dir/release-provenance.json" "$build_dir/.release-handoff/release-provenance.json"' 'execute must reject a build handoff whose recovery provenance differs from planning'
+require_line "$execute" '          cmp "$intent_dir/release-intent.json" "$build_dir/release-intent/release-intent.json"' 'execute must reject a build handoff whose immutable intent differs from planning'
+require_line "$execute" '          cmp "$intent_dir/release-provenance.json" "$build_dir/release-intent/release-provenance.json"' 'execute must reject a build handoff whose recovery provenance differs from planning'
 require_line "$execute" '          path: ${{ runner.temp }}/release-intent' 'execute must download release-intent outside the workspace -- callisto release execute re-checks release trust before every dispatch, which fails closed on any untracked file in the worktree'
 require_line "$execute" '          path: ${{ runner.temp }}/release-build' 'execute must download release-build outside the workspace -- callisto release execute re-checks release trust before every dispatch, which fails closed on any untracked file in the worktree'
+require_line "$execute" '          path: release-source' 'execute must use an explicit release-source checkout'
+require_line "$execute" '          args=(--source-root "$GITHUB_WORKSPACE/release-source" --intent "$intent_dir/release-intent.json" --state "$state_dir/execution-state.json")' 'execute must pass the explicit source checkout to the current Callisto coordinator'
 
 ci_workflow=.github/workflows/callisto-ci.yml
 checkout_count=$(rg -n 'uses: actions/checkout@' "$ci_workflow" | wc -l)
