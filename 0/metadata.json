@@ -1,0 +1,39 @@
+{
+  "cli_version": "0.10.7-nightly.202609170627.0dda4e14f",
+  "checkpoint_id": "01M2RWYW2DEJNFWT0KPZX4NYHQ",
+  "session_id": "01a0aa80-3aab-7313-9603-edf7533a1570",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-17T23:59:22.206929Z",
+  "branch": "codex/release-recovery",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "docs/07-self-release-lifecycle.md"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-terra",
+  "turn_id": "6d601cc2ac2d",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 5350653,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 290968064,
+    "output_tokens": 626149,
+    "api_call_count": 2501
+  },
+  "session_metrics": {
+    "turn_count": 72
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-17T23:59:21.215822Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 5,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 5,
+    "total_lines_changed": 5,
+    "agent_percentage": 0,
+    "metric_version": 2
+  }
+}
