@@ -7,6 +7,12 @@ pub struct RawConfig {
     pub changesets: Option<RawChangesetsConfig>,
     pub cascade: Option<RawCascadeConfig>,
     pub validation: Option<RawValidationConfig>,
+    /// Named, credential-free destinations used by the release executor.
+    ///
+    /// Authentication is deliberately absent from this shape: it belongs to
+    /// the process environment or the provider's credential store at execute
+    /// time, never to `callisto.toml`.
+    pub release: Option<RawReleaseConfig>,
     pub registries: Option<BTreeMap<String, RawRegistryConfig>>,
     pub package: Option<Vec<RawPackageConfig>>,
     #[serde(rename = "package-set")]
@@ -20,6 +26,32 @@ pub struct RawConfig {
     /// against, so a later run can diff the freshly-discovered state against
     /// it instead of against nothing.
     pub init: Option<RawInitConfig>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawReleaseConfig {
+    /// The name of the sole production profile.
+    pub production: String,
+    #[serde(default)]
+    pub profile: Vec<RawReleaseProfile>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawReleaseProfile {
+    pub name: String,
+    #[serde(rename = "forge-repository")]
+    pub forge_repository: String,
+    #[serde(default)]
+    pub registry: Vec<RawReleaseRegistry>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawReleaseRegistry {
+    pub key: String,
+    pub endpoint: String,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]

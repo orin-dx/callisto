@@ -8,7 +8,7 @@ use callisto_model::{
 
 use crate::config::groups::{GroupTable, RawGroupTable};
 use crate::config::pattern::PackagePattern;
-use crate::config::raw::RawConfig;
+use crate::config::raw::{RawConfig, RawReleaseConfig, RawReleaseProfile};
 use crate::error::{ConfigError, GraphError};
 
 #[derive(Clone, Debug)]
@@ -17,6 +17,10 @@ pub struct ResolvedConfig {
     pub changesets_dir: PathBuf,
     pub cascade: CascadeConfig,
     pub validation: ValidationConfig,
+    /// Release destinations, when this workspace has opted into the new
+    /// profile-based executor. Keeping this optional lets non-releasing
+    /// workspaces continue to use Callisto without invented endpoints.
+    pub release: Option<ReleaseProfiles>,
     pub registries: BTreeMap<RegistryKey, RegistryConfig>,
     /// Per-package override rules from `[[package]]` blocks, in TOML declaration order.
     ///
@@ -122,6 +126,70 @@ pub struct ValidationConfig {
 pub struct RegistryConfig {
     pub kind: Ecosystem,
     pub url: Option<String>,
+}
+
+/// Credential-free, named destinations for one release workspace.
+///
+/// There is exactly one production profile and at least one isolated
+/// rehearsal profile. A rehearsal may never share the production forge
+/// repository or any registry endpoint, so CI cannot silently turn a
+/// rehearsal into a production publish.
+#[derive(Clone, Debug)]
+pub struct ReleaseProfiles {
+    production: ReleaseProfile,
+    rehearsals: Vec<ReleaseProfile>,
+}
+
+impl ReleaseProfiles {
+    pub fn production(&self) -> &ReleaseProfile {
+        &self.production
+    }
+
+    pub fn rehearsals(&self) -> &[ReleaseProfile] {
+        &self.rehearsals
+    }
+
+    pub fn profile(&self, name: &str) -> Option<&ReleaseProfile> {
+        if self.production.name == name {
+            Some(&self.production)
+        } else {
+            self.rehearsals.iter().find(|profile| profile.name == name)
+        }
+    }
+}
+
+/// A complete provider routing profile. It contains public endpoints only;
+/// credentials are resolved solely by the invoked provider client.
+#[derive(Clone, Debug)]
+pub struct ReleaseProfile {
+    name: String,
+    forge_repository: String,
+    registries: BTreeMap<RegistryKey, ReleaseRegistryEndpoint>,
+}
+
+impl ReleaseProfile {
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn forge_repository(&self) -> &str {
+        &self.forge_repository
+    }
+
+    pub fn registries(&self) -> &BTreeMap<RegistryKey, ReleaseRegistryEndpoint> {
+        &self.registries
+    }
+}
+
+/// A normalized endpoint suitable for a release invocation. This type has no
+/// credential fields and can only be made by the strict configuration loader.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReleaseRegistryEndpoint(String);
+
+impl ReleaseRegistryEndpoint {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
 }
 
 /// Per-package overrides from a `[[package]]` block in `callisto.toml`.
@@ -291,6 +359,128 @@ fn parse_package_config_fields(
     })
 }
 
+fn validate_profile_name(name: &str) -> Result<(), ConfigError> {
+    let mut chars = name.chars();
+    let valid = chars.next().is_some_and(|first| first.is_ascii_lowercase())
+        && chars.all(|character| character.is_ascii_lowercase() || character.is_ascii_digit() || character == '-');
+    if valid {
+        Ok(())
+    } else {
+        Err(ConfigError::InvalidReleaseProfileName { name: name.to_string() })
+    }
+}
+
+fn normalize_release_endpoint(
+    profile: &str,
+    registry: &str,
+    raw: &str,
+) -> Result<ReleaseRegistryEndpoint, ConfigError> {
+    let parsed = url::Url::parse(raw).map_err(|_| ConfigError::UnsafeReleaseRegistryEndpoint {
+        profile: profile.to_string(),
+        registry: registry.to_string(),
+    })?;
+    if parsed.scheme() != "https"
+        || parsed.host_str().is_none()
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+        || parsed.query().is_some()
+        || parsed.fragment().is_some()
+    {
+        return Err(ConfigError::UnsafeReleaseRegistryEndpoint {
+            profile: profile.to_string(),
+            registry: registry.to_string(),
+        });
+    }
+
+    // `Url::to_string` provides one stable spelling for equivalent endpoint
+    // input while retaining percent-encoded path bytes (important for private
+    // registry routing). No credential-bearing component reaches this type.
+    Ok(ReleaseRegistryEndpoint(parsed.to_string()))
+}
+
+fn resolve_release_profile(raw: RawReleaseProfile) -> Result<ReleaseProfile, ConfigError> {
+    validate_profile_name(&raw.name)?;
+    let forge_repository = raw.forge_repository.trim();
+    if forge_repository.is_empty()
+        || forge_repository.contains(char::is_whitespace)
+        || (forge_repository.contains('/') && forge_repository.split('/').count() != 2)
+    {
+        return Err(ConfigError::InvalidReleaseProfileName { name: raw.name });
+    }
+
+    let mut registries = BTreeMap::new();
+    for registry in raw.registry {
+        let key = RegistryKey(registry.key.clone());
+        let endpoint = normalize_release_endpoint(&raw.name, &registry.key, &registry.endpoint)?;
+        if registries.insert(key, endpoint).is_some() {
+            return Err(ConfigError::DuplicateReleaseProfileRegistry {
+                profile: raw.name,
+                registry: registry.key,
+            });
+        }
+    }
+    if registries.is_empty() {
+        return Err(ConfigError::UnsafeReleaseRegistryEndpoint {
+            profile: raw.name,
+            registry: "<missing>".to_string(),
+        });
+    }
+
+    Ok(ReleaseProfile {
+        name: raw.name,
+        forge_repository: forge_repository.to_string(),
+        registries,
+    })
+}
+
+fn resolve_release_profiles(raw: RawReleaseConfig) -> Result<ReleaseProfiles, ConfigError> {
+    validate_profile_name(&raw.production)?;
+    let mut profiles = BTreeMap::new();
+    for profile in raw.profile {
+        let profile = resolve_release_profile(profile)?;
+        let name = profile.name.clone();
+        if profiles.insert(name.clone(), profile).is_some() {
+            return Err(ConfigError::DuplicateReleaseProfile { name });
+        }
+    }
+    let production = profiles
+        .remove(&raw.production)
+        .ok_or_else(|| ConfigError::UnknownProductionReleaseProfile {
+            name: raw.production.clone(),
+        })?;
+    if profiles.is_empty() {
+        return Err(ConfigError::ReleaseProfileNotIsolated {
+            production: production.name.clone(),
+            rehearsal: "<missing>".to_string(),
+            destination: "rehearsal profile".to_string(),
+        });
+    }
+
+    let rehearsals: Vec<_> = profiles.into_values().collect();
+    for rehearsal in &rehearsals {
+        if rehearsal
+            .forge_repository
+            .eq_ignore_ascii_case(&production.forge_repository)
+        {
+            return Err(ConfigError::ReleaseProfileNotIsolated {
+                production: production.name.clone(),
+                rehearsal: rehearsal.name.clone(),
+                destination: "forge repository".to_string(),
+            });
+        }
+        for (key, production_endpoint) in &production.registries {
+            if rehearsal.registries.get(key) == Some(production_endpoint) {
+                return Err(ConfigError::ReleaseProfileNotIsolated {
+                    production: production.name.clone(),
+                    rehearsal: rehearsal.name.clone(),
+                    destination: format!("registry `{key}`"),
+                });
+            }
+        }
+    }
+    Ok(ReleaseProfiles { production, rehearsals })
+}
+
 pub fn load(root: &Path) -> Result<ResolvedConfig, ConfigError> {
     let callisto_toml = root.join("callisto.toml");
     let raw = if callisto_toml.exists() {
@@ -307,6 +497,7 @@ pub fn load(root: &Path) -> Result<ResolvedConfig, ConfigError> {
     };
 
     let mut provenance = BTreeMap::new();
+    let release = raw.release.map(resolve_release_profiles).transpose()?;
 
     let changesets_dir_str = raw
         .changesets
@@ -465,6 +656,7 @@ pub fn load(root: &Path) -> Result<ResolvedConfig, ConfigError> {
             preserve_npm_ranges,
         },
         validation: ValidationConfig { allow_empty_changesets },
+        release,
         registries,
         packages,
         package_sets,
@@ -1089,5 +1281,117 @@ mod tests {
             matches!(result.unwrap_err(), ConfigError::UnknownKey { .. }),
             "expected UnknownKey error variant"
         );
+    }
+
+    fn write_release_config(root: &Path, release: &str) {
+        fs::write(root.join("callisto.toml"), release).expect("write callisto.toml");
+    }
+
+    #[test]
+    fn release_profiles_resolve_credential_free_isolated_destinations() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        write_release_config(
+            tmp.path(),
+            r#"
+[release]
+production = "production"
+
+[[release.profile]]
+name = "production"
+forge-repository = "orin-dx/callisto"
+[[release.profile.registry]]
+key = "cratesIo"
+endpoint = "https://crates.io/api/v1/crates/new"
+[[release.profile.registry]]
+key = "npm"
+endpoint = "https://registry.npmjs.org/"
+
+[[release.profile]]
+name = "rehearsal"
+forge-repository = "orin-dx/callisto-rehearsal"
+[[release.profile.registry]]
+key = "cratesIo"
+endpoint = "https://registry.rehearsal.invalid/api/v1/crates/new"
+[[release.profile.registry]]
+key = "npm"
+endpoint = "https://npm.rehearsal.invalid/"
+"#,
+        );
+
+        let release = load(tmp.path())
+            .expect("isolated profiles must load")
+            .release
+            .expect("release config must resolve");
+        assert_eq!(release.production().name(), "production");
+        assert_eq!(release.rehearsals().len(), 1);
+        assert_eq!(
+            release.production().registries()[&RegistryKey("cratesIo".to_string())].as_str(),
+            "https://crates.io/api/v1/crates/new"
+        );
+    }
+
+    #[test]
+    fn release_profiles_reject_credentialed_endpoints_without_echoing_them() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let secret = "never-log-this-token";
+        write_release_config(
+            tmp.path(),
+            &format!(
+                r#"
+[release]
+production = "production"
+[[release.profile]]
+name = "production"
+forge-repository = "orin-dx/callisto"
+[[release.profile.registry]]
+key = "cratesIo"
+endpoint = "https://user:{secret}@crates.io/api/v1/crates/new"
+[[release.profile]]
+name = "rehearsal"
+forge-repository = "orin-dx/callisto-rehearsal"
+[[release.profile.registry]]
+key = "cratesIo"
+endpoint = "https://registry.rehearsal.invalid/api/v1/crates/new"
+"#,
+            ),
+        );
+        let error = load(tmp.path()).expect_err("credentialed endpoint must fail");
+        assert!(matches!(error, ConfigError::UnsafeReleaseRegistryEndpoint { .. }));
+        assert!(!error.to_string().contains(secret));
+    }
+
+    #[test]
+    fn release_profiles_require_a_distinct_rehearsal_destination() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        write_release_config(
+            tmp.path(),
+            r#"
+[release]
+production = "production"
+[[release.profile]]
+name = "production"
+forge-repository = "orin-dx/callisto"
+[[release.profile.registry]]
+key = "cratesIo"
+endpoint = "https://crates.io/api/v1/crates/new"
+[[release.profile]]
+name = "rehearsal"
+forge-repository = "orin-dx/callisto-rehearsal"
+[[release.profile.registry]]
+key = "cratesIo"
+endpoint = "https://crates.io/api/v1/crates/new"
+"#,
+        );
+        assert!(matches!(
+            load(tmp.path()),
+            Err(ConfigError::ReleaseProfileNotIsolated { .. })
+        ));
+    }
+
+    #[test]
+    fn release_endpoint_normalization_preserves_encoded_path_bytes() {
+        let endpoint = normalize_release_endpoint("rehearsal", "private", "https://registry.invalid/a%2Fb")
+            .expect("safe endpoint");
+        assert_eq!(endpoint.as_str(), "https://registry.invalid/a%2Fb");
     }
 }

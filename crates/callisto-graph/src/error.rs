@@ -731,6 +731,40 @@ pub enum ConfigError {
     )]
     InvalidChangelogPath { pattern: String, value: String },
 
+    #[error("[release] production profile `{name}` is not declared")]
+    #[diagnostic(code(E197), help("Declare [[release.profile]] with this exact name."))]
+    UnknownProductionReleaseProfile { name: String },
+
+    #[error("release profile name `{name}` is invalid")]
+    #[diagnostic(
+        code(E198),
+        help("Use lowercase ASCII letters, digits, and hyphens; begin with a letter.")
+    )]
+    InvalidReleaseProfileName { name: String },
+
+    #[error("release profile `{name}` is declared more than once")]
+    #[diagnostic(code(E199), help("Each [[release.profile]] name must be unique."))]
+    DuplicateReleaseProfile { name: String },
+
+    #[error("release profile `{profile}` has an unsafe registry endpoint for `{registry}`")]
+    #[diagnostic(code(E200), help("Use an absolute HTTPS URL with no userinfo, query, or fragment."))]
+    UnsafeReleaseRegistryEndpoint { profile: String, registry: String },
+
+    #[error("release profile `{profile}` repeats registry `{registry}`")]
+    #[diagnostic(code(E201), help("Declare each registry endpoint once per profile."))]
+    DuplicateReleaseProfileRegistry { profile: String, registry: String },
+
+    #[error("rehearsal profile `{rehearsal}` shares its {destination} with production profile `{production}`")]
+    #[diagnostic(
+        code(E202),
+        help("Use an isolated forge repository and registry endpoints for rehearsal.")
+    )]
+    ReleaseProfileNotIsolated {
+        production: String,
+        rehearsal: String,
+        destination: String,
+    },
+
     #[error(transparent)]
     Tag(#[from] TagTemplateError),
 
