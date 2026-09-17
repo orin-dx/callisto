@@ -524,6 +524,25 @@ mod tests {
         .is_ok());
     }
 
+    #[test]
+    fn release_artifact_manifest_requires_all_explicit_paths() {
+        use clap::Parser;
+
+        assert!(Cli::try_parse_from(["callisto", "release", "artifact-manifest"]).is_err());
+        assert!(Cli::try_parse_from([
+            "callisto",
+            "release",
+            "artifact-manifest",
+            "--intent",
+            "intent.json",
+            "--artifact-dir",
+            "artifacts",
+            "--out",
+            "manifest.json",
+        ])
+        .is_ok());
+    }
+
     /// AC-006/AC-007 (parse slice): `callisto matrix --package foo` parses
     /// into Command::Matrix with the package field populated; MatrixArgs
     /// declares no --format of its own (the global flag is used instead).
