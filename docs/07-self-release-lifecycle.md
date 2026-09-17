@@ -50,6 +50,11 @@ The product release will contain attested assets for `aarch64-apple-darwin`,
 `x86_64-unknown-linux-gnu`, `x86_64-unknown-linux-musl`, and `wasm32-wasip1`. Apple signing and
 notarization are intentionally out of scope until the project has a safe project-owned policy.
 
+Each asset's GitHub provenance is bound to the current coordinator workflow revision: that is the
+revision GitHub records for the workflow run. The immutable intent and artifact manifest separately
+bind those bytes to the selected release-source revision, so a recovery can safely use current
+orchestration without misrepresenting an older source checkout as the workflow source.
+
 The private `orin-dx/callisto-rehearsal` forge repository is isolated from production. It is not,
 by itself, an end-to-end rehearsal: each registry needs a real isolated destination and
 credentials. The workflow must fail closed when that infrastructure is not provisioned.
