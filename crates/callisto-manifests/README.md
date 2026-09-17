@@ -12,4 +12,4 @@ Concrete Syntax Tree (CST) manifest editors and crash-safe atomic writer for Cal
 
 ## License
 
-GNU Affero General Public License v3.0 (`AGPL-3.0-only`).
+Functional Source License, Version 1.1, MIT Future License (`FSL-1.1-MIT`).

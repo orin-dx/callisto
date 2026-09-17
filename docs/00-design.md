@@ -3,7 +3,12 @@
 **Status:** IMPLEMENTED & VERIFIED (Canonical Spec)
 **Date:** 2026-07-24
 **Repo:** `github.com/orin-dx/callisto`
-**License target:** AGPL-3.0 (coordination logic) + MIT/Apache-2.0 (format + model primitives) — see §16
+**License target (historical):** AGPL-3.0 (coordination logic) + MIT/Apache-2.0 (format + model primitives) — see §16
+
+**Current licensing policy (2026-09-16):** `callisto-model`, `callisto-format`, and
+`callisto-vcs` are MIT-only; all other crates use canonical FSL-1.1-MIT. The
+historical license references below describe the prior design and do not govern
+current manifests or releases.
 **npm scope:** `@orin-dx`
 
 This revision supersedes the prior draft in three structural ways, each explained in the
