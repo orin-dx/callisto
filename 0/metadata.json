@@ -1,0 +1,61 @@
+{
+  "cli_version": "0.10.7-nightly.202609170627.0dda4e14f",
+  "checkpoint_id": "01M2RCES4Y5QBGNVD6KCSC10VS",
+  "session_id": "01a0aa80-3aab-7313-9603-edf7533a1570",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-17T19:10:57.647489Z",
+  "branch": "codex/release-recovery",
+  "checkpoints_count": 1,
+  "save_step_count": 2,
+  "files_touched": [
+    ".gitignore",
+    "crates/callisto-model/src/release.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-terra",
+  "turn_id": "f624110d039b",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 4299121,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 252155392,
+    "output_tokens": 530086,
+    "api_call_count": 2217,
+    "subagent_tokens_complete": false
+  },
+  "session_metrics": {
+    "turn_count": 53
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-17T19:10:56.805625Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 567,
+    "human_modified": 7,
+    "human_removed": 0,
+    "total_committed": 569,
+    "total_lines_changed": 574,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 446,
+      "user_lines_removed": 0,
+      "agent_lines_added": 2,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/plans/RELEASE-SELF-HOSTING-INCIDENT-2026-09-16.md": 435,
+        ".claude/settings.local.json": 11
+      }
+    }
+  ]
+}
