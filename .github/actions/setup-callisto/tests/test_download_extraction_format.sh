@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Regression test for the download/extraction format dispatch in action.yml
-# (the ASSET_NAME-driven case statements added to fix the Windows .zip vs
-# .tar.gz mismatch). Extracts the actual run-step body from action.yml by a
+# Regression test for the download/extraction format dispatch in action.yml.
+# Extracts the actual run-step body from action.yml by a
 # real text anchor -- the "# Detect OS platform architecture" comment through
 # the end of the file -- so this test always exercises the file's current
 # real logic; it cannot silently drift from it.
@@ -66,16 +65,16 @@ run_case() {
 
 fail=0
 
-# 1. Windows runner -> zip asset, curl destination is not the old hardcoded
-# tar.gz path, unzip is invoked, tar is not.
+# 1. Windows is not a supported product-binary target. It must skip a
+# fictitious download and use the established installation fallback.
 out=$(run_case "MINGW64_NT-10.0" "x86_64" 0); code=$?
 if [[ $code -ne 0 ]] \
-  || [[ "$out" == *"-o "*"callisto.tar.gz"* ]] \
-  || [[ "$out" != *"unzip -q "*" -d "* ]] \
-  || [[ "$out" == *"tar -xzf"* ]]; then
-  echo "FAIL test_windows_uses_zip_and_unzip: code=$code out=$out"; fail=1
+  || [[ "$out" == *"tar -xzf"* ]] \
+  || [[ "$out" == *"unzip"* ]] \
+  || [[ "$out" != *"cargo install callisto-cli"* ]]; then
+  echo "FAIL test_windows_falls_back_without_fictitious_asset: code=$code out=$out"; fail=1
 else
-  echo "PASS test_windows_uses_zip_and_unzip"
+  echo "PASS test_windows_falls_back_without_fictitious_asset"
 fi
 
 # 2. macOS arm64 regression -> unchanged tar.gz behavior, unzip not invoked.
@@ -100,14 +99,16 @@ else
   echo "PASS test_linux_amd64_still_uses_targz"
 fi
 
-# 4. Unknown/exotic OS -> defensive catch-all fires (not an error): tar.gz
-# fallback runs, step still exits 0.
+# 4. Unknown/exotic OS must likewise use the fallback chain rather than
+# guessing an archive target.
 out=$(run_case "SunOS" "sun4u" 0); code=$?
 if [[ $code -ne 0 ]] \
-  || [[ "$out" != *"tar -xzf "* ]]; then
-  echo "FAIL test_unknown_os_falls_back_to_targz_no_error: code=$code out=$out"; fail=1
+  || [[ "$out" == *"tar -xzf "* ]] \
+  || [[ "$out" == *"unzip"* ]] \
+  || [[ "$out" != *"cargo install callisto-cli"* ]]; then
+  echo "FAIL test_unknown_os_uses_install_fallback: code=$code out=$out"; fail=1
 else
-  echo "PASS test_unknown_os_falls_back_to_targz_no_error"
+  echo "PASS test_unknown_os_uses_install_fallback"
 fi
 
 # 5. Download failure -> falls through to the pre-existing cargo-install
