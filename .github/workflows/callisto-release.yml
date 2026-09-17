@@ -152,14 +152,18 @@ jobs:
       - name: Derive and hash intent
         run: |
           set -euo pipefail
-          callisto release plan --from-release-commit "${{ needs.release-candidate.outputs.release_source_sha }}" --decision .callisto/release-decision.json --out release-intent.json
+          release_source_sha="${{ needs.release-candidate.outputs.release_source_sha }}"
+          callisto release plan --from-release-commit "$release_source_sha" --decision .callisto/release-decision.json --out release-intent.json
           shasum -a 256 release-intent.json > release-intent.json.sha256
+          jq -n --arg orchestration "$GITHUB_SHA" --arg source "$release_source_sha" \
+            '{orchestrationRevision: $orchestration, releaseSourceRevision: $source}' > release-provenance.json
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-intent
           path: |
             release-intent.json
             release-intent.json.sha256
+            release-provenance.json
           if-no-files-found: error
           retention-days: 1
 

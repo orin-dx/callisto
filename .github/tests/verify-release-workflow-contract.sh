@@ -39,6 +39,9 @@ require_line "$build" '      attestations: write' 'build must create provenance 
 require_line "$build" '      id-token: write' 'build must mint the Sigstore OIDC identity'
 require_line "$build" '          include-hidden-files: true' 'build must upload .release-handoff -- upload-artifact drops dotfiles by default and "execute" would silently receive nothing'
 
+plan="$(job_block plan build)"
+require_line "$plan" "            '{orchestrationRevision: \$orchestration, releaseSourceRevision: \$source}' > release-provenance.json" 'recovery planning must record separate orchestration and release-source revisions'
+
 execute="$(sed -n '/^  execute:$/,$p' "$workflow")"
 require_line "$execute" '    needs: build' 'PR merge is the release approval; execute must depend directly on the verified build, not a GitHub Environment gate'
 require_line "$execute" '          cmp "$intent_dir/release-intent.json" "$build_dir/.release-handoff/release-intent.json"' 'execute must read the handoff file at its actual archived path -- .release-handoff and release-artifacts were sibling upload paths in "build", so the artifact is rooted one level up, not flattened'
