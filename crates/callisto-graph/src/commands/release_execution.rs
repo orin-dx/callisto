@@ -403,7 +403,7 @@ mod tests {
                     workflow_path: ".github/workflows/release.yml".to_string(),
                     workflow_commit: callisto_model::CommitSha::parse(&"b".repeat(40)).unwrap(),
                     subject_digest: digest,
-                    source_commit: callisto_model::CommitSha::parse(&"a".repeat(40)).unwrap(),
+                    source_commit: callisto_model::CommitSha::parse(&"b".repeat(40)).unwrap(),
                 },
             }],
         )

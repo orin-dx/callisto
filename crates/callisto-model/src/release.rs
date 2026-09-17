@@ -1187,6 +1187,12 @@ fn is_safe_artifact_component(value: &str) -> bool {
 }
 
 /// Credential-free GitHub attestation policy and verified provenance facts.
+///
+/// `source_commit` is the source digest GitHub records for the workflow run:
+/// the coordinator revision that executed the attestation action. The release
+/// source is separately bound by `ArtifactManifestV1::source_commit` and the
+/// immutable intent, because recovery intentionally builds an older release
+/// checkout with current coordinator workflow code.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GitHubArtifactAttestationV1 {
@@ -1237,7 +1243,7 @@ impl ArtifactManifestV1 {
         }
         if entries.iter().any(|entry| {
             entry.digest != entry.attestation.subject_digest
-                || entry.attestation.source_commit != *sha
+                || entry.attestation.source_commit != entry.slot.attestation_policy.workflow_commit
                 || entry.attestation.repository != entry.slot.attestation_policy.repository
                 || entry.attestation.workflow_path != entry.slot.attestation_policy.workflow_path
                 || entry.attestation.workflow_commit != entry.slot.attestation_policy.workflow_commit
@@ -2589,7 +2595,7 @@ mod tests {
                     workflow_path: ".github/workflows/release.yml".to_string(),
                     workflow_commit: CommitSha::parse(&"b".repeat(40)).unwrap(),
                     subject_digest: digest,
-                    source_commit: CommitSha::parse(&"a".repeat(40)).unwrap(),
+                    source_commit: CommitSha::parse(&"b".repeat(40)).unwrap(),
                 },
             }],
         )

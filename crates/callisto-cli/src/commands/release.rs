@@ -57,14 +57,11 @@ fn artifact_manifest(args: ReleaseArtifactManifestArgs, global: &GlobalArgs) -> 
         source,
         path: Some(args.artifact_dir.clone()),
     })?;
-    let source_commit = match &intent.snapshot.source {
-        callisto_model::SourceIdentity::GitCommit { sha } => sha.clone(),
-        callisto_model::SourceIdentity::HermeticContent { .. } => {
-            return Err(CliError::Other(
-                "artifact manifests require a Git commit release source".to_owned(),
-            ))
-        }
-    };
+    if !matches!(intent.snapshot.source, callisto_model::SourceIdentity::GitCommit { .. }) {
+        return Err(CliError::Other(
+            "artifact manifests require a Git commit release source".to_owned(),
+        ));
+    }
     let mut entries = Vec::with_capacity(intent.artifact_slots.len());
     for slot in &intent.artifact_slots {
         let path = root.join(&slot.asset_name);
@@ -107,7 +104,7 @@ fn artifact_manifest(args: ReleaseArtifactManifestArgs, global: &GlobalArgs) -> 
                 workflow_path: slot.attestation_policy.workflow_path.clone(),
                 workflow_commit: slot.attestation_policy.workflow_commit.clone(),
                 subject_digest: digest,
-                source_commit: source_commit.clone(),
+                source_commit: slot.attestation_policy.workflow_commit.clone(),
             },
         });
     }

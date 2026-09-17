@@ -86,7 +86,7 @@ pub fn verify_artifact_manifest<'a, R: CommandRunner>(
             return Err(GraphError::ArtifactBytesMismatch { path });
         }
 
-        verify_github_attestation(&path, entry, manifest, runner)?;
+        verify_github_attestation(&path, entry, runner)?;
     }
     Ok(VerifiedArtifactManifest { manifest, root })
 }
@@ -149,14 +149,13 @@ fn resolve_asset_path(root: &Path, asset_name: &str) -> Result<PathBuf, GraphErr
 fn verify_github_attestation<R: CommandRunner>(
     path: &Path,
     entry: &callisto_model::ArtifactManifestEntryV1,
-    manifest: &ArtifactManifestV1,
     runner: &R,
 ) -> Result<(), GraphError> {
     let policy = &entry.slot.attestation_policy;
     let repository_slug = policy.repository.as_slug();
     let workflow = format!("{repository_slug}/{}", policy.workflow_path);
     let path_argument = path.to_string_lossy();
-    let source_commit = manifest.source_commit.as_str();
+    let source_commit = entry.attestation.source_commit.as_str();
     let args = [
         "attestation",
         "verify",
@@ -255,10 +254,7 @@ mod tests {
             workflow_path: slot.attestation_policy.workflow_path.clone(),
             workflow_commit: slot.attestation_policy.workflow_commit.clone(),
             subject_digest: digest.clone(),
-            source_commit: match &intent.snapshot.source {
-                callisto_model::SourceIdentity::GitCommit { sha } => sha.clone(),
-                callisto_model::SourceIdentity::HermeticContent { .. } => panic!("test intent has a Git source"),
-            },
+            source_commit: slot.attestation_policy.workflow_commit.clone(),
         };
         ArtifactManifestV1::new(
             intent,
@@ -312,7 +308,7 @@ mod tests {
         assert!(calls[0]
             .1
             .windows(2)
-            .any(|args| args == ["--source-digest", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]));
+            .any(|args| args == ["--source-digest", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"]));
         assert!(calls[0].1.contains(&"--deny-self-hosted-runners".to_owned()));
     }
 
