@@ -35,11 +35,9 @@ actual delta, builds from that exact commit, and passes the intent between jobs 
 GitHub artifact with a SHA-256 sidecar. It is not committed and it is never recovered from a
 cache. The execute job rechecks the handoff before calling `callisto release execute`.
 
-Create a GitHub Environment named `release` before enabling registry credentials. Configure
-at least one required reviewer and appropriate branch/tag deployment rules in the repository's
-Environment settings. The workflow queries the Environment API and fails if the reviewer rule
-is absent; the `environment: release` job boundary is what prevents registry secrets from being
-available to planning or build jobs.
+The merged, managed release PR is the sole approval boundary. Do not configure a separate
+GitHub Environment reviewer gate for this workflow. Keep registry credentials scoped only to
+the `execute` job, so planning and build jobs cannot read them.
 
 An administrator must also enable a branch-protection rule or ruleset on `main` that requires
 CODEOWNERS review. [`.github/CODEOWNERS`](../.github/CODEOWNERS) names the real owner for
