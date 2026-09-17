@@ -29,10 +29,12 @@ Remediate confirmed defects in **Rust Hazard Taxonomies 5 & 6**:
    - Apply the minimal, robust code fix.
    - Execute test command to verify the test passes post-fix (green pass).
 2. **Zero Regressions**: Run full workspace test suite to ensure 100% test pass across all workspace crates.
+3. **Sibling sweep before closing**: Grep for the same defect shape elsewhere in the workspace (same algorithm reimplemented per ecosystem/mode/branch), even if the assigned finding names only one location. If a `bug-hunter-architect-rust` trait-extraction report exists for this defect class, apply it (unify into the proposed abstraction) instead of patching this instance in place — a fix that ignores an available unification design and patches one copy anyway is not a fix, it's a deferral in disguise. If siblings exist and unifying is out of scope for this task, fix all of them anyway if the diff stays small, or record every unfixed sibling location explicitly in the commit/changeset — never close silently on one instance when more are known.
 </execution_strategy>
 
 <success_criteria>
 - [ ] Regression test written and verified failing before code modification (red).
 - [ ] Code fix applied adhering to safe Rust and atomic write invariants.
 - [ ] Full workspace test suite passes 100% green post-fix.
+- [ ] Sibling instances of the same defect shape searched for and either fixed or explicitly recorded as deferred — not left unmentioned.
 </success_criteria>
