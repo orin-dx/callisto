@@ -1996,7 +1996,9 @@ pub enum ReleaseStateError {
 pub struct ReleaseReceiptV1 {
     schema_version: u8,
     intent_digest: IntentDigest,
+    provenance: ReleaseRunProvenanceV1,
     outcomes: BTreeMap<ReleaseOperationId, OperationOutcome>,
+    observations: BTreeMap<ReleaseOperationId, ProviderObservationV1>,
 }
 
 #[derive(Serialize, Deserialize, JsonSchema)]
@@ -2004,7 +2006,9 @@ pub struct ReleaseReceiptV1 {
 struct ReleaseReceiptV1Wire {
     schema_version: u8,
     intent_digest: IntentDigest,
+    provenance: ReleaseRunProvenanceV1,
     outcomes: Vec<OperationOutcomeEntryV1>,
+    observations: Vec<ReleaseOperationObservationV1>,
 }
 
 #[derive(Serialize, Deserialize, JsonSchema)]
@@ -2022,12 +2026,21 @@ impl Serialize for ReleaseReceiptV1 {
         ReleaseReceiptV1Wire {
             schema_version: self.schema_version,
             intent_digest: self.intent_digest.clone(),
+            provenance: self.provenance.clone(),
             outcomes: self
                 .outcomes
                 .iter()
                 .map(|(operation, outcome)| OperationOutcomeEntryV1 {
                     operation: operation.clone(),
                     outcome: *outcome,
+                })
+                .collect(),
+            observations: self
+                .observations
+                .iter()
+                .map(|(operation, observation)| ReleaseOperationObservationV1 {
+                    operation: operation.clone(),
+                    observation: *observation,
                 })
                 .collect(),
         }
@@ -2048,11 +2061,20 @@ impl<'de> Deserialize<'de> for ReleaseReceiptV1 {
 impl ReleaseReceiptV1 {
     pub const SCHEMA_VERSION: u8 = 1;
 
-    /// Constructs a receipt only when state is complete and exact for `intent`.
-    pub fn from_state(intent: &ReleaseIntentV1, state: &ReleaseExecutionStateV1) -> Result<Self, ReleaseReceiptError> {
+    /// Constructs a receipt only when the terminal state and fresh provider
+    /// evidence agree on every operation in `intent`.
+    pub fn from_evidence(
+        intent: &ReleaseIntentV1,
+        state: &ReleaseExecutionStateV1,
+        provenance: ReleaseRunProvenanceV1,
+        observations: impl IntoIterator<Item = ReleaseOperationObservationV1>,
+    ) -> Result<Self, ReleaseReceiptError> {
         state
             .validate_for_intent(intent)
             .map_err(ReleaseReceiptError::InvalidState)?;
+        provenance
+            .validate_for_intent(intent)
+            .map_err(ReleaseReceiptError::InvalidProvenance)?;
         let mut outcomes = BTreeMap::new();
         for (id, operation_state) in &state.operations {
             let outcome = match operation_state {
@@ -2071,10 +2093,31 @@ impl ReleaseReceiptV1 {
             };
             outcomes.insert(id.clone(), outcome);
         }
+        let mut observed = BTreeMap::new();
+        for entry in observations {
+            if !entry.observation.is_terminal_success() {
+                return Err(ReleaseReceiptError::NonExactObservation {
+                    id: Box::new(entry.operation),
+                    observation: entry.observation,
+                });
+            }
+            if observed.insert(entry.operation.clone(), entry.observation).is_some() {
+                return Err(ReleaseReceiptError::DuplicateObservation {
+                    id: Box::new(entry.operation),
+                });
+            }
+        }
+        let expected: BTreeSet<_> = intent.operations.iter().map(|operation| operation.id.clone()).collect();
+        let actual: BTreeSet<_> = observed.keys().cloned().collect();
+        if actual != expected {
+            return Err(ReleaseReceiptError::MismatchedObservationRoster);
+        }
         Ok(Self {
             schema_version: Self::SCHEMA_VERSION,
             intent_digest: state.intent_digest.clone(),
+            provenance,
             outcomes,
+            observations: observed,
         })
     }
 
@@ -2092,10 +2135,24 @@ impl ReleaseReceiptV1 {
         if self.intent_digest != intent.digest {
             return Err(ReleaseReceiptError::MismatchedIntent);
         }
+        self.provenance
+            .validate_for_intent(intent)
+            .map_err(ReleaseReceiptError::InvalidProvenance)?;
         let expected: BTreeSet<_> = intent.operations.iter().map(|operation| operation.id.clone()).collect();
         let actual: BTreeSet<_> = self.outcomes.keys().cloned().collect();
         if actual != expected {
             return Err(ReleaseReceiptError::MismatchedOperationRoster);
+        }
+        let observed: BTreeSet<_> = self.observations.keys().cloned().collect();
+        if observed != expected {
+            return Err(ReleaseReceiptError::MismatchedObservationRoster);
+        }
+        if self
+            .observations
+            .values()
+            .any(|observation| !observation.is_terminal_success())
+        {
+            return Err(ReleaseReceiptError::NonExactReceiptObservation);
         }
         Ok(())
     }
@@ -2122,10 +2179,29 @@ impl ReleaseReceiptV1 {
                 });
             }
         }
+        let mut observations = BTreeMap::new();
+        for entry in wire.observations {
+            if !entry.observation.is_terminal_success() {
+                return Err(ReleaseReceiptError::NonExactObservation {
+                    id: Box::new(entry.operation),
+                    observation: entry.observation,
+                });
+            }
+            if observations
+                .insert(entry.operation.clone(), entry.observation)
+                .is_some()
+            {
+                return Err(ReleaseReceiptError::DuplicateObservation {
+                    id: Box::new(entry.operation),
+                });
+            }
+        }
         Ok(Self {
             schema_version: wire.schema_version,
             intent_digest: wire.intent_digest,
+            provenance: wire.provenance,
             outcomes,
+            observations,
         })
     }
 }
@@ -2143,16 +2219,57 @@ pub enum ReleaseReceiptError {
     DuplicateOperation { id: Box<ReleaseOperationId> },
     #[error("release receipt cannot be derived from invalid state: {0}")]
     InvalidState(ReleaseStateError),
+    #[error("release receipt provenance is not bound to the intent: {0}")]
+    InvalidProvenance(ReleaseRunProvenanceError),
     #[error("release operation `{id:?}` is not terminal")]
     NonTerminalOperation { id: Box<ReleaseOperationId> },
     #[error("release operation `{id:?}` did not complete successfully")]
     NonSuccessfulOperation { id: Box<ReleaseOperationId> },
+    #[error("release receipt observation roster differs from the bound intent")]
+    MismatchedObservationRoster,
+    #[error("release receipt contains duplicate observation for `{id:?}`")]
+    DuplicateObservation { id: Box<ReleaseOperationId> },
+    #[error("release receipt observation for `{id:?}` is not exact: {observation:?}")]
+    NonExactObservation {
+        id: Box<ReleaseOperationId>,
+        observation: ProviderObservationV1,
+    },
+    #[error("release receipt contains a non-exact provider observation")]
+    NonExactReceiptObservation,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::Ecosystem;
+
+    fn receipt_provenance(intent: &ReleaseIntentV1) -> ReleaseRunProvenanceV1 {
+        let SourceIdentity::GitCommit { sha } = &intent.snapshot.source else {
+            panic!("release receipt fixtures require a Git source");
+        };
+        ReleaseRunProvenanceV1::new(
+            ReleaseRunKindV1::Initial,
+            CommitSha::parse(&"b".repeat(40)).unwrap(),
+            sha.clone(),
+            ReleaseProfileId::parse("production").unwrap(),
+            intent.digest().clone(),
+        )
+    }
+
+    fn receipt_from_exact_observations(
+        intent: &ReleaseIntentV1,
+        state: &ReleaseExecutionStateV1,
+    ) -> Result<ReleaseReceiptV1, ReleaseReceiptError> {
+        ReleaseReceiptV1::from_evidence(
+            intent,
+            state,
+            receipt_provenance(intent),
+            intent.operations.iter().map(|operation| ReleaseOperationObservationV1 {
+                operation: operation.id().clone(),
+                observation: ProviderObservationV1::Exact,
+            }),
+        )
+    }
 
     /// `rename_all` on an internally-tagged enum only renames the `kind`
     /// discriminant, never fields inside a variant -- the exact gap that
@@ -2863,22 +2980,37 @@ mod tests {
         )
         .unwrap();
         let pending = ReleaseExecutionStateV1::pending(&intent);
-        assert!(ReleaseReceiptV1::from_state(&intent, &pending).is_err());
+        assert!(receipt_from_exact_observations(&intent, &pending).is_err());
 
         let mut complete = pending;
         complete.mark_attempting(operation.id()).unwrap();
         complete
             .mark_terminal(operation.id(), OperationOutcome::Published)
             .unwrap();
-        let receipt = ReleaseReceiptV1::from_state(&intent, &complete).unwrap();
+        let receipt = receipt_from_exact_observations(&intent, &complete).unwrap();
         assert_eq!(receipt.intent_digest(), intent.digest());
 
         let mut failed = ReleaseExecutionStateV1::pending(&intent);
         failed.mark_attempting(operation.id()).unwrap();
         failed.mark_terminal(operation.id(), OperationOutcome::Failed).unwrap();
         assert!(matches!(
-            ReleaseReceiptV1::from_state(&intent, &failed),
+            receipt_from_exact_observations(&intent, &failed),
             Err(ReleaseReceiptError::NonSuccessfulOperation { .. })
+        ));
+        assert!(matches!(
+            ReleaseReceiptV1::from_evidence(
+                &intent,
+                &complete,
+                receipt_provenance(&intent),
+                [ReleaseOperationObservationV1 {
+                    operation: operation.id().clone(),
+                    observation: ProviderObservationV1::Indeterminate,
+                }],
+            ),
+            Err(ReleaseReceiptError::NonExactObservation {
+                observation: ProviderObservationV1::Indeterminate,
+                ..
+            })
         ));
     }
 
@@ -2912,7 +3044,7 @@ mod tests {
         complete
             .mark_terminal(operation.id(), OperationOutcome::Published)
             .unwrap();
-        let receipt = ReleaseReceiptV1::from_state(&intent, &complete).unwrap();
+        let receipt = receipt_from_exact_observations(&intent, &complete).unwrap();
         let mut receipt_wire = serde_json::to_value(receipt).unwrap();
         receipt_wire["schemaVersion"] = serde_json::Value::from(2);
         assert!(serde_json::from_value::<ReleaseReceiptV1>(receipt_wire).is_err());
@@ -2953,7 +3085,7 @@ mod tests {
         complete
             .mark_terminal(operation.id(), OperationOutcome::Published)
             .unwrap();
-        let receipt = ReleaseReceiptV1::from_state(&first, &complete).unwrap();
+        let receipt = receipt_from_exact_observations(&first, &complete).unwrap();
         assert!(matches!(
             receipt.validate_for_intent(&different_digest),
             Err(ReleaseReceiptError::MismatchedIntent)
