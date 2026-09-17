@@ -285,6 +285,7 @@ jobs:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           TWINE_PASSWORD: ${{ secrets.TWINE_PASSWORD }}
           GH_TOKEN: ${{ github.token }}
+          RELEASE_SOURCE_SHA_INPUT: ${{ inputs.release_source_sha }}
         run: |
           set -euo pipefail
           intent_dir="${RUNNER_TEMP}/release-intent"
@@ -292,6 +293,9 @@ jobs:
           state_dir="${RUNNER_TEMP}/callisto-release-state/${GITHUB_RUN_ID}"
           mkdir -p "$state_dir"
           args=(--source-root "$GITHUB_WORKSPACE/release-source" --intent "$intent_dir/release-intent.json" --state "$state_dir/execution-state.json" --receipt "$state_dir/release-receipt.json" --orchestration-revision "${{ needs.build.outputs.orchestration_sha }}" --profile production)
+          if [[ -n "$RELEASE_SOURCE_SHA_INPUT" ]]; then
+            args+=(--recovery)
+          fi
           if [[ -f "$build_dir/release-artifacts/manifest.json" ]]; then
             args+=(--artifact-manifest "$build_dir/release-artifacts/manifest.json" --artifact-dir "$build_dir/release-artifacts")
           fi
