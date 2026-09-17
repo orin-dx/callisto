@@ -2,7 +2,7 @@
 name = "callisto-graph"
 version = "0.6.0"
 edition.workspace = true
-license = "AGPL-3.0-only"
+license = "FSL-1.1-MIT"
 description = "Callisto Release Engine — Dependency DAG solver and topological cascade release planner."
 repository.workspace = true
 readme = "README.md"

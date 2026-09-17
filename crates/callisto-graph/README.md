@@ -12,4 +12,4 @@ Polyglot dependency DAG solver, cascade propagator, and publish planner for Call
 
 ## License
 
-GNU Affero General Public License v3.0 (`AGPL-3.0-only`).
+Functional Source License, Version 1.1, MIT Future License (`FSL-1.1-MIT`).

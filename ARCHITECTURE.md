@@ -18,7 +18,7 @@ Callisto addresses key architectural deficiencies in existing release management
 - **Crash-Safe File Mutations**: Enforces atomic filesystem transactions using temporary directory file swaps (`NamedTempFile` + `fs::rename`) to prevent half-written or corrupt manifests during unexpected process termination.
 - **In-Process Git Engine**: Eliminates external `git` subprocess spawns by leveraging `gix` (gitoxide) for fast, thread-safe repository discovery, commit traversal, and ref resolution.
 - **Formal Graph Solver**: Constructs the workspace dependency graph as a hand-rolled adjacency structure (`ManifestWalkResolver`), then runs `petgraph`'s Tarjan Strongly Connected Components (SCC) algorithm over a transient graph built specifically for cycle-path extraction, to detect circular dependencies before applying topological version cascades.
-- **Dual Licensing Isolation**: Separates permissive data types (`MIT/Apache-2.0`) from copyleft execution logic (`AGPL-3.0`), allowing third-party tools to consume Callisto's domain contracts without importing AGPL code.
+- **Licensing Isolation**: Separates MIT foundation crates from FSL product logic, allowing third-party tools to consume Callisto's domain contracts without importing product-layer restrictions.
 
 ---
 
@@ -117,27 +117,24 @@ flowchart TB
 
 | Crate | License | Layer | Responsibility | Key Dependencies |
 | :--- | :--- | :--- | :--- | :--- |
-| `callisto-model` | MIT/Apache-2.0 | Layer 1 | Core domain primitives, version grammars, JSON report schemas, atomic disk writes | `semver`, `schemars`, `serde`, `tempfile` |
-| `callisto-format` | MIT/Apache-2.0 | Layer 1 | Byte-compatible parser and writer for changeset `.md` and `pre.json` | `indexmap`, `serde` |
-| `callisto-conventional` | AGPL-3.0 | Layer 1 | Conventional commit parsing and severity classification | `thiserror` |
-| `callisto-changelog` | AGPL-3.0 | Layer 1 | Sectioned Markdown changelog rendering | `callisto-model`, `thiserror`, `miette` |
-| `callisto-manifests` | AGPL-3.0 | Layer 2 | Format-preserving manifest AST editing (atomic writes live in `callisto-model`, §5) | `toml_edit`, `serde_json`, `indexmap` |
-| `callisto-vcs` | MIT/Apache-2.0 | Layer 2 | Git operations via `gix` (native, non-wasm32) with `ShellGit` fallback | `gix`, `globset` |
-| `callisto-graph` | AGPL-3.0 | Layer 3 | Dependency DAG construction, Tarjan SCC cycle detection, cascade engine | `petgraph`, `ignore` |
-| `callisto-cli` | AGPL-3.0 | Layer 4 | Standalone CLI binary, colored diff previews, `miette` error reporting | `clap`, `miette`, `anstream`, `similar` |
-| `callisto-moon` | AGPL-3.0 | Layer 4 | Moon extension host integration and WASM compilation target | `extism-pdk` (`wasm32-wasip1`) |
-| `callisto-fixtures` | AGPL-3.0 | Dev | Multi-ecosystem corpus and in-memory test doubles | Dev-only test helpers |
+| `callisto-model` | MIT | Layer 1 | Core domain primitives, version grammars, JSON report schemas, atomic disk writes | `semver`, `schemars`, `serde`, `tempfile` |
+| `callisto-format` | MIT | Layer 1 | Byte-compatible parser and writer for changeset `.md` and `pre.json` | `indexmap`, `serde` |
+| `callisto-conventional` | FSL-1.1-MIT | Layer 1 | Conventional commit parsing and severity classification | `thiserror` |
+| `callisto-changelog` | FSL-1.1-MIT | Layer 1 | Sectioned Markdown changelog rendering | `callisto-model`, `thiserror`, `miette` |
+| `callisto-manifests` | FSL-1.1-MIT | Layer 2 | Format-preserving manifest AST editing (atomic writes live in `callisto-model`, §5) | `toml_edit`, `serde_json`, `indexmap` |
+| `callisto-vcs` | MIT | Layer 2 | Git operations via `gix` (native, non-wasm32) with `ShellGit` fallback | `gix`, `globset` |
+| `callisto-graph` | FSL-1.1-MIT | Layer 3 | Dependency DAG construction, Tarjan SCC cycle detection, cascade engine | `petgraph`, `ignore` |
+| `callisto-cli` | FSL-1.1-MIT | Layer 4 | Standalone CLI binary, colored diff previews, `miette` error reporting | `clap`, `miette`, `anstream`, `similar` |
+| `callisto-moon` | FSL-1.1-MIT | Layer 4 | Moon extension host integration and WASM compilation target | `extism-pdk` (`wasm32-wasip1`) |
+| `callisto-fixtures` | FSL-1.1-MIT | Dev | Multi-ecosystem corpus and in-memory test doubles | Dev-only test helpers |
 
 **"Layer 1" is a dependency-depth tier here, not a license tier.** The diagram above groups
 `callisto-model`, `callisto-format`, `callisto-conventional`, and `callisto-changelog` into one
 "Layer 1" box because all four are leaf crates whose only internal dependency is
-`callisto-model` itself — but only the first two are actually permissively licensed. The
-project's enforced licensing invariant (`CLAUDE.md`) is narrower and does not use this
-diagram's layer numbers: **only `callisto-model` and `callisto-format` are required to stay
-MIT/Apache-2.0 and never depend on an AGPL crate.** `callisto-conventional` and
-`callisto-changelog` are AGPL-3.0 leaf crates that happen to sit at the same dependency depth,
-not members of that protected set — the table's own License column is the authoritative source
-for any given crate's actual license, not this section's diagram grouping.
+`callisto-model` itself — but only the first three are MIT foundations. The project invariant
+is based on license boundaries rather than diagram depth: **`callisto-model`,
+`callisto-format`, and `callisto-vcs` must remain MIT and never depend on an FSL crate.**
+All other crates are FSL product code; the table's License column is authoritative.
 
 ---
 
@@ -667,7 +664,5 @@ Callisto is engineered to support polyglot monorepos across **Rust, TypeScript/J
 - **CST Engine**: MSBuild XML CST editor (`xmltree`) for `*.csproj` and `Directory.Build.props`.
 - **Central Package Management (CPM)**: Updating `<PackageVersion Include="..." Version="..." />` in `Directory.Packages.props`.
 - **Lockfile Auto-Staging**: `packages.lock.json`.
-
-
 
 

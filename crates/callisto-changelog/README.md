@@ -12,4 +12,4 @@ Package CHANGELOG.md generator and section extractor for Callisto.
 
 ## License
 
-Permissively licensed under `MIT OR Apache-2.0`.
+Functional Source License, Version 1.1, MIT Future License (`FSL-1.1-MIT`).
