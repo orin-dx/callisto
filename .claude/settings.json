@@ -1,21 +1,13 @@
 {
-  "permissions": {
-    "allow": [
-      "Bash(cargo test *)",
-      "Bash(just ci)",
-      "Bash(cargo build *)",
-      "Bash(cargo clippy *)",
-      "Bash(just test)",
-      "Bash(cargo nextest *)",
-      "Bash(just lint)",
-      "Bash(cargo check *)",
-      "Bash(just fmt-check)",
-      "Bash(just audit)",
-      "Bash(just doc-check)"
-    ],
-    "deny": [
-      "Read(./.entire/metadata/**)"
-    ]
+  "enabledPlugins": {
+    "vector@orin-dx-agent-plugins": true,
+    "axiom@orin-dx-agent-plugins": true,
+    "canon@orin-dx-agent-plugins": true,
+    "delta@orin-dx-agent-plugins": true,
+    "graph@orin-dx-agent-plugins": true,
+    "lambda@orin-dx-agent-plugins": true,
+    "proof@orin-dx-agent-plugins": true,
+    "trace@orin-dx-agent-plugins": true
   },
   "hooks": {
     "PostToolUse": [
@@ -94,14 +86,19 @@
       }
     ]
   },
-  "enabledPlugins": {
-    "vector@orin-dx-agent-plugins": true,
-    "axiom@orin-dx-agent-plugins": true,
-    "canon@orin-dx-agent-plugins": true,
-    "delta@orin-dx-agent-plugins": true,
-    "graph@orin-dx-agent-plugins": true,
-    "lambda@orin-dx-agent-plugins": true,
-    "proof@orin-dx-agent-plugins": true,
-    "trace@orin-dx-agent-plugins": true
+  "permissions": {
+    "allow": [
+      "Bash(cargo test *)",
+      "Bash(just ci)",
+      "Bash(cargo build *)",
+      "Bash(cargo clippy *)",
+      "Bash(just test)",
+      "Bash(cargo nextest *)",
+      "Bash(just lint)",
+      "Bash(cargo check *)",
+      "Bash(just fmt-check)",
+      "Bash(just audit)",
+      "Bash(just doc-check)"
+    ]
   }
 }
