@@ -185,3 +185,7 @@ Fix this asap with the tokens you have left proomptly
 ---
 
 Don't stop until it's all fixed and ready to release
+
+---
+
+Are you sure you're not missing anything from the prior work? COntinue unitl done
