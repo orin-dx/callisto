@@ -13,4 +13,4 @@ Domain primitives, SemVer grammars, package identity types, and versioned JSON r
 
 ## License
 
-Permissively licensed under `MIT OR Apache-2.0`.
+MIT License (`MIT`).

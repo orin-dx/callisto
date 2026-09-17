@@ -1,5 +1,10 @@
 # Library-first vs. moon-first: resolving §0.1
 
+> **Current licensing policy (2026-09-16):** `callisto-model`,
+> `callisto-format`, and `callisto-vcs` are MIT-only; all other crates use
+> canonical FSL-1.1-MIT. This decision document records the prior licensing
+> model; current manifests are authoritative.
+
 **Summary of the recommendation.** Take **Option C**, but with a much narrower definition of "library-first" than §0.1 currently implies. The evidence from release-please, Nx Release, semantic-release, and knope does *not* support Option B's premise — that callisto has three equally-weighted consumers — because callisto's own design has already decided the GitHub Action is a bash-composite that shells out to the CLI binary (§12.1), not an independent API consumer. That leaves exactly two real consumers: `callisto-cli` and `callisto-moon` — and the second reaches the core through a narrow, enumerated I/O seam (see "Crate-boundary implications" below) and gets no independent API-stability promise, rather than a symmetric second API surface. What the prior art actually validates is not consumer symmetry but **seam placement**: Nx's v21 rewrite was caused by ecosystem I/O logic being smeared into coordination logic, and knope's cascade is permanently trapped inside its binary crate. So: keep the coordination core moon-free and binary-free as a hard, CI-enforced rule; ship moon as the one blessed integration; and do *not* pay for a stable public Rust API, a C ABI, or dyn-compatible traits before v1.0. One concrete correction falls out of this: `MoonProjectGraphResolver` as specced in §15 is the wrong shape and should be deleted — moon's project graph structurally cannot supply the data §7.4's cascade rules need.
 
 ---
