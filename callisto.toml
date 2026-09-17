@@ -18,6 +18,15 @@ members = [
 [changesets]
 dir = ".changeset"
 
+[release]
+product-package = "cargo/callisto-cli"
+artifact-targets = [
+    "aarch64-apple-darwin",
+    "x86_64-unknown-linux-gnu",
+    "x86_64-unknown-linux-musl",
+    "wasm32-wasip1",
+]
+
 [cascade]
 mode = "out-of-range"
 bump-severity = "patch"

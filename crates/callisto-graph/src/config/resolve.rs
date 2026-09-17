@@ -8,7 +8,7 @@ use callisto_model::{
 
 use crate::config::groups::{GroupTable, RawGroupTable};
 use crate::config::pattern::PackagePattern;
-use crate::config::raw::RawConfig;
+use crate::config::raw::{RawConfig, RawProductReleaseConfig};
 use crate::error::{ConfigError, GraphError};
 
 #[derive(Clone, Debug)]
@@ -17,6 +17,7 @@ pub struct ResolvedConfig {
     pub changesets_dir: PathBuf,
     pub cascade: CascadeConfig,
     pub validation: ValidationConfig,
+    pub product_release: Option<ProductReleaseConfig>,
     pub registries: BTreeMap<RegistryKey, RegistryConfig>,
     /// Per-package override rules from `[[package]]` blocks, in TOML declaration order.
     ///
@@ -39,6 +40,14 @@ pub struct ResolvedConfig {
     pub(crate) raw_groups: RawGroupTable,
     pub promoted_siblings: BTreeMap<String, Vec<(PackageId, BTreeSet<Ecosystem>)>>,
     provenance: BTreeMap<ConfigKey, ConfigProvenance>,
+}
+
+/// Credential-free declaration of the one product that owns GitHub binary
+/// assets. The operation builder supplies the immutable attestation policy.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProductReleaseConfig {
+    pub package: PackageId,
+    pub artifact_targets: Vec<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -122,6 +131,33 @@ pub struct ValidationConfig {
 pub struct RegistryConfig {
     pub kind: Ecosystem,
     pub url: Option<String>,
+}
+
+fn resolve_product_release(raw: RawProductReleaseConfig) -> Result<ProductReleaseConfig, ConfigError> {
+    let package = PackageId::parse(&raw.product_package).map_err(|_| ConfigError::InvalidProductRelease {
+        detail: "product-package must be an ecosystem-qualified package identity".to_owned(),
+    })?;
+    const TARGETS: [&str; 4] = [
+        "aarch64-apple-darwin",
+        "x86_64-unknown-linux-gnu",
+        "x86_64-unknown-linux-musl",
+        "wasm32-wasip1",
+    ];
+    if raw.artifact_targets.len() != TARGETS.len()
+        || raw
+            .artifact_targets
+            .iter()
+            .any(|target| !TARGETS.contains(&target.as_str()))
+        || raw.artifact_targets.iter().collect::<BTreeSet<_>>().len() != TARGETS.len()
+    {
+        return Err(ConfigError::InvalidProductRelease {
+            detail: "artifact-targets must contain each supported product target exactly once".to_owned(),
+        });
+    }
+    Ok(ProductReleaseConfig {
+        package,
+        artifact_targets: TARGETS.iter().map(|target| (*target).to_owned()).collect(),
+    })
 }
 
 /// Per-package overrides from a `[[package]]` block in `callisto.toml`.
@@ -307,6 +343,7 @@ pub fn load(root: &Path) -> Result<ResolvedConfig, ConfigError> {
     };
 
     let mut provenance = BTreeMap::new();
+    let product_release = raw.release.map(resolve_product_release).transpose()?;
 
     let changesets_dir_str = raw
         .changesets
@@ -465,6 +502,7 @@ pub fn load(root: &Path) -> Result<ResolvedConfig, ConfigError> {
             preserve_npm_ranges,
         },
         validation: ValidationConfig { allow_empty_changesets },
+        product_release,
         registries,
         packages,
         package_sets,

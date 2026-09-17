@@ -764,6 +764,13 @@ pub enum ConfigError {
     )]
     InvalidChangelogPath { pattern: String, value: String },
 
+    #[error("invalid product release configuration: {detail}")]
+    #[diagnostic(
+        code(E197),
+        help("Configure one supported product package and all four required artifact targets.")
+    )]
+    InvalidProductRelease { detail: String },
+
     #[error(transparent)]
     Tag(#[from] TagTemplateError),
 

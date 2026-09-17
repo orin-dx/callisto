@@ -7,5 +7,5 @@ pub use groups::{GroupDef, GroupMember, GroupMemberKind, GroupTable, RawGroupTab
 pub use pattern::PackagePattern;
 pub use resolve::{
     load, parse_pre_major_policy, CascadeBumpSeverity, CascadeConfig, CascadeMode, ConfigProvenance, PackageConfig,
-    PreMajorInferencePolicy, RegistryConfig, ResolvedConfig, ValidationConfig,
+    PreMajorInferencePolicy, ProductReleaseConfig, RegistryConfig, ResolvedConfig, ValidationConfig,
 };

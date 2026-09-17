@@ -7,6 +7,7 @@ pub struct RawConfig {
     pub changesets: Option<RawChangesetsConfig>,
     pub cascade: Option<RawCascadeConfig>,
     pub validation: Option<RawValidationConfig>,
+    pub release: Option<RawProductReleaseConfig>,
     pub registries: Option<BTreeMap<String, RawRegistryConfig>>,
     pub package: Option<Vec<RawPackageConfig>>,
     #[serde(rename = "package-set")]
@@ -20,6 +21,18 @@ pub struct RawConfig {
     /// against, so a later run can diff the freshly-discovered state against
     /// it instead of against nothing.
     pub init: Option<RawInitConfig>,
+}
+
+/// Product binary release declaration. Credentials and provider endpoints are
+/// intentionally excluded: this configuration only identifies immutable
+/// intent slots; execution receives credentials from its caller.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawProductReleaseConfig {
+    #[serde(rename = "product-package")]
+    pub product_package: String,
+    #[serde(rename = "artifact-targets")]
+    pub artifact_targets: Vec<String>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
