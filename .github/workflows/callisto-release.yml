@@ -262,6 +262,10 @@ jobs:
           # the handoff file lands here nested under .release-handoff/, not
           # flat at release-intent.json.
           cmp "$intent_dir/release-intent.json" "$build_dir/.release-handoff/release-intent.json"
+          cmp "$intent_dir/release-provenance.json" "$build_dir/.release-handoff/release-provenance.json"
+          jq -e --arg orchestration "$GITHUB_SHA" --arg source "${{ inputs.release_source_sha || github.sha }}" \
+            '.orchestrationRevision == $orchestration and .releaseSourceRevision == $source' \
+            "$intent_dir/release-provenance.json" > /dev/null
       - name: Execute verified release
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}

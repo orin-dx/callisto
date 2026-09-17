@@ -45,6 +45,7 @@ require_line "$plan" "            '{orchestrationRevision: \$orchestration, rele
 execute="$(sed -n '/^  execute:$/,$p' "$workflow")"
 require_line "$execute" '    needs: build' 'PR merge is the release approval; execute must depend directly on the verified build, not a GitHub Environment gate'
 require_line "$execute" '          cmp "$intent_dir/release-intent.json" "$build_dir/.release-handoff/release-intent.json"' 'execute must read the handoff file at its actual archived path -- .release-handoff and release-artifacts were sibling upload paths in "build", so the artifact is rooted one level up, not flattened'
+require_line "$execute" '          cmp "$intent_dir/release-provenance.json" "$build_dir/.release-handoff/release-provenance.json"' 'execute must reject a build handoff whose recovery provenance differs from planning'
 require_line "$execute" '          path: ${{ runner.temp }}/release-intent' 'execute must download release-intent outside the workspace -- callisto release execute re-checks release trust before every dispatch, which fails closed on any untracked file in the worktree'
 require_line "$execute" '          path: ${{ runner.temp }}/release-build' 'execute must download release-build outside the workspace -- callisto release execute re-checks release trust before every dispatch, which fails closed on any untracked file in the worktree'
 
