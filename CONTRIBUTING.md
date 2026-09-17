@@ -39,6 +39,16 @@ just hooks
 just ci
 ```
 
+### Optional Entire session capture
+
+Entire is an optional maintainer tool. The committed `.entire` configuration disables automatic
+checkpoint pushes because sessions can include prompts, responses, tool calls, and file changes.
+Do not push session data to this public repository by default.
+
+If you use Entire, install and authenticate its CLI locally, then run `entire status --detailed`.
+Use a separately approved private checkpoint remote before enabling session synchronization.
+Agent-specific integrations are local generated files and are not required to contribute.
+
 ---
 
 ## 2. Primary Development Tasks (`just`)
