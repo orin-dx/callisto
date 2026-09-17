@@ -31,7 +31,7 @@ if ! rg -Fqx 'command+=(--emit-decision "$INPUT_DECISION_PATH")' "$action"; then
 fi
 
 release_candidate="$(job_block release-candidate plan)"
-require_line "$release_candidate" '          prs=$(gh api --paginate "/repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/pulls" --jq '\''[.[] | select(.merged_at != null and .base.ref == "main" and (.head.ref == "callisto/version-packages" or (.head.ref | test("^callisto/version-packages--[0-9a-f]{40}$"))))] | length'\'')' 'release-candidate must accept only canonical or SHA-suffixed managed branches'
+require_line "$release_candidate" '          prs=$(gh api --paginate "/repos/${GITHUB_REPOSITORY}/commits/${release_source_sha}/pulls" --jq '\''[.[] | select(.merged_at != null and .base.ref == "main" and (.head.ref == "callisto/version-packages" or (.head.ref | test("^callisto/version-packages--[0-9a-f]{40}$"))))] | length'\'')' 'release-candidate must validate an explicit source only when it is a merged managed branch'
 
 build="$(job_block build execute)"
 require_line "$build" '      contents: read' 'build must read the intent-bound source tree'

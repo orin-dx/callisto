@@ -5,6 +5,11 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      release_source_sha:
+        description: 'Merged managed release-PR commit to recover; leave empty for the triggering commit.'
+        required: false
+        type: string
 
 permissions: {}
 
@@ -105,6 +110,7 @@ jobs:
       pull-requests: read
     outputs:
       is_release_pr: ${{ steps.candidate.outputs.is_release_pr }}
+      release_source_sha: ${{ steps.candidate.outputs.release_source_sha }}
     steps:
       - id: candidate
         shell: bash
@@ -112,15 +118,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          release_source_sha="${{ inputs.release_source_sha || github.sha }}"
           # This only schedules the job. `release plan` verifies the actual
           # parent-to-merge delta; labels and PR metadata are never authority.
           # The GitHub API check is complementary provenance evidence: a
           # trusted merge must be both an actual merge of the managed PR and
           # a GitHub-verified signed commit. It cannot be a direct push.
-          prs=$(gh api --paginate "/repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/pulls" --jq '[.[] | select(.merged_at != null and .base.ref == "main" and (.head.ref == "callisto/version-packages" or (.head.ref | test("^callisto/version-packages--[0-9a-f]{40}$"))))] | length')
-          verified=$(gh api "/repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}" --jq '.commit.verification.verified')
+          prs=$(gh api --paginate "/repos/${GITHUB_REPOSITORY}/commits/${release_source_sha}/pulls" --jq '[.[] | select(.merged_at != null and .base.ref == "main" and (.head.ref == "callisto/version-packages" or (.head.ref | test("^callisto/version-packages--[0-9a-f]{40}$"))))] | length')
+          verified=$(gh api "/repos/${GITHUB_REPOSITORY}/commits/${release_source_sha}" --jq '.commit.verification.verified')
           if [[ "$prs" == 1 && "$verified" == true ]]; then
             echo 'is_release_pr=true' >> "$GITHUB_OUTPUT"
+            echo "release_source_sha=$release_source_sha" >> "$GITHUB_OUTPUT"
           else
             echo 'is_release_pr=false' >> "$GITHUB_OUTPUT"
           fi
@@ -135,7 +143,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ needs.release-candidate.outputs.release_source_sha }}
           fetch-depth: 0
           persist-credentials: false
       - uses: $/.github/actions/setup-callisto
@@ -144,7 +152,7 @@ jobs:
       - name: Derive and hash intent
         run: |
           set -euo pipefail
-          callisto release plan --from-release-commit "$GITHUB_SHA" --decision .callisto/release-decision.json --out release-intent.json
+          callisto release plan --from-release-commit "${{ needs.release-candidate.outputs.release_source_sha }}" --decision .callisto/release-decision.json --out release-intent.json
           shasum -a 256 release-intent.json > release-intent.json.sha256
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -166,7 +174,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ inputs.release_source_sha || github.sha }}
           fetch-depth: 0
           persist-credentials: false
       - uses: $/.github/actions/setup-callisto
@@ -215,7 +223,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ inputs.release_source_sha || github.sha }}
           fetch-depth: 0
           # Unlike every other job's checkout, this one must persist
           # credentials: dispatch_tag (callisto-graph) pushes the release tag
