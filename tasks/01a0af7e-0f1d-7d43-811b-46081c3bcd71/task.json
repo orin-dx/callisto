@@ -1,0 +1,18 @@
+{
+  "tool_use_id": "01a0af7e-0f1d-7d43-811b-46081c3bcd71",
+  "agent_id": "01a0af7e-0f1d-7d43-811b-46081c3bcd71",
+  "subagent_type": "worker",
+  "files": [
+    "crates/callisto-model/src/lib.rs",
+    "crates/callisto-model/src/product_release.rs"
+  ],
+  "token_usage": {
+    "input_tokens": 49899,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 1259776,
+    "output_tokens": 6998,
+    "api_call_count": 28
+  },
+  "started_at": "2026-09-17T06:11:10.331419-07:00",
+  "completed_at": "2026-09-17T06:19:33.241248-07:00"
+}
