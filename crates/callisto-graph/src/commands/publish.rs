@@ -688,8 +688,8 @@ fn resolve_entry_id(
 ///
 /// Matches `rust_crates`/`npm_platform_packages`/`npm_main_packages`/
 /// `pypi_packages` entries against `report.attempts` by the same
-/// `PackageId::Prefixed { ecosystem, name }` shape [`PublishOrchestrator::execute`]
-/// constructs at publish time (not `resolve_entry_id`'s bare-vs-prefixed
+/// `PackageId::Prefixed { ecosystem, name }` shape the publisher constructs
+/// at publish time (not `resolve_entry_id`'s bare-vs-prefixed
 /// resolution, since `report` carries no workspace context to resolve
 /// against). `releases` entries carry the package's real graph-resolved id
 /// instead, which may be `Bare` even when the matching attempt is

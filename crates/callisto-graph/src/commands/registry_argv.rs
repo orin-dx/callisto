@@ -7,8 +7,7 @@
 //! never a [`callisto_model::CommandRunner`] call of its own) and *what did
 //! the finished command's output mean*. Actually invoking the command, and
 //! any retry/backoff policy around a failed attempt, is the caller's job --
-//! see [`super::release::ValidatedReleaseIntent::dispatch_prepared`], the
-//! durable release executor's single production publish path.
+//! see the durable release executor's single production publish path.
 //!
 //! A small amount of local filesystem reading happens here (the Cargo
 //! on-disk version check, npm package-manager detection from lockfiles) --

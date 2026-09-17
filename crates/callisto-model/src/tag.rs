@@ -173,7 +173,7 @@ impl TagName {
     /// Parses a Git tag name, rejecting anything `git check-ref-format`
     /// would reject (control characters, `..`, `@{`, a `.lock`-suffixed or
     /// leading-`.` component, reserved characters, and the rest of
-    /// [`is_valid_git_ref_name`]) plus a leading `-`, which is a legal Git
+    /// the remaining Git ref-name rules) plus a leading `-`, which is a legal Git
     /// ref character but would be read as a flag by any CLI argument
     /// parser (`git`, `gh`, ...) a tag name is later passed to bare.
     pub fn parse(s: &str) -> Result<Self, TagNameError> {
@@ -185,7 +185,7 @@ impl TagName {
     }
 
     /// Constructs a tag name without validating it against
-    /// [`is_valid_git_ref_name`]. Restricted to call sites that can prove
+    /// Git ref-name rules. Restricted to call sites that can prove
     /// their input is already safe -- see the call site's own comment for
     /// its specific justification. Prefer [`TagName::parse`] everywhere else.
     pub fn new_unchecked(name: String) -> Self {
