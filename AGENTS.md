@@ -14,11 +14,11 @@ Callisto is a fast, polyglot monorepo versioning and release management engine w
 ├───────────────────────────────────┬────────────────────────────────────┤
 │ LAYER & CRATE                     │ LICENSE & PURPOSE                  │
 ├───────────────────────────────────┼────────────────────────────────────┤
-│ Layer 1: callisto-model           │ MIT                               │
+│ Layer 1: callisto-model           │ MIT                                │
 │          callisto-format          │ Domain primitives, SemVer grammars │
 ├───────────────────────────────────┼────────────────────────────────────┤
-│ Layer 1.5: callisto-vcs           │ MIT                               │
-│                                    │ Native Git integration             │
+│ Layer 1.5: callisto-vcs           │ MIT                                │
+│                                   │ Native Git integration             │
 ├───────────────────────────────────┼────────────────────────────────────┤
 │ Layer 2: callisto-manifests       │ FSL-1.1-MIT                        │
 │          callisto-conventional    │ AST manifest editors, changeset    │
@@ -30,8 +30,8 @@ Callisto is a fast, polyglot monorepo versioning and release management engine w
 │ Layer 4: callisto-cli             │ FSL-1.1-MIT                        │
 │          callisto-moon            │ Standalone CLI & Moon WASM plugin  │
 ├───────────────────────────────────┼────────────────────────────────────┤
-│ Dev:     callisto-fixtures        │ FSL-1.1-MIT — dev-only byte-compat  │
-│                                    │ test corpus                        │
+│ Dev:     callisto-fixtures        │ FSL-1.1-MIT — dev-only byte-compat │
+│                                   │ test corpus                        │
 └───────────────────────────────────┴────────────────────────────────────┘
 ```
 
@@ -45,14 +45,14 @@ Always use `just` or `moon` task runners for building, testing, linting, and for
 
 ### Primary Command Reference
 
-| Action | Primary Task Runner Command | Moon Engine Command |
-| :--- | :--- | :--- |
-| **Run Full Verification CI** | `just ci` | `moon run :format-check && moon run :lint && moon run :test` |
-| **Run Test Suite** | `just test` | `moon run :test` |
-| **Check Clippy Lints** | `just lint` | `moon run :lint` |
-| **Check Formatting** | `just fmt-check` | `moon run :format-check` |
-| **Format Code** | `just fmt` | `moon run :format` |
-| **Verify WASM Cross-Compilation** | `just wasm-check` | `cargo check -p callisto-moon --target wasm32-wasip1 --features pdk` |
+| Action                            | Primary Task Runner Command | Moon Engine Command                                                  |
+| :-------------------------------- | :-------------------------- | :------------------------------------------------------------------- |
+| **Run Full Verification CI**      | `just ci`                   | `moon run :format-check && moon run :lint && moon run :test`         |
+| **Run Test Suite**                | `just test`                 | `moon run :test`                                                     |
+| **Check Clippy Lints**            | `just lint`                 | `moon run :lint`                                                     |
+| **Check Formatting**              | `just fmt-check`            | `moon run :format-check`                                             |
+| **Format Code**                   | `just fmt`                  | `moon run :format`                                                   |
+| **Verify WASM Cross-Compilation** | `just wasm-check`           | `cargo check -p callisto-moon --target wasm32-wasip1 --features pdk` |
 
 ---
 
