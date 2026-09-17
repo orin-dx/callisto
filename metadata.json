@@ -5,8 +5,8 @@
   "branch": "codex/release-recovery",
   "checkpoints_count": 1,
   "files_touched": [
-    ".github/tests/verify-release-workflow-contract.sh",
-    ".github/workflows/callisto-release.yml"
+    "crates/callisto-graph/src/commands/release_execution.rs",
+    "crates/callisto-graph/src/error.rs"
   ],
   "sessions": [
     {
@@ -18,10 +18,10 @@
     }
   ],
   "token_usage": {
-    "input_tokens": 4377842,
+    "input_tokens": 4401329,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 256022272,
-    "output_tokens": 544216,
-    "api_call_count": 2248
+    "cache_read_tokens": 257710336,
+    "output_tokens": 546126,
+    "api_call_count": 2258
   }
 }
