@@ -12,4 +12,4 @@ Changeset markdown parser and writer for Callisto monorepo version management.
 
 ## License
 
-Permissively licensed under `MIT OR Apache-2.0`.
+MIT License (`MIT`).
