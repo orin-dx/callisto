@@ -3,12 +3,13 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use callisto_model::{
-    ConfigKey, Ecosystem, PackageId, PublishTarget, RegistryKey, ReleaseTrigger, Severity, TagTemplate,
+    ConfigKey, Ecosystem, GitHubRepository, PackageId, PublishTarget, RegistryKey, ReleaseProfileId, ReleaseTrigger,
+    Severity, TagTemplate,
 };
 
 use crate::config::groups::{GroupTable, RawGroupTable};
 use crate::config::pattern::PackagePattern;
-use crate::config::raw::{RawConfig, RawProductReleaseConfig};
+use crate::config::raw::{RawConfig, RawProductReleaseConfig, RawReleaseProfileConfig};
 use crate::error::{ConfigError, GraphError};
 
 #[derive(Clone, Debug)]
@@ -48,6 +49,21 @@ pub struct ResolvedConfig {
 pub struct ProductReleaseConfig {
     pub package: PackageId,
     pub artifact_targets: Vec<String>,
+    pub profiles: BTreeMap<ReleaseProfileId, ReleaseProfileConfig>,
+}
+
+/// Credential-free destination facts required before a product release can
+/// plan or execute. A rehearsal registry is intentionally not synthesized:
+/// absent infrastructure leaves the rehearsal profile unavailable.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReleaseProfileConfig {
+    pub forge_repository: GitHubRepository,
+}
+
+impl ProductReleaseConfig {
+    pub fn profile(&self, id: &ReleaseProfileId) -> Option<&ReleaseProfileConfig> {
+        self.profiles.get(id)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -154,10 +170,31 @@ fn resolve_product_release(raw: RawProductReleaseConfig) -> Result<ProductReleas
             detail: "artifact-targets must contain each supported product target exactly once".to_owned(),
         });
     }
+    let profiles = raw
+        .profiles
+        .unwrap_or_default()
+        .into_iter()
+        .map(|(name, raw)| resolve_release_profile(name, raw))
+        .collect::<Result<BTreeMap<_, _>, _>>()?;
     Ok(ProductReleaseConfig {
         package,
         artifact_targets: TARGETS.iter().map(|target| (*target).to_owned()).collect(),
+        profiles,
     })
+}
+
+fn resolve_release_profile(
+    name: String,
+    raw: RawReleaseProfileConfig,
+) -> Result<(ReleaseProfileId, ReleaseProfileConfig), ConfigError> {
+    let profile = ReleaseProfileId::parse(&name).map_err(|error| ConfigError::InvalidProductRelease {
+        detail: format!("release profile `{name}` is invalid: {error}"),
+    })?;
+    let forge_repository =
+        GitHubRepository::parse(&raw.forge_repository).map_err(|error| ConfigError::InvalidProductRelease {
+            detail: format!("release profile `{name}` has invalid forge-repository: {error}"),
+        })?;
+    Ok((profile, ReleaseProfileConfig { forge_repository }))
 }
 
 /// Per-package overrides from a `[[package]]` block in `callisto.toml`.
@@ -1126,6 +1163,35 @@ mod tests {
         assert!(
             matches!(result.unwrap_err(), ConfigError::UnknownKey { .. }),
             "expected UnknownKey error variant"
+        );
+    }
+
+    #[test]
+    fn product_release_profiles_bind_named_forge_destinations() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        fs::write(
+            tmp.path().join("callisto.toml"),
+            "[release]\nproduct-package = \"cargo/demo\"\nartifact-targets = [\n  \"aarch64-apple-darwin\",\n  \"x86_64-unknown-linux-gnu\",\n  \"x86_64-unknown-linux-musl\",\n  \"wasm32-wasip1\",\n]\n\n[release.profiles.production]\nforge-repository = \"orin-dx/callisto\"\n\n[release.profiles.rehearsal]\nforge-repository = \"orin-dx/callisto-rehearsal\"\n",
+        )
+        .expect("write callisto.toml");
+
+        let config = load(tmp.path()).expect("profile configuration must load");
+        let release = config.product_release.expect("product release config");
+        assert_eq!(
+            release
+                .profile(&ReleaseProfileId::parse("production").unwrap())
+                .expect("production profile")
+                .forge_repository
+                .as_slug(),
+            "orin-dx/callisto"
+        );
+        assert_eq!(
+            release
+                .profile(&ReleaseProfileId::parse("rehearsal").unwrap())
+                .expect("rehearsal profile")
+                .forge_repository
+                .as_slug(),
+            "orin-dx/callisto-rehearsal"
         );
     }
 }

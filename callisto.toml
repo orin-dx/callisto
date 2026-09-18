@@ -27,6 +27,9 @@ artifact-targets = [
     "wasm32-wasip1",
 ]
 
+[release.profiles.production]
+forge-repository = "orin-dx/callisto"
+
 [cascade]
 mode = "out-of-range"
 bump-severity = "patch"

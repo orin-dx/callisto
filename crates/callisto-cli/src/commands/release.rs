@@ -202,6 +202,25 @@ fn plan(args: ReleasePlanArgs, global: &GlobalArgs) -> Result<ExitCode, CliError
                 .map_err(|error| CliError::Other(format!("invalid orchestration revision `{revision}`: {error}")))?;
             let repository = callisto_model::GitHubRepository::parse(repository)
                 .map_err(|error| CliError::Other(format!("invalid artifact repository `{repository}`: {error}")))?;
+            let configured_profile = workspace
+                .config
+                .product_release
+                .as_ref()
+                .and_then(|release| release.profile(&profile))
+                .ok_or_else(|| {
+                    CliError::Other(format!(
+                        "release profile `{}` is not configured with a forge destination",
+                        profile.as_str()
+                    ))
+                })?;
+            if configured_profile.forge_repository != repository {
+                return Err(CliError::Other(format!(
+                    "release profile `{}` targets forge repository `{}`, not `{}`",
+                    profile.as_str(),
+                    configured_profile.forge_repository.as_slug(),
+                    repository.as_slug()
+                )));
+            }
             build_release_intent_with_artifacts(
                 &workspace.root,
                 &locator,
@@ -317,6 +336,31 @@ fn execute(args: ReleaseExecuteArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
     };
     let runner = CliCommandRunner;
     let source_global = source_global(global, args.source_root.as_deref());
+    let source_workspace = load_workspace(&source_global, &runner)?;
+    if source_workspace.config.product_release.is_some() {
+        let configured_profile = source_workspace
+            .config
+            .product_release
+            .as_ref()
+            .and_then(|release| release.profile(&selected_profile))
+            .ok_or_else(|| {
+                CliError::Other(format!(
+                    "release profile `{}` is not configured with a forge destination",
+                    selected_profile.as_str()
+                ))
+            })?;
+        if intent
+            .artifact_slots
+            .iter()
+            .any(|slot| slot.attestation_policy.repository != configured_profile.forge_repository)
+        {
+            return Err(CliError::Other(format!(
+                "release intent artifact destination does not match profile `{}` forge repository `{}`",
+                selected_profile.as_str(),
+                configured_profile.forge_repository.as_slug()
+            )));
+        }
+    }
     let root = dunce::canonicalize(&source_global.cwd).map_err(|source| CliError::Io {
         source,
         path: Some(source_global.cwd.clone()),

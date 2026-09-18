@@ -23,6 +23,12 @@ does not rerun historical workflow code, create a version PR, or invent a newer 
 The immutable run envelope and provider observations are recovery authority. A local state file
 is useful crash evidence, but cannot prove what a registry, Git remote, or forge contains.
 
+The selected release profile is part of the immutable intent digest, not just a receipt label.
+The production profile declares its GitHub forge destination in `callisto.toml`; planning rejects
+an artifact repository that differs from that destination, and execution rejects a profile that
+does not match its intent. An unconfigured profile, including the rehearsal profile until its
+isolated providers exist, fails before it writes an intent or dispatches an effect.
+
 ## Execution
 
 Before an effect, Callisto observes the provider. An operation is one of absent, exact success,
@@ -71,6 +77,10 @@ crates.io, record its credential-free index URL in the rehearsal checkout, and a
 publish token as a repository secret. Keep `orin-dx/callisto-rehearsal` as the forge destination.
 Do not add npm or PyPI credentials unless the rehearsal source actually contains a package routed
 to those registries; the current Callisto product release is Cargo-only.
+
+Do not add `[release.profiles.rehearsal]` merely to make a workflow appear complete. Add it only
+with the corresponding isolated Cargo routing and a rehearsal checkout whose Git remote targets
+the rehearsal forge; the complete profile must never share a production forge or registry endpoint.
 
 The first rehearsal must use disposable, unreleased versions. It must prove a complete run and a
 fresh-runner recovery against the persistent rehearsal providers before any production recovery is

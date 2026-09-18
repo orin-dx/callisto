@@ -98,7 +98,7 @@ fn release_commit_fixture_with_product_release(product_release: bool) -> (TempDi
     let config_path = root.join("callisto.toml");
     let config = fs::read_to_string(&config_path).unwrap();
     let product_config = product_release.then_some(
-        "\n[release]\nproduct-package = \"cargo/core-crate\"\nartifact-targets = [\n  \"aarch64-apple-darwin\",\n  \"x86_64-unknown-linux-gnu\",\n  \"x86_64-unknown-linux-musl\",\n  \"wasm32-wasip1\",\n]\n",
+        "\n[release]\nproduct-package = \"cargo/core-crate\"\nartifact-targets = [\n  \"aarch64-apple-darwin\",\n  \"x86_64-unknown-linux-gnu\",\n  \"x86_64-unknown-linux-musl\",\n  \"wasm32-wasip1\",\n]\n\n[release.profiles.production]\nforge-repository = \"example/core-crate\"\n",
     );
     let tag_template = product_release.then_some("tag-template = \"callisto@{version}\"\n");
     fs::write(
@@ -418,6 +418,42 @@ fn plan_product_intent(root: &Path, external: &Path, release_commit: &str) -> st
     let value: serde_json::Value = serde_json::from_slice(&fs::read(&intent).unwrap()).unwrap();
     assert_eq!(value["artifactSlots"].as_array().map(Vec::len), Some(4));
     intent
+}
+
+#[test]
+fn product_release_rejects_an_unconfigured_profile_before_writing_intent() {
+    let (dir, release_commit) = product_release_commit_fixture();
+    let external = tempfile::tempdir().unwrap();
+    let intent = external.path().join("rehearsal-intent.json");
+    let plan = callisto(
+        dir.path(),
+        &[
+            "release",
+            "plan",
+            "--profile",
+            "rehearsal",
+            "--from-release-commit",
+            &release_commit,
+            "--decision",
+            DECISION_PATH,
+            "--orchestration-revision",
+            &release_commit,
+            "--artifact-repository",
+            "example/core-crate",
+            "--out",
+            intent.to_str().unwrap(),
+        ],
+    );
+    assert!(
+        !plan.status.success(),
+        "an unconfigured rehearsal destination must fail before creating an intent"
+    );
+    assert!(
+        String::from_utf8_lossy(&plan.stderr).contains("not configured with a forge destination"),
+        "profile failure should say why provisioning is required: {}",
+        String::from_utf8_lossy(&plan.stderr)
+    );
+    assert!(!intent.exists(), "failed profile validation must not write an intent");
 }
 
 const PRODUCT_ASSETS: [&str; 4] = [

@@ -33,6 +33,16 @@ pub struct RawProductReleaseConfig {
     pub product_package: String,
     #[serde(rename = "artifact-targets")]
     pub artifact_targets: Vec<String>,
+    /// Credential-free forge destinations keyed by release profile. Registry
+    /// credentials are deliberately excluded from repository configuration.
+    pub profiles: Option<BTreeMap<String, RawReleaseProfileConfig>>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawReleaseProfileConfig {
+    #[serde(rename = "forge-repository")]
+    pub forge_repository: String,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
