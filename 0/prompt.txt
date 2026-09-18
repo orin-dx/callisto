@@ -1,0 +1,1 @@
+We also planned wasm target right?
