@@ -1,0 +1,1 @@
+Apple signing is tricky for an open source project though. I have a dev account by signing something with my account on an open source project seems risky. I don't think folks do that right?
