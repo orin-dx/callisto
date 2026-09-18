@@ -54,6 +54,14 @@ fn system_git() -> PathBuf {
 /// a pending changeset, while its head changes the manifest and changelog and
 /// removes that changeset.
 fn release_commit_fixture() -> (TempDir, String) {
+    release_commit_fixture_with_product_release(false)
+}
+
+fn product_release_commit_fixture() -> (TempDir, String) {
+    release_commit_fixture_with_product_release(true)
+}
+
+fn release_commit_fixture_with_product_release(product_release: bool) -> (TempDir, String) {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     git(root, &["init", "-b", "main"]);
@@ -89,10 +97,16 @@ fn release_commit_fixture() -> (TempDir, String) {
     );
     let config_path = root.join("callisto.toml");
     let config = fs::read_to_string(&config_path).unwrap();
+    let product_config = product_release.then_some(
+        "\n[release]\nproduct-package = \"cargo/core-crate\"\nartifact-targets = [\n  \"aarch64-apple-darwin\",\n  \"x86_64-unknown-linux-gnu\",\n  \"x86_64-unknown-linux-musl\",\n  \"wasm32-wasip1\",\n]\n",
+    );
+    let tag_template = product_release.then_some("tag-template = \"callisto@{version}\"\n");
     fs::write(
         config_path,
         format!(
-            "{config}\n[[package]]\nmatch = \"cargo/core-crate\"\npublish-to = [\"crates-io\", \"github-release\"]\n"
+            "{config}{product_config}\n[[package]]\nmatch = \"cargo/core-crate\"\npublish-to = [\"crates-io\", \"github-release\"]\n{tag_template}",
+            product_config = product_config.unwrap_or_default(),
+            tag_template = tag_template.unwrap_or_default(),
         ),
     )
     .unwrap();
@@ -320,6 +334,51 @@ fn plan_intent(root: &Path, external: &Path, release_commit: &str) -> std::path:
     intent
 }
 
+fn plan_product_intent(root: &Path, external: &Path, release_commit: &str) -> std::path::PathBuf {
+    let intent = external.join("release-intent.json");
+    let plan = callisto(
+        root,
+        &[
+            "release",
+            "plan",
+            "--from-release-commit",
+            release_commit,
+            "--decision",
+            DECISION_PATH,
+            "--orchestration-revision",
+            release_commit,
+            "--artifact-repository",
+            "example/core-crate",
+            "--out",
+            intent.to_str().unwrap(),
+        ],
+    );
+    assert!(
+        plan.status.success(),
+        "product release plan failed: {}",
+        String::from_utf8_lossy(&plan.stderr)
+    );
+    let value: serde_json::Value = serde_json::from_slice(&fs::read(&intent).unwrap()).unwrap();
+    assert_eq!(value["artifactSlots"].as_array().map(Vec::len), Some(4));
+    intent
+}
+
+const PRODUCT_ASSETS: [&str; 4] = [
+    "callisto-aarch64-apple-darwin.tar.gz",
+    "callisto-x86_64-unknown-linux-gnu.tar.gz",
+    "callisto-x86_64-unknown-linux-musl.tar.gz",
+    "callisto-moon.wasm",
+];
+
+fn create_product_artifacts(external: &Path) -> std::path::PathBuf {
+    let artifacts = external.join("release-artifacts");
+    fs::create_dir_all(&artifacts).unwrap();
+    for asset in PRODUCT_ASSETS {
+        fs::write(artifacts.join(asset), format!("fixture artifact: {asset}\n")).unwrap();
+    }
+    artifacts
+}
+
 fn fake_publishers(
     external: &Path,
     release_commit: &str,
@@ -357,7 +416,7 @@ fn fake_publishers(
     fs::write(
         bin.join("gh"),
         format!(
-            "#!/bin/sh\nprintf 'gh %s\\n' \"$*\" >> \"$CALLISTO_TEST_LOG\"\nif [ \"$1\" = api ]; then\n  if [ -f \"$CALLISTO_TEST_FORGE_MARKER\" ]; then\n    printf '%s\\n\\n%s\\n' 'HTTP/1.1 200 OK' '{{\"tag_name\":\"core-crate@0.2.0\",\"target_commitish\":\"{release_commit}\"}}'\n  else\n    printf '%s\\n\\n%s\\n' 'HTTP/1.1 404 Not Found' '{{}}'\n  fi\n  exit 0\nfi\nif [ \"$1\" = release ] && [ \"$2\" = create ]; then\n  : > \"$CALLISTO_TEST_FORGE_MARKER\"\nfi\nexit 0\n"
+            "#!/bin/sh\nprintf 'gh %s\\n' \"$*\" >> \"$CALLISTO_TEST_LOG\"\nif [ \"$1\" = attestation ] && [ \"$2\" = verify ]; then\n  exit 0\nfi\nif [ \"$1\" = api ]; then\n  if [ -f \"$CALLISTO_TEST_FORGE_MARKER\" ]; then\n    assets=''\n    comma=''\n    if [ -f \"$CALLISTO_TEST_ARTIFACT_MARKER\" ]; then\n      while IFS='|' read -r asset size digest; do\n        assets=\"${{assets}}${{comma}}{{\\\"name\\\":\\\"${{asset}}\\\",\\\"size\\\":${{size}},\\\"digest\\\":\\\"sha256:${{digest}}\\\"}}\"\n        comma=','\n      done < \"$CALLISTO_TEST_ARTIFACT_MARKER\"\n    fi\n    printf '%s\\n\\n%s\\n' 'HTTP/1.1 200 OK' \"{{\\\"tag_name\\\":\\\"$CALLISTO_TEST_FORGE_TAG\\\",\\\"target_commitish\\\":\\\"{release_commit}\\\",\\\"assets\\\":[${{assets}}]}}\"\n  else\n    printf '%s\\n\\n%s\\n' 'HTTP/1.1 404 Not Found' '{{}}'\n  fi\n  exit 0\nfi\nif [ \"$1\" = release ] && [ \"$2\" = create ]; then\n  : > \"$CALLISTO_TEST_FORGE_MARKER\"\nfi\nif [ \"$1\" = release ] && [ \"$2\" = upload ]; then\n  asset=$4\n  name=$(basename \"$asset\")\n  size=$(wc -c < \"$asset\" | tr -d ' ')\n  digest=$(shasum -a 256 \"$asset\" | awk '{{print $1}}')\n  printf '%s|%s|%s\\n' \"$name\" \"$size\" \"$digest\" >> \"$CALLISTO_TEST_ARTIFACT_MARKER\"\nfi\nexit 0\n"
         ),
     )
     .unwrap();
@@ -429,10 +488,63 @@ fn execute_with_recovery(
         .env("CALLISTO_TEST_LOG", publishers.log)
         .env("CALLISTO_TEST_GIT_TRACE", publishers.git_trace)
         .env("CALLISTO_TEST_FORGE_MARKER", publishers.forge_marker)
+        .env(
+            "CALLISTO_TEST_ARTIFACT_MARKER",
+            publishers.log.with_extension("artifact-marker"),
+        )
+        .env("CALLISTO_TEST_FORGE_TAG", "core-crate@0.2.0")
         .env("CALLISTO_TEST_CARGO_MARKER", state.with_extension("cargo-marker"))
         .env("CALLISTO_TEST_REAL_GIT", system_git())
         .output()
         .expect("release execute should run")
+}
+
+fn execute_product(
+    root: &Path,
+    intent: &Path,
+    manifest: &Path,
+    artifacts: &Path,
+    state: &Path,
+    publishers: FakePublishers<'_>,
+    recovery: bool,
+) -> Output {
+    let path = format!("{}:{}", publishers.bin.display(), std::env::var("PATH").unwrap());
+    let mut command = Command::new(env!("CARGO_BIN_EXE_callisto"));
+    command
+        .args(["--format", "json", "--cwd", root.to_str().unwrap()])
+        .args([
+            "release",
+            "execute",
+            "--intent",
+            intent.to_str().unwrap(),
+            "--artifact-manifest",
+            manifest.to_str().unwrap(),
+            "--artifact-dir",
+            artifacts.to_str().unwrap(),
+            "--state",
+            state.to_str().unwrap(),
+            "--receipt",
+            state.with_extension("receipt.json").to_str().unwrap(),
+            "--orchestration-revision",
+            &git(root, &["rev-parse", "HEAD"]),
+        ]);
+    if recovery {
+        command.arg("--recovery");
+    }
+    command
+        .env("PATH", path)
+        .env("CALLISTO_TEST_LOG", publishers.log)
+        .env("CALLISTO_TEST_GIT_TRACE", publishers.git_trace)
+        .env("CALLISTO_TEST_FORGE_MARKER", publishers.forge_marker)
+        .env(
+            "CALLISTO_TEST_ARTIFACT_MARKER",
+            publishers.log.with_extension("artifact-marker"),
+        )
+        .env("CALLISTO_TEST_FORGE_TAG", "callisto@0.2.0")
+        .env("CALLISTO_TEST_CARGO_MARKER", state.with_extension("cargo-marker"))
+        .env("CALLISTO_TEST_REAL_GIT", system_git())
+        .output()
+        .expect("product release execute should run")
 }
 
 #[test]
@@ -480,6 +592,75 @@ fn merged_release_commit_executes_exactly_once_through_real_cli() {
             "a second execute may re-observe providers for its receipt, but must not repeat `{effect}`"
         );
     }
+}
+
+#[test]
+fn product_artifacts_are_uploaded_once_and_recovered_from_provider_observation() {
+    let (dir, release_commit) = product_release_commit_fixture();
+    let external = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let intent = plan_product_intent(root, external.path(), &release_commit);
+    let artifacts = create_product_artifacts(external.path());
+    let manifest = external.path().join("artifact-manifest.json");
+    let create_manifest = callisto(
+        root,
+        &[
+            "release",
+            "artifact-manifest",
+            "--intent",
+            intent.to_str().unwrap(),
+            "--artifact-dir",
+            artifacts.to_str().unwrap(),
+            "--out",
+            manifest.to_str().unwrap(),
+        ],
+    );
+    assert!(
+        create_manifest.status.success(),
+        "artifact manifest creation failed: {}",
+        String::from_utf8_lossy(&create_manifest.stderr)
+    );
+    let state = external.path().join("release-state.json");
+    let (bin, log, forge_marker, git_trace) = fake_publishers(external.path(), &release_commit, false);
+    let publishers = FakePublishers {
+        bin: &bin,
+        log: &log,
+        forge_marker: &forge_marker,
+        git_trace: &git_trace,
+    };
+
+    let first = execute_product(root, &intent, &manifest, &artifacts, &state, publishers, false);
+    assert!(
+        first.status.success(),
+        "product release execution failed: {}\n{}",
+        String::from_utf8_lossy(&first.stderr),
+        fs::read_to_string(&log).unwrap_or_else(|_| "<no effect trace>".to_owned()),
+    );
+    let effects = fs::read_to_string(&log).unwrap();
+    for asset in PRODUCT_ASSETS {
+        assert!(
+            effects.contains("gh release upload callisto@0.2.0") && effects.contains(asset),
+            "each planned product artifact must be uploaded: missing {asset} in {effects}"
+        );
+    }
+    assert_eq!(effects.matches("gh release upload").count(), PRODUCT_ASSETS.len());
+
+    fs::remove_file(&state).unwrap();
+    fs::remove_file(state.with_extension("receipt.json")).unwrap();
+    let recovered = execute_product(root, &intent, &manifest, &artifacts, &state, publishers, true);
+    assert!(
+        recovered.status.success(),
+        "fresh-state product recovery failed: {}\n{}",
+        String::from_utf8_lossy(&recovered.stderr),
+        fs::read_to_string(&log).unwrap_or_else(|_| "<no effect trace>".to_owned()),
+    );
+    let after_recovery = fs::read_to_string(&log).unwrap();
+    assert_eq!(
+        after_recovery.matches("gh release upload").count(),
+        PRODUCT_ASSETS.len(),
+        "provider-observed recovery must never upload an existing product artifact again"
+    );
+    assert!(state.with_extension("receipt.json").exists());
 }
 
 #[test]

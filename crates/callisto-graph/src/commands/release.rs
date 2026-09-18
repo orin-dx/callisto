@@ -1483,7 +1483,12 @@ fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
     let mut artifact_slots = Vec::new();
     if let (Some(product), Some(policy)) = (&workspace.config.product_release, artifact_policy) {
         for (id, (package, version)) in &selected {
-            if package.id != product.package {
+            // Workspace package identities may remain bare even when a
+            // policy intentionally qualifies the product by ecosystem. Use
+            // the model's compatibility relation and retain the explicit
+            // ecosystem check so a same-name package in another ecosystem
+            // cannot acquire the product's binary release slots.
+            if !product.package.matches(&package.id) || product.package.ecosystem() != Some(id.ecosystem()) {
                 continue;
             }
             let forge = forge_by_package.get(id).ok_or_else(|| GraphError::ReleaseInvariant {
