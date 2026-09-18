@@ -1,0 +1,28 @@
+<task-notification>
+<task-id>a131715fd33cfc696</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8f8eb6fc-22cd-45a0-a0c3-707f9385dbc8/tasks/a131715fd33cfc696.output</output-file>
+<status>completed</status>
+<summary>Agent "Delete 7 dead abstractions from the audit" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>**Task:** Implement and open a PR for Pattern A of the duplication/over-engineering audit — delete 7 confirmed dead abstractions.
+
+**Result:** PR #57 opened: https://github.com/orin-dx/callisto/pull/57 (branch `chore/delete-dead-abstractions`, commit `13d26f8c`).
+
+Deleted, each verified dead via fresh workspace-wide greps before removal (not trusting stale line numbers):
+1. `PackageIdentityResolver` trait — `crates/callisto-model/src/identity.rs`
+2. `ChangesetStorage` trait + re-exports — `crates/callisto-model/src/atomic.rs`, `crates/callisto-manifests/src/atomic.rs`, `crates/callisto-manifests/src/lib.rs`
+3. `ManifestCstEditor` blanket impl — `crates/callisto-manifests/src/lib.rs` (+ amended `.claude/specs/SPEC-MANIFEST-PERSIST-001.json` AC-005/AC-014 with a `revision_note`)
+4. `ReleaseEffectAdapter`/`PreparedReleaseEffectAdapter` — `crates/callisto-graph/src/commands/release_execution.rs`, plus re-export in `commands/mod.rs` and call site in `crates/callisto-cli/src/commands/release.rs`
+5. `RawMoonYml`/`RawMoonExtensions`/`RawMoonCallistoConfig` — `crates/callisto-graph/src/config/raw.rs`
+6. `ReportPresenter` trait + test-only `FakeReport` impl — `crates/callisto-cli/src/output.rs`
+7. `--skip-publish-precheck` flag + `check_credentials` (5 tests) — `crates/callisto-cli/src/cli.rs`, `crates/callisto-cli/src/commands/publish.rs`, plus two `PublishArgs` construction sites in `crates/callisto-cli/tests/{dry_run_invariant_tests,lifecycle_e2e_tests}.rs`
+
+Verified out of scope per directive: did not touch `cascade.rs` (`CascadeSolver`), `vcs/lib.rs` (`GitVcsProvider`), or `tags.rs` (`last_tag_for`) — confirmed zero edits to those three files.
+
+Verification: `cargo build --workspace` clean, `cargo clippy --workspace --all-targets -- -D warnings` clean, `cargo test --workspace` 62/62 groups pass, `cargo fmt --all` applied. `just check-api` fails for an unrelated, pre-existing reason (a yanked transitive dependency, `bisync`, breaks `cargo-semver-checks`'s dependency resolution for any crate depending on `callisto-vcs`) — reproduces on clean `main`, noted in the PR body, not fixed here (out of scope).
+
+One surprise: `ManifestCstEditor`'s deletion required a spec amendment (it was named in `SPEC-MANIFEST-PERSIST-001.json` AC-014), which I made per the directive's instruction, including fixing a second stale reference in AC-005.</result>
+<usage><subagent_tokens>811221</subagent_tokens><tool_uses>102</tool_uses><duration_ms>1594815</duration_ms></usage>
+<worktree><worktreePath>/Users/gabe/Projects/callisto/.claude/worktrees/agent-a131715fd33cfc696</worktreePath><worktreeBranch>worktree-agent-a131715fd33cfc696</worktreeBranch></worktree>
+</task-notification>
