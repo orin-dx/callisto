@@ -1,0 +1,1 @@
+Don't our other projects using another license than AGPL?
