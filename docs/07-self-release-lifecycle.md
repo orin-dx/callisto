@@ -58,3 +58,20 @@ orchestration without misrepresenting an older source checkout as the workflow s
 The private `orin-dx/callisto-rehearsal` forge repository is isolated from production. It is not,
 by itself, an end-to-end rehearsal: each registry needs a real isolated destination and
 credentials. The workflow must fail closed when that infrastructure is not provisioned.
+
+### Rehearsal provisioning boundary
+
+GitHub Packages is not a Cargo registry and must not be selected as the rehearsal destination for
+Callisto's Cargo crates. The selected service must expose both a Cargo sparse index and Cargo's
+publish API, retain published versions, and provide a scoped token for the rehearsal workflow.
+JFrog Artifactory and AWS CodeArtifact document support for that protocol.
+
+Before dispatching the first rehearsal, provision a private Cargo destination distinct from
+crates.io, record its credential-free index URL in the rehearsal checkout, and add only its scoped
+publish token as a repository secret. Keep `orin-dx/callisto-rehearsal` as the forge destination.
+Do not add npm or PyPI credentials unless the rehearsal source actually contains a package routed
+to those registries; the current Callisto product release is Cargo-only.
+
+The first rehearsal must use disposable, unreleased versions. It must prove a complete run and a
+fresh-runner recovery against the persistent rehearsal providers before any production recovery is
+attempted.
