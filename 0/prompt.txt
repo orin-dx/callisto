@@ -1,0 +1,1 @@
+Check run 34714958112 (CI on PR #94) via `gh run view 34714958112 --json status,conclusion,jobs`. Report final results if completed. If still running, note progress plainly.
