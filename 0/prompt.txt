@@ -1,0 +1,1 @@
+Can we cleanup our workflow pipelines? Durable release seems like an AI term that is not very friendly right? Seems like AI slop all over our workflow
