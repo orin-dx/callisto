@@ -1,0 +1,16 @@
+● Enabled · branch feat/layered-fsl-mit-licensing
+  Agents · Claude Code, Codex, Gemini CLI, OpenCode
+  ! Claude Code hooks out of date · run 'entire enable --force'
+  Checkpoints sync to: origin
+  1 checkpoint not yet on origin — it syncs with your next 'git push origin'
+
+── Active Sessions ─────────────────────────────────────────────────────────────
+
+Codex (gpt-5.6-terra) · 01a0aa80-3aab-7313-9603-edf7533a1570
+> "It's signed in, I checked"
+started 23h ago · active 1m ago · tokens 102379.3k
+
+────────────────────────────────────────────────────────────────────────────────
+1 session
+
+Agents: run `entire agent-help` for machine-readable usage.
