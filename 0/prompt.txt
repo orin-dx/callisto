@@ -1,0 +1,34 @@
+<task-notification>
+<task-id>a72b93cebfffbe877</task-id>
+<tool-use-id>toolu_01Ak9ohdR1ihUdn4xtb7bjgf</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8f8eb6fc-22cd-45a0-a0c3-707f9385dbc8/tasks/a72b93cebfffbe877.output</output-file>
+<status>completed</status>
+<summary>Agent "Decide and apply test-counter gating policy" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Confirmed: no working-tree changes were made. Per instructions, since the conclusion is "no fix needed," no commit/changeset was created.
+
+## Verdict: No change needed — original finding is stale, superseded by later precedent
+
+**The original audit finding is now stale.** `REVWALK_VISIT_COUNT` / `reset_revwalk_visit_count()` / `revwalk_visit_count()` in `crates/callisto-vcs/src/lib.rs` (lines 214-232) is not an isolated policy gap — it is one of at least **four** instances of a deliberate, consistent, cross-crate convention: a process-global `AtomicUsize` counter, `pub` at the crate's reachable API surface, ungated by any `#[cfg(test)]` or Cargo feature, incremented unconditionally in a real production code path, paired with a `reset_*`/`*_count` accessor pair, and documented with an explicit "Test-observability counter... Production code never reads this" doc comment.
+
+**All instances found** (grep for `AtomicUsize`/`AtomicU64` + `_count` accessor pairs across the workspace, excluding in-test `mod tests` mock counters which are a separate, unrelated pattern):
+
+| Crate | Counter | Location | Published on crates.io? |
+|---|---|---|---|
+| `callisto-manifests` | `OPEN_CALL_COUNT` / `open_call_count()` / `reset_open_call_count()` | `src/lib.rs:180-190` | Yes (0.5.0, AGPL-3.0-only) |
+| `callisto-manifests` | `PERSIST_CALL_COUNT` / `persist_call_count()` / `reset_persist_call_count()` | `src/lib.rs:198-208` | same crate |
+| `callisto-graph` | `IDENTITY_READ_COUNT` / `identity_read_count()` / `reset_identity_read_count()` | `src/identity.rs:15-25` | Yes (0.5.0, AGPL-3.0-only) |
+| `callisto-graph` | `GLOB_COMPILE_COUNT` / `glob_compile_count()` / `reset_glob_compile_count()` | `src/tags.rs:58-74` | same crate |
+| `callisto-vcs` | `REVWALK_VISIT_COUNT` / `revwalk_visit_count()` / `reset_revwalk_visit_count()` | `src/lib.rs:222-232` (the finding in question) | Yes (0.5.0, MIT OR Apache-2.0) |
+
+`callisto_manifests::open_call_count` is explicitly the *named precedent* — every later instance's doc comment cross-references it by name ("Mirrors `callisto_manifests::open_call_count`", "Process-global, like `callisto_manifests::reset_open_call_count`", "same precedent as `callisto_manifests::open_call_count`"). This is not incidental convergence; it's a deliberately copied, self-documenting pattern.
+
+**On the "external reachability" hypothesis (checked and refuted):** I verified via crates.io's API that `callisto-vcs`, `callisto-manifests`, and `callisto-graph` are **all** actually published, multi-version, independently-installable crates (`callisto-vcs` 0.3.1→0.5.0, `callisto-manifests` 0.3.0→0.5.0, `callisto-graph` 0.3.1→0.5.0 — all on crates.io right now with real download counts). All the counter accessors sit on each crate's externally-reachable surface: `callisto-manifests`'s and `callisto-vcs`'s are defined directly in `src/lib.rs` (crate root), and `callisto-graph`'s `identity`/`tags` modules are declared `pub mod` in its `lib.rs`, making `callisto_graph::identity::identity_read_count()` just as reachable to an external `Cargo.toml` dependent as `callisto_vcs::revwalk_visit_count()`. So there is no reachability asymmetry — every instance is equally exposed to the same class of external consumer. If anything, `callisto-manifests` (AGPL-3.0-only) carries a *stronger* copyleft obligation on anyone who depends on it than `callisto-vcs` (permissive MIT/Apache-2.0), so the "risk profile" argument actually cuts the opposite direction from what the original finding implied.
+
+**On the "should it be feature-gated" hypothesis (checked and refuted):** the workspace does have an established `test-util` Cargo feature (`callisto-model`'s `Cargo.toml`, gating `ApplyPermit::force_for_tests`), used via the resolver-v2 dev-dependency-feature-unification pattern by `callisto-vcs`/`callisto-manifests`/`callisto-graph` in their `[dev-dependencies]`. But none of the four counter instances use it — not because it was overlooked, but because these counters are asserted from *other crates'* integration tests against a *production* (non-dev) dependency (e.g. `callisto-graph`'s tests call `callisto_manifests::open_call_count()`, and `callisto-moon`'s tests call `callisto_graph::identity::identity_read_count()`), which is architecturally different from `force_for_tests`'s single-crate, same-crate-dev-dependency use case. Gating the counters behind `test-util` would need every consuming crate to thread a feature flag through its own `[dependencies]` for functionality that's genuinely never read by production code anyway — the counters are already effectively inert in production (write-only, `SeqCst` increment of no consequence). This is a consistent, deliberate choice across the whole family, not an inconsistency isolated to `callisto-vcs`.
+
+**On discoverability:** the task suggested a possible minimal fix would be aligning `callisto-vcs`'s doc comment to reference the shared rationale. This is already done — `git blame` shows the `REVWALK_VISIT_COUNT` doc comment has said *"same precedent as `callisto_manifests::open_call_count`"* since commit `baf4ebb6` (2026-08-24), predating even the workspace's PR #14. Nothing to add.
+
+**Conclusion:** `REVWALK_VISIT_COUNT` is a consistent, precedented instance of an accepted workspace convention, not a distinguishable defect. No code change was made. `cargo test -p callisto-vcs` (48 unit tests + `revwalk_bound_count_test` integration test, all passing) and `cargo clippy -p callisto-vcs --all-targets -- -D warnings` (clean) both confirm nothing was disturbed. Working tree remains clean — no commit, no changeset, per the instructions for this outcome.</result>
+<usage><subagent_tokens>92758</subagent_tokens><tool_uses>43</tool_uses><duration_ms>307105</duration_ms></usage>
+</task-notification>
