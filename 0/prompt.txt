@@ -1,0 +1,1 @@
+Do we need to show the suggest PR label in the PR? We apply the label already. That's duplicate info. Any other duplicate info we show?
