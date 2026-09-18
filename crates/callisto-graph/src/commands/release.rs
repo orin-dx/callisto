@@ -164,6 +164,7 @@ enum ForgeReleaseObservation {
     Missing,
     Exact,
     Conflict,
+    Indeterminate,
 }
 
 type DerivedReleaseInputs = (
@@ -447,8 +448,8 @@ impl ValidatedReleaseIntent<'_> {
                 target,
                 annotation,
             } => self.dispatch_tag(permit, name, target, annotation),
-            PreparedOperation::ForgeRelease { tag } => self.dispatch_forge_release(tag),
-            PreparedOperation::ArtifactUpload { slot, tag } => self.dispatch_artifact_upload(slot, tag, artifacts),
+            PreparedOperation::ForgeRelease { tag } => self.dispatch_forge_release(id, tag),
+            PreparedOperation::ArtifactUpload { slot, tag } => self.dispatch_artifact_upload(id, slot, tag, artifacts),
         }
     }
 
@@ -527,6 +528,7 @@ impl ValidatedReleaseIntent<'_> {
                     ForgeReleaseObservation::Missing => ProviderObservationV1::Absent,
                     ForgeReleaseObservation::Exact => ProviderObservationV1::Exact,
                     ForgeReleaseObservation::Conflict => ProviderObservationV1::Conflict,
+                    ForgeReleaseObservation::Indeterminate => ProviderObservationV1::Indeterminate,
                 })
             }
             PreparedOperation::ArtifactUpload { slot, tag } => self.observe_artifact_upload(slot, tag, artifacts),
@@ -846,7 +848,7 @@ impl ValidatedReleaseIntent<'_> {
         }
     }
 
-    fn dispatch_forge_release(&self, tag: &TagName) -> Result<OperationOutcome, GraphError> {
+    fn dispatch_forge_release(&self, id: &ReleaseOperationId, tag: &TagName) -> Result<OperationOutcome, GraphError> {
         let remote = self.checked_git_remote()?;
         let repository = remote
             .github_repository
@@ -860,6 +862,11 @@ impl ValidatedReleaseIntent<'_> {
             ForgeReleaseObservation::Conflict => {
                 return Err(GraphError::ReleaseRemoteConflict {
                     conflict: RemoteConflict::ForgeReleaseDiffers,
+                })
+            }
+            ForgeReleaseObservation::Indeterminate => {
+                return Err(GraphError::ReleaseProviderIndeterminate {
+                    operation: Box::new(id.clone()),
                 })
             }
             ForgeReleaseObservation::Missing => {}
@@ -884,22 +891,30 @@ impl ValidatedReleaseIntent<'_> {
                 },
             });
         }
-        if self.observed_forge_release_target(tag, &repository)? == ForgeReleaseObservation::Exact {
-            Ok(OperationOutcome::Published)
-        } else {
-            Err(GraphError::ReleaseRemoteConflict {
-                conflict: RemoteConflict::ForgeReleaseNotObservedAfterCreate,
-            })
+        match self.observed_forge_release_target(tag, &repository)? {
+            ForgeReleaseObservation::Exact => Ok(OperationOutcome::Published),
+            ForgeReleaseObservation::Indeterminate => Err(GraphError::ReleaseProviderIndeterminate {
+                operation: Box::new(id.clone()),
+            }),
+            ForgeReleaseObservation::Missing | ForgeReleaseObservation::Conflict => {
+                Err(GraphError::ReleaseRemoteConflict {
+                    conflict: RemoteConflict::ForgeReleaseNotObservedAfterCreate,
+                })
+            }
         }
     }
 
     fn dispatch_artifact_upload(
         &self,
+        id: &ReleaseOperationId,
         slot: &ArtifactSlotId,
         tag: &TagName,
         artifacts: Option<&VerifiedArtifactManifest<'_>>,
     ) -> Result<OperationOutcome, GraphError> {
-        match self.observe_artifact_upload(slot, tag, artifacts)? {
+        let artifacts = artifacts.ok_or(GraphError::ReleasePreconditionUnmet {
+            requirement: ReleasePreconditionRequirement::VerifiedArtifactManifest,
+        })?;
+        match self.observe_artifact_upload(slot, tag, Some(artifacts))? {
             ProviderObservationV1::Exact => return Ok(OperationOutcome::AlreadySatisfied),
             ProviderObservationV1::Conflict => {
                 return Err(GraphError::ReleaseRemoteConflict {
@@ -907,21 +922,26 @@ impl ValidatedReleaseIntent<'_> {
                 })
             }
             ProviderObservationV1::Indeterminate => {
-                return Err(GraphError::ReleasePreconditionUnmet {
-                    requirement: ReleasePreconditionRequirement::VerifiedArtifactManifest,
+                return Err(GraphError::ReleaseProviderIndeterminate {
+                    operation: Box::new(id.clone()),
                 })
             }
             ProviderObservationV1::Absent => {}
         }
-        let artifacts = artifacts.ok_or(GraphError::ReleasePreconditionUnmet {
-            requirement: ReleasePreconditionRequirement::VerifiedArtifactManifest,
-        })?;
         let path = artifacts.path_for(slot)?;
         let repository = slot.attestation_policy.repository.as_slug();
-        if self.observed_forge_release_target(tag, &repository)? != ForgeReleaseObservation::Exact {
-            return Err(GraphError::ReleaseRemoteConflict {
-                conflict: RemoteConflict::ForgeReleaseDiffers,
-            });
+        match self.observed_forge_release_target(tag, &repository)? {
+            ForgeReleaseObservation::Exact => {}
+            ForgeReleaseObservation::Indeterminate => {
+                return Err(GraphError::ReleaseProviderIndeterminate {
+                    operation: Box::new(id.clone()),
+                })
+            }
+            ForgeReleaseObservation::Missing | ForgeReleaseObservation::Conflict => {
+                return Err(GraphError::ReleaseRemoteConflict {
+                    conflict: RemoteConflict::ForgeReleaseDiffers,
+                })
+            }
         }
         let path_argument = path.to_string_lossy();
         let args = [
@@ -948,11 +968,12 @@ impl ValidatedReleaseIntent<'_> {
             ProviderObservationV1::Conflict => Err(GraphError::ReleaseRemoteConflict {
                 conflict: RemoteConflict::ArtifactDiffers,
             }),
-            ProviderObservationV1::Absent | ProviderObservationV1::Indeterminate => {
-                Err(GraphError::ReleaseRemoteConflict {
-                    conflict: RemoteConflict::ArtifactNotObservedAfterUpload,
-                })
-            }
+            ProviderObservationV1::Absent => Err(GraphError::ReleaseRemoteConflict {
+                conflict: RemoteConflict::ArtifactNotObservedAfterUpload,
+            }),
+            ProviderObservationV1::Indeterminate => Err(GraphError::ReleaseProviderIndeterminate {
+                operation: Box::new(id.clone()),
+            }),
         }
     }
 
@@ -979,11 +1000,8 @@ impl ValidatedReleaseIntent<'_> {
         ];
         let observed = self.runner.run("gh", &args, &self.prepared.root)?;
         let (status, body) = github_api_response("gh", &args, &observed)?;
-        if status == 404 {
-            return Ok(ProviderObservationV1::Absent);
-        }
-        if status != 200 {
-            return Ok(ProviderObservationV1::Conflict);
+        if let Some(observation) = github_release_response_status(status) {
+            return Ok(observation);
         }
         let release: serde_json::Value = serde_json::from_str(body).map_err(|error| GraphError::ReleaseCommand {
             program: "gh".to_owned(),
@@ -1093,12 +1111,13 @@ impl ValidatedReleaseIntent<'_> {
         ];
         let observed = self.runner.run("gh", &api_args, &self.prepared.root)?;
         let (status, body) = github_api_response("gh", &api_args, &observed)?;
-        if status == 404 {
-            return Ok(ForgeReleaseObservation::Missing);
-        }
-        if status != 200 {
-            return Err(GraphError::ReleaseRemoteConflict {
-                conflict: RemoteConflict::ForgeApiStatus,
+        if let Some(observation) = github_release_response_status(status) {
+            return Ok(match observation {
+                ProviderObservationV1::Absent => ForgeReleaseObservation::Missing,
+                ProviderObservationV1::Indeterminate => ForgeReleaseObservation::Indeterminate,
+                ProviderObservationV1::Exact | ProviderObservationV1::Conflict => unreachable!(
+                    "GitHub response status can only establish absence or indeterminacy before parsing its body"
+                ),
             });
         }
         let value: serde_json::Value = serde_json::from_str(body).map_err(|error| GraphError::ReleaseCommand {
@@ -1188,6 +1207,18 @@ fn github_api_response<'a>(
             },
         }),
         Err(error) => Err(error),
+    }
+}
+
+/// Classifies an HTTP response before parsing a GitHub Release body. A 404
+/// proves absence; all other non-success statuses leave remote identity
+/// unknown. In particular, authentication, rate-limit, and server failures
+/// must never be reported as a conflicting release or asset.
+fn github_release_response_status(status: u16) -> Option<ProviderObservationV1> {
+    match status {
+        200 => None,
+        404 => Some(ProviderObservationV1::Absent),
+        _ => Some(ProviderObservationV1::Indeterminate),
     }
 }
 
@@ -2348,6 +2379,19 @@ mod tests {
         };
         let (status, _) = github_api_response("gh", &["api"], &output).unwrap();
         assert_eq!(status, 404);
+    }
+
+    #[test]
+    fn github_release_status_only_proves_absence_for_not_found() {
+        assert_eq!(github_release_response_status(200), None);
+        assert_eq!(github_release_response_status(404), Some(ProviderObservationV1::Absent));
+        for status in [401, 403, 429, 500, 503] {
+            assert_eq!(
+                github_release_response_status(status),
+                Some(ProviderObservationV1::Indeterminate),
+                "HTTP {status} must not be reported as a conflicting remote release"
+            );
+        }
     }
 
     #[test]

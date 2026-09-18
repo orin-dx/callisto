@@ -551,6 +551,17 @@ pub enum GraphError {
         observation: callisto_model::ProviderObservationV1,
     },
 
+    #[error("cannot dispatch release operation `{operation:?}` because its provider observation is indeterminate")]
+    #[diagnostic(
+        code(E176),
+        help(
+            "Restore provider credentials or connectivity, then retry. Callisto will not dispatch an effect while it cannot determine the remote identity."
+        )
+    )]
+    ReleaseProviderIndeterminate {
+        operation: Box<callisto_model::ReleaseOperationId>,
+    },
+
     #[error("registry version already exists for `{package}` at {version}")]
     #[diagnostic(
         code(E174),
@@ -627,8 +638,6 @@ pub enum RemoteConflict {
     ArtifactDiffers,
     #[error("an uploaded release asset was not observed afterward")]
     ArtifactNotObservedAfterUpload,
-    #[error("the forge API returned an unexpected status")]
-    ForgeApiStatus,
 }
 
 /// A release feature with no implemented dispatch for the given
