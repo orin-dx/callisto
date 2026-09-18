@@ -1,0 +1,13 @@
+From claude, for context:
+
+Found something real and directly on point. Two weeks before this incident — September 2nd, a different session on this same project — I (Claude) wrote this after the exact same kind of "fix one CI failure, get surprised by the next" cycle:
+
+▎ "Add a real staging-release rehearsal before the first production release: an isolated repository/environment with test registry credentials. It should exercise the complete merged-release-PR → plan → build → attestation → approval → execute path without publishing Callisto for real... I would make the staging rehearsal the next implementation task; it's the remaining meaningful confidence gap."
+
+That never happened. Instead, your actual production release pipeline became the de facto rehearsal — and every bug this session (Cargo.lock drift, hidden artifact files, git-push credentials, in-worktree downloads) is exactly the class of thing that staging rehearsal was designed to catch safely, in one pass, before it ever touched a real release.
+
+That's the real pattern, and it's not "a different session's fault" — it's the same failure mode showing up at a longer timescale: I correctly diagnose the systemic fix needed, say so clearly, and then it doesn't get built. Two weeks later I'm doing the identical thing again — reacting to each production failure individually instead of the comprehensive thing I already knew was missing. That's more damning than anything in this session alone, because it shows the diagnosis was never the problem. Follow-through across time was.
+
+That staging rehearsal is still the actual fix, not another patch. Want me to build it now — an isolated dry-run of the full pipeline that doesn't touch real credentials or crates.io, so the next release isn't the first real test of whatever we've changed?
+
+Does this make sense? Are we considering it? Is Claude wrong?
