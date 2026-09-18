@@ -1,0 +1,27 @@
+<task-notification>
+<task-id>a0f559ce785ac418f</task-id>
+<tool-use-id>toolu_01CWtkJttjP5ZMCYsWKnbLdE</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8f8eb6fc-22cd-45a0-a0c3-707f9385dbc8/tasks/a0f559ce785ac418f.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix cascade stale-member panic risk" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Committed cleanly, working tree clean, not pushed.
+
+## Summary
+
+**Bug**: `crates/callisto-graph/src/cascade.rs`'s `solve_cascade` Fixed-group ("Track 1") convergence block was a structural copy of the Linked-group block above it but never received the stale-member guard the Linked-group block got in commit `08814168`. It wrote every id in `g.package_members()` into `CascadeOutcome.severities`/`.targets` unconditionally, with no `input.base.contains_key(id)` check. A stale id (a `[[fixed-group]]` member removed from the workspace but still in `callisto.toml`) then reached `crates/callisto-graph/src/commands/version.rs`'s `plan_version` at `pkg_map.get(id).copied().unwrap()` (line 147, `pkg_map` built only from live graph packages) and panicked, crashing `callisto version`.
+
+**Fix**: Mirrored the Linked-group block's guard verbatim — filter `g.package_members()` into `live_members` via `input.base.contains_key(id)`, push an `UnknownPackage` diagnostic governed by `ConfigKey::FIXED_GROUP` for each stale id, and iterate `live_members` (not raw `g.package_members()`) in both the severity-raise and target-insert loops.
+
+**Tests added**:
+1. `crates/callisto-graph/src/commands/version.rs` — `plan_version_skips_stale_fixed_group_member_instead_of_panicking`: reproduces the actual panic end-to-end through `plan_version` (confirmed panicking at `version.rs:147:44` on unfixed code, now passes and asserts the `UnknownPackage`/`ConfigKey::FIXED_GROUP` diagnostic is surfaced on `VersionPlan.diagnostics` and the live sibling still bumps correctly).
+2. `crates/callisto-graph/src/cascade.rs` — `test_fixed_group_skips_stale_member_and_emits_diagnostic`: unit-level check on `solve_cascade` directly (mirrors the existing Fixed-group and aggregate.rs `union_fixed` stale-member test patterns).
+
+**Verification**: `cargo test -p callisto-graph` — 394 lib tests + all integration suites pass, 0 failures. `cargo clippy -p callisto-graph -- -D warnings` — clean. `cargo fmt -p callisto-graph` applied (pre-commit hook caught two formatting nits in the new tests, fixed before commit).
+
+**Changeset**: `.changeset/cascade-fixed-group-stale-member-guard.md` — patch bump for `callisto-graph`.
+
+**Commit**: `de68d38b6f616ff5d87ceee2b6cbdecfe7e756ae` — `fix(graph): guard against stale fixed-group members in cascade convergence`, on branch `fix/release-decision-persist-and-verify` in this worktree. Not pushed, no PR opened, per instructions.</result>
+<usage><subagent_tokens>185346</subagent_tokens><tool_uses>78</tool_uses><duration_ms>619980</duration_ms></usage>
+<worktree><worktreePath>/Users/gabe/Projects/callisto/.claude/worktrees/agent-a0f559ce785ac418f</worktreePath><worktreeBranch>worktree-agent-a0f559ce785ac418f</worktreeBranch></worktree>
+</task-notification>
