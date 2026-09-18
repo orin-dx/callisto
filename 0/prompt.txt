@@ -1,0 +1,29 @@
+<task-notification>
+<task-id>a5ca71425fa14b344</task-id>
+<tool-use-id>toolu_01ScyggGg61ibGSt1QcGMuhZ</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8f8eb6fc-22cd-45a0-a0c3-707f9385dbc8/tasks/a5ca71425fa14b344.output</output-file>
+<status>completed</status>
+<summary>Agent "Split WorkspaceCargoResolver mutate/persist, batch root writes" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Committed cleanly, working tree clean, no push performed.
+
+## Summary
+
+**Commit:** `1141cf5f58c3d1c68081bb0fc3023b5208d3fa61` on branch `worktree-agent-a5ca71425fa14b344` (isolated worktree, based directly on `main` at #68, no push/PR made).
+
+**Hazard investigation (required reading, done first):** Read `WorkspaceCargoResolver` (`crates/callisto-manifests/src/cargo.rs`), `classify_manifest_writes`/`apply_version_plan` (`crates/callisto-graph/src/apply.rs`), `cascade.rs`'s `CargoWorkspaceDependency` emission, and `.claude/plans/ACTIVE.md`'s "Track: apply_version_plan write-batching" entry plus `crates/callisto-graph/tests/apply_batch_002_verification_notes.md`. The original exclusion's hazard is specifically the **mixed-routing** case — a root `Cargo.toml` written through *both* the `Manifest` trait (e.g. a self-referential root package's own `[package]`/`[dependencies]`) *and* `WorkspaceCargoResolver` (`[workspace.package]`/`[workspace.dependencies]`) in the *same plan*. That is a different case from the one I batched (pure-resolver-only paths, no competing `Manifest`-trait write in the plan). I left the mixed-routing exclusion (`classification.excluded`) completely untouched — it still forces fully individual, unbatched, plan-order processing on both sides — and added a regression test (`mixed_routing_root_manifest_still_persists_resolver_writes_individually`) proving it still isn't batched.
+
+**Fix:**
+1. `WorkspaceCargoResolver::write_version`/`write_dependency` no longer call `persist` internally — pure in-memory mutation now, matching `CargoToml`/`PackageJson`/`PyprojectToml`. `persist` is promoted to `pub`. Updated the one other call site that relied on the implicit persist (`CargoToml::update_dependency_spec`'s inherited-dependency delegation) to call `.persist(permit)` explicitly. Full-workspace grep confirmed no other call sites exist anywhere in the repo.
+2. `classify_manifest_writes`/`apply_version_plan` (`crates/callisto-graph/src/apply.rs`) gained a `resolver_batched` group: a root manifest written only via `CargoWorkspacePackage`/`CargoWorkspaceDependency` (no mixed routing) is now opened once, mutated in memory for its bump + all rewrites, and persisted exactly once.
+
+**Permit accounting:** `ApplyPermit` is a zero-sized `Copy` capability token threaded by shared reference — there's no separate permit ledger in this codebase, so "permit accounting" resolves to counting `atomic_write`/`persist` invocations. Added `resolver_load_call_count`/`resolver_persist_call_count` counters, kept deliberately separate from the existing `open_call_count`/`persist_call_count` (which are scoped to the `Manifest` trait's three implementors) because `OpenContext::for_workspace_root` calls `WorkspaceCargoResolver::load` unconditionally on every `apply_version_plan` call whenever the workspace root has a `Cargo.toml` — folding the counters together would have broken essentially every existing `open_call_count` assertion in the crate (verified this empirically before choosing separate counters).
+
+**Before/after evidence** (`crates/callisto-graph/tests/apply_persist_open_count_test.rs`, new test `resolver_batched_root_manifest_opens_once_and_persists_once_for_bump_plus_multiple_rewrites`): a plan with 1 workspace-version bump + 3 inherited-dependency rewrites sharing one root manifest now produces `resolver_load_call_count() == 2` (1 incidental `for_workspace_root` load + 1 batched-loop load) and `resolver_persist_call_count() == 1` — down from what would have been 5 loads / 4 persists before this fix (1 incidental + one load+persist per write).
+
+**Verification:** `cargo test -p callisto-manifests -p callisto-graph` — all green (569 tests across both crates' unit + integration suites, including all pre-existing `WorkspaceCargoResolver`/`apply_version_plan`/cascade-pipeline tests, unchanged in outcome). `cargo clippy -p callisto-manifests -p callisto-graph --all-targets -- -D warnings` — clean. Also ran full-workspace `cargo build`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo fmt --check`, and `callisto-cli`'s `lifecycle_e2e_tests`/`durable_release_e2e_tests` — all clean, as extra confirmation beyond the two required crates.
+
+**Changeset:** `.changeset/workspace-cargo-resolver-batch-writes.md` (patch, `callisto-manifests` + `callisto-graph`), validated via `cargo run -p callisto-cli -- validate`.</result>
+<usage><subagent_tokens>293900</subagent_tokens><tool_uses>93</tool_uses><duration_ms>1186787</duration_ms></usage>
+<worktree><worktreePath>/Users/gabe/Projects/callisto/.claude/worktrees/agent-a5ca71425fa14b344</worktreePath><worktreeBranch>worktree-agent-a5ca71425fa14b344</worktreeBranch></worktree>
+</task-notification>
