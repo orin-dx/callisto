@@ -1,0 +1,119 @@
+FYI from what we told claude:
+
+    # Comprehensive remediation plan
+
+    ## Phase 0: Stabilize the current branch and stop blind reruns
+
+    1. Merge PR #97 (https://github.com/orin-dx/callisto/pull/97) first; it fixes the Rust security advisory and currently has green checks.
+    2. Rebase or update PRs #95 and #96 after #97.
+    3. Merge #95 and remove required reviewers from the actual GitHub Environment settings.
+    4. Merge #96 as a short-term retention improvement, explicitly documenting that it is not a durability fix.
+    5. Do not initiate another blind self-release until false-success and recovery behavior are corrected or a deliberate bootstrap procedure is
+       selected.
+
+    The next coherent release may be 0.7.3. It is acceptable for 0.7.0–0.7.2 to remain unpublished if dependency constraints, tags, and registry state
+    are validated before publication.
+
+    Exit condition:
+
+    - Security checks are green.
+    - No second environment approval remains.
+    - The team understands that retention is mitigation, not recovery.
+
+    ———
+
+    ## Phase 1: Reset the product contract
+
+    Produce a short, binding product/architecture decision that answers:
+
+    - Who is the primary user?
+    - Which ecosystems are supported before v1?
+    - Is Changesets the primary authoring model?
+    - Are conventional commits supplemental or a second primary model?
+    - Does Rust own actual publication? Recommended answer: yes.
+    - Does CI own only scheduling and credentials? Recommended answer: yes.
+    - Are binary assets required before v1?
+    - What is the product-level version and tag?
+    - Which existing CLI/JSON interfaces are retained before v1?
+
+    Recommended decisions:
+
+    - Cargo, npm, Python, and native npm coordination remain the supported scope.
+    - Changesets are primary; conventional commits can generate equivalent change intent.
+    - Merge of the reviewed version PR is release approval.
+    - No environment reviewer gate.
+    - One canonical release plan and executor.
+    - Remove legacy surfaces before v1 where compatibility has no real consumer.
+
+    Exit condition:
+
+    - README, design document, CLI help, and actual behavior describe the same product.
+
+    ———
+
+    ## Phase 2: Add failing tests for every observed incident
+
+    Before correcting the implementation, create tests that reproduce the real failures:
+
+    1. A failed operation left Attempting, followed by a rerun.
+        - It must never return zero merely because no operation is eligible.
+
+    2. A resume on a fresh runner with no local state.
+  ──── (227 lines hidden) ──────────────────────────────────────────────────────────────────────────────────────────────────────
+  vironment reviewer requirement and obsolete
+      approval language.
+
+    - #96 (https://github.com/orin-dx/callisto/pull/96): reasonable operational mitigation. Do not describe it as durable recovery.
+
+    None of these PRs fixes executor resumability, false success, or release-state reconstruction.
+
+    ———
+
+    # Recommended decisions on open questions
+
+    My defaults would be:
+
+    1. Binary assets before v1?
+       Defer unless the setup actions are already a required external contract. Finish the source-release engine first.
+
+    2. Product tag?
+       Use a product-level callisto@X.Y.Z release for CLI/WASM assets, while retaining ecosystem package tags for individual registry artifacts.
+
+    3. Legacy CLI compatibility?
+       Remove misleading preview-only commands before v1 or turn them into explicit aliases backed by the new engine. Do not maintain two
+       implementations.
+
+    4. Fixtures in the fixed version group?
+       Exclude the unpublished dev-only fixture crate unless its version is part of a concrete compatibility contract.
+
+    5. Manual release approval?
+       No second approval. Reviewed release PR merge is the approval.
+
+    6. Execution journal as authority?
+       No. It is valuable evidence, but remote state plus the immutable plan is the recovery authority.
+
+    ———
+
+    ## Validation and confidence
+
+    The assessment was performed against clean remote main at commit 0ffe567f9c404cee233d44a6e4ae69a7868590a2, while preserving the existing dirty
+    local worktree.
+
+    Validation included:
+
+    - Repository architecture and release-path review.
+    - Recent PR and workflow-run history.
+    - Claude/Entire session history related to the publish orchestrator and durable-decision design.
+    - Release-mode command benchmarks.
+    - Clippy, test, and documentation execution.
+    - 1,381 tests passed.
+    - The complete local just ci invocation could not finish the advisory check because the sandbox could not acquire the Cargo advisory database lock;
+      GitHub independently shows the active advisory failure and PR #97’s green correction.
+
+    Confidence is high for the executor, workflow, recovery, discovery, documentation, and setup-action findings. Confidence is medium for the proposed
+    final domain decomposition because the binary-distribution and compatibility decisions remain product choices.
+
+    The most important next step is not another release attempt. It is to lock in the false-success and resume failures as tests, then make external
+    observation and a terminal receipt mandatory.
+
+and:  /Users/gabe/Projects/callisto/.claude/plans/RELEASE-SELF-HOSTING-INCIDENT-2026-09-16.md
