@@ -1,0 +1,42 @@
+{
+  "cli_version": "0.10.7-nightly.202609170627.0dda4e14f",
+  "checkpoint_id": "01M2VBWPYTFAGPKDFE36ZJ0JV6",
+  "strategy": "manual-commit",
+  "branch": "codex/release-recovery",
+  "checkpoints_count": 16,
+  "files_touched": [
+    ".github/tests/verify-no-open-defects.sh",
+    "crates/callisto-cli/tests/cli_tag_template.rs",
+    "crates/callisto-cli/tests/common/release_harness.rs",
+    "crates/callisto-cli/tests/durable_release_e2e_tests.rs",
+    "crates/callisto-cli/tests/release_hardening_tests.rs",
+    "crates/callisto-cli/tests/release_plan_pypi_default_registry_test.rs",
+    "crates/callisto-cli/tests/release_profile_isolation_tests.rs",
+    "crates/callisto-graph/tests/release_config_hardening_tests.rs",
+    "crates/callisto-model/tests/release_evidence_tests.rs",
+    "justfile"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 182,
+    "cache_creation_tokens": 489237,
+    "cache_read_tokens": 15181820,
+    "output_tokens": 116166,
+    "api_call_count": 82,
+    "subagent_tokens": {
+      "input_tokens": 1004,
+      "cache_creation_tokens": 1658217,
+      "cache_read_tokens": 82393542,
+      "output_tokens": 557592,
+      "api_call_count": 492
+    }
+  }
+}

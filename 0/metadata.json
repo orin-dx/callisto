@@ -1,0 +1,188 @@
+{
+  "cli_version": "0.10.7-nightly.202609170627.0dda4e14f",
+  "checkpoint_id": "01M2VBWPYTFAGPKDFE36ZJ0JV6",
+  "session_id": "a08620cc-8b37-45b5-b4b2-89a977aad490",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-18T22:58:46.186278Z",
+  "branch": "codex/release-recovery",
+  "checkpoints_count": 16,
+  "save_step_count": 3,
+  "files_touched": [
+    ".github/tests/verify-no-open-defects.sh",
+    "crates/callisto-cli/tests/cli_tag_template.rs",
+    "crates/callisto-cli/tests/common/release_harness.rs",
+    "crates/callisto-cli/tests/durable_release_e2e_tests.rs",
+    "crates/callisto-cli/tests/release_hardening_tests.rs",
+    "crates/callisto-cli/tests/release_plan_pypi_default_registry_test.rs",
+    "crates/callisto-cli/tests/release_profile_isolation_tests.rs",
+    "crates/callisto-graph/tests/release_config_hardening_tests.rs",
+    "crates/callisto-model/tests/release_evidence_tests.rs",
+    "justfile"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5",
+  "turn_id": "48049d8543a5",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 182,
+    "cache_creation_tokens": 489237,
+    "cache_read_tokens": 15181820,
+    "output_tokens": 116166,
+    "api_call_count": 82,
+    "subagent_tokens": {
+      "input_tokens": 1004,
+      "cache_creation_tokens": 1658217,
+      "cache_read_tokens": 82393542,
+      "output_tokens": 557592,
+      "api_call_count": 492
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01YCCAbwm7sztdDtLuczSzDN",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "48049d8543a5",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 466,
+        "end": 467,
+        "entry_ids": [
+          "64369af6-5a29-4372-9bc8-6e58a915ca54"
+        ],
+        "tool_use_id": "toolu_01YCCAbwm7sztdDtLuczSzDN"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01YCCAbwm7sztdDtLuczSzDN"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 16
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-18T22:58:46.072772Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 2,
+    "human_removed": 625,
+    "total_committed": 455,
+    "total_lines_changed": 627,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 3995,
+      "user_lines_removed": 601,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/plans/PR101-HARDENING/audit/pr101-arch.md": 60,
+        ".claude/plans/PR101-HARDENING/audit/pr101-config-cli.md": 80,
+        ".claude/plans/PR101-HARDENING/audit/pr101-core.md": 70,
+        ".claude/plans/PR101-HARDENING/audit/pr101-perf.md": 69,
+        ".claude/plans/PR101-HARDENING/audit/pr101-tests.md": 157,
+        ".claude/plans/PR101-HARDENING/audit/pr101-workflow.md": 78,
+        ".claude/plans/PR101-HARDENING/proposed-tests/cli_proposed_release_tests.rs": 1126,
+        ".claude/plans/PR101-HARDENING/proposed-tests/graph_proposed_config_tests.rs": 43,
+        ".claude/plans/PR101-HARDENING/proposed-tests/model_proposed_release_evidence.rs": 111,
+        ".claude/settings.local.json": 11,
+        ".github/tests/verify-no-open-defects.sh": 11,
+        "crates/callisto-cli/tests/cli_tag_template.rs": 86,
+        "crates/callisto-cli/tests/common/release_harness.rs": 938,
+        "crates/callisto-cli/tests/durable_release_e2e_tests.rs": 4,
+        "crates/callisto-cli/tests/release_hardening_tests.rs": 770,
+        "crates/callisto-cli/tests/release_plan_pypi_default_registry_test.rs": 95,
+        "crates/callisto-cli/tests/release_profile_isolation_tests.rs": 96,
+        "crates/callisto-graph/tests/release_config_hardening_tests.rs": 44,
+        "crates/callisto-model/tests/release_evidence_tests.rs": 142,
+        "justfile": 4
+      },
+      "user_removed_per_file": {
+        "crates/callisto-cli/tests/durable_release_e2e_tests.rs": 601
+      }
+    },
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 1806,
+      "user_lines_removed": 13,
+      "agent_lines_added": 2190,
+      "agent_lines_removed": 601,
+      "user_added_per_file": {
+        ".claude/plans/PR101-HARDENING/audit/pr101-arch.md": 60,
+        ".claude/plans/PR101-HARDENING/audit/pr101-config-cli.md": 80,
+        ".claude/plans/PR101-HARDENING/audit/pr101-core.md": 70,
+        ".claude/plans/PR101-HARDENING/audit/pr101-perf.md": 69,
+        ".claude/plans/PR101-HARDENING/audit/pr101-tests.md": 157,
+        ".claude/plans/PR101-HARDENING/audit/pr101-workflow.md": 78,
+        ".claude/plans/PR101-HARDENING/proposed-tests/cli_proposed_release_tests.rs": 1126,
+        ".claude/plans/PR101-HARDENING/proposed-tests/graph_proposed_config_tests.rs": 43,
+        ".claude/plans/PR101-HARDENING/proposed-tests/model_proposed_release_evidence.rs": 111,
+        ".claude/settings.local.json": 11,
+        "crates/callisto-cli/tests/release_plan_pypi_default_registry_test.rs": 1
+      },
+      "user_removed_per_file": {
+        "crates/callisto-cli/tests/release_plan_pypi_default_registry_test.rs": 13
+      }
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 1806,
+      "user_lines_removed": 13,
+      "agent_lines_added": 2190,
+      "agent_lines_removed": 601,
+      "user_added_per_file": {
+        ".claude/plans/PR101-HARDENING/audit/pr101-arch.md": 60,
+        ".claude/plans/PR101-HARDENING/audit/pr101-config-cli.md": 80,
+        ".claude/plans/PR101-HARDENING/audit/pr101-core.md": 70,
+        ".claude/plans/PR101-HARDENING/audit/pr101-perf.md": 69,
+        ".claude/plans/PR101-HARDENING/audit/pr101-tests.md": 157,
+        ".claude/plans/PR101-HARDENING/audit/pr101-workflow.md": 78,
+        ".claude/plans/PR101-HARDENING/proposed-tests/cli_proposed_release_tests.rs": 1126,
+        ".claude/plans/PR101-HARDENING/proposed-tests/graph_proposed_config_tests.rs": 43,
+        ".claude/plans/PR101-HARDENING/proposed-tests/model_proposed_release_evidence.rs": 111,
+        ".claude/settings.local.json": 11,
+        "crates/callisto-cli/tests/release_plan_pypi_default_registry_test.rs": 1
+      },
+      "user_removed_per_file": {
+        "crates/callisto-cli/tests/release_plan_pypi_default_registry_test.rs": 13
+      }
+    },
+    {
+      "checkpoint_number": 4,
+      "user_lines_added": 1805,
+      "user_lines_removed": 0,
+      "agent_lines_added": 2647,
+      "agent_lines_removed": 603,
+      "user_added_per_file": {
+        ".claude/plans/PR101-HARDENING/audit/pr101-arch.md": 60,
+        ".claude/plans/PR101-HARDENING/audit/pr101-config-cli.md": 80,
+        ".claude/plans/PR101-HARDENING/audit/pr101-core.md": 70,
+        ".claude/plans/PR101-HARDENING/audit/pr101-perf.md": 69,
+        ".claude/plans/PR101-HARDENING/audit/pr101-tests.md": 157,
+        ".claude/plans/PR101-HARDENING/audit/pr101-workflow.md": 78,
+        ".claude/plans/PR101-HARDENING/proposed-tests/cli_proposed_release_tests.rs": 1126,
+        ".claude/plans/PR101-HARDENING/proposed-tests/graph_proposed_config_tests.rs": 43,
+        ".claude/plans/PR101-HARDENING/proposed-tests/model_proposed_release_evidence.rs": 111,
+        ".claude/settings.local.json": 11
+      }
+    }
+  ]
+}
