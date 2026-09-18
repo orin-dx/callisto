@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>b1hviapsy</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8f8eb6fc-22cd-45a0-a0c3-707f9385dbc8/tasks/b1hviapsy.output</output-file>
+<status>completed</status>
+<summary>Background command "cargo build -p callisto-model --quiet 2&gt;&amp;1 | tail -100" completed (exit code 0)</summary>
+</task-notification>
