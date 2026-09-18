@@ -1,0 +1,1 @@
+Do we propose any mapping/rewriting of changesets to better suite GH PRs and release? For the changelog?
