@@ -1,0 +1,15 @@
+<environment_context>
+  <current_date>2026-09-18</current_date>
+  <timezone>America/Los_Angeles</timezone>
+  <filesystem><workspace_roots><root>/Users/gabe/Projects/callisto</root></workspace_roots><permission_profile type="managed"><file_system type="restricted"><entry access="read"><special>:root</special></entry><entry access="write"><path>/Users/gabe/Projects/callisto</path></entry><entry access="write"><special>:slash_tmp</special></entry><entry access="write"><special>:tmpdir</special></entry><entry access="read"><path>/Users/gabe/Projects/callisto/.git</path></entry><entry access="read"><path>/Users/gabe/Projects/callisto/.agents</path></entry><entry access="read"><path>/Users/gabe/Projects/callisto/.codex</path></entry></file_system></permission_profile></filesystem>
+  <subagents>
+    <agent name="/root/artifact_gap" />
+    <agent name="/root/gap_inventory" />
+    <agent name="/root/release_integration_map" />
+    <agent name="/root/adversary_cutover_model" />
+    <agent name="/root/complete_t1_test_matrix" />
+    <agent name="/root/convergence_boundary_trace" />
+    <agent name="/root/correct_independent_plans" />
+    <agent name="/root/correct_orchestration_plan" />
+  </subagents>
+</environment_context>
