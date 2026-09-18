@@ -1,0 +1,36 @@
+<task-notification>
+<task-id>a95c78e86d6fe9ba4</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8f8eb6fc-22cd-45a0-a0c3-707f9385dbc8/tasks/a95c78e86d6fe9ba4.output</output-file>
+<status>completed</status>
+<summary>Agent "Batch git show calls into cat-file --batch" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Committed cleanly at `82df6a90251183f1c5c1a886d6ee9abc3751f1f4`. Working tree is clean, no push/PR performed as instructed.
+
+## Summary
+
+**Finding confirmed and fixed.** `derive_release_commit_decision` in `crates/callisto-graph/src/commands/release_decision.rs` looped over every canonical manifest, calling `manifest_version_at` against both `parent` and `release_commit` — each a separate `git show &lt;commit&gt;:&lt;path&gt;` subprocess spawn. For N manifests that was 2N spawns.
+
+**Key discovery during investigation:** `callisto_model::CommandRunner` (`crates/callisto-model/src/exec.rs`) had no stdin-piping capability at all — every one of its ~30 implementors across the workspace called `.stdin(Stdio::null())`. `git cat-file --batch` requires piping a list of `commit:path` objects to stdin and parsing a byte-length-framed response stream. I verified the exact wire protocol empirically (`&lt;sha&gt; blob &lt;size&gt;\n&lt;content&gt;\n&lt;LF&gt;` or `&lt;object&gt; missing\n`) against real git before writing the parser.
+
+**Fix implemented:**
+1. `crates/callisto-model/src/exec.rs`: added `run_with_stdin` to `CommandRunner` with a default impl returning `CommandError::Unsupported` — backward-compatible, zero changes needed to any existing implementor.
+2. `crates/callisto-cli/src/runner.rs`: implemented `run_with_stdin` for `CliCommandRunner` (the real production runner), writing stdin on a dedicated thread concurrently with `wait_with_output()` draining stdout/stderr, to avoid pipe-buffer deadlock on large payloads.
+3. `crates/callisto-graph/src/commands/release_decision.rs`: replaced the 2N-call loop with `batch_manifest_blobs_at` (one `cat-file --batch` call per commit) + `resolve_batch_versions`. The batch parser is deliberately defensive: matches each response against its exact expected `commit:path` object string (not a generic suffix pattern), validates the `blob` type, checks the declared size fits and is followed by the protocol's separator byte, and fails the whole batch closed on any leftover/truncated output — any framing ambiguity fails closed rather than risking silent misattribution.
+4. `manifest_version_at`'s parsing was extracted into `parse_manifest_version`, shared by the new batch path; the old per-object `manifest_version_at` wrapper was relocated into `#[cfg(test)]` since production no longer calls it (avoiding dead code), and its two existing tests are otherwise unchanged.
+
+**Evidence of the before/after subprocess count:** added `derive_release_commit_decision_issues_exactly_two_batch_invocations_for_multiple_manifests`, a unit test with a recording `CommandRunner` double driving 3 canonical manifests through the real function — asserts exactly 2 `cat-file --batch` calls (would have been 6 `git show` calls pre-fix). Also added direct `run_with_stdin` coverage in `runner.rs` (round-trip correctness, a 4MB-payload deadlock-avoidance test, `NotFound` handling).
+
+**Verification:**
+- `cargo test -p callisto-graph -p callisto-cli -p callisto-model`: all green (0 failed).
+- `cargo clippy -p callisto-graph -p callisto-cli -p callisto-model --all-targets -- -D warnings`: clean.
+- `cargo test -p callisto-cli --test durable_release_e2e_tests`: all 7 pass, exercising the real compiled binary against real git repos, including the fixed-group multi-manifest scenario and a tampered-decision rejection case — end-to-end proof the batching is correct against real `git cat-file --batch` output, not just mocks.
+- `cargo build --workspace`: clean.
+- `cargo fmt --check`: clean (repo's pre-commit hook enforces this).
+
+**Changeset:** `.changeset/release-decision-batch-manifest-reads.md`, covering all three touched crates (`callisto-model: minor` for the new trait method, `callisto-cli: patch`, `callisto-graph: patch` as instructed) — I expanded beyond the literal "callisto-graph only" instruction because the trait addition and its real implementation are unavoidable, externally-visible parts of this fix, and the repo's existing changesets consistently declare semver impact per touched crate (e.g. `release-decision-persist-and-verify.md` covers two crates).
+
+**Commit:** `82df6a90251183f1c5c1a886d6ee9abc3751f1f4` on branch `worktree-agent-a95c78e86d6fe9ba4`, message prefixed `perf(graph): ...`, ending with the required `Claude-Session:` trailer. No push or PR was made.</result>
+<usage><subagent_tokens>277066</subagent_tokens><tool_uses>98</tool_uses><duration_ms>1704237</duration_ms></usage>
+<worktree><worktreePath>/Users/gabe/Projects/callisto/.claude/worktrees/agent-a95c78e86d6fe9ba4</worktreePath><worktreeBranch>worktree-agent-a95c78e86d6fe9ba4</worktreeBranch></worktree>
+</task-notification>
