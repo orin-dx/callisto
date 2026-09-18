@@ -1,0 +1,32 @@
+<task-notification>
+<task-id>aa0907eaa38aa0c77</task-id>
+<tool-use-id>toolu_012LVkjyPdtra6r7Gad5uf95</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8f8eb6fc-22cd-45a0-a0c3-707f9385dbc8/tasks/aa0907eaa38aa0c77.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix error-message/error-variant accuracy bugs" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All three fixes are committed on branch `fix/error-message-accuracy`, based on `origin/main` (4cda1f4e). Not pushed, no PR opened, as instructed.
+
+**Commit SHA:** `c7d6a953`
+
+**Summary of changes:**
+
+1. **`crates/callisto-vcs/src/release_lock.rs`** — `ReleaseWorkspaceLock::acquire` now classifies `try_lock_exclusive` failures via a new `classify_lock_acquire_error` helper: compares the I/O error's `ErrorKind` against `fs2::lock_contended_error()` (the cross-platform signal `fs2`'s own tests use to detect real contention — `EWOULDBLOCK`/`ErrorKind::WouldBlock` on Unix, `ERROR_LOCK_VIOLATION` on Windows). True contention still reports "another Callisto release already holds this workspace lock"; every other I/O failure now reports its real cause (`"could not acquire release workspace lock: {error}"`). Added two tests: one proving the genuine-contention message is unchanged, one proving a synthetic `PermissionDenied` error reports its own cause instead.
+
+2. **`crates/callisto-graph/src/error.rs` + `identity.rs`** — Added two new `GraphError` variants (`UnsupportedIdentityEcosystem { ecosystem }`, diagnostic code E155; `PackageIdentifierParse { path, name, source: PackageIdParseError }`, code E156). `IdentityResolver::resolve`'s two call sites (unsupported-ecosystem branch and `PackageId::parse` failure) now route to their own variant instead of both collapsing into `GraphError::AmbiguousName`. Fixed a `manifest_rel` move-order bug introduced by the refactor (cloned before the earlier `.ok_or()` consumed it). Added two tests proving each branch's distinct error and that neither is `AmbiguousName`; verified all other `AmbiguousName` construction sites in the crate are genuine multi-candidate ambiguity (not sibling instances of this bug).
+
+3. **`crates/callisto-cli/src/commands/add.rs` + `cli.rs`** — Extracted severity parsing into `parse_severity()`, fixed the message to "Must be none, patch, minor, or major." (confirmed via `Severity::from_str` in `callisto-model/src/severity.rs` that `none` has always been accepted). Also fixed the same inaccurate list in `AddArgs.packages`' doc comment (`--package` flag help text), a sibling instance of the identical defect. Added tests locking in the exact corrected message text and confirming `none` parses successfully.
+
+One changeset added: `.changeset/accurate-error-causes-lock-identity-severity.md` (patch bump for all three crates).
+
+**Verification (all clean):**
+- `cargo test -p callisto-vcs -p callisto-graph -p callisto-cli`: all passing (50 vcs + 401 graph unit + 101 cli lib tests, plus all integration/doc test binaries — 0 failures)
+- `cargo clippy -p callisto-vcs -p callisto-graph -p callisto-cli --all-targets -- -D warnings`: clean, no warnings
+- `cargo fmt --check`: clean
+- `Cargo.lock`: untouched
+- Pre-commit hook (`moon run :format-check`) passed
+
+No permission-classifier denials encountered — `/usr/bin/git` worked throughout with no issues.</result>
+<usage><subagent_tokens>181200</subagent_tokens><tool_uses>74</tool_uses><duration_ms>784118</duration_ms></usage>
+<worktree><worktreePath>/Users/gabe/Projects/callisto/.claude/worktrees/agent-aa0907eaa38aa0c77</worktreePath><worktreeBranch>worktree-agent-aa0907eaa38aa0c77</worktreeBranch></worktree>
+</task-notification>
