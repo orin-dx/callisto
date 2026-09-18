@@ -1,0 +1,5 @@
+This sounds a lot more sensible. Let's scope it our and prepare a fix please.
+
+Once done do a very deep analysis and thorough check of the code for similar mistakes we've made. Places where the exact same thing is implemented twice and places where we're complicating things unecessary. Use agent teams that are very targeted at identifying these types of issues. Then bring those back and analyze patterns and consider our overall architecture along with semantic models to propose comprehensive fixes that consider the whole vs just the issue one at a time.
+
+Present the findings and proposals.
