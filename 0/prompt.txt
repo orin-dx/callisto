@@ -1,0 +1,1 @@
+Please think through the bug that you found, validate, research, consider the architecture and model that may have shortcomings casing it. Propose a solution and fix
