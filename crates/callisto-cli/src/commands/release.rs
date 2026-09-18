@@ -316,7 +316,7 @@ fn execute(args: ReleaseExecuteArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
             ))
         }
     };
-    let provenance = ReleaseRunProvenanceV1::new(
+    let mut provenance = ReleaseRunProvenanceV1::new(
         if args.recovery {
             ReleaseRunKindV1::Recovery
         } else {
@@ -327,6 +327,9 @@ fn execute(args: ReleaseExecuteArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
         profile,
         capability.intent().digest().clone(),
     );
+    if let Some(artifacts) = verified_artifacts.as_ref() {
+        provenance = provenance.with_artifact_manifest_digest(artifacts.manifest().digest());
+    }
     let receipt = ReleaseReceiptV1::from_evidence(
         capability.intent(),
         &state,

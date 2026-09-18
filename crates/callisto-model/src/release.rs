@@ -1258,6 +1258,12 @@ impl ArtifactManifestV1 {
         })
     }
 
+    /// Hashes the canonical serialized manifest transported from build to
+    /// execution. Its entry roster was canonicalized by [`Self::new`].
+    pub fn digest(&self) -> ArtifactDigest {
+        ArtifactDigest::from_bytes(serde_json::to_vec(self).expect("artifact manifest serializes"))
+    }
+
     pub fn validate_for_intent(&self, intent: &ReleaseIntentV1) -> Result<(), ArtifactManifestError> {
         if self.schema_version != Self::SCHEMA_VERSION || self.intent_digest != intent.digest {
             return Err(ArtifactManifestError::MismatchedIntent);
@@ -1714,6 +1720,8 @@ pub struct ReleaseRunProvenanceV1 {
     pub release_source_revision: CommitSha,
     pub profile: ReleaseProfileId,
     pub intent_digest: IntentDigest,
+    #[serde(default)]
+    pub artifact_manifest_digest: Option<ArtifactDigest>,
 }
 
 impl ReleaseRunProvenanceV1 {
@@ -1733,7 +1741,15 @@ impl ReleaseRunProvenanceV1 {
             release_source_revision,
             profile,
             intent_digest,
+            artifact_manifest_digest: None,
         }
+    }
+
+    /// Binds this run to the exact binary manifest verified before upload.
+    #[must_use]
+    pub fn with_artifact_manifest_digest(mut self, digest: ArtifactDigest) -> Self {
+        self.artifact_manifest_digest = Some(digest);
+        self
     }
 
     pub fn validate_for_intent(&self, intent: &ReleaseIntentV1) -> Result<(), ReleaseRunProvenanceError> {
@@ -1744,6 +1760,9 @@ impl ReleaseRunProvenanceV1 {
         }
         if self.intent_digest != intent.digest {
             return Err(ReleaseRunProvenanceError::MismatchedIntent);
+        }
+        if !intent.artifact_slots.is_empty() && self.artifact_manifest_digest.is_none() {
+            return Err(ReleaseRunProvenanceError::MissingArtifactManifest);
         }
         match &intent.snapshot.source {
             SourceIdentity::GitCommit { sha } if sha == &self.release_source_revision => Ok(()),
@@ -1794,6 +1813,8 @@ pub enum ReleaseRunProvenanceError {
     MismatchedReleaseSource,
     #[error("release run provenance requires a Git commit release source")]
     NonGitReleaseSource,
+    #[error("artifact release provenance requires an artifact manifest digest")]
+    MissingArtifactManifest,
 }
 
 /// Crash-safe state for an intent-bound execution. Pending and Attempting are nonterminal.
