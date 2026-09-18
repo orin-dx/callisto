@@ -1,0 +1,1 @@
+hmmmmm, should the entire setup be pushed up or should we have a post-install hook?
