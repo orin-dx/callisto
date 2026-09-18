@@ -1,0 +1,1 @@
+Org secrets work the exact same way as repo secrets. Either read the docs or stop worrying about it and assuming it when you can check
