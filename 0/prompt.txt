@@ -1,0 +1,1 @@
+No, Claude did that. Show me the updated findings in a format that is easily digestable for claude to see it's fuckup. Think through the proper way to address this and include it in the findings.
