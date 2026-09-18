@@ -88,28 +88,20 @@ revision GitHub records for the workflow run. The immutable intent and artifact 
 bind those bytes to the selected release-source revision, so a recovery can safely use current
 orchestration without misrepresenting an older source checkout as the workflow source.
 
-The private `orin-dx/callisto-rehearsal` forge repository is isolated from production. It is not,
-by itself, an end-to-end rehearsal: each registry needs a real isolated destination and
-credentials. The workflow must fail closed when that infrastructure is not provisioned.
+The private `orin-dx/callisto-rehearsal` forge repository is isolated from production. It is
+reserved for future forge-level experiments; it is not a prerequisite for the current rehearsal.
 
-### Rehearsal provisioning boundary
+### Rehearsal boundary
 
-GitHub Packages is not a Cargo registry and must not be selected as the rehearsal destination for
-Callisto's Cargo crates. The selected service must expose both a Cargo sparse index and Cargo's
-publish API, retain published versions, and provide a scoped token for the rehearsal workflow.
-JFrog Artifactory and AWS CodeArtifact document support for that protocol.
+Callisto publishes Cargo crates to crates.io and product assets to GitHub Releases. It does not
+publish to AWS, JFrog, GitHub Packages, or another registry merely to simulate a release.
 
-Before dispatching the first rehearsal, provision a private Cargo destination distinct from
-crates.io, record its credential-free index URL in the rehearsal checkout, and add only its scoped
-publish token as a repository secret. Keep `orin-dx/callisto-rehearsal` as the forge destination.
-Do not add npm or PyPI credentials unless the rehearsal source actually contains a package routed
-to those registries; the current Callisto product release is Cargo-only.
+The hermetic provider harness is the rehearsal boundary until the project deliberately adopts an
+isolated registry as a product requirement. It exercises the same CLI lifecycle, separate source
+worktrees, provider observation, artifact validation, failure recovery, and fresh-runner state
+reconstruction without publishing a package or introducing a second distribution service.
 
-Do not add `[release.profiles.rehearsal]` merely to make a workflow appear complete. Add it only
-with the corresponding isolated Cargo routing, a `registry-routes` entry from `cratesIo` to that
-registry, and a rehearsal checkout whose Git remote targets the rehearsal forge; the complete
-profile must never share a production forge or registry endpoint.
-
-The first rehearsal must use disposable, unreleased versions. It must prove a complete run and a
-fresh-runner recovery against the persistent rehearsal providers before any production recovery is
-attempted.
+The private `orin-dx/callisto-rehearsal` repository remains reserved for future forge-level
+experiments. Do not add `[release.profiles.rehearsal]` or registry credentials while the product
+has no isolated-registry requirement: a configured profile that cannot prove persistent provider
+behavior would create false confidence rather than release safety.
