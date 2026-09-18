@@ -29,6 +29,7 @@ artifact-targets = [
 
 [release.profiles.production]
 forge-repository = "orin-dx/callisto"
+registry-routes = { cratesIo = "cratesIo" }
 
 [cascade]
 mode = "out-of-range"

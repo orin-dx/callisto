@@ -29,6 +29,12 @@ an artifact repository that differs from that destination, and execution rejects
 does not match its intent. An unconfigured profile, including the rehearsal profile until its
 isolated providers exist, fails before it writes an intent or dispatches an effect.
 
+Each configured profile also declares `registry-routes`, mapping a logical package target such as
+`cratesIo` to a concrete configured registry key. The resolved key and its credential-free
+endpoint digest are part of the release operation and package fingerprint. A configured profile
+cannot fall back to an un-routed production registry, and two profiles cannot share a forge or
+configured registry destination.
+
 ## Execution
 
 Before an effect, Callisto observes the provider. An operation is one of absent, exact success,
@@ -79,8 +85,9 @@ Do not add npm or PyPI credentials unless the rehearsal source actually contains
 to those registries; the current Callisto product release is Cargo-only.
 
 Do not add `[release.profiles.rehearsal]` merely to make a workflow appear complete. Add it only
-with the corresponding isolated Cargo routing and a rehearsal checkout whose Git remote targets
-the rehearsal forge; the complete profile must never share a production forge or registry endpoint.
+with the corresponding isolated Cargo routing, a `registry-routes` entry from `cratesIo` to that
+registry, and a rehearsal checkout whose Git remote targets the rehearsal forge; the complete
+profile must never share a production forge or registry endpoint.
 
 The first rehearsal must use disposable, unreleased versions. It must prove a complete run and a
 fresh-runner recovery against the persistent rehearsal providers before any production recovery is

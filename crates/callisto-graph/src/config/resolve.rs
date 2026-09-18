@@ -58,6 +58,7 @@ pub struct ProductReleaseConfig {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ReleaseProfileConfig {
     pub forge_repository: GitHubRepository,
+    pub registry_routes: BTreeMap<RegistryKey, RegistryKey>,
 }
 
 impl ProductReleaseConfig {
@@ -209,7 +210,19 @@ fn resolve_release_profile(
         GitHubRepository::parse(&raw.forge_repository).map_err(|error| ConfigError::InvalidProductRelease {
             detail: format!("release profile `{name}` has invalid forge-repository: {error}"),
         })?;
-    Ok((profile, ReleaseProfileConfig { forge_repository }))
+    let registry_routes = raw
+        .registry_routes
+        .unwrap_or_default()
+        .into_iter()
+        .map(|(logical, destination)| (RegistryKey(logical), RegistryKey(destination)))
+        .collect();
+    Ok((
+        profile,
+        ReleaseProfileConfig {
+            forge_repository,
+            registry_routes,
+        },
+    ))
 }
 
 /// Per-package overrides from a `[[package]]` block in `callisto.toml`.
@@ -490,6 +503,9 @@ pub fn load(root: &Path) -> Result<ResolvedConfig, ConfigError> {
             registries.insert(key, RegistryConfig { kind, url: reg.url });
         }
     }
+    if let Some(release) = product_release.as_ref() {
+        validate_release_profile_routes(release, &registries)?;
+    }
 
     let raw_groups = RawGroupTable {
         fixed: raw.fixed_group.unwrap_or_default(),
@@ -563,6 +579,66 @@ pub fn load(root: &Path) -> Result<ResolvedConfig, ConfigError> {
         promoted_siblings: BTreeMap::new(),
         provenance,
     })
+}
+
+fn validate_release_profile_routes(
+    release: &ProductReleaseConfig,
+    registries: &BTreeMap<RegistryKey, RegistryConfig>,
+) -> Result<(), ConfigError> {
+    for (profile, destination) in &release.profiles {
+        for (logical, actual) in &destination.registry_routes {
+            let registry = registries
+                .get(actual)
+                .ok_or_else(|| ConfigError::InvalidProductRelease {
+                    detail: format!(
+                        "release profile `{}` routes `{}` to unknown registry `{}`",
+                        profile.as_str(),
+                        logical.as_str(),
+                        actual.as_str()
+                    ),
+                })?;
+            if actual.as_str() != RegistryKey::CRATES_IO
+                && actual.as_str() != RegistryKey::NPM
+                && registry.url.is_none()
+            {
+                return Err(ConfigError::InvalidProductRelease {
+                    detail: format!(
+                        "release profile `{}` routes `{}` to registry `{}` without a credential-free URL",
+                        profile.as_str(),
+                        logical.as_str(),
+                        actual.as_str()
+                    ),
+                });
+            }
+        }
+    }
+    for (profile, destination) in &release.profiles {
+        for (other, other_destination) in &release.profiles {
+            if other <= profile {
+                continue;
+            }
+            for actual in destination.registry_routes.values() {
+                for other_actual in other_destination.registry_routes.values() {
+                    let same_key = actual == other_actual;
+                    let same_url = registries.get(actual).and_then(|registry| registry.url.as_deref())
+                        == registries
+                            .get(other_actual)
+                            .and_then(|registry| registry.url.as_deref());
+                    if same_key || same_url {
+                        return Err(ConfigError::InvalidProductRelease {
+                            detail: format!(
+                                "release profiles `{}` and `{}` share registry destination `{}`",
+                                profile.as_str(),
+                                other.as_str(),
+                                actual.as_str()
+                            ),
+                        });
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -1222,6 +1298,21 @@ mod tests {
         assert!(matches!(
             load(tmp.path()),
             Err(ConfigError::InvalidProductRelease { detail }) if detail.contains("share forge-repository")
+        ));
+    }
+
+    #[test]
+    fn product_release_profiles_reject_a_shared_registry_destination() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        fs::write(
+            tmp.path().join("callisto.toml"),
+            "[release]\nproduct-package = \"cargo/demo\"\nartifact-targets = [\n  \"aarch64-apple-darwin\",\n  \"x86_64-unknown-linux-gnu\",\n  \"x86_64-unknown-linux-musl\",\n  \"wasm32-wasip1\",\n]\n\n[release.profiles.production]\nforge-repository = \"orin-dx/callisto\"\nregistry-routes = { cratesIo = \"private-cargo\" }\n\n[release.profiles.rehearsal]\nforge-repository = \"orin-dx/callisto-rehearsal\"\nregistry-routes = { cratesIo = \"private-cargo\" }\n\n[registries.private-cargo]\nkind = \"cargo\"\nurl = \"https://registry.example.test/index\"\n",
+        )
+        .expect("write callisto.toml");
+
+        assert!(matches!(
+            load(tmp.path()),
+            Err(ConfigError::InvalidProductRelease { detail }) if detail.contains("share registry destination")
         ));
     }
 }

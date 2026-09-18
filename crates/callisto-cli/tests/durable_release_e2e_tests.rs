@@ -98,7 +98,7 @@ fn release_commit_fixture_with_product_release(product_release: bool) -> (TempDi
     let config_path = root.join("callisto.toml");
     let config = fs::read_to_string(&config_path).unwrap();
     let product_config = product_release.then_some(
-        "\n[release]\nproduct-package = \"cargo/core-crate\"\nartifact-targets = [\n  \"aarch64-apple-darwin\",\n  \"x86_64-unknown-linux-gnu\",\n  \"x86_64-unknown-linux-musl\",\n  \"wasm32-wasip1\",\n]\n\n[release.profiles.production]\nforge-repository = \"example/core-crate\"\n",
+        "\n[release]\nproduct-package = \"cargo/core-crate\"\nartifact-targets = [\n  \"aarch64-apple-darwin\",\n  \"x86_64-unknown-linux-gnu\",\n  \"x86_64-unknown-linux-musl\",\n  \"wasm32-wasip1\",\n]\n\n[release.profiles.production]\nforge-repository = \"example/core-crate\"\nregistry-routes = { cratesIo = \"cratesIo\" }\n",
     );
     let tag_template = product_release.then_some("tag-template = \"callisto@{version}\"\n");
     fs::write(

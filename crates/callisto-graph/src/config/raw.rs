@@ -43,6 +43,10 @@ pub struct RawProductReleaseConfig {
 pub struct RawReleaseProfileConfig {
     #[serde(rename = "forge-repository")]
     pub forge_repository: String,
+    /// Maps a logical package target registry (for example `cratesIo`) to a
+    /// concrete configured registry key. This contains no endpoint or token.
+    #[serde(rename = "registry-routes")]
+    pub registry_routes: Option<BTreeMap<String, String>>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]

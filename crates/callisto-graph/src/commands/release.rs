@@ -22,6 +22,7 @@ use callisto_vcs::{
     GitAccess, GitDataSource, TagSignPolicy,
 };
 
+use crate::config::ReleaseProfileConfig;
 use crate::error::{
     CommandFailure, ReleasePreconditionRequirement, ReleaseSelectionInvalidReason, RemoteConflict,
     UnsupportedReleaseFeature,
@@ -1234,7 +1235,8 @@ fn derive_release_intent<R: CommandRunner, D: DependencyResolver>(
     trust_profile: ExecutionTrustProfileV1,
     artifact_policy: Option<&ArtifactBuildPolicy>,
 ) -> Result<ReleaseIntentV1, GraphError> {
-    let (snapshot, operations, _, _, slots) = derive_release_inputs(workspace, decision, source, artifact_policy)?;
+    let (snapshot, operations, _, _, slots) =
+        derive_release_inputs(workspace, decision, &profile, source, artifact_policy)?;
     Ok(ReleaseIntentV1::new(
         profile,
         decision.clone(),
@@ -1268,7 +1270,7 @@ fn derive_release_intent_with_prepared<R: CommandRunner, D: DependencyResolver>(
     artifact_policy: Option<&ArtifactBuildPolicy>,
 ) -> Result<(ReleaseIntentV1, PreparedDerivation), GraphError> {
     let (snapshot, operations, prepared, git_remote, slots) =
-        derive_release_inputs(workspace, decision, source, artifact_policy)?;
+        derive_release_inputs(workspace, decision, &profile, source, artifact_policy)?;
     let intent = ReleaseIntentV1::new(profile, decision.clone(), snapshot, trust_profile, operations, slots)?;
     Ok((
         intent,
@@ -1303,9 +1305,15 @@ fn artifact_policy_from_intent(intent: &ReleaseIntentV1) -> Result<Option<Artifa
 fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
     workspace: &Workspace<'_, R, D>,
     decision: &ReleaseDecisionV1,
+    profile: &ReleaseProfileId,
     source: SourceIdentity,
     artifact_policy: Option<&ArtifactBuildPolicy>,
 ) -> Result<DerivedReleaseInputs, GraphError> {
+    let profile_config = workspace
+        .config
+        .product_release
+        .as_ref()
+        .and_then(|release| release.profile(profile));
     let mut package_inputs = Vec::new();
 
     let mut selected = BTreeMap::new();
@@ -1375,6 +1383,7 @@ fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
             package,
             version,
             produces_tag.then_some(git_remote.as_ref()).flatten(),
+            profile_config,
         )?;
         package_inputs.push(ReleasePackageInputV1 {
             package: id.clone(),
@@ -1384,12 +1393,11 @@ fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
         let mut publishes = Vec::new();
         for target in &package.publish_to {
             if target.ecosystem() == Some(id.ecosystem()) {
-                let registry_key = target.registry_key().expect("registry target has registry key");
-                let binding = prepared_registry_binding(workspace, target)?;
+                let binding = prepared_registry_binding(workspace, target, profile_config)?;
                 let operation = ReleaseOperation::registry_publish(
                     id.clone(),
                     version.clone(),
-                    RegistryBindingId::new(registry_key.as_str(), binding.identity.clone())?,
+                    RegistryBindingId::new(binding.key.as_str(), binding.identity.clone())?,
                     Vec::new(),
                 )?;
                 // A durable registry operation must have one exact endpoint
@@ -1583,6 +1591,7 @@ fn package_fingerprint<R: CommandRunner, D: DependencyResolver>(
     package: &callisto_model::Package,
     version: &Version,
     git_remote: Option<&PreparedGitRemote>,
+    profile: Option<&ReleaseProfileConfig>,
 ) -> Result<SemanticInputDigest, GraphError> {
     let mut transcript = CanonicalTranscript::semantic_input_v1();
     transcript.push_str("package.id", &id.to_string());
@@ -1607,7 +1616,10 @@ fn package_fingerprint<R: CommandRunner, D: DependencyResolver>(
             .map_or_else(|| "default".to_string(), |tag| tag.as_str()),
     );
     for target in &package.publish_to {
-        transcript.push_str("package.target", target_fingerprint(workspace, target)?.as_str());
+        transcript.push_str(
+            "package.target",
+            target_fingerprint(workspace, target, profile)?.as_str(),
+        );
     }
     if let Some(remote) = git_remote {
         transcript.push_str("package.gitRemote", remote.identity.as_str());
@@ -1725,6 +1737,7 @@ impl RegistryBindingV1 {
 fn target_fingerprint<R: CommandRunner, D: DependencyResolver>(
     workspace: &Workspace<'_, R, D>,
     target: &PublishTarget,
+    profile: Option<&ReleaseProfileConfig>,
 ) -> Result<SemanticInputDigest, GraphError> {
     let mut transcript = CanonicalTranscript::semantic_input_v1();
     // Single source of truth for the "kind" string, shared with
@@ -1732,9 +1745,18 @@ fn target_fingerprint<R: CommandRunner, D: DependencyResolver>(
     // instead of re-hardcoding these per-variant literals here too.
     transcript.push_str("target.kind", target.config_str());
     match target {
-        PublishTarget::CratesIo | PublishTarget::GitHubRelease | PublishTarget::None => {}
+        PublishTarget::GitHubRelease | PublishTarget::None => {}
+        PublishTarget::CratesIo => {
+            push_registry_binding(
+                &mut transcript,
+                prepared_registry_binding(workspace, target, profile)?.identity,
+            )?;
+        }
         PublishTarget::Npm { access, .. } => {
-            push_registry_binding(&mut transcript, prepared_registry_binding(workspace, target)?.identity)?;
+            push_registry_binding(
+                &mut transcript,
+                prepared_registry_binding(workspace, target, profile)?.identity,
+            )?;
             transcript.push_str(
                 "target.access",
                 match access {
@@ -1745,7 +1767,10 @@ fn target_fingerprint<R: CommandRunner, D: DependencyResolver>(
             );
         }
         PublishTarget::Pypi { .. } | PublishTarget::NuGet { .. } => {
-            push_registry_binding(&mut transcript, prepared_registry_binding(workspace, target)?.identity)?;
+            push_registry_binding(
+                &mut transcript,
+                prepared_registry_binding(workspace, target, profile)?.identity,
+            )?;
         }
         #[allow(unreachable_patterns)]
         _ => {
@@ -1768,11 +1793,47 @@ fn push_registry_binding(
 fn prepared_registry_binding<R: CommandRunner, D: DependencyResolver>(
     workspace: &Workspace<'_, R, D>,
     target: &PublishTarget,
+    profile: Option<&ReleaseProfileConfig>,
 ) -> Result<PreparedRegistryBinding, GraphError> {
-    let key = target.registry_key().ok_or_else(|| GraphError::ReleaseInvariant {
+    let logical_key = target.registry_key().ok_or_else(|| GraphError::ReleaseInvariant {
         detail: format!("publish target `{}` has no registry key", target.config_str()),
     })?;
-    let explicit = target.registry_override();
+    let key = profile
+        .map(|profile| {
+            profile
+                .registry_routes
+                .get(&logical_key)
+                .cloned()
+                .ok_or_else(|| GraphError::ReleaseInvariant {
+                    detail: format!(
+                        "release profile has no registry route for logical registry `{}`",
+                        logical_key.as_str()
+                    ),
+                })
+        })
+        .transpose()?
+        .unwrap_or_else(|| logical_key.clone());
+    let configured_registry = workspace
+        .config
+        .registries
+        .get(&key)
+        .ok_or_else(|| GraphError::ReleaseInvariant {
+            detail: format!(
+                "release profile routes `{}` to unknown registry `{}`",
+                logical_key.as_str(),
+                key.as_str()
+            ),
+        })?;
+    if Some(configured_registry.kind) != target.ecosystem() {
+        return Err(GraphError::ReleaseInvariant {
+            detail: format!(
+                "release profile routes `{}` to registry `{}` with incompatible ecosystem",
+                logical_key.as_str(),
+                key.as_str()
+            ),
+        });
+    }
+    let explicit = (key == logical_key).then(|| target.registry_override()).flatten();
     let configured = workspace
         .config
         .registries
@@ -2356,6 +2417,28 @@ mod tests {
     }
 
     #[test]
+    fn profile_registry_route_replaces_the_logical_crates_io_destination() {
+        let (dir, runner) = fixture();
+        std::fs::write(
+            dir.path().join("callisto.toml"),
+            "[release]\nproduct-package = \"cargo/release-fixture\"\nartifact-targets = [\n  \"aarch64-apple-darwin\",\n  \"x86_64-unknown-linux-gnu\",\n  \"x86_64-unknown-linux-musl\",\n  \"wasm32-wasip1\",\n]\n\n[release.profiles.rehearsal]\nforge-repository = \"example/rehearsal\"\nregistry-routes = { cratesIo = \"rehearsal-cargo\" }\n\n[registries.rehearsal-cargo]\nkind = \"cargo\"\nurl = \"https://registry.example.test/index\"\n\n[[package]]\nmatch = \"release-fixture\"\npublish-to = [\"crates-io\"]\n",
+        )
+        .unwrap();
+        let locator = crate::IgnoreWalkLocator::new(dir.path());
+        let workspace = Workspace::load(dir.path().to_path_buf(), &locator, &runner).unwrap();
+        let profile = workspace
+            .config
+            .product_release
+            .as_ref()
+            .and_then(|release| release.profile(&ReleaseProfileId::parse("rehearsal").unwrap()))
+            .unwrap();
+
+        let binding = prepared_registry_binding(&workspace, &PublishTarget::CratesIo, Some(profile)).unwrap();
+        assert_eq!(binding.key.as_str(), "rehearsal-cargo");
+        assert_eq!(binding.endpoint.as_deref(), Some("https://registry.example.test/index"));
+    }
+
+    #[test]
     fn git_remote_binding_normalizes_credential_free_ssh_and_rejects_credentialed_https() {
         let ssh = canonical_git_remote("git@GitHub.com:example/release-fixture.git").unwrap();
         assert_eq!(ssh.endpoint, "ssh://git@github.com/example/release-fixture.git");
@@ -2573,8 +2656,14 @@ mod tests {
         let root = canonical_root(dir.path()).unwrap();
         let workspace = Workspace::load(root.clone(), &locator, &runner).unwrap();
         let source = observe_source(&workspace, ExecutionTrustProfileV1::GitCommit).unwrap();
-        let (before_snapshot, before_operations, _, _, _) =
-            derive_release_inputs(&workspace, &decision(), source.clone(), None).unwrap();
+        let (before_snapshot, before_operations, _, _, _) = derive_release_inputs(
+            &workspace,
+            &decision(),
+            &ReleaseProfileId::parse("production").unwrap(),
+            source.clone(),
+            None,
+        )
+        .unwrap();
 
         std::fs::write(
             root.join("callisto.toml"),
@@ -2582,8 +2671,14 @@ mod tests {
         )
         .unwrap();
         let reread = Workspace::load(root, &locator, &runner).unwrap();
-        let (after_snapshot, after_operations, _, _, _) =
-            derive_release_inputs(&reread, &decision(), source, None).unwrap();
+        let (after_snapshot, after_operations, _, _, _) = derive_release_inputs(
+            &reread,
+            &decision(),
+            &ReleaseProfileId::parse("production").unwrap(),
+            source,
+            None,
+        )
+        .unwrap();
 
         assert_eq!(before_snapshot, after_snapshot);
         assert_eq!(before_operations, after_operations);
