@@ -3,7 +3,7 @@
   "entries": [
     {
       "package": "cargo/callisto-changelog",
-      "targetVersion": "0.7.2",
+      "targetVersion": "0.7.3",
       "reasons": [
         {
           "kind": "fixedGroup",
@@ -13,7 +13,7 @@
     },
     {
       "package": "cargo/callisto-cli",
-      "targetVersion": "0.7.2",
+      "targetVersion": "0.7.3",
       "reasons": [
         {
           "kind": "fixedGroup",
@@ -23,7 +23,7 @@
     },
     {
       "package": "cargo/callisto-conventional",
-      "targetVersion": "0.7.2",
+      "targetVersion": "0.7.3",
       "reasons": [
         {
           "kind": "fixedGroup",
@@ -33,7 +33,7 @@
     },
     {
       "package": "cargo/callisto-fixtures",
-      "targetVersion": "0.7.2",
+      "targetVersion": "0.7.3",
       "reasons": [
         {
           "kind": "fixedGroup",
@@ -43,7 +43,7 @@
     },
     {
       "package": "cargo/callisto-format",
-      "targetVersion": "0.7.2",
+      "targetVersion": "0.7.3",
       "reasons": [
         {
           "kind": "fixedGroup",
@@ -53,16 +53,17 @@
     },
     {
       "package": "cargo/callisto-graph",
-      "targetVersion": "0.7.2",
+      "targetVersion": "0.7.3",
       "reasons": [
         {
-          "kind": "changeset"
+          "kind": "fixedGroup",
+          "groupId": "workspace"
         }
       ]
     },
     {
       "package": "cargo/callisto-manifests",
-      "targetVersion": "0.7.2",
+      "targetVersion": "0.7.3",
       "reasons": [
         {
           "kind": "fixedGroup",
@@ -72,7 +73,7 @@
     },
     {
       "package": "cargo/callisto-model",
-      "targetVersion": "0.7.2",
+      "targetVersion": "0.7.3",
       "reasons": [
         {
           "kind": "fixedGroup",
@@ -82,17 +83,16 @@
     },
     {
       "package": "cargo/callisto-moon",
-      "targetVersion": "0.7.2",
+      "targetVersion": "0.7.3",
       "reasons": [
         {
-          "kind": "fixedGroup",
-          "groupId": "workspace"
+          "kind": "changeset"
         }
       ]
     },
     {
       "package": "cargo/callisto-vcs",
-      "targetVersion": "0.7.2",
+      "targetVersion": "0.7.3",
       "reasons": [
         {
           "kind": "fixedGroup",
@@ -101,5 +101,5 @@
       ]
     }
   ],
-  "digest": "c94facd3cb22d6437ce57c7bd6282b1b42189537f91d578626c5c1638bcb6510"
+  "digest": "4e09109d51104e378c944b57cd922efd2a0def7209e11943069d36803b7cf7ab"
 }
