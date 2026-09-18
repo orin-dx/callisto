@@ -1,0 +1,8 @@
+<task-notification>
+<task-id>bejupwqdr</task-id>
+<tool-use-id>toolu_012W4165deBgK5HQeQv5wtse</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8f8eb6fc-22cd-45a0-a0c3-707f9385dbc8/tasks/bejupwqdr.output</output-file>
+<status>completed</status>
+<summary>Background command "cd /Users/gabe/Projects/callisto/.claude/worktrees/agent-a806d07549d2a33fd
+cargo build --workspace --quiet 2&gt;&amp;1 | tail -100 &amp;&amp; cargo clippy --workspace --all-targets --quiet -- -D warnings 2&gt;&amp;1 | tail -100" completed (exit code 0)</summary>
+</task-notification>
