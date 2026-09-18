@@ -1,0 +1,3 @@
+Are we confident that all of these: https://github.com/orin-dx/callisto/pull/57
+
+Are not coming back once we tackle future specs that we already have on the table? Let's be careful here
