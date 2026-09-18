@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bgzlyctwp</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/15d85ded-2e3a-4f72-9187-c1840a5cd880/tasks/bgzlyctwp.output</output-file>
+<status>completed</status>
+<summary>Background command "just ci-fast &gt; /tmp/ci-fast-run.log 2&gt;&amp;1; echo "CI_FAST_EXIT=$?"" completed (exit code 0)</summary>
+</task-notification>
