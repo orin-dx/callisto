@@ -1,0 +1,11 @@
+<task-notification>
+<task-id>a7e8437fdb358ebf2</task-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8f8eb6fc-22cd-45a0-a0c3-707f9385dbc8/tasks/a7e8437fdb358ebf2.output</output-file>
+<status>completed</status>
+<summary>Agent "Draft PR title and body" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Noted — that background search failed, but it's moot; I already found and used `/Users/gabe/Projects/agent-plugins/shared/references/github.md` for the template/voice standard, and the PR draft above is already complete and delivered.
+
+No action needed from this notification. The PR title/body/labels/reasoning I posted previously stands as the final output — let me know if you'd like any adjustments before you proceed with `gh pr create`.</result>
+<usage><subagent_tokens>64029</subagent_tokens><tool_uses>13</tool_uses><duration_ms>361904</duration_ms></usage>
+</task-notification>
