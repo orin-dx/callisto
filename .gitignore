@@ -17,4 +17,15 @@ lcov.info
 
 # per-session parallel-agent worktree checkouts — full repo copies, never committed
 .claude/worktrees/
+.playwright-mcp/
 mutants.out/
+
+# Entire agent adapters are local generated integration files. The shared
+# Entire policy lives in .entire/settings.json and .entire/.gitignore.
+.agents/skills/entire-search/
+.claude/skills/entire-search/
+.claude/candidates/
+.claude/recon-manifest.json
+.codex/
+.gemini/skills/entire-search/
+.opencode/

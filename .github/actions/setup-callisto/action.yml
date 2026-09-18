@@ -56,21 +56,25 @@ runs:
 
         if [[ "$OS_NAME" == "darwin" ]]; then
           if [[ "$ARCH_NAME" == "arm64" ]]; then
-            ASSET_NAME="callisto-macos-aarch64.tar.gz"
+            ASSET_NAME="callisto-aarch64-apple-darwin.tar.gz"
           else
-            ASSET_NAME="callisto-macos-amd64.tar.gz"
+            ASSET_NAME=""
           fi
         elif [[ "$OS_NAME" == "linux" ]]; then
-          ASSET_NAME="callisto-linux-amd64.tar.gz"
+          if [[ "$ARCH_NAME" == "x86_64" ]]; then
+            ASSET_NAME="callisto-x86_64-unknown-linux-gnu.tar.gz"
+          else
+            ASSET_NAME=""
+          fi
         elif [[ "$OS_NAME" == *"mingw"* || "$OS_NAME" == *"msys"* || "$OS_NAME" == *"windows"* ]]; then
-          ASSET_NAME="callisto-windows-amd64.zip"
+          ASSET_NAME=""
         else
-          ASSET_NAME="callisto-linux-amd64.tar.gz"
+          ASSET_NAME=""
         fi
 
-        if [[ "$TAG_NAME" == "latest" ]]; then
+        if [[ -n "$ASSET_NAME" && "$TAG_NAME" == "latest" ]]; then
           DOWNLOAD_URL="https://github.com/orin-dx/callisto/releases/latest/download/$ASSET_NAME"
-        else
+        elif [[ -n "$ASSET_NAME" ]]; then
           DOWNLOAD_URL="https://github.com/orin-dx/callisto/releases/download/$TAG_NAME/$ASSET_NAME"
         fi
 
@@ -106,7 +110,7 @@ runs:
         elif [[ "$SOURCE" == "local" ]]; then
           echo "::error::setup-callisto source=local requires a Callisto workspace checkout"
           exit 1
-        elif curl -sL -f "$DOWNLOAD_URL" -o "$DOWNLOAD_DEST" 2>/dev/null; then
+        elif [[ -n "$ASSET_NAME" ]] && curl -sL -f "$DOWNLOAD_URL" -o "$DOWNLOAD_DEST" 2>/dev/null; then
           # Match the extraction tool to ASSET_NAME's actual format; any
           # unrecognized extension defensively falls back to the previous
           # tar.gz behavior rather than erroring (the crates.io/cargo-install

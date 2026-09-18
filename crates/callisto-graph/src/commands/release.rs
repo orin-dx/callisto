@@ -9,10 +9,11 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use callisto_model::{
-    ApplyPermit, CanonicalTranscript, CommandOutput, CommandRunner, CommitSha, DepKind, Ecosystem,
-    ExecutionTrustProfileV1, GitHubRepository, GitHubRepositoryParseError, NpmAccess, OperationOutcome, PublishOutcome,
-    PublishTarget, RegistryBindingDigest, RegistryBindingId, RegistryKey, ReleaseDecisionV1, ReleaseInputSnapshotV1,
-    ReleaseIntentError, ReleaseIntentV1, ReleaseOperation, ReleaseOperationId, ReleasePackageId, ReleasePackageInputV1,
+    ApplyPermit, ArtifactSlotId, CanonicalTranscript, CommandOutput, CommandRunner, CommitSha, DepKind, Ecosystem,
+    ExecutionTrustProfileV1, GitHubRepository, GitHubRepositoryParseError, NpmAccess, OperationOutcome,
+    ProviderObservationV1, PublishOutcome, PublishTarget, RegistryBindingDigest, RegistryBindingId, RegistryKey,
+    ReleaseDecisionV1, ReleaseInputSnapshotV1, ReleaseIntentError, ReleaseIntentV1, ReleaseOperation,
+    ReleaseOperationId, ReleaseOperationObservationV1, ReleasePackageId, ReleasePackageInputV1, ReleaseProfileId,
     SemanticInputDigest, SourceIdentity, TagName, Version,
 };
 use callisto_vcs::{
@@ -21,11 +22,14 @@ use callisto_vcs::{
     GitAccess, GitDataSource, TagSignPolicy,
 };
 
+use crate::config::ReleaseProfileConfig;
 use crate::error::{
     CommandFailure, ReleasePreconditionRequirement, ReleaseSelectionInvalidReason, RemoteConflict,
     UnsupportedReleaseFeature,
 };
 use crate::{commands::registry_argv, DependencyResolver, GraphError, ProjectLocator, Workspace};
+
+use super::release_artifacts::VerifiedArtifactManifest;
 
 /// Reason carried by [`GraphError::ReleaseIntentStale`] (E124); real reasons are constructible only from this module.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -99,6 +103,20 @@ enum PreparedOperation {
     ForgeRelease {
         tag: TagName,
     },
+    ArtifactUpload {
+        slot: ArtifactSlotId,
+        tag: TagName,
+    },
+}
+
+/// Coordinator-owned identity used to bind a product artifact to the exact
+/// workflow revision that built it. This is distinct from a historic release
+/// source during recovery.
+#[derive(Clone, Debug)]
+pub struct ArtifactBuildPolicy {
+    pub repository: GitHubRepository,
+    pub workflow_path: String,
+    pub workflow_commit: CommitSha,
 }
 
 /// Credential-free, canonical registry routing. `endpoint` is populated only
@@ -147,6 +165,7 @@ enum ForgeReleaseObservation {
     Missing,
     Exact,
     Conflict,
+    Indeterminate,
 }
 
 type DerivedReleaseInputs = (
@@ -154,6 +173,7 @@ type DerivedReleaseInputs = (
     Vec<ReleaseOperation>,
     BTreeMap<ReleaseOperationId, PreparedOperation>,
     Option<PreparedGitRemote>,
+    Vec<ArtifactSlotId>,
 );
 
 struct PreparedDerivation {
@@ -213,21 +233,87 @@ impl ValidatedReleaseIntent<'_> {
     }
 }
 
+/// Collects one fresh, exact-provider observation for every operation in the
+/// immutable intent.
+///
+/// A terminal receipt is deliberately built from this result rather than from
+/// local execution state. The caller must reject any non-exact result; this
+/// function preserves the complete roster so receipt construction can prove
+/// that it did not silently omit an operation.
+pub fn observe_release_operations(
+    capability: &ValidatedReleaseIntent<'_>,
+) -> Result<Vec<ReleaseOperationObservationV1>, GraphError> {
+    observe_release_operations_with_artifacts(capability, None)
+}
+
+/// Collects provider observations using verified artifact bytes when the
+/// intent declares binary uploads. The verified capability prevents recovery
+/// from accepting a same-named remote asset with different bytes.
+pub fn observe_release_operations_with_artifacts(
+    capability: &ValidatedReleaseIntent<'_>,
+    artifacts: Option<&VerifiedArtifactManifest<'_>>,
+) -> Result<Vec<ReleaseOperationObservationV1>, GraphError> {
+    capability
+        .intent()
+        .operations
+        .iter()
+        .map(|operation| {
+            capability.recheck_trust()?;
+            Ok(ReleaseOperationObservationV1 {
+                operation: operation.id().clone(),
+                observation: capability.observe_prepared(operation.id(), artifacts)?,
+            })
+        })
+        .collect()
+}
+
 /// Builds a release intent from a fresh root-bound observation.
 pub fn build_release_intent<L: ProjectLocator, R: CommandRunner>(
     root: &Path,
     locator: &L,
     runner: &R,
     decision: &ReleaseDecisionV1,
+    profile: ReleaseProfileId,
     trust_profile: ExecutionTrustProfileV1,
 ) -> Result<ReleaseIntentV1, GraphError> {
     let root = canonical_root(root)?;
     let workspace = Workspace::load(root.clone(), locator, runner)?;
     let source = observe_source(&workspace, trust_profile)?;
-    let intent = derive_release_intent(&workspace, decision, source.clone(), trust_profile)?;
+    let intent = derive_release_intent(&workspace, decision, profile, source.clone(), trust_profile, None)?;
 
     // Recheck after all input reads. A concurrent edit or checkout cannot be
     // authorized merely because it happened after the first check.
+    if observe_source(&workspace, trust_profile)? != source {
+        return Err(GraphError::ReleaseIntentStale {
+            reason: StaleReason::source_identity_changed(),
+        });
+    }
+    Ok(intent)
+}
+
+/// Builds an intent whose declared binary slots are bound to the current
+/// coordinator workflow. Callers recovering an old release source must pass
+/// the current coordinator revision here, never substitute the source SHA.
+pub fn build_release_intent_with_artifacts<L: ProjectLocator, R: CommandRunner>(
+    root: &Path,
+    locator: &L,
+    runner: &R,
+    decision: &ReleaseDecisionV1,
+    profile: ReleaseProfileId,
+    trust_profile: ExecutionTrustProfileV1,
+    artifact_policy: ArtifactBuildPolicy,
+) -> Result<ReleaseIntentV1, GraphError> {
+    let root = canonical_root(root)?;
+    let workspace = Workspace::load(root.clone(), locator, runner)?;
+    let source = observe_source(&workspace, trust_profile)?;
+    let intent = derive_release_intent(
+        &workspace,
+        decision,
+        profile,
+        source.clone(),
+        trust_profile,
+        Some(&artifact_policy),
+    )?;
     if observe_source(&workspace, trust_profile)? != source {
         return Err(GraphError::ReleaseIntentStale {
             reason: StaleReason::source_identity_changed(),
@@ -271,8 +357,15 @@ pub fn validate_release_intent_with_state_directory<'a, L: ProjectLocator, R: Co
         });
     }
     let source = source_from_trust(&trust);
-    let (expected, prepared) =
-        derive_release_intent_with_prepared(&workspace, &received.decision, source.clone(), received.trust_profile)?;
+    let artifact_policy = artifact_policy_from_intent(&received)?;
+    let (expected, prepared) = derive_release_intent_with_prepared(
+        &workspace,
+        &received.decision,
+        received.profile.clone(),
+        source.clone(),
+        received.trust_profile,
+        artifact_policy.as_ref(),
+    )?;
     let final_trust = observe_git_trust(&workspace, received.trust_profile)?;
     if expected != received || final_trust != trust {
         return Err(GraphError::ReleaseIntentStale {
@@ -344,6 +437,7 @@ impl ValidatedReleaseIntent<'_> {
         &self,
         permit: &ApplyPermit,
         id: &ReleaseOperationId,
+        artifacts: Option<&VerifiedArtifactManifest<'_>>,
     ) -> Result<OperationOutcome, GraphError> {
         let operation = self
             .prepared
@@ -359,7 +453,90 @@ impl ValidatedReleaseIntent<'_> {
                 target,
                 annotation,
             } => self.dispatch_tag(permit, name, target, annotation),
-            PreparedOperation::ForgeRelease { tag } => self.dispatch_forge_release(tag),
+            PreparedOperation::ForgeRelease { tag } => self.dispatch_forge_release(id, tag),
+            PreparedOperation::ArtifactUpload { slot, tag } => self.dispatch_artifact_upload(id, slot, tag, artifacts),
+        }
+    }
+
+    /// Observes the exact provider identity prepared with this capability.
+    ///
+    /// This path accepts no caller-controlled endpoint, package, tag, or
+    /// release name. It is therefore safe to use when a local state file says
+    /// an effect was interrupted: remote state decides whether execution may
+    /// converge, never a stale runner-local journal.
+    pub(crate) fn observe_prepared(
+        &self,
+        id: &ReleaseOperationId,
+        artifacts: Option<&VerifiedArtifactManifest<'_>>,
+    ) -> Result<ProviderObservationV1, GraphError> {
+        let operation = self
+            .prepared
+            .operations
+            .get(id)
+            .ok_or_else(|| GraphError::ReleaseInvariant {
+                detail: format!("observe_prepared: no prepared operation for `{id:?}`"),
+            })?;
+        match operation {
+            PreparedOperation::RegistryPublish {
+                package_name,
+                version,
+                registry,
+                ..
+            } => match id.package.ecosystem() {
+                Ecosystem::Cargo => {
+                    let registry_key = (registry.key.as_str() != RegistryKey::CRATES_IO).then(|| registry.key.as_str());
+                    Ok(
+                        if self.cargo_version_is_published(package_name, version, registry_key)? {
+                            ProviderObservationV1::Exact
+                        } else {
+                            ProviderObservationV1::Absent
+                        },
+                    )
+                }
+                Ecosystem::Npm => Ok(
+                    if self.npm_version_is_published(package_name, version, registry.endpoint.as_deref())? {
+                        ProviderObservationV1::Exact
+                    } else {
+                        ProviderObservationV1::Absent
+                    },
+                ),
+                // PyPI's upload endpoint is not a query API. Until its
+                // provider adapter can prove an exact version through the
+                // configured index, recovery must fail closed rather than
+                // attempting a second upload.
+                Ecosystem::Pypi => Ok(ProviderObservationV1::Indeterminate),
+                _ => Err(GraphError::UnsupportedRelease {
+                    feature: UnsupportedReleaseFeature::Ecosystem,
+                }),
+            },
+            PreparedOperation::Tag {
+                name,
+                target,
+                annotation,
+            } => Ok(match self.observed_tag(name)? {
+                None => ProviderObservationV1::Absent,
+                Some(observed) if observed.target == *target && observed.annotation == *annotation => {
+                    ProviderObservationV1::Exact
+                }
+                Some(_) => ProviderObservationV1::Conflict,
+            }),
+            PreparedOperation::ForgeRelease { tag } => {
+                let remote = self.checked_git_remote()?;
+                let repository = remote
+                    .github_repository
+                    .as_ref()
+                    .ok_or(GraphError::ReleasePreconditionUnmet {
+                        requirement: ReleasePreconditionRequirement::GitHubRemote,
+                    })?
+                    .as_slug();
+                Ok(match self.observed_forge_release_target(tag, &repository)? {
+                    ForgeReleaseObservation::Missing => ProviderObservationV1::Absent,
+                    ForgeReleaseObservation::Exact => ProviderObservationV1::Exact,
+                    ForgeReleaseObservation::Conflict => ProviderObservationV1::Conflict,
+                    ForgeReleaseObservation::Indeterminate => ProviderObservationV1::Indeterminate,
+                })
+            }
+            PreparedOperation::ArtifactUpload { slot, tag } => self.observe_artifact_upload(slot, tag, artifacts),
         }
     }
 
@@ -385,6 +562,12 @@ impl ValidatedReleaseIntent<'_> {
         let output = match id.package.ecosystem() {
             Ecosystem::Cargo => {
                 let registry_key = (registry.key.as_str() != RegistryKey::CRATES_IO).then(|| registry.key.as_str());
+                if self.cargo_version_is_published(package_name, version, registry_key)? {
+                    return Err(GraphError::ReleaseRegistryVersionExists {
+                        package: package_name.clone(),
+                        version: version.clone(),
+                    });
+                }
                 let argv = registry_argv::cargo_publish_argv(
                     &self.prepared.root,
                     package_dir,
@@ -396,7 +579,10 @@ impl ValidatedReleaseIntent<'_> {
             }
             Ecosystem::Npm => {
                 if self.npm_version_is_published(package_name, version, registry.endpoint.as_deref())? {
-                    return Ok(OperationOutcome::AlreadySatisfied);
+                    return Err(GraphError::ReleaseRegistryVersionExists {
+                        package: package_name.clone(),
+                        version: version.clone(),
+                    });
                 }
                 let package_manager = registry_argv::detect_npm_package_manager(&self.prepared.root);
                 let argv = registry_argv::npm_publish_argv(
@@ -667,7 +853,7 @@ impl ValidatedReleaseIntent<'_> {
         }
     }
 
-    fn dispatch_forge_release(&self, tag: &TagName) -> Result<OperationOutcome, GraphError> {
+    fn dispatch_forge_release(&self, id: &ReleaseOperationId, tag: &TagName) -> Result<OperationOutcome, GraphError> {
         let remote = self.checked_git_remote()?;
         let repository = remote
             .github_repository
@@ -681,6 +867,11 @@ impl ValidatedReleaseIntent<'_> {
             ForgeReleaseObservation::Conflict => {
                 return Err(GraphError::ReleaseRemoteConflict {
                     conflict: RemoteConflict::ForgeReleaseDiffers,
+                })
+            }
+            ForgeReleaseObservation::Indeterminate => {
+                return Err(GraphError::ReleaseProviderIndeterminate {
+                    operation: Box::new(id.clone()),
                 })
             }
             ForgeReleaseObservation::Missing => {}
@@ -705,12 +896,152 @@ impl ValidatedReleaseIntent<'_> {
                 },
             });
         }
-        if self.observed_forge_release_target(tag, &repository)? == ForgeReleaseObservation::Exact {
-            Ok(OperationOutcome::Published)
-        } else {
-            Err(GraphError::ReleaseRemoteConflict {
-                conflict: RemoteConflict::ForgeReleaseNotObservedAfterCreate,
-            })
+        match self.observed_forge_release_target(tag, &repository)? {
+            ForgeReleaseObservation::Exact => Ok(OperationOutcome::Published),
+            ForgeReleaseObservation::Indeterminate => Err(GraphError::ReleaseProviderIndeterminate {
+                operation: Box::new(id.clone()),
+            }),
+            ForgeReleaseObservation::Missing | ForgeReleaseObservation::Conflict => {
+                Err(GraphError::ReleaseRemoteConflict {
+                    conflict: RemoteConflict::ForgeReleaseNotObservedAfterCreate,
+                })
+            }
+        }
+    }
+
+    fn dispatch_artifact_upload(
+        &self,
+        id: &ReleaseOperationId,
+        slot: &ArtifactSlotId,
+        tag: &TagName,
+        artifacts: Option<&VerifiedArtifactManifest<'_>>,
+    ) -> Result<OperationOutcome, GraphError> {
+        let artifacts = artifacts.ok_or(GraphError::ReleasePreconditionUnmet {
+            requirement: ReleasePreconditionRequirement::VerifiedArtifactManifest,
+        })?;
+        match self.observe_artifact_upload(slot, tag, Some(artifacts))? {
+            ProviderObservationV1::Exact => return Ok(OperationOutcome::AlreadySatisfied),
+            ProviderObservationV1::Conflict => {
+                return Err(GraphError::ReleaseRemoteConflict {
+                    conflict: RemoteConflict::ArtifactDiffers,
+                })
+            }
+            ProviderObservationV1::Indeterminate => {
+                return Err(GraphError::ReleaseProviderIndeterminate {
+                    operation: Box::new(id.clone()),
+                })
+            }
+            ProviderObservationV1::Absent => {}
+        }
+        let path = artifacts.path_for(slot)?;
+        let repository = slot.attestation_policy.repository.as_slug();
+        match self.observed_forge_release_target(tag, &repository)? {
+            ForgeReleaseObservation::Exact => {}
+            ForgeReleaseObservation::Indeterminate => {
+                return Err(GraphError::ReleaseProviderIndeterminate {
+                    operation: Box::new(id.clone()),
+                })
+            }
+            ForgeReleaseObservation::Missing | ForgeReleaseObservation::Conflict => {
+                return Err(GraphError::ReleaseRemoteConflict {
+                    conflict: RemoteConflict::ForgeReleaseDiffers,
+                })
+            }
+        }
+        let path_argument = path.to_string_lossy();
+        let args = [
+            "release",
+            "upload",
+            tag.as_str(),
+            path_argument.as_ref(),
+            "--repo",
+            repository.as_str(),
+        ];
+        let uploaded = self.runner.run("gh", &args, &self.prepared.root)?;
+        if !uploaded.success() {
+            return Err(GraphError::ReleaseCommand {
+                program: "gh".to_owned(),
+                args: args.iter().map(ToString::to_string).collect(),
+                failure: CommandFailure::NonZeroExit {
+                    exit_code: uploaded.exit_code,
+                    stderr: uploaded.stderr,
+                },
+            });
+        }
+        match self.observe_artifact_upload(slot, tag, Some(artifacts))? {
+            ProviderObservationV1::Exact => Ok(OperationOutcome::Published),
+            ProviderObservationV1::Conflict => Err(GraphError::ReleaseRemoteConflict {
+                conflict: RemoteConflict::ArtifactDiffers,
+            }),
+            ProviderObservationV1::Absent => Err(GraphError::ReleaseRemoteConflict {
+                conflict: RemoteConflict::ArtifactNotObservedAfterUpload,
+            }),
+            ProviderObservationV1::Indeterminate => Err(GraphError::ReleaseProviderIndeterminate {
+                operation: Box::new(id.clone()),
+            }),
+        }
+    }
+
+    fn observe_artifact_upload(
+        &self,
+        slot: &ArtifactSlotId,
+        tag: &TagName,
+        artifacts: Option<&VerifiedArtifactManifest<'_>>,
+    ) -> Result<ProviderObservationV1, GraphError> {
+        let Some(artifacts) = artifacts else {
+            return Ok(ProviderObservationV1::Indeterminate);
+        };
+        let entry = artifacts.entry_for(slot)?;
+        let repository = slot.attestation_policy.repository.as_slug();
+        let endpoint = format!("repos/{repository}/releases/tags/{tag}");
+        let args = [
+            "api",
+            "--include",
+            "--method",
+            "GET",
+            endpoint.as_str(),
+            "--repo",
+            repository.as_str(),
+        ];
+        let observed = self.runner.run("gh", &args, &self.prepared.root)?;
+        let (status, body) = github_api_response("gh", &args, &observed)?;
+        if let Some(observation) = github_release_response_status(status) {
+            return Ok(observation);
+        }
+        let release: serde_json::Value = serde_json::from_str(body).map_err(|error| GraphError::ReleaseCommand {
+            program: "gh".to_owned(),
+            args: args.iter().map(ToString::to_string).collect(),
+            failure: CommandFailure::MalformedOutput {
+                detail: error.to_string(),
+            },
+        })?;
+        let assets = release
+            .get("assets")
+            .and_then(serde_json::Value::as_array)
+            .ok_or_else(|| GraphError::ReleaseCommand {
+                program: "gh".to_owned(),
+                args: args.iter().map(ToString::to_string).collect(),
+                failure: CommandFailure::MalformedOutput {
+                    detail: "GitHub release response has no assets array".to_owned(),
+                },
+            })?;
+        let matching: Vec<_> = assets
+            .iter()
+            .filter(|asset| asset.get("name").and_then(serde_json::Value::as_str) == Some(slot.asset_name.as_str()))
+            .collect();
+        match matching.as_slice() {
+            [] => Ok(ProviderObservationV1::Absent),
+            [asset] => {
+                let digest = format!("sha256:{}", entry.digest.as_str());
+                if asset.get("size").and_then(serde_json::Value::as_u64) == Some(entry.byte_length)
+                    && asset.get("digest").and_then(serde_json::Value::as_str) == Some(digest.as_str())
+                {
+                    Ok(ProviderObservationV1::Exact)
+                } else {
+                    Ok(ProviderObservationV1::Conflict)
+                }
+            }
+            _ => Ok(ProviderObservationV1::Conflict),
         }
     }
 
@@ -784,23 +1115,14 @@ impl ValidatedReleaseIntent<'_> {
             repository,
         ];
         let observed = self.runner.run("gh", &api_args, &self.prepared.root)?;
-        if observed.exit_code != Some(0) {
-            return Err(GraphError::ReleaseCommand {
-                program: "gh".to_string(),
-                args: api_args.iter().map(ToString::to_string).collect(),
-                failure: CommandFailure::NonZeroExit {
-                    exit_code: observed.exit_code,
-                    stderr: observed.stderr,
-                },
-            });
-        }
-        let (status, body) = parse_github_api_response("gh", &api_args, &observed.stdout)?;
-        if status == 404 {
-            return Ok(ForgeReleaseObservation::Missing);
-        }
-        if status != 200 {
-            return Err(GraphError::ReleaseRemoteConflict {
-                conflict: RemoteConflict::ForgeApiStatus,
+        let (status, body) = github_api_response("gh", &api_args, &observed)?;
+        if let Some(observation) = github_release_response_status(status) {
+            return Ok(match observation {
+                ProviderObservationV1::Absent => ForgeReleaseObservation::Missing,
+                ProviderObservationV1::Indeterminate => ForgeReleaseObservation::Indeterminate,
+                ProviderObservationV1::Exact | ProviderObservationV1::Conflict => unreachable!(
+                    "GitHub response status can only establish absence or indeterminacy before parsing its body"
+                ),
             });
         }
         let value: serde_json::Value = serde_json::from_str(body).map_err(|error| GraphError::ReleaseCommand {
@@ -870,30 +1192,86 @@ fn parse_github_api_response<'a>(program: &str, args: &[&str], stdout: &'a str) 
     Ok((status, body))
 }
 
+/// `gh api --include` preserves the HTTP response even for a 404 and exits
+/// non-zero. Parse that authoritative response first so absence is not
+/// mistaken for a transport failure; retain the command failure when no
+/// parseable HTTP response was produced.
+fn github_api_response<'a>(
+    program: &str,
+    args: &[&str],
+    output: &'a CommandOutput,
+) -> Result<(u16, &'a str), GraphError> {
+    match parse_github_api_response(program, args, &output.stdout) {
+        Ok(response) => Ok(response),
+        Err(_) if !output.success() => Err(GraphError::ReleaseCommand {
+            program: program.to_owned(),
+            args: args.iter().map(ToString::to_string).collect(),
+            failure: CommandFailure::NonZeroExit {
+                exit_code: output.exit_code,
+                stderr: output.stderr.clone(),
+            },
+        }),
+        Err(error) => Err(error),
+    }
+}
+
+/// Classifies an HTTP response before parsing a GitHub Release body. A 404
+/// proves absence; all other non-success statuses leave remote identity
+/// unknown. In particular, authentication, rate-limit, and server failures
+/// must never be reported as a conflicting release or asset.
+fn github_release_response_status(status: u16) -> Option<ProviderObservationV1> {
+    match status {
+        200 => None,
+        404 => Some(ProviderObservationV1::Absent),
+        _ => Some(ProviderObservationV1::Indeterminate),
+    }
+}
+
 fn derive_release_intent<R: CommandRunner, D: DependencyResolver>(
     workspace: &Workspace<'_, R, D>,
     decision: &ReleaseDecisionV1,
+    profile: ReleaseProfileId,
     source: SourceIdentity,
     trust_profile: ExecutionTrustProfileV1,
+    artifact_policy: Option<&ArtifactBuildPolicy>,
 ) -> Result<ReleaseIntentV1, GraphError> {
-    let (snapshot, operations, _, _) = derive_release_inputs(workspace, decision, source)?;
+    let (snapshot, operations, _, _, slots) =
+        derive_release_inputs(workspace, decision, &profile, source, artifact_policy)?;
     Ok(ReleaseIntentV1::new(
+        profile,
         decision.clone(),
         snapshot,
         trust_profile,
         operations,
-        vec![],
+        slots,
     )?)
+}
+
+/// The externally stable product-asset names. Keeping this mapping in the
+/// graph layer makes the durable slot identity and installer contract share a
+/// single release-domain spelling rather than teaching workflow YAML how to
+/// invent filenames.
+fn product_asset_name(target: &str) -> Option<&'static str> {
+    match target {
+        "aarch64-apple-darwin" => Some("callisto-aarch64-apple-darwin.tar.gz"),
+        "x86_64-unknown-linux-gnu" => Some("callisto-x86_64-unknown-linux-gnu.tar.gz"),
+        "x86_64-unknown-linux-musl" => Some("callisto-x86_64-unknown-linux-musl.tar.gz"),
+        "wasm32-wasip1" => Some("callisto-moon.wasm"),
+        _ => None,
+    }
 }
 
 fn derive_release_intent_with_prepared<R: CommandRunner, D: DependencyResolver>(
     workspace: &Workspace<'_, R, D>,
     decision: &ReleaseDecisionV1,
+    profile: ReleaseProfileId,
     source: SourceIdentity,
     trust_profile: ExecutionTrustProfileV1,
+    artifact_policy: Option<&ArtifactBuildPolicy>,
 ) -> Result<(ReleaseIntentV1, PreparedDerivation), GraphError> {
-    let (snapshot, operations, prepared, git_remote) = derive_release_inputs(workspace, decision, source)?;
-    let intent = ReleaseIntentV1::new(decision.clone(), snapshot, trust_profile, operations, vec![])?;
+    let (snapshot, operations, prepared, git_remote, slots) =
+        derive_release_inputs(workspace, decision, &profile, source, artifact_policy)?;
+    let intent = ReleaseIntentV1::new(profile, decision.clone(), snapshot, trust_profile, operations, slots)?;
     Ok((
         intent,
         PreparedDerivation {
@@ -903,11 +1281,39 @@ fn derive_release_intent_with_prepared<R: CommandRunner, D: DependencyResolver>(
     ))
 }
 
+fn artifact_policy_from_intent(intent: &ReleaseIntentV1) -> Result<Option<ArtifactBuildPolicy>, GraphError> {
+    let Some(first) = intent.artifact_slots.first() else {
+        return Ok(None);
+    };
+    let policy = &first.attestation_policy;
+    if intent
+        .artifact_slots
+        .iter()
+        .any(|slot| slot.attestation_policy != *policy)
+    {
+        return Err(GraphError::ReleaseInvariant {
+            detail: "release intent mixes artifact attestation policies".to_owned(),
+        });
+    }
+    Ok(Some(ArtifactBuildPolicy {
+        repository: policy.repository.clone(),
+        workflow_path: policy.workflow_path.clone(),
+        workflow_commit: policy.workflow_commit.clone(),
+    }))
+}
+
 fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
     workspace: &Workspace<'_, R, D>,
     decision: &ReleaseDecisionV1,
+    profile: &ReleaseProfileId,
     source: SourceIdentity,
+    artifact_policy: Option<&ArtifactBuildPolicy>,
 ) -> Result<DerivedReleaseInputs, GraphError> {
+    let profile_config = workspace
+        .config
+        .product_release
+        .as_ref()
+        .and_then(|release| release.profile(profile));
     let mut package_inputs = Vec::new();
 
     let mut selected = BTreeMap::new();
@@ -943,11 +1349,26 @@ fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
     let git_remote = requires_git_remote
         .then(|| prepared_git_remote(&workspace.root, workspace.runner))
         .transpose()?;
+    if let Some(policy) = artifact_policy {
+        let remote = git_remote
+            .as_ref()
+            .and_then(|remote| remote.github_repository.as_ref())
+            .ok_or(GraphError::ReleasePreconditionUnmet {
+                requirement: ReleasePreconditionRequirement::GitHubRemote,
+            })?;
+        if remote != &policy.repository {
+            return Err(GraphError::ReleaseArtifactRepositoryMismatch {
+                configured: policy.repository.clone(),
+                remote: remote.clone(),
+            });
+        }
+    }
 
     let mut operations = BTreeMap::<ReleaseOperationId, ReleaseOperation>::new();
     let mut prepared = BTreeMap::<ReleaseOperationId, PreparedOperation>::new();
     let mut publishes_by_package = BTreeMap::<ReleasePackageId, Vec<ReleaseOperationId>>::new();
     let mut tag_by_package = BTreeMap::<ReleasePackageId, ReleaseOperationId>::new();
+    let mut forge_by_package = BTreeMap::<ReleasePackageId, ReleaseOperationId>::new();
 
     // First construct leaves so dependency prerequisites can refer only to
     // exact selected release identities, never PackageId's wildcard matcher.
@@ -962,6 +1383,7 @@ fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
             package,
             version,
             produces_tag.then_some(git_remote.as_ref()).flatten(),
+            profile_config,
         )?;
         package_inputs.push(ReleasePackageInputV1 {
             package: id.clone(),
@@ -971,12 +1393,11 @@ fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
         let mut publishes = Vec::new();
         for target in &package.publish_to {
             if target.ecosystem() == Some(id.ecosystem()) {
-                let registry_key = target.registry_key().expect("registry target has registry key");
-                let binding = prepared_registry_binding(workspace, target)?;
+                let binding = prepared_registry_binding(workspace, target, profile_config)?;
                 let operation = ReleaseOperation::registry_publish(
                     id.clone(),
                     version.clone(),
-                    RegistryBindingId::new(registry_key.as_str(), binding.identity.clone())?,
+                    RegistryBindingId::new(binding.key.as_str(), binding.identity.clone())?,
                     Vec::new(),
                 )?;
                 // A durable registry operation must have one exact endpoint
@@ -1100,7 +1521,58 @@ fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
                 }
             };
             prepared.insert(operation.id().clone(), PreparedOperation::ForgeRelease { tag });
+            forge_by_package.insert(id.clone(), operation.id().clone());
             operations.insert(operation.id().clone(), operation);
+        }
+    }
+
+    let mut artifact_slots = Vec::new();
+    if let (Some(product), Some(policy)) = (&workspace.config.product_release, artifact_policy) {
+        for (id, (package, version)) in &selected {
+            // Workspace package identities may remain bare even when a
+            // policy intentionally qualifies the product by ecosystem. Use
+            // the model's compatibility relation and retain the explicit
+            // ecosystem check so a same-name package in another ecosystem
+            // cannot acquire the product's binary release slots.
+            if !product.package.matches(&package.id) || product.package.ecosystem() != Some(id.ecosystem()) {
+                continue;
+            }
+            let forge = forge_by_package.get(id).ok_or_else(|| GraphError::ReleaseInvariant {
+                detail: format!("product package `{id}` has no forge release operation"),
+            })?;
+            let tag = match prepared.get(forge) {
+                Some(PreparedOperation::ForgeRelease { tag }) => tag.clone(),
+                _ => {
+                    return Err(GraphError::ReleaseInvariant {
+                        detail: format!("product forge release `{forge:?}` is not prepared"),
+                    })
+                }
+            };
+            for target in &product.artifact_targets {
+                let asset_name = product_asset_name(target).expect("validated product target");
+                let slot = ArtifactSlotId::new(
+                    id.clone(),
+                    version.clone(),
+                    target,
+                    asset_name,
+                    policy.repository.clone(),
+                    policy.workflow_path.clone(),
+                    policy.workflow_commit.clone(),
+                )
+                .map_err(|error| GraphError::ReleaseInvariant {
+                    detail: format!("invalid configured artifact slot: {error}"),
+                })?;
+                let operation = ReleaseOperation::artifact_upload(slot.clone(), vec![forge.clone()])?;
+                prepared.insert(
+                    operation.id().clone(),
+                    PreparedOperation::ArtifactUpload {
+                        slot: slot.clone(),
+                        tag: tag.clone(),
+                    },
+                );
+                operations.insert(operation.id().clone(), operation);
+                artifact_slots.push(slot);
+            }
         }
     }
 
@@ -1109,6 +1581,7 @@ fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
         canonical_operation_order(operations)?,
         prepared,
         git_remote,
+        artifact_slots,
     ))
 }
 
@@ -1118,6 +1591,7 @@ fn package_fingerprint<R: CommandRunner, D: DependencyResolver>(
     package: &callisto_model::Package,
     version: &Version,
     git_remote: Option<&PreparedGitRemote>,
+    profile: Option<&ReleaseProfileConfig>,
 ) -> Result<SemanticInputDigest, GraphError> {
     let mut transcript = CanonicalTranscript::semantic_input_v1();
     transcript.push_str("package.id", &id.to_string());
@@ -1142,7 +1616,10 @@ fn package_fingerprint<R: CommandRunner, D: DependencyResolver>(
             .map_or_else(|| "default".to_string(), |tag| tag.as_str()),
     );
     for target in &package.publish_to {
-        transcript.push_str("package.target", target_fingerprint(workspace, target)?.as_str());
+        transcript.push_str(
+            "package.target",
+            target_fingerprint(workspace, target, profile)?.as_str(),
+        );
     }
     if let Some(remote) = git_remote {
         transcript.push_str("package.gitRemote", remote.identity.as_str());
@@ -1260,6 +1737,7 @@ impl RegistryBindingV1 {
 fn target_fingerprint<R: CommandRunner, D: DependencyResolver>(
     workspace: &Workspace<'_, R, D>,
     target: &PublishTarget,
+    profile: Option<&ReleaseProfileConfig>,
 ) -> Result<SemanticInputDigest, GraphError> {
     let mut transcript = CanonicalTranscript::semantic_input_v1();
     // Single source of truth for the "kind" string, shared with
@@ -1267,9 +1745,18 @@ fn target_fingerprint<R: CommandRunner, D: DependencyResolver>(
     // instead of re-hardcoding these per-variant literals here too.
     transcript.push_str("target.kind", target.config_str());
     match target {
-        PublishTarget::CratesIo | PublishTarget::GitHubRelease | PublishTarget::None => {}
+        PublishTarget::GitHubRelease | PublishTarget::None => {}
+        PublishTarget::CratesIo => {
+            push_registry_binding(
+                &mut transcript,
+                prepared_registry_binding(workspace, target, profile)?.identity,
+            )?;
+        }
         PublishTarget::Npm { access, .. } => {
-            push_registry_binding(&mut transcript, prepared_registry_binding(workspace, target)?.identity)?;
+            push_registry_binding(
+                &mut transcript,
+                prepared_registry_binding(workspace, target, profile)?.identity,
+            )?;
             transcript.push_str(
                 "target.access",
                 match access {
@@ -1280,7 +1767,10 @@ fn target_fingerprint<R: CommandRunner, D: DependencyResolver>(
             );
         }
         PublishTarget::Pypi { .. } | PublishTarget::NuGet { .. } => {
-            push_registry_binding(&mut transcript, prepared_registry_binding(workspace, target)?.identity)?;
+            push_registry_binding(
+                &mut transcript,
+                prepared_registry_binding(workspace, target, profile)?.identity,
+            )?;
         }
         #[allow(unreachable_patterns)]
         _ => {
@@ -1303,11 +1793,47 @@ fn push_registry_binding(
 fn prepared_registry_binding<R: CommandRunner, D: DependencyResolver>(
     workspace: &Workspace<'_, R, D>,
     target: &PublishTarget,
+    profile: Option<&ReleaseProfileConfig>,
 ) -> Result<PreparedRegistryBinding, GraphError> {
-    let key = target.registry_key().ok_or_else(|| GraphError::ReleaseInvariant {
+    let logical_key = target.registry_key().ok_or_else(|| GraphError::ReleaseInvariant {
         detail: format!("publish target `{}` has no registry key", target.config_str()),
     })?;
-    let explicit = target.registry_override();
+    let key = profile
+        .map(|profile| {
+            profile
+                .registry_routes
+                .get(&logical_key)
+                .cloned()
+                .ok_or_else(|| GraphError::ReleaseInvariant {
+                    detail: format!(
+                        "release profile has no registry route for logical registry `{}`",
+                        logical_key.as_str()
+                    ),
+                })
+        })
+        .transpose()?
+        .unwrap_or_else(|| logical_key.clone());
+    let configured_registry = workspace
+        .config
+        .registries
+        .get(&key)
+        .ok_or_else(|| GraphError::ReleaseInvariant {
+            detail: format!(
+                "release profile routes `{}` to unknown registry `{}`",
+                logical_key.as_str(),
+                key.as_str()
+            ),
+        })?;
+    if Some(configured_registry.kind) != target.ecosystem() {
+        return Err(GraphError::ReleaseInvariant {
+            detail: format!(
+                "release profile routes `{}` to registry `{}` with incompatible ecosystem",
+                logical_key.as_str(),
+                key.as_str()
+            ),
+        });
+    }
+    let explicit = (key == logical_key).then(|| target.registry_override()).flatten();
     let configured = workspace
         .config
         .registries
@@ -1800,6 +2326,7 @@ mod tests {
             &locator,
             &runner,
             &decision,
+            ReleaseProfileId::parse("production").unwrap(),
             ExecutionTrustProfileV1::GitCommit,
         )
         .unwrap();
@@ -1825,6 +2352,7 @@ mod tests {
             &locator,
             &runner,
             &decision(),
+            ReleaseProfileId::parse("production").unwrap(),
             ExecutionTrustProfileV1::GitCommit,
         )
         .unwrap();
@@ -1861,6 +2389,24 @@ mod tests {
     }
 
     #[test]
+    fn product_asset_names_are_target_qualified_and_complete() {
+        assert_eq!(
+            product_asset_name("aarch64-apple-darwin"),
+            Some("callisto-aarch64-apple-darwin.tar.gz")
+        );
+        assert_eq!(
+            product_asset_name("x86_64-unknown-linux-gnu"),
+            Some("callisto-x86_64-unknown-linux-gnu.tar.gz")
+        );
+        assert_eq!(
+            product_asset_name("x86_64-unknown-linux-musl"),
+            Some("callisto-x86_64-unknown-linux-musl.tar.gz")
+        );
+        assert_eq!(product_asset_name("wasm32-wasip1"), Some("callisto-moon.wasm"));
+        assert_eq!(product_asset_name("unsupported"), None);
+    }
+
+    #[test]
     fn registry_binding_normalizes_host_and_default_port_without_retaining_url() {
         let explicit = canonical_registry_binding("test", "HTTPS://Registry.Example.Test:443/a/../index").unwrap();
         let implicit = canonical_registry_binding("test", "https://registry.example.test/index").unwrap();
@@ -1868,6 +2414,28 @@ mod tests {
         assert_eq!(explicit.host, "registry.example.test");
         assert_eq!(explicit.effective_port, Some(443));
         assert_eq!(explicit.path, "/index");
+    }
+
+    #[test]
+    fn profile_registry_route_replaces_the_logical_crates_io_destination() {
+        let (dir, runner) = fixture();
+        std::fs::write(
+            dir.path().join("callisto.toml"),
+            "[release]\nproduct-package = \"cargo/release-fixture\"\nartifact-targets = [\n  \"aarch64-apple-darwin\",\n  \"x86_64-unknown-linux-gnu\",\n  \"x86_64-unknown-linux-musl\",\n  \"wasm32-wasip1\",\n]\n\n[release.profiles.rehearsal]\nforge-repository = \"example/rehearsal\"\nregistry-routes = { cratesIo = \"rehearsal-cargo\" }\n\n[registries.rehearsal-cargo]\nkind = \"cargo\"\nurl = \"https://registry.example.test/index\"\n\n[[package]]\nmatch = \"release-fixture\"\npublish-to = [\"crates-io\"]\n",
+        )
+        .unwrap();
+        let locator = crate::IgnoreWalkLocator::new(dir.path());
+        let workspace = Workspace::load(dir.path().to_path_buf(), &locator, &runner).unwrap();
+        let profile = workspace
+            .config
+            .product_release
+            .as_ref()
+            .and_then(|release| release.profile(&ReleaseProfileId::parse("rehearsal").unwrap()))
+            .unwrap();
+
+        let binding = prepared_registry_binding(&workspace, &PublishTarget::CratesIo, Some(profile)).unwrap();
+        assert_eq!(binding.key.as_str(), "rehearsal-cargo");
+        assert_eq!(binding.endpoint.as_deref(), Some("https://registry.example.test/index"));
     }
 
     #[test]
@@ -1895,6 +2463,30 @@ mod tests {
     }
 
     #[test]
+    fn github_api_response_preserves_a_parseable_not_found_on_nonzero_exit() {
+        let output = CommandOutput {
+            exit_code: Some(1),
+            stdout: "HTTP/2 404\r\ncontent-type: application/json\r\n\r\n{\"message\":\"Not Found\"}".to_owned(),
+            stderr: "gh: Not Found (HTTP 404)".to_owned(),
+        };
+        let (status, _) = github_api_response("gh", &["api"], &output).unwrap();
+        assert_eq!(status, 404);
+    }
+
+    #[test]
+    fn github_release_status_only_proves_absence_for_not_found() {
+        assert_eq!(github_release_response_status(200), None);
+        assert_eq!(github_release_response_status(404), Some(ProviderObservationV1::Absent));
+        for status in [401, 403, 429, 500, 503] {
+            assert_eq!(
+                github_release_response_status(status),
+                Some(ProviderObservationV1::Indeterminate),
+                "HTTP {status} must not be reported as a conflicting remote release"
+            );
+        }
+    }
+
+    #[test]
     fn prepared_capability_retains_exact_tag_and_registry_inputs() {
         let (dir, runner) = fixture();
         let state_dir = tempfile::tempdir().unwrap();
@@ -1904,6 +2496,7 @@ mod tests {
             &locator,
             &runner,
             &decision(),
+            ReleaseProfileId::parse("production").unwrap(),
             ExecutionTrustProfileV1::GitCommit,
         )
         .unwrap();
@@ -1963,6 +2556,7 @@ mod tests {
             &locator,
             &runner,
             &decision(),
+            ReleaseProfileId::parse("production").unwrap(),
             ExecutionTrustProfileV1::GitCommit,
         )
         .unwrap();
@@ -1995,7 +2589,7 @@ mod tests {
             .success());
         assert_eq!(
             validated
-                .dispatch_prepared(&callisto_model::ApplyPermit::force_for_tests(), &tag_id)
+                .dispatch_prepared(&callisto_model::ApplyPermit::force_for_tests(), &tag_id, None)
                 .unwrap(),
             OperationOutcome::AlreadySatisfied
         );
@@ -2011,6 +2605,7 @@ mod tests {
             &locator,
             &runner,
             &decision(),
+            ReleaseProfileId::parse("production").unwrap(),
             ExecutionTrustProfileV1::GitCommit,
         )
         .unwrap();
@@ -2047,7 +2642,7 @@ mod tests {
             .unwrap()
             .success());
         assert!(matches!(
-            validated.dispatch_prepared(&callisto_model::ApplyPermit::force_for_tests(), &tag_id),
+            validated.dispatch_prepared(&callisto_model::ApplyPermit::force_for_tests(), &tag_id, None),
             Err(GraphError::ReleaseRemoteConflict {
                 conflict: RemoteConflict::TagTargetDiffers
             })
@@ -2061,8 +2656,14 @@ mod tests {
         let root = canonical_root(dir.path()).unwrap();
         let workspace = Workspace::load(root.clone(), &locator, &runner).unwrap();
         let source = observe_source(&workspace, ExecutionTrustProfileV1::GitCommit).unwrap();
-        let (before_snapshot, before_operations, _, _) =
-            derive_release_inputs(&workspace, &decision(), source.clone()).unwrap();
+        let (before_snapshot, before_operations, _, _, _) = derive_release_inputs(
+            &workspace,
+            &decision(),
+            &ReleaseProfileId::parse("production").unwrap(),
+            source.clone(),
+            None,
+        )
+        .unwrap();
 
         std::fs::write(
             root.join("callisto.toml"),
@@ -2070,7 +2671,14 @@ mod tests {
         )
         .unwrap();
         let reread = Workspace::load(root, &locator, &runner).unwrap();
-        let (after_snapshot, after_operations, _, _) = derive_release_inputs(&reread, &decision(), source).unwrap();
+        let (after_snapshot, after_operations, _, _, _) = derive_release_inputs(
+            &reread,
+            &decision(),
+            &ReleaseProfileId::parse("production").unwrap(),
+            source,
+            None,
+        )
+        .unwrap();
 
         assert_eq!(before_snapshot, after_snapshot);
         assert_eq!(before_operations, after_operations);

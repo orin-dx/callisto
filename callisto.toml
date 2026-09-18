@@ -18,8 +18,29 @@ members = [
 [changesets]
 dir = ".changeset"
 
+[release]
+product-package = "cargo/callisto-cli"
+artifact-targets = [
+    "aarch64-apple-darwin",
+    "x86_64-unknown-linux-gnu",
+    "x86_64-unknown-linux-musl",
+    "wasm32-wasip1",
+]
+
+[release.profiles.production]
+forge-repository = "orin-dx/callisto"
+registry-routes = { cratesIo = "cratesIo" }
+
 [cascade]
 mode = "out-of-range"
 bump-severity = "patch"
 peer-escalation = true
 preserve-npm-ranges = true
+
+# The CLI is the product distributed from GitHub Releases. The other fixed
+# group members retain their ecosystem package identities and registry
+# publication; only this release target owns the cross-platform binaries.
+[[package]]
+match = "cargo/callisto-cli"
+publish-to = ["crates-io", "github-release"]
+tag-template = "callisto@{version}"

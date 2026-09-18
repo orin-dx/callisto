@@ -1,0 +1,75 @@
+{
+  "id": "SPEC-SELF-RELEASE-LIFECYCLE",
+  "purpose": "Define one recoverable, provider-observed release lifecycle for Callisto so that a reviewed managed release merge automatically releases exactly its committed version, can be resumed safely after interruption, and never treats workflow structure or local state as proof of publication.",
+  "scope": "The Callisto release domain model, graph coordinator, CLI, GitHub Actions adapter, binary assets, hermetic behavioral test harness, release documentation, and merge governance required before the next self-release.",
+  "non_goals": [
+    "A second manual approval or a GitHub Environment reviewer gate.",
+    "Publishing a new version merely to recover an unpublished merged version.",
+    "Treating a local execution-state file as the authority for remote publication.",
+    "Apple Developer signing, notarization, or an owner-specific certificate before a project policy and safe credential model exist.",
+    "Inventing a staging registry endpoint, credentials, or external service that the owner has not provisioned."
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "SRL-01",
+      "criterion": "A verified merge of a managed release PR is the only publication authorization; the release workflow contains no GitHub Environment assignment, required-reviewer gate, or equivalent second approval."
+    },
+    {
+      "id": "SRL-02",
+      "criterion": "Release orchestration is modeled by a serializable run envelope that records the exact orchestration revision, release-source revision, immutable intent digest, selected profile, and artifact-manifest digest."
+    },
+    {
+      "id": "SRL-03",
+      "criterion": "A recovery invocation accepts an explicit full release-source SHA, verifies it is an allowed merged managed-release commit, creates fresh intent and artifacts from that source, and does not invoke versioning or create a version PR.",
+      "is_error_case": true
+    },
+    {
+      "id": "SRL-04",
+      "criterion": "The current Callisto CLI and workflow revision remain distinct from the checked-out release source during recovery; tests prove that a post-failure orchestration fix can recover an older unpublished release source."
+    },
+    {
+      "id": "SRL-05",
+      "criterion": "All release lifecycle semantics--source validation, provenance, planning, observation, transition selection, resume, terminality, receipt construction, and artifact-slot validation--have one CLI/graph owner; Actions only supplies scheduling, isolated checkouts, artifact transport, credentials to execute, and command invocation."
+    },
+    {
+      "id": "SRL-06",
+      "criterion": "Before every effect and on every resume, each registry publication, Git tag, forge release, and artifact upload is provider-observed as absent, exact success, conflict, or indeterminate; indeterminate and conflict states fail closed with typed diagnostics."
+    },
+    {
+      "id": "SRL-07",
+      "criterion": "An exact pre-existing remote effect is recorded as already satisfied without attempting a duplicate publication; a same-identity version whose remote contents do not match the immutable intent is reported as a conflict."
+    },
+    {
+      "id": "SRL-08",
+      "criterion": "A process interruption after persisting Attempting can be resumed on a fresh runner with no prior local state by reconstructing progress from the immutable run envelope and provider observations; it cannot return success while any operation is incomplete."
+    },
+    {
+      "id": "SRL-09",
+      "criterion": "A release receipt is emitted only after every required operation is provider-observed as terminal success or already satisfied, and the receipt includes provenance and per-operation observation evidence."
+    },
+    {
+      "id": "SRL-10",
+      "criterion": "The production release plan includes attested binary asset slots for aarch64-apple-darwin, x86_64-unknown-linux-gnu, x86_64-unknown-linux-musl, and wasm32-wasip1; each validated asset is attached to the product-level GitHub Release."
+    },
+    {
+      "id": "SRL-11",
+      "criterion": "A release profile is consumed by the release lifecycle. The production profile has one explicit destination; any future non-production profile must use isolated destinations, and shared forge destinations or registry endpoints are rejected before any effect."
+    },
+    {
+      "id": "SRL-12",
+      "criterion": "Executable behavioral tests cover fresh release, recovery, hidden and nested artifact transport, clean source worktrees, source/orchestration identity separation, job-local Git credentials, no-secret plan/build jobs, partial provider success, provider conflict, and receipt emission; line-oriented YAML checks remain only as narrow policy guards."
+    },
+    {
+      "id": "SRL-13",
+      "criterion": "The repository requires the concrete verification checks used as release evidence before merge, while merge remains the sole release authorization boundary."
+    },
+    {
+      "id": "SRL-14",
+      "criterion": "Documentation, CLI help, configuration examples, tests, and workflow behavior describe the same release lifecycle; obsolete preview-only release paths are removed rather than retained as a second implementation."
+    }
+  ],
+  "linked_requirement": "RELEASE-SELF-HOSTING-INCIDENT-2026-09-16",
+  "spec_file_path": "docs/specs/SPEC-SELF-RELEASE-LIFECYCLE.json",
+  "revision_note": "This structural specification supersedes piecemeal recovery workflow patches. It preserves already-correct no-approval and terminality fixes but requires the unconsumed profile model and workflow-only provenance handoff to be either integrated into the canonical lifecycle or removed. The owner decision on 2026-09-17 keeps the implemented rehearsal hermetic; an external registry is not a current release dependency.",
+  "reasoning": "Grounded in the owner-authoritative incident report and live source inspection on 2026-09-17. The owner explicitly rejected AWS and another distribution service for rehearsal, so external staging registry selection is deferred rather than fabricated."
+}

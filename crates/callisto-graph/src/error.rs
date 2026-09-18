@@ -519,6 +519,60 @@ pub enum GraphError {
         )
     )]
     ReleaseInvariant { detail: String },
+
+    #[error("release execution is incomplete: {count} operation(s) lack verified terminal success")]
+    #[diagnostic(
+        code(E172),
+        help("Use release reconcile to inspect the exact incomplete operations; do not treat this release as successful.")
+    )]
+    ReleaseIncomplete { count: usize },
+
+    #[error("artifact repository `{configured}` does not match the prepared GitHub push remote `{remote}`")]
+    #[diagnostic(
+        code(E175),
+        help("Use the repository derived from the trusted Git remote; Callisto will not upload product assets to a caller-selected repository.")
+    )]
+    ReleaseArtifactRepositoryMismatch {
+        configured: callisto_model::GitHubRepository,
+        remote: callisto_model::GitHubRepository,
+    },
+
+    #[error(
+        "cannot safely resume release operation `{operation:?}` because its provider observation is {observation:?}"
+    )]
+    #[diagnostic(
+        code(E173),
+        help(
+            "Do not retry this effect. Resolve the provider state or add an exact provider observer before resuming the immutable release intent."
+        )
+    )]
+    ReleaseRecoveryUnresolved {
+        operation: Box<callisto_model::ReleaseOperationId>,
+        observation: callisto_model::ProviderObservationV1,
+    },
+
+    #[error("cannot dispatch release operation `{operation:?}` because its provider observation is indeterminate")]
+    #[diagnostic(
+        code(E176),
+        help(
+            "Restore provider credentials or connectivity, then retry. Callisto will not dispatch an effect while it cannot determine the remote identity."
+        )
+    )]
+    ReleaseProviderIndeterminate {
+        operation: Box<callisto_model::ReleaseOperationId>,
+    },
+
+    #[error("registry version already exists for `{package}` at {version}")]
+    #[diagnostic(
+        code(E174),
+        help(
+            "Do not publish this version again. Verify the release history and choose an explicitly selected recovery run only if the immutable intent matches the existing release."
+        )
+    )]
+    ReleaseRegistryVersionExists {
+        package: String,
+        version: callisto_model::Version,
+    },
 }
 
 /// Why a workspace package that a `--package` filter named is nonetheless
@@ -580,8 +634,10 @@ pub enum RemoteConflict {
     ForgeReleaseDiffers,
     #[error("a forge release was created but was not observed afterward")]
     ForgeReleaseNotObservedAfterCreate,
-    #[error("the forge API returned an unexpected status")]
-    ForgeApiStatus,
+    #[error("a release asset already exists with a different digest or length")]
+    ArtifactDiffers,
+    #[error("an uploaded release asset was not observed afterward")]
+    ArtifactNotObservedAfterUpload,
 }
 
 /// A release feature with no implemented dispatch for the given
@@ -626,6 +682,8 @@ pub enum ReleasePreconditionRequirement {
     ChangelogConfigured,
     #[error("a provided artifact manifest")]
     ArtifactManifestProvided,
+    #[error("a verified artifact manifest")]
+    VerifiedArtifactManifest,
 }
 
 #[cfg(test)]
@@ -730,6 +788,13 @@ pub enum ConfigError {
         help("Use a forward-slash-separated path relative to the package root that does not contain '..' components.")
     )]
     InvalidChangelogPath { pattern: String, value: String },
+
+    #[error("invalid product release configuration: {detail}")]
+    #[diagnostic(
+        code(E197),
+        help("Configure one supported product package and all four required artifact targets.")
+    )]
+    InvalidProductRelease { detail: String },
 
     #[error(transparent)]
     Tag(#[from] TagTemplateError),

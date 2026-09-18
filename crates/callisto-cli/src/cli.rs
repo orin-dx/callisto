@@ -266,6 +266,8 @@ pub enum ReleaseArgs {
     Inspect(ReleaseInspectArgs),
     /// Report which pending operations are eligible without changing release state.
     Reconcile(ReleaseReconcileArgs),
+    /// Create the exact artifact manifest for a completed intent-bound build.
+    ArtifactManifest(ReleaseArtifactManifestArgs),
     /// Execute a previously approved intent. This is the only durable mutation route.
     Execute(ReleaseExecuteArgs),
 }
@@ -322,6 +324,21 @@ pub struct ReleasePrCommitPlanArgs {
 
 #[derive(Args, Clone, Debug)]
 pub struct ReleasePlanArgs {
+    /// Credential-free release destination profile bound into the immutable
+    /// intent. Execution must use this same profile.
+    #[arg(long, default_value = "production", value_name = "PROFILE")]
+    pub profile: String,
+    /// Read the release source from this checkout while the Callisto binary
+    /// itself may come from a separate, current orchestration checkout.
+    #[arg(long, value_name = "DIR")]
+    pub source_root: Option<PathBuf>,
+    /// Exact current coordinator revision whose workflow will attest product assets.
+    #[arg(long, value_name = "SHA")]
+    pub orchestration_revision: Option<String>,
+    /// GitHub repository receiving the product release assets, for example
+    /// `orin-dx/callisto`. Required when the workspace declares product assets.
+    #[arg(long, value_name = "OWNER/REPOSITORY", requires = "orchestration_revision")]
+    pub artifact_repository: Option<String>,
     /// Exact qualified package identity, for example `cargo/callisto-cli`. Repeat this flag to select multiple packages. This local/manual mode cannot be combined with --from-release-commit.
     #[arg(
         long = "package",
@@ -370,7 +387,24 @@ pub struct ReleaseReconcileArgs {
 }
 
 #[derive(Args, Clone, Debug)]
+pub struct ReleaseArtifactManifestArgs {
+    /// Exact durable release intent that declares the expected artifact slots.
+    #[arg(long, value_name = "FILE")]
+    pub intent: PathBuf,
+    /// Directory containing one regular file for every declared artifact slot.
+    #[arg(long, value_name = "DIR")]
+    pub artifact_dir: PathBuf,
+    /// Explicit path where the artifact manifest will be atomically written.
+    #[arg(long, value_name = "FILE")]
+    pub out: PathBuf,
+}
+
+#[derive(Args, Clone, Debug)]
 pub struct ReleaseExecuteArgs {
+    /// Validate and execute against this exact release-source checkout. The
+    /// current CLI/orchestration checkout is never inferred from this path.
+    #[arg(long, value_name = "DIR")]
+    pub source_root: Option<PathBuf>,
     /// Explicit path to the durable release intent JSON document.
     #[arg(long, value_name = "FILE")]
     pub intent: PathBuf,
@@ -384,6 +418,20 @@ pub struct ReleaseExecuteArgs {
     /// Explicit durable state path. If omitted, state is stored outside the checkout.
     #[arg(long, value_name = "FILE")]
     pub state: Option<PathBuf>,
+    /// Write the terminal, provider-observed receipt to this explicit path.
+    /// A release is not reported successful until this receipt is written.
+    #[arg(long, value_name = "FILE")]
+    pub receipt: PathBuf,
+    /// Exact current coordinator revision that executed this release.
+    #[arg(long, value_name = "SHA")]
+    pub orchestration_revision: String,
+    /// Credential-free target profile identity recorded in the receipt.
+    #[arg(long, default_value = "production", value_name = "PROFILE")]
+    pub profile: String,
+    /// Record this explicitly selected run as recovery of a historic merged
+    /// release source. It never changes the coordinator revision.
+    #[arg(long)]
+    pub recovery: bool,
 }
 
 /// Arguments for the `completions` command.
@@ -476,6 +524,25 @@ mod tests {
             "release-decision.json",
             "--out",
             "intent.json",
+        ])
+        .is_ok());
+    }
+
+    #[test]
+    fn release_artifact_manifest_requires_all_explicit_paths() {
+        use clap::Parser;
+
+        assert!(Cli::try_parse_from(["callisto", "release", "artifact-manifest"]).is_err());
+        assert!(Cli::try_parse_from([
+            "callisto",
+            "release",
+            "artifact-manifest",
+            "--intent",
+            "intent.json",
+            "--artifact-dir",
+            "artifacts",
+            "--out",
+            "manifest.json",
         ])
         .is_ok());
     }

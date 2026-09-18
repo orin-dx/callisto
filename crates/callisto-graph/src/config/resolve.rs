@@ -3,12 +3,13 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use callisto_model::{
-    ConfigKey, Ecosystem, PackageId, PublishTarget, RegistryKey, ReleaseTrigger, Severity, TagTemplate,
+    ConfigKey, Ecosystem, GitHubRepository, PackageId, PublishTarget, RegistryKey, ReleaseProfileId, ReleaseTrigger,
+    Severity, TagTemplate,
 };
 
 use crate::config::groups::{GroupTable, RawGroupTable};
 use crate::config::pattern::PackagePattern;
-use crate::config::raw::RawConfig;
+use crate::config::raw::{RawConfig, RawProductReleaseConfig, RawReleaseProfileConfig};
 use crate::error::{ConfigError, GraphError};
 
 #[derive(Clone, Debug)]
@@ -17,6 +18,7 @@ pub struct ResolvedConfig {
     pub changesets_dir: PathBuf,
     pub cascade: CascadeConfig,
     pub validation: ValidationConfig,
+    pub product_release: Option<ProductReleaseConfig>,
     pub registries: BTreeMap<RegistryKey, RegistryConfig>,
     /// Per-package override rules from `[[package]]` blocks, in TOML declaration order.
     ///
@@ -39,6 +41,30 @@ pub struct ResolvedConfig {
     pub(crate) raw_groups: RawGroupTable,
     pub promoted_siblings: BTreeMap<String, Vec<(PackageId, BTreeSet<Ecosystem>)>>,
     provenance: BTreeMap<ConfigKey, ConfigProvenance>,
+}
+
+/// Credential-free declaration of the one product that owns GitHub binary
+/// assets. The operation builder supplies the immutable attestation policy.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProductReleaseConfig {
+    pub package: PackageId,
+    pub artifact_targets: Vec<String>,
+    pub profiles: BTreeMap<ReleaseProfileId, ReleaseProfileConfig>,
+}
+
+/// Credential-free destination facts required before a product release can
+/// plan or execute. A rehearsal registry is intentionally not synthesized:
+/// absent infrastructure leaves the rehearsal profile unavailable.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReleaseProfileConfig {
+    pub forge_repository: GitHubRepository,
+    pub registry_routes: BTreeMap<RegistryKey, RegistryKey>,
+}
+
+impl ProductReleaseConfig {
+    pub fn profile(&self, id: &ReleaseProfileId) -> Option<&ReleaseProfileConfig> {
+        self.profiles.get(id)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -122,6 +148,81 @@ pub struct ValidationConfig {
 pub struct RegistryConfig {
     pub kind: Ecosystem,
     pub url: Option<String>,
+}
+
+fn resolve_product_release(raw: RawProductReleaseConfig) -> Result<ProductReleaseConfig, ConfigError> {
+    let package = PackageId::parse(&raw.product_package).map_err(|_error| ConfigError::InvalidProductRelease {
+        detail: "product-package must be an ecosystem-qualified package identity".to_owned(),
+    })?;
+    const TARGETS: [&str; 4] = [
+        "aarch64-apple-darwin",
+        "x86_64-unknown-linux-gnu",
+        "x86_64-unknown-linux-musl",
+        "wasm32-wasip1",
+    ];
+    if raw.artifact_targets.len() != TARGETS.len()
+        || raw
+            .artifact_targets
+            .iter()
+            .any(|target| !TARGETS.contains(&target.as_str()))
+        || raw.artifact_targets.iter().collect::<BTreeSet<_>>().len() != TARGETS.len()
+    {
+        return Err(ConfigError::InvalidProductRelease {
+            detail: "artifact-targets must contain each supported product target exactly once".to_owned(),
+        });
+    }
+    let profiles = raw
+        .profiles
+        .unwrap_or_default()
+        .into_iter()
+        .map(|(name, raw)| resolve_release_profile(name, raw))
+        .collect::<Result<BTreeMap<_, _>, _>>()?;
+    for (profile, destination) in &profiles {
+        if let Some((other, _)) = profiles
+            .iter()
+            .find(|(other, candidate)| *other != profile && candidate.forge_repository == destination.forge_repository)
+        {
+            return Err(ConfigError::InvalidProductRelease {
+                detail: format!(
+                    "release profiles `{}` and `{}` share forge-repository `{}`",
+                    profile.as_str(),
+                    other.as_str(),
+                    destination.forge_repository.as_slug()
+                ),
+            });
+        }
+    }
+    Ok(ProductReleaseConfig {
+        package,
+        artifact_targets: TARGETS.iter().map(|target| (*target).to_owned()).collect(),
+        profiles,
+    })
+}
+
+fn resolve_release_profile(
+    name: String,
+    raw: RawReleaseProfileConfig,
+) -> Result<(ReleaseProfileId, ReleaseProfileConfig), ConfigError> {
+    let profile = ReleaseProfileId::parse(&name).map_err(|error| ConfigError::InvalidProductRelease {
+        detail: format!("release profile `{name}` is invalid: {error}"),
+    })?;
+    let forge_repository =
+        GitHubRepository::parse(&raw.forge_repository).map_err(|error| ConfigError::InvalidProductRelease {
+            detail: format!("release profile `{name}` has invalid forge-repository: {error}"),
+        })?;
+    let registry_routes = raw
+        .registry_routes
+        .unwrap_or_default()
+        .into_iter()
+        .map(|(logical, destination)| (RegistryKey(logical), RegistryKey(destination)))
+        .collect();
+    Ok((
+        profile,
+        ReleaseProfileConfig {
+            forge_repository,
+            registry_routes,
+        },
+    ))
 }
 
 /// Per-package overrides from a `[[package]]` block in `callisto.toml`.
@@ -307,6 +408,7 @@ pub fn load(root: &Path) -> Result<ResolvedConfig, ConfigError> {
     };
 
     let mut provenance = BTreeMap::new();
+    let product_release = raw.release.map(resolve_product_release).transpose()?;
 
     let changesets_dir_str = raw
         .changesets
@@ -401,6 +503,9 @@ pub fn load(root: &Path) -> Result<ResolvedConfig, ConfigError> {
             registries.insert(key, RegistryConfig { kind, url: reg.url });
         }
     }
+    if let Some(release) = product_release.as_ref() {
+        validate_release_profile_routes(release, &registries)?;
+    }
 
     let raw_groups = RawGroupTable {
         fixed: raw.fixed_group.unwrap_or_default(),
@@ -465,6 +570,7 @@ pub fn load(root: &Path) -> Result<ResolvedConfig, ConfigError> {
             preserve_npm_ranges,
         },
         validation: ValidationConfig { allow_empty_changesets },
+        product_release,
         registries,
         packages,
         package_sets,
@@ -473,6 +579,66 @@ pub fn load(root: &Path) -> Result<ResolvedConfig, ConfigError> {
         promoted_siblings: BTreeMap::new(),
         provenance,
     })
+}
+
+fn validate_release_profile_routes(
+    release: &ProductReleaseConfig,
+    registries: &BTreeMap<RegistryKey, RegistryConfig>,
+) -> Result<(), ConfigError> {
+    for (profile, destination) in &release.profiles {
+        for (logical, actual) in &destination.registry_routes {
+            let registry = registries
+                .get(actual)
+                .ok_or_else(|| ConfigError::InvalidProductRelease {
+                    detail: format!(
+                        "release profile `{}` routes `{}` to unknown registry `{}`",
+                        profile.as_str(),
+                        logical.as_str(),
+                        actual.as_str()
+                    ),
+                })?;
+            if actual.as_str() != RegistryKey::CRATES_IO
+                && actual.as_str() != RegistryKey::NPM
+                && registry.url.is_none()
+            {
+                return Err(ConfigError::InvalidProductRelease {
+                    detail: format!(
+                        "release profile `{}` routes `{}` to registry `{}` without a credential-free URL",
+                        profile.as_str(),
+                        logical.as_str(),
+                        actual.as_str()
+                    ),
+                });
+            }
+        }
+    }
+    for (profile, destination) in &release.profiles {
+        for (other, other_destination) in &release.profiles {
+            if other <= profile {
+                continue;
+            }
+            for actual in destination.registry_routes.values() {
+                for other_actual in other_destination.registry_routes.values() {
+                    let same_key = actual == other_actual;
+                    let same_url = registries.get(actual).and_then(|registry| registry.url.as_deref())
+                        == registries
+                            .get(other_actual)
+                            .and_then(|registry| registry.url.as_deref());
+                    if same_key || same_url {
+                        return Err(ConfigError::InvalidProductRelease {
+                            detail: format!(
+                                "release profiles `{}` and `{}` share registry destination `{}`",
+                                profile.as_str(),
+                                other.as_str(),
+                                actual.as_str()
+                            ),
+                        });
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -1089,5 +1255,64 @@ mod tests {
             matches!(result.unwrap_err(), ConfigError::UnknownKey { .. }),
             "expected UnknownKey error variant"
         );
+    }
+
+    #[test]
+    fn product_release_profiles_bind_named_forge_destinations() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        fs::write(
+            tmp.path().join("callisto.toml"),
+            "[release]\nproduct-package = \"cargo/demo\"\nartifact-targets = [\n  \"aarch64-apple-darwin\",\n  \"x86_64-unknown-linux-gnu\",\n  \"x86_64-unknown-linux-musl\",\n  \"wasm32-wasip1\",\n]\n\n[release.profiles.production]\nforge-repository = \"orin-dx/callisto\"\n\n[release.profiles.rehearsal]\nforge-repository = \"orin-dx/callisto-rehearsal\"\n",
+        )
+        .expect("write callisto.toml");
+
+        let config = load(tmp.path()).expect("profile configuration must load");
+        let release = config.product_release.expect("product release config");
+        assert_eq!(
+            release
+                .profile(&ReleaseProfileId::parse("production").unwrap())
+                .expect("production profile")
+                .forge_repository
+                .as_slug(),
+            "orin-dx/callisto"
+        );
+        assert_eq!(
+            release
+                .profile(&ReleaseProfileId::parse("rehearsal").unwrap())
+                .expect("rehearsal profile")
+                .forge_repository
+                .as_slug(),
+            "orin-dx/callisto-rehearsal"
+        );
+    }
+
+    #[test]
+    fn product_release_profiles_reject_a_shared_forge_destination() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        fs::write(
+            tmp.path().join("callisto.toml"),
+            "[release]\nproduct-package = \"cargo/demo\"\nartifact-targets = [\n  \"aarch64-apple-darwin\",\n  \"x86_64-unknown-linux-gnu\",\n  \"x86_64-unknown-linux-musl\",\n  \"wasm32-wasip1\",\n]\n\n[release.profiles.production]\nforge-repository = \"orin-dx/callisto\"\n\n[release.profiles.rehearsal]\nforge-repository = \"orin-dx/callisto\"\n",
+        )
+        .expect("write callisto.toml");
+
+        assert!(matches!(
+            load(tmp.path()),
+            Err(ConfigError::InvalidProductRelease { detail }) if detail.contains("share forge-repository")
+        ));
+    }
+
+    #[test]
+    fn product_release_profiles_reject_a_shared_registry_destination() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        fs::write(
+            tmp.path().join("callisto.toml"),
+            "[release]\nproduct-package = \"cargo/demo\"\nartifact-targets = [\n  \"aarch64-apple-darwin\",\n  \"x86_64-unknown-linux-gnu\",\n  \"x86_64-unknown-linux-musl\",\n  \"wasm32-wasip1\",\n]\n\n[release.profiles.production]\nforge-repository = \"orin-dx/callisto\"\nregistry-routes = { cratesIo = \"private-cargo\" }\n\n[release.profiles.rehearsal]\nforge-repository = \"orin-dx/callisto-rehearsal\"\nregistry-routes = { cratesIo = \"private-cargo\" }\n\n[registries.private-cargo]\nkind = \"cargo\"\nurl = \"https://registry.example.test/index\"\n",
+        )
+        .expect("write callisto.toml");
+
+        assert!(matches!(
+            load(tmp.path()),
+            Err(ConfigError::InvalidProductRelease { detail }) if detail.contains("share registry destination")
+        ));
     }
 }

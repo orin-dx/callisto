@@ -43,6 +43,12 @@ test-ci:
     cargo nextest run --workspace --all-features --profile ci
     cargo test --doc --all-features
 
+# Execute the release lifecycle at the real CLI boundary with fake registry,
+# Git, forge, and attestation providers. This is deliberately separate from
+# broad workspace tests so PR CI makes the release behavior evidence visible.
+release-workflow-behavior:
+    bash .github/tests/release-workflow-behavior/run.sh
+
 # Run Clippy lints (warnings treated as errors) as a single workspace invocation.
 # Moon's per-project `cargo clippy -p $project` tasks all lock the same shared
 # target/ dir, so running them one-per-project serializes on Cargo's own build
