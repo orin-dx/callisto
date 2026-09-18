@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bmqjulrhl</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/bd46a5d6-6ee8-4403-81c4-bc01aa657e38/tasks/bmqjulrhl.output</output-file>
+<status>completed</status>
+<summary>Background command "cargo test -p callisto-moon --test moon_wasm_sandbox register_extension_matches_moon_wire_protocol --quiet &gt; /tmp/moon-wasm-retest2.log 2&gt;&amp;1; echo "EXIT=$?"" completed (exit code 0)</summary>
+</task-notification>
