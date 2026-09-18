@@ -9,7 +9,7 @@
 
 <p align="center">
   <a href="https://github.com/orin-dx/callisto/actions/workflows/callisto-ci.yml"><img src="https://github.com/orin-dx/callisto/actions/workflows/callisto-ci.yml/badge.svg" alt="CI" /></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT%20OR%20Apache--2.0-blue.svg" alt="License" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-Mixed%20MIT%20%2F%20FSL--1.1--MIT-blue.svg" alt="License" /></a>
   <a href="crates/callisto-model"><img src="https://img.shields.io/badge/unsafe_code-forbid-success.svg" alt="Safety" /></a>
 </p>
 
@@ -273,7 +273,7 @@ extensions:
 
 ## Workspace Crate Architecture
 
-Callisto is structured into 10 workspace crates divided across permissive (`MIT OR Apache-2.0`) and copyleft (`AGPL-3.0-only`) licenses:
+Callisto is structured into 10 workspace crates divided between MIT-licensed foundations and FSL-licensed product code:
 
 ```mermaid
 graph TB
@@ -309,16 +309,16 @@ graph TB
 
 | Layer | Crate | License | Purpose |
 | :--- | :--- | :--- | :--- |
-| **Layer 1** | [`callisto-model`](crates/callisto-model) | MIT/Apache-2.0 | Domain primitives, version grammars, JSON report contracts |
-| | [`callisto-format`](crates/callisto-format) | MIT/Apache-2.0 | Changeset `.md` and `pre.json` parsers and writers |
-| | [`callisto-conventional`](crates/callisto-conventional) | AGPL-3.0 | Conventional commit parsing and bump severity classification |
-| | [`callisto-changelog`](crates/callisto-changelog) | AGPL-3.0 | Markdown changelog renderer |
-| **Layer 2** | [`callisto-manifests`](crates/callisto-manifests) | AGPL-3.0 | Format-preserving manifest AST editors and atomic file writes |
-| | [`callisto-vcs`](crates/callisto-vcs) | MIT/Apache-2.0 | Native in-process Git operations powered by `gix` (gitoxide) |
-| **Layer 3** | [`callisto-graph`](crates/callisto-graph) | AGPL-3.0 | Dependency DAG solver and Tarjan SCC cycle diagnostics |
-| **Layer 4** | [`callisto-cli`](crates/callisto-cli) | AGPL-3.0 | Standalone CLI binary, colored diff previews, `miette` diagnostic cards |
-| | [`callisto-moon`](crates/callisto-moon) | AGPL-3.0 | Moon extension protocol implementation (`extism-pdk`) |
-| **Dev** | [`callisto-fixtures`](crates/callisto-fixtures) | AGPL-3.0 | Multi-ecosystem corpus and in-memory test doubles |
+| **Layer 1** | [`callisto-model`](crates/callisto-model) | MIT | Domain primitives, version grammars, JSON report contracts |
+| | [`callisto-format`](crates/callisto-format) | MIT | Changeset `.md` and `pre.json` parsers and writers |
+| | [`callisto-conventional`](crates/callisto-conventional) | FSL-1.1-MIT | Conventional commit parsing and bump severity classification |
+| | [`callisto-changelog`](crates/callisto-changelog) | FSL-1.1-MIT | Markdown changelog renderer |
+| **Layer 2** | [`callisto-manifests`](crates/callisto-manifests) | FSL-1.1-MIT | Format-preserving manifest AST editors and atomic file writes |
+| | [`callisto-vcs`](crates/callisto-vcs) | MIT | Native in-process Git operations powered by `gix` (gitoxide) |
+| **Layer 3** | [`callisto-graph`](crates/callisto-graph) | FSL-1.1-MIT | Dependency DAG solver and Tarjan SCC cycle diagnostics |
+| **Layer 4** | [`callisto-cli`](crates/callisto-cli) | FSL-1.1-MIT | Standalone CLI binary, colored diff previews, `miette` diagnostic cards |
+| | [`callisto-moon`](crates/callisto-moon) | FSL-1.1-MIT | Moon extension protocol implementation (`extism-pdk`) |
+| **Dev** | [`callisto-fixtures`](crates/callisto-fixtures) | FSL-1.1-MIT | Multi-ecosystem corpus and in-memory test doubles |
 
 ---
 

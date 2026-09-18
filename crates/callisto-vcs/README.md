@@ -12,4 +12,4 @@ Native Git repository discovery, status checking, and tag management for Callist
 
 ## License
 
-GNU Affero General Public License v3.0 (`AGPL-3.0-only`).
+MIT License (`MIT`).

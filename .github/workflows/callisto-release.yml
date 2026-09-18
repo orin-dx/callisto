@@ -186,7 +186,11 @@ jobs:
           name: release-intent
           path: ${{ runner.temp }}/release-intent
           if-no-files-found: error
-          retention-days: 1
+          # 1 day was too short: a stuck run needing "execute" re-run days
+          # later (e.g. while a workflow bug gets diagnosed and fixed) loses
+          # this artifact before the fix even lands, forcing a full rerun
+          # instead of just the failed job.
+          retention-days: 7
 
   build-artifact:
     name: Build ${{ matrix.target }} from the intent-bound source tree
@@ -267,7 +271,11 @@ jobs:
           name: release-build-${{ matrix.id }}
           path: ${{ runner.temp }}/release-artifacts/${{ matrix.asset }}
           if-no-files-found: error
-          retention-days: 1
+          # 1 day was too short: a stuck run needing "execute" re-run days
+          # later (e.g. while a workflow bug gets diagnosed and fixed) loses
+          # this artifact before the fix even lands, forcing a full rerun
+          # instead of just the failed job.
+          retention-days: 7
 
   build:
     name: Assemble attested product artifacts

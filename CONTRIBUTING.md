@@ -85,9 +85,9 @@ All manifest and configuration modifications must go through `callisto_manifests
 ### 4. Direct & Actionable Diagnostics (`miette`)
 Errors intended for CLI users must derive `miette::Diagnostic` with an explicit error code, clear diagnostic message, and actionable remediation tip.
 
-### 5. Dual Licensing Tier Respect
-- **Layer 1 Crates** (`callisto-model`, `callisto-format`): Dual-licensed under `MIT OR Apache-2.0`. Must NOT depend on AGPL-licensed crates (`callisto-graph`, `callisto-cli`, `callisto-manifests`).
-- **Layer 2-4 Crates** (`callisto-graph`, `callisto-cli`, `callisto-moon`): Licensed under `AGPL-3.0-only`.
+### 5. Licensing Tier Respect
+- **MIT foundation crates** (`callisto-model`, `callisto-format`, `callisto-vcs`): Licensed under MIT and must not depend on FSL-licensed crates.
+- **FSL product crates** (all remaining workspace crates): Licensed under canonical `FSL-1.1-MIT`, which grants an MIT license beginning two years after each release is first published.
 
 ---
 

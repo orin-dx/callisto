@@ -1,5 +1,10 @@
 # callisto — crate specification
 
+> **Current licensing policy (2026-09-16):** `callisto-model`,
+> `callisto-format`, and `callisto-vcs` are MIT-only; all other crates use
+> canonical FSL-1.1-MIT. Older license references in this historical spec do
+> not govern current manifests or releases.
+
 **Status:** IMPLEMENTED & VERIFIED (Revision 1 Implementation Spec)
 **Date:** 2026-07-24
 **Repo:** `github.com/orin-dx/callisto`
@@ -11450,7 +11455,6 @@ requirements only; it is not a second, independent sketch of the crate's shapes.
 ### 13.7 GitHub Actions Workflow & Moon Alignment (`callisto-action`)
 1. **Action Architecture**: Callisto release orchestration in CI MUST be composed as a CLI consumer using `callisto-cli` binary calls, `gh` CLI for Pull Requests, and `moon run :publish` for multi-ecosystem package publishing.
 2. **Composite Action**: `.github/actions/setup-callisto` provides automated binary caching and installation for GitHub Actions workflows.
-
 
 
 
