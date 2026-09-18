@@ -1,0 +1,1 @@
+Yes, that's what I meant by both. Let's check on whether musl would work here or we need something else. Same for mac arm.
