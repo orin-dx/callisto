@@ -1,0 +1,8 @@
+<task-notification>
+<task-id>bf9blzsx8</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8f8eb6fc-22cd-45a0-a0c3-707f9385dbc8/tasks/bf9blzsx8.output</output-file>
+<status>completed</status>
+<summary>Background command "until gh pr checks 58 --repo orin-dx/callisto 2&gt;&amp;1 | grep -qv "pending"; do sleep 15; done
+gh pr checks 58 --repo orin-dx/callisto 2&gt;&amp;1" completed (exit code 0)</summary>
+</task-notification>
