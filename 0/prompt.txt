@@ -1,0 +1,5 @@
+<task-notification>
+<task-id>ba8go2q3d</task-id>
+<summary>Monitor event: "Wait for PR #76's fresh CI run to finish"</summary>
+<event>[Monitor timed out — re-arm if needed.]</event>
+</task-notification>
