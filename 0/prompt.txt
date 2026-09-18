@@ -1,0 +1,3 @@
+Please take a look at our repo and the latest PRs to see a pattern of missed issues and entirely lackluster ability of Claude to get this release tool to actually release itself. You can also read the last week's work of interactions in the latest claude code session JSON to get a better understanding of what's been happening and my displeasure.
+
+I need your help in sorting this out so I can get back to using callisto with my other tools. Claude seems unable to get this working and I need you to help me. This is worth at leat $1000 of my time. Please prove me thta AI can help.
