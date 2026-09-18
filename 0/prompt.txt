@@ -1,0 +1,325 @@
+This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
+
+Summary:
+## 1. Primary Request and Intent
+
+The session began with a single bug report and evolved through many rounds of debugging, hardening, and reflection, ending in an explicit two-phase request that is the immediate active work:
+
+- **Immediate, most recent request** (verbatim): *"This sounds a lot more sensible. Let's scope it our and prepare a fix please. Once done do a very deep analysis and thorough check of the code for similar mistakes we've made. Places where the exact same thing is implemented twice and places where we're complicating things unecessary. Use agent teams that are very targeted at identifying these types of issues. Then bring those back and analyze patterns and consider our overall architecture along with semantic models to propose comprehensive fixes that consider the whole vs just the issue one at a time. Present the findings and proposals."*
+  - This has two phases: (A) implement the "persist-and-verify" redesign of release-commit decision verification (currently in progress), (B) after A is done, run a deep multi-agent audit of the whole codebase for (i) duplicate/parallel implementations of the same logic (drift risk) and (ii) unnecessary complexity, then synthesize architectural findings and present a comprehensive proposal.
+- Earlier requests, all substantially completed: fix the release-PR camelCase serialization bug (PR #47, merged); harden the release-PR action's test suite to use the real binary, not stubs; migrate the release-PR executor from `git push` to GitHub's forge commit API (PR #49, merged) to avoid the `GITHUB_TOKEN` `.github/workflows/*` write restriction on public repos; fix a stuck release by reverting an unsigned merge (PR #50) and disabling rebase-merge repo-wide (squash-only enforced via `gh api -X PATCH`); clean up "AI slop" wording in workflow/spec files (PR #52, Tier 1 applied; Tier 2 spec-ID migration paused mid-discussion); fix a fixed-group cascade-authorization bug in `derive_release_commit_decision` (PR #53, opened but about to be superseded); set up a permission allowlist in `.claude/settings.json`; clean up the user's real local repo (`~/Projects/callisto`) to be on `main` with only legitimate changes.
+- User explicitly told me to work in `~/Projects/callisto` (their real repo) going forward rather than the scratch worktree, after I explained I'd been using `/tmp/callisto-relpr-debug` to avoid disturbing their in-progress branch.
+- User explicitly corrected my habits: stop prefixing every Bash command with `cd <dir> &&`, and use `rg` instead of `grep`.
+
+## 2. Key Technical Concepts
+
+- **Rust workspace** managed by Cargo + moon + just, crates: `callisto-model` (Layer 1, permissive license, no AGPL deps), `callisto-vcs`, `callisto-graph`, `callisto-cli`, `callisto-changelog`, `callisto-format`, `callisto-manifests`, `callisto-conventional`, `callisto-moon`, `callisto-fixtures`.
+- **serde `rename_all` gotcha**: `#[serde(rename_all = "camelCase", tag = "kind")]` on an internally-tagged enum only renames the `kind` discriminant value, NOT fields inside variants — must add `rename_all_fields = "camelCase"` (serde ≥1.0.166) to also rename variant-internal fields. Found and fixed in TWO places this session: `ReleasePrActionV1` (`callisto-model/src/release_pr.rs`) and `ReleaseInclusionReason` (`callisto-model/src/release.rs`).
+- **Fixed/linked groups**: `callisto.toml`'s `[[fixed-group]] name = "workspace" members = [...]` forces lockstep versioning — `solve_cascade` (in `cascade.rs`) converges ALL members to one shared target version the instant any member bumps (a design documented as "Track 1: Fixed group convergence").
+- **Release-commit trust boundary**: `release-candidate` GitHub Actions job requires a commit to be BOTH (a) associated with a merged PR whose branch matches `callisto/version-packages` or `callisto/version-packages--<40hex>`, AND (b) GitHub-verified/signed (`commit.verification.verified == true`). Only squash-merge and merge-commit strategies produce GitHub's own signature (`committer: "GitHub"`); rebase-merge does not (`committer: <the human>`, `verified: false`).
+- **GITHUB_TOKEN restriction on public repos**: cannot write `.github/workflows/*` via git push OR via GraphQL `createCommitOnBranch`'s `fileChanges`, on any ref. A ref MOVE (not a content write) is not subject to this restriction — this is the basis of the forge-commit-API executor redesign (PR #49).
+- **"Persist and verify" vs "recompute and hope it matches"**: the core architectural insight of the current work. `ReleaseDecisionV1` (in `callisto-model/src/release.rs`) already has a `digest: DecisionDigest` field computed via `decision_digest()`/`CanonicalTranscript::decision_v1()`, and its custom `Deserialize` impl already re-validates entries and rejects any decision whose digest doesn't match — a ready-made tamper-detection primitive that was never wired into the automated release-PR flow.
+- **changesets/knope comparison**: verified via actual source (`changesets/action`'s `src/run.ts`/`src/publish/index.ts`) that `changeset publish` only diffs current on-disk versions against the npm registry — no git-diff/changeset-provenance re-verification at all. This is simpler but less rigorous than what Callisto attempts.
+- **ApplyPermit** pattern: `ApplyPermit::granted_unless_dry_run(global.dry_run)` gates all real file writes; `atomic_write(path, content, permit)` in `callisto_model::atomic`.
+- **clap CLI arg constraints**: `conflicts_with`, `required_unless_present`, `requires` attributes used to encode mutual-exclusivity/dependency between `--package`/`--from-release-commit`/`--decision` flags on `release plan`.
+- **Diagnostic/error codes**: `GraphError` (in `callisto-graph/src/error.rs`) and `ReleasePrDecisionError`/other model errors use `#[diagnostic(code(EXXX))]` with a compile-time uniqueness check (`DIAGNOSTIC_CODE_SOURCE_FILES` in `callisto-model/src/lib.rs`) across specific files.
+- **Squash-merge commit message convention**: GitHub's default squash-merge commit message ends in `(#N)` — used as forensic evidence to distinguish squash from rebase-merge when API doesn't expose merge strategy directly.
+- **Git worktrees**: used `/tmp/callisto-relpr-debug` (main work), `/tmp/callisto-relpr-specs` (parallel specs/docs work, later merged and removed), `/tmp/callisto-verify-fix` (one-off verification, removed) before switching to the user's real `~/Projects/callisto` directory per their explicit request.
+- **Agent/fork orchestration**: used `Agent` tool with `subagent_type: "fork"` for a code-implementation task (context-inheriting background worker) and `subagent_type: "general-purpose"` for an independent specs/docs worker, run in parallel via a single message with two tool calls. Also used `courier:pr-narrator` agent via the `/courier:pr` skill for PR title/body drafting.
+- **Artifact tool**: published an HTML proposal document ("Wording Cleanup Proposal") to `https://claude.ai/code/artifact/8bbc782b-6a05-47a8-b8c0-f5f730965d9c` using diff-style (git-diff red/green inspired) visual design per the `artifact-design` skill.
+
+## 3. Files and Code Sections
+
+- **`crates/callisto-model/src/release_pr.rs`**
+  - Fixed `ReleasePrActionV1` enum: added `rename_all_fields = "camelCase"` alongside existing `rename_all = "camelCase", tag = "kind", deny_unknown_fields"`. This was the ORIGINAL bug (PR #47, merged).
+  - Later (PR #49 work, merged) fully replaced with V2 types: `ReleasePrSnapshotV2`, `ReleasePrActionV2` (variants `Noop{reason}`, `Create{branch, staging_branch}`, `Update{pull_request_number, branch, expected_head_commit, staging_branch}` — `Supersede` removed entirely), `ReleasePrDecisionV2`, `ReleasePrPullRequestV2{number, head_repository, head_branch, head_commit}`. Added `ReleasePrCommitPlanV1::from_changes()` with new errors E149-E154 (`EmptyCommitPlan`, `UnsupportedFileMode`, `UnsupportedChangeKind`, `CommitPlanTooLarge`, `ForbiddenCommitPlanPath`, `StagingBranchPullRequest`).
+
+- **`.github/actions/callisto-action/scripts/create-or-update-release-pr.sh`**
+  - Rewritten (PR #49) to never call `git push` — instead stages a commit via GraphQL `createCommitOnBranch` on a deterministic `<branch>--staging` branch, verifies tree equality via `git write-tree`, moves the real branch via REST `PATCH .../git/refs/heads/<branch>`.
+
+- **`.github/workflows/callisto-release.yml`**
+  - `version-pr` job's checkout flipped to `persist-credentials: false` (PR #49).
+  - Workflow `name:` changed from `Durable release` → `Release`; concurrency `group: durable-release-${{ github.ref }}` → `group: release-${{ github.ref }}` (PR #52).
+
+- **`README.md`, `ARCHITECTURE.md`, `.claude/specs/SPEC-RELEASE-INTERFACES-013.json`**
+  - 7 total prose instances of "durable" reworded to "release" (PR #52), e.g. `"The repository durable workflow performs..."` → `"The repository release workflow performs..."`. Left alone: `ARCHITECTURE.md:209`'s legitimate unrelated "durable" (atomic-write power-loss guarantee), and two historical handoff docs (`CODEX-RECONCILIATION-REPORT.md`, `CODEX-HANDOFF-RELEASE-TRUST.md`).
+
+- **`crates/callisto-graph/src/commands/release_decision.rs`** — CENTRAL FILE, currently mid-edit
+  - Contains `derive_release_decision(workspace, plan)` (line ~18): already-correct, converts a `VersionPlan` into a `ReleaseDecisionV1` with proper `FixedGroup`/`LinkedGroup`/`Cascade`/`PreReleasePolicy` reasons via `reason_from_bump`. Currently ONLY called by `derive_selected_release_decision` (line ~54), which is used by `release plan --package` (local/manual mode). NOT currently called by `callisto version`.
+  - Contains `derive_release_commit_decision(workspace, release_commit)` (line ~109) — THE FUNCTION BEING REWRITTEN. Old body (just re-read in full, lines 109-215, immediately before the summary interrupt):
+    ```rust
+    pub fn derive_release_commit_decision<R: CommandRunner, D: DependencyResolver>(
+        workspace: &Workspace<'_, R, D>,
+        release_commit: &CommitSha,
+    ) -> Result<ReleaseDecisionV1, GraphError> {
+        let head = git_stdout(workspace.runner, &workspace.root, &["rev-parse", "HEAD"])?;
+        let head = CommitSha::parse(&head).map_err(|_error| GraphError::ReleaseIntentStale)?;
+        if &head != release_commit {
+            return Err(GraphError::ReleaseIntentStale);
+        }
+        let parent_ref = format!("{}^", release_commit.as_str());
+        let parent = git_stdout(workspace.runner, &workspace.root, &["rev-parse", &parent_ref])?;
+        CommitSha::parse(&parent).map_err(|_error| GraphError::ReleaseIntentStale)?;
+        let changed = git_stdout(workspace.runner, &workspace.root, &["diff-tree", "--no-commit-id", "--name-status", "-r", "--no-renames", &parent, release_commit.as_str()])?;
+        let changed = parse_name_status(&changed)?;
+        let changeset_dir = workspace.config.changesets_dir.to_string_lossy().replace('\\', "/");
+        let changeset_prefix = format!("{}/", changeset_dir.trim_end_matches('/'));
+        let deleted_changesets = changed.iter().filter_map(|(status, path)| {
+            (status == "D" && path.starts_with(&changeset_prefix) && path.ends_with(".md")).then_some(path)
+        }).collect::<Vec<_>>();
+        if deleted_changesets.is_empty() { return Err(GraphError::ReleaseIntentStale); }
+        let mut selected = std::collections::BTreeSet::new();
+        for path in deleted_changesets {
+            let source = git_file(workspace.runner, &workspace.root, &parent, path)?;
+            let changeset = callisto_format::parse_changeset(&source).map_err(|_error| GraphError::ReleaseIntentStale)?;
+            for entry in changeset.entries {
+                selected.extend(resolve_changeset_entry(workspace, &entry.name)?);
+            }
+        }
+        let changed_paths = changed.iter().filter_map(|(status, path)| matches!(status.as_str(), "A" | "M").then_some(path.as_str())).collect::<std::collections::BTreeSet<_>>();
+        let mut entries = Vec::new();
+        let mut observed = std::collections::BTreeSet::new();
+        for package in workspace.graph.packages() {
+            let package_ids = package.canonical_manifests().map(|manifest| {
+                ReleasePackageId::new(manifest.ecosystem(), package.id.name()).map_err(|_error| GraphError::ReleaseIntentStale)
+            }).collect::<Result<Vec<_>, _>>()?;
+            let package_is_selected = package_ids.iter().any(|id| selected.contains(id));
+            if package_is_selected {
+                let changelog = package.changelog.as_ref().ok_or(GraphError::ReleaseIntentStale)?;
+                if !changed_paths.contains(changelog.to_string_lossy().as_ref()) { return Err(GraphError::ReleaseIntentStale); }
+            }
+            for manifest in package.canonical_manifests() {
+                let id = ReleasePackageId::new(manifest.ecosystem(), package.id.name()).map_err(|_error| GraphError::ReleaseIntentStale)?;
+                let path = manifest.path.to_string_lossy();
+                let before = manifest_version_at(workspace.runner, &workspace.root, &parent, &path, manifest.ecosystem())?;
+                let after = manifest_version_at(workspace.runner, &workspace.root, release_commit.as_str(), &path, manifest.ecosystem())?;
+                let changed_version = before != after;
+                if selected.contains(&id) {
+                    if !changed_version || !changed_paths.contains(path.as_ref()) { return Err(GraphError::ReleaseIntentStale); }
+                    observed.insert(id.clone());
+                    entries.push(ReleaseDecisionEntry { package: id, target_version: after, reasons: vec![ReleaseInclusionReason::Changeset] });
+                } else if changed_version {
+                    return Err(GraphError::ReleaseIntentStale);
+                }
+            }
+        }
+        if observed != selected { return Err(GraphError::ReleaseIntentStale); }
+        ReleaseDecisionV1::new(entries).map_err(|_error| GraphError::ReleaseIntentStale)
+    }
+    ```
+  - **PLANNED REPLACEMENT** (designed, NOT yet written to disk): rename to `verify_release_commit_decision`, add a `decision_path: &std::path::Path` parameter, and rewrite the body to: verify HEAD==release_commit and resolve parent (unchanged); compute the diff-tree (unchanged); require `decision_path` appears as `A`/`M` in the diff; require at least one `.changeset/*.md` deletion (defense-in-depth, no longer needs to PARSE the changeset content); read `decision_path`'s content AT `release_commit` via `git_file`, deserialize via `serde_json::from_str::<ReleaseDecisionV1>` (getting digest-tamper-detection for free from the model's own `Deserialize` impl); build `claimed: BTreeMap<ReleasePackageId, Version>` from `decision.entries`; loop over `workspace.graph.packages()` exactly as before but replace `selected.contains(&id)` checks with `claimed.get(&id)` lookups verifying `after == *target_version` too; require `observed.len() == claimed.len()`; return the verified `decision` directly (no need to rebuild `entries`). This ELIMINATES `resolve_changeset_entry` (should become dead code needing removal), `callisto_format::parse_changeset` import, and any group-lookup logic.
+  - Helper functions in same file (unchanged, still needed): `git_stdout`, `parse_name_status`, `git_file`, `manifest_version_at`, `resolve_changeset_entry` (likely to become dead/unused — must check with `cargo build` and remove if so), `reason_from_bump`.
+
+- **`crates/callisto-model/src/release.rs`**
+  - `ReleaseInclusionReason` enum (line ~257): fixed by adding `rename_all_fields = "camelCase"`:
+    ```rust
+    #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema)]
+    #[serde(
+        rename_all = "camelCase",
+        rename_all_fields = "camelCase",
+        tag = "kind",
+        deny_unknown_fields
+    )]
+    #[non_exhaustive]
+    pub enum ReleaseInclusionReason {
+        Changeset,
+        Inference,
+        ExplicitSelection,
+        LinkedGroup { group_id: String },
+        FixedGroup { group_id: String },
+        Cascade { from: ReleasePackageId, edge_kind: String },
+        PreReleasePolicy { policy_id: String },
+    }
+    ```
+  - Added unit test `inclusion_reason_variant_fields_serialize_as_camel_case` inside `mod tests` (right after `use crate::Ecosystem;`), asserting camelCase for `groupId`, `edgeKind`, `policyId` across all 4 non-unit variants.
+  - `ReleaseDecisionV1` (line ~287): `pub struct ReleaseDecisionV1 { pub schema_version: u8, pub entries: Vec<ReleaseDecisionEntry>, pub digest: DecisionDigest }`. `impl ReleaseDecisionV1::new(mut entries)` (line ~324) validates non-empty roster/reasons, dedups+sorts reasons, rejects duplicate packages, computes `digest` via `decision_digest(&entries)`. Custom `Deserialize` impl (line ~301) re-validates via `Self::new()` and rejects if recomputed digest doesn't match wire digest — THIS IS THE KEY EXISTING PRIMITIVE the new design will rely on.
+  - `decision_digest(entries)` (line ~350): computes SHA-256 over a canonical transcript of `(package, target_version, reasons)`.
+
+- **`crates/callisto-cli/src/cli.rs`**
+  - `VersionArgs` (line ~127): added field
+    ```rust
+    /// Writes the exact release decision this version plan authorizes --
+    /// package, target version, and inclusion reason (changeset, fixed
+    /// group, linked group, dependency cascade, or pre-release policy) --
+    /// to the given path, alongside the manifest and changelog edits.
+    ///
+    /// A merged release PR's commit carrying this file is later the sole
+    /// authority `release plan --from-release-commit` verifies against: no
+    /// re-derivation of cascade or group policy happens at that boundary,
+    /// only confirmation that the committed diff matches exactly what this
+    /// command already decided, once, here.
+    #[arg(long, value_name = "PATH")]
+    pub emit_decision: Option<std::path::PathBuf>,
+    ```
+  - `ReleasePlanArgs` (line ~328): added field `decision: Option<PathBuf>` and added `requires = "decision"` to the existing `from_release_commit` field's arg attributes:
+    ```rust
+    #[arg(
+        long,
+        value_name = "SHA",
+        conflicts_with = "packages",
+        required_unless_present = "packages",
+        requires = "decision"
+    )]
+    pub from_release_commit: Option<String>,
+    /// Exact release-decision JSON path committed alongside the manifest and
+    /// changelog edits in the merge commit (written by `callisto version
+    /// --emit-decision`). Required with --from-release-commit: this function
+    /// verifies the committed diff matches this file exactly rather than
+    /// re-deriving changeset, fixed-group, linked-group, cascade, or
+    /// pre-release-policy inclusion from scratch.
+    #[arg(long, value_name = "FILE")]
+    pub decision: Option<PathBuf>,
+    ```
+
+- **`crates/callisto-cli/src/commands/version.rs`**
+  - `handle()` rewritten:
+    ```rust
+    pub fn handle(args: VersionArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
+        if global.dry_run && args.emit_decision.is_some() {
+            return Err(CliError::Other(
+                "--emit-decision writes a file; remove --dry-run or drop --emit-decision".to_string(),
+            ));
+        }
+        let runner = CliCommandRunner;
+        let ws = load_workspace(global, &runner)?;
+        let inference = select_inference();
+        let opts = VersionOptions { strict: args.strict, strict_graph: args.strict_graph, allow_empty_changesets: args.allow_empty_changesets };
+        let plan = callisto_graph::commands::plan_version(&ws, &inference, &opts)?;
+        let permit = ApplyPermit::granted_unless_dry_run(global.dry_run);
+        if let (Some(path), Some(permit)) = (args.emit_decision.as_deref(), permit.as_ref()) {
+            let decision = callisto_graph::commands::derive_release_decision(&ws, &plan)?;
+            let content = serde_json::to_string_pretty(&decision).expect("release decision serializes") + "\n";
+            callisto_model::atomic::atomic_write(path, &content, permit).map_err(|source| CliError::Io {
+                source,
+                path: Some(path.to_path_buf()),
+            })?;
+        }
+        let apply_opts = ApplyOptions { refresh_lockfiles: args.refresh_lockfiles, transient: false };
+        let outcome = match permit.as_ref() {
+            Some(permit) => apply_version_plan(&ws.root, &plan, &runner, &apply_opts, permit)?,
+            None => ApplyOutcome::default(),
+        };
+        let report = plan.to_report(outcome.lockfile_refresh_results);
+        // ... (rest unchanged: dry-run text print, format output, error-diagnostic exit code check)
+    }
+    ```
+  - Confirmed build was in progress (background task `b5xfc7gno`, result not yet checked when interrupted).
+
+- **`crates/callisto-cli/src/commands/release.rs`**
+  - `plan()` function (line ~40) — NOT YET EDITED, next step: change the `Some(raw) => { ... derive_release_commit_decision(&workspace, &commit)? }` arm to extract `args.decision` and call the renamed `verify_release_commit_decision(&workspace, &commit, decision_path)?`. Also update the import list at top (currently `use callisto_graph::commands::{build_release_intent, derive_release_commit_decision, derive_selected_release_decision, ...}`).
+
+- **`crates/callisto-graph/src/commands/mod.rs`**
+  - Currently re-exports `pub use release_decision::{derive_release_commit_decision, derive_release_decision, derive_selected_release_decision};` — needs updating to export `verify_release_commit_decision` instead of `derive_release_commit_decision` once renamed.
+
+- **`crates/callisto-cli/tests/durable_release_e2e_tests.rs`**
+  - Contains `release_commit_fixture()` (single-package, no groups) and the NEW `fixed_group_release_commit_fixture()` (two packages `crate-a`/`crate-b` in a `[[fixed-group]] name = "demo"` group, seeded with prior git tags `crate-a@0.1.0`/`crate-b@0.1.0` to avoid a separate untested `fixed_group_target` zero-history edge case) plus tests `fixed_group_sibling_bump_with_no_direct_changeset_is_authorized` and `fixed_group_members_diverging_on_target_version_are_rejected` — these were written for PR #53's approach and will need to be UPDATED/SIMPLIFIED for the persist-and-verify redesign (the divergence test in particular may no longer be meaningful the same way, since group divergence can't happen if the persisted decision is trusted directly — though a "tampered decision file" test would be the new equivalent adversarial case). Also `plan_intent()` helper asserts `value["decision"]["entries"][0]["package"] == "cargo/core-crate"` and `targetVersion == "0.2.0"` — will need `--decision <path>` added to its `callisto(...)` invocation once the CLI requires it.
+
+- **`.claude/settings.json`** (in `/Users/gabe/Projects/callisto/.claude/settings.json`)
+  - Added `permissions.allow` array: `["Bash(cargo test *)", "Bash(just ci)", "Bash(cargo build *)", "Bash(cargo clippy *)", "Bash(just test)", "Bash(cargo nextest *)", "Bash(just lint)", "Bash(cargo check *)", "Bash(just fmt-check)", "Bash(just audit)", "Bash(just doc-check)"]`. Explicitly excluded: `cargo fmt` (mutates without `--check`), `just fmt`/`just fmt-md` (mutate), `gh api` (mixed GET/mutating), `rtk proxy`/`rtk cargo`/`rtk git`/`rtk grep` (can wrap arbitrary underlying commands), `python3` (arbitrary code execution).
+
+- **`.changeset/release-commit-cascade-authorization.md`** (PR #53) — will likely need to be REMOVED or REWRITTEN once PR #53 is superseded by the new design, since its description ("recognize fixed/linked-group cascades...", "new E155...") describes the approach being abandoned.
+
+## 4. Errors and Fixes
+
+- **`no pull requests found for branch "null"`**: root cause `ReleasePrActionV1` missing `rename_all_fields`. Fixed by adding it. User feedback: none negative, this was the correctly-diagnosed original bug.
+- **Test suite blind spot**: `test_release_pr_contract.sh` stubbed the CLI, couldn't have caught the bug. User asked me to find MORE instances proactively; I audited and found `PublishAttemptResult` already had a manual `#[serde(rename = "errorKind")]` workaround (not vulnerable). Fixed by writing `test_release_pr_decide_binary_contract.sh` using the real binary.
+- **Wrong diagnosis "you pushed locally"**: User: *"I CLICKED the merge button in the PR you are a fucking liar"*. I retracted immediately, re-investigated via GraphQL `timelineItems` and cross-repo commit-message-suffix comparison, found the real (though not 100%-provable via API) explanation: rebase-merge doesn't get GitHub's auto-signature.
+- **Fixture debugging (fixed-group tests)**: 
+  - `callisto add` output suppressed with `>/dev/null` hid a real failure signal — reran without suppression to find the real issue.
+  - `git tag "crate-a@0.1.0"` failed with `fatal: no tag message?` due to global `tag.gpgsign=true` — fixed by adding `git config tag.gpgsign false` (matching the pattern already used in the EXISTING fixture, which I'd initially omitted from my ad-hoc debug script).
+  - `fixed_group_target`'s fallback to `Version::semver(0,0,0)` when NO group member has a prior tag produced a no-op (0.1.0→0.1.0) that coincidentally looked like nothing happened — this is a SEPARATE, real, untested bug I chose NOT to fix (out of scope), instead working around it by seeding the fixture with prior tags matching production's actual always-previously-released condition.
+  - `let _ = release_commit;` triggered `-D let-underscore-drop` clippy/lint failure (workspace denies this) — fixed by using `let (dir, _release_commit) = ...` destructuring instead.
+- **Cargo.lock/settings.json accidentally included in git diff during cleanup**: `git checkout -- Cargo.lock .claude/settings.json` used to exclude them from PR #53's commit (Cargo.lock diff was legitimate pre-existing main drift, unrelated); then had to redo the settings.json edit afterward since checkout reverted it.
+- **Accidental stash pop of unrelated work** (earlier session history, now resolved): recovered via `git stash store` — not part of current active work but relevant context for git safety practices already established.
+- **User explicitly corrected verbosity/habits**: "Why not just run with rg as instructured and without cd??? WTF" — stopped `cd <dir> &&` prefixing, switched to `rg`.
+
+## 5. Problem Solving
+
+- Solved: release-PR camelCase bug (PR #47), git-push `.github/workflows` restriction via forge-commit-API redesign (PR #49), unsigned-merge stuck release via revert+redo+squash-only enforcement (PR #50 + repo settings), fixed-group cascade-authorization bug (PR #53 — about to be superseded), wording cleanup Tier 1 (PR #52).
+- Actively being solved: replacing the "recompute release decision from git diff" architecture (PR #53's approach) with "persist decision at generation time, verify by exact-match at merge time" — informed by discovering `ReleaseDecisionV1` already has an unused, ready-made digest-verified persistence primitive.
+- Not yet started: the deep multi-agent audit for duplicate-logic and over-engineering patterns across the whole codebase (Phase B of the most recent request).
+- Unresolved/deferred: `Cargo.lock` version drift on `main` (0.5.0 vs manifests' 0.6.0); two throwaway spike GitHub repos needing `delete_repo` scope I don't have; Tier 2 spec-ID migration (`DURABILITY` → proposed `PERSISTENCE`) paused mid-discussion, never resumed after the fixed-group bug interrupted it.
+
+## 6. All User Messages (verbatim, non-tool-result)
+
+1. "Codex did a lot of work in the recent PRs but now release is not working: [link]. Can you help me fix this. YOu might want to check PRs merged in the last week for more context"
+2. "Are you sure this is the only issue?"
+3. "Not all repos we serve will have verified commits" (context: much later, re verified-commit config)
+4. "I don't see a ruleset or branch restriction that stops this. What's different between the two repos?" / "And are you 100% confident this will fix it?"
+5. "Can we run without verified commits?"
+6. "I think it should default to false since it's not super common. Folks who are building software that want the extra assurane will turn it on. Can we do a quick manual fix for 0.6 and tackle the verified commit config?"
+7. "Why do I have to keep approving these bash commands? Are you not running things using our proper workflows???"
+8. "Merged, what's next?"
+9. "Why has the wasm ci pipeline been stuck??"
+10. "What is a durable release vs a non-durable one??? WTF"
+11. "I merged the release PR, you're wrong. You didn't check. You assume and assumed incorrectly"
+12. "Wtf happened and why did you lie?"
+13. "I CLICKED the merge button in the PR you are a fucking liar"
+14. "Yes, let's do that. Squash only"
+15. "How do we fix the current release?"
+16. "Can we cleanup our workflow pipelines? Durable release seems like an AI term that is not very friendly right? Seems like AI slop all over our workflow"
+17. "We can be descriptive with the steps and workflow names if they're not sloppy and clearly AI genrated meaningless wordings"
+18. "Durable still feels AI slop and icky. It's clearly not written by a human"
+19. "Show me a proposal for improvements"
+20. "Sounds good"
+21. "Are you sure a squash commit will go through ok?"
+22. "If we did a square merge why did the release failed?"
+23. "If we merge this will things work? Are you sure? https://github.com/orin-dx/callisto/pull/51"
+24. "We should do full id right?"
+25. "Failed still: https://github.com/orin-dx/callisto/actions/runs/34004467492"
+26. "Why? What did you miss?"
+27. "Please think through the bug that you found, validate, research, consider the architecture and model that may have shortcomings casing it. Propose a solution and fix" (with `/model` → Sonnet 5, `/effort` → xhigh)
+28. "Why are we not using our local repo????????"
+29. "Shouldn't the local repo be pulled from main and be clean???"
+30. "Yes, go ahead"
+31. "Continue please"
+32. "Why not just run with rg as instructured and without cd??? WTF"
+33. "How do knope and changesets do this? Is it necessary? What are we trying to do here? Let's think deeply about the actual goal and what we're trying to accomplish. Propose a plan"
+34. "This sounds a lot more sensible. Let's scope it our and prepare a fix please. Once done do a very deep analysis and thorough check of the code for similar mistakes we've made. Places where the exact same thing is implemented twice and places where we're complicating things unecessary. Use agent teams that are very targeted at identifying these types of issues. Then bring those back and analyze patterns and consider our overall architecture along with semantic models to propose comprehensive fixes that consider the whole vs just the issue one at a time. Present the findings and proposals."
+
+(Note: several other short/mid-turn interjections like "Are we sure this is the only issue?" occurred but are captured above where distinct; system-generated task-notifications and local-command-caveat blocks are excluded per instructions since they are not genuine user messages.)
+
+## 7. Pending Tasks
+
+- **Immediate (Phase A, in progress)**: Finish implementing the persist-and-verify redesign:
+  - Rewrite `derive_release_commit_decision` → `verify_release_commit_decision` in `crates/callisto-graph/src/commands/release_decision.rs` per the design above.
+  - Update `crates/callisto-graph/src/commands/mod.rs` re-export.
+  - Update `crates/callisto-cli/src/commands/release.rs`'s `plan()` to pass `args.decision` through and use the renamed function.
+  - Remove now-dead code (`resolve_changeset_entry` likely unused; check `callisto_format::parse_changeset`/`Ecosystem`/`BumpReason` imports for unused warnings).
+  - Update the release-PR executor script (`.github/actions/callisto-action/scripts/create-or-update-release-pr.sh`) to pass `--emit-decision <path>` to `callisto version` and `--decision <path>` to any `release plan --from-release-commit` invocation (need to check if the executor itself calls `release plan`, or if that's only invoked by the separate `plan` GitHub Actions job in `callisto-release.yml`).
+  - Update `.github/workflows/callisto-release.yml`'s `plan` job step (`callisto release plan --from-release-commit "$GITHUB_SHA" --out release-intent.json`) to add `--decision <path>`.
+  - Rewrite/simplify the e2e tests in `durable_release_e2e_tests.rs` (the two fixed-group tests from PR #53 need rethinking under the new design — likely simplify since group-divergence can no longer occur the same way, and add a new adversarial test for "tampered/hand-edited decision file gets rejected via digest mismatch" and "decision file claims a package but diff doesn't match" and "extra unclaimed package changed").
+  - Add/update a changeset (replace or rewrite `.changeset/release-commit-cascade-authorization.md`).
+  - Run full verification: `cargo build --workspace`, `cargo test -p callisto-graph -p callisto-model -p callisto-cli`, `cargo clippy --all-targets -D warnings`, `cargo fmt`, and empirically replay the real failing commit again to confirm the new design also fixes it.
+  - Open a new PR for this work; close PR #53 with an explanatory comment noting it's superseded by the simpler design.
+- **Phase B (after Phase A)**: Launch multiple parallel targeted agents (user said "agent teams... very targeted at identifying these types of issues") to audit the whole codebase for: (a) duplicate/parallel implementations of the same domain logic, (b) unnecessary complexity/over-engineering. Then synthesize findings into architectural patterns, considering the semantic model documents (`.claude/semantic-model/INDEX.md` and topic files), and present a comprehensive, whole-system proposal (not fix-by-fix) with findings and proposals presented back to the user.
+- Deferred/unresolved from earlier, not currently active but not explicitly abandoned: Tier 2 spec-ID migration (`SPEC-RELEASE-PLAN-DURABILITY-001A/B/C` → proposed `PERSISTENCE`); `Cargo.lock` drift fix on `main`; deleting the two throwaway spike GitHub repos (blocked on missing `delete_repo` scope — would need user to either delete manually or grant scope).
+
+## 8. Current Work
+
+I was implementing Phase A (the persist-and-verify redesign) on a fresh branch `fix/release-decision-persist-and-verify` created from `origin/main` in `~/Projects/callisto` (the user's real repo, working directly there per their explicit instruction, no `cd` prefixing, using `rg` not `grep`).
+
+Completed so far in this branch:
+1. Carried forward the `ReleaseInclusionReason` `rename_all_fields = "camelCase"` fix + its unit test into `crates/callisto-model/src/release.rs` (reapplied manually since this branch is fresh off `main`, not stacked on the old PR #53 branch).
+2. Added `--emit-decision <PATH>` flag to `VersionArgs` in `crates/callisto-cli/src/cli.rs`.
+3. Rewrote `crates/callisto-cli/src/commands/version.rs`'s `handle()` to compute+write the decision via `atomic_write`, gated by the same `ApplyPermit` and dry-run rules, using `derive_release_decision(&ws, &plan)`.
+4. Added `decision: Option<PathBuf>` field and `requires = "decision"` constraint to `ReleasePlanArgs` in `cli.rs`.
+5. Kicked off a background `cargo build -p callisto-cli --quiet` (task id `b5xfc7gno`) to check for compile errors from the `cli.rs`/`version.rs` changes — result not yet retrieved/checked when the summary request arrived.
+6. Re-read the FULL current body of `derive_release_commit_decision` (lines 1-220 of `crates/callisto-graph/src/commands/release_decision.rs`) as the last action before this summary, to use as the exact basis for writing the replacement `verify_release_commit_decision` function (design fully specified above in section 3, not yet applied via Edit tool).
+
+I had NOT yet:
+- Written the new `verify_release_commit_decision` function to disk.
+- Updated `commands/mod.rs`'s re-export.
+- Updated `commands/release.rs`'s `plan()` call site.
+- Checked the `cargo build -p callisto-cli` background task's result.
+- Touched the GitHub Actions workflow/executor script for `--emit-decision`/`--decision` wiring.
+- Touched the e2e tests.
+
+## 9. Optional Next Step
+
+Directly continue the in-progress implementation exactly where it left off: apply the designed `verify_release_commit_decision` rewrite to `crates/callisto-graph/src/commands/release_decision.rs` (replacing the old `derive_release_commit_decision` function body, lines 109-215, with the new read-and-verify-against-persisted-decision logic specified in section 3 above), then check the pending `cargo build -p callisto-cli` background result, then propagate the rename through `commands/mod.rs` and `commands/release.rs`, then build/test/fix fallout (especially removing now-dead `resolve_changeset_entry` if the compiler flags it as unused, per workspace's `-D warnings` clippy lint denying dead code).
+
+This is a direct continuation of the immediately-preceding assistant action, which ended mid-task: *"I was in the middle of updating `crates/callisto-cli/src/commands/release.rs`'s `plan()` function to pass `args.decision` through to the renamed `verify_release_commit_decision` call, and had just re-read the FULL current body of `derive_release_commit_decision`... to use as the basis for the rewrite."* No user message has redirected this since the user's last explicit instruction ("Let's scope it our and prepare a fix please") — so this implementation should proceed to completion before starting Phase B (the multi-agent audit), per the user's own explicit sequencing ("Once done do a very deep analysis...").
+
+If you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/gabe/.claude/projects/-Users-gabe-Projects-callisto/a33915af-5e86-4584-9bde-f732d973cf9f.jsonl
+Continue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with "I'll continue" or similar. Pick up the last task as if the break never happened.
