@@ -1,0 +1,9 @@
+<task-notification>
+<task-id>bfzroasqq</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a33915af-5e86-4584-9bde-f732d973cf9f/tasks/bfzroasqq.output</output-file>
+<status>completed</status>
+<summary>Background command "for rid in $(cat /tmp/all_durable_runs.txt); do
+  gh run view "$rid" --repo orin-dx/callisto --json jobs --jq '.jobs[] | select(.name=="Execute approved release") | .conclusion' 2&gt;/dev/null
+done | sort | uniq -c" completed (exit code 0)</summary>
+</task-notification>
