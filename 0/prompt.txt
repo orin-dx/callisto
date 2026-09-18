@@ -1,0 +1,1 @@
+Can we make sure we build everything with release, specially if we plan on releasing a binary as a GH artifact??
