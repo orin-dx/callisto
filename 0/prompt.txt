@@ -1,0 +1,33 @@
+<task-notification>
+<task-id>a77328d70fdbbfb6d</task-id>
+<tool-use-id>toolu_018xK2FVFE2X8uzmg9tJc8cp</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8f8eb6fc-22cd-45a0-a0c3-707f9385dbc8/tasks/a77328d70fdbbfb6d.output</output-file>
+<status>completed</status>
+<summary>Agent "Dedupe OpenContext + fix owner-manifest reopen" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Everything is committed cleanly. Per instructions I will not push or open a PR.
+
+## Summary
+
+**Commit:** `271b3adf` on branch `worktree-agent-a77328d70fdbbfb6d` (worktree at `/Users/gabe/Projects/callisto/.claude/worktrees/agent-a77328d70fdbbfb6d`), branched from `main` at `ae0ceac1`.
+
+**Finding 1 (duplication) — fixed:**
+- Added `OpenContext::for_workspace_root(root: &amp;Path) -&gt; OpenContext` in `crates/callisto-manifests/src/lib.rs`, reproducing the exact original logic (Cargo.toml existence check → `WorkspaceCargoResolver::load(...).inheritance()` → `Arc::new` → `detect_npm_workspace_kind`).
+- Migrated all four call sites to it: `crates/callisto-graph/src/walk.rs` (`ManifestWalkResolver::build`), `crates/callisto-graph/src/lib.rs` (`Workspace::base_versions`), `crates/callisto-graph/src/apply.rs` (`apply_version_plan`), `crates/callisto-graph/src/commands/version.rs` (`plan_version`, whose local var was renamed... actually kept as `open_ctx` per its existing usage, just simplified to one line).
+- Verified via `grep -rn "OpenContext {"` that no production site remains outside the new constructor itself — all other matches are pre-existing test-only literals in `callisto-manifests`' own unit tests (`cargo.rs`, `npm.rs`, `python.rs`, `lib.rs`) and `apply.rs`'s `#[cfg(test)]` module.
+
+**Finding 2 (performance) — fixed:**
+- In `commands/version.rs`'s platform-target loop, the owner's canonical-manifest read (`open(&amp;owner_manifest_decl, &amp;open_ctx)?`, used only to check for a matching optional dependency) now routes through `crate::manifest_cache::open_cached(&amp;ws.manifest_cache, ...)` — the same read-only cache mechanism `base_versions`/`walk.rs` already use — instead of a raw `open()` call every iteration.
+
+**Regression test proving finding 2:** `crates/callisto-graph/tests/plan_version_owner_open_count_test.rs`, a new `#[serial]` integration test (isolated in its own binary since `callisto_manifests::open_call_count` is process-global, following the `manifest_cache_test.rs`/`apply_persist_open_count_test.rs` precedent). It builds an owner ("hybrid") with two `GroupMember::PlatformManifest` siblings (one real Case-D disk-discovered, one fixture-injected, mirroring the existing AC-007b fixture), resets the counter after `Workspace::load`, calls `plan_version`, and asserts `open_call_count() == 2`.
+- I manually verified the test catches the regression: temporarily reverting the fix (`open()` instead of `open_cached()`) made the test fail with `left: 4, right: 2` — exactly matching the predicted before/after (N platform-target manifest opens + N owner re-opens pre-fix, vs. N + 1-effectively-0 post-fix since the owner's manifest is already cached from discovery). Restored the fix afterward and re-confirmed green.
+
+**Verification (both crates):**
+- `cargo test -p callisto-graph -p callisto-manifests`: all green (392 lib tests + all integration test binaries, including the new one).
+- `cargo clippy -p callisto-graph -p callisto-manifests --all-targets -- -D warnings`: clean.
+- `cargo fmt -p callisto-graph -p callisto-manifests -- --check`: clean.
+
+**Changeset:** `.changeset/open-context-workspace-root-dedup.md`, patch-level for both `callisto-manifests` and `callisto-graph`, following the multi-package format used by `shared-manifest-identity-reader.md`/`parallel-arm-dedup.md`.</result>
+<usage><subagent_tokens>224975</subagent_tokens><tool_uses>102</tool_uses><duration_ms>854590</duration_ms></usage>
+<worktree><worktreePath>/Users/gabe/Projects/callisto/.claude/worktrees/agent-a77328d70fdbbfb6d</worktreePath><worktreeBranch>worktree-agent-a77328d70fdbbfb6d</worktreeBranch></worktree>
+</task-notification>
