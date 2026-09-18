@@ -1,0 +1,26 @@
+<task-notification>
+<task-id>aa6f7262240d6e12a</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8f8eb6fc-22cd-45a0-a0c3-707f9385dbc8/tasks/aa6f7262240d6e12a.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix ReleaseOperationId Ord/Eq violation" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Committed successfully, no push/PR performed as instructed.
+
+## Summary
+
+**Bug fixed**: `ReleaseOperationId`'s hand-written `Ord` impl (in `crates/callisto-model/src/release.rs`) folded an `ArtifactUpload` role down to just `format!("{}|{}", slot.platform, slot.asset_name)`, dropping `ArtifactSlotId::attestation_policy` entirely from the comparison — even though the derived `Eq`/`Hash` includes it. Two artifact-upload operations with the same package/version/platform/asset_name but a distinct `attestation_policy` compared `Ord::Equal` while remaining `Eq`-distinct, breaking the `BTreeSet`/`BTreeMap` invariant. `validate_operations`'s `ids: BTreeSet&lt;ReleaseOperationId&gt;` and `stable_kahn_order`'s `edges: BTreeMap&lt;...&gt;` both key on this type, so the second such operation's insert silently returned `false`, and `ReleaseIntentV1::new` wrongly rejected the intent with `DuplicateOperation`.
+
+**Investigation finding**: `Version` (used as a field of `ReleaseOperationId`) has no `Ord`/`PartialOrd` impl anywhere in the codebase (SemVer vs. PEP 440 aren't comparable via a single total order) — that's why both `ArtifactSlotId` and `ReleaseOperationId` already used `version.render()` in hand-written comparisons instead of comparing `Version` directly. This meant `ReleaseOperationId` itself cannot `#[derive(Ord)]` directly (it would fail to compile). I adjusted the fix accordingly: derived `PartialOrd`/`Ord` on `ReleaseOperationRole` (every variant's field type — `RegistryBindingId`, `ArtifactSlotId` — already implements `Ord`, confirmed by successful compilation), and kept a much-thinner hand-written `Ord` for `ReleaseOperationId` that delegates the role comparison wholesale to the now-correct derived `Ord` on `ReleaseOperationRole`, while still using `version.render()` for the `Version` field.
+
+**Changes**:
+- `crates/callisto-model/src/release.rs`: added `PartialOrd, Ord` to `ReleaseOperationRole`'s derive; deleted the now-dead `discriminator()` and `registry()` helper methods (used only by the old hand-rolled `Ord`); simplified `ReleaseOperationId`'s `Ord` to `(&amp;self.package, &amp;self.role, self.version.render()).cmp(...)`; kept `artifact_slot()` since it's used elsewhere (`validate_artifact_slot`, `validate_artifact_upload_roster`).
+- Added a regression test `artifact_upload_ids_differing_only_by_attestation_policy_stay_distinct_under_ord` that constructs two `ArtifactSlotId`s differing only by `attestation_policy.workflow_commit`, and checks: (a) `Eq`-distinctness, (b) `Ord::cmp` is not `Equal`, (c) both survive a `BTreeSet&lt;ReleaseOperationId&gt;` insert, and (d) the full `ReleaseIntentV1::new`/`validate_operations` path accepts both operations instead of raising `DuplicateOperation`. Confirmed it fails on pre-fix code (`cmp` returned `Equal`) and passes post-fix.
+- Added `.changeset/artifact-upload-ord-attestation-policy.md` (`callisto-model: patch`).
+
+**Verification**: `cargo test -p callisto-model` (182 passed), `cargo clippy -p callisto-model -- -D warnings` (clean), `cargo test -p callisto-graph` (392+ across all binaries, all passed — no downstream ordering assertions broke), `cargo clippy -p callisto-graph -- -D warnings` (clean), `cargo check --workspace` (clean), `cargo fmt -p callisto-model` (applied, then verified clean). Grepped the whole workspace for `ReleaseOperationId`/`ReleaseOperationRole` usage — only `callisto-model` and `callisto-graph` reference these types, both verified.
+
+**Commit**: `aed02df3085abb5772914b76a239012d12bc03ba` on branch `worktree-agent-aa6f7262240d6e12a`, message `fix(model): stop dropping attestation_policy from ReleaseOperationId Ord`. Not pushed, no PR opened.</result>
+<usage><subagent_tokens>143532</subagent_tokens><tool_uses>67</tool_uses><duration_ms>508554</duration_ms></usage>
+<worktree><worktreePath>/Users/gabe/Projects/callisto/.claude/worktrees/agent-aa6f7262240d6e12a</worktreePath><worktreeBranch>worktree-agent-aa6f7262240d6e12a</worktreeBranch></worktree>
+</task-notification>
