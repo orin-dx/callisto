@@ -1,0 +1,63 @@
+Base directory for this skill: /Users/gabe/.claude/plugins/cache/orin-dx-agent-plugins/ranger/3.0.0/skills/audit
+
+# ranger — Cross-Language Bug-Hunting Skill
+
+## How It Works
+
+One skill, one fixed 5-phase pipeline (recon → scanner → boundary-tracer [conditional] → adversary → exit-gate). What changes is which part of the request drives it:
+
+- **Full sweep** — no category or candidate named: every hazard taxonomy gets scanned.
+- **Targeted scan** — the request names one hazard category (e.g. "unhandled promises"): the same pipeline runs, scoped to that category.
+- **Verify one candidate** — the request hands ranger an already-identified bug: adversary runs directly against it, skipping the sweep.
+- **Post-remediation check** — the request asks whether prior findings are resolved: exit-gate re-reads the code from scratch and confirms.
+
+There is no `ranger/scan` or `ranger/verify` to invoke separately — one skill directory (`skills/audit/`), the request itself determines which phase does the work.
+
+---
+
+## Pipeline
+
+```
+workspace → recon → scanner → [boundary-tracer?] → adversary → exit-gate → finding-report@1
+```
+
+1. **Recon** — builds verified manifest: live files, dead files, entry points, language.
+2. **Scan** — loads language-specific hazard reference, runs grep patterns against live files only, emits candidate@1 list.
+3. **Boundary Tracer** *(conditional)* — traces field survival for T7 and T10 candidates. Skipped for all other taxonomies.
+4. **Adversary** — reads actual code, traces control flow, and refutes candidates. Batched by crate/module to evaluate multiple candidate signals in one pass, minimizing subagent overhead. Confirms when a concrete failing scenario can be stated; emits plausible when no refutation exists but reachability depends on state outside the code (config, an external caller, environment).
+5. **Exit Gate** — after remediation, re-reads code from scratch, checks all confirmed findings are gone, scans for sibling gaps, verifies compile and tests. Plausible findings pass through to the verdict for human review, never as remediation targets. Escalates to human when retry_count exceeds 3.
+
+---
+
+## Dispatch Matrix
+
+| Agent | Mode | Model / Effort | Loads | Input → Output |
+| :--- | :--- | :--- | :--- | :--- |
+| `recon` | Workspace recon | haiku / low | — | workspace path → live/dead manifest + language |
+| `scanner` | Pattern matching | sonnet / medium | rust-hazards.md (+ rust-hazards-t7-t10.md for a full scan) or the TypeScript equivalents | manifest → candidate@1 list |
+| `boundary-tracer` | Data flow tracing | sonnet / medium | rust-hazards-t7-t10.md or typescript-hazards-t7-t10.md — its entire scope | T7/T10 candidate → field survival map. Conditional. |
+| `adversary` | Adversarial reasoning | opus / high | whichever file has the candidate's one taxonomy — never both | batched candidate@1 list → finding-report@1 entries or dismissals |
+| `exit-gate` | Exit verification | opus / high | — | finding-report@1 → verdict@2 |
+
+---
+
+## Language Detection
+
+Recon inspects the workspace root:
+- `Cargo.toml` present → language: `rust` → agents load `shared/references/rust-hazards.md` and/or `rust-hazards-t7-t10.md`, per each agent's own scope
+- `package.json` present → language: `typescript` or `javascript` → agents load `shared/references/typescript-hazards.md` and/or `typescript-hazards-t7-t10.md`, per each agent's own scope
+
+---
+
+## Dead Code Rule
+
+Ranger ONLY reports bugs in live, reachable code. Any file not traceable from an entry point is dead and excluded from all scanning and adversarial phases. This is enforced by the recon manifest.
+
+---
+
+## Output
+
+All confirmed findings conform to the `finding-report@1` schema (`shared/schemas/finding-report@1.json`). The exit-gate verdict conforms to `verdict@2` (`shared/schemas/verdict@2.json`), which extends `verdict@1` with the non-blocking `flagged_for_review` channel.
+
+
+ARGUMENTS: Audit the whole Callisto Rust workspace (crates: callisto-model, callisto-graph, callisto-cli, callisto-vcs, callisto-manifests, callisto-conventional, callisto-changelog, callisto-format, callisto-moon, callisto-fixtures) for correctness bugs -- silent failures, spec-vs-code drift, ordering/staleness bugs, edge cases, security/path-containment issues. This workspace just went through a large multi-PR refactoring round (persist-and-verify release decisions, group-severity-algebra unification, publish/tag argv extraction with PublishOrchestrator deletion, redaction/glob/diagnostic-line dedup, typed GitHub-repo/tag identity, a shared manifest reader, and PEP-508/TOML-decor/config parallel-arm dedup) -- pay special attention to whether any of that churn introduced a real bug, not just whether it compiles and its own tests pass. Do not report bugs in dead or unreachable code.
