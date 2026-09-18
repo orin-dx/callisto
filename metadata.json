@@ -1,0 +1,32 @@
+{
+  "cli_version": "0.10.7-nightly.202609170627.0dda4e14f",
+  "checkpoint_id": "01M2RY8VVW1QG45V0EMZTZQVAS",
+  "strategy": "manual-commit",
+  "branch": "codex/release-recovery",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".github/tests/release-workflow-behavior/README.md",
+    ".github/tests/release-workflow-behavior/run.sh",
+    ".github/tests/verify-release-workflow-contract.sh",
+    ".github/workflows/callisto-ci.yml",
+    ".github/workflows/callisto-release.yml",
+    "justfile"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 5606023,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 303397632,
+    "output_tokens": 659322,
+    "api_call_count": 2605,
+    "subagent_tokens_complete": false
+  }
+}
