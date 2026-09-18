@@ -1,0 +1,34 @@
+<task-notification>
+<task-id>a806d07549d2a33fd</task-id>
+<tool-use-id>toolu_01Rr5hbPWuonwwBPW9ZMWsLv</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8f8eb6fc-22cd-45a0-a0c3-707f9385dbc8/tasks/a806d07549d2a33fd.output</output-file>
+<status>completed</status>
+<summary>Agent "Dedup redaction/glob/diagnostic-line logic (fresh agent)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>PR #58 is open against `main`. Task complete.
+
+## Summary
+
+**PR:** https://github.com/orin-dx/callisto/pull/58 — branch `refactor/redaction-glob-dedup` off `origin/main`, commit `7458c1ab`.
+
+**Shared helper signatures (stable, for the stacked follow-up PR to build on):**
+- `pub fn CommandOutput::redacted_stderr(&amp;self) -&gt; String` — `crates/callisto-model/src/exec.rs`
+- `pub fn compile_tag_glob(pattern: &amp;str) -&gt; Result&lt;globset::GlobMatcher, VcsError&gt;` — `crates/callisto-vcs/src/lib.rs`
+
+**What changed:**
+1. Redaction: added `redacted_stderr()`, replaced all 4 named local copies (`pre_cursor.rs`, `pre.rs`, `apply.rs`, `shell.rs`) — plus a second call site in `callisto-graph/src/commands/validate.rs` that reused `apply.rs`'s `pub(crate)` copy and wasn't in the original list. Left `publish_client.rs` untouched as instructed.
+2. Glob: added `compile_tag_glob()`, made `GitRepository::list_tags`, `ShellGit::list_tags`, and `tags::matching_tags` all call it; deleted `shell.rs`'s dead `compile_glob()`.
+3. `render_validate` now calls `render_diagnostics` instead of re-inlining the line format.
+4. Deleted `GitVcsProvider` (trait + impl, confirmed zero other references workspace-wide) and `last_tag_for`/`select_from_tags` (+ their tests and the `lib.rs` re-export). Added `.changeset/redaction-glob-dedup.md` (`callisto-vcs: minor`, `callisto-graph: minor`), matching the "audit pattern A" sibling PR's precedent for 0.x breaking removals.
+
+**Moon investigation:** `callisto-moon/src/runner.rs` and `runner_pdk.rs` construct `CommandOutput` from raw stderr but never embed it directly into a user-facing error — that only happens in `callisto-vcs`/`callisto-graph`, both already fixed. No moon-specific change needed.
+
+**Surprises:**
+- Found an unlisted 6th duplicate composition in `callisto-cli/src/runner.rs` (`CliCommandRunner`) — deliberately left it alone since it redacts only the *live-echoed* line while keeping the *captured* `CommandOutput.stderr` intentionally raw for downstream error classifiers; routing it through `.redacted_stderr()` would break that guarantee and its dedicated tests.
+- `apply.rs`'s local redact fn was `pub(crate)`, not fully private, and had a second call site in `validate.rs` not mentioned in the task.
+- `render_validate`'s switch to `render_diagnostics` adds a `Diagnostics:` header line to its failure output that wasn't there before (tests use `contains(...)`, so nothing broke, but it's a visible text change).
+
+Verification: `cargo build --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, and `cargo fmt --all -- --check` all pass clean, plus individual crate-scoped re-runs after each fix.</result>
+<usage><subagent_tokens>290554</subagent_tokens><tool_uses>159</tool_uses><duration_ms>1704719</duration_ms></usage>
+<worktree><worktreePath>/Users/gabe/Projects/callisto/.claude/worktrees/agent-a806d07549d2a33fd</worktreePath><worktreeBranch>worktree-agent-a806d07549d2a33fd</worktreeBranch></worktree>
+</task-notification>
