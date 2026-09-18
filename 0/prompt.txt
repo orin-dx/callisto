@@ -1,0 +1,10 @@
+<task-notification>
+<task-id>aca79d4f3af454827</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8f8eb6fc-22cd-45a0-a0c3-707f9385dbc8/tasks/aca79d4f3af454827.output</output-file>
+<status>completed</status>
+<summary>Agent "Dedup redaction/glob/diagnostic-line logic" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Still building/testing D locally. Waiting on all three: D's verification, fork A1 (dead abstractions), and fork G (redaction/glob dedup).</result>
+<usage><subagent_tokens>714185</subagent_tokens><tool_uses>1</tool_uses><duration_ms>20863</duration_ms></usage>
+</task-notification>
