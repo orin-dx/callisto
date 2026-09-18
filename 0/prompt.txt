@@ -1,0 +1,28 @@
+<task-notification>
+<task-id>a24c8a1cb7aa4e3ee</task-id>
+<tool-use-id>toolu_018oUdF4AJJVVHp5QmttQG4X</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8f8eb6fc-22cd-45a0-a0c3-707f9385dbc8/tasks/a24c8a1cb7aa4e3ee.output</output-file>
+<status>completed</status>
+<summary>Agent "Extract publish/tag argv layer, delete PublishOrchestrator" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Confirmed: base is `main`, 12 files changed, +1033/-3735, matching exactly my local commit. The diff contains only my new work (no duplicate redaction-glob-dedup content), since my branch was reset to `origin/main`'s tip before making any changes.
+
+## Summary
+
+**PR:** https://github.com/orin-dx/callisto/pull/60 (base: `main`, 12 files changed, +1033/-3735)
+
+**What I did:**
+- Setup note: the originally-specified base branch `refactor/redaction-glob-dedup` was merged into `main` mid-task (confirmed via the coordinator). I reset my branch to `origin/main`'s tip (content-identical to that branch's tip) before starting any work, so the final diff contains only this task's changes.
+- Extracted a pure argv/classification layer at `crates/callisto-graph/src/commands/registry_argv.rs` (829 lines, 26 unit tests): `Argv{program,args,cwd}`, `cargo_publish_argv` (adds `--locked` + on-disk-version check via the previously-unused `GraphError::OnDiskVersionDrift`), `detect_npm_package_manager`/`npm_publish_argv` (pnpm/yarn/bun/npm-specific invocations — the real, live-today bug), `pypi_publish_argv` (build-into-`dist/` + scoped upload glob, returns a 2-step `Vec&lt;Argv&gt;`), and the three `classify_*_output` functions moved from `publish_client.rs`.
+- Rewired `dispatch_registry` in `release.rs` to call `registry_argv` instead of hand-building commands.
+- Extended `callisto_vcs::GitDataSource::create_tag` with a new `TagSignPolicy` enum (`RespectRepoConfig` / `ForceUnsigned`) across all three implementors (`GitRepository`, `ShellGit`, `GitAccess`) so the `--` flag-injection guard and `--no-sign` CI workaround compose instead of one replacing the other. `dispatch_tag` now calls `GitAccess::create_tag(..., TagSignPolicy::ForceUnsigned, ...)` instead of inlining raw `git tag` argv (which had neither guard for the tag name).
+- Deleted `publish_client.rs` entirely and deleted `PublishOrchestrator`/`AlwaysRetryPolicy`/`SystemTimeProvider`/`parse_retry_after` from `publish.rs`, keeping the still-live `plan_publish`/`PublishOptions`/`filter_plan_by_report` and their tests intact (surgically trimmed a ~1335-line test module down to the 11 tests that don't touch the orchestrator).
+- Removed `publish_tests.rs`'s one orchestrator-only regression test (`pub_001_load_plan_required_for_private_registry_routing`) — its underlying bug class (a stateful "did you call `load_plan`" foot-gun) is structurally eliminated by `registry_argv`'s per-call-argument design.
+- Added changeset `.changeset/publish-tag-argv-extraction.md` (`callisto-graph: minor`, `callisto-vcs: minor`), matching this repo's established convention of never using `major` even for breaking 0.x API removals.
+
+**Verification:** `cargo build --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo fmt --all -- --check`, and `cargo test --workspace` (62/62 binaries, 0 failures) all pass. Specifically re-ran and read `callisto-cli`'s `durable_release_e2e_tests.rs` — `merged_release_commit_executes_exactly_once_through_real_cli` drives the real compiled binary against a real git repo and confirmed the tag is actually created and cargo publish/git push/gh release all fire correctly through the new code paths.
+
+**Surprise worth flagging:** no existing test exercises `dispatch_registry`'s npm branch end-to-end (the e2e suite only covers cargo) — that gap predates this PR; npm/pnpm/yarn/bun coverage is at the `registry_argv` unit level only. Also worth noting: `GitRepository`'s native `gix` tag-creation path never shells to `git` at all, so `TagSignPolicy` is a no-op there by construction — it only affects `ShellGit`.</result>
+<usage><subagent_tokens>469753</subagent_tokens><tool_uses>191</tool_uses><duration_ms>2533553</duration_ms></usage>
+<worktree><worktreePath>/Users/gabe/Projects/callisto/.claude/worktrees/agent-a24c8a1cb7aa4e3ee</worktreePath><worktreeBranch>worktree-agent-a24c8a1cb7aa4e3ee</worktreeBranch></worktree>
+</task-notification>
