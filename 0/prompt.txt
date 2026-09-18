@@ -1,0 +1,46 @@
+<task-notification>
+<task-id>a43ae2b2fb48809d9</task-id>
+<tool-use-id>toolu_013MrMr2bvAMA7HYcFmJCwvr</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8f8eb6fc-22cd-45a0-a0c3-707f9385dbc8/tasks/a43ae2b2fb48809d9.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix cascade group-target + Ord residual" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Both bugs are fixed, committed, and the working tree is clean. No push, no PR, per instructions.
+
+## Summary
+
+**Branch:** `fix/cascade-fixed-group-and-operationid-ord` (based off current `origin/main`, in worktree `/Users/gabe/Projects/callisto/.claude/worktrees/agent-a43ae2b2fb48809d9`)
+**Commit:** `f531f624400a89ed8c9e9bd84791b7fe2dee435e`
+
+### Bug 1 — `fixed_group_target` stale-member corruption
+File: `crates/callisto-graph/src/groups.rs` (function signature) + `crates/callisto-graph/src/cascade.rs` (call site, line ~414).
+
+Root cause confirmed by reading both group-kind code paths: the Fixed-group ("Track 1") block in `solve_cascade` already computed a filtered `live_members` list (for severity propagation), but then called `crate::groups::fixed_group_target(g, ...)` with the raw, unfiltered `GroupDef`. Inside `fixed_group_target`, `g.package_members()` picked `released[0]` from ALL declared members; if a stale member (absent from `input.base`) sorted first and still carried a leftover release tag, `base.get(&amp;released[0])` missed and silently fell back to the hardcoded `Version::semver(1, 0, 0)`, corrupting the alignment target for every live sibling.
+
+Fix: changed `fixed_group_target`'s first parameter from `g: &amp;GroupDef` to `live_members: &amp;[PackageId]`, so the call site passes the already-filtered list — mirroring the Linked-group block's existing guard and making the corruption structurally unrepresentable (no caller can pass an unfiltered group anymore). Added regression test `test_fixed_group_target_ignores_stale_tagged_member_alignment_base`, which reproduces the exact scenario (stale, tagged member declared first) and asserts the live member correctly gets `3.1.0` (from its real base 3.0.0), not `1.0.0`. Also hoisted duplicated test fixtures (`FakeGitTagRunner`, `package_with_canonical_manifest`) to module scope since a second test now needed them (avoids a second copy per CLAUDE.md guidance). All existing Linked/Fixed-group tests still pass unchanged.
+
+### Bug 2 — `Version`-field `Ord` via lossy `.render()` proxy
+File: `crates/callisto-model/src/release.rs`.
+
+Confirmed `ReleaseOperationId::cmp` compared `self.version.render()` (a `&amp;str`) instead of `Version` itself. Investigated `Version` in `version.rs`: it deliberately has no `Ord` (cross-grammar comparison isn't meaningful), and its derived `Eq`/`PartialEq` include the `grammar` field. Since the same literal (e.g. `"1.2.3"`) is valid under both `SemVer` and `Pep440` and renders identically in both, two `Version`s with different `grammar` but identical `render()` output are `Eq`-distinct yet were `Ord`-`Equal` under the old code — a real, constructible BTreeSet/BTreeMap invariant violation (verified this exact construction compiles and behaves as predicted).
+
+Per CLAUDE.md's duplication-check step, grepped the whole workspace for the same pattern and found a second, previously-unnoticed instance: `ArtifactSlotId::cmp` (same file) had the identical `.version.render()` defect. Fixed both via one shared helper:
+```rust
+fn version_ord_key(v: &amp;Version) -&gt; (VersionGrammar, &amp;str) {
+    (v.grammar(), v.render())
+}
+```
+`parsed` is a pure function of `(grammar, raw)`, so this key is complete and consistent with `Version`'s derived `Eq` without needing `Version` to implement `Ord` (preserving the original design decision). Added two regression tests mirroring the existing F5 `attestation_policy` test style: `operation_ids_differing_only_by_version_grammar_stay_distinct_under_ord` and `artifact_slot_ids_differing_only_by_version_grammar_stay_distinct_under_ord`, each confirming `Eq`-distinct values stay `Ord`-distinct and don't collapse in a `BTreeSet`.
+
+### Verification
+- `cargo test -p callisto-graph -p callisto-model` (all targets, unit + doctests): all green (400 + smaller suites, no failures).
+- `cargo clippy -p callisto-graph -p callisto-model --all-targets -- -D warnings`: clean.
+- `cargo build --workspace`: clean (confirmed no other crate calls the changed `fixed_group_target` signature).
+- `cargo fmt` applied (the repo's pre-commit hook runs `moon run :format-check` and caught two formatting nits, fixed and reverified before committing).
+- `Cargo.lock` untouched.
+
+### Changeset
+`.changeset/fixed-group-target-stale-filter-and-version-ord.md` (`callisto-graph: patch`, `callisto-model: patch`), following the repo's existing multi-topic/multi-package changeset format.</result>
+<usage><subagent_tokens>216987</subagent_tokens><tool_uses>81</tool_uses><duration_ms>1023821</duration_ms></usage>
+<worktree><worktreePath>/Users/gabe/Projects/callisto/.claude/worktrees/agent-a43ae2b2fb48809d9</worktreePath><worktreeBranch>worktree-agent-a43ae2b2fb48809d9</worktreeBranch></worktree>
+</task-notification>
