@@ -1,0 +1,1 @@
+Try to predict where we could go wrong in later phases of the release. Every time we get further but we get stuck because we're not looking forward as we go
