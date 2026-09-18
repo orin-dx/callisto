@@ -1,0 +1,1 @@
+Let's tackle all of them. If they have no conflicts we can leverage agent teams and workflows to parallelize the work. Make sure we won't step on each other. If necessary use stacked branches. Use worktree to keep things separate.
