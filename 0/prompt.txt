@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>b3tfwyxn5</task-id>
+<summary>Monitor event: "Wait for PR #76's final changesets-validation check"</summary>
+<event>PR #76: pending=0 fail=0
+DONE fail=0</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
