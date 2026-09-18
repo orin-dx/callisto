@@ -1,0 +1,49 @@
+{
+  "cli_version": "0.10.7-nightly.202609170627.0dda4e14f",
+  "checkpoint_id": "01M2S1R12073V2694SB09JWT24",
+  "session_id": "01a0aa80-3aab-7313-9603-edf7533a1570",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-18T01:23:03.185322Z",
+  "branch": "codex/release-recovery",
+  "checkpoints_count": 1,
+  "save_step_count": 2,
+  "files_touched": [
+    "crates/callisto-cli/src/tty.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-terra",
+  "turn_id": "6d601cc2ac2d",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 6250543,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 331657728,
+    "output_tokens": 733739,
+    "api_call_count": 2805,
+    "subagent_tokens_complete": false
+  },
+  "session_metrics": {
+    "turn_count": 78
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-18T01:23:01.952893Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 20,
+    "total_committed": 0,
+    "total_lines_changed": 20,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
