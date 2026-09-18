@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>b3tfwyxn5</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/f31314f3-cb9d-46e5-b69c-b389116eb431/tasks/b3tfwyxn5.output</output-file>
+<status>completed</status>
+<summary>Monitor "Wait for PR #76's final changesets-validation check" stream ended</summary>
+</task-notification>
