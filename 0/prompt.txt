@@ -1,0 +1,3 @@
+Let's make a comprehensive plan that accounts for the architecture and semantic models. We want to adjust as needed to ensure that we avoid similar bugs in the future vs spot patching one at a time. Sometimes there is a pattern to our issues that we can address with a model change or architectural change.
+
+Let's be holistic about this once the bug hunter is done please. Present the plan first. Don't rush.
