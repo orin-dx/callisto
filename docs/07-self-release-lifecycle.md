@@ -10,6 +10,27 @@ There is no GitHub Environment reviewer, deployment protection gate, or second m
 Merge evidence and release authorization are separate concerns: required CI checks protect the
 merge; the merge authorizes the release.
 
+## Merge evidence
+
+The active `main` ruleset requires one approving review, signed commits, linear squash history,
+and the following named evidence before a release PR can merge:
+
+- `Workflow Contracts`
+- `Code Formatting (Moon & Just)`
+- `Clippy Lints (Moon & Just)`
+- `Security & Advisory Audit (Moon & Just)`
+- `Code Coverage & Test Report`
+- `Test Suite & WASM Check (macos-latest)`
+- `Test Suite & WASM Check (ubuntu-latest)`
+- `Release Artifact Preflight (macos-arm64)`
+- `Release Artifact Preflight (linux-gnu)`
+- `Release Artifact Preflight (linux-musl)`
+- `Release Artifact Preflight (wasm-wasi)`
+- `Validate Changesets & Workspace Status`
+
+The repository owner has an explicit ruleset bypass for emergency recovery. That bypass is not a
+second approval mechanism and must be used only when the normal evidence path cannot run.
+
 ## Release identity and recovery
 
 Every release run records two different revisions:
