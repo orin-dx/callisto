@@ -1,0 +1,3 @@
+I'm going to rely on you to help me out of this mess. Can you make a comprehensive plan fox fixing our issues in the repo? Before you get too far let's do a very thorough adversarial analysis focusing on our overall goals of callisto (what we're trying to build even if the code or spec are wrong, questing things), performance, bugs/issues, architecture and semantic modeling.
+
+Don't rush. Research (changesets, knope are perfect references and nx release along with release please are good models), think, analyze and report back. Don't start making changes yet.
