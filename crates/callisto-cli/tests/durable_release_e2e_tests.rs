@@ -334,6 +334,63 @@ fn plan_intent(root: &Path, external: &Path, release_commit: &str) -> std::path:
     intent
 }
 
+fn coordinator_checkout(source: &Path, release_commit: &str) -> (TempDir, String) {
+    let dir = tempfile::tempdir().unwrap();
+    let coordinator = dir.path();
+    git(
+        source,
+        &[
+            "clone",
+            "--no-checkout",
+            source.to_str().unwrap(),
+            coordinator.to_str().unwrap(),
+        ],
+    );
+    git(coordinator, &["config", "user.name", "Callisto Coordinator"]);
+    git(coordinator, &["config", "user.email", "coordinator@example.invalid"]);
+    git(coordinator, &["config", "commit.gpgsign", "false"]);
+    git(coordinator, &["checkout", "--detach", release_commit]);
+    fs::write(coordinator.join("COORDINATOR-REVISION"), "new coordinator\n").unwrap();
+    git(coordinator, &["add", "COORDINATOR-REVISION"]);
+    git(coordinator, &["commit", "-m", "advance coordinator"]);
+    let revision = git(coordinator, &["rev-parse", "HEAD"]);
+    assert_ne!(
+        revision, release_commit,
+        "the coordinator must differ from release source"
+    );
+    (dir, revision)
+}
+
+fn plan_intent_from_source(
+    coordinator: &Path,
+    source: &Path,
+    external: &Path,
+    release_commit: &str,
+) -> std::path::PathBuf {
+    let intent = external.join("release-intent.json");
+    let plan = callisto(
+        coordinator,
+        &[
+            "release",
+            "plan",
+            "--source-root",
+            source.to_str().unwrap(),
+            "--from-release-commit",
+            release_commit,
+            "--decision",
+            source.join(DECISION_PATH).to_str().unwrap(),
+            "--out",
+            intent.to_str().unwrap(),
+        ],
+    );
+    assert!(
+        plan.status.success(),
+        "cross-worktree release plan failed: {}",
+        String::from_utf8_lossy(&plan.stderr)
+    );
+    intent
+}
+
 fn plan_product_intent(root: &Path, external: &Path, release_commit: &str) -> std::path::PathBuf {
     let intent = external.join("release-intent.json");
     let plan = callisto(
@@ -497,6 +554,51 @@ fn execute_with_recovery(
         .env("CALLISTO_TEST_REAL_GIT", system_git())
         .output()
         .expect("release execute should run")
+}
+
+fn execute_from_coordinator(
+    coordinator: &Path,
+    source: &Path,
+    intent: &Path,
+    state: &Path,
+    publishers: FakePublishers<'_>,
+    recovery: bool,
+) -> Output {
+    let path = format!("{}:{}", publishers.bin.display(), std::env::var("PATH").unwrap());
+    let mut command = Command::new(env!("CARGO_BIN_EXE_callisto"));
+    command
+        .args(["--format", "json", "--cwd", coordinator.to_str().unwrap()])
+        .args([
+            "release",
+            "execute",
+            "--source-root",
+            source.to_str().unwrap(),
+            "--intent",
+            intent.to_str().unwrap(),
+            "--state",
+            state.to_str().unwrap(),
+            "--receipt",
+            state.with_extension("receipt.json").to_str().unwrap(),
+            "--orchestration-revision",
+            &git(coordinator, &["rev-parse", "HEAD"]),
+        ]);
+    if recovery {
+        command.arg("--recovery");
+    }
+    command
+        .env("PATH", path)
+        .env("CALLISTO_TEST_LOG", publishers.log)
+        .env("CALLISTO_TEST_GIT_TRACE", publishers.git_trace)
+        .env("CALLISTO_TEST_FORGE_MARKER", publishers.forge_marker)
+        .env(
+            "CALLISTO_TEST_ARTIFACT_MARKER",
+            publishers.log.with_extension("artifact-marker"),
+        )
+        .env("CALLISTO_TEST_FORGE_TAG", "core-crate@0.2.0")
+        .env("CALLISTO_TEST_CARGO_MARKER", state.with_extension("cargo-marker"))
+        .env("CALLISTO_TEST_REAL_GIT", system_git())
+        .output()
+        .expect("cross-worktree release execute should run")
 }
 
 fn execute_product(
@@ -733,6 +835,54 @@ fn explicit_recovery_reconstructs_missing_state_from_remote_evidence() {
         );
     }
     assert!(state.with_extension("receipt.json").exists());
+}
+
+#[test]
+fn newer_coordinator_executes_and_recovers_an_older_release_source() {
+    let (source_dir, release_commit) = release_commit_fixture();
+    let source = source_dir.path();
+    let (coordinator_dir, coordinator_revision) = coordinator_checkout(source, &release_commit);
+    let coordinator = coordinator_dir.path();
+    let external = tempfile::tempdir().unwrap();
+    let intent = plan_intent_from_source(coordinator, source, external.path(), &release_commit);
+    let state = external.path().join("release-state.json");
+    let (bin, log, forge_marker, git_trace) = fake_publishers(external.path(), &release_commit, false);
+    let publishers = FakePublishers {
+        bin: &bin,
+        log: &log,
+        forge_marker: &forge_marker,
+        git_trace: &git_trace,
+    };
+
+    let first = execute_from_coordinator(coordinator, source, &intent, &state, publishers, false);
+    assert!(
+        first.status.success(),
+        "new coordinator execution failed: {}",
+        String::from_utf8_lossy(&first.stderr)
+    );
+    let receipt: serde_json::Value =
+        serde_json::from_slice(&fs::read(state.with_extension("receipt.json")).expect("initial receipt must exist"))
+            .unwrap();
+    assert_eq!(receipt["provenance"]["orchestrationRevision"], coordinator_revision);
+    assert_eq!(receipt["provenance"]["releaseSourceRevision"], release_commit);
+
+    fs::remove_file(&state).unwrap();
+    fs::remove_file(state.with_extension("receipt.json")).unwrap();
+    let effects = fs::read_to_string(&log).unwrap();
+    let recovered = execute_from_coordinator(coordinator, source, &intent, &state, publishers, true);
+    assert!(
+        recovered.status.success(),
+        "new coordinator recovery failed: {}",
+        String::from_utf8_lossy(&recovered.stderr)
+    );
+    let after_recovery = fs::read_to_string(&log).unwrap();
+    for effect in ["cargo publish", "git push", "gh release create"] {
+        assert_eq!(
+            after_recovery.matches(effect).count(),
+            effects.matches(effect).count(),
+            "recovery must observe the old source's remote effects instead of repeating `{effect}`"
+        );
+    }
 }
 
 #[test]
