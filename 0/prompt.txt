@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bzigtu7pi</task-id>
+<tool-use-id>toolu_019ibMjtSHbmM4PQgQwy9oAr</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/f31314f3-cb9d-46e5-b69c-b389116eb431/tasks/bzigtu7pi.output</output-file>
+<status>completed</status>
+<summary>Monitor "Wait for PR #76's macOS test suite (last pending check) to finish" stream ended</summary>
+</task-notification>
