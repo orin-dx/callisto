@@ -1,0 +1,1 @@
+We should adjust the source in ~/projects/agent-plugins and make sure we adjust the codex versions too
