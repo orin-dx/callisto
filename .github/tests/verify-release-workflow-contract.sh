@@ -72,6 +72,11 @@ fi
 
 require_line "$version_pr" '          persist-credentials: false' 'version-pr never git-pushes -- it commits through the forge API -- so it must not persist Git credentials'
 
+if ! rg -Fqx '      - run: just release-workflow-behavior' "$ci_workflow"; then
+  printf 'workflow contract failed: PR CI must run the behavioral release workflow harness\n' >&2
+  exit 1
+fi
+
 execute="$(sed -n '/^  execute:$/,$p' "$workflow")"
 require_line "$execute" '          persist-credentials: true' 'execute pushes the release tag with a plain git push (dispatch_tag) -- unlike every other job it has no other way to authenticate, so it must persist Git credentials'
 
