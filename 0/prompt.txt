@@ -1,0 +1,31 @@
+<task-notification>
+<task-id>a2e84498ea1bbda1a</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8f8eb6fc-22cd-45a0-a0c3-707f9385dbc8/tasks/a2e84498ea1bbda1a.output</output-file>
+<status>completed</status>
+<summary>Agent "Unify SemVer/PEP440 bump arithmetic" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Summary
+
+Read `crates/callisto-format/src/bump.rs` fully — both `bump()` implementations and both `bump_prerelease()` implementations — before touching anything, confirmed the duplication finding is accurate, and confirmed via `git log --oneline -- crates/callisto-format/src/bump.rs` that two independent bug-fix commits exist for this exact arithmetic: `99a632e3` (fix(format): increment undotted pre-release counter from numeric suffix — SemVer copy) and `5c86c315` (fix(format,model): correct PEP 440 post+dev bump — PEP 440 copy).
+
+**Extracted two shared helpers:**
+- `bump_release_triple(major, minor, patch, severity, finalize_in_place, overflow) -&gt; Result&lt;(u64,u64,u64), BumpError&gt;` — the zero-guard major/minor/patch arithmetic, used by both `SemVerVersioning::bump` and `Pep440Versioning::bump`. `finalize_in_place` is computed by each caller from its own grammar-specific state (`current.is_prerelease()` for SemVer; `!parsed.is_post() &amp;&amp; (parsed.is_pre() || parsed.is_dev())` for PEP 440) and passed in as a plain bool, so the shared function only holds the identical arithmetic, not the grammar-specific detection.
+- `next_counter(suffix: Option&lt;&amp;str&gt;, overflow) -&gt; Result&lt;u64, BumpError&gt;` — parses a trailing decimal counter and increments it (0 if absent/non-numeric), used by both `bump_prerelease` methods. Each caller still does its own grammar-specific prefix-stripping (SemVer's dotted-then-undotted `Option::or_else` chain with a `split_once('-')` + exact release-match guard; PEP 440's single `strip_prefix(letter_or_.dev)`), feeding the resulting `Option&lt;&amp;str&gt;` into the shared function.
+
+Traced every branch by hand to confirm behavior equivalence (e.g., the `Severity::None` match arms that existed in the old SemVer code were dead code — severity is already filtered by an early return in both callers — so replacing them with `unreachable!()` matching PEP 440's existing style changes nothing reachable).
+
+No genuine behavior divergence was found between the two implementations — the duplication was a true 1:1 match, so no bug was flagged.
+
+**Verification:**
+- `cargo test -p callisto-format`: 94 passed, 0 failed
+- `cargo clippy -p callisto-format --all-targets -- -D warnings`: clean
+- `cargo fmt -p callisto-format -- --check`: clean
+- `cargo test -p callisto-model -p callisto-graph -p callisto-cli`: all green, 0 failures across every test binary
+
+**Changeset**: `.changeset/bump-release-triple-and-counter-dedup.md` (patch, `callisto-format`).
+
+**Commit**: `ba1e72c89a378e92ba8e33f6bd6637f682723ae8` — `refactor(format): extract shared bump-triple and counter-increment helpers`, ending with the required `Claude-Session` trailer. The repo's pre-commit hook ran `moon run :format-check` across the whole workspace and passed. Not pushed, no PR opened, per instructions.</result>
+<usage><subagent_tokens>120614</subagent_tokens><tool_uses>26</tool_uses><duration_ms>336077</duration_ms></usage>
+<worktree><worktreePath>/Users/gabe/Projects/callisto/.claude/worktrees/agent-a2e84498ea1bbda1a</worktreePath><worktreeBranch>worktree-agent-a2e84498ea1bbda1a</worktreeBranch></worktree>
+</task-notification>
