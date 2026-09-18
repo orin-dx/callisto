@@ -1,0 +1,342 @@
+FYI, for context. Don't act on it:
+
+  # Comprehensive remediation plan
+
+  ## Phase 0: Stabilize the current branch and stop blind reruns
+
+  1. Merge PR #97 (https://github.com/orin-dx/callisto/pull/97) first; it fixes the Rust security advisory and currently has green checks.
+  2. Rebase or update PRs #95 and #96 after #97.
+  3. Merge #95 and remove required reviewers from the actual GitHub Environment settings.
+  4. Merge #96 as a short-term retention improvement, explicitly documenting that it is not a durability fix.
+  5. Do not initiate another blind self-release until false-success and recovery behavior are corrected or a deliberate bootstrap procedure is
+     selected.
+
+  The next coherent release may be 0.7.3. It is acceptable for 0.7.0–0.7.2 to remain unpublished if dependency constraints, tags, and registry state
+  are validated before publication.
+
+  Exit condition:
+
+  - Security checks are green.
+  - No second environment approval remains.
+  - The team understands that retention is mitigation, not recovery.
+
+  ———
+
+  ## Phase 1: Reset the product contract
+
+  Produce a short, binding product/architecture decision that answers:
+
+  - Who is the primary user?
+  - Which ecosystems are supported before v1?
+  - Is Changesets the primary authoring model?
+  - Are conventional commits supplemental or a second primary model?
+  - Does Rust own actual publication? Recommended answer: yes.
+  - Does CI own only scheduling and credentials? Recommended answer: yes.
+  - Are binary assets required before v1?
+  - What is the product-level version and tag?
+  - Which existing CLI/JSON interfaces are retained before v1?
+
+  Recommended decisions:
+
+  - Cargo, npm, Python, and native npm coordination remain the supported scope.
+  - Changesets are primary; conventional commits can generate equivalent change intent.
+  - Merge of the reviewed version PR is release approval.
+  - No environment reviewer gate.
+  - One canonical release plan and executor.
+  - Remove legacy surfaces before v1 where compatibility has no real consumer.
+
+  Exit condition:
+
+  - README, design document, CLI help, and actual behavior describe the same product.
+
+  ———
+
+  ## Phase 2: Add failing tests for every observed incident
+
+  Before correcting the implementation, create tests that reproduce the real failures:
+
+  1. A failed operation left Attempting, followed by a rerun.
+      - It must never return zero merely because no operation is eligible.
+
+  2. A resume on a fresh runner with no local state.
+  3. A publisher succeeds remotely but the local process receives an ambiguous failure.
+  4. A workflow artifact containing a hidden directory.
+  5. Artifacts downloaded outside the trusted worktree.
+  6. Resume after main advances.
+  7. Resume after the original workflow artifact expires.
+  8. Explicit version installation when the exact asset/package does not exist.
+      - It must not install main.
+
+  9. Malformed Cargo/pnpm workspace definitions.
+      - They must fail closed.
+
+  10. A complete self-release against fake registries and a bare Git remote.
+  11. The same release executed twice.
+
+  - The second execution must perform no duplicate publication and still issue a valid receipt.
+
+  Static workflow assertions can remain, but only as supplemental lint.
+
+  Exit condition:
+
+  - Each historical incident has a test that fails for the original reason, not merely for a similar helper function.
+
+  ———
+
+  ## Phase 3: Repair executor correctness
+
+  1. Define a provider observation interface.
+  2. Observe every operation before execution.
+  3. Observe again after successful or ambiguous execution.
+  4. Resolve abandoned Attempting operations through external state.
+  5. Treat mismatched existing state as a conflict.
+  6. Require a terminal receipt before returning exit code zero.
+  7. Persist the journal after every state transition.
+  8. Upload the journal with if: always() for diagnostics.
+  9. Make journal loss survivable by reconstructing from the plan and providers.
+  10. Add an explicit recovery command targeted by commit and plan digest.
+
+  Exit condition:
+
+  - Killing the executor at every transition and rerunning always converges to success or a precise conflict.
+  - It cannot duplicate an already completed publication.
+  - It cannot report success for a partial release.
+
+  This is the highest-priority implementation phase.
+
+  ———
+
+  ## Phase 4: Simplify the GitHub workflow
+
+  Target workflow:
+
+  Changesets
+      ↓
+  Version PR with immutable release plan
+      ↓ review + merge
+  Release executor
+      ↓
+  Observe → apply missing operations → verify
+      ↓
+  Terminal receipt
+
+  Specific changes:
+
+  - Treat merge as the approval.
+  - Remove the reviewer environment gate.
+  - Keep environment scoping only where needed for secrets.
+  - Avoid a build/artifact job boundary for source-only registry releases.
+  - Run binary build jobs only when the release plan contains artifact operations.
+  - Add workflow_dispatch inputs for release commit and plan digest.
+  - Check out the requested commit, not implicitly current main.
+  - Keep artifacts out of the trusted worktree.
+  - Upload execution journals and receipts independently from build artifacts.
+  - Validate every restored artifact against plan digests.
+
+  Exit condition:
+
+  - Happy path, delayed retry, advanced main, and partial remote publication all use the same workflow and executor.
+
+  ———
+
+  ## Phase 5: Unify the release API and domain model
+
+  1. Introduce exact ReleaseUnitId and ArtifactId concepts.
+  2. Resolve user selectors once at the boundary.
+  3. Build one release graph used by planning, CLI display, and execution.
+  4. Consolidate VersionPlan, PublishPlan, ReleaseDecision, and ReleaseIntent into a clear lifecycle.
+  5. Retire, remove, or make thin aliases of:
+      - plan-publish
+      - preview-only publish
+      - filter-plan
+      - standalone tag
+
+  6. Ensure no duplicated implementation remains behind aliases.
+  7. Expose JSON Schema for every stable automation artifact.
+  8. Add schema-version migration or explicit rejection behavior.
+
+  Exit condition:
+
+  - There is one implementation that decides version, publishability, ordering, and targets.
+  - All frontends call that implementation.
+
+  ———
+
+  ## Phase 6: Make workspace discovery authoritative and fail-closed
+
+  1. Parse root workspace configuration once.
+  2. Distinguish absent configuration from invalid configuration.
+  3. Turn invalid globs into diagnostics.
+  4. Turn unreadable or invalid child manifests into aggregated diagnostics.
+  5. Prevent malformed configuration from broadening package membership.
+  6. Include file spans and remediation in errors.
+  7. Add adversarial fixtures for path normalization, nested workspaces, excludes, symlinks, and platform packages.
+
+  Exit condition:
+
+  - No malformed authority file can silently add packages to a release.
+
+  ———
+
+  ## Phase 7: Finish or defer binary distribution deliberately
+
+  If binaries are required before v1:
+
+  1. Derive artifact slots from the release plan.
+  2. Define deterministic target matrices and filenames.
+  3. Build CLI archives and callisto-moon.wasm.
+  4. Generate checksums and an artifact manifest.
+  5. Attest the manifest.
+  6. Pass a verified-manifest capability to upload code.
+  7. Create one product GitHub Release.
+  8. Upload all planned assets.
+  9. Make setup actions download and verify exact versions.
+  10. Test installation on clean Linux, macOS, and supported downstream environments.
+
+  If binaries are deferred:
+
+  - Remove or hide the unreachable upload path.
+  - Make setup actions use only actually supported distribution channels.
+  - Stop documenting GitHub assets that are not produced.
+
+  Exit condition:
+
+  - A clean downstream machine can install the requested exact version, or the product clearly states that this distribution method is unsupported.
+
+  ———
+
+  ## Phase 8: Establish performance engineering
+
+  1. Add representative monorepo fixtures:
+      - 10 packages.
+      - 100 packages.
+      - Mixed Cargo/npm/Python.
+      - Native npm platform packages.
+      - Deep dependency cascades.
+
+  2. Benchmark cold and warm paths separately.
+  3. Add command-level performance budgets.
+  4. Resolve the base commit once.
+  5. Replace per-package history scans with one traversal and path-to-package mapping.
+  6. Cache parsed manifests and workspace membership within a command.
+  7. Profile before introducing concurrency.
+  8. Replace the undocumented <10ms claim with a reproducible p50/p95 target.
+
+  Exit condition:
+
+  - Performance statements can be reproduced in CI from a documented fixture.
+  - Status no longer scales as packages multiplied by history queries.
+
+  ———
+
+  ## Phase 9: Reconcile documentation and certify self-release
+
+  1. Rewrite the README and design sections from the canonical lifecycle.
+  2. Document:
+      - version PR behavior
+      - approval model
+      - execution
+      - observation and idempotence
+      - recovery
+      - product versus package tags
+      - binary distribution
+
+  3. Add an operator runbook for ambiguous failures.
+  4. Perform two certification releases:
+      - one normal self-release
+      - one deliberately interrupted and resumed release
+
+  5. Verify:
+      - every expected registry version
+      - package tags
+      - product GitHub Release
+      - assets and checksums, if supported
+      - setup action installation
+      - terminal receipt
+
+  Exit condition:
+
+  - Callisto releases itself successfully twice, including one forced recovery, before claiming the release path is reliable.
+
+  ———
+
+  # Suggested implementation sequence
+
+  This should be executed as small, independently reviewable changes, approximately:
+
+  1. Tests for false-success and Attempting recovery.
+  2. Terminal-receipt enforcement.
+  3. Provider observation interface.
+  4. Durable/reconstructable recovery and manual target selection.
+  5. Workflow simplification and removal of duplicate approval.
+  6. Fail-closed workspace discovery.
+  7. Release domain-model consolidation.
+  8. Removal of legacy release paths.
+  9. Binary distribution decision and implementation/removal.
+  10. Performance work and documented budgets.
+  11. Documentation reconciliation.
+  12. Certified self-release.
+
+  Phases 2–4 are P0. Phases 1, 5, and 6 are foundational P1. Binary distribution, performance, and final documentation are P2 once release
+  correctness is secured.
+
+  ———
+
+  # Current PR disposition
+
+  - #97 (https://github.com/orin-dx/callisto/pull/97): merge first. It removes the current security-audit blocker.
+  - #95 (https://github.com/orin-dx/callisto/pull/95): correct direction. Also remove the actual GitHub Environment reviewer requirement and obsolete
+    approval language.
+
+  - #96 (https://github.com/orin-dx/callisto/pull/96): reasonable operational mitigation. Do not describe it as durable recovery.
+
+  None of these PRs fixes executor resumability, false success, or release-state reconstruction.
+
+  ———
+
+  # Recommended decisions on open questions
+
+  My defaults would be:
+
+  1. Binary assets before v1?
+     Defer unless the setup actions are already a required external contract. Finish the source-release engine first.
+
+  2. Product tag?
+     Use a product-level callisto@X.Y.Z release for CLI/WASM assets, while retaining ecosystem package tags for individual registry artifacts.
+
+  3. Legacy CLI compatibility?
+     Remove misleading preview-only commands before v1 or turn them into explicit aliases backed by the new engine. Do not maintain two
+     implementations.
+
+  4. Fixtures in the fixed version group?
+     Exclude the unpublished dev-only fixture crate unless its version is part of a concrete compatibility contract.
+
+  5. Manual release approval?
+     No second approval. Reviewed release PR merge is the approval.
+
+  6. Execution journal as authority?
+     No. It is valuable evidence, but remote state plus the immutable plan is the recovery authority.
+
+  ———
+
+  ## Validation and confidence
+
+  The assessment was performed against clean remote main at commit 0ffe567f9c404cee233d44a6e4ae69a7868590a2, while preserving the existing dirty
+  local worktree.
+
+  Validation included:
+
+  - Repository architecture and release-path review.
+  - Recent PR and workflow-run history.
+  - Claude/Entire session history related to the publish orchestrator and durable-decision design.
+  - Release-mode command benchmarks.
+  - Clippy, test, and documentation execution.
+  - 1,381 tests passed.
+  - The complete local just ci invocation could not finish the advisory check because the sandbox could not acquire the Cargo advisory database lock;
+    GitHub independently shows the active advisory failure and PR #97’s green correction.
+
+  Confidence is high for the executor, workflow, recovery, discovery, documentation, and setup-action findings. Confidence is medium for the proposed
+  final domain decomposition because the binary-distribution and compatibility decisions remain product choices.
+
+  The most important next step is not another release attempt. It is to lock in the false-success and resume failures as tests, then make external
+  observation and a terminal receipt mandatory.
