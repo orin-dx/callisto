@@ -1,0 +1,1 @@
+Please commit as you go into logical chunks that make sense based on the changes
