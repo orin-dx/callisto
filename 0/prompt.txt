@@ -1,0 +1,1 @@
+Can you just fix the GH repo config to allow stacked branches to be self approved since I'm the only dev?
