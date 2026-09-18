@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>b3cy0xt69</task-id>
+<tool-use-id>toolu_01C4bDQPSYxvVfxyaCfkqCkg</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/f31314f3-cb9d-46e5-b69c-b389116eb431/tasks/b3cy0xt69.output</output-file>
+<status>completed</status>
+<summary>Background command "Check current worktree cleanliness and whether Cargo.lock is in sync" completed (exit code 0)</summary>
+</task-notification>
