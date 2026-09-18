@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bferfxvno</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8f8eb6fc-22cd-45a0-a0c3-707f9385dbc8/tasks/bferfxvno.output</output-file>
+<status>completed</status>
+<summary>Background command "cargo test -p callisto-cli --test durable_release_e2e_tests 2&gt;&amp;1 | tail -30" completed (exit code 0)</summary>
+</task-notification>
