@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bfigjsg2i</task-id>
+<tool-use-id>toolu_011Q9q7fCXsGtsPagKxfo4RS</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8f8eb6fc-22cd-45a0-a0c3-707f9385dbc8/tasks/bfigjsg2i.output</output-file>
+<status>completed</status>
+<summary>Background command "cargo clippy --workspace --all-targets --quiet -- -D warnings 2&gt;&amp;1 | tail -150" completed (exit code 0)</summary>
+</task-notification>
