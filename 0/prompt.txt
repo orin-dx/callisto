@@ -1,0 +1,5 @@
+<pasted_content id="087f">
+Can you do an adversarial analysis of https://github.com/orin-dx/callisto/pull/101? Focusing on architecture, semantic model in the
+  context of the goals of callisto? Also look for performance issues, bugs, missed corner casses and missing coverage. Tests should
+  be black box, cover useful functionality, happy path, corner cases and error states.
+</pasted_content id="087f">
