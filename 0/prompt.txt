@@ -1,0 +1,32 @@
+<task-notification>
+<task-id>a4d9da1eb071e1590</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8f8eb6fc-22cd-45a0-a0c3-707f9385dbc8/tasks/a4d9da1eb071e1590.output</output-file>
+<status>completed</status>
+<summary>Agent "Shared manifest reader + PEP508/TOML/config dedup" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Summary
+
+PR opened: **https://github.com/orin-dx/callisto/pull/63**
+
+Branch: `refactor/manifest-reader-and-parallel-arms` (off fresh `origin/main`), 8 commits, all 10 items completed — none skipped or scoped down.
+
+**Part 1 (Pattern B — shared manifest reader):**
+1. `Ecosystem::CANONICAL` + `canonical_manifest_format()` in `crates/callisto-model/src/ecosystem.rs`
+2. `read_identity`/`ManifestIdentity`/`VersionSource`/`read_napi_targets` in `crates/callisto-manifests/src/lib.rs` (+ per-ecosystem `identity_from_source` in `cargo.rs`/`npm.rs`/`python.rs`)
+3. Rewired `crates/callisto-graph/src/identity.rs`, `locate/ignore_walk.rs`, `crates/callisto-moon/src/locator.rs`, `locate/membership.rs`, `napi.rs`/`matrix.rs`, plus `commands/release_decision.rs`'s `manifest_version_at`
+4. `crates/callisto-graph/tests/architecture.rs` — grep-shaped enforcement test, verified it actually fails (not vacuous) by temporarily removing an allowlist entry
+
+**Part 2 (Pattern H — all 6 parallel-arm dedups):** PEP 508 `Requirement` type in `python.rs` (item 5), `set_scalar_preserving_decor`/`set_dependency_version` in `cargo.rs` (item 6), `parse_package_config_fields` in `config/resolve.rs` (item 7), `GroupKind`-parameterized loops in `config/groups.rs` (item 8), Cargo/Python `Membership`/`MembershipSpec` unification (item 9 — turned out to already be done as part of item 3, same file), and `prepend`'s shared splice in `callisto-changelog/src/write.rs` (item 10).
+
+**Verification:** ran build+test+clippy after every individual item (never batched), then `cargo build/clippy/test --workspace` and `cargo fmt --all` at the end — all clean, 100% pass, zero failures across the entire workspace (~1,236 tests). Local `callisto validate` confirms both changesets are well-formed. CI is still running its (slower) test/coverage jobs as I write this, but Clippy, Formatting, Workflow Contracts, and Security Audit have already passed.
+
+**Real behavior changes a reviewer should know about:**
+- **Flit-based Python packages are now discovered** by `IgnoreWalkLocator::projects()` — previously silently invisible.
+- **`napi.targets` malformed-value granularity changed**: `NapiTargetsIndex::load`'s lenient policy now drops the whole array on a non-string entry instead of filtering out just that entry (the strict `matrix::read_napi_targets` policy is unchanged).
+- **PEP 508 rewrite normalizes extras/marker whitespace** (`[a, b]` → `[a,b]`, `; marker` → `;marker`) — no existing test encoded the old whitespace-preserving behavior.
+
+**What surprised me:** the audit's own claims didn't fully match current code in two places, and I called this out rather than forcing the described shape — `callisto-moon`'s `locator.rs` only had 2 distinct ecosystem-detection semantics (multi-push, first-match), not 3; and item 9 (Cargo/Python membership unification) was already fully satisfied by item 3's rewiring since it's the same file/structs. `config/groups.rs`'s `validate_syntactic` had zero pre-existing tests, so I added 8 to lock in its subtle asymmetric cross-kind conflict check before/after the refactor.</result>
+<usage><subagent_tokens>501339</subagent_tokens><tool_uses>305</tool_uses><duration_ms>2959291</duration_ms></usage>
+<worktree><worktreePath>/Users/gabe/Projects/callisto/.claude/worktrees/agent-a4d9da1eb071e1590</worktreePath><worktreeBranch>worktree-agent-a4d9da1eb071e1590</worktreeBranch></worktree>
+</task-notification>
