@@ -1,0 +1,1 @@
+Show me the comprehensive finding report to give to claude and to store in memory. We need to figure out how to do this way better.
