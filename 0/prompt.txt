@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bnxhqjdd6</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/f31314f3-cb9d-46e5-b69c-b389116eb431/tasks/bnxhqjdd6.output</output-file>
+<status>completed</status>
+<summary>Background command "Run full pre-PR verification suite" completed (exit code 0)</summary>
+</task-notification>
