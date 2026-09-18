@@ -1,0 +1,1 @@
+And was I not asking you to stop and look more comprehensively? you have access to the sessions from entire search. That's how Codex found the issues (and by analyzing our PR pattern).
