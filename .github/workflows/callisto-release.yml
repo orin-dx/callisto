@@ -120,9 +120,11 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_SOURCE_SHA_INPUT: ${{ inputs.release_source_sha }}
+          TRIGGERING_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          release_source_sha="${{ inputs.release_source_sha || github.sha }}"
+          release_source_sha="${RELEASE_SOURCE_SHA_INPUT:-$TRIGGERING_SHA}"
           orchestration_sha=$(gh api "/repos/${GITHUB_REPOSITORY}/commits/main" --jq '.sha')
           # This only schedules the job. `release plan` verifies the actual
           # parent-to-merge delta; labels and PR metadata are never authority.
@@ -166,12 +168,18 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: Derive and hash intent
+        env:
+          RELEASE_SOURCE_SHA: ${{ needs.release-candidate.outputs.release_source_sha }}
+          ORCHESTRATION_SHA: ${{ needs.release-candidate.outputs.orchestration_sha }}
         run: |
           set -euo pipefail
-          release_source_sha="${{ needs.release-candidate.outputs.release_source_sha }}"
           handoff_dir="${RUNNER_TEMP}/release-intent"
           mkdir -p "$handoff_dir"
-          callisto release plan --profile production --source-root "$GITHUB_WORKSPACE/release-source" --orchestration-revision "${{ needs.release-candidate.outputs.orchestration_sha }}" --artifact-repository "$GITHUB_REPOSITORY" --from-release-commit "$release_source_sha" --decision "$GITHUB_WORKSPACE/release-source/.callisto/release-decision.json" --out "$handoff_dir/release-intent.json"
+          callisto release plan --profile production --source-root "$GITHUB_WORKSPACE/release-source" \
+            --orchestration-revision "$ORCHESTRATION_SHA" --artifact-repository "$GITHUB_REPOSITORY" \
+            --from-release-commit "$RELEASE_SOURCE_SHA" \
+            --decision "$GITHUB_WORKSPACE/release-source/.callisto/release-decision.json" \
+            --out "$handoff_dir/release-intent.json"
           shasum -a 256 "$handoff_dir/release-intent.json" > "$handoff_dir/release-intent.json.sha256"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -242,26 +250,14 @@ jobs:
           callisto release inspect --input "$handoff_dir/release-intent.json"
           mkdir -p "${RUNNER_TEMP}/release-artifacts"
       - name: Build declared artifact
+        env:
+          CALLISTO_RELEASE_ARTIFACT_KIND: ${{ matrix.kind }}
+          CALLISTO_RELEASE_ARTIFACT_TARGET: ${{ matrix.target }}
+          CALLISTO_RELEASE_ARTIFACT_ASSET: ${{ matrix.asset }}
+          CALLISTO_RELEASE_SOURCE_ROOT: ${{ github.workspace }}/release-source
+          CALLISTO_RELEASE_ARTIFACT_DIR: ${{ runner.temp }}/release-artifacts
         run: |
-          set -euo pipefail
-          case '${{ matrix.kind }}' in
-            cli)
-              rustup target add '${{ matrix.target }}'
-              (cd release-source && cargo build --locked --release -p callisto-cli --target '${{ matrix.target }}')
-              tar -C "release-source/target/${{ matrix.target }}/release" -czf "${RUNNER_TEMP}/release-artifacts/${{ matrix.asset }}" callisto
-              ;;
-            cross)
-              rustup target add '${{ matrix.target }}'
-              cargo install cross --locked --version 0.2.5
-              (cd release-source && cross build --locked --release -p callisto-cli --target '${{ matrix.target }}')
-              tar -C "release-source/target/${{ matrix.target }}/release" -czf "${RUNNER_TEMP}/release-artifacts/${{ matrix.asset }}" callisto
-              ;;
-            wasm)
-              rustup target add '${{ matrix.target }}'
-              (cd release-source && cargo rustc --locked --release -p callisto-moon --target '${{ matrix.target }}' --features pdk --crate-type cdylib)
-              cp "release-source/target/${{ matrix.target }}/release/callisto_moon.wasm" "${RUNNER_TEMP}/release-artifacts/${{ matrix.asset }}"
-              ;;
-          esac
+          bash .github/scripts/build-release-artifact.sh
       - name: Attest exact artifact bytes
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
@@ -377,13 +373,14 @@ jobs:
           TWINE_PASSWORD: ${{ secrets.TWINE_PASSWORD }}
           GH_TOKEN: ${{ github.token }}
           RELEASE_SOURCE_SHA_INPUT: ${{ inputs.release_source_sha }}
+          ORCHESTRATION_SHA: ${{ needs.build.outputs.orchestration_sha }}
         run: |
           set -euo pipefail
           intent_dir="${RUNNER_TEMP}/release-intent"
           build_dir="${RUNNER_TEMP}/release-build"
           state_dir="${RUNNER_TEMP}/callisto-release-state/${GITHUB_RUN_ID}"
           mkdir -p "$state_dir"
-          args=(--source-root "$GITHUB_WORKSPACE/release-source" --intent "$intent_dir/release-intent.json" --state "$state_dir/execution-state.json" --receipt "$state_dir/release-receipt.json" --orchestration-revision "${{ needs.build.outputs.orchestration_sha }}" --profile production)
+          args=(--source-root "$GITHUB_WORKSPACE/release-source" --intent "$intent_dir/release-intent.json" --state "$state_dir/execution-state.json" --receipt "$state_dir/release-receipt.json" --orchestration-revision "$ORCHESTRATION_SHA" --profile production)
           if [[ -n "$RELEASE_SOURCE_SHA_INPUT" ]]; then
             args+=(--recovery)
           fi

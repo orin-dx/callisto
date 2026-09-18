@@ -32,6 +32,9 @@ fi
 
 release_candidate="$(job_block release-candidate plan)"
 require_line "$release_candidate" '          prs=$(gh api --paginate "/repos/${GITHUB_REPOSITORY}/commits/${release_source_sha}/pulls" --jq '\''[.[] | select(.merged_at != null and .base.ref == "main" and (.head.ref == "callisto/version-packages" or (.head.ref | test("^callisto/version-packages--[0-9a-f]{40}$"))))] | length'\'')' 'release-candidate must validate an explicit source only when it is a merged managed branch'
+require_line "$release_candidate" '          RELEASE_SOURCE_SHA_INPUT: ${{ inputs.release_source_sha }}' 'release-candidate must pass a dispatch input through an environment variable'
+require_line "$release_candidate" '          TRIGGERING_SHA: ${{ github.sha }}' 'release-candidate must pass the triggering commit through an environment variable'
+require_line "$release_candidate" '          release_source_sha="${RELEASE_SOURCE_SHA_INPUT:-$TRIGGERING_SHA}"' 'release-candidate must not interpolate user-controlled SHA input into shell'
 
 build_artifact="$(job_block build-artifact build)"
 require_line "$build_artifact" '      contents: read' 'each target build must read the intent-bound source tree'
@@ -39,6 +42,7 @@ require_line "$build_artifact" '      attestations: write' 'each target build mu
 require_line "$build_artifact" '      id-token: write' 'each target build must mint the Sigstore OIDC identity'
 require_line "$build_artifact" '          path: ${{ runner.temp }}/release-intent' 'each target build must keep the release handoff outside either checkout'
 require_line "$build_artifact" '          subject-path: ${{ runner.temp }}/release-artifacts/${{ matrix.asset }}' 'each target build must attest its staged artifact bytes'
+require_line "$build_artifact" '          bash .github/scripts/build-release-artifact.sh' 'production artifact builds must use the shared preflighted build recipe'
 require_line "$build_artifact" '            target: aarch64-apple-darwin' 'the product matrix must build macOS ARM64'
 require_line "$build_artifact" '            target: x86_64-unknown-linux-gnu' 'the product matrix must build glibc Linux x86_64'
 require_line "$build_artifact" '            target: x86_64-unknown-linux-musl' 'the product matrix must build musl Linux x86_64'
@@ -50,7 +54,9 @@ require_line "$build" '          callisto release artifact-manifest --intent "${
 plan="$(job_block plan build-artifact)"
 require_line "$plan" '          ref: ${{ needs.release-candidate.outputs.orchestration_sha }}' 'planning must use one resolved current orchestration revision'
 require_line "$plan" '          path: release-source' 'planning must check out the explicit release source separately'
-require_line "$plan" '          callisto release plan --profile production --source-root "$GITHUB_WORKSPACE/release-source" --orchestration-revision "${{ needs.release-candidate.outputs.orchestration_sha }}" --artifact-repository "$GITHUB_REPOSITORY" --from-release-commit "$release_source_sha" --decision "$GITHUB_WORKSPACE/release-source/.callisto/release-decision.json" --out "$handoff_dir/release-intent.json"' 'planning must bind the production profile, product artifact slots, current coordinator, and exact source checkout'
+require_line "$plan" '          ORCHESTRATION_SHA: ${{ needs.release-candidate.outputs.orchestration_sha }}' 'planning must pass the coordinator revision through an environment variable'
+require_line "$plan" '            --orchestration-revision "$ORCHESTRATION_SHA" --artifact-repository "$GITHUB_REPOSITORY" \' 'planning must bind the production profile and current coordinator without shell interpolation'
+require_line "$plan" '            --from-release-commit "$RELEASE_SOURCE_SHA" \' 'planning must bind the exact release source checkout'
 
 execute="$(sed -n '/^  execute:$/,$p' "$workflow")"
 require_line "$execute" '    needs: build' 'PR merge is the release approval; execute must depend directly on the verified build, not a GitHub Environment gate'
@@ -58,7 +64,8 @@ require_line "$execute" '          cmp "$intent_dir/release-intent.json" "$build
 require_line "$execute" '          path: ${{ runner.temp }}/release-intent' 'execute must download release-intent outside the workspace -- callisto release execute re-checks release trust before every dispatch, which fails closed on any untracked file in the worktree'
 require_line "$execute" '          path: ${{ runner.temp }}/release-build' 'execute must download release-build outside the workspace -- callisto release execute re-checks release trust before every dispatch, which fails closed on any untracked file in the worktree'
 require_line "$execute" '          path: release-source' 'execute must use an explicit release-source checkout'
-require_line "$execute" '          args=(--source-root "$GITHUB_WORKSPACE/release-source" --intent "$intent_dir/release-intent.json" --state "$state_dir/execution-state.json" --receipt "$state_dir/release-receipt.json" --orchestration-revision "${{ needs.build.outputs.orchestration_sha }}" --profile production)' 'execute must pass the explicit source checkout, coordinator revision, and mandatory receipt path to the current Callisto coordinator'
+require_line "$execute" '          ORCHESTRATION_SHA: ${{ needs.build.outputs.orchestration_sha }}' 'execution must pass the coordinator revision through an environment variable'
+require_line "$execute" '          args=(--source-root "$GITHUB_WORKSPACE/release-source" --intent "$intent_dir/release-intent.json" --state "$state_dir/execution-state.json" --receipt "$state_dir/release-receipt.json" --orchestration-revision "$ORCHESTRATION_SHA" --profile production)' 'execute must pass the explicit source checkout, coordinator revision, and mandatory receipt path to the current Callisto coordinator'
 require_line "$execute" '          if [[ -n "$RELEASE_SOURCE_SHA_INPUT" ]]; then' 'an explicit historic source must select the recovery lifecycle'
 require_line "$execute" '            args+=(--recovery)' 'an explicit historic source must record recovery in the terminal receipt'
 
@@ -74,6 +81,25 @@ require_line "$version_pr" '          persist-credentials: false' 'version-pr ne
 
 if ! rg -Fqx '      - run: just release-workflow-behavior' "$ci_workflow"; then
   printf 'workflow contract failed: PR CI must run the behavioral release workflow harness\n' >&2
+  exit 1
+fi
+
+if ! rg -Fqx '  release-artifact-preflight:' "$ci_workflow"; then
+  printf 'workflow contract failed: PR CI must preflight every production artifact build recipe\n' >&2
+  exit 1
+fi
+
+if ! rg -Fqx '        run: bash .github/tests/test-release-artifact-build-script.sh' "$ci_workflow"; then
+  printf 'workflow contract failed: CI must test the shared release artifact build script\n' >&2
+  exit 1
+fi
+
+if ! rg -Fqx '          - id: macos-arm64' "$ci_workflow" \
+  || ! rg -Fqx '            target: aarch64-apple-darwin' "$ci_workflow" \
+  || ! rg -Fqx '            target: x86_64-unknown-linux-gnu' "$ci_workflow" \
+  || ! rg -Fqx '            target: x86_64-unknown-linux-musl' "$ci_workflow" \
+  || ! rg -Fqx '            target: wasm32-wasip1' "$ci_workflow"; then
+  printf 'workflow contract failed: artifact preflight must cover all four product targets\n' >&2
   exit 1
 fi
 
