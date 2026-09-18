@@ -1,0 +1,1 @@
+How do we fix this systematically, not just for this repo though? We have all our plugins which is nice but it's still making stupid mistakes, specially in claude but I'm sure in codex too
