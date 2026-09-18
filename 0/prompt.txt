@@ -1,0 +1,32 @@
+<task-notification>
+<task-id>a6c79357380448444</task-id>
+<tool-use-id>toolu_01UnLa1u1ukS7foG1ndRzbJn</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8f8eb6fc-22cd-45a0-a0c3-707f9385dbc8/tasks/a6c79357380448444.output</output-file>
+<status>completed</status>
+<summary>Agent "Classify moon runner spawn failures via ErrorKind" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Working tree is clean (no output from `git status --porcelain`). The commit is complete.
+
+## Summary
+
+**Commit:** `20bac80026fd80293cdcf85626bfce74c8ced227` — `fix(moon): classify native spawn failures by ErrorKind, not message text`
+
+**Fix**: In `crates/callisto-moon/src/runner.rs`, `MoonCommandRunner::run`'s native (`#[cfg(not(feature = "pdk"))]`) path now classifies spawn failures via a new `classify_native_io_error(program: &amp;str, e: &amp;std::io::Error)` helper that checks `e.kind() == std::io::ErrorKind::NotFound` directly on the real `io::Error`, before any string conversion — mirroring `callisto-cli/src/runner.rs`'s `CliCommandRunner::run` pattern exactly. The old `classify_host_failure`/`looks_like_not_found` string-heuristic functions are untouched and still used by `runner_pdk.rs`'s wasm/pdk path, whose `warpgate_pdk` errors carry no `ErrorKind` at all — confirmed by reading that file, which is unmodified.
+
+**Tests**:
+- `native_runner_reports_not_found` (pre-existing) still passes — now for the correct reason (kind-based, not locale-wording-based).
+- Added `classify_native_io_error_uses_error_kind_not_message_text`: a synthetic `io::Error` with `ErrorKind::NotFound` but wording that would NOT match the old string heuristic still classifies as `CommandError::NotFound`.
+- Added `classify_native_io_error_does_not_misclassify_on_message_text_alone`: a sibling check — `ErrorKind::PermissionDenied` with "not found" in the message text still classifies as `CommandError::Io`, proving the classification keys off `ErrorKind`, not text.
+
+**Verification** (all clean):
+- `cargo test -p callisto-moon`: 14 unit + 13 integration tests pass.
+- `cargo clippy -p callisto-moon --all-targets -- -D warnings`: clean.
+- `cargo fmt -p callisto-moon -- --check`: initially flagged the new tests' formatting; ran `cargo fmt -p callisto-moon` to fix, then re-verified tests/clippy still pass.
+- `just wasm-check`: ran successfully — `cargo check --target wasm32-wasip1 --features pdk` and `cargo rustc --crate-type cdylib` both finished clean, confirming the `pdk` build path (which still uses the string heuristic) is unaffected.
+
+**Changeset**: `.changeset/moon-native-runner-not-found-kind.md`, patch-level for `callisto-moon`.
+
+The diff is minimal — 2 files changed, 69 insertions(+), 1 deletion(-) — touching only `runner.rs` and adding the changeset. Not pushed, no PR opened.</result>
+<usage><subagent_tokens>103945</subagent_tokens><tool_uses>33</tool_uses><duration_ms>509911</duration_ms></usage>
+<worktree><worktreePath>/Users/gabe/Projects/callisto/.claude/worktrees/agent-a6c79357380448444</worktreePath><worktreeBranch>worktree-agent-a6c79357380448444</worktreeBranch></worktree>
+</task-notification>
