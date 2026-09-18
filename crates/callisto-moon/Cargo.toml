@@ -1,6 +1,6 @@
 [package]
 name = "callisto-moon"
-version = "0.7.2"
+version = "0.7.3"
 edition.workspace = true
 license = "FSL-1.1-MIT"
 description = "Callisto Release Engine — Moon WASM PDK plugin for polyglot monorepo release automation."
