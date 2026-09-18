@@ -1311,6 +1311,10 @@ fn validated_registry_key(raw: String) -> Result<RegistryKey, ReleaseOperationEr
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ReleaseIntentV1 {
     pub schema_version: u8,
+    /// The destination profile selected before planning. It is part of the
+    /// canonical digest so execution cannot relabel a production intent as a
+    /// rehearsal (or vice versa) when writing its receipt.
+    pub profile: ReleaseProfileId,
     pub decision: ReleaseDecisionV1,
     pub snapshot: ReleaseInputSnapshotV1,
     pub trust_profile: ExecutionTrustProfileV1,
@@ -1323,6 +1327,7 @@ pub struct ReleaseIntentV1 {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ReleaseIntentV1Wire {
     schema_version: u8,
+    profile: ReleaseProfileId,
     decision: ReleaseDecisionV1,
     snapshot: ReleaseInputSnapshotV1,
     trust_profile: ExecutionTrustProfileV1,
@@ -1352,6 +1357,7 @@ impl<'de> Deserialize<'de> for ReleaseIntentV1 {
             return Err(serde::de::Error::custom("release input packages are not canonical"));
         }
         let intent = Self::new(
+            wire.profile,
             wire.decision,
             wire.snapshot,
             wire.trust_profile,
@@ -1369,9 +1375,10 @@ impl<'de> Deserialize<'de> for ReleaseIntentV1 {
 }
 
 impl ReleaseIntentV1 {
-    pub const SCHEMA_VERSION: u8 = 1;
+    pub const SCHEMA_VERSION: u8 = 2;
 
     pub fn new(
+        profile: ReleaseProfileId,
         decision: ReleaseDecisionV1,
         snapshot: ReleaseInputSnapshotV1,
         trust_profile: ExecutionTrustProfileV1,
@@ -1398,9 +1405,17 @@ impl ReleaseIntentV1 {
             return Err(ReleaseIntentError::ArtifactSlotOutsideDecision);
         }
         validate_artifact_upload_roster(&operations, &artifact_slots)?;
-        let digest = digest_intent(&decision, &snapshot, trust_profile, &operations, &artifact_slots);
+        let digest = digest_intent(
+            &profile,
+            &decision,
+            &snapshot,
+            trust_profile,
+            &operations,
+            &artifact_slots,
+        );
         Ok(Self {
             schema_version: Self::SCHEMA_VERSION,
+            profile,
             decision,
             snapshot,
             trust_profile,
@@ -1416,6 +1431,7 @@ impl ReleaseIntentV1 {
 }
 
 fn digest_intent(
+    profile: &ReleaseProfileId,
     decision: &ReleaseDecisionV1,
     snapshot: &ReleaseInputSnapshotV1,
     trust_profile: ExecutionTrustProfileV1,
@@ -1424,6 +1440,7 @@ fn digest_intent(
 ) -> IntentDigest {
     let mut transcript = CanonicalTranscript::intent_v1();
     transcript.push_bytes("schema", [ReleaseIntentV1::SCHEMA_VERSION]);
+    transcript.push_str("profile", profile.as_str());
     transcript.push_str("decision", decision.digest.as_str());
     transcript.push_str("snapshot", snapshot.digest().as_str());
     transcript.push_str(
@@ -1761,6 +1778,9 @@ impl ReleaseRunProvenanceV1 {
         if self.intent_digest != intent.digest {
             return Err(ReleaseRunProvenanceError::MismatchedIntent);
         }
+        if self.profile != intent.profile {
+            return Err(ReleaseRunProvenanceError::MismatchedProfile);
+        }
         if !intent.artifact_slots.is_empty() && self.artifact_manifest_digest.is_none() {
             return Err(ReleaseRunProvenanceError::MissingArtifactManifest);
         }
@@ -1809,6 +1829,8 @@ pub enum ReleaseRunProvenanceError {
     UnsupportedSchema { found: u8 },
     #[error("release run provenance is bound to a different intent")]
     MismatchedIntent,
+    #[error("release run provenance profile does not match the release intent")]
+    MismatchedProfile,
     #[error("release run provenance source does not match the release intent")]
     MismatchedReleaseSource,
     #[error("release run provenance requires a Git commit release source")]
@@ -2372,6 +2394,7 @@ mod tests {
             }
         }
         ReleaseIntentV1::new(
+            ReleaseProfileId::parse("production").expect("production profile is valid"),
             ReleaseDecisionV1::new(entries).expect("test operations define a roster"),
             snapshot.expect("test snapshot is valid"),
             trust_profile,
@@ -2961,7 +2984,7 @@ mod tests {
             ReleaseRunKindV1::Recovery,
             CommitSha::parse(&"b".repeat(40)).unwrap(),
             CommitSha::parse(&"a".repeat(40)).unwrap(),
-            ReleaseProfileId::parse("rehearsal").unwrap(),
+            ReleaseProfileId::parse("production").unwrap(),
             intent.digest().clone(),
         );
 
@@ -2971,11 +2994,23 @@ mod tests {
         );
         assert!(provenance.validate_for_intent(&intent).is_ok());
 
+        let wrong_profile = ReleaseRunProvenanceV1::new(
+            ReleaseRunKindV1::Recovery,
+            CommitSha::parse(&"b".repeat(40)).unwrap(),
+            CommitSha::parse(&"a".repeat(40)).unwrap(),
+            ReleaseProfileId::parse("rehearsal").unwrap(),
+            intent.digest().clone(),
+        );
+        assert!(matches!(
+            wrong_profile.validate_for_intent(&intent),
+            Err(ReleaseRunProvenanceError::MismatchedProfile)
+        ));
+
         let wrong_source = ReleaseRunProvenanceV1::new(
             ReleaseRunKindV1::Recovery,
             CommitSha::parse(&"b".repeat(40)).unwrap(),
             CommitSha::parse(&"c".repeat(40)).unwrap(),
-            ReleaseProfileId::parse("rehearsal").unwrap(),
+            ReleaseProfileId::parse("production").unwrap(),
             intent.digest().clone(),
         );
         assert!(matches!(

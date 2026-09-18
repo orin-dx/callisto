@@ -238,6 +238,7 @@ mod tests {
         .unwrap();
         let operation = ReleaseOperation::artifact_upload(slot.clone(), vec![]).unwrap();
         ReleaseIntentV1::new(
+            callisto_model::ReleaseProfileId::parse("production").unwrap(),
             decision,
             snapshot,
             ExecutionTrustProfileV1::GitCommit,

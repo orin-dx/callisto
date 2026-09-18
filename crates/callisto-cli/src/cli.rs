@@ -324,6 +324,10 @@ pub struct ReleasePrCommitPlanArgs {
 
 #[derive(Args, Clone, Debug)]
 pub struct ReleasePlanArgs {
+    /// Credential-free release destination profile bound into the immutable
+    /// intent. Execution must use this same profile.
+    #[arg(long, default_value = "production", value_name = "PROFILE")]
+    pub profile: String,
     /// Read the release source from this checkout while the Callisto binary
     /// itself may come from a separate, current orchestration checkout.
     #[arg(long, value_name = "DIR")]

@@ -130,6 +130,8 @@ fn plan(args: ReleasePlanArgs, global: &GlobalArgs) -> Result<ExitCode, CliError
         ));
     }
     let runner = CliCommandRunner;
+    let profile = ReleaseProfileId::parse(&args.profile)
+        .map_err(|error| CliError::Other(format!("invalid release profile `{}`: {error}", args.profile)))?;
     let source_global = source_global(global, args.source_root.as_deref());
     let workspace = load_workspace(&source_global, &runner)?;
     let decision = match args.from_release_commit.as_deref() {
@@ -205,6 +207,7 @@ fn plan(args: ReleasePlanArgs, global: &GlobalArgs) -> Result<ExitCode, CliError
                 &locator,
                 &runner,
                 &decision,
+                profile.clone(),
                 ExecutionTrustProfileV1::GitCommit,
                 callisto_graph::commands::ArtifactBuildPolicy {
                     repository,
@@ -223,6 +226,7 @@ fn plan(args: ReleasePlanArgs, global: &GlobalArgs) -> Result<ExitCode, CliError
             &locator,
             &runner,
             &decision,
+            profile,
             ExecutionTrustProfileV1::GitCommit,
         )?,
         (None, _, _) => {
@@ -274,6 +278,15 @@ fn reconcile(args: ReleaseReconcileArgs, global: &GlobalArgs) -> Result<ExitCode
 
 fn execute(args: ReleaseExecuteArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
     let intent = read_intent(&args.intent)?;
+    let selected_profile = ReleaseProfileId::parse(&args.profile)
+        .map_err(|error| CliError::Other(format!("invalid release profile `{}`: {error}", args.profile)))?;
+    if selected_profile != intent.profile {
+        return Err(CliError::Other(format!(
+            "release execute profile `{}` does not match immutable intent profile `{}`",
+            selected_profile.as_str(),
+            intent.profile.as_str()
+        )));
+    }
     let manifest = args
         .artifact_manifest
         .as_deref()
@@ -335,8 +348,6 @@ fn execute(args: ReleaseExecuteArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
             args.orchestration_revision
         ))
     })?;
-    let profile = ReleaseProfileId::parse(&args.profile)
-        .map_err(|error| CliError::Other(format!("invalid release profile `{}`: {error}", args.profile)))?;
     let source = match &capability.intent().snapshot.source {
         callisto_model::SourceIdentity::GitCommit { sha } => sha.clone(),
         callisto_model::SourceIdentity::HermeticContent { .. } => {
@@ -353,7 +364,7 @@ fn execute(args: ReleaseExecuteArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
         },
         orchestration_revision,
         source,
-        profile,
+        selected_profile,
         capability.intent().digest().clone(),
     );
     if let Some(artifacts) = verified_artifacts.as_ref() {

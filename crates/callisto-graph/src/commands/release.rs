@@ -13,8 +13,8 @@ use callisto_model::{
     ExecutionTrustProfileV1, GitHubRepository, GitHubRepositoryParseError, NpmAccess, OperationOutcome,
     ProviderObservationV1, PublishOutcome, PublishTarget, RegistryBindingDigest, RegistryBindingId, RegistryKey,
     ReleaseDecisionV1, ReleaseInputSnapshotV1, ReleaseIntentError, ReleaseIntentV1, ReleaseOperation,
-    ReleaseOperationId, ReleaseOperationObservationV1, ReleasePackageId, ReleasePackageInputV1, SemanticInputDigest,
-    SourceIdentity, TagName, Version,
+    ReleaseOperationId, ReleaseOperationObservationV1, ReleasePackageId, ReleasePackageInputV1, ReleaseProfileId,
+    SemanticInputDigest, SourceIdentity, TagName, Version,
 };
 use callisto_vcs::{
     access::{GitCommitTrustEvidence, GitHeadDisposition},
@@ -272,12 +272,13 @@ pub fn build_release_intent<L: ProjectLocator, R: CommandRunner>(
     locator: &L,
     runner: &R,
     decision: &ReleaseDecisionV1,
+    profile: ReleaseProfileId,
     trust_profile: ExecutionTrustProfileV1,
 ) -> Result<ReleaseIntentV1, GraphError> {
     let root = canonical_root(root)?;
     let workspace = Workspace::load(root.clone(), locator, runner)?;
     let source = observe_source(&workspace, trust_profile)?;
-    let intent = derive_release_intent(&workspace, decision, source.clone(), trust_profile, None)?;
+    let intent = derive_release_intent(&workspace, decision, profile, source.clone(), trust_profile, None)?;
 
     // Recheck after all input reads. A concurrent edit or checkout cannot be
     // authorized merely because it happened after the first check.
@@ -297,6 +298,7 @@ pub fn build_release_intent_with_artifacts<L: ProjectLocator, R: CommandRunner>(
     locator: &L,
     runner: &R,
     decision: &ReleaseDecisionV1,
+    profile: ReleaseProfileId,
     trust_profile: ExecutionTrustProfileV1,
     artifact_policy: ArtifactBuildPolicy,
 ) -> Result<ReleaseIntentV1, GraphError> {
@@ -306,6 +308,7 @@ pub fn build_release_intent_with_artifacts<L: ProjectLocator, R: CommandRunner>(
     let intent = derive_release_intent(
         &workspace,
         decision,
+        profile,
         source.clone(),
         trust_profile,
         Some(&artifact_policy),
@@ -357,6 +360,7 @@ pub fn validate_release_intent_with_state_directory<'a, L: ProjectLocator, R: Co
     let (expected, prepared) = derive_release_intent_with_prepared(
         &workspace,
         &received.decision,
+        received.profile.clone(),
         source.clone(),
         received.trust_profile,
         artifact_policy.as_ref(),
@@ -1225,12 +1229,14 @@ fn github_release_response_status(status: u16) -> Option<ProviderObservationV1> 
 fn derive_release_intent<R: CommandRunner, D: DependencyResolver>(
     workspace: &Workspace<'_, R, D>,
     decision: &ReleaseDecisionV1,
+    profile: ReleaseProfileId,
     source: SourceIdentity,
     trust_profile: ExecutionTrustProfileV1,
     artifact_policy: Option<&ArtifactBuildPolicy>,
 ) -> Result<ReleaseIntentV1, GraphError> {
     let (snapshot, operations, _, _, slots) = derive_release_inputs(workspace, decision, source, artifact_policy)?;
     Ok(ReleaseIntentV1::new(
+        profile,
         decision.clone(),
         snapshot,
         trust_profile,
@@ -1256,13 +1262,14 @@ fn product_asset_name(target: &str) -> Option<&'static str> {
 fn derive_release_intent_with_prepared<R: CommandRunner, D: DependencyResolver>(
     workspace: &Workspace<'_, R, D>,
     decision: &ReleaseDecisionV1,
+    profile: ReleaseProfileId,
     source: SourceIdentity,
     trust_profile: ExecutionTrustProfileV1,
     artifact_policy: Option<&ArtifactBuildPolicy>,
 ) -> Result<(ReleaseIntentV1, PreparedDerivation), GraphError> {
     let (snapshot, operations, prepared, git_remote, slots) =
         derive_release_inputs(workspace, decision, source, artifact_policy)?;
-    let intent = ReleaseIntentV1::new(decision.clone(), snapshot, trust_profile, operations, slots)?;
+    let intent = ReleaseIntentV1::new(profile, decision.clone(), snapshot, trust_profile, operations, slots)?;
     Ok((
         intent,
         PreparedDerivation {
@@ -2258,6 +2265,7 @@ mod tests {
             &locator,
             &runner,
             &decision,
+            ReleaseProfileId::parse("production").unwrap(),
             ExecutionTrustProfileV1::GitCommit,
         )
         .unwrap();
@@ -2283,6 +2291,7 @@ mod tests {
             &locator,
             &runner,
             &decision(),
+            ReleaseProfileId::parse("production").unwrap(),
             ExecutionTrustProfileV1::GitCommit,
         )
         .unwrap();
@@ -2404,6 +2413,7 @@ mod tests {
             &locator,
             &runner,
             &decision(),
+            ReleaseProfileId::parse("production").unwrap(),
             ExecutionTrustProfileV1::GitCommit,
         )
         .unwrap();
@@ -2463,6 +2473,7 @@ mod tests {
             &locator,
             &runner,
             &decision(),
+            ReleaseProfileId::parse("production").unwrap(),
             ExecutionTrustProfileV1::GitCommit,
         )
         .unwrap();
@@ -2511,6 +2522,7 @@ mod tests {
             &locator,
             &runner,
             &decision(),
+            ReleaseProfileId::parse("production").unwrap(),
             ExecutionTrustProfileV1::GitCommit,
         )
         .unwrap();
