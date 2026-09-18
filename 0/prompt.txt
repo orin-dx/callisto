@@ -1,0 +1,1 @@
+We seem to be doing a lot in the actions, should any of that logic be in the CLI?
