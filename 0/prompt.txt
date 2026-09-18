@@ -1,0 +1,6 @@
+<task-notification>
+<task-id>bn7nvhaqy</task-id>
+<summary>Monitor event: "Wait for PR #75/76/77 CI to finish after e2e-test push"</summary>
+<event>PR #76:  failing check(s)</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
