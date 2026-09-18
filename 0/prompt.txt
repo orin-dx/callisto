@@ -1,0 +1,28 @@
+<task-notification>
+<task-id>a0d424454b20b46db</task-id>
+<tool-use-id>toolu_015wcCBewNmnX7XrevPLHefw</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8f8eb6fc-22cd-45a0-a0c3-707f9385dbc8/tasks/a0d424454b20b46db.output</output-file>
+<status>completed</status>
+<summary>Agent "Dedupe ReleasePackageId derivation" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All three duplicated derivation sites in `crates/callisto-graph/src/commands/release_decision.rs` and `crates/callisto-graph/src/commands/release.rs` have been migrated onto one shared helper. Work is committed locally (not pushed, no PR opened).
+
+**Changes**
+
+- `crates/callisto-graph/src/commands/release_decision.rs`: added `pub(crate) fn release_package_ids(package: &amp;Package) -&gt; Result&lt;Vec&lt;ReleasePackageId&gt;, GraphError&gt;` (maps each canonical manifest's ecosystem to a `ReleasePackageId`, same `GraphError::ReleaseIntentStale` error mapping every site already used). `derive_release_decision` now calls it. `derive_release_commit_decision` now calls it once and reuses the result by zipping `package.canonical_manifests()` with the returned `Vec&lt;ReleasePackageId&gt;` in the second loop, deleting the redundant per-manifest recomputation that previously lived at ~208-211.
+- `crates/callisto-graph/src/commands/release.rs`: `derive_release_inputs` now calls `super::release_decision::release_package_ids(package)?` and dedups the returned ids via `BTreeSet` (equivalent to the old `BTreeSet&lt;Ecosystem&gt;` dedup, since `ReleasePackageId` equality is ecosystem+name and name is fixed per package), replacing the standalone per-site mapping.
+- Error-mapping/wording is unchanged at all three sites — all three already mapped to `GraphError::ReleaseIntentStale`, so nothing needed preserving specially; no exceptions to note.
+- Added a new regression test in `release.rs`'s test module, `dual_identity_package_release_ids_agree_between_decision_and_intent_derivation`: builds a Case D dual-identity package (co-located `Cargo.toml` + `package.json`), runs `derive_release_decision` and `build_release_intent` against it, and asserts both agree on the exact same two `ReleasePackageId`s (cargo + npm) — the shape that would have silently diverged if the decision-side and inputs-side derivations disagreed.
+- Added `.changeset/release-package-id-derivation-dedup.md` (`callisto-graph: patch`).
+
+**Verification**
+
+- `cargo build -p callisto-graph`, `cargo build --workspace`: clean
+- `cargo clippy -p callisto-graph -- -D warnings` and with `--all-targets`: clean
+- `cargo test -p callisto-graph`: all lib tests pass (393, including the new one) plus every integration test file, 0 failures
+- `cargo fmt -p callisto-graph -- --check`: clean
+
+**Commit**: `8e1539d4d0bc4172642f1d008a39db5c465af143` — "refactor(graph): dedup release-package-id derivation across decision/verify/inputs" on branch `fix/release-decision-persist-and-verify` in this worktree, not pushed.</result>
+<usage><subagent_tokens>165994</subagent_tokens><tool_uses>73</tool_uses><duration_ms>600688</duration_ms></usage>
+<worktree><worktreePath>/Users/gabe/Projects/callisto/.claude/worktrees/agent-a0d424454b20b46db</worktreePath><worktreeBranch>worktree-agent-a0d424454b20b46db</worktreeBranch></worktree>
+</task-notification>
