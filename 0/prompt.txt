@@ -1,0 +1,1 @@
+Can we tackle the P3 items in a single PR now and look at the shortlist in a parallel agent team keeping in mind to use the best model and effort for the tasks?
