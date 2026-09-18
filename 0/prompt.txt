@@ -1,0 +1,82 @@
+FYI, this is what codex said:
+
+
+
+<pasted_content id="087f">
+  ### Material findings
+
+  1. P1 — CLI can publish successfully, then reject the run and emit no receipt
+
+     release execute performs all remote effects before parsing --orchestration-revision:
+      - crates/callisto-cli/src/commands/release.rs:382
+      - crates/callisto-cli/src/commands/release.rs:389
+
+     A malformed revision, invalid receipt path, or later receipt failure can therefore leave crates/tags/releases published while the
+     command exits unsuccessfully.
+
+     Required black-box test:
+      - pass an invalid orchestration SHA;
+      - assert the command fails;
+      - assert no fake provider effect occurred;
+      - assert no partial state is reported as successful.
+
+     Parse and validate all immutable run metadata and output paths before dispatching any operation.
+
+  2. P1 — GitHub Release observation likely rejects real releases
+
+     The implementation requires GitHub’s target_commitish to equal the release source SHA:
+      - crates/callisto-graph/src/commands/release.rs:1135
+
+     But the workflow invokes gh release create ... --verify-tag without explicitly supplying a target commit. GitHub documents
+     target_commitish as a branch/commitish field and examples commonly contain the default branch, such as master, not necessarily
+     the tag’s commit SHA. GitHub Releases API (https://docs.github.com/en/rest/releases/releases)
+
+     This is pre-existing in main, but PR #101 continues to depend on it, and artifact uploads now require the same release
+     observation path. Add a real GitHub-compatible test fixture or change the identity check to use the immutable tag target, not
+     target_commitish.
+
+  3. P2 — Release reconciliation has poor scaling characteristics
+
+     Every execution loop recomputes the entire transitive DAG:
+      - crates/callisto-graph/src/commands/release_execution.rs:74
+      - crates/callisto-graph/src/commands/release_execution.rs:264
+
+     The DFS allocates/clones BTreeSet identities per operation. Since this runs after every operation, a long dependency chain can
+     approach cubic work in the number of operations. Large monorepos will pay this cost during release execution.
+
+     Add a benchmark/property test with hundreds or thousands of operations, then cache prerequisite closure or maintain incremental
+     eligibility.
+
+  4. P2 — Profile authority is split between CLI and graph layers
+
+     The graph layer treats profile configuration as optional:
+      - crates/callisto-graph/src/commands/release.rs:1312
+
+     The CLI separately validates the profile and artifact repository:
+      - crates/callisto-cli/src/commands/release.rs:205
+
+     This creates two semantic authorities. A caller of the public graph API can construct an intent with an arbitrary profile/
+     artifact policy relationship that the domain model does not reject. The graph should resolve a profile into a typed destination
+     binding and enforce that binding during intent construction and validation.
+
+  ### Coverage gaps
+
+  The current black-box suite covers the main happy path, recovery, partial publication, and artifact filtering well, but is missing:
+
+  - invalid orchestration SHA with assertion of zero provider effects;
+  - receipt-directory creation/write failures after successful effects;
+  - GitHub API 401, 403, 429, 500, malformed JSON, duplicate assets, and missing asset digests;
+  - failed gh attestation verify;
+  - profile/forge mismatch during execution;
+  - profile registry-route changes between planning and execution;
+  - large-DAG performance;
+  - real GitHub Release target_commitish behavior;
+  - recovery with missing state plus an Absent observation for every operation;
+  - non-recovery execution with missing state and pre-existing remote effects.
+
+  The existing provider fake also treats attestation verification as unconditional success, so it does not exercise the most security-
+  sensitive artifact failure path.
+
+  just fmt-check passes. The broader test invocations were blocked behind the shared Cargo build lock and were interrupted; I would
+  not treat the PR’s reported CI count as closing the cases above.
+</pasted_content id="087f">
