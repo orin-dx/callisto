@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>b6vuc3rtg</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a33915af-5e86-4584-9bde-f732d973cf9f/tasks/b6vuc3rtg.output</output-file>
+<status>completed</status>
+<summary>Background command "cargo test -p callisto-model --quiet inclusion_reason 2&gt;&amp;1 | tail -20" completed (exit code 0)</summary>
+</task-notification>
