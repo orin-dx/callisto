@@ -1,0 +1,22 @@
+Base directory for this skill: /Users/gabe/.claude/plugins/cache/orin-dx-agent-plugins/courier/3.0.0/skills/commit
+
+# Courier — Commit
+
+<overview>
+Reads the staged git diff and produces a conventional commit message. Delegates entirely to `commit-analyzer`.
+</overview>
+
+<dispatch>
+| Agent | Model / Effort | Delegate When |
+| :--- | :--- | :--- |
+| **commit-analyzer** | haiku / low | Staged changes are ready and need a conventional commit message. |
+</dispatch>
+
+<references>
+`shared/references/conventional-commits.md` — type/scope conventions, commit message rules, and the voice standard for this artifact.
+</references>
+
+<io>
+**Consumes**: staged git diff
+**Produces**: conventional commit message. The skill runs `git commit` after the user confirms the message — committing is a local, reversible action per this repo's standing action-safety guidance, but still surface the message for confirmation before running it.
+</io>
