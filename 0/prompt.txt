@@ -1,0 +1,28 @@
+<task-notification>
+<task-id>a0d158923378e384a</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/bd46a5d6-6ee8-4403-81c4-bc01aa657e38/tasks/a0d158923378e384a.output</output-file>
+<status>completed</status>
+<summary>Agent "Draft conventional commit message" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Based on my analysis of the staged diff, here is the conventional commit message:
+
+```json
+{
+  "commit_message": "feat(release): persist release decision at plan time for merge-time verification",
+  "type": "feat",
+  "scope": "release",
+  "breaking": false,
+  "reasoning": "Adds new `--emit-decision` and `--decision` CLI flags to implement persist-and-verify release verification model. Fixes the prior re-derivation approach that broke on fixed-group cascades by trusting the already-computed, tamper-checked decision instead of re-deriving changeset/group/cascade policy from scratch."
+}
+```
+
+**Key changes explained by intent:**
+
+- **Problem solved**: The old re-derivation logic in `release plan --from-release-commit` rejected valid fixed-group cascades where sibling packages were bumped without explicit changesets.
+
+- **Solution mechanism**: `callisto version --emit-decision &lt;path&gt;` now writes the exact release decision computed at plan time. At merge verification, `--from-release-commit --decision &lt;path&gt;` reads that committed decision and cross-checks it against the actual diff, with tamper detection already provided by `ReleaseDecisionV1`'s content digest.
+
+- **Secondary changes**: Serialization fix for `ReleaseInclusionReason` variant fields (camelCase via `rename_all_fields`), GitHub Action wiring, adversarial e2e tests for tamper/disagreement scenarios, CLI flag wiring, and permissions allowlist addition.</result>
+<usage><subagent_tokens>51455</subagent_tokens><tool_uses>6</tool_uses><duration_ms>175507</duration_ms></usage>
+</task-notification>
