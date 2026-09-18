@@ -1,0 +1,31 @@
+<task-notification>
+<task-id>a0cd29660b4b39586</task-id>
+<tool-use-id>toolu_012fihdwa6midsVFYi4g14Y2</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8f8eb6fc-22cd-45a0-a0c3-707f9385dbc8/tasks/a0cd29660b4b39586.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix redundant manifest reads in identity resolution and npm role detection" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Both fixes are complete, committed, and verified. Here's the summary:
+
+## Summary
+
+Both F16 and F23 are implemented as two separate commits on `fix/release-decision-persist-and-verify`, on top of base commit `1b3354fc` (PR #65).
+
+**Commit 1** — `86cf784b` `perf(graph,moon): memoize IdentityResolver::resolve to fix redundant identity resolution`
+
+- `crates/callisto-graph/src/identity.rs`: `IdentityResolver` gained a `Mutex&lt;BTreeMap&lt;(PathBuf, Ecosystem), PackageId&gt;&gt;` memo. `resolve()` checks it first and only does `fs::read_to_string` + parse on a miss. (`Mutex`, not `RefCell`, because `ProjectLocator: Send + Sync` requires `IdentityResolver` to be `Sync`.) A new `IDENTITY_READ_COUNT` process-global counter (mirroring `callisto_manifests::open_call_count`) makes the fix provable.
+- No change was needed in `crates/callisto-moon/src/locator.rs`: since `MoonProjectLocator` holds one long-lived `IdentityResolver` across both `projects()` and `declared_edges()`, memoizing at the resolver level automatically eliminates both reported redundancies (re-resolving `from` per edge, and re-resolving `to` once per edge instead of once per unique target).
+- Evidence: `identity_resolve_count_test.rs` shows 30 `resolve()` calls for the same `(path, ecosystem)` → 1 disk read. `locator_identity_read_count_test.rs` builds a shared `utils` package with 5 dependents and shows `projects()` + `declared_edges()` together do 6 reads total (one per manifest), not 6 + 5 (edges) = 11.
+
+**Commit 2** — `8aa82b67` `perf(graph,manifests): route npm platform-role detection through the manifest cache`
+
+- `crates/callisto-manifests/src/lib.rs`: added `NpmRole` enum and `Manifest::npm_role() -&gt; Option&lt;NpmRole&gt;` (default `None`).
+- `crates/callisto-manifests/src/npm.rs`: `PackageJson::npm_role()` derives platform/arch/abi from the already-parsed `self.doc` (`npm_role_from_doc`, moved/renamed from walk.rs's `detect_npm_role`, including the `napi_linux_abi_from_package_name` ABI-suffix inference).
+- `crates/callisto-graph/src/walk.rs`: deleted `detect_npm_role` and `napi_linux_abi_from_package_name`; the per-project loop now calls `open_cached(manifest_cache, decl, &amp;ctx)` once and reads `.npm_role()` off that cached handle instead of a raw `fs::read`.
+- Evidence: `npm_role_does_not_re_read_the_manifest_from_disk` (in `npm.rs`) opens a manifest, deletes the underlying file, then confirms `npm_role()` still reports the correct role — proving detection is doc-based, not a second disk read (a discriminating test, since `open_call_count()` alone can't distinguish this bug — the eliminated read was never routed through `open()` in the first place).
+- The five walk.rs unit tests that called `detect_npm_role` directly were replaced with equivalent tests driving the real `ManifestWalkResolver::build` path via `Workspace::load`, preserving end-to-end coverage of the wiring.
+
+**Verification**: `cargo test -p callisto-moon -p callisto-graph -p callisto-manifests` (36 test binaries, all `ok`, zero failures) and `cargo clippy -p callisto-moon -p callisto-graph -p callisto-manifests --all-targets -- -D warnings` (clean) both pass against the final committed state. `cargo fmt --check` is clean. Two changesets added: `.changeset/identity-resolver-memoization.md` (callisto-graph, callisto-moon: patch) and `.changeset/npm-role-manifest-trait-method.md` (callisto-manifests, callisto-graph: patch).</result>
+<usage><subagent_tokens>294415</subagent_tokens><tool_uses>106</tool_uses><duration_ms>1598760</duration_ms></usage>
+<worktree><worktreePath>/Users/gabe/Projects/callisto/.claude/worktrees/agent-a0cd29660b4b39586</worktreePath><worktreeBranch>worktree-agent-a0cd29660b4b39586</worktreeBranch></worktree>
+</task-notification>
