@@ -433,6 +433,12 @@ fn create_product_artifacts(external: &Path) -> std::path::PathBuf {
     for asset in PRODUCT_ASSETS {
         fs::write(artifacts.join(asset), format!("fixture artifact: {asset}\n")).unwrap();
     }
+    // Artifact downloads can contain framework metadata or nested archive
+    // paths. Only the immutable manifest's direct asset names may reach the
+    // provider adapter; these fixtures must remain inert.
+    fs::write(artifacts.join(".hidden-metadata"), "must not upload\n").unwrap();
+    fs::create_dir_all(artifacts.join("nested")).unwrap();
+    fs::write(artifacts.join("nested/unlisted-artifact"), "must not upload\n").unwrap();
     artifacts
 }
 
@@ -746,6 +752,8 @@ fn product_artifacts_are_uploaded_once_and_recovered_from_provider_observation()
         );
     }
     assert_eq!(effects.matches("gh release upload").count(), PRODUCT_ASSETS.len());
+    assert!(!effects.contains(".hidden-metadata"));
+    assert!(!effects.contains("nested/unlisted-artifact"));
 
     fs::remove_file(&state).unwrap();
     fs::remove_file(state.with_extension("receipt.json")).unwrap();
