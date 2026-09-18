@@ -1,7 +1,7 @@
 {
   "id": "SPEC-SELF-RELEASE-LIFECYCLE",
   "purpose": "Define one recoverable, provider-observed release lifecycle for Callisto so that a reviewed managed release merge automatically releases exactly its committed version, can be resumed safely after interruption, and never treats workflow structure or local state as proof of publication.",
-  "scope": "The Callisto release domain model, graph coordinator, CLI, GitHub Actions adapter, binary assets, behavioral test harness, rehearsal profile, release documentation, and merge governance required before the next self-release.",
+  "scope": "The Callisto release domain model, graph coordinator, CLI, GitHub Actions adapter, binary assets, hermetic behavioral test harness, release documentation, and merge governance required before the next self-release.",
   "non_goals": [
     "A second manual approval or a GitHub Environment reviewer gate.",
     "Publishing a new version merely to recover an unpublished merged version.",
@@ -53,7 +53,7 @@
     },
     {
       "id": "SRL-11",
-      "criterion": "A release profile is consumed by the release lifecycle, has one production destination and isolated rehearsal destinations, and rejects shared forge destinations or registry endpoints before any effect."
+      "criterion": "A release profile is consumed by the release lifecycle. The production profile has one explicit destination; any future non-production profile must use isolated destinations, and shared forge destinations or registry endpoints are rejected before any effect."
     },
     {
       "id": "SRL-12",
@@ -70,6 +70,6 @@
   ],
   "linked_requirement": "RELEASE-SELF-HOSTING-INCIDENT-2026-09-16",
   "spec_file_path": "docs/specs/SPEC-SELF-RELEASE-LIFECYCLE.json",
-  "revision_note": "This structural specification supersedes piecemeal recovery workflow patches. It preserves already-correct no-approval and terminality fixes but requires the unconsumed profile model and workflow-only provenance handoff to be either integrated into the canonical lifecycle or removed.",
-  "reasoning": "Grounded in the owner-authoritative incident report and live source inspection on 2026-09-17. External staging registry selection remains intentionally unresolved rather than fabricated."
+  "revision_note": "This structural specification supersedes piecemeal recovery workflow patches. It preserves already-correct no-approval and terminality fixes but requires the unconsumed profile model and workflow-only provenance handoff to be either integrated into the canonical lifecycle or removed. The owner decision on 2026-09-17 keeps the implemented rehearsal hermetic; an external registry is not a current release dependency.",
+  "reasoning": "Grounded in the owner-authoritative incident report and live source inspection on 2026-09-17. The owner explicitly rejected AWS and another distribution service for rehearsal, so external staging registry selection is deferred rather than fabricated."
 }

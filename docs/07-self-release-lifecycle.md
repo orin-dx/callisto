@@ -47,8 +47,8 @@ is useful crash evidence, but cannot prove what a registry, Git remote, or forge
 The selected release profile is part of the immutable intent digest, not just a receipt label.
 The production profile declares its GitHub forge destination in `callisto.toml`; planning rejects
 an artifact repository that differs from that destination, and execution rejects a profile that
-does not match its intent. An unconfigured profile, including the rehearsal profile until its
-isolated providers exist, fails before it writes an intent or dispatches an effect.
+does not match its intent. An unconfigured profile fails before it writes an intent or dispatches
+an effect.
 
 Each configured profile also declares `registry-routes`, mapping a logical package target such as
 `cratesIo` to a concrete configured registry key. The resolved key and its credential-free

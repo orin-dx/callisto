@@ -192,24 +192,23 @@
     },
     {
       "id": "T08",
-      "title": "Provision and prove the isolated rehearsal profile",
+      "title": "Prove the hermetic rehearsal boundary",
       "files": {
         "modify": [
-          "callisto.toml",
           "docs/07-self-release-lifecycle.md",
-          ".github/workflows/callisto-release.yml"
+          ".github/workflows/callisto-ci.yml"
         ],
         "test": [
           ".github/tests/release-workflow-behavior/"
         ]
       },
       "steps": [
-        "Use the existing private orin-dx/callisto-rehearsal repository as the isolated forge destination; ensure it never shares a production forge repository or registry endpoint.",
-        "Select and provision actual isolated Cargo, npm, and PyPI-compatible rehearsal destinations with minimal credentials, or explicitly defer each unsupported provider from rehearsal rather than pretending the forge repository alone is end-to-end coverage.",
-        "Add a manual rehearsal dispatch that invokes the same CLI lifecycle under the rehearsal profile and fails closed when required destinations or credentials are absent.",
-        "Run one full rehearsal with disposable versions and verify provider state, assets, attestations, receipt, no production writes, and fresh-runner resume."
+        "Keep the existing private orin-dx/callisto-rehearsal repository reserved for future forge-level experiments; it is not a release destination or a prerequisite for the current rehearsal.",
+        "Run the hermetic provider harness in pull-request CI against the same CLI lifecycle, separate worktrees, artifact validation, provider observation, recovery, and fresh-runner reconstruction used by production.",
+        "Do not provision AWS, JFrog, GitHub Packages, another staging registry, registry credentials, or a rehearsal profile merely to simulate a release.",
+        "If a future product requirement needs an isolated registry, introduce it as a separately reviewed decision with provider-specific credentials and a real persistent-provider rehearsal."
       ],
-      "commit_message": "feat(release): add isolated self-release rehearsal",
+      "commit_message": "test(release): prove hermetic self-release rehearsal",
       "depends_on": ["T05", "T06", "T07"],
       "covers_criteria": ["SRL-11", "SRL-12"]
     },
@@ -251,7 +250,7 @@
       },
       "steps": [
         "Reconstruct and verify the selected merged unpublished release source against its committed decision before dispatching recovery; do not assume 0.7.2 is publishable until provider versions, tags, dependency constraints, and source identity are observed again.",
-        "Run the rehearsal first, then dispatch a new current-orchestration recovery run for the selected source rather than rerunning any historical workflow.",
+        "Run the hermetic rehearsal first, then dispatch a new current-orchestration recovery run for the selected source rather than rerunning any historical workflow.",
         "Verify every registry version, tag target, GitHub Release asset/attestation, provenance envelope, and receipt against the immutable intent; treat any disagreement as an incident, not a successful release.",
         "Only after the independent verification passes, mark the incident closed and prepare the PR."
       ],
@@ -287,7 +286,7 @@
     },
     {
       "batch_id": "B5",
-      "title": "External rehearsal, governance, and release cutover",
+      "title": "Hermetic rehearsal, governance, and release cutover",
       "target_crate": "GitHub configuration",
       "task_ids": ["T08", "T09", "T10"]
     }
@@ -295,7 +294,7 @@
   "linked_spec": "SPEC-SELF-RELEASE-LIFECYCLE",
   "spec_file_path": "docs/specs/SPEC-SELF-RELEASE-LIFECYCLE.json",
   "plan_file_path": "docs/projects/SPEC-SELF-RELEASE-LIFECYCLE.json",
-  "spec_hash": "sha256:4060d02dbe0b472a5a0a7e977109a34eb8f670e037081d0dd67b27aba0aec2c8",
+  "spec_hash": "sha256:d0362292ff513700bdc4e0aa76e5845218a75d1d5aff966080fed803ad1baa6d",
   "linked_requirement": "RELEASE-SELF-HOSTING-INCIDENT-2026-09-16",
-  "reasoning": "Ordering is driven by semantic dependencies: no Actions rewrite precedes canonical CLI ownership; no rehearsal precedes behavior proof; no production recovery precedes rehearsal and governance evidence."
+  "reasoning": "Ordering is driven by semantic dependencies: no Actions rewrite precedes canonical CLI ownership; no hermetic rehearsal precedes behavior proof; no production recovery precedes rehearsal and governance evidence."
 }
