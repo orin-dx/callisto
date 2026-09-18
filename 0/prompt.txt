@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>b3bkm7fw2</task-id>
+<tool-use-id>toolu_01WKPgsiYJiN8ocbJvDdLgWt</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8f8eb6fc-22cd-45a0-a0c3-707f9385dbc8/tasks/b3bkm7fw2.output</output-file>
+<status>completed</status>
+<summary>Background command "Push PR2 branch" completed (exit code 0)</summary>
+</task-notification>
