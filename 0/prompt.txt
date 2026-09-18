@@ -1,0 +1,1 @@
+Check run 34702634375 via `gh run view 34702634375 --json status,conclusion,jobs`. Report progress plainly -- if execute has run and completed, report success/failure with detail (fetch the failure log if it failed). If still earlier in the pipeline, note which job it's on.
