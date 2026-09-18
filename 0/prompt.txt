@@ -1,0 +1,9 @@
+To answer your question:
+1. we do want binary assets support
+2. I think so, help me decide
+3. No, "legacy" is not a thing since I'm the only user right now. let's not create debt for ourselves, right?
+4. I think so, help me reason it
+5. No, the PR should be the approval
+6. You're right here, I think this is a no also.
+
+Any more questions?
