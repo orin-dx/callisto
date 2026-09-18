@@ -1,0 +1,1 @@
+FYI we should not have an env release check/approval. That will slow us down, specially prior to a v1. WTF
