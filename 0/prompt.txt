@@ -1,0 +1,1 @@
+Continue until all phases and work is completely done and commited and you're ready for a PR. Don't keep stopping please
