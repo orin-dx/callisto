@@ -469,3 +469,7 @@ are you not capable???
 ---
 
 finish the fucking work, i beg of you. don't stop until completely done
+
+---
+
+We are not publishing to AWS, we don't need their CLI WTF
