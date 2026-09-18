@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>b16e8hbr6</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/f31314f3-cb9d-46e5-b69c-b389116eb431/tasks/b16e8hbr6.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch CI for all three updated PRs in parallel" completed (exit code 0)</summary>
+</task-notification>
