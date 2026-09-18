@@ -1,0 +1,4 @@
+1. We should target, mac arm, linux both, wasm right now
+2. I think you're right. Most systems won't allow us to publish something that already exists so we shouldn't try but we should call it out in case there was a versioning mistake (likely for the user once we fix our bugs).
+3. agreed
+4. I think you have it right
