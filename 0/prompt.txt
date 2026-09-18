@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bq28zkx66</task-id>
+<tool-use-id>toolu_01P6fx81mgHDDNpQVt2PgNhG</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/8f8eb6fc-22cd-45a0-a0c3-707f9385dbc8/tasks/bq28zkx66.output</output-file>
+<status>completed</status>
+<summary>Background command "cargo clippy -p callisto-model --all-targets --quiet -- -D warnings 2&gt;&amp;1 | tail -60" completed (exit code 0)</summary>
+</task-notification>
