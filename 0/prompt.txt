@@ -1,0 +1,6 @@
+<task-notification>
+<task-id>bzigtu7pi</task-id>
+<summary>Monitor event: "Wait for PR #76's macOS test suite (last pending check) to finish"</summary>
+<event>PR #76: pending=1 fail=0</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
