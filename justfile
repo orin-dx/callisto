@@ -17,6 +17,10 @@ test:
     cargo nextest run --workspace --all-features
     cargo test --doc --all-features
 
+# Runs only the parked defect tests (each is #[ignore = "DEFECT-..."]); they are expected to fail until fixed.
+release-red:
+    cargo test -p callisto-cli -p callisto-graph -p callisto-model -- --ignored red_
+
 # Explicit compatibility path for contributors who do not have cargo-nextest
 # installed. It is never used by CI or pre-merge verification.
 test-moon:
