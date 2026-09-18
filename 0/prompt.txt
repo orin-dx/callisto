@@ -1,0 +1,12 @@
+Claude is:
+
+  - Right that the missing end-to-end rehearsal is a major systemic omission.
+  - Right that it would have caught most of this incident’s GitHub Actions failures earlier.
+  - Right that failure to implement an already-identified safeguard is more concerning than failure to identify it.
+  - Wrong or incomplete in calling the rehearsal the whole fix.
+  - Potentially wrong if “build it now” means encoding the current overcomplicated workflow—including manual approval and unreachable artifact
+    machinery—before correcting the target architecture.
+
+  The correct course is to make the rehearsal one of the first implementation deliverables, but build it against the simplified release lifecycle and
+  pair it with the executor correctness work. No more production releases as tests, and no more test harness that can declare success without a
+  terminal, externally verified receipt.
