@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bh0afvb4x</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a33915af-5e86-4584-9bde-f732d973cf9f/tasks/bh0afvb4x.output</output-file>
+<status>completed</status>
+<summary>Background command "cargo test -p callisto-cli --test durable_release_e2e_tests --quiet 2&gt;&amp;1 | tail -60" completed (exit code 0)</summary>
+</task-notification>
