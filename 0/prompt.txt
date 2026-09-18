@@ -1,0 +1,40 @@
+<task-notification>
+<task-id>a157e6692d3bc63eb</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/f31314f3-cb9d-46e5-b69c-b389116eb431/tasks/a157e6692d3bc63eb.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement PR3 of ReleaseIntentStale taxonomy" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>PR3 is complete and committed. Summary of the work:
+
+## Commit
+`a6fe4e1713e309f258d796a88ff6d06b6f3536c1` on branch `worktree-agent-a157e6692d3bc63eb` in the worktree at `/Users/gabe/Projects/callisto/.claude/worktrees/agent-a157e6692d3bc63eb`. Not pushed, no PR opened, per instructions.
+
+## Final ratchet count
+`crates/callisto-graph/tests/architecture.rs`: `release_decision.rs` lowered from **42 → 0**. All 42 sites classified; none left on `legacy_unclassified()`. `commands/release_decision.rs` removed from `MAP_ERR_IGNORE_ALLOWLIST` (verified zero `map_err(|_ident| ...)` discards remain via the same lexical pattern the test itself uses).
+
+## Classification summary (all in `crates/callisto-graph/src/commands/release_decision.rs`)
+- **Subprocess exits/malformed output** (git rev-parse/diff-tree, cat-file --batch framing, name-status parsing) → `GraphError::ReleaseCommand{program, args, failure}` (E164), via two file-local helpers `command_non_zero_exit`/`command_malformed_output` (15 sites).
+- **Merged-commit verification** (`derive_release_commit_decision`) → `GraphError::ReleaseCommitVerificationFailed{commit, reason}` (E165), one distinct `CommitVerificationFailure` per check: `HeadMismatch`, `DecisionNotWrittenByCommit`, `NoChangesetConsumed`, `ChangelogNotTouched`, `ManifestNotInDiff`, `ManifestVersionMismatch`, `UnclaimedVersionChange`, `ClaimedPackageNotObserved` (8 sites — the combined triple-OR check was split into two ordered checks with identical net behavior).
+- **Corrupt decision JSON** → `GraphError::ReleaseDecisionDecode{path, message}` (E166) (1 site).
+- **Missing changelog config on a claimed package** → `GraphError::ReleasePreconditionUnmet{requirement: ChangelogConfigured}` (E170) (1 site).
+- **Unhandled `#[non_exhaustive]` BumpReason arm** → `GraphError::UnsupportedRelease{feature: BumpReason}` (E168) (1 site).
+- **Duplicate/out-of-plan `--package` selections** → `GraphError::ReleaseSelectionInvalid{package, reason}` (E169), now naming the actual offending package (2 sites, rewritten to identify the specific package rather than a generic length/membership check).
+- **Already-typed causes previously discarded** (`ReleasePackageId::new`, `ReleaseDecisionV1::new`, `Version::parse`) → passed through via existing `#[from]`/`GraphError::from` (5 sites).
+- **Internal invariants** (plan/workspace pairing mismatch, cascade/peer-escalation `via` lookup, unreachable ecosystem-format miss, missing manifest blob at a queried commit folded into MalformedOutput) → `GraphError::ReleaseInvariant{detail}` (E171) (3 sites) plus 1 folded into MalformedOutput.
+
+Every site fit one of the spec's categories or an existing E158-E171 variant — none needed to stay on `legacy_unclassified()`.
+
+## Verification
+- `cargo test -p callisto-graph` (all targets, incl. `tests/architecture.rs`): 422+ lib tests plus all integration test binaries pass, including the 7 architecture tests.
+- `cargo clippy -p callisto-graph --all-targets -- -D warnings`: clean.
+- `cargo build --workspace`: succeeds.
+- `cargo fmt -p callisto-graph -- --check`: clean.
+- Fixed existing tests that pattern-matched the old `ReleaseIntentStale` shape (`parse_name_status` signature gained an `args` param; `manifest_version_at_fails_closed_...` now matches `ReleaseCommand{MalformedOutput}`).
+- Added regression tests for the highest-value new distinctions: `HeadMismatch`, corrupt-decision-file (`ReleaseDecisionDecode`), `ClaimedPackageNotObserved`, and duplicate/not-in-plan `--package` selections.
+- Added a changeset: `.changeset/release-intent-stale-error-taxonomy-pr3.md` (`callisto-graph: patch`).
+
+No blockers encountered with the RTK/git workaround — `/usr/bin/git` worked for every git operation including the pre-commit hook's `moon run :format-check`.</result>
+<usage><subagent_tokens>278174</subagent_tokens><tool_uses>66</tool_uses><duration_ms>1314281</duration_ms></usage>
+<worktree><worktreePath>/Users/gabe/Projects/callisto/.claude/worktrees/agent-a157e6692d3bc63eb</worktreePath><worktreeBranch>worktree-agent-a157e6692d3bc63eb</worktreeBranch></worktree>
+</task-notification>
