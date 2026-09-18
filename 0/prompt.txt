@@ -1,0 +1,1 @@
+We don't want dual license for all packages. We want MIT for what is trully important to have it MIT and the rest FSL right?
