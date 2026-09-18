@@ -1,0 +1,1 @@
+How do knope and changesets do this? Is it necessary? What are we trying to do here? Let's think deeply about the actual goal and what we're trying to accomplish. Propose a plan
