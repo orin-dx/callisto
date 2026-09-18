@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bxrvf10hr</task-id>
+<tool-use-id>toolu_01K7Poq8UEXpJ3vKUKAVQkeX</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a33915af-5e86-4584-9bde-f732d973cf9f/tasks/bxrvf10hr.output</output-file>
+<status>completed</status>
+<summary>Background command "cargo clippy -p callisto-graph -p callisto-model -p callisto-cli --all-targets --quiet -- -D warnings 2&gt;&amp;1 | tail -150" completed (exit code 0)</summary>
+</task-notification>
