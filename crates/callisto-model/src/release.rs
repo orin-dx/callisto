@@ -2985,6 +2985,45 @@ mod tests {
     }
 
     #[test]
+    fn artifact_release_receipt_provenance_requires_the_verified_manifest_digest() {
+        let package = ReleasePackageId::parse("cargo/callisto-cli").unwrap();
+        let version = Version::semver(1, 2, 3);
+        let slot = ArtifactSlotId::new(
+            package,
+            version,
+            "x86_64-unknown-linux-gnu",
+            "callisto-x86_64-unknown-linux-gnu.tar.gz",
+            GitHubRepository::parse("orin-dx/callisto").unwrap(),
+            ".github/workflows/callisto-release.yml",
+            CommitSha::parse(&"b".repeat(40)).unwrap(),
+        )
+        .unwrap();
+        let intent = test_intent_with_slots(
+            ReleaseInputSnapshotV1::new(SourceIdentity::git_commit("a".repeat(40)).unwrap(), vec![]),
+            ExecutionTrustProfileV1::GitCommit,
+            vec![ReleaseOperation::artifact_upload(slot.clone(), vec![]).unwrap()],
+            vec![slot],
+        )
+        .unwrap();
+        let provenance = ReleaseRunProvenanceV1::new(
+            ReleaseRunKindV1::Initial,
+            CommitSha::parse(&"b".repeat(40)).unwrap(),
+            CommitSha::parse(&"a".repeat(40)).unwrap(),
+            ReleaseProfileId::parse("production").unwrap(),
+            intent.digest().clone(),
+        );
+
+        assert!(matches!(
+            provenance.validate_for_intent(&intent),
+            Err(ReleaseRunProvenanceError::MissingArtifactManifest)
+        ));
+        assert!(provenance
+            .with_artifact_manifest_digest(ArtifactDigest::from_bytes(b"manifest"))
+            .validate_for_intent(&intent)
+            .is_ok());
+    }
+
+    #[test]
     fn release_run_provenance_and_observation_wire_fail_closed() {
         assert!(ReleaseProfileId::parse("production/main").is_err());
         assert!(ReleaseProfileId::parse("").is_err());
