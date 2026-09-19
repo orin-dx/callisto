@@ -19,7 +19,7 @@ require_line() {
   fi
 }
 
-version_pr="$(job_block version-pr release-candidate)"
+version_pr="$(job_block version-pr plan)"
 require_line "$version_pr" '      contents: write' 'version-pr must write the managed branch'
 require_line "$version_pr" '      pull-requests: write' 'version-pr must create or update the release PR'
 require_line "$version_pr" "          version_command: 'callisto version --refresh-lockfiles'" 'version-pr must refresh Cargo.lock for coupled Cargo version bumps; the action appends its single authoritative --emit-decision argument'
@@ -30,8 +30,8 @@ if ! rg -Fqx 'command+=(--emit-decision "$INPUT_DECISION_PATH")' "$action"; then
   exit 1
 fi
 
-release_candidate="$(job_block release-candidate plan)"
-require_line "$release_candidate" '          prs=$(gh api --paginate "/repos/${GITHUB_REPOSITORY}/commits/${release_source_sha}/pulls" --jq '\''[.[] | select(.merged_at != null and .base.ref == "main" and (.head.ref == "callisto/version-packages" or (.head.ref | test("^callisto/version-packages--[0-9a-f]{40}$"))))] | length'\'')' 'release-candidate must validate an explicit source only when it is a merged managed branch'
+release_candidate="$(job_block release-candidate version-pr)"
+require_line "$release_candidate" '          prs=$(gh api --paginate "/repos/${GITHUB_REPOSITORY}/commits/${release_source_sha}/pulls" --jq '\''[.[] | select(.merged_at != null and .base.ref == "main" and .head.repo.full_name == "'\''"${GITHUB_REPOSITORY}"'\''" and (.head.ref == "callisto/version-packages" or (.head.ref | test("^callisto/version-packages--[0-9a-f]{40}$"))))] | length'\'')' 'release-candidate must validate an explicit source only when it is a merged managed branch'
 require_line "$release_candidate" '          RELEASE_SOURCE_SHA_INPUT: ${{ inputs.release_source_sha }}' 'release-candidate must pass a dispatch input through an environment variable'
 require_line "$release_candidate" '          TRIGGERING_SHA: ${{ github.sha }}' 'release-candidate must pass the triggering commit through an environment variable'
 require_line "$release_candidate" '          release_source_sha="${RELEASE_SOURCE_SHA_INPUT:-$TRIGGERING_SHA}"' 'release-candidate must not interpolate user-controlled SHA input into shell'
@@ -59,12 +59,12 @@ require_line "$plan" '            --orchestration-revision "$ORCHESTRATION_SHA" 
 require_line "$plan" '            --from-release-commit "$RELEASE_SOURCE_SHA" \' 'planning must bind the exact release source checkout'
 
 execute="$(sed -n '/^  execute:$/,$p' "$workflow")"
-require_line "$execute" '    needs: build' 'PR merge is the release approval; execute must depend directly on the verified build, not a GitHub Environment gate'
-require_line "$execute" '          cmp "$intent_dir/release-intent.json" "$build_dir/release-intent/release-intent.json"' 'execute must reject a build handoff whose immutable intent differs from planning'
+require_line "$execute" '    needs: [plan, build, release-candidate]' 'PR merge is the release approval; execute must depend directly on the plan and verified build, not a GitHub Environment gate'
+require_line "$execute" '            cmp "$intent_dir/release-intent.json" "$build_dir/release-intent/release-intent.json"' 'execute must reject a build handoff whose immutable intent differs from planning'
 require_line "$execute" '          path: ${{ runner.temp }}/release-intent' 'execute must download release-intent outside the workspace -- callisto release execute re-checks release trust before every dispatch, which fails closed on any untracked file in the worktree'
 require_line "$execute" '          path: ${{ runner.temp }}/release-build' 'execute must download release-build outside the workspace -- callisto release execute re-checks release trust before every dispatch, which fails closed on any untracked file in the worktree'
 require_line "$execute" '          path: release-source' 'execute must use an explicit release-source checkout'
-require_line "$execute" '          ORCHESTRATION_SHA: ${{ needs.build.outputs.orchestration_sha }}' 'execution must pass the coordinator revision through an environment variable'
+require_line "$execute" '          ORCHESTRATION_SHA: ${{ needs.release-candidate.outputs.orchestration_sha }}' 'execution must pass the coordinator revision through an environment variable'
 require_line "$execute" '          args=(--source-root "$GITHUB_WORKSPACE/release-source" --intent "$intent_dir/release-intent.json" --state "$state_dir/execution-state.json" --receipt "$state_dir/release-receipt.json" --orchestration-revision "$ORCHESTRATION_SHA" --profile production)' 'execute must pass the explicit source checkout, coordinator revision, and mandatory receipt path to the current Callisto coordinator'
 require_line "$execute" '          if [[ -n "$RELEASE_SOURCE_SHA_INPUT" ]]; then' 'an explicit historic source must select the recovery lifecycle'
 require_line "$execute" '            args+=(--recovery)' 'an explicit historic source must record recovery in the terminal receipt'

@@ -41,6 +41,11 @@ Every release run records two different revisions:
 A recovery is a new run using current orchestration and an explicit full release-source SHA. It
 does not rerun historical workflow code, create a version PR, or invent a newer version.
 
+The orchestration revision is the SHA of the run itself (`github.sha`, main only), never the moving
+tip of `main`, because attestations are stamped with the run's SHA. A recovery dispatch is gated by
+`recovery-checks` (release workflow contract and policy checks), not the full `verify` job, so an
+unrelated failure on `main` cannot block publishing an already merged release.
+
 The immutable run envelope and provider observations are recovery authority. A local state file
 is useful crash evidence, but cannot prove what a registry, Git remote, or forge contains.
 

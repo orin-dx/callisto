@@ -46,6 +46,10 @@ jobs:
         run: bash .github/tests/verify-release-workflow-contract.sh
       - name: Verify release artifact build script contract
         run: bash .github/tests/test-release-artifact-build-script.sh
+      - name: Verify release workflow policy
+        run: bash .github/tests/verify-release-workflow-policy.sh
+      - name: Verify release workflow policy rejects mutants
+        run: bash .github/tests/verify-release-workflow-policy.sh --self-test
       - name: Verify Release-PR action contract
         run: env PATH=/usr/bin:/bin bash .github/actions/callisto-action/tests/test_release_pr_contract.sh
 

@@ -13,13 +13,17 @@ on:
 
 permissions: {}
 
+# One group per commit: GitHub replaces a pending run in a shared group, which
+# could silently drop a release merge queued behind an unrelated push.
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ github.sha }}
   cancel-in-progress: false
 
 jobs:
   verify:
     name: Verify release candidate
+    if: github.event_name == 'push' || inputs.release_source_sha == ''
+    timeout-minutes: 45
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -68,10 +72,95 @@ jobs:
       - name: Reject mutable GitHub Actions references
         run: .github/tests/verify-action-pins.sh
 
+  recovery-checks:
+    name: Check release workflow policy for recovery
+    if: github.event_name == 'workflow_dispatch' && inputs.release_source_sha != ''
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install ripgrep
+        uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b # v2
+        with:
+          tool: ripgrep
+      - name: Verify release workflow contracts
+        run: |
+          set -euo pipefail
+          bash .github/tests/verify-release-workflow-contract.sh
+          bash .github/tests/verify-release-workflow-policy.sh
+          bash .github/tests/verify-release-workflow-policy.sh --self-test
+
+  release-candidate:
+    name: Identify a merged Callisto release PR
+    needs: [verify, recovery-checks]
+    # Exactly one gate runs per event; a failed gate matches neither clause.
+    if: >-
+      always() && github.ref == 'refs/heads/main' &&
+      ((needs.verify.result == 'success' && needs.recovery-checks.result == 'skipped') ||
+       (needs.recovery-checks.result == 'success' && needs.verify.result == 'skipped'))
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      is_release_pr: ${{ steps.candidate.outputs.is_release_pr }}
+      release_source_sha: ${{ steps.candidate.outputs.release_source_sha }}
+      orchestration_sha: ${{ steps.candidate.outputs.orchestration_sha }}
+    steps:
+      - id: candidate
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SOURCE_SHA_INPUT: ${{ inputs.release_source_sha }}
+          TRIGGERING_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          release_source_sha="${RELEASE_SOURCE_SHA_INPUT:-$TRIGGERING_SHA}"
+          if [[ ! "$release_source_sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::release_source_sha must be exactly 40 lowercase hex characters"
+            exit 1
+          fi
+          resolved_sha=$(gh api "/repos/${GITHUB_REPOSITORY}/commits/${release_source_sha}" --jq '.sha')
+          if [[ "$resolved_sha" != "$release_source_sha" ]]; then
+            echo "::error::release_source_sha does not resolve to that exact commit"
+            exit 1
+          fi
+          # Attestations are stamped with this run's own SHA, so the
+          # coordinator must be exactly the revision running this workflow.
+          orchestration_sha="$TRIGGERING_SHA"
+          # This only schedules the job. `release plan` verifies the actual
+          # parent-to-merge delta; labels and PR metadata are never authority.
+          # The GitHub API check is complementary provenance evidence: a
+          # trusted merge must be both an actual merge of the managed PR and
+          # a GitHub-verified signed commit. It cannot be a direct push.
+          prs=$(gh api --paginate "/repos/${GITHUB_REPOSITORY}/commits/${release_source_sha}/pulls" --jq '[.[] | select(.merged_at != null and .base.ref == "main" and .head.repo.full_name == "'"${GITHUB_REPOSITORY}"'" and (.head.ref == "callisto/version-packages" or (.head.ref | test("^callisto/version-packages--[0-9a-f]{40}$"))))] | length')
+          verified=$(gh api "/repos/${GITHUB_REPOSITORY}/commits/${release_source_sha}" --jq '.commit.verification.verified')
+          if [[ "$prs" == 1 && "$verified" == true ]]; then
+            {
+              echo 'is_release_pr=true'
+              echo "release_source_sha=$release_source_sha"
+              echo "orchestration_sha=$orchestration_sha"
+            } >> "$GITHUB_OUTPUT"
+          else
+            echo 'is_release_pr=false' >> "$GITHUB_OUTPUT"
+          fi
+
   version-pr:
     name: Create or update the Callisto release PR
-    needs: verify
-    if: github.event_name != 'workflow_dispatch' || inputs.release_source_sha == ''
+    needs: release-candidate
+    if: >-
+      always() && needs.release-candidate.result == 'success' &&
+      needs.release-candidate.outputs.is_release_pr != 'true' &&
+      inputs.release_source_sha == ''
+    timeout-minutes: 10
+    concurrency:
+      group: version-pr
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -101,55 +190,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
-  release-candidate:
-    name: Identify a merged Callisto release PR
-    needs: [verify, version-pr]
-    if: >-
-      always() && needs.verify.result == 'success' &&
-      (inputs.release_source_sha != '' || needs.version-pr.outputs.has_pending_changesets == 'false')
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: read
-    outputs:
-      is_release_pr: ${{ steps.candidate.outputs.is_release_pr }}
-      release_source_sha: ${{ steps.candidate.outputs.release_source_sha }}
-      orchestration_sha: ${{ steps.candidate.outputs.orchestration_sha }}
-    steps:
-      - id: candidate
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_SOURCE_SHA_INPUT: ${{ inputs.release_source_sha }}
-          TRIGGERING_SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          release_source_sha="${RELEASE_SOURCE_SHA_INPUT:-$TRIGGERING_SHA}"
-          orchestration_sha=$(gh api "/repos/${GITHUB_REPOSITORY}/commits/main" --jq '.sha')
-          # This only schedules the job. `release plan` verifies the actual
-          # parent-to-merge delta; labels and PR metadata are never authority.
-          # The GitHub API check is complementary provenance evidence: a
-          # trusted merge must be both an actual merge of the managed PR and
-          # a GitHub-verified signed commit. It cannot be a direct push.
-          prs=$(gh api --paginate "/repos/${GITHUB_REPOSITORY}/commits/${release_source_sha}/pulls" --jq '[.[] | select(.merged_at != null and .base.ref == "main" and (.head.ref == "callisto/version-packages" or (.head.ref | test("^callisto/version-packages--[0-9a-f]{40}$"))))] | length')
-          verified=$(gh api "/repos/${GITHUB_REPOSITORY}/commits/${release_source_sha}" --jq '.commit.verification.verified')
-          if [[ "$prs" == 1 && "$verified" == true ]]; then
-            {
-              echo 'is_release_pr=true'
-              echo "release_source_sha=$release_source_sha"
-              echo "orchestration_sha=$orchestration_sha"
-            } >> "$GITHUB_OUTPUT"
-          else
-            echo 'is_release_pr=false' >> "$GITHUB_OUTPUT"
-          fi
-
   plan:
     name: Derive ephemeral intent from the merged release commit
     needs: release-candidate
     if: needs.release-candidate.outputs.is_release_pr == 'true'
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    outputs:
+      has_artifacts: ${{ steps.slots.outputs.has_artifacts }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -181,6 +231,11 @@ jobs:
             --decision "$GITHUB_WORKSPACE/release-source/.callisto/release-decision.json" \
             --out "$handoff_dir/release-intent.json"
           shasum -a 256 "$handoff_dir/release-intent.json" > "$handoff_dir/release-intent.json.sha256"
+      - name: Read declared artifact slot count
+        id: slots
+        run: |
+          set -euo pipefail
+          echo "has_artifacts=$(jq '.artifactSlots | length > 0' "${RUNNER_TEMP}/release-intent/release-intent.json")" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-intent
@@ -195,6 +250,8 @@ jobs:
   build-artifact:
     name: Build ${{ matrix.target }} from the intent-bound source tree
     needs: [plan, release-candidate]
+    if: needs.plan.outputs.has_artifacts == 'true'
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -239,9 +296,6 @@ jobs:
           path: release-source
           fetch-depth: 0
           persist-credentials: false
-      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
-        with:
-          just-version: '1.58.0'
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: release-intent
@@ -279,7 +333,9 @@ jobs:
 
   build:
     name: Assemble attested product artifacts
-    needs: [build-artifact, release-candidate]
+    needs: [build-artifact, release-candidate, plan]
+    if: always() && needs.plan.outputs.has_artifacts == 'true' && needs.build-artifact.result == 'success'
+    timeout-minutes: 15
     outputs:
       orchestration_sha: ${{ needs.release-candidate.outputs.orchestration_sha }}
       release_source_sha: ${{ needs.release-candidate.outputs.release_source_sha }}
@@ -326,20 +382,27 @@ jobs:
             ${{ runner.temp }}/release-intent
             ${{ runner.temp }}/release-artifacts
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 7
 
   execute:
     name: Execute approved release
-    needs: build
+    needs: [plan, build, release-candidate]
+    # Artifact-less sources skip build; a failed or cancelled build must still block.
+    if: >-
+      always() && needs.plan.result == 'success' &&
+      (needs.plan.outputs.has_artifacts == 'false' || needs.build.result == 'success')
+    timeout-minutes: 60
+    concurrency:
+      group: release-execute
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     permissions:
       contents: write
       attestations: read
-      id-token: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.build.outputs.orchestration_sha }}
+          ref: ${{ needs.release-candidate.outputs.orchestration_sha }}
           fetch-depth: 0
           persist-credentials: false
       - uses: $/.github/actions/setup-callisto
@@ -347,7 +410,7 @@ jobs:
           source: local
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.build.outputs.release_source_sha }}
+          ref: ${{ needs.release-candidate.outputs.release_source_sha }}
           path: release-source
           fetch-depth: 0
           # The release-source checkout alone needs Git credentials because
@@ -363,25 +426,28 @@ jobs:
         with:
           name: release-intent
           path: ${{ runner.temp }}/release-intent
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - if: needs.plan.outputs.has_artifacts == 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: release-build
           path: ${{ runner.temp }}/release-build
       - name: Verify same-run handoff before credentials
+        env:
+          HAS_ARTIFACTS: ${{ needs.plan.outputs.has_artifacts }}
         run: |
           set -euo pipefail
           intent_dir="${RUNNER_TEMP}/release-intent"
           build_dir="${RUNNER_TEMP}/release-build"
           (cd "$intent_dir" && shasum -a 256 -c release-intent.json.sha256)
-          cmp "$intent_dir/release-intent.json" "$build_dir/release-intent/release-intent.json"
+          if [[ "$HAS_ARTIFACTS" == true ]]; then
+            cmp "$intent_dir/release-intent.json" "$build_dir/release-intent/release-intent.json"
+          fi
       - name: Execute verified release
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-          TWINE_PASSWORD: ${{ secrets.TWINE_PASSWORD }}
           GH_TOKEN: ${{ github.token }}
           RELEASE_SOURCE_SHA_INPUT: ${{ inputs.release_source_sha }}
-          ORCHESTRATION_SHA: ${{ needs.build.outputs.orchestration_sha }}
+          ORCHESTRATION_SHA: ${{ needs.release-candidate.outputs.orchestration_sha }}
         run: |
           set -euo pipefail
           intent_dir="${RUNNER_TEMP}/release-intent"
@@ -396,3 +462,23 @@ jobs:
             args+=(--artifact-manifest "$build_dir/release-artifacts/manifest.json" --artifact-dir "$build_dir/release-artifacts")
           fi
           callisto release execute "${args[@]}"
+      - name: Summarize receipt
+        if: always()
+        run: |
+          receipt="${RUNNER_TEMP}/callisto-release-state/${GITHUB_RUN_ID}/release-receipt.json"
+          if [[ -f "$receipt" ]]; then
+            {
+              echo '### Release receipt'
+              echo '```json'
+              cat "$receipt"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Upload receipt and execution state
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-receipt
+          path: ${{ runner.temp }}/callisto-release-state/${{ github.run_id }}
+          if-no-files-found: ignore
+          retention-days: 7
