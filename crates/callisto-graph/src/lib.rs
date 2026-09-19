@@ -27,6 +27,7 @@ mod manifest_cache;
 pub(crate) mod matrix;
 pub mod napi;
 pub mod plan;
+pub(crate) mod registry_endpoint;
 pub mod resolver;
 pub mod tags;
 pub mod toposort;

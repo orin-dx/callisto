@@ -116,7 +116,7 @@ impl TagIndex {
     pub fn build<D: DependencyResolver>(
         git: &GitAccess<'_>,
         graph: &D,
-        _cfg: &ResolvedConfig,
+        cfg: &ResolvedConfig,
     ) -> Result<Self, GraphError> {
         let mut last = BTreeMap::new();
         let mut templates = BTreeMap::new();
@@ -148,8 +148,21 @@ impl TagIndex {
                 .tag_template
                 .clone()
                 .unwrap_or_else(|| TagTemplate::default_for(&pkg.id));
-            let sel = select_from_tags_cached(&all_tags, &tmpl, pkg.version_grammar()?, &mut glob_cache)?;
-            last.insert(pkg.id.clone(), sel.chosen);
+            let grammar = pkg.version_grammar()?;
+            let mut chosen = select_from_tags_cached(&all_tags, &tmpl, grammar, &mut glob_cache)?.chosen;
+            if chosen.is_none() {
+                if let Some(previous) = crate::config::resolve::resolve_package_config(&pkg.id, cfg)?
+                    .map(|package_config| package_config.previous_tag_templates.as_slice())
+                {
+                    for template in previous {
+                        chosen = select_from_tags_cached(&all_tags, template, grammar, &mut glob_cache)?.chosen;
+                        if chosen.is_some() {
+                            break;
+                        }
+                    }
+                }
+            }
+            last.insert(pkg.id.clone(), chosen);
             templates.insert(pkg.id.clone(), tmpl);
             pre_cursor.insert(pkg.id.clone(), None);
         }

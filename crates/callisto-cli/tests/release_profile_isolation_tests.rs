@@ -63,7 +63,6 @@ fn status_with(fragment: &str) -> (bool, Vec<String>, String) {
 const E197: &str = "E197";
 
 #[test]
-#[ignore = "DEFECT-C8: profiles routing cratesIo->cratesIo and npm->npm are rejected because two builtin registries with no URL compare equal"]
 fn red_c8_distinct_builtin_registries_in_different_profiles_are_accepted() {
     let (ok, codes, detail) = status_with(
         "\n[release.profiles.a]\nforge-repository = \"org/one\"\nregistry-routes = { cratesIo = \"cratesIo\" }\n\n[release.profiles.b]\nforge-repository = \"org/two\"\nregistry-routes = { npm = \"npm\" }\n",
@@ -72,7 +71,6 @@ fn red_c8_distinct_builtin_registries_in_different_profiles_are_accepted() {
 }
 
 #[test]
-#[ignore = "DEFECT-C8: two registries whose URLs differ only in case/default port are not recognised as the same destination"]
 fn red_c8_registry_url_spellings_of_one_destination_are_rejected() {
     let (ok, codes, detail) = status_with(
         "\n[release.profiles.a]\nforge-repository = \"org/one\"\nregistry-routes = { cratesIo = \"r1\" }\n\n[release.profiles.b]\nforge-repository = \"org/two\"\nregistry-routes = { cratesIo = \"r2\" }\n\n[registries.r1]\nkind = \"cargo\"\nurl = \"https://x.example/\"\n\n[registries.r2]\nkind = \"cargo\"\nurl = \"https://X.example:443\"\n",
@@ -84,7 +82,6 @@ fn red_c8_registry_url_spellings_of_one_destination_are_rejected() {
 }
 
 #[test]
-#[ignore = "DEFECT-C8: forge repositories differing only in case are not recognised as the same destination"]
 fn red_c8_forge_repository_case_variants_are_rejected() {
     let (ok, codes, detail) = status_with(
         "\n[release.profiles.a]\nforge-repository = \"org/one\"\n\n[release.profiles.b]\nforge-repository = \"Org/One\"\n",
@@ -96,7 +93,6 @@ fn red_c8_forge_repository_case_variants_are_rejected() {
 }
 
 #[test]
-#[ignore = "DEFECT-C8: forge repositories differing only by a `.git` suffix are not recognised as the same destination"]
 fn red_c8_forge_repository_dot_git_suffix_is_rejected() {
     let (ok, codes, detail) = status_with(
         "\n[release.profiles.a]\nforge-repository = \"org/one\"\n\n[release.profiles.b]\nforge-repository = \"org/one.git\"\n",
@@ -108,7 +104,6 @@ fn red_c8_forge_repository_dot_git_suffix_is_rejected() {
 }
 
 #[test]
-#[ignore = "DEFECT-C8: a single non-production profile routing cratesIo->cratesIo aliases the production registry and is accepted"]
 fn red_c8_non_production_profile_routing_to_the_production_registry_is_rejected() {
     let (ok, codes, detail) = status_with(
         "\n[release.profiles.rehearsal]\nforge-repository = \"org/rehearsal\"\nregistry-routes = { cratesIo = \"cratesIo\" }\n",

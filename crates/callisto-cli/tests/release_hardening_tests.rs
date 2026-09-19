@@ -603,7 +603,6 @@ fn red_p20_lightweight_preexisting_tag_reports_a_typed_conflict() {
 }
 
 #[test]
-#[ignore = "DEFECT-D07: a bare product-package is accepted and silently derives zero artifact slots"]
 fn red_d07_bare_product_package_is_rejected_or_still_yields_four_slots() {
     let (dir, release_commit) = product_release_commit_fixture();
     let cfg = dir.path().join("callisto.toml");

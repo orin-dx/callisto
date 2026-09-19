@@ -107,6 +107,9 @@ pub struct RawPackageConfig {
     pub publish_to: Option<Vec<String>>,
     #[serde(rename = "tag-template")]
     pub tag_template: Option<String>,
+    /// Earlier `tag-template`s whose tags stay discoverable as the last release.
+    #[serde(rename = "previous-tag-templates")]
+    pub previous_tag_templates: Option<Vec<String>>,
     /// Package-root-relative. Always forward-slash-separated (`/`), never `\` — same
     /// portability rule as `[changesets].dir` (see its doc comment): this value is parsed
     /// through `workspace_relative`, which only normalizes the *host* platform's native

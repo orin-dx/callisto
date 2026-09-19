@@ -41,7 +41,6 @@ fn invalid_profile_name_or_forge_repository_is_rejected() {
     assert!(load("[release.profiles.production]\nforge-repository=\"not a repo\"\n").is_err());
 }
 #[test]
-#[ignore = "DEFECT-D07: a bare product-package is accepted and silently derives zero artifact slots"]
 fn red_d07_product_package_must_be_ecosystem_qualified() {
     let d = tempfile::tempdir().unwrap();
     fs::write(d.path().join("callisto.toml"), "[release]\nproduct-package = \"demo\"\nartifact-targets = [\"aarch64-apple-darwin\",\"x86_64-unknown-linux-gnu\",\"x86_64-unknown-linux-musl\",\"wasm32-wasip1\"]\n").unwrap();

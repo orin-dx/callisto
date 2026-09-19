@@ -154,6 +154,11 @@ fn resolve_product_release(raw: RawProductReleaseConfig) -> Result<ProductReleas
     let package = PackageId::parse(&raw.product_package).map_err(|_error| ConfigError::InvalidProductRelease {
         detail: "product-package must be an ecosystem-qualified package identity".to_owned(),
     })?;
+    if package.ecosystem().is_none() {
+        return Err(ConfigError::InvalidProductRelease {
+            detail: "product-package must be an ecosystem-qualified package identity".to_owned(),
+        });
+    }
     const TARGETS: [&str; 4] = [
         "aarch64-apple-darwin",
         "x86_64-unknown-linux-gnu",
@@ -234,6 +239,8 @@ pub struct PackageConfig {
     pub release_trigger: Option<ReleaseTrigger>,
     pub publish_to: Option<Vec<PublishTarget>>,
     pub tag_template: Option<TagTemplate>,
+    /// Consulted for the last tag only after `tag_template` finds none.
+    pub previous_tag_templates: Vec<TagTemplate>,
     /// Changelog path relative to the package's own root directory.
     pub changelog: Option<PathBuf>,
     pub pre_major_inference: Option<PreMajorInferencePolicy>,
@@ -345,6 +352,7 @@ fn parse_package_config_fields(
     pattern_display: &str,
     release_trigger: Option<&str>,
     tag_template: Option<&str>,
+    previous_tag_templates: Option<&[String]>,
     changelog: Option<&str>,
     pre_major_inference: Option<&str>,
     publish_to: Option<&[String]>,
@@ -354,6 +362,13 @@ fn parse_package_config_fields(
     let tag_template = tag_template
         .map(TagTemplate::parse)
         .transpose()
+        .map_err(ConfigError::Tag)?;
+
+    let previous_tag_templates = previous_tag_templates
+        .unwrap_or_default()
+        .iter()
+        .map(|template| TagTemplate::parse(template))
+        .collect::<Result<Vec<_>, _>>()
         .map_err(ConfigError::Tag)?;
 
     let changelog = changelog
@@ -387,6 +402,7 @@ fn parse_package_config_fields(
         release_trigger,
         publish_to,
         tag_template,
+        previous_tag_templates,
         changelog,
         pre_major_inference,
     })
@@ -528,6 +544,7 @@ pub fn load(root: &Path) -> Result<ResolvedConfig, ConfigError> {
             &raw_pkg.pattern,
             raw_pkg.release_trigger.as_deref(),
             raw_pkg.tag_template.as_deref(),
+            raw_pkg.previous_tag_templates.as_deref(),
             raw_pkg.changelog.as_deref(),
             raw_pkg.pre_major_inference.as_deref(),
             raw_pkg.publish_to.as_deref(),
@@ -552,6 +569,7 @@ pub fn load(root: &Path) -> Result<ResolvedConfig, ConfigError> {
             &raw_pkg.pattern,
             raw_pkg.release_trigger.as_deref(),
             raw_pkg.tag_template.as_deref(),
+            None,
             raw_pkg.changelog.as_deref(),
             raw_pkg.pre_major_inference.as_deref(),
             raw_pkg.publish_to.as_deref(),
@@ -612,28 +630,55 @@ fn validate_release_profile_routes(
             }
         }
     }
+    let production = ReleaseProfileId::parse("production").ok();
+    let route_destination = |key: &RegistryKey| {
+        crate::registry_endpoint::registry_destination(
+            key.as_str(),
+            registries.get(key).and_then(|registry| registry.url.as_deref()),
+        )
+    };
+    let same_destination = |a: &RegistryKey, b: &RegistryKey| {
+        a == b
+            || match (route_destination(a), route_destination(b)) {
+                (Some(a), Some(b)) => a == b,
+                _ => false,
+            }
+    };
+    let conflict = |profile: &ReleaseProfileId, other: &str, logical: &RegistryKey, actual: &RegistryKey| {
+        Err(ConfigError::InvalidProductRelease {
+            detail: format!(
+                "release profiles `{}` and `{}` share registry destination `{}` for `{}`",
+                profile.as_str(),
+                other,
+                actual.as_str(),
+                logical.as_str()
+            ),
+        })
+    };
     for (profile, destination) in &release.profiles {
         for (other, other_destination) in &release.profiles {
             if other <= profile {
                 continue;
             }
-            for actual in destination.registry_routes.values() {
-                for other_actual in other_destination.registry_routes.values() {
-                    let same_key = actual == other_actual;
-                    let same_url = registries.get(actual).and_then(|registry| registry.url.as_deref())
-                        == registries
-                            .get(other_actual)
-                            .and_then(|registry| registry.url.as_deref());
-                    if same_key || same_url {
-                        return Err(ConfigError::InvalidProductRelease {
-                            detail: format!(
-                                "release profiles `{}` and `{}` share registry destination `{}`",
-                                profile.as_str(),
-                                other.as_str(),
-                                actual.as_str()
-                            ),
-                        });
+            for (logical, actual) in &destination.registry_routes {
+                if let Some(other_actual) = other_destination.registry_routes.get(logical) {
+                    if same_destination(actual, other_actual) {
+                        return conflict(profile, other.as_str(), logical, actual);
                     }
+                }
+            }
+        }
+        // The production profile owns each built-in destination it does not re-route; a lone
+        // non-production profile is compared against those built-ins directly.
+        let production_routes = production.as_ref().and_then(|id| release.profiles.get(id));
+        let non_production = production.as_ref() != Some(profile);
+        if non_production && (production_routes.is_some() || release.profiles.len() == 1) {
+            for (logical, actual) in &destination.registry_routes {
+                let owner = production_routes
+                    .and_then(|routes| routes.registry_routes.get(logical))
+                    .unwrap_or(logical);
+                if same_destination(actual, owner) {
+                    return conflict(profile, "production", logical, actual);
                 }
             }
         }

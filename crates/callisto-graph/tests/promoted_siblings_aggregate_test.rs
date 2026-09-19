@@ -81,6 +81,7 @@ fn workspace_load_populates_promoted_siblings_and_aggregate_propagates_ambiguity
             release_trigger: None,
             publish_to: None,
             tag_template: None,
+            previous_tag_templates: Vec::new(),
             changelog: None,
             pre_major_inference: None,
         },

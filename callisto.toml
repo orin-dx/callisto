@@ -44,3 +44,4 @@ preserve-npm-ranges = true
 match = "cargo/callisto-cli"
 publish-to = ["crates-io", "github-release"]
 tag-template = "callisto@{version}"
+previous-tag-templates = ["callisto-cli@{version}"]

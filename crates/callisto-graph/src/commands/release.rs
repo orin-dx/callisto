@@ -27,6 +27,9 @@ use crate::error::{
     CommandFailure, ReleasePreconditionRequirement, ReleaseSelectionInvalidReason, RemoteConflict,
     UnsupportedReleaseFeature,
 };
+use crate::registry_endpoint::{
+    builtin_registry_url, canonical_registry_url, url_parse_error_reason, RegistryBindingV1,
+};
 use crate::{commands::registry_argv, DependencyResolver, GraphError, ProjectLocator, Workspace};
 
 use super::release_artifacts::VerifiedArtifactManifest;
@@ -1748,6 +1751,7 @@ fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
 
     let mut artifact_slots = Vec::new();
     if let (Some(product), Some(policy)) = (&workspace.config.product_release, artifact_policy) {
+        require_product_package_publishes_to_forge(workspace, &product.package)?;
         for (id, (package, version)) in &selected {
             // Workspace package identities may remain bare even when a
             // policy intentionally qualifies the product by ecosystem. Use
@@ -1803,6 +1807,37 @@ fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
         git_remote,
         artifact_slots,
     ))
+}
+
+/// A configured product package must exist and publish to github-release; otherwise
+/// derivation would silently yield zero artifact slots.
+fn require_product_package_publishes_to_forge<R: CommandRunner, D: DependencyResolver>(
+    workspace: &Workspace<'_, R, D>,
+    product: &callisto_model::PackageId,
+) -> Result<(), GraphError> {
+    let mut found = false;
+    for package in workspace.graph.packages() {
+        let is_product = super::release_decision::release_package_ids(package)?
+            .iter()
+            .any(|id| product.matches(&package.id) && product.ecosystem() == Some(id.ecosystem()));
+        if !is_product {
+            continue;
+        }
+        found = true;
+        if package
+            .publish_to
+            .iter()
+            .any(|target| matches!(target, PublishTarget::GitHubRelease))
+        {
+            return Ok(());
+        }
+    }
+    let detail = if found {
+        format!("product-package `{product}` does not publish to github-release")
+    } else {
+        format!("product-package `{product}` is not a package in this workspace")
+    };
+    Err(crate::error::ConfigError::InvalidProductRelease { detail }.into())
 }
 
 fn package_fingerprint<R: CommandRunner, D: DependencyResolver>(
@@ -1918,42 +1953,6 @@ fn digest_bytes(tag: &str, bytes: &[u8]) -> SemanticInputDigest {
     SemanticInputDigest::from_transcript(&transcript)
 }
 
-/// Credential-free URL projection used only inside a digest transcript.
-#[derive(Debug, PartialEq, Eq)]
-struct RegistryBindingV1 {
-    scheme: String,
-    host: String,
-    effective_port: Option<u16>,
-    path: String,
-}
-
-impl RegistryBindingV1 {
-    fn digest(&self) -> RegistryBindingDigest {
-        let mut transcript = CanonicalTranscript::semantic_input_v1();
-        transcript.push_str("registry.scheme", &self.scheme);
-        transcript.push_str("registry.host", &self.host);
-        transcript.push_str(
-            "registry.port",
-            &self.effective_port.map_or_else(String::new, |port| port.to_string()),
-        );
-        transcript.push_str("registry.path", &self.path);
-        RegistryBindingDigest::from_normalized_binding(transcript.as_bytes())
-    }
-
-    fn endpoint(&self) -> String {
-        let host = if self.host.contains(':') {
-            format!("[{}]", self.host)
-        } else {
-            self.host.clone()
-        };
-        let port = match (&self.scheme[..], self.effective_port) {
-            ("https", Some(443)) | ("http", Some(80)) | (_, None) => String::new(),
-            (_, Some(port)) => format!(":{port}"),
-        };
-        format!("{}://{host}{port}{}", self.scheme, self.path)
-    }
-}
-
 fn target_fingerprint<R: CommandRunner, D: DependencyResolver>(
     workspace: &Workspace<'_, R, D>,
     target: &PublishTarget,
@@ -2033,18 +2032,22 @@ fn prepared_registry_binding<R: CommandRunner, D: DependencyResolver>(
         })
         .transpose()?
         .unwrap_or_else(|| logical_key.clone());
-    let configured_registry = workspace
-        .config
-        .registries
-        .get(&key)
-        .ok_or_else(|| GraphError::ReleaseInvariant {
-            detail: format!(
-                "release profile routes `{}` to unknown registry `{}`",
-                logical_key.as_str(),
-                key.as_str()
-            ),
-        })?;
-    if Some(configured_registry.kind) != target.ecosystem() {
+    // Built-in keys (pypi, nuget) need no [registries] entry; an unknown routed key still fails.
+    let builtin_unconfigured = builtin_registry_url(key.as_str()).is_some();
+    let configured_registry = match workspace.config.registries.get(&key) {
+        Some(registry) => Some(registry),
+        None if builtin_unconfigured => None,
+        None => {
+            return Err(GraphError::ReleaseInvariant {
+                detail: format!(
+                    "release profile routes `{}` to unknown registry `{}`",
+                    logical_key.as_str(),
+                    key.as_str()
+                ),
+            })
+        }
+    };
+    if configured_registry.is_some_and(|registry| Some(registry.kind) != target.ecosystem()) {
         return Err(GraphError::ReleaseInvariant {
             detail: format!(
                 "release profile routes `{}` to registry `{}` with incompatible ecosystem",
@@ -2054,11 +2057,7 @@ fn prepared_registry_binding<R: CommandRunner, D: DependencyResolver>(
         });
     }
     let explicit = (key == logical_key).then(|| target.registry_override()).flatten();
-    let configured = workspace
-        .config
-        .registries
-        .get(&key)
-        .and_then(|registry| registry.url.as_deref());
+    let configured = configured_registry.and_then(|registry| registry.url.as_deref());
     let binding = match explicit.or(configured) {
         Some(raw) => canonical_registry_binding(key.as_str(), raw)?,
         None => {
@@ -2076,23 +2075,6 @@ fn prepared_registry_binding<R: CommandRunner, D: DependencyResolver>(
     })
 }
 
-/// Maps a `url::ParseError` to a specific, static diagnostic reason for
-/// [`GraphError::UnsafeRegistryBinding`]/[`GraphError::UnsafeGitRemote`],
-/// rather than discarding it behind one generic "invalid URL" message.
-fn url_parse_error_reason(error: url::ParseError) -> &'static str {
-    match error {
-        url::ParseError::RelativeUrlWithoutBase => "URL has no scheme (e.g. missing `https://`)",
-        url::ParseError::EmptyHost => "URL host is empty",
-        url::ParseError::InvalidPort => "URL port is invalid",
-        url::ParseError::InvalidIpv4Address | url::ParseError::InvalidIpv6Address => {
-            "URL host is not a valid IP address"
-        }
-        url::ParseError::InvalidDomainCharacter => "URL host contains an invalid character",
-        url::ParseError::Overflow => "URL exceeds the maximum length",
-        _ => "invalid URL",
-    }
-}
-
 /// Maps a [`GitHubRepositoryParseError`] to a specific, static diagnostic
 /// reason for [`GraphError::UnsafeGitRemote`], rather than discarding it
 /// behind one generic message for every distinct parse failure.
@@ -2102,51 +2084,16 @@ fn github_repository_parse_error_reason(error: &GitHubRepositoryParseError) -> &
         GitHubRepositoryParseError::TooManyParts { .. } => "GitHub remote path has more than one `/`",
         GitHubRepositoryParseError::InvalidOwner { .. } => "GitHub owner name is invalid",
         GitHubRepositoryParseError::InvalidRepo { .. } => "GitHub repository name is invalid",
+        GitHubRepositoryParseError::DotComponent { .. } => "GitHub owner or repository is a dot component",
         #[allow(unreachable_patterns)]
         _ => "GitHub owner or repository name is invalid",
     }
 }
 
 fn canonical_registry_binding(registry: &str, raw: &str) -> Result<RegistryBindingV1, GraphError> {
-    let parsed = url::Url::parse(raw).map_err(|error| GraphError::UnsafeRegistryBinding {
+    canonical_registry_url(raw).map_err(|reason| GraphError::UnsafeRegistryBinding {
         registry: registry.to_string(),
-        reason: url_parse_error_reason(error),
-    })?;
-    if parsed.cannot_be_a_base() || parsed.host_str().is_none() {
-        return Err(GraphError::UnsafeRegistryBinding {
-            registry: registry.to_string(),
-            reason: "URL must have an authority",
-        });
-    }
-    if !matches!(parsed.scheme(), "http" | "https") {
-        return Err(GraphError::UnsafeRegistryBinding {
-            registry: registry.to_string(),
-            reason: "URL scheme must be http or https",
-        });
-    }
-    if !parsed.username().is_empty() || parsed.password().is_some() {
-        return Err(GraphError::UnsafeRegistryBinding {
-            registry: registry.to_string(),
-            reason: "userinfo is forbidden",
-        });
-    }
-    if parsed.query().is_some() {
-        return Err(GraphError::UnsafeRegistryBinding {
-            registry: registry.to_string(),
-            reason: "query string is forbidden",
-        });
-    }
-    if parsed.fragment().is_some() {
-        return Err(GraphError::UnsafeRegistryBinding {
-            registry: registry.to_string(),
-            reason: "fragment is forbidden",
-        });
-    }
-    Ok(RegistryBindingV1 {
-        scheme: parsed.scheme().to_ascii_lowercase(),
-        host: parsed.host_str().expect("validated authority").to_ascii_lowercase(),
-        effective_port: parsed.port_or_known_default(),
-        path: parsed.path().to_string(),
+        reason,
     })
 }
 

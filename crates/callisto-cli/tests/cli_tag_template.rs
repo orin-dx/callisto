@@ -13,7 +13,6 @@ fn git(root: &Path, args: &[&str]) {
 }
 
 #[test]
-#[ignore = "DEFECT-C3: renaming tag-template hides existing tags, so status reports lastReleasedVersion null"]
 fn red_c3_renamed_tag_template_still_finds_prior_tags() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
@@ -36,7 +35,7 @@ fn red_c3_renamed_tag_template_still_finds_prior_tags() {
     fs::write(root.join("crates/foo/src/lib.rs"), "\n").unwrap();
     fs::write(
         root.join("callisto.toml"),
-        "[[package]]\nmatch = \"cargo/foo\"\ntag-template = \"bar@{version}\"\n",
+        "[[package]]\nmatch = \"cargo/foo\"\ntag-template = \"bar@{version}\"\nprevious-tag-templates = [\"foo@{version}\"]\n",
     )
     .unwrap();
     git(root, &["add", "."]);

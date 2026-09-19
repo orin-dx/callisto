@@ -82,7 +82,6 @@ fn plan_succeeds(dir: &tempfile::TempDir, package: &str) {
 }
 
 #[test]
-#[ignore = "DEFECT-C2: release plan for a pypi target without a [release] profile fails with E171 ReleaseInvariant"]
 fn red_c2_release_plan_succeeds_for_pypi_target_without_release_profile() {
     let dir = fixture(
         "pkg/pyproject.toml",

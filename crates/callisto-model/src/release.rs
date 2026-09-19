@@ -172,7 +172,8 @@ pub struct GitHubRepository {
 impl GitHubRepository {
     /// Parses an exact `owner/repo` GitHub repository identity.
     ///
-    /// Both `owner` and `repo` must be non-empty, ASCII alphanumeric plus
+    /// A trailing `.git` on the repository is dropped and both parts are
+    /// lowercased. Both `owner` and `repo` must be non-empty, ASCII alphanumeric plus
     /// `-`, `_`, and `.`, and must not start or end with `-`. This is
     /// deliberately one charset rule applied uniformly to both parts,
     /// matching GitHub's own allowed repository-name charset closely enough
@@ -186,15 +187,20 @@ impl GitHubRepository {
         if repo.contains('/') {
             return Err(GitHubRepositoryParseError::TooManyParts { raw: s.to_string() });
         }
+        let repo = repo.strip_suffix(".git").unwrap_or(repo);
+        if matches!(owner, "." | "..") || matches!(repo, "." | "..") {
+            return Err(GitHubRepositoryParseError::DotComponent { raw: s.to_string() });
+        }
         if !is_valid_github_repository_part(owner) {
             return Err(GitHubRepositoryParseError::InvalidOwner { raw: s.to_string() });
         }
         if !is_valid_github_repository_part(repo) {
             return Err(GitHubRepositoryParseError::InvalidRepo { raw: s.to_string() });
         }
+        // GitHub names are case-insensitive, so the lowercase form is the identity.
         Ok(Self {
-            owner: owner.to_string(),
-            repo: repo.to_string(),
+            owner: owner.to_ascii_lowercase(),
+            repo: repo.to_ascii_lowercase(),
         })
     }
 
@@ -280,6 +286,8 @@ pub enum GitHubRepositoryParseError {
     InvalidOwner { raw: String },
     #[error("GitHub repository `{raw}` has an invalid repository name")]
     InvalidRepo { raw: String },
+    #[error("GitHub repository `{raw}` has a `.` or `..` component")]
+    DotComponent { raw: String },
 }
 
 macro_rules! release_digest {
@@ -1268,6 +1276,11 @@ impl ArtifactManifestV1 {
         if self.schema_version != Self::SCHEMA_VERSION || self.intent_digest != intent.digest {
             return Err(ArtifactManifestError::MismatchedIntent);
         }
+        match &intent.snapshot.source {
+            SourceIdentity::GitCommit { sha } if sha == &self.source_commit => {}
+            SourceIdentity::GitCommit { .. } => return Err(ArtifactManifestError::MismatchedSourceCommit),
+            SourceIdentity::HermeticContent { .. } => return Err(ArtifactManifestError::NonGitSource),
+        }
         Self::new(intent, self.entries.clone()).map(|_| ())
     }
 }
@@ -1292,6 +1305,8 @@ pub enum ArtifactManifestError {
     MismatchedAttestation,
     #[error("artifact manifest is bound to a different intent or schema")]
     MismatchedIntent,
+    #[error("artifact manifest source commit differs from the intent release source")]
+    MismatchedSourceCommit,
 }
 
 fn validated_registry_key(raw: String) -> Result<RegistryKey, ReleaseOperationError> {

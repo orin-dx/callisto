@@ -201,7 +201,6 @@ fn artifact_manifest_rejects_attestation_source_that_is_not_the_coordinator_revi
 }
 
 #[test]
-#[ignore = "DEFECT-C6: ArtifactManifestV1::validate_for_intent never checks manifest.source_commit against the intent source"]
 fn red_c6_manifest_with_forged_source_commit_is_rejected() {
     let package = ReleasePackageId::parse("cargo/demo").unwrap();
     let version = Version::semver(1, 2, 3);
