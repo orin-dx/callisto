@@ -158,7 +158,7 @@ mod tests {
         let operation =
             ReleaseOperation::registry_publish(package.clone(), Version::semver(1, 0, 0), registry, vec![]).unwrap();
         ReleaseIntentV1::new(
-            callisto_model::ReleaseProfileId::parse("production").unwrap(),
+            callisto_model::ReleaseProfileId::production(),
             callisto_model::ReleaseDecisionV1::new(vec![callisto_model::ReleaseDecisionEntry {
                 package: package.clone(),
                 target_version: Version::semver(1, 0, 0),

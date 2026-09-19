@@ -206,7 +206,6 @@ fn p05_execute_profile_must_match_intent_profile() {
 }
 
 #[test]
-#[ignore = "DEFECT-D05: --orchestration-revision is parsed only after release effects have run"]
 fn red_d05_malformed_orchestration_revision_is_rejected_before_any_effect() {
     let e = Env::new(false);
     let out = execute_raw(
@@ -255,7 +254,6 @@ fn p07_plan_rejects_abbreviated_and_unknown_release_sha() {
 }
 
 #[test]
-#[ignore = "DEFECT-D06: with no [release] section an unknown --profile plans against the production registry"]
 fn red_d06_unconfigured_profile_without_product_release_is_rejected() {
     let (dir, release_commit) = release_commit_fixture();
     let external = tempfile::tempdir().unwrap();
@@ -286,6 +284,34 @@ fn red_d06_unconfigured_profile_without_product_release_is_rejected() {
         "unconfigured profile must fail before writing intent"
     );
     assert!(!out_path.exists());
+}
+
+#[test]
+fn c4_source_without_release_section_plans_and_ignores_artifact_flags() {
+    let (dir, release_commit) = release_commit_fixture();
+    let external = tempfile::tempdir().unwrap();
+    let out_path = external.path().join("i.json");
+    let r = callisto(
+        dir.path(),
+        &[
+            "release",
+            "plan",
+            "--from-release-commit",
+            &release_commit,
+            "--decision",
+            DECISION_PATH,
+            "--orchestration-revision",
+            &release_commit,
+            "--artifact-repository",
+            "example/repo",
+            "--out",
+            out_path.to_str().unwrap(),
+        ],
+    );
+    assert!(r.status.success(), "{}", String::from_utf8_lossy(&r.stderr));
+    assert!(String::from_utf8_lossy(&r.stderr).contains("no [release] section"));
+    let intent: serde_json::Value = serde_json::from_slice(&fs::read(&out_path).unwrap()).unwrap();
+    assert!(intent["artifact_slots"].as_array().is_none_or(Vec::is_empty));
 }
 
 #[test]

@@ -85,7 +85,7 @@ fn product_release_rejects_an_unconfigured_profile_before_writing_intent() {
         "an unconfigured rehearsal destination must fail before creating an intent"
     );
     assert!(
-        String::from_utf8_lossy(&plan.stderr).contains("not configured with a forge destination"),
+        String::from_utf8_lossy(&plan.stderr).contains("release profile `rehearsal` is not configured"),
         "profile failure should say why provisioning is required: {}",
         String::from_utf8_lossy(&plan.stderr)
     );

@@ -1701,6 +1701,13 @@ pub enum ReleaseRunKindV1 {
 pub struct ReleaseProfileId(String);
 
 impl ReleaseProfileId {
+    /// The default profile; the only one valid when a workspace has no `[release]` section.
+    pub const PRODUCTION: &'static str = "production";
+
+    pub fn production() -> Self {
+        Self(Self::PRODUCTION.to_owned())
+    }
+
     pub fn parse(raw: impl AsRef<str>) -> Result<Self, ReleaseRunProvenanceError> {
         let raw = raw.as_ref();
         if raw.is_empty()
@@ -2315,7 +2322,7 @@ mod tests {
             ReleaseRunKindV1::Initial,
             CommitSha::parse(&"b".repeat(40)).unwrap(),
             sha.clone(),
-            ReleaseProfileId::parse("production").unwrap(),
+            ReleaseProfileId::production(),
             intent.digest().clone(),
         )
     }
@@ -2409,7 +2416,7 @@ mod tests {
             }
         }
         ReleaseIntentV1::new(
-            ReleaseProfileId::parse("production").expect("production profile is valid"),
+            ReleaseProfileId::production(),
             ReleaseDecisionV1::new(entries).expect("test operations define a roster"),
             snapshot.expect("test snapshot is valid"),
             trust_profile,
@@ -2999,7 +3006,7 @@ mod tests {
             ReleaseRunKindV1::Recovery,
             CommitSha::parse(&"b".repeat(40)).unwrap(),
             CommitSha::parse(&"a".repeat(40)).unwrap(),
-            ReleaseProfileId::parse("production").unwrap(),
+            ReleaseProfileId::production(),
             intent.digest().clone(),
         );
 
@@ -3025,7 +3032,7 @@ mod tests {
             ReleaseRunKindV1::Recovery,
             CommitSha::parse(&"b".repeat(40)).unwrap(),
             CommitSha::parse(&"c".repeat(40)).unwrap(),
-            ReleaseProfileId::parse("production").unwrap(),
+            ReleaseProfileId::production(),
             intent.digest().clone(),
         );
         assert!(matches!(
@@ -3059,7 +3066,7 @@ mod tests {
             ReleaseRunKindV1::Initial,
             CommitSha::parse(&"b".repeat(40)).unwrap(),
             CommitSha::parse(&"a".repeat(40)).unwrap(),
-            ReleaseProfileId::parse("production").unwrap(),
+            ReleaseProfileId::production(),
             intent.digest().clone(),
         );
 

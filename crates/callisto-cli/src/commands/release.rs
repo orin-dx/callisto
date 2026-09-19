@@ -26,7 +26,7 @@ use crate::cli::{
     ReleasePlanArgs, ReleaseReconcileArgs,
 };
 use crate::error::CliError;
-use crate::output::write_json;
+use crate::output::{log_line, write_json};
 use crate::runner::CliCommandRunner;
 use crate::workspace::{load_workspace, select_inference};
 
@@ -202,22 +202,18 @@ fn plan(args: ReleasePlanArgs, global: &GlobalArgs) -> Result<ExitCode, CliError
                 .map_err(|error| CliError::Other(format!("invalid orchestration revision `{revision}`: {error}")))?;
             let repository = callisto_model::GitHubRepository::parse(repository)
                 .map_err(|error| CliError::Other(format!("invalid artifact repository `{repository}`: {error}")))?;
-            let configured_profile = workspace
+            // Profile existence is validated by the graph; only the destination match lives here.
+            if let Some(configured) = workspace
                 .config
                 .product_release
                 .as_ref()
                 .and_then(|release| release.profile(&profile))
-                .ok_or_else(|| {
-                    CliError::Other(format!(
-                        "release profile `{}` is not configured with a forge destination",
-                        profile.as_str()
-                    ))
-                })?;
-            if configured_profile.forge_repository != repository {
+                .filter(|configured| configured.forge_repository != repository)
+            {
                 return Err(CliError::Other(format!(
                     "release profile `{}` targets forge repository `{}`, not `{}`",
                     profile.as_str(),
-                    configured_profile.forge_repository.as_slug(),
+                    configured.forge_repository.as_slug(),
                     repository.as_slug()
                 )));
             }
@@ -240,18 +236,22 @@ fn plan(args: ReleasePlanArgs, global: &GlobalArgs) -> Result<ExitCode, CliError
                 "product release planning requires --orchestration-revision and --artifact-repository".to_owned(),
             ));
         }
-        (None, None, None) => build_release_intent(
-            &workspace.root,
-            &locator,
-            &runner,
-            &decision,
-            profile,
-            ExecutionTrustProfileV1::GitCommit,
-        )?,
-        (None, _, _) => {
-            return Err(CliError::Other(
-                "--orchestration-revision and --artifact-repository require a configured product release".to_owned(),
-            ));
+        (None, revision, repository) => {
+            // The release workflow always passes both flags, including for sources predating [release].
+            if revision.is_some() || repository.is_some() {
+                log_line(
+                    global.format,
+                    "notice: --orchestration-revision and --artifact-repository ignored: the source has no [release] section; planning with zero artifact slots",
+                );
+            }
+            build_release_intent(
+                &workspace.root,
+                &locator,
+                &runner,
+                &decision,
+                profile,
+                ExecutionTrustProfileV1::GitCommit,
+            )?
         }
     };
     let permit = ApplyPermit::granted_unless_dry_run(global.dry_run)
@@ -296,6 +296,14 @@ fn reconcile(args: ReleaseReconcileArgs, global: &GlobalArgs) -> Result<ExitCode
 }
 
 fn execute(args: ReleaseExecuteArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
+    // Every input is validated and the receipt destination probed before the first effect, so a
+    // late failure cannot leave published crates, tags or releases without a receipt.
+    let permit = ApplyPermit::granted_unless_dry_run(global.dry_run).ok_or_else(|| {
+        CliError::Other(
+            "release execute cannot run with --dry-run; use release reconcile for a read-only readiness check"
+                .to_string(),
+        )
+    })?;
     let intent = read_intent(&args.intent)?;
     let selected_profile = ReleaseProfileId::parse(&args.profile)
         .map_err(|error| CliError::Other(format!("invalid release profile `{}`: {error}", args.profile)))?;
@@ -306,6 +314,24 @@ fn execute(args: ReleaseExecuteArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
             intent.profile.as_str()
         )));
     }
+    let orchestration_revision = callisto_model::CommitSha::parse(&args.orchestration_revision).map_err(|error| {
+        CliError::Other(format!(
+            "invalid orchestration revision `{}`: {error}",
+            args.orchestration_revision
+        ))
+    })?;
+    let source = match &intent.snapshot.source {
+        callisto_model::SourceIdentity::GitCommit { sha } => sha.clone(),
+        callisto_model::SourceIdentity::HermeticContent { .. } => {
+            return Err(CliError::Other(
+                "release receipts require a Git commit release source".to_owned(),
+            ))
+        }
+    };
+    callisto_model::atomic::probe_atomic_write(&args.receipt, &permit).map_err(|source| CliError::Io {
+        source,
+        path: Some(args.receipt.clone()),
+    })?;
     let manifest = args
         .artifact_manifest
         .as_deref()
@@ -334,21 +360,30 @@ fn execute(args: ReleaseExecuteArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
             ));
         }
     };
+    let mut provenance = ReleaseRunProvenanceV1::new(
+        if args.recovery {
+            ReleaseRunKindV1::Recovery
+        } else {
+            ReleaseRunKindV1::Initial
+        },
+        orchestration_revision,
+        source,
+        selected_profile.clone(),
+        intent.digest().clone(),
+    );
+    if let Some(artifacts) = verified_artifacts.as_ref() {
+        provenance = provenance.with_artifact_manifest_digest(artifacts.manifest().digest());
+    }
     let runner = CliCommandRunner;
     let source_global = source_global(global, args.source_root.as_deref());
     let source_workspace = load_workspace(&source_global, &runner)?;
-    if source_workspace.config.product_release.is_some() {
-        let configured_profile = source_workspace
-            .config
-            .product_release
-            .as_ref()
-            .and_then(|release| release.profile(&selected_profile))
-            .ok_or_else(|| {
-                CliError::Other(format!(
-                    "release profile `{}` is not configured with a forge destination",
-                    selected_profile.as_str()
-                ))
-            })?;
+    // Profile existence is validated by the graph during intent validation; only the destination match lives here.
+    if let Some(configured_profile) = source_workspace
+        .config
+        .product_release
+        .as_ref()
+        .and_then(|release| release.profile(&selected_profile))
+    {
         if intent
             .artifact_slots
             .iter()
@@ -373,12 +408,6 @@ fn execute(args: ReleaseExecuteArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
         Some(path) => ReleaseStateStore::new(path),
         None => ReleaseStateStore::default_for(&root, capability.intent())?,
     };
-    let permit = ApplyPermit::granted_unless_dry_run(global.dry_run).ok_or_else(|| {
-        CliError::Other(
-            "release execute cannot run with --dry-run; use release reconcile for a read-only readiness check"
-                .to_string(),
-        )
-    })?;
     let state = execute_release_with_artifacts_in_recovery(
         &capability,
         &store,
@@ -386,34 +415,6 @@ fn execute(args: ReleaseExecuteArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
         verified_artifacts.as_ref(),
         args.recovery,
     )?;
-    let orchestration_revision = callisto_model::CommitSha::parse(&args.orchestration_revision).map_err(|error| {
-        CliError::Other(format!(
-            "invalid orchestration revision `{}`: {error}",
-            args.orchestration_revision
-        ))
-    })?;
-    let source = match &capability.intent().snapshot.source {
-        callisto_model::SourceIdentity::GitCommit { sha } => sha.clone(),
-        callisto_model::SourceIdentity::HermeticContent { .. } => {
-            return Err(CliError::Other(
-                "release receipts require a Git commit release source".to_owned(),
-            ))
-        }
-    };
-    let mut provenance = ReleaseRunProvenanceV1::new(
-        if args.recovery {
-            ReleaseRunKindV1::Recovery
-        } else {
-            ReleaseRunKindV1::Initial
-        },
-        orchestration_revision,
-        source,
-        selected_profile,
-        capability.intent().digest().clone(),
-    );
-    if let Some(artifacts) = verified_artifacts.as_ref() {
-        provenance = provenance.with_artifact_manifest_digest(artifacts.manifest().digest());
-    }
     let receipt = ReleaseReceiptV1::from_evidence(
         capability.intent(),
         &state,

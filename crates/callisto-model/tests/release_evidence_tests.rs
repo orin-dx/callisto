@@ -167,7 +167,7 @@ fn artifact_manifest_rejects_attestation_source_that_is_not_the_coordinator_revi
     )
     .unwrap();
     let i = ReleaseIntentV1::new(
-        ReleaseProfileId::parse("production").unwrap(),
+        ReleaseProfileId::production(),
         ReleaseDecisionV1::new(vec![ReleaseDecisionEntry {
             package,
             target_version: version,
@@ -215,7 +215,7 @@ fn red_c6_manifest_with_forged_source_commit_is_rejected() {
     )
     .unwrap();
     let i = ReleaseIntentV1::new(
-        ReleaseProfileId::parse("production").unwrap(),
+        ReleaseProfileId::production(),
         ReleaseDecisionV1::new(vec![ReleaseDecisionEntry {
             package,
             target_version: version,

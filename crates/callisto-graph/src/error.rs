@@ -573,6 +573,15 @@ pub enum GraphError {
         package: String,
         version: callisto_model::Version,
     },
+
+    #[error("release profile `{profile}` is not configured")]
+    #[diagnostic(
+        code(E198),
+        help(
+            "Define it under [release.profiles.{profile}] in the workspace config; without a [release] section only the default `production` profile is valid."
+        )
+    )]
+    ReleaseProfileUnknown { profile: String },
 }
 
 /// Why a workspace package that a `--package` filter named is nonetheless

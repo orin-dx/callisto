@@ -52,11 +52,48 @@ pub fn atomic_write(path: &Path, content: &str, permit: &ApplyPermit) -> io::Res
     Ok(())
 }
 
+/// Fails now if [`atomic_write`] to `path` could not succeed, leaving no file behind.
+/// A pre-existing regular file at `path` is accepted because the write replaces it.
+///
+/// # Errors
+///
+/// Returns the I/O error creating the parent directories or a temp file beside `path`, or
+/// `IsADirectory`-style `InvalidInput` when `path` is a directory.
+pub fn probe_atomic_write(path: &Path, permit: &ApplyPermit) -> io::Result<()> {
+    let _permit = permit;
+    if path.is_dir() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "destination is a directory",
+        ));
+    }
+    let raw_parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let parent = if raw_parent.as_os_str().is_empty() {
+        Path::new(".")
+    } else {
+        raw_parent
+    };
+    std::fs::create_dir_all(parent)?;
+    NamedTempFile::new_in(parent).map(drop)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::ApplyPermit;
     use tempfile::tempdir;
+
+    #[test]
+    fn probe_leaves_no_file_and_accepts_existing_target() {
+        let dir = tempdir().unwrap();
+        let target = dir.path().join("new/receipt.json");
+        let permit = ApplyPermit::force_for_tests();
+        probe_atomic_write(&target, &permit).unwrap();
+        assert_eq!(std::fs::read_dir(target.parent().unwrap()).unwrap().count(), 0);
+        std::fs::write(&target, "x").unwrap();
+        probe_atomic_write(&target, &permit).unwrap();
+        assert!(probe_atomic_write(dir.path(), &permit).is_err());
+    }
 
     #[test]
     fn atomic_write_creates_file_with_correct_content() {

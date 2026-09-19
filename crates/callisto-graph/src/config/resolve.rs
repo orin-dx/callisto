@@ -630,7 +630,7 @@ fn validate_release_profile_routes(
             }
         }
     }
-    let production = ReleaseProfileId::parse("production").ok();
+    let production = Some(ReleaseProfileId::production());
     let route_destination = |key: &RegistryKey| {
         crate::registry_endpoint::registry_destination(
             key.as_str(),
@@ -678,7 +678,7 @@ fn validate_release_profile_routes(
                     .and_then(|routes| routes.registry_routes.get(logical))
                     .unwrap_or(logical);
                 if same_destination(actual, owner) {
-                    return conflict(profile, "production", logical, actual);
+                    return conflict(profile, ReleaseProfileId::PRODUCTION, logical, actual);
                 }
             }
         }
@@ -1315,7 +1315,7 @@ mod tests {
         let release = config.product_release.expect("product release config");
         assert_eq!(
             release
-                .profile(&ReleaseProfileId::parse("production").unwrap())
+                .profile(&ReleaseProfileId::production())
                 .expect("production profile")
                 .forge_repository
                 .as_slug(),

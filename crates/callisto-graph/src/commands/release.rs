@@ -1532,11 +1532,22 @@ fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
     source: SourceIdentity,
     artifact_policy: Option<&ArtifactBuildPolicy>,
 ) -> Result<DerivedReleaseInputs, GraphError> {
-    let profile_config = workspace
-        .config
-        .product_release
-        .as_ref()
-        .and_then(|release| release.profile(profile));
+    // The single authority for profile validity; callers only plumb the id through.
+    let profile_config = match workspace.config.product_release.as_ref() {
+        Some(release) => Some(
+            release
+                .profile(profile)
+                .ok_or_else(|| GraphError::ReleaseProfileUnknown {
+                    profile: profile.as_str().to_owned(),
+                })?,
+        ),
+        None if profile.as_str() == ReleaseProfileId::PRODUCTION => None,
+        None => {
+            return Err(GraphError::ReleaseProfileUnknown {
+                profile: profile.as_str().to_owned(),
+            })
+        }
+    };
     let mut package_inputs = Vec::new();
 
     let mut selected = BTreeMap::new();
@@ -2520,7 +2531,7 @@ mod tests {
             &locator,
             &runner,
             &decision,
-            ReleaseProfileId::parse("production").unwrap(),
+            ReleaseProfileId::production(),
             ExecutionTrustProfileV1::GitCommit,
         )
         .unwrap();
@@ -2546,7 +2557,7 @@ mod tests {
             &locator,
             &runner,
             &decision(),
-            ReleaseProfileId::parse("production").unwrap(),
+            ReleaseProfileId::production(),
             ExecutionTrustProfileV1::GitCommit,
         )
         .unwrap();
@@ -2690,7 +2701,7 @@ mod tests {
             &locator,
             &runner,
             &decision(),
-            ReleaseProfileId::parse("production").unwrap(),
+            ReleaseProfileId::production(),
             ExecutionTrustProfileV1::GitCommit,
         )
         .unwrap();
@@ -2753,7 +2764,7 @@ mod tests {
             &locator,
             &runner,
             &decision(),
-            ReleaseProfileId::parse("production").unwrap(),
+            ReleaseProfileId::production(),
             ExecutionTrustProfileV1::GitCommit,
         )
         .unwrap();
@@ -2812,7 +2823,7 @@ mod tests {
             &locator,
             &runner,
             &decision(),
-            ReleaseProfileId::parse("production").unwrap(),
+            ReleaseProfileId::production(),
             ExecutionTrustProfileV1::GitCommit,
         )
         .unwrap();
@@ -2866,7 +2877,7 @@ mod tests {
         let (before_snapshot, before_operations, _, _, _) = derive_release_inputs(
             &workspace,
             &decision(),
-            &ReleaseProfileId::parse("production").unwrap(),
+            &ReleaseProfileId::production(),
             source.clone(),
             None,
         )
@@ -2878,14 +2889,8 @@ mod tests {
         )
         .unwrap();
         let reread = Workspace::load(root, &locator, &runner).unwrap();
-        let (after_snapshot, after_operations, _, _, _) = derive_release_inputs(
-            &reread,
-            &decision(),
-            &ReleaseProfileId::parse("production").unwrap(),
-            source,
-            None,
-        )
-        .unwrap();
+        let (after_snapshot, after_operations, _, _, _) =
+            derive_release_inputs(&reread, &decision(), &ReleaseProfileId::production(), source, None).unwrap();
 
         assert_eq!(before_snapshot, after_snapshot);
         assert_eq!(before_operations, after_operations);

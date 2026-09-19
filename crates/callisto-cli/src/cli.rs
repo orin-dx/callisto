@@ -326,7 +326,7 @@ pub struct ReleasePrCommitPlanArgs {
 pub struct ReleasePlanArgs {
     /// Credential-free release destination profile bound into the immutable
     /// intent. Execution must use this same profile.
-    #[arg(long, default_value = "production", value_name = "PROFILE")]
+    #[arg(long, default_value = callisto_model::ReleaseProfileId::PRODUCTION, value_name = "PROFILE")]
     pub profile: String,
     /// Read the release source from this checkout while the Callisto binary
     /// itself may come from a separate, current orchestration checkout.
@@ -426,7 +426,7 @@ pub struct ReleaseExecuteArgs {
     #[arg(long, value_name = "SHA")]
     pub orchestration_revision: String,
     /// Credential-free target profile identity recorded in the receipt.
-    #[arg(long, default_value = "production", value_name = "PROFILE")]
+    #[arg(long, default_value = callisto_model::ReleaseProfileId::PRODUCTION, value_name = "PROFILE")]
     pub profile: String,
     /// Record this explicitly selected run as recovery of a historic merged
     /// release source. It never changes the coordinator revision.
