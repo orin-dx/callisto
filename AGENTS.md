@@ -58,7 +58,7 @@ Always use `just` or `moon` task runners for building, testing, linting, and for
 
 ## 3. Strict Engineering Invariants
 
-Agents modifying Callisto code MUST enforce the following 5 engineering invariants:
+Agents modifying Callisto code MUST enforce the following 6 engineering invariants:
 
 ### 1. Safe Rust Only (`unsafe_code = "forbid"`)
 - `unsafe` code blocks are strictly forbidden across all 10 workspace crates.

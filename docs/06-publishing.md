@@ -30,7 +30,7 @@ do not need to migrate anything -- that branch is a normal, continuously-updated
 going forward. An optional App or fine-grained token remains available for repositories that
 want release PR operations attributed to a different identity, but is never required.
 
-After a merge, the workflow will derive a fresh release run from the exact merged source and
+After a merge, the workflow derives a fresh release run from the exact merged source and
 pass its immutable handoff between jobs. A historical GitHub Actions rerun is never recovery:
 it uses the historical orchestration revision. Recovery must be a new run of current
 orchestration against an explicit merged release source.
@@ -46,9 +46,10 @@ workflow and action changes, but GitHub does not enforce review merely because t
 Only the `execute` job may receive `CARGO_REGISTRY_TOKEN`, `NPM_TOKEN`, or `TWINE_PASSWORD`.
 Do not put those secrets at workflow scope, in build jobs, or in an action input.
 
-The provider-observed recovery lifecycle and binary asset publishing are being implemented. Until
-that work lands, local execution state and a green workflow are not proof that a release exists.
-Use the release receipt and independent provider checks as the completion evidence.
+Recovery is derived from provider observation (registry, remote tag, forge release, assets), and
+binary assets are published to the GitHub Release. Local execution state and a green workflow are
+still not proof that a release exists; use the release receipt and independent provider checks as
+the completion evidence.
 
 `callisto-action` is now a compatibility version-PR action only. Its former `publish` and
 `create_github_release` inputs are ignored; it never publishes, tags, downloads artifacts, or
@@ -80,7 +81,7 @@ job, immediately before the command that publishes:
   env:
     NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-- run: callisto release execute --intent .release-intent/release-intent.json
+- run: callisto release execute --intent "$RUNNER_TEMP/release-intent/release-intent.json" --receipt "$RUNNER_TEMP/release-receipt.json" --orchestration-revision "$GITHUB_SHA"
 ```
 
 This works because `npm config set` writes to the user-level `.npmrc`, which the npm CLI
@@ -102,7 +103,7 @@ variable. Set `NODE_AUTH_TOKEN` in the job environment:
     node-version: '20'
     registry-url: 'https://registry.npmjs.org'
 
-- run: callisto release execute --intent .release-intent/release-intent.json
+- run: callisto release execute --intent "$RUNNER_TEMP/release-intent/release-intent.json" --receipt "$RUNNER_TEMP/release-receipt.json" --orchestration-revision "$GITHUB_SHA"
   env:
     NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 ```
@@ -147,7 +148,7 @@ detected from `napi.targets`/`[tool.maturin].targets`.
 
 ### Publish order
 
-`callisto publish` publishes in this fixed order: Rust crates → npm platform packages → npm
+`callisto release execute` publishes in this fixed order: Rust crates → npm platform packages → npm
 main packages → PyPI packages. Platform packages always publish before the main package that
 depends on them.
 

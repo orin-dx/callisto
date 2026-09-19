@@ -74,7 +74,6 @@ fn find_key(value: &serde_json::Value, key: &str) -> Option<String> {
 }
 
 #[test]
-#[ignore = "DEFECT-C3: setup-callisto derives CRATE_VERSION by stripping `callisto-cli@`, but releases are now tagged `callisto@<version>`"]
 fn red_c3_installer_derives_crate_version_from_the_current_tag_template() {
     let action = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.github/actions/setup-callisto/action.yml");
     let body = fs::read_to_string(&action).unwrap();

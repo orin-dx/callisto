@@ -80,9 +80,9 @@ runs:
 
         # Derive a crates.io version spec from TAG_NAME: "latest" installs
         # whatever crates.io resolves as latest (no --version flag); an
-        # explicit tag like "callisto-cli@0.5.0" strips the "callisto-cli@"
-        # prefix down to the bare semver cargo install expects.
-        CRATE_VERSION="${TAG_NAME#callisto-cli@}"
+        # explicit tag ("callisto@0.5.0" or legacy "callisto-cli@0.5.0")
+        # strips either prefix down to the bare semver cargo install expects.
+        CRATE_VERSION="${TAG_NAME#callisto@}"; CRATE_VERSION="${CRATE_VERSION#callisto-cli@}"
 
         # Pick a download destination whose extension matches ASSET_NAME
         # (under $RUNNER_TEMP, never the workspace) so the extraction step
@@ -105,7 +105,7 @@ runs:
         # Prioritize local repository build when inside the callisto monorepo
         if [[ -f "$GITHUB_WORKSPACE/Cargo.toml" ]] && grep -q "callisto-cli" "$GITHUB_WORKSPACE/Cargo.toml"; then
           echo "Building local callisto binary from current repository commit..."
-          cargo build -p callisto-cli
+          cargo build --locked -p callisto-cli
           cp "$GITHUB_WORKSPACE/target/debug/callisto" "$CALLISTO_BIN_DIR/callisto"
         elif [[ "$SOURCE" == "local" ]]; then
           echo "::error::setup-callisto source=local requires a Callisto workspace checkout"
@@ -134,8 +134,12 @@ runs:
           echo "Callisto installed from crates.io ($CRATE_VERSION)"
           cp "${RUNNER_TEMP}/callisto-cargo-install/bin/callisto" "$CALLISTO_BIN_DIR/callisto"
         else
+          if [[ "$TAG_NAME" != "latest" ]]; then
+            echo "::error::callisto $TAG_NAME is available neither as a prebuilt asset nor on crates.io"
+            exit 1
+          fi
           echo "Installing from git source (crates.io install failed or was skipped)..."
-          cargo install --git https://github.com/orin-dx/callisto.git callisto-cli --root "${RUNNER_TEMP}/callisto-cargo-install" --quiet
+          cargo install --locked --git https://github.com/orin-dx/callisto.git callisto-cli --root "${RUNNER_TEMP}/callisto-cargo-install" --quiet
           cp "${RUNNER_TEMP}/callisto-cargo-install/bin/callisto" "$CALLISTO_BIN_DIR/callisto"
         fi
 

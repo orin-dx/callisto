@@ -356,7 +356,7 @@ pub trait DependencyResolver: Send + Sync {
 
 ## 9. GitHub Actions Orchestration (`callisto-action`)
 
-Callisto includes a built-in composite action ([`.github/actions/callisto-action/action.yml`](.github/actions/callisto-action/action.yml)) that creates or updates a reviewed version PR. The repository release workflow owns the post-merge plan, build, attestation, and protected execute stages; see [`docs/06-publishing.md`](docs/06-publishing.md).
+Callisto includes a built-in composite action ([`.github/actions/callisto-action/action.yml`](.github/actions/callisto-action/action.yml)) that creates or updates a reviewed version PR. The repository release workflow owns the post-merge plan, build, attestation, and execute stages; the merged release PR is the sole authorization; see [`docs/06-publishing.md`](docs/06-publishing.md).
 
 ```mermaid
 %%{init: {'theme': 'base', 'themeVariables': {'lineColor': '#64748b', 'edgeLabelBackground': '#f8fafc', 'fontFamily': 'ui-sans-serif, system-ui, sans-serif'}}}%%
@@ -366,7 +366,7 @@ sequenceDiagram
     participant VersionPR as Job 2: version-pr (needs: [verify])
     participant Plan as Job 3: plan
     participant Build as Job 4: build
-    participant Execute as Job 5: execute (release Environment)
+    participant Execute as Job 5: execute (no Environment gate)
     participant CLI as callisto CLI
     participant GH as GitHub API (gh CLI)
 

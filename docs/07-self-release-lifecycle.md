@@ -93,9 +93,6 @@ revision GitHub records for the workflow run. The immutable intent and artifact 
 bind those bytes to the selected release-source revision, so a recovery can safely use current
 orchestration without misrepresenting an older source checkout as the workflow source.
 
-The private `orin-dx/callisto-rehearsal` forge repository is isolated from production. It is
-reserved for future forge-level experiments; it is not a prerequisite for the current rehearsal.
-
 ### Rehearsal boundary
 
 Callisto publishes Cargo crates to crates.io and product assets to GitHub Releases. It does not

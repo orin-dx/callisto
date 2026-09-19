@@ -1,10 +1,9 @@
-//! Read-only durable release interfaces.
+//! Durable release interfaces (plan and execute).
 //!
-//! Planning deliberately accepts only exact package identities. It never
-//! accepts an inline intent or searches for an authority file. Execution is
-//! intentionally not wired until the provider adapter can prove exact remote
-//! identities; exposing a permissive fallback here would recreate the legacy
-//! publish/tag bypass this command family replaces.
+//! Planning accepts only exact package identities. It never accepts an inline
+//! intent or searches for an authority file. `execute` is the only durable
+//! mutation route and requires an explicit intent, receipt, and orchestration
+//! revision; there is no permissive fallback to the legacy publish/tag path.
 
 use std::process::ExitCode;
 

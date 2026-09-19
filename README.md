@@ -100,14 +100,13 @@ callisto version
 
 ## Publishing Packages
 
-`callisto version` bumps and commits; publishing to a registry is a separate, explicit step, split into commands that each do one thing and pass JSON to the next:
+`callisto version` bumps and commits. Durable publication is `callisto release plan` then `callisto release execute` (see [`docs/06-publishing.md`](docs/06-publishing.md)). The legacy commands below are read-only previews that pass JSON along; `callisto publish` never contacts a registry:
 
 ```bash
 # 1. Compute what's ready to publish (read-only, no network)
 callisto plan-publish --format json > plan.json
 
-# 2. Publish each package to its registry (cargo/npm/twine), independently —
-#    one package's rejection doesn't block the others
+# 2. Preview the publish plan (compatibility command; does not publish)
 callisto publish --format json > report.json
 
 # 3. Narrow the plan down to what the report confirms actually succeeded —
@@ -128,9 +127,7 @@ sequenceDiagram
   CI->>CLI: plan-publish --format json
   CLI-->>CI: PublishPlan
   CI->>CLI: publish --format json
-  CLI->>Reg: publish per package (cargo / npm / twine)
-  Reg-->>CLI: per-package outcome
-  CLI-->>CI: PublishReport
+  CLI-->>CI: PublishPlan preview (nothing published)
   CI->>CLI: filter-plan --plan --report
   CLI-->>CI: plan narrowed to confirmed successes
   CI->>CLI: tag --plan --floating-major
@@ -158,7 +155,7 @@ callisto compose-pr-body --branch release-packages
 
 ### 2. Production GitHub Actions Workflow (`release.yml`)
 
-Create `.github/workflows/release.yml` to automate version bumps and registry publishing on `push` to `main`:
+Create `.github/workflows/release.yml` to automate version bumps and the release PR on `push` to `main`:
 
 ```yaml
 name: Release

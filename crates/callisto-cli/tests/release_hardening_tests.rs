@@ -2,9 +2,7 @@
 
 //! Black-box release hardening tests over the real `callisto` binary.
 //!
-//! Tests named `red_*` capture an audited defect and are parked with
-//! `#[ignore = "DEFECT-..."]`; run them with `just release-red`. Everything
-//! else is an ordinary regression test.
+//! Tests named `red_*` each pin a defect found in the release-lifecycle audit.
 
 #[path = "common/release_harness.rs"]
 mod release_harness;
