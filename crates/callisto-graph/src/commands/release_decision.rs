@@ -353,7 +353,7 @@ fn command_malformed_output(program: &str, args: &[&str], detail: impl Into<Stri
 }
 
 fn git_stdout<R: CommandRunner>(runner: &R, root: &std::path::Path, args: &[&str]) -> Result<String, GraphError> {
-    let output = runner.run("git", args, root)?;
+    let output = runner.run_with_timeout("git", args, root, super::release::timeouts::LOCAL_GIT)?;
     if !output.success() {
         return Err(command_non_zero_exit("git", args, &output));
     }

@@ -8,14 +8,13 @@
 use std::{
     fs::{self, File},
     path::{Component, Path, PathBuf},
-    time::Duration,
 };
 
 use callisto_model::{ArtifactManifestV1, CommandRunner, ReleaseIntentV1};
 
 use crate::GraphError;
 
-const ATTESTATION_TIMEOUT: Duration = Duration::from_secs(120);
+use super::release::timeouts;
 
 /// A manifest whose exact local bytes and GitHub provenance have been checked.
 ///
@@ -175,7 +174,7 @@ fn verify_github_attestation<R: CommandRunner>(
             "gh",
             &args,
             path.parent().unwrap_or_else(|| Path::new(".")),
-            ATTESTATION_TIMEOUT,
+            timeouts::ATTESTATION_VERIFY,
         )
         .map_err(|error| GraphError::ArtifactAttestation {
             path: path.to_path_buf(),

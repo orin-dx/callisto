@@ -184,6 +184,59 @@ enum ForgeReleaseObservation {
     Indeterminate,
 }
 
+/// Wall-clock deadlines for every command the release path issues. Without
+/// them one hung provider consumes the whole CI job budget; a breach surfaces
+/// as `CommandError::TimedOut` (E025) and, after `Attempting` is persisted,
+/// fails closed exactly as any other dispatch error.
+pub(crate) mod timeouts {
+    use std::time::Duration;
+
+    /// `cargo publish`, `npm publish`, `python -m build`, `twine upload`.
+    pub(crate) const PUBLISH: Duration = Duration::from_secs(900);
+    /// `cargo info`, `npm view`.
+    pub(crate) const REGISTRY_QUERY: Duration = Duration::from_secs(300);
+    /// `gh attestation verify`.
+    pub(crate) const ATTESTATION_VERIFY: Duration = Duration::from_secs(120);
+    /// `gh api`.
+    pub(crate) const FORGE_API: Duration = Duration::from_secs(60);
+    /// `git ls-remote`.
+    pub(crate) const GIT_LS_REMOTE: Duration = Duration::from_secs(60);
+    /// `git push`.
+    pub(crate) const GIT_PUSH: Duration = Duration::from_secs(120);
+    /// `gh release create`.
+    pub(crate) const FORGE_RELEASE_CREATE: Duration = Duration::from_secs(120);
+    /// `gh release upload`.
+    pub(crate) const FORGE_ASSET_UPLOAD: Duration = Duration::from_secs(600);
+    /// Purely local git reads (`rev-parse`, `for-each-ref`, `remote get-url`).
+    pub(crate) const LOCAL_GIT: Duration = Duration::from_secs(60);
+}
+
+/// What one pre-effect observation authorizes for an operation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ReleasePreflight {
+    /// The effect has not happened and may be issued.
+    Proceed,
+    /// The provider already holds exactly this operation's intended result.
+    AlreadySatisfied,
+}
+
+/// Maps one observation to its pre-effect decision. `conflict` names the
+/// operation-specific disagreement so the typed error stays precise.
+fn preflight_from_observation(
+    observation: ProviderObservationV1,
+    id: &ReleaseOperationId,
+    conflict: RemoteConflict,
+) -> Result<ReleasePreflight, GraphError> {
+    match observation {
+        ProviderObservationV1::Absent => Ok(ReleasePreflight::Proceed),
+        ProviderObservationV1::Exact => Ok(ReleasePreflight::AlreadySatisfied),
+        ProviderObservationV1::Conflict => Err(GraphError::ReleaseRemoteConflict { conflict }),
+        ProviderObservationV1::Indeterminate => Err(GraphError::ReleaseProviderIndeterminate {
+            operation: Box::new(id.clone()),
+        }),
+    }
+}
+
 /// One GitHub release lookup, shared by the forge-release and asset adapters.
 #[derive(Debug)]
 enum GitHubReleaseLookup {
@@ -238,7 +291,8 @@ impl ValidatedReleaseIntent<'_> {
     pub(crate) fn recheck_trust(&self) -> Result<(), GraphError> {
         let evidence =
             callisto_vcs::GitAccess::discover(&self.prepared.root, self.runner).observe_git_commit_trust()?;
-        if evidence != self.prepared.trust || source_from_trust(&evidence) != self.prepared.source {
+        if evidence.identity() != self.prepared.trust.identity() || source_from_trust(&evidence) != self.prepared.source
+        {
             return Err(GraphError::ReleaseIntentStale {
                 reason: StaleReason::trust_evidence_changed(),
             });
@@ -375,7 +429,7 @@ pub fn validate_release_intent_with_state_directory<'a, L: ProjectLocator, R: Co
     let initial_trust = observe_git_trust(&workspace, received.trust_profile)?;
     let lock = ReleaseWorkspaceLock::acquire(&root, state_directory)?;
     let trust = observe_git_trust(&workspace, received.trust_profile)?;
-    if trust != initial_trust {
+    if trust.identity() != initial_trust.identity() {
         return Err(GraphError::ReleaseIntentStale {
             reason: StaleReason::trust_evidence_changed(),
         });
@@ -391,7 +445,7 @@ pub fn validate_release_intent_with_state_directory<'a, L: ProjectLocator, R: Co
         artifact_policy.as_ref(),
     )?;
     let final_trust = observe_git_trust(&workspace, received.trust_profile)?;
-    if expected != received || final_trust != trust {
+    if expected != received || final_trust.identity() != trust.identity() {
         return Err(GraphError::ReleaseIntentStale {
             reason: StaleReason::intent_differs_from_fresh_derivation(),
         });
@@ -453,23 +507,113 @@ fn source_from_trust(evidence: &GitCommitTrustEvidence) -> SourceIdentity {
 }
 
 impl ValidatedReleaseIntent<'_> {
+    fn prepared_operation(&self, id: &ReleaseOperationId, caller: &str) -> Result<&PreparedOperation, GraphError> {
+        self.prepared
+            .operations
+            .get(id)
+            .ok_or_else(|| GraphError::ReleaseInvariant {
+                detail: format!("{caller}: no prepared operation for `{id:?}`"),
+            })
+    }
+
+    /// The single fresh pre-effect observation for one operation, made before
+    /// the executor persists `Attempting` so a failure here cannot strand the
+    /// operation mid-flight. Its result is what authorizes
+    /// [`Self::dispatch_prepared`]; the dispatchers never re-observe first.
+    pub(crate) fn preflight_prepared(
+        &self,
+        id: &ReleaseOperationId,
+        artifacts: Option<&VerifiedArtifactManifest<'_>>,
+    ) -> Result<ReleasePreflight, GraphError> {
+        let operation = self.prepared_operation(id, "preflight_prepared")?;
+        match operation {
+            PreparedOperation::RegistryPublish {
+                package_name,
+                version,
+                registry,
+                ..
+            } => {
+                // A registry version that already exists is a hard conflict,
+                // not an adopted success: only the recovery path may converge
+                // on an exact remote observation.
+                let exists = match id.package.ecosystem() {
+                    Ecosystem::Cargo => {
+                        self.cargo_version_is_published(package_name, version, registry.key.as_str())?
+                    }
+                    Ecosystem::Npm => {
+                        self.npm_version_is_published(package_name, version, registry.endpoint.as_deref())?
+                    }
+                    // PyPI's upload endpoint is not a query API, so there is
+                    // nothing to observe before the effect.
+                    Ecosystem::Pypi => false,
+                    _ => {
+                        return Err(GraphError::UnsupportedRelease {
+                            feature: UnsupportedReleaseFeature::Ecosystem,
+                        })
+                    }
+                };
+                if exists {
+                    Err(GraphError::ReleaseRegistryVersionExists {
+                        package: package_name.clone(),
+                        version: version.clone(),
+                    })
+                } else {
+                    Ok(ReleasePreflight::Proceed)
+                }
+            }
+            PreparedOperation::Tag {
+                name,
+                target,
+                annotation,
+            } => preflight_from_observation(
+                self.tag_observation(name, target, annotation)?,
+                id,
+                RemoteConflict::TagTargetDiffers,
+            ),
+            PreparedOperation::ForgeRelease { tag } => {
+                let remote = self.checked_git_remote()?;
+                let repository = remote
+                    .github_repository
+                    .as_ref()
+                    .ok_or(GraphError::ReleasePreconditionUnmet {
+                        requirement: ReleasePreconditionRequirement::GitHubRemote,
+                    })?
+                    .as_slug();
+                let observation = match self.observed_forge_release_target(tag, &repository)? {
+                    ForgeReleaseObservation::Missing => ProviderObservationV1::Absent,
+                    ForgeReleaseObservation::Exact => ProviderObservationV1::Exact,
+                    ForgeReleaseObservation::Conflict => ProviderObservationV1::Conflict,
+                    ForgeReleaseObservation::Indeterminate => ProviderObservationV1::Indeterminate,
+                };
+                preflight_from_observation(observation, id, RemoteConflict::ForgeReleaseDiffers)
+            }
+            PreparedOperation::ArtifactUpload { slot, tag } => {
+                let artifacts = artifacts.ok_or(GraphError::ReleasePreconditionUnmet {
+                    requirement: ReleasePreconditionRequirement::VerifiedArtifactManifest,
+                })?;
+                preflight_from_observation(
+                    self.observe_artifact_upload(slot, tag, Some(artifacts))?,
+                    id,
+                    RemoteConflict::ArtifactDiffers,
+                )
+            }
+        }
+    }
+
     /// Dispatches exactly one graph-private operation prepared during fresh
     /// validation. This is intentionally the only production effect path: it
     /// never accepts a path, endpoint, tag, package name, or version from a
     /// caller.
+    ///
+    /// Only legitimate after [`Self::preflight_prepared`] returned
+    /// [`ReleasePreflight::Proceed`] for the same operation.
     pub(crate) fn dispatch_prepared(
         &self,
         permit: &ApplyPermit,
         id: &ReleaseOperationId,
         artifacts: Option<&VerifiedArtifactManifest<'_>>,
     ) -> Result<OperationOutcome, GraphError> {
-        let operation = self
-            .prepared
-            .operations
-            .get(id)
-            .ok_or_else(|| GraphError::ReleaseInvariant {
-                detail: format!("dispatch_prepared: no prepared operation for `{id:?}`"),
-            })?;
+        let operation = self.prepared_operation(id, "dispatch_prepared")?;
         match operation {
             PreparedOperation::RegistryPublish { .. } => self.dispatch_registry(permit, id, operation),
             PreparedOperation::Tag {
@@ -493,13 +637,7 @@ impl ValidatedReleaseIntent<'_> {
         id: &ReleaseOperationId,
         artifacts: Option<&VerifiedArtifactManifest<'_>>,
     ) -> Result<ProviderObservationV1, GraphError> {
-        let operation = self
-            .prepared
-            .operations
-            .get(id)
-            .ok_or_else(|| GraphError::ReleaseInvariant {
-                detail: format!("observe_prepared: no prepared operation for `{id:?}`"),
-            })?;
+        let operation = self.prepared_operation(id, "observe_prepared")?;
         match operation {
             PreparedOperation::RegistryPublish {
                 package_name,
@@ -577,12 +715,6 @@ impl ValidatedReleaseIntent<'_> {
         let output = match id.package.ecosystem() {
             Ecosystem::Cargo => {
                 let registry_key = (registry.key.as_str() != RegistryKey::CRATES_IO).then(|| registry.key.as_str());
-                if self.cargo_version_is_published(package_name, version, registry.key.as_str())? {
-                    return Err(GraphError::ReleaseRegistryVersionExists {
-                        package: package_name.clone(),
-                        version: version.clone(),
-                    });
-                }
                 let argv = registry_argv::cargo_publish_argv(
                     &self.prepared.root,
                     package_dir,
@@ -593,12 +725,6 @@ impl ValidatedReleaseIntent<'_> {
                 self.run_argv(&argv)?
             }
             Ecosystem::Npm => {
-                if self.npm_version_is_published(package_name, version, registry.endpoint.as_deref())? {
-                    return Err(GraphError::ReleaseRegistryVersionExists {
-                        package: package_name.clone(),
-                        version: version.clone(),
-                    });
-                }
                 let package_manager = registry_argv::detect_npm_package_manager(&self.prepared.root);
                 let argv = registry_argv::npm_publish_argv(
                     &self.prepared.root,
@@ -786,7 +912,9 @@ impl ValidatedReleaseIntent<'_> {
     /// decided by `registry_argv`.
     fn run_argv(&self, argv: &registry_argv::Argv) -> Result<CommandOutput, GraphError> {
         let args: Vec<&str> = argv.args.iter().map(String::as_str).collect();
-        Ok(self.runner.run(&argv.program, &args, &argv.cwd)?)
+        Ok(self
+            .runner
+            .run_with_timeout(&argv.program, &args, &argv.cwd, timeouts::PUBLISH)?)
     }
 
     /// Unlike `cargo info`, `npm view` never resolves the local manifest, so
@@ -805,7 +933,7 @@ impl ValidatedReleaseIntent<'_> {
         }
         let output = self
             .runner
-            .run_quiet("npm", &args, &self.prepared.root, std::time::Duration::from_secs(300))?;
+            .run_quiet("npm", &args, &self.prepared.root, timeouts::REGISTRY_QUERY)?;
         if output.success() {
             return Ok(!output.stdout_trimmed().is_empty());
         }
@@ -838,7 +966,7 @@ impl ValidatedReleaseIntent<'_> {
         let neutral = neutral_observation_dir()?;
         let output = self
             .runner
-            .run_quiet("cargo", &args, neutral.path(), std::time::Duration::from_secs(300))?;
+            .run_quiet("cargo", &args, neutral.path(), timeouts::REGISTRY_QUERY)?;
         registry_argv::classify_cargo_info_output(&output).map_err(|source| GraphError::Registry {
             package: package_name.to_string(),
             source,
@@ -853,23 +981,7 @@ impl ValidatedReleaseIntent<'_> {
         target: &CommitSha,
         annotation: &str,
     ) -> Result<OperationOutcome, GraphError> {
-        // The remote is validated before any local effect: the tag this release
-        // binds to a commit is the pushed one, not a leftover local ref.
-        match self.tag_observation(name, target, annotation)? {
-            ProviderObservationV1::Exact => return Ok(OperationOutcome::AlreadySatisfied),
-            ProviderObservationV1::Conflict => {
-                return Err(GraphError::ReleaseRemoteConflict {
-                    conflict: RemoteConflict::TagTargetDiffers,
-                })
-            }
-            ProviderObservationV1::Indeterminate => {
-                return Err(GraphError::ReleaseProviderIndeterminate {
-                    operation: Box::new(id.clone()),
-                })
-            }
-            ProviderObservationV1::Absent => {}
-        }
-        // An absent observation leaves the local ref either missing or already
+        // The preflight observation already proved the remote absent. It leaves
         // exactly as prepared by a run whose push failed; only the push remains.
         if self.observed_local_tag(name)? == LocalTagObservation::Absent {
             // Delegates to `GitAccess::create_tag` rather than inlining `git
@@ -889,7 +1001,9 @@ impl ValidatedReleaseIntent<'_> {
         }
         let remote_endpoint = self.checked_git_remote()?.endpoint.clone();
         let push_args = ["push", remote_endpoint.as_str(), name.as_str()];
-        let pushed = self.runner.run("git", &push_args, &self.prepared.root)?;
+        let pushed = self
+            .runner
+            .run_with_timeout("git", &push_args, &self.prepared.root, timeouts::GIT_PUSH)?;
         if pushed.exit_code != Some(0) {
             return Err(GraphError::ReleaseCommand {
                 program: "git".to_string(),
@@ -947,20 +1061,6 @@ impl ValidatedReleaseIntent<'_> {
                 requirement: ReleasePreconditionRequirement::GitHubRemote,
             })?
             .as_slug();
-        match self.observed_forge_release_target(tag, &repository)? {
-            ForgeReleaseObservation::Exact => return Ok(OperationOutcome::AlreadySatisfied),
-            ForgeReleaseObservation::Conflict => {
-                return Err(GraphError::ReleaseRemoteConflict {
-                    conflict: RemoteConflict::ForgeReleaseDiffers,
-                })
-            }
-            ForgeReleaseObservation::Indeterminate => {
-                return Err(GraphError::ReleaseProviderIndeterminate {
-                    operation: Box::new(id.clone()),
-                })
-            }
-            ForgeReleaseObservation::Missing => {}
-        }
         let create_args = [
             "release",
             "create",
@@ -970,7 +1070,9 @@ impl ValidatedReleaseIntent<'_> {
             "--verify-tag",
             "--generate-notes",
         ];
-        let created = self.runner.run("gh", &create_args, &self.prepared.root)?;
+        let created =
+            self.runner
+                .run_with_timeout("gh", &create_args, &self.prepared.root, timeouts::FORGE_RELEASE_CREATE)?;
         if created.exit_code != Some(0) {
             return Err(GraphError::ReleaseCommand {
                 program: "gh".to_string(),
@@ -1004,20 +1106,6 @@ impl ValidatedReleaseIntent<'_> {
         let artifacts = artifacts.ok_or(GraphError::ReleasePreconditionUnmet {
             requirement: ReleasePreconditionRequirement::VerifiedArtifactManifest,
         })?;
-        match self.observe_artifact_upload(slot, tag, Some(artifacts))? {
-            ProviderObservationV1::Exact => return Ok(OperationOutcome::AlreadySatisfied),
-            ProviderObservationV1::Conflict => {
-                return Err(GraphError::ReleaseRemoteConflict {
-                    conflict: RemoteConflict::ArtifactDiffers,
-                })
-            }
-            ProviderObservationV1::Indeterminate => {
-                return Err(GraphError::ReleaseProviderIndeterminate {
-                    operation: Box::new(id.clone()),
-                })
-            }
-            ProviderObservationV1::Absent => {}
-        }
         let path = artifacts.path_for(slot)?;
         let repository = slot.attestation_policy.repository.as_slug();
         match self.observed_forge_release_target(tag, &repository)? {
@@ -1042,7 +1130,9 @@ impl ValidatedReleaseIntent<'_> {
             "--repo",
             repository.as_str(),
         ];
-        let uploaded = self.runner.run("gh", &args, &self.prepared.root)?;
+        let uploaded = self
+            .runner
+            .run_with_timeout("gh", &args, &self.prepared.root, timeouts::FORGE_ASSET_UPLOAD)?;
         if !uploaded.success() {
             return Err(GraphError::ReleaseCommand {
                 program: "gh".to_owned(),
@@ -1127,7 +1217,7 @@ impl ValidatedReleaseIntent<'_> {
         let args = ["ls-remote", endpoint.as_str(), reference.as_str(), peeled.as_str()];
         let observed = self
             .runner
-            .run_quiet("git", &args, &self.prepared.root, std::time::Duration::from_secs(300))?;
+            .run_quiet("git", &args, &self.prepared.root, timeouts::GIT_LS_REMOTE)?;
         if observed.exit_code != Some(0) {
             return Ok(RemoteTagObservation::Indeterminate);
         }
@@ -1162,7 +1252,9 @@ impl ValidatedReleaseIntent<'_> {
     fn observed_local_tag(&self, name: &TagName) -> Result<LocalTagObservation, GraphError> {
         let reference = format!("refs/tags/{name}^{{commit}}");
         let rev_parse_args = ["rev-parse", "--verify", "--quiet", reference.as_str()];
-        let observed = self.runner.run("git", &rev_parse_args, &self.prepared.root)?;
+        let observed =
+            self.runner
+                .run_with_timeout("git", &rev_parse_args, &self.prepared.root, timeouts::LOCAL_GIT)?;
         if observed.exit_code != Some(0) {
             return Ok(LocalTagObservation::Absent);
         }
@@ -1179,7 +1271,9 @@ impl ValidatedReleaseIntent<'_> {
             "--format=%(objecttype)%00%(contents:subject)%00%(contents:body)",
             for_each_ref_target.as_str(),
         ];
-        let details = self.runner.run("git", &for_each_ref_args, &self.prepared.root)?;
+        let details =
+            self.runner
+                .run_with_timeout("git", &for_each_ref_args, &self.prepared.root, timeouts::LOCAL_GIT)?;
         if details.exit_code != Some(0) {
             return Err(GraphError::ReleaseCommand {
                 program: "git".to_string(),
@@ -1221,7 +1315,9 @@ impl ValidatedReleaseIntent<'_> {
     fn github_release_by_tag(&self, repository: &str, tag: &TagName) -> Result<GitHubReleaseLookup, GraphError> {
         let endpoint = github_release_endpoint(repository, tag);
         let api_args = github_release_api_args(&endpoint);
-        let observed = self.runner.run("gh", &api_args, &self.prepared.root)?;
+        let observed = self
+            .runner
+            .run_with_timeout("gh", &api_args, &self.prepared.root, timeouts::FORGE_API)?;
         let (status, body) = github_api_response("gh", &api_args, &observed)?;
         if let Some(observation) = github_release_response_status(status) {
             return Ok(match observation {
@@ -2055,7 +2151,12 @@ fn canonical_registry_binding(registry: &str, raw: &str) -> Result<RegistryBindi
 }
 
 fn prepared_git_remote(root: &Path, runner: &dyn CommandRunner) -> Result<PreparedGitRemote, GraphError> {
-    let output = runner.run("git", &["remote", "get-url", "--push", "origin"], root)?;
+    let output = runner.run_with_timeout(
+        "git",
+        &["remote", "get-url", "--push", "origin"],
+        root,
+        timeouts::LOCAL_GIT,
+    )?;
     if output.exit_code != Some(0) {
         return Err(GraphError::UnsafeGitRemote {
             reason: "origin must have a push URL",
@@ -2745,10 +2846,8 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            validated
-                .dispatch_prepared(&callisto_model::ApplyPermit::force_for_tests(), &tag_id, None)
-                .unwrap(),
-            OperationOutcome::AlreadySatisfied
+            validated.preflight_prepared(&tag_id, None).unwrap(),
+            ReleasePreflight::AlreadySatisfied
         );
     }
 
@@ -2803,7 +2902,7 @@ mod tests {
             .unwrap()
             .success());
         assert!(matches!(
-            validated.dispatch_prepared(&callisto_model::ApplyPermit::force_for_tests(), &tag_id, None),
+            validated.preflight_prepared(&tag_id, None),
             Err(GraphError::ReleaseRemoteConflict {
                 conflict: RemoteConflict::TagTargetDiffers
             })

@@ -926,7 +926,6 @@ fn red_d03_recovery_run_succeeds_and_uploads_assets_when_forge_reports_default_b
 }
 
 #[test]
-#[ignore = "DEFECT-D04: real cargo publish leaves target/ in the source worktree and recheck_trust aborts the next operation"]
 fn red_d04_two_crate_release_survives_cargo_leaving_a_target_dir() {
     let mut e = RigEnv::fixed_group();
     e.rig.real_cargo_target_dir();
@@ -1010,7 +1009,6 @@ fn red_d08_local_only_tag_is_pushed_to_the_remote_before_the_receipt() {
 }
 
 #[test]
-#[ignore = "DEFECT-C7: Attempting is persisted before the pre-effect observation, so an observation failure wedges the rerun"]
 fn red_c7_pre_effect_observation_failure_does_not_wedge_rerun() {
     let mut e = RigEnv::single();
     e.rig.set("CALLISTO_TEST_CARGO_INFO_FAIL", "1");

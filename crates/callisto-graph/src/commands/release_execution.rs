@@ -15,13 +15,17 @@ use crate::{
     GraphError,
 };
 
-use super::release::ValidatedReleaseIntent;
+use callisto_model::OperationOutcome;
+
+use super::release::{ReleasePreflight, ValidatedReleaseIntent};
 use super::release_artifacts::VerifiedArtifactManifest;
 use crate::error::ReleasePreconditionRequirement;
 
 /// Executes eligible operations one at a time with crash-safe state updates.
 ///
-/// `Attempting` is persisted before dispatch. If dispatch returns an error,
+/// Each operation is observed once before `Attempting` is persisted, so a
+/// pre-effect failure leaves it `Pending`. `Attempting` is persisted only
+/// immediately before a mutating command; if dispatch then returns an error,
 /// the state deliberately remains `Attempting`: recovery must observe the
 /// exact remote identity rather than guessing whether an effect occurred.
 pub fn execute_release<W: ReleaseStateWriter>(
@@ -75,12 +79,20 @@ pub fn execute_release_with_artifacts_in_recovery<W: ReleaseStateWriter>(
             break;
         };
         capability.recheck_trust()?;
+        // Observe before persisting `Attempting`: a conflict, indeterminate
+        // provider, or failed observation raised here issued no effect, so the
+        // operation must stay `Pending` and remain rerunnable.
+        let preflight = capability.preflight_prepared(&operation, artifacts)?;
         state
             .mark_attempting(&operation)
             .map_err(|source| GraphError::ReleaseExecutionState { source })?;
-        store.save(intent, &state, permit)?;
-
-        let outcome = capability.dispatch_prepared(permit, &operation, artifacts)?;
+        let outcome = match preflight {
+            ReleasePreflight::AlreadySatisfied => OperationOutcome::AlreadySatisfied,
+            ReleasePreflight::Proceed => {
+                store.save(intent, &state, permit)?;
+                capability.dispatch_prepared(permit, &operation, artifacts)?
+            }
+        };
         state
             .mark_terminal(&operation, outcome)
             .map_err(|source| GraphError::ReleaseExecutionState { source })?;
@@ -276,28 +288,36 @@ pub fn reconcile_release_execution(
         .collect();
 
     let mut eligible = Vec::new();
+    let mut satisfied = BTreeMap::new();
     for operation in &intent.operations {
         if state.operation_state(operation.id()) != Some(OperationState::Pending) {
             continue;
         }
-        let mut visited = BTreeSet::new();
-        if prerequisites_satisfied_transitively(operation.id(), &prerequisites, state, &mut visited) {
+        let mut on_path = BTreeSet::new();
+        if prerequisites_satisfied_transitively(operation.id(), &prerequisites, state, &mut on_path, &mut satisfied) {
             eligible.push(operation.id().clone());
         }
     }
     Ok(ReconciledReleaseExecution { eligible })
 }
 
+/// `satisfied` memoizes each subtree's answer across the whole reconcile, so
+/// the walk is linear in the DAG rather than enumerating every path.
 fn prerequisites_satisfied_transitively(
     id: &ReleaseOperationId,
     prerequisites: &BTreeMap<ReleaseOperationId, Vec<ReleaseOperationId>>,
     state: &ReleaseExecutionStateV1,
-    visited: &mut BTreeSet<ReleaseOperationId>,
+    on_path: &mut BTreeSet<ReleaseOperationId>,
+    satisfied: &mut BTreeMap<ReleaseOperationId, bool>,
 ) -> bool {
-    // `ReleaseIntentV1` has already proved this is a DAG. Keeping the visited
+    if let Some(known) = satisfied.get(id) {
+        return *known;
+    }
+    // `ReleaseIntentV1` has already proved this is a DAG. Keeping the on-path
     // guard makes this helper fail closed if a future model version violates
-    // that invariant rather than recursing indefinitely.
-    if !visited.insert(id.clone()) {
+    // that invariant rather than recursing indefinitely. A cycle's answer is
+    // deliberately not memoized: it is a property of this path, not of `id`.
+    if !on_path.insert(id.clone()) {
         return false;
     }
     let result = prerequisites.get(id).is_some_and(|direct| {
@@ -305,10 +325,11 @@ fn prerequisites_satisfied_transitively(
             matches!(
                 state.operation_state(prerequisite),
                 Some(OperationState::Published | OperationState::AlreadySatisfied)
-            ) && prerequisites_satisfied_transitively(prerequisite, prerequisites, state, visited)
+            ) && prerequisites_satisfied_transitively(prerequisite, prerequisites, state, on_path, satisfied)
         })
     });
-    visited.remove(id);
+    on_path.remove(id);
+    satisfied.insert(id.clone(), result);
     result
 }
 
