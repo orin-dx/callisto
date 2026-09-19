@@ -589,7 +589,6 @@ fn p19_plan_rejects_artifact_repository_that_differs_from_profile_destination() 
 }
 
 #[test]
-#[ignore = "DEFECT-P20: a lightweight pre-existing tag surfaces as E164 malformed git output instead of a typed remote conflict"]
 fn red_p20_lightweight_preexisting_tag_reports_a_typed_conflict() {
     let e = Env::new(false);
     git(e.root(), &["tag", "core-crate@0.2.0", "HEAD^"]);
@@ -812,7 +811,6 @@ fn inside_cargo_workspace(dir: &Path) -> bool {
 }
 
 #[test]
-#[ignore = "DEFECT-D01: `cargo info name@ver` runs in the workspace root without --registry, so cargo resolves the local manifest and reads an unpublished version as published"]
 fn red_d01_cargo_info_runs_outside_any_workspace_and_names_the_registry() {
     let mut e = RigEnv::single();
     e.rig.real_cargo_info();
@@ -843,7 +841,6 @@ fn red_d01_cargo_info_runs_outside_any_workspace_and_names_the_registry() {
 }
 
 #[test]
-#[ignore = "DEFECT-D02: `gh api` is invoked with --repo, a flag `gh api` does not define"]
 fn red_d02_release_runs_against_a_gh_that_rejects_unknown_api_flags() {
     let mut e = RigEnv::single();
     e.rig.strict_gh();
@@ -858,7 +855,6 @@ fn red_d02_release_runs_against_a_gh_that_rejects_unknown_api_flags() {
 }
 
 #[test]
-#[ignore = "DEFECT-D02: every flag callisto passes to `gh api` must appear in real `gh api --help`; --repo does not"]
 fn red_d02_every_emitted_gh_api_flag_exists_in_real_gh_help() {
     let Ok(help) = Command::new("gh").args(["api", "--help"]).output() else {
         eprintln!("skipped: gh is not installed");
@@ -892,7 +888,6 @@ fn red_d02_every_emitted_gh_api_flag_exists_in_real_gh_help() {
 }
 
 #[test]
-#[ignore = "DEFECT-D03: forge Exact requires target_commitish == source SHA, but GitHub reports the default branch for a release created without --target"]
 fn red_d03_normal_run_succeeds_when_forge_reports_default_branch_as_target() {
     let mut e = RigEnv::product();
     e.rig.forge_default_branch("main");
@@ -909,7 +904,6 @@ fn red_d03_normal_run_succeeds_when_forge_reports_default_branch_as_target() {
 }
 
 #[test]
-#[ignore = "DEFECT-D03: forge Exact requires target_commitish == source SHA, but GitHub reports the default branch for a release created without --target"]
 fn red_d03_recovery_run_succeeds_and_uploads_assets_when_forge_reports_default_branch() {
     let mut e = RigEnv::product();
     let (artifacts, manifest) = e.product_inputs();
@@ -990,7 +984,6 @@ fn real_cargo_package_creates_target_under_the_source_directory() {
 }
 
 #[test]
-#[ignore = "DEFECT-D08: tag observation reads only local refs, so a local tag whose push failed is treated as already satisfied and never pushed"]
 fn red_d08_local_only_tag_is_pushed_to_the_remote_before_the_receipt() {
     let mut e = RigEnv::single();
     let bare = bare_remote(e.external.path());

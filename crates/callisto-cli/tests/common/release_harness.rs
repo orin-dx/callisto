@@ -429,7 +429,9 @@ pub fn fake_publishers(
     .unwrap();
     fs::write(
         bin.join("git"),
-        "#!/bin/sh\nprintf 'git %s\\n' \"$*\" >> \"$CALLISTO_TEST_GIT_TRACE\"\nif [ \"$1\" = push ]; then\n  printf 'git %s\\n' \"$*\" >> \"$CALLISTO_TEST_LOG\"\n  exit 0\nfi\nexec \"$CALLISTO_TEST_REAL_GIT\" \"$@\"\n",
+        format!(
+            "#!/bin/sh\nprintf 'git %s\\n' \"$*\" >> \"$CALLISTO_TEST_GIT_TRACE\"\n{FAKE_GIT_REMOTE_TAGS}\nif [ \"$1\" = push ]; then\n  printf 'git %s\\n' \"$*\" >> \"$CALLISTO_TEST_LOG\"\n  record_pushed_tag \"$3\"\n  exit 0\nfi\nexec \"$CALLISTO_TEST_REAL_GIT\" \"$@\"\n"
+        ),
     )
     .unwrap();
     fs::write(
@@ -728,6 +730,32 @@ fi
 exit 0
 "#;
 
+/// Fake remote tag storage shared by both fake `git` programs: `git push`
+/// records the pushed tag exactly as `ls-remote` would report it (the tag
+/// object plus its peeled commit), and `ls-remote` answers from that record.
+/// Real git is used instead wherever the rig points at a real bare remote.
+const FAKE_GIT_REMOTE_TAGS: &str = r#"
+store="$CALLISTO_TEST_GIT_TRACE.remote-tags"
+tab=$(printf '\t')
+record_pushed_tag() {
+  obj=$("$CALLISTO_TEST_REAL_GIT" rev-parse "refs/tags/$1" 2>/dev/null) || return 0
+  commit=$("$CALLISTO_TEST_REAL_GIT" rev-parse "refs/tags/$1^{commit}" 2>/dev/null) || return 0
+  printf '%s%srefs/tags/%s\n' "$obj" "$tab" "$1" >> "$store"
+  printf '%s%srefs/tags/%s^{}\n' "$commit" "$tab" "$1" >> "$store"
+}
+if [ "$1" = ls-remote ]; then
+  shift
+  shift
+  [ -f "$store" ] || exit 0
+  for ref in "$@"; do
+    while IFS= read -r line; do
+      case "$line" in *"$tab$ref") printf '%s\n' "$line";; esac
+    done < "$store"
+  done
+  exit 0
+fi
+"#;
+
 const RIG_GIT: &str = r#"#!/bin/sh
 printf 'git %s\n' "$*" >> "$CALLISTO_TEST_GIT_TRACE"
 if [ "$CALLISTO_TEST_PUSH" = real ]; then
@@ -743,16 +771,24 @@ if [ "$CALLISTO_TEST_PUSH" = real ]; then
   done
   exec "$CALLISTO_TEST_REAL_GIT" "$@"
 fi
+"#;
+
+const RIG_GIT_TAIL: &str = r#"
 if [ "$1" = push ]; then
   printf 'git %s\n' "$*" >> "$CALLISTO_TEST_LOG"
   if [ "$CALLISTO_TEST_PUSH" = fail ]; then
     printf 'fatal: unable to access remote\n' >&2
     exit 1
   fi
+  record_pushed_tag "$3"
   exit 0
 fi
 exec "$CALLISTO_TEST_REAL_GIT" "$@"
 "#;
+
+fn rig_git() -> String {
+    format!("{RIG_GIT}{FAKE_GIT_REMOTE_TAGS}{RIG_GIT_TAIL}")
+}
 
 /// Fake `cargo`/`gh`/`git` on a private PATH directory plus the env that
 /// steers them.
@@ -771,7 +807,11 @@ impl Rig {
         use std::os::unix::fs::PermissionsExt;
         let bin = external.join("rig-bin");
         fs::create_dir_all(&bin).unwrap();
-        for (name, body) in [("cargo", RIG_CARGO), ("gh", RIG_GH), ("git", RIG_GIT)] {
+        for (name, body) in [
+            ("cargo", RIG_CARGO.to_owned()),
+            ("gh", RIG_GH.to_owned()),
+            ("git", rig_git()),
+        ] {
             fs::write(bin.join(name), body).unwrap();
             fs::set_permissions(bin.join(name), fs::Permissions::from_mode(0o755)).unwrap();
         }

@@ -154,10 +154,26 @@ struct PreparedReleaseInputs {
     operations: BTreeMap<ReleaseOperationId, PreparedOperation>,
 }
 
+/// What the local repository holds at `refs/tags/<name>`.
 #[derive(Debug, PartialEq, Eq)]
-struct ObservedTag {
-    target: CommitSha,
-    annotation: String,
+enum LocalTagObservation {
+    Absent,
+    Annotated {
+        target: CommitSha,
+        annotation: String,
+    },
+    /// A lightweight tag, or any other object this adapter did not write.
+    Unannotated,
+}
+
+/// What the prepared remote holds at `refs/tags/<name>`. `ls-remote` cannot
+/// read annotation text, so only the tagged commit is comparable.
+#[derive(Debug, PartialEq, Eq)]
+enum RemoteTagObservation {
+    Absent,
+    Annotated { target: CommitSha },
+    Unannotated,
+    Indeterminate,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -166,6 +182,14 @@ enum ForgeReleaseObservation {
     Exact,
     Conflict,
     Indeterminate,
+}
+
+/// One GitHub release lookup, shared by the forge-release and asset adapters.
+#[derive(Debug)]
+enum GitHubReleaseLookup {
+    Absent,
+    Indeterminate,
+    Found(serde_json::Value),
 }
 
 type DerivedReleaseInputs = (
@@ -452,7 +476,7 @@ impl ValidatedReleaseIntent<'_> {
                 name,
                 target,
                 annotation,
-            } => self.dispatch_tag(permit, name, target, annotation),
+            } => self.dispatch_tag(permit, id, name, target, annotation),
             PreparedOperation::ForgeRelease { tag } => self.dispatch_forge_release(id, tag),
             PreparedOperation::ArtifactUpload { slot, tag } => self.dispatch_artifact_upload(id, slot, tag, artifacts),
         }
@@ -483,16 +507,13 @@ impl ValidatedReleaseIntent<'_> {
                 registry,
                 ..
             } => match id.package.ecosystem() {
-                Ecosystem::Cargo => {
-                    let registry_key = (registry.key.as_str() != RegistryKey::CRATES_IO).then(|| registry.key.as_str());
-                    Ok(
-                        if self.cargo_version_is_published(package_name, version, registry_key)? {
-                            ProviderObservationV1::Exact
-                        } else {
-                            ProviderObservationV1::Absent
-                        },
-                    )
-                }
+                Ecosystem::Cargo => Ok(
+                    if self.cargo_version_is_published(package_name, version, registry.key.as_str())? {
+                        ProviderObservationV1::Exact
+                    } else {
+                        ProviderObservationV1::Absent
+                    },
+                ),
                 Ecosystem::Npm => Ok(
                     if self.npm_version_is_published(package_name, version, registry.endpoint.as_deref())? {
                         ProviderObservationV1::Exact
@@ -513,13 +534,7 @@ impl ValidatedReleaseIntent<'_> {
                 name,
                 target,
                 annotation,
-            } => Ok(match self.observed_tag(name)? {
-                None => ProviderObservationV1::Absent,
-                Some(observed) if observed.target == *target && observed.annotation == *annotation => {
-                    ProviderObservationV1::Exact
-                }
-                Some(_) => ProviderObservationV1::Conflict,
-            }),
+            } => self.tag_observation(name, target, annotation),
             PreparedOperation::ForgeRelease { tag } => {
                 let remote = self.checked_git_remote()?;
                 let repository = remote
@@ -562,7 +577,7 @@ impl ValidatedReleaseIntent<'_> {
         let output = match id.package.ecosystem() {
             Ecosystem::Cargo => {
                 let registry_key = (registry.key.as_str() != RegistryKey::CRATES_IO).then(|| registry.key.as_str());
-                if self.cargo_version_is_published(package_name, version, registry_key)? {
+                if self.cargo_version_is_published(package_name, version, registry.key.as_str())? {
                     return Err(GraphError::ReleaseRegistryVersionExists {
                         package: package_name.clone(),
                         version: version.clone(),
@@ -653,9 +668,8 @@ impl ValidatedReleaseIntent<'_> {
                     std::thread::sleep,
                 )?,
                 Ecosystem::Cargo => {
-                    let registry_key = (registry.key.as_str() != RegistryKey::CRATES_IO).then(|| registry.key.as_str());
                     poll_until_published(
-                        || self.cargo_version_is_published(package_name, version, registry_key),
+                        || self.cargo_version_is_published(package_name, version, registry.key.as_str()),
                         REGISTRY_CONFIRMATION_MAX_RETRIES,
                         registry_confirmation_backoff,
                         std::thread::sleep,
@@ -671,11 +685,43 @@ impl ValidatedReleaseIntent<'_> {
             };
             require_registry_confirmation(is_published, package_name, version)?;
         }
-        Ok(match outcome {
-            PublishOutcome::Published => OperationOutcome::Published,
-            PublishOutcome::AlreadyPublished => OperationOutcome::AlreadySatisfied,
-        })
+        match outcome {
+            PublishOutcome::Published => Ok(OperationOutcome::Published),
+            // The client's "already exists" text is not a receipt: a yanked
+            // version reads as absent to the registry, so only an exact
+            // observation of the version itself may satisfy the operation.
+            PublishOutcome::AlreadyPublished => match self.observe_prepared(id, None)? {
+                ProviderObservationV1::Exact => Ok(OperationOutcome::AlreadySatisfied),
+                _ => Err(GraphError::RegistryPublishUnconfirmed {
+                    package: package_name.clone(),
+                    version: version.clone(),
+                }),
+            },
+        }
     }
+}
+
+/// Cargo's own name for crates.io; the workspace's logical registry key for it
+/// is `cratesIo`. Every other key is already a cargo registry name.
+fn cargo_registry_name(registry_key: &str) -> &str {
+    if registry_key == RegistryKey::CRATES_IO {
+        "crates-io"
+    } else {
+        registry_key
+    }
+}
+
+/// An empty directory with no `Cargo.toml` ancestor. `cargo info` run inside
+/// the workspace resolves the local manifest and reports the unpublished
+/// version being released as already published.
+fn neutral_observation_dir() -> Result<tempfile::TempDir, GraphError> {
+    tempfile::Builder::new()
+        .prefix("callisto-registry-observation-")
+        .tempdir()
+        .map_err(|error| GraphError::ReleaseInputRead {
+            path: std::env::temp_dir(),
+            message: error.to_string(),
+        })
 }
 
 /// Ecosystems whose publish gets confirmed against the registry before the
@@ -743,6 +789,9 @@ impl ValidatedReleaseIntent<'_> {
         Ok(self.runner.run(&argv.program, &args, &argv.cwd)?)
     }
 
+    /// Unlike `cargo info`, `npm view` never resolves the local manifest, so
+    /// this keeps the workspace cwd: it is only where the project `.npmrc`
+    /// supplying the registry and its credentials is read from.
     fn npm_version_is_published(
         &self,
         package_name: &str,
@@ -782,16 +831,14 @@ impl ValidatedReleaseIntent<'_> {
         &self,
         package_name: &str,
         version: &Version,
-        registry_key: Option<&str>,
+        registry_key: &str,
     ) -> Result<bool, GraphError> {
         let spec = format!("{package_name}@{}", version.render());
-        let mut args = vec!["info", spec.as_str()];
-        if let Some(registry) = registry_key {
-            args.extend(["--registry", registry]);
-        }
+        let args = vec!["info", spec.as_str(), "--registry", cargo_registry_name(registry_key)];
+        let neutral = neutral_observation_dir()?;
         let output = self
             .runner
-            .run_quiet("cargo", &args, &self.prepared.root, std::time::Duration::from_secs(300))?;
+            .run_quiet("cargo", &args, neutral.path(), std::time::Duration::from_secs(300))?;
         registry_argv::classify_cargo_info_output(&output).map_err(|source| GraphError::Registry {
             package: package_name.to_string(),
             source,
@@ -801,33 +848,45 @@ impl ValidatedReleaseIntent<'_> {
     fn dispatch_tag(
         &self,
         permit: &ApplyPermit,
+        id: &ReleaseOperationId,
         name: &TagName,
         target: &CommitSha,
         annotation: &str,
     ) -> Result<OperationOutcome, GraphError> {
-        if let Some(observed) = self.observed_tag(name)? {
-            return if observed.target == *target && observed.annotation == annotation {
-                Ok(OperationOutcome::AlreadySatisfied)
-            } else {
-                Err(GraphError::ReleaseRemoteConflict {
+        // The remote is validated before any local effect: the tag this release
+        // binds to a commit is the pushed one, not a leftover local ref.
+        match self.tag_observation(name, target, annotation)? {
+            ProviderObservationV1::Exact => return Ok(OperationOutcome::AlreadySatisfied),
+            ProviderObservationV1::Conflict => {
+                return Err(GraphError::ReleaseRemoteConflict {
                     conflict: RemoteConflict::TagTargetDiffers,
                 })
-            };
+            }
+            ProviderObservationV1::Indeterminate => {
+                return Err(GraphError::ReleaseProviderIndeterminate {
+                    operation: Box::new(id.clone()),
+                })
+            }
+            ProviderObservationV1::Absent => {}
         }
-        // Delegates to `GitAccess::create_tag` rather than inlining `git
-        // tag` argv, so this inherits its `--` end-of-options separator
-        // (defends `name` against being misread as a flag) on top of the
-        // `--no-sign` this durable path has always needed (this repo's CI
-        // sets `tag.gpgSign`/`commit.gpgsign` globally in some contexts,
-        // with no tag-signing key available here).
-        let git = GitAccess::discover(&self.prepared.root, self.runner);
-        git.create_tag(
-            name.as_str(),
-            target,
-            Some(annotation),
-            TagSignPolicy::ForceUnsigned,
-            permit,
-        )?;
+        // An absent observation leaves the local ref either missing or already
+        // exactly as prepared by a run whose push failed; only the push remains.
+        if self.observed_local_tag(name)? == LocalTagObservation::Absent {
+            // Delegates to `GitAccess::create_tag` rather than inlining `git
+            // tag` argv, so this inherits its `--` end-of-options separator
+            // (defends `name` against being misread as a flag) on top of the
+            // `--no-sign` this durable path has always needed (this repo's CI
+            // sets `tag.gpgSign`/`commit.gpgsign` globally in some contexts,
+            // with no tag-signing key available here).
+            let git = GitAccess::discover(&self.prepared.root, self.runner);
+            git.create_tag(
+                name.as_str(),
+                target,
+                Some(annotation),
+                TagSignPolicy::ForceUnsigned,
+                permit,
+            )?;
+        }
         let remote_endpoint = self.checked_git_remote()?.endpoint.clone();
         let push_args = ["push", remote_endpoint.as_str(), name.as_str()];
         let pushed = self.runner.run("git", &push_args, &self.prepared.root)?;
@@ -841,16 +900,42 @@ impl ValidatedReleaseIntent<'_> {
                 },
             });
         }
-        if self
-            .observed_tag(name)?
-            .is_some_and(|observed| observed.target == *target && observed.annotation == annotation)
-        {
-            Ok(OperationOutcome::Published)
-        } else {
-            Err(GraphError::ReleaseRemoteConflict {
+        match self.tag_observation(name, target, annotation)? {
+            ProviderObservationV1::Exact => Ok(OperationOutcome::Published),
+            ProviderObservationV1::Indeterminate => Err(GraphError::ReleaseProviderIndeterminate {
+                operation: Box::new(id.clone()),
+            }),
+            _ => Err(GraphError::ReleaseRemoteConflict {
                 conflict: RemoteConflict::TagNotObservedAfterPush,
-            })
+            }),
         }
+    }
+
+    /// The remote decides whether the tag operation is satisfied, but a local
+    /// ref that contradicts the prepared tag is still a conflict: the next push
+    /// would carry it.
+    fn tag_observation(
+        &self,
+        name: &TagName,
+        target: &CommitSha,
+        annotation: &str,
+    ) -> Result<ProviderObservationV1, GraphError> {
+        match self.observed_local_tag(name)? {
+            LocalTagObservation::Absent => {}
+            LocalTagObservation::Annotated {
+                target: observed,
+                annotation: observed_annotation,
+            } if observed == *target && observed_annotation == annotation => {}
+            _ => return Ok(ProviderObservationV1::Conflict),
+        }
+        Ok(match self.observed_remote_tag(name)? {
+            RemoteTagObservation::Absent => ProviderObservationV1::Absent,
+            RemoteTagObservation::Annotated { target: observed } if observed == *target => ProviderObservationV1::Exact,
+            RemoteTagObservation::Annotated { .. } | RemoteTagObservation::Unannotated => {
+                ProviderObservationV1::Conflict
+            }
+            RemoteTagObservation::Indeterminate => ProviderObservationV1::Indeterminate,
+        })
     }
 
     fn dispatch_forge_release(&self, id: &ReleaseOperationId, tag: &TagName) -> Result<OperationOutcome, GraphError> {
@@ -993,34 +1078,20 @@ impl ValidatedReleaseIntent<'_> {
         };
         let entry = artifacts.entry_for(slot)?;
         let repository = slot.attestation_policy.repository.as_slug();
-        let endpoint = format!("repos/{repository}/releases/tags/{tag}");
-        let args = [
-            "api",
-            "--include",
-            "--method",
-            "GET",
-            endpoint.as_str(),
-            "--repo",
-            repository.as_str(),
-        ];
-        let observed = self.runner.run("gh", &args, &self.prepared.root)?;
-        let (status, body) = github_api_response("gh", &args, &observed)?;
-        if let Some(observation) = github_release_response_status(status) {
-            return Ok(observation);
-        }
-        let release: serde_json::Value = serde_json::from_str(body).map_err(|error| GraphError::ReleaseCommand {
-            program: "gh".to_owned(),
-            args: args.iter().map(ToString::to_string).collect(),
-            failure: CommandFailure::MalformedOutput {
-                detail: error.to_string(),
-            },
-        })?;
+        let release = match self.github_release_by_tag(&repository, tag)? {
+            GitHubReleaseLookup::Absent => return Ok(ProviderObservationV1::Absent),
+            GitHubReleaseLookup::Indeterminate => return Ok(ProviderObservationV1::Indeterminate),
+            GitHubReleaseLookup::Found(release) => release,
+        };
         let assets = release
             .get("assets")
             .and_then(serde_json::Value::as_array)
             .ok_or_else(|| GraphError::ReleaseCommand {
                 program: "gh".to_owned(),
-                args: args.iter().map(ToString::to_string).collect(),
+                args: github_release_api_args(&github_release_endpoint(&repository, tag))
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect(),
                 failure: CommandFailure::MalformedOutput {
                     detail: "GitHub release response has no assets array".to_owned(),
                 },
@@ -1045,12 +1116,55 @@ impl ValidatedReleaseIntent<'_> {
         }
     }
 
-    fn observed_tag(&self, name: &TagName) -> Result<Option<ObservedTag>, GraphError> {
+    /// Observes `refs/tags/<name>` on the prepared remote. A git failure leaves
+    /// the remote unknown; absence must be proved by a successful query.
+    fn observed_remote_tag(&self, name: &TagName) -> Result<RemoteTagObservation, GraphError> {
+        let endpoint = self.checked_git_remote()?.endpoint.clone();
+        let reference = format!("refs/tags/{name}");
+        // The peeled ref resolves an annotated tag to its commit; a lightweight
+        // tag has no peeled line at all.
+        let peeled = format!("{reference}^{{}}");
+        let args = ["ls-remote", endpoint.as_str(), reference.as_str(), peeled.as_str()];
+        let observed = self
+            .runner
+            .run_quiet("git", &args, &self.prepared.root, std::time::Duration::from_secs(300))?;
+        if observed.exit_code != Some(0) {
+            return Ok(RemoteTagObservation::Indeterminate);
+        }
+        let mut tag_object = None;
+        let mut peeled_commit = None;
+        for line in observed.stdout.lines() {
+            let Some((sha, found)) = line.split_once('\t') else {
+                continue;
+            };
+            match found.trim() {
+                found if found == peeled => peeled_commit = Some(sha),
+                found if found == reference => tag_object = Some(sha),
+                _ => {}
+            }
+        }
+        let Some(sha) = peeled_commit.or(tag_object) else {
+            return Ok(RemoteTagObservation::Absent);
+        };
+        if peeled_commit.is_none() {
+            return Ok(RemoteTagObservation::Unannotated);
+        }
+        let target = CommitSha::parse(sha.trim()).map_err(|error| GraphError::ReleaseCommand {
+            program: "git".to_string(),
+            args: args.iter().map(ToString::to_string).collect(),
+            failure: CommandFailure::MalformedOutput {
+                detail: error.to_string(),
+            },
+        })?;
+        Ok(RemoteTagObservation::Annotated { target })
+    }
+
+    fn observed_local_tag(&self, name: &TagName) -> Result<LocalTagObservation, GraphError> {
         let reference = format!("refs/tags/{name}^{{commit}}");
         let rev_parse_args = ["rev-parse", "--verify", "--quiet", reference.as_str()];
         let observed = self.runner.run("git", &rev_parse_args, &self.prepared.root)?;
         if observed.exit_code != Some(0) {
-            return Ok(None);
+            return Ok(LocalTagObservation::Absent);
         }
         let target = CommitSha::parse(observed.stdout.trim()).map_err(|error| GraphError::ReleaseCommand {
             program: "git".to_string(),
@@ -1081,7 +1195,11 @@ impl ValidatedReleaseIntent<'_> {
         let object_type = fields.next();
         let annotation = fields.next();
         let body = fields.next();
-        if object_type != Some("tag") || body.is_none_or(|body| !body.trim().is_empty()) || fields.next().is_some() {
+        // A lightweight tag is a conflicting ref, not malformed git output.
+        if object_type != Some("tag") {
+            return Ok(LocalTagObservation::Unannotated);
+        }
+        if body.is_none_or(|body| !body.trim().is_empty()) || fields.next().is_some() {
             return Err(GraphError::ReleaseCommand {
                 program: "git".to_string(),
                 args: for_each_ref_args.iter().map(ToString::to_string).collect(),
@@ -1093,33 +1211,22 @@ impl ValidatedReleaseIntent<'_> {
         let annotation = annotation.ok_or_else(|| GraphError::ReleaseInvariant {
             detail: "for-each-ref line validated as `tag`/empty-body but carried no annotation field".to_string(),
         })?;
-        Ok(Some(ObservedTag {
+        Ok(LocalTagObservation::Annotated {
             target,
             annotation: annotation.to_string(),
-        }))
+        })
     }
 
-    fn observed_forge_release_target(
-        &self,
-        tag: &TagName,
-        repository: &str,
-    ) -> Result<ForgeReleaseObservation, GraphError> {
-        let endpoint = format!("repos/{repository}/releases/tags/{tag}");
-        let api_args = [
-            "api",
-            "--include",
-            "--method",
-            "GET",
-            endpoint.as_str(),
-            "--repo",
-            repository,
-        ];
+    /// The one GET both forge observations share.
+    fn github_release_by_tag(&self, repository: &str, tag: &TagName) -> Result<GitHubReleaseLookup, GraphError> {
+        let endpoint = github_release_endpoint(repository, tag);
+        let api_args = github_release_api_args(&endpoint);
         let observed = self.runner.run("gh", &api_args, &self.prepared.root)?;
         let (status, body) = github_api_response("gh", &api_args, &observed)?;
         if let Some(observation) = github_release_response_status(status) {
             return Ok(match observation {
-                ProviderObservationV1::Absent => ForgeReleaseObservation::Missing,
-                ProviderObservationV1::Indeterminate => ForgeReleaseObservation::Indeterminate,
+                ProviderObservationV1::Absent => GitHubReleaseLookup::Absent,
+                ProviderObservationV1::Indeterminate => GitHubReleaseLookup::Indeterminate,
                 ProviderObservationV1::Exact | ProviderObservationV1::Conflict => unreachable!(
                     "GitHub response status can only establish absence or indeterminacy before parsing its body"
                 ),
@@ -1132,18 +1239,26 @@ impl ValidatedReleaseIntent<'_> {
                 detail: error.to_string(),
             },
         })?;
-        let expected = match &self.prepared.source {
-            SourceIdentity::GitCommit { sha } => sha.as_str(),
-            SourceIdentity::HermeticContent { .. } => {
-                return Err(GraphError::UnsupportedRelease {
-                    feature: UnsupportedReleaseFeature::SourceIdentity,
-                })
-            }
+        Ok(GitHubReleaseLookup::Found(value))
+    }
+
+    /// A release created for an existing tag reports the repository's default
+    /// branch as `target_commitish`, so that field proves nothing about the
+    /// released commit. The tag operation is a DAG prerequisite of the forge
+    /// release, so the tag already binds this release's name to its commit.
+    fn observed_forge_release_target(
+        &self,
+        tag: &TagName,
+        repository: &str,
+    ) -> Result<ForgeReleaseObservation, GraphError> {
+        let value = match self.github_release_by_tag(repository, tag)? {
+            GitHubReleaseLookup::Absent => return Ok(ForgeReleaseObservation::Missing),
+            GitHubReleaseLookup::Indeterminate => return Ok(ForgeReleaseObservation::Indeterminate),
+            GitHubReleaseLookup::Found(value) => value,
         };
+        let published = !value.get("draft").and_then(serde_json::Value::as_bool).unwrap_or(false);
         Ok(
-            if value.get("tag_name").and_then(serde_json::Value::as_str) == Some(tag.as_str())
-                && value.get("target_commitish").and_then(serde_json::Value::as_str) == Some(expected)
-            {
+            if published && value.get("tag_name").and_then(serde_json::Value::as_str) == Some(tag.as_str()) {
                 ForgeReleaseObservation::Exact
             } else {
                 ForgeReleaseObservation::Conflict
@@ -1166,6 +1281,15 @@ impl ValidatedReleaseIntent<'_> {
         }
         Ok(expected)
     }
+}
+
+fn github_release_endpoint(repository: &str, tag: &TagName) -> String {
+    format!("repos/{repository}/releases/tags/{tag}")
+}
+
+/// `gh api` defines no `--repo`; the endpoint already carries owner and repository.
+fn github_release_api_args(endpoint: &str) -> [&str; 5] {
+    ["api", "--include", "--method", "GET", endpoint]
 }
 
 fn parse_github_api_response<'a>(program: &str, args: &[&str], stdout: &'a str) -> Result<(u16, &'a str), GraphError> {
@@ -2188,6 +2312,28 @@ mod tests {
             })
         }
     }
+    /// Real git except `ls-remote`, whose answer is read from a file. The
+    /// fixture's `origin` is a real GitHub URL that must never be contacted.
+    struct StubbedRemote {
+        ls_remote: std::path::PathBuf,
+    }
+    impl CommandRunner for StubbedRemote {
+        fn run(&self, program: &str, args: &[&str], cwd: &Path) -> Result<CommandOutput, CommandError> {
+            if args.first() == Some(&"ls-remote") {
+                return Ok(CommandOutput {
+                    exit_code: Some(0),
+                    stdout: std::fs::read_to_string(&self.ls_remote).unwrap_or_default(),
+                    stderr: String::new(),
+                });
+            }
+            RealGitRunner.run(program, args, cwd)
+        }
+    }
+
+    fn git_stdout(root: &Path, args: &[&str]) -> String {
+        RealGitRunner.run("git", args, root).unwrap().stdout.trim().to_owned()
+    }
+
     fn fixture() -> (tempfile::TempDir, RealGitRunner) {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(
@@ -2548,8 +2694,11 @@ mod tests {
 
     #[test]
     fn prepared_tag_adapter_accepts_only_the_exact_intended_target() {
-        let (dir, runner) = fixture();
+        let (dir, _) = fixture();
         let state_dir = tempfile::tempdir().unwrap();
+        let runner = StubbedRemote {
+            ls_remote: state_dir.path().join("ls-remote"),
+        };
         let locator = crate::IgnoreWalkLocator::new(dir.path());
         let intent = build_release_intent(
             dir.path(),
@@ -2587,6 +2736,14 @@ mod tests {
             .status()
             .unwrap()
             .success());
+        // The remote, not the local ref, is what satisfies the operation.
+        let object = git_stdout(dir.path(), &["rev-parse", &format!("refs/tags/{tag_name}")]);
+        let commit = git_stdout(dir.path(), &["rev-parse", &format!("refs/tags/{tag_name}^{{commit}}")]);
+        std::fs::write(
+            &runner.ls_remote,
+            format!("{object}\trefs/tags/{tag_name}\n{commit}\trefs/tags/{tag_name}^{{}}\n"),
+        )
+        .unwrap();
         assert_eq!(
             validated
                 .dispatch_prepared(&callisto_model::ApplyPermit::force_for_tests(), &tag_id, None)
@@ -2597,8 +2754,12 @@ mod tests {
 
     #[test]
     fn prepared_tag_adapter_rejects_conflicting_existing_target() {
-        let (dir, runner) = fixture();
+        let (dir, _) = fixture();
         let state_dir = tempfile::tempdir().unwrap();
+        // An empty answer: the remote has no such tag, so the conflicting local one decides.
+        let runner = StubbedRemote {
+            ls_remote: state_dir.path().join("ls-remote"),
+        };
         let locator = crate::IgnoreWalkLocator::new(dir.path());
         let intent = build_release_intent(
             dir.path(),
