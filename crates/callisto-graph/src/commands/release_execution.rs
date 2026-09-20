@@ -16,7 +16,7 @@ use crate::{
     GraphError,
 };
 
-use super::release::{ReleasePreflight, ValidatedReleaseIntent};
+use super::release::{ReleasePreflight, ReleaseProviderSet};
 use super::release_artifacts::VerifiedArtifactManifest;
 use crate::error::ReleasePreconditionRequirement;
 
@@ -32,8 +32,8 @@ use crate::error::ReleasePreconditionRequirement;
 /// immediately before a mutating command; if dispatch then returns an error,
 /// the state deliberately remains `Attempting`: recovery must observe the
 /// exact remote identity rather than guessing whether an effect occurred.
-pub fn execute_release<W: ReleaseStateWriter>(
-    capability: &ValidatedReleaseIntent<'_>,
+pub fn execute_release<W: ReleaseStateWriter, P: ReleaseProviderSet + ?Sized>(
+    capability: &P,
     store: &ReleaseStateStore<W>,
     permit: &ApplyPermit,
     envelope: &ReleaseRunEnvelopeV1,
@@ -69,13 +69,21 @@ pub fn execute_release<W: ReleaseStateWriter>(
         // Observe before persisting `Attempting`: a conflict, indeterminate
         // provider, or failed observation raised here issued no effect, so the
         // operation must stay `Pending` and remain rerunnable.
-        let event = match capability.preflight_prepared(&operation, artifacts)? {
+        let event = match capability.preflight(&operation, artifacts)? {
             ReleasePreflight::AlreadySatisfied { evidence } => OperationEvent::ObservedExactBeforeEffect { evidence },
             ReleasePreflight::Proceed { proof } => {
-                apply(&mut state, &operation, &OperationEvent::Attempt { proof })?;
+                let attempt = OperationEvent::Attempt { proof };
+                apply(&mut state, &operation, &attempt)?;
                 store.save(intent, &state, permit)?;
+                // The proof stays borrowed from the persisted attempt: only a
+                // recorded attempt may authorize the effect that follows it.
+                let OperationEvent::Attempt { proof } = &attempt else {
+                    return Err(GraphError::ReleaseInvariant {
+                        detail: "the attempt event just built is not an Attempt".to_owned(),
+                    });
+                };
                 OperationEvent::Confirmed {
-                    evidence: capability.dispatch_prepared(permit, &operation, artifacts)?,
+                    evidence: capability.publish(permit, proof, &operation, artifacts)?,
                 }
             }
         };
@@ -102,8 +110,8 @@ fn apply(
 /// recovery lifecycle. `Absent`, `Conflict`, and `Indeterminate` are not
 /// state transitions: the former remains eligible for normal dispatch once
 /// its prerequisites are reconstructed, while the latter two stop recovery.
-fn reconstruct_missing_state<W: ReleaseStateWriter>(
-    capability: &ValidatedReleaseIntent<'_>,
+fn reconstruct_missing_state<W: ReleaseStateWriter, P: ReleaseProviderSet + ?Sized>(
+    capability: &P,
     store: &ReleaseStateStore<W>,
     permit: &ApplyPermit,
     state: &mut ReleaseExecutionStateV1,
@@ -118,7 +126,7 @@ fn reconstruct_missing_state<W: ReleaseStateWriter>(
         .collect();
     for operation in pending {
         capability.recheck_trust()?;
-        reconstruct_missing_operation(state, &operation, capability.observe_prepared(&operation, artifacts)?)?;
+        reconstruct_missing_operation(state, &operation, capability.observe(&operation, artifacts)?)?;
         store.save(capability.intent(), state, permit)?;
     }
     Ok(())
@@ -154,8 +162,8 @@ fn reconstruct_missing_operation(
 /// after a process crash, an absent or unavailable provider response cannot
 /// prove that a previous request did not take effect. Exact observation is
 /// the sole automatic convergence path.
-fn recover_interrupted_operations<W: ReleaseStateWriter>(
-    capability: &ValidatedReleaseIntent<'_>,
+fn recover_interrupted_operations<W: ReleaseStateWriter, P: ReleaseProviderSet + ?Sized>(
+    capability: &P,
     store: &ReleaseStateStore<W>,
     permit: &ApplyPermit,
     state: &mut ReleaseExecutionStateV1,
@@ -170,7 +178,7 @@ fn recover_interrupted_operations<W: ReleaseStateWriter>(
         .collect();
     for operation in attempting {
         capability.recheck_trust()?;
-        recover_interrupted_operation(state, &operation, capability.observe_prepared(&operation, artifacts)?)?;
+        recover_interrupted_operation(state, &operation, capability.observe(&operation, artifacts)?)?;
         store.save(capability.intent(), state, permit)?;
     }
     Ok(())

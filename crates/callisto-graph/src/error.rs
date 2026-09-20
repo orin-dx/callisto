@@ -713,6 +713,8 @@ pub enum ReleasePreconditionRequirement {
     ArtifactManifestProvided,
     #[error("a verified artifact manifest")]
     VerifiedArtifactManifest,
+    #[error("a provider that can observe what it publishes")]
+    ObservableProvider,
 }
 
 #[cfg(test)]
