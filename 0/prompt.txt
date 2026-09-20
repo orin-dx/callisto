@@ -902,3 +902,13 @@ Are you super confident?
 ---
 
 Merged the PR, what's next?
+
+---
+
+<task-notification>
+<task-id>bs6x1fegr</task-id>
+<tool-use-id>toolu_012bXcSS8wcNZXA3VCxV4E2C</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a08620cc-8b37-45b5-b4b2-89a977aad490/tasks/bs6x1fegr.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for the release workflow run to finish and report every job" completed (exit code 0)</summary>
+</task-notification>
