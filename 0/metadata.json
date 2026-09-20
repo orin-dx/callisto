@@ -1,0 +1,125 @@
+{
+  "cli_version": "0.10.7-nightly.202609170627.0dda4e14f",
+  "checkpoint_id": "01M2ZQM9N5937K43X97SWWZE37",
+  "session_id": "a08620cc-8b37-45b5-b4b2-89a977aad490",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-20T15:40:49.661839Z",
+  "branch": "codex/release-recovery",
+  "checkpoints_count": 3,
+  "save_step_count": 4,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5",
+  "turn_id": "334470a43886",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 576,
+    "cache_creation_tokens": 3303875,
+    "cache_read_tokens": 104759142,
+    "output_tokens": 363206,
+    "api_call_count": 257,
+    "subagent_tokens": {
+      "input_tokens": 16,
+      "cache_creation_tokens": 45486,
+      "cache_read_tokens": 1299955,
+      "output_tokens": 5837,
+      "api_call_count": 8
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01YCCAbwm7sztdDtLuczSzDN",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "48049d8543a5",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 466,
+        "end": 467,
+        "entry_ids": [
+          "64369af6-5a29-4372-9bc8-6e58a915ca54"
+        ],
+        "tool_use_id": "toolu_01YCCAbwm7sztdDtLuczSzDN"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01YCCAbwm7sztdDtLuczSzDN"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 50
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 13,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".cargo/config.toml": 2,
+        ".claude/settings.local.json": 11
+      }
+    },
+    {
+      "checkpoint_number": 4,
+      "user_lines_added": 13,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".cargo/config.toml": 2,
+        ".claude/settings.local.json": 11
+      }
+    },
+    {
+      "checkpoint_number": 5,
+      "user_lines_added": 266,
+      "user_lines_removed": 82,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".cargo/config.toml": 2,
+        ".claude/plans/PR101-HARDENING/README.md": 1,
+        ".claude/settings.local.json": 11,
+        ".claude/specs/SPEC-RELEASE-LIFECYCLE-HARDENING.json": 1,
+        ".github/actions/setup-callisto-wasm/action.yml": 38,
+        ".github/actions/setup-callisto-wasm/tests/test_verification_modes.sh": 70,
+        ".github/actions/setup-callisto/action.yml": 51,
+        ".github/actions/setup-callisto/tests/test_download_extraction_format.sh": 78,
+        "docs/06-publishing.md": 13,
+        "docs/07-self-release-lifecycle.md": 1
+      },
+      "user_removed_per_file": {
+        ".claude/plans/PR101-HARDENING/README.md": 1,
+        ".claude/specs/SPEC-RELEASE-LIFECYCLE-HARDENING.json": 1,
+        ".github/actions/setup-callisto-wasm/action.yml": 17,
+        ".github/actions/setup-callisto/action.yml": 23,
+        ".github/actions/setup-callisto/tests/test_download_extraction_format.sh": 36,
+        "docs/06-publishing.md": 3,
+        "docs/07-self-release-lifecycle.md": 1
+      }
+    }
+  ]
+}
