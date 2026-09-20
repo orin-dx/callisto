@@ -1,0 +1,24 @@
+{
+  "tool_use_id": "toolu_01P4Eg4YaT1vBWBTUU9A1qJE",
+  "agent_id": "ade6162e5890d3959",
+  "subagent_type": "smith:implementer",
+  "task_description": "Route workflow checks through just recipes",
+  "files": [
+    "ARCHITECTURE.md",
+    "CLAUDE.md",
+    "crates/callisto-cli/src/commands/release.rs",
+    "crates/callisto-cli/tests/durable_release_e2e_tests.rs",
+    "crates/callisto-cli/tests/release_hardening_tests.rs",
+    "crates/callisto-graph/src/commands/mod.rs",
+    "crates/callisto-graph/src/commands/release.rs",
+    "crates/callisto-graph/src/commands/release_execution.rs",
+    "crates/callisto-graph/src/commands/release_store.rs",
+    "crates/callisto-graph/src/error.rs",
+    "crates/callisto-model/src/lib.rs",
+    "crates/callisto-model/src/release.rs",
+    "crates/callisto-model/tests/release_evidence_tests.rs",
+    "justfile"
+  ],
+  "started_at": "2026-09-19T17:22:05.884871-07:00",
+  "completed_at": "2026-09-19T17:22:05.885056-07:00"
+}

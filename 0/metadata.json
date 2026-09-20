@@ -1,0 +1,327 @@
+{
+  "cli_version": "0.10.7-nightly.202609170627.0dda4e14f",
+  "checkpoint_id": "01M2Y3P77RCEVTT9S32MEZPS2V",
+  "session_id": "a08620cc-8b37-45b5-b4b2-89a977aad490",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-20T00:33:06.930156Z",
+  "branch": "codex/release-recovery",
+  "checkpoints_count": 8,
+  "save_step_count": 7,
+  "files_touched": [
+    ".github/tests/verify-release-workflow-contract.sh",
+    ".github/workflows/callisto-ci.yml",
+    ".github/workflows/callisto-release.yml",
+    "ARCHITECTURE.md",
+    "CLAUDE.md",
+    "justfile"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5",
+  "turn_id": "1289e3ed54ab",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 364,
+    "cache_creation_tokens": 1780959,
+    "cache_read_tokens": 46578565,
+    "output_tokens": 250630,
+    "api_call_count": 163,
+    "subagent_tokens": {
+      "input_tokens": 244,
+      "cache_creation_tokens": 382945,
+      "cache_read_tokens": 18621968,
+      "output_tokens": 117158,
+      "api_call_count": 122
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01YCCAbwm7sztdDtLuczSzDN",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "48049d8543a5",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 466,
+        "end": 467,
+        "entry_ids": [
+          "64369af6-5a29-4372-9bc8-6e58a915ca54"
+        ],
+        "tool_use_id": "toolu_01YCCAbwm7sztdDtLuczSzDN"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01YCCAbwm7sztdDtLuczSzDN"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 33
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-20T00:33:06.823825Z",
+    "agent_lines": 0,
+    "agent_removed": 15,
+    "human_added": 14,
+    "human_modified": 24,
+    "human_removed": 0,
+    "total_committed": 19,
+    "total_lines_changed": 53,
+    "agent_percentage": 28.30188679245283,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 3133,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".cargo/config.toml": 2,
+        ".claude/plans/PR101-HARDENING/audit/pr101-arch.md": 60,
+        ".claude/plans/PR101-HARDENING/audit/pr101-config-cli.md": 80,
+        ".claude/plans/PR101-HARDENING/audit/pr101-core.md": 70,
+        ".claude/plans/PR101-HARDENING/audit/pr101-perf.md": 69,
+        ".claude/plans/PR101-HARDENING/audit/pr101-tests.md": 157,
+        ".claude/plans/PR101-HARDENING/audit/pr101-workflow.md": 78,
+        ".claude/plans/PR101-HARDENING/defects-and-red-tests.md": 23,
+        ".claude/plans/PR101-HARDENING/proposed-tests/cli_proposed_release_tests.rs": 1126,
+        ".claude/plans/PR101-HARDENING/proposed-tests/graph_proposed_config_tests.rs": 43,
+        ".claude/plans/PR101-HARDENING/proposed-tests/model_proposed_release_evidence.rs": 111,
+        ".claude/plans/PR101-HARDENING/w0-ledger.md": 67,
+        ".claude/settings.local.json": 11,
+        ".claude/specs/SPEC-RELEASE-ENVELOPE-STATE.json": 368,
+        ".claude/specs/SPEC-RELEASE-EXECUTE-SURFACE.json": 287,
+        ".claude/specs/SPEC-RELEASE-PROVIDER-EXECUTOR.json": 262,
+        "crates/callisto-model/src/lib.rs": 6,
+        "crates/callisto-model/src/release_observation.rs": 215,
+        "crates/callisto-model/src/release_transition.rs": 98
+      }
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 3652,
+      "user_lines_removed": 586,
+      "agent_lines_added": 319,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".cargo/config.toml": 2,
+        ".claude/plans/PR101-HARDENING/audit/pr101-arch.md": 60,
+        ".claude/plans/PR101-HARDENING/audit/pr101-config-cli.md": 80,
+        ".claude/plans/PR101-HARDENING/audit/pr101-core.md": 70,
+        ".claude/plans/PR101-HARDENING/audit/pr101-perf.md": 69,
+        ".claude/plans/PR101-HARDENING/audit/pr101-tests.md": 157,
+        ".claude/plans/PR101-HARDENING/audit/pr101-workflow.md": 78,
+        ".claude/plans/PR101-HARDENING/defects-and-red-tests.md": 23,
+        ".claude/plans/PR101-HARDENING/proposed-tests/cli_proposed_release_tests.rs": 1126,
+        ".claude/plans/PR101-HARDENING/proposed-tests/graph_proposed_config_tests.rs": 43,
+        ".claude/plans/PR101-HARDENING/proposed-tests/model_proposed_release_evidence.rs": 111,
+        ".claude/plans/PR101-HARDENING/w0-ledger.md": 67,
+        ".claude/settings.local.json": 11,
+        ".claude/specs/SPEC-RELEASE-ENVELOPE-STATE.json": 368,
+        ".claude/specs/SPEC-RELEASE-EXECUTE-SURFACE.json": 287,
+        ".claude/specs/SPEC-RELEASE-PROVIDER-EXECUTOR.json": 262,
+        "crates/callisto-cli/src/commands/release.rs": 18,
+        "crates/callisto-graph/src/commands/mod.rs": 5,
+        "crates/callisto-graph/src/commands/release.rs": 236,
+        "crates/callisto-graph/src/commands/release_execution.rs": 73,
+        "crates/callisto-graph/src/commands/release_store.rs": 79,
+        "crates/callisto-graph/src/commands/release_test_support.rs": 85,
+        "crates/callisto-graph/src/error.rs": 21,
+        "crates/callisto-model/src/release.rs": 319,
+        "crates/callisto-model/src/release_observation.rs": 2
+      },
+      "user_removed_per_file": {
+        "crates/callisto-cli/src/commands/release.rs": 28,
+        "crates/callisto-graph/src/commands/mod.rs": 7,
+        "crates/callisto-graph/src/commands/release.rs": 187,
+        "crates/callisto-graph/src/commands/release_execution.rs": 68,
+        "crates/callisto-graph/src/commands/release_store.rs": 16,
+        "crates/callisto-graph/src/error.rs": 1,
+        "crates/callisto-model/src/release.rs": 277,
+        "crates/callisto-model/src/release_observation.rs": 2
+      }
+    },
+    {
+      "checkpoint_number": 4,
+      "user_lines_added": 2820,
+      "user_lines_removed": 6,
+      "agent_lines_added": 1287,
+      "agent_lines_removed": 704,
+      "user_added_per_file": {
+        ".cargo/config.toml": 2,
+        ".claude/plans/PR101-HARDENING/audit/pr101-arch.md": 60,
+        ".claude/plans/PR101-HARDENING/audit/pr101-config-cli.md": 80,
+        ".claude/plans/PR101-HARDENING/audit/pr101-core.md": 70,
+        ".claude/plans/PR101-HARDENING/audit/pr101-perf.md": 69,
+        ".claude/plans/PR101-HARDENING/audit/pr101-tests.md": 157,
+        ".claude/plans/PR101-HARDENING/audit/pr101-workflow.md": 78,
+        ".claude/plans/PR101-HARDENING/defects-and-red-tests.md": 23,
+        ".claude/plans/PR101-HARDENING/proposed-tests/cli_proposed_release_tests.rs": 1126,
+        ".claude/plans/PR101-HARDENING/proposed-tests/graph_proposed_config_tests.rs": 43,
+        ".claude/plans/PR101-HARDENING/proposed-tests/model_proposed_release_evidence.rs": 111,
+        ".claude/plans/PR101-HARDENING/w0-ledger.md": 67,
+        ".claude/settings.local.json": 11,
+        ".claude/specs/SPEC-RELEASE-ENVELOPE-STATE.json": 368,
+        ".claude/specs/SPEC-RELEASE-EXECUTE-SURFACE.json": 287,
+        ".claude/specs/SPEC-RELEASE-PROVIDER-EXECUTOR.json": 262,
+        "crates/callisto-cli/tests/durable_release_e2e_tests.rs": 2,
+        "crates/callisto-cli/tests/release_hardening_tests.rs": 4
+      },
+      "user_removed_per_file": {
+        "crates/callisto-cli/tests/durable_release_e2e_tests.rs": 2,
+        "crates/callisto-cli/tests/release_hardening_tests.rs": 4
+      }
+    },
+    {
+      "checkpoint_number": 5,
+      "user_lines_added": 3202,
+      "user_lines_removed": 24,
+      "agent_lines_added": 1293,
+      "agent_lines_removed": 710,
+      "user_added_per_file": {
+        ".cargo/config.toml": 2,
+        ".claude/plans/PR101-HARDENING/audit/pr101-arch.md": 60,
+        ".claude/plans/PR101-HARDENING/audit/pr101-config-cli.md": 80,
+        ".claude/plans/PR101-HARDENING/audit/pr101-core.md": 70,
+        ".claude/plans/PR101-HARDENING/audit/pr101-perf.md": 69,
+        ".claude/plans/PR101-HARDENING/audit/pr101-tests.md": 157,
+        ".claude/plans/PR101-HARDENING/audit/pr101-workflow.md": 78,
+        ".claude/plans/PR101-HARDENING/defects-and-red-tests.md": 23,
+        ".claude/plans/PR101-HARDENING/proposed-tests/cli_proposed_release_tests.rs": 1126,
+        ".claude/plans/PR101-HARDENING/proposed-tests/graph_proposed_config_tests.rs": 43,
+        ".claude/plans/PR101-HARDENING/proposed-tests/model_proposed_release_evidence.rs": 111,
+        ".claude/plans/PR101-HARDENING/w0-ledger.md": 67,
+        ".claude/settings.local.json": 11,
+        ".claude/specs/SPEC-RELEASE-ENVELOPE-STATE.json": 368,
+        ".claude/specs/SPEC-RELEASE-EXECUTE-SURFACE.json": 287,
+        ".claude/specs/SPEC-RELEASE-PROVIDER-EXECUTOR.json": 262,
+        ".github/tests/verify-release-workflow-contract.sh": 2,
+        ".github/workflows/callisto-ci.yml": 7,
+        ".github/workflows/callisto-release.yml": 7,
+        "CLAUDE.md": 1,
+        "crates/callisto-model/tests/release_envelope_transition_tests.rs": 350,
+        "justfile": 21
+      },
+      "user_removed_per_file": {
+        ".github/tests/verify-release-workflow-contract.sh": 1,
+        ".github/workflows/callisto-ci.yml": 13,
+        ".github/workflows/callisto-release.yml": 7,
+        "CLAUDE.md": 1,
+        "justfile": 2
+      }
+    },
+    {
+      "checkpoint_number": 6,
+      "user_lines_added": 2814,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1701,
+      "agent_lines_removed": 732,
+      "user_added_per_file": {
+        ".cargo/config.toml": 2,
+        ".claude/plans/PR101-HARDENING/audit/pr101-arch.md": 60,
+        ".claude/plans/PR101-HARDENING/audit/pr101-config-cli.md": 80,
+        ".claude/plans/PR101-HARDENING/audit/pr101-core.md": 70,
+        ".claude/plans/PR101-HARDENING/audit/pr101-perf.md": 69,
+        ".claude/plans/PR101-HARDENING/audit/pr101-tests.md": 157,
+        ".claude/plans/PR101-HARDENING/audit/pr101-workflow.md": 78,
+        ".claude/plans/PR101-HARDENING/defects-and-red-tests.md": 23,
+        ".claude/plans/PR101-HARDENING/proposed-tests/cli_proposed_release_tests.rs": 1126,
+        ".claude/plans/PR101-HARDENING/proposed-tests/graph_proposed_config_tests.rs": 43,
+        ".claude/plans/PR101-HARDENING/proposed-tests/model_proposed_release_evidence.rs": 111,
+        ".claude/plans/PR101-HARDENING/w0-ledger.md": 67,
+        ".claude/settings.local.json": 11,
+        ".claude/specs/SPEC-RELEASE-ENVELOPE-STATE.json": 368,
+        ".claude/specs/SPEC-RELEASE-EXECUTE-SURFACE.json": 287,
+        ".claude/specs/SPEC-RELEASE-PROVIDER-EXECUTOR.json": 262
+      }
+    },
+    {
+      "checkpoint_number": 7,
+      "user_lines_added": 2838,
+      "user_lines_removed": 4,
+      "agent_lines_added": 1701,
+      "agent_lines_removed": 732,
+      "user_added_per_file": {
+        ".cargo/config.toml": 2,
+        ".claude/plans/PR101-HARDENING/audit/pr101-arch.md": 60,
+        ".claude/plans/PR101-HARDENING/audit/pr101-config-cli.md": 80,
+        ".claude/plans/PR101-HARDENING/audit/pr101-core.md": 70,
+        ".claude/plans/PR101-HARDENING/audit/pr101-perf.md": 69,
+        ".claude/plans/PR101-HARDENING/audit/pr101-tests.md": 157,
+        ".claude/plans/PR101-HARDENING/audit/pr101-workflow.md": 78,
+        ".claude/plans/PR101-HARDENING/defects-and-red-tests.md": 23,
+        ".claude/plans/PR101-HARDENING/proposed-tests/cli_proposed_release_tests.rs": 1126,
+        ".claude/plans/PR101-HARDENING/proposed-tests/graph_proposed_config_tests.rs": 43,
+        ".claude/plans/PR101-HARDENING/proposed-tests/model_proposed_release_evidence.rs": 111,
+        ".claude/plans/PR101-HARDENING/w0-ledger.md": 67,
+        ".claude/settings.local.json": 11,
+        ".claude/specs/SPEC-RELEASE-ENVELOPE-STATE.json": 368,
+        ".claude/specs/SPEC-RELEASE-EXECUTE-SURFACE.json": 287,
+        ".claude/specs/SPEC-RELEASE-PROVIDER-EXECUTOR.json": 262,
+        "crates/callisto-model/src/release.rs": 24
+      },
+      "user_removed_per_file": {
+        "crates/callisto-model/src/release.rs": 4
+      }
+    },
+    {
+      "checkpoint_number": 8,
+      "user_lines_added": 2952,
+      "user_lines_removed": 43,
+      "agent_lines_added": 1725,
+      "agent_lines_removed": 736,
+      "user_added_per_file": {
+        ".cargo/config.toml": 2,
+        ".claude/plans/PR101-HARDENING/audit/pr101-arch.md": 60,
+        ".claude/plans/PR101-HARDENING/audit/pr101-config-cli.md": 80,
+        ".claude/plans/PR101-HARDENING/audit/pr101-core.md": 70,
+        ".claude/plans/PR101-HARDENING/audit/pr101-perf.md": 69,
+        ".claude/plans/PR101-HARDENING/audit/pr101-tests.md": 157,
+        ".claude/plans/PR101-HARDENING/audit/pr101-workflow.md": 78,
+        ".claude/plans/PR101-HARDENING/defects-and-red-tests.md": 23,
+        ".claude/plans/PR101-HARDENING/proposed-tests/cli_proposed_release_tests.rs": 1126,
+        ".claude/plans/PR101-HARDENING/proposed-tests/graph_proposed_config_tests.rs": 43,
+        ".claude/plans/PR101-HARDENING/proposed-tests/model_proposed_release_evidence.rs": 111,
+        ".claude/plans/PR101-HARDENING/w0-ledger.md": 67,
+        ".claude/semantic-model/INDEX.md": 2,
+        ".claude/semantic-model/release-lifecycle.md": 78,
+        ".claude/settings.local.json": 11,
+        ".claude/specs/SPEC-RELEASE-ENVELOPE-STATE.json": 368,
+        ".claude/specs/SPEC-RELEASE-EXECUTE-SURFACE.json": 287,
+        ".claude/specs/SPEC-RELEASE-PROVIDER-EXECUTOR.json": 262,
+        "crates/callisto-cli/src/commands/release.rs": 1,
+        "crates/callisto-graph/src/commands/release.rs": 11,
+        "crates/callisto-graph/src/commands/release_store.rs": 3,
+        "crates/callisto-graph/src/commands/release_test_support.rs": 3,
+        "crates/callisto-model/src/release.rs": 3,
+        "crates/callisto-model/src/release_observation.rs": 15,
+        "crates/callisto-model/src/release_transition.rs": 21,
+        "crates/callisto-model/tests/release_envelope_transition_tests.rs": 1
+      },
+      "user_removed_per_file": {
+        "crates/callisto-cli/src/commands/release.rs": 7,
+        "crates/callisto-graph/src/commands/release.rs": 13,
+        "crates/callisto-graph/src/commands/release_store.rs": 1,
+        "crates/callisto-graph/src/commands/release_test_support.rs": 1,
+        "crates/callisto-model/src/release.rs": 1,
+        "crates/callisto-model/src/release_observation.rs": 8,
+        "crates/callisto-model/src/release_transition.rs": 7,
+        "crates/callisto-model/tests/release_envelope_transition_tests.rs": 5
+      }
+    }
+  ]
+}
