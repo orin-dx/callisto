@@ -1,0 +1,247 @@
+{
+  "id": "SPEC-RELEASE-LIFECYCLE-HARDENING",
+  "status": "proposed",
+  "owner_track": "release-security",
+  "last_verified_revision": "4ef6d0ab",
+  "depends_on": [
+    "SPEC-SELF-RELEASE-LIFECYCLE",
+    "SPEC-RELEASE-INTENT-MODEL-009",
+    "SPEC-RELEASE-TRUST-010",
+    "SPEC-RELEASE-CAPABILITY-011",
+    "SPEC-RELEASE-EXECUTION-012",
+    "SPEC-ARCH-RELEASE-ERROR-TAXONOMY"
+  ],
+  "purpose": "Describe, as testable criteria, the release-lifecycle contract as implemented on branch codex/release-recovery (PR 101): run envelope, provider observation and evidence, the transition table, the provider port, protocol-level registry, tag and forge observation, retry and deadlines, validation before effects, canonical destinations, redaction, the workflow adapter policy, and the verification tiers that keep them honest.",
+  "scope": "The implemented behavior of the release path in callisto-model, callisto-graph, callisto-cli, the release workflow, the setup-callisto installer and the provider contract tier. Every criterion cites its source file and the tests or policy self-test mutants that pin it. Provenance tags: [UR] owner requirement, [EC] existing contract already stated in docs/07-self-release-lifecycle.md or a sibling spec, [XC] external constraint from observed provider behavior, [JC] judgment call awaiting owner acceptance.",
+  "non_goals": [
+    "Replacing the three superseded design drafts' proposals that were not implemented (an HTTP client crate for registry observation, in-process provider clients).",
+    "A data-driven [release] catalog for adopters other than Callisto; the target table stays Callisto-specific.",
+    "A workspace-hack crate, npm evidence beyond npm view, and exercising the Blocked and EffectFailedAndAbsent events outside tests.",
+    "Hosted CI results and a GitHub dry run of the workflow; both are pending and outside this spec's evidence.",
+    "The unpinned rust-cache action inside orin-dx/actions/setup-rust, the bot-PR check policy for the managed release PR, and token rotation; these need the owner."
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "AC-001",
+      "criterion": "[EC] A run envelope (kind Initial or Recovery, orchestration revision, release-source revision, profile, intent digest, artifact-manifest digest) is validated against the intent: schema, digest, profile, manifest-digest presence (exactly when the intent declares artifact slots), orchestration revision equal to every slot's attestation workflow commit, and release-source revision equal to the intent's Git source each reject independently. The selected profile is part of the intent digest and cannot be relabelled; execution rejects a profile that differs from the intent's before any effect. Source: crates/callisto-model/src/release.rs, crates/callisto-cli/src/commands/release.rs. Tests: envelope_rejects_each_cross_field_mismatch, release_run_envelope_wire_and_profile_identifiers_fail_closed, profile_is_bound_into_the_intent_digest_and_cannot_be_relabelled, p04_tampered_profile_in_intent_is_rejected_before_any_effect, p05_execute_profile_must_match_intent_profile.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-002",
+      "criterion": "[EC] The envelope is persisted inside the execution state; a state file whose envelope belongs to another run, profile or intent is never loaded and the error is actionable. State writes are atomic: a failure before the rename never becomes the durable state and the last durable state survives a failed replacement. Source: crates/callisto-graph/src/commands/release_store.rs, crates/callisto-model/src/release.rs. Tests: state_from_another_run_envelope_is_rejected_with_an_actionable_error, state_from_another_run_envelope_is_rejected_with_an_actionable_message, mismatched_intent_is_never_loaded_as_state, initializes_then_loads_exact_intent_bound_state, injected_pre_rename_failure_never_becomes_successful_state, failed_replacement_preserves_the_last_durable_state.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-003",
+      "criterion": "[EC] The receipt is built from the run envelope plus fresh provider observations, requires a complete duplicate-free roster of Exact observations, and rejects deserialized receipts with non-Exact or missing observations or a state from another profile or intent. An artifact manifest whose source_commit differs from the intent's Git source, or whose attestation source is not the coordinator revision, is rejected. The manifest itself carries no signature; its integrity rests on the digest binding to the intent. Source: crates/callisto-model/src/release.rs, crates/callisto-model/src/release_observation.rs. Tests: receipt_requires_a_complete_duplicate_free_exact_observation_roster, deserialized_receipt_rejects_nonexact_or_missing_observations, receipt_rejects_a_state_whose_envelope_belongs_to_another_profile_or_intent, p11_receipt_is_bound_to_intent_and_provider_evidence, p15_receipt_requires_fresh_provider_evidence_not_local_state, red_c6_manifest_with_forged_source_commit_is_rejected, artifact_manifest_rejects_attestation_source_that_is_not_the_coordinator_revision, artifact_manifest_requires_exact_slot_digest_and_source_binding.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-004",
+      "criterion": "[EC] A provider observation is exactly one of Absent, Exact, Conflict, Indeterminate. Exact carries typed per-role evidence (registry version with checksum and yanked flag, tag peeled commit, forge release tag and draft flag, asset size and sha256), and evidence that does not match the operation's role is rejected. Conflict reasons and Indeterminate causes are closed enums. Source: crates/callisto-model/src/release_observation.rs. Tests: observation_rejects_evidence_that_does_not_match_the_operation_role, receipt_requires_a_complete_duplicate_free_exact_observation_roster.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-005",
+      "criterion": "[EC] An authentication, rate-limit, transport or malformed-response failure is Indeterminate, never Conflict and never Absent; absence is proved only by a definite not-found answer. Source: crates/callisto-graph/src/commands/release/provider/registry.rs, crates/callisto-graph/src/commands/release/provider/http.rs, crates/callisto-graph/src/commands/release/github.rs. Tests: a_plain_forbidden_answer_settles_immediately_rather_than_burning_the_attempts, a_persistent_server_error_exhausts_the_attempts_and_reports_its_status, a_body_that_is_not_the_index_format_is_malformed_not_absent, github_release_status_only_proves_absence_for_not_found, p09_indeterminate_forge_observation_fails_closed.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-006",
+      "criterion": "[EC] A single pure transition function is the only way an operation's state changes; the legal (state, event, run kind) edge set equals an explicit list, and no bounded event sequence reaches a success state without a legal edge. Source: crates/callisto-model/src/release_transition.rs. Tests: every_state_event_run_kind_triple_matches_the_explicit_allowed_list, no_bounded_event_sequence_reaches_success_without_a_legal_edge.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-007",
+      "criterion": "[EC] Attempting is reachable only through an absent proof minted from an observation; it is persisted only after an absent observation in the same run, so a failed pre-effect observation never strands an operation. Effects (publish, push, release create, asset upload) are never re-issued by the retry policy: a stranded Attempting fails nonzero without repeating the effect, and concurrent executes publish at most once. Source: crates/callisto-model/src/release_transition.rs, crates/callisto-graph/src/commands/release_execution.rs, crates/callisto-graph/src/commands/release/provider/policy.rs. Tests: an_operation_can_never_be_marked_attempting_without_observing_absence, the_checker_reports_attempting_persisted_before_any_observation, red_c7_pre_effect_observation_failure_does_not_wedge_rerun, p01_stranded_attempting_is_nonzero_and_repeats_no_effect, p13_concurrent_execute_publishes_at_most_once, failed_publish_persists_indeterminate_attempt_and_never_tags.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-008",
+      "criterion": "[EC] Adopting a pre-existing exact effect into a missing journal is a Recovery-run privilege; published-by-this-attempt (Published) is distinct from already-existed (AlreadySatisfied); an interrupted Attempting converges only from an exact provider observation. Exact success observed before an effect becomes AlreadySatisfied for tags, forge releases and artifacts. A registry version that already exists in a non-recovery run is a hard E174 refusal, never adopted, and an unexplained lost state without --recovery never republishes. Source: crates/callisto-model/src/release_transition.rs, crates/callisto-graph/src/commands/release_execution.rs, crates/callisto-graph/src/commands/release/provider/registry.rs, crates/callisto-graph/src/commands/release/provider/mod.rs. Tests: missing_state_reconstruction_only_adopts_exact_provider_effects, interrupted_operation_converges_only_from_an_exact_provider_observation, explicit_recovery_reconstructs_missing_state_from_remote_evidence, p14_recovery_with_a_conflicting_existing_tag_fails_closed, p03_lost_state_without_recovery_flag_never_republishes, p02_partial_provider_success_recovers_from_fresh_runner_without_republishing, a_release_already_published_with_every_asset_is_already_satisfied.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-009",
+      "criterion": "[EC] On every Recovery run the executor reconstructs every still-Pending operation from provider observation, so a recovery run interrupted mid-reconstruction resumes from the same state file instead of failing with E174. Source: crates/callisto-graph/src/commands/release_execution.rs. Tests: a_recovery_run_interrupted_mid_reconstruction_resumes_from_the_same_state, explicit_recovery_reconstructs_missing_state_from_remote_evidence.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-010",
+      "criterion": "[EC] A receipt is issued only when every operation is provider-observed Exact or AlreadySatisfied, transitively through prerequisites; Attempting, failed, blocked, missing and indeterminate operations are non-success and block dependents. Source: crates/callisto-graph/src/commands/release_execution.rs. Tests: quiescent_incomplete_state_is_never_successful, every_verified_terminal_success_allows_completion, reconciliation_requires_transitive_exact_successes, non_successful_or_attempting_prerequisites_never_make_dependents_eligible, direct_success_cannot_hide_an_unsatisfied_transitive_prerequisite, p17_tampered_failed_state_reports_incomplete_release_e172, p01_stranded_attempting_is_nonzero_and_repeats_no_effect.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-011",
+      "criterion": "[EC] The executor depends only on the ReleaseProviderSet port; an in-memory set drives the real executor, and an effect requires both an ApplyPermit and an AbsentProof obtainable only from an absent observation. Source: crates/callisto-graph/src/commands/release/provider/mod.rs, crates/callisto-graph/src/commands/release_execution.rs. Tests: the_release_executor_survives_every_enumerated_crash_and_provider_fault, an_operation_can_never_be_marked_attempting_without_observing_absence.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-012",
+      "criterion": "[EC] Provider capabilities are explicit: no production provider can publish without being observable, a publish-only role is refused, every registry adapter declares an observable version, and an ecosystem with no adapter is Unsupported. A prepared operation carries only graph-private invocation data (package dir, tag, target, binding); the tag adapter accepts only the exact intended target and rejects a conflicting existing one. Source: crates/callisto-graph/src/commands/release/provider/mod.rs, crates/callisto-graph/src/commands/release/provider/registry.rs, crates/callisto-graph/src/commands/release/mod.rs. Tests: no_production_provider_can_publish_without_being_observable, a_publish_only_role_is_refused_and_every_other_shape_is_allowed, every_registry_adapter_declares_an_observable_version, an_ecosystem_with_no_registry_adapter_is_unsupported, prepared_capability_retains_exact_tag_and_registry_inputs, prepared_tag_adapter_accepts_only_the_exact_intended_target, prepared_tag_adapter_rejects_conflicting_existing_target.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-013",
+      "criterion": "[EC] A publish returns a post-effect observation, never the client's exit code: neither a zero exit nor a client's 'already exists'/'already uploaded' text satisfies an operation, and an unconfirmed publish reports its own error variant. Source: crates/callisto-graph/src/commands/release/provider/registry.rs, crates/callisto-graph/src/commands/release/provider/policy.rs. Tests: c5_already_uploaded_text_without_registry_observation_is_not_success, c5_already_exists_text_without_registry_observation_is_not_success, require_registry_confirmation_rejects_unconfirmed_publish_with_its_own_variant, require_registry_confirmation_accepts_a_confirmed_publish.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-014",
+      "criterion": "[XC] crates.io observation reads the sparse index (cargo's 1/, 2/, 3/x/, ab/cd/ path layout, lowercased name): a listed unyanked version is Exact with the index cksum, an unlisted version or a 404 is Absent. A yanked crates.io version is a Conflict, a truncated or non-index body is Indeterminate(malformed) never Absent, and a cargo git index fails closed with the unsupported-protocol cause. Source: crates/callisto-graph/src/commands/release/provider/registry.rs. Tests: the_sparse_index_path_follows_cargos_length_layout_and_lowercases, a_served_unyanked_version_is_exact_and_carries_the_index_checksum, a_version_missing_from_a_served_index_is_absent_not_indeterminate, an_unknown_crate_answered_with_not_found_is_absent, the_captured_crates_io_response_parses_and_a_listed_version_is_exact, a_version_the_captured_index_does_not_list_is_absent, a_yanked_version_is_a_conflict_not_an_absence, the_captured_yanked_line_is_a_yanked_conflict, a_truncated_captured_index_line_is_malformed_not_absent, a_cargo_git_index_fails_closed_with_the_unsupported_protocol_cause.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-015",
+      "criterion": "[XC] PyPI observation reads the project JSON API (PEP 503 normalized name): a 200 is Exact with the first file's sha256, a 404 is Absent, a yanked file is a Conflict, and a malformed document is Indeterminate. A pypi target plans without a release profile. Source: crates/callisto-graph/src/commands/release/provider/registry.rs. Tests: pypi_observes_its_json_endpoint_and_reports_the_first_files_digest, pypi_reports_not_found_as_absent_and_a_yanked_file_as_a_conflict, the_captured_pypi_document_is_exact_yanked_or_malformed, the_captured_not_found_responses_report_status_404, red_c2_release_plan_succeeds_for_pypi_target_without_release_profile.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-016",
+      "criterion": "[JC] Registry HTTP observation is one credential-free curl GET per attempt (--url, no -L redirect following, bounded --max-time) against the profile-bound endpoint, not a local package-manager client or an HTTP crate; curl exits for timeout/unreachable are transient, other exits are command failures. The npm observation argv (npm view) is held to the real npm's flags; its classification is not separately unit-tested. Source: crates/callisto-graph/src/commands/release/provider/http.rs, crates/callisto-graph/src/commands/release/provider/registry.rs. Tests: the_captured_registry_answers_are_observed_end_to_end_over_the_wire, curl_transport_exits_are_transient_and_other_exits_are_command_failures, a_response_is_split_at_the_last_header_block_and_keeps_its_headers, a_response_without_a_status_line_or_header_break_is_malformed, red_d01_registry_observation_is_a_request_to_the_bound_endpoint_not_a_local_manifest_read, every_emitted_curl_flag_exists_in_real_curl_help, every_emitted_npm_flag_exists_in_real_npm_help.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-017",
+      "criterion": "[JC] One bounded retry policy wraps read-only observations: at most 5 attempts, exponential backoff 2s,4s,8s,16s, a server's Retry-After (delta-seconds or HTTP date) replaces the schedule and is clamped to 300s, HTTP 429/5xx and a rate-limited 403 are transient, a plain 403 settles immediately, a hard error is not retried, and exhaustion reports the last transient answer with no trailing sleep. Source: crates/callisto-graph/src/commands/release/provider/policy.rs, crates/callisto-graph/src/commands/release/provider/http.rs. Tests: a_settled_first_attempt_never_sleeps, a_transient_answer_is_retried_on_the_exponential_schedule, exhausted_attempts_report_the_last_transient_answer_with_no_trailing_sleep, a_servers_retry_after_replaces_the_schedule_and_is_clamped_to_the_cap, a_hard_error_is_propagated_without_retrying, a_rate_limited_answer_is_retried_after_the_servers_own_delay_and_then_settles, a_plain_forbidden_response_is_not_a_rate_limit, retry_after_reads_both_delta_seconds_and_an_http_date.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-018",
+      "criterion": "[JC] The receipt pass observes registry operations with the lag-tolerant retry (Absent is transient there): a registry that serves the version only after the confirmation still yields a receipt, and one that never serves it yields none. Only a fresh Exact satisfies the receipt. Source: crates/callisto-graph/src/commands/release/provider/registry.rs, crates/callisto-graph/src/commands/release/provider/mod.rs, crates/callisto-cli/src/commands/release.rs. Tests: a_lagging_registry_after_publication_still_yields_a_receipt, a_registry_that_never_serves_the_version_yields_no_receipt.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-019",
+      "criterion": "[JC] Every outbound command runs under a wall-clock deadline supplied by the run-with-timeout runner; a breach kills the process and returns CommandError::TimedOut. The per-command values live only in provider::policy::timeouts. Source: crates/callisto-graph/src/commands/release/provider/policy.rs, crates/callisto-cli/src/runner.rs. Tests: run_with_timeout_kills_slow_process_and_returns_timed_out.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-020",
+      "criterion": "[XC] Tag observation runs git ls-remote against the prepared remote endpoint for refs/tags/NAME and refs/tags/NAME^{}: an annotated tag resolves to its peeled commit, no output is Absent, a lightweight tag is Conflict(UnannotatedTag), a git failure is transient Indeterminate. Source: crates/callisto-graph/src/commands/release/provider/tag.rs. Tests: a_captured_annotated_tag_resolves_to_its_peeled_commit, a_captured_lightweight_tag_is_unannotated, captured_empty_output_is_an_absent_tag_and_garbled_output_is_not, red_p20_lightweight_preexisting_tag_reports_a_typed_conflict.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-021",
+      "criterion": "[EC] A local-only tag is pushed to the remote before the receipt, a conflicting local tag fails closed with no receipt, and the receipt requires the remote tag to be observed at the intended commit. Source: crates/callisto-graph/src/commands/release/provider/tag.rs. Tests: red_d08_local_only_tag_is_pushed_to_the_remote_before_the_receipt, p10_conflicting_local_tag_fails_closed_and_issues_no_receipt.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-022",
+      "criterion": "[XC] The forge release is observed through gh api with no --repo flag and never by target_commitish (GitHub reports the default branch there); the tag operation, a DAG prerequisite, binds the release name to its commit. A draft is found by scanning the list endpoint page by page, bounded at 10 pages of 100. Source: crates/callisto-graph/src/commands/release/provider/forge.rs, crates/callisto-graph/src/commands/release/github.rs. Tests: red_d02_release_runs_against_a_gh_that_rejects_unknown_api_flags, red_d03_normal_run_succeeds_when_forge_reports_default_branch_as_target, red_d03_recovery_run_succeeds_and_uploads_assets_when_forge_reports_default_branch, the_list_scan_pages_until_it_finds_the_draft, an_exhausted_bounded_scan_reports_absence_rather_than_paging_forever, a_draft_listed_on_the_second_page_is_found_and_never_recreated, the_captured_gh_output_parses_with_its_status_headers_and_body.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-023",
+      "criterion": "[JC] The GitHub Release is created as a draft, every asset is uploaded to the draft, and publication is a separate ForgePublish operation that depends on every upload; a release with no artifacts is still published, and a half-filled draft is completed then published. Source: crates/callisto-graph/src/commands/release/derive.rs, crates/callisto-graph/src/commands/release/provider/forge.rs. Tests: a_release_is_drafted_then_filled_then_published_in_that_order, recovery_of_a_half_filled_draft_uploads_the_rest_and_then_publishes, a_release_with_no_artifacts_is_still_published, a_published_release_satisfies_both_forge_roles.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-024",
+      "criterion": "[EC] A release whose prerelease flag disagrees with the version is a Conflict with no effect issued; a remote asset of the same size but different sha256 is a Conflict; a published release missing an asset re-uploads only that asset. Source: crates/callisto-graph/src/commands/release/provider/forge.rs, crates/callisto-graph/src/commands/release/provider/artifact.rs. Tests: a_release_whose_prerelease_flag_disagrees_with_the_version_is_a_conflict, a_prerelease_flag_mismatch_is_a_conflict_and_issues_no_effect, p16_remote_asset_with_same_size_but_different_digest_is_a_conflict, a_published_release_missing_an_asset_re_uploads_only_that_asset.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-025",
+      "criterion": "[UR,EC] Every execute input is validated before the first effect: profile, orchestration revision syntax, release SHA (full, resolvable), artifact inputs and manifest, so a late failure cannot leave published effects without a receipt. Plan and execute resolve the same workspace root from a subdirectory, and a bare relative --state path places the workspace lock in the current directory rather than under an empty parent. Source: crates/callisto-cli/src/commands/release.rs. Tests: red_d05_malformed_orchestration_revision_is_rejected_before_any_effect, p07_plan_rejects_abbreviated_and_unknown_release_sha, p12_tampered_missing_or_swapped_artifacts_reject_before_any_effect, changed_checkout_after_planning_never_reaches_a_publish_boundary, execute_resolves_the_same_workspace_root_as_plan_from_a_subdirectory, a_bare_state_filename_yields_the_current_directory, a_bare_relative_state_path_resolves_against_the_process_working_directory.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-026",
+      "criterion": "[EC] The graph is the profile authority: when [release] is present the requested profile must resolve (E198), when absent only production is accepted; an unconfigured profile fails before an intent is written; plan rejects an artifact repository that differs from the git remote or the profile destination. Source: crates/callisto-graph/src/commands/release/derive.rs, crates/callisto-cli/src/commands/release.rs. Tests: red_d06_unconfigured_profile_without_product_release_is_rejected, product_release_rejects_an_unconfigured_profile_before_writing_intent, p18_plan_rejects_artifact_repository_that_differs_from_the_git_remote, p19_plan_rejects_artifact_repository_that_differs_from_profile_destination.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-027",
+      "criterion": "[JC] A source without a [release] section plans with zero artifact slots and prints a notice; a bare (ecosystem-unqualified) product package is rejected. Source: crates/callisto-cli/src/commands/release.rs, crates/callisto-graph/src/config/resolve.rs. Tests: c4_source_without_release_section_plans_and_ignores_artifact_flags, red_d07_product_package_must_be_ecosystem_qualified, red_d07_bare_product_package_is_rejected_or_still_yields_four_slots.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-028",
+      "criterion": "[EC] Destinations are compared canonically per logical key: spellings of one registry URL, GitHub repository case variants and a .git suffix are rejected across profiles; distinct built-in registries in different profiles are accepted; a non-production profile routing to the production registry is rejected. Logical registry route keys are validated with the one registry-key charset rule; a route to an unknown registry or a custom registry without a URL is rejected. Source: crates/callisto-graph/src/config/resolve.rs, crates/callisto-model/src/release.rs. Tests: red_c8_registry_url_spellings_of_one_destination_are_rejected, red_c8_forge_repository_case_variants_are_rejected, red_c8_forge_repository_dot_git_suffix_is_rejected, red_c8_distinct_builtin_registries_in_different_profiles_are_accepted, red_c8_non_production_profile_routing_to_the_production_registry_is_rejected, profiles_sharing_a_registry_endpoint_under_different_keys_are_rejected, product_release_profiles_reject_a_shared_forge_destination, product_release_profiles_reject_a_shared_registry_destination, github_repository_rejects_embedded_whitespace_extra_parts_and_leading_trailing_hyphen, product_release_routes_reject_a_malformed_logical_key, route_to_unknown_registry_is_rejected, custom_registry_route_without_url_is_rejected.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-029",
+      "criterion": "[JC] A registry endpoint may use plain http only for loopback hosts; userinfo, query and fragment are rejected; an IPv6 endpoint renders with exactly one pair of brackets. Source: crates/callisto-graph/src/registry_endpoint.rs, crates/callisto-graph/src/commands/release/binding.rs. Tests: plain_http_is_accepted_only_for_loopback_hosts, plain_http_is_rejected_for_every_other_host, an_ipv6_endpoint_is_bracketed_exactly_once, product_release_routes_reject_a_cleartext_registry_url, product_release_routes_accept_a_loopback_registry_url, registry_binding_rejects_credentials_and_ambiguous_routing.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-030",
+      "criterion": "[JC] Package names are validated per ecosystem (cargo, npm, PyPI grammars) before reaching argv or URLs: leading dash, whitespace, control characters, slashes, %, ?, # and out-of-grammar names are rejected; npm workspace names are passed in joined form (--workspace=NAME); tag names reject a leading hyphen; artifact slot components reject . and .. Source: crates/callisto-model/src/release.rs, crates/callisto-model/src/tag.rs, crates/callisto-graph/src/commands/registry_argv.rs. Tests: release_package_names_reject_argv_and_url_hazards, release_package_names_accept_each_ecosystem_grammar, release_package_id_requires_a_qualified_canonical_identity, npm_publish_argv_uses_workspace_flag, tag_name_parse_rejects_leading_hyphen_and_control_characters, artifact_slot_components_reject_dot_and_dot_dot.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-031",
+      "criterion": "[EC] Renamed tag templates stay discoverable: previous-tag-templates lists prior templates, and the installer derives the crate version from either the current or a previous tag template. Source: crates/callisto-model/src/tag.rs, .github/actions/setup-callisto/action.yml. Tests: red_c3_renamed_tag_template_still_finds_prior_tags, red_c3_installer_derives_crate_version_from_the_current_tag_template.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-032",
+      "criterion": "[EC] Known credential values and URL userinfo are redacted from command stderr at the one Display chokepoint of a non-zero-exit failure, from the live echo, and from publish-classification messages, including passwords containing / or @. Source: crates/callisto-graph/src/error.rs, crates/callisto-model/src/registry.rs, crates/callisto-model/src/exec.rs. Tests: non_zero_exit_display_redacts_release_path_credentials, non_zero_exit_display_redacts_url_userinfo, redacted_stderr_strips_authenticated_remote_url_userinfo, redacts_url_userinfo_even_when_it_matches_no_known_secret, redacts_userinfo_when_the_password_itself_contains_a_slash, redacts_userinfo_when_the_password_itself_contains_an_at_sign, classify_cargo_output_redacts_secrets_in_error_message.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-033",
+      "criterion": "[XC] The orchestration revision is github.sha of the run (assigned exactly once from TRIGGERING_SHA), never the moving tip of main, because attestations are stamped with the run's SHA; the run envelope then requires it to equal every slot's attestation workflow commit. Source: .github/workflows/callisto-release.yml, .github/tests/verify-release-workflow-policy.sh, crates/callisto-model/src/release.rs. Tests: envelope_rejects_each_cross_field_mismatch. Policy self-test mutants (.github/tests/verify-release-workflow-policy.sh --self-test): hardcoded orchestration_sha.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-034",
+      "criterion": "[UR] Release publication is authorized only by a merge: the release path runs on refs/heads/main only, and is_release_pr is true only for exactly one merged managed-branch PR into main from the same repository whose release-source commit is GitHub-verified (signed). Source: .github/workflows/callisto-release.yml, .github/tests/verify-release-workflow-policy.sh, .github/tests/verify-release-workflow-contract.sh. Policy self-test mutants (.github/tests/verify-release-workflow-policy.sh --self-test): verified requirement dropped; verified query dropped.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-035",
+      "criterion": "[UR] No GitHub Environment or approval gate is used on any job; plan runs only when release-candidate says is_release_pr, and execute requires plan success and needs plan, build and release-candidate. Source: .github/workflows/callisto-release.yml, .github/tests/verify-release-workflow-policy.sh. Policy self-test mutants (.github/tests/verify-release-workflow-policy.sh --self-test): environment on execute; plan runs always; execute loses plan success.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-036",
+      "criterion": "[EC] A workflow_dispatch release_source_sha must be 40 lowercase hex and equal to its resolved SHA; the execute release-source checkout uses that SHA, never a moving ref, and the same-run handoff verification (sha256 and cmp) runs unconditionally before the first step that references secrets. Source: .github/workflows/callisto-release.yml, .github/tests/verify-release-workflow-policy.sh. Policy self-test mutants (.github/tests/verify-release-workflow-policy.sh --self-test): dispatch sha regex weakened; resolved-sha equality dropped; execute checks out moving ref; handoff step disabled; handoff step renamed away; handoff continue-on-error.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-037",
+      "criterion": "[UR] Secret and permission scope: workflow-level permissions are empty; only execute references secrets and only CARGO_REGISTRY_TOKEN; id-token and attestations write only in build-artifact; contents write only in execute and version-pr. Source: .github/workflows/callisto-release.yml, .github/tests/verify-release-workflow-policy.sh. Policy self-test mutants (.github/tests/verify-release-workflow-policy.sh --self-test): secret in build-artifact; contents: write in plan; id-token on execute; NPM_TOKEN on execute.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-038",
+      "criterion": "[JC] Concurrency and time bounds: workflow group release-${{ github.sha }} without cancellation, execute and version-pr serialized in their own non-cancelling groups, and every job declares timeout-minutes. Source: .github/workflows/callisto-release.yml, .github/tests/verify-release-workflow-policy.sh. Policy self-test mutants (.github/tests/verify-release-workflow-policy.sh --self-test): cancel-in-progress true; timeout removed.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-039",
+      "criterion": "[JC] The setup-callisto installer verifies a downloaded prebuilt asset with gh attestation verify (pinned repo and signer workflow) before extracting only the binary, aborts on verification failure or missing gh, and bypasses only with allow-unverified: true. Source: .github/actions/setup-callisto/action.yml. Tests: test_verification_success_extracts_only_binary, test_verification_failure_aborts, test_gh_missing_aborts, test_allow_unverified_bypasses_$mode.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-040",
+      "criterion": "[JC] Fake providers serve captured real responses (crates.io, PyPI, GitHub, git ls-remote fixtures with recorded provenance) and the shared loopback server serves the same bytes to the unit and CLI tiers. Source: testing/loopback_http.rs, testing/fixtures/providers/github/PROVENANCE.md. Tests: the_captured_published_release_is_exact_and_not_a_draft, the_captured_release_shape_under_a_draft_flag_is_a_draft_only_the_list_serves, the_captured_release_shape_under_a_prerelease_flag_conflicts_with_a_stable_version, the_captured_list_page_finds_a_listed_tag_and_reports_an_unlisted_one_absent, the_fake_gh_serves_the_captured_release_shape.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-041",
+      "criterion": "[JC] Every fake rejects flags and subcommands outside the real tools' shapes, and every flag the release path emits for gh, git, curl, cargo and npm is present in the real tool's own help; a tool missing under CI fails rather than skipping for gh, git, curl and cargo. Source: crates/callisto-cli/tests/provider_flag_contract_tests.rs. Tests: every_fake_rejects_unknown_subcommands_and_flags_like_the_real_tool, every_emitted_gh_flag_exists_in_real_gh_help, every_emitted_git_flag_exists_in_real_git_help, every_emitted_cargo_flag_exists_in_real_cargo_help, every_flag_literal_in_the_release_path_sources_is_in_the_tool_shapes, the_argv_allow_list_check_flags_an_unlisted_flag_or_command.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-042",
+      "criterion": "[JC] A deterministic fault-injection simulator drives the real execute_release against an in-memory provider world, crashing at every persistence point and injecting each provider outcome (no randomness, no clock), and asserts after each scenario: no duplicate landing, no effect before its prerequisites, Attempting earned by an absent observation, receipt only over a landed and terminal journal, convergence within bounded reruns, and no downstream effect after a permanent conflict. The simulator's invariant checker discriminates: it reports a duplicate landing against a lying provider, an effect preceding its prerequisite, a receipt whose effects never landed, a receipt over a journal never written, and Attempting persisted before any observation. Source: crates/callisto-graph/src/commands/release_simulator.rs. Tests: the_release_executor_survives_every_enumerated_crash_and_provider_fault, a_recovery_run_interrupted_mid_reconstruction_resumes_from_the_same_state, the_checker_reports_a_duplicate_landing_against_a_lying_provider, the_checker_reports_an_effect_that_precedes_its_prerequisite, the_checker_reports_a_receipt_whose_effects_never_landed, the_checker_reports_a_receipt_over_a_journal_that_was_never_written, the_checker_reports_attempting_persisted_before_any_observation.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-043",
+      "criterion": "[JC] One Rust table (PRODUCT_ARTIFACT_TARGETS) is the target/asset authority; the artifact-target roster must be exactly the four supported targets, callisto.toml agrees with the table, and the release matrix, CI preflight matrix, build script tuples and installers are checked against it (seven mutants killed). The table remains Callisto-specific. Source: crates/callisto-graph/src/config/resolve.rs, .github/tests/verify-release-workflow-policy.sh. Tests: asset_table_and_lookup_agree, callisto_toml_artifact_targets_match_the_asset_table, artifact_target_roster_must_be_exactly_the_four_supported_targets. Policy self-test mutants (.github/tests/verify-release-workflow-policy.sh --self-test): asset renamed in release matrix; target dropped from release matrix; asset renamed in ci matrix; target dropped from ci matrix; asset renamed in build script; asset renamed in installer; target dropped from callisto.toml.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-044",
+      "criterion": "[EC] Release errors are typed variants (E-codes are not reused for unrelated failures); release modules never discard error sources; stale-intent constructors are private to fresh re-observation; E124 reapproval guidance is unique to E124. Source: crates/callisto-graph/src/error.rs, crates/callisto-graph/tests/architecture.rs. Tests: release_modules_never_discard_error_sources, release_intent_stale_is_constructed_only_by_fresh_reobservation, stale_reason_constructors_are_module_private, reapprove_guidance_belongs_to_e124_only.",
+      "is_error_case": false
+    }
+  ],
+  "reasoning": "Supersedes the design drafts SPEC-RELEASE-ENVELOPE-STATE, SPEC-RELEASE-PROVIDER-EXECUTOR and SPEC-RELEASE-EXECUTE-SURFACE, which failed their exit gate on scope and cross-spec contradictions and were written before the implementation deviated from them. Nothing here is accepted by the owner; every [JC] criterion is open for acceptance or replacement. Criteria carry no dangling REQ links.",
+  "revision_note": "Replaces three failed design drafts with one spec of the implemented contract at 4ef6d0ab."
+}
