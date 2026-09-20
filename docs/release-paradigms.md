@@ -68,7 +68,7 @@ jobs:
       - uses: ./.github/actions/setup-callisto
       - uses: ./.github/actions/callisto-action
         # Publishing is performed by the durable repository workflow after merge.
-        # Registry credentials belong only in its protected execute job.
+        # Registry credentials belong only in its execute job.
 ```
 
 ---
@@ -114,7 +114,7 @@ jobs:
       - uses: ./.github/actions/setup-callisto
       - uses: ./.github/actions/callisto-action
         # Publishing is performed by the durable repository workflow after merge.
-        # Registry credentials belong only in its protected execute job.
+        # Registry credentials belong only in its execute job.
 ```
 
 ---
@@ -158,5 +158,5 @@ jobs:
       - uses: ./.github/actions/setup-callisto
       - uses: ./.github/actions/callisto-action
         # Publishing is performed by the durable repository workflow after merge.
-        # Registry credentials belong only in its protected execute job.
+        # Registry credentials belong only in its execute job.
 ```

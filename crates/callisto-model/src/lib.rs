@@ -60,6 +60,12 @@ pub use registry::*;
 pub mod release;
 pub use release::*;
 
+pub mod release_observation;
+pub use release_observation::*;
+
+pub mod release_transition;
+pub use release_transition::*;
+
 pub mod release_pr;
 pub use release_pr::*;
 

@@ -13,6 +13,8 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use sha2::{Digest, Sha256};
 
+use crate::release_observation::{ProviderObservationV1, ReleaseOperationObservationV1};
+use crate::release_transition::OperationEvent;
 use crate::{CommitSha, Ecosystem, PackageId, RegistryKey, Version, VersionGrammar};
 
 /// Sort key for a `Version` field inside a hand-written `Ord` impl.
@@ -52,6 +54,12 @@ impl ReleasePackageId {
     /// existing package-identity grammar.
     pub fn new(ecosystem: Ecosystem, name: impl AsRef<str>) -> Result<Self, ReleasePackageIdParseError> {
         let name = name.as_ref();
+        if let Err(reason) = check_release_package_name(ecosystem, name) {
+            return Err(ReleasePackageIdParseError::UnsafeName {
+                raw: format!("{}/{}", ecosystem.prefix(), name),
+                reason,
+            });
+        }
         let raw = format!("{}/{}", ecosystem.prefix(), name);
         match PackageId::parse(&raw) {
             Ok(PackageId::Prefixed {
@@ -153,6 +161,119 @@ pub enum ReleasePackageIdParseError {
     Malformed { raw: String },
     #[error("release package identity {raw} is not in canonical ecosystem/name form")]
     NonCanonical { raw: String },
+    #[error("release package identity {raw} is unsafe: {reason}")]
+    UnsafeName { raw: String, reason: &'static str },
+}
+
+/// The charset every release package name must satisfy, per ecosystem.
+///
+/// A release package name is not just a label: it becomes an argv word
+/// (`npm view <name>@<version>`, `pnpm publish --filter=<name>`) and a URL
+/// path segment (the cargo sparse index, the PyPI JSON API). `TagName` and
+/// `GitHubRepository` already rule out the same hazards for their own
+/// identities; this is the equivalent rule for package names, applied where
+/// [`ReleasePackageId`] is minted so no release path can skip it.
+///
+/// Each ecosystem's real grammar is enforced rather than a lowest common
+/// denominator, because a name outside it cannot name a publishable package
+/// anyway and a plan-time rejection is cheaper than a half-published release.
+fn check_release_package_name(ecosystem: Ecosystem, name: &str) -> Result<(), &'static str> {
+    if name.is_empty() {
+        return Err("name is empty");
+    }
+    if name.len() > 214 {
+        return Err("name is longer than any registry accepts");
+    }
+    if name.starts_with('-') {
+        return Err("a leading `-` would be read as a command-line option");
+    }
+    if name.chars().any(|c| c.is_control() || c.is_whitespace()) {
+        return Err("name contains a control character or whitespace");
+    }
+    // `/` is allowed only as the single separator of an npm `@scope/name`,
+    // handled below; every other character here can change the meaning of a
+    // URL path or an argv word.
+    if name.contains(['?', '#', '%', '\\', ':', '@']) && !(ecosystem == Ecosystem::Npm && name.starts_with('@')) {
+        return Err("name contains a character that can alter a URL path or argv word");
+    }
+    match ecosystem {
+        Ecosystem::Cargo => check_cargo_name(name),
+        Ecosystem::Npm => check_npm_name(name),
+        Ecosystem::Pypi => check_pypi_name(name),
+        // No publish path is implemented for these, so only the shared
+        // argv/URL rules above apply; a `/` would still traverse a URL path.
+        _ => {
+            if name.contains('/') {
+                Err("name contains a path separator")
+            } else {
+                Ok(())
+            }
+        }
+    }
+}
+
+/// crates.io: ASCII alphanumerics, `-` and `_`, starting with a letter or `_`.
+fn check_cargo_name(name: &str) -> Result<(), &'static str> {
+    let first = name.chars().next().unwrap_or('\0');
+    if !(first.is_ascii_alphabetic() || first == '_') {
+        return Err("a cargo crate name must start with a letter or underscore");
+    }
+    if !name
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'))
+    {
+        return Err("a cargo crate name may only contain letters, digits, `-` and `_`");
+    }
+    Ok(())
+}
+
+/// npm: lowercase, URL-safe, with an optional single `@scope/` prefix.
+fn check_npm_name(name: &str) -> Result<(), &'static str> {
+    let (scoped, unscoped) = match name.strip_prefix('@') {
+        Some(rest) => {
+            let (scope, package) = rest
+                .split_once('/')
+                .ok_or("an npm scope must be followed by `/` and a package name")?;
+            check_npm_segment(scope, true)?;
+            (true, package)
+        }
+        None => (false, name),
+    };
+    check_npm_segment(unscoped, scoped)
+}
+
+/// npm allows legacy uppercase names and, only under a scope, a leading `.` or `_`.
+fn check_npm_segment(segment: &str, scoped: bool) -> Result<(), &'static str> {
+    let first = segment.chars().next().unwrap_or('\0');
+    let leading_ok = first.is_ascii_alphanumeric() || (scoped && matches!(first, '.' | '_'));
+    if !leading_ok {
+        return Err(
+            "an npm name segment must start with a letter or digit (a scoped name may also start with `.` or `_`)",
+        );
+    }
+    if !segment
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
+    {
+        return Err("an npm name segment may only contain letters, digits, `-`, `_` and `.`");
+    }
+    Ok(())
+}
+
+/// PEP 508: alphanumerics separated by single `-`, `_` or `.` runs, starting
+/// and ending with an alphanumeric.
+fn check_pypi_name(name: &str) -> Result<(), &'static str> {
+    let boundary_ok = |c: Option<char>| c.is_some_and(|c| c.is_ascii_alphanumeric());
+    if !boundary_ok(name.chars().next()) || !boundary_ok(name.chars().last()) {
+        return Err("a PyPI project name must start and end with a letter or digit");
+    }
+    if !name
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
+    {
+        return Err("a PyPI project name may only contain letters, digits, `-`, `_` and `.`");
+    }
+    Ok(())
 }
 
 /// An exact `owner/repo` GitHub repository identity.
@@ -172,7 +293,8 @@ pub struct GitHubRepository {
 impl GitHubRepository {
     /// Parses an exact `owner/repo` GitHub repository identity.
     ///
-    /// Both `owner` and `repo` must be non-empty, ASCII alphanumeric plus
+    /// A trailing `.git` on the repository is dropped and both parts are
+    /// lowercased. Both `owner` and `repo` must be non-empty, ASCII alphanumeric plus
     /// `-`, `_`, and `.`, and must not start or end with `-`. This is
     /// deliberately one charset rule applied uniformly to both parts,
     /// matching GitHub's own allowed repository-name charset closely enough
@@ -186,15 +308,20 @@ impl GitHubRepository {
         if repo.contains('/') {
             return Err(GitHubRepositoryParseError::TooManyParts { raw: s.to_string() });
         }
+        let repo = repo.strip_suffix(".git").unwrap_or(repo);
+        if matches!(owner, "." | "..") || matches!(repo, "." | "..") {
+            return Err(GitHubRepositoryParseError::DotComponent { raw: s.to_string() });
+        }
         if !is_valid_github_repository_part(owner) {
             return Err(GitHubRepositoryParseError::InvalidOwner { raw: s.to_string() });
         }
         if !is_valid_github_repository_part(repo) {
             return Err(GitHubRepositoryParseError::InvalidRepo { raw: s.to_string() });
         }
+        // GitHub names are case-insensitive, so the lowercase form is the identity.
         Ok(Self {
-            owner: owner.to_string(),
-            repo: repo.to_string(),
+            owner: owner.to_ascii_lowercase(),
+            repo: repo.to_ascii_lowercase(),
         })
     }
 
@@ -280,6 +407,8 @@ pub enum GitHubRepositoryParseError {
     InvalidOwner { raw: String },
     #[error("GitHub repository `{raw}` has an invalid repository name")]
     InvalidRepo { raw: String },
+    #[error("GitHub repository `{raw}` has a `.` or `..` component")]
+    DotComponent { raw: String },
 }
 
 macro_rules! release_digest {
@@ -433,7 +562,9 @@ pub struct ReleaseDecisionEntry {
 /// hand-copied check could.
 pub(crate) fn check_schema_version<E: serde::de::Error>(found: u8, expected: u8, type_name: &str) -> Result<(), E> {
     if found != expected {
-        return Err(E::custom(format!("unsupported {type_name} schema version")));
+        return Err(E::custom(format!(
+            "unsupported {type_name} schema version {found}; this build reads version {expected}"
+        )));
     }
     Ok(())
 }
@@ -821,10 +952,14 @@ pub enum ReleaseOperationRole {
         registry: RegistryBindingId,
     },
     Tag,
+    /// Creates the GitHub Release as a draft. Publication is a separate role.
     ForgeRelease,
     ArtifactUpload {
         slot: ArtifactSlotId,
     },
+    /// Publishes the draft created by [`Self::ForgeRelease`], only after every
+    /// artifact upload of that release has been confirmed.
+    ForgePublish,
 }
 
 #[derive(Deserialize)]
@@ -841,6 +976,7 @@ enum ReleaseOperationRoleWire {
     ArtifactUpload {
         slot: ArtifactSlotId,
     },
+    ForgePublish,
 }
 
 impl<'de> Deserialize<'de> for ReleaseOperationRole {
@@ -858,6 +994,7 @@ impl<'de> Deserialize<'de> for ReleaseOperationRole {
             ReleaseOperationRoleWire::Tag => Ok(Self::Tag),
             ReleaseOperationRoleWire::ForgeRelease => Ok(Self::ForgeRelease),
             ReleaseOperationRoleWire::ArtifactUpload { slot } => Ok(Self::ArtifactUpload { slot }),
+            ReleaseOperationRoleWire::ForgePublish => Ok(Self::ForgePublish),
         }
     }
 }
@@ -866,7 +1003,7 @@ impl ReleaseOperationRole {
     fn artifact_slot(&self) -> Option<&ArtifactSlotId> {
         match self {
             Self::ArtifactUpload { slot } => Some(slot),
-            Self::RegistryPublish { .. } | Self::Tag | Self::ForgeRelease => None,
+            Self::RegistryPublish { .. } | Self::Tag | Self::ForgeRelease | Self::ForgePublish => None,
         }
     }
 }
@@ -934,6 +1071,14 @@ impl ReleaseOperationId {
             package: slot.package.clone(),
             version: slot.version.clone(),
             role: ReleaseOperationRole::ArtifactUpload { slot },
+        }
+    }
+
+    pub fn forge_publish(package: ReleasePackageId, version: Version) -> Self {
+        Self {
+            package,
+            role: ReleaseOperationRole::ForgePublish,
+            version,
         }
     }
 
@@ -1016,6 +1161,14 @@ impl ReleaseOperation {
         Self::new(ReleaseOperationId::artifact_upload(slot), prerequisites)
     }
 
+    pub fn forge_publish(
+        package: ReleasePackageId,
+        version: Version,
+        prerequisites: Vec<ReleaseOperationId>,
+    ) -> Result<Self, ReleaseOperationError> {
+        Self::new(ReleaseOperationId::forge_publish(package, version), prerequisites)
+    }
+
     pub fn new(
         id: ReleaseOperationId,
         mut prerequisites: Vec<ReleaseOperationId>,
@@ -1053,6 +1206,9 @@ pub enum ReleaseOperationError {
     #[error("artifact upload operation identity must match its slot package and version")]
     MismatchedArtifactSlot,
 }
+
+/// The one workflow whose runs may attest release artifacts; CI asserts the file exists here.
+pub const RELEASE_COORDINATOR_WORKFLOW_PATH: &str = ".github/workflows/callisto-release.yml";
 
 /// Immutable GitHub provenance policy declared by a binary release slot.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, JsonSchema)]
@@ -1181,12 +1337,20 @@ fn is_safe_artifact_component(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= 255
         && !value.contains("..")
+        // `.` names the directory being joined, not a file in it.
+        && value != "."
         && value
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
 }
 
 /// Credential-free GitHub attestation policy and verified provenance facts.
+///
+/// `source_commit` is the source digest GitHub records for the workflow run:
+/// the coordinator revision that executed the attestation action. The release
+/// source is separately bound by `ArtifactManifestV1::source_commit` and the
+/// immutable intent, because recovery intentionally builds an older release
+/// checkout with current coordinator workflow code.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GitHubArtifactAttestationV1 {
@@ -1237,7 +1401,7 @@ impl ArtifactManifestV1 {
         }
         if entries.iter().any(|entry| {
             entry.digest != entry.attestation.subject_digest
-                || entry.attestation.source_commit != *sha
+                || entry.attestation.source_commit != entry.slot.attestation_policy.workflow_commit
                 || entry.attestation.repository != entry.slot.attestation_policy.repository
                 || entry.attestation.workflow_path != entry.slot.attestation_policy.workflow_path
                 || entry.attestation.workflow_commit != entry.slot.attestation_policy.workflow_commit
@@ -1252,9 +1416,20 @@ impl ArtifactManifestV1 {
         })
     }
 
+    /// Hashes the canonical serialized manifest transported from build to
+    /// execution. Its entry roster was canonicalized by [`Self::new`].
+    pub fn digest(&self) -> ArtifactDigest {
+        ArtifactDigest::from_bytes(serde_json::to_vec(self).expect("artifact manifest serializes"))
+    }
+
     pub fn validate_for_intent(&self, intent: &ReleaseIntentV1) -> Result<(), ArtifactManifestError> {
         if self.schema_version != Self::SCHEMA_VERSION || self.intent_digest != intent.digest {
             return Err(ArtifactManifestError::MismatchedIntent);
+        }
+        match &intent.snapshot.source {
+            SourceIdentity::GitCommit { sha } if sha == &self.source_commit => {}
+            SourceIdentity::GitCommit { .. } => return Err(ArtifactManifestError::MismatchedSourceCommit),
+            SourceIdentity::HermeticContent { .. } => return Err(ArtifactManifestError::NonGitSource),
         }
         Self::new(intent, self.entries.clone()).map(|_| ())
     }
@@ -1280,11 +1455,25 @@ pub enum ArtifactManifestError {
     MismatchedAttestation,
     #[error("artifact manifest is bound to a different intent or schema")]
     MismatchedIntent,
+    #[error("artifact manifest source commit differs from the intent release source")]
+    MismatchedSourceCommit,
 }
 
-fn validated_registry_key(raw: String) -> Result<RegistryKey, ReleaseOperationError> {
+/// The one charset rule for a registry key, applied wherever a key is minted
+/// from configuration or from a durable intent: a key reaches argv (`cargo
+/// publish --registry <key>`) and is compared across profiles, so it stays
+/// alphanumeric plus `-`/`_`.
+///
+/// # Errors
+///
+/// Returns [`ReleaseOperationError::MalformedRegistryKey`] for an empty,
+/// over-long, or out-of-charset key.
+pub fn validated_registry_key(raw: String) -> Result<RegistryKey, ReleaseOperationError> {
+    // A leading `-` would make `cargo publish --registry <key>` read the key
+    // as another option, the same hazard `TagName` already rules out.
     if raw.is_empty()
         || raw.len() > 128
+        || raw.starts_with('-')
         || !raw
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
@@ -1299,6 +1488,10 @@ fn validated_registry_key(raw: String) -> Result<RegistryKey, ReleaseOperationEr
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ReleaseIntentV1 {
     pub schema_version: u8,
+    /// The destination profile selected before planning. It is part of the
+    /// canonical digest so execution cannot relabel a production intent as a
+    /// rehearsal (or vice versa) when writing its receipt.
+    pub profile: ReleaseProfileId,
     pub decision: ReleaseDecisionV1,
     pub snapshot: ReleaseInputSnapshotV1,
     pub trust_profile: ExecutionTrustProfileV1,
@@ -1311,6 +1504,7 @@ pub struct ReleaseIntentV1 {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ReleaseIntentV1Wire {
     schema_version: u8,
+    profile: ReleaseProfileId,
     decision: ReleaseDecisionV1,
     snapshot: ReleaseInputSnapshotV1,
     trust_profile: ExecutionTrustProfileV1,
@@ -1340,6 +1534,7 @@ impl<'de> Deserialize<'de> for ReleaseIntentV1 {
             return Err(serde::de::Error::custom("release input packages are not canonical"));
         }
         let intent = Self::new(
+            wire.profile,
             wire.decision,
             wire.snapshot,
             wire.trust_profile,
@@ -1357,9 +1552,12 @@ impl<'de> Deserialize<'de> for ReleaseIntentV1 {
 }
 
 impl ReleaseIntentV1 {
-    pub const SCHEMA_VERSION: u8 = 1;
+    /// 3 adds the `forgePublish` role: publication is its own operation after
+    /// every artifact upload, so a version-2 intent's DAG is not executable here.
+    pub const SCHEMA_VERSION: u8 = 3;
 
     pub fn new(
+        profile: ReleaseProfileId,
         decision: ReleaseDecisionV1,
         snapshot: ReleaseInputSnapshotV1,
         trust_profile: ExecutionTrustProfileV1,
@@ -1386,9 +1584,17 @@ impl ReleaseIntentV1 {
             return Err(ReleaseIntentError::ArtifactSlotOutsideDecision);
         }
         validate_artifact_upload_roster(&operations, &artifact_slots)?;
-        let digest = digest_intent(&decision, &snapshot, trust_profile, &operations, &artifact_slots);
+        let digest = digest_intent(
+            &profile,
+            &decision,
+            &snapshot,
+            trust_profile,
+            &operations,
+            &artifact_slots,
+        );
         Ok(Self {
             schema_version: Self::SCHEMA_VERSION,
+            profile,
             decision,
             snapshot,
             trust_profile,
@@ -1404,6 +1610,7 @@ impl ReleaseIntentV1 {
 }
 
 fn digest_intent(
+    profile: &ReleaseProfileId,
     decision: &ReleaseDecisionV1,
     snapshot: &ReleaseInputSnapshotV1,
     trust_profile: ExecutionTrustProfileV1,
@@ -1412,6 +1619,7 @@ fn digest_intent(
 ) -> IntentDigest {
     let mut transcript = CanonicalTranscript::intent_v1();
     transcript.push_bytes("schema", [ReleaseIntentV1::SCHEMA_VERSION]);
+    transcript.push_str("profile", profile.as_str());
     transcript.push_str("decision", decision.digest.as_str());
     transcript.push_str("snapshot", snapshot.digest().as_str());
     transcript.push_str(
@@ -1496,6 +1704,7 @@ fn operation_id_text(id: &ReleaseOperationId) -> String {
             slot.attestation_policy.workflow_commit.as_str(),
             slot.version.render(),
         ),
+        ReleaseOperationRole::ForgePublish => "forge-publish".to_string(),
     };
     format!("{}|{}|{}", id.package, role, id.version.render())
 }
@@ -1639,12 +1848,242 @@ pub enum OperationOutcome {
     Blocked { reason: OperationBlockReason },
 }
 
+/// The lifecycle entry point that produced a release run.
+///
+/// Both modes use the same intent and provider-observation rules. `Recovery`
+/// exists so an operator cannot disguise a merged-but-unpublished release as
+/// a normal versioning run.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum ReleaseRunKindV1 {
+    Initial,
+    Recovery,
+}
+
+/// A normalized, credential-free release profile identity.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, JsonSchema)]
+#[schemars(with = "String")]
+pub struct ReleaseProfileId(String);
+
+impl ReleaseProfileId {
+    /// The default profile; the only one valid when a workspace has no `[release]` section.
+    pub const PRODUCTION: &'static str = "production";
+
+    pub fn production() -> Self {
+        Self(Self::PRODUCTION.to_owned())
+    }
+
+    pub fn parse(raw: impl AsRef<str>) -> Result<Self, ReleaseRunEnvelopeError> {
+        let raw = raw.as_ref();
+        if raw.is_empty()
+            || raw.len() > 128
+            || !raw
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+        {
+            return Err(ReleaseRunEnvelopeError::InvalidProfile { raw: raw.to_owned() });
+        }
+        Ok(Self(raw.to_owned()))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl Serialize for ReleaseProfileId {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&self.0)
+    }
+}
+
+impl<'de> Deserialize<'de> for ReleaseProfileId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let raw = String::deserialize(deserializer)?;
+        Self::parse(raw).map_err(serde::de::Error::custom)
+    }
+}
+
+/// The immutable identity of one release run, created and validated before
+/// the first effect and persisted inside the execution state.
+///
+/// Every field is derived from the intent and the verified artifact manifest
+/// rather than asserted by a caller, so no fact here has a second authority.
+/// The revisions are intentionally separate even when equal: a recovery must
+/// prove both the current coordinator it used and the historic merged source
+/// it is releasing.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ReleaseRunEnvelopeV1 {
+    schema_version: u8,
+    kind: ReleaseRunKindV1,
+    orchestration_revision: CommitSha,
+    release_source_revision: CommitSha,
+    profile: ReleaseProfileId,
+    intent_digest: IntentDigest,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    artifact_manifest_digest: Option<ArtifactDigest>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ReleaseRunEnvelopeV1Wire {
+    schema_version: u8,
+    kind: ReleaseRunKindV1,
+    orchestration_revision: CommitSha,
+    release_source_revision: CommitSha,
+    profile: ReleaseProfileId,
+    intent_digest: IntentDigest,
+    #[serde(default)]
+    artifact_manifest_digest: Option<ArtifactDigest>,
+}
+
+impl<'de> Deserialize<'de> for ReleaseRunEnvelopeV1 {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = ReleaseRunEnvelopeV1Wire::deserialize(deserializer)?;
+        if wire.schema_version != ReleaseRunEnvelopeV1::SCHEMA_VERSION {
+            return Err(serde::de::Error::custom(ReleaseRunEnvelopeError::UnsupportedSchema {
+                found: wire.schema_version,
+            }));
+        }
+        Ok(Self {
+            schema_version: wire.schema_version,
+            kind: wire.kind,
+            orchestration_revision: wire.orchestration_revision,
+            release_source_revision: wire.release_source_revision,
+            profile: wire.profile,
+            intent_digest: wire.intent_digest,
+            artifact_manifest_digest: wire.artifact_manifest_digest,
+        })
+    }
+}
+
+impl ReleaseRunEnvelopeV1 {
+    pub const SCHEMA_VERSION: u8 = 1;
+
+    /// The only constructor. Profile, source revision, and intent digest are
+    /// read out of `intent`; only the run kind, the coordinator revision, and
+    /// the verified manifest digest come from the caller, and all three are
+    /// cross-checked against the intent here, before any effect.
+    pub fn new(
+        kind: ReleaseRunKindV1,
+        orchestration_revision: CommitSha,
+        intent: &ReleaseIntentV1,
+        artifact_manifest_digest: Option<ArtifactDigest>,
+    ) -> Result<Self, ReleaseRunEnvelopeError> {
+        let release_source_revision = match &intent.snapshot.source {
+            SourceIdentity::GitCommit { sha } => sha.clone(),
+            SourceIdentity::HermeticContent { .. } => return Err(ReleaseRunEnvelopeError::NonGitReleaseSource),
+        };
+        let envelope = Self {
+            schema_version: Self::SCHEMA_VERSION,
+            kind,
+            orchestration_revision,
+            release_source_revision,
+            profile: intent.profile.clone(),
+            intent_digest: intent.digest.clone(),
+            artifact_manifest_digest,
+        };
+        envelope.validate_for_intent(intent)?;
+        Ok(envelope)
+    }
+
+    pub fn kind(&self) -> ReleaseRunKindV1 {
+        self.kind
+    }
+
+    pub fn orchestration_revision(&self) -> &CommitSha {
+        &self.orchestration_revision
+    }
+
+    pub fn release_source_revision(&self) -> &CommitSha {
+        &self.release_source_revision
+    }
+
+    pub fn profile(&self) -> &ReleaseProfileId {
+        &self.profile
+    }
+
+    pub fn intent_digest(&self) -> &IntentDigest {
+        &self.intent_digest
+    }
+
+    pub fn artifact_manifest_digest(&self) -> Option<&ArtifactDigest> {
+        self.artifact_manifest_digest.as_ref()
+    }
+
+    /// Cross-field validity against the exact intent this run releases.
+    pub fn validate_for_intent(&self, intent: &ReleaseIntentV1) -> Result<(), ReleaseRunEnvelopeError> {
+        if self.schema_version != Self::SCHEMA_VERSION {
+            return Err(ReleaseRunEnvelopeError::UnsupportedSchema {
+                found: self.schema_version,
+            });
+        }
+        if self.intent_digest != intent.digest {
+            return Err(ReleaseRunEnvelopeError::MismatchedIntent);
+        }
+        if self.profile != intent.profile {
+            return Err(ReleaseRunEnvelopeError::MismatchedProfile);
+        }
+        match (intent.artifact_slots.is_empty(), &self.artifact_manifest_digest) {
+            (false, None) => return Err(ReleaseRunEnvelopeError::MissingArtifactManifest),
+            (true, Some(_)) => return Err(ReleaseRunEnvelopeError::UnexpectedArtifactManifest),
+            _ => {}
+        }
+        // The coordinator that built and attested the binaries is the same
+        // revision the slots' attestation policy pins; a receipt must not be
+        // able to name a coordinator that did not produce these artifacts.
+        for slot in &intent.artifact_slots {
+            if slot.attestation_policy.workflow_commit != self.orchestration_revision {
+                return Err(ReleaseRunEnvelopeError::MismatchedOrchestrationRevision);
+            }
+        }
+        match &intent.snapshot.source {
+            SourceIdentity::GitCommit { sha } if sha == &self.release_source_revision => Ok(()),
+            SourceIdentity::GitCommit { .. } => Err(ReleaseRunEnvelopeError::MismatchedReleaseSource),
+            SourceIdentity::HermeticContent { .. } => Err(ReleaseRunEnvelopeError::NonGitReleaseSource),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
+pub enum ReleaseRunEnvelopeError {
+    #[error("release profile `{raw}` must be a nonempty ASCII identifier")]
+    InvalidProfile { raw: String },
+    #[error("unsupported release run envelope schema version {found}")]
+    UnsupportedSchema { found: u8 },
+    #[error("release run envelope is bound to a different intent")]
+    MismatchedIntent,
+    #[error("release run envelope profile does not match the release intent")]
+    MismatchedProfile,
+    #[error("release run envelope source does not match the release intent")]
+    MismatchedReleaseSource,
+    #[error("release run envelope requires a Git commit release source")]
+    NonGitReleaseSource,
+    #[error("artifact release envelope requires an artifact manifest digest")]
+    MissingArtifactManifest,
+    #[error("release run envelope carries an artifact manifest digest for a slot-less intent")]
+    UnexpectedArtifactManifest,
+    #[error("release run envelope orchestration revision is not the revision that attested the artifact slots")]
+    MismatchedOrchestrationRevision,
+}
+
 /// Crash-safe state for an intent-bound execution. Pending and Attempting are nonterminal.
-#[derive(Clone, Debug, PartialEq, Eq, JsonSchema)]
-#[schemars(with = "ReleaseExecutionStateV1Wire")]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ReleaseExecutionStateV1 {
     schema_version: u8,
     intent_digest: IntentDigest,
+    envelope: ReleaseRunEnvelopeV1,
     operations: BTreeMap<ReleaseOperationId, OperationState>,
 }
 
@@ -1656,6 +2095,7 @@ pub struct ReleaseExecutionStateV1 {
 struct ReleaseExecutionStateV1Wire {
     schema_version: u8,
     intent_digest: IntentDigest,
+    envelope: ReleaseRunEnvelopeV1,
     operations: Vec<OperationStateEntryV1>,
 }
 
@@ -1674,6 +2114,7 @@ impl Serialize for ReleaseExecutionStateV1 {
         ReleaseExecutionStateV1Wire {
             schema_version: self.schema_version,
             intent_digest: self.intent_digest.clone(),
+            envelope: self.envelope.clone(),
             operations: self
                 .operations
                 .iter()
@@ -1684,6 +2125,18 @@ impl Serialize for ReleaseExecutionStateV1 {
                 .collect(),
         }
         .serialize(serializer)
+    }
+}
+
+/// Delegated by hand: a container-level `#[schemars(with = ...)]` is ignored by
+/// the derive, which would publish the in-memory shape instead of the wire.
+impl JsonSchema for ReleaseExecutionStateV1 {
+    fn schema_name() -> String {
+        "ReleaseExecutionStateV1".to_owned()
+    }
+
+    fn json_schema(generator: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
+        ReleaseExecutionStateV1Wire::json_schema(generator)
     }
 }
 
@@ -1709,23 +2162,35 @@ pub enum OperationState {
 }
 
 impl ReleaseExecutionStateV1 {
-    pub const SCHEMA_VERSION: u8 = 1;
+    pub const SCHEMA_VERSION: u8 = 2;
 
-    /// Starts execution for exactly the roster authorized by `intent`.
-    pub fn pending(intent: &ReleaseIntentV1) -> Self {
-        Self {
+    /// Starts execution for exactly the roster authorized by `intent`, under
+    /// the run envelope that was validated before any effect. There is no way
+    /// to create a state without an envelope.
+    pub fn new(intent: &ReleaseIntentV1, envelope: ReleaseRunEnvelopeV1) -> Result<Self, ReleaseStateError> {
+        envelope
+            .validate_for_intent(intent)
+            .map_err(ReleaseStateError::InvalidEnvelope)?;
+        Ok(Self {
             schema_version: Self::SCHEMA_VERSION,
             intent_digest: intent.digest.clone(),
+            envelope,
             operations: intent
                 .operations
                 .iter()
                 .map(|operation| (operation.id.clone(), OperationState::Pending))
                 .collect(),
-        }
+        })
     }
 
     pub fn intent_digest(&self) -> &IntentDigest {
         &self.intent_digest
+    }
+
+    /// The run this state belongs to: the single authority for kind,
+    /// coordinator revision, release source, profile, and manifest digest.
+    pub fn envelope(&self) -> &ReleaseRunEnvelopeV1 {
+        &self.envelope
     }
 
     /// Validates that this state belongs to this exact intent and operation roster.
@@ -1741,10 +2206,27 @@ impl ReleaseExecutionStateV1 {
         if self.intent_digest != intent.digest {
             return Err(ReleaseStateError::MismatchedIntent);
         }
+        self.envelope
+            .validate_for_intent(intent)
+            .map_err(ReleaseStateError::InvalidEnvelope)?;
         let expected: BTreeSet<_> = intent.operations.iter().map(|operation| operation.id.clone()).collect();
         let actual: BTreeSet<_> = self.operations.keys().cloned().collect();
         if actual != expected {
             return Err(ReleaseStateError::MismatchedOperationRoster);
+        }
+        Ok(())
+    }
+
+    /// Validates this state against the run currently executing. A state left
+    /// behind by a different run is never adopted silently.
+    pub fn validate_for_run(
+        &self,
+        intent: &ReleaseIntentV1,
+        envelope: &ReleaseRunEnvelopeV1,
+    ) -> Result<(), ReleaseStateError> {
+        self.validate_for_intent(intent)?;
+        if &self.envelope != envelope {
+            return Err(ReleaseStateError::MismatchedEnvelope);
         }
         Ok(())
     }
@@ -1771,51 +2253,33 @@ impl ReleaseExecutionStateV1 {
         Ok(Self {
             schema_version: wire.schema_version,
             intent_digest: wire.intent_digest,
+            envelope: wire.envelope,
             operations,
         })
     }
 
-    pub fn mark_attempting(&mut self, id: &ReleaseOperationId) -> Result<(), ReleaseStateError> {
-        let state = self
-            .operations
-            .get_mut(id)
-            .ok_or_else(|| ReleaseStateError::UnknownOperation {
-                id: Box::new(id.clone()),
-            })?;
-        if *state != OperationState::Pending {
-            return Err(ReleaseStateError::InvalidTransition {
-                id: Box::new(id.clone()),
-                from: *state,
-            });
-        }
-        *state = OperationState::Attempting;
-        Ok(())
-    }
-
-    pub fn mark_terminal(
+    /// The only way an operation's state ever changes. The run kind comes from
+    /// this state's own envelope, never from a caller.
+    pub fn apply(
         &mut self,
         id: &ReleaseOperationId,
-        outcome: OperationOutcome,
-    ) -> Result<(), ReleaseStateError> {
+        event: &OperationEvent,
+    ) -> Result<OperationState, ReleaseStateError> {
+        let run_kind = self.envelope.kind();
         let state = self
             .operations
             .get_mut(id)
             .ok_or_else(|| ReleaseStateError::UnknownOperation {
                 id: Box::new(id.clone()),
             })?;
-        if *state != OperationState::Attempting {
-            return Err(ReleaseStateError::InvalidTransition {
+        let next = crate::release_transition::transition(*state, event, run_kind).map_err(|source| {
+            ReleaseStateError::InvalidTransition {
                 id: Box::new(id.clone()),
-                from: *state,
-            });
-        }
-        *state = match outcome {
-            OperationOutcome::Published => OperationState::Published,
-            OperationOutcome::AlreadySatisfied => OperationState::AlreadySatisfied,
-            OperationOutcome::Failed => OperationState::Failed,
-            OperationOutcome::Blocked { reason } => OperationState::Blocked { reason },
-        };
-        Ok(())
+                source,
+            }
+        })?;
+        *state = next;
+        Ok(next)
     }
 }
 
@@ -1828,24 +2292,32 @@ pub enum ReleaseStateError {
     MismatchedIntent,
     #[error("release state operation roster differs from the bound intent")]
     MismatchedOperationRoster,
+    #[error(
+        "release state at this path belongs to a different release run; \
+         pass a new --state path or remove the stale state file before retrying"
+    )]
+    MismatchedEnvelope,
+    #[error("release state carries an invalid run envelope: {0}")]
+    InvalidEnvelope(ReleaseRunEnvelopeError),
     #[error("release state contains duplicate operation `{id:?}`")]
     DuplicateOperation { id: Box<ReleaseOperationId> },
     #[error("release state does not contain operation `{id:?}`")]
     UnknownOperation { id: Box<ReleaseOperationId> },
-    #[error("operation `{id:?}` cannot transition from {from:?}")]
+    #[error("operation `{id:?}`: {source}")]
     InvalidTransition {
         id: Box<ReleaseOperationId>,
-        from: OperationState,
+        source: crate::release_transition::InvalidTransition,
     },
 }
 
 /// A terminal receipt derived only from a complete execution state.
-#[derive(Clone, Debug, PartialEq, Eq, JsonSchema)]
-#[schemars(with = "ReleaseReceiptV1Wire")]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ReleaseReceiptV1 {
     schema_version: u8,
     intent_digest: IntentDigest,
+    envelope: ReleaseRunEnvelopeV1,
     outcomes: BTreeMap<ReleaseOperationId, OperationOutcome>,
+    observations: BTreeMap<ReleaseOperationId, ProviderObservationV1>,
 }
 
 #[derive(Serialize, Deserialize, JsonSchema)]
@@ -1853,7 +2325,9 @@ pub struct ReleaseReceiptV1 {
 struct ReleaseReceiptV1Wire {
     schema_version: u8,
     intent_digest: IntentDigest,
+    envelope: ReleaseRunEnvelopeV1,
     outcomes: Vec<OperationOutcomeEntryV1>,
+    observations: Vec<ReleaseOperationObservationV1>,
 }
 
 #[derive(Serialize, Deserialize, JsonSchema)]
@@ -1871,6 +2345,7 @@ impl Serialize for ReleaseReceiptV1 {
         ReleaseReceiptV1Wire {
             schema_version: self.schema_version,
             intent_digest: self.intent_digest.clone(),
+            envelope: self.envelope.clone(),
             outcomes: self
                 .outcomes
                 .iter()
@@ -1879,8 +2354,26 @@ impl Serialize for ReleaseReceiptV1 {
                     outcome: *outcome,
                 })
                 .collect(),
+            observations: self
+                .observations
+                .iter()
+                .map(|(operation, observation)| {
+                    ReleaseOperationObservationV1::new(operation.clone(), observation.clone())
+                        .expect("receipt observations were role-checked on construction")
+                })
+                .collect(),
         }
         .serialize(serializer)
+    }
+}
+
+impl JsonSchema for ReleaseReceiptV1 {
+    fn schema_name() -> String {
+        "ReleaseReceiptV1".to_owned()
+    }
+
+    fn json_schema(generator: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
+        ReleaseReceiptV1Wire::json_schema(generator)
     }
 }
 
@@ -1895,13 +2388,22 @@ impl<'de> Deserialize<'de> for ReleaseReceiptV1 {
 }
 
 impl ReleaseReceiptV1 {
-    pub const SCHEMA_VERSION: u8 = 1;
+    pub const SCHEMA_VERSION: u8 = 2;
 
-    /// Constructs a receipt only when state is complete and exact for `intent`.
-    pub fn from_state(intent: &ReleaseIntentV1, state: &ReleaseExecutionStateV1) -> Result<Self, ReleaseReceiptError> {
+    /// Constructs a receipt only when the terminal state and fresh provider
+    /// evidence agree on every operation in `intent`.
+    ///
+    /// The run envelope comes from the state, which was created and validated
+    /// before the first effect; nothing is assembled after the fact here.
+    pub fn from_evidence(
+        intent: &ReleaseIntentV1,
+        state: &ReleaseExecutionStateV1,
+        observations: impl IntoIterator<Item = ReleaseOperationObservationV1>,
+    ) -> Result<Self, ReleaseReceiptError> {
         state
             .validate_for_intent(intent)
             .map_err(ReleaseReceiptError::InvalidState)?;
+        let envelope = state.envelope().clone();
         let mut outcomes = BTreeMap::new();
         for (id, operation_state) in &state.operations {
             let outcome = match operation_state {
@@ -1920,10 +2422,32 @@ impl ReleaseReceiptV1 {
             };
             outcomes.insert(id.clone(), outcome);
         }
+        let mut observed = BTreeMap::new();
+        for entry in observations {
+            let (operation, observation) = entry.into_parts();
+            if !observation.is_terminal_success() {
+                return Err(ReleaseReceiptError::NonExactObservation {
+                    id: Box::new(operation),
+                    observation: Box::new(observation),
+                });
+            }
+            if observed.insert(operation.clone(), observation).is_some() {
+                return Err(ReleaseReceiptError::DuplicateObservation {
+                    id: Box::new(operation),
+                });
+            }
+        }
+        let expected: BTreeSet<_> = intent.operations.iter().map(|operation| operation.id.clone()).collect();
+        let actual: BTreeSet<_> = observed.keys().cloned().collect();
+        if actual != expected {
+            return Err(ReleaseReceiptError::MismatchedObservationRoster);
+        }
         Ok(Self {
             schema_version: Self::SCHEMA_VERSION,
             intent_digest: state.intent_digest.clone(),
+            envelope,
             outcomes,
+            observations: observed,
         })
     }
 
@@ -1941,10 +2465,24 @@ impl ReleaseReceiptV1 {
         if self.intent_digest != intent.digest {
             return Err(ReleaseReceiptError::MismatchedIntent);
         }
+        self.envelope
+            .validate_for_intent(intent)
+            .map_err(ReleaseReceiptError::InvalidEnvelope)?;
         let expected: BTreeSet<_> = intent.operations.iter().map(|operation| operation.id.clone()).collect();
         let actual: BTreeSet<_> = self.outcomes.keys().cloned().collect();
         if actual != expected {
             return Err(ReleaseReceiptError::MismatchedOperationRoster);
+        }
+        let observed: BTreeSet<_> = self.observations.keys().cloned().collect();
+        if observed != expected {
+            return Err(ReleaseReceiptError::MismatchedObservationRoster);
+        }
+        if self
+            .observations
+            .values()
+            .any(|observation| !observation.is_terminal_success())
+        {
+            return Err(ReleaseReceiptError::NonExactReceiptObservation);
         }
         Ok(())
     }
@@ -1971,10 +2509,27 @@ impl ReleaseReceiptV1 {
                 });
             }
         }
+        let mut observations = BTreeMap::new();
+        for entry in wire.observations {
+            let (operation, observation) = entry.into_parts();
+            if !observation.is_terminal_success() {
+                return Err(ReleaseReceiptError::NonExactObservation {
+                    id: Box::new(operation),
+                    observation: Box::new(observation),
+                });
+            }
+            if observations.insert(operation.clone(), observation).is_some() {
+                return Err(ReleaseReceiptError::DuplicateObservation {
+                    id: Box::new(operation),
+                });
+            }
+        }
         Ok(Self {
             schema_version: wire.schema_version,
             intent_digest: wire.intent_digest,
+            envelope: wire.envelope,
             outcomes,
+            observations,
         })
     }
 }
@@ -1992,16 +2547,108 @@ pub enum ReleaseReceiptError {
     DuplicateOperation { id: Box<ReleaseOperationId> },
     #[error("release receipt cannot be derived from invalid state: {0}")]
     InvalidState(ReleaseStateError),
+    #[error("release receipt envelope is not bound to the intent: {0}")]
+    InvalidEnvelope(ReleaseRunEnvelopeError),
     #[error("release operation `{id:?}` is not terminal")]
     NonTerminalOperation { id: Box<ReleaseOperationId> },
     #[error("release operation `{id:?}` did not complete successfully")]
     NonSuccessfulOperation { id: Box<ReleaseOperationId> },
+    #[error("release receipt observation roster differs from the bound intent")]
+    MismatchedObservationRoster,
+    #[error("release receipt contains duplicate observation for `{id:?}`")]
+    DuplicateObservation { id: Box<ReleaseOperationId> },
+    #[error("release receipt observation for `{id:?}` is not exact: {observation:?}")]
+    NonExactObservation {
+        id: Box<ReleaseOperationId>,
+        observation: Box<ProviderObservationV1>,
+    },
+    #[error("release receipt contains a non-exact provider observation")]
+    NonExactReceiptObservation,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::release_observation::{ProviderEvidenceV1, ProviderIndeterminateCause};
     use crate::Ecosystem;
+
+    fn test_envelope(intent: &ReleaseIntentV1) -> ReleaseRunEnvelopeV1 {
+        let orchestration = intent
+            .artifact_slots
+            .first()
+            .map(|slot| slot.attestation_policy.workflow_commit.clone())
+            .unwrap_or_else(|| CommitSha::parse(&"b".repeat(40)).unwrap());
+        let manifest = (!intent.artifact_slots.is_empty()).then(|| ArtifactDigest::from_bytes(b"manifest"));
+        ReleaseRunEnvelopeV1::new(ReleaseRunKindV1::Initial, orchestration, intent, manifest).unwrap()
+    }
+
+    fn pending_state(intent: &ReleaseIntentV1) -> ReleaseExecutionStateV1 {
+        ReleaseExecutionStateV1::new(intent, test_envelope(intent)).unwrap()
+    }
+
+    /// Role-matching evidence for one operation, as a real provider adapter
+    /// would report it.
+    fn evidence_for(id: &ReleaseOperationId) -> ProviderEvidenceV1 {
+        match &id.role {
+            ReleaseOperationRole::RegistryPublish { .. } => ProviderEvidenceV1::RegistryVersion {
+                version: id.version.clone(),
+                checksum: None,
+                yanked: None,
+            },
+            ReleaseOperationRole::Tag => ProviderEvidenceV1::GitTag {
+                peeled_commit: CommitSha::parse(&"a".repeat(40)).unwrap(),
+            },
+            ReleaseOperationRole::ForgeRelease | ReleaseOperationRole::ForgePublish => {
+                ProviderEvidenceV1::ForgeRelease {
+                    tag_name: crate::TagName::new_unchecked(format!("v{}", id.version.render())),
+                    draft: false,
+                }
+            }
+            ReleaseOperationRole::ArtifactUpload { .. } => ProviderEvidenceV1::ArtifactUpload {
+                byte_length: 6,
+                sha256: ArtifactDigest::from_bytes(b"binary"),
+            },
+        }
+    }
+
+    fn exact_observation(id: &ReleaseOperationId) -> ProviderObservationV1 {
+        ProviderObservationV1::Exact {
+            evidence: evidence_for(id),
+        }
+    }
+
+    fn attempt_event() -> OperationEvent {
+        OperationEvent::Attempt {
+            proof: ProviderObservationV1::Absent
+                .absent_proof()
+                .expect("absent mints a proof"),
+        }
+    }
+
+    fn confirmed_event(id: &ReleaseOperationId) -> OperationEvent {
+        OperationEvent::Confirmed {
+            evidence: exact_observation(id).exact_evidence().expect("exact mints evidence"),
+        }
+    }
+
+    /// Drives one operation through the only legal path to `Published`.
+    fn publish_operation(state: &mut ReleaseExecutionStateV1, id: &ReleaseOperationId) {
+        state.apply(id, &attempt_event()).unwrap();
+        state.apply(id, &confirmed_event(id)).unwrap();
+    }
+
+    fn receipt_from_exact_observations(
+        intent: &ReleaseIntentV1,
+        state: &ReleaseExecutionStateV1,
+    ) -> Result<ReleaseReceiptV1, ReleaseReceiptError> {
+        ReleaseReceiptV1::from_evidence(
+            intent,
+            state,
+            intent.operations.iter().map(|operation| {
+                ReleaseOperationObservationV1::new(operation.id().clone(), exact_observation(operation.id())).unwrap()
+            }),
+        )
+    }
 
     /// `rename_all` on an internally-tagged enum only renames the `kind`
     /// discriminant, never fields inside a variant -- the exact gap that
@@ -2077,6 +2724,7 @@ mod tests {
             }
         }
         ReleaseIntentV1::new(
+            ReleaseProfileId::production(),
             ReleaseDecisionV1::new(entries).expect("test operations define a roster"),
             snapshot.expect("test snapshot is valid"),
             trust_profile,
@@ -2321,7 +2969,7 @@ mod tests {
                     workflow_path: ".github/workflows/release.yml".to_string(),
                     workflow_commit: CommitSha::parse(&"b".repeat(40)).unwrap(),
                     subject_digest: digest,
-                    source_commit: CommitSha::parse(&"a".repeat(40)).unwrap(),
+                    source_commit: CommitSha::parse(&"b".repeat(40)).unwrap(),
                 },
             }],
         )
@@ -2649,6 +3297,32 @@ mod tests {
     }
 
     #[test]
+    fn release_run_envelope_wire_and_profile_identifiers_fail_closed() {
+        assert!(ReleaseProfileId::parse("production/main").is_err());
+        assert!(ReleaseProfileId::parse("").is_err());
+        let intent = test_intent(
+            ReleaseInputSnapshotV1::new(SourceIdentity::git_commit("a".repeat(40)).unwrap(), vec![]),
+            ExecutionTrustProfileV1::GitCommit,
+            vec![ReleaseOperation::tag(
+                ReleasePackageId::parse("cargo/callisto-model").unwrap(),
+                Version::semver(1, 2, 3),
+                vec![],
+            )
+            .unwrap()],
+        )
+        .unwrap();
+        let envelope = test_envelope(&intent);
+        assert_ne!(
+            envelope.orchestration_revision(),
+            envelope.release_source_revision(),
+            "a run must retain distinct coordinator and release-source identities"
+        );
+        let mut wire = serde_json::to_value(&envelope).unwrap();
+        wire["schemaVersion"] = serde_json::Value::from(9);
+        assert!(serde_json::from_value::<ReleaseRunEnvelopeV1>(wire).is_err());
+    }
+
+    #[test]
     fn receipt_is_bound_to_intent_and_requires_terminal_outcomes() {
         let package = ReleasePackageId::parse("cargo/callisto-model").unwrap();
         let operation =
@@ -2660,23 +3334,41 @@ mod tests {
             vec![operation.clone()],
         )
         .unwrap();
-        let pending = ReleaseExecutionStateV1::pending(&intent);
-        assert!(ReleaseReceiptV1::from_state(&intent, &pending).is_err());
+        let pending = pending_state(&intent);
+        assert!(receipt_from_exact_observations(&intent, &pending).is_err());
 
         let mut complete = pending;
-        complete.mark_attempting(operation.id()).unwrap();
-        complete
-            .mark_terminal(operation.id(), OperationOutcome::Published)
-            .unwrap();
-        let receipt = ReleaseReceiptV1::from_state(&intent, &complete).unwrap();
+        publish_operation(&mut complete, operation.id());
+        let receipt = receipt_from_exact_observations(&intent, &complete).unwrap();
         assert_eq!(receipt.intent_digest(), intent.digest());
 
-        let mut failed = ReleaseExecutionStateV1::pending(&intent);
-        failed.mark_attempting(operation.id()).unwrap();
-        failed.mark_terminal(operation.id(), OperationOutcome::Failed).unwrap();
+        let mut failed = pending_state(&intent);
+        failed.apply(operation.id(), &attempt_event()).unwrap();
+        failed
+            .apply(
+                operation.id(),
+                &OperationEvent::EffectFailedAndAbsent {
+                    proof: ProviderObservationV1::Absent.absent_proof().unwrap(),
+                },
+            )
+            .unwrap();
         assert!(matches!(
-            ReleaseReceiptV1::from_state(&intent, &failed),
+            receipt_from_exact_observations(&intent, &failed),
             Err(ReleaseReceiptError::NonSuccessfulOperation { .. })
+        ));
+        assert!(matches!(
+            ReleaseReceiptV1::from_evidence(
+                &intent,
+                &complete,
+                [ReleaseOperationObservationV1::new(
+                    operation.id().clone(),
+                    ProviderObservationV1::Indeterminate {
+                        cause: ProviderIndeterminateCause::CommandFailed,
+                    },
+                )
+                .unwrap()],
+            ),
+            Err(ReleaseReceiptError::NonExactObservation { .. })
         ));
     }
 
@@ -2695,7 +3387,7 @@ mod tests {
             vec![operation.clone()],
         )
         .unwrap();
-        let state = ReleaseExecutionStateV1::pending(&intent);
+        let state = pending_state(&intent);
         let mut state_wire = serde_json::to_value(&state).unwrap();
         state_wire["unexpected"] = serde_json::Value::Bool(true);
         assert!(serde_json::from_value::<ReleaseExecutionStateV1>(state_wire).is_err());
@@ -2706,13 +3398,10 @@ mod tests {
         assert!(serde_json::from_value::<ReleaseExecutionStateV1>(duplicate_state).is_err());
 
         let mut complete = state;
-        complete.mark_attempting(operation.id()).unwrap();
-        complete
-            .mark_terminal(operation.id(), OperationOutcome::Published)
-            .unwrap();
-        let receipt = ReleaseReceiptV1::from_state(&intent, &complete).unwrap();
+        publish_operation(&mut complete, operation.id());
+        let receipt = receipt_from_exact_observations(&intent, &complete).unwrap();
         let mut receipt_wire = serde_json::to_value(receipt).unwrap();
-        receipt_wire["schemaVersion"] = serde_json::Value::from(2);
+        receipt_wire["schemaVersion"] = serde_json::Value::from(9);
         assert!(serde_json::from_value::<ReleaseReceiptV1>(receipt_wire).is_err());
     }
 
@@ -2733,7 +3422,7 @@ mod tests {
             vec![operation.clone()],
         )
         .unwrap();
-        let state = ReleaseExecutionStateV1::pending(&first);
+        let state = pending_state(&first);
         assert!(matches!(
             state.validate_for_intent(&different_digest),
             Err(ReleaseStateError::MismatchedIntent)
@@ -2747,11 +3436,8 @@ mod tests {
         ));
 
         let mut complete = state;
-        complete.mark_attempting(operation.id()).unwrap();
-        complete
-            .mark_terminal(operation.id(), OperationOutcome::Published)
-            .unwrap();
-        let receipt = ReleaseReceiptV1::from_state(&first, &complete).unwrap();
+        publish_operation(&mut complete, operation.id());
+        let receipt = receipt_from_exact_observations(&first, &complete).unwrap();
         assert!(matches!(
             receipt.validate_for_intent(&different_digest),
             Err(ReleaseReceiptError::MismatchedIntent)
@@ -2794,5 +3480,95 @@ mod tests {
         bad_registry["operations"][0]["id"]["role"]["registryKey"] =
             serde_json::Value::String("https://token@example.test/registry".to_string());
         assert!(serde_json::from_value::<ReleaseIntentV1>(bad_registry).is_err());
+    }
+
+    /// A release package name becomes an argv word (`npm view <name>@<v>`,
+    /// `pnpm publish --filter=<name>`) and a URL path segment (the cargo
+    /// sparse index, the PyPI JSON API). These are the shapes that would
+    /// change the meaning of one of those, so they are refused at plan time.
+    #[test]
+    fn release_package_names_reject_argv_and_url_hazards() {
+        let hazards = [
+            (Ecosystem::Cargo, "-x"),
+            (Ecosystem::Cargo, "--registry"),
+            (Ecosystem::Cargo, "a b"),
+            (Ecosystem::Cargo, "a\nb"),
+            (Ecosystem::Cargo, "a\u{0}b"),
+            (Ecosystem::Cargo, "a/b"),
+            (Ecosystem::Cargo, "a%2fb"),
+            (Ecosystem::Cargo, "a?b"),
+            (Ecosystem::Cargo, "a#b"),
+            (Ecosystem::Cargo, "a\\b"),
+            (Ecosystem::Cargo, "1crate"),
+            (Ecosystem::Cargo, "crate.name"),
+            (Ecosystem::Npm, "-x"),
+            (Ecosystem::Npm, "@scope"),
+            (Ecosystem::Npm, "@scope/a/b"),
+            (Ecosystem::Npm, "scope/name"),
+            (Ecosystem::Npm, ".hidden"),
+            (Ecosystem::Npm, "_hidden"),
+            (Ecosystem::Npm, "@scope/-x"),
+            (Ecosystem::Pypi, "-x"),
+            (Ecosystem::Pypi, "pkg/../etc"),
+            (Ecosystem::Pypi, ".pkg"),
+            (Ecosystem::Pypi, "pkg-"),
+            (Ecosystem::Pypi, "pkg name"),
+        ];
+        for (ecosystem, name) in hazards {
+            assert!(
+                matches!(
+                    ReleasePackageId::new(ecosystem, name),
+                    Err(ReleasePackageIdParseError::UnsafeName { .. } | ReleasePackageIdParseError::Malformed { .. })
+                ),
+                "{ecosystem:?} accepted an unsafe package name: {name:?}"
+            );
+        }
+    }
+
+    /// The real names each ecosystem publishes under must keep working.
+    #[test]
+    fn release_package_names_accept_each_ecosystem_grammar() {
+        for (ecosystem, name) in [
+            (Ecosystem::Cargo, "callisto-model"),
+            (Ecosystem::Cargo, "_private_crate"),
+            (Ecosystem::Cargo, "serde"),
+            (Ecosystem::Npm, "callisto"),
+            (Ecosystem::Npm, "@orin-dx/callisto"),
+            (Ecosystem::Npm, "left.pad"),
+            (Ecosystem::Npm, "JSONStream"),
+            (Ecosystem::Npm, "Base64"),
+            (Ecosystem::Npm, "@_scope/_x"),
+            (Ecosystem::Npm, "@types/node"),
+            (Ecosystem::Pypi, "typing-extensions"),
+            (Ecosystem::Pypi, "zope.interface"),
+            (Ecosystem::Pypi, "Flask"),
+        ] {
+            let id = ReleasePackageId::new(ecosystem, name)
+                .unwrap_or_else(|error| panic!("{ecosystem:?}/{name} must stay valid: {error}"));
+            assert_eq!(id.name(), name);
+        }
+    }
+
+    /// `.` names the directory an asset path is joined onto, not a file in it.
+    #[test]
+    fn artifact_slot_components_reject_dot_and_dot_dot() {
+        let slot = |platform: &str, asset: &str| {
+            ArtifactSlotId::new(
+                ReleasePackageId::new(Ecosystem::Cargo, "demo").unwrap(),
+                Version::semver(1, 0, 0),
+                platform,
+                asset,
+                GitHubRepository::parse("orin-dx/callisto").unwrap(),
+                ".github/workflows/release.yml",
+                CommitSha::parse(&"b".repeat(40)).unwrap(),
+            )
+        };
+        for (platform, asset) in [(".", "a.tar.gz"), ("linux", "."), ("..", "a.tar.gz"), ("linux", "..")] {
+            assert!(
+                matches!(slot(platform, asset), Err(ArtifactSlotError::UnsafeSlotComponent)),
+                "unsafe slot component accepted: {platform:?}/{asset:?}"
+            );
+        }
+        assert!(slot("x86_64-unknown-linux-gnu", "callisto.tar.gz").is_ok());
     }
 }

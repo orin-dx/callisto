@@ -38,14 +38,14 @@ jobs:
           # Docker action arguments are passed directly, rather than through a
           # shell. Keep the exception as one argument so its regex is intact.
           args: -color -ignore=\$/.+
+      - name: Install just
+        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
+        with:
+          just-version: '1.58.0'
       - name: Audit workflow and action security
-        run: zizmor --offline --strict-collection .
-      - name: Verify pinned actions
-        run: bash .github/tests/verify-action-pins.sh
-      - name: Verify durable release workflow contract
-        run: bash .github/tests/verify-release-workflow-contract.sh
-      - name: Verify Release-PR action contract
-        run: env PATH=/usr/bin:/bin bash .github/actions/callisto-action/tests/test_release_pr_contract.sh
+        run: just zizmor
+      - name: Verify workflow contracts
+        run: just workflow-contracts
 
   fmt:
     name: Code Formatting (Moon & Just)
@@ -106,6 +106,7 @@ jobs:
         with:
           tool: cargo-nextest
       - run: just test-ci
+      - run: just release-workflow-behavior
       - name: Verify Release-PR action against the real callisto binary
         run: bash .github/actions/callisto-action/tests/test_release_pr_decide_binary_contract.sh
       - run: just wasm-check
@@ -117,6 +118,48 @@ jobs:
           path: target/nextest/ci/junit.xml
           if-no-files-found: warn
           retention-days: 14
+
+  release-artifact-preflight:
+    name: Release Artifact Preflight (${{ matrix.id }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: macos-arm64
+            runner: macos-14
+            target: aarch64-apple-darwin
+            asset: callisto-aarch64-apple-darwin.tar.gz
+            kind: cli
+          - id: linux-gnu
+            runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            asset: callisto-x86_64-unknown-linux-gnu.tar.gz
+            kind: cli
+          - id: linux-musl
+            runner: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            asset: callisto-x86_64-unknown-linux-musl.tar.gz
+            kind: cross
+          - id: wasm-wasi
+            runner: ubuntu-latest
+            target: wasm32-wasip1
+            asset: callisto-moon.wasm
+            kind: wasm
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: orin-dx/actions/setup-rust@2521888266780dabc7f5fd4c32b02d6ab82849db # v1.1
+      - name: Build the production artifact recipe
+        env:
+          CALLISTO_RELEASE_ARTIFACT_KIND: ${{ matrix.kind }}
+          CALLISTO_RELEASE_ARTIFACT_TARGET: ${{ matrix.target }}
+          CALLISTO_RELEASE_ARTIFACT_ASSET: ${{ matrix.asset }}
+          CALLISTO_RELEASE_SOURCE_ROOT: ${{ github.workspace }}
+          CALLISTO_RELEASE_ARTIFACT_DIR: ${{ runner.temp }}/release-artifact-preflight
+        run: bash .github/scripts/build-release-artifact.sh
 
   coverage:
     name: Code Coverage & Test Report
@@ -173,7 +216,7 @@ jobs:
 
   validate:
     name: Validate Changesets & Workspace Status
-    needs: [workflow-contracts, fmt, clippy, test, coverage, security]
+    needs: [workflow-contracts, fmt, clippy, test, release-artifact-preflight, coverage, security]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

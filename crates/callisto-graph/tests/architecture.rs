@@ -191,7 +191,8 @@ fn allowlist_entries_reference_files_that_still_exist() {
 //
 // Enforcement for the `GraphError::ReleaseIntentStale` (E124) struct-variant
 // migration: staleness carries a real `StaleReason`, constructible only
-// from `commands/release.rs`. The `StaleReason::legacy_unclassified()`
+// from the `commands/release/` module (a directory module since the
+// provider-port split; `StaleReason` itself lives in its `mod.rs`). The `StaleReason::legacy_unclassified()`
 // migration ratchet used during PR1-PR3 reached zero callers across all
 // three release-executor files in PR4 and was deleted, along with the
 // ratchet's own pinned-count test.
@@ -203,7 +204,7 @@ fn graph_crate_src_dir() -> PathBuf {
 }
 
 /// Reads `relative` (forward-slash separated, relative to this crate's
-/// `src/`, e.g. `"commands/release.rs"`) with `#[cfg(test)] mod tests { ... }`
+/// `src/`, e.g. `"commands/release/mod.rs"`) with `#[cfg(test)] mod tests { ... }`
 /// blocks stripped.
 fn read_production_source(relative: &str) -> String {
     let path = graph_crate_src_dir().join(relative);
@@ -221,17 +222,17 @@ const STALE_REASON_REAL_CONSTRUCTORS: [&str; 4] = [
 
 /// AC-002: `GraphError::ReleaseIntentStale` is constructed only via one of
 /// `StaleReason`'s four fresh-re-observation constructors, and only from
-/// `commands/release.rs` -- the SPEC-ARCH-RELEASE-ERROR-TAXONOMY migration
+/// the `commands/release/` module -- the SPEC-ARCH-RELEASE-ERROR-TAXONOMY migration
 /// (PR1-PR4) eliminated every other construction site workspace-wide.
 #[test]
 fn release_intent_stale_is_constructed_only_by_fresh_reobservation() {
-    let release_rs = graph_crate_src_dir().join("commands/release.rs");
+    let release_module = graph_crate_src_dir().join("commands/release");
     let mut files = Vec::new();
     collect_rust_src_files(&graph_crate_src_dir(), &mut files);
 
     let mut violations = Vec::new();
     for file in files {
-        if file == release_rs {
+        if file.starts_with(&release_module) {
             continue;
         }
         let Ok(content) = fs::read_to_string(&file) else {
@@ -248,15 +249,15 @@ fn release_intent_stale_is_constructed_only_by_fresh_reobservation() {
     assert!(
         violations.is_empty(),
         "StaleReason's fresh-re-observation constructors must be referenced only from \
-         commands/release.rs: {violations:#?}"
+         the commands/release/ module: {violations:#?}"
     );
 }
 
 /// AC-001: the four real constructors carry no visibility modifier --
-/// callable only from within `commands/release.rs` itself.
+/// callable only from within the `commands/release/` module itself.
 #[test]
 fn stale_reason_constructors_are_module_private() {
-    let production = read_production_source("commands/release.rs");
+    let production = read_production_source("commands/release/mod.rs");
 
     let mut violations = Vec::new();
     for name in STALE_REASON_REAL_CONSTRUCTORS {

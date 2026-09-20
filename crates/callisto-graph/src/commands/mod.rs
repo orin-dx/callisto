@@ -9,7 +9,11 @@ pub mod release;
 pub mod release_artifacts;
 pub mod release_decision;
 pub mod release_execution;
+#[cfg(test)]
+mod release_simulator;
 pub mod release_store;
+#[cfg(test)]
+pub(crate) mod release_test_support;
 pub mod snapshot;
 pub mod status;
 pub mod tag;
@@ -22,13 +26,13 @@ pub use matrix::{matrix, MatrixOptions};
 pub use pr_body::{compose_pr_body, PrBodyOptions};
 pub use publish::{filter_plan_by_report, plan_publish, PublishOptions};
 pub use release::{
-    build_release_intent, validate_release_intent, validate_release_intent_with_state_directory, ValidatedReleaseIntent,
+    build_release_intent, build_release_intent_with_artifacts, observe_release_operations, validate_release_intent,
+    validate_release_intent_with_state_directory, ArtifactBuildPolicy, ReleasePreflight, ReleaseProviderSet,
+    ValidatedReleaseIntent,
 };
 pub use release_artifacts::{verify_artifact_manifest, VerifiedArtifactManifest};
 pub use release_decision::{derive_release_commit_decision, derive_release_decision, derive_selected_release_decision};
-pub use release_execution::{
-    execute_release, execute_release_with_artifacts, reconcile_release_execution, ReconciledReleaseExecution,
-};
+pub use release_execution::{execute_release, reconcile_release_execution, ReconciledReleaseExecution};
 pub use release_store::{AtomicReleaseStateWriter, ReleaseStateStore, ReleaseStateWriter};
 pub use snapshot::plan_snapshot;
 pub use status::{status, StatusOptions};

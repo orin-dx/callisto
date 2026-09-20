@@ -7,6 +7,7 @@ pub struct RawConfig {
     pub changesets: Option<RawChangesetsConfig>,
     pub cascade: Option<RawCascadeConfig>,
     pub validation: Option<RawValidationConfig>,
+    pub release: Option<RawProductReleaseConfig>,
     pub registries: Option<BTreeMap<String, RawRegistryConfig>>,
     pub package: Option<Vec<RawPackageConfig>>,
     #[serde(rename = "package-set")]
@@ -20,6 +21,32 @@ pub struct RawConfig {
     /// against, so a later run can diff the freshly-discovered state against
     /// it instead of against nothing.
     pub init: Option<RawInitConfig>,
+}
+
+/// Product binary release declaration. Credentials and provider endpoints are
+/// intentionally excluded: this configuration only identifies immutable
+/// intent slots; execution receives credentials from its caller.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawProductReleaseConfig {
+    #[serde(rename = "product-package")]
+    pub product_package: String,
+    #[serde(rename = "artifact-targets")]
+    pub artifact_targets: Vec<String>,
+    /// Credential-free forge destinations keyed by release profile. Registry
+    /// credentials are deliberately excluded from repository configuration.
+    pub profiles: Option<BTreeMap<String, RawReleaseProfileConfig>>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawReleaseProfileConfig {
+    #[serde(rename = "forge-repository")]
+    pub forge_repository: String,
+    /// Maps a logical package target registry (for example `cratesIo`) to a
+    /// concrete configured registry key. This contains no endpoint or token.
+    #[serde(rename = "registry-routes")]
+    pub registry_routes: Option<BTreeMap<String, String>>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -80,6 +107,9 @@ pub struct RawPackageConfig {
     pub publish_to: Option<Vec<String>>,
     #[serde(rename = "tag-template")]
     pub tag_template: Option<String>,
+    /// Earlier `tag-template`s whose tags stay discoverable as the last release.
+    #[serde(rename = "previous-tag-templates")]
+    pub previous_tag_templates: Option<Vec<String>>,
     /// Package-root-relative. Always forward-slash-separated (`/`), never `\` — same
     /// portability rule as `[changesets].dir` (see its doc comment): this value is parsed
     /// through `workspace_relative`, which only normalizes the *host* platform's native

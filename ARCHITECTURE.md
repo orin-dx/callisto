@@ -356,7 +356,7 @@ pub trait DependencyResolver: Send + Sync {
 
 ## 9. GitHub Actions Orchestration (`callisto-action`)
 
-Callisto includes a built-in composite action ([`.github/actions/callisto-action/action.yml`](.github/actions/callisto-action/action.yml)) that creates or updates a reviewed version PR. The repository release workflow owns the post-merge plan, build, attestation, and protected execute stages; see [`docs/06-publishing.md`](docs/06-publishing.md).
+Callisto includes a built-in composite action ([`.github/actions/callisto-action/action.yml`](.github/actions/callisto-action/action.yml)) that creates or updates a reviewed version PR. The repository release workflow owns the post-merge plan, build, attestation, and execute stages; the merged release PR is the sole authorization; see [`docs/06-publishing.md`](docs/06-publishing.md).
 
 ```mermaid
 %%{init: {'theme': 'base', 'themeVariables': {'lineColor': '#64748b', 'edgeLabelBackground': '#f8fafc', 'fontFamily': 'ui-sans-serif, system-ui, sans-serif'}}}%%
@@ -366,7 +366,7 @@ sequenceDiagram
     participant VersionPR as Job 2: version-pr (needs: [verify])
     participant Plan as Job 3: plan
     participant Build as Job 4: build
-    participant Execute as Job 5: execute (release Environment)
+    participant Execute as Job 5: execute (no Environment gate)
     participant CLI as callisto CLI
     participant GH as GitHub API (gh CLI)
 
@@ -437,8 +437,8 @@ CI calls `just coverage 90` (`callisto-ci.yml`'s `coverage` job, a required chec
 `needs` list), so a coverage-gate failure always reproduces locally with that exact invocation, no
 raw `cargo llvm-cov` flags improvised separately in the workflow YAML. With `threshold` omitted
 (`just coverage`), the run is unthresholded/informational -- `--ignore-filename-regex '_pdk\.rs$'`
-is always applied regardless (see the naming convention note below) -- and not part of `just
-ci`/`just ci-fast` -- coverage generation is a CI-only gate, run on demand locally. A PR that
+is always applied regardless (see the naming convention note below). `just ci` runs it with the same
+threshold of 90 that CI enforces. A PR that
 regresses total line coverage below 90% fails CI, not just informationally. The
 baseline at the time this gate was added was 90.40%, leaving a thin ~0.4-point margin -- a
 deliberate choice to catch essentially any regression, at the cost of the gate being more sensitive

@@ -8,14 +8,13 @@
 use std::{
     fs::{self, File},
     path::{Component, Path, PathBuf},
-    time::Duration,
 };
 
 use callisto_model::{ArtifactManifestV1, CommandRunner, ReleaseIntentV1};
 
 use crate::GraphError;
 
-const ATTESTATION_TIMEOUT: Duration = Duration::from_secs(120);
+use super::release::timeouts;
 
 /// A manifest whose exact local bytes and GitHub provenance have been checked.
 ///
@@ -25,11 +24,37 @@ const ATTESTATION_TIMEOUT: Duration = Duration::from_secs(120);
 #[derive(Debug)]
 pub struct VerifiedArtifactManifest<'a> {
     manifest: &'a ArtifactManifestV1,
+    root: PathBuf,
 }
 
 impl<'a> VerifiedArtifactManifest<'a> {
     pub fn manifest(&self) -> &'a ArtifactManifestV1 {
         self.manifest
+    }
+
+    /// Test-only pairing of a manifest with a root, for simulators whose
+    /// providers issue no real upload and read no local asset bytes.
+    #[cfg(test)]
+    pub(crate) fn for_tests(manifest: &'a ArtifactManifestV1, root: PathBuf) -> Self {
+        Self { manifest, root }
+    }
+
+    pub(crate) fn path_for(&self, slot: &callisto_model::ArtifactSlotId) -> Result<PathBuf, GraphError> {
+        resolve_asset_path(&self.root, &slot.asset_name)
+    }
+
+    /// Returns the already intent-bound manifest entry for `slot`.
+    pub(crate) fn entry_for(
+        &self,
+        slot: &callisto_model::ArtifactSlotId,
+    ) -> Result<&callisto_model::ArtifactManifestEntryV1, GraphError> {
+        self.manifest
+            .entries
+            .iter()
+            .find(|entry| entry.slot == *slot)
+            .ok_or_else(|| GraphError::ReleaseInvariant {
+                detail: format!("verified artifact manifest has no entry for `{}`", slot.asset_name),
+            })
     }
 }
 
@@ -67,9 +92,9 @@ pub fn verify_artifact_manifest<'a, R: CommandRunner>(
             return Err(GraphError::ArtifactBytesMismatch { path });
         }
 
-        verify_github_attestation(&path, entry, manifest, runner)?;
+        verify_github_attestation(&path, entry, runner)?;
     }
-    Ok(VerifiedArtifactManifest { manifest })
+    Ok(VerifiedArtifactManifest { manifest, root })
 }
 
 fn canonical_artifact_root(artifact_root: &Path) -> Result<PathBuf, GraphError> {
@@ -130,14 +155,13 @@ fn resolve_asset_path(root: &Path, asset_name: &str) -> Result<PathBuf, GraphErr
 fn verify_github_attestation<R: CommandRunner>(
     path: &Path,
     entry: &callisto_model::ArtifactManifestEntryV1,
-    manifest: &ArtifactManifestV1,
     runner: &R,
 ) -> Result<(), GraphError> {
     let policy = &entry.slot.attestation_policy;
     let repository_slug = policy.repository.as_slug();
     let workflow = format!("{repository_slug}/{}", policy.workflow_path);
     let path_argument = path.to_string_lossy();
-    let source_commit = manifest.source_commit.as_str();
+    let source_commit = entry.attestation.source_commit.as_str();
     let args = [
         "attestation",
         "verify",
@@ -157,7 +181,7 @@ fn verify_github_attestation<R: CommandRunner>(
             "gh",
             &args,
             path.parent().unwrap_or_else(|| Path::new(".")),
-            ATTESTATION_TIMEOUT,
+            timeouts::ATTESTATION_VERIFY,
         )
         .map_err(|error| GraphError::ArtifactAttestation {
             path: path.to_path_buf(),
@@ -220,6 +244,7 @@ mod tests {
         .unwrap();
         let operation = ReleaseOperation::artifact_upload(slot.clone(), vec![]).unwrap();
         ReleaseIntentV1::new(
+            callisto_model::ReleaseProfileId::production(),
             decision,
             snapshot,
             ExecutionTrustProfileV1::GitCommit,
@@ -236,10 +261,7 @@ mod tests {
             workflow_path: slot.attestation_policy.workflow_path.clone(),
             workflow_commit: slot.attestation_policy.workflow_commit.clone(),
             subject_digest: digest.clone(),
-            source_commit: match &intent.snapshot.source {
-                callisto_model::SourceIdentity::GitCommit { sha } => sha.clone(),
-                callisto_model::SourceIdentity::HermeticContent { .. } => panic!("test intent has a Git source"),
-            },
+            source_commit: slot.attestation_policy.workflow_commit.clone(),
         };
         ArtifactManifestV1::new(
             intent,
@@ -293,7 +315,7 @@ mod tests {
         assert!(calls[0]
             .1
             .windows(2)
-            .any(|args| args == ["--source-digest", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]));
+            .any(|args| args == ["--source-digest", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"]));
         assert!(calls[0].1.contains(&"--deny-self-hosted-runners".to_owned()));
     }
 

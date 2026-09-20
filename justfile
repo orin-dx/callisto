@@ -1,6 +1,6 @@
 # Default recipe: fast local CI pipeline (no coverage) via moon & just.
 # Use `just ci` explicitly for full CI parity including coverage.
-default: ci-fast
+default: ci
 
 # Build debug workspace binaries via moon
 build:
@@ -42,6 +42,23 @@ test-release-action-binary:
 test-ci:
     cargo nextest run --workspace --all-features --profile ci
     cargo test --doc --all-features
+
+# Execute the release lifecycle at the real CLI boundary with fake registry,
+# Git, forge, and attestation providers. This is deliberately separate from
+# broad workspace tests so PR CI makes the release behavior evidence visible.
+release-workflow-behavior:
+    bash .github/tests/release-workflow-behavior/run.sh
+
+# Re-captures the real provider responses under testing/fixtures/providers with
+# read-only network GETs. Manual: review the diff and update PROVENANCE.md.
+provider-fixtures:
+    bash testing/refresh-provider-fixtures.sh
+
+# Manual and network-dependent, so deliberately not part of `ci`: re-fetches the
+# live providers and asserts each fixture's SHAPE (status code, JSON key paths,
+# ls-remote line kinds) still matches; content is never compared.
+provider-contract:
+    bash testing/refresh-provider-fixtures.sh --check
 
 # Run Clippy lints (warnings treated as errors) as a single workspace invocation.
 # Moon's per-project `cargo clippy -p $project` tasks all lock the same shared
@@ -123,10 +140,8 @@ wasm-check:
 # it (--fail-under-lines). The human-readable summary is always emitted
 # before enforcing the threshold: LCOV output itself contains no aggregate
 # percentage, and a failed CI gate must say what developers need to improve.
-# Unset locally (informational only, matching ARCHITECTURE.md's "coverage
-# generation is a CI-only gate" note); CI calls `just coverage 90` -- this is
-# the one command both run, so a CI coverage failure always reproduces locally
-# with the exact same invocation.
+# Unset means informational only; `just ci` and CI both call `just coverage 90`,
+# so a CI coverage failure always reproduces locally with the same invocation.
 coverage threshold="":
     #!/usr/bin/env bash
     set -euo pipefail
@@ -187,13 +202,28 @@ hooks:
     @chmod +x .git/hooks/pre-push
     @echo "Git pre-commit and pre-push hooks installed successfully."
 
-# Run full local CI verification pipeline via moon and just
-ci: fmt-check lint test audit doc-check wasm-check coverage
+# Static security audit of workflows and actions (requires zizmor and ripgrep).
+zizmor:
+    zizmor --offline --strict-collection .
 
-# Same as `ci`, minus `coverage`. Real CI (callisto-ci.yml) already runs
-# coverage as its own parallel job on a separate runner; locally it's a
-# third full-workspace recompile under llvm-cov instrumentation tacked onto
-# the end of a serial pipeline. Use this for everyday pre-PR checks;
-# coverage numbers are a reporting concern, not something every local run
-# needs to regenerate.
-ci-fast: fmt-check lint test audit doc-check wasm-check
+# Credential-free release workflow contract, policy, and policy mutant checks.
+release-workflow-checks:
+    bash .github/tests/verify-release-workflow-contract.sh
+    bash .github/tests/verify-release-workflow-policy.sh
+    bash .github/tests/verify-release-workflow-policy.sh --self-test
+
+# Workflow Contracts CI job minus actionlint and zizmor: pins, release
+# contract/policy, artifact build script, the Release-PR action contract
+# under a minimal PATH, and the installer verification-mode tests.
+workflow-contracts: release-workflow-checks
+    bash .github/tests/verify-action-pins.sh
+    bash .github/tests/test-release-artifact-build-script.sh
+    env PATH=/usr/bin:/bin bash .github/actions/callisto-action/tests/test_release_pr_contract.sh
+    bash .github/actions/setup-callisto/tests/test_download_extraction_format.sh
+    bash .github/actions/setup-callisto/tests/test_crates_io_fallback.sh
+    bash .github/actions/setup-callisto-wasm/tests/test_verification_modes.sh
+
+# Every check CI runs except actionlint (Docker) and the binary-dependent
+# release-PR decide contract and artifact preflight build. CI runs them as
+# parallel jobs (callisto-ci.yml); locally they run in sequence.
+ci: fmt-check lint test audit doc-check wasm-check zizmor workflow-contracts release-workflow-behavior (coverage "90")

@@ -30,30 +30,34 @@ do not need to migrate anything -- that branch is a normal, continuously-updated
 going forward. An optional App or fine-grained token remains available for repositories that
 want release PR operations attributed to a different identity, but is never required.
 
-After a merge, the workflow derives a transient release intent from the signed merge commit's
-actual delta, builds from that exact commit, and passes the intent between jobs as a same-run
-GitHub artifact with a SHA-256 sidecar. It is not committed and it is never recovered from a
-cache. The execute job rechecks the handoff before calling `callisto release execute`.
+After a merge, the workflow derives a fresh release run from the exact merged source and
+pass its immutable handoff between jobs. A historical GitHub Actions rerun is never recovery:
+it uses the historical orchestration revision. Recovery must be a new run of current
+orchestration against an explicit merged release source.
 
-Create a GitHub Environment named `release` before enabling registry credentials. Configure
-at least one required reviewer and appropriate branch/tag deployment rules in the repository's
-Environment settings. The workflow queries the Environment API and fails if the reviewer rule
-is absent; the `environment: release` job boundary is what prevents registry secrets from being
-available to planning or build jobs.
+The merged, managed release PR is the sole approval boundary. Do not configure a separate
+GitHub Environment reviewer gate for this workflow. Keep registry credentials scoped only to
+the `execute` job, so planning and build jobs cannot read them.
 
 An administrator must also enable a branch-protection rule or ruleset on `main` that requires
 CODEOWNERS review. [`.github/CODEOWNERS`](../.github/CODEOWNERS) names the real owner for
 workflow and action changes, but GitHub does not enforce review merely because that file exists.
 
 Only the `execute` job may receive `CARGO_REGISTRY_TOKEN`, `NPM_TOKEN`, or `TWINE_PASSWORD`.
-Do not put those secrets at workflow scope, in build jobs, or in an action input. Binary releases
-add exact files plus `release-artifacts/manifest.json` to the build handoff; their GitHub build
-attestations are verified by Callisto before upload. Source-only releases do not need that
-manifest.
+Do not put those secrets at workflow scope, in build jobs, or in an action input.
+
+Recovery is derived from provider observation (registry, remote tag, forge release, assets), and
+binary assets are published to the GitHub Release. Local execution state and a green workflow are
+still not proof that a release exists; use the release receipt and independent provider checks as
+the completion evidence.
 
 `callisto-action` is now a compatibility version-PR action only. Its former `publish` and
 `create_github_release` inputs are ignored; it never publishes, tags, downloads artifacts, or
 creates a forge release. The repository durable workflow is the supported release path.
+
+The binding self-release contract, implementation batches, and cutover evidence are in
+[`SPEC-SELF-RELEASE-LIFECYCLE`](specs/SPEC-SELF-RELEASE-LIFECYCLE.json) and its
+[`implementation plan`](projects/SPEC-SELF-RELEASE-LIFECYCLE.json).
 
 ---
 
@@ -77,7 +81,7 @@ job, immediately before the command that publishes:
   env:
     NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-- run: callisto release execute --intent .release-intent/release-intent.json
+- run: callisto release execute --intent "$RUNNER_TEMP/release-intent/release-intent.json" --receipt "$RUNNER_TEMP/release-receipt.json" --orchestration-revision "$GITHUB_SHA"
 ```
 
 This works because `npm config set` writes to the user-level `.npmrc`, which the npm CLI
@@ -99,7 +103,7 @@ variable. Set `NODE_AUTH_TOKEN` in the job environment:
     node-version: '20'
     registry-url: 'https://registry.npmjs.org'
 
-- run: callisto release execute --intent .release-intent/release-intent.json
+- run: callisto release execute --intent "$RUNNER_TEMP/release-intent/release-intent.json" --receipt "$RUNNER_TEMP/release-receipt.json" --orchestration-revision "$GITHUB_SHA"
   env:
     NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 ```
@@ -144,7 +148,7 @@ detected from `napi.targets`/`[tool.maturin].targets`.
 
 ### Publish order
 
-`callisto publish` publishes in this fixed order: Rust crates → npm platform packages → npm
+`callisto release execute` publishes in this fixed order: Rust crates → npm platform packages → npm
 main packages → PyPI packages. Platform packages always publish before the main package that
 depends on them.
 
@@ -195,6 +199,11 @@ natively.
 ---
 
 ## Python (PyPI) Authentication
+
+PyPI applies to `callisto publish` only. The durable release lifecycle
+(`callisto release plan` / `execute`, see `07-self-release-lifecycle.md`) refuses a PyPI publish
+target at plan time: pip cannot distinguish a missing project from an unreachable index, so a PyPI
+version can never be proved absent and a durable release could never confirm one.
 
 Python publishing uses `twine upload`. Twine reads credentials from two environment
 variables: `TWINE_USERNAME` (set to `__token__` when using a PyPI API token) and
@@ -258,3 +267,22 @@ jobs:
         # This action only creates or updates the release PR. Registry tokens
         # belong exclusively in the protected execute job after merge.
 ```
+
+### Installer verification
+
+`setup-callisto` and `setup-callisto-wasm` verify a downloaded prebuilt asset with
+`gh attestation verify` (repository `orin-dx/callisto`, signer workflow
+`.github/workflows/callisto-release.yml`, using the job's `github.token`) before extracting or
+using it, and extract only the `callisto` binary from the archive. The `verification` input selects
+the behavior:
+
+- `require`: verification failure or a missing `gh` aborts the step; the asset is never run.
+- `fallback` (default): on failure or missing `gh`, warn, delete the asset and install from
+  crates.io (version pinned to the requested tag; unpinned only for `latest`). The unverified asset
+  is never run. For `setup-callisto-wasm`, which has no source-install alternative, `fallback`
+  behaves like `require`.
+- `skip`: no verification; warn and use the asset.
+
+Any other value fails immediately. `fallback` is the default because releases built before the
+first attested release carry no attestation, so `require` would hard-fail existing users; a
+tampered asset is never run in `require` or `fallback`.

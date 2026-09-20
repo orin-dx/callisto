@@ -1,8 +1,6 @@
 use std::path::Path;
 use std::time::Duration;
 
-use crate::registry::{known_credential_env_values, redact_known_secrets};
-
 /// The minimum `git` version callisto supports, as a [`semver::VersionReq`] grammar string
 /// consumed directly by [`check_git_version`] — the single place this floor is defined, so
 /// the requirement used for the actual comparison and the one rendered in
@@ -106,12 +104,10 @@ impl CommandOutput {
     /// its own error output, and that text flows into `--format json` and
     /// miette diagnostic output downstream.
     ///
-    /// The single shared definition of "how do we redact a subprocess's
-    /// stderr in this workspace" -- composes [`redact_known_secrets`] and
-    /// [`known_credential_env_values`] once here instead of each caller
-    /// reimplementing the same one-line composition locally.
+    /// Delegates to [`crate::redact_command_stderr`], the single shared
+    /// definition of how this workspace redacts subprocess stderr.
     pub fn redacted_stderr(&self) -> String {
-        redact_known_secrets(&self.stderr, &known_credential_env_values(std::env::vars()))
+        crate::registry::redact_command_stderr(&self.stderr)
     }
 }
 

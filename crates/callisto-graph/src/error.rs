@@ -519,6 +519,87 @@ pub enum GraphError {
         )
     )]
     ReleaseInvariant { detail: String },
+
+    #[error("release execution is incomplete: {count} operation(s) lack verified terminal success")]
+    #[diagnostic(
+        code(E172),
+        help("Use release reconcile to inspect the exact incomplete operations; do not treat this release as successful.")
+    )]
+    ReleaseIncomplete { count: usize },
+
+    #[error("artifact repository `{configured}` does not match the prepared GitHub push remote `{remote}`")]
+    #[diagnostic(
+        code(E175),
+        help("Use the repository derived from the trusted Git remote; Callisto will not upload product assets to a caller-selected repository.")
+    )]
+    ReleaseArtifactRepositoryMismatch {
+        configured: callisto_model::GitHubRepository,
+        remote: callisto_model::GitHubRepository,
+    },
+
+    #[error(
+        "cannot safely resume release operation `{operation:?}` because its provider observation is {observation:?}"
+    )]
+    #[diagnostic(
+        code(E173),
+        help(
+            "Do not retry this effect. Resolve the provider state or add an exact provider observer before resuming the immutable release intent."
+        )
+    )]
+    ReleaseRecoveryUnresolved {
+        operation: Box<callisto_model::ReleaseOperationId>,
+        observation: Box<callisto_model::ProviderObservationV1>,
+    },
+
+    #[error("release run envelope is not valid for this intent: {source}")]
+    #[diagnostic(
+        code(E178),
+        help("Re-plan the release intent, or run execute with the orchestration revision, profile and artifact manifest the intent was planned against.")
+    )]
+    ReleaseRunEnvelope {
+        source: callisto_model::ReleaseRunEnvelopeError,
+    },
+
+    #[error("provider observation is not usable as release evidence: {source}")]
+    #[diagnostic(
+        code(E177),
+        help("This is an internal callisto defect: a provider adapter produced evidence that does not belong to the operation's role. Report it with the full error detail.")
+    )]
+    ReleaseProviderObservation {
+        source: callisto_model::ProviderObservationError,
+    },
+
+    #[error("cannot dispatch release operation `{operation:?}` because its provider observation is indeterminate")]
+    #[diagnostic(
+        code(E176),
+        help(
+            "Restore provider credentials or connectivity, then retry. Callisto will not dispatch an effect while it cannot determine the remote identity."
+        )
+    )]
+    ReleaseProviderIndeterminate {
+        operation: Box<callisto_model::ReleaseOperationId>,
+    },
+
+    #[error("registry version already exists for `{package}` at {version}")]
+    #[diagnostic(
+        code(E174),
+        help(
+            "Do not publish this version again. Verify the release history and choose an explicitly selected recovery run only if the immutable intent matches the existing release."
+        )
+    )]
+    ReleaseRegistryVersionExists {
+        package: String,
+        version: callisto_model::Version,
+    },
+
+    #[error("release profile `{profile}` is not configured")]
+    #[diagnostic(
+        code(E198),
+        help(
+            "Define it under [release.profiles.{profile}] in the workspace config; without a [release] section only the default `production` profile is valid."
+        )
+    )]
+    ReleaseProfileUnknown { profile: String },
 }
 
 /// Why a workspace package that a `--package` filter named is nonetheless
@@ -538,7 +619,14 @@ pub enum NotInPlanReason {
 /// crate could not parse.
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum CommandFailure {
-    #[error("exited with status {exit_code:?}: {stderr}")]
+    /// `stderr` is held raw so failure classification keeps matching on the
+    /// client's exact words; redaction happens on the way out, because this
+    /// `Display` is the only route by which it reaches a diagnostic, a JSON
+    /// report, or a release receipt.
+    #[error(
+        "exited with status {exit_code:?}: {}",
+        callisto_model::redact_command_stderr(stderr)
+    )]
     NonZeroExit { exit_code: Option<i32>, stderr: String },
     #[error("produced malformed output: {detail}")]
     MalformedOutput { detail: String },
@@ -580,8 +668,14 @@ pub enum RemoteConflict {
     ForgeReleaseDiffers,
     #[error("a forge release was created but was not observed afterward")]
     ForgeReleaseNotObservedAfterCreate,
-    #[error("the forge API returned an unexpected status")]
-    ForgeApiStatus,
+    #[error("a forge release was published but was not observed as published afterward")]
+    ForgeReleaseNotObservedAfterPublish,
+    #[error("a release asset already exists with a different digest or length")]
+    ArtifactDiffers,
+    #[error("an uploaded release asset was not observed afterward")]
+    ArtifactNotObservedAfterUpload,
+    #[error("the registry holds this version but not the identity this intent authorized")]
+    RegistryVersionDiffers,
 }
 
 /// A release feature with no implemented dispatch for the given
@@ -626,6 +720,16 @@ pub enum ReleasePreconditionRequirement {
     ChangelogConfigured,
     #[error("a provided artifact manifest")]
     ArtifactManifestProvided,
+    #[error("a verified artifact manifest")]
+    VerifiedArtifactManifest,
+    #[error("a provider that can observe what it publishes")]
+    ObservableProvider,
+    #[error(
+        "a registry client that can prove a version absent; pip cannot distinguish a missing PyPI project \
+         from an unreachable index, so durable release does not support PyPI -- publish it outside durable \
+         release, or wait for a reliable PyPI observation"
+    )]
+    ObservableRegistryClient,
 }
 
 #[cfg(test)]
@@ -731,9 +835,70 @@ pub enum ConfigError {
     )]
     InvalidChangelogPath { pattern: String, value: String },
 
+    #[error("invalid product release configuration: {detail}")]
+    #[diagnostic(
+        code(E197),
+        help("Configure one supported product package and all four required artifact targets.")
+    )]
+    InvalidProductRelease { detail: String },
+
     #[error(transparent)]
     Tag(#[from] TagTemplateError),
 
     #[error(transparent)]
     VersionParse(#[from] VersionParseError),
+}
+
+#[cfg(test)]
+mod redaction_tests {
+    use super::*;
+
+    /// A failing registry client echoes the token it was handed. That stderr
+    /// reaches a miette diagnostic, `--format json`, and the CI step summary
+    /// through this `Display`, so the credential must not survive it -- for
+    /// every env var name the release path actually passes.
+    #[test]
+    fn non_zero_exit_display_redacts_release_path_credentials() {
+        for (name, secret) in [
+            ("CARGO_REGISTRY_TOKEN", "cio-secret-token-value"),
+            ("GH_TOKEN", "ghp-secret-token-value"),
+            ("NPM_TOKEN", "npm-secret-token-value"),
+        ] {
+            std::env::set_var(name, secret);
+            let error = GraphError::ReleaseCommand {
+                program: "cargo".to_owned(),
+                args: vec!["publish".to_owned()],
+                failure: CommandFailure::NonZeroExit {
+                    exit_code: Some(1),
+                    stderr: format!("error: failed to authenticate with token {secret}\n"),
+                },
+            };
+            let rendered = error.to_string();
+            std::env::remove_var(name);
+            assert!(
+                !rendered.contains(secret),
+                "{name} value survived into the diagnostic: {rendered}"
+            );
+            assert!(
+                rendered.contains("[REDACTED]"),
+                "{name} value must be replaced by the redaction marker: {rendered}"
+            );
+            assert!(
+                rendered.contains("failed to authenticate"),
+                "redaction must keep the surrounding diagnostic text: {rendered}"
+            );
+        }
+    }
+
+    /// An authenticated remote URL is the leak shape that needs no env var to
+    /// be set, so it is redacted independently of the token list.
+    #[test]
+    fn non_zero_exit_display_redacts_url_userinfo() {
+        let failure = CommandFailure::NonZeroExit {
+            exit_code: Some(128),
+            stderr: "fatal: could not read from https://x-access-token:ghs_live@github.com/o/r\n".to_owned(),
+        };
+        let rendered = failure.to_string();
+        assert!(!rendered.contains("ghs_live"), "userinfo survived: {rendered}");
+    }
 }

@@ -140,3 +140,100 @@ fn ac13_diagnostic_code_enum_gains_only_changelog_read_error() {
         "DiagnosticCode schema must gain exactly one new variant: ambiguous-package-name"
     );
 }
+
+/// The durable release wire types are versioned: a change to either shape
+/// without a `SCHEMA_VERSION` bump is a silent break for state and receipts
+/// written by an earlier release. Both are at version 2 (the run envelope
+/// moved inside the state, and receipt observations now carry evidence).
+#[test]
+fn durable_release_wire_shapes_match_their_schema_version() {
+    let receipt = run_schema("release-receipt");
+    let (req, props) = required_and_props(&receipt);
+    let expected = set(&["schemaVersion", "intentDigest", "envelope", "outcomes", "observations"]);
+    assert_eq!(req, expected);
+    assert_eq!(props, expected);
+
+    let state = run_schema("release-state");
+    let (req, props) = required_and_props(&state);
+    let expected = set(&["schemaVersion", "intentDigest", "envelope", "operations"]);
+    assert_eq!(req, expected);
+    assert_eq!(props, expected);
+}
+
+/// The operation role is the durable DAG's vocabulary: a persisted state or
+/// receipt names every operation by it. `forgePublish` is the role that makes
+/// publication the last forge step, after every `artifactUpload`.
+#[test]
+fn release_operation_roles_carry_exactly_their_declared_variants() {
+    let state = run_schema("release-state");
+    let variants: BTreeSet<String> = state["definitions"]["ReleaseOperationRole"]["oneOf"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|variant| {
+            variant["properties"]["kind"]["enum"][0]
+                .as_str()
+                .expect("every role variant names itself")
+                .to_owned()
+        })
+        .collect();
+    assert_eq!(
+        variants,
+        set(&[
+            "registryPublish",
+            "tag",
+            "forgeRelease",
+            "artifactUpload",
+            "forgePublish",
+        ])
+    );
+}
+
+/// Both observation enums are closed and persisted in receipts and state, so a
+/// reader from an earlier release must be able to name every value it can meet.
+/// Adding one is intentional and belongs here; losing one silently is not.
+#[test]
+fn provider_observation_enums_carry_exactly_their_declared_variants() {
+    let receipt = run_schema("release-receipt");
+    let variants = |name: &str| -> BTreeSet<String> {
+        receipt["definitions"][name]["oneOf"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|variant| {
+                variant["enum"]
+                    .get(0)
+                    .or_else(|| variant["properties"]["kind"]["enum"].get(0))
+                    .and_then(serde_json::Value::as_str)
+                    .expect("every variant names itself")
+                    .to_owned()
+            })
+            .collect()
+    };
+
+    assert_eq!(
+        variants("ProviderConflictReason"),
+        set(&[
+            "localTagDiffers",
+            "remoteTagTargetDiffers",
+            "unannotatedTag",
+            "forgeReleaseDiffers",
+            "forgeReleasePrereleaseDiffers",
+            "artifactAssetDiffers",
+            "duplicateArtifactAsset",
+            "registryVersionYanked",
+        ])
+    );
+    assert_eq!(
+        variants("ProviderIndeterminateCause"),
+        set(&[
+            "unsupportedProvider",
+            "providerStatus",
+            "commandFailed",
+            "malformedResponse",
+            "timeout",
+            "registryVersionUnverified",
+            "artifactManifestUnavailable",
+        ])
+    );
+}

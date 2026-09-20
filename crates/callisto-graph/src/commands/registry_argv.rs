@@ -7,8 +7,7 @@
 //! never a [`callisto_model::CommandRunner`] call of its own) and *what did
 //! the finished command's output mean*. Actually invoking the command, and
 //! any retry/backoff policy around a failed attempt, is the caller's job --
-//! see [`super::release::ValidatedReleaseIntent::dispatch_prepared`], the
-//! durable release executor's single production publish path.
+//! see the durable release executor's single production publish path.
 //!
 //! A small amount of local filesystem reading happens here (the Cargo
 //! on-disk version check, npm package-manager detection from lockfiles) --
@@ -186,10 +185,14 @@ pub fn detect_npm_package_manager(workspace_root: &Path) -> NpmPackageManager {
 ///
 /// | Package manager | Program | Base args                                  |
 /// |------------------|---------|--------------------------------------------|
-/// | Pnpm             | `pnpm`  | `publish --filter <name> --no-git-checks`  |
+/// | Pnpm             | `pnpm`  | `publish --filter=<name> --no-git-checks`  |
 /// | Yarn             | `yarn`  | `workspace <name> npm publish`             |
 /// | Bun              | `bun`   | `publish` (run from `package_dir`)         |
-/// | Npm              | `npm`   | `publish --workspace <name>`               |
+/// | Npm              | `npm`   | `publish --workspace=<name>`               |
+///
+/// `--filter=`/`--workspace=` use the joined form so the name cannot be
+/// re-read as an option. Yarn takes the name positionally and has no joined
+/// spelling, so there it rests on `ReleasePackageId`'s leading-`-` rejection.
 ///
 /// `tag`/`access`/`registry` are appended to every variant's base args.
 /// `package_dir` is only used for bun: it has no `--filter`/`--workspace`
@@ -229,8 +232,10 @@ pub fn npm_publish_argv(
             "pnpm",
             vec![
                 "publish".to_string(),
-                "--filter".to_string(),
-                package_name.to_string(),
+                // `--filter=<name>`, not `--filter <name>`: the joined form
+                // cannot be re-read as an option even if a name slipped past
+                // `ReleasePackageId`'s charset rule.
+                format!("--filter={package_name}"),
                 // pnpm >= 7 refuses to publish from a dirty working tree by
                 // default. After `callisto version` stages manifest bumps,
                 // the tree is always dirty until the operator commits, so
@@ -252,11 +257,7 @@ pub fn npm_publish_argv(
         NpmPackageManager::Bun => ("bun", vec!["publish".to_string()], workspace_root.join(package_dir)),
         NpmPackageManager::Npm => (
             "npm",
-            vec![
-                "publish".to_string(),
-                "--workspace".to_string(),
-                package_name.to_string(),
-            ],
+            vec!["publish".to_string(), format!("--workspace={package_name}")],
             workspace_root.to_path_buf(),
         ),
     };
@@ -404,24 +405,6 @@ pub(crate) fn classify_cargo_output(output: &CommandOutput) -> Result<PublishOut
     }
     Err(RegistryError::Other(format!(
         "cargo publish failed (exit {:?}): {}",
-        output.exit_code,
-        output.redacted_stderr().trim()
-    )))
-}
-
-/// Classifies `cargo info <pkg>@<version>` output into whether the registry
-/// confirms that version is published. An ambiguous failure (not a clear
-/// "not found") is surfaced as an error, never read as "not published".
-pub(crate) fn classify_cargo_info_output(output: &CommandOutput) -> Result<bool, RegistryError> {
-    if output.success() {
-        return Ok(true);
-    }
-    let combined = combined_lower(output);
-    if combined.contains("could not find") {
-        return Ok(false);
-    }
-    Err(RegistryError::Other(format!(
-        "cargo info failed (exit {:?}): {}",
         output.exit_code,
         output.redacted_stderr().trim()
     )))
@@ -629,7 +612,7 @@ mod tests {
             None,
         );
         assert_eq!(argv.program, "pnpm");
-        assert_eq!(argv.args, vec!["publish", "--filter", "pkg-a", "--no-git-checks"]);
+        assert_eq!(argv.args, vec!["publish", "--filter=pkg-a", "--no-git-checks"]);
         assert_eq!(argv.cwd, Path::new("/workspace"));
     }
 
@@ -677,7 +660,7 @@ mod tests {
             None,
         );
         assert_eq!(argv.program, "npm");
-        assert_eq!(argv.args, vec!["publish", "--workspace", "pkg-a"]);
+        assert_eq!(argv.args, vec!["publish", "--workspace=pkg-a"]);
     }
 
     #[test]
@@ -695,8 +678,7 @@ mod tests {
             argv.args,
             vec![
                 "publish",
-                "--workspace",
-                "pkg-a",
+                "--workspace=pkg-a",
                 "--tag",
                 "next",
                 "--access",
@@ -800,31 +782,6 @@ mod tests {
             "secret must be redacted from error message, got: {err}"
         );
         std::env::remove_var("CARGO_REGISTRY_TOKEN");
-    }
-
-    #[test]
-    fn classify_cargo_info_output_success_confirms_published() {
-        let out = output(0, "demo\nversion: 1.0.0", "");
-        assert_eq!(classify_cargo_info_output(&out), Ok(true));
-    }
-
-    #[test]
-    fn classify_cargo_info_output_not_found_is_not_yet_published() {
-        let out = output(
-            101,
-            "",
-            "error: could not find `demo@1.0.0` in registry `https://github.com/rust-lang/crates.io-index`",
-        );
-        assert_eq!(classify_cargo_info_output(&out), Ok(false));
-    }
-
-    #[test]
-    fn classify_cargo_info_output_other_failure_is_an_error_not_a_false() {
-        let out = output(1, "", "error: failed to update the registry index: network timeout");
-        match classify_cargo_info_output(&out) {
-            Err(RegistryError::Other(_)) => {}
-            other => panic!("ambiguous failure must not read as 'not published', got {other:?}"),
-        }
     }
 
     #[test]
