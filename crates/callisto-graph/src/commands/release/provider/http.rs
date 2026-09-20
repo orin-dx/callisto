@@ -14,7 +14,7 @@ use callisto_model::{CommandOutput, CommandRunner};
 use crate::error::CommandFailure;
 use crate::GraphError;
 
-use super::policy::timeouts;
+use super::policy::{programs, timeouts};
 
 /// One parsed HTTP response.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -82,7 +82,7 @@ pub(crate) fn http_get(runner: &dyn CommandRunner, cwd: &Path, url: &str) -> Res
         "--url",
         url,
     ];
-    let output = runner.run_quiet("curl", &args, cwd, timeouts::REGISTRY_QUERY)?;
+    let output = runner.run_quiet(programs::CURL, &args, cwd, timeouts::REGISTRY_QUERY)?;
     classify_curl_output(&args, &output)
 }
 
@@ -110,7 +110,7 @@ fn classify_curl_output(args: &[&str], output: &CommandOutput) -> Result<HttpOut
 
 fn curl_failure(args: &[&str], failure: CommandFailure) -> GraphError {
     GraphError::ReleaseCommand {
-        program: "curl".to_owned(),
+        program: programs::CURL.to_owned(),
         args: args.iter().map(ToString::to_string).collect(),
         failure,
     }

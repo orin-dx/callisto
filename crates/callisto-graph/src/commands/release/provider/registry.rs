@@ -12,7 +12,7 @@ use crate::GraphError;
 
 use super::super::binding::RegistryProtocol;
 use super::http::{http_get, HttpOutcome, HttpResponse, TransportFailure};
-use super::policy::{self, require_registry_confirmation, timeouts, Attempt};
+use super::policy::{self, programs, require_registry_confirmation, timeouts, Attempt};
 use super::{
     wrong_role, EffectAuthorization, PreparedOperation, ProviderCapabilities, ProviderContext, ProviderRequest,
     RegistryPublishOperation, ReleasePreflight, ReleaseProvider,
@@ -403,7 +403,7 @@ impl RegistryEcosystem for NpmRegistry {
         }
         let output = context
             .runner()
-            .run_quiet("npm", &args, context.root(), timeouts::REGISTRY_QUERY)?;
+            .run_quiet(programs::NPM, &args, context.root(), timeouts::REGISTRY_QUERY)?;
         if output.success() {
             return Ok(if output.stdout_trimmed().is_empty() {
                 settled(ProviderObservationV1::Absent)

@@ -11,7 +11,7 @@ use super::super::github::{
     github_release_endpoint, github_release_for_tag, malformed_github_response, GitHubReleaseLookup,
 };
 use super::forge::observed_draft_or_published_release;
-use super::policy::timeouts;
+use super::policy::{programs, timeouts};
 use super::{
     confirmed_evidence, wrong_role, ArtifactUploadOperation, EffectAuthorization, PreparedOperation,
     ProviderCapabilities, ProviderContext, ProviderRequest, ReleaseProvider,
@@ -78,12 +78,13 @@ impl ReleaseProvider for ArtifactUploadProvider {
             "--repo",
             repository.as_str(),
         ];
-        let uploaded = context
-            .runner()
-            .run_with_timeout("gh", &args, context.root(), timeouts::FORGE_ASSET_UPLOAD)?;
+        let uploaded =
+            context
+                .runner()
+                .run_with_timeout(programs::GH, &args, context.root(), timeouts::FORGE_ASSET_UPLOAD)?;
         if !uploaded.success() {
             return Err(GraphError::ReleaseCommand {
-                program: "gh".to_owned(),
+                program: programs::GH.to_owned(),
                 args: args.iter().map(ToString::to_string).collect(),
                 failure: CommandFailure::NonZeroExit {
                     exit_code: uploaded.exit_code,

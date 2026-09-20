@@ -11,7 +11,7 @@ use crate::error::CommandFailure;
 use crate::GraphError;
 
 use super::provider::http::{parse_http_response, HttpResponse};
-use super::provider::policy::{retry_observation, timeouts, Attempt, Sleeper};
+use super::provider::policy::{programs, retry_observation, timeouts, Attempt, Sleeper};
 
 /// One GitHub release lookup, shared by the forge-release and asset adapters.
 #[derive(Debug)]
@@ -133,7 +133,7 @@ pub(crate) fn github_release_for_tag(
 
 pub(crate) fn malformed_github_response(endpoint: &str, detail: &str) -> GraphError {
     GraphError::ReleaseCommand {
-        program: "gh".to_owned(),
+        program: programs::GH.to_owned(),
         args: github_release_api_args(endpoint)
             .iter()
             .map(ToString::to_string)
@@ -150,8 +150,8 @@ fn github_api_get_once(
     endpoint: &str,
 ) -> Result<Attempt<GitHubReleaseLookup>, GraphError> {
     let api_args = github_release_api_args(endpoint);
-    let observed = runner.run_with_timeout("gh", &api_args, root, timeouts::FORGE_API)?;
-    let response = github_api_response("gh", &api_args, &observed)?;
+    let observed = runner.run_with_timeout(programs::GH, &api_args, root, timeouts::FORGE_API)?;
+    let response = github_api_response(programs::GH, &api_args, &observed)?;
     if let Some(lookup) = github_release_response_status(response.status) {
         return Ok(
             if matches!(response.status, 429 | 500..=599) || (response.status == 403 && response.is_rate_limited()) {
@@ -166,7 +166,7 @@ fn github_api_get_once(
     }
     let value: serde_json::Value =
         serde_json::from_str(&response.body).map_err(|error| GraphError::ReleaseCommand {
-            program: "gh".to_string(),
+            program: programs::GH.to_string(),
             args: api_args.iter().map(ToString::to_string).collect(),
             failure: CommandFailure::MalformedOutput {
                 detail: error.to_string(),

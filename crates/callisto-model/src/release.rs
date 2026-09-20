@@ -1088,6 +1088,9 @@ pub enum ReleaseOperationError {
     MismatchedArtifactSlot,
 }
 
+/// The one workflow whose runs may attest release artifacts; CI asserts the file exists here.
+pub const RELEASE_COORDINATOR_WORKFLOW_PATH: &str = ".github/workflows/callisto-release.yml";
+
 /// Immutable GitHub provenance policy declared by a binary release slot.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]

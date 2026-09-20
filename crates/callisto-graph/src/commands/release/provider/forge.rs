@@ -10,7 +10,7 @@ use crate::error::{CommandFailure, RemoteConflict};
 use crate::GraphError;
 
 use super::super::github::{github_release_for_tag, GitHubReleaseLookup};
-use super::policy::timeouts;
+use super::policy::{programs, timeouts};
 use super::{
     confirmed_evidence, wrong_role, EffectAuthorization, ForgePublishOperation, ForgeReleaseOperation,
     PreparedOperation, ProviderCapabilities, ProviderContext, ProviderRequest, ReleaseProvider,
@@ -154,12 +154,14 @@ enum Draft {
 }
 
 fn run_gh(context: &ProviderContext<'_>, args: &[&str], timeout: std::time::Duration) -> Result<(), GraphError> {
-    let output = context.runner().run_with_timeout("gh", args, context.root(), timeout)?;
+    let output = context
+        .runner()
+        .run_with_timeout(programs::GH, args, context.root(), timeout)?;
     if output.success() {
         return Ok(());
     }
     Err(GraphError::ReleaseCommand {
-        program: "gh".to_owned(),
+        program: programs::GH.to_owned(),
         args: args.iter().map(ToString::to_string).collect(),
         failure: CommandFailure::NonZeroExit {
             exit_code: output.exit_code,

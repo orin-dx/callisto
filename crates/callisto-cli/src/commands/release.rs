@@ -40,25 +40,18 @@ pub fn handle(args: ReleaseArgs, global: &GlobalArgs) -> Result<ExitCode, CliErr
 
 fn artifact_manifest(args: ReleaseArtifactManifestArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
     if global.dry_run {
-        return Err(CliError::Other(
-            "release artifact-manifest needs an output file; remove --dry-run because it records build output"
-                .to_owned(),
-        ));
+        return Err(CliError::ReleaseArtifactManifestDryRun);
     }
     let intent = read_intent(&args.intent)?;
     if intent.artifact_slots.is_empty() {
-        return Err(CliError::Other(
-            "release intent declares no binary artifact slots; no artifact manifest can be created".to_owned(),
-        ));
+        return Err(CliError::ReleaseNoArtifactSlots);
     }
     let root = args.artifact_dir.canonicalize().map_err(|source| CliError::Io {
         source,
         path: Some(args.artifact_dir.clone()),
     })?;
     if !matches!(intent.snapshot.source, callisto_model::SourceIdentity::GitCommit { .. }) {
-        return Err(CliError::Other(
-            "artifact manifests require a Git commit release source".to_owned(),
-        ));
+        return Err(CliError::ReleaseManifestSourceNotGit);
     }
     let mut entries = Vec::with_capacity(intent.artifact_slots.len());
     for slot in &intent.artifact_slots {
@@ -68,22 +61,20 @@ fn artifact_manifest(args: ReleaseArtifactManifestArgs, global: &GlobalArgs) -> 
             path: Some(path.clone()),
         })?;
         if metadata.file_type().is_symlink() || !metadata.is_file() {
-            return Err(CliError::Other(format!(
-                "artifact `{}` must be a regular file directly in `{}`",
-                slot.asset_name,
-                root.display()
-            )));
+            return Err(CliError::ReleaseArtifactNotRegularFile {
+                asset: slot.asset_name.to_string(),
+                dir: root.display().to_string(),
+            });
         }
         let canonical = path.canonicalize().map_err(|source| CliError::Io {
             source,
             path: Some(path.clone()),
         })?;
         if !canonical.starts_with(&root) {
-            return Err(CliError::Other(format!(
-                "artifact `{}` resolves outside `{}`",
-                slot.asset_name,
-                root.display()
-            )));
+            return Err(CliError::ReleaseArtifactEscapesDirectory {
+                asset: slot.asset_name.to_string(),
+                dir: root.display().to_string(),
+            });
         }
         let file = std::fs::File::open(&canonical).map_err(|source| CliError::Io {
             source,
@@ -106,8 +97,9 @@ fn artifact_manifest(args: ReleaseArtifactManifestArgs, global: &GlobalArgs) -> 
             },
         });
     }
-    let manifest = ArtifactManifestV1::new(&intent, entries)
-        .map_err(|error| CliError::Other(format!("cannot create artifact manifest: {error}")))?;
+    let manifest = ArtifactManifestV1::new(&intent, entries).map_err(|error| CliError::ReleaseManifestInvalid {
+        detail: error.to_string(),
+    })?;
     let permit = ApplyPermit::granted_unless_dry_run(false).expect("non-dry-run permits writes");
     let content = serde_json::to_string_pretty(&manifest).expect("artifact manifest serializes") + "\n";
     callisto_model::atomic::atomic_write(&args.out, &content, &permit).map_err(|source| CliError::Io {
@@ -123,19 +115,21 @@ fn artifact_manifest(args: ReleaseArtifactManifestArgs, global: &GlobalArgs) -> 
 
 fn plan(args: ReleasePlanArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
     if global.dry_run {
-        return Err(CliError::Other(
-            "release plan needs an output file; remove --dry-run because planning is already read-only".to_string(),
-        ));
+        return Err(CliError::ReleasePlanDryRun);
     }
     let runner = CliCommandRunner;
-    let profile = ReleaseProfileId::parse(&args.profile)
-        .map_err(|error| CliError::Other(format!("invalid release profile `{}`: {error}", args.profile)))?;
+    let profile = ReleaseProfileId::parse(&args.profile).map_err(|error| CliError::ReleaseProfileInvalid {
+        profile: args.profile.clone(),
+        detail: error.to_string(),
+    })?;
     let source_global = source_global(global, args.source_root.as_deref());
     let workspace = load_workspace(&source_global, &runner)?;
     let decision = match args.from_release_commit.as_deref() {
         Some(raw) => {
-            let commit = callisto_model::CommitSha::parse(raw)
-                .map_err(|error| CliError::Other(format!("invalid merged release commit `{raw}`: {error}")))?;
+            let commit = callisto_model::CommitSha::parse(raw).map_err(|error| CliError::ReleaseCommitInvalid {
+                raw: raw.to_owned(),
+                detail: error.to_string(),
+            })?;
             let decision_path = args
                 .decision
                 .as_deref()
@@ -152,22 +146,19 @@ fn plan(args: ReleasePlanArgs, global: &GlobalArgs) -> Result<ExitCode, CliError
                 })?;
                 decision_path
                     .strip_prefix(&workspace.root)
-                    .map_err(|_outside_source| {
-                        CliError::Other(format!(
-                            "release decision {} must be inside selected source root {}",
-                            decision_path.display(),
-                            workspace.root.display()
-                        ))
+                    .map_err(|_outside_source| CliError::ReleaseDecisionOutsideSource {
+                        decision: decision_path.display().to_string(),
+                        root: workspace.root.display().to_string(),
                     })?
                     .to_path_buf()
             } else {
                 decision_path.to_path_buf()
             };
             let decision_path = callisto_model::workspace_relative(&decision_path).map_err(|error| {
-                CliError::Other(format!(
-                    "invalid release decision path {}: {error}",
-                    decision_path.display()
-                ))
+                CliError::ReleaseDecisionPathInvalid {
+                    path: decision_path.display().to_string(),
+                    detail: error.to_string(),
+                }
             })?;
             derive_release_commit_decision(&workspace, &commit, &decision_path)?
         }
@@ -176,10 +167,9 @@ fn plan(args: ReleasePlanArgs, global: &GlobalArgs) -> Result<ExitCode, CliError
                 .packages
                 .iter()
                 .map(|raw| {
-                    ReleasePackageId::parse(raw).map_err(|error| {
-                        CliError::Other(format!(
-                            "invalid release package `{raw}`: {error}; use an exact ecosystem-qualified identity such as cargo/callisto-cli"
-                        ))
+                    ReleasePackageId::parse(raw).map_err(|error| CliError::ReleasePackageInvalid {
+                        raw: raw.clone(),
+                        detail: error.to_string(),
                     })
                 })
                 .collect::<Result<Vec<_>, _>>()?;
@@ -196,10 +186,18 @@ fn plan(args: ReleasePlanArgs, global: &GlobalArgs) -> Result<ExitCode, CliError
         &args.artifact_repository,
     ) {
         (Some(_), Some(revision), Some(repository)) => {
-            let workflow_commit = callisto_model::CommitSha::parse(revision)
-                .map_err(|error| CliError::Other(format!("invalid orchestration revision `{revision}`: {error}")))?;
-            let repository = callisto_model::GitHubRepository::parse(repository)
-                .map_err(|error| CliError::Other(format!("invalid artifact repository `{repository}`: {error}")))?;
+            let workflow_commit = callisto_model::CommitSha::parse(revision).map_err(|error| {
+                CliError::ReleaseOrchestrationRevisionInvalid {
+                    revision: revision.clone(),
+                    detail: error.to_string(),
+                }
+            })?;
+            let repository = callisto_model::GitHubRepository::parse(repository).map_err(|error| {
+                CliError::ReleaseArtifactRepositoryInvalid {
+                    repository: repository.clone(),
+                    detail: error.to_string(),
+                }
+            })?;
             // Profile existence is validated by the graph; only the destination match lives here.
             if let Some(configured) = workspace
                 .config
@@ -208,12 +206,11 @@ fn plan(args: ReleasePlanArgs, global: &GlobalArgs) -> Result<ExitCode, CliError
                 .and_then(|release| release.profile(&profile))
                 .filter(|configured| configured.forge_repository != repository)
             {
-                return Err(CliError::Other(format!(
-                    "release profile `{}` targets forge repository `{}`, not `{}`",
-                    profile.as_str(),
-                    configured.forge_repository.as_slug(),
-                    repository.as_slug()
-                )));
+                return Err(CliError::ReleaseProfileRepositoryMismatch {
+                    profile: profile.as_str().to_owned(),
+                    configured: configured.forge_repository.as_slug().to_string(),
+                    requested: repository.as_slug().to_string(),
+                });
             }
             build_release_intent_with_artifacts(
                 &workspace.root,
@@ -224,15 +221,13 @@ fn plan(args: ReleasePlanArgs, global: &GlobalArgs) -> Result<ExitCode, CliError
                 ExecutionTrustProfileV1::GitCommit,
                 callisto_graph::commands::ArtifactBuildPolicy {
                     repository,
-                    workflow_path: ".github/workflows/callisto-release.yml".to_owned(),
+                    workflow_path: callisto_model::RELEASE_COORDINATOR_WORKFLOW_PATH.to_owned(),
                     workflow_commit,
                 },
             )?
         }
         (Some(_), _, _) => {
-            return Err(CliError::Other(
-                "product release planning requires --orchestration-revision and --artifact-repository".to_owned(),
-            ));
+            return Err(CliError::ReleaseOrchestrationFlagsRequired);
         }
         (None, revision, repository) => {
             // The release workflow always passes both flags, including for sources predating [release].
@@ -295,27 +290,23 @@ fn reconcile(args: ReleaseReconcileArgs, global: &GlobalArgs) -> Result<ExitCode
 fn execute(args: ReleaseExecuteArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
     // Every input is validated and the receipt destination probed before the first effect, so a
     // late failure cannot leave published crates, tags or releases without a receipt.
-    let permit = ApplyPermit::granted_unless_dry_run(global.dry_run).ok_or_else(|| {
-        CliError::Other(
-            "release execute cannot run with --dry-run; use release reconcile for a read-only readiness check"
-                .to_string(),
-        )
-    })?;
+    let permit = ApplyPermit::granted_unless_dry_run(global.dry_run).ok_or(CliError::ReleaseExecuteDryRun)?;
     let intent = read_intent(&args.intent)?;
-    let selected_profile = ReleaseProfileId::parse(&args.profile)
-        .map_err(|error| CliError::Other(format!("invalid release profile `{}`: {error}", args.profile)))?;
+    let selected_profile = ReleaseProfileId::parse(&args.profile).map_err(|error| CliError::ReleaseProfileInvalid {
+        profile: args.profile.clone(),
+        detail: error.to_string(),
+    })?;
     if selected_profile != intent.profile {
-        return Err(CliError::Other(format!(
-            "release execute profile `{}` does not match immutable intent profile `{}`",
-            selected_profile.as_str(),
-            intent.profile.as_str()
-        )));
+        return Err(CliError::ReleaseProfileMismatch {
+            selected: selected_profile.as_str().to_owned(),
+            intent: intent.profile.as_str().to_owned(),
+        });
     }
     let orchestration_revision = callisto_model::CommitSha::parse(&args.orchestration_revision).map_err(|error| {
-        CliError::Other(format!(
-            "invalid orchestration revision `{}`: {error}",
-            args.orchestration_revision
-        ))
+        CliError::ReleaseOrchestrationRevisionInvalid {
+            revision: args.orchestration_revision.clone(),
+            detail: error.to_string(),
+        }
     })?;
     callisto_model::atomic::probe_atomic_write(&args.receipt, &permit).map_err(|source| CliError::Io {
         source,
@@ -333,20 +324,14 @@ fn execute(args: ReleaseExecuteArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
     ) {
         (true, None, None) => None,
         (true, _, _) => {
-            return Err(CliError::Other(
-                "release intent declares no binary artifact slots; omit --artifact-manifest and --artifact-dir"
-                    .to_owned(),
-            ));
+            return Err(CliError::ReleaseUnexpectedArtifactInputs);
         }
         (false, Some(manifest), Some(directory)) => {
             let runner = CliCommandRunner;
             Some(verify_artifact_manifest(&intent, manifest, directory, &runner)?)
         }
         (false, _, _) => {
-            return Err(CliError::Other(
-                "release intent declares binary artifact slots; provide both --artifact-manifest and --artifact-dir"
-                    .to_owned(),
-            ));
+            return Err(CliError::ReleaseMissingArtifactInputs);
         }
     };
     // The run envelope is minted and cross-checked here, before the first
@@ -363,7 +348,9 @@ fn execute(args: ReleaseExecuteArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
             .as_ref()
             .map(|artifacts| artifacts.manifest().digest()),
     )
-    .map_err(|error| CliError::Other(format!("release run envelope is not valid for this intent: {error}")))?;
+    .map_err(|error| CliError::ReleaseEnvelopeInvalid {
+        detail: error.to_string(),
+    })?;
     let runner = CliCommandRunner;
     let source_global = source_global(global, args.source_root.as_deref());
     let source_workspace = load_workspace(&source_global, &runner)?;
@@ -379,11 +366,10 @@ fn execute(args: ReleaseExecuteArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
             .iter()
             .any(|slot| slot.attestation_policy.repository != configured_profile.forge_repository)
         {
-            return Err(CliError::Other(format!(
-                "release intent artifact destination does not match profile `{}` forge repository `{}`",
-                selected_profile.as_str(),
-                configured_profile.forge_repository.as_slug()
-            )));
+            return Err(CliError::ReleaseArtifactDestinationMismatch {
+                profile: selected_profile.as_str().to_owned(),
+                repository: configured_profile.forge_repository.as_slug().to_string(),
+            });
         }
     }
     let root = dunce::canonicalize(&source_global.cwd).map_err(|source| CliError::Io {
@@ -404,7 +390,9 @@ fn execute(args: ReleaseExecuteArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
         &state,
         observe_release_operations(&capability, verified_artifacts.as_ref())?,
     )
-    .map_err(|error| CliError::Other(format!("cannot issue terminal release receipt: {error}")))?;
+    .map_err(|error| CliError::ReleaseReceiptIssue {
+        detail: error.to_string(),
+    })?;
     write_receipt(&args.receipt, &receipt, &permit)?;
     match global.format {
         OutputFormat::Json => write_json(&mut std::io::stdout(), &receipt)?,
@@ -437,13 +425,17 @@ fn read_intent(path: &std::path::Path) -> Result<ReleaseIntentV1, CliError> {
             expected: ReleaseIntentV1::SCHEMA_VERSION,
         });
     }
-    serde_json::from_value(value)
-        .map_err(|error| CliError::Other(format!("invalid release intent {}: {error}", path.display())))
+    serde_json::from_value(value).map_err(|error| CliError::ReleaseIntentInvalid {
+        path: path.display().to_string(),
+        detail: error.to_string(),
+    })
 }
 
 fn read_artifact_manifest(path: &std::path::Path) -> Result<ArtifactManifestV1, CliError> {
-    serde_json::from_value(read_json_file(path)?)
-        .map_err(|error| CliError::Other(format!("invalid artifact manifest {}: {error}", path.display())))
+    serde_json::from_value(read_json_file(path)?).map_err(|error| CliError::ArtifactManifestFileInvalid {
+        path: path.display().to_string(),
+        detail: error.to_string(),
+    })
 }
 
 fn read_json_file(path: &std::path::Path) -> Result<serde_json::Value, CliError> {
@@ -451,8 +443,10 @@ fn read_json_file(path: &std::path::Path) -> Result<serde_json::Value, CliError>
         source,
         path: Some(path.to_path_buf()),
     })?;
-    serde_json::from_str(&content)
-        .map_err(|error| CliError::Other(format!("invalid JSON in {}: {error}", path.display())))
+    serde_json::from_str(&content).map_err(|error| CliError::ReleaseJsonInvalid {
+        path: path.display().to_string(),
+        detail: error.to_string(),
+    })
 }
 
 fn write_intent(path: &std::path::Path, intent: &ReleaseIntentV1, permit: &ApplyPermit) -> Result<(), CliError> {

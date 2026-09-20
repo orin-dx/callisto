@@ -12,6 +12,7 @@ use callisto_model::{
     SemanticInputDigest, SourceIdentity, Version,
 };
 
+use crate::config::resolve::product_asset_name;
 use crate::config::ReleaseProfileConfig;
 use crate::error::{ReleasePreconditionRequirement, ReleaseSelectionInvalidReason, UnsupportedReleaseFeature};
 use crate::{DependencyResolver, GraphError, Workspace};
@@ -104,20 +105,6 @@ pub(crate) fn artifact_policy_from_intent(intent: &ReleaseIntentV1) -> Result<Op
         workflow_path: policy.workflow_path.clone(),
         workflow_commit: policy.workflow_commit.clone(),
     }))
-}
-
-/// The externally stable product-asset names. Keeping this mapping in the
-/// graph layer makes the durable slot identity and installer contract share a
-/// single release-domain spelling rather than teaching workflow YAML how to
-/// invent filenames.
-fn product_asset_name(target: &str) -> Option<&'static str> {
-    match target {
-        "aarch64-apple-darwin" => Some("callisto-aarch64-apple-darwin.tar.gz"),
-        "x86_64-unknown-linux-gnu" => Some("callisto-x86_64-unknown-linux-gnu.tar.gz"),
-        "x86_64-unknown-linux-musl" => Some("callisto-x86_64-unknown-linux-musl.tar.gz"),
-        "wasm32-wasip1" => Some("callisto-moon.wasm"),
-        _ => None,
-    }
 }
 
 pub(crate) fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(

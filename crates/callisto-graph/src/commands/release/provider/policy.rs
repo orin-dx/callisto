@@ -35,6 +35,16 @@ pub(crate) mod timeouts {
     pub(crate) const LOCAL_GIT: Duration = Duration::from_secs(60);
 }
 
+/// External programs and the remote name the release path invokes.
+pub(crate) mod programs {
+    pub(crate) const GIT: &str = "git";
+    pub(crate) const GH: &str = "gh";
+    pub(crate) const CURL: &str = "curl";
+    pub(crate) const NPM: &str = "npm";
+    /// The remote whose push URL is the trusted release destination.
+    pub(crate) const GIT_REMOTE: &str = "origin";
+}
+
 /// Total tries for one read-only observation, including the first.
 pub(crate) const OBSERVATION_MAX_ATTEMPTS: u32 = 5;
 

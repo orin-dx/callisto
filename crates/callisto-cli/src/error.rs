@@ -117,6 +117,189 @@ pub enum CliError {
         expected: u8,
     },
 
+    #[error("release artifact-manifest needs an output file; remove --dry-run because it records build output")]
+    #[diagnostic(
+        code(callisto::release_artifact_manifest_dry_run),
+        help("re-run `callisto release artifact-manifest` without --dry-run")
+    )]
+    ReleaseArtifactManifestDryRun,
+
+    #[error("release plan needs an output file; remove --dry-run because planning is already read-only")]
+    #[diagnostic(
+        code(callisto::release_plan_dry_run),
+        help("re-run `callisto release plan --out <file>` without --dry-run")
+    )]
+    ReleasePlanDryRun,
+
+    #[error("release execute cannot run with --dry-run; use release reconcile for a read-only readiness check")]
+    #[diagnostic(
+        code(callisto::release_execute_dry_run),
+        help("use `callisto release reconcile` for a read-only readiness check")
+    )]
+    ReleaseExecuteDryRun,
+
+    #[error("release intent declares no binary artifact slots; no artifact manifest can be created")]
+    #[diagnostic(code(callisto::release_no_artifact_slots), help("plan the release with --orchestration-revision and --artifact-repository so the intent declares artifact slots"))]
+    ReleaseNoArtifactSlots,
+
+    #[error("artifact manifests require a Git commit release source")]
+    #[diagnostic(
+        code(callisto::release_manifest_source_not_git),
+        help("plan the release from a Git commit source")
+    )]
+    ReleaseManifestSourceNotGit,
+
+    #[error("artifact `{asset}` must be a regular file directly in `{dir}`")]
+    #[diagnostic(
+        code(callisto::release_artifact_not_regular_file),
+        help("place the built asset as a plain file (not a symlink or directory) directly in the artifact directory")
+    )]
+    ReleaseArtifactNotRegularFile { asset: String, dir: String },
+
+    #[error("artifact `{asset}` resolves outside `{dir}`")]
+    #[diagnostic(
+        code(callisto::release_artifact_escapes_directory),
+        help("remove symlinks so every asset resolves inside the artifact directory")
+    )]
+    ReleaseArtifactEscapesDirectory { asset: String, dir: String },
+
+    #[error("cannot create artifact manifest: {detail}")]
+    #[diagnostic(
+        code(callisto::release_manifest_creation_failed),
+        help("check that the artifact directory holds exactly the assets the intent declares")
+    )]
+    ReleaseManifestInvalid { detail: String },
+
+    #[error("invalid release profile `{profile}`: {detail}")]
+    #[diagnostic(
+        code(callisto::release_profile_invalid),
+        help("pass a profile id declared under [release.profiles] in callisto.toml")
+    )]
+    ReleaseProfileInvalid { profile: String, detail: String },
+
+    #[error("invalid merged release commit `{raw}`: {detail}")]
+    #[diagnostic(
+        code(callisto::release_commit_invalid),
+        help("pass the full commit SHA of the merged release commit")
+    )]
+    ReleaseCommitInvalid { raw: String, detail: String },
+
+    #[error("release decision {decision} must be inside selected source root {root}")]
+    #[diagnostic(
+        code(callisto::release_decision_outside_source),
+        help("point --decision at a file inside the source root selected with --source-root")
+    )]
+    ReleaseDecisionOutsideSource { decision: String, root: String },
+
+    #[error("invalid release decision path {path}: {detail}")]
+    #[diagnostic(
+        code(callisto::release_decision_path_invalid),
+        help("pass a repository-relative decision path without `..` components")
+    )]
+    ReleaseDecisionPathInvalid { path: String, detail: String },
+
+    #[error("invalid release package `{raw}`: {detail}; use an exact ecosystem-qualified identity such as cargo/callisto-cli")]
+    #[diagnostic(
+        code(callisto::release_package_invalid),
+        help("name each package as <ecosystem>/<name>, for example cargo/callisto-cli")
+    )]
+    ReleasePackageInvalid { raw: String, detail: String },
+
+    #[error("invalid orchestration revision `{revision}`: {detail}")]
+    #[diagnostic(
+        code(callisto::release_orchestration_revision_invalid),
+        help("pass the full commit SHA of the orchestration workflow revision")
+    )]
+    ReleaseOrchestrationRevisionInvalid { revision: String, detail: String },
+
+    #[error("invalid artifact repository `{repository}`: {detail}")]
+    #[diagnostic(
+        code(callisto::release_artifact_repository_invalid),
+        help("pass the forge repository as <owner>/<repo>")
+    )]
+    ReleaseArtifactRepositoryInvalid { repository: String, detail: String },
+
+    #[error("release profile `{profile}` targets forge repository `{configured}`, not `{requested}`")]
+    #[diagnostic(
+        code(callisto::release_profile_repository_mismatch),
+        help("pass --artifact-repository matching the profile's forge-repository in callisto.toml")
+    )]
+    ReleaseProfileRepositoryMismatch {
+        profile: String,
+        configured: String,
+        requested: String,
+    },
+
+    #[error("product release planning requires --orchestration-revision and --artifact-repository")]
+    #[diagnostic(
+        code(callisto::release_orchestration_flags_required),
+        help("pass both --orchestration-revision and --artifact-repository")
+    )]
+    ReleaseOrchestrationFlagsRequired,
+
+    #[error("release execute profile `{selected}` does not match immutable intent profile `{intent}`")]
+    #[diagnostic(
+        code(callisto::release_profile_mismatch),
+        help("execute with the profile the intent was planned under, or re-plan for the wanted profile")
+    )]
+    ReleaseProfileMismatch { selected: String, intent: String },
+
+    #[error("release intent declares no binary artifact slots; omit --artifact-manifest and --artifact-dir")]
+    #[diagnostic(
+        code(callisto::release_unexpected_artifact_inputs),
+        help("drop --artifact-manifest and --artifact-dir for an intent without artifact slots")
+    )]
+    ReleaseUnexpectedArtifactInputs,
+
+    #[error("release intent declares binary artifact slots; provide both --artifact-manifest and --artifact-dir")]
+    #[diagnostic(
+        code(callisto::release_missing_artifact_inputs),
+        help("pass both --artifact-manifest and --artifact-dir")
+    )]
+    ReleaseMissingArtifactInputs,
+
+    #[error("release run envelope is not valid for this intent: {detail}")]
+    #[diagnostic(
+        code(callisto::release_envelope_invalid),
+        help("re-check the orchestration revision, recovery flag and artifact manifest against the intent")
+    )]
+    ReleaseEnvelopeInvalid { detail: String },
+
+    #[error("release intent artifact destination does not match profile `{profile}` forge repository `{repository}`")]
+    #[diagnostic(
+        code(callisto::release_artifact_destination_mismatch),
+        help("re-plan the intent with an --artifact-repository matching the profile")
+    )]
+    ReleaseArtifactDestinationMismatch { profile: String, repository: String },
+
+    #[error("cannot issue terminal release receipt: {detail}")]
+    #[diagnostic(
+        code(callisto::release_receipt_issue_failed),
+        help("run `callisto release reconcile` to inspect the execution state before retrying")
+    )]
+    ReleaseReceiptIssue { detail: String },
+
+    #[error("invalid release intent {path}: {detail}")]
+    #[diagnostic(
+        code(callisto::release_intent_invalid),
+        help("re-run `callisto release plan` to derive a fresh intent")
+    )]
+    ReleaseIntentInvalid { path: String, detail: String },
+
+    #[error("invalid artifact manifest {path}: {detail}")]
+    #[diagnostic(
+        code(callisto::release_artifact_manifest_invalid),
+        help("re-run `callisto release artifact-manifest` to regenerate it")
+    )]
+    ArtifactManifestFileInvalid { path: String, detail: String },
+
+    #[error("invalid JSON in {path}: {detail}")]
+    #[diagnostic(
+        code(callisto::release_json_invalid),
+        help("check the file is complete, well-formed JSON")
+    )]
+    ReleaseJsonInvalid { path: String, detail: String },
+
     #[error("{0}")]
     #[diagnostic(code(callisto::error))]
     Other(String),
@@ -239,5 +422,97 @@ mod tests {
         let keys_1: std::collections::BTreeSet<String> =
             jsons[1]["error"].as_object().unwrap().keys().cloned().collect();
         assert_eq!(keys_0, keys_1, "All error variants must produce the same JSON key set");
+    }
+
+    #[test]
+    fn typed_release_errors_carry_code_and_help() {
+        let errors = [
+            CliError::ReleaseArtifactManifestDryRun,
+            CliError::ReleasePlanDryRun,
+            CliError::ReleaseExecuteDryRun,
+            CliError::ReleaseNoArtifactSlots,
+            CliError::ReleaseManifestSourceNotGit,
+            CliError::ReleaseArtifactNotRegularFile {
+                asset: "x".to_owned(),
+                dir: "x".to_owned(),
+            },
+            CliError::ReleaseArtifactEscapesDirectory {
+                asset: "x".to_owned(),
+                dir: "x".to_owned(),
+            },
+            CliError::ReleaseManifestInvalid { detail: "x".to_owned() },
+            CliError::ReleaseProfileInvalid {
+                profile: "x".to_owned(),
+                detail: "x".to_owned(),
+            },
+            CliError::ReleaseCommitInvalid {
+                raw: "x".to_owned(),
+                detail: "x".to_owned(),
+            },
+            CliError::ReleaseDecisionOutsideSource {
+                decision: "x".to_owned(),
+                root: "x".to_owned(),
+            },
+            CliError::ReleaseDecisionPathInvalid {
+                path: "x".to_owned(),
+                detail: "x".to_owned(),
+            },
+            CliError::ReleasePackageInvalid {
+                raw: "x".to_owned(),
+                detail: "x".to_owned(),
+            },
+            CliError::ReleaseOrchestrationRevisionInvalid {
+                revision: "x".to_owned(),
+                detail: "x".to_owned(),
+            },
+            CliError::ReleaseArtifactRepositoryInvalid {
+                repository: "x".to_owned(),
+                detail: "x".to_owned(),
+            },
+            CliError::ReleaseProfileRepositoryMismatch {
+                profile: "x".to_owned(),
+                configured: "x".to_owned(),
+                requested: "x".to_owned(),
+            },
+            CliError::ReleaseOrchestrationFlagsRequired,
+            CliError::ReleaseProfileMismatch {
+                selected: "x".to_owned(),
+                intent: "x".to_owned(),
+            },
+            CliError::ReleaseUnexpectedArtifactInputs,
+            CliError::ReleaseMissingArtifactInputs,
+            CliError::ReleaseEnvelopeInvalid { detail: "x".to_owned() },
+            CliError::ReleaseArtifactDestinationMismatch {
+                profile: "x".to_owned(),
+                repository: "x".to_owned(),
+            },
+            CliError::ReleaseReceiptIssue { detail: "x".to_owned() },
+            CliError::ReleaseIntentInvalid {
+                path: "x".to_owned(),
+                detail: "x".to_owned(),
+            },
+            CliError::ArtifactManifestFileInvalid {
+                path: "x".to_owned(),
+                detail: "x".to_owned(),
+            },
+            CliError::ReleaseJsonInvalid {
+                path: "x".to_owned(),
+                detail: "x".to_owned(),
+            },
+        ];
+        for error in &errors {
+            let json = format_error_json(error);
+            let code = json["error"]["code"].as_str().unwrap();
+            assert!(
+                code.starts_with("callisto::release_") && code != "callisto::error",
+                "{code}"
+            );
+            assert!(json["error"]["help"].is_string(), "{code} lacks help");
+        }
+        let codes: std::collections::BTreeSet<_> = errors
+            .iter()
+            .map(|e| format_error_json(e)["error"]["code"].to_string())
+            .collect();
+        assert_eq!(codes.len(), errors.len(), "release error codes must be unique");
     }
 }

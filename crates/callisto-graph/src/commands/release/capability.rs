@@ -16,7 +16,7 @@ use callisto_vcs::{
 use crate::error::ReleasePreconditionRequirement;
 use crate::{DependencyResolver, GraphError, ProjectLocator, Workspace};
 
-use super::binding::{prepared_git_remote, PreparedGitRemote};
+use super::binding::{recheck_git_remote, PreparedGitRemote};
 use super::derive::{
     artifact_policy_from_intent, derive_release_intent, derive_release_intent_with_prepared, ArtifactBuildPolicy,
 };
@@ -98,15 +98,9 @@ impl ReleaseProviderSet for ValidatedReleaseIntent<'_> {
                 reason: StaleReason::trust_evidence_changed(),
             });
         }
-        if self
-            .prepared
-            .git_remote
-            .as_ref()
-            .is_some_and(|expected| prepared_git_remote(&self.prepared.root, self.runner).as_ref() != Ok(expected))
-        {
-            return Err(GraphError::ReleaseIntentStale {
-                reason: StaleReason::git_remote_changed(),
-            });
+        // An unreadable remote propagates as itself; only a readable, different remote is "stale".
+        if let Some(expected) = self.prepared.git_remote.as_ref() {
+            recheck_git_remote(&self.prepared.root, self.runner, expected)?;
         }
         Ok(())
     }

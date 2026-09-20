@@ -170,7 +170,7 @@ fn artifact_manifest_rejects_attestation_source_that_is_not_the_coordinator_revi
         "x86_64-unknown-linux-gnu",
         "demo.tar.gz",
         GitHubRepository::parse("orin-dx/callisto").unwrap(),
-        ".github/workflows/callisto-release.yml",
+        callisto_model::RELEASE_COORDINATOR_WORKFLOW_PATH,
         sha('b'),
     )
     .unwrap();
@@ -218,7 +218,7 @@ fn red_c6_manifest_with_forged_source_commit_is_rejected() {
         "x86_64-unknown-linux-gnu",
         "demo.tar.gz",
         GitHubRepository::parse("orin-dx/callisto").unwrap(),
-        ".github/workflows/callisto-release.yml",
+        callisto_model::RELEASE_COORDINATOR_WORKFLOW_PATH,
         sha('b'),
     )
     .unwrap();

@@ -150,6 +150,22 @@ pub struct RegistryConfig {
     pub url: Option<String>,
 }
 
+/// The single (target, asset name) table; CI's policy check compares every workflow and script copy to it.
+pub const PRODUCT_ARTIFACT_TARGETS: [(&str, &str); 4] = [
+    ("aarch64-apple-darwin", "callisto-aarch64-apple-darwin.tar.gz"),
+    ("x86_64-unknown-linux-gnu", "callisto-x86_64-unknown-linux-gnu.tar.gz"),
+    ("x86_64-unknown-linux-musl", "callisto-x86_64-unknown-linux-musl.tar.gz"),
+    ("wasm32-wasip1", "callisto-moon.wasm"),
+];
+
+/// The externally stable asset name for a supported product target.
+pub fn product_asset_name(target: &str) -> Option<&'static str> {
+    PRODUCT_ARTIFACT_TARGETS
+        .iter()
+        .find(|(candidate, _)| *candidate == target)
+        .map(|(_, asset)| *asset)
+}
+
 fn resolve_product_release(raw: RawProductReleaseConfig) -> Result<ProductReleaseConfig, ConfigError> {
     let package = PackageId::parse(&raw.product_package).map_err(|_error| ConfigError::InvalidProductRelease {
         detail: "product-package must be an ecosystem-qualified package identity".to_owned(),
@@ -159,18 +175,12 @@ fn resolve_product_release(raw: RawProductReleaseConfig) -> Result<ProductReleas
             detail: "product-package must be an ecosystem-qualified package identity".to_owned(),
         });
     }
-    const TARGETS: [&str; 4] = [
-        "aarch64-apple-darwin",
-        "x86_64-unknown-linux-gnu",
-        "x86_64-unknown-linux-musl",
-        "wasm32-wasip1",
-    ];
-    if raw.artifact_targets.len() != TARGETS.len()
+    if raw.artifact_targets.len() != PRODUCT_ARTIFACT_TARGETS.len()
         || raw
             .artifact_targets
             .iter()
-            .any(|target| !TARGETS.contains(&target.as_str()))
-        || raw.artifact_targets.iter().collect::<BTreeSet<_>>().len() != TARGETS.len()
+            .any(|target| product_asset_name(target).is_none())
+        || raw.artifact_targets.iter().collect::<BTreeSet<_>>().len() != PRODUCT_ARTIFACT_TARGETS.len()
     {
         return Err(ConfigError::InvalidProductRelease {
             detail: "artifact-targets must contain each supported product target exactly once".to_owned(),
@@ -199,7 +209,10 @@ fn resolve_product_release(raw: RawProductReleaseConfig) -> Result<ProductReleas
     }
     Ok(ProductReleaseConfig {
         package,
-        artifact_targets: TARGETS.iter().map(|target| (*target).to_owned()).collect(),
+        artifact_targets: PRODUCT_ARTIFACT_TARGETS
+            .iter()
+            .map(|(target, _)| (*target).to_owned())
+            .collect(),
         profiles,
     })
 }

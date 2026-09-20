@@ -8,6 +8,13 @@ exec python3 - "$@" <<'PY'
 import json, os, re, shutil, subprocess, sys, tempfile
 
 DEFAULT = ".github/workflows/callisto-release.yml"
+TABLE_SRC = "crates/callisto-graph/src/config/resolve.rs"
+CONFIG = "callisto.toml"
+CI_WORKFLOW = ".github/workflows/callisto-ci.yml"
+BUILD_SCRIPT = ".github/scripts/build-release-artifact.sh"
+INSTALLER = ".github/actions/setup-callisto/action.yml"
+WASM_INSTALLER = ".github/actions/setup-callisto-wasm/action.yml"
+COORDINATOR_CONST_SRC = "crates/callisto-model/src/release.rs"
 CONTENTS_WRITE = {"execute", "version-pr"}  # version-pr commits the managed branch via the forge API
 OIDC_JOBS = {"build-artifact"}
 
@@ -101,6 +108,109 @@ def check(path):
     return errs
 
 
+def matrix_pairs(path, job):
+    wf = load(path)
+    return {(e.get("target"), e.get("asset")) for e in wf["jobs"][job]["strategy"]["matrix"]["include"]}
+
+
+def table_agreement(paths):
+    """Every hand-copied target/asset table must equal the Rust table."""
+    errs = []
+    rust_text = open(paths["rust"]).read()
+    block = re.search(r"PRODUCT_ARTIFACT_TARGETS:[^=]*=\s*\[(.*?)\];", rust_text, re.S)
+    if not block:
+        return [f"{paths['rust']}: PRODUCT_ARTIFACT_TARGETS table not found"]
+    rust = set(re.findall(r'\("([^"]+)",\s*"([^"]+)"\)', block.group(1)))
+    rust_targets = {t for t, _ in rust}
+    rust_assets = {a for _, a in rust}
+
+    def compare(label, found):
+        for t, a in sorted(rust - found):
+            errs.append(f"{label}: missing ({t}, {a}) present in {paths['rust']}")
+        for t, a in sorted(found - rust):
+            errs.append(f"{label}: ({t}, {a}) disagrees with {paths['rust']}")
+
+    try:
+        import tomllib
+        with open(paths["config"], "rb") as f:
+            configured = set(tomllib.load(f)["release"]["artifact-targets"])
+    except ImportError:  # python < 3.11: read the one array by text
+        body = re.search(r"^artifact-targets\s*=\s*\[(.*?)\]", open(paths["config"]).read(), re.S | re.M)
+        configured = set(re.findall(r'"([^"]+)"', body.group(1))) if body else set()
+    if configured != rust_targets:
+        errs.append(f"{paths['config']}: artifact-targets {sorted(configured)} disagrees with {paths['rust']} {sorted(rust_targets)}")
+    compare(f"{paths['release']} build-artifact matrix", matrix_pairs(paths["release"], "build-artifact"))
+    ci = load(paths["ci"])
+    ci_pairs = set()
+    for job in ci["jobs"].values():
+        for e in (job.get("strategy") or {}).get("matrix", {}).get("include", []) or []:
+            if "target" in e and "asset" in e:
+                ci_pairs.add((e["target"], e["asset"]))
+    compare(f"{paths['ci']} preflight matrix", ci_pairs)
+    script = open(paths["script"]).read()
+    compare(f"{paths['script']} tuples", set(re.findall(r"^\s*\w+:([^:\s]+):([^\s|\\)]+)[\s|\\)]*$", script, re.M)))
+    installer = open(paths["installer"]).read()
+    for asset in set(re.findall(r'ASSET_NAME="([^"]+)"', installer)):
+        if asset not in rust_assets:
+            errs.append(f"{paths['installer']}: asset {asset} disagrees with {paths['rust']}")
+    wasm = open(paths["wasm_installer"]).read()
+    for asset in set(re.findall(r"releases/[^\s\"]*/(callisto-[A-Za-z0-9._-]+)", wasm)):
+        if asset not in rust_assets:
+            errs.append(f"{paths['wasm_installer']}: asset {asset} disagrees with {paths['rust']}")
+    return errs
+
+
+def coordinator_path_agreement(path, src):
+    """The Rust constant is the one spelling; the workflow file must exist there."""
+    m = re.search(r'RELEASE_COORDINATOR_WORKFLOW_PATH:\s*&str\s*=\s*"([^"]+)"', open(src).read())
+    if not m:
+        return [f"{src}: RELEASE_COORDINATOR_WORKFLOW_PATH not found"]
+    errs = []
+    if m.group(1) != path:
+        errs.append(f"{src}: coordinator path {m.group(1)} disagrees with the checked workflow {path}")
+    if not os.path.isfile(m.group(1)):
+        errs.append(f"{src}: coordinator workflow {m.group(1)} does not exist")
+    for installer in (INSTALLER, WASM_INSTALLER):
+        for signer in re.findall(r"--signer-workflow\s+(\S+)", open(installer).read()):
+            if not signer.endswith("/" + m.group(1)):
+                errs.append(f"{installer}: --signer-workflow {signer} disagrees with {src} coordinator path {m.group(1)}")
+    return errs
+
+
+def default_paths(release=DEFAULT):
+    return {"rust": TABLE_SRC, "config": CONFIG, "release": release, "ci": CI_WORKFLOW,
+            "script": BUILD_SCRIPT, "installer": INSTALLER, "wasm_installer": WASM_INSTALLER}
+
+
+def table_mutants(d):
+    """Copy each table source into d, mutate one copy at a time."""
+    def copy(name, src):
+        dst = os.path.join(d, name)
+        shutil.copy(src, dst)
+        return dst
+
+    def variants():
+        base = default_paths()
+        for label, key, old, new in (
+            ("asset renamed in release matrix", "release", "asset: callisto-moon.wasm", "asset: callisto-moon2.wasm"),
+            ("target dropped from release matrix", "release", "          - id: linux-musl\n            runner: ubuntu-latest\n            target: x86_64-unknown-linux-musl\n            asset: callisto-x86_64-unknown-linux-musl.tar.gz\n            kind: cross\n", ""),
+            ("asset renamed in ci matrix", "ci", "asset: callisto-x86_64-unknown-linux-gnu.tar.gz", "asset: callisto-x86_64-linux-gnu.tar.gz"),
+            ("target dropped from ci matrix", "ci", "          - id: wasm-wasi\n            runner: ubuntu-latest\n            target: wasm32-wasip1\n            asset: callisto-moon.wasm\n            kind: wasm\n", ""),
+            ("asset renamed in build script", "script", "cli:aarch64-apple-darwin:callisto-aarch64-apple-darwin.tar.gz", "cli:aarch64-apple-darwin:callisto-arm.tar.gz"),
+            ("asset renamed in installer", "installer", 'ASSET_NAME="callisto-aarch64-apple-darwin.tar.gz"', 'ASSET_NAME="callisto-macos.tar.gz"'),
+            ("target dropped from callisto.toml", "config", '    "wasm32-wasip1",\n', ""),
+        ):
+            text = open(base[key]).read()
+            if old not in text:
+                raise SystemExit(f"self-test mutant anchor missing in {base[key]}: {old!r}")
+            paths = dict(base)
+            paths[key] = os.path.join(d, f"{key}-mutant")
+            open(paths[key], "w").write(text.replace(old, new, 1))
+            yield label, paths
+
+    return variants()
+
+
 def mutants(text):
     def sub(a, b, count=1):
         if a not in text:
@@ -131,6 +241,8 @@ def mutants(text):
 args = [a for a in sys.argv[1:] if a != "--self-test"]
 path = args[0] if args else DEFAULT
 errs = check(path)
+errs += table_agreement(default_paths(path))
+errs += coordinator_path_agreement(DEFAULT, COORDINATOR_CONST_SRC)
 if errs:
     print("release workflow policy failed:\n  " + "\n  ".join(errs), file=sys.stderr)
     sys.exit(1)
@@ -142,6 +254,12 @@ if "--self-test" in sys.argv:
             p = os.path.join(d, "wf.yml")
             open(p, "w").write(mutated)
             if check(p):
+                print(f"self-test ok: mutant rejected: {name}")
+            else:
+                print(f"self-test FAILED: mutant accepted: {name}", file=sys.stderr)
+                bad += 1
+        for name, paths in table_mutants(d):
+            if table_agreement(paths):
                 print(f"self-test ok: mutant rejected: {name}")
             else:
                 print(f"self-test FAILED: mutant accepted: {name}", file=sys.stderr)

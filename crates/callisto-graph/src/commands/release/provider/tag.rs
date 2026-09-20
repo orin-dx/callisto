@@ -9,7 +9,7 @@ use callisto_vcs::{GitAccess, GitDataSource, TagSignPolicy};
 use crate::error::{CommandFailure, RemoteConflict};
 use crate::GraphError;
 
-use super::policy::{self, timeouts, Attempt};
+use super::policy::{self, programs, timeouts, Attempt};
 use super::{
     confirmed_evidence, wrong_role, EffectAuthorization, PreparedOperation, ProviderCapabilities, ProviderContext,
     ProviderRequest, ReleaseProvider, TagOperation,
@@ -86,12 +86,13 @@ impl ReleaseProvider for TagProvider {
         }
         let remote_endpoint = context.checked_git_remote()?.endpoint.clone();
         let push_args = ["push", remote_endpoint.as_str(), operation.name.as_str()];
-        let pushed = context
-            .runner()
-            .run_with_timeout("git", &push_args, context.root(), timeouts::GIT_PUSH)?;
+        let pushed =
+            context
+                .runner()
+                .run_with_timeout(programs::GIT, &push_args, context.root(), timeouts::GIT_PUSH)?;
         if pushed.exit_code != Some(0) {
             return Err(GraphError::ReleaseCommand {
-                program: "git".to_string(),
+                program: programs::GIT.to_string(),
                 args: push_args.iter().map(ToString::to_string).collect(),
                 failure: CommandFailure::NonZeroExit {
                     exit_code: pushed.exit_code,
@@ -171,7 +172,7 @@ fn observed_remote_tag(
     let args = ["ls-remote", endpoint.as_str(), reference.as_str(), peeled.as_str()];
     let observed = context
         .runner()
-        .run_quiet("git", &args, context.root(), timeouts::GIT_LS_REMOTE)?;
+        .run_quiet(programs::GIT, &args, context.root(), timeouts::GIT_LS_REMOTE)?;
     if observed.exit_code != Some(0) {
         return Ok(Attempt::Transient {
             value: RemoteTagObservation::Indeterminate,
@@ -207,7 +208,7 @@ fn classify_ls_remote(
         return Ok(RemoteTagObservation::Unannotated);
     }
     let target = CommitSha::parse(sha.trim()).map_err(|error| GraphError::ReleaseCommand {
-        program: "git".to_string(),
+        program: programs::GIT.to_string(),
         args: args.iter().map(ToString::to_string).collect(),
         failure: CommandFailure::MalformedOutput {
             detail: error.to_string(),
@@ -219,14 +220,15 @@ fn classify_ls_remote(
 fn observed_local_tag(context: &ProviderContext<'_>, name: &TagName) -> Result<LocalTagObservation, GraphError> {
     let reference = format!("refs/tags/{name}^{{commit}}");
     let rev_parse_args = ["rev-parse", "--verify", "--quiet", reference.as_str()];
-    let observed = context
-        .runner()
-        .run_with_timeout("git", &rev_parse_args, context.root(), timeouts::LOCAL_GIT)?;
+    let observed =
+        context
+            .runner()
+            .run_with_timeout(programs::GIT, &rev_parse_args, context.root(), timeouts::LOCAL_GIT)?;
     if observed.exit_code != Some(0) {
         return Ok(LocalTagObservation::Absent);
     }
     let target = CommitSha::parse(observed.stdout.trim()).map_err(|error| GraphError::ReleaseCommand {
-        program: "git".to_string(),
+        program: programs::GIT.to_string(),
         args: rev_parse_args.iter().map(ToString::to_string).collect(),
         failure: CommandFailure::MalformedOutput {
             detail: error.to_string(),
@@ -238,12 +240,13 @@ fn observed_local_tag(context: &ProviderContext<'_>, name: &TagName) -> Result<L
         "--format=%(objecttype)%00%(contents:subject)%00%(contents:body)",
         for_each_ref_target.as_str(),
     ];
-    let details = context
-        .runner()
-        .run_with_timeout("git", &for_each_ref_args, context.root(), timeouts::LOCAL_GIT)?;
+    let details =
+        context
+            .runner()
+            .run_with_timeout(programs::GIT, &for_each_ref_args, context.root(), timeouts::LOCAL_GIT)?;
     if details.exit_code != Some(0) {
         return Err(GraphError::ReleaseCommand {
-            program: "git".to_string(),
+            program: programs::GIT.to_string(),
             args: for_each_ref_args.iter().map(ToString::to_string).collect(),
             failure: CommandFailure::NonZeroExit {
                 exit_code: details.exit_code,
@@ -262,7 +265,7 @@ fn observed_local_tag(context: &ProviderContext<'_>, name: &TagName) -> Result<L
     }
     if body.is_none_or(|body| !body.trim().is_empty()) || fields.next().is_some() {
         return Err(GraphError::ReleaseCommand {
-            program: "git".to_string(),
+            program: programs::GIT.to_string(),
             args: for_each_ref_args.iter().map(ToString::to_string).collect(),
             failure: CommandFailure::MalformedOutput {
                 detail: format!("unexpected for-each-ref output: {line:?}"),

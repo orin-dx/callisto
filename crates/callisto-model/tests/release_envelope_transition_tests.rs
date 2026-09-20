@@ -35,7 +35,7 @@ fn slotted_intent() -> (ReleaseIntentV1, ArtifactSlotId) {
         "x86_64-unknown-linux-gnu",
         "demo.tar.gz",
         GitHubRepository::parse("orin-dx/callisto").unwrap(),
-        ".github/workflows/callisto-release.yml",
+        callisto_model::RELEASE_COORDINATOR_WORKFLOW_PATH,
         sha('b'),
     )
     .unwrap();

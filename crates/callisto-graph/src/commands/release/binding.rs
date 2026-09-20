@@ -16,7 +16,7 @@ use crate::registry_endpoint::{
 };
 use crate::{DependencyResolver, GraphError, Workspace};
 
-use super::provider::policy::timeouts;
+use super::provider::policy::{programs, timeouts};
 use super::StaleReason;
 
 /// Credential-free, canonical registry routing. `endpoint` is populated only
@@ -158,8 +158,8 @@ fn github_repository_parse_error_reason(error: &GitHubRepositoryParseError) -> &
 
 pub(crate) fn prepared_git_remote(root: &Path, runner: &dyn CommandRunner) -> Result<PreparedGitRemote, GraphError> {
     let output = runner.run_with_timeout(
-        "git",
-        &["remote", "get-url", "--push", "origin"],
+        programs::GIT,
+        &["remote", "get-url", "--push", programs::GIT_REMOTE],
         root,
         timeouts::LOCAL_GIT,
     )?;
@@ -314,6 +314,42 @@ mod tests {
         assert_eq!(explicit.host, "registry.example.test");
         assert_eq!(explicit.effective_port, Some(443));
         assert_eq!(explicit.path, "/index");
+    }
+
+    struct RemoteUrl(&'static str);
+    impl callisto_model::CommandRunner for RemoteUrl {
+        fn run(
+            &self,
+            _program: &str,
+            _args: &[&str],
+            _cwd: &Path,
+        ) -> Result<callisto_model::CommandOutput, callisto_model::CommandError> {
+            Ok(callisto_model::CommandOutput {
+                exit_code: Some(if self.0.is_empty() { 2 } else { 0 }),
+                stdout: self.0.to_owned(),
+                stderr: String::new(),
+            })
+        }
+    }
+
+    #[test]
+    fn recheck_reports_a_unreadable_remote_as_itself_and_a_moved_remote_as_stale() {
+        let expected = canonical_git_remote("https://github.com/example/release-fixture.git").unwrap();
+        let root = Path::new(".");
+        recheck_git_remote(
+            root,
+            &RemoteUrl("https://github.com/example/release-fixture.git"),
+            &expected,
+        )
+        .unwrap();
+        assert!(matches!(
+            recheck_git_remote(root, &RemoteUrl(""), &expected),
+            Err(GraphError::UnsafeGitRemote { .. })
+        ));
+        assert!(matches!(
+            recheck_git_remote(root, &RemoteUrl("https://github.com/example/other.git"), &expected),
+            Err(GraphError::ReleaseIntentStale { .. })
+        ));
     }
 
     #[test]
