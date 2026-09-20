@@ -9,6 +9,8 @@ pub mod release;
 pub mod release_artifacts;
 pub mod release_decision;
 pub mod release_execution;
+#[cfg(test)]
+mod release_simulator;
 pub mod release_store;
 #[cfg(test)]
 pub(crate) mod release_test_support;

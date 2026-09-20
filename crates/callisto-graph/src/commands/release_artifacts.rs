@@ -32,6 +32,13 @@ impl<'a> VerifiedArtifactManifest<'a> {
         self.manifest
     }
 
+    /// Test-only pairing of a manifest with a root, for simulators whose
+    /// providers issue no real upload and read no local asset bytes.
+    #[cfg(test)]
+    pub(crate) fn for_tests(manifest: &'a ArtifactManifestV1, root: PathBuf) -> Self {
+        Self { manifest, root }
+    }
+
     pub(crate) fn path_for(&self, slot: &callisto_model::ArtifactSlotId) -> Result<PathBuf, GraphError> {
         resolve_asset_path(&self.root, &slot.asset_name)
     }

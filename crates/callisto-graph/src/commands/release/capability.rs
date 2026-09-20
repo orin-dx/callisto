@@ -170,8 +170,8 @@ impl ReleaseProviderSet for ValidatedReleaseIntent<'_> {
 /// local execution state. The caller must reject any non-exact result; this
 /// function preserves the complete roster so receipt construction can prove
 /// that it did not silently omit an operation.
-pub fn observe_release_operations(
-    capability: &ValidatedReleaseIntent<'_>,
+pub fn observe_release_operations<P: ReleaseProviderSet + ?Sized>(
+    capability: &P,
     artifacts: Option<&VerifiedArtifactManifest<'_>>,
 ) -> Result<Vec<ReleaseOperationObservationV1>, GraphError> {
     ReleaseProviderSet::intent(capability)

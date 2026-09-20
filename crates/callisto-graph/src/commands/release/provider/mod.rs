@@ -282,7 +282,7 @@ fn require_observable(capabilities: ProviderCapabilities) -> Result<(), GraphErr
 
 /// Maps one observation to its pre-effect decision. `conflict` names the
 /// operation-specific disagreement so the typed error stays precise.
-fn preflight_from_observation(
+pub(crate) fn preflight_from_observation(
     observation: ProviderObservationV1,
     id: &ReleaseOperationId,
     conflict: RemoteConflict,

@@ -121,6 +121,24 @@ adopting a pre-existing effect into a missing journal is a recovery-only
 privilege; "our attempt landed" (`Published`) is distinct from "it already
 existed" (`AlreadySatisfied`); terminal states absorb every event.
 
+## Fault-injection simulator (`commands/release_simulator.rs`)
+
+A deterministic in-crate simulator drives the real `execute_release` plus the
+receipt path against an in-memory provider set and state writer, enumerating
+every crash point (each provider call, each save before and after) and every
+provider fault (indeterminate, conflict, effect-fails-before-landing,
+effect-lands-then-error, registry lag), then reruns as both the same runner and
+a fresh-journal recovery runner.
+
+Asserted after every scenario: a receipt only over landed effects and a durable
+all-success journal; no effect re-issued for an operation already landed; no
+effect landing before every prerequisite; `Attempting` persisted only after an
+`Absent` observation in the same run; nothing downstream of an observed conflict
+landing; and convergence within three clean reruns -- except a same-runner rerun
+facing a persisted `Attempting` the provider does not hold, which is E173's
+deliberate refusal to re-dispatch, and a lost-journal recovery run re-issuing an
+effect a lagging index still reports absent, which only the provider can refuse.
+
 ## E-codes
 
 - `E172` release execution incomplete (non-terminal operations remain).
