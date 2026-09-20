@@ -134,7 +134,7 @@ in `callisto.toml` keeps tags from the old template discoverable as the last rel
 
 The `setup-callisto` and `setup-callisto-wasm` actions verify a downloaded prebuilt asset with
 `gh attestation verify` against `orin-dx/callisto` and the `callisto-release.yml` signer workflow,
-and fail closed unless `allow-unverified: true`.
+and never run an unverified asset unless `verification: skip` (modes: `require`, `fallback` default, `skip`).
 
 ### Rehearsal boundary
 

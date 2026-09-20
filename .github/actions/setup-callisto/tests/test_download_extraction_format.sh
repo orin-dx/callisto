@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Regression test for the download/extraction format dispatch in action.yml.
 # Extracts the actual run-step body from action.yml by a
-# real text anchor -- the "# Detect OS platform architecture" comment through
+# real text anchor -- the "# Validate verification mode" comment through
 # the end of the file -- so this test always exercises the file's current
 # real logic; it cannot silently drift from it.
 #
@@ -15,7 +15,7 @@ set -u
 ACTION_YML="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/action.yml"
 
 extract_snippet() {
-  sed -n '/# Detect OS platform architecture for pre-built binaries/,$p' "$ACTION_YML"
+  sed -n '/# Validate verification mode/,$p' "$ACTION_YML"
 }
 
 # Runs the extracted snippet with uname/curl stubbed per test case, and
@@ -28,7 +28,8 @@ run_case() {
   local uname_m="$2"
   local curl_exit="$3"
   local gh_mode="${4:-ok}"
-  local allow="${5:-false}"
+  local mode="${5-}"
+  local tag="${6:-latest}"
   local calls_file workspace runner_temp bin_dir github_path tmp_script
   calls_file="$(mktemp)"
   workspace="$(mktemp -d)"
@@ -38,7 +39,7 @@ run_case() {
   tmp_script="$(mktemp)"
   local isolated_path
   isolated_path="$(mktemp -d)"
-  for t in tr grep; do ln -s "$(command -v "$t")" "$isolated_path/$t"; done
+  for t in tr grep rm; do ln -s "$(command -v "$t")" "$isolated_path/$t"; done
   {
     printf 'uname() {\n'
     printf '  case "$1" in\n'
@@ -47,7 +48,7 @@ run_case() {
     printf '    *) command uname "$@" ;;\n'
     printf '  esac\n'
     printf '}\n'
-    printf 'curl() { echo "$*" >> %q; return %q; }\n' "$calls_file" "$curl_exit"
+    printf 'curl() { echo "curl $*" >> %q; [[ %q -eq 0 ]] && : > "${@: -1}"; return %q; }\n' "$calls_file" "$curl_exit" "$curl_exit"
     printf 'tar() { echo "tar $*" >> %q; return 0; }\n' "$calls_file"
     printf 'unzip() { echo "unzip $*" >> %q; return 0; }\n' "$calls_file"
     printf 'cargo() { echo "cargo $*" >> %q; return 0; }\n' "$calls_file"
@@ -57,16 +58,17 @@ run_case() {
       fail) printf 'gh() { echo "gh $*" >> %q; return 1; }\n' "$calls_file" ;;
       missing) printf 'PATH=%q\n' "$isolated_path" ;;
     esac
-    printf 'INPUT_CALLISTO_ALLOW_UNVERIFIED=%q\n' "$allow"
+    [[ -n "$mode" ]] && printf 'INPUT_CALLISTO_VERIFICATION=%q\n' "$mode"
     printf 'GITHUB_WORKSPACE=%q\n' "$workspace"
     printf 'RUNNER_TEMP=%q\n' "$runner_temp"
     printf 'CALLISTO_BIN_DIR=%q\n' "$bin_dir"
     printf 'GITHUB_PATH=%q\n' "$github_path"
-    printf 'TAG_NAME="latest"\n'
+    printf 'TAG_NAME=%q\n' "$tag"
     extract_snippet
   } > "$tmp_script"
   bash "$tmp_script"
   local code=$?
+  [[ -e "$runner_temp/callisto.tar.gz" ]] && echo "ASSET_PRESENT"
   echo "---CALLS---"
   cat "$calls_file"
   rm -f "$tmp_script" "$calls_file" "$github_path"
@@ -137,42 +139,82 @@ else
   echo "PASS test_download_failure_falls_back_to_cargo_install"
 fi
 
-# 6. Verification success -> gh attestation verify runs against the pinned
-# repo and release workflow, before extraction, and only the binary is extracted.
-out=$(run_case "Linux" "x86_64" 0 ok); code=$?
-if [[ $code -ne 0 ]] \
-  || [[ "$out" != *"gh attestation verify "*"--repo orin-dx/callisto --signer-workflow orin-dx/callisto/.github/workflows/callisto-release.yml"* ]] \
-  || [[ "$out" != *"tar -xzf "*" callisto" ]] \
-  || [[ "${out%%tar -xzf*}" != *"gh attestation verify"* ]]; then
-  echo "FAIL test_verification_success_extracts_only_binary: code=$code out=$out"; fail=1
-else
-  echo "PASS test_verification_success_extracts_only_binary"
-fi
-
-# 7. Verification failure aborts: nonzero exit, nothing extracted, no fallback install.
-out=$(run_case "Linux" "x86_64" 0 fail); code=$?
-if [[ $code -eq 0 ]] || [[ "$out" == *"tar -xzf"* ]] || [[ "$out" == *"cargo install"* ]]; then
-  echo "FAIL test_verification_failure_aborts: code=$code out=$out"; fail=1
-else
-  echo "PASS test_verification_failure_aborts"
-fi
-
-# 8. gh missing aborts fail-closed.
-out=$(run_case "Linux" "x86_64" 0 missing); code=$?
-if [[ $code -eq 0 ]] || [[ "$out" == *"tar -xzf"* ]] || [[ "$out" == *"cargo install"* ]]; then
-  echo "FAIL test_gh_missing_aborts: code=$code out=$out"; fail=1
-else
-  echo "PASS test_gh_missing_aborts"
-fi
-
-# 9. allow-unverified=true bypasses verification (even with failing/missing gh).
-for mode in fail missing; do
-  out=$(run_case "Linux" "x86_64" 0 "$mode" true); code=$?
-  if [[ $code -ne 0 ]] || [[ "$out" != *"tar -xzf "* ]] || [[ "$out" == *"gh attestation"* ]]; then
-    echo "FAIL test_allow_unverified_bypasses_$mode: code=$code out=$out"; fail=1
+# 6. Verification success extracts only the binary in every mode but skip
+# (skip never calls gh); gh runs against the pinned repo and signer, before extraction.
+for mode in require fallback ""; do
+  out=$(run_case "Linux" "x86_64" 0 ok "$mode"); code=$?
+  if [[ $code -ne 0 ]] \
+    || [[ "$out" != *"gh attestation verify "*"--repo orin-dx/callisto --signer-workflow orin-dx/callisto/.github/workflows/callisto-release.yml"* ]] \
+    || [[ "$out" != *"tar -xzf "*" callisto" ]] \
+    || [[ "${out%%tar -xzf*}" != *"gh attestation verify"* ]] \
+    || [[ "$out" == *"cargo install"* ]]; then
+    echo "FAIL test_verification_success_extracts_only_binary_${mode:-default}: code=$code out=$out"; fail=1
   else
-    echo "PASS test_allow_unverified_bypasses_$mode"
+    echo "PASS test_verification_success_extracts_only_binary_${mode:-default}"
   fi
 done
+
+# 7. require + verification failure or missing gh aborts; asset never extracted or kept.
+for gh in fail missing; do
+  out=$(run_case "Linux" "x86_64" 0 "$gh" require); code=$?
+  if [[ $code -eq 0 ]] || [[ "$out" == *"tar -xzf"* ]] || [[ "$out" == *"cargo install"* ]] \
+    || [[ "$out" == *"ASSET_PRESENT"* ]] || [[ "$out" != *"::error::"* ]]; then
+    echo "FAIL test_require_$([[ $gh == fail ]] && echo verification_failure || echo gh_missing)_aborts: code=$code out=$out"; fail=1
+  else
+    echo "PASS test_require_$([[ $gh == fail ]] && echo verification_failure || echo gh_missing)_aborts"
+  fi
+done
+
+# 8. fallback (explicit and default) + failure or missing gh: warn, delete the asset,
+# take crates.io, never extract.
+for gh in fail missing; do
+  for mode in fallback ""; do
+    out=$(run_case "Linux" "x86_64" 0 "$gh" "$mode"); code=$?
+    name="test_fallback_$([[ $gh == fail ]] && echo verification_failure || echo gh_missing)_uses_crates_io_${mode:-default}"
+    if [[ $code -ne 0 ]] || [[ "$out" == *"tar -xzf"* ]] || [[ "$out" == *"unzip"* ]] \
+      || [[ "$out" == *"ASSET_PRESENT"* ]] || [[ "$out" != *"::warning::"* ]] \
+      || [[ "$out" != *"cargo install callisto-cli"* ]] || [[ "$out" == *"cargo install --locked --git"* ]]; then
+      echo "FAIL $name: code=$code out=$out"; fail=1
+    else
+      echo "PASS $name"
+    fi
+  done
+done
+
+# 9. fallback keeps an explicit version pin and never uses the unpinned git install.
+out=$(run_case "Linux" "x86_64" 0 fail fallback "callisto@0.5.0"); code=$?
+if [[ $code -ne 0 ]] || [[ "$out" == *"tar -xzf"* ]] \
+  || [[ "$out" != *"cargo install callisto-cli --version 0.5.0 "* ]] || [[ "$out" == *"--git"* ]]; then
+  echo "FAIL test_fallback_keeps_explicit_version_pin: code=$code out=$out"; fail=1
+else
+  echo "PASS test_fallback_keeps_explicit_version_pin"
+fi
+
+# 10. skip extracts without calling gh, with a warning.
+for gh in fail missing ok; do
+  out=$(run_case "Linux" "x86_64" 0 "$gh" skip); code=$?
+  if [[ $code -ne 0 ]] || [[ "$out" != *"tar -xzf "* ]] || [[ "$out" == *"gh attestation"* ]] \
+    || [[ "$out" != *"::warning::"* ]] || [[ "$out" == *"cargo install"* ]]; then
+    echo "FAIL test_skip_extracts_without_gh_$gh: code=$code out=$out"; fail=1
+  else
+    echo "PASS test_skip_extracts_without_gh_$gh"
+  fi
+done
+
+# 11. Invalid value fails immediately, listing the valid values, with no download.
+out=$(run_case "Linux" "x86_64" 0 ok bogus); code=$?
+if [[ $code -eq 0 ]] || [[ "$out" != *"valid values: require, fallback, skip"* ]] \
+  || [[ "$out" == *"curl"* ]] || [[ "$out" == *"tar -xzf"* ]]; then
+  echo "FAIL test_invalid_verification_fails: code=$code out=$out"; fail=1
+else
+  echo "PASS test_invalid_verification_fails"
+fi
+
+# 12. The action's declared input default is fallback.
+if grep -A12 '^  verification:' "$ACTION_YML" | grep -q "default: 'fallback'"; then
+  echo "PASS test_default_verification_is_fallback"
+else
+  echo "FAIL test_default_verification_is_fallback"; fail=1
+fi
 
 exit $fail

@@ -9,10 +9,16 @@ inputs:
     description: 'Version tag of Callisto to install'
     required: false
     default: 'latest'
-  allow-unverified:
-    description: 'Install a prebuilt release asset even when its GitHub attestation cannot be verified (gh missing or verification failed). Default false: fail closed.'
+  verification:
+    description: >-
+      Attestation verification of the prebuilt release asset (gh attestation verify, repo
+      orin-dx/callisto, signer workflow callisto-release.yml). One of: require = a failed
+      verification or missing gh aborts the step and the asset is never run; fallback (default) =
+      on failure or missing gh, warn, delete the asset and install from crates.io instead (never
+      run the unverified asset); skip = do not verify, warn, and use the asset. Releases built
+      before the first attested release carry no attestation, hence the fallback default.
     required: false
-    default: 'false'
+    default: 'fallback'
 
 runs:
   using: 'composite'
@@ -40,7 +46,7 @@ runs:
       env:
         INPUT_CALLISTO_SOURCE: ${{ inputs.source }}
         INPUT_CALLISTO_VERSION: ${{ inputs.version }}
-        INPUT_CALLISTO_ALLOW_UNVERIFIED: ${{ inputs.allow-unverified }}
+        INPUT_CALLISTO_VERIFICATION: ${{ inputs.verification }}
         GH_TOKEN: ${{ github.token }}
       run: | # zizmor: ignore[github-env] the PATH entry is a fixed child of the trusted runner temporary directory, not action input or downloaded archive content.
         # Install into $RUNNER_TEMP so the binary never lands inside the workspace
@@ -55,6 +61,16 @@ runs:
           echo "::error::unsupported setup-callisto source '$SOURCE' (expected auto or local)"
           exit 1
         fi
+
+        # Validate verification mode
+        VERIFICATION="${INPUT_CALLISTO_VERIFICATION:-fallback}"
+        case "$VERIFICATION" in
+          require|fallback|skip) ;;
+          *)
+            echo "::error::unsupported setup-callisto verification '$VERIFICATION' (valid values: require, fallback, skip)"
+            exit 1
+            ;;
+        esac
 
         # Detect OS platform architecture for pre-built binaries
         OS_NAME=$(uname -s | tr '[:upper:]' '[:lower:]')
@@ -110,23 +126,45 @@ runs:
 
         # A prebuilt asset runs with the job's privileges, so it must carry a
         # GitHub attestation from the Callisto release workflow before it is
-        # extracted. Fails closed unless allow-unverified is "true".
+        # extracted. require aborts on failure; fallback discards the asset and
+        # returns 1 so the crates.io path runs; skip trusts the asset.
         verify_asset() {
-          if [[ "${INPUT_CALLISTO_ALLOW_UNVERIFIED:-false}" == "true" ]]; then
-            echo "::warning::allow-unverified=true: skipping attestation verification of $ASSET_NAME"
+          local reason=""
+          if [[ "$VERIFICATION" == "skip" ]]; then
+            echo "::warning::verification=skip: $ASSET_NAME was not verified"
             return 0
           fi
           if ! command -v gh >/dev/null 2>&1; then
-            echo "::error::cannot verify $ASSET_NAME: gh is not installed (set allow-unverified: true to bypass)"
-            return 1
-          fi
-          if ! gh attestation verify "$DOWNLOAD_DEST" \
+            reason="gh is not installed"
+          elif ! gh attestation verify "$DOWNLOAD_DEST" \
               --repo orin-dx/callisto \
               --signer-workflow orin-dx/callisto/.github/workflows/callisto-release.yml \
               --deny-self-hosted-runners; then
-            echo "::error::attestation verification failed for $ASSET_NAME (set allow-unverified: true to bypass)"
-            return 1
+            reason="attestation verification failed"
           fi
+          [[ -z "$reason" ]] && return 0
+          rm -f "$DOWNLOAD_DEST"
+          if [[ "$VERIFICATION" == "require" ]]; then
+            echo "::error::cannot verify $ASSET_NAME: $reason (verification=require)"
+            exit 1
+          fi
+          echo "::warning::cannot verify $ASSET_NAME: $reason; discarding it and installing from crates.io (verification=fallback)"
+          return 1
+        }
+
+        # Download, verify and extract the prebuilt asset; nonzero means use the fallback chain.
+        fetch_prebuilt() {
+          curl -sL -f "$DOWNLOAD_URL" -o "$DOWNLOAD_DEST" 2>/dev/null || return 1
+          verify_asset || return 1
+          # Extract only the expected binary, never the whole archive.
+          case "$ASSET_NAME" in
+            *.zip)
+              unzip -q "$DOWNLOAD_DEST" callisto.exe -d "$CALLISTO_BIN_DIR"
+              ;;
+            *)
+              tar -xzf "$DOWNLOAD_DEST" -C "$CALLISTO_BIN_DIR" callisto
+              ;;
+          esac
         }
 
         # Prioritize local repository build when inside the callisto monorepo
@@ -137,17 +175,7 @@ runs:
         elif [[ "$SOURCE" == "local" ]]; then
           echo "::error::setup-callisto source=local requires a Callisto workspace checkout"
           exit 1
-        elif [[ -n "$ASSET_NAME" ]] && curl -sL -f "$DOWNLOAD_URL" -o "$DOWNLOAD_DEST" 2>/dev/null; then
-          verify_asset || exit 1
-          # Extract only the expected binary, never the whole archive.
-          case "$ASSET_NAME" in
-            *.zip)
-              unzip -q "$DOWNLOAD_DEST" callisto.exe -d "$CALLISTO_BIN_DIR"
-              ;;
-            *)
-              tar -xzf "$DOWNLOAD_DEST" -C "$CALLISTO_BIN_DIR" callisto
-              ;;
-          esac
+        elif [[ -n "$ASSET_NAME" ]] && fetch_prebuilt; then
           echo "Callisto downloaded from GitHub Releases ($DOWNLOAD_URL)"
         elif [[ "$TAG_NAME" == "latest" ]] && cargo install callisto-cli --locked --root "${RUNNER_TEMP}/callisto-cargo-install" --quiet; then
           echo "Callisto installed from crates.io (latest)"

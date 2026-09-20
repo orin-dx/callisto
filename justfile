@@ -213,12 +213,15 @@ release-workflow-checks:
     bash .github/tests/verify-release-workflow-policy.sh --self-test
 
 # Workflow Contracts CI job minus actionlint and zizmor: pins, release
-# contract/policy, artifact build script, and the Release-PR action contract
-# under a minimal PATH.
+# contract/policy, artifact build script, the Release-PR action contract
+# under a minimal PATH, and the installer verification-mode tests.
 workflow-contracts: release-workflow-checks
     bash .github/tests/verify-action-pins.sh
     bash .github/tests/test-release-artifact-build-script.sh
     env PATH=/usr/bin:/bin bash .github/actions/callisto-action/tests/test_release_pr_contract.sh
+    bash .github/actions/setup-callisto/tests/test_download_extraction_format.sh
+    bash .github/actions/setup-callisto/tests/test_crates_io_fallback.sh
+    bash .github/actions/setup-callisto-wasm/tests/test_verification_modes.sh
 
 # Every check CI runs except actionlint (Docker) and the binary-dependent
 # release-PR decide contract and artifact preflight build. CI runs them as

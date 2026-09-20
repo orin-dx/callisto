@@ -9,10 +9,15 @@ inputs:
     description: 'Destination path for callisto-moon.wasm'
     required: false
     default: '.moon/cache/ext/callisto-moon.wasm'
-  allow-unverified:
-    description: 'Use the downloaded plugin even when its GitHub attestation cannot be verified (gh missing or verification failed). Default false: fail closed.'
+  verification:
+    description: >-
+      Attestation verification of the downloaded plugin (gh attestation verify). One of: require =
+      a failed verification or missing gh aborts and the plugin is deleted; fallback (default) =
+      identical to require, because no source-install alternative exists for the wasm plugin
+      (the error says so); skip = do not verify, warn, and use the plugin. Releases built before
+      the first attested release carry no attestation; use skip for those.
     required: false
-    default: 'false'
+    default: 'fallback'
 
 outputs:
   path:
@@ -37,12 +42,20 @@ runs:
       env:
         INPUT_WASM_DEST: ${{ inputs.dest }}
         INPUT_WASM_VERSION: ${{ inputs.version }}
-        INPUT_WASM_ALLOW_UNVERIFIED: ${{ inputs.allow-unverified }}
+        INPUT_WASM_VERIFICATION: ${{ inputs.verification }}
         GH_TOKEN: ${{ github.token }}
       run: |
         DEST_PATH="$INPUT_WASM_DEST"
         mkdir -p "$(dirname "$DEST_PATH")"
         TAG_NAME="$INPUT_WASM_VERSION"
+        VERIFICATION="${INPUT_WASM_VERIFICATION:-fallback}"
+        case "$VERIFICATION" in
+          require|fallback|skip) ;;
+          *)
+            echo "::error::unsupported setup-callisto-wasm verification '$VERIFICATION' (valid values: require, fallback, skip)"
+            exit 1
+            ;;
+        esac
 
         if [[ "$TAG_NAME" == "latest" ]]; then
           DOWNLOAD_URL="https://github.com/orin-dx/callisto/releases/latest/download/callisto-moon.wasm"
@@ -52,19 +65,27 @@ runs:
 
         echo "Downloading Callisto WASM plugin from $DOWNLOAD_URL to $DEST_PATH..."
         if curl -sL -f "$DOWNLOAD_URL" -o "$DEST_PATH"; then
-          if [[ "$INPUT_WASM_ALLOW_UNVERIFIED" == "true" ]]; then
-            echo "::warning::allow-unverified=true: skipping attestation verification of the WASM plugin"
-          elif ! command -v gh >/dev/null 2>&1; then
-            rm -f "$DEST_PATH"
-            echo "::error::cannot verify callisto-moon.wasm: gh is not installed (set allow-unverified: true to bypass)"
-            exit 1
-          elif ! gh attestation verify "$DEST_PATH" \
-              --repo orin-dx/callisto \
-              --signer-workflow orin-dx/callisto/.github/workflows/callisto-release.yml \
-              --deny-self-hosted-runners; then
-            rm -f "$DEST_PATH"
-            echo "::error::attestation verification failed for callisto-moon.wasm (set allow-unverified: true to bypass)"
-            exit 1
+          if [[ "$VERIFICATION" == "skip" ]]; then
+            echo "::warning::verification=skip: the WASM plugin was not verified"
+          else
+            REASON=""
+            if ! command -v gh >/dev/null 2>&1; then
+              REASON="gh is not installed"
+            elif ! gh attestation verify "$DEST_PATH" \
+                --repo orin-dx/callisto \
+                --signer-workflow orin-dx/callisto/.github/workflows/callisto-release.yml \
+                --deny-self-hosted-runners; then
+              REASON="attestation verification failed"
+            fi
+            if [[ -n "$REASON" ]]; then
+              rm -f "$DEST_PATH"
+              if [[ "$VERIFICATION" == "fallback" ]]; then
+                echo "::error::cannot verify callisto-moon.wasm: $REASON; no fallback exists for the wasm plugin, so verification=fallback behaves like require"
+              else
+                echo "::error::cannot verify callisto-moon.wasm: $REASON (verification=require)"
+              fi
+              exit 1
+            fi
           fi
         else
           echo "Release binary asset not found. Compiling Callisto WASM plugin locally..."

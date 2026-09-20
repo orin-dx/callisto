@@ -6,7 +6,7 @@ Status: all audited defects and the agreed structural work are implemented, comm
 
 - orin-dx/actions setup-rust pins `Swatinem/rust-cache` by floating tag; it runs inside the jobs holding the OIDC identity and the crates.io token.
 - Bot-PR check policy for the managed release PR: the required checks do not start on it without a manual approval or the owner bypass.
-- Installer attestation default: `setup-callisto` fails closed unless `allow-unverified: true`.
+- Installer attestation default: `setup-callisto` `verification` input: `require`, `fallback` (default, installs from crates.io), `skip`.
 - Token rotation after the incident.
 - Acceptance or replacement of every [JC] criterion in SPEC-RELEASE-LIFECYCLE-HARDENING.
 
