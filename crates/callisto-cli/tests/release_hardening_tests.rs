@@ -1051,3 +1051,122 @@ fn c5_already_exists_text_without_registry_observation_is_not_success() {
         diagnostic_codes(&out)
     );
 }
+
+/// F3: a sparse index that has not finished propagating must not cost a fully
+/// published release its receipt.
+///
+/// The receipt pass observes every operation afresh. Before the fix it used
+/// the plain observation, so a 404 served right after a successful publish was
+/// read as "absent" and the receipt was refused -- after every crate, tag and
+/// release had already been created. The rerun that follows a push release
+/// carries no `--recovery`, so it could only end in E174.
+#[test]
+fn a_lagging_registry_after_publication_still_yields_a_receipt() {
+    let e = RigEnv::single();
+    // The post-publish confirmation gets its honest answer; the next two
+    // reads -- the receipt pass -- answer 404, which it must treat as lag
+    // rather than as an answer.
+    set_registry_flap(e.root(), 1, 2);
+    let out = e.run(&[]);
+    assert!(
+        out.status.success(),
+        "index lag after a successful publish cost the release its receipt; codes {:?}: {}",
+        diagnostic_codes(&out),
+        stderr(&out)
+    );
+    assert!(
+        e.receipt_path().exists(),
+        "a successful run must leave the receipt it was asked for"
+    );
+    assert_eq!(
+        e.rig.log_count("cargo publish"),
+        1,
+        "lag tolerance must not re-issue the publish"
+    );
+}
+
+/// The other half of the same rule: tolerating lag must not turn a registry
+/// that never serves the version into a success. A receipt still requires a
+/// fresh exact observation of every operation.
+#[test]
+fn a_registry_that_never_serves_the_version_yields_no_receipt() {
+    let e = RigEnv::single();
+    // More 404s than the bounded retry policy will ever ask for, armed once
+    // the publish itself has been confirmed.
+    set_registry_flap(e.root(), 1, 1_000);
+    let out = e.run(&[]);
+    assert!(
+        !out.status.success(),
+        "a registry that never serves the version was reported as a successful release"
+    );
+    assert!(
+        !e.receipt_path().exists(),
+        "no receipt may be written when an operation was never observed exactly"
+    );
+}
+
+/// `release plan` resolves its workspace with `find_workspace_root`; `execute`
+/// used to canonicalise whatever `--cwd` named. Run from a subdirectory the
+/// two then disagreed, and an intent rebuilt against a non-root directory
+/// cannot match the one that was planned.
+#[test]
+fn execute_resolves_the_same_workspace_root_as_plan_from_a_subdirectory() {
+    let e = RigEnv::single();
+    let subdirectory = e.root().join("crates/core/src");
+    assert!(subdirectory.is_dir(), "fixture must have a subdirectory to run from");
+    let head = git(e.root(), &["rev-parse", "HEAD"]);
+    let out = execute_rig_in(
+        e.root(),
+        &subdirectory,
+        None,
+        &e.intent,
+        &e.state,
+        &e.rig,
+        e.forge_tag,
+        &[],
+        Some(&head),
+    );
+    assert!(
+        out.status.success(),
+        "execute from a subdirectory disagreed with plan's workspace root; codes {:?}: {}",
+        diagnostic_codes(&out),
+        stderr(&out)
+    );
+    assert!(e.receipt_path().exists(), "the subdirectory run must issue its receipt");
+}
+
+/// A bare `--state release-state.json` names a file in the process's own
+/// working directory. Its directory is `Some("")`, which is not a directory
+/// any later join can use meaningfully, so the state and its workspace lock
+/// must still land there and the run must complete.
+#[test]
+fn a_bare_relative_state_path_resolves_against_the_process_working_directory() {
+    let e = RigEnv::single();
+    let elsewhere = tempfile::tempdir().unwrap();
+    let head = git(e.root(), &["rev-parse", "HEAD"]);
+    let out = execute_rig_in(
+        e.root(),
+        e.root(),
+        Some(elsewhere.path()),
+        &e.intent,
+        Path::new("bare-release-state.json"),
+        &e.rig,
+        e.forge_tag,
+        &[],
+        Some(&head),
+    );
+    assert!(
+        out.status.success(),
+        "a bare --state path failed; codes {:?}: {}",
+        diagnostic_codes(&out),
+        stderr(&out)
+    );
+    assert!(
+        elsewhere.path().join("bare-release-state.json").exists(),
+        "the state file must land in the process working directory"
+    );
+    assert!(
+        elsewhere.path().join("callisto/release-locks").is_dir(),
+        "the workspace lock must live beside the state file it guards, not in an unrelated tree"
+    );
+}

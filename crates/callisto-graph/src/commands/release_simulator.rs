@@ -494,7 +494,20 @@ impl ReleaseProviderSet for SimWorld {
         id: &ReleaseOperationId,
         _artifacts: Option<&VerifiedArtifactManifest<'_>>,
     ) -> Result<ReleasePreflight, GraphError> {
-        preflight_from_observation(self.observe_internal(id)?, id, remote_conflict_for(id))
+        let observation = self.observe_internal(id)?;
+        // The production registry provider refuses to adopt a live version at
+        // preflight: only the recovery reconstruction path may converge on an
+        // exact registry observation. Modelling that here is what makes a
+        // still-`Pending` registry operation a wedge rather than a no-op.
+        if matches!(id.role, callisto_model::ReleaseOperationRole::RegistryPublish { .. })
+            && matches!(observation, ProviderObservationV1::Exact { .. })
+        {
+            return Err(GraphError::ReleaseRegistryVersionExists {
+                package: id.package.name().to_owned(),
+                version: id.version.clone(),
+            });
+        }
+        preflight_from_observation(observation, id, remote_conflict_for(id))
     }
 
     fn observe(
@@ -1412,4 +1425,88 @@ fn the_checker_reports_attempting_persisted_before_any_observation() {
         },
     );
     assert!(check_attempting_is_earned(&legal).is_ok());
+}
+
+/// F1: a recovery run that dies partway through reconstruction must remain
+/// resumable from the state file it left behind.
+///
+/// Reconstruction is the only path that adopts an effect an earlier run
+/// already landed. When it is interrupted, the operations it never reached
+/// stay `Pending` in a state file that now exists -- and a `Pending` registry
+/// operation whose version is live is a hard `E174`, not a conflict any rerun
+/// can resolve. So the sweep must run on every recovery run, not only on one
+/// that started with no state at all.
+#[test]
+fn a_recovery_run_interrupted_mid_reconstruction_resumes_from_the_same_state() {
+    let (intent, manifest) = simulator_intent();
+    let directory = tempfile::tempdir().unwrap();
+    let state_path = directory.path().join("release-state.json");
+    let context = Rc::new(SimContext::default());
+    let scenario = Scenario {
+        crash: None,
+        fault: Some(Fault {
+            kind: FaultKind::ObserveIndeterminate,
+            at: 1,
+        }),
+    };
+    let world = SimWorld::new(intent.clone(), scenario, Rc::clone(&context), Sabotage::default());
+    // Every effect of an earlier run is already out there; only the journal was lost.
+    for operation in &intent.operations {
+        world.land(operation.id());
+    }
+    world.lost_journal_recovery.set(true);
+    let recovery = envelope_of_kind(&intent, ReleaseRunKindV1::Recovery);
+    let operations: Vec<_> = intent.operations.iter().map(|op| op.id().clone()).collect();
+    let store_for = |context: &Rc<SimContext>| {
+        ReleaseStateStore::with_writer(
+            &state_path,
+            SimWriter::new(Rc::clone(context), operations.clone(), None, Sabotage::default()),
+        )
+    };
+
+    // Run 0: recovery with no journal, stopped partway through reconstruction.
+    context.run.set(0);
+    let interrupted = execute_and_receipt(&world, &store_for(&context), &manifest, &recovery);
+    assert!(
+        interrupted.is_err(),
+        "the injected indeterminate observation must stop reconstruction"
+    );
+    assert!(state_path.exists(), "the interrupted run must leave its journal behind");
+    let partial = durable_states(&context.trace.borrow());
+    let pending: Vec<_> = operations
+        .iter()
+        .filter(|id| partial.get(*id).copied().unwrap_or(OperationState::Pending) == OperationState::Pending)
+        .collect();
+    assert!(
+        partial.values().any(|state| *state == OperationState::AlreadySatisfied),
+        "reconstruction adopted nothing, so this scenario proves nothing: {partial:?}"
+    );
+    assert!(
+        pending
+            .iter()
+            .any(|id| matches!(id.role, callisto_model::ReleaseOperationRole::RegistryPublish { .. })),
+        "a live registry operation must be left pending -- that is the E174 wedge: {partial:?}"
+    );
+
+    // Run 1: the same journal, recovery again, with the fault budget spent.
+    context.run.set(FAULT_ARMED_RUNS);
+    execute_and_receipt(&world, &store_for(&context), &manifest, &recovery)
+        .expect("a recovery rerun from the interrupted state must converge");
+
+    let run = ScenarioRun {
+        world,
+        context,
+        outcomes: vec![RunOutcome::Failed, RunOutcome::Receipted],
+    };
+    if let Err(violation) = check_invariants(&intent, &run, Mode::SameRunner) {
+        panic!(
+            "release invariant violated: {violation:?}\ntrace:\n{}",
+            trace_lines(&run.context)
+        );
+    }
+    assert_eq!(
+        run.world.landings.borrow().len(),
+        intent.operations.len(),
+        "recovery re-issued an effect that was already landed"
+    );
 }

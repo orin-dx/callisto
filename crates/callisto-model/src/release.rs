@@ -54,6 +54,12 @@ impl ReleasePackageId {
     /// existing package-identity grammar.
     pub fn new(ecosystem: Ecosystem, name: impl AsRef<str>) -> Result<Self, ReleasePackageIdParseError> {
         let name = name.as_ref();
+        if let Err(reason) = check_release_package_name(ecosystem, name) {
+            return Err(ReleasePackageIdParseError::UnsafeName {
+                raw: format!("{}/{}", ecosystem.prefix(), name),
+                reason,
+            });
+        }
         let raw = format!("{}/{}", ecosystem.prefix(), name);
         match PackageId::parse(&raw) {
             Ok(PackageId::Prefixed {
@@ -155,6 +161,115 @@ pub enum ReleasePackageIdParseError {
     Malformed { raw: String },
     #[error("release package identity {raw} is not in canonical ecosystem/name form")]
     NonCanonical { raw: String },
+    #[error("release package identity {raw} is unsafe: {reason}")]
+    UnsafeName { raw: String, reason: &'static str },
+}
+
+/// The charset every release package name must satisfy, per ecosystem.
+///
+/// A release package name is not just a label: it becomes an argv word
+/// (`npm view <name>@<version>`, `pnpm publish --filter=<name>`) and a URL
+/// path segment (the cargo sparse index, the PyPI JSON API). `TagName` and
+/// `GitHubRepository` already rule out the same hazards for their own
+/// identities; this is the equivalent rule for package names, applied where
+/// [`ReleasePackageId`] is minted so no release path can skip it.
+///
+/// Each ecosystem's real grammar is enforced rather than a lowest common
+/// denominator, because a name outside it cannot name a publishable package
+/// anyway and a plan-time rejection is cheaper than a half-published release.
+fn check_release_package_name(ecosystem: Ecosystem, name: &str) -> Result<(), &'static str> {
+    if name.is_empty() {
+        return Err("name is empty");
+    }
+    if name.len() > 214 {
+        return Err("name is longer than any registry accepts");
+    }
+    if name.starts_with('-') {
+        return Err("a leading `-` would be read as a command-line option");
+    }
+    if name.chars().any(|c| c.is_control() || c.is_whitespace()) {
+        return Err("name contains a control character or whitespace");
+    }
+    // `/` is allowed only as the single separator of an npm `@scope/name`,
+    // handled below; every other character here can change the meaning of a
+    // URL path or an argv word.
+    if name.contains(['?', '#', '%', '\\', ':', '@']) && !(ecosystem == Ecosystem::Npm && name.starts_with('@')) {
+        return Err("name contains a character that can alter a URL path or argv word");
+    }
+    match ecosystem {
+        Ecosystem::Cargo => check_cargo_name(name),
+        Ecosystem::Npm => check_npm_name(name),
+        Ecosystem::Pypi => check_pypi_name(name),
+        // No publish path is implemented for these, so only the shared
+        // argv/URL rules above apply; a `/` would still traverse a URL path.
+        _ => {
+            if name.contains('/') {
+                Err("name contains a path separator")
+            } else {
+                Ok(())
+            }
+        }
+    }
+}
+
+/// crates.io: ASCII alphanumerics, `-` and `_`, starting with a letter or `_`.
+fn check_cargo_name(name: &str) -> Result<(), &'static str> {
+    let first = name.chars().next().unwrap_or('\0');
+    if !(first.is_ascii_alphabetic() || first == '_') {
+        return Err("a cargo crate name must start with a letter or underscore");
+    }
+    if !name
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'))
+    {
+        return Err("a cargo crate name may only contain letters, digits, `-` and `_`");
+    }
+    Ok(())
+}
+
+/// npm: lowercase, URL-safe, with an optional single `@scope/` prefix.
+fn check_npm_name(name: &str) -> Result<(), &'static str> {
+    let unscoped = match name.strip_prefix('@') {
+        Some(rest) => {
+            let (scope, package) = rest
+                .split_once('/')
+                .ok_or("an npm scope must be followed by `/` and a package name")?;
+            check_npm_segment(scope)?;
+            package
+        }
+        None => name,
+    };
+    check_npm_segment(unscoped)
+}
+
+fn check_npm_segment(segment: &str) -> Result<(), &'static str> {
+    let first = segment.chars().next().unwrap_or('\0');
+    if !first.is_ascii_lowercase() && !first.is_ascii_digit() {
+        return Err("an npm name segment must start with a lowercase letter or digit");
+    }
+    if !segment
+        .bytes()
+        .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'-' | b'_' | b'.'))
+    {
+        return Err("an npm name segment may only contain lowercase letters, digits, `-`, `_` and `.`");
+    }
+    Ok(())
+}
+
+/// PEP 508: alphanumerics separated by single `-`, `_` or `.` runs, starting
+/// and ending with an alphanumeric.
+fn check_pypi_name(name: &str) -> Result<(), &'static str> {
+    let boundary_ok = |c: Option<char>| c.is_some_and(|c| c.is_ascii_alphanumeric());
+    if !boundary_ok(name.chars().next()) || !boundary_ok(name.chars().last()) {
+        return Err("a PyPI project name must start and end with a letter or digit");
+    }
+    if !name
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
+    {
+        return Err("a PyPI project name may only contain letters, digits, `-`, `_` and `.`");
+    }
+    Ok(())
 }
 
 /// An exact `owner/repo` GitHub repository identity.
@@ -1218,6 +1333,8 @@ fn is_safe_artifact_component(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= 255
         && !value.contains("..")
+        // `.` names the directory being joined, not a file in it.
+        && value != "."
         && value
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
@@ -1338,9 +1455,21 @@ pub enum ArtifactManifestError {
     MismatchedSourceCommit,
 }
 
-fn validated_registry_key(raw: String) -> Result<RegistryKey, ReleaseOperationError> {
+/// The one charset rule for a registry key, applied wherever a key is minted
+/// from configuration or from a durable intent: a key reaches argv (`cargo
+/// publish --registry <key>`) and is compared across profiles, so it stays
+/// alphanumeric plus `-`/`_`.
+///
+/// # Errors
+///
+/// Returns [`ReleaseOperationError::MalformedRegistryKey`] for an empty,
+/// over-long, or out-of-charset key.
+pub fn validated_registry_key(raw: String) -> Result<RegistryKey, ReleaseOperationError> {
+    // A leading `-` would make `cargo publish --registry <key>` read the key
+    // as another option, the same hazard `TagName` already rules out.
     if raw.is_empty()
         || raw.len() > 128
+        || raw.starts_with('-')
         || !raw
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
@@ -3347,5 +3476,90 @@ mod tests {
         bad_registry["operations"][0]["id"]["role"]["registryKey"] =
             serde_json::Value::String("https://token@example.test/registry".to_string());
         assert!(serde_json::from_value::<ReleaseIntentV1>(bad_registry).is_err());
+    }
+
+    /// A release package name becomes an argv word (`npm view <name>@<v>`,
+    /// `pnpm publish --filter=<name>`) and a URL path segment (the cargo
+    /// sparse index, the PyPI JSON API). These are the shapes that would
+    /// change the meaning of one of those, so they are refused at plan time.
+    #[test]
+    fn release_package_names_reject_argv_and_url_hazards() {
+        let hazards = [
+            (Ecosystem::Cargo, "-x"),
+            (Ecosystem::Cargo, "--registry"),
+            (Ecosystem::Cargo, "a b"),
+            (Ecosystem::Cargo, "a\nb"),
+            (Ecosystem::Cargo, "a\u{0}b"),
+            (Ecosystem::Cargo, "a/b"),
+            (Ecosystem::Cargo, "a%2fb"),
+            (Ecosystem::Cargo, "a?b"),
+            (Ecosystem::Cargo, "a#b"),
+            (Ecosystem::Cargo, "a\\b"),
+            (Ecosystem::Cargo, "1crate"),
+            (Ecosystem::Cargo, "crate.name"),
+            (Ecosystem::Npm, "-x"),
+            (Ecosystem::Npm, "UPPER"),
+            (Ecosystem::Npm, "@scope"),
+            (Ecosystem::Npm, "@scope/a/b"),
+            (Ecosystem::Npm, "scope/name"),
+            (Ecosystem::Npm, ".hidden"),
+            (Ecosystem::Pypi, "-x"),
+            (Ecosystem::Pypi, "pkg/../etc"),
+            (Ecosystem::Pypi, ".pkg"),
+            (Ecosystem::Pypi, "pkg-"),
+            (Ecosystem::Pypi, "pkg name"),
+        ];
+        for (ecosystem, name) in hazards {
+            assert!(
+                matches!(
+                    ReleasePackageId::new(ecosystem, name),
+                    Err(ReleasePackageIdParseError::UnsafeName { .. } | ReleasePackageIdParseError::Malformed { .. })
+                ),
+                "{ecosystem:?} accepted an unsafe package name: {name:?}"
+            );
+        }
+    }
+
+    /// The real names each ecosystem publishes under must keep working.
+    #[test]
+    fn release_package_names_accept_each_ecosystem_grammar() {
+        for (ecosystem, name) in [
+            (Ecosystem::Cargo, "callisto-model"),
+            (Ecosystem::Cargo, "_private_crate"),
+            (Ecosystem::Cargo, "serde"),
+            (Ecosystem::Npm, "callisto"),
+            (Ecosystem::Npm, "@orin-dx/callisto"),
+            (Ecosystem::Npm, "left.pad"),
+            (Ecosystem::Pypi, "typing-extensions"),
+            (Ecosystem::Pypi, "zope.interface"),
+            (Ecosystem::Pypi, "Flask"),
+        ] {
+            let id = ReleasePackageId::new(ecosystem, name)
+                .unwrap_or_else(|error| panic!("{ecosystem:?}/{name} must stay valid: {error}"));
+            assert_eq!(id.name(), name);
+        }
+    }
+
+    /// `.` names the directory an asset path is joined onto, not a file in it.
+    #[test]
+    fn artifact_slot_components_reject_dot_and_dot_dot() {
+        let slot = |platform: &str, asset: &str| {
+            ArtifactSlotId::new(
+                ReleasePackageId::new(Ecosystem::Cargo, "demo").unwrap(),
+                Version::semver(1, 0, 0),
+                platform,
+                asset,
+                GitHubRepository::parse("orin-dx/callisto").unwrap(),
+                ".github/workflows/release.yml",
+                CommitSha::parse(&"b".repeat(40)).unwrap(),
+            )
+        };
+        for (platform, asset) in [(".", "a.tar.gz"), ("linux", "."), ("..", "a.tar.gz"), ("linux", "..")] {
+            assert!(
+                matches!(slot(platform, asset), Err(ArtifactSlotError::UnsafeSlotComponent)),
+                "unsafe slot component accepted: {platform:?}/{asset:?}"
+            );
+        }
+        assert!(slot("x86_64-unknown-linux-gnu", "callisto.tar.gz").is_ok());
     }
 }

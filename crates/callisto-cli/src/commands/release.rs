@@ -372,12 +372,11 @@ fn execute(args: ReleaseExecuteArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
             });
         }
     }
-    let root = dunce::canonicalize(&source_global.cwd).map_err(|source| CliError::Io {
-        source,
-        path: Some(source_global.cwd.clone()),
-    })?;
+    // The workspace root, resolved exactly as `plan` resolves it. Executing
+    // from a subdirectory must reach the same root, not the process cwd.
+    let root = source_workspace.root.clone();
     let locator = IgnoreWalkLocator::new(&root);
-    let explicit_state_directory = args.state.as_deref().and_then(std::path::Path::parent);
+    let explicit_state_directory = args.state.as_deref().map(state_directory_of);
     let capability =
         validate_release_intent_with_state_directory(&root, &locator, &runner, explicit_state_directory, intent)?;
     let store = match args.state {
@@ -403,6 +402,17 @@ fn execute(args: ReleaseExecuteArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
         ),
     }
     Ok(ExitCode::SUCCESS)
+}
+
+/// The directory an explicit `--state` path names. `Path::parent` of a bare
+/// filename is `Some("")`, which every later join silently resolves against
+/// the process cwd -- so a bare `--state release.json` would put the workspace
+/// lock somewhere other than the workspace.
+fn state_directory_of(state: &std::path::Path) -> &std::path::Path {
+    match state.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => parent,
+        _ => std::path::Path::new("."),
+    }
 }
 
 fn source_global(global: &GlobalArgs, source_root: Option<&std::path::Path>) -> GlobalArgs {
@@ -464,4 +474,21 @@ fn write_receipt(path: &std::path::Path, receipt: &ReleaseReceiptV1, permit: &Ap
         source,
         path: Some(path.to_path_buf()),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::state_directory_of;
+    use std::path::Path;
+
+    /// `Path::parent` answers `Some("")` for a bare filename. An empty path is
+    /// not a directory any join can be reasoned about, so it is normalized to
+    /// `.` before it becomes the workspace lock's base directory.
+    #[test]
+    fn a_bare_state_filename_yields_the_current_directory() {
+        assert_eq!(state_directory_of(Path::new("release-state.json")), Path::new("."));
+        assert_eq!(state_directory_of(Path::new("state/run.json")), Path::new("state"));
+        assert_eq!(state_directory_of(Path::new("/tmp/run.json")), Path::new("/tmp"));
+        assert_eq!(state_directory_of(Path::new("/")), Path::new("."));
+    }
 }

@@ -44,17 +44,23 @@ pub fn execute_release<W: ReleaseStateWriter, P: ReleaseProviderSet + ?Sized>(
     envelope
         .validate_for_intent(intent)
         .map_err(|source| GraphError::ReleaseRunEnvelope { source })?;
-    let (mut state, state_was_missing) = match store.load(intent, envelope)? {
-        Some(state) => (state, false),
+    let mut state = match store.load(intent, envelope)? {
+        Some(state) => state,
         None => {
             let state = ReleaseExecutionStateV1::new(intent, envelope.clone())
                 .map_err(|source| GraphError::ReleaseExecutionState { source })?;
             store.save(intent, &state, permit)?;
-            (state, true)
+            state
         }
     };
-    if envelope.kind() == ReleaseRunKindV1::Recovery && state_was_missing {
-        reconstruct_missing_state(capability, store, permit, &mut state, artifacts)?;
+    // Every `Pending` operation of a recovery run is swept, not only those of a
+    // run that started with no state at all. A recovery run that dies partway
+    // through this sweep persists the operations it did adopt and leaves the
+    // rest `Pending`; gating on "the state file was missing" would make the
+    // next run skip them, and a `Pending` registry operation whose version is
+    // already live is a permanent E174.
+    if envelope.kind() == ReleaseRunKindV1::Recovery {
+        reconstruct_pending_operations(capability, store, permit, &mut state, artifacts)?;
     }
     recover_interrupted_operations(capability, store, permit, &mut state, artifacts)?;
     loop {
@@ -110,7 +116,10 @@ fn apply(
 /// recovery lifecycle. `Absent`, `Conflict`, and `Indeterminate` are not
 /// state transitions: the former remains eligible for normal dispatch once
 /// its prerequisites are reconstructed, while the latter two stop recovery.
-fn reconstruct_missing_state<W: ReleaseStateWriter, P: ReleaseProviderSet + ?Sized>(
+///
+/// This sweeps every `Pending` operation of the run, so an earlier sweep that
+/// stopped on an `Indeterminate` operation is resumed rather than skipped.
+fn reconstruct_pending_operations<W: ReleaseStateWriter, P: ReleaseProviderSet + ?Sized>(
     capability: &P,
     store: &ReleaseStateStore<W>,
     permit: &ApplyPermit,

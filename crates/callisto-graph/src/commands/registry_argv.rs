@@ -185,10 +185,14 @@ pub fn detect_npm_package_manager(workspace_root: &Path) -> NpmPackageManager {
 ///
 /// | Package manager | Program | Base args                                  |
 /// |------------------|---------|--------------------------------------------|
-/// | Pnpm             | `pnpm`  | `publish --filter <name> --no-git-checks`  |
+/// | Pnpm             | `pnpm`  | `publish --filter=<name> --no-git-checks`  |
 /// | Yarn             | `yarn`  | `workspace <name> npm publish`             |
 /// | Bun              | `bun`   | `publish` (run from `package_dir`)         |
-/// | Npm              | `npm`   | `publish --workspace <name>`               |
+/// | Npm              | `npm`   | `publish --workspace=<name>`               |
+///
+/// `--filter=`/`--workspace=` use the joined form so the name cannot be
+/// re-read as an option. Yarn takes the name positionally and has no joined
+/// spelling, so there it rests on `ReleasePackageId`'s leading-`-` rejection.
 ///
 /// `tag`/`access`/`registry` are appended to every variant's base args.
 /// `package_dir` is only used for bun: it has no `--filter`/`--workspace`
@@ -228,8 +232,10 @@ pub fn npm_publish_argv(
             "pnpm",
             vec![
                 "publish".to_string(),
-                "--filter".to_string(),
-                package_name.to_string(),
+                // `--filter=<name>`, not `--filter <name>`: the joined form
+                // cannot be re-read as an option even if a name slipped past
+                // `ReleasePackageId`'s charset rule.
+                format!("--filter={package_name}"),
                 // pnpm >= 7 refuses to publish from a dirty working tree by
                 // default. After `callisto version` stages manifest bumps,
                 // the tree is always dirty until the operator commits, so
@@ -251,11 +257,7 @@ pub fn npm_publish_argv(
         NpmPackageManager::Bun => ("bun", vec!["publish".to_string()], workspace_root.join(package_dir)),
         NpmPackageManager::Npm => (
             "npm",
-            vec![
-                "publish".to_string(),
-                "--workspace".to_string(),
-                package_name.to_string(),
-            ],
+            vec!["publish".to_string(), format!("--workspace={package_name}")],
             workspace_root.to_path_buf(),
         ),
     };
@@ -610,7 +612,7 @@ mod tests {
             None,
         );
         assert_eq!(argv.program, "pnpm");
-        assert_eq!(argv.args, vec!["publish", "--filter", "pkg-a", "--no-git-checks"]);
+        assert_eq!(argv.args, vec!["publish", "--filter=pkg-a", "--no-git-checks"]);
         assert_eq!(argv.cwd, Path::new("/workspace"));
     }
 
@@ -658,7 +660,7 @@ mod tests {
             None,
         );
         assert_eq!(argv.program, "npm");
-        assert_eq!(argv.args, vec!["publish", "--workspace", "pkg-a"]);
+        assert_eq!(argv.args, vec!["publish", "--workspace=pkg-a"]);
     }
 
     #[test]
@@ -676,8 +678,7 @@ mod tests {
             argv.args,
             vec![
                 "publish",
-                "--workspace",
-                "pkg-a",
+                "--workspace=pkg-a",
                 "--tag",
                 "next",
                 "--access",

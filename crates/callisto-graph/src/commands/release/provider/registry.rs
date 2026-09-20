@@ -39,6 +39,24 @@ impl ReleaseProvider for RegistryProvider {
         registry_observation(adapter_for(request.id.package.ecosystem())?, context, operation)
     }
 
+    /// A registry index propagates asynchronously, so an absence observed
+    /// right after a successful publish is lag, not an answer. The receipt
+    /// pass uses the same bounded retry the post-publish confirmation does:
+    /// `Absent` is transient, everything else settles as itself, and only a
+    /// fresh `Exact` can still satisfy the receipt.
+    fn observe_settled(
+        &self,
+        context: &ProviderContext<'_>,
+        request: &ProviderRequest<'_>,
+    ) -> Result<ProviderObservationV1, GraphError> {
+        let operation = registry_operation(request)?;
+        let adapter = adapter_for(request.id.package.ecosystem())?;
+        if !adapter.can_observe_versions() {
+            return self.observe(context, request);
+        }
+        confirmed_registry_observation(adapter, context, operation)
+    }
+
     fn preflight_conflict(&self) -> RemoteConflict {
         RemoteConflict::RegistryVersionDiffers
     }

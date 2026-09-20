@@ -619,7 +619,14 @@ pub enum NotInPlanReason {
 /// crate could not parse.
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum CommandFailure {
-    #[error("exited with status {exit_code:?}: {stderr}")]
+    /// `stderr` is held raw so failure classification keeps matching on the
+    /// client's exact words; redaction happens on the way out, because this
+    /// `Display` is the only route by which it reaches a diagnostic, a JSON
+    /// report, or a release receipt.
+    #[error(
+        "exited with status {exit_code:?}: {}",
+        callisto_model::redact_command_stderr(stderr)
+    )]
     NonZeroExit { exit_code: Option<i32>, stderr: String },
     #[error("produced malformed output: {detail}")]
     MalformedOutput { detail: String },
@@ -834,4 +841,58 @@ pub enum ConfigError {
 
     #[error(transparent)]
     VersionParse(#[from] VersionParseError),
+}
+
+#[cfg(test)]
+mod redaction_tests {
+    use super::*;
+
+    /// A failing registry client echoes the token it was handed. That stderr
+    /// reaches a miette diagnostic, `--format json`, and the CI step summary
+    /// through this `Display`, so the credential must not survive it -- for
+    /// every env var name the release path actually passes.
+    #[test]
+    fn non_zero_exit_display_redacts_release_path_credentials() {
+        for (name, secret) in [
+            ("CARGO_REGISTRY_TOKEN", "cio-secret-token-value"),
+            ("GH_TOKEN", "ghp-secret-token-value"),
+            ("NPM_TOKEN", "npm-secret-token-value"),
+        ] {
+            std::env::set_var(name, secret);
+            let error = GraphError::ReleaseCommand {
+                program: "cargo".to_owned(),
+                args: vec!["publish".to_owned()],
+                failure: CommandFailure::NonZeroExit {
+                    exit_code: Some(1),
+                    stderr: format!("error: failed to authenticate with token {secret}\n"),
+                },
+            };
+            let rendered = error.to_string();
+            std::env::remove_var(name);
+            assert!(
+                !rendered.contains(secret),
+                "{name} value survived into the diagnostic: {rendered}"
+            );
+            assert!(
+                rendered.contains("[REDACTED]"),
+                "{name} value must be replaced by the redaction marker: {rendered}"
+            );
+            assert!(
+                rendered.contains("failed to authenticate"),
+                "redaction must keep the surrounding diagnostic text: {rendered}"
+            );
+        }
+    }
+
+    /// An authenticated remote URL is the leak shape that needs no env var to
+    /// be set, so it is redacted independently of the token list.
+    #[test]
+    fn non_zero_exit_display_redacts_url_userinfo() {
+        let failure = CommandFailure::NonZeroExit {
+            exit_code: Some(128),
+            stderr: "fatal: could not read from https://x-access-token:ghs_live@github.com/o/r\n".to_owned(),
+        };
+        let rendered = failure.to_string();
+        assert!(!rendered.contains("ghs_live"), "userinfo survived: {rendered}");
+    }
 }

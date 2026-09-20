@@ -146,6 +146,19 @@ pub fn known_credential_env_values(vars: impl Iterator<Item = (String, String)>)
     .collect()
 }
 
+/// The one definition of "how this workspace redacts a subprocess's stderr":
+/// [`redact_known_secrets`] over [`known_credential_env_values`] of the live
+/// environment. Every path that puts child stderr in front of a human -- the
+/// live echo, [`crate::CommandOutput::redacted_stderr`], and the
+/// `CommandFailure::NonZeroExit` diagnostic -- composes it here rather than
+/// repeating the composition, so none of them can drift out of step.
+///
+/// Reads the environment, so it is deliberately not the pure primitive;
+/// unit tests target [`redact_known_secrets`] with an explicit secret list.
+pub fn redact_command_stderr(stderr: &str) -> String {
+    redact_known_secrets(stderr, &known_credential_env_values(std::env::vars()))
+}
+
 /// Strips a URL's userinfo (`user:pass@` between `scheme://` and the
 /// host) from every `scheme://...` occurrence in `text`, replacing it
 /// with `[REDACTED]@`. Token-by-token: within the span from `scheme://`

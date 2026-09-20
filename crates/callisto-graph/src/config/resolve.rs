@@ -232,8 +232,15 @@ fn resolve_release_profile(
         .registry_routes
         .unwrap_or_default()
         .into_iter()
-        .map(|(logical, destination)| (RegistryKey(logical), RegistryKey(destination)))
-        .collect();
+        .map(|(logical, destination)| {
+            let key = |raw: String| {
+                callisto_model::validated_registry_key(raw).map_err(|error| ConfigError::InvalidProductRelease {
+                    detail: format!("release profile `{name}` has an invalid registry route: {error}"),
+                })
+            };
+            Ok((key(logical)?, key(destination)?))
+        })
+        .collect::<Result<_, ConfigError>>()?;
     Ok((
         profile,
         ReleaseProfileConfig {
@@ -640,6 +647,20 @@ fn validate_release_profile_routes(
                         actual.as_str()
                     ),
                 });
+            }
+            // The same check release binding applies, run here so a cleartext
+            // or credential-bearing endpoint is refused before any publish.
+            if let Some(url) = registry.url.as_deref() {
+                crate::registry_endpoint::canonical_registry_url(url).map_err(|reason| {
+                    ConfigError::InvalidProductRelease {
+                        detail: format!(
+                            "release profile `{}` routes `{}` to registry `{}` with an unusable URL: {reason}",
+                            profile.as_str(),
+                            logical.as_str(),
+                            actual.as_str()
+                        ),
+                    }
+                })?;
             }
         }
     }
@@ -1372,5 +1393,61 @@ mod tests {
             load(tmp.path()),
             Err(ConfigError::InvalidProductRelease { detail }) if detail.contains("share registry destination")
         ));
+    }
+
+    /// `npm --registry`/`twine --repository-url` would carry a credential to
+    /// a cleartext endpoint, so config load refuses one before any publish
+    /// can bind it.
+    #[test]
+    fn product_release_routes_reject_a_cleartext_registry_url() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        fs::write(
+            tmp.path().join("callisto.toml"),
+            "[release]\nproduct-package = \"cargo/demo\"\nartifact-targets = [\n  \"aarch64-apple-darwin\",\n  \"x86_64-unknown-linux-gnu\",\n  \"x86_64-unknown-linux-musl\",\n  \"wasm32-wasip1\",\n]\n\n[release.profiles.production]\nforge-repository = \"orin-dx/callisto\"\nregistry-routes = { cratesIo = \"private-cargo\" }\n\n[registries.private-cargo]\nkind = \"cargo\"\nurl = \"http://registry.example.test/index\"\n",
+        )
+        .expect("write callisto.toml");
+
+        assert!(
+            matches!(
+                load(tmp.path()),
+                Err(ConfigError::InvalidProductRelease { ref detail }) if detail.contains("loopback")
+            ),
+            "cleartext registry URL accepted: {:?}",
+            load(tmp.path()).map(|_| ())
+        );
+    }
+
+    /// The loopback registry the release harness serves must keep loading.
+    #[test]
+    fn product_release_routes_accept_a_loopback_registry_url() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        fs::write(
+            tmp.path().join("callisto.toml"),
+            "[release]\nproduct-package = \"cargo/demo\"\nartifact-targets = [\n  \"aarch64-apple-darwin\",\n  \"x86_64-unknown-linux-gnu\",\n  \"x86_64-unknown-linux-musl\",\n  \"wasm32-wasip1\",\n]\n\n[release.profiles.production]\nforge-repository = \"orin-dx/callisto\"\nregistry-routes = { cratesIo = \"private-cargo\" }\n\n[registries.private-cargo]\nkind = \"cargo\"\nurl = \"http://127.0.0.1:8765/index/\"\n",
+        )
+        .expect("write callisto.toml");
+
+        load(tmp.path()).expect("a loopback registry must stay loadable");
+    }
+
+    /// A route's logical key reaches argv and cross-profile comparison, so it
+    /// goes through the same charset rule a durable intent's key does.
+    #[test]
+    fn product_release_routes_reject_a_malformed_logical_key() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        fs::write(
+            tmp.path().join("callisto.toml"),
+            "[release]\nproduct-package = \"cargo/demo\"\nartifact-targets = [\n  \"aarch64-apple-darwin\",\n  \"x86_64-unknown-linux-gnu\",\n  \"x86_64-unknown-linux-musl\",\n  \"wasm32-wasip1\",\n]\n\n[release.profiles.production]\nforge-repository = \"orin-dx/callisto\"\nregistry-routes = { \"--registry\" = \"private-cargo\" }\n\n[registries.private-cargo]\nkind = \"cargo\"\nurl = \"https://registry.example.test/index\"\n",
+        )
+        .expect("write callisto.toml");
+
+        assert!(
+            matches!(
+                load(tmp.path()),
+                Err(ConfigError::InvalidProductRelease { ref detail }) if detail.contains("invalid registry route")
+            ),
+            "malformed logical registry key accepted: {:?}",
+            load(tmp.path()).map(|_| ())
+        );
     }
 }

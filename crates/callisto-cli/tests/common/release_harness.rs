@@ -43,6 +43,8 @@ pub mod test_registry {
         markers: Mutex<BTreeMap<String, PathBuf>>,
         tokens: Mutex<BTreeMap<PathBuf, String>>,
         statuses: Mutex<BTreeMap<String, u16>>,
+        /// Per token: honest serves still to let through, then 404s to serve.
+        flaps: Mutex<BTreeMap<String, (usize, usize)>>,
         state: PathBuf,
     }
 
@@ -60,6 +62,7 @@ pub mod test_registry {
                 markers: Mutex::new(BTreeMap::new()),
                 tokens: Mutex::new(BTreeMap::new()),
                 statuses: Mutex::new(BTreeMap::new()),
+                flaps: Mutex::new(BTreeMap::new()),
                 state,
             }
         })
@@ -85,6 +88,17 @@ pub mod test_registry {
                 .ok()
                 .map(|version| (*name, version))
         });
+        // A real sparse index or CDN can serve a version from one edge and
+        // still answer 404 from another for a while. `set_registry_flap` arms
+        // that: once this token has served the version once, the next N reads
+        // answer 404 again.
+        if published.is_some() && spend_flap(token) {
+            return if pypi {
+                fixtures::pypi_not_found()
+            } else {
+                fixtures::crates_index_not_found()
+            };
+        }
         match (published, pypi) {
             (None, true) => fixtures::pypi_not_found(),
             (None, false) => fixtures::crates_index_not_found(),
@@ -94,6 +108,23 @@ pub mod test_registry {
             (Some((name, version)), false) => {
                 fixtures::crates_index_response(name, &[(version.trim(), FIXTURE_CKSUM, false)])
             }
+        }
+    }
+
+    /// Advances the armed flap by one read of a published version, and
+    /// returns whether this read must answer 404.
+    fn spend_flap(token: &str) -> bool {
+        let mut flaps = registry().flaps.lock().unwrap();
+        match flaps.get_mut(token) {
+            Some((honest, _)) if *honest > 0 => {
+                *honest -= 1;
+                false
+            }
+            Some((_, absent)) if *absent > 0 => {
+                *absent -= 1;
+                true
+            }
+            _ => false,
         }
     }
 
@@ -134,6 +165,21 @@ pub mod test_registry {
             .collect()
     }
 
+    /// Arms index-propagation lag for `root`'s registry: the first
+    /// `honest_serves` reads of a published version answer normally, the next
+    /// `absent_responses` answer 404, and the honest answers then resume.
+    ///
+    /// `honest_serves` is what lets a test place the lag at a chosen stage --
+    /// `1` lets the post-publish confirmation succeed and puts the 404s on the
+    /// receipt pass, which is where a real CDN edge disagreement lands.
+    pub fn set_registry_flap(root: &Path, honest_serves: usize, absent_responses: usize) {
+        registry()
+            .flaps
+            .lock()
+            .unwrap()
+            .insert(token_for(root), (honest_serves, absent_responses));
+    }
+
     /// Forces every answer for `root`'s registry to this status, or restores
     /// the marker-backed answers with `None`.
     pub fn set_registry_status(root: &Path, status: Option<u16>) {
@@ -146,7 +192,7 @@ pub mod test_registry {
     }
 }
 
-pub use test_registry::{registry_marker, registry_paths, registry_url, set_registry_status};
+pub use test_registry::{registry_marker, registry_paths, registry_url, set_registry_flap, set_registry_status};
 
 pub fn git(root: &Path, args: &[&str]) -> String {
     let output = Command::new("git").args(args).current_dir(root).output().unwrap();
@@ -1376,11 +1422,33 @@ pub fn execute_rig(
     extra: &[&str],
     orchestration: Option<&str>,
 ) -> Output {
+    execute_rig_in(root, root, None, intent, state, rig, forge_tag, extra, orchestration)
+}
+
+/// The same run, with `--cwd` and the process's own working directory chosen
+/// separately from the fixture root: `cwd` is what the operator typed, and
+/// `process_cwd` is where they typed it, which is what a relative `--state`
+/// path resolves against.
+#[allow(clippy::too_many_arguments)]
+pub fn execute_rig_in(
+    root: &Path,
+    cwd: &Path,
+    process_cwd: Option<&Path>,
+    intent: &Path,
+    state: &Path,
+    rig: &Rig,
+    forge_tag: &str,
+    extra: &[&str],
+    orchestration: Option<&str>,
+) -> Output {
     let path = format!("{}:{}", rig.bin.display(), std::env::var("PATH").unwrap());
     let head = git(root, &["rev-parse", "HEAD"]);
     let mut command = Command::new(env!("CARGO_BIN_EXE_callisto"));
+    if let Some(process_cwd) = process_cwd {
+        command.current_dir(process_cwd);
+    }
     command
-        .args(["--format", "json", "--cwd", root.to_str().unwrap()])
+        .args(["--format", "json", "--cwd", cwd.to_str().unwrap()])
         .args([
             "release",
             "execute",
