@@ -1,0 +1,198 @@
+{
+  "cli_version": "0.10.7-nightly.202609170627.0dda4e14f",
+  "checkpoint_id": "01M2YAF4WPS45BASC1EMHFQQGC",
+  "session_id": "a08620cc-8b37-45b5-b4b2-89a977aad490",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-20T02:31:35.947561Z",
+  "branch": "codex/release-recovery",
+  "checkpoints_count": 3,
+  "save_step_count": 3,
+  "files_touched": [
+    ".github/actions/setup-callisto-wasm/action.yml",
+    ".github/actions/setup-callisto/action.yml",
+    ".github/actions/setup-callisto/tests/test_download_extraction_format.sh",
+    "docs/06-publishing.md",
+    "docs/07-self-release-lifecycle.md",
+    "docs/projects/SPEC-SELF-RELEASE-LIFECYCLE.json",
+    "docs/specs/SPEC-SELF-RELEASE-LIFECYCLE.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5",
+  "turn_id": "ae8faed765ab",
+  "checkpoint_transcript_start": 1996,
+  "transcript_lines_at_start": 1996,
+  "compact_transcript_start": 234,
+  "token_usage": {
+    "input_tokens": 24,
+    "cache_creation_tokens": 34902,
+    "cache_read_tokens": 5830617,
+    "output_tokens": 15657,
+    "api_call_count": 10,
+    "subagent_tokens": {
+      "input_tokens": 228,
+      "cache_creation_tokens": 446169,
+      "cache_read_tokens": 14470145,
+      "output_tokens": 152012,
+      "api_call_count": 114
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01YCCAbwm7sztdDtLuczSzDN",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "48049d8543a5",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 466,
+        "end": 467,
+        "entry_ids": [
+          "64369af6-5a29-4372-9bc8-6e58a915ca54"
+        ],
+        "tool_use_id": "toolu_01YCCAbwm7sztdDtLuczSzDN"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01YCCAbwm7sztdDtLuczSzDN"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 40
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-20T02:31:35.849856Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 148,
+    "human_modified": 49,
+    "human_removed": 0,
+    "total_committed": 148,
+    "total_lines_changed": 208,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 2814,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".cargo/config.toml": 2,
+        ".claude/plans/PR101-HARDENING/audit/pr101-arch.md": 60,
+        ".claude/plans/PR101-HARDENING/audit/pr101-config-cli.md": 80,
+        ".claude/plans/PR101-HARDENING/audit/pr101-core.md": 70,
+        ".claude/plans/PR101-HARDENING/audit/pr101-perf.md": 69,
+        ".claude/plans/PR101-HARDENING/audit/pr101-tests.md": 157,
+        ".claude/plans/PR101-HARDENING/audit/pr101-workflow.md": 78,
+        ".claude/plans/PR101-HARDENING/defects-and-red-tests.md": 23,
+        ".claude/plans/PR101-HARDENING/proposed-tests/cli_proposed_release_tests.rs": 1126,
+        ".claude/plans/PR101-HARDENING/proposed-tests/graph_proposed_config_tests.rs": 43,
+        ".claude/plans/PR101-HARDENING/proposed-tests/model_proposed_release_evidence.rs": 111,
+        ".claude/plans/PR101-HARDENING/w0-ledger.md": 67,
+        ".claude/settings.local.json": 11,
+        ".claude/specs/SPEC-RELEASE-ENVELOPE-STATE.json": 368,
+        ".claude/specs/SPEC-RELEASE-EXECUTE-SURFACE.json": 287,
+        ".claude/specs/SPEC-RELEASE-PROVIDER-EXECUTOR.json": 262
+      }
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 4244,
+      "user_lines_removed": 38,
+      "agent_lines_added": 10,
+      "agent_lines_removed": 3,
+      "user_added_per_file": {
+        ".cargo/config.toml": 2,
+        ".claude/plans/PR101-HARDENING/audit/pr101-arch.md": 60,
+        ".claude/plans/PR101-HARDENING/audit/pr101-config-cli.md": 80,
+        ".claude/plans/PR101-HARDENING/audit/pr101-core.md": 70,
+        ".claude/plans/PR101-HARDENING/audit/pr101-perf.md": 69,
+        ".claude/plans/PR101-HARDENING/audit/pr101-tests.md": 157,
+        ".claude/plans/PR101-HARDENING/audit/pr101-workflow.md": 78,
+        ".claude/plans/PR101-HARDENING/defects-and-red-tests.md": 23,
+        ".claude/plans/PR101-HARDENING/proposed-tests/cli_proposed_release_tests.rs": 1126,
+        ".claude/plans/PR101-HARDENING/proposed-tests/graph_proposed_config_tests.rs": 43,
+        ".claude/plans/PR101-HARDENING/proposed-tests/model_proposed_release_evidence.rs": 111,
+        ".claude/plans/PR101-HARDENING/w0-ledger.md": 67,
+        ".claude/plans/RELEASE-SELF-HOSTING-INCIDENT-2026-09-16.md": 11,
+        ".claude/settings.local.json": 11,
+        ".claude/specs/SPEC-RELEASE-ENVELOPE-STATE.json": 368,
+        ".claude/specs/SPEC-RELEASE-EXECUTE-SURFACE.json": 287,
+        ".claude/specs/SPEC-RELEASE-PROVIDER-EXECUTOR.json": 262,
+        ".github/actions/setup-callisto-wasm/action.yml": 22,
+        ".github/actions/setup-callisto/action.yml": 31,
+        ".github/actions/setup-callisto/tests/test_download_extraction_format.sh": 50,
+        "crates/callisto-graph/src/commands/mod.rs": 2,
+        "crates/callisto-graph/src/commands/release_simulator.rs": 1242,
+        "docs/06-publishing.md": 9,
+        "docs/07-self-release-lifecycle.md": 54,
+        "docs/projects/SPEC-SELF-RELEASE-LIFECYCLE.json": 1,
+        "docs/specs/SPEC-SELF-RELEASE-LIFECYCLE.json": 8
+      },
+      "user_removed_per_file": {
+        ".claude/plans/RELEASE-SELF-HOSTING-INCIDENT-2026-09-16.md": 11,
+        ".github/actions/setup-callisto-wasm/action.yml": 1,
+        ".github/actions/setup-callisto/action.yml": 9,
+        ".github/actions/setup-callisto/tests/test_download_extraction_format.sh": 1,
+        "docs/07-self-release-lifecycle.md": 7,
+        "docs/projects/SPEC-SELF-RELEASE-LIFECYCLE.json": 1,
+        "docs/specs/SPEC-SELF-RELEASE-LIFECYCLE.json": 8
+      }
+    },
+    {
+      "checkpoint_number": 4,
+      "user_lines_added": 3237,
+      "user_lines_removed": 233,
+      "agent_lines_added": 1430,
+      "agent_lines_removed": 30,
+      "user_added_per_file": {
+        ".cargo/config.toml": 2,
+        ".claude/plans/PR101-HARDENING/audit/pr101-arch.md": 60,
+        ".claude/plans/PR101-HARDENING/audit/pr101-config-cli.md": 80,
+        ".claude/plans/PR101-HARDENING/audit/pr101-core.md": 70,
+        ".claude/plans/PR101-HARDENING/audit/pr101-perf.md": 69,
+        ".claude/plans/PR101-HARDENING/audit/pr101-tests.md": 157,
+        ".claude/plans/PR101-HARDENING/audit/pr101-workflow.md": 78,
+        ".claude/plans/PR101-HARDENING/defects-and-red-tests.md": 23,
+        ".claude/plans/PR101-HARDENING/proposed-tests/cli_proposed_release_tests.rs": 1126,
+        ".claude/plans/PR101-HARDENING/proposed-tests/graph_proposed_config_tests.rs": 43,
+        ".claude/plans/PR101-HARDENING/proposed-tests/model_proposed_release_evidence.rs": 111,
+        ".claude/plans/PR101-HARDENING/w0-ledger.md": 67,
+        ".claude/plans/RELEASE-SELF-HOSTING-INCIDENT-2026-09-16.md": 11,
+        ".claude/semantic-model/release-lifecycle.md": 18,
+        ".claude/settings.local.json": 11,
+        ".claude/specs/SPEC-RELEASE-ENVELOPE-STATE.json": 368,
+        ".claude/specs/SPEC-RELEASE-EXECUTE-SURFACE.json": 287,
+        ".claude/specs/SPEC-RELEASE-PROVIDER-EXECUTOR.json": 262,
+        "crates/callisto-graph/src/commands/release_simulator.rs": 394
+      },
+      "user_removed_per_file": {
+        ".claude/plans/RELEASE-SELF-HOSTING-INCIDENT-2026-09-16.md": 11,
+        "crates/callisto-graph/src/commands/release_simulator.rs": 222
+      }
+    }
+  ]
+}
