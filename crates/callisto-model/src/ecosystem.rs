@@ -192,11 +192,21 @@ impl PublishTarget {
 /// 503's own `-` (the join character doesn't affect equality comparisons,
 /// only which convention a caller building a filename needs).
 pub fn normalize_pypi_package_name(name: &str) -> String {
+    pypi_name_parts(name).join("_")
+}
+
+/// The PEP 503 normalized project name: the same equivalence, joined with
+/// hyphens, which is the form PyPI's own URLs use.
+pub fn normalize_pypi_project_name(name: &str) -> String {
+    pypi_name_parts(name).join("-")
+}
+
+fn pypi_name_parts(name: &str) -> Vec<String> {
     name.to_lowercase()
         .split(['-', '.', '_'])
-        .filter(|s| !s.is_empty())
-        .collect::<Vec<_>>()
-        .join("_")
+        .filter(|part| !part.is_empty())
+        .map(ToOwned::to_owned)
+        .collect()
 }
 
 /// Trigger mechanism for generating releases.
@@ -259,6 +269,8 @@ mod tests {
         assert_eq!(normalize_pypi_package_name("my.package"), "my_package");
         assert_eq!(normalize_pypi_package_name("My--Package"), "my_package");
         assert_eq!(normalize_pypi_package_name("MY.PACKAGE"), "my_package");
+        assert_eq!(normalize_pypi_project_name("My--Package"), "my-package");
+        assert_eq!(normalize_pypi_project_name("MY.PACKAGE"), "my-package");
     }
 
     #[test]

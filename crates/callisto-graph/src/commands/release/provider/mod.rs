@@ -20,9 +20,16 @@ use super::release_artifacts::VerifiedArtifactManifest;
 
 pub(crate) mod artifact;
 pub(crate) mod forge;
+pub(crate) mod http;
 pub(crate) mod policy;
 pub(crate) mod registry;
 pub(crate) mod tag;
+
+/// The loopback HTTP server the protocol-level observation tests run against,
+/// shared verbatim with the CLI end-to-end harness so both exercise one server.
+#[cfg(test)]
+#[path = "../../../../../../testing/loopback_http.rs"]
+pub(crate) mod loopback;
 
 /// The invocation data for one effect. This is deliberately graph-private:
 /// callers can inspect the serializable intent, but cannot substitute a new
@@ -143,6 +150,7 @@ pub(crate) struct ProviderContext<'a> {
     root: &'a Path,
     runner: &'a dyn CommandRunner,
     git_remote: Option<&'a PreparedGitRemote>,
+    sleeper: &'a dyn policy::Sleeper,
 }
 
 impl<'a> ProviderContext<'a> {
@@ -155,7 +163,16 @@ impl<'a> ProviderContext<'a> {
             root,
             runner,
             git_remote,
+            sleeper: &policy::ThreadSleeper,
         }
+    }
+
+    /// Replaces the wall-clock wait, so a test can exercise the retry schedule
+    /// without spending it.
+    #[cfg(test)]
+    pub(crate) fn with_sleeper(mut self, sleeper: &'a dyn policy::Sleeper) -> Self {
+        self.sleeper = sleeper;
+        self
     }
 
     pub(crate) fn root(&self) -> &'a Path {
@@ -164,6 +181,10 @@ impl<'a> ProviderContext<'a> {
 
     pub(crate) fn runner(&self) -> &'a dyn CommandRunner {
         self.runner
+    }
+
+    pub(crate) fn sleeper(&self) -> &'a dyn policy::Sleeper {
+        self.sleeper
     }
 
     pub(crate) fn checked_git_remote(&self) -> Result<&'a PreparedGitRemote, GraphError> {

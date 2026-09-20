@@ -1,17 +1,18 @@
 //! The registry-publish role: one adapter per ecosystem, selected once.
 
 use callisto_model::{
-    CommandOutput, Ecosystem, ExactEvidence, ProviderEvidenceV1, ProviderIndeterminateCause, ProviderObservationV1,
-    PublishOutcome, RegistryError, RegistryKey,
+    normalize_pypi_project_name, ArtifactDigest, CommandOutput, Ecosystem, ExactEvidence, ProviderConflictReason,
+    ProviderEvidenceV1, ProviderIndeterminateCause, ProviderObservationV1, PublishOutcome, RegistryError, RegistryKey,
 };
 
 use crate::commands::registry_argv;
 use crate::error::{CommandFailure, RemoteConflict, UnsupportedReleaseFeature};
+use crate::registry_endpoint::builtin_registry_url;
 use crate::GraphError;
 
-use super::policy::{
-    self, poll_until_published, require_registry_confirmation, timeouts, REGISTRY_CONFIRMATION_MAX_RETRIES,
-};
+use super::super::binding::RegistryProtocol;
+use super::http::{http_get, HttpOutcome, HttpResponse, TransportFailure};
+use super::policy::{self, require_registry_confirmation, timeouts, Attempt};
 use super::{
     wrong_role, EffectAuthorization, PreparedOperation, ProviderCapabilities, ProviderContext, ProviderRequest,
     RegistryPublishOperation, ReleasePreflight, ReleaseProvider,
@@ -57,9 +58,8 @@ impl ReleaseProvider for RegistryProvider {
                 package: operation.package_name.clone(),
                 version: operation.version.clone(),
             }),
-            // PyPI's upload endpoint is not a query API, so there is nothing
-            // to observe before the effect; the post-effect confirmation is
-            // where it fails closed.
+            // A registry with no query API at all has nothing to observe
+            // before the effect; the post-effect confirmation fails closed.
             ProviderObservationV1::Indeterminate {
                 cause: ProviderIndeterminateCause::UnsupportedProvider,
             } => Ok(proceed()),
@@ -85,20 +85,20 @@ impl ReleaseProvider for RegistryProvider {
             package: operation.package_name.clone(),
             source,
         })?;
-        if matches!(outcome, PublishOutcome::Published) && adapter.can_observe_versions() {
-            let confirmed = poll_until_published(
-                || adapter.version_is_published(context, operation),
-                REGISTRY_CONFIRMATION_MAX_RETRIES,
-                policy::registry_confirmation_backoff,
-                std::thread::sleep,
-            )?;
-            require_registry_confirmation(confirmed, &operation.package_name, &operation.version)?;
-        }
         // Neither a zero exit nor the client's "already exists" text is a
-        // receipt: a yanked version reads as absent to the registry, so only
-        // an exact observation of the version itself may satisfy the
-        // operation, whatever the publish client reported.
-        self.observe(context, request)?
+        // receipt: a yanked version is not the version this intent authorized,
+        // so only an exact observation may satisfy the operation.
+        let confirmed = if matches!(outcome, PublishOutcome::Published) && adapter.can_observe_versions() {
+            confirmed_registry_observation(adapter, context, operation)?
+        } else {
+            registry_observation(adapter, context, operation)?
+        };
+        require_registry_confirmation(
+            confirmed.is_terminal_success(),
+            &operation.package_name,
+            &operation.version,
+        )?;
+        confirmed
             .exact_evidence()
             .ok_or_else(|| GraphError::RegistryPublishUnconfirmed {
                 package: operation.package_name.clone(),
@@ -134,16 +134,25 @@ fn registry_observation(
             cause: ProviderIndeterminateCause::UnsupportedProvider,
         });
     }
-    Ok(if adapter.version_is_published(context, operation)? {
-        ProviderObservationV1::Exact {
-            evidence: ProviderEvidenceV1::RegistryVersion {
-                version: operation.version.clone(),
-                checksum: None,
-                yanked: None,
+    policy::retry_observation(context.sleeper(), || adapter.observe_once(context, operation))
+}
+
+/// The same observation, but an absence is treated as index-propagation lag
+/// rather than an answer: this only runs after a publish client reported the
+/// version as newly published.
+fn confirmed_registry_observation(
+    adapter: &'static dyn RegistryEcosystem,
+    context: &ProviderContext<'_>,
+    operation: &RegistryPublishOperation,
+) -> Result<ProviderObservationV1, GraphError> {
+    policy::retry_observation(context.sleeper(), || {
+        Ok(match adapter.observe_once(context, operation)? {
+            Attempt::Settled(ProviderObservationV1::Absent) => Attempt::Transient {
+                value: ProviderObservationV1::Absent,
+                retry_after: None,
             },
-        }
-    } else {
-        ProviderObservationV1::Absent
+            settled_or_transient => settled_or_transient,
+        })
     })
 }
 
@@ -155,17 +164,14 @@ pub(crate) trait RegistryEcosystem {
     /// version. `false` makes every observation `Indeterminate`, so a publish
     /// is never confirmed here and instead fails closed at the mandatory
     /// post-effect exact observation.
-    ///
-    /// PyPI's identical propagation-lag gap is deliberately deferred -- no
-    /// PyPI package or credentials in this workspace to test a fix against.
     fn can_observe_versions(&self) -> bool;
 
-    /// Only called when [`Self::can_observe_versions`].
-    fn version_is_published(
+    /// One observation attempt. Only called when [`Self::can_observe_versions`].
+    fn observe_once(
         &self,
         context: &ProviderContext<'_>,
         operation: &RegistryPublishOperation,
-    ) -> Result<bool, GraphError>;
+    ) -> Result<Attempt<ProviderObservationV1>, GraphError>;
 
     /// Runs the publish client and returns the output that decides the outcome.
     fn publish(
@@ -199,29 +205,92 @@ fn run_argv(context: &ProviderContext<'_>, argv: &registry_argv::Argv) -> Result
         .run_with_timeout(&argv.program, &args, &argv.cwd, timeouts::PUBLISH)?)
 }
 
-struct CargoRegistry;
+/// The profile-bound base URL for an observation: the configured endpoint, or
+/// the built-in URL the registry key stands for.
+fn observation_endpoint(operation: &RegistryPublishOperation) -> Result<String, GraphError> {
+    let base = operation
+        .registry
+        .endpoint
+        .clone()
+        .or_else(|| builtin_registry_url(operation.registry.key.as_str()).map(ToOwned::to_owned))
+        .ok_or_else(|| GraphError::ReleaseInvariant {
+            detail: format!(
+                "registry `{}` has no observable endpoint",
+                operation.registry.key.as_str()
+            ),
+        })?;
+    Ok(base.trim_end_matches('/').to_owned())
+}
 
-/// Cargo's own name for crates.io; the workspace's logical registry key for it
-/// is `cratesIo`. Every other key is already a cargo registry name.
-fn cargo_registry_name(registry_key: &str) -> &str {
-    if registry_key == RegistryKey::CRATES_IO {
-        "crates-io"
-    } else {
-        registry_key
+/// Maps one HTTP outcome to the attempt shape, leaving only the statuses that
+/// actually prove something for the caller to classify.
+///
+/// A 429, any 5xx, and a rate-limited 403 are transient; every other status is
+/// a settled answer. No status is ever reported as a conflicting remote object.
+fn http_attempt(outcome: HttpOutcome) -> Result<HttpResponse, Attempt<ProviderObservationV1>> {
+    let response = match outcome {
+        HttpOutcome::Transport(TransportFailure::Timeout) => {
+            return Err(transient(ProviderIndeterminateCause::Timeout, None))
+        }
+        HttpOutcome::Transport(TransportFailure::Unreachable) => {
+            return Err(transient(ProviderIndeterminateCause::CommandFailed, None))
+        }
+        HttpOutcome::Response(response) => response,
+    };
+    let transient_status =
+        matches!(response.status, 429 | 500..=599) || (response.status == 403 && response.is_rate_limited());
+    if transient_status {
+        return Err(transient(
+            ProviderIndeterminateCause::ProviderStatus {
+                status: response.status,
+            },
+            response.retry_after(),
+        ));
+    }
+    Ok(response)
+}
+
+fn transient(
+    cause: ProviderIndeterminateCause,
+    retry_after: Option<std::time::Duration>,
+) -> Attempt<ProviderObservationV1> {
+    Attempt::Transient {
+        value: ProviderObservationV1::Indeterminate { cause },
+        retry_after,
     }
 }
 
-/// An empty directory with no `Cargo.toml` ancestor. `cargo info` run inside
-/// the workspace resolves the local manifest and reports the unpublished
-/// version being released as already published.
-fn neutral_observation_dir() -> Result<tempfile::TempDir, GraphError> {
-    tempfile::Builder::new()
-        .prefix("callisto-registry-observation-")
-        .tempdir()
-        .map_err(|error| GraphError::ReleaseInputRead {
-            path: std::env::temp_dir(),
-            message: error.to_string(),
-        })
+fn settled(observation: ProviderObservationV1) -> Attempt<ProviderObservationV1> {
+    Attempt::Settled(observation)
+}
+
+fn indeterminate(cause: ProviderIndeterminateCause) -> Attempt<ProviderObservationV1> {
+    settled(ProviderObservationV1::Indeterminate { cause })
+}
+
+fn yanked_conflict() -> Attempt<ProviderObservationV1> {
+    settled(ProviderObservationV1::Conflict {
+        reason: ProviderConflictReason::RegistryVersionYanked,
+    })
+}
+
+struct CargoRegistry;
+
+/// The sparse index path layout: `1/a`, `2/ab`, `3/a/abc`, else `ab/cd/name`,
+/// always lowercased.
+pub(crate) fn sparse_index_path(package_name: &str) -> String {
+    let name = package_name.to_ascii_lowercase();
+    let mut characters = name.chars();
+    match name.chars().count() {
+        1 => format!("1/{name}"),
+        2 => format!("2/{name}"),
+        3 => format!("3/{}/{name}", characters.next().expect("three characters")),
+        _ => {
+            let prefix: String = characters.by_ref().take(2).collect();
+            let infix: String = characters.take(2).collect();
+            format!("{prefix}/{infix}/{name}")
+        }
+    }
 }
 
 impl RegistryEcosystem for CargoRegistry {
@@ -229,25 +298,27 @@ impl RegistryEcosystem for CargoRegistry {
         true
     }
 
-    fn version_is_published(
+    fn observe_once(
         &self,
         context: &ProviderContext<'_>,
         operation: &RegistryPublishOperation,
-    ) -> Result<bool, GraphError> {
-        let spec = format!("{}@{}", operation.package_name, operation.version.render());
-        let args = vec![
-            "info",
-            spec.as_str(),
-            "--registry",
-            cargo_registry_name(operation.registry.key.as_str()),
-        ];
-        let neutral = neutral_observation_dir()?;
-        let output = context
-            .runner()
-            .run_quiet("cargo", &args, neutral.path(), timeouts::REGISTRY_QUERY)?;
-        registry_argv::classify_cargo_info_output(&output).map_err(|source| GraphError::Registry {
-            package: operation.package_name.clone(),
-            source,
+    ) -> Result<Attempt<ProviderObservationV1>, GraphError> {
+        if operation.registry.protocol == RegistryProtocol::CargoGitIndex {
+            return Ok(indeterminate(ProviderIndeterminateCause::UnsupportedProtocol));
+        }
+        let url = format!(
+            "{}/{}",
+            observation_endpoint(operation)?,
+            sparse_index_path(&operation.package_name)
+        );
+        let response = match http_attempt(http_get(context.runner(), context.root(), &url)?) {
+            Ok(response) => response,
+            Err(attempt) => return Ok(attempt),
+        };
+        Ok(match response.status {
+            404 => settled(ProviderObservationV1::Absent),
+            200 => classify_sparse_index(&response.body, operation),
+            status => indeterminate(ProviderIndeterminateCause::ProviderStatus { status }),
         })
     }
 
@@ -273,6 +344,43 @@ impl RegistryEcosystem for CargoRegistry {
     }
 }
 
+/// One line per version, newest last. A version the index does not carry is
+/// absent; a yanked one exists but is not what this intent authorized.
+fn classify_sparse_index(body: &str, operation: &RegistryPublishOperation) -> Attempt<ProviderObservationV1> {
+    let mut found = None;
+    for line in body.lines().filter(|line| !line.trim().is_empty()) {
+        let Ok(entry) = serde_json::from_str::<serde_json::Value>(line) else {
+            return indeterminate(ProviderIndeterminateCause::MalformedResponse);
+        };
+        if entry.get("vers").and_then(serde_json::Value::as_str) == Some(operation.version.render()) {
+            found = Some(entry);
+        }
+    }
+    let Some(entry) = found else {
+        return settled(ProviderObservationV1::Absent);
+    };
+    if entry.get("yanked").and_then(serde_json::Value::as_bool) == Some(true) {
+        return yanked_conflict();
+    }
+    let Some(checksum) = entry
+        .get("cksum")
+        .and_then(serde_json::Value::as_str)
+        .map(ArtifactDigest::parse)
+    else {
+        return indeterminate(ProviderIndeterminateCause::MalformedResponse);
+    };
+    let Ok(checksum) = checksum else {
+        return indeterminate(ProviderIndeterminateCause::MalformedResponse);
+    };
+    settled(ProviderObservationV1::Exact {
+        evidence: ProviderEvidenceV1::RegistryVersion {
+            version: operation.version.clone(),
+            checksum: Some(checksum),
+            yanked: Some(false),
+        },
+    })
+}
+
 struct NpmRegistry;
 
 impl RegistryEcosystem for NpmRegistry {
@@ -280,14 +388,14 @@ impl RegistryEcosystem for NpmRegistry {
         true
     }
 
-    /// Unlike `cargo info`, `npm view` never resolves the local manifest, so
-    /// this keeps the workspace cwd: it is only where the project `.npmrc`
-    /// supplying the registry and its credentials is read from.
-    fn version_is_published(
+    /// `npm view` keeps the workspace cwd: unlike a manifest-resolving client
+    /// it never reads the local package, and the cwd is only where the project
+    /// `.npmrc` supplying the registry is read from.
+    fn observe_once(
         &self,
         context: &ProviderContext<'_>,
         operation: &RegistryPublishOperation,
-    ) -> Result<bool, GraphError> {
+    ) -> Result<Attempt<ProviderObservationV1>, GraphError> {
         let spec = format!("{}@{}", operation.package_name, operation.version.render());
         let mut args = vec!["view", spec.as_str(), "--json"];
         if let Some(registry) = operation.registry.endpoint.as_deref() {
@@ -297,7 +405,19 @@ impl RegistryEcosystem for NpmRegistry {
             .runner()
             .run_quiet("npm", &args, context.root(), timeouts::REGISTRY_QUERY)?;
         if output.success() {
-            return Ok(!output.stdout_trimmed().is_empty());
+            return Ok(if output.stdout_trimmed().is_empty() {
+                settled(ProviderObservationV1::Absent)
+            } else {
+                // `npm view` reports no package checksum, so the evidence says
+                // so rather than inventing one.
+                settled(ProviderObservationV1::Exact {
+                    evidence: ProviderEvidenceV1::RegistryVersion {
+                        version: operation.version.clone(),
+                        checksum: None,
+                        yanked: None,
+                    },
+                })
+            });
         }
         let details = format!("{}\n{}", output.stdout, output.stderr).to_ascii_lowercase();
         if details.contains("e404")
@@ -305,16 +425,9 @@ impl RegistryEcosystem for NpmRegistry {
             || details.contains("no matching version")
             || details.contains("is not in this registry")
         {
-            return Ok(false);
+            return Ok(settled(ProviderObservationV1::Absent));
         }
-        Err(GraphError::ReleaseCommand {
-            program: "npm".to_string(),
-            args: args.iter().map(ToString::to_string).collect(),
-            failure: CommandFailure::NonZeroExit {
-                exit_code: output.exit_code,
-                stderr: output.stderr,
-            },
-        })
+        Ok(transient(ProviderIndeterminateCause::CommandFailed, None))
     }
 
     fn publish(
@@ -344,16 +457,28 @@ struct PypiRegistry;
 
 impl RegistryEcosystem for PypiRegistry {
     fn can_observe_versions(&self) -> bool {
-        false
+        true
     }
 
-    fn version_is_published(
+    fn observe_once(
         &self,
-        _context: &ProviderContext<'_>,
-        _operation: &RegistryPublishOperation,
-    ) -> Result<bool, GraphError> {
-        Err(GraphError::ReleaseInvariant {
-            detail: "PyPI declares no version query; its observation is Indeterminate".to_string(),
+        context: &ProviderContext<'_>,
+        operation: &RegistryPublishOperation,
+    ) -> Result<Attempt<ProviderObservationV1>, GraphError> {
+        let url = format!(
+            "{}/pypi/{}/{}/json",
+            observation_endpoint(operation)?,
+            normalize_pypi_project_name(&operation.package_name),
+            operation.version.render()
+        );
+        let response = match http_attempt(http_get(context.runner(), context.root(), &url)?) {
+            Ok(response) => response,
+            Err(attempt) => return Ok(attempt),
+        };
+        Ok(match response.status {
+            404 => settled(ProviderObservationV1::Absent),
+            200 => classify_pypi_version(&response.body, operation),
+            status => indeterminate(ProviderIndeterminateCause::ProviderStatus { status }),
         })
     }
 
@@ -393,32 +518,40 @@ impl RegistryEcosystem for PypiRegistry {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Regression coverage for the confirmed bug: a Cargo publish was never
-    /// confirmed against the registry at all, unlike npm's existing check.
-    /// `can_observe_versions` is the exact declaration `RegistryProvider::publish`
-    /// gates confirmation on, so this fails if Cargo's confirmation is ever
-    /// silently dropped again.
-    #[test]
-    fn only_npm_and_cargo_declare_an_observable_registry_version() {
-        assert!(adapter_for(Ecosystem::Cargo).unwrap().can_observe_versions());
-        assert!(adapter_for(Ecosystem::Npm).unwrap().can_observe_versions());
-        assert!(
-            !adapter_for(Ecosystem::Pypi).unwrap().can_observe_versions(),
-            "PyPI's identical gap is deliberately deferred, not silently fixed"
-        );
+/// A version's file list. A release with every file yanked is a conflict; one
+/// with no files at all exists but proves no identity.
+fn classify_pypi_version(body: &str, operation: &RegistryPublishOperation) -> Attempt<ProviderObservationV1> {
+    let Ok(document) = serde_json::from_str::<serde_json::Value>(body) else {
+        return indeterminate(ProviderIndeterminateCause::MalformedResponse);
+    };
+    let Some(files) = document.get("urls").and_then(serde_json::Value::as_array) else {
+        return indeterminate(ProviderIndeterminateCause::MalformedResponse);
+    };
+    let Some(first) = files.first() else {
+        return indeterminate(ProviderIndeterminateCause::RegistryVersionUnverified);
+    };
+    if files
+        .iter()
+        .any(|file| file.get("yanked").and_then(serde_json::Value::as_bool) == Some(true))
+    {
+        return yanked_conflict();
     }
-
-    #[test]
-    fn an_ecosystem_with_no_registry_adapter_is_unsupported() {
-        assert!(matches!(
-            adapter_for(Ecosystem::NuGet),
-            Err(GraphError::UnsupportedRelease {
-                feature: UnsupportedReleaseFeature::Ecosystem
-            })
-        ));
-    }
+    let Some(Ok(checksum)) = first
+        .get("digests")
+        .and_then(|digests| digests.get("sha256"))
+        .and_then(serde_json::Value::as_str)
+        .map(ArtifactDigest::parse)
+    else {
+        return indeterminate(ProviderIndeterminateCause::MalformedResponse);
+    };
+    settled(ProviderObservationV1::Exact {
+        evidence: ProviderEvidenceV1::RegistryVersion {
+            version: operation.version.clone(),
+            checksum: Some(checksum),
+            yanked: Some(false),
+        },
+    })
 }
+
+#[cfg(test)]
+mod tests;

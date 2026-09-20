@@ -40,6 +40,37 @@ never a conflict.
 Two tokens are mintable only from an observation: `AbsentProof` (from `Absent`)
 and `ExactEvidence` (from `Exact`).
 
+## Registry observation over the protocol (`provider/http.rs`, `provider/registry.rs`)
+
+Observation never shells to a package-manager client that can resolve the local
+workspace. It is a credential-free `curl` GET through the bounded
+`CommandRunner`, against the profile-bound endpoint:
+
+- cargo: the sparse index, `{endpoint}/{1|2|3/a|ab/cd}/{name}` lowercased. A
+  cargo registry configured without the `sparse+` marker is a git index and
+  fails closed as `Indeterminate { UnsupportedProtocol }`. The built-in
+  `cratesIo` key is always sparse, and may carry a `url` to point it at another
+  http host (rehearsal, tests) under the usual validation and E197 rules.
+- PyPI: `{endpoint}/pypi/{pep503-name}/{version}/json`. PyPI is now observable,
+  so a PyPI publish can reach a receipt.
+- npm: still `npm view`, reporting `checksum: None` rather than inventing one.
+
+404 or a missing version line is `Absent`; a served, unyanked version is `Exact`
+with the index checksum and `yanked: Some(false)`; a served, yanked version is
+`Conflict { RegistryVersionYanked }` -- the defect `cargo info` hid by reading a
+yanked version as absent. Any other status, or a body that is not the index
+format, is indeterminate.
+
+## Bounded retry (`provider/policy.rs`)
+
+`retry_observation` wraps read-only observations only -- registry HTTP, the
+GitHub release GET, `git ls-remote`. An effect is never re-issued. Retryable:
+HTTP 429, any 5xx, a 403 carrying rate-limit headers, and a curl timeout or
+connection failure. Five attempts, 2s doubling to 16s, each wait capped at
+300s, honouring `Retry-After` (delta-seconds or HTTP-date). Post-publish
+confirmation uses the same policy with `Absent` treated as index-propagation
+lag. `Sleeper` is the injected wall clock.
+
 ## Transition table (`release_transition.rs`)
 
 `transition(current, event, run_kind)` is the only place an `OperationState`

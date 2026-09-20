@@ -55,8 +55,13 @@ pub(crate) fn url_parse_error_reason(error: url::ParseError) -> &'static str {
     }
 }
 
+/// Cargo's `sparse+` marker on a registry index URL. Its presence is how cargo
+/// itself distinguishes an HTTP sparse index from a git index.
+pub(crate) const SPARSE_INDEX_PREFIX: &str = "sparse+";
+
 /// Canonicalises a registry URL (scheme/host case, default port, path) or names the unsafe part.
 pub(crate) fn canonical_registry_url(raw: &str) -> Result<RegistryBindingV1, &'static str> {
+    let raw = raw.strip_prefix(SPARSE_INDEX_PREFIX).unwrap_or(raw);
     let parsed = url::Url::parse(raw).map_err(url_parse_error_reason)?;
     if parsed.cannot_be_a_base() || parsed.host_str().is_none() {
         return Err("URL must have an authority");

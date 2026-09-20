@@ -49,7 +49,7 @@ fn execute_raw(
         .env("CALLISTO_TEST_FORGE_MARKER", p.forge_marker)
         .env("CALLISTO_TEST_ARTIFACT_MARKER", p.log.with_extension("artifact-marker"))
         .env("CALLISTO_TEST_FORGE_TAG", forge_tag)
-        .env("CALLISTO_TEST_CARGO_MARKER", state.with_extension("cargo-marker"))
+        .env("CALLISTO_TEST_CARGO_MARKER", registry_marker(root))
         .env("CALLISTO_TEST_REAL_GIT", system_git());
     command.output().unwrap()
 }
@@ -155,7 +155,9 @@ fn p01_stranded_attempting_is_nonzero_and_repeats_no_effect() {
 #[test]
 fn p02_partial_provider_success_recovers_from_fresh_runner_without_republishing() {
     let e = Env::new(false);
-    fs::write(e.state.with_extension("cargo-marker"), "").unwrap(); // crate already on registry
+    // the registry already serves this version
+    let marker = registry_marker(e.root());
+    fs::write(marker.with_file_name("published.core-crate"), "0.2.0\n").unwrap();
     let out = e.run(&["--recovery"]);
     assert!(out.status.success(), "{}", stderr(&out));
     assert_eq!(count(&e.log, "cargo publish"), 0);
@@ -414,8 +416,6 @@ fn p12_tampered_missing_or_swapped_artifacts_reject_before_any_effect() {
 #[test]
 fn p13_concurrent_execute_publishes_at_most_once() {
     let e = Env::new(false);
-    // slow publish so the two processes overlap
-    fs::write(e.bin.join("cargo"), "#!/bin/sh\nprintf 'cargo %s\\n' \"$*\" >> \"$CALLISTO_TEST_LOG\"\nif [ \"$1\" = info ]; then\n if [ -f \"$CALLISTO_TEST_CARGO_MARKER\" ]; then exit 0; fi\n printf 'could not find crate\\n' >&2; exit 101\nfi\nif [ \"$1\" = publish ]; then sleep 3; : > \"$CALLISTO_TEST_CARGO_MARKER\"; exit 0; fi\nexit 0\n").unwrap();
     let spawn = |e: &Env| {
         let path = format!("{}:{}", e.bin.display(), std::env::var("PATH").unwrap());
         Command::new(env!("CARGO_BIN_EXE_callisto"))
@@ -441,7 +441,9 @@ fn p13_concurrent_execute_publishes_at_most_once() {
             .env("CALLISTO_TEST_FORGE_MARKER", &e.forge_marker)
             .env("CALLISTO_TEST_ARTIFACT_MARKER", e.log.with_extension("artifact-marker"))
             .env("CALLISTO_TEST_FORGE_TAG", "core-crate@0.2.0")
-            .env("CALLISTO_TEST_CARGO_MARKER", e.state.with_extension("cargo-marker"))
+            .env("CALLISTO_TEST_CARGO_MARKER", registry_marker(e.root()))
+            // slow publish so the two processes overlap
+            .env("CALLISTO_TEST_CARGO_PUBLISH_SLEEP", "3")
             .env("CALLISTO_TEST_REAL_GIT", system_git())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
@@ -828,34 +830,28 @@ fn plan_fixed_group_intent(root: &Path, external: &Path, release_commit: &str) -
     intent
 }
 
-/// True when `dir` or any ancestor holds a `Cargo.toml`, i.e. cargo would resolve a local workspace there.
-fn inside_cargo_workspace(dir: &Path) -> bool {
-    dir.ancestors().any(|ancestor| ancestor.join("Cargo.toml").is_file())
-}
-
+/// The D01 defect was `cargo info`: run inside the workspace it resolved the
+/// local manifest and reported the unpublished version as already published.
+/// Observation is now a request to the bound registry endpoint, so the property
+/// is asserted where it now lives -- on the request the registry received, and
+/// on cargo never being asked anything but to publish.
 #[test]
-fn red_d01_cargo_info_runs_outside_any_workspace_and_names_the_registry() {
-    let mut e = RigEnv::single();
-    e.rig.real_cargo_info();
+fn red_d01_registry_observation_is_a_request_to_the_bound_endpoint_not_a_local_manifest_read() {
+    let e = RigEnv::single();
     let out = e.run(&[]);
-    let infos: Vec<_> = e
-        .rig
-        .cargo_calls()
-        .into_iter()
-        .filter(|(_, argv)| argv.starts_with("info "))
-        .collect();
-    assert!(!infos.is_empty(), "release must observe the registry with `cargo info`");
-    for (cwd, argv) in &infos {
-        assert!(
-            !inside_cargo_workspace(Path::new(cwd)),
-            "`cargo info {argv}` ran inside a Cargo workspace ({cwd}); cargo resolves the local manifest there"
-        );
-        assert!(
-            argv.contains("--registry crates-io"),
-            "`cargo info {argv}` must name the registry explicitly"
-        );
-    }
     assert!(out.status.success(), "{}", stderr(&out));
+
+    let served = registry_paths(e.root());
+    assert!(
+        served.iter().any(|path| path == "/co/re/core-crate"),
+        "observation must be a sparse-index GET against the bound registry, got {served:?}"
+    );
+    let cargo: Vec<String> = e.rig.cargo_calls().into_iter().map(|(_, argv)| argv).collect();
+    assert!(
+        !cargo.is_empty() && cargo.iter().all(|argv| argv.starts_with("publish ")),
+        "only the publish effect may shell to cargo; a client that resolves the local manifest \
+         must never decide what the registry holds, got {cargo:?}"
+    );
     assert_eq!(
         e.rig.log_count("cargo publish"),
         1,
@@ -1033,8 +1029,10 @@ fn red_d08_local_only_tag_is_pushed_to_the_remote_before_the_receipt() {
 
 #[test]
 fn red_c7_pre_effect_observation_failure_does_not_wedge_rerun() {
-    let mut e = RigEnv::single();
-    e.rig.set("CALLISTO_TEST_CARGO_INFO_FAIL", "1");
+    let e = RigEnv::single();
+    // 401 proves neither presence nor absence and is not retryable, so it
+    // reaches the executor as a single indeterminate observation.
+    set_registry_status(e.root(), Some(401));
     let first = e.run(&[]);
     assert!(!first.status.success());
     assert_eq!(
@@ -1042,7 +1040,7 @@ fn red_c7_pre_effect_observation_failure_does_not_wedge_rerun() {
         0,
         "no effect may run while observation fails"
     );
-    e.rig.set("CALLISTO_TEST_CARGO_INFO_FAIL", "0");
+    set_registry_status(e.root(), None);
     let second = e.run(&[]);
     assert!(
         second.status.success(),
@@ -1065,7 +1063,7 @@ fn c5_already_uploaded_text_without_registry_observation_is_not_success() {
     eprintln!("C5 status={:?} codes={:?}", out.status.code(), diagnostic_codes(&out));
     assert!(
         !out.status.success() && !e.receipt_path().exists(),
-        "`cargo info` still reports the crate absent, yet the run reported success (codes {:?})",
+        "the registry still does not serve the version, yet the run reported success (codes {:?})",
         diagnostic_codes(&out)
     );
 }
@@ -1082,7 +1080,7 @@ fn c5_already_exists_text_without_registry_observation_is_not_success() {
     eprintln!("C5 status={:?} codes={:?}", out.status.code(), diagnostic_codes(&out));
     assert!(
         !out.status.success() && !e.receipt_path().exists(),
-        "`cargo info` still reports the crate absent, yet the run reported success (codes {:?})",
+        "the registry still does not serve the version, yet the run reported success (codes {:?})",
         diagnostic_codes(&out)
     );
 }

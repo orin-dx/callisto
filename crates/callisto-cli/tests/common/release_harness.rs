@@ -5,15 +5,139 @@
 //! kept for the durable-release tests that depend on them. The `Rig` fakes
 //! model the real tools (see `Realism`) and are opt-in per defect.
 #![cfg(unix)]
-#![allow(dead_code)]
+#![allow(dead_code, unused_imports)]
 
 use std::{
+    collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
     process::{Command, Output},
+    sync::{Mutex, OnceLock},
 };
 
 use tempfile::TempDir;
+
+#[path = "../../../../testing/loopback_http.rs"]
+pub mod loopback;
+
+pub use loopback::{LoopbackRequest, LoopbackResponse, LoopbackServer};
+
+/// The loopback sparse index and PyPI endpoint the fixtures bind their registry
+/// to, so no end-to-end test can reach a real registry.
+///
+/// One server per test binary; each fixture gets its own URL path prefix, whose
+/// token names the directory the fake `cargo publish` records versions into.
+/// The server answers from exactly those files, so "publish then observe" is
+/// one mechanism rather than two fakes agreeing by accident.
+pub mod test_registry {
+    use super::{BTreeMap, LoopbackResponse, LoopbackServer, Mutex, OnceLock, Path, PathBuf};
+
+    /// Any 64-character lowercase hex value satisfies the checksum contract;
+    /// the fixtures assert on presence, not on a particular digest.
+    const FIXTURE_CKSUM: &str = "1111111111111111111111111111111111111111111111111111111111111111";
+
+    struct Registry {
+        server: LoopbackServer,
+        markers: Mutex<BTreeMap<String, PathBuf>>,
+        tokens: Mutex<BTreeMap<PathBuf, String>>,
+        statuses: Mutex<BTreeMap<String, u16>>,
+        state: PathBuf,
+    }
+
+    fn registry() -> &'static Registry {
+        static REGISTRY: OnceLock<Registry> = OnceLock::new();
+        REGISTRY.get_or_init(|| {
+            let state = tempfile::Builder::new()
+                .prefix("callisto-test-registry-")
+                .tempdir()
+                .expect("registry state directory")
+                .keep();
+            let server = LoopbackServer::start(move |request| answer(&request.path));
+            Registry {
+                server,
+                markers: Mutex::new(BTreeMap::new()),
+                tokens: Mutex::new(BTreeMap::new()),
+                statuses: Mutex::new(BTreeMap::new()),
+                state,
+            }
+        })
+    }
+
+    /// `/{token}/{index path...}/{name}` for cargo, `/{token}/pypi/{name}/{version}/json` for PyPI.
+    fn answer(path: &str) -> LoopbackResponse {
+        let mut segments = path.trim_start_matches('/').split('/');
+        let Some(token) = segments.next() else {
+            return LoopbackResponse::not_found();
+        };
+        if let Some(status) = registry().statuses.lock().unwrap().get(token).copied() {
+            return LoopbackResponse::new(status, "{}");
+        }
+        let Some(directory) = registry().markers.lock().unwrap().get(token).cloned() else {
+            return LoopbackResponse::not_found();
+        };
+        let Some(name) = segments.next_back() else {
+            return LoopbackResponse::not_found();
+        };
+        let Ok(version) = std::fs::read_to_string(directory.join(format!("published.{name}"))) else {
+            return LoopbackResponse::not_found();
+        };
+        let version = version.trim();
+        LoopbackResponse::new(
+            200,
+            format!("{{\"name\":\"{name}\",\"vers\":\"{version}\",\"cksum\":\"{FIXTURE_CKSUM}\",\"yanked\":false}}\n"),
+        )
+    }
+
+    fn token_for(root: &Path) -> String {
+        let registry = registry();
+        let mut tokens = registry.tokens.lock().unwrap();
+        if let Some(token) = tokens.get(root) {
+            return token.clone();
+        }
+        let token = format!("r{}", tokens.len());
+        let directory = registry.state.join(&token);
+        std::fs::create_dir_all(&directory).expect("marker directory");
+        registry.markers.lock().unwrap().insert(token.clone(), directory);
+        tokens.insert(root.to_path_buf(), token.clone());
+        token
+    }
+
+    /// The URL to bind `[registries.cratesIo]` to for a fixture at `root`.
+    pub fn registry_url(root: &Path) -> String {
+        format!("{}{}/", registry().server.base_url(), token_for(root))
+    }
+
+    /// The prefix the fake `cargo publish` writes `<prefix>.<crate>` under.
+    pub fn registry_marker(root: &Path) -> PathBuf {
+        let token = token_for(root);
+        registry().markers.lock().unwrap()[&token].join("published")
+    }
+
+    /// Every request path the registry served for the fixture at `root`, with
+    /// that fixture's URL prefix stripped.
+    pub fn registry_paths(root: &Path) -> Vec<String> {
+        let prefix = format!("/{}/", token_for(root));
+        registry()
+            .server
+            .paths()
+            .into_iter()
+            .filter_map(|path| path.strip_prefix(&prefix).map(|rest| format!("/{rest}")))
+            .collect()
+    }
+
+    /// Forces every answer for `root`'s registry to this status, or restores
+    /// the marker-backed answers with `None`.
+    pub fn set_registry_status(root: &Path, status: Option<u16>) {
+        let token = token_for(root);
+        let mut statuses = registry().statuses.lock().unwrap();
+        match status {
+            Some(status) => statuses.insert(token, status),
+            None => statuses.remove(&token),
+        };
+    }
+}
+
+pub use test_registry::{registry_marker, registry_paths, registry_url, set_registry_status};
 
 pub fn git(root: &Path, args: &[&str]) -> String {
     let output = Command::new("git").args(args).current_dir(root).output().unwrap();
@@ -48,6 +172,16 @@ pub fn system_git() -> PathBuf {
                     .is_ok_and(|output| output.status.success())
         })
         .expect("a real Git executable must be available before installing the fixture PATH")
+}
+
+/// Binds the built-in `cratesIo` key to the loopback sparse index. A built-in
+/// registry key may carry a `url`, which is what makes an end-to-end
+/// observation possible without reaching crates.io.
+fn loopback_registry_block(root: &Path) -> String {
+    format!(
+        "\n[registries.cratesIo]\nkind = \"cargo\"\nurl = \"{}\"\n",
+        registry_url(root)
+    )
 }
 
 /// Builds the exact shape a merged release PR must have: its parent contains
@@ -104,8 +238,9 @@ pub fn release_commit_fixture_with_product_release(product_release: bool) -> (Te
     fs::write(
         config_path,
         format!(
-            "{config}{product_config}\n[[package]]\nmatch = \"cargo/core-crate\"\npublish-to = [\"crates-io\", \"github-release\"]\n{tag_template}",
+            "{config}{product_config}{registry}\n[[package]]\nmatch = \"cargo/core-crate\"\npublish-to = [\"crates-io\", \"github-release\"]\n{tag_template}",
             product_config = product_config.unwrap_or_default(),
+            registry = loopback_registry_block(root),
             tag_template = tag_template.unwrap_or_default(),
         ),
     )
@@ -208,10 +343,11 @@ pub fn fixed_group_release_commit_fixture() -> (TempDir, String) {
     fs::write(
         config_path,
         format!(
-            "{config}\n\
+            "{config}{registry}\n\
              [[package]]\nmatch = \"cargo/crate-a\"\npublish-to = [\"crates-io\"]\n\n\
              [[package]]\nmatch = \"cargo/crate-b\"\npublish-to = [\"crates-io\"]\n\n\
-             [[fixed-group]]\nname = \"demo\"\nmembers = [\"crate-a\", \"crate-b\"]\n"
+             [[fixed-group]]\nname = \"demo\"\nmembers = [\"crate-a\", \"crate-b\"]\n",
+            registry = loopback_registry_block(root),
         ),
     )
     .unwrap();
@@ -415,16 +551,16 @@ pub fn fake_publishers(
     let log = external.join("external-effects.log");
     let git_trace = external.join("git-commands.log");
     let forge_marker = external.join("forge-release-created");
-    let cargo_publish = if fail_cargo_publish {
-        "exit 23"
+    // One cargo fake for both harnesses; a forced failure is just the same
+    // publish-exit knob the rig uses, preset in the script.
+    let preset = if fail_cargo_publish {
+        "CALLISTO_TEST_CARGO_PUBLISH_EXIT=23\n"
     } else {
-        ": > \"$CALLISTO_TEST_CARGO_MARKER\"\nexit 0"
+        ""
     };
     fs::write(
         bin.join("cargo"),
-        format!(
-            "#!/bin/sh\nprintf 'cargo %s\\n' \"$*\" >> \"$CALLISTO_TEST_LOG\"\nif [ \"$1\" = info ]; then\n  if [ -f \"$CALLISTO_TEST_CARGO_MARKER\" ]; then\n    exit 0\n  fi\n  printf 'could not find crate\\n' >&2\n  exit 101\nfi\nif [ \"$1\" = publish ]; then\n  {cargo_publish}\nfi\nexit 0\n"
-        ),
+        RIG_CARGO.replacen("#!/bin/sh\n", &format!("#!/bin/sh\n{preset}"), 1),
     )
     .unwrap();
     fs::write(
@@ -514,7 +650,7 @@ pub fn execute_with_recovery(
             publishers.log.with_extension("artifact-marker"),
         )
         .env("CALLISTO_TEST_FORGE_TAG", "core-crate@0.2.0")
-        .env("CALLISTO_TEST_CARGO_MARKER", state.with_extension("cargo-marker"))
+        .env("CALLISTO_TEST_CARGO_MARKER", registry_marker(root))
         .env("CALLISTO_TEST_REAL_GIT", system_git())
         .output()
         .expect("release execute should run")
@@ -559,7 +695,7 @@ pub fn execute_from_coordinator(
             publishers.log.with_extension("artifact-marker"),
         )
         .env("CALLISTO_TEST_FORGE_TAG", "core-crate@0.2.0")
-        .env("CALLISTO_TEST_CARGO_MARKER", state.with_extension("cargo-marker"))
+        .env("CALLISTO_TEST_CARGO_MARKER", registry_marker(source))
         .env("CALLISTO_TEST_REAL_GIT", system_git())
         .output()
         .expect("cross-worktree release execute should run")
@@ -607,7 +743,7 @@ pub fn execute_product(
             publishers.log.with_extension("artifact-marker"),
         )
         .env("CALLISTO_TEST_FORGE_TAG", "callisto@0.2.0")
-        .env("CALLISTO_TEST_CARGO_MARKER", state.with_extension("cargo-marker"))
+        .env("CALLISTO_TEST_CARGO_MARKER", registry_marker(root))
         .env("CALLISTO_TEST_REAL_GIT", system_git())
         .output()
         .expect("product release execute should run")
@@ -619,39 +755,14 @@ pub fn execute_product(
 // red test isolates exactly the realism it needs.
 // ---------------------------------------------------------------------
 
+/// The one fake `cargo`. Observation no longer shells to cargo at all, so the
+/// only thing this models is `publish`: it records the published version under
+/// `$CALLISTO_TEST_CARGO_MARKER.<crate>`, which is exactly what the loopback
+/// sparse index serves from.
 const RIG_CARGO: &str = r#"#!/bin/sh
 printf 'cargo %s\n' "$*" >> "$CALLISTO_TEST_LOG"
-printf '%s|%s\n' "$PWD" "$*" >> "$CALLISTO_TEST_CARGO_CALLS"
-if [ "$1" = info ]; then
-  if [ "$CALLISTO_TEST_CARGO_INFO_FAIL" = 1 ]; then
-    printf 'error: network unreachable\n' >&2
-    exit 1
-  fi
-  name=${2%@*}
-  registry=''
-  prev=''
-  for a in "$@"; do
-    if [ "$prev" = --registry ]; then registry=$a; fi
-    prev=$a
-  done
-  if [ "$CALLISTO_TEST_CARGO_LOCAL" = 1 ] && [ -z "$registry" ]; then
-    dir=$PWD
-    while [ "$dir" != / ]; do
-      if [ -f "$dir/Cargo.toml" ]; then
-        if grep -rqs --include=Cargo.toml "^name = \"$name\"" "$dir"; then
-          printf '%s v0.0.0 (from ./crates/%s)\n' "$name" "$name"
-          exit 0
-        fi
-      fi
-      dir=$(dirname "$dir")
-    done
-  fi
-  if [ -f "$CALLISTO_TEST_CARGO_MARKER" ] || [ -f "$CALLISTO_TEST_CARGO_MARKER.$name" ]; then
-    printf '%s\n' "$name"
-    exit 0
-  fi
-  printf 'could not find crate\n' >&2
-  exit 101
+if [ -n "$CALLISTO_TEST_CARGO_CALLS" ]; then
+  printf '%s|%s\n' "$PWD" "$*" >> "$CALLISTO_TEST_CARGO_CALLS"
 fi
 if [ "$1" = publish ]; then
   manifest=''
@@ -661,6 +772,7 @@ if [ "$1" = publish ]; then
     prev=$a
   done
   name=$(grep -m1 '^name = ' "$manifest" | cut -d'"' -f2)
+  version=$(grep -m1 '^version = ' "$manifest" | cut -d'"' -f2)
   if [ "$CALLISTO_TEST_CARGO_TARGET" = 1 ]; then
     mkdir -p "$PWD/target/package"
     : > "$PWD/target/package/x"
@@ -669,7 +781,10 @@ if [ "$1" = publish ]; then
     printf '%s\n' "$CALLISTO_TEST_CARGO_PUBLISH_STDERR" >&2
     exit "$CALLISTO_TEST_CARGO_PUBLISH_EXIT"
   fi
-  : > "$CALLISTO_TEST_CARGO_MARKER.$name"
+  if [ -n "$CALLISTO_TEST_CARGO_PUBLISH_SLEEP" ]; then
+    sleep "$CALLISTO_TEST_CARGO_PUBLISH_SLEEP"
+  fi
+  printf '%s\n' "$version" > "$CALLISTO_TEST_CARGO_MARKER.$name"
   exit 0
 fi
 exit 0
@@ -834,10 +949,6 @@ impl Rig {
         self
     }
 
-    /// `cargo info` resolves a workspace-local manifest when run inside a workspace without `--registry`.
-    pub fn real_cargo_info(&mut self) -> &mut Self {
-        self.set("CALLISTO_TEST_CARGO_LOCAL", "1")
-    }
     /// `cargo publish` leaves `target/package/` in its working directory.
     pub fn real_cargo_target_dir(&mut self) -> &mut Self {
         self.set("CALLISTO_TEST_CARGO_TARGET", "1")
@@ -933,7 +1044,7 @@ pub fn execute_rig(
             rig.log.with_extension("artifact-marker"),
         )
         .env("CALLISTO_TEST_FORGE_TAG", forge_tag)
-        .env("CALLISTO_TEST_CARGO_MARKER", state.with_extension("cargo-marker"))
+        .env("CALLISTO_TEST_CARGO_MARKER", registry_marker(root))
         .env("CALLISTO_TEST_REAL_GIT", system_git());
     for (key, value) in &rig.env {
         command.env(key, value);

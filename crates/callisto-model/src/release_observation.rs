@@ -90,6 +90,9 @@ pub enum ProviderConflictReason {
 pub enum ProviderIndeterminateCause {
     /// No query API exists for this provider yet (PyPI's upload endpoint).
     UnsupportedProvider,
+    /// The registry is bound over a protocol this path cannot read, such as a
+    /// cargo git index rather than a sparse HTTP index.
+    UnsupportedProtocol,
     /// The provider answered with a status that proves neither presence nor absence.
     ProviderStatus {
         status: u16,

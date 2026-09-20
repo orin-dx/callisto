@@ -159,3 +159,52 @@ fn durable_release_wire_shapes_match_their_schema_version() {
     assert_eq!(req, expected);
     assert_eq!(props, expected);
 }
+
+/// Both observation enums are closed and persisted in receipts and state, so a
+/// reader from an earlier release must be able to name every value it can meet.
+/// Adding one is intentional and belongs here; losing one silently is not.
+#[test]
+fn provider_observation_enums_carry_exactly_their_declared_variants() {
+    let receipt = run_schema("release-receipt");
+    let variants = |name: &str| -> BTreeSet<String> {
+        receipt["definitions"][name]["oneOf"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|variant| {
+                variant["enum"]
+                    .get(0)
+                    .or_else(|| variant["properties"]["kind"]["enum"].get(0))
+                    .and_then(serde_json::Value::as_str)
+                    .expect("every variant names itself")
+                    .to_owned()
+            })
+            .collect()
+    };
+
+    assert_eq!(
+        variants("ProviderConflictReason"),
+        set(&[
+            "localTagDiffers",
+            "remoteTagTargetDiffers",
+            "unannotatedTag",
+            "forgeReleaseDiffers",
+            "artifactAssetDiffers",
+            "duplicateArtifactAsset",
+            "registryVersionYanked",
+        ])
+    );
+    assert_eq!(
+        variants("ProviderIndeterminateCause"),
+        set(&[
+            "unsupportedProvider",
+            "unsupportedProtocol",
+            "providerStatus",
+            "commandFailed",
+            "malformedResponse",
+            "timeout",
+            "registryVersionUnverified",
+            "artifactManifestUnavailable",
+        ])
+    );
+}

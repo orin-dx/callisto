@@ -6,7 +6,7 @@
 use std::path::Path;
 
 use callisto_model::{
-    CanonicalTranscript, CommandRunner, GitHubRepository, GitHubRepositoryParseError, PublishTarget,
+    CanonicalTranscript, CommandRunner, Ecosystem, GitHubRepository, GitHubRepositoryParseError, PublishTarget,
     RegistryBindingDigest, RegistryKey, SemanticInputDigest,
 };
 
@@ -27,6 +27,27 @@ pub(crate) struct PreparedRegistryBinding {
     pub(crate) key: RegistryKey,
     pub(crate) endpoint: Option<String>,
     pub(crate) identity: RegistryBindingDigest,
+    pub(crate) protocol: RegistryProtocol,
+}
+
+/// How the bound registry is read. A cargo registry configured without the
+/// `sparse+` marker is a git index, which this release path cannot observe
+/// over HTTP and must therefore refuse rather than guess about.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum RegistryProtocol {
+    Http,
+    CargoSparseIndex,
+    CargoGitIndex,
+}
+
+fn cargo_index_protocol(raw: Option<&str>) -> RegistryProtocol {
+    match raw {
+        None => RegistryProtocol::CargoSparseIndex,
+        Some(url) if url.starts_with(crate::registry_endpoint::SPARSE_INDEX_PREFIX) => {
+            RegistryProtocol::CargoSparseIndex
+        }
+        Some(_) => RegistryProtocol::CargoGitIndex,
+    }
 }
 
 /// Immutable, credential-free destination for Git effects. Its canonical
@@ -88,20 +109,28 @@ pub(crate) fn prepared_registry_binding<R: CommandRunner, D: DependencyResolver>
     }
     let explicit = (key == logical_key).then(|| target.registry_override()).flatten();
     let configured = configured_registry.and_then(|registry| registry.url.as_deref());
-    let binding = match explicit.or(configured) {
-        Some(raw) => canonical_registry_binding(key.as_str(), raw)?,
-        None => {
-            return Ok(PreparedRegistryBinding {
-                key: key.clone(),
-                endpoint: None,
-                identity: RegistryBindingDigest::from_normalized_binding(key.as_str().as_bytes()),
-            })
-        }
+    let raw = explicit.or(configured);
+    // The built-in crates.io key always names a sparse index, including when a
+    // rehearsal or test deployment points it at another http host.
+    let protocol = match target.ecosystem() {
+        Some(Ecosystem::Cargo) if key.as_str() == RegistryKey::CRATES_IO => RegistryProtocol::CargoSparseIndex,
+        Some(Ecosystem::Cargo) => cargo_index_protocol(raw),
+        _ => RegistryProtocol::Http,
     };
+    let Some(raw) = raw else {
+        return Ok(PreparedRegistryBinding {
+            key: key.clone(),
+            endpoint: None,
+            identity: RegistryBindingDigest::from_normalized_binding(key.as_str().as_bytes()),
+            protocol,
+        });
+    };
+    let binding = canonical_registry_binding(key.as_str(), raw)?;
     Ok(PreparedRegistryBinding {
         key,
         endpoint: Some(binding.endpoint()),
         identity: binding.digest(),
+        protocol,
     })
 }
 

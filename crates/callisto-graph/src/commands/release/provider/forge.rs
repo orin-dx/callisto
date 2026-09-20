@@ -1,8 +1,8 @@
 //! The forge-release role: one GitHub release per prepared tag.
 
 use callisto_model::{
-    CommandRunner, ExactEvidence, ProviderConflictReason, ProviderEvidenceV1, ProviderIndeterminateCause,
-    ProviderObservationV1, TagName,
+    ExactEvidence, ProviderConflictReason, ProviderEvidenceV1, ProviderIndeterminateCause, ProviderObservationV1,
+    TagName,
 };
 
 use crate::error::{CommandFailure, RemoteConflict};
@@ -36,7 +36,7 @@ impl ReleaseProvider for ForgeReleaseProvider {
     ) -> Result<ProviderObservationV1, GraphError> {
         let operation = forge_operation(request)?;
         let repository = context.github_repository_slug()?;
-        observed_forge_release_target(context.root(), context.runner(), &operation.tag, &repository)
+        observed_forge_release_target(context, &operation.tag, &repository)
     }
 
     fn publish(
@@ -71,7 +71,7 @@ impl ReleaseProvider for ForgeReleaseProvider {
             });
         }
         confirmed_evidence(
-            observed_forge_release_target(context.root(), context.runner(), &operation.tag, &repository)?,
+            observed_forge_release_target(context, &operation.tag, &repository)?,
             request.id,
             RemoteConflict::ForgeReleaseNotObservedAfterCreate,
         )
@@ -90,12 +90,11 @@ fn forge_operation<'a>(request: &ProviderRequest<'a>) -> Result<&'a ForgeRelease
 /// released commit. The tag operation is a DAG prerequisite of the forge
 /// release, so the tag already binds this release's name to its commit.
 pub(crate) fn observed_forge_release_target(
-    root: &std::path::Path,
-    runner: &dyn CommandRunner,
+    context: &ProviderContext<'_>,
     tag: &TagName,
     repository: &str,
 ) -> Result<ProviderObservationV1, GraphError> {
-    let value = match github_release_by_tag(root, runner, repository, tag)? {
+    let value = match github_release_by_tag(context.root(), context.runner(), context.sleeper(), repository, tag)? {
         GitHubReleaseLookup::Absent => return Ok(ProviderObservationV1::Absent),
         GitHubReleaseLookup::Indeterminate { status } => {
             return Ok(ProviderObservationV1::Indeterminate {

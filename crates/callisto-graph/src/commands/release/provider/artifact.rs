@@ -65,7 +65,7 @@ impl ReleaseProvider for ArtifactUploadProvider {
         let path = artifacts.path_for(&operation.slot)?;
         let repository = operation.slot.attestation_policy.repository.as_slug();
         confirmed_evidence(
-            observed_forge_release_target(context.root(), context.runner(), &operation.tag, &repository)?,
+            observed_forge_release_target(context, &operation.tag, &repository)?,
             request.id,
             RemoteConflict::ForgeReleaseDiffers,
         )?;
@@ -118,7 +118,13 @@ fn observe_artifact_upload(
     };
     let entry = artifacts.entry_for(&operation.slot)?;
     let repository = operation.slot.attestation_policy.repository.as_slug();
-    let release = match github_release_by_tag(context.root(), context.runner(), &repository, &operation.tag)? {
+    let release = match github_release_by_tag(
+        context.root(),
+        context.runner(),
+        context.sleeper(),
+        &repository,
+        &operation.tag,
+    )? {
         GitHubReleaseLookup::Absent => return Ok(ProviderObservationV1::Absent),
         GitHubReleaseLookup::Indeterminate { status } => {
             return Ok(ProviderObservationV1::Indeterminate {

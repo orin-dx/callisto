@@ -10,7 +10,8 @@ use callisto_model::{CommandOutput, CommandRunner, TagName};
 use crate::error::CommandFailure;
 use crate::GraphError;
 
-use super::provider::policy::timeouts;
+use super::provider::http::{parse_http_response, HttpResponse};
+use super::provider::policy::{retry_observation, timeouts, Attempt, Sleeper};
 
 /// One GitHub release lookup, shared by the forge-release and asset adapters.
 #[derive(Debug)]
@@ -29,39 +30,19 @@ pub(crate) fn github_release_api_args(endpoint: &str) -> [&str; 5] {
     ["api", "--include", "--method", "GET", endpoint]
 }
 
-fn parse_github_api_response<'a>(program: &str, args: &[&str], stdout: &'a str) -> Result<(u16, &'a str), GraphError> {
-    let malformed = |detail: String| GraphError::ReleaseCommand {
+fn parse_github_api_response(program: &str, args: &[&str], stdout: &str) -> Result<HttpResponse, GraphError> {
+    parse_http_response(stdout).map_err(|detail| GraphError::ReleaseCommand {
         program: program.to_string(),
         args: args.iter().map(ToString::to_string).collect(),
         failure: CommandFailure::MalformedOutput { detail },
-    };
-    let (headers, body) = stdout
-        .rsplit_once("\r\n\r\n")
-        .or_else(|| stdout.rsplit_once("\n\n"))
-        .ok_or_else(|| malformed("response has no blank line separating headers from body".to_string()))?;
-    let status_line = headers
-        .lines()
-        .rev()
-        .find(|line| line.trim_end_matches('\r').starts_with("HTTP/"))
-        .ok_or_else(|| malformed("response headers contain no HTTP status line".to_string()))?;
-    let status = status_line
-        .split_whitespace()
-        .nth(1)
-        .ok_or_else(|| malformed(format!("HTTP status line has no status code: {status_line:?}")))?
-        .parse::<u16>()
-        .map_err(|error| malformed(format!("HTTP status code is not a valid number: {error}")))?;
-    Ok((status, body))
+    })
 }
 
 /// `gh api --include` preserves the HTTP response even for a 404 and exits
 /// non-zero. Parse that authoritative response first so absence is not
 /// mistaken for a transport failure; retain the command failure when no
 /// parseable HTTP response was produced.
-fn github_api_response<'a>(
-    program: &str,
-    args: &[&str],
-    output: &'a CommandOutput,
-) -> Result<(u16, &'a str), GraphError> {
+fn github_api_response(program: &str, args: &[&str], output: &CommandOutput) -> Result<HttpResponse, GraphError> {
     match parse_github_api_response(program, args, &output.stdout) {
         Ok(response) => Ok(response),
         Err(_) if !output.success() => Err(GraphError::ReleaseCommand {
@@ -88,28 +69,49 @@ fn github_release_response_status(status: u16) -> Option<GitHubReleaseLookup> {
     }
 }
 
-/// The one GET both forge observations share.
+/// The one GET both forge observations share, under the same bounded retry as
+/// every other read-only observation.
 pub(crate) fn github_release_by_tag(
+    root: &Path,
+    runner: &dyn CommandRunner,
+    sleeper: &dyn Sleeper,
+    repository: &str,
+    tag: &TagName,
+) -> Result<GitHubReleaseLookup, GraphError> {
+    retry_observation(sleeper, || github_release_by_tag_once(root, runner, repository, tag))
+}
+
+fn github_release_by_tag_once(
     root: &Path,
     runner: &dyn CommandRunner,
     repository: &str,
     tag: &TagName,
-) -> Result<GitHubReleaseLookup, GraphError> {
+) -> Result<Attempt<GitHubReleaseLookup>, GraphError> {
     let endpoint = github_release_endpoint(repository, tag);
     let api_args = github_release_api_args(&endpoint);
     let observed = runner.run_with_timeout("gh", &api_args, root, timeouts::FORGE_API)?;
-    let (status, body) = github_api_response("gh", &api_args, &observed)?;
-    if let Some(lookup) = github_release_response_status(status) {
-        return Ok(lookup);
+    let response = github_api_response("gh", &api_args, &observed)?;
+    if let Some(lookup) = github_release_response_status(response.status) {
+        return Ok(
+            if matches!(response.status, 429 | 500..=599) || (response.status == 403 && response.is_rate_limited()) {
+                Attempt::Transient {
+                    value: lookup,
+                    retry_after: response.retry_after(),
+                }
+            } else {
+                Attempt::Settled(lookup)
+            },
+        );
     }
-    let value: serde_json::Value = serde_json::from_str(body).map_err(|error| GraphError::ReleaseCommand {
-        program: "gh".to_string(),
-        args: api_args.iter().map(ToString::to_string).collect(),
-        failure: CommandFailure::MalformedOutput {
-            detail: error.to_string(),
-        },
-    })?;
-    Ok(GitHubReleaseLookup::Found(value))
+    let value: serde_json::Value =
+        serde_json::from_str(&response.body).map_err(|error| GraphError::ReleaseCommand {
+            program: "gh".to_string(),
+            args: api_args.iter().map(ToString::to_string).collect(),
+            failure: CommandFailure::MalformedOutput {
+                detail: error.to_string(),
+            },
+        })?;
+    Ok(Attempt::Settled(GitHubReleaseLookup::Found(value)))
 }
 
 #[cfg(test)]
@@ -118,14 +120,14 @@ mod tests {
 
     #[test]
     fn github_api_observation_parser_requires_an_explicit_http_status() {
-        let (status, body) = parse_github_api_response(
+        let response = parse_github_api_response(
             "gh",
             &["api"],
             "HTTP/2 404\r\ncontent-type: application/json\r\n\r\n{\"message\":\"Not Found\"}",
         )
         .unwrap();
-        assert_eq!(status, 404);
-        assert_eq!(body, "{\"message\":\"Not Found\"}");
+        assert_eq!(response.status, 404);
+        assert_eq!(response.body, "{\"message\":\"Not Found\"}");
         assert!(parse_github_api_response("gh", &["api"], "not a response").is_err());
     }
 
@@ -136,8 +138,7 @@ mod tests {
             stdout: "HTTP/2 404\r\ncontent-type: application/json\r\n\r\n{\"message\":\"Not Found\"}".to_owned(),
             stderr: "gh: Not Found (HTTP 404)".to_owned(),
         };
-        let (status, _) = github_api_response("gh", &["api"], &output).unwrap();
-        assert_eq!(status, 404);
+        assert_eq!(github_api_response("gh", &["api"], &output).unwrap().status, 404);
     }
 
     #[test]

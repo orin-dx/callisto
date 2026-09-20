@@ -15,8 +15,10 @@ pub(crate) mod timeouts {
 
     /// `cargo publish`, `npm publish`, `python -m build`, `twine upload`.
     pub(crate) const PUBLISH: Duration = Duration::from_secs(900);
-    /// `cargo info`, `npm view`.
+    /// The subprocess deadline around one registry query (`curl`, `npm view`).
     pub(crate) const REGISTRY_QUERY: Duration = Duration::from_secs(300);
+    /// `curl --max-time`: the HTTP request's own deadline, inside the above.
+    pub(crate) const HTTP_MAX_TIME: Duration = Duration::from_secs(60);
     /// `gh attestation verify`.
     pub(crate) const ATTESTATION_VERIFY: Duration = Duration::from_secs(120);
     /// `gh api`.
@@ -33,35 +35,67 @@ pub(crate) mod timeouts {
     pub(crate) const LOCAL_GIT: Duration = Duration::from_secs(60);
 }
 
-/// Retries after this many unconfirmed checks: 3 retries (4 checks total).
-pub(crate) const REGISTRY_CONFIRMATION_MAX_RETRIES: u32 = 3;
+/// Total tries for one read-only observation, including the first.
+pub(crate) const OBSERVATION_MAX_ATTEMPTS: u32 = 5;
 
-/// Exponential backoff between confirmation checks: 2s, 4s, 8s (14s worst
-/// case) -- registry index propagation is normally sub-second, so this only
-/// costs time on the rare lagging case, not the common one.
-pub(crate) fn registry_confirmation_backoff(retry: u32) -> Duration {
-    Duration::from_secs(2u64.pow(retry + 1))
+/// Longest single wait, and the clamp applied to a server's `Retry-After`.
+pub(crate) const OBSERVATION_BACKOFF_CAP: Duration = Duration::from_secs(300);
+
+/// Exponential backoff between observation attempts: 2s, 4s, 8s, 16s.
+pub(crate) fn observation_backoff(attempt: u32) -> Duration {
+    Duration::from_secs(2u64.saturating_pow(attempt + 1)).min(OBSERVATION_BACKOFF_CAP)
 }
 
-/// Retries `check` up to `max_retries` more times, sleeping `backoff(retry)`
-/// between attempts, and returns as soon as it reports published. Returns
-/// `Ok(false)` if it never does. `sleep` is injected so tests can verify the
-/// retry count and schedule without a real wall-clock wait.
-pub(crate) fn poll_until_published(
-    mut check: impl FnMut() -> Result<bool, GraphError>,
-    max_retries: u32,
-    backoff: impl Fn(u32) -> Duration,
-    sleep: impl Fn(Duration),
-) -> Result<bool, GraphError> {
-    for retry in 0..=max_retries {
-        if check()? {
-            return Ok(true);
-        }
-        if retry < max_retries {
-            sleep(backoff(retry));
+/// One attempt's result: either it settled the question, or it left the answer
+/// unknown for a reason that may resolve on its own.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum Attempt<T> {
+    Settled(T),
+    /// `value` is the answer to report if every attempt is exhausted.
+    Transient {
+        value: T,
+        retry_after: Option<Duration>,
+    },
+}
+
+/// The wall-clock wait, injected so tests exercise the schedule without it.
+pub(crate) trait Sleeper: Sync {
+    fn sleep(&self, duration: Duration);
+}
+
+pub(crate) struct ThreadSleeper;
+
+impl Sleeper for ThreadSleeper {
+    fn sleep(&self, duration: Duration) {
+        std::thread::sleep(duration);
+    }
+}
+
+/// The one bounded retry in the release path. It wraps read-only observations
+/// only: an effect (publish, push, release create, asset upload) is never
+/// re-issued from here, because a transient error cannot prove the first
+/// attempt did not take effect.
+pub(crate) fn retry_observation<T>(
+    sleeper: &dyn Sleeper,
+    mut attempt: impl FnMut() -> Result<Attempt<T>, GraphError>,
+) -> Result<T, GraphError> {
+    let mut exhausted = None;
+    for index in 0..OBSERVATION_MAX_ATTEMPTS {
+        match attempt()? {
+            Attempt::Settled(value) => return Ok(value),
+            Attempt::Transient { value, retry_after } => {
+                exhausted = Some(value);
+                if index + 1 < OBSERVATION_MAX_ATTEMPTS {
+                    sleeper.sleep(
+                        retry_after
+                            .unwrap_or_else(|| observation_backoff(index))
+                            .min(OBSERVATION_BACKOFF_CAP),
+                    );
+                }
+            }
         }
     }
-    Ok(false)
+    Ok(exhausted.expect("at least one attempt always runs"))
 }
 
 /// A successful publish-client exit isn't a receipt: confirms the registry
@@ -83,7 +117,7 @@ pub(crate) fn require_registry_confirmation(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use callisto_model::VersionGrammar;
 
@@ -118,80 +152,115 @@ mod tests {
         assert!(require_registry_confirmation(true, "left-pad", &version).is_ok());
     }
 
-    #[test]
-    fn poll_until_published_succeeds_immediately_without_sleeping() {
-        let sleeps = std::cell::RefCell::new(Vec::new());
-        let result = poll_until_published(
-            || Ok(true),
-            REGISTRY_CONFIRMATION_MAX_RETRIES,
-            registry_confirmation_backoff,
-            |d| sleeps.borrow_mut().push(d),
-        );
-        assert_eq!(result, Ok(true));
-        assert!(sleeps.borrow().is_empty(), "must not sleep when already published");
+    /// Records the schedule instead of waiting it out.
+    pub(crate) struct RecordingSleeper(std::sync::Mutex<Vec<Duration>>);
+
+    impl RecordingSleeper {
+        pub(crate) fn new() -> Self {
+            Self(std::sync::Mutex::new(Vec::new()))
+        }
+
+        pub(crate) fn waits(&self) -> Vec<Duration> {
+            self.0.lock().unwrap().clone()
+        }
+    }
+
+    impl Sleeper for RecordingSleeper {
+        fn sleep(&self, duration: Duration) {
+            self.0.lock().unwrap().push(duration);
+        }
     }
 
     #[test]
-    fn poll_until_published_succeeds_on_a_later_retry() {
-        let attempts = std::cell::RefCell::new(0);
-        let sleeps = std::cell::RefCell::new(Vec::new());
-        let result = poll_until_published(
-            || {
-                *attempts.borrow_mut() += 1;
-                Ok(*attempts.borrow() == 3)
-            },
-            REGISTRY_CONFIRMATION_MAX_RETRIES,
-            registry_confirmation_backoff,
-            |d| sleeps.borrow_mut().push(d),
-        );
-        assert_eq!(result, Ok(true));
-        assert_eq!(*attempts.borrow(), 3);
+    fn a_settled_first_attempt_never_sleeps() {
+        let sleeper = RecordingSleeper::new();
+        let result = retry_observation(&sleeper, || Ok(Attempt::Settled("published")));
+        assert_eq!(result, Ok("published"));
+        assert!(sleeper.waits().is_empty());
+    }
+
+    #[test]
+    fn a_transient_answer_is_retried_on_the_exponential_schedule() {
+        let sleeper = RecordingSleeper::new();
+        let attempts = std::cell::Cell::new(0);
+        let result = retry_observation(&sleeper, || {
+            attempts.set(attempts.get() + 1);
+            Ok(if attempts.get() == 3 {
+                Attempt::Settled("published")
+            } else {
+                Attempt::Transient {
+                    value: "unknown",
+                    retry_after: None,
+                }
+            })
+        });
+        assert_eq!(result, Ok("published"));
+        assert_eq!(attempts.get(), 3);
+        assert_eq!(sleeper.waits(), vec![Duration::from_secs(2), Duration::from_secs(4)]);
+    }
+
+    #[test]
+    fn exhausted_attempts_report_the_last_transient_answer_with_no_trailing_sleep() {
+        let sleeper = RecordingSleeper::new();
+        let attempts = std::cell::Cell::new(0);
+        let result = retry_observation(&sleeper, || {
+            attempts.set(attempts.get() + 1);
+            Ok(Attempt::Transient {
+                value: "unknown",
+                retry_after: None,
+            })
+        });
+        assert_eq!(result, Ok("unknown"));
+        assert_eq!(attempts.get(), i32::try_from(OBSERVATION_MAX_ATTEMPTS).unwrap());
         assert_eq!(
-            *sleeps.borrow(),
-            vec![Duration::from_secs(2), Duration::from_secs(4)],
-            "must sleep with the exponential schedule between the two failed checks"
+            sleeper.waits(),
+            vec![
+                Duration::from_secs(2),
+                Duration::from_secs(4),
+                Duration::from_secs(8),
+                Duration::from_secs(16)
+            ]
         );
     }
 
     #[test]
-    fn poll_until_published_gives_up_after_max_retries_with_no_trailing_sleep() {
-        let attempts = std::cell::RefCell::new(0);
-        let sleeps = std::cell::RefCell::new(Vec::new());
-        let result = poll_until_published(
-            || {
-                *attempts.borrow_mut() += 1;
-                Ok(false)
-            },
-            REGISTRY_CONFIRMATION_MAX_RETRIES,
-            registry_confirmation_backoff,
-            |d| sleeps.borrow_mut().push(d),
-        );
-        assert_eq!(result, Ok(false));
-        assert_eq!(*attempts.borrow(), 4, "one initial check plus 3 retries");
+    fn a_servers_retry_after_replaces_the_schedule_and_is_clamped_to_the_cap() {
+        let sleeper = RecordingSleeper::new();
+        let attempts = std::cell::Cell::new(0);
+        let result = retry_observation(&sleeper, || {
+            attempts.set(attempts.get() + 1);
+            Ok(match attempts.get() {
+                1 => Attempt::Transient {
+                    value: "unknown",
+                    retry_after: Some(Duration::from_secs(9)),
+                },
+                2 => Attempt::Transient {
+                    value: "unknown",
+                    retry_after: Some(Duration::from_secs(86_400)),
+                },
+                _ => Attempt::Settled("published"),
+            })
+        });
+        assert_eq!(result, Ok("published"));
         assert_eq!(
-            *sleeps.borrow(),
-            vec![Duration::from_secs(2), Duration::from_secs(4), Duration::from_secs(8)],
-            "must not sleep again after the final (4th) check fails"
+            sleeper.waits(),
+            vec![Duration::from_secs(9), OBSERVATION_BACKOFF_CAP],
+            "an absurd Retry-After must not park the release for a day"
         );
     }
 
     #[test]
-    fn poll_until_published_propagates_a_check_error_without_retrying() {
-        let attempts = std::cell::RefCell::new(0);
-        let version = Version::parse("1.2.3", VersionGrammar::SemVer).unwrap();
-        let result = poll_until_published(
-            || {
-                *attempts.borrow_mut() += 1;
-                Err(GraphError::RegistryPublishUnconfirmed {
-                    package: "left-pad".to_string(),
-                    version: version.clone(),
-                })
-            },
-            REGISTRY_CONFIRMATION_MAX_RETRIES,
-            registry_confirmation_backoff,
-            |_| panic!("must not sleep after a hard error"),
-        );
+    fn a_hard_error_is_propagated_without_retrying() {
+        let sleeper = RecordingSleeper::new();
+        let attempts = std::cell::Cell::new(0);
+        let result = retry_observation::<&str>(&sleeper, || {
+            attempts.set(attempts.get() + 1);
+            Err(GraphError::ReleaseInvariant {
+                detail: "hard".to_string(),
+            })
+        });
         assert!(result.is_err());
-        assert_eq!(*attempts.borrow(), 1, "a check error must not be retried");
+        assert_eq!(attempts.get(), 1);
+        assert!(sleeper.waits().is_empty());
     }
 }

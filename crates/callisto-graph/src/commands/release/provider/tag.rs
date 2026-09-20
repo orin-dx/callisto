@@ -9,7 +9,7 @@ use callisto_vcs::{GitAccess, GitDataSource, TagSignPolicy};
 use crate::error::{CommandFailure, RemoteConflict};
 use crate::GraphError;
 
-use super::policy::timeouts;
+use super::policy::{self, timeouts, Attempt};
 use super::{
     confirmed_evidence, wrong_role, EffectAuthorization, PreparedOperation, ProviderCapabilities, ProviderContext,
     ProviderRequest, ReleaseProvider, TagOperation,
@@ -133,7 +133,8 @@ fn tag_observation(
             })
         }
     }
-    Ok(match observed_remote_tag(context, &operation.name)? {
+    let remote = policy::retry_observation(context.sleeper(), || observed_remote_tag(context, &operation.name))?;
+    Ok(match remote {
         RemoteTagObservation::Absent => ProviderObservationV1::Absent,
         RemoteTagObservation::Annotated { target: observed } if observed == operation.target => {
             ProviderObservationV1::Exact {
@@ -155,8 +156,13 @@ fn tag_observation(
 }
 
 /// Observes `refs/tags/<name>` on the prepared remote. A git failure leaves
-/// the remote unknown; absence must be proved by a successful query.
-fn observed_remote_tag(context: &ProviderContext<'_>, name: &TagName) -> Result<RemoteTagObservation, GraphError> {
+/// the remote unknown; absence must be proved by a successful query. The
+/// failure is transient: `ls-remote` is a read, so retrying it cannot have an
+/// effect.
+fn observed_remote_tag(
+    context: &ProviderContext<'_>,
+    name: &TagName,
+) -> Result<Attempt<RemoteTagObservation>, GraphError> {
     let endpoint = context.checked_git_remote()?.endpoint.clone();
     let reference = format!("refs/tags/{name}");
     // The peeled ref resolves an annotated tag to its commit; a lightweight
@@ -167,7 +173,10 @@ fn observed_remote_tag(context: &ProviderContext<'_>, name: &TagName) -> Result<
         .runner()
         .run_quiet("git", &args, context.root(), timeouts::GIT_LS_REMOTE)?;
     if observed.exit_code != Some(0) {
-        return Ok(RemoteTagObservation::Indeterminate);
+        return Ok(Attempt::Transient {
+            value: RemoteTagObservation::Indeterminate,
+            retry_after: None,
+        });
     }
     let mut tag_object = None;
     let mut peeled_commit = None;
@@ -182,10 +191,10 @@ fn observed_remote_tag(context: &ProviderContext<'_>, name: &TagName) -> Result<
         }
     }
     let Some(sha) = peeled_commit.or(tag_object) else {
-        return Ok(RemoteTagObservation::Absent);
+        return Ok(Attempt::Settled(RemoteTagObservation::Absent));
     };
     if peeled_commit.is_none() {
-        return Ok(RemoteTagObservation::Unannotated);
+        return Ok(Attempt::Settled(RemoteTagObservation::Unannotated));
     }
     let target = CommitSha::parse(sha.trim()).map_err(|error| GraphError::ReleaseCommand {
         program: "git".to_string(),
@@ -194,7 +203,7 @@ fn observed_remote_tag(context: &ProviderContext<'_>, name: &TagName) -> Result<
             detail: error.to_string(),
         },
     })?;
-    Ok(RemoteTagObservation::Annotated { target })
+    Ok(Attempt::Settled(RemoteTagObservation::Annotated { target }))
 }
 
 fn observed_local_tag(context: &ProviderContext<'_>, name: &TagName) -> Result<LocalTagObservation, GraphError> {
