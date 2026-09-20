@@ -89,7 +89,8 @@ if ! rg -Fqx '  release-artifact-preflight:' "$ci_workflow"; then
   exit 1
 fi
 
-if ! rg -Fqx '        run: bash .github/tests/test-release-artifact-build-script.sh' "$ci_workflow"; then
+if ! rg -Fqx '        run: just workflow-contracts' "$ci_workflow" \
+  || ! rg -Fqx '    bash .github/tests/test-release-artifact-build-script.sh' justfile; then
   printf 'workflow contract failed: CI must test the shared release artifact build script\n' >&2
   exit 1
 fi

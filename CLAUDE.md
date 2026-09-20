@@ -7,8 +7,7 @@ This repository follows the centralized AI agent guidelines documented in [`AGEN
 ## Quick Reference
 
 ### Primary Task Runner Commands
-- `just` / `just ci-fast` (default): Full verification suite minus `coverage`. Use this for everyday pre-PR checks.
-- `just ci`: Same, plus `coverage`. Matches CI parity; slow (coverage recompiles the whole workspace under instrumentation).
+- `just` / `just ci` (default): Full verification suite, including the 90% line-coverage gate, zizmor, workflow contracts, and release-workflow-behavior. Excludes actionlint and the binary-dependent release-PR/artifact-preflight CI checks.
 - `just test` / `moon run :test`: Run all unit, integration, doctests, and E2E lifecycle test suites.
 - `just lint` / `moon run :lint`: Run Clippy lints with `-D warnings`.
 - `just fmt` / `moon run :format`: Format code automatically.
