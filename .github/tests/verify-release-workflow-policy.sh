@@ -105,6 +105,44 @@ def check(path):
     env = next((s.get("env", {}) for s in rc.get("steps", []) if s.get("id") == "candidate"), {})
     if env.get("TRIGGERING_SHA") != "${{ github.sha }}":
         errs.append("TRIGGERING_SHA must be github.sha")
+    script = next((st.get("run", "") for st in rc.get("steps", []) if st.get("id") == "candidate"), "")
+    if "^[0-9a-f]{40}$" not in script or '[[ ! "$release_source_sha" =~ ^[0-9a-f]{40}$ ]]' not in script:
+        errs.append("release-candidate must require a full 40-lowercase-hex release_source_sha")
+    if not re.search(r'\[\[ "\$resolved_sha" != "\$release_source_sha" \]\]; then\s*echo [^\n]*\n\s*exit 1', script):
+        errs.append("release-candidate must reject a release_source_sha whose resolved sha differs")
+    prs_line = next((l for l in script.splitlines() if l.strip().startswith("prs=$(")), "")
+    for frag in ('.merged_at != null', '.base.ref == "main"', '.head.repo.full_name == "', 'callisto/version-packages'):
+        if frag not in prs_line:
+            errs.append(f"release-candidate managed-PR association check lost {frag!r}")
+    if not re.search(r"^\s*verified=\$\(gh api [^\n]*--jq '\.commit\.verification\.verified'\)$", script, re.M):
+        errs.append("release-candidate must compute the commit verification from .commit.verification.verified")
+    if not re.search(r"if \[\[ \"\$prs\" == 1 && \"\$verified\" == true \]\]; then\s*\{\s*echo 'is_release_pr=true'", script):
+        errs.append("is_release_pr=true must require exactly one managed PR and a verified commit")
+    if len(re.findall(r"is_release_pr=true", script)) != 1:
+        errs.append("is_release_pr=true must be set in exactly one place")
+    plan = jobs.get("plan", {})
+    cond = re.sub(r"\s+", " ", str(plan.get("if", ""))).strip()
+    if cond != "needs.release-candidate.outputs.is_release_pr == 'true'" or plan.get("needs") != "release-candidate":
+        errs.append("plan must run only when release-candidate says is_release_pr == 'true'")
+    ex = jobs.get("execute", {})
+    if not re.search(r"needs\.plan\.result == 'success'", str(ex.get("if", ""))):
+        errs.append("execute must require needs.plan.result == 'success'")
+    if set(ex.get("needs", [])) != {"plan", "build", "release-candidate"}:
+        errs.append("execute must need plan, build, and release-candidate")
+    steps = ex.get("steps", [])
+    src = [s for s in steps if str(s.get("uses", "")).startswith("actions/checkout@") and (s.get("with") or {}).get("path") == "release-source"]
+    if len(src) != 1 or src[0]["with"].get("ref") != "${{ needs.release-candidate.outputs.release_source_sha }}":
+        errs.append("execute release-source checkout ref must be needs.release-candidate.outputs.release_source_sha")
+    hand = [i for i, s in enumerate(steps) if s.get("name") == "Verify same-run handoff before credentials"]
+    sec = [i for i, s in enumerate(steps) if "secrets." in json.dumps(s)]
+    if len(hand) != 1:
+        errs.append("execute must have exactly one 'Verify same-run handoff before credentials' step")
+    else:
+        h = steps[hand[0]]
+        if "if" in h or "continue-on-error" in h or "cmp " not in h.get("run", "") or "-a 256 -c" not in h.get("run", ""):
+            errs.append("handoff verification step must be unconditional, fail-closed, and run the sha256 and cmp checks")
+        if not sec or hand[0] > min(sec):
+            errs.append("handoff verification must precede the first step that references secrets")
     return errs
 
 
@@ -223,6 +261,17 @@ def mutants(text):
         return text[:j] + new + text[j + len(old):]
 
     return {
+        "verified requirement dropped": sub('if [[ "$prs" == 1 && "$verified" == true ]]', 'if [[ "$prs" == 1 ]]'),
+        "dispatch sha regex weakened": sub("^[0-9a-f]{40}$", "^.+$"),
+        "resolved-sha equality dropped": sub('if [[ "$resolved_sha" != "$release_source_sha" ]]', 'if false'),
+        "execute loses plan success": sub("always() && needs.plan.result == 'success' &&", "always() &&"),
+        "plan runs always": sub("    needs: release-candidate\n    if: needs.release-candidate.outputs.is_release_pr == 'true'\n    timeout-minutes: 20",
+            "    needs: release-candidate\n    if: always()\n    timeout-minutes: 20"),
+        "execute checks out moving ref": after("\n  execute:\n", "ref: ${{ needs.release-candidate.outputs.release_source_sha }}", "ref: main"),
+        "handoff step disabled": sub("      - name: Verify same-run handoff before credentials\n", "      - name: Verify same-run handoff before credentials\n        if: false\n"),
+        "handoff step renamed away": sub("Verify same-run handoff before credentials", "Handoff"),
+        "handoff continue-on-error": sub("      - name: Verify same-run handoff before credentials\n        env:", "      - name: Verify same-run handoff before credentials\n        continue-on-error: true\n        env:"),
+        "verified query dropped": sub("--jq '.commit.verification.verified'", "--jq '.sha'"),
         "secret in build-artifact": sub("          CALLISTO_RELEASE_ARTIFACT_KIND: ${{ matrix.kind }}\n",
             "          CALLISTO_RELEASE_ARTIFACT_KIND: ${{ matrix.kind }}\n          LEAK: ${{ secrets.LEAK }}\n"),
         "contents: write in plan": after("\n  plan:\n", "      contents: read", "      contents: write"),

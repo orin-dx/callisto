@@ -47,6 +47,12 @@ A recovery dispatch is gated by `recovery-checks` (credential-free release workf
 policy checks), not the full `verify` job, so an unrelated failure on `main` cannot block
 publishing an already merged release.
 
+A push-triggered release whose `execute` job fails after publishing cannot be fixed by re-running
+that job: the rerun gets a fresh runner without `--recovery`, so every already-published registry
+operation is refused with `E174` by design, and a different artifact is never adopted silently. The
+supported path is a `workflow_dispatch` with the `release_source_sha` input, which runs a
+`Recovery`-kind run that reconstructs progress from provider observation.
+
 The run envelope (kind `Initial` or `Recovery`, orchestration revision, release-source revision,
 profile, intent digest, artifact-manifest digest) is derived from the intent by one constructor, so
 profile, source revision, and intent digest have no second authority. It is validated across fields
