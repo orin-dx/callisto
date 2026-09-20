@@ -229,29 +229,33 @@ fn check_cargo_name(name: &str) -> Result<(), &'static str> {
 
 /// npm: lowercase, URL-safe, with an optional single `@scope/` prefix.
 fn check_npm_name(name: &str) -> Result<(), &'static str> {
-    let unscoped = match name.strip_prefix('@') {
+    let (scoped, unscoped) = match name.strip_prefix('@') {
         Some(rest) => {
             let (scope, package) = rest
                 .split_once('/')
                 .ok_or("an npm scope must be followed by `/` and a package name")?;
-            check_npm_segment(scope)?;
-            package
+            check_npm_segment(scope, true)?;
+            (true, package)
         }
-        None => name,
+        None => (false, name),
     };
-    check_npm_segment(unscoped)
+    check_npm_segment(unscoped, scoped)
 }
 
-fn check_npm_segment(segment: &str) -> Result<(), &'static str> {
+/// npm allows legacy uppercase names and, only under a scope, a leading `.` or `_`.
+fn check_npm_segment(segment: &str, scoped: bool) -> Result<(), &'static str> {
     let first = segment.chars().next().unwrap_or('\0');
-    if !first.is_ascii_lowercase() && !first.is_ascii_digit() {
-        return Err("an npm name segment must start with a lowercase letter or digit");
+    let leading_ok = first.is_ascii_alphanumeric() || (scoped && matches!(first, '.' | '_'));
+    if !leading_ok {
+        return Err(
+            "an npm name segment must start with a letter or digit (a scoped name may also start with `.` or `_`)",
+        );
     }
     if !segment
         .bytes()
-        .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'-' | b'_' | b'.'))
+        .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
     {
-        return Err("an npm name segment may only contain lowercase letters, digits, `-`, `_` and `.`");
+        return Err("an npm name segment may only contain letters, digits, `-`, `_` and `.`");
     }
     Ok(())
 }
@@ -3498,11 +3502,12 @@ mod tests {
             (Ecosystem::Cargo, "1crate"),
             (Ecosystem::Cargo, "crate.name"),
             (Ecosystem::Npm, "-x"),
-            (Ecosystem::Npm, "UPPER"),
             (Ecosystem::Npm, "@scope"),
             (Ecosystem::Npm, "@scope/a/b"),
             (Ecosystem::Npm, "scope/name"),
             (Ecosystem::Npm, ".hidden"),
+            (Ecosystem::Npm, "_hidden"),
+            (Ecosystem::Npm, "@scope/-x"),
             (Ecosystem::Pypi, "-x"),
             (Ecosystem::Pypi, "pkg/../etc"),
             (Ecosystem::Pypi, ".pkg"),
@@ -3530,6 +3535,10 @@ mod tests {
             (Ecosystem::Npm, "callisto"),
             (Ecosystem::Npm, "@orin-dx/callisto"),
             (Ecosystem::Npm, "left.pad"),
+            (Ecosystem::Npm, "JSONStream"),
+            (Ecosystem::Npm, "Base64"),
+            (Ecosystem::Npm, "@_scope/_x"),
+            (Ecosystem::Npm, "@types/node"),
             (Ecosystem::Pypi, "typing-extensions"),
             (Ecosystem::Pypi, "zope.interface"),
             (Ecosystem::Pypi, "Flask"),
