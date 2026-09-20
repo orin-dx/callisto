@@ -443,7 +443,9 @@ pub struct ReleaseDecisionEntry {
 /// hand-copied check could.
 pub(crate) fn check_schema_version<E: serde::de::Error>(found: u8, expected: u8, type_name: &str) -> Result<(), E> {
     if found != expected {
-        return Err(E::custom(format!("unsupported {type_name} schema version")));
+        return Err(E::custom(format!(
+            "unsupported {type_name} schema version {found}; this build reads version {expected}"
+        )));
     }
     Ok(())
 }
@@ -831,10 +833,14 @@ pub enum ReleaseOperationRole {
         registry: RegistryBindingId,
     },
     Tag,
+    /// Creates the GitHub Release as a draft. Publication is a separate role.
     ForgeRelease,
     ArtifactUpload {
         slot: ArtifactSlotId,
     },
+    /// Publishes the draft created by [`Self::ForgeRelease`], only after every
+    /// artifact upload of that release has been confirmed.
+    ForgePublish,
 }
 
 #[derive(Deserialize)]
@@ -851,6 +857,7 @@ enum ReleaseOperationRoleWire {
     ArtifactUpload {
         slot: ArtifactSlotId,
     },
+    ForgePublish,
 }
 
 impl<'de> Deserialize<'de> for ReleaseOperationRole {
@@ -868,6 +875,7 @@ impl<'de> Deserialize<'de> for ReleaseOperationRole {
             ReleaseOperationRoleWire::Tag => Ok(Self::Tag),
             ReleaseOperationRoleWire::ForgeRelease => Ok(Self::ForgeRelease),
             ReleaseOperationRoleWire::ArtifactUpload { slot } => Ok(Self::ArtifactUpload { slot }),
+            ReleaseOperationRoleWire::ForgePublish => Ok(Self::ForgePublish),
         }
     }
 }
@@ -876,7 +884,7 @@ impl ReleaseOperationRole {
     fn artifact_slot(&self) -> Option<&ArtifactSlotId> {
         match self {
             Self::ArtifactUpload { slot } => Some(slot),
-            Self::RegistryPublish { .. } | Self::Tag | Self::ForgeRelease => None,
+            Self::RegistryPublish { .. } | Self::Tag | Self::ForgeRelease | Self::ForgePublish => None,
         }
     }
 }
@@ -944,6 +952,14 @@ impl ReleaseOperationId {
             package: slot.package.clone(),
             version: slot.version.clone(),
             role: ReleaseOperationRole::ArtifactUpload { slot },
+        }
+    }
+
+    pub fn forge_publish(package: ReleasePackageId, version: Version) -> Self {
+        Self {
+            package,
+            role: ReleaseOperationRole::ForgePublish,
+            version,
         }
     }
 
@@ -1024,6 +1040,14 @@ impl ReleaseOperation {
         prerequisites: Vec<ReleaseOperationId>,
     ) -> Result<Self, ReleaseOperationError> {
         Self::new(ReleaseOperationId::artifact_upload(slot), prerequisites)
+    }
+
+    pub fn forge_publish(
+        package: ReleasePackageId,
+        version: Version,
+        prerequisites: Vec<ReleaseOperationId>,
+    ) -> Result<Self, ReleaseOperationError> {
+        Self::new(ReleaseOperationId::forge_publish(package, version), prerequisites)
     }
 
     pub fn new(
@@ -1392,7 +1416,9 @@ impl<'de> Deserialize<'de> for ReleaseIntentV1 {
 }
 
 impl ReleaseIntentV1 {
-    pub const SCHEMA_VERSION: u8 = 2;
+    /// 3 adds the `forgePublish` role: publication is its own operation after
+    /// every artifact upload, so a version-2 intent's DAG is not executable here.
+    pub const SCHEMA_VERSION: u8 = 3;
 
     pub fn new(
         profile: ReleaseProfileId,
@@ -1542,6 +1568,7 @@ fn operation_id_text(id: &ReleaseOperationId) -> String {
             slot.attestation_policy.workflow_commit.as_str(),
             slot.version.render(),
         ),
+        ReleaseOperationRole::ForgePublish => "forge-publish".to_string(),
     };
     format!("{}|{}|{}", id.package, role, id.version.render())
 }
@@ -2435,10 +2462,12 @@ mod tests {
             ReleaseOperationRole::Tag => ProviderEvidenceV1::GitTag {
                 peeled_commit: CommitSha::parse(&"a".repeat(40)).unwrap(),
             },
-            ReleaseOperationRole::ForgeRelease => ProviderEvidenceV1::ForgeRelease {
-                tag_name: crate::TagName::new_unchecked(format!("v{}", id.version.render())),
-                draft: false,
-            },
+            ReleaseOperationRole::ForgeRelease | ReleaseOperationRole::ForgePublish => {
+                ProviderEvidenceV1::ForgeRelease {
+                    tag_name: crate::TagName::new_unchecked(format!("v{}", id.version.render())),
+                    draft: false,
+                }
+            }
             ReleaseOperationRole::ArtifactUpload { .. } => ProviderEvidenceV1::ArtifactUpload {
                 byte_length: 6,
                 sha256: ArtifactDigest::from_bytes(b"binary"),

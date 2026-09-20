@@ -106,6 +106,17 @@ pub enum CliError {
     )]
     NotATty,
 
+    #[error("release intent `{}` declares schema version {found}, but this build reads version {expected}", path.display())]
+    #[diagnostic(
+        code(callisto::release_intent_schema_unsupported),
+        help("re-run `callisto release plan` to derive a fresh intent: an intent is bound to one build's operation graph and is never reused across versions")
+    )]
+    ReleaseIntentSchemaUnsupported {
+        path: std::path::PathBuf,
+        found: String,
+        expected: u8,
+    },
+
     #[error("{0}")]
     #[diagnostic(code(callisto::error))]
     Other(String),

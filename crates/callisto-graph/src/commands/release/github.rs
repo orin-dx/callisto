@@ -25,6 +25,15 @@ pub(crate) fn github_release_endpoint(repository: &str, tag: &TagName) -> String
     format!("repos/{repository}/releases/tags/{tag}")
 }
 
+/// GitHub serves at most 100 releases per page; ten pages is the bound this
+/// scan will spend looking for one draft before reporting it unobservable.
+const RELEASE_LIST_PAGE_SIZE: usize = 100;
+const RELEASE_LIST_PAGE_LIMIT: usize = 10;
+
+fn github_release_list_endpoint(repository: &str, page: usize) -> String {
+    format!("repos/{repository}/releases?per_page={RELEASE_LIST_PAGE_SIZE}&page={page}")
+}
+
 /// `gh api` defines no `--repo`; the endpoint already carries owner and repository.
 pub(crate) fn github_release_api_args(endpoint: &str) -> [&str; 5] {
     ["api", "--include", "--method", "GET", endpoint]
@@ -69,26 +78,78 @@ fn github_release_response_status(status: u16) -> Option<GitHubReleaseLookup> {
     }
 }
 
-/// The one GET both forge observations share, under the same bounded retry as
+/// The one GET every forge observation shares, under the same bounded retry as
 /// every other read-only observation.
-pub(crate) fn github_release_by_tag(
+///
+/// This endpoint never serves drafts, so it proves publication, not existence;
+/// [`github_release_for_tag`] is what the roles call.
+fn github_release_by_tag(
     root: &Path,
     runner: &dyn CommandRunner,
     sleeper: &dyn Sleeper,
     repository: &str,
     tag: &TagName,
 ) -> Result<GitHubReleaseLookup, GraphError> {
-    retry_observation(sleeper, || github_release_by_tag_once(root, runner, repository, tag))
+    let endpoint = github_release_endpoint(repository, tag);
+    retry_observation(sleeper, || github_api_get_once(root, runner, &endpoint))
 }
 
-fn github_release_by_tag_once(
+/// Finds the release for `tag` whether it is published or still a draft.
+///
+/// `GET /releases/tags/{tag}` omits drafts entirely, so a 404 there is not
+/// absence: the bounded list scan below is the only way to observe a draft.
+pub(crate) fn github_release_for_tag(
     root: &Path,
     runner: &dyn CommandRunner,
+    sleeper: &dyn Sleeper,
     repository: &str,
     tag: &TagName,
+) -> Result<GitHubReleaseLookup, GraphError> {
+    match github_release_by_tag(root, runner, sleeper, repository, tag)? {
+        GitHubReleaseLookup::Absent => {}
+        found_or_unknown => return Ok(found_or_unknown),
+    }
+    for page in 1..=RELEASE_LIST_PAGE_LIMIT {
+        let endpoint = github_release_list_endpoint(repository, page);
+        let listed = match retry_observation(sleeper, || github_api_get_once(root, runner, &endpoint))? {
+            GitHubReleaseLookup::Found(listed) => listed,
+            absent_or_unknown => return Ok(absent_or_unknown),
+        };
+        let releases = listed
+            .as_array()
+            .ok_or_else(|| malformed_github_response(&endpoint, "GitHub release list response is not an array"))?;
+        if releases.is_empty() {
+            break;
+        }
+        if let Some(release) = releases
+            .iter()
+            .find(|release| release.get("tag_name").and_then(serde_json::Value::as_str) == Some(tag.as_str()))
+        {
+            return Ok(GitHubReleaseLookup::Found(release.clone()));
+        }
+    }
+    Ok(GitHubReleaseLookup::Absent)
+}
+
+pub(crate) fn malformed_github_response(endpoint: &str, detail: &str) -> GraphError {
+    GraphError::ReleaseCommand {
+        program: "gh".to_owned(),
+        args: github_release_api_args(endpoint)
+            .iter()
+            .map(ToString::to_string)
+            .collect(),
+        failure: CommandFailure::MalformedOutput {
+            detail: detail.to_owned(),
+        },
+    }
+}
+
+fn github_api_get_once(
+    root: &Path,
+    runner: &dyn CommandRunner,
+    endpoint: &str,
 ) -> Result<Attempt<GitHubReleaseLookup>, GraphError> {
-    let endpoint = github_release_endpoint(repository, tag);
-    let api_args = github_release_api_args(&endpoint);
+    let api_args = github_release_api_args(endpoint);
     let observed = runner.run_with_timeout("gh", &api_args, root, timeouts::FORGE_API)?;
     let response = github_api_response("gh", &api_args, &observed)?;
     if let Some(lookup) = github_release_response_status(response.status) {

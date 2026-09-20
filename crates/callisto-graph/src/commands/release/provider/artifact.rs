@@ -8,9 +8,9 @@ use crate::error::{CommandFailure, ReleasePreconditionRequirement, RemoteConflic
 use crate::GraphError;
 
 use super::super::github::{
-    github_release_api_args, github_release_by_tag, github_release_endpoint, GitHubReleaseLookup,
+    github_release_endpoint, github_release_for_tag, malformed_github_response, GitHubReleaseLookup,
 };
-use super::forge::observed_forge_release_target;
+use super::forge::observed_draft_or_published_release;
 use super::policy::timeouts;
 use super::{
     confirmed_evidence, wrong_role, ArtifactUploadOperation, EffectAuthorization, PreparedOperation,
@@ -65,7 +65,7 @@ impl ReleaseProvider for ArtifactUploadProvider {
         let path = artifacts.path_for(&operation.slot)?;
         let repository = operation.slot.attestation_policy.repository.as_slug();
         confirmed_evidence(
-            observed_forge_release_target(context, &operation.tag, &repository)?,
+            observed_draft_or_published_release(context, &operation.tag, operation.prerelease, &repository)?,
             request.id,
             RemoteConflict::ForgeReleaseDiffers,
         )?;
@@ -118,7 +118,7 @@ fn observe_artifact_upload(
     };
     let entry = artifacts.entry_for(&operation.slot)?;
     let repository = operation.slot.attestation_policy.repository.as_slug();
-    let release = match github_release_by_tag(
+    let release = match github_release_for_tag(
         context.root(),
         context.runner(),
         context.sleeper(),
@@ -136,15 +136,11 @@ fn observe_artifact_upload(
     let assets = release
         .get("assets")
         .and_then(serde_json::Value::as_array)
-        .ok_or_else(|| GraphError::ReleaseCommand {
-            program: "gh".to_owned(),
-            args: github_release_api_args(&github_release_endpoint(&repository, &operation.tag))
-                .iter()
-                .map(ToString::to_string)
-                .collect(),
-            failure: CommandFailure::MalformedOutput {
-                detail: "GitHub release response has no assets array".to_owned(),
-            },
+        .ok_or_else(|| {
+            malformed_github_response(
+                &github_release_endpoint(&repository, &operation.tag),
+                "GitHub release response has no assets array",
+            )
         })?;
     let matching: Vec<_> = assets
         .iter()

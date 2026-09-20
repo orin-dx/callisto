@@ -18,7 +18,8 @@ use crate::{DependencyResolver, GraphError, Workspace};
 
 use super::binding::{prepared_git_remote, prepared_registry_binding, PreparedGitRemote};
 use super::provider::{
-    ArtifactUploadOperation, ForgeReleaseOperation, PreparedOperation, RegistryPublishOperation, TagOperation,
+    ArtifactUploadOperation, ForgePublishOperation, ForgeReleaseOperation, PreparedOperation, RegistryPublishOperation,
+    TagOperation,
 };
 
 /// Coordinator-owned identity used to bind a product artifact to the exact
@@ -350,7 +351,10 @@ pub(crate) fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
             };
             prepared.insert(
                 operation.id().clone(),
-                PreparedOperation::ForgeRelease(ForgeReleaseOperation { tag }),
+                PreparedOperation::ForgeRelease(ForgeReleaseOperation {
+                    tag,
+                    prerelease: version.is_prerelease(),
+                }),
             );
             forge_by_package.insert(id.clone(), operation.id().clone());
             operations.insert(operation.id().clone(), operation);
@@ -358,6 +362,7 @@ pub(crate) fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
     }
 
     let mut artifact_slots = Vec::new();
+    let mut uploads_by_package = BTreeMap::<ReleasePackageId, Vec<ReleaseOperationId>>::new();
     if let (Some(product), Some(policy)) = (&workspace.config.product_release, artifact_policy) {
         require_product_package_publishes_to_forge(workspace, &product.package)?;
         for (id, (package, version)) in &selected {
@@ -400,12 +405,44 @@ pub(crate) fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
                     PreparedOperation::ArtifactUpload(ArtifactUploadOperation {
                         slot: slot.clone(),
                         tag: tag.clone(),
+                        prerelease: version.is_prerelease(),
                     }),
                 );
+                uploads_by_package
+                    .entry(id.clone())
+                    .or_default()
+                    .push(operation.id().clone());
                 operations.insert(operation.id().clone(), operation);
                 artifact_slots.push(slot);
             }
         }
+    }
+
+    // Publishing is the last forge step: a GitHub Release is only complete
+    // once every asset it carries has been uploaded to it as a draft.
+    for (id, (_, version)) in &selected {
+        let Some(forge) = forge_by_package.get(id) else {
+            continue;
+        };
+        let mut prerequisites = vec![forge.clone()];
+        prerequisites.extend(uploads_by_package.get(id).into_iter().flatten().cloned());
+        let operation = ReleaseOperation::forge_publish(id.clone(), version.clone(), prerequisites)?;
+        let tag = match prepared.get(forge) {
+            Some(PreparedOperation::ForgeRelease(prepared_forge)) => prepared_forge.tag.clone(),
+            _ => {
+                return Err(GraphError::ReleaseInvariant {
+                    detail: format!("forge publish `{:?}` has no prepared draft release", operation.id()),
+                })
+            }
+        };
+        prepared.insert(
+            operation.id().clone(),
+            PreparedOperation::ForgePublish(ForgePublishOperation {
+                tag,
+                prerelease: version.is_prerelease(),
+            }),
+        );
+        operations.insert(operation.id().clone(), operation);
     }
 
     Ok((

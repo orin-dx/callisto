@@ -426,7 +426,18 @@ fn source_global(global: &GlobalArgs, source_root: Option<&std::path::Path>) -> 
 }
 
 fn read_intent(path: &std::path::Path) -> Result<ReleaseIntentV1, CliError> {
-    serde_json::from_value(read_json_file(path)?)
+    let value = read_json_file(path)?;
+    // A stale intent is the expected failure after a schema bump; name it
+    // before serde reports it as an opaque parse error.
+    let found = &value["schemaVersion"];
+    if found != &serde_json::json!(ReleaseIntentV1::SCHEMA_VERSION) {
+        return Err(CliError::ReleaseIntentSchemaUnsupported {
+            path: path.to_path_buf(),
+            found: found.to_string(),
+            expected: ReleaseIntentV1::SCHEMA_VERSION,
+        });
+    }
+    serde_json::from_value(value)
         .map_err(|error| CliError::Other(format!("invalid release intent {}: {error}", path.display())))
 }
 

@@ -43,7 +43,7 @@ pub(crate) fn evidence_for(id: &ReleaseOperationId) -> ProviderEvidenceV1 {
         ReleaseOperationRole::Tag => ProviderEvidenceV1::GitTag {
             peeled_commit: CommitSha::parse(&"a".repeat(40)).unwrap(),
         },
-        ReleaseOperationRole::ForgeRelease => ProviderEvidenceV1::ForgeRelease {
+        ReleaseOperationRole::ForgeRelease | ReleaseOperationRole::ForgePublish => ProviderEvidenceV1::ForgeRelease {
             tag_name: TagName::new_unchecked(format!("v{}", id.version.render())),
             draft: false,
         },

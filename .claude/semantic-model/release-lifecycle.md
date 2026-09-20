@@ -30,6 +30,8 @@ Indeterminate { cause }`. `ProviderEvidenceV1` is closed and per-role:
 `RegistryVersion { version, checksum?, yanked? }`, `GitTag { peeled_commit }`,
 `ForgeRelease { tag_name, draft }`, `ArtifactUpload { byte_length, sha256 }`.
 `Option` fields are `None` where the adapter cannot yet prove the value.
+The `ForgeRelease` evidence serves both forge roles; for `ForgePublish` it is
+only accepted with `draft: false`.
 
 `ReleaseOperationObservationV1::new` is the single constructor, used by
 deserialization too, and rejects evidence whose shape does not match the
@@ -60,6 +62,33 @@ with the index checksum and `yanked: Some(false)`; a served, yanked version is
 `Conflict { RegistryVersionYanked }` -- the defect `cargo info` hid by reading a
 yanked version as absent. Any other status, or a body that is not the index
 format, is indeterminate.
+
+## Forge roles and DAG order (`provider/forge.rs`, `provider/artifact.rs`)
+
+Publication is the last forge step, because GitHub releases can be immutable:
+once published, assets can no longer be added, so a release must be complete
+before it is published.
+
+`Tag` -> `ForgeRelease` (create as draft) -> every `ArtifactUpload` -> `ForgePublish`.
+`ForgePublish` depends on the draft and on *every* upload of that release,
+including when there are none.
+
+- `ForgeRelease` effect: `gh release create TAG --repo R --verify-tag --draft
+  --generate-notes`, plus `--prerelease` when the released version has a semver
+  pre-release part (`Version::is_prerelease()`, the same source as the npm
+  `next` dist-tag).
+- `ForgePublish` effect: `gh release edit TAG --repo R --draft=false`.
+- Lookup: `GET /releases/tags/{tag}` omits drafts, so a 404 there is followed by
+  a bounded scan of `GET /releases?per_page=100&page=N` (at most 10 pages).
+  Both roles and the upload role share this one lookup.
+- `ForgeRelease` is `Exact` for a draft or a published release; `ForgePublish`
+  is `Exact` only when `draft: false` and `Absent` while still a draft. A
+  release whose tag matches but whose `prerelease` flag disagrees with the
+  version is `Conflict { ForgeReleasePrereleaseDiffers }`.
+- Uploads target the draft, compare by size and `sha256` digest, and never pass
+  `--clobber`. An asset missing from a published release is `Absent`, so it is
+  uploaded; an immutable release refuses that upload as a typed command failure
+  rather than letting the release be reported complete.
 
 ## Bounded retry (`provider/policy.rs`)
 
@@ -105,5 +134,8 @@ existed" (`AlreadySatisfied`); terminal states absorb every event.
 ## Wire versions
 
 `ReleaseExecutionStateV1::SCHEMA_VERSION` and `ReleaseReceiptV1::SCHEMA_VERSION`
-are both `2`. `callisto schema --type release-receipt|release-state` publishes
+are both `2`; `ReleaseIntentV1::SCHEMA_VERSION` is `3` (the `forgePublish`
+role). An intent from an earlier version is rejected by
+`callisto::release_intent_schema_unsupported`, which names re-planning as the
+fix. `callisto schema --type release-receipt|release-state` publishes
 the wire shape, guarded by `crates/callisto-cli/tests/schema_guard_test.rs`.

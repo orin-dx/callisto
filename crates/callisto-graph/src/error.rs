@@ -661,6 +661,8 @@ pub enum RemoteConflict {
     ForgeReleaseDiffers,
     #[error("a forge release was created but was not observed afterward")]
     ForgeReleaseNotObservedAfterCreate,
+    #[error("a forge release was published but was not observed as published afterward")]
+    ForgeReleaseNotObservedAfterPublish,
     #[error("a release asset already exists with a different digest or length")]
     ArtifactDiffers,
     #[error("an uploaded release asset was not observed afterward")]

@@ -160,6 +160,35 @@ fn durable_release_wire_shapes_match_their_schema_version() {
     assert_eq!(props, expected);
 }
 
+/// The operation role is the durable DAG's vocabulary: a persisted state or
+/// receipt names every operation by it. `forgePublish` is the role that makes
+/// publication the last forge step, after every `artifactUpload`.
+#[test]
+fn release_operation_roles_carry_exactly_their_declared_variants() {
+    let state = run_schema("release-state");
+    let variants: BTreeSet<String> = state["definitions"]["ReleaseOperationRole"]["oneOf"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|variant| {
+            variant["properties"]["kind"]["enum"][0]
+                .as_str()
+                .expect("every role variant names itself")
+                .to_owned()
+        })
+        .collect();
+    assert_eq!(
+        variants,
+        set(&[
+            "registryPublish",
+            "tag",
+            "forgeRelease",
+            "artifactUpload",
+            "forgePublish",
+        ])
+    );
+}
+
 /// Both observation enums are closed and persisted in receipts and state, so a
 /// reader from an earlier release must be able to name every value it can meet.
 /// Adding one is intentional and belongs here; losing one silently is not.
@@ -189,6 +218,7 @@ fn provider_observation_enums_carry_exactly_their_declared_variants() {
             "remoteTagTargetDiffers",
             "unannotatedTag",
             "forgeReleaseDiffers",
+            "forgeReleasePrereleaseDiffers",
             "artifactAssetDiffers",
             "duplicateArtifactAsset",
             "registryVersionYanked",

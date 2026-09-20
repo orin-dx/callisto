@@ -573,7 +573,14 @@ pub fn fake_publishers(
     fs::write(
         bin.join("gh"),
         format!(
-            "#!/bin/sh\nprintf 'gh %s\\n' \"$*\" >> \"$CALLISTO_TEST_LOG\"\nif [ \"$1\" = attestation ] && [ \"$2\" = verify ]; then\n  exit 0\nfi\nif [ \"$1\" = api ]; then\n  if [ -f \"$CALLISTO_TEST_FORGE_MARKER\" ]; then\n    assets=''\n    comma=''\n    if [ -f \"$CALLISTO_TEST_ARTIFACT_MARKER\" ]; then\n      while IFS='|' read -r asset size digest; do\n        assets=\"${{assets}}${{comma}}{{\\\"name\\\":\\\"${{asset}}\\\",\\\"size\\\":${{size}},\\\"digest\\\":\\\"sha256:${{digest}}\\\"}}\"\n        comma=','\n      done < \"$CALLISTO_TEST_ARTIFACT_MARKER\"\n    fi\n    printf '%s\\n\\n%s\\n' 'HTTP/1.1 200 OK' \"{{\\\"tag_name\\\":\\\"$CALLISTO_TEST_FORGE_TAG\\\",\\\"target_commitish\\\":\\\"{release_commit}\\\",\\\"assets\\\":[${{assets}}]}}\"\n  else\n    printf '%s\\n\\n%s\\n' 'HTTP/1.1 404 Not Found' '{{}}'\n  fi\n  exit 0\nfi\nif [ \"$1\" = release ] && [ \"$2\" = create ]; then\n  : > \"$CALLISTO_TEST_FORGE_MARKER\"\nfi\nif [ \"$1\" = release ] && [ \"$2\" = upload ]; then\n  asset=$4\n  name=$(basename \"$asset\")\n  size=$(wc -c < \"$asset\" | tr -d ' ')\n  digest=$(shasum -a 256 \"$asset\" | awk '{{print $1}}')\n  printf '%s|%s|%s\\n' \"$name\" \"$size\" \"$digest\" >> \"$CALLISTO_TEST_ARTIFACT_MARKER\"\nfi\nexit 0\n"
+            "#!/bin/sh\n\
+             printf 'gh %s\\n' \"$*\" >> \"$CALLISTO_TEST_LOG\"\n\
+             CALLISTO_TEST_FORGE_COMMITISH=${{CALLISTO_TEST_FORGE_COMMITISH:-{release_commit}}}\n\
+             {FAKE_GH_FORGE}\n\
+             if [ \"$1\" = attestation ] && [ \"$2\" = verify ]; then\n  exit 0\nfi\n\
+             if [ \"$1\" = api ]; then\n  for a in \"$@\"; do endpoint=$a; done\n  gh_api \"$endpoint\"\n  exit 0\nfi\n\
+             if [ \"$1\" = release ]; then\n  shift\n  gh_release \"$@\"\nfi\n\
+             exit 0\n"
         ),
     )
     .unwrap();
@@ -806,7 +813,7 @@ if [ "$CALLISTO_TEST_GH_STRICT" = 1 ]; then
       -*)
         case "$cmd:$a" in
           api:--include|api:-i|api:--method|api:-X|api:--header|api:-H|api:--field|api:-F|api:--raw-field|api:-f|api:--jq|api:-q|api:--paginate|api:--silent|api:--slurp|api:--hostname|api:--input|api:--cache|api:--template|api:-t|api:--verbose) ;;
-          release:--repo|release:-R|release:--verify-tag|release:--generate-notes|release:-g|release:--target|release:--title|release:-t|release:--notes|release:-n|release:--notes-file|release:-F|release:--draft|release:-d|release:--prerelease|release:-p|release:--latest|release:--clobber|release:--discussion-category|release:--notes-start-tag|release:--fail-on-no-commits) ;;
+          release:--repo|release:-R|release:--verify-tag|release:--generate-notes|release:-g|release:--target|release:--title|release:-t|release:--notes|release:-n|release:--notes-file|release:-F|release:--draft|release:--draft=false|release:--draft=true|release:-d|release:--prerelease|release:-p|release:--latest|release:--clobber|release:--discussion-category|release:--notes-start-tag|release:--fail-on-no-commits) ;;
           api:*|release:*) reject "$a" ;;
         esac
         ;;
@@ -817,32 +824,103 @@ if [ "$1" = attestation ] && [ "$2" = verify ]; then
   exit 0
 fi
 if [ "$1" = api ]; then
-  if [ -f "$CALLISTO_TEST_FORGE_MARKER" ]; then
-    assets=''
-    comma=''
-    if [ -f "$CALLISTO_TEST_ARTIFACT_MARKER" ]; then
-      while IFS='|' read -r asset size digest; do
-        assets="${assets}${comma}{\"name\":\"${asset}\",\"size\":${size},\"digest\":\"sha256:${digest}\"}"
-        comma=','
-      done < "$CALLISTO_TEST_ARTIFACT_MARKER"
-    fi
-    printf '%s\n\n%s\n' 'HTTP/1.1 200 OK' "{\"tag_name\":\"$CALLISTO_TEST_FORGE_TAG\",\"target_commitish\":\"$CALLISTO_TEST_FORGE_COMMITISH\",\"assets\":[${assets}]}"
-  else
-    printf '%s\n\n%s\n' 'HTTP/1.1 404 Not Found' '{}'
-  fi
+  for a in "$@"; do endpoint=$a; done
+  gh_api "$endpoint"
   exit 0
 fi
-if [ "$1" = release ] && [ "$2" = create ]; then
-  : > "$CALLISTO_TEST_FORGE_MARKER"
-fi
-if [ "$1" = release ] && [ "$2" = upload ]; then
-  asset=$4
-  name=$(basename "$asset")
-  size=$(wc -c < "$asset" | tr -d ' ')
-  digest=$(shasum -a 256 "$asset" | awk '{print $1}')
-  printf '%s|%s|%s\n' "$name" "$size" "$digest" >> "$CALLISTO_TEST_ARTIFACT_MARKER"
+if [ "$1" = release ]; then
+  shift
+  gh_release "$@"
 fi
 exit 0
+"#;
+
+/// The GitHub Releases model both fake `gh` programs share.
+///
+/// It reproduces the three facts the provider depends on: a release starts as
+/// a draft, `GET /releases/tags/{tag}` does not serve drafts, and the list
+/// endpoint does (paginated). `$CALLISTO_TEST_FORGE_MARKER` holds `draft` or
+/// `published`; an empty marker is a pre-existing published release, which is
+/// how a test seeds one directly.
+const FAKE_GH_FORGE: &str = r#"
+forge_state() {
+  if [ ! -f "$CALLISTO_TEST_FORGE_MARKER" ]; then printf 'absent'; return; fi
+  case "$(cat "$CALLISTO_TEST_FORGE_MARKER")" in
+    draft) printf 'draft' ;;
+    *) printf 'published' ;;
+  esac
+}
+release_json() {
+  assets=''
+  comma=''
+  if [ -f "$CALLISTO_TEST_ARTIFACT_MARKER" ]; then
+    while IFS='|' read -r asset size digest; do
+      assets="${assets}${comma}{\"name\":\"${asset}\",\"size\":${size},\"digest\":\"sha256:${digest}\",\"state\":\"uploaded\"}"
+      comma=','
+    done < "$CALLISTO_TEST_ARTIFACT_MARKER"
+  fi
+  draft=false
+  if [ "$(forge_state)" = draft ]; then draft=true; fi
+  pre=false
+  if [ -f "$CALLISTO_TEST_FORGE_MARKER.prerelease" ]; then pre=true; fi
+  printf '{"tag_name":"%s","draft":%s,"prerelease":%s,"immutable":true,"target_commitish":"%s","assets":[%s]}' \
+    "$CALLISTO_TEST_FORGE_TAG" "$draft" "$pre" "$CALLISTO_TEST_FORGE_COMMITISH" "$assets"
+}
+http_ok() { printf '%s\n\n%s\n' 'HTTP/1.1 200 OK' "$1"; }
+http_404() { printf '%s\n\n%s\n' 'HTTP/1.1 404 Not Found' '{}'; }
+gh_api() {
+  endpoint=$1
+  state=$(forge_state)
+  case "$endpoint" in
+    */releases/tags/*)
+      if [ "$state" = published ]; then http_ok "$(release_json)"; else http_404; fi
+      ;;
+    *'/releases?'*)
+      page=${endpoint##*page=}
+      if [ "$state" = absent ]; then http_ok '[]'; return; fi
+      listed=${CALLISTO_TEST_FORGE_PAGE:-1}
+      if [ "$page" = "$listed" ]; then
+        http_ok "[$(release_json)]"
+      elif [ "$page" -lt "$listed" ]; then
+        http_ok '[{"tag_name":"unrelated@0.0.1","draft":false,"prerelease":false,"immutable":true,"assets":[]}]'
+      else
+        http_ok '[]'
+      fi
+      ;;
+    *) http_404 ;;
+  esac
+}
+gh_release() {
+  action=$1
+  shift
+  case "$action" in
+    create)
+      state=draft
+      for a in "$@"; do
+        case "$a" in
+          --draft) state=draft ;;
+          --prerelease) : > "$CALLISTO_TEST_FORGE_MARKER.prerelease" ;;
+        esac
+      done
+      printf '%s' "$state" > "$CALLISTO_TEST_FORGE_MARKER"
+      ;;
+    edit)
+      for a in "$@"; do
+        case "$a" in
+          --draft=false) printf 'published' > "$CALLISTO_TEST_FORGE_MARKER" ;;
+        esac
+      done
+      ;;
+    upload)
+      [ -f "$CALLISTO_TEST_FORGE_MARKER" ] || { printf 'release not found\n' >&2; exit 1; }
+      asset=$2
+      name=$(basename "$asset")
+      size=$(wc -c < "$asset" | tr -d ' ')
+      digest=$(shasum -a 256 "$asset" | awk '{print $1}')
+      printf '%s|%s|%s\n' "$name" "$size" "$digest" >> "$CALLISTO_TEST_ARTIFACT_MARKER"
+      ;;
+  esac
+}
 "#;
 
 /// Fake remote tag storage shared by both fake `git` programs: `git push`
@@ -905,6 +983,10 @@ fn rig_git() -> String {
     format!("{RIG_GIT}{FAKE_GIT_REMOTE_TAGS}{RIG_GIT_TAIL}")
 }
 
+fn rig_gh() -> String {
+    RIG_GH.replacen("#!/bin/sh\n", &format!("#!/bin/sh\n{FAKE_GH_FORGE}"), 1)
+}
+
 /// Fake `cargo`/`gh`/`git` on a private PATH directory plus the env that
 /// steers them.
 pub struct Rig {
@@ -922,11 +1004,7 @@ impl Rig {
         use std::os::unix::fs::PermissionsExt;
         let bin = external.join("rig-bin");
         fs::create_dir_all(&bin).unwrap();
-        for (name, body) in [
-            ("cargo", RIG_CARGO.to_owned()),
-            ("gh", RIG_GH.to_owned()),
-            ("git", rig_git()),
-        ] {
+        for (name, body) in [("cargo", RIG_CARGO.to_owned()), ("gh", rig_gh()), ("git", rig_git())] {
             fs::write(bin.join(name), body).unwrap();
             fs::set_permissions(bin.join(name), fs::Permissions::from_mode(0o755)).unwrap();
         }

@@ -45,17 +45,26 @@ pub enum ProviderEvidenceV1 {
     },
 }
 
+/// Why one piece of evidence cannot stand for one operation's role.
+enum EvidenceRejection {
+    Role,
+    DraftRelease,
+}
+
 impl ProviderEvidenceV1 {
-    fn matches_role(&self, role: &ReleaseOperationRole) -> bool {
-        matches!(
-            (self, role),
-            (
-                Self::RegistryVersion { .. },
-                ReleaseOperationRole::RegistryPublish { .. }
-            ) | (Self::GitTag { .. }, ReleaseOperationRole::Tag)
-                | (Self::ForgeRelease { .. }, ReleaseOperationRole::ForgeRelease)
-                | (Self::ArtifactUpload { .. }, ReleaseOperationRole::ArtifactUpload { .. })
-        )
+    /// Both forge roles are proved by the same GitHub Release object; only the
+    /// `draft` flag separates "the draft exists" from "the release is published".
+    fn check_role(&self, role: &ReleaseOperationRole) -> Result<(), EvidenceRejection> {
+        match (self, role) {
+            (Self::ForgeRelease { draft, .. }, ReleaseOperationRole::ForgePublish) => {
+                (!draft).then_some(()).ok_or(EvidenceRejection::DraftRelease)
+            }
+            (Self::RegistryVersion { .. }, ReleaseOperationRole::RegistryPublish { .. })
+            | (Self::GitTag { .. }, ReleaseOperationRole::Tag)
+            | (Self::ForgeRelease { .. }, ReleaseOperationRole::ForgeRelease)
+            | (Self::ArtifactUpload { .. }, ReleaseOperationRole::ArtifactUpload { .. }) => Ok(()),
+            _ => Err(EvidenceRejection::Role),
+        }
     }
 }
 
@@ -70,8 +79,11 @@ pub enum ProviderConflictReason {
     RemoteTagTargetDiffers,
     /// The remote tag is lightweight, so it carries no release annotation.
     UnannotatedTag,
-    /// The forge release exists but is a draft or names another tag.
+    /// The forge release exists but names another tag.
     ForgeReleaseDiffers,
+    /// A release for this tag exists, but its `prerelease` flag disagrees with
+    /// the released version's semver pre-release part.
+    ForgeReleasePrereleaseDiffers,
     /// The release asset exists with different bytes or length.
     ArtifactAssetDiffers,
     /// Several assets share the slot's asset name.
@@ -195,10 +207,18 @@ impl ReleaseOperationObservationV1 {
         observation: ProviderObservationV1,
     ) -> Result<Self, ProviderObservationError> {
         if let ProviderObservationV1::Exact { evidence } = &observation {
-            if !evidence.matches_role(&operation.role) {
-                return Err(ProviderObservationError::EvidenceRoleMismatch {
-                    id: Box::new(operation),
-                });
+            match evidence.check_role(&operation.role) {
+                Ok(()) => {}
+                Err(EvidenceRejection::Role) => {
+                    return Err(ProviderObservationError::EvidenceRoleMismatch {
+                        id: Box::new(operation),
+                    })
+                }
+                Err(EvidenceRejection::DraftRelease) => {
+                    return Err(ProviderObservationError::DraftReleaseCannotProvePublication {
+                        id: Box::new(operation),
+                    })
+                }
             }
         }
         Ok(Self { operation, observation })
@@ -222,4 +242,6 @@ impl ReleaseOperationObservationV1 {
 pub enum ProviderObservationError {
     #[error("provider evidence does not belong to the role of release operation `{id:?}`")]
     EvidenceRoleMismatch { id: Box<ReleaseOperationId> },
+    #[error("a draft forge release cannot prove publication of release operation `{id:?}`")]
+    DraftReleaseCannotProvePublication { id: Box<ReleaseOperationId> },
 }

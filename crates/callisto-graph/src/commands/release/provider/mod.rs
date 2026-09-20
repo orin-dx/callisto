@@ -40,6 +40,7 @@ pub(crate) enum PreparedOperation {
     Tag(TagOperation),
     ForgeRelease(ForgeReleaseOperation),
     ArtifactUpload(ArtifactUploadOperation),
+    ForgePublish(ForgePublishOperation),
 }
 
 #[derive(Debug)]
@@ -62,12 +63,20 @@ pub(crate) struct TagOperation {
 #[derive(Debug)]
 pub(crate) struct ForgeReleaseOperation {
     pub(crate) tag: TagName,
+    pub(crate) prerelease: bool,
 }
 
 #[derive(Debug)]
 pub(crate) struct ArtifactUploadOperation {
     pub(crate) slot: ArtifactSlotId,
     pub(crate) tag: TagName,
+    pub(crate) prerelease: bool,
+}
+
+#[derive(Debug)]
+pub(crate) struct ForgePublishOperation {
+    pub(crate) tag: TagName,
+    pub(crate) prerelease: bool,
 }
 
 /// What one pre-effect observation authorizes for an operation, carrying the
@@ -249,6 +258,7 @@ fn provider_for(operation: &PreparedOperation) -> &'static dyn ReleaseProvider {
         PreparedOperation::Tag(_) => &tag::TagProvider,
         PreparedOperation::ForgeRelease(_) => &forge::ForgeReleaseProvider,
         PreparedOperation::ArtifactUpload(_) => &artifact::ArtifactUploadProvider,
+        PreparedOperation::ForgePublish(_) => &forge::ForgePublishProvider,
     }
 }
 
@@ -336,6 +346,7 @@ mod tests {
             &tag::TagProvider,
             &forge::ForgeReleaseProvider,
             &artifact::ArtifactUploadProvider,
+            &forge::ForgePublishProvider,
         ] {
             let capabilities = provider.capabilities();
             assert!(
