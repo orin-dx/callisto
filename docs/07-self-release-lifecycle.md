@@ -41,10 +41,19 @@ Every release run records two different revisions:
 A recovery is a new run using current orchestration and an explicit full release-source SHA. It
 does not rerun historical workflow code, create a version PR, or invent a newer version.
 
-The orchestration revision is the SHA of the run itself (`github.sha`, main only), never the moving
-tip of `main`, because attestations are stamped with the run's SHA. A recovery dispatch is gated by
-`recovery-checks` (release workflow contract and policy checks), not the full `verify` job, so an
-unrelated failure on `main` cannot block publishing an already merged release.
+The orchestration revision is the SHA of the run itself (`github.sha`), never the moving tip of
+`main`, because attestations are stamped with the run's SHA. The release path runs on `main` only.
+A recovery dispatch is gated by `recovery-checks` (credential-free release workflow contract and
+policy checks), not the full `verify` job, so an unrelated failure on `main` cannot block
+publishing an already merged release.
+
+The run envelope (kind `Initial` or `Recovery`, orchestration revision, release-source revision,
+profile, intent digest, artifact-manifest digest) is derived from the intent by one constructor, so
+profile, source revision, and intent digest have no second authority. It is validated across fields
+(source revision equals the intent's Git source; the manifest digest is present exactly when the
+intent declares artifact slots; the orchestration revision equals every slot's attestation workflow
+commit) and persisted inside the execution state before the first effect. The receipt is built from
+that envelope plus fresh observations. State left by a different run is rejected.
 
 The immutable run envelope and provider observations are recovery authority. A local state file
 is useful crash evidence, but cannot prove what a registry, Git remote, or forge contains.
@@ -64,9 +73,28 @@ configured registry destination.
 ## Execution
 
 Before an effect, Callisto observes the provider. An operation is one of absent, exact success,
-conflict, or indeterminate. Exact success becomes `AlreadySatisfied`; Callisto must not publish
-the same version merely to learn whether it exists. Conflict and indeterminate observations fail
-closed with an actionable diagnostic.
+conflict, or indeterminate. Exact success carries typed per-role evidence: registry version with
+checksum and yanked flag, tag peeled commit, forge release tag and draft flag, asset size and
+sha256. Conflict reasons and indeterminate causes are closed enums; an authentication, rate-limit,
+or transport failure is always indeterminate, never a conflict. Exact success becomes
+`AlreadySatisfied`; Callisto must not publish the same version merely to learn whether it exists.
+Conflict and indeterminate observations fail closed with an actionable diagnostic.
+
+A single pure transition table is the only way an operation's state changes. `Attempting` is
+reachable only through an absent proof; adopting a pre-existing effect into a missing journal is a
+recovery-only privilege; "our attempt landed" (`Published`) is distinct from "it already existed"
+(`AlreadySatisfied`).
+
+Registry observation uses the registry protocol, not a local package-manager client: the crates.io
+sparse index and the PyPI JSON API, credential-free, against the profile-bound endpoint; npm uses
+`npm view`. A yanked version is a conflict. One bounded retry policy covers read-only observations
+only (registry HTTP, the GitHub release lookup, `git ls-remote`): HTTP 429, 5xx, a rate-limited 403,
+and curl timeouts are retried with backoff, honouring `Retry-After`. Effects are never blindly
+re-issued. Every outbound command has a deadline.
+
+The GitHub Release is created as a draft, assets are uploaded to the draft, and publishing is a
+separate last operation that depends on every upload, because a published release can be immutable
+and refuse further assets.
 
 The release succeeds only when every operation is provider-observed as exact success or already
 satisfied. `Attempting`, failed, blocked, missing, and indeterminate are non-success states. A
@@ -93,10 +121,29 @@ revision GitHub records for the workflow run. The immutable intent and artifact 
 bind those bytes to the selected release-source revision, so a recovery can safely use current
 orchestration without misrepresenting an older source checkout as the workflow source.
 
+A source without a `[release]` section plans with zero artifact slots and prints a notice.
+
+The `callisto@{version}` product tag replaced `callisto-cli@{version}`; `previous-tag-templates`
+in `callisto.toml` keeps tags from the old template discoverable as the last release.
+
+The `setup-callisto` and `setup-callisto-wasm` actions verify a downloaded prebuilt asset with
+`gh attestation verify` against `orin-dx/callisto` and the `callisto-release.yml` signer workflow,
+and fail closed unless `allow-unverified: true`.
+
 ### Rehearsal boundary
 
 Callisto publishes Cargo crates to crates.io and product assets to GitHub Releases. It does not
 publish to AWS, JFrog, GitHub Packages, or another registry merely to simulate a release.
+
+The provider contract tier keeps the fakes honest: fake providers serve captured real responses
+(`testing/fixtures/providers`, provenance recorded per provider), every fake rejects flags and
+subcommands outside the real tools' shapes, and a test checks each emitted flag against the real
+tool's own help. `just provider-fixtures` refreshes fixtures and `just provider-contract`
+re-fetches live to assert shapes still match; both are manual and network-dependent.
+
+A deterministic fault-injection simulator drives the real release executor against an in-memory
+provider world, crashing at every persistence point and injecting each provider outcome, then
+asserts the lifecycle invariants after each run.
 
 The hermetic provider harness is the rehearsal boundary until the project deliberately adopts an
 isolated registry as a product requirement. It exercises the same CLI lifecycle, separate source

@@ -27,6 +27,8 @@ run_case() {
   local uname_s="$1"
   local uname_m="$2"
   local curl_exit="$3"
+  local gh_mode="${4:-ok}"
+  local allow="${5:-false}"
   local calls_file workspace runner_temp bin_dir github_path tmp_script
   calls_file="$(mktemp)"
   workspace="$(mktemp -d)"
@@ -34,6 +36,9 @@ run_case() {
   bin_dir="$(mktemp -d)"
   github_path="$(mktemp)"
   tmp_script="$(mktemp)"
+  local isolated_path
+  isolated_path="$(mktemp -d)"
+  for t in tr grep; do ln -s "$(command -v "$t")" "$isolated_path/$t"; done
   {
     printf 'uname() {\n'
     printf '  case "$1" in\n'
@@ -47,6 +52,12 @@ run_case() {
     printf 'unzip() { echo "unzip $*" >> %q; return 0; }\n' "$calls_file"
     printf 'cargo() { echo "cargo $*" >> %q; return 0; }\n' "$calls_file"
     printf 'cp() { echo "cp $*" >> %q; return 0; }\n' "$calls_file"
+    case "$gh_mode" in
+      ok) printf 'gh() { echo "gh $*" >> %q; return 0; }\n' "$calls_file" ;;
+      fail) printf 'gh() { echo "gh $*" >> %q; return 1; }\n' "$calls_file" ;;
+      missing) printf 'PATH=%q\n' "$isolated_path" ;;
+    esac
+    printf 'INPUT_CALLISTO_ALLOW_UNVERIFIED=%q\n' "$allow"
     printf 'GITHUB_WORKSPACE=%q\n' "$workspace"
     printf 'RUNNER_TEMP=%q\n' "$runner_temp"
     printf 'CALLISTO_BIN_DIR=%q\n' "$bin_dir"
@@ -59,7 +70,7 @@ run_case() {
   echo "---CALLS---"
   cat "$calls_file"
   rm -f "$tmp_script" "$calls_file" "$github_path"
-  rm -rf "$workspace" "$runner_temp" "$bin_dir"
+  rm -rf "$workspace" "$runner_temp" "$bin_dir" "$isolated_path"
   return $code
 }
 
@@ -125,5 +136,43 @@ if [[ $code -ne 0 ]] \
 else
   echo "PASS test_download_failure_falls_back_to_cargo_install"
 fi
+
+# 6. Verification success -> gh attestation verify runs against the pinned
+# repo and release workflow, before extraction, and only the binary is extracted.
+out=$(run_case "Linux" "x86_64" 0 ok); code=$?
+if [[ $code -ne 0 ]] \
+  || [[ "$out" != *"gh attestation verify "*"--repo orin-dx/callisto --signer-workflow orin-dx/callisto/.github/workflows/callisto-release.yml"* ]] \
+  || [[ "$out" != *"tar -xzf "*" callisto" ]] \
+  || [[ "${out%%tar -xzf*}" != *"gh attestation verify"* ]]; then
+  echo "FAIL test_verification_success_extracts_only_binary: code=$code out=$out"; fail=1
+else
+  echo "PASS test_verification_success_extracts_only_binary"
+fi
+
+# 7. Verification failure aborts: nonzero exit, nothing extracted, no fallback install.
+out=$(run_case "Linux" "x86_64" 0 fail); code=$?
+if [[ $code -eq 0 ]] || [[ "$out" == *"tar -xzf"* ]] || [[ "$out" == *"cargo install"* ]]; then
+  echo "FAIL test_verification_failure_aborts: code=$code out=$out"; fail=1
+else
+  echo "PASS test_verification_failure_aborts"
+fi
+
+# 8. gh missing aborts fail-closed.
+out=$(run_case "Linux" "x86_64" 0 missing); code=$?
+if [[ $code -eq 0 ]] || [[ "$out" == *"tar -xzf"* ]] || [[ "$out" == *"cargo install"* ]]; then
+  echo "FAIL test_gh_missing_aborts: code=$code out=$out"; fail=1
+else
+  echo "PASS test_gh_missing_aborts"
+fi
+
+# 9. allow-unverified=true bypasses verification (even with failing/missing gh).
+for mode in fail missing; do
+  out=$(run_case "Linux" "x86_64" 0 "$mode" true); code=$?
+  if [[ $code -ne 0 ]] || [[ "$out" != *"tar -xzf "* ]] || [[ "$out" == *"gh attestation"* ]]; then
+    echo "FAIL test_allow_unverified_bypasses_$mode: code=$code out=$out"; fail=1
+  else
+    echo "PASS test_allow_unverified_bypasses_$mode"
+  fi
+done
 
 exit $fail

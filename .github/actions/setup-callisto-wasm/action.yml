@@ -9,6 +9,10 @@ inputs:
     description: 'Destination path for callisto-moon.wasm'
     required: false
     default: '.moon/cache/ext/callisto-moon.wasm'
+  allow-unverified:
+    description: 'Use the downloaded plugin even when its GitHub attestation cannot be verified (gh missing or verification failed). Default false: fail closed.'
+    required: false
+    default: 'false'
 
 outputs:
   path:
@@ -33,6 +37,8 @@ runs:
       env:
         INPUT_WASM_DEST: ${{ inputs.dest }}
         INPUT_WASM_VERSION: ${{ inputs.version }}
+        INPUT_WASM_ALLOW_UNVERIFIED: ${{ inputs.allow-unverified }}
+        GH_TOKEN: ${{ github.token }}
       run: |
         DEST_PATH="$INPUT_WASM_DEST"
         mkdir -p "$(dirname "$DEST_PATH")"
@@ -45,7 +51,22 @@ runs:
         fi
 
         echo "Downloading Callisto WASM plugin from $DOWNLOAD_URL to $DEST_PATH..."
-        if ! curl -sL -f "$DOWNLOAD_URL" -o "$DEST_PATH"; then
+        if curl -sL -f "$DOWNLOAD_URL" -o "$DEST_PATH"; then
+          if [[ "$INPUT_WASM_ALLOW_UNVERIFIED" == "true" ]]; then
+            echo "::warning::allow-unverified=true: skipping attestation verification of the WASM plugin"
+          elif ! command -v gh >/dev/null 2>&1; then
+            rm -f "$DEST_PATH"
+            echo "::error::cannot verify callisto-moon.wasm: gh is not installed (set allow-unverified: true to bypass)"
+            exit 1
+          elif ! gh attestation verify "$DEST_PATH" \
+              --repo orin-dx/callisto \
+              --signer-workflow orin-dx/callisto/.github/workflows/callisto-release.yml \
+              --deny-self-hosted-runners; then
+            rm -f "$DEST_PATH"
+            echo "::error::attestation verification failed for callisto-moon.wasm (set allow-unverified: true to bypass)"
+            exit 1
+          fi
+        else
           echo "Release binary asset not found. Compiling Callisto WASM plugin locally..."
           rustup target add wasm32-wasip1 2>/dev/null || true
           cargo build -p callisto-moon --target wasm32-wasip1 --features pdk --release

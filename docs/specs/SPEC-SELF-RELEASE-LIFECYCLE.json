@@ -16,7 +16,7 @@
     },
     {
       "id": "SRL-02",
-      "criterion": "Release orchestration is modeled by a serializable run envelope that records the exact orchestration revision, release-source revision, immutable intent digest, selected profile, and artifact-manifest digest."
+      "criterion": "Release orchestration is modeled by a serializable run envelope (kind, orchestration revision, release-source revision, profile, intent digest, artifact-manifest digest). It is derived from the intent by one constructor, validated across fields, and persisted in the execution state before the first effect; the receipt is built from it."
     },
     {
       "id": "SRL-03",
@@ -29,15 +29,15 @@
     },
     {
       "id": "SRL-05",
-      "criterion": "All release lifecycle semantics--source validation, provenance, planning, observation, transition selection, resume, terminality, receipt construction, and artifact-slot validation--have one CLI/graph owner; Actions only supplies scheduling, isolated checkouts, artifact transport, credentials to execute, and command invocation."
+      "criterion": "All release lifecycle semantics--source validation, provenance, planning, observation, operation state transitions, resume, terminality, receipt construction, and artifact-slot validation--have one CLI/graph owner; operation state changes only through a single pure transition table. Actions only supplies scheduling, isolated checkouts, artifact transport, credentials to execute, and command invocation."
     },
     {
       "id": "SRL-06",
-      "criterion": "Before every effect and on every resume, each registry publication, Git tag, forge release, and artifact upload is provider-observed as absent, exact success, conflict, or indeterminate; indeterminate and conflict states fail closed with typed diagnostics."
+      "criterion": "Before every effect and on every resume, each registry publication, Git tag, forge release, forge publication, and artifact upload is provider-observed as absent, exact success (with typed per-role evidence), conflict, or indeterminate; conflict and indeterminate carry closed reasons and fail closed with typed diagnostics. Attempting is reachable only through an absent proof. Registry observation uses the registry protocol (crates.io sparse index, PyPI JSON API; npm via npm view); read-only observations use one bounded retry policy that honours Retry-After, effects are never blindly re-issued, and every outbound command has a deadline."
     },
     {
       "id": "SRL-07",
-      "criterion": "An exact pre-existing remote effect is recorded as already satisfied without attempting a duplicate publication; a same-identity version whose remote contents do not match the immutable intent is reported as a conflict."
+      "criterion": "An exact pre-existing remote effect is recorded as already satisfied without attempting a duplicate publication; a same-identity version whose remote contents do not match the immutable intent, including a yanked registry version, is reported as a conflict."
     },
     {
       "id": "SRL-08",
@@ -45,11 +45,11 @@
     },
     {
       "id": "SRL-09",
-      "criterion": "A release receipt is emitted only after every required operation is provider-observed as terminal success or already satisfied, and the receipt includes provenance and per-operation observation evidence."
+      "criterion": "A release receipt is emitted only after every required operation is provider-observed as terminal success or already satisfied, and the receipt is built from the persisted run envelope and includes provenance and per-operation observation evidence."
     },
     {
       "id": "SRL-10",
-      "criterion": "The production release plan includes attested binary asset slots for aarch64-apple-darwin, x86_64-unknown-linux-gnu, x86_64-unknown-linux-musl, and wasm32-wasip1; each validated asset is attached to the product-level GitHub Release."
+      "criterion": "The production release plan includes attested binary asset slots for aarch64-apple-darwin, x86_64-unknown-linux-gnu, x86_64-unknown-linux-musl, and wasm32-wasip1; the product-level GitHub Release is created as a draft, each validated asset is uploaded to the draft, and publishing the release is a separate last operation depending on every upload."
     },
     {
       "id": "SRL-11",
@@ -57,7 +57,7 @@
     },
     {
       "id": "SRL-12",
-      "criterion": "Executable behavioral tests cover fresh release, recovery, hidden and nested artifact transport, clean source worktrees, source/orchestration identity separation, job-local Git credentials, no-secret plan/build jobs, partial provider success, provider conflict, and receipt emission; line-oriented YAML checks remain only as narrow policy guards."
+      "criterion": "Executable behavioral tests cover fresh release, recovery, hidden and nested artifact transport, clean source worktrees, source/orchestration identity separation, job-local Git credentials, no-secret plan/build jobs, partial provider success, provider conflict, and receipt emission; provider fakes serve captured real responses and reject flags outside the real tools' shapes, and emitted flags are checked against the real tools' help; line-oriented YAML checks remain only as narrow policy guards."
     },
     {
       "id": "SRL-13",
@@ -70,6 +70,6 @@
   ],
   "linked_requirement": "RELEASE-SELF-HOSTING-INCIDENT-2026-09-16",
   "spec_file_path": "docs/specs/SPEC-SELF-RELEASE-LIFECYCLE.json",
-  "revision_note": "This structural specification supersedes piecemeal recovery workflow patches. It preserves already-correct no-approval and terminality fixes but requires the unconsumed profile model and workflow-only provenance handoff to be either integrated into the canonical lifecycle or removed. The owner decision on 2026-09-17 keeps the implemented rehearsal hermetic; an external registry is not a current release dependency.",
+  "revision_note": "This structural specification supersedes piecemeal recovery workflow patches. It preserves already-correct no-approval and terminality fixes but requires the unconsumed profile model and workflow-only provenance handoff to be either integrated into the canonical lifecycle or removed. The owner decision on 2026-09-17 keeps the implemented rehearsal hermetic; an external registry is not a current release dependency. Revised 2026-09-19 to match the implemented lifecycle: envelope persisted before effects, typed evidence, single transition table, protocol-level registry observation with bounded retry, draft-then-publish forge release, and the provider contract tier.",
   "reasoning": "Grounded in the owner-authoritative incident report and live source inspection on 2026-09-17. The owner explicitly rejected AWS and another distribution service for rehearsal, so external staging registry selection is deferred rather than fabricated."
 }

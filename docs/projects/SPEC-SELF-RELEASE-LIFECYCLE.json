@@ -132,7 +132,7 @@
       "steps": [
         "Make the configured product release declare canonical asset slots for macOS ARM, Linux GNU, Linux musl, and WASI; derive ArtifactUpload operations and their dependency edges in the same intent as registry, tag, and forge operations.",
         "Implement the CLI build/stage command to build from the explicit release source into a temporary directory, generate an intent-bound manifest, verify digests and attestations, and stage no files in the checkout.",
-        "Attach only manifest-verified assets to the product-level GitHub Release after the corresponding tag/release observation is exact.",
+        "Create the product-level GitHub Release as a draft, upload only manifest-verified assets to the draft, and publish it as a separate last operation that depends on every upload.",
         "Run target feasibility probes for aarch64-apple-darwin and x86_64-unknown-linux-musl in CI before committing to the final runner/toolchain strategy; preserve a typed unsupported-target failure if a target cannot be built reproducibly.",
         "Do not add Apple signing or notarization; document unsigned macOS artifacts and their verification story."
       ],

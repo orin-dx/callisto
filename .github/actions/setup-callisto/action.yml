@@ -9,6 +9,10 @@ inputs:
     description: 'Version tag of Callisto to install'
     required: false
     default: 'latest'
+  allow-unverified:
+    description: 'Install a prebuilt release asset even when its GitHub attestation cannot be verified (gh missing or verification failed). Default false: fail closed.'
+    required: false
+    default: 'false'
 
 runs:
   using: 'composite'
@@ -36,6 +40,8 @@ runs:
       env:
         INPUT_CALLISTO_SOURCE: ${{ inputs.source }}
         INPUT_CALLISTO_VERSION: ${{ inputs.version }}
+        INPUT_CALLISTO_ALLOW_UNVERIFIED: ${{ inputs.allow-unverified }}
+        GH_TOKEN: ${{ github.token }}
       run: | # zizmor: ignore[github-env] the PATH entry is a fixed child of the trusted runner temporary directory, not action input or downloaded archive content.
         # Install into $RUNNER_TEMP so the binary never lands inside the workspace
         # tree (preventing accidental git-staging by downstream steps that run
@@ -102,6 +108,27 @@ runs:
             ;;
         esac
 
+        # A prebuilt asset runs with the job's privileges, so it must carry a
+        # GitHub attestation from the Callisto release workflow before it is
+        # extracted. Fails closed unless allow-unverified is "true".
+        verify_asset() {
+          if [[ "${INPUT_CALLISTO_ALLOW_UNVERIFIED:-false}" == "true" ]]; then
+            echo "::warning::allow-unverified=true: skipping attestation verification of $ASSET_NAME"
+            return 0
+          fi
+          if ! command -v gh >/dev/null 2>&1; then
+            echo "::error::cannot verify $ASSET_NAME: gh is not installed (set allow-unverified: true to bypass)"
+            return 1
+          fi
+          if ! gh attestation verify "$DOWNLOAD_DEST" \
+              --repo orin-dx/callisto \
+              --signer-workflow orin-dx/callisto/.github/workflows/callisto-release.yml \
+              --deny-self-hosted-runners; then
+            echo "::error::attestation verification failed for $ASSET_NAME (set allow-unverified: true to bypass)"
+            return 1
+          fi
+        }
+
         # Prioritize local repository build when inside the callisto monorepo
         if [[ -f "$GITHUB_WORKSPACE/Cargo.toml" ]] && grep -q "callisto-cli" "$GITHUB_WORKSPACE/Cargo.toml"; then
           echo "Building local callisto binary from current repository commit..."
@@ -111,19 +138,14 @@ runs:
           echo "::error::setup-callisto source=local requires a Callisto workspace checkout"
           exit 1
         elif [[ -n "$ASSET_NAME" ]] && curl -sL -f "$DOWNLOAD_URL" -o "$DOWNLOAD_DEST" 2>/dev/null; then
-          # Match the extraction tool to ASSET_NAME's actual format; any
-          # unrecognized extension defensively falls back to the previous
-          # tar.gz behavior rather than erroring (the crates.io/cargo-install
-          # fallback chain below already exists to absorb total failure).
+          verify_asset || exit 1
+          # Extract only the expected binary, never the whole archive.
           case "$ASSET_NAME" in
             *.zip)
-              unzip -q "$DOWNLOAD_DEST" -d "$CALLISTO_BIN_DIR"
-              ;;
-            *.tar.gz)
-              tar -xzf "$DOWNLOAD_DEST" -C "$CALLISTO_BIN_DIR"
+              unzip -q "$DOWNLOAD_DEST" callisto.exe -d "$CALLISTO_BIN_DIR"
               ;;
             *)
-              tar -xzf "$DOWNLOAD_DEST" -C "$CALLISTO_BIN_DIR"
+              tar -xzf "$DOWNLOAD_DEST" -C "$CALLISTO_BIN_DIR" callisto
               ;;
           esac
           echo "Callisto downloaded from GitHub Releases ($DOWNLOAD_URL)"

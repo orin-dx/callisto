@@ -262,3 +262,12 @@ jobs:
         # This action only creates or updates the release PR. Registry tokens
         # belong exclusively in the protected execute job after merge.
 ```
+
+### Installer verification
+
+`setup-callisto` and `setup-callisto-wasm` verify a downloaded prebuilt asset with
+`gh attestation verify` (repository `orin-dx/callisto`, signer workflow
+`.github/workflows/callisto-release.yml`, using the job's `github.token`) before extracting or
+using it, and extract only the `callisto` binary from the archive. Verification failure or a
+missing `gh` aborts the step. Set the input `allow-unverified: true` (default `false`) to install
+without verification.

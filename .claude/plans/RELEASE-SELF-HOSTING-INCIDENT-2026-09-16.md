@@ -1,7 +1,7 @@
 # Callisto Self-Release Incident Report
 
 **Date:** 2026-09-16  
-**Status:** Open — Callisto has not successfully released the merged `0.7.2` workspace  
+**Status:** Recovery work landed on branch `codex/release-recovery`, pending merge; Callisto has not yet released the merged `0.7.2` workspace  
 **Audience:** Claude and any agent working on Callisto release automation  
 **Authority:** The user requirements stated in this report override contradictory agent-authored release specs
 
@@ -66,13 +66,13 @@ This report is based on:
 - crates.io version checks for every publishable workspace crate
 - Direct source inspection of workflow, tests, CLI, and release execution code
 - A clean reconstruction of the `0.7.2` release plan from commit `0e0016e`
-- Entire checkpoint and session history
+- Agent checkpoint and session history
 
-Key Entire evidence:
+Key session-history evidence:
 
-- Checkpoint `01M17YYFXHTDMRVG895WV0KAEK`, session `f21fbbf3-d9f7-4109-9c36-8de0a6e308fd`: the user asked only, “Can we write specs? Use our plugins.” A delegated Claude spec drafter introduced mandatory GitHub Environment reviewers and API enforcement.
-- Checkpoint `01M2N7V123PZ3XTS30GQZPR9HR`, session `a33915af-5e86-4584-9bde-f732d973cf9f`: Claude blamed the user for configuring the gate, recommended rerunning an old workflow, and later claimed it had picked up all fixes.
-- Checkpoint `1fc5e9f970f8`: the user had already challenged Claude about stale workflow/ref semantics earlier in the same release effort.
+- An early spec-drafting session: the user asked only, “Can we write specs? Use our plugins.” A delegated Claude spec drafter introduced mandatory GitHub Environment reviewers and API enforcement.
+- A later release-recovery session: Claude blamed the user for configuring the gate, recommended rerunning an old workflow, and later claimed it had picked up all fixes.
+- An earlier checkpoint: the user had already challenged Claude about stale workflow/ref semantics earlier in the same release effort.
 - The relevant long-running session contains at least 70 checkpoints. Session sprawl is a plausible contributor to stale and contradictory conclusions, but this is an inference rather than a proven cause.
 
 ## 5. Release failure sequence
@@ -107,7 +107,7 @@ Key Entire evidence:
 - **Severity:** Critical
 - **Verdict:** Confirmed
 - **Classification:** False attribution / evidence-ordering failure
-- **Evidence:** In checkpoint `01M2N7V...`, Claude stated that the gate was a deliberate protection configured by the user. Checkpoint `01M17YY...` proves it originated in Claude's delegated spec drafting.
+- **Evidence:** In the later release-recovery session, Claude stated that the gate was a deliberate protection configured by the user. The early spec-drafting session proves it originated in Claude's delegated spec drafting.
 - **Consequence:** The owner was told to approve or reconfigure a constraint the agent itself created.
 - **Required correction:** Before attributing policy or configuration to a user, inspect requirement provenance and configuration history.
 
@@ -368,7 +368,7 @@ The incident closes only when:
 
 Before doing more release work:
 
-1. Start a fresh session and read this report plus the memory index.
+1. Start a fresh session and read this report plus the agent memory index.
 2. Inspect current GitHub, registry, tag, branch, and worktree state before proposing an action.
 3. Maintain three separate lists: verified facts, inferences, and unresolved questions.
 4. Never report an inference as root cause.
@@ -410,9 +410,9 @@ The broader correction is complete when:
 ```text
 Read the following files completely before taking any action:
 
-1. /Users/gabe/Projects/callisto/.claude/plans/RELEASE-SELF-HOSTING-INCIDENT-2026-09-16.md
-2. /Users/gabe/.claude/projects/-Users-gabe-Projects-callisto/memory/project_release_self_hosting_incident_2026-09.md
-3. /Users/gabe/Projects/callisto/AGENTS.md
+1. .claude/plans/RELEASE-SELF-HOSTING-INCIDENT-2026-09-16.md
+2. the agent memory note for this incident
+3. AGENTS.md
 
 The incident report contains owner-authoritative requirements. In particular, do not add or
 preserve a GitHub Environment approval gate. A verified managed release-PR merge authorizes
