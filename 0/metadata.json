@@ -1,0 +1,241 @@
+{
+  "cli_version": "0.10.7-nightly.202609170627.0dda4e14f",
+  "checkpoint_id": "01M301JS2WPD3BRYG6G4QA3EXQ",
+  "session_id": "a08620cc-8b37-45b5-b4b2-89a977aad490",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-20T18:34:46.46227Z",
+  "branch": "codex/release-recovery",
+  "checkpoints_count": 3,
+  "save_step_count": 3,
+  "files_touched": [
+    "crates/callisto-cli/tests/common/release_harness.rs",
+    "crates/callisto-cli/tests/provider_flag_contract_tests.rs",
+    "crates/callisto-cli/tests/release_hardening_tests.rs",
+    "crates/callisto-cli/tests/release_plan_pypi_default_registry_test.rs",
+    "crates/callisto-cli/tests/schema_guard_test.rs",
+    "crates/callisto-graph/src/commands/release/binding.rs",
+    "crates/callisto-graph/src/commands/release/derive.rs",
+    "crates/callisto-graph/src/commands/release/provider/http.rs",
+    "crates/callisto-graph/src/commands/release/provider/mod.rs",
+    "crates/callisto-graph/src/commands/release/provider/policy.rs",
+    "crates/callisto-graph/src/commands/release/provider/registry.rs",
+    "crates/callisto-graph/src/commands/release/provider/registry/tests.rs",
+    "crates/callisto-graph/src/config/resolve.rs",
+    "crates/callisto-graph/src/error.rs",
+    "crates/callisto-graph/src/registry_endpoint.rs",
+    "crates/callisto-model/src/release_observation.rs",
+    "testing/fixtures/providers/cargo-info/PROVENANCE.md",
+    "testing/fixtures/providers/crates-io/PROVENANCE.md",
+    "testing/fixtures/providers/crates-io/sparse-index-200.http",
+    "testing/fixtures/providers/crates-io/sparse-index-404.http",
+    "testing/fixtures/providers/crates-io/sparse-index-yanked-line.json",
+    "testing/fixtures/providers/npm-view/PROVENANCE.md",
+    "testing/fixtures/providers/pypi/PROVENANCE.md",
+    "testing/fixtures/providers/pypi/version-200.http",
+    "testing/fixtures/providers/pypi/version-404.http",
+    "testing/loopback_http.rs",
+    "testing/refresh-provider-fixtures.sh"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5",
+  "turn_id": "8c8223ead1f7",
+  "checkpoint_transcript_start": 3176,
+  "transcript_lines_at_start": 3176,
+  "compact_transcript_start": 371,
+  "token_usage": {
+    "input_tokens": 38,
+    "cache_creation_tokens": 50780,
+    "cache_read_tokens": 14938200,
+    "output_tokens": 43132,
+    "api_call_count": 18,
+    "subagent_tokens": {
+      "input_tokens": 200,
+      "cache_creation_tokens": 319033,
+      "cache_read_tokens": 17511221,
+      "output_tokens": 75932,
+      "api_call_count": 100
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01YCCAbwm7sztdDtLuczSzDN",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "48049d8543a5",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 466,
+        "end": 467,
+        "entry_ids": [
+          "64369af6-5a29-4372-9bc8-6e58a915ca54"
+        ],
+        "tool_use_id": "toolu_01YCCAbwm7sztdDtLuczSzDN"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01YCCAbwm7sztdDtLuczSzDN"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 54
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-20T18:34:46.289921Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 1041,
+    "human_removed": 36,
+    "total_committed": 0,
+    "total_lines_changed": 1119,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 13,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".cargo/config.toml": 2,
+        ".claude/settings.local.json": 11
+      }
+    },
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 13,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".cargo/config.toml": 2,
+        ".claude/settings.local.json": 11
+      }
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 917,
+      "user_lines_removed": 1048,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".cargo/config.toml": 2,
+        ".claude/settings.local.json": 11,
+        "crates/callisto-cli/tests/common/release_harness.rs": 104,
+        "crates/callisto-cli/tests/provider_flag_contract_tests.rs": 9,
+        "crates/callisto-cli/tests/release_hardening_tests.rs": 29,
+        "crates/callisto-cli/tests/release_plan_pypi_default_registry_test.rs": 20,
+        "crates/callisto-graph/src/commands/release/binding.rs": 1,
+        "crates/callisto-graph/src/commands/release/derive.rs": 1,
+        "crates/callisto-graph/src/commands/release/provider/http.rs": 8,
+        "crates/callisto-graph/src/commands/release/provider/mod.rs": 3,
+        "crates/callisto-graph/src/commands/release/provider/policy.rs": 2,
+        "crates/callisto-graph/src/commands/release/provider/registry.rs": 93,
+        "crates/callisto-graph/src/commands/release/provider/registry/tests.rs": 328,
+        "crates/callisto-graph/src/config/resolve.rs": 25,
+        "crates/callisto-graph/src/error.rs": 6,
+        "crates/callisto-graph/src/registry_endpoint.rs": 28,
+        "crates/callisto-model/src/release_observation.rs": 2,
+        "testing/fixtures/providers/cargo-info/PROVENANCE.md": 31,
+        "testing/fixtures/providers/cargo-info/absent-version.cmd": 5,
+        "testing/fixtures/providers/cargo-info/found.cmd": 23,
+        "testing/fixtures/providers/cargo-info/network-failure.cmd": 17,
+        "testing/fixtures/providers/cargo-info/unknown-crate.cmd": 5,
+        "testing/fixtures/providers/cargo-info/yanked.cmd": 5,
+        "testing/fixtures/providers/github/release-404.http": 5,
+        "testing/fixtures/providers/github/release-draft.http": 7,
+        "testing/fixtures/providers/github/release-list-page.http": 7,
+        "testing/fixtures/providers/github/release-prerelease.http": 7,
+        "testing/fixtures/providers/github/release-published.http": 7,
+        "testing/fixtures/providers/npm-view/PROVENANCE.md": 14,
+        "testing/fixtures/providers/npm-view/found.cmd": 4,
+        "testing/fixtures/providers/npm-view/missing.cmd": 17,
+        "testing/loopback_http.rs": 39,
+        "testing/refresh-provider-fixtures.sh": 52
+      },
+      "user_removed_per_file": {
+        "crates/callisto-cli/tests/common/release_harness.rs": 150,
+        "crates/callisto-cli/tests/provider_flag_contract_tests.rs": 10,
+        "crates/callisto-cli/tests/release_hardening_tests.rs": 17,
+        "crates/callisto-cli/tests/release_plan_pypi_default_registry_test.rs": 7,
+        "crates/callisto-cli/tests/schema_guard_test.rs": 1,
+        "crates/callisto-graph/src/commands/release/binding.rs": 31,
+        "crates/callisto-graph/src/commands/release/provider/http.rs": 101,
+        "crates/callisto-graph/src/commands/release/provider/mod.rs": 2,
+        "crates/callisto-graph/src/commands/release/provider/policy.rs": 4,
+        "crates/callisto-graph/src/commands/release/provider/registry.rs": 172,
+        "crates/callisto-graph/src/commands/release/provider/registry/tests.rs": 292,
+        "crates/callisto-graph/src/config/resolve.rs": 4,
+        "crates/callisto-graph/src/registry_endpoint.rs": 44,
+        "crates/callisto-model/src/release_observation.rs": 4,
+        "testing/fixtures/providers/crates-io/PROVENANCE.md": 7,
+        "testing/fixtures/providers/crates-io/sparse-index-200.http": 22,
+        "testing/fixtures/providers/crates-io/sparse-index-404.http": 17,
+        "testing/fixtures/providers/crates-io/sparse-index-yanked-line.json": 1,
+        "testing/fixtures/providers/github/release-404.http": 5,
+        "testing/fixtures/providers/github/release-draft.http": 7,
+        "testing/fixtures/providers/github/release-list-page.http": 7,
+        "testing/fixtures/providers/github/release-prerelease.http": 7,
+        "testing/fixtures/providers/github/release-published.http": 7,
+        "testing/fixtures/providers/pypi/PROVENANCE.md": 6,
+        "testing/fixtures/providers/pypi/version-200.http": 28,
+        "testing/fixtures/providers/pypi/version-404.http": 26,
+        "testing/loopback_http.rs": 46,
+        "testing/refresh-provider-fixtures.sh": 23
+      }
+    },
+    {
+      "checkpoint_number": 4,
+      "user_lines_added": 183,
+      "user_lines_removed": 52,
+      "agent_lines_added": 795,
+      "agent_lines_removed": 1015,
+      "user_added_per_file": {
+        ".cargo/config.toml": 2,
+        ".changeset/release-product-artifacts.md": 1,
+        ".claude/plans/PR101-HARDENING/closure-matrix.md": 5,
+        ".claude/plans/PR101-HARDENING/defects-and-red-tests.md": 2,
+        ".claude/semantic-model/release-lifecycle.md": 38,
+        ".claude/settings.local.json": 11,
+        ".claude/specs/SPEC-RELEASE-LIFECYCLE-HARDENING.json": 10,
+        "crates/callisto-cli/tests/release_hardening_tests.rs": 3,
+        "crates/callisto-graph/src/commands/release/provider/registry/tests.rs": 2,
+        "docs/06-publishing.md": 5,
+        "docs/07-self-release-lifecycle.md": 28,
+        "testing/fixtures/providers/cargo-info/absent-version.cmd": 5,
+        "testing/fixtures/providers/cargo-info/found.cmd": 23,
+        "testing/fixtures/providers/cargo-info/network-failure.cmd": 17,
+        "testing/fixtures/providers/cargo-info/unknown-crate.cmd": 5,
+        "testing/fixtures/providers/cargo-info/yanked.cmd": 5,
+        "testing/fixtures/providers/npm-view/found.cmd": 4,
+        "testing/fixtures/providers/npm-view/missing.cmd": 17
+      },
+      "user_removed_per_file": {
+        ".changeset/release-product-artifacts.md": 1,
+        ".claude/plans/PR101-HARDENING/closure-matrix.md": 5,
+        ".claude/plans/PR101-HARDENING/defects-and-red-tests.md": 2,
+        ".claude/semantic-model/release-lifecycle.md": 18,
+        ".claude/specs/SPEC-RELEASE-LIFECYCLE-HARDENING.json": 10,
+        "crates/callisto-cli/tests/release_hardening_tests.rs": 1,
+        "crates/callisto-graph/src/commands/release/provider/registry/tests.rs": 9,
+        "docs/07-self-release-lifecycle.md": 6
+      }
+    }
+  ]
+}

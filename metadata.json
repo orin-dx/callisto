@@ -1,0 +1,59 @@
+{
+  "cli_version": "0.10.7-nightly.202609170627.0dda4e14f",
+  "checkpoint_id": "01M301JS2WPD3BRYG6G4QA3EXQ",
+  "strategy": "manual-commit",
+  "branch": "codex/release-recovery",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "crates/callisto-cli/tests/common/release_harness.rs",
+    "crates/callisto-cli/tests/provider_flag_contract_tests.rs",
+    "crates/callisto-cli/tests/release_hardening_tests.rs",
+    "crates/callisto-cli/tests/release_plan_pypi_default_registry_test.rs",
+    "crates/callisto-cli/tests/schema_guard_test.rs",
+    "crates/callisto-graph/src/commands/release/binding.rs",
+    "crates/callisto-graph/src/commands/release/derive.rs",
+    "crates/callisto-graph/src/commands/release/provider/http.rs",
+    "crates/callisto-graph/src/commands/release/provider/mod.rs",
+    "crates/callisto-graph/src/commands/release/provider/policy.rs",
+    "crates/callisto-graph/src/commands/release/provider/registry.rs",
+    "crates/callisto-graph/src/commands/release/provider/registry/tests.rs",
+    "crates/callisto-graph/src/config/resolve.rs",
+    "crates/callisto-graph/src/error.rs",
+    "crates/callisto-graph/src/registry_endpoint.rs",
+    "crates/callisto-model/src/release_observation.rs",
+    "testing/fixtures/providers/cargo-info/PROVENANCE.md",
+    "testing/fixtures/providers/crates-io/PROVENANCE.md",
+    "testing/fixtures/providers/crates-io/sparse-index-200.http",
+    "testing/fixtures/providers/crates-io/sparse-index-404.http",
+    "testing/fixtures/providers/crates-io/sparse-index-yanked-line.json",
+    "testing/fixtures/providers/npm-view/PROVENANCE.md",
+    "testing/fixtures/providers/pypi/PROVENANCE.md",
+    "testing/fixtures/providers/pypi/version-200.http",
+    "testing/fixtures/providers/pypi/version-404.http",
+    "testing/loopback_http.rs",
+    "testing/refresh-provider-fixtures.sh"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 38,
+    "cache_creation_tokens": 50780,
+    "cache_read_tokens": 14938200,
+    "output_tokens": 43132,
+    "api_call_count": 18,
+    "subagent_tokens": {
+      "input_tokens": 200,
+      "cache_creation_tokens": 319033,
+      "cache_read_tokens": 17511221,
+      "output_tokens": 75932,
+      "api_call_count": 100
+    }
+  }
+}
